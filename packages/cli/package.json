@@ -1,0 +1,15 @@
+{
+  "name": "@papercusp/cli",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "papercusp": "./bin/papercusp"
+  },
+  "scripts": {
+    "test": "node --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.7.0"
+  }
+}

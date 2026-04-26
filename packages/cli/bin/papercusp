@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Wrapper that runs the TypeScript CLI via tsx.
+# tsx is hoisted via the workspace install.
+set -euo pipefail
+# Resolve through any symlink (npm puts a symlink in node_modules/.bin) so
+# we always find the real source dir.
+SELF="$(readlink -f "$0")"
+HERE="$(cd "$(dirname "$SELF")" && pwd)"
+SCRIPT="$HERE/../src/papercusp.ts"
+# Prefer the workspace-hoisted tsx; fall back to node + tsx loader.
+if command -v tsx >/dev/null 2>&1; then
+  exec tsx "$SCRIPT" "$@"
+else
+  exec node --experimental-strip-types --no-warnings "$SCRIPT" "$@"
+fi
