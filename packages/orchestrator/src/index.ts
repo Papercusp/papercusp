@@ -38,6 +38,8 @@ export {
   resolveModel,
 } from './invoke.js';
 export type { InvokeContext } from './invoke.js';
+export { parseDecision, DECISION_VERBS } from './decision-parse.js';
+export type { DecisionVerb, ParsedDecision } from './decision-parse.js';
 export type {
   HarnessPhase,
   HarnessKind,

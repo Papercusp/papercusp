@@ -266,8 +266,23 @@ export async function invoke(
     child.stdout.on('data', (chunk: Buffer) => appendFileSync(jsonlPath, chunk));
     child.stderr.on('data', (chunk: Buffer) => appendFileSync(errPath, chunk));
 
-    child.stdin.write(prompt);
-    child.stdin.end();
+    // EPIPE protection: if the subprocess exits before reading our stdin
+    // (e.g. `true`, or a crashed claude binary), the write would throw an
+    // unhandled EPIPE. Swallow it — the agent's exit code already tells
+    // the caller something went wrong.
+    child.stdin.on('error', (err) => {
+      if ((err as NodeJS.ErrnoException).code !== 'EPIPE') {
+        ctx.log(`  stdin error: ${err.message}`);
+      }
+    });
+    try {
+      child.stdin.write(prompt);
+      child.stdin.end();
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EPIPE') {
+        ctx.log(`  stdin write error: ${(err as Error).message}`);
+      }
+    }
 
     child.on('error', (err) => {
       ctx.log(`  spawn error: ${err.message}`);
