@@ -7,7 +7,11 @@ const WEB_UPSTREAM      = process.env.PAPERCUSP_WEB_UPSTREAM      ?? 'http://loc
 module.exports = {
   reactStrictMode: true,
   output: 'standalone',
-  outputFileTracingRoot: path.join(__dirname, '../..'),
+  // Workspace root is the parent monorepo (~/Restart), not this submodule.
+  // Both must agree per Next 16: turbopack.root mirrors outputFileTracingRoot.
+  // __dirname here is libs/papercusp/apps/web → 4 levels up = ~/Restart.
+  outputFileTracingRoot: path.join(__dirname, '../../../..'),
+  turbopack: { root: path.join(__dirname, '../../../..') },
   typescript: { ignoreBuildErrors: true },
   images: { unoptimized: true },
   experimental: {
