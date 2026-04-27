@@ -40,6 +40,10 @@ export {
 export type { InvokeContext } from './invoke.js';
 export { parseDecision, DECISION_VERBS } from './decision-parse.js';
 export type { DecisionVerb, ParsedDecision } from './decision-parse.js';
+export { checkpointGate } from './checkpoints.js';
+export type { CheckpointAction } from './checkpoints.js';
+export { runMainLoop } from './main-loop.js';
+export type { MainLoopOptions, MainLoopExit } from './main-loop.js';
 export type {
   HarnessPhase,
   HarnessKind,
