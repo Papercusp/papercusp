@@ -305,15 +305,27 @@ test('runMainLoop — NEXT_WORKER with simple config invokes worker, continues l
   }
 });
 
-test('runMainLoop — NEXT_WORKER falls back to bash when parallel/competition enabled', async () => {
-  const fx = makeFixture();
-  // Write a config.json with parallelWorkers.max = 4 (parallel mode).
-  // (As of Stage 3, branch-iso/worktrees are ported; parallel/competition
-  //  still falls back.)
+test('runMainLoop — NEXT_WORKER takes parallel-lane path when parallelWorkers.max>1 + branchIso', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'prompts', 'worker.md'), '# WORKER');
+  });
+  // Write config + features so the loop can drive a feature.
   writeFileSync(
     join(fx.stateDir, 'config.json'),
-    JSON.stringify({ parallelWorkers: { max: 4, mode: 'lane' } }),
+    JSON.stringify({
+      parallelWorkers: { max: 4, mode: 'lane' },
+      branchIsolation: { enabled: true, useWorktrees: false },
+    }),
   );
+  writeFileSync(
+    join(fx.stateDir, 'features.json'),
+    JSON.stringify({ features: [{ id: 'F-001', status: 'pending', attempts: 0 }] }),
+  );
+  // Make the project a real git repo so branchIsoPreWorker can checkout.
+  // (We're spawning git via spawnSync — needs an actual repo.)
+  const { spawnSync } = await import('node:child_process');
+  spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: fx.projectDir });
+  spawnSync('git', ['commit', '--allow-empty', '-m', 'init', '-q'], { cwd: fx.projectDir });
   try {
     const log: string[] = [];
     const result = await runMainLoop({
@@ -328,12 +340,15 @@ test('runMainLoop — NEXT_WORKER falls back to bash when parallel/competition e
         log: () => {},
       },
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
-      maxIterations: 5,
+      maxIterations: 1,
       iterationSleepMs: 0,
       skipPreLoop: true,
     });
-    assert.equal(result.reason, 'todo-branch');
-    assert.ok(log.some((l) => l.includes('parallel-lane/competition not yet ported')));
+    assert.equal(result.reason, 'max-iterations');
+    assert.ok(
+      log.some((l) => l.includes('parallel lane,') && l.includes('active before')),
+      'should log parallel-lane start',
+    );
   } finally {
     fx.cleanup();
   }

@@ -86,6 +86,25 @@ export type {
   FirePluginHookOptions,
   FirePluginHookResult,
 } from './plugin-hooks.js';
+export {
+  buildCompetitionManifest,
+  competitionManifestPath,
+  createLanePool,
+  isCompetitionMode,
+  isLaneMode,
+  parallelMaxWorkers,
+  parallelMode,
+  parseCompetitionVerdict,
+  readCompetitionManifest,
+  writeCompetitionManifest,
+} from './lanes.js';
+export type {
+  CompetitionLane,
+  CompetitionManifest,
+  CompetitionVerdict,
+  LanePool,
+  LaneRecord,
+} from './lanes.js';
 export type {
   HarnessPhase,
   HarnessKind,

@@ -37,10 +37,23 @@ import { snapshotState } from './snapshot-state.js';
 import { runPreLoop } from './pre-loop.js';
 import { checkpointGate } from './checkpoints.js';
 import { firePluginHook } from './plugin-hooks.js';
+import {
+  competitionManifestPath,
+  createLanePool,
+  isCompetitionMode,
+  isLaneMode,
+  parallelMaxWorkers,
+  parseCompetitionVerdict,
+  readCompetitionManifest,
+  writeCompetitionManifest,
+} from './lanes.js';
+import type { LanePool } from './lanes.js';
+import { git } from './git.js';
+import { branchIsoBase, worktreePath } from './branch-iso.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface MainLoopExit {
@@ -110,6 +123,11 @@ export async function runMainLoop(opts: MainLoopOptions): Promise<MainLoopExit> 
     return { exitCode: 8, reason: 'pending-checkpoint', iterations: 0 };
   }
 
+  // Lane pool — one per loop run. Used by NEXT_WORKER (parallel/competition)
+  // and drained by NEXT_VALIDATOR before the validator runs. cfg.parallelWorkers.max
+  // is the cap; default 1 (sequential).
+  const lanePool = createLanePool(ctx.stateDir, parallelMaxWorkers(cfg));
+
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     logger.log(`── iteration ${iteration} ──`);
 
@@ -122,14 +140,18 @@ export async function runMainLoop(opts: MainLoopOptions): Promise<MainLoopExit> 
         `ERROR: orchestrator returned unparsable decision: '${decisionResult.output.slice(0, 200)}'`,
       );
       logger.log('Aborting. Inspect logs and state, then rerun.');
+      await lanePool.waitAll();
       return { exitCode: 4, reason: 'unparsable-decision', iterations: iteration };
     }
 
     logger.log(`ORCH decision: ${parsed.raw} (role=${primaryRole})`);
 
     // 2. Dispatch.
-    const dispatch = await dispatchDecision(parsed, ctx, logger, cfg, iteration, sleep);
+    const dispatch = await dispatchDecision(parsed, ctx, logger, cfg, iteration, sleep, lanePool);
     if (dispatch.terminal) {
+      // Drain in-flight parallel lanes so they don't outlive this exit
+      // (e.g. a worker writing to a directory the caller is about to clean up).
+      await lanePool.waitAll();
       return { exitCode: dispatch.exitCode, reason: dispatch.reason, iterations: iteration };
     }
 
@@ -181,6 +203,8 @@ export async function runMainLoop(opts: MainLoopOptions): Promise<MainLoopExit> 
 
   logger.log(`Hit MAX_ITERATIONS=${maxIterations} without converging. Exiting.`);
   logger.notifyEvent('max-iter', `Hit MAX_ITERATIONS=${maxIterations} without converging`);
+  // Drain any in-flight parallel lanes so they don't outlive this exit.
+  await lanePool.waitAll();
   return { exitCode: 5, reason: 'max-iterations', iterations: maxIterations };
 }
 
@@ -208,6 +232,7 @@ async function dispatchDecision(
   cfg: ReturnType<typeof readConfig>,
   iteration: number,
   sleep: (ms: number) => Promise<void>,
+  lanePool: LanePool,
 ): Promise<DispatchResult> {
   switch (parsed.verb) {
     case 'DONE':
@@ -232,13 +257,13 @@ async function dispatchDecision(
       return handleNextHarness(parsed, ctx, logger);
 
     case 'NEXT_WORKER':
-      return handleNextWorker(parsed, ctx, logger, cfg);
+      return handleNextWorker(parsed, ctx, logger, cfg, lanePool);
 
     case 'NEXT_WORKER_CEO_MODE':
       return handleNextWorkerCeoMode(parsed, ctx, logger, cfg);
 
     case 'NEXT_VALIDATOR':
-      return handleNextValidator(parsed, ctx, logger, cfg);
+      return handleNextValidator(parsed, ctx, logger, cfg, lanePool);
 
     case 'NEXT_TESTER':
       return handleSimpleInvoke(ctx, logger, 'tester', parsed.arg ? [`VAL_ID=${parsed.arg}`] : ['VAL_ID='], `TESTER starting${parsed.arg ? ` for ${parsed.arg}` : ''}`);
@@ -350,45 +375,36 @@ async function handleDone(
 }
 
 /**
- * Returns true if a feature-level subsystem we haven't ported yet is on.
- * Currently: parallel-lane and competition-mode. (Branch isolation +
- * worktrees ARE ported as of Stage 3.)
- */
-function isParallelOrCompetition(cfg: ReturnType<typeof readConfig>): boolean {
-  return (
-    Number(configGet<unknown>(cfg, 'parallelWorkers.max', 1)) > 1 ||
-    configGet<string>(cfg, 'parallelWorkers.mode', 'lane') === 'competition'
-  );
-}
-
-/**
- * NEXT_WORKER handler. Stage 3 wires in branch isolation + worktrees:
+ * NEXT_WORKER handler. Routes between three paths:
  *
- *   - optional debugger if attempts ≥ threshold AND no debug note exists
- *   - branchIsoPreWorker (creates branch or worktree)
- *   - log "WORKER <fid> starting"
- *   - invoke worker (with worktree cwd if applicable)
- *   - branchIsoPostWorker (commits in branch or worktree)
+ *   - **competition** (Stage 5a): N workers on the same feature in
+ *     sibling worktrees; validator picks a winner via COMPETITION_WINNER.
+ *     Requires branchIsolation + useWorktrees + parallelWorkers.mode=='competition'.
+ *   - **parallel lane** (Stage 5a): up to N workers run on different
+ *     features in parallel, each on its own branch. Requires
+ *     branchIsolation + parallelWorkers.max > 1.
+ *   - **sequential** (Stage 2c): single worker; default.
  *
- * Parallel-lane / competition mode still falls back to bash — those need
- * lane-management subsystems (Stage 5+).
+ * All three paths share the optional debugger-threshold pre-check.
  */
 async function handleNextWorker(
   parsed: ParsedDecision,
   ctx: InvokeContext,
   logger: Logger,
   cfg: ReturnType<typeof readConfig>,
+  lanePool: LanePool,
 ): Promise<DispatchResult> {
   const fid = parsed.arg ?? '';
   if (!fid) {
     logger.log(`ERROR: NEXT_WORKER without feature id: ${parsed.raw}`);
     return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
   }
-  if (isParallelOrCompetition(cfg)) {
-    logger.log(
-      `NEXT_WORKER ${fid}: parallel-lane/competition not yet ported — falling back to bash`,
-    );
-    return { terminal: true, exitCode: 0, reason: 'todo-branch' };
+
+  if (isCompetitionMode(cfg)) {
+    return handleCompetitionWorker(fid, ctx, logger, cfg);
+  }
+  if (isLaneMode(cfg)) {
+    return handleParallelLaneWorker(fid, ctx, logger, cfg, lanePool);
   }
 
   // Optional debugger before the worker.
@@ -468,29 +484,35 @@ async function handleNextWorker(
 }
 
 /**
- * NEXT_VALIDATOR handler. Stage 3 wires in branch isolation + worktrees:
- *
+ * NEXT_VALIDATOR handler.
+ *   - drains parallel worker lanes first (avoid git conflicts with the
+ *     validator running concurrently with workers)
  *   - branchIsoPreValidator (switches to feature branch / logs worktree)
  *   - log "VALIDATOR <fid> starting"
  *   - invoke validator (with worktree cwd if applicable)
  *   - branchIsoPostValidator (merges/PRs/keeps on PASS)
+ *   - if a competition manifest exists for this feature: parse winner,
+ *     merge winner branch, drop loser worktrees.
  */
 async function handleNextValidator(
   parsed: ParsedDecision,
   ctx: InvokeContext,
   logger: Logger,
   cfg: ReturnType<typeof readConfig>,
+  lanePool: LanePool,
 ): Promise<DispatchResult> {
   const fid = parsed.arg ?? '';
   if (!fid) {
     logger.log(`ERROR: NEXT_VALIDATOR without feature id: ${parsed.raw}`);
     return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
   }
-  if (isParallelOrCompetition(cfg)) {
-    logger.log(
-      `NEXT_VALIDATOR ${fid}: parallel/competition not yet ported — falling back to bash`,
-    );
-    return { terminal: true, exitCode: 0, reason: 'todo-branch' };
+
+  // Drain parallel worker lanes before running the validator — running git
+  // operations concurrently with workers committing in their lanes risks
+  // index conflicts.
+  if (lanePool.count() > 0) {
+    logger.log(`  parallel: waiting on ${lanePool.count()} worker lane(s)…`);
+    await lanePool.waitAll();
   }
 
   const branchIsoCtx = {
@@ -545,8 +567,291 @@ async function handleNextValidator(
   // Validator updates features.json itself; branchIsoPostValidator reads
   // the (possibly-just-changed) status and merges/PRs on PASS.
   branchIsoPostValidator(branchIsoCtx, fid);
+
+  // Competition mode: if a manifest exists for this feature, the validator
+  // is expected to have emitted COMPETITION_WINNER lane-N (or "none"). Read
+  // the latest validator .out, parse the verdict, merge the winner branch
+  // into base, drop loser worktrees, remove the manifest.
+  const manifest = readCompetitionManifest(ctx.stateDir, fid);
+  if (manifest) {
+    handleCompetitionVerdict(fid, manifest, ctx, logger, cfg);
+  }
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
+
+/**
+ * Competition-mode worker: spawn N workers on the SAME feature in sibling
+ * git worktrees. Wait for all to finish. Write the manifest so the next
+ * validator iteration knows which worktrees to compare.
+ */
+async function handleCompetitionWorker(
+  fid: string,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+): Promise<DispatchResult> {
+  const max = parallelMaxWorkers(cfg);
+  logger.log(`COMPETITION: spawning ${max} workers on ${fid}`);
+  // on-competition-start hook (informational).
+  runHook('on-competition-start', {
+    stateDir: ctx.stateDir,
+    projectDir: ctx.projectDir,
+    logDir: ctx.logDir,
+    env: {
+      FEATURE_ID: fid,
+      LANE_COUNT: String(max),
+      PROJECT_DIR: ctx.projectDir,
+      STATE_DIR: ctx.stateDir,
+    },
+    log: logger.log,
+  });
+  setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true });
+
+  const branchIsoCtx = {
+    cfg,
+    projectDir: ctx.projectDir,
+    stateDir: ctx.stateDir,
+    log: logger.log,
+  };
+  const base = branchIsoBase(branchIsoCtx);
+  const worktreesRoot = join(ctx.stateDir, 'worktrees');
+  mkdirSync(worktreesRoot, { recursive: true });
+
+  // Spawn N workers concurrently, each in its own worktree.
+  const lanePromises: Promise<void>[] = [];
+  for (let i = 1; i <= max; i++) {
+    const laneFid = `${fid}-lane-${i}`;
+    const wt = join(worktreesRoot, laneFid);
+    const br = `harness/${laneFid}`;
+    if (!existsSync(wt)) {
+      const r = git(['worktree', 'add', '-B', br, wt, base], { cwd: ctx.projectDir });
+      if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
+    }
+    logger.log(`  competition lane ${i}: ${wt}`);
+
+    const lanePromise = (async () => {
+      try {
+        await invoke(
+          { ...ctx, worktreePathFor: () => wt },
+          'worker',
+          [
+            `FEATURE_ID=${laneFid}`,
+            `COMPETITION_PARENT=${fid}`,
+            `COMPETITION_LANE=${i}`,
+          ],
+        );
+      } catch (err) {
+        logger.log(`  competition lane ${i} error: ${(err as Error).message}`);
+      }
+      // Commit any staged changes in this lane's worktree.
+      git(['add', '-A'], { cwd: wt });
+      const status = git(['diff', '--cached', '--quiet'], { cwd: wt });
+      if (status.exitCode !== 0) {
+        const r = git(
+          ['commit', '--quiet', '-m', `worker: ${laneFid} (competition lane ${i})`],
+          { cwd: wt },
+        );
+        if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
+      }
+    })();
+    lanePromises.push(lanePromise);
+  }
+
+  // Wait for all competitors.
+  await Promise.all(lanePromises);
+
+  setFeatureStatus(ctx.stateDir, fid, 'validating');
+  writeCompetitionManifest(ctx.stateDir, fid, max);
+  logger.log(`COMPETITION: manifest ${competitionManifestPath(ctx.stateDir, fid)} written`);
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * Parallel-lane worker: acquire a slot from the lane pool (blocks if at
+ * cap), kick off the worker async, and return so the orchestrator can
+ * dispatch the next decision while this worker runs in parallel. The
+ * NEXT_VALIDATOR branch later drains the pool before its validator runs.
+ */
+async function handleParallelLaneWorker(
+  fid: string,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+  lanePool: LanePool,
+): Promise<DispatchResult> {
+  const max = parallelMaxWorkers(cfg);
+  if (lanePool.count() >= max) {
+    logger.log(
+      `  parallel: cap reached (${lanePool.count()}/${max}), waiting for a lane to free`,
+    );
+  }
+  const laneId = await lanePool.acquire(fid);
+  logger.log(
+    `WORKER ${fid} starting (parallel lane, ${lanePool.count() - 1}/${max} active before this)`,
+  );
+  setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true });
+
+  const branchIsoCtx = {
+    cfg,
+    projectDir: ctx.projectDir,
+    stateDir: ctx.stateDir,
+    log: logger.log,
+  };
+  const useWorktrees =
+    configGet<boolean>(cfg, 'branchIsolation.useWorktrees', false) === true;
+
+  // Run the worker pipeline async. Each step matches the sequential path's
+  // ordering (pre-worker hook → invoke → post-worker hook → branch-iso post).
+  void (async () => {
+    branchIsoPreWorker(branchIsoCtx, fid);
+    runHook('pre-worker', {
+      stateDir: ctx.stateDir,
+      projectDir: ctx.projectDir,
+      logDir: ctx.logDir,
+      env: { ROLE: 'worker', FEATURE_ID: fid, PROJECT_DIR: ctx.projectDir, STATE_DIR: ctx.stateDir },
+      log: logger.log,
+    });
+    let workerRc = 0;
+    try {
+      const r = await invoke(
+        useWorktrees
+          ? { ...ctx, worktreePathFor: (id) => worktreePath(ctx.stateDir, id) }
+          : ctx,
+        'worker',
+        [`FEATURE_ID=${fid}`],
+      );
+      workerRc = r.exitCode;
+    } catch (err) {
+      logger.log(`WORKER (parallel) error: ${(err as Error).message}`);
+      workerRc = 1;
+    }
+    runHook('post-worker', {
+      stateDir: ctx.stateDir,
+      projectDir: ctx.projectDir,
+      logDir: ctx.logDir,
+      env: {
+        ROLE: 'worker',
+        FEATURE_ID: fid,
+        RC: String(workerRc),
+        PROJECT_DIR: ctx.projectDir,
+        STATE_DIR: ctx.stateDir,
+      },
+      log: logger.log,
+    });
+    branchIsoPostWorker(branchIsoCtx, fid);
+    setFeatureStatus(ctx.stateDir, fid, 'validating');
+    lanePool.release(laneId);
+  })();
+
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * Competition-mode validator post-step. Find the validator's most recent
+ * .out file, parse COMPETITION_WINNER, merge the winning lane's branch,
+ * and clean up loser worktrees.
+ */
+function handleCompetitionVerdict(
+  fid: string,
+  manifest: ReturnType<typeof readCompetitionManifest>,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+): void {
+  if (!manifest) return;
+  // Find the most recent <ts>-validator-<fid>.out file in logDir.
+  let latestOut = '';
+  let latestTs = 0;
+  try {
+    const entries = readdirSync(ctx.logDir);
+    for (const name of entries) {
+      if (!name.endsWith(`-validator-${fid}.out`)) continue;
+      const tsMatch = /^(\d+)-validator-/.exec(name);
+      if (!tsMatch) continue;
+      const ts = parseInt(tsMatch[1], 10);
+      if (ts > latestTs) {
+        latestTs = ts;
+        latestOut = name;
+      }
+    }
+  } catch {
+    // ignore — log dir may not exist
+  }
+  if (!latestOut) {
+    logger.log('COMPETITION: no validator .out file found; manifest kept for retry.');
+    return;
+  }
+  const validatorOutput = readFileSync(join(ctx.logDir, latestOut), 'utf8');
+  const verdict = parseCompetitionVerdict(validatorOutput);
+
+  if (verdict.kind === 'absent') {
+    logger.log('COMPETITION: validator did not emit COMPETITION_WINNER; manifest kept for retry.');
+    return;
+  }
+
+  if (verdict.kind === 'winner') {
+    const winnerName = `lane-${verdict.lane}`;
+    logger.log(`COMPETITION: winner is ${winnerName}; merging.`);
+    const branchIsoCtx = {
+      cfg,
+      projectDir: ctx.projectDir,
+      stateDir: ctx.stateDir,
+      log: logger.log,
+    };
+    const base = branchIsoBase(branchIsoCtx);
+    const winnerBr = `harness/${fid}-${winnerName}`;
+    git(['checkout', base], { cwd: ctx.projectDir });
+    const merge = git(
+      ['merge', '--no-ff', winnerBr, '-m', `competition winner: ${fid} from ${winnerName}`],
+      { cwd: ctx.projectDir },
+    );
+    if (merge.outputHead(5)) logger.log(`  ${merge.outputHead(5)}`);
+    // Remove all lane worktrees + branches (including the winner's — base
+    // now has the merged content).
+    for (let i = 1; i <= manifest.n; i++) {
+      const wt = join(ctx.stateDir, 'worktrees', `${fid}-lane-${i}`);
+      const br = `harness/${fid}-lane-${i}`;
+      git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
+      git(['branch', '-D', br], { cwd: ctx.projectDir });
+    }
+    try {
+      unlinkSync(competitionManifestPath(ctx.stateDir, fid));
+    } catch {
+      // ignore
+    }
+    logger.log(`COMPETITION: cleaned up; parent ${fid} now carries winner's changes.`);
+    runHook('on-competition-won', {
+      stateDir: ctx.stateDir,
+      projectDir: ctx.projectDir,
+      logDir: ctx.logDir,
+      env: {
+        FEATURE_ID: fid,
+        WINNER: winnerName,
+        PROJECT_DIR: ctx.projectDir,
+        STATE_DIR: ctx.stateDir,
+      },
+      log: logger.log,
+    });
+    return;
+  }
+
+  if (verdict.kind === 'none') {
+    logger.log('COMPETITION: no lane passed; discarding all.');
+    for (let i = 1; i <= manifest.n; i++) {
+      const wt = join(ctx.stateDir, 'worktrees', `${fid}-lane-${i}`);
+      const br = `harness/${fid}-lane-${i}`;
+      git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
+      git(['branch', '-D', br], { cwd: ctx.projectDir });
+    }
+    try {
+      unlinkSync(competitionManifestPath(ctx.stateDir, fid));
+    } catch {
+      // ignore
+    }
+  }
+}
+
+
 
 /**
  * ESCALATE handler. Mirrors bash:
