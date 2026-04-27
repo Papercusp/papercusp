@@ -1,0 +1,37 @@
+{
+  "name": "@papercusp/orchestrator",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript port of the Papercusp harness orchestrator (run.sh). Drops the bash prereq for Windows users while keeping `claude -p` shell-out so Claude Max subscriptions continue to work. Feature-flagged via PAPERCUSP_USE_TS_ORCHESTRATOR — falls through to bash run.sh by default until parity is verified.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./config": {
+      "types": "./src/config.ts",
+      "import": "./src/config.ts",
+      "default": "./src/config.ts"
+    },
+    "./state": {
+      "types": "./src/state.ts",
+      "import": "./src/state.ts",
+      "default": "./src/state.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "papercusp-orchestrate": "./bin/run.ts"
+  },
+  "scripts": {
+    "test": "node --test --import tsx src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@papercusp/harness": "*",
+    "tsx": "^4.7.0"
+  }
+}

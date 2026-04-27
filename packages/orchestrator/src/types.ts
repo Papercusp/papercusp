@@ -1,0 +1,109 @@
+/**
+ * Shared types for the orchestrator. Mirror the on-disk shape of state files
+ * (`.harness/config.json`, `.harness/features.json`) and the CLI args /
+ * orchestrator-decision protocol so we can later replace bash without
+ * changing the file format.
+ */
+
+/** Harness phase — which prompt set the orchestrator pulls from. */
+export type HarnessPhase = 'staging' | 'department' | 'production' | string;
+
+/** Harness kind — coding harness vs parent (org / department). */
+export type HarnessKind = '' | 'coding' | 'org' | 'department';
+
+/** A phase entry in `.harness/config.json` `phases`. */
+export interface PhaseConfig {
+  port?: number | string;
+  dbPath?: string;
+  // … phases can carry arbitrary keys; orchestrator only needs port + dbPath
+  [k: string]: unknown;
+}
+
+/** Structure of `.harness/config.json`. */
+export interface HarnessConfig {
+  phase?: HarnessPhase;
+  harness_kind?: HarnessKind;
+  dept?: string;
+  /** Per-phase configuration. Phase name → port / dbPath / etc. */
+  phases?: Record<string, PhaseConfig>;
+  /** Iteration cost cap in USD across the entire run. */
+  maxCostUsd?: number;
+  /** Number of agent log files to keep before pruning. Default 500. */
+  logRetention?: number;
+  /** Branch isolation toggle. */
+  branchIsolation?: { enabled?: boolean; baseBranch?: string };
+  /** Worktree-per-feature toggle. */
+  worktrees?: { enabled?: boolean };
+  /** Reviewer behavior toggles. */
+  reviewer?: { replanOnAccept?: boolean };
+  product?: {
+    enabled?: boolean;
+    triggerOnNearDone?: boolean;
+    nearDoneThreshold?: number;
+    mode?: 'auto-apply' | 'propose-only';
+    replanOnAccept?: boolean;
+  };
+  /** Per-role model overrides. */
+  models?: Record<string, string>;
+  /** Anything else the harness might set. */
+  [k: string]: unknown;
+}
+
+/** A single feature in `.harness/features.json`. */
+export interface FeatureRecord {
+  id: string;
+  status: 'pending' | 'in_progress' | 'passed' | 'failed' | 'proposed' | string;
+  attempts?: number;
+  worker?: string;
+  description?: string;
+  [k: string]: unknown;
+}
+
+/** Top-level shape of `.harness/features.json` (object or array form). */
+export type FeaturesJson = { features: FeatureRecord[] } | FeatureRecord[];
+
+/** Args passed to the orchestrator entry point. */
+export interface OrchestratorEnv {
+  /** Absolute path to the harness install (HARNESS_DIR env var). */
+  harnessDir: string;
+  /** Absolute path to the project being driven (PROJECT_DIR env var / cwd). */
+  projectDir: string;
+  /** Hard iteration cap. Default 200. */
+  maxIterations: number;
+  /** Sleep seconds between iterations. Default 2. */
+  iterationSleep: number;
+  /** Override for the agent invocation command. Default `claude -p`. */
+  claudeCmd: string;
+  /** Phase resolved from config.json (defaulted to "staging"). */
+  phase: HarnessPhase;
+  /** Optional port for phase-aware prompts. */
+  port?: string;
+  /** Optional DB path for phase-aware prompts. */
+  dbPath?: string;
+}
+
+/** Decision the orchestrator role emits as its final answer. */
+export type OrchestratorDecision =
+  | { kind: 'NEXT_WORKER'; featureId: string }
+  | { kind: 'NEXT_VALIDATOR'; featureId: string }
+  | { kind: 'NEXT_DEBUGGER'; featureId: string }
+  | { kind: 'DONE' }
+  | { kind: 'PLAN' }
+  | { kind: 'REPLAN' }
+  | { kind: 'PROPOSAL_REVIEW' }
+  | { kind: 'CHILD_HARNESS'; childPath: string }
+  | { kind: 'UNKNOWN'; raw: string };
+
+/** What `invoke()` returns. */
+export interface InvokeResult {
+  /** stdout (the final result line — what bash captured into `$out`). */
+  output: string;
+  /** Path to the `.jsonl` stream-json log for UIs. */
+  jsonlPath: string;
+  /** Path to the final `.out` text. */
+  outPath: string;
+  /** Process exit code. 0 = success. */
+  exitCode: number;
+  /** Wall-clock duration in ms. */
+  durationMs: number;
+}
