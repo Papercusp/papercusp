@@ -147,20 +147,35 @@ async function dispatchDecision(
     case 'NEXT_VALIDATOR':
       return handleNextValidator(parsed, ctx, logger, cfg);
 
-    // The remaining verbs require subsystems that Stages 3+ will port
-    // (worktrees, hooks, plugin firing, competition mode, action blocks).
-    // Until they land, signal "fall through to bash".
+    case 'NEXT_TESTER':
+      return handleSimpleInvoke(ctx, logger, 'tester', parsed.arg ? [`VAL_ID=${parsed.arg}`] : ['VAL_ID='], `TESTER starting${parsed.arg ? ` for ${parsed.arg}` : ''}`);
+
+    case 'NEXT_SECURITY':
+      return handleSimpleInvoke(ctx, logger, 'security-reviewer', [], 'SECURITY sweep starting');
+
+    case 'GENERATE_TESTS':
+      return handleSimpleInvoke(ctx, logger, 'test-writer', [], 'TEST_WRITER edge-case expansion starting');
+
+    case 'NEXT_MONITOR':
+      return handleSimpleInvoke(ctx, logger, 'monitor', [], 'MONITOR health sweep starting (production phase)');
+
+    case 'CONVERTED':
+      logger.log('Orchestrator converted issues to fix features. Continuing.');
+      return { terminal: false, exitCode: 0, reason: 'idle' };
+
+    case 'FEATURE_FREEZE':
+      logger.log(`FEATURE_FREEZE: ${parsed.raw}`);
+      return { terminal: false, exitCode: 0, reason: 'idle' };
+
+    case 'RUN_TESTS':
+      return handleRunTests(ctx, logger);
+
+    // Verbs that need subsystem ports (worktree / hooks / action blocks /
+    // sub-harness spawn). Stay on bash until those land.
     case 'NEXT_WORKER_CEO_MODE':
     case 'NEXT_ARCHITECT':
-    case 'NEXT_TESTER':
-    case 'NEXT_SECURITY':
-    case 'GENERATE_TESTS':
-    case 'RUN_TESTS':
-    case 'NEXT_MONITOR':
     case 'READY_FOR_PROD':
-    case 'FEATURE_FREEZE':
     case 'NEXT_HARNESS':
-    case 'CONVERTED':
       logger.log(
         `TODO: ${parsed.verb} branch not yet ported — falling back to bash run.sh`,
       );
@@ -343,6 +358,61 @@ async function handleNextValidator(
   // passed/failed via filesystem writes (run.sh's bash equivalent doesn't
   // post-process the validator's exit code either; it relies on the agent's
   // markdown output to update features.json on the next orchestrator turn).
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * Generic "invoke role + log" handler for the trivial decision branches.
+ * Mirrors bash's pattern of `invoke <role> [args]; log "<ROLE>: ${out}"`.
+ *
+ * The role's output isn't post-processed here — the agent itself updates
+ * any state files it needs to (e.g. validator writes a verdict to
+ * features.json), and the next orchestrator turn observes those changes.
+ */
+async function handleSimpleInvoke(
+  ctx: InvokeContext,
+  logger: Logger,
+  role: string,
+  extras: readonly string[],
+  startLog: string,
+): Promise<DispatchResult> {
+  logger.log(startLog);
+  try {
+    const r = await invoke(ctx, role, extras);
+    logger.log(`${role.toUpperCase()}: ${(r.output || '').slice(0, 200) || '(no output)'}`);
+  } catch (err) {
+    logger.log(`${role} error: ${(err as Error).message}`);
+  }
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * RUN_TESTS handler. Mirrors bash:
+ *   if bin/run-tests.sh is executable: run it
+ *   else: log skip
+ */
+function handleRunTests(ctx: InvokeContext, logger: Logger): DispatchResult {
+  const script = `${ctx.harnessDir}/bin/run-tests.sh`;
+  logger.log('RUN_TESTS invoked (testing phase)');
+  if (!existsSync(script)) {
+    logger.log('  (bin/run-tests.sh not implemented yet — skipping)');
+    return { terminal: false, exitCode: 0, reason: 'idle' };
+  }
+  const result = spawnSync('bash', [script, ctx.projectDir], {
+    cwd: ctx.projectDir,
+    env: {
+      ...process.env,
+      PROJECT_DIR: ctx.projectDir,
+      STATE_DIR: ctx.stateDir,
+      HARNESS_DIR: ctx.harnessDir,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const stdout = result.stdout?.toString() ?? '';
+  const stderr = result.stderr?.toString() ?? '';
+  for (const line of [...stdout.split(/\r?\n/), ...stderr.split(/\r?\n/)]) {
+    if (line.trim().length > 0) logger.log(line);
+  }
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 

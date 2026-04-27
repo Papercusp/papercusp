@@ -346,6 +346,140 @@ test('runMainLoop — NEXT_WORKER without feature id is rejected', async () => {
   }
 });
 
+test('runMainLoop — NEXT_TESTER invokes tester role', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'prompts', 'tester.md'), '# TESTER');
+  });
+  try {
+    const log: string[] = [];
+    const result = await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'bash -c echo${IFS}NEXT_TESTER${IFS}val-1',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    assert.equal(result.reason, 'max-iterations');
+    assert.ok(log.some((l) => l.startsWith('TESTER starting for val-1')));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — GENERATE_TESTS invokes test-writer', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'prompts', 'test-writer.md'), '# TW');
+  });
+  try {
+    const log: string[] = [];
+    await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'bash -c echo${IFS}GENERATE_TESTS',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    assert.ok(log.some((l) => l.startsWith('TEST_WRITER edge-case expansion starting')));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — CONVERTED is a no-op log + continue', async () => {
+  const fx = makeFixture();
+  try {
+    const log: string[] = [];
+    const result = await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'bash -c echo${IFS}CONVERTED',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    assert.equal(result.reason, 'max-iterations');
+    assert.ok(log.some((l) => l.includes('converted issues to fix features')));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — FEATURE_FREEZE is a no-op log + continue', async () => {
+  const fx = makeFixture();
+  try {
+    const log: string[] = [];
+    const result = await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'bash -c echo${IFS}FEATURE_FREEZE${IFS}staging',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    assert.equal(result.reason, 'max-iterations');
+    assert.ok(log.some((l) => l.startsWith('FEATURE_FREEZE: FEATURE_FREEZE staging')));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — RUN_TESTS skips gracefully when bin/run-tests.sh missing', async () => {
+  const fx = makeFixture();
+  try {
+    const log: string[] = [];
+    const result = await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'bash -c echo${IFS}RUN_TESTS',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    assert.equal(result.reason, 'max-iterations');
+    assert.ok(log.some((l) => l.includes('RUN_TESTS invoked')));
+    assert.ok(log.some((l) => l.includes('bin/run-tests.sh not implemented yet')));
+  } finally {
+    fx.cleanup();
+  }
+});
+
 test('runMainLoop — NEXT_HARNESS still hits todo-branch (Stage 3+)', async () => {
   const fx = makeFixture();
   try {
