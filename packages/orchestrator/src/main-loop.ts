@@ -33,7 +33,7 @@ import { runHook } from './hooks.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface MainLoopExit {
@@ -90,7 +90,7 @@ export async function runMainLoop(opts: MainLoopOptions): Promise<MainLoopExit> 
     logger.log(`ORCH decision: ${parsed.raw} (role=${primaryRole})`);
 
     // 2. Dispatch.
-    const dispatch = await dispatchDecision(parsed, ctx, logger, cfg, iteration);
+    const dispatch = await dispatchDecision(parsed, ctx, logger, cfg, iteration, sleep);
     if (dispatch.terminal) {
       return { exitCode: dispatch.exitCode, reason: dispatch.reason, iterations: iteration };
     }
@@ -130,25 +130,26 @@ async function dispatchDecision(
   logger: Logger,
   cfg: ReturnType<typeof readConfig>,
   iteration: number,
+  sleep: (ms: number) => Promise<void>,
 ): Promise<DispatchResult> {
   switch (parsed.verb) {
     case 'DONE':
       return handleDone(ctx, logger, cfg, iteration);
 
     case 'IDLE':
-      logger.log('IDLE — primary role reports nothing to do this iteration.');
-      // bash continues the loop on IDLE (used by org/department primary roles).
+      // bash sleeps 30s on IDLE to back off polling-style primary roles.
+      logger.log('IDLE — sleeping before next iteration');
+      await sleep(30_000);
       return { terminal: false, exitCode: 0, reason: 'idle' };
 
     case 'ESCALATE':
-      logger.log('🔔 ESCALATE — surfacing to operator.');
-      logger.notifyEvent('escalate', parsed.raw);
-      return { terminal: true, exitCode: 9, reason: 'escalate' };
+      return handleEscalate(parsed, ctx, logger);
 
     case 'CHECKPOINT':
-      logger.log('⏸  CHECKPOINT — primary role requested a pause for grant.');
-      logger.notifyEvent('checkpoint', parsed.raw);
-      return { terminal: true, exitCode: 8, reason: 'checkpoint' };
+      return handleCheckpoint(parsed, ctx, logger, iteration);
+
+    case 'READY_FOR_PROD':
+      return handleReadyForProd(ctx, logger);
 
     case 'NEXT_WORKER':
       return handleNextWorker(parsed, ctx, logger, cfg);
@@ -184,7 +185,6 @@ async function dispatchDecision(
 
     // Verbs that still need subsystem ports.
     case 'NEXT_WORKER_CEO_MODE':
-    case 'READY_FOR_PROD':
     case 'NEXT_HARNESS':
       logger.log(
         `TODO: ${parsed.verb} branch not yet ported — falling back to bash run.sh`,
@@ -463,6 +463,110 @@ async function handleNextValidator(
   // Validator updates features.json itself; branchIsoPostValidator reads
   // the (possibly-just-changed) status and merges/PRs on PASS.
   branchIsoPostValidator(branchIsoCtx, fid);
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * ESCALATE handler. Mirrors bash:
+ *   reason = decision after "ESCALATE "
+ *   logs, fires on-escalate hook, runs curator with TRIGGER=escalate,
+ *   notifies, exits 3.
+ */
+async function handleEscalate(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+): Promise<DispatchResult> {
+  const reason = parsed.arg ?? '';
+  logger.log(`⛔ ESCALATED: ${reason}`);
+  logger.log(`See ${ctx.stateDir}/escalation.md for details.`);
+  runHook('on-escalate', {
+    stateDir: ctx.stateDir,
+    projectDir: ctx.projectDir,
+    logDir: ctx.logDir,
+    env: { REASON: reason, PROJECT_DIR: ctx.projectDir, STATE_DIR: ctx.stateDir },
+    log: logger.log,
+  });
+  logger.log('Running curator to distill run memory before exit.');
+  try {
+    const c = await invoke(ctx, 'curator', ['TRIGGER=escalate', `REASON=${reason}`]);
+    logger.log(`CURATOR: ${(c.output || '').slice(0, 200) || '(no output)'}`);
+  } catch (err) {
+    logger.log(`CURATOR error: ${(err as Error).message}`);
+  }
+  logger.notifyEvent('escalate', reason);
+  return { terminal: true, exitCode: 3, reason: 'escalate' };
+}
+
+/**
+ * CHECKPOINT handler. Mirrors bash:
+ *   name + message = decision tail
+ *   writes <stateDir>/checkpoint-<name>.md with markdown body
+ *   fires on-checkpoint-fired hook
+ *   notify_event checkpoint
+ *   exit 8
+ */
+function handleCheckpoint(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+  iteration: number,
+): DispatchResult {
+  // bash splits "CHECKPOINT <name> <message...>" — reuse parsed.arg as the
+  // name token; pull the rest as message from parsed.raw.
+  let name = parsed.arg ?? '';
+  const stripped = parsed.raw.replace(/^CHECKPOINT\s+\S+\s*/, '').trim();
+  const message = stripped;
+  if (!name) {
+    logger.log('CHECKPOINT emitted without name — treating as unnamed escalation.');
+    name = 'unnamed';
+  }
+  const cpFile = join(ctx.stateDir, `checkpoint-${name}.md`);
+  const isoNow = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const body = `# Checkpoint: ${name}
+
+Requested at: ${isoNow}
+Iteration: ${iteration}
+
+${message}
+
+## How to grant
+Grant via UI, or create \`${cpFile}.granted\`:
+\`\`\`
+touch ${cpFile}.granted
+\`\`\`
+Then re-run the harness — it will detect the grant file, delete it and the checkpoint,
+and continue.
+`;
+  writeFileSync(cpFile, body);
+
+  logger.log(`⏸  CHECKPOINT '${name}' requested. See ${cpFile}`);
+  runHook('on-checkpoint-fired', {
+    stateDir: ctx.stateDir,
+    projectDir: ctx.projectDir,
+    logDir: ctx.logDir,
+    env: {
+      CHECKPOINT_NAME: name,
+      TRIGGER: 'orchestrator',
+      PROJECT_DIR: ctx.projectDir,
+      STATE_DIR: ctx.stateDir,
+    },
+    log: logger.log,
+  });
+  logger.notifyEvent('checkpoint', `Checkpoint requested: ${name}`);
+  return { terminal: true, exitCode: 8, reason: 'checkpoint' };
+}
+
+/**
+ * READY_FOR_PROD handler. Mirrors bash:
+ *   date > <stateDir>/ready-for-prod.flag
+ *   log
+ *   continue
+ */
+function handleReadyForProd(ctx: InvokeContext, logger: Logger): DispatchResult {
+  const flagPath = join(ctx.stateDir, 'ready-for-prod.flag');
+  writeFileSync(flagPath, `${new Date().toISOString()}\n`);
+  logger.log('READY_FOR_PROD — flag written for promotion pipeline.');
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 

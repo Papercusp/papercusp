@@ -97,7 +97,7 @@ test('runMainLoop — DONE decision exits cleanly with code 0', async () => {
   }
 });
 
-test('runMainLoop — IDLE keeps iterating until max', async () => {
+test('runMainLoop — IDLE keeps iterating until max (sleep stubbed)', async () => {
   const fx = makeFixture();
   try {
     const log: string[] = [];
@@ -118,11 +118,11 @@ test('runMainLoop — IDLE keeps iterating until max', async () => {
       },
       maxIterations: 3,
       iterationSleepMs: 0,
+      sleepFn: () => Promise.resolve(), // skip the IDLE 30s + per-iter sleep
     });
     assert.equal(result.exitCode, 5);
     assert.equal(result.reason, 'max-iterations');
     assert.equal(result.iterations, 3);
-    // 3 iteration headers
     const headers = log.filter((l) => l.includes('── iteration '));
     assert.equal(headers.length, 3);
   } finally {
@@ -130,8 +130,10 @@ test('runMainLoop — IDLE keeps iterating until max', async () => {
   }
 });
 
-test('runMainLoop — ESCALATE exits with code 9', async () => {
-  const fx = makeFixture();
+test('runMainLoop — ESCALATE exits with code 3 (matches bash) + runs curator', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'prompts', 'curator.md'), '# CURATOR');
+  });
   try {
     const log: string[] = [];
     const result = await runMainLoop({
@@ -141,7 +143,7 @@ test('runMainLoop — ESCALATE exits with code 9', async () => {
         stateDir: fx.stateDir,
         logDir: fx.logDir,
         phase: 'staging',
-        claudeCmd: 'bash -c echo${IFS}ESCALATE',
+        claudeCmd: 'bash -c echo${IFS}ESCALATE${IFS}stuck',
         dept: '',
         log: () => {},
       },
@@ -152,15 +154,17 @@ test('runMainLoop — ESCALATE exits with code 9', async () => {
       maxIterations: 5,
       iterationSleepMs: 0,
     });
-    assert.equal(result.exitCode, 9);
+    assert.equal(result.exitCode, 3);
     assert.equal(result.reason, 'escalate');
+    assert.ok(log.some((l) => l.includes('⛔ ESCALATED: stuck')));
     assert.ok(log.some((l) => l === 'event:escalate'));
+    assert.ok(log.some((l) => l.includes('Running curator')));
   } finally {
     fx.cleanup();
   }
 });
 
-test('runMainLoop — CHECKPOINT exits with code 8', async () => {
+test('runMainLoop — CHECKPOINT writes file + exits 8', async () => {
   const fx = makeFixture();
   try {
     const log: string[] = [];
@@ -171,16 +175,50 @@ test('runMainLoop — CHECKPOINT exits with code 8', async () => {
         stateDir: fx.stateDir,
         logDir: fx.logDir,
         phase: 'staging',
-        claudeCmd: 'bash -c echo${IFS}CHECKPOINT',
+        claudeCmd: 'bash -c echo${IFS}CHECKPOINT${IFS}awaiting-design-review',
         dept: '',
         log: () => {},
       },
-      logger: { log: () => {}, notifyEvent: () => {} },
+      logger: { log: (m) => log.push(m), notifyEvent: (e) => log.push(`event:${e}`) },
       maxIterations: 5,
       iterationSleepMs: 0,
     });
     assert.equal(result.exitCode, 8);
     assert.equal(result.reason, 'checkpoint');
+    // Checkpoint file written.
+    const cpPath = join(fx.stateDir, 'checkpoint-awaiting-design-review.md');
+    const body = readFileSync(cpPath, 'utf8');
+    assert.match(body, /# Checkpoint: awaiting-design-review/);
+    assert.match(body, /Iteration: 1/);
+    assert.ok(log.some((l) => l === 'event:checkpoint'));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — READY_FOR_PROD writes flag file + continues', async () => {
+  const fx = makeFixture();
+  try {
+    const log: string[] = [];
+    await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'bash -c echo${IFS}READY_FOR_PROD',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    // Flag file present, content is an ISO timestamp.
+    const flag = readFileSync(join(fx.stateDir, 'ready-for-prod.flag'), 'utf8');
+    assert.match(flag, /^\d{4}-\d{2}-\d{2}T/);
+    assert.ok(log.some((l) => l.startsWith('READY_FOR_PROD — flag written')));
   } finally {
     fx.cleanup();
   }
