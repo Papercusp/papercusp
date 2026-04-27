@@ -10,11 +10,9 @@
  *   4. Snapshot state, prune logs, check cost cap
  *   5. Sleep briefly, repeat
  *
- * Stage 2b ships the loop scaffolding + the simple decision branches
- * (DONE / IDLE / ESCALATE / CHECKPOINT). The complex branches
- * (NEXT_WORKER family, NEXT_VALIDATOR, NEXT_HARNESS) currently emit a
- * "TODO: not yet ported" log and fall through to bash run.sh via the
- * fallback path in bin/run.ts.
+ * As of Stage 5a, every decision branch from run.sh is handled here —
+ * including parallel-lane and competition workers. The TS loop is a full
+ * replacement for the bash version when PAPERCUSP_USE_TS_ORCHESTRATOR=1.
  */
 import { spawnSync } from 'node:child_process';
 import { configGet, readConfig } from './config.js';
@@ -71,8 +69,7 @@ export interface MainLoopExit {
     | 'plan-rejected'
     | 'auto-checkpoint'
     | 'scoper-failed'
-    | 'pending-checkpoint'
-    | 'todo-branch'; // ports incomplete — fall back to bash
+    | 'pending-checkpoint';
   /** Number of iterations executed (1-based). */
   iterations: number;
 }
@@ -220,10 +217,6 @@ interface DispatchResult {
 /**
  * Dispatch a parsed decision. Returns terminal=true when the loop should
  * stop (DONE / ESCALATE / IDLE-with-config / CHECKPOINT) and false otherwise.
- *
- * Stage 2b implements the simple branches inline. The complex branches
- * (NEXT_WORKER family) return terminal=true with reason='todo-branch' so
- * the caller's fallback path can hand off to bash run.sh.
  */
 async function dispatchDecision(
   parsed: ParsedDecision,

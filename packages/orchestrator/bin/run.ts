@@ -5,13 +5,10 @@
  * when `PAPERCUSP_USE_TS_ORCHESTRATOR=1` is set.
  *
  * Routing logic:
- *   - flag unset → spawn bash run.sh (current default; preserves all
- *     production behavior until full TS port lands)
- *   - flag set + decision is one of DONE/IDLE/ESCALATE/CHECKPOINT/
- *     unparsable → handled in TS, exits with bash-equivalent code
- *   - flag set + decision is a NEXT_* branch → emits a "fallback" log
- *     line and hands off to bash run.sh so the existing per-feature
- *     branching keeps working until Stages 2c+ port them
+ *   - flag unset → spawn bash run.sh (default until parity is verified
+ *     in production)
+ *   - flag set → run the TS main loop end-to-end; every decision branch
+ *     is now handled in TS (Stage 5a closed the last gap)
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -79,12 +76,6 @@ async function runTs(): Promise<never> {
     iterationSleepMs,
   });
 
-  if (exit.reason === 'todo-branch') {
-    logger.log(
-      'Hand-off: complex decision branch not yet ported. Falling back to bash run.sh.',
-    );
-    runBash();
-  }
   process.exit(exit.exitCode);
 }
 
