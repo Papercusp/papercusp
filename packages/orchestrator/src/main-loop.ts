@@ -20,9 +20,12 @@ import { spawnSync } from 'node:child_process';
 import { configGet, readConfig } from './config.js';
 import { parseDecision } from './decision-parse.js';
 import { invoke } from './invoke.js';
+import { featureAttempts, setFeatureStatus } from './state.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 export interface MainLoopExit {
   /** Process exit code matching bash semantics. */
@@ -138,11 +141,16 @@ async function dispatchDecision(
       logger.notifyEvent('checkpoint', parsed.raw);
       return { terminal: true, exitCode: 8, reason: 'checkpoint' };
 
-    // The rest of the verbs require complex per-feature branching that
-    // Stages 2c+ will port. For now, signal "fall through to bash".
     case 'NEXT_WORKER':
-    case 'NEXT_WORKER_CEO_MODE':
+      return handleNextWorker(parsed, ctx, logger, cfg);
+
     case 'NEXT_VALIDATOR':
+      return handleNextValidator(parsed, ctx, logger, cfg);
+
+    // The remaining verbs require subsystems that Stages 3+ will port
+    // (worktrees, hooks, plugin firing, competition mode, action blocks).
+    // Until they land, signal "fall through to bash".
+    case 'NEXT_WORKER_CEO_MODE':
     case 'NEXT_ARCHITECT':
     case 'NEXT_TESTER':
     case 'NEXT_SECURITY':
@@ -225,6 +233,117 @@ async function handleDone(
 
   logger.notifyEvent('done', `Mission complete: all features passed after ${iteration} iterations`);
   return { terminal: true, exitCode: 0, reason: 'done' };
+}
+
+/**
+ * Returns true if any of the complex-config flags is on. Stage 2c handles
+ * only the sequential, no-branch-iso path; everything else flows back to
+ * bash run.sh until Stage 3 ports the worktree subsystem.
+ */
+function isComplexConfig(cfg: ReturnType<typeof readConfig>): boolean {
+  return (
+    configGet<boolean>(cfg, 'branchIsolation.enabled', false) === true ||
+    configGet<boolean>(cfg, 'branchIsolation.useWorktrees', false) === true ||
+    Number(configGet<unknown>(cfg, 'parallelWorkers.max', 1)) > 1 ||
+    configGet<string>(cfg, 'parallelWorkers.mode', 'lane') === 'competition'
+  );
+}
+
+/**
+ * NEXT_WORKER handler. Stage 2c implements only the sequential, no-branch-iso,
+ * no-parallel path:
+ *
+ *   - optional debugger if attempts ≥ threshold AND no debug note exists
+ *   - log "WORKER <fid> starting"
+ *   - invoke worker
+ *
+ * If the config has branchIsolation / worktrees / parallel / competition,
+ * fall through to bash run.sh. Stage 3 will port those subsystems.
+ */
+async function handleNextWorker(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+): Promise<DispatchResult> {
+  const fid = parsed.arg ?? '';
+  if (!fid) {
+    logger.log(`ERROR: NEXT_WORKER without feature id: ${parsed.raw}`);
+    return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
+  }
+  if (isComplexConfig(cfg)) {
+    logger.log(
+      `NEXT_WORKER ${fid}: complex config (branch-iso/worktrees/parallel) ` +
+        'not yet ported — falling back to bash',
+    );
+    return { terminal: true, exitCode: 0, reason: 'todo-branch' };
+  }
+
+  // Optional debugger before the worker.
+  if (configGet<boolean>(cfg, 'debugger.enabled', true) === true) {
+    const threshold = Number(configGet<unknown>(cfg, 'debugger.threshold', 3));
+    const attempts = featureAttempts(ctx.stateDir, fid);
+    const debugNote = join(ctx.stateDir, 'debug', `${fid}.md`);
+    if (attempts >= threshold && !existsSync(debugNote)) {
+      logger.log(
+        `DEBUGGER ${fid} starting (attempts=${attempts} ≥ ${threshold})`,
+      );
+      try {
+        const dout = await invoke(ctx, 'debugger', [`FEATURE_ID=${fid}`]);
+        logger.log(
+          `DEBUGGER: ${(dout.output || '').slice(0, 200) || '(no output)'}`,
+        );
+      } catch (err) {
+        logger.log(`DEBUGGER error: ${(err as Error).message}`);
+      }
+    }
+  }
+
+  logger.log(`WORKER ${fid} starting`);
+  setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true });
+  try {
+    await invoke(ctx, 'worker', [`FEATURE_ID=${fid}`]);
+  } catch (err) {
+    logger.log(`WORKER error: ${(err as Error).message}`);
+  }
+  // bash continues the loop after the worker — validator runs on a later
+  // iteration when the orchestrator decides NEXT_VALIDATOR.
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * NEXT_VALIDATOR handler. Stage 2c implements only the sequential,
+ * no-branch-iso path — same as NEXT_WORKER. Complex configs fall back.
+ */
+async function handleNextValidator(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+): Promise<DispatchResult> {
+  const fid = parsed.arg ?? '';
+  if (!fid) {
+    logger.log(`ERROR: NEXT_VALIDATOR without feature id: ${parsed.raw}`);
+    return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
+  }
+  if (isComplexConfig(cfg)) {
+    logger.log(
+      `NEXT_VALIDATOR ${fid}: complex config not yet ported — falling back to bash`,
+    );
+    return { terminal: true, exitCode: 0, reason: 'todo-branch' };
+  }
+
+  logger.log(`VALIDATOR ${fid} starting`);
+  try {
+    await invoke(ctx, 'validator', [`FEATURE_ID=${fid}`]);
+  } catch (err) {
+    logger.log(`VALIDATOR error: ${(err as Error).message}`);
+  }
+  // The validator agent is responsible for updating the feature's status to
+  // passed/failed via filesystem writes (run.sh's bash equivalent doesn't
+  // post-process the validator's exit code either; it relies on the agent's
+  // markdown output to update features.json on the next orchestrator turn).
+  return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 
 /** Run bin/service-smoke-test.sh synchronously. Returns the exit code. */

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runMainLoop } from './main-loop.js';
@@ -211,8 +211,62 @@ test('runMainLoop — unparsable decision exits with code 4', async () => {
   }
 });
 
-test('runMainLoop — NEXT_WORKER hits TODO branch (signals bash fallback)', async () => {
+test('runMainLoop — NEXT_WORKER with simple config invokes worker, continues loop', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'prompts', 'worker.md'), '# WORKER');
+  });
+  // Pre-seed features.json with the target feature (else attempts() etc.
+  // start at zero anyway, but having it makes the parity assertion clearer).
+  writeFileSync(
+    join(fx.stateDir, 'features.json'),
+    JSON.stringify({ features: [{ id: 'F-001', status: 'pending', attempts: 0 }] }),
+  );
+  try {
+    const log: string[] = [];
+    const result = await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        // First iteration emits NEXT_WORKER; we cap at 1 so the loop ends
+        // without a second decision (max-iterations exit).
+        claudeCmd: 'bash -c echo${IFS}NEXT_WORKER${IFS}F-001',
+        dept: '',
+        log: () => {},
+      },
+      logger: {
+        log: (m) => log.push(m),
+        notifyEvent: () => {},
+      },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    assert.equal(result.reason, 'max-iterations');
+    assert.equal(result.iterations, 1);
+    assert.ok(
+      log.some((l) => l.startsWith('WORKER F-001 starting')),
+      'should log worker start',
+    );
+    // Feature attempts bumped from 0 → 1.
+    const featuresAfter = JSON.parse(
+      readFileSync(join(fx.stateDir, 'features.json'), 'utf8'),
+    );
+    assert.equal(featuresAfter.features[0].attempts, 1);
+    assert.equal(featuresAfter.features[0].status, 'in_progress');
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — NEXT_WORKER falls back to bash when branch-iso enabled', async () => {
   const fx = makeFixture();
+  // Write a config.json with branchIsolation.enabled = true.
+  writeFileSync(
+    join(fx.stateDir, 'config.json'),
+    JSON.stringify({ branchIsolation: { enabled: true } }),
+  );
   try {
     const log: string[] = [];
     const result = await runMainLoop({
@@ -226,18 +280,93 @@ test('runMainLoop — NEXT_WORKER hits TODO branch (signals bash fallback)', asy
         dept: '',
         log: () => {},
       },
-      logger: {
-        log: (m) => log.push(m),
-        notifyEvent: () => {},
-      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 5,
       iterationSleepMs: 0,
     });
     assert.equal(result.reason, 'todo-branch');
-    assert.ok(
-      log.some((l) => l.includes('NEXT_WORKER branch not yet ported')),
-      'should log the TODO',
-    );
+    assert.ok(log.some((l) => l.includes('complex config')));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — NEXT_VALIDATOR with simple config invokes validator', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'prompts', 'validator.md'), '# VALIDATOR');
+  });
+  try {
+    const log: string[] = [];
+    const result = await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'bash -c echo${IFS}NEXT_VALIDATOR${IFS}F-001',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    assert.equal(result.reason, 'max-iterations');
+    assert.ok(log.some((l) => l.startsWith('VALIDATOR F-001 starting')));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — NEXT_WORKER without feature id is rejected', async () => {
+  const fx = makeFixture();
+  try {
+    const log: string[] = [];
+    const result = await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'bash -c echo${IFS}NEXT_WORKER',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 5,
+      iterationSleepMs: 0,
+    });
+    assert.equal(result.exitCode, 4);
+    assert.equal(result.reason, 'unparsable-decision');
+    assert.ok(log.some((l) => l.includes('NEXT_WORKER without feature id')));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — NEXT_HARNESS still hits todo-branch (Stage 3+)', async () => {
+  const fx = makeFixture();
+  try {
+    const log: string[] = [];
+    const result = await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'bash -c echo${IFS}NEXT_HARNESS${IFS}sub-harness',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 5,
+      iterationSleepMs: 0,
+    });
+    assert.equal(result.reason, 'todo-branch');
+    assert.ok(log.some((l) => l.includes('NEXT_HARNESS branch not yet ported')));
   } finally {
     fx.cleanup();
   }
