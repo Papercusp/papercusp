@@ -75,6 +75,8 @@ export { pruneLogs } from './prune-logs.js';
 export type { PruneResult } from './prune-logs.js';
 export { snapshotState } from './snapshot-state.js';
 export type { SnapshotResult } from './snapshot-state.js';
+export { runPreLoop } from './pre-loop.js';
+export type { PreLoopResult } from './pre-loop.js';
 export type {
   HarnessPhase,
   HarnessKind,

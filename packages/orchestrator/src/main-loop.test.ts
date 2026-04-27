@@ -86,6 +86,7 @@ test('runMainLoop — DONE decision exits cleanly with code 0', async () => {
       },
       maxIterations: 5,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.exitCode, 0);
     assert.equal(result.reason, 'done');
@@ -118,6 +119,7 @@ test('runMainLoop — IDLE keeps iterating until max (sleep stubbed)', async () 
       },
       maxIterations: 3,
       iterationSleepMs: 0,
+      skipPreLoop: true,
       sleepFn: () => Promise.resolve(), // skip the IDLE 30s + per-iter sleep
     });
     assert.equal(result.exitCode, 5);
@@ -153,6 +155,7 @@ test('runMainLoop — ESCALATE exits with code 3 (matches bash) + runs curator',
       },
       maxIterations: 5,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.exitCode, 3);
     assert.equal(result.reason, 'escalate');
@@ -182,6 +185,7 @@ test('runMainLoop — CHECKPOINT writes file + exits 8', async () => {
       logger: { log: (m) => log.push(m), notifyEvent: (e) => log.push(`event:${e}`) },
       maxIterations: 5,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.exitCode, 8);
     assert.equal(result.reason, 'checkpoint');
@@ -214,6 +218,7 @@ test('runMainLoop — READY_FOR_PROD writes flag file + continues', async () => 
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     // Flag file present, content is an ISO timestamp.
     const flag = readFileSync(join(fx.stateDir, 'ready-for-prod.flag'), 'utf8');
@@ -241,6 +246,7 @@ test('runMainLoop — unparsable decision exits with code 4', async () => {
       logger: { log: () => {}, notifyEvent: () => {} },
       maxIterations: 5,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.exitCode, 4);
     assert.equal(result.reason, 'unparsable-decision');
@@ -280,6 +286,7 @@ test('runMainLoop — NEXT_WORKER with simple config invokes worker, continues l
       },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.reason, 'max-iterations');
     assert.equal(result.iterations, 1);
@@ -323,6 +330,7 @@ test('runMainLoop — NEXT_WORKER falls back to bash when parallel/competition e
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 5,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.reason, 'todo-branch');
     assert.ok(log.some((l) => l.includes('parallel-lane/competition not yet ported')));
@@ -351,6 +359,7 @@ test('runMainLoop — NEXT_VALIDATOR with simple config invokes validator', asyn
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.reason, 'max-iterations');
     assert.ok(log.some((l) => l.startsWith('VALIDATOR F-001 starting')));
@@ -377,6 +386,7 @@ test('runMainLoop — NEXT_WORKER without feature id is rejected', async () => {
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 5,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.exitCode, 4);
     assert.equal(result.reason, 'unparsable-decision');
@@ -415,6 +425,7 @@ test('runMainLoop — NEXT_ARCHITECT with PATCH verdict resets feature to todo',
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     // The orchestrator's first iteration uses primaryRole=orchestrator.
     // To test architect, we need the orchestrator to emit NEXT_ARCHITECT.
@@ -460,6 +471,7 @@ test('runMainLoop — NEXT_ARCHITECT direct dispatch via stub', async () => {
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.reason, 'max-iterations');
     // Architect started + verdict observed.
@@ -507,6 +519,7 @@ test('runMainLoop — NEXT_ARCHITECT with REVIEW verdict blocks feature + emits 
       logger: { log: (m) => log.push(m), notifyEvent: (e, b) => log.push(`event:${e} ${b}`) },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.ok(log.some((l) => l.startsWith('event:review-pending')));
     const after = JSON.parse(readFileSync(join(fx.stateDir, 'features.json'), 'utf8'));
@@ -538,6 +551,7 @@ test('runMainLoop — NEXT_TESTER invokes tester role', async () => {
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.reason, 'max-iterations');
     assert.ok(log.some((l) => l.startsWith('TESTER starting for val-1')));
@@ -566,6 +580,7 @@ test('runMainLoop — GENERATE_TESTS invokes test-writer', async () => {
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.ok(log.some((l) => l.startsWith('TEST_WRITER edge-case expansion starting')));
   } finally {
@@ -591,6 +606,7 @@ test('runMainLoop — CONVERTED is a no-op log + continue', async () => {
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.reason, 'max-iterations');
     assert.ok(log.some((l) => l.includes('converted issues to fix features')));
@@ -617,6 +633,7 @@ test('runMainLoop — FEATURE_FREEZE is a no-op log + continue', async () => {
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.reason, 'max-iterations');
     assert.ok(log.some((l) => l.startsWith('FEATURE_FREEZE: FEATURE_FREEZE staging')));
@@ -643,6 +660,7 @@ test('runMainLoop — RUN_TESTS skips gracefully when bin/run-tests.sh missing',
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.reason, 'max-iterations');
     assert.ok(log.some((l) => l.includes('RUN_TESTS invoked')));
@@ -681,6 +699,7 @@ test('runMainLoop — cost-cap fires exit 6 when total >= maxCostUsd', async () 
       logger: { log: (m) => log.push(m), notifyEvent: (e, b) => log.push(`event:${e} ${b ?? ''}`) },
       maxIterations: 5,
       iterationSleepMs: 0,
+      skipPreLoop: true,
       sleepFn: () => Promise.resolve(),
     });
     assert.equal(result.exitCode, 6);
@@ -711,6 +730,7 @@ test('runMainLoop — snapshot dir created after each iteration', async () => {
       logger: { log: () => {}, notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
       sleepFn: () => Promise.resolve(),
     });
     // Snapshot dir present.
@@ -742,6 +762,7 @@ test('runMainLoop — NEXT_HARNESS attempts API + falls back when no registry', 
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
       maxIterations: 1,
       iterationSleepMs: 0,
+      skipPreLoop: true,
     });
     assert.equal(result.reason, 'max-iterations');
     // Header logged.

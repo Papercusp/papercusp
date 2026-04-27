@@ -1,0 +1,176 @@
+/**
+ * Pre-main-loop initialization. Mirrors bash run.sh's:
+ *
+ *   Step 1   — invoke scoper MODE=initial when validation-contract.md or
+ *              features.json is missing (fresh-mission setup)
+ *   Step 1.5 — invoke reviewer MODE=plan to challenge scoper output;
+ *              exit 7 on VERDICT: reject
+ *   Step 2   — ensure-docs.sh scaffold
+ *   Step 3   — post-planner auto-checkpoints (per config.checkpoints.types)
+ *   Step 4   — git worktree prune (when branchIsolation.useWorktrees)
+ *
+ * NOT yet ported (Stage 5b deferred):
+ *   - SQL feature import (features.json → harness_<slug>.harness_features in
+ *     Postgres). The bash run.sh still does this; TS path leaves it for
+ *     bash to re-do on cutover. Most coding harnesses don't care because
+ *     features.json on disk is the source of truth at runtime; SQL is an
+ *     observability/cross-harness query layer.
+ */
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { configGet } from './config.js';
+import { featuresExist } from './state.js';
+import { invoke } from './invoke.js';
+import { runHook } from './hooks.js';
+import { git } from './git.js';
+import type { InvokeContext } from './invoke.js';
+import type { Logger } from './log.js';
+import type { HarnessConfig } from './types.js';
+
+export interface PreLoopResult {
+  /** Reason the pre-loop signaled "stop here, exit". null if loop should run. */
+  stop: 'plan-rejected' | 'auto-checkpoint' | 'scoper-failed' | null;
+  /** Bash-equivalent exit code if stop is set. */
+  exitCode: number;
+}
+
+/** Runs every step before the main while loop. Returns stop signal or null. */
+export async function runPreLoop(
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: HarnessConfig,
+): Promise<PreLoopResult> {
+  // Step 1: PLAN — invoke scoper if mission state is fresh.
+  const contractPath = join(ctx.stateDir, 'validation-contract.md');
+  const planNeeded = !existsSync(contractPath) || !featuresExist(ctx.stateDir);
+  if (planNeeded) {
+    logger.log('PLAN: SPEC.md detected, no contract or features yet. Invoking scoper (initial mode).');
+    try {
+      const out = await invoke(ctx, 'scoper', ['MODE=initial']);
+      // bash: echo "$plan_out" | tail -3 | tee -a run.log
+      const tail = out.output.split(/\r?\n/).filter((l) => l).slice(-3);
+      for (const line of tail) logger.log(line);
+    } catch (err) {
+      logger.log(`SCOPER error: ${(err as Error).message}`);
+    }
+    if (!existsSync(contractPath) || !featuresExist(ctx.stateDir)) {
+      logger.log(`ERROR: scoper did not produce required artifacts. See ${ctx.logDir}.`);
+      return { stop: 'scoper-failed', exitCode: 2 };
+    }
+  } else {
+    logger.log('PLAN: existing contract + features found. Skipping scoper.');
+  }
+
+  // Step 1.5: PLAN-REVIEW — challenge the scoper output (idempotent: skips
+  // if plan-review.md already exists).
+  const planReviewPath = join(ctx.stateDir, 'plan-review.md');
+  if (
+    configGet<boolean>(cfg, 'planReviewer.enabled', true) === true &&
+    !existsSync(planReviewPath)
+  ) {
+    logger.log('PLAN-REVIEW: challenging scoper output');
+    try {
+      await invoke(ctx, 'reviewer', ['MODE=plan']);
+    } catch (err) {
+      logger.log(`REVIEWER error: ${(err as Error).message}`);
+    }
+    if (existsSync(planReviewPath)) {
+      const body = readFileSync(planReviewPath, 'utf8');
+      const verdictLine = body
+        .split(/\r?\n/)
+        .filter((l) => /^VERDICT:/i.test(l))
+        .pop() ?? '';
+      logger.log(`PLAN-REVIEW: ${verdictLine || 'no verdict line found'}`);
+      if (/reject/i.test(verdictLine)) {
+        logger.log('⛔ Plan reviewer rejected — writing escalation and exiting 7.');
+        writeFileSync(
+          join(ctx.stateDir, 'escalation.md'),
+          '# Plan reviewer rejected the plan\n\n' +
+            'See .harness/plan-review.md for details.\n',
+        );
+        logger.notifyEvent('escalate', 'Plan reviewer rejected the planner output');
+        return { stop: 'plan-rejected', exitCode: 7 };
+      }
+    } else {
+      logger.log('PLAN-REVIEW: no plan-review.md produced, continuing without review');
+    }
+  }
+
+  // Step 2: ensure-docs.sh scaffold.
+  const ensureDocsScript = join(ctx.harnessDir, 'bin', 'ensure-docs.sh');
+  if (existsSync(ensureDocsScript)) {
+    const r = spawnSync('bash', [ensureDocsScript, ctx.projectDir], {
+      cwd: ctx.projectDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if ((r.status ?? 1) !== 0) {
+      logger.log('WARN: ensure-docs.sh failed (non-fatal)');
+    }
+  }
+
+  // Step 3: post-planner auto-checkpoints.
+  const cpStop = firePostPlannerCheckpoints(ctx, logger, cfg);
+  if (cpStop) return cpStop;
+
+  // Step 4: prune stale worktrees from prior crashes.
+  if (configGet<boolean>(cfg, 'branchIsolation.useWorktrees', false) === true) {
+    const r = git(['worktree', 'prune'], { cwd: ctx.projectDir });
+    if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
+  }
+
+  return { stop: null, exitCode: 0 };
+}
+
+/** Inspect config.checkpoints.types[].triggerOn=='post-planner' and fire any
+ *  that haven't fired yet. Returns a stop signal if one was fired. */
+function firePostPlannerCheckpoints(
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: HarnessConfig,
+): PreLoopResult | null {
+  if (configGet<boolean>(cfg, 'checkpoints.enabled', false) !== true) return null;
+  const types = configGet<unknown>(cfg, 'checkpoints.types', []);
+  if (!Array.isArray(types)) return null;
+  const postPlannerNames = types
+    .filter((t): t is { name?: string; triggerOn?: string } => typeof t === 'object' && t !== null)
+    .filter((t) => t.triggerOn === 'post-planner')
+    .map((t) => t.name)
+    .filter((n): n is string => typeof n === 'string' && n.length > 0);
+
+  for (const name of postPlannerNames) {
+    const cpFile = join(ctx.stateDir, `checkpoint-${name}.md`);
+    const sentinel = join(ctx.stateDir, `.checkpoint-${name}.fired`);
+    if (existsSync(sentinel) || existsSync(cpFile) || existsSync(`${cpFile}.granted`)) {
+      continue;
+    }
+    const isoNow = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    const body =
+      `# Checkpoint: ${name} (auto, triggerOn=post-planner)\n\n` +
+      `Requested at: ${isoNow}\n` +
+      `Trigger: planner + plan-reviewer both passed for the first time.\n\n` +
+      'Review the plan in `.harness/features.json` and `.harness/validation-contract.md`.\n\n' +
+      '## How to grant\n' +
+      `- UI: /api/harness/<slug>/checkpoint/${name}/grant\n` +
+      `- CLI: touch ${cpFile}.granted && re-run the harness\n`;
+    mkdirSync(ctx.stateDir, { recursive: true });
+    writeFileSync(cpFile, body);
+    writeFileSync(sentinel, '');
+    logger.log(`⏸  Auto-fired checkpoint: ${name} (post-planner). Exiting 8.`);
+    runHook('on-checkpoint-fired', {
+      stateDir: ctx.stateDir,
+      projectDir: ctx.projectDir,
+      logDir: ctx.logDir,
+      env: {
+        CHECKPOINT_NAME: name,
+        TRIGGER: 'post-planner',
+        PROJECT_DIR: ctx.projectDir,
+        STATE_DIR: ctx.stateDir,
+      },
+      log: logger.log,
+    });
+    logger.notifyEvent('checkpoint', `Auto checkpoint: ${name}`);
+    return { stop: 'auto-checkpoint', exitCode: 8 };
+  }
+  return null;
+}

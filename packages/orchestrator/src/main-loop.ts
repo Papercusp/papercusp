@@ -34,6 +34,8 @@ import { processActionsBlock } from './actions-block.js';
 import { evaluateCostCap } from './cost-cap.js';
 import { pruneLogs } from './prune-logs.js';
 import { snapshotState } from './snapshot-state.js';
+import { runPreLoop } from './pre-loop.js';
+import { checkpointGate } from './checkpoints.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
@@ -52,6 +54,10 @@ export interface MainLoopExit {
     | 'max-iterations'
     | 'unparsable-decision'
     | 'cost-cap'
+    | 'plan-rejected'
+    | 'auto-checkpoint'
+    | 'scoper-failed'
+    | 'pending-checkpoint'
     | 'todo-branch'; // ports incomplete — fall back to bash
   /** Number of iterations executed (1-based). */
   iterations: number;
@@ -65,6 +71,9 @@ export interface MainLoopOptions {
   iterationSleepMs: number;
   /** Override for `Date.now()` and `setTimeout` to make tests deterministic. */
   sleepFn?: (ms: number) => Promise<void>;
+  /** Skip pre-loop (scoper / plan-reviewer / ensure-docs / etc.) for tests
+   *  that want to drive only the iteration loop. Defaults to false. */
+  skipPreLoop?: boolean;
 }
 
 const defaultSleep = (ms: number): Promise<void> =>
@@ -76,6 +85,29 @@ export async function runMainLoop(opts: MainLoopOptions): Promise<MainLoopExit> 
   const sleep = opts.sleepFn ?? defaultSleep;
   const cfg = readConfig(ctx.stateDir);
   const primaryRole = configGet<string>(cfg, 'primaryRole', 'orchestrator');
+
+  // Pre-loop: scoper, plan-reviewer, ensure-docs, post-planner checkpoints,
+  // worktree prune.
+  if (opts.skipPreLoop !== true) {
+    const pre = await runPreLoop(ctx, logger, cfg);
+    if (pre.stop !== null) {
+      return { exitCode: pre.exitCode, reason: pre.stop, iterations: 0 };
+    }
+  }
+
+  // Process previously-granted user checkpoints; refuse to start if pending.
+  const cpAction = checkpointGate(ctx.stateDir);
+  if (cpAction.kind === 'granted-cleared') {
+    for (const name of cpAction.cleared) {
+      logger.log(`✅ Checkpoint granted: ${name.replace(/\.md$/, '')}. Removing.`);
+    }
+  } else if (cpAction.kind === 'pending') {
+    for (const name of cpAction.pending) {
+      logger.log(`⏸  Checkpoint pending grant: ${name.replace(/\.md$/, '')}. Exiting.`);
+    }
+    logger.log(`Grant via UI, or run: touch <stateDir>/<checkpoint>.granted; then re-run.`);
+    return { exitCode: 8, reason: 'pending-checkpoint', iterations: 0 };
+  }
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     logger.log(`── iteration ${iteration} ──`);
