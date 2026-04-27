@@ -29,6 +29,7 @@ import {
   worktreeEnabled,
   worktreePath,
 } from './branch-iso.js';
+import { runHook } from './hooks.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
@@ -224,12 +225,19 @@ async function handleDone(
   ) {
     logger.log('Running service smoke-test (smokeTest.onDone=true)…');
     const smokeRc = runSmokeTest(ctx, logger);
+    const hookOpts = {
+      stateDir: ctx.stateDir,
+      projectDir: ctx.projectDir,
+      logDir: ctx.logDir,
+      env: { TRIGGER: 'onDone', PROJECT_DIR: ctx.projectDir, STATE_DIR: ctx.stateDir },
+      log: logger.log,
+    };
     if (smokeRc === 0) {
       logger.log('Smoke test PASSED.');
-      // run_hook on-smoke-pass — Stage 4 will port the hook system; for now
-      // we log and skip.
+      runHook('on-smoke-pass', hookOpts);
     } else {
       logger.log('Smoke test FAILED — feature reopened. Re-entering loop.');
+      runHook('on-smoke-fail', hookOpts);
       return { terminal: false, exitCode: 0, reason: 'idle' };
     }
   }
@@ -328,6 +336,14 @@ async function handleNextWorker(
   };
 
   branchIsoPreWorker(branchIsoCtx, fid);
+  // pre-worker hook (user customization point).
+  runHook('pre-worker', {
+    stateDir: ctx.stateDir,
+    projectDir: ctx.projectDir,
+    logDir: ctx.logDir,
+    env: { ROLE: 'worker', FEATURE_ID: fid, PROJECT_DIR: ctx.projectDir, STATE_DIR: ctx.stateDir },
+    log: logger.log,
+  });
   logger.log(`WORKER ${fid} starting`);
   setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true });
 
@@ -340,11 +356,29 @@ async function handleNextWorker(
       }
     : ctx;
 
+  let workerRc = 0;
   try {
-    await invoke(worktreedCtx, 'worker', [`FEATURE_ID=${fid}`]);
+    const r = await invoke(worktreedCtx, 'worker', [`FEATURE_ID=${fid}`]);
+    workerRc = r.exitCode;
   } catch (err) {
     logger.log(`WORKER error: ${(err as Error).message}`);
+    workerRc = 1;
   }
+
+  // post-worker hook.
+  runHook('post-worker', {
+    stateDir: ctx.stateDir,
+    projectDir: ctx.projectDir,
+    logDir: ctx.logDir,
+    env: {
+      ROLE: 'worker',
+      FEATURE_ID: fid,
+      RC: String(workerRc),
+      PROJECT_DIR: ctx.projectDir,
+      STATE_DIR: ctx.stateDir,
+    },
+    log: logger.log,
+  });
 
   branchIsoPostWorker(branchIsoCtx, fid);
   return { terminal: false, exitCode: 0, reason: 'idle' };
@@ -384,6 +418,14 @@ async function handleNextValidator(
   };
 
   branchIsoPreValidator(branchIsoCtx, fid);
+  // pre-validator hook.
+  runHook('pre-validator', {
+    stateDir: ctx.stateDir,
+    projectDir: ctx.projectDir,
+    logDir: ctx.logDir,
+    env: { ROLE: 'validator', FEATURE_ID: fid, PROJECT_DIR: ctx.projectDir, STATE_DIR: ctx.stateDir },
+    log: logger.log,
+  });
   logger.log(`VALIDATOR ${fid} starting`);
 
   const worktreedCtx: InvokeContext = worktreeEnabled(cfg)
@@ -393,11 +435,29 @@ async function handleNextValidator(
       }
     : ctx;
 
+  let validatorRc = 0;
   try {
-    await invoke(worktreedCtx, 'validator', [`FEATURE_ID=${fid}`]);
+    const r = await invoke(worktreedCtx, 'validator', [`FEATURE_ID=${fid}`]);
+    validatorRc = r.exitCode;
   } catch (err) {
     logger.log(`VALIDATOR error: ${(err as Error).message}`);
+    validatorRc = 1;
   }
+
+  // post-validator hook.
+  runHook('post-validator', {
+    stateDir: ctx.stateDir,
+    projectDir: ctx.projectDir,
+    logDir: ctx.logDir,
+    env: {
+      ROLE: 'validator',
+      FEATURE_ID: fid,
+      RC: String(validatorRc),
+      PROJECT_DIR: ctx.projectDir,
+      STATE_DIR: ctx.stateDir,
+    },
+    log: logger.log,
+  });
 
   // Validator updates features.json itself; branchIsoPostValidator reads
   // the (possibly-just-changed) status and merges/PRs on PASS.

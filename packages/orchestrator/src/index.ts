@@ -58,6 +58,8 @@ export {
 export type { BranchIsoCtx } from './branch-iso.js';
 export { git, branchExists, hasStagedChanges } from './git.js';
 export type { GitResult, GitOptions } from './git.js';
+export { runHook } from './hooks.js';
+export type { RunHookOptions, RunHookResult } from './hooks.js';
 export type {
   HarnessPhase,
   HarnessKind,
