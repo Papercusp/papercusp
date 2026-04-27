@@ -24,6 +24,8 @@ export {
 } from './state.js';
 export { createLogger } from './log.js';
 export { resolvePaths, resolveEnv } from './env.js';
+export { promptCandidates, resolvePromptFile } from './prompt-resolve.js';
+export type { PromptResolveContext } from './prompt-resolve.js';
 export type {
   HarnessPhase,
   HarnessKind,
