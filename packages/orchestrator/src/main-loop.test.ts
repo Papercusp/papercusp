@@ -260,12 +260,14 @@ test('runMainLoop — NEXT_WORKER with simple config invokes worker, continues l
   }
 });
 
-test('runMainLoop — NEXT_WORKER falls back to bash when branch-iso enabled', async () => {
+test('runMainLoop — NEXT_WORKER falls back to bash when parallel/competition enabled', async () => {
   const fx = makeFixture();
-  // Write a config.json with branchIsolation.enabled = true.
+  // Write a config.json with parallelWorkers.max = 4 (parallel mode).
+  // (As of Stage 3, branch-iso/worktrees are ported; parallel/competition
+  //  still falls back.)
   writeFileSync(
     join(fx.stateDir, 'config.json'),
-    JSON.stringify({ branchIsolation: { enabled: true } }),
+    JSON.stringify({ parallelWorkers: { max: 4, mode: 'lane' } }),
   );
   try {
     const log: string[] = [];
@@ -285,7 +287,7 @@ test('runMainLoop — NEXT_WORKER falls back to bash when branch-iso enabled', a
       iterationSleepMs: 0,
     });
     assert.equal(result.reason, 'todo-branch');
-    assert.ok(log.some((l) => l.includes('complex config')));
+    assert.ok(log.some((l) => l.includes('parallel-lane/competition not yet ported')));
   } finally {
     fx.cleanup();
   }

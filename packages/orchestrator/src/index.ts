@@ -44,6 +44,20 @@ export { checkpointGate } from './checkpoints.js';
 export type { CheckpointAction } from './checkpoints.js';
 export { runMainLoop } from './main-loop.js';
 export type { MainLoopOptions, MainLoopExit } from './main-loop.js';
+export {
+  branchIsoEnabled,
+  worktreeEnabled,
+  worktreePath,
+  branchIsoBase,
+  branchIsoPreWorker,
+  branchIsoPostWorker,
+  branchIsoPreValidator,
+  branchIsoPostValidator,
+  worktreeReset,
+} from './branch-iso.js';
+export type { BranchIsoCtx } from './branch-iso.js';
+export { git, branchExists, hasStagedChanges } from './git.js';
+export type { GitResult, GitOptions } from './git.js';
 export type {
   HarnessPhase,
   HarnessKind,

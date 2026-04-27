@@ -21,6 +21,14 @@ import { configGet, readConfig } from './config.js';
 import { parseDecision } from './decision-parse.js';
 import { invoke } from './invoke.js';
 import { featureAttempts, setFeatureStatus } from './state.js';
+import {
+  branchIsoPostValidator,
+  branchIsoPostWorker,
+  branchIsoPreValidator,
+  branchIsoPreWorker,
+  worktreeEnabled,
+  worktreePath,
+} from './branch-iso.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
@@ -251,29 +259,28 @@ async function handleDone(
 }
 
 /**
- * Returns true if any of the complex-config flags is on. Stage 2c handles
- * only the sequential, no-branch-iso path; everything else flows back to
- * bash run.sh until Stage 3 ports the worktree subsystem.
+ * Returns true if a feature-level subsystem we haven't ported yet is on.
+ * Currently: parallel-lane and competition-mode. (Branch isolation +
+ * worktrees ARE ported as of Stage 3.)
  */
-function isComplexConfig(cfg: ReturnType<typeof readConfig>): boolean {
+function isParallelOrCompetition(cfg: ReturnType<typeof readConfig>): boolean {
   return (
-    configGet<boolean>(cfg, 'branchIsolation.enabled', false) === true ||
-    configGet<boolean>(cfg, 'branchIsolation.useWorktrees', false) === true ||
     Number(configGet<unknown>(cfg, 'parallelWorkers.max', 1)) > 1 ||
     configGet<string>(cfg, 'parallelWorkers.mode', 'lane') === 'competition'
   );
 }
 
 /**
- * NEXT_WORKER handler. Stage 2c implements only the sequential, no-branch-iso,
- * no-parallel path:
+ * NEXT_WORKER handler. Stage 3 wires in branch isolation + worktrees:
  *
  *   - optional debugger if attempts ≥ threshold AND no debug note exists
+ *   - branchIsoPreWorker (creates branch or worktree)
  *   - log "WORKER <fid> starting"
- *   - invoke worker
+ *   - invoke worker (with worktree cwd if applicable)
+ *   - branchIsoPostWorker (commits in branch or worktree)
  *
- * If the config has branchIsolation / worktrees / parallel / competition,
- * fall through to bash run.sh. Stage 3 will port those subsystems.
+ * Parallel-lane / competition mode still falls back to bash — those need
+ * lane-management subsystems (Stage 5+).
  */
 async function handleNextWorker(
   parsed: ParsedDecision,
@@ -286,10 +293,9 @@ async function handleNextWorker(
     logger.log(`ERROR: NEXT_WORKER without feature id: ${parsed.raw}`);
     return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
   }
-  if (isComplexConfig(cfg)) {
+  if (isParallelOrCompetition(cfg)) {
     logger.log(
-      `NEXT_WORKER ${fid}: complex config (branch-iso/worktrees/parallel) ` +
-        'not yet ported — falling back to bash',
+      `NEXT_WORKER ${fid}: parallel-lane/competition not yet ported — falling back to bash`,
     );
     return { terminal: true, exitCode: 0, reason: 'todo-branch' };
   }
@@ -314,21 +320,43 @@ async function handleNextWorker(
     }
   }
 
+  const branchIsoCtx = {
+    cfg,
+    projectDir: ctx.projectDir,
+    stateDir: ctx.stateDir,
+    log: logger.log,
+  };
+
+  branchIsoPreWorker(branchIsoCtx, fid);
   logger.log(`WORKER ${fid} starting`);
   setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true });
+
+  // If worktrees enabled, route the worker subprocess to the worktree dir
+  // by passing a worktreePathFor callback to invoke().
+  const worktreedCtx: InvokeContext = worktreeEnabled(cfg)
+    ? {
+        ...ctx,
+        worktreePathFor: (id) => worktreePath(ctx.stateDir, id),
+      }
+    : ctx;
+
   try {
-    await invoke(ctx, 'worker', [`FEATURE_ID=${fid}`]);
+    await invoke(worktreedCtx, 'worker', [`FEATURE_ID=${fid}`]);
   } catch (err) {
     logger.log(`WORKER error: ${(err as Error).message}`);
   }
-  // bash continues the loop after the worker — validator runs on a later
-  // iteration when the orchestrator decides NEXT_VALIDATOR.
+
+  branchIsoPostWorker(branchIsoCtx, fid);
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 
 /**
- * NEXT_VALIDATOR handler. Stage 2c implements only the sequential,
- * no-branch-iso path — same as NEXT_WORKER. Complex configs fall back.
+ * NEXT_VALIDATOR handler. Stage 3 wires in branch isolation + worktrees:
+ *
+ *   - branchIsoPreValidator (switches to feature branch / logs worktree)
+ *   - log "VALIDATOR <fid> starting"
+ *   - invoke validator (with worktree cwd if applicable)
+ *   - branchIsoPostValidator (merges/PRs/keeps on PASS)
  */
 async function handleNextValidator(
   parsed: ParsedDecision,
@@ -341,23 +369,39 @@ async function handleNextValidator(
     logger.log(`ERROR: NEXT_VALIDATOR without feature id: ${parsed.raw}`);
     return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
   }
-  if (isComplexConfig(cfg)) {
+  if (isParallelOrCompetition(cfg)) {
     logger.log(
-      `NEXT_VALIDATOR ${fid}: complex config not yet ported — falling back to bash`,
+      `NEXT_VALIDATOR ${fid}: parallel/competition not yet ported — falling back to bash`,
     );
     return { terminal: true, exitCode: 0, reason: 'todo-branch' };
   }
 
+  const branchIsoCtx = {
+    cfg,
+    projectDir: ctx.projectDir,
+    stateDir: ctx.stateDir,
+    log: logger.log,
+  };
+
+  branchIsoPreValidator(branchIsoCtx, fid);
   logger.log(`VALIDATOR ${fid} starting`);
+
+  const worktreedCtx: InvokeContext = worktreeEnabled(cfg)
+    ? {
+        ...ctx,
+        worktreePathFor: (id) => worktreePath(ctx.stateDir, id),
+      }
+    : ctx;
+
   try {
-    await invoke(ctx, 'validator', [`FEATURE_ID=${fid}`]);
+    await invoke(worktreedCtx, 'validator', [`FEATURE_ID=${fid}`]);
   } catch (err) {
     logger.log(`VALIDATOR error: ${(err as Error).message}`);
   }
-  // The validator agent is responsible for updating the feature's status to
-  // passed/failed via filesystem writes (run.sh's bash equivalent doesn't
-  // post-process the validator's exit code either; it relies on the agent's
-  // markdown output to update features.json on the next orchestrator turn).
+
+  // Validator updates features.json itself; branchIsoPostValidator reads
+  // the (possibly-just-changed) status and merges/PRs on PASS.
+  branchIsoPostValidator(branchIsoCtx, fid);
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 
