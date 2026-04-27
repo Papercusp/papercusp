@@ -38,6 +38,7 @@ interface DashboardTabManifest {
   label: string;
   icon?: string;
   componentId?: string;        // resolved at UI-load time to a lazy import
+  componentRoot?: string;      // optional per-tab override of plugin-level componentRoot
 }
 
 interface SidebarItemManifest {
@@ -53,6 +54,7 @@ interface UiContributionManifest {
   label: string;
   icon?: string;
   componentId?: string;        // lazy-loaded at UI host
+  componentRoot?: string;      // optional override of plugin-level componentRoot
 }
 
 interface PluginManifest {
@@ -213,13 +215,27 @@ plugins.get('/:slug/contributions', async (c) => {
     for (const p of await listPluginsIn(s.dir, s.source)) {
       if (seen.has(p.name)) continue;
       seen.add(p.name);
+      // Plugin-level componentRoot cascades to any contribution that
+      // doesn't specify its own (Phase 6b runtime needs componentRoot
+      // per contribution to do the dynamic import).
+      const pluginRoot = (p as PluginManifest & { componentRoot?: string }).componentRoot;
       for (const tab of p.dashboardTabs ?? []) {
-        dashboardTabs.push({ ...tab, pluginName: p.name });
+        dashboardTabs.push({
+          componentRoot: tab.componentRoot ?? pluginRoot,
+          ...tab,
+          pluginName: p.name,
+        });
       }
       for (const item of p.sidebarItems ?? []) {
         sidebarItems.push({ ...item, pluginName: p.name });
       }
-      if (p.ui) routes.push({ ...p.ui, pluginName: p.name });
+      if (p.ui) {
+        routes.push({
+          componentRoot: p.ui.componentRoot ?? pluginRoot,
+          ...p.ui,
+          pluginName: p.name,
+        });
+      }
     }
   }
 
