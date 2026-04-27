@@ -34,7 +34,7 @@ function openInVSCode(projectPath: string) {
   window.open(url, VSCODE_WINDOW_NAME);
 }
 
-type MainPanel = 'brainstorm' | 'proposals' | 'git' | 'dashboard' | 'summary' | 'docs' | 'vscode' | 'insights' | 'config';
+type MainPanel = 'brainstorm' | 'proposals' | 'git' | 'dashboard' | 'summary' | 'docs' | 'vscode' | 'insights' | 'config' | 'plugins';
 
 import { Panel } from '@restart/ui-primitives';
 import { StatCard } from '@restart/ui-primitives';
@@ -44,6 +44,7 @@ import { MarkdownView } from '@restart/ui-primitives';
 import { JsonTree } from '@restart/ui-primitives';
 import { IssuesList } from './issues/IssuesList';
 import { preloadGitLog as libPreloadGitLog } from '@restart/git-graph';
+import PluginTabs from '@/lib/PluginTabs';
 
 function preloadGitLog(slug: string, limit = 300) {
   libPreloadGitLog(`harness:${slug}`, limit, `/api/harness/${slug}/git/log?limit=${limit}`);
@@ -1054,8 +1055,7 @@ export default function HarnessDashboard() {
           className={`h-tab${activePanel === 'summary' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'summary'}
-          onClick={() => activeSlug && setActivePanel('summary')}
-          disabled={!activeSlug}
+          onClick={() => setActivePanel('summary')}
           title={activeSlug ? 'Project summary — high-level changelog of what has been built' : 'Select a project to view summary'}
         >
           <FileText size={13} /> summary
@@ -1064,8 +1064,7 @@ export default function HarnessDashboard() {
           className={`h-tab${activePanel === 'docs' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'docs'}
-          onClick={() => activeSlug && setActivePanel('docs')}
-          disabled={!activeSlug}
+          onClick={() => setActivePanel('docs')}
           title={activeSlug ? 'Project docs (requires docs-viewer on :4325)' : 'Select a project to view docs'}
         >
           <BookOpen size={13} /> docs
@@ -1074,8 +1073,7 @@ export default function HarnessDashboard() {
           className={`h-tab${activePanel === 'vscode' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'vscode'}
-          onClick={() => activeSlug && setActivePanel('vscode')}
-          disabled={!activeSlug}
+          onClick={() => setActivePanel('vscode')}
           title={activeSlug ? 'code-server — edit project in VSCode' : 'Select a project to open in VSCode'}
         >
           <Code2 size={13} /> vscode
@@ -1084,8 +1082,7 @@ export default function HarnessDashboard() {
           className={`h-tab${activePanel === 'insights' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'insights'}
-          onClick={() => activeSlug && setActivePanel('insights')}
-          disabled={!activeSlug}
+          onClick={() => setActivePanel('insights')}
           title={activeSlug ? 'Insights — analytics' : 'Select a project to view insights'}
         >
           <TrendingUp size={13} /> insights
@@ -1094,11 +1091,19 @@ export default function HarnessDashboard() {
           className={`h-tab${activePanel === 'config' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'config'}
-          onClick={() => activeSlug && setActivePanel('config')}
-          disabled={!activeSlug}
+          onClick={() => setActivePanel('config')}
           title={activeSlug ? 'Edit SPEC.md / AGENTS.md / config.json' : 'Select a project to edit config'}
         >
           <SlidersHorizontal size={13} /> config
+        </button>
+        <button
+          className={`h-tab${activePanel === 'plugins' ? ' on' : ''}`}
+          role="tab"
+          aria-selected={activePanel === 'plugins'}
+          onClick={() => setActivePanel('plugins')}
+          title={activeSlug ? 'Plugin-contributed dashboard tabs' : 'Select a project to view plugin tabs'}
+        >
+          🧩 plugins
         </button>
       </div>
 
@@ -1165,6 +1170,23 @@ export default function HarnessDashboard() {
             onClose={() => setActivePanel('dashboard')}
           />
         )}
+        {activePanel === 'plugins' && activeSlug && (
+          <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
+            <PluginTabs slug={activeSlug} />
+          </div>
+        )}
+        {!activeSlug && (activePanel === 'summary' || activePanel === 'docs' || activePanel === 'vscode' || activePanel === 'config' || activePanel === 'insights' || activePanel === 'brainstorm' || activePanel === 'proposals' || activePanel === 'plugins') && (
+          <div className="h-empty" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Activity size={18} className="h-empty-icon" />
+            <span>Pick a project above to view {activePanel}.</span>
+          </div>
+        )}
+        {activeSlug && !status && (activePanel === 'vscode' || activePanel === 'config') && (
+          <div className="h-empty" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Loader2 size={18} className="h-empty-icon h-spin" />
+            <span>Loading {activeSlug} mission state…</span>
+          </div>
+        )}
         {activePanel === 'dashboard' && (
           <>
             {isCompact ? (
@@ -1218,7 +1240,7 @@ export default function HarnessDashboard() {
               </div>
             </div>
           ) : (
-        <div className="h-dashboard-grid" style={{ display: 'flex', gap: 6, height: '100%', minHeight: 760, flex: 1 }}>
+        <div className="h-dashboard-grid" style={{ display: 'flex', gap: 6, height: '100%', minHeight: 0, flex: 1 }}>
           {activeSlug && leftPane === 'inbox' && (
             <CollapsedGitRail slug={activeSlug} onExpand={() => setLeftPane('git')} />
           )}
