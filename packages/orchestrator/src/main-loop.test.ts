@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runMainLoop } from './main-loop.js';
@@ -647,6 +647,78 @@ test('runMainLoop — RUN_TESTS skips gracefully when bin/run-tests.sh missing',
     assert.equal(result.reason, 'max-iterations');
     assert.ok(log.some((l) => l.includes('RUN_TESTS invoked')));
     assert.ok(log.some((l) => l.includes('bin/run-tests.sh not implemented yet')));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — cost-cap fires exit 6 when total >= maxCostUsd', async () => {
+  const fx = makeFixture();
+  // Pre-seed a fake jsonl that "spends" 5.0 USD.
+  writeFileSync(
+    join(fx.logDir, '0000000000-fake.jsonl'),
+    JSON.stringify({ type: 'result', total_cost_usd: 5.0 }) + '\n',
+  );
+  // Cap at 5.0 — first cost-cap check after iteration 1 will trip it.
+  writeFileSync(
+    join(fx.stateDir, 'config.json'),
+    JSON.stringify({ maxCostUsd: 5.0 }),
+  );
+  try {
+    const log: string[] = [];
+    const result = await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        // IDLE iteration so we hit the post-iteration cost-cap check.
+        claudeCmd: 'bash -c echo${IFS}IDLE',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: (e, b) => log.push(`event:${e} ${b ?? ''}`) },
+      maxIterations: 5,
+      iterationSleepMs: 0,
+      sleepFn: () => Promise.resolve(),
+    });
+    assert.equal(result.exitCode, 6);
+    assert.equal(result.reason, 'cost-cap');
+    assert.equal(result.iterations, 1);
+    assert.ok(log.some((l) => l.includes('COST CAP EXCEEDED')));
+    assert.ok(log.some((l) => l.startsWith('event:cost-cap')));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — snapshot dir created after each iteration', async () => {
+  const fx = makeFixture();
+  writeFileSync(join(fx.stateDir, 'features.json'), '{"features":[]}');
+  try {
+    await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'bash -c echo${IFS}IDLE',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: () => {}, notifyEvent: () => {} },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+      sleepFn: () => Promise.resolve(),
+    });
+    // Snapshot dir present.
+    const snapsRoot = join(fx.stateDir, 'snapshots');
+    assert.ok(existsSync(snapsRoot));
+    const dirs = readdirSync(snapsRoot);
+    assert.equal(dirs.length, 1);
+    assert.match(dirs[0], /^\d+-iter-001$/);
   } finally {
     fx.cleanup();
   }

@@ -69,6 +69,12 @@ export type {
   ProcessActionsOptions,
   ProcessActionsResult,
 } from './actions-block.js';
+export { evaluateCostCap, sumJsonlCost } from './cost-cap.js';
+export type { CostCapResult } from './cost-cap.js';
+export { pruneLogs } from './prune-logs.js';
+export type { PruneResult } from './prune-logs.js';
+export { snapshotState } from './snapshot-state.js';
+export type { SnapshotResult } from './snapshot-state.js';
 export type {
   HarnessPhase,
   HarnessKind,

@@ -31,6 +31,9 @@ import {
 } from './branch-iso.js';
 import { runHook } from './hooks.js';
 import { processActionsBlock } from './actions-block.js';
+import { evaluateCostCap } from './cost-cap.js';
+import { pruneLogs } from './prune-logs.js';
+import { snapshotState } from './snapshot-state.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
@@ -48,6 +51,7 @@ export interface MainLoopExit {
     | 'checkpoint'
     | 'max-iterations'
     | 'unparsable-decision'
+    | 'cost-cap'
     | 'todo-branch'; // ports incomplete — fall back to bash
   /** Number of iterations executed (1-based). */
   iterations: number;
@@ -96,10 +100,49 @@ export async function runMainLoop(opts: MainLoopOptions): Promise<MainLoopExit> 
       return { exitCode: dispatch.exitCode, reason: dispatch.reason, iterations: iteration };
     }
 
-    // 3. Snapshot / prune / cost cap — Stage 5 will port these. Stage 2b
-    //    omits them so a partial port doesn't double-write state.
+    // 3. Snapshot state (for UI rollback).
+    snapshotState(ctx.stateDir, iteration, cfg);
 
-    // 4. Sleep.
+    // 4. Prune oldest agent logs beyond logRetention.
+    pruneLogs(ctx.logDir, cfg);
+
+    // 5. Cost cap. Aborts the loop with exit code 6 when total >= cap.
+    const cost = evaluateCostCap(cfg, ctx.logDir, ctx.stateDir);
+    if (cost.cap !== null) {
+      logger.log(`  COST total=${cost.total.toFixed(4)} cap=${cost.cap}`);
+    } else {
+      logger.log(`  COST total=${cost.total.toFixed(4)} (no cap configured)`);
+    }
+    if (cost.overCap) {
+      logger.log(
+        `⛔ COST CAP EXCEEDED: ${cost.total.toFixed(4)} >= ${cost.cap}. Aborting.`,
+      );
+      logger.notifyEvent(
+        'cost-cap',
+        `Cost cap exceeded: ${cost.total.toFixed(4)} >= ${cost.cap}`,
+      );
+      return { exitCode: 6, reason: 'cost-cap', iterations: iteration };
+    }
+    if (cost.warned && cost.cap !== null) {
+      const pct = Math.round((cost.total / cost.cap) * 100);
+      logger.log(`⚠ COST WARN: ${cost.total.toFixed(4)} >= ${pct}% of ${cost.cap} cap`);
+      logger.notifyEvent(
+        'cost-warn',
+        `Cost at ${pct}% of cap: ${cost.total.toFixed(4)} of ${cost.cap}`,
+      );
+    }
+    if (cost.shouldPause) {
+      logger.log("  auto-pause: SIGSTOP'ing harness process tree (config.maxCostUsdAutoPause=true)");
+      try {
+        process.kill(process.pid, 'SIGSTOP');
+        // Resumes here on SIGCONT.
+        logger.log('  auto-pause: resumed');
+      } catch (err) {
+        logger.log(`  auto-pause failed: ${(err as Error).message}`);
+      }
+    }
+
+    // 6. Sleep.
     await sleep(opts.iterationSleepMs);
   }
 
