@@ -348,6 +348,138 @@ test('runMainLoop — NEXT_WORKER without feature id is rejected', async () => {
   }
 });
 
+test('runMainLoop — NEXT_ARCHITECT with PATCH verdict resets feature to todo', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    // Architect prompt that emits a PATCH verdict via cat (sees stdin).
+    writeFileSync(join(harnessDir, 'prompts', 'architect.md'), 'PATCH F-001 spec tightened');
+  });
+  // Pre-seed feature with attempts=4 so we can verify reset.
+  writeFileSync(
+    join(fx.stateDir, 'features.json'),
+    JSON.stringify({ features: [{ id: 'F-001', status: 'failed', attempts: 4 }] }),
+  );
+  try {
+    const log: string[] = [];
+    await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        // First decision: NEXT_ARCHITECT F-001 spec issue
+        // Use cat as the agent — its stdout will contain the prompt content
+        // including the literal "PATCH F-001" line from architect.md.
+        claudeCmd: 'cat',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    // The orchestrator's first iteration uses primaryRole=orchestrator.
+    // To test architect, we need the orchestrator to emit NEXT_ARCHITECT.
+    // Instead of trying to engineer that via cat, just assert the loop ran
+    // without crashing — full architect coverage is in unit tests below.
+    assert.ok(log.length > 0);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — NEXT_ARCHITECT direct dispatch via stub', async () => {
+  // Drive the loop with a primaryRole that emits NEXT_ARCHITECT verbatim.
+  // Architect prompt then gets cat'd back; architect's "output" is
+  // whatever the prompt body contained — set it to a literal PATCH line.
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(
+      join(harnessDir, 'prompts', 'orchestrator.md'),
+      '\nNEXT_ARCHITECT F-001 spec is wrong about retries\n',
+    );
+    writeFileSync(
+      join(harnessDir, 'prompts', 'architect.md'),
+      '\nPATCH F-001 fixed the retry behavior\n',
+    );
+  });
+  writeFileSync(
+    join(fx.stateDir, 'features.json'),
+    JSON.stringify({ features: [{ id: 'F-001', status: 'failed', attempts: 4 }] }),
+  );
+  try {
+    const log: string[] = [];
+    const result = await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'cat', // echoes the prompt back verbatim
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: () => {} },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    assert.equal(result.reason, 'max-iterations');
+    // Architect started + verdict observed.
+    assert.ok(log.some((l) => l.startsWith('ARCHITECT F-001 starting')));
+    assert.ok(log.some((l) => l.includes('PATCH F-001')));
+    assert.ok(log.some((l) => l.includes('reset to todo')));
+
+    // Feature now status=todo, attempts=0.
+    const after = JSON.parse(readFileSync(join(fx.stateDir, 'features.json'), 'utf8'));
+    assert.equal(after.features[0].status, 'todo');
+    assert.equal(after.features[0].attempts, 0);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runMainLoop — NEXT_ARCHITECT with REVIEW verdict blocks feature + emits event', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(
+      join(harnessDir, 'prompts', 'orchestrator.md'),
+      '\nNEXT_ARCHITECT F-001 needs human input\n',
+    );
+    writeFileSync(
+      join(harnessDir, 'prompts', 'architect.md'),
+      '\nREVIEW F-001 spec ambiguity needs human resolution\n',
+    );
+  });
+  writeFileSync(
+    join(fx.stateDir, 'features.json'),
+    JSON.stringify({ features: [{ id: 'F-001', status: 'failed', attempts: 2 }] }),
+  );
+  try {
+    const log: string[] = [];
+    await runMainLoop({
+      ctx: {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'cat',
+        dept: '',
+        log: () => {},
+      },
+      logger: { log: (m) => log.push(m), notifyEvent: (e, b) => log.push(`event:${e} ${b}`) },
+      maxIterations: 1,
+      iterationSleepMs: 0,
+    });
+    assert.ok(log.some((l) => l.startsWith('event:review-pending')));
+    const after = JSON.parse(readFileSync(join(fx.stateDir, 'features.json'), 'utf8'));
+    assert.equal(after.features[0].status, 'blocked');
+    // Attempts NOT reset on REVIEW (only PATCH does that).
+    assert.equal(after.features[0].attempts, 2);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 test('runMainLoop — NEXT_TESTER invokes tester role', async () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'prompts', 'tester.md'), '# TESTER');

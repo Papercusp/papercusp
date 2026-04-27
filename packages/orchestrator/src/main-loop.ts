@@ -33,7 +33,7 @@ import { runHook } from './hooks.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface MainLoopExit {
@@ -168,6 +168,9 @@ async function dispatchDecision(
     case 'NEXT_MONITOR':
       return handleSimpleInvoke(ctx, logger, 'monitor', [], 'MONITOR health sweep starting (production phase)');
 
+    case 'NEXT_ARCHITECT':
+      return handleNextArchitect(parsed, ctx, logger);
+
     case 'CONVERTED':
       logger.log('Orchestrator converted issues to fix features. Continuing.');
       return { terminal: false, exitCode: 0, reason: 'idle' };
@@ -179,10 +182,8 @@ async function dispatchDecision(
     case 'RUN_TESTS':
       return handleRunTests(ctx, logger);
 
-    // Verbs that need subsystem ports (worktree / hooks / action blocks /
-    // sub-harness spawn). Stay on bash until those land.
+    // Verbs that still need subsystem ports.
     case 'NEXT_WORKER_CEO_MODE':
-    case 'NEXT_ARCHITECT':
     case 'READY_FOR_PROD':
     case 'NEXT_HARNESS':
       logger.log(
@@ -462,6 +463,74 @@ async function handleNextValidator(
   // Validator updates features.json itself; branchIsoPostValidator reads
   // the (possibly-just-changed) status and merges/PRs on PASS.
   branchIsoPostValidator(branchIsoCtx, fid);
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * NEXT_ARCHITECT handler. Mirrors bash:
+ *
+ *   rest="${decision##NEXT_ARCHITECT }"
+ *   fid="${rest%% *}"; reason="${rest#* }"
+ *   invoke architect "FEATURE_ID=$fid" "REASON=$reason"
+ *   verdict ← grep -E '^(PATCH|REVIEW) '
+ *   case verdict:
+ *     PATCH*  → set feature.status='todo' attempts=0 (worker retries)
+ *     REVIEW* → set feature.status='blocked' + notify review-pending
+ *     other   → log no actionable verdict
+ */
+async function handleNextArchitect(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+): Promise<DispatchResult> {
+  // Bash splits "NEXT_ARCHITECT F-001 some reason" into fid + reason. Our
+  // parseDecision only captures the next token (F-001). Recover the reason
+  // by looking at the raw line: anything after the first whitespace post-arg
+  // is the reason.
+  const fid = parsed.arg ?? '';
+  if (!fid) {
+    logger.log(`ERROR: NEXT_ARCHITECT without feature id: ${parsed.raw}`);
+    return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
+  }
+  // Reason is everything after `<verb> <arg>` in the original raw text.
+  // parseDecision only matched the verb + first arg token, but the agent
+  // may have included more — try to pull it back from the source raw.
+  const stripped = parsed.raw.replace(/^NEXT_ARCHITECT\s+\S+\s*/, '').trim();
+  const reason = stripped || '(no reason given)';
+
+  logger.log(`ARCHITECT ${fid} starting — reason: ${reason}`);
+  // Ensure pending-reviews dir exists for the REVIEW path.
+  const pendingDir = join(ctx.stateDir, 'pending-reviews');
+  if (!existsSync(pendingDir)) {
+    mkdirSync(pendingDir, { recursive: true });
+  }
+
+  let archOut = '';
+  try {
+    const r = await invoke(ctx, 'architect', [`FEATURE_ID=${fid}`, `REASON=${reason}`]);
+    archOut = r.output;
+  } catch (err) {
+    logger.log(`ARCHITECT error: ${(err as Error).message}`);
+  }
+
+  // Find the verdict line (last "PATCH ..." or "REVIEW ..." in the output).
+  const verdictMatch = archOut
+    .split(/\r?\n/)
+    .reverse()
+    .find((line) => /^(PATCH|REVIEW)\s/.test(line.trim()));
+  const verdict = verdictMatch?.trim() ?? '';
+  logger.log(`ARCHITECT verdict: ${verdict || '(none)'}`);
+
+  if (verdict.startsWith('PATCH')) {
+    setFeatureStatus(ctx.stateDir, fid, 'todo', { resetAttempts: true });
+    logger.log(`ARCHITECT patched spec for ${fid}; reset to todo.`);
+  } else if (verdict.startsWith('REVIEW')) {
+    setFeatureStatus(ctx.stateDir, fid, 'blocked');
+    logger.log(`ARCHITECT queued review for ${fid}; blocked until resolved.`);
+    logger.notifyEvent('review-pending', `${fid} needs human input`);
+  } else {
+    logger.log(`ARCHITECT produced no actionable verdict; leaving ${fid} untouched.`);
+  }
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 

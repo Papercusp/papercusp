@@ -100,6 +100,18 @@ test('setFeatureStatus — bumps attempts when requested', () => {
   }
 });
 
+test('setFeatureStatus — resetAttempts forces attempts back to 0', () => {
+  const dir = withFeaturesJson({
+    features: [{ id: 'F-001', status: 'failed', attempts: 5 }],
+  });
+  try {
+    setFeatureStatus(dir, 'F-001', 'todo', { resetAttempts: true });
+    assert.equal(featureAttempts(dir, 'F-001'), 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('setFeatureStatus — silently no-ops on unknown id (matches bash)', () => {
   const dir = withFeaturesJson({ features: [{ id: 'F-001', status: 'pending' }] });
   try {

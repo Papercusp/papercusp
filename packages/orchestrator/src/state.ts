@@ -40,21 +40,24 @@ export function featureAttempts(stateDir: string, featureId: string): number {
 }
 
 /**
- * Update a feature's status (and optionally bump attempts). Preserves all
- * other fields. Mirrors bash `feature_set_status <fid> <status>`.
+ * Update a feature's status. Preserves all other fields. Mirrors bash
+ * `feature_set_status <fid> <status>` plus the python-inline mutations
+ * (architect's reset-to-todo with attempts=0).
  */
 export function setFeatureStatus(
   stateDir: string,
   featureId: string,
   status: FeatureRecord['status'],
-  options: { bumpAttempts?: boolean } = {},
+  options: { bumpAttempts?: boolean; resetAttempts?: boolean } = {},
 ): FeatureRecord[] {
   const path = `${stateDir}/features.json`;
   const features = readFeatures(stateDir);
   const idx = features.findIndex((f) => f.id === featureId);
   if (idx < 0) return features; // bash silently no-ops too
   const next = { ...features[idx], status };
-  if (options.bumpAttempts) {
+  if (options.resetAttempts) {
+    next.attempts = 0;
+  } else if (options.bumpAttempts) {
     next.attempts = (next.attempts ?? 0) + 1;
   }
   features[idx] = next;
