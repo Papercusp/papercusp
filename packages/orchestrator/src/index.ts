@@ -60,6 +60,15 @@ export { git, branchExists, hasStagedChanges } from './git.js';
 export type { GitResult, GitOptions } from './git.js';
 export { runHook } from './hooks.js';
 export type { RunHookOptions, RunHookResult } from './hooks.js';
+export {
+  extractActionsBlock,
+  parseActionsJson,
+  processActionsBlock,
+} from './actions-block.js';
+export type {
+  ProcessActionsOptions,
+  ProcessActionsResult,
+} from './actions-block.js';
 export type {
   HarnessPhase,
   HarnessKind,

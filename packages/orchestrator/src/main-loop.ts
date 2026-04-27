@@ -30,6 +30,7 @@ import {
   worktreePath,
 } from './branch-iso.js';
 import { runHook } from './hooks.js';
+import { processActionsBlock } from './actions-block.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
@@ -157,6 +158,9 @@ async function dispatchDecision(
     case 'NEXT_WORKER':
       return handleNextWorker(parsed, ctx, logger, cfg);
 
+    case 'NEXT_WORKER_CEO_MODE':
+      return handleNextWorkerCeoMode(parsed, ctx, logger, cfg);
+
     case 'NEXT_VALIDATOR':
       return handleNextValidator(parsed, ctx, logger, cfg);
 
@@ -185,13 +189,6 @@ async function dispatchDecision(
 
     case 'RUN_TESTS':
       return handleRunTests(ctx, logger);
-
-    // Verbs that still need subsystem ports.
-    case 'NEXT_WORKER_CEO_MODE':
-      logger.log(
-        `TODO: ${parsed.verb} branch not yet ported — falling back to bash run.sh`,
-      );
-      return { terminal: true, exitCode: 0, reason: 'todo-branch' };
 
     default: {
       // Unreachable — parseDecision narrows to DECISION_VERBS which we
@@ -569,6 +566,58 @@ function handleReadyForProd(ctx: InvokeContext, logger: Logger): DispatchResult 
   const flagPath = join(ctx.stateDir, 'ready-for-prod.flag');
   writeFileSync(flagPath, `${new Date().toISOString()}\n`);
   logger.log('READY_FOR_PROD — flag written for promotion pipeline.');
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * NEXT_WORKER_CEO_MODE handler. Used by org/department harnesses when
+ * the business role handles a Directive from the user. Mirrors bash:
+ *
+ *   invoke worker FEATURE_ID=$fid MODE=ceo MESSAGE_ID=$fid
+ *   process_actions_block $worker_out $callingDept
+ *
+ * The worker's prompt is resolved per the same phase+dept lookup chain
+ * as a regular invoke (CEO-mode prompt files live under
+ * prompts/department/departments/business/worker.md by convention).
+ *
+ * The worker's output is expected to contain a markdown-fenced
+ * ```actions ... ``` JSON block; each action gets POSTed to
+ * /api/org/admin/execute-action.
+ */
+async function handleNextWorkerCeoMode(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+): Promise<DispatchResult> {
+  const fid = parsed.arg ?? '';
+  if (!fid) {
+    logger.log(`ERROR: NEXT_WORKER_CEO_MODE without feature id: ${parsed.raw}`);
+    return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
+  }
+  logger.log(`NEXT_WORKER_CEO_MODE ${fid} (CEO mode)`);
+
+  let workerOut = '';
+  try {
+    const r = await invoke(ctx, 'worker', [
+      `FEATURE_ID=${fid}`,
+      'MODE=ceo',
+      `MESSAGE_ID=${fid}`,
+    ]);
+    workerOut = r.output;
+  } catch (err) {
+    logger.log(`WORKER (ceo mode) error: ${(err as Error).message}`);
+    return { terminal: false, exitCode: 0, reason: 'idle' };
+  }
+  logger.log(`WORKER (ceo mode): ${workerOut.slice(0, 200) || '(no output)'}`);
+
+  const callingDept = configGet<string>(cfg, 'dept', '');
+  await processActionsBlock({
+    stdout: workerOut,
+    callingDept: callingDept || undefined,
+    log: logger.log,
+  });
+
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 
