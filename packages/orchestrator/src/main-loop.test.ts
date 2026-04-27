@@ -652,7 +652,7 @@ test('runMainLoop — RUN_TESTS skips gracefully when bin/run-tests.sh missing',
   }
 });
 
-test('runMainLoop — NEXT_HARNESS still hits todo-branch (Stage 3+)', async () => {
+test('runMainLoop — NEXT_HARNESS attempts API + falls back when no registry', async () => {
   const fx = makeFixture();
   try {
     const log: string[] = [];
@@ -668,11 +668,21 @@ test('runMainLoop — NEXT_HARNESS still hits todo-branch (Stage 3+)', async () 
         log: () => {},
       },
       logger: { log: (m) => log.push(m), notifyEvent: () => {} },
-      maxIterations: 5,
+      maxIterations: 1,
       iterationSleepMs: 0,
     });
-    assert.equal(result.reason, 'todo-branch');
-    assert.ok(log.some((l) => l.includes('NEXT_HARNESS branch not yet ported')));
+    assert.equal(result.reason, 'max-iterations');
+    // Header logged.
+    assert.ok(log.some((l) => l.includes('NEXT_HARNESS sub-harness --role=orchestrator')));
+    // API was tried (assumes localhost:3001 not running in test env).
+    assert.ok(log.some((l) => l.includes('API unreachable, falling back')));
+    // Falls back to registry lookup, which also fails in the test env →
+    // logs the registry-missing error.
+    assert.ok(
+      log.some(
+        (l) => l.includes('child harness path not found') || l.includes('Check ~/.restart-harness-projects.json'),
+      ),
+    );
   } finally {
     fx.cleanup();
   }

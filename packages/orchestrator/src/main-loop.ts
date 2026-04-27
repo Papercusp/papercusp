@@ -33,7 +33,7 @@ import { runHook } from './hooks.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface MainLoopExit {
@@ -151,6 +151,9 @@ async function dispatchDecision(
     case 'READY_FOR_PROD':
       return handleReadyForProd(ctx, logger);
 
+    case 'NEXT_HARNESS':
+      return handleNextHarness(parsed, ctx, logger);
+
     case 'NEXT_WORKER':
       return handleNextWorker(parsed, ctx, logger, cfg);
 
@@ -185,7 +188,6 @@ async function dispatchDecision(
 
     // Verbs that still need subsystem ports.
     case 'NEXT_WORKER_CEO_MODE':
-    case 'NEXT_HARNESS':
       logger.log(
         `TODO: ${parsed.verb} branch not yet ported — falling back to bash run.sh`,
       );
@@ -568,6 +570,115 @@ function handleReadyForProd(ctx: InvokeContext, logger: Logger): DispatchResult 
   writeFileSync(flagPath, `${new Date().toISOString()}\n`);
   logger.log('READY_FOR_PROD — flag written for promotion pipeline.');
   return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * NEXT_HARNESS handler. Cross-harness dispatch (harness-of-harnesses).
+ * Mirrors bash:
+ *
+ *   NEXT_HARNESS <child-slug> [--role=<role>] [other args]
+ *
+ *   1. Try POST http://localhost:3001/api/harness/<slug>/invoke?role=<role>
+ *      with 120s timeout. On 2xx, write response to log dir and return.
+ *   2. On unreachable (any non-2xx, network error, or timeout): look up
+ *      the child's path in ~/.restart-harness-projects.json and recurse:
+ *        cd <child_path> && PROJECT_DIR=<child_path> MAX_ITERATIONS=1 \
+ *          bash <harnessDir>/run.sh
+ *      (One iteration per call so the parent stays in control of cadence.)
+ */
+async function handleNextHarness(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+): Promise<DispatchResult> {
+  const childSlug = parsed.arg ?? '';
+  if (!childSlug) {
+    logger.log(`ERROR: NEXT_HARNESS without child slug: ${parsed.raw}`);
+    return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
+  }
+  // Pull --role= from raw if present.
+  const roleMatch = parsed.raw.match(/--role=(\S+)/);
+  const childRole = roleMatch?.[1] ?? 'orchestrator';
+  logger.log(`NEXT_HARNESS ${childSlug} --role=${childRole}`);
+
+  const apiUrl = `http://localhost:3001/api/harness/${childSlug}/invoke?role=${childRole}`;
+  const apiOk = await postJson(apiUrl, '{}', 120_000);
+  if (apiOk.ok) {
+    const ts = Math.floor(Date.now() / 1000);
+    const out = join(ctx.logDir, `nexth-${childSlug}-${ts}.json`);
+    writeFileSync(out, apiOk.body);
+    logger.log(`  → dispatched via API (${apiUrl})`);
+    return { terminal: false, exitCode: 0, reason: 'idle' };
+  }
+
+  logger.log('  → API unreachable, falling back to direct shell exec');
+  const childPath = lookupHarnessPath(childSlug);
+  if (!childPath || !existsSync(childPath)) {
+    logger.log(`  ERROR: child harness path not found for slug '${childSlug}'`);
+    logger.log('  Check ~/.restart-harness-projects.json');
+    return { terminal: false, exitCode: 0, reason: 'idle' };
+  }
+  // Recurse into the child harness for one iteration.
+  const result = spawnSync('bash', [`${ctx.harnessDir}/run.sh`], {
+    cwd: childPath,
+    env: {
+      ...process.env,
+      PROJECT_DIR: childPath,
+      MAX_ITERATIONS: '1',
+      HARNESS_DIR: ctx.harnessDir,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const stdout = result.stdout?.toString() ?? '';
+  const stderr = result.stderr?.toString() ?? '';
+  // Tail to the parent's run.log (bash uses tee + head -100).
+  for (const line of (stdout + stderr).split(/\r?\n/).slice(0, 100)) {
+    if (line.length > 0) logger.log(line);
+  }
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+interface PostResult {
+  ok: boolean;
+  status: number;
+  body: string;
+}
+
+/** Tiny fetch wrapper. Returns ok=false on any error / non-2xx / timeout. */
+async function postJson(url: string, body: string, timeoutMs: number): Promise<PostResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    return { ok: res.ok, status: res.status, body: text };
+  } catch {
+    return { ok: false, status: 0, body: '' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Look up a child harness's project dir from `~/.restart-harness-projects.json`.
+ * Mirrors bash's python heredoc.
+ */
+function lookupHarnessPath(slug: string): string | null {
+  const registryPath = join(process.env.HOME ?? '', '.restart-harness-projects.json');
+  if (!existsSync(registryPath)) return null;
+  try {
+    const data = JSON.parse(readFileSync(registryPath, 'utf8'));
+    const projects = (data?.projects ?? []) as Array<{ slug?: string; path?: string }>;
+    const match = projects.find((p) => p.slug === slug);
+    return match?.path ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
