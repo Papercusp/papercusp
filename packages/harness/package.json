@@ -1,0 +1,22 @@
+{
+  "name": "@papercusp/harness",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Autonomous-harness substrate: run.sh, prompts, bin scripts, identity files, templates. Imported by consumers via @papercusp/harness/paths to locate the install root without hardcoding ~/autonomous-harness.",
+  "main": "paths.ts",
+  "types": "paths.ts",
+  "exports": {
+    ".": {
+      "types": "./paths.ts",
+      "import": "./paths.ts",
+      "default": "./paths.ts"
+    },
+    "./paths": {
+      "types": "./paths.ts",
+      "import": "./paths.ts",
+      "default": "./paths.ts"
+    },
+    "./package.json": "./package.json"
+  }
+}
