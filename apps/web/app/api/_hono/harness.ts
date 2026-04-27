@@ -1134,7 +1134,7 @@ harness.post('/:slug/smoke-test/run', async (c) => {
   const { spawn } = await import('node:child_process');
   const scriptPath = harnessPath('bin', 'service-smoke-test.sh');
   if (!existsSync(scriptPath)) return c.json({ error: 'smoke-test script not found' }, 500);
-  return new Promise((resolve) => {
+  return new Promise<Response>((resolve) => {
     let stdout = '';
     const p = spawn('bash', [scriptPath], {
       env: { ...process.env, PROJECT_DIR: project.path, STATE_DIR: join(project.path, '.harness') },
@@ -1693,7 +1693,7 @@ harness.get('/:slug/features/:id/diff', async (c) => {
     if (cfg?.branchIsolation?.baseBranch) base = String(cfg.branchIsolation.baseBranch);
   } catch {}
   // Run `git diff <base>...harness/<id>` in project dir via child_process
-  return new Promise((resolve) => {
+  return new Promise<Response>((resolve) => {
     const { execFile } = require('node:child_process');
     execFile('git', ['diff', '--stat=200', `${base}...${branch}`], { cwd: project.path, maxBuffer: 4 * 1024 * 1024 }, (err: any, stat: string) => {
       if (err) {
@@ -1866,7 +1866,7 @@ harness.post('/:slug/product-review', async (c) => {
   const goalPath = join(project.path, 'GOAL.md');
   if (!existsSync(goalPath)) return c.json({ error: 'GOAL.md not found in project root' }, 400);
 
-  return new Promise((resolve) => {
+  return new Promise<Response>((resolve) => {
     const { execFile } = require('node:child_process');
     const harnessScript = harnessPath('run.sh');
     // Direct invocation: use MAX_ITERATIONS=0 and a forced product trigger via
@@ -1974,7 +1974,7 @@ harness.put('/:slug/knowledge', async (c) => {
 harness.get('/:slug/diff/working', async (c) => {
   const project = resolvePhasedProject(c.req.param('slug'), phasePhaseLabel(c.req.query('phase')));
   if (!project) return c.json({ error: 'unknown project' }, 404);
-  return new Promise((resolve) => {
+  return new Promise<Response>((resolve) => {
     const { execFile } = require('node:child_process');
     execFile('git', ['diff', '--stat=200', 'HEAD'], { cwd: project.path, maxBuffer: 4 * 1024 * 1024 }, (err: any, stat: string) => {
       if (err) {
