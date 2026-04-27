@@ -26,6 +26,18 @@ export { createLogger } from './log.js';
 export { resolvePaths, resolveEnv } from './env.js';
 export { promptCandidates, resolvePromptFile } from './prompt-resolve.js';
 export type { PromptResolveContext } from './prompt-resolve.js';
+export { extractFeatureId, makeRunId } from './run-id.js';
+export { buildPrompt } from './prompt-build.js';
+export type { BuildPromptInput } from './prompt-build.js';
+export {
+  invoke,
+  splitCommand,
+  extractResult,
+  resolvePromptOverride,
+  resolveTimeout,
+  resolveModel,
+} from './invoke.js';
+export type { InvokeContext } from './invoke.js';
 export type {
   HarnessPhase,
   HarnessKind,
