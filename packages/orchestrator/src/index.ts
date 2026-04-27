@@ -77,6 +77,15 @@ export { snapshotState } from './snapshot-state.js';
 export type { SnapshotResult } from './snapshot-state.js';
 export { runPreLoop } from './pre-loop.js';
 export type { PreLoopResult } from './pre-loop.js';
+export {
+  firePluginHook,
+  findFireHookCli,
+  pluginSearchPaths,
+} from './plugin-hooks.js';
+export type {
+  FirePluginHookOptions,
+  FirePluginHookResult,
+} from './plugin-hooks.js';
 export type {
   HarnessPhase,
   HarnessKind,

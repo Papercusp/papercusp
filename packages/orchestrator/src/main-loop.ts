@@ -36,6 +36,7 @@ import { pruneLogs } from './prune-logs.js';
 import { snapshotState } from './snapshot-state.js';
 import { runPreLoop } from './pre-loop.js';
 import { checkpointGate } from './checkpoints.js';
+import { firePluginHook } from './plugin-hooks.js';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { ParsedDecision } from './decision-parse.js';
@@ -333,9 +334,16 @@ async function handleDone(
     logger.log(`DOCUMENTER error: ${(err as Error).message}`);
   }
 
-  // Skip the optional scoper-on-done + archive-on-done + plugin-hooks for
-  // Stage 2b (Stage 4 + 5 add them). Bash run.sh covers them on the bash
-  // path; we just won't emit the events from TS yet.
+  // (Skipping optional scoper-on-done + archive-on-done — minor polish.)
+
+  // Fire registered plugin afterDone hooks (briefings pipeline, etc.).
+  firePluginHook({
+    hookName: 'afterDone',
+    projectDir: ctx.projectDir,
+    stateDir: ctx.stateDir,
+    pluginsLogPath: join(ctx.logDir, 'plugins.log'),
+    log: logger.log,
+  });
 
   logger.notifyEvent('done', `Mission complete: all features passed after ${iteration} iterations`);
   return { terminal: true, exitCode: 0, reason: 'done' };
