@@ -330,8 +330,16 @@ async function promptObject(
 
     if (v === null || v === undefined) {
       if (required.includes(key)) {
+        // With --accept-defaults (non-interactive / template-driven init),
+        // skip required fields that have no value rather than re-prompt.
+        // The plugin won't be runnable until the operator fills these via
+        // the UI's plugin-config editor or the CLI, but enabling still
+        // succeeds so the plugin shows up as an actionable item.
+        if (ctx.acceptDefaults) {
+          console.log(dim(`  ${key} is required but unset — fill via the config editor before invoking actions`));
+          continue;
+        }
         console.log(red(`  ${key} is required`));
-        // Re-prompt this key.
         const { [key]: _omit, ...rest } = out;
         const nextOut = await promptObject({ ...ctx }, schema, { ...existing, ...rest });
         return nextOut;
@@ -488,6 +496,69 @@ export async function cmdPluginDisable(args: string[]): Promise<void> {
   await saveEnabledFile(harness, enabled);
   console.log(green(`✓ disabled ${slug} in ${harness}`));
   console.log(dim(`  (config preserved at ~/.papercusp/harnesses/${harness}/plugin-configs/${slug}.json)`));
+}
+
+export async function cmdPluginUninstall(args: string[]): Promise<void> {
+  const slug = args[0];
+  if (!slug) die('plugin uninstall: usage: papercusp plugin uninstall <slug> [--purge-grants]');
+  const purgeGrants = args.includes('--purge-grants');
+
+  const pluginDir = join(GLOBAL_PLUGINS_DIR, slug);
+  const dirExists = existsSync(pluginDir);
+
+  // Walk every harness and disable the plugin + delete its config.
+  const disabledIn: string[] = [];
+  if (existsSync(HARNESSES_DIR)) {
+    const harnesses = await fs.readdir(HARNESSES_DIR, { withFileTypes: true });
+    for (const h of harnesses) {
+      if (!h.isDirectory()) continue;
+      const enabledFile = join(HARNESSES_DIR, h.name, 'enabled-plugins.json');
+      const enabled = await readJson<EnabledPluginsFile>(enabledFile);
+      if (enabled?.enabled[slug]) {
+        delete enabled.enabled[slug];
+        await writeJson(enabledFile, enabled);
+        disabledIn.push(h.name);
+      }
+      const configFile = join(HARNESSES_DIR, h.name, 'plugin-configs', `${slug}.json`);
+      if (existsSync(configFile)) await fs.rm(configFile, { force: true });
+    }
+  }
+
+  if (dirExists) {
+    await fs.rm(pluginDir, { recursive: true, force: true });
+    console.log(green(`✓ removed ${pluginDir}`));
+  } else if (disabledIn.length === 0) {
+    console.log(dim(`${slug} is not installed and not enabled in any harness`));
+    return;
+  } else {
+    console.log(dim(`${slug} not in ${pluginDir} (was already removed from disk)`));
+  }
+
+  if (disabledIn.length > 0) {
+    console.log(dim(`  disabled in ${disabledIn.length} harness(es): ${disabledIn.join(', ')}`));
+  }
+
+  if (purgeGrants) {
+    const grantedPath = join(PAPERCUSP_ROOT, 'granted-capabilities.json');
+    const extendedPath = join(PAPERCUSP_ROOT, 'extended-grants.json');
+    let purged = 0;
+    for (const path of [grantedPath, extendedPath]) {
+      const file = await readJson<{ grants?: Record<string, unknown>; extended?: Record<string, unknown> }>(path);
+      if (!file) continue;
+      const target = file.grants ?? file.extended;
+      if (!target) continue;
+      for (const key of Object.keys(target)) {
+        if (key === slug || key.startsWith(`${slug}@`)) {
+          delete (target as Record<string, unknown>)[key];
+          purged++;
+        }
+      }
+      await writeJson(path, file);
+    }
+    if (purged > 0) console.log(dim(`  purged ${purged} grant entry/entries`));
+  } else {
+    console.log(dim(`  (capability grants preserved; pass --purge-grants to remove)`));
+  }
 }
 
 export async function cmdPluginConfig(args: string[]): Promise<void> {
@@ -1041,6 +1112,8 @@ export async function cmdPlugin(args: string[]): Promise<void> {
       return cmdPluginEnable(rest);
     case 'disable':
       return cmdPluginDisable(rest);
+    case 'uninstall':
+      return cmdPluginUninstall(rest);
     case 'config':
       return cmdPluginConfig(rest);
     case 'invoke':
@@ -1057,6 +1130,7 @@ ${bold('Subcommands:')}
   ${cyan('list')} [--harness <slug>]                          Show installed + enabled-for-harness map.
   ${cyan('enable <slug>')} [--harness <slug>] [--accept-defaults]   Enable a plugin in a harness; prompts configSchema.
   ${cyan('disable <slug>')} [--harness <slug>]                 Disable a plugin in a harness (preserves config).
+  ${cyan('uninstall <slug>')} [--purge-grants]                Remove the plugin globally + disable in every harness.
   ${cyan('config <slug>')} [--harness <slug>] [--set k=v]…     Edit plugin config ($EDITOR if TTY; or --set repeated).
   ${cyan('invoke <slug> <action>')} [--harness <slug>] [--params '<json>'] [--dry-run]
                                               Manually fire a plugin action (operator-facing). Exits 5 on ok=false.

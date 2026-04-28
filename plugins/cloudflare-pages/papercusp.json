@@ -16,7 +16,10 @@
     {
       "name": "publish",
       "label": "Publish to Cloudflare Pages",
-      "surfaces": ["mission-done", "harness-toolbar"],
+      "surfaces": [
+        "mission-done",
+        "harness-toolbar"
+      ],
       "capabilities": [
         "secrets:read:CLOUDFLARE_API_TOKEN",
         "http:fetch:api.cloudflare.com"
@@ -27,14 +30,20 @@
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "dryRun": { "type": "boolean", "default": false }
+          "dryRun": {
+            "type": "boolean",
+            "default": false
+          }
         }
       }
     }
   ],
   "configSchema": {
     "type": "object",
-    "required": ["accountId", "projectName"],
+    "required": [
+      "accountId",
+      "projectName"
+    ],
     "properties": {
       "accountId": {
         "type": "string",
@@ -59,7 +68,12 @@
     }
   },
   "uiSchema": {
-    "accountId": { "ui:help": "Find at dash.cloudflare.com → right sidebar." },
-    "projectName": { "ui:help": "Must already exist in your Cloudflare account." }
-  }
+    "accountId": {
+      "ui:help": "Find at dash.cloudflare.com \u2192 right sidebar."
+    },
+    "projectName": {
+      "ui:help": "Must already exist in your Cloudflare account."
+    }
+  },
+  "icon": "Cloud"
 }

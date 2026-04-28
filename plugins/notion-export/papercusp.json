@@ -15,21 +15,37 @@
     {
       "name": "exportMission",
       "label": "Export to Notion",
-      "surfaces": ["mission-done", "harness-toolbar"],
-      "capabilities": ["secrets:read:NOTION_API_KEY", "http:fetch:api.notion.com"],
-      "serverHandler": { "timeoutSec": 30 },
+      "surfaces": [
+        "mission-done",
+        "harness-toolbar"
+      ],
+      "capabilities": [
+        "secrets:read:NOTION_API_KEY",
+        "http:fetch:api.notion.com"
+      ],
+      "serverHandler": {
+        "timeoutSec": 30
+      },
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "title":   { "type": "string", "description": "Page title. Defaults to the mission ID." },
-          "summary": { "type": "string", "description": "Body content. Markdown is converted client-side." }
+          "title": {
+            "type": "string",
+            "description": "Page title. Defaults to the mission ID."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Body content. Markdown is converted client-side."
+          }
         }
       }
     }
   ],
   "configSchema": {
     "type": "object",
-    "required": ["databaseId"],
+    "required": [
+      "databaseId"
+    ],
     "properties": {
       "databaseId": {
         "type": "string",
@@ -42,5 +58,6 @@
         "description": "Notion-Version header. Update if Notion bumps the API."
       }
     }
-  }
+  },
+  "icon": "FileText"
 }

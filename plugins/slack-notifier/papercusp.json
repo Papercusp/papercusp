@@ -16,16 +16,32 @@
     {
       "name": "notify",
       "label": "Send to Slack",
-      "surfaces": ["harness-toolbar", "mission-done"],
-      "capabilities": ["secrets:read:SLACK_WEBHOOK_URL", "http:fetch:hooks.slack.com"],
-      "serverHandler": { "timeoutSec": 10 },
+      "surfaces": [
+        "harness-toolbar",
+        "mission-done"
+      ],
+      "capabilities": [
+        "secrets:read:SLACK_WEBHOOK_URL",
+        "http:fetch:hooks.slack.com"
+      ],
+      "serverHandler": {
+        "timeoutSec": 10
+      },
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "text": { "type": "string", "description": "Message body. Required." },
-          "channel": { "type": "string", "description": "Override the default channel (e.g. #ops-alerts)." }
+          "text": {
+            "type": "string",
+            "description": "Message body. Required."
+          },
+          "channel": {
+            "type": "string",
+            "description": "Override the default channel (e.g. #ops-alerts)."
+          }
         },
-        "required": ["text"]
+        "required": [
+          "text"
+        ]
       }
     }
   ],
@@ -53,5 +69,6 @@
         "description": "When true, on-mission-done routine fires only when status != 'ok'."
       }
     }
-  }
+  },
+  "icon": "Slack"
 }

@@ -15,7 +15,9 @@
       "label": "Docs",
       "icon": "BookOpen",
       "iframeUrlConfigKey": "docsUrl",
-      "replaces": ["docs"]
+      "replaces": [
+        "docs"
+      ]
     }
   ],
   "configSchema": {
@@ -27,5 +29,6 @@
         "description": "Base URL of the docs site."
       }
     }
-  }
+  },
+  "icon": "BookOpen"
 }

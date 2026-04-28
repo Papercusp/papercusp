@@ -13,35 +13,61 @@
     {
       "name": "migrate",
       "label": "Run pending migrations",
-      "surfaces": ["harness-toolbar"],
-      "capabilities": ["db:plugin-schema"],
-      "serverHandler": { "timeoutSec": 30 },
+      "surfaces": [
+        "harness-toolbar"
+      ],
+      "capabilities": [
+        "db:plugin-schema"
+      ],
+      "serverHandler": {
+        "timeoutSec": 30
+      },
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "dryRun": { "type": "boolean", "default": false }
+          "dryRun": {
+            "type": "boolean",
+            "default": false
+          }
         }
       }
     },
     {
       "name": "inspect",
       "label": "Inspect schema",
-      "surfaces": ["harness-toolbar"],
-      "capabilities": ["db:plugin-schema"],
-      "serverHandler": { "timeoutSec": 5 }
+      "surfaces": [
+        "harness-toolbar"
+      ],
+      "capabilities": [
+        "db:plugin-schema"
+      ],
+      "serverHandler": {
+        "timeoutSec": 5
+      }
     },
     {
       "name": "reset",
       "label": "Drop + recreate schema",
-      "surfaces": ["harness-toolbar"],
-      "capabilities": ["db:plugin-schema"],
-      "serverHandler": { "timeoutSec": 15 },
+      "surfaces": [
+        "harness-toolbar"
+      ],
+      "capabilities": [
+        "db:plugin-schema"
+      ],
+      "serverHandler": {
+        "timeoutSec": 15
+      },
       "paramsSchema": {
         "type": "object",
         "properties": {
-          "confirm": { "type": "boolean", "description": "Must be true. Reset is destructive." }
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true. Reset is destructive."
+          }
         },
-        "required": ["confirm"]
+        "required": [
+          "confirm"
+        ]
       }
     }
   ],
@@ -54,5 +80,6 @@
         "description": "Postgres schema this plugin owns. Defaults to 'plugin_local'."
       }
     }
-  }
+  },
+  "icon": "Database"
 }

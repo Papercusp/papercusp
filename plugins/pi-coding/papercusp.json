@@ -15,7 +15,9 @@
       "label": "Pi",
       "icon": "Terminal",
       "iframeUrlConfigKey": "piUrl",
-      "replaces": ["pi"]
+      "replaces": [
+        "pi"
+      ]
     }
   ],
   "configSchema": {
@@ -27,5 +29,6 @@
         "description": "Base URL for the Pi terminal endpoint."
       }
     }
-  }
+  },
+  "icon": "Terminal"
 }

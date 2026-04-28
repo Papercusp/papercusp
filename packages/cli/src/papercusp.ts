@@ -860,6 +860,16 @@ async function cmdInit(args: string[]): Promise<void> {
       }
       await copyDir(join(templateDir, e), targetEntryPath);
     }
+    // Also copy the template manifest to .harness/papercusp.json so the
+    // substrate's /api/harness/:slug/manifest endpoint can read this
+    // harness instance's `configFiles` declaration without needing to
+    // walk the installed-templates directory. Skip if absent (legacy
+    // templates without a manifest can't expose configFiles anyway).
+    const tmplManifest = join(templateDir, 'papercusp.json');
+    if (existsSync(tmplManifest)) {
+      await fs.mkdir(join(projectPath, '.harness'), { recursive: true });
+      await fs.copyFile(tmplManifest, join(projectPath, '.harness', 'papercusp.json'));
+    }
   } else {
     console.log(
       isExistingRepo
@@ -870,8 +880,12 @@ async function cmdInit(args: string[]): Promise<void> {
     await writeIfAbsent('AGENTS.md', `# Conventions for ${slug}\n\n(write coding conventions, libraries to prefer, etc.)\n`);
   }
 
+  // .harness/config.json comes from the template (every template that
+  // declares its `configFiles` ships one). Templates without --from
+  // (the blank-project path) get a minimal default written below as a
+  // last-resort fallback only when no template was used.
   const configPath = join(projectPath, '.harness', 'config.json');
-  if (!existsSync(configPath)) {
+  if (!fromHarness && !existsSync(configPath)) {
     await fs.writeFile(
       configPath,
       JSON.stringify(
@@ -894,12 +908,153 @@ async function cmdInit(args: string[]): Promise<void> {
     await writeRegistry(reg);
   }
 
+  // ── Template-declared plugins ─────────────────────────────────────────
+  // If the template manifest declares `plugins`, auto-install missing ones
+  // and auto-enable each in this new harness. Tolerates the legacy
+  // `string[]` form (treated as `{slug, version:"latest"}` with autoEnable)
+  // and the new structured form
+  // `Array<{slug, version?, autoEnable?, config?}>`.
+  if (fromHarness) {
+    const templateManifestPath = join(HARNESSES_DIR, fromHarness, 'papercusp.json');
+    const templateManifest = (await readJson<{ plugins?: unknown }>(templateManifestPath)) ?? {};
+    const pluginSpec = normalizeTemplatePlugins(templateManifest.plugins);
+    if (pluginSpec.length > 0) {
+      console.log('');
+      console.log(`installing template plugins (${pluginSpec.length})...`);
+      const successes: string[] = [];
+      const failures: Array<{ slug: string; reason: string }> = [];
+      for (const p of pluginSpec) {
+        const dirSlug = pluginDirBasename(p.slug);
+        const flatPluginDir = join(GLOBAL_PLUGINS_DIR, dirSlug);
+        const scopedPluginDir = join(GLOBAL_PLUGINS_DIR, p.slug);
+        const installedFlat = existsSync(flatPluginDir);
+        const installedScoped = existsSync(scopedPluginDir);
+        if (!installedFlat && !installedScoped) {
+          console.log(`  ${cyan('install')} ${p.slug}${p.version ? '@' + p.version : ''}`);
+          const installArgs = ['install', p.version ? `${p.slug}@${p.version}` : p.slug, '--accept-capabilities'];
+          const r = spawnSync(process.argv[0], [process.argv[1] ?? fileURLToPath(import.meta.url), ...installArgs], {
+            stdio: 'inherit',
+            env: { ...process.env, PAPERCUSP_ACCEPT_CAPABILITIES: '1' },
+          });
+          if (r.status !== 0) {
+            failures.push({ slug: p.slug, reason: `install exit code ${r.status}` });
+            continue;
+          }
+        } else {
+          console.log(`  ${dim('already installed')} ${p.slug}`);
+        }
+        // Bridge: scoped installs (`~/.papercusp/global-plugins/@scope/name/`)
+        // — symlink to the flat name so `cmdPluginEnable` (which keys by
+        // basename) finds it. Idempotent.
+        if (!existsSync(flatPluginDir) && existsSync(scopedPluginDir)) {
+          await fs.symlink(scopedPluginDir, flatPluginDir).catch(() => { /* ignore EEXIST race */ });
+        }
+        if (p.autoEnable === false) {
+          console.log(`  ${dim('not auto-enabling')} ${p.slug} (autoEnable: false)`);
+          continue;
+        }
+        // Seed plugin-configs/<dir>.json with template defaults (with
+        // ${PROJECT_NAME} interpolation).
+        if (p.config && typeof p.config === 'object') {
+          const interpolated = interpolateTemplateConfig(p.config, { PROJECT_NAME: slug });
+          await fs.mkdir(join(HARNESSES_DIR, slug, 'plugin-configs'), { recursive: true });
+          await fs.writeFile(
+            join(HARNESSES_DIR, slug, 'plugin-configs', `${dirSlug}.json`),
+            JSON.stringify(interpolated, null, 2),
+            'utf8',
+          );
+        }
+        // Enable in this harness.
+        const enableArgs = ['plugin', 'enable', dirSlug, '--harness', slug, '--accept-defaults'];
+        const r = spawnSync(process.argv[0], [process.argv[1] ?? fileURLToPath(import.meta.url), ...enableArgs], {
+          stdio: 'inherit',
+          env: process.env,
+        });
+        if (r.status !== 0) {
+          failures.push({ slug: p.slug, reason: `enable exit code ${r.status}` });
+          continue;
+        }
+        successes.push(p.slug);
+      }
+      if (successes.length > 0) {
+        console.log(`  ${green('✓')} ${successes.length} plugin(s) enabled: ${successes.join(', ')}`);
+      }
+      if (failures.length > 0) {
+        console.log(`  ${red('✗')} ${failures.length} plugin(s) failed:`);
+        for (const f of failures) console.log(`    ${f.slug} — ${f.reason}`);
+      }
+    }
+  }
+
   console.log('');
   console.log(green(`✓ ${slug} initialized`));
   console.log(`next steps:`);
   console.log(`  edit ${cyan(projectPath + '/SPEC.md')}`);
   console.log(`  ${cyan(`papercusp scaffold-schema ${slug}`)}    (provision Postgres schema)`);
   console.log(`  ${cyan(`papercusp run ${slug}`)}                (start the harness)`);
+}
+
+interface TemplatePluginSpec {
+  slug: string;
+  version?: string;
+  autoEnable?: boolean;
+  config?: Record<string, unknown>;
+}
+
+/**
+ * Coerce a template manifest's `plugins` field into the structured form.
+ * Accepts:
+ *   - undefined / [] → []
+ *   - string[]      → [{slug, autoEnable: true}]  (legacy back-compat)
+ *   - object[]      → [{slug, version?, autoEnable?, config?}]  (current)
+ *
+ * Strips entries that lack a parseable slug — never throws.
+ */
+function normalizeTemplatePlugins(raw: unknown): TemplatePluginSpec[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TemplatePluginSpec[] = [];
+  for (const entry of raw) {
+    if (typeof entry === 'string') {
+      // Legacy `string[]` form: "slug" or "slug@version".
+      const m = /^(@?[a-z0-9][a-z0-9._/-]*)(?:@(.+))?$/i.exec(entry.trim());
+      if (m) out.push({ slug: m[1]!, version: m[2], autoEnable: true });
+    } else if (typeof entry === 'object' && entry !== null) {
+      const e = entry as { slug?: unknown; version?: unknown; autoEnable?: unknown; config?: unknown };
+      if (typeof e.slug === 'string' && /^@?[a-z0-9][a-z0-9._/-]*$/i.test(e.slug)) {
+        out.push({
+          slug: e.slug,
+          version: typeof e.version === 'string' ? e.version : undefined,
+          autoEnable: typeof e.autoEnable === 'boolean' ? e.autoEnable : true,
+          config: typeof e.config === 'object' && e.config !== null ? (e.config as Record<string, unknown>) : undefined,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/** `@papercupai/docs-viewer` → `docs-viewer`. The CLI keys enabled state by dir basename. */
+function pluginDirBasename(slug: string): string {
+  const idx = slug.indexOf('/');
+  return idx === -1 ? slug : slug.slice(idx + 1);
+}
+
+/** Replace `${KEY}` placeholders in any string value of a config object. */
+function interpolateTemplateConfig(
+  cfg: Record<string, unknown>,
+  vars: Record<string, string>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(cfg)) {
+    if (typeof v === 'string') {
+      out[k] = v.replace(/\$\{(\w+)\}/g, (_, key: string) => vars[key] ?? `\${${key}}`);
+    } else if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+      out[k] = interpolateTemplateConfig(v as Record<string, unknown>, vars);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 async function cmdPublish(args: string[] = []): Promise<void> {

@@ -15,7 +15,9 @@
       "label": "VS Code",
       "icon": "Code",
       "iframeUrlConfigKey": "codeServerUrl",
-      "replaces": ["vscode"]
+      "replaces": [
+        "vscode"
+      ]
     }
   ],
   "configSchema": {
@@ -32,5 +34,6 @@
     "codeServerUrl": {
       "ui:help": "Operator-managed; defaults to the substrate's bundled code-server on :8082."
     }
-  }
+  },
+  "icon": "Code"
 }
