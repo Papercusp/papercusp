@@ -1,0 +1,15 @@
+{
+  "name": "@restart/pglite-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Embedded Postgres-wire-compatible server for desktop builds. Wraps @electric-sql/pglite + @electric-sql/pglite-socket so the existing postgres-js callsites can connect via a unix socket without any code changes.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "pglite-server": "bin/pglite-server.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.4.5",
+    "@electric-sql/pglite-socket": "^0.1.5"
+  }
+}
