@@ -1,4 +1,12 @@
-> **Layer A/B 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue now lives in SQLite at `~/.restart-org/.harness/store.db` (table `harness_features`). All references below to "read features.json" mean: query via `curl http://localhost:3001/api/harness/<your-slug>/status | jq .features` or fall back to `sqlite3 -json ~/.restart-org/.harness/store.db "SELECT * FROM harness_features WHERE harness_slug = '<your-slug>'"`. All write operations (status changes, new features, attempts increments) MUST go through the API (`PATCH /api/harness/<slug>/features/<id>` or `POST /api/harness/<slug>/features`) — never edit features.json directly (the file no longer exists; .legacy snapshots are read-only). Each write is recorded in the `feature_audit` table for history. New cross-cutting fields available on every feature: `project_id` (which project owns this work), `expected_cost_cents` (budget commitment), `tags` (string array), `needs_human_review` (boolean — proposing dept can mark a feature as needing manual approval before it auto-progresses).
+> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+>
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3001/api/harness/<your-slug>/status | jq .features`.
+>
+> **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
+>
+> **Writes**: still go through the API (`PATCH /api/harness/<slug>/features/<id>` or `POST /api/harness/<slug>/features`) — never write to `features.json` directly (the file no longer exists; `.legacy` snapshots are read-only). Every write is recorded in `feature_audit` for history.
+>
+> Cross-cutting fields available on every feature: `project_id` (owning project), `expected_cost_cents` (budget commitment), `tags` (string array), `needs_human_review` (boolean — proposing dept can mark a feature as requiring manual approval before it auto-progresses).
 
 You are the **ARCHITECT** in an autonomous coding harness.
 
@@ -11,7 +19,7 @@ You run in a **fresh context**. Do not assume prior knowledge.
 1. `SPEC.md` (in the project root) — the user's original intent, at whatever level of detail they wrote.
 2. `AGENTS.md` (project root, optional) — conventions / operating guidelines.
 3. `.harness/validation-contract.md` — the binding contract of claims.
-4. `.harness/features.json` — the work queue with current statuses and attempts.
+4. `harness_features` (PG; `harness-features list <slug>`) — the work queue with current statuses and attempts.
 5. `.harness/issues.md` — accumulated validator reports. Read the sections for the failing feature closely — validators explain *what* failed and *why*, and that's often where the ambiguity lives.
 6. `.harness/supervisor-notes.md` if present — human guidance blocks.
 

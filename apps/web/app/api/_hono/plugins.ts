@@ -32,6 +32,25 @@ const LEGACY_REGISTRY_PATH = join(homedir(), '.restart-harness-projects.json');
  * Phase 6a: contribution metadata declared in `papercusp.json`. Components
  * referenced by `componentId` are loaded at runtime by the UI host (Phase 6b).
  * Manifest carries only id + label + icon — no React refs.
+ *
+ * Pattern 1 (unified manifest): each tab picks its render mode by which
+ * fields are set:
+ *
+ *   In-process React (build-time):
+ *     {componentRoot, componentId}
+ *
+ *   Iframe (runtime, marketplace-friendly):
+ *     {iframeUrl}                          ← static URL
+ *     {iframeUrlConfigKey: 'codeServerUrl'} ← reads
+ *       configSchema.properties[k].default, with per-harness override at
+ *       ~/.papercusp/harnesses/<slug>/plugin-configs/<plugin>.json[k].
+ *
+ * If both modes are present, the host prefers iframe (cheaper to validate at
+ * runtime; no rebuild required to update).
+ *
+ * `replaces` lets a plugin tab take over a built-in tab id (docs/vscode/pi).
+ * The dashboard hides the built-in version when a plugin replacement is
+ * present — gives plugins a way to ship the same surface with custom UX.
  */
 interface DashboardTabManifest {
   id: string;
@@ -39,6 +58,9 @@ interface DashboardTabManifest {
   icon?: string;
   componentId?: string;        // resolved at UI-load time to a lazy import
   componentRoot?: string;      // optional per-tab override of plugin-level componentRoot
+  iframeUrl?: string;          // direct URL — Pattern 1 iframe mode
+  iframeUrlConfigKey?: string; // resolves through configSchema + per-harness config
+  replaces?: string[];         // built-in tab ids this plugin tab supersedes
 }
 
 interface SidebarItemManifest {
@@ -70,6 +92,9 @@ interface PluginManifest {
   ui?: UiContributionManifest;
   routines?: Array<{ name: string; trigger: 'cron' | 'webhook' | 'api' }>;
   schema?: unknown;
+  /** JSON-Schema describing config keys this plugin accepts. Used by
+   *  `iframeUrlConfigKey` to read per-key `default` values. */
+  configSchema?: { properties?: Record<string, { default?: unknown }> };
   [k: string]: unknown;
 }
 
@@ -77,12 +102,58 @@ async function readJson<T>(path: string): Promise<T | null> {
   try { return JSON.parse(await fs.readFile(path, 'utf8')) as T; } catch { return null; }
 }
 
+/**
+ * Pattern 1 — resolve a tab's iframeUrl. Three sources, in priority order:
+ *
+ *   1. Per-harness override: `~/.papercusp/harnesses/<slug>/plugin-configs/<plugin>.json`
+ *      key matching `tab.iframeUrlConfigKey` — operator-controlled.
+ *
+ *   2. Manifest's configSchema default: same key, but read from
+ *      `manifest.configSchema.properties[k].default`.
+ *
+ *   3. Direct: `tab.iframeUrl` (no config key indirection).
+ *
+ * Always appends `?harness=<slug>` so the iframe knows which install it's
+ * scoped to. Returns null if the tab declares no iframe path at all.
+ */
+function resolveIframeUrl(
+  manifest: PluginManifest,
+  tab: DashboardTabManifest,
+  harnessConfig: Record<string, unknown> | null,
+  harnessSlug: string,
+): string | null {
+  let url: string | null = null;
+
+  if (tab.iframeUrlConfigKey) {
+    const k = tab.iframeUrlConfigKey;
+    const fromConfig = harnessConfig?.[k];
+    const fromDefault = manifest.configSchema?.properties?.[k]?.default;
+    if (typeof fromConfig === 'string' && fromConfig.length > 0) url = fromConfig;
+    else if (typeof fromDefault === 'string' && fromDefault.length > 0) url = fromDefault;
+  }
+  if (!url && typeof tab.iframeUrl === 'string' && tab.iframeUrl.length > 0) {
+    url = tab.iframeUrl;
+  }
+  if (!url) return null;
+
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}harness=${encodeURIComponent(harnessSlug)}`;
+}
+
 async function listPluginsIn(parent: string, source: 'project' | 'harness' | 'global'): Promise<Array<PluginManifest & { source: string; path: string }>> {
   const out: Array<PluginManifest & { source: string; path: string }> = [];
   if (!existsSync(parent)) return out;
   const entries = await fs.readdir(parent, { withFileTypes: true }).catch(() => []);
   for (const e of entries) {
-    if (!e.isDirectory() || e.name.startsWith('.')) continue;
+    if (e.name.startsWith('.')) continue;
+    // Accept directories AND symlinks (dev-mode pattern: symlinking a
+    // plugin's repo dir into ~/.papercusp/global-plugins/).
+    let isDirOrLinkToDir = e.isDirectory();
+    if (!isDirOrLinkToDir && e.isSymbolicLink()) {
+      const target = await fs.stat(join(parent, e.name)).catch(() => null);
+      isDirOrLinkToDir = target?.isDirectory() ?? false;
+    }
+    if (!isDirOrLinkToDir) continue;
     const dir = join(parent, e.name);
     const m = await readJson<PluginManifest>(join(dir, 'papercusp.json'));
     if (!m?.name || !m?.version) continue;
@@ -219,10 +290,16 @@ plugins.get('/:slug/contributions', async (c) => {
       // doesn't specify its own (Phase 6b runtime needs componentRoot
       // per contribution to do the dynamic import).
       const pluginRoot = (p as PluginManifest & { componentRoot?: string }).componentRoot;
+      // Per-harness plugin config (operator overrides for iframeUrlConfigKey).
+      const harnessConfig = await readJson<Record<string, unknown>>(
+        join(HARNESSES_DIR, slug, 'plugin-configs', `${p.name}.json`),
+      );
       for (const tab of p.dashboardTabs ?? []) {
+        const resolvedIframeUrl = resolveIframeUrl(p, tab, harnessConfig, slug);
         dashboardTabs.push({
           componentRoot: tab.componentRoot ?? pluginRoot,
           ...tab,
+          iframeUrl: resolvedIframeUrl ?? tab.iframeUrl,
           pluginName: p.name,
         });
       }

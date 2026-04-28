@@ -6,8 +6,8 @@
  * DB_PATH derived from .harness/config.json.
  */
 import { harnessRoot } from '@papercusp/harness/paths';
-import { readConfig, resolvePhase } from './config.js';
-import type { OrchestratorEnv } from './types.js';
+import { readConfig, resolvePhase } from './config';
+import type { OrchestratorEnv } from './types';
 
 export interface ResolvedPaths {
   harnessDir: string;

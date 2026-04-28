@@ -10,7 +10,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import type { FeatureRecord, FeaturesJson } from './types.js';
+import type { FeatureRecord, FeaturesJson } from './types';
 
 /** Read and normalize features.json. Returns [] if absent or malformed. */
 export function readFeatures(stateDir: string): FeatureRecord[] {

@@ -1,7 +1,7 @@
 /**
  * Postgres connection layer for the harness store.
  *
- * Backing DB: `restart_harness` on the same Postgres instance Paperclip uses.
+ * Backing DB: `papercusp` on the same Postgres instance Paperclip uses.
  * Schemas: `harness_shared` (cross-cutting) + `harness_<slug>` (per-harness).
  *
  * Two client surfaces:
@@ -27,11 +27,11 @@ import * as sharedSchema from './schema';
 // HARNESS_DATABASE_URL after this module is imported) take effect.
 function appUrl(): string {
   return process.env.HARNESS_DATABASE_URL
-    ?? 'postgresql://harness_app:harness_app_pwd@localhost:5432/restart_harness';
+    ?? 'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
 }
 function adminUrl(): string {
   return process.env.HARNESS_ADMIN_DATABASE_URL
-    ?? 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/restart_harness';
+    ?? 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
 }
 
 let _adminClient: Sql | null = null;
@@ -45,7 +45,11 @@ function buildClient(connectionUrl: string, searchPath: string[]): Sql {
     connection: {
       search_path: sp,
     },
-    max: 8,
+    // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 8 for real Postgres;
+    // desktop builds set it to 1 because pglite-socket serializes queries
+    // internally and currently can't handle parameterized queries arriving
+    // concurrently across multiple sockets.
+    max: Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 8),
     // BIGINT → number. Our timestamps and attempt counts fit safely in Number's
     // 2^53 range; expected_cost_cents won't realistically exceed it. Override
     // case-by-case if a column ever needs full BIGINT precision.

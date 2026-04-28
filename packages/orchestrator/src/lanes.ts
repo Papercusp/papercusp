@@ -19,8 +19,8 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { configGet } from './config.js';
-import type { HarnessConfig } from './types.js';
+import { configGet } from './config';
+import type { HarnessConfig } from './types';
 
 export interface LaneRecord {
   /** Internal monotonic id (replaces bash's OS PID; PIDs aren't meaningful in-process). */

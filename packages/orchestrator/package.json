@@ -22,6 +22,11 @@
       "import": "./src/state.ts",
       "default": "./src/state.ts"
     },
+    "./role-prompt": {
+      "types": "./src/role-prompt-from-slug.ts",
+      "import": "./src/role-prompt-from-slug.ts",
+      "default": "./src/role-prompt-from-slug.ts"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

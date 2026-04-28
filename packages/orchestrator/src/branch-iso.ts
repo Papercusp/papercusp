@@ -17,10 +17,10 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { configGet } from './config.js';
-import { branchExists, git, hasStagedChanges } from './git.js';
-import { setFeatureStatus } from './state.js';
-import type { HarnessConfig } from './types.js';
+import { configGet } from './config';
+import { branchExists, git, hasStagedChanges } from './git';
+import { setFeatureStatus } from './state';
+import type { HarnessConfig } from './types';
 
 export interface BranchIsoCtx {
   cfg: HarnessConfig;

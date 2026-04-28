@@ -13,7 +13,7 @@
  *
  * When unset / != 1, the bin/run.ts entry point exec's bash run.sh instead.
  */
-export { readConfig, configGet, resolvePhase } from './config.js';
+export { readConfig, configGet, resolvePhase } from './config';
 export {
   readFeatures,
   featuresExist,
@@ -21,14 +21,20 @@ export {
   setFeatureStatus,
   harnessSlug,
   passedFraction,
-} from './state.js';
-export { createLogger } from './log.js';
-export { resolvePaths, resolveEnv } from './env.js';
-export { promptCandidates, resolvePromptFile } from './prompt-resolve.js';
-export type { PromptResolveContext } from './prompt-resolve.js';
-export { extractFeatureId, makeRunId } from './run-id.js';
-export { buildPrompt } from './prompt-build.js';
-export type { BuildPromptInput } from './prompt-build.js';
+} from './state';
+export { createLogger } from './log';
+export { resolvePaths, resolveEnv } from './env';
+export { promptCandidates, resolvePromptFile } from './prompt-resolve';
+export type { PromptResolveContext } from './prompt-resolve';
+export { extractFeatureId, makeRunId } from './run-id';
+export { buildPrompt } from './prompt-build';
+export type { BuildPromptInput } from './prompt-build';
+export { assembleRolePrompt, lookupProjectDir } from './role-prompt-from-slug';
+export type {
+  AssembleRolePromptOptions,
+  AssembledPrompt,
+  RolePromptMode,
+} from './role-prompt-from-slug';
 export {
   invoke,
   splitCommand,
@@ -36,14 +42,14 @@ export {
   resolvePromptOverride,
   resolveTimeout,
   resolveModel,
-} from './invoke.js';
-export type { InvokeContext } from './invoke.js';
-export { parseDecision, DECISION_VERBS } from './decision-parse.js';
-export type { DecisionVerb, ParsedDecision } from './decision-parse.js';
-export { checkpointGate } from './checkpoints.js';
-export type { CheckpointAction } from './checkpoints.js';
-export { runMainLoop } from './main-loop.js';
-export type { MainLoopOptions, MainLoopExit } from './main-loop.js';
+} from './invoke';
+export type { InvokeContext } from './invoke';
+export { parseDecision, DECISION_VERBS } from './decision-parse';
+export type { DecisionVerb, ParsedDecision } from './decision-parse';
+export { checkpointGate } from './checkpoints';
+export type { CheckpointAction } from './checkpoints';
+export { runMainLoop } from './main-loop';
+export type { MainLoopOptions, MainLoopExit } from './main-loop';
 export {
   branchIsoEnabled,
   worktreeEnabled,
@@ -54,38 +60,38 @@ export {
   branchIsoPreValidator,
   branchIsoPostValidator,
   worktreeReset,
-} from './branch-iso.js';
-export type { BranchIsoCtx } from './branch-iso.js';
-export { git, branchExists, hasStagedChanges } from './git.js';
-export type { GitResult, GitOptions } from './git.js';
-export { runHook } from './hooks.js';
-export type { RunHookOptions, RunHookResult } from './hooks.js';
+} from './branch-iso';
+export type { BranchIsoCtx } from './branch-iso';
+export { git, branchExists, hasStagedChanges } from './git';
+export type { GitResult, GitOptions } from './git';
+export { runHook } from './hooks';
+export type { RunHookOptions, RunHookResult } from './hooks';
 export {
   extractActionsBlock,
   parseActionsJson,
   processActionsBlock,
-} from './actions-block.js';
+} from './actions-block';
 export type {
   ProcessActionsOptions,
   ProcessActionsResult,
-} from './actions-block.js';
-export { evaluateCostCap, sumJsonlCost } from './cost-cap.js';
-export type { CostCapResult } from './cost-cap.js';
-export { pruneLogs } from './prune-logs.js';
-export type { PruneResult } from './prune-logs.js';
-export { snapshotState } from './snapshot-state.js';
-export type { SnapshotResult } from './snapshot-state.js';
-export { runPreLoop } from './pre-loop.js';
-export type { PreLoopResult } from './pre-loop.js';
+} from './actions-block';
+export { evaluateCostCap, sumJsonlCost } from './cost-cap';
+export type { CostCapResult } from './cost-cap';
+export { pruneLogs } from './prune-logs';
+export type { PruneResult } from './prune-logs';
+export { snapshotState } from './snapshot-state';
+export type { SnapshotResult } from './snapshot-state';
+export { runPreLoop } from './pre-loop';
+export type { PreLoopResult } from './pre-loop';
 export {
   firePluginHook,
   findFireHookCli,
   pluginSearchPaths,
-} from './plugin-hooks.js';
+} from './plugin-hooks';
 export type {
   FirePluginHookOptions,
   FirePluginHookResult,
-} from './plugin-hooks.js';
+} from './plugin-hooks';
 export {
   buildCompetitionManifest,
   competitionManifestPath,
@@ -97,14 +103,14 @@ export {
   parseCompetitionVerdict,
   readCompetitionManifest,
   writeCompetitionManifest,
-} from './lanes.js';
+} from './lanes';
 export type {
   CompetitionLane,
   CompetitionManifest,
   CompetitionVerdict,
   LanePool,
   LaneRecord,
-} from './lanes.js';
+} from './lanes';
 export type {
   HarnessPhase,
   HarnessKind,
@@ -115,4 +121,4 @@ export type {
   OrchestratorEnv,
   OrchestratorDecision,
   InvokeResult,
-} from './types.js';
+} from './types';

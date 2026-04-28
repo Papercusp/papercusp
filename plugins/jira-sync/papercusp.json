@@ -1,0 +1,157 @@
+{
+  "kind": "plugin",
+  "name": "@papercupai/jira-sync",
+  "version": "0.1.1",
+  "papercusp": "^0.1.0",
+  "description": "Sync papercusp harness state to a Jira project: create an issue per feature, append comments on status transitions, optionally bulk-export pending proposals. Demonstrates capability-gated REST integration with auth headers + idempotent upserts.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "main": "./index.ts",
+  "capabilities": [
+    "secrets:read:JIRA_API_TOKEN",
+    "secrets:read:JIRA_EMAIL",
+    "secrets:read:JIRA_BASE_URL",
+    "http:fetch:*.atlassian.net",
+    "events:listen:feature-passed",
+    "events:listen:feature-failed",
+    "events:listen:proposal-accepted",
+    "events:listen:mission-done"
+  ],
+  "actions": [
+    {
+      "name": "create-issue",
+      "label": "Create Jira issue",
+      "surfaces": [
+        "harness-toolbar",
+        "feature-row",
+        "mission-done"
+      ],
+      "capabilities": [
+        "secrets:read:JIRA_API_TOKEN",
+        "secrets:read:JIRA_EMAIL",
+        "secrets:read:JIRA_BASE_URL",
+        "http:fetch:*.atlassian.net"
+      ],
+      "serverHandler": {
+        "timeoutSec": 15
+      },
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "description": "Issue title. Required."
+          },
+          "description": {
+            "type": "string",
+            "description": "Issue body (Atlassian Document Format text or plaintext)."
+          },
+          "projectKey": {
+            "type": "string",
+            "description": "Override the configured default Jira project key."
+          },
+          "issueType": {
+            "type": "string",
+            "description": "Issue type name (Task, Bug, Story\u2026). Defaults to configured value."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "If set, plugin auto-labels '<labelPrefix>-key-<value>' and searches for a pre-existing issue with that label before creating. Returns the existing issue key if found. Recommended source: feature_id, so re-runs (event replays, retries) don't duplicate issues."
+          }
+        },
+        "required": [
+          "summary"
+        ]
+      }
+    },
+    {
+      "name": "post-comment",
+      "label": "Post Jira comment",
+      "surfaces": [
+        "feature-row"
+      ],
+      "capabilities": [
+        "secrets:read:JIRA_API_TOKEN",
+        "secrets:read:JIRA_EMAIL",
+        "secrets:read:JIRA_BASE_URL",
+        "http:fetch:*.atlassian.net"
+      ],
+      "serverHandler": {
+        "timeoutSec": 10
+      },
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "issueKey": {
+            "type": "string",
+            "description": "Jira issue key, e.g. PRJ-42. Required."
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment text. Required."
+          }
+        },
+        "required": [
+          "issueKey",
+          "body"
+        ]
+      }
+    },
+    {
+      "name": "list-issues",
+      "label": "List Jira issues for harness",
+      "surfaces": [
+        "plugin-detail"
+      ],
+      "capabilities": [
+        "secrets:read:JIRA_API_TOKEN",
+        "secrets:read:JIRA_EMAIL",
+        "secrets:read:JIRA_BASE_URL",
+        "http:fetch:*.atlassian.net"
+      ],
+      "serverHandler": {
+        "timeoutSec": 15
+      },
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "jql": {
+            "type": "string",
+            "description": "Override the default 'labels = papercusp-{slug}' JQL."
+          }
+        }
+      }
+    }
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "defaultProjectKey": {
+        "type": "string",
+        "description": "Default Jira project key (e.g. ENG)."
+      },
+      "defaultIssueType": {
+        "type": "string",
+        "default": "Task",
+        "description": "Default issue type. 'Task' is universal across projects."
+      },
+      "labelPrefix": {
+        "type": "string",
+        "default": "papercusp",
+        "description": "Issues get auto-labeled '{prefix}-{harness-slug}' for filtering."
+      },
+      "createOnFeaturePassed": {
+        "type": "boolean",
+        "default": false,
+        "description": "When a feature passes, auto-create a Jira issue summarizing the change."
+      }
+    }
+  },
+  "icon": "CheckSquare"
+}

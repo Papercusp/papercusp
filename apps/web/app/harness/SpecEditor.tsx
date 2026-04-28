@@ -365,22 +365,24 @@ export default function SpecEditor({ slug, projectPath, alive, onClose, inline =
           ) : loading ? (
             <div style={{ padding: '2rem', color: '#9ca3af' }}>loading…</div>
           ) : simpleTab ? (
-            <Editor
-              height="100%"
-              language={tabMeta.language}
-              theme="vs-dark"
-              value={draft[simpleTab]}
-              onChange={(v) => setDraft((d) => ({ ...d, [simpleTab]: v ?? '' }))}
-              options={{
-                minimap: { enabled: false },
-                fontSize: 13,
-                wordWrap: 'on',
-                lineNumbers: 'on',
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                tabSize: 2,
-              }}
-            />
+            <div style={{ position: 'absolute', inset: 0 }}>
+              <Editor
+                height="100%"
+                language={tabMeta.language}
+                theme="vs-dark"
+                value={draft[simpleTab]}
+                onChange={(v) => setDraft((d) => ({ ...d, [simpleTab]: v ?? '' }))}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 13,
+                  wordWrap: 'on',
+                  lineNumbers: 'on',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  tabSize: 2,
+                }}
+              />
+            </div>
           ) : null}
           {onSettings && missing && simpleTab && !dirty.includes(simpleTab) && !isCollectionTab && (
             <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', background: '#111827', border: '1px solid #374151', padding: '0.35rem 0.65rem', borderRadius: 3, fontSize: '0.75rem', color: '#9ca3af' }}>

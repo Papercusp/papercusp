@@ -1,4 +1,21 @@
-# Papercusp
+# Papercusp web app — public framework copy
+
+> **Two-tree architecture (when read inside the `aviynw/Restart` monorepo).**
+> This directory is the **public-face copy** of the framework's web app.
+> Originally a `papercupai/papercusp` git submodule, it was vendored into
+> the parent repo in commit `636c4219` when `papercupai/*` repos became
+> unreachable; both trees now share the same git history.
+>
+> The active development tree for the same web app lives at `apps/papercusp/`
+> in the parent monorepo — features land there first and get promoted here
+> when stable.
+>
+> If this `libs/papercusp/` tree is ever re-extracted to a standalone repo
+> (e.g. when `papercupai/*` becomes accessible again, or when we re-publish
+> the framework), this `apps/web/` directory IS the canonical Papercusp web
+> app. Both versions share the same npm package name (`@papercusp/web`).
+>
+> See `ARCHITECTURE.md` in the parent monorepo for the full architecture.
 
 The open-source autonomous-harness framework — the hosted web app + marketplace API.
 
@@ -21,7 +38,7 @@ This app powers `papercuspai.com`. It serves:
   bin/papercusp-init-db.sh
   ```
 
-  This creates the `restart_harness` + `restart_harness_test` databases, the
+  This creates the `papercusp` + `papercusp_test` databases, the
   `harness_app` / `harness_admin` roles, and applies the framework DDL plus
   the Papercup demo's extra DDL.
 

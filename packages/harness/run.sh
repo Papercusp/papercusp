@@ -389,7 +389,7 @@ feature_set_status() {
         PGPASSWORD="${HARNESS_APP_PWD:-harness_app_pwd}" \
         PGOPTIONS="-c search_path=${schema},harness_shared,public" \
         psql -U "${HARNESS_APP_USER:-harness_app}" -h "${PGHOST:-localhost}" \
-             -d "${HARNESS_PG_DB:-restart_harness}" -q \
+             -d "${HARNESS_PG_DB:-papercusp}" -q \
              -c "UPDATE harness_features SET status = '$(printf '%s' "$status" | sed "s/'/''/g")', updated_ts = $(date +%s)000 WHERE feature_id = '$(printf '%s' "$fid" | sed "s/'/''/g")'" 2>/dev/null
         return 0
     fi
@@ -889,7 +889,7 @@ except Exception:
     fi
 }
 
-# 2026-04-26: features live in Postgres (restart_harness DB, harness_<slug>
+# 2026-04-26: features live in Postgres (papercusp DB, harness_<slug>
 # schema). These helpers prefer curl-to-API; if the web tier is down, they
 # fall back to direct psql against the per-harness schema.
 
@@ -928,7 +928,7 @@ features_json() {
         PGPASSWORD="${HARNESS_APP_PWD:-harness_app_pwd}" \
         PGOPTIONS="-c search_path=${schema},harness_shared,public" \
         psql -U "${HARNESS_APP_USER:-harness_app}" -h "${PGHOST:-localhost}" \
-             -d "${HARNESS_PG_DB:-restart_harness}" -At \
+             -d "${HARNESS_PG_DB:-papercusp}" -At \
              -c "SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) FROM (SELECT feature_id AS id, title, status, attempts, claims, summary, kind, project_id, expected_cost_cents, tags, needs_human_review FROM harness_features) t" 2>/dev/null || echo "[]"
         return 0
     fi
@@ -944,7 +944,7 @@ features_exist() {
         n="$(PGPASSWORD="${HARNESS_APP_PWD:-harness_app_pwd}" \
             PGOPTIONS="-c search_path=${schema},harness_shared,public" \
             psql -U "${HARNESS_APP_USER:-harness_app}" -h "${PGHOST:-localhost}" \
-                 -d "${HARNESS_PG_DB:-restart_harness}" -At \
+                 -d "${HARNESS_PG_DB:-papercusp}" -At \
                  -c "SELECT COUNT(*) FROM harness_features" 2>/dev/null)"
         [ "${n:-0}" -gt 0 ]
         return $?
@@ -973,7 +973,7 @@ else:
         n="$(PGPASSWORD="${HARNESS_APP_PWD:-harness_app_pwd}" \
             PGOPTIONS="-c search_path=${schema},harness_shared,public" \
             psql -U "${HARNESS_APP_USER:-harness_app}" -h "${PGHOST:-localhost}" \
-                 -d "${HARNESS_PG_DB:-restart_harness}" -At \
+                 -d "${HARNESS_PG_DB:-papercusp}" -At \
                  -c "SELECT COALESCE(attempts,0) FROM harness_features WHERE feature_id = '$(printf '%s' "$fid" | sed "s/'/''/g")'" 2>/dev/null)"
         echo "${n:-0}"
         return 0
@@ -1207,64 +1207,103 @@ except Exception:
     [ -f "$STATE_DIR/memory/summary.md" ] || : > "$STATE_DIR/memory/summary.md"
     [ -f "$STATE_DIR/memory/MEMORY.md" ] || : > "$STATE_DIR/memory/MEMORY.md"
 
-    {
-        cat "$prompt_file"
-        if [ -n "$role_prompt_override" ]; then
-            echo
-            echo "---"
-            echo "## Droid specialization (from .harness/config.json → promptOverrides.$role)"
-            echo
-            printf '%s\n' "$role_prompt_override"
-        fi
-
-        # Inject curated memory into every role except the curator itself.
-        # Keeps prompts small (summary.md is capped at 40 lines) while giving
-        # fresh-context agents the lessons from prior iterations.
-        if [ "$role" != "curator" ] && [ -s "$STATE_DIR/memory/summary.md" ]; then
-            echo
-            echo "---"
-            echo "## Memory (curated from prior iterations of this run)"
-            echo
-            cat "$STATE_DIR/memory/summary.md"
-        fi
-
-        # Inject per-role IDENTITY (cross-mission, Agent-Swarm-inspired).
-        # Maintained by curator. Contains patterns/failures from ALL prior missions,
-        # not just this one. Bounded by curator's compaction pass.
-        identity_file="$HARNESS_DIR/identity/${role}.md"
-        if [ -f "$identity_file" ] && [ -s "$identity_file" ]; then
-            echo
-            echo "---"
-            echo "## Your identity (cross-mission memory for the $role role)"
-            echo
-            cat "$identity_file"
-        fi
-
-        echo
-        echo "---"
-        echo "## Runtime context"
-        echo
+    # Prompt-assembly path. Default: bash assembles inline below (the legacy
+    # path, identical to what's been shipping). When PAPERCUSP_USE_TS_PROMPT_ASSEMBLY=1
+    # is set, shells out to the TS `assemble-prompt` CLI which uses the same
+    # `assembleRolePrompt()` function the chat endpoint and PM dispatch use,
+    # eliminating drift. The TS path is opt-in until parity is verified in the
+    # wild — flip the env flag to enable.
+    local _slug; _slug="$(harness_slug)"
+    local _ts_assembler="$HARNESS_DIR/../orchestrator/bin/assemble-prompt.ts"
+    if [ "${PAPERCUSP_USE_TS_PROMPT_ASSEMBLY:-0}" = "1" ] && [ -f "$_ts_assembler" ]; then
+        # Build --extra args from the original positional context lines.
+        local _extras_args=()
         for extra in "$@"; do
-            echo "- $extra"
+            _extras_args+=( --extra "$extra" )
         done
         if [ -n "$cwd_override" ]; then
-            echo "- Working directory: $cwd_override (worktree for $feature_id)"
-            echo "- Project root: $PROJECT_DIR (reference only — you edit the worktree)"
+            _extras_args+=( --extra "Working directory: $cwd_override (worktree for $feature_id)" )
+            _extras_args+=( --extra "Project root: $PROJECT_DIR (reference only — you edit the worktree)" )
+        fi
+        # Capture into a temp file then pipe (cleaner stderr handling, easier to debug).
+        local _prompt_tmp; _prompt_tmp="$(mktemp)"
+        if npx tsx "$_ts_assembler" \
+                --slug "$_slug" \
+                --role "$role" \
+                ${feature_id:+--feature-id "$feature_id"} \
+                --run-id "$run_id" \
+                "${_extras_args[@]}" \
+                > "$_prompt_tmp" 2>>"$err"; then
+            ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2>> "$err" ) < "$_prompt_tmp"
+            rm -f "$_prompt_tmp"
         else
-            echo "- Working directory: $PROJECT_DIR"
+            log "  role=$role TS prompt-assembly failed (rc=$?), falling back to bash inline"
+            rm -f "$_prompt_tmp"
+            # Fall through to bash inline path below by setting a sentinel.
+            export _PAPERCUSP_TS_ASSEMBLY_FAILED=1
         fi
-        echo "- State directory: $STATE_DIR (all coordination files live here; shared across worktrees if any)"
-        echo "- Run ID: $run_id"
-        if [ "$role" != "curator" ]; then
-            echo "- **Memory discipline:** at the end of your work, if you learned something"
-            echo "  actionable for future iterations (a technique that works, a library that"
-            echo "  doesn't, an invariant that tripped you up), append ONE line to"
-            echo "  \`.harness/memory/raw.md\` in the format:"
-            echo "  \`[<ISO-8601-timestamp>] $role <feature_id-or-dash>: <one-line observation>\`"
-            echo "  Do not dump logs. Do not duplicate existing lines. Skip silently if you"
-            echo "  have nothing generalizable to add."
-        fi
-    } | ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2> "$err" )
+    fi
+    if [ "${PAPERCUSP_USE_TS_PROMPT_ASSEMBLY:-0}" != "1" ] || [ "${_PAPERCUSP_TS_ASSEMBLY_FAILED:-0}" = "1" ]; then
+        unset _PAPERCUSP_TS_ASSEMBLY_FAILED
+        {
+            cat "$prompt_file"
+            if [ -n "$role_prompt_override" ]; then
+                echo
+                echo "---"
+                echo "## Droid specialization (from .harness/config.json → promptOverrides.$role)"
+                echo
+                printf '%s\n' "$role_prompt_override"
+            fi
+
+            # Inject curated memory into every role except the curator itself.
+            # Keeps prompts small (summary.md is capped at 40 lines) while giving
+            # fresh-context agents the lessons from prior iterations.
+            if [ "$role" != "curator" ] && [ -s "$STATE_DIR/memory/summary.md" ]; then
+                echo
+                echo "---"
+                echo "## Memory (curated from prior iterations of this run)"
+                echo
+                cat "$STATE_DIR/memory/summary.md"
+            fi
+
+            # Inject per-role IDENTITY (cross-mission, Agent-Swarm-inspired).
+            # Maintained by curator. Contains patterns/failures from ALL prior missions,
+            # not just this one. Bounded by curator's compaction pass.
+            identity_file="$HARNESS_DIR/identity/${role}.md"
+            if [ -f "$identity_file" ] && [ -s "$identity_file" ]; then
+                echo
+                echo "---"
+                echo "## Your identity (cross-mission memory for the $role role)"
+                echo
+                cat "$identity_file"
+            fi
+
+            echo
+            echo "---"
+            echo "## Runtime context"
+            echo
+            for extra in "$@"; do
+                echo "- $extra"
+            done
+            if [ -n "$cwd_override" ]; then
+                echo "- Working directory: $cwd_override (worktree for $feature_id)"
+                echo "- Project root: $PROJECT_DIR (reference only — you edit the worktree)"
+            else
+                echo "- Working directory: $PROJECT_DIR"
+            fi
+            echo "- State directory: $STATE_DIR (all coordination files live here; shared across worktrees if any)"
+            echo "- Run ID: $run_id"
+            if [ "$role" != "curator" ]; then
+                echo "- **Memory discipline:** at the end of your work, if you learned something"
+                echo "  actionable for future iterations (a technique that works, a library that"
+                echo "  doesn't, an invariant that tripped you up), append ONE line to"
+                echo "  \`.harness/memory/raw.md\` in the format:"
+                echo "  \`[<ISO-8601-timestamp>] $role <feature_id-or-dash>: <one-line observation>\`"
+                echo "  Do not dump logs. Do not duplicate existing lines. Skip silently if you"
+                echo "  have nothing generalizable to add."
+            fi
+        } | ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2> "$err" )
+    fi
     local rc=$?
     if [ "$rc" = "124" ]; then
         log "  role=$role TIMED OUT after ${timeout_seconds}s (rc=124)"
@@ -1348,7 +1387,7 @@ if [ ! -f "$STATE_DIR/validation-contract.md" ] || ! features_exist; then
         PGUSER="${HARNESS_APP_USER:-harness_app}" \
         PGPASSWORD="${HARNESS_APP_PWD:-harness_app_pwd}" \
         PGHOST="${PGHOST:-localhost}" \
-        PGDATABASE="${HARNESS_PG_DB:-restart_harness}" \
+        PGDATABASE="${HARNESS_PG_DB:-papercusp}" \
         python3 -c '
 import json, os, sys, time, subprocess
 slug = os.environ["SLUG"]

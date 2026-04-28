@@ -15,10 +15,10 @@
  * replacement for the bash version when PAPERCUSP_USE_TS_ORCHESTRATOR=1.
  */
 import { spawnSync } from 'node:child_process';
-import { configGet, readConfig } from './config.js';
-import { parseDecision } from './decision-parse.js';
-import { invoke } from './invoke.js';
-import { featureAttempts, setFeatureStatus } from './state.js';
+import { configGet, readConfig } from './config';
+import { parseDecision } from './decision-parse';
+import { invoke } from './invoke';
+import { featureAttempts, readFeatures, setFeatureStatus } from './state';
 import {
   branchIsoPostValidator,
   branchIsoPostWorker,
@@ -26,15 +26,15 @@ import {
   branchIsoPreWorker,
   worktreeEnabled,
   worktreePath,
-} from './branch-iso.js';
-import { runHook } from './hooks.js';
-import { processActionsBlock } from './actions-block.js';
-import { evaluateCostCap } from './cost-cap.js';
-import { pruneLogs } from './prune-logs.js';
-import { snapshotState } from './snapshot-state.js';
-import { runPreLoop } from './pre-loop.js';
-import { checkpointGate } from './checkpoints.js';
-import { firePluginHook } from './plugin-hooks.js';
+} from './branch-iso';
+import { runHook } from './hooks';
+import { processActionsBlock } from './actions-block';
+import { evaluateCostCap } from './cost-cap';
+import { pruneLogs } from './prune-logs';
+import { snapshotState } from './snapshot-state';
+import { runPreLoop } from './pre-loop';
+import { checkpointGate } from './checkpoints';
+import { firePluginHook } from './plugin-hooks';
 import {
   competitionManifestPath,
   createLanePool,
@@ -44,15 +44,26 @@ import {
   parseCompetitionVerdict,
   readCompetitionManifest,
   writeCompetitionManifest,
-} from './lanes.js';
-import type { LanePool } from './lanes.js';
-import { git } from './git.js';
-import { branchIsoBase, worktreePath } from './branch-iso.js';
-import type { InvokeContext } from './invoke.js';
-import type { Logger } from './log.js';
-import type { ParsedDecision } from './decision-parse.js';
+} from './lanes';
+import type { LanePool } from './lanes';
+import { git } from './git';
+import { branchIsoBase, worktreePath } from './branch-iso';
+import type { InvokeContext } from './invoke';
+import type { Logger } from './log';
+import type { ParsedDecision } from './decision-parse';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+/** Fire a Papercusp plugin lifecycle hook with InvokeContext defaults. */
+function fireLifecycleHook(ctx: InvokeContext, hookName: string, log: (m: string) => void): void {
+  firePluginHook({
+    hookName,
+    projectDir: ctx.projectDir,
+    stateDir: ctx.stateDir,
+    pluginsLogPath: join(ctx.logDir, 'plugins.log'),
+    log,
+  });
+}
 
 export interface MainLoopExit {
   /** Process exit code matching bash semantics. */
@@ -97,6 +108,26 @@ export async function runMainLoop(opts: MainLoopOptions): Promise<MainLoopExit> 
   const cfg = readConfig(ctx.stateDir);
   const primaryRole = configGet<string>(cfg, 'primaryRole', 'orchestrator');
 
+  // Plugin lifecycle: onLoad fires once at orchestrator startup; onUnload
+  // fires once at orchestrator shutdown via try/finally below. Fired even
+  // if the run aborts so plugins can clean up.
+  fireLifecycleHook(ctx, 'onLoad', logger.log);
+  try {
+    return await runMainLoopBody(opts, ctx, logger, sleep, cfg, primaryRole, maxIterations);
+  } finally {
+    fireLifecycleHook(ctx, 'onUnload', logger.log);
+  }
+}
+
+async function runMainLoopBody(
+  opts: MainLoopOptions,
+  ctx: InvokeContext,
+  logger: Logger,
+  sleep: (ms: number) => Promise<void>,
+  cfg: ReturnType<typeof readConfig>,
+  primaryRole: string,
+  maxIterations: number,
+): Promise<MainLoopExit> {
   // Pre-loop: scoper, plan-reviewer, ensure-docs, post-planner checkpoints,
   // worktree prune.
   if (opts.skipPreLoop !== true) {
@@ -125,11 +156,15 @@ export async function runMainLoop(opts: MainLoopOptions): Promise<MainLoopExit> 
   // is the cap; default 1 (sequential).
   const lanePool = createLanePool(ctx.stateDir, parallelMaxWorkers(cfg));
 
+  // Fire Papercusp plugin lifecycle: beforeMissionStart.
+  fireLifecycleHook(ctx, 'beforeMissionStart', logger.log);
+
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     logger.log(`── iteration ${iteration} ──`);
 
     // 1. Invoke the primary advancing role.
     const decisionResult = await invoke(ctx, primaryRole);
+    fireLifecycleHook(ctx, 'onPostOrchestrator', logger.log);
     const parsed = parseDecision(decisionResult.output);
 
     if (parsed === null) {
@@ -471,6 +506,7 @@ async function handleNextWorker(
     },
     log: logger.log,
   });
+  fireLifecycleHook(ctx, 'onPostWorker', logger.log);
 
   branchIsoPostWorker(branchIsoCtx, fid);
   return { terminal: false, exitCode: 0, reason: 'idle' };
@@ -533,6 +569,12 @@ async function handleNextValidator(
       }
     : ctx;
 
+  // Capture pre-validator status set so we can detect transitions to
+  // 'passed' after the validator returns. Validator updates features.json
+  // directly; this is the cheapest way to surface the per-feature event.
+  const beforeStatus = new Map<string, string>();
+  for (const f of readFeatures(ctx.stateDir)) beforeStatus.set(f.id, f.status);
+
   let validatorRc = 0;
   try {
     const r = await invoke(worktreedCtx, 'validator', [`FEATURE_ID=${fid}`]);
@@ -556,6 +598,23 @@ async function handleNextValidator(
     },
     log: logger.log,
   });
+  fireLifecycleHook(ctx, 'onPostValidator', logger.log);
+
+  // Pattern 1 — onFeaturePassed fires per newly-passed feature. Diff before
+  // vs after to find features that transitioned status → 'passed'. Each
+  // fire passes --feature-id=... so plugin scripts can target the event.
+  for (const f of readFeatures(ctx.stateDir)) {
+    if (f.status === 'passed' && beforeStatus.get(f.id) !== 'passed') {
+      firePluginHook({
+        hookName: 'onFeaturePassed',
+        projectDir: ctx.projectDir,
+        stateDir: ctx.stateDir,
+        pluginsLogPath: join(ctx.logDir, 'plugins.log'),
+        log: logger.log,
+        extraFlags: [`--feature-id=${f.id}`],
+      });
+    }
+  }
 
   // Validator updates features.json itself; branchIsoPostValidator reads
   // the (possibly-just-changed) status and merges/PRs on PASS.

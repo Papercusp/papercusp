@@ -10,8 +10,8 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { configGet } from './config.js';
-import type { HarnessConfig } from './types.js';
+import { configGet } from './config';
+import type { HarnessConfig } from './types';
 
 export interface SnapshotResult {
   /** Path to the new snapshot dir (or null if the source state didn't exist). */

@@ -22,11 +22,25 @@ export interface ComponentRef {
   componentId: string;
 }
 
-export interface DashboardTabContribution extends ComponentRef {
+/**
+ * Pattern 1 — a plugin tab can ship as either an in-process React component
+ * (componentRoot + componentId) or an iframe URL. PluginTabs picks the
+ * render mode at component-mount time based on which is present.
+ *
+ * If both are set, the host prefers iframeUrl (cheaper to validate at
+ * runtime; no rebuild required to update). `replaces` lets a plugin tab
+ * supersede a built-in dashboard tab id (docs/vscode/pi/etc.); the
+ * dashboard hides the built-in version when a replacement is present.
+ */
+export interface DashboardTabContribution {
   pluginName: string;
   id: string;
   label: string;
   icon?: string;
+  componentRoot?: string;
+  componentId?: string;
+  iframeUrl?: string;
+  replaces?: string[];
 }
 
 export interface SidebarItemContribution {

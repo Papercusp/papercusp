@@ -211,6 +211,10 @@ export default function FeatureList({
             )}
           </div>
 
+          <button type="button" className="h-feature-add" onClick={onAdd}>
+            + new
+          </button>
+
           {/* Item 7: project filter dropdown (small fixed list) */}
           {projectOptions.length > 0 && (
             <select
@@ -264,10 +268,6 @@ export default function FeatureList({
               );
             })}
           </div>
-
-          <button type="button" className="h-feature-add" onClick={onAdd}>
-            + new
-          </button>
         </div>
       </div>
 

@@ -10,8 +10,8 @@
  */
 import { existsSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { configGet } from './config.js';
-import type { HarnessConfig } from './types.js';
+import { configGet } from './config';
+import type { HarnessConfig } from './types';
 
 export interface PruneResult {
   /** Files kept after prune. */

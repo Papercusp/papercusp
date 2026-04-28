@@ -1,7 +1,7 @@
 /**
  * Drizzle Postgres schema for the Papercusp framework's storage system.
  *
- * Layout (database = `restart_harness`, will rename to `papercusp` in a later stage):
+ * Layout (database = `papercusp`, will rename to `papercusp` in a later stage):
  *   harness_shared           ← framework cross-cutting tables
  *     ├── audit_log
  *     ├── projects

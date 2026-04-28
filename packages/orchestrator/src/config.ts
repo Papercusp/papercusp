@@ -12,7 +12,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { HarnessConfig } from './types.js';
+import type { HarnessConfig } from './types';
 
 /** Read .harness/config.json from a project state dir. Returns {} if absent. */
 export function readConfig(stateDir: string): HarnessConfig {

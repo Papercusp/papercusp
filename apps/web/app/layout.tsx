@@ -11,9 +11,15 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+      </head>
       <body>
         <header className="pc-header">
-          <a href="/" className="brand">PAPERCUSP</a>
+          <a href="/" className="brand" aria-label="papercusp" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <img src="/mascot.svg" alt="" width={28} height={28} />
+            <img src="/wordmark.svg" alt="papercusp" height={22} />
+          </a>
           <nav>
             <a href="/marketplace">Marketplace</a>
             <a href="/settings/api-keys">Settings</a>

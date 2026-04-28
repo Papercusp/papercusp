@@ -1,0 +1,65 @@
+{
+  "name": "@papercupai/cloudflare-pages",
+  "version": "0.1.0",
+  "kind": "plugin",
+  "papercusp": "^0.1.0",
+  "description": "Publish the harness's static export to Cloudflare Pages on mission-done. Demonstrates the action primitive + capability-gated secrets + http:fetch.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "capabilities": [
+    "secrets:read:CLOUDFLARE_API_TOKEN",
+    "http:fetch:api.cloudflare.com",
+    "ui:dashboard-tab",
+    "events:listen:mission-done"
+  ],
+  "actions": [
+    {
+      "name": "publish",
+      "label": "Publish to Cloudflare Pages",
+      "surfaces": ["mission-done", "harness-toolbar"],
+      "capabilities": [
+        "secrets:read:CLOUDFLARE_API_TOKEN",
+        "http:fetch:api.cloudflare.com"
+      ],
+      "serverHandler": {
+        "timeoutSec": 120
+      },
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "dryRun": { "type": "boolean", "default": false }
+        }
+      }
+    }
+  ],
+  "configSchema": {
+    "type": "object",
+    "required": ["accountId", "projectName"],
+    "properties": {
+      "accountId": {
+        "type": "string",
+        "minLength": 4,
+        "description": "Cloudflare account UUID."
+      },
+      "projectName": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The Pages project to deploy to."
+      },
+      "exportDir": {
+        "type": "string",
+        "default": "out",
+        "description": "Static export directory under the harness's project root."
+      },
+      "branch": {
+        "type": "string",
+        "default": "main",
+        "description": "Branch label for the deployment."
+      }
+    }
+  },
+  "uiSchema": {
+    "accountId": { "ui:help": "Find at dash.cloudflare.com → right sidebar." },
+    "projectName": { "ui:help": "Must already exist in your Cloudflare account." }
+  }
+}

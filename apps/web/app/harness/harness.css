@@ -3,7 +3,11 @@
  * (--bg, --fg, --good, --bad, --border, --dur-*, etc.) */
 
 .h-root {
-  height: calc(100vh - var(--app-nav-height));
+  /* Fallback to 49px (papercusp's pc-header height) when --app-nav-height
+     is undefined. Without the fallback the calc() is invalid and height
+     reverts to auto, which sizes to content — collapsing the dashboard
+     and leaving empty space below the tables. */
+  height: calc(100vh - var(--app-nav-height, 49px));
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -815,7 +819,7 @@
   flex-shrink: 0;
 }
 
-.h-issue-open {
+.h-issue-open-affordance {
   opacity: 0;
   transform: translateX(-2px);
   border: 1px solid color-mix(in oklab, var(--accent), transparent 62%);
@@ -830,8 +834,8 @@
   transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out);
 }
 
-.h-issue:hover .h-issue-open,
-.h-issue:focus-visible .h-issue-open {
+.h-issue:hover .h-issue-open-affordance,
+.h-issue:focus-visible .h-issue-open-affordance {
   opacity: 1;
   transform: translateX(0);
 }
@@ -3199,7 +3203,7 @@
     flex-wrap: wrap;
   }
 
-  .h-issue-open {
+  .h-issue-open-affordance {
     display: none;
   }
 }
@@ -3377,7 +3381,7 @@
   line-height: 1.35;
 }
 
-.h-issue-open {
+.h-issue-open-affordance {
   display: none;
 }
 
@@ -3605,7 +3609,7 @@
 
   nav.top .nav-flyout {
     position: fixed;
-    top: calc(var(--app-nav-height) + 6px);
+    top: calc(var(--app-nav-height, 49px) + 6px);
     left: 8px;
     right: 8px;
     width: auto;
@@ -3924,7 +3928,7 @@
 /* ── Embedded-in-Papercup overrides ─────────────────────────────
    When the harness dashboard is mounted inside `/papercup/harnesses`,
    Papercup's sticky tab bar sits above `.h-root`, eating ~92px. The
-   default `height: calc(100vh - var(--app-nav-height))` overshoots
+   default `height: calc(100vh - var(--app-nav-height, 49px))` overshoots
    the available space. After subtracting the harness's own chrome
    (header + phase strip + mission overview ≈ 430px), the inner
    `.h-main-shell` collapses to ~120px — too small for the Proposals
@@ -3936,16 +3940,16 @@
    their normal useful size instead of being squeezed under the Papercup
    tabs/header chrome. */
 .papercup-route .h-root {
-  height: auto;
-  min-height: max(
-    calc(100vh - var(--app-nav-height) - 92px),
-    1260px
-  );
+  /* Fill the iframe viewport. The papercup tab bar above .h-root measures
+     ~116px at standalone desktop widths but wraps to ~132px when the
+     iframe is narrower (e.g. embedded in /papercup inside admin shell
+     with the git history sidebar). Subtract the wrapped height so the
+     embed case fits without scroll; the standalone case gets a small
+     gap which is acceptable. Floor at 720px for very short viewports. */
+  height: calc(100dvh - 132px);
+  min-height: 720px;
 }
 
-.papercup-route .h-main-shell.dashboard {
-  min-height: 760px;
-}
 /* Promote the shell to a flex container so its inner panel layout
    gets the full computed height. The inner JSX uses `height: 100%`
    inline which doesn't resolve in a `display: block` parent whose own
@@ -3956,22 +3960,12 @@
 .papercup-route .h-main-shell.embed {
   display: flex;
   flex-direction: column;
-  min-height: 760px;
+  min-height: 0;
 }
 .papercup-route .h-main-shell.dashboard > *,
 .papercup-route .h-main-shell.embed > * {
   flex: 1;
   min-height: 0;
-}
-/* Embed views (Proposals, Summary, Insights, Config…) host a single
-   panel with internal scroll. Without an upper bound, panel content
-   like the long Markdown body in Proposals pushes the chain unbounded
-   and ruins the side-by-side list/detail layout. Cap embed at the
-   panel floor so the inner overflow:auto regions actually scroll.
-   Dashboard view doesn't get the cap — its four panels collectively
-   need more vertical real estate. */
-.papercup-route .h-main-shell.embed {
-  max-height: 760px;
 }
 
 
@@ -3980,7 +3974,7 @@
    ReactFlow wheel-panning was cramped there and could trap scroll direction;
    this list keeps branch/lane signal while using normal browser scrolling. */
 .h-git-panel {
-  height: min(760px, calc(100vh - var(--app-nav-height) - 140px));
+  height: min(760px, calc(100vh - var(--app-nav-height, 49px) - 140px));
   min-height: 420px;
   max-height: 760px;
   min-width: 0;
@@ -4236,7 +4230,7 @@
    useful, just like the Papercup embed override above. */
 .h-root:has(.h-proposals-panel) {
   height: auto;
-  min-height: max(calc(100vh - var(--app-nav-height)), 1040px);
+  min-height: max(calc(100vh - var(--app-nav-height, 49px)), 1040px);
 }
 .h-main-shell.embed:has(.h-proposals-panel) {
   min-height: 760px;
@@ -4907,12 +4901,15 @@
 
 /* Standalone /harness has enough mission chrome to squeeze the dashboard left
    pane into a tiny strip. When the Architect Inbox is visible, let the page
-   grow and give the dashboard grid the same readable floor used in Papercup. */
-.h-root:has([data-harness-inbox]) {
+   grow and give the dashboard grid the same readable floor used in Papercup.
+   Scope: standalone /harness only. /papercup uses iframe-bounded sizing
+   (see .papercup-route .h-root above) and would scroll-overflow under this
+   1260px floor, so we exclude it here. */
+.h-root:has([data-harness-inbox]):not(.papercup-route .h-root) {
   height: auto;
-  min-height: max(calc(100vh - var(--app-nav-height)), 1260px);
+  min-height: max(calc(100vh - var(--app-nav-height, 49px)), 1260px);
 }
-.h-main-shell.dashboard:has([data-harness-inbox]) {
+.h-main-shell.dashboard:has([data-harness-inbox]):not(.papercup-route .h-main-shell.dashboard) {
   min-height: 760px;
 }
 
@@ -6557,6 +6554,13 @@
   flex: 1 1 auto;
   min-height: 760px;
 }
+/* In /papercup the grid is bounded by the iframe viewport (~908px tall),
+   most of which is consumed by the harness chrome. The 760px floor would
+   force scroll past the iframe edge, leaving the grid bottom hidden.
+   Let the grid flex into the actual remaining space instead. */
+.papercup-route .h-dashboard-grid {
+  min-height: 0;
+}
 .h-compact-dashboard {
   flex: 1 1 auto;
   min-height: 0;
@@ -6899,5 +6903,381 @@
   }
   .h-proposal-toolbar-controls .h-proposal-hotkeys {
     display: none;
+  }
+}
+
+/* Papercusp harness polish: richer workspace rail and calmer panel chrome without changing behavior. */
+.h-tabs.h-main-tabs {
+  margin: 10px 24px 0;
+  padding: 8px 12px 0;
+  border: 1px solid color-mix(in oklab, var(--border), white 8%);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg), white 5%), color-mix(in oklab, var(--bg), transparent 0%));
+  box-shadow: 0 14px 32px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.025);
+  backdrop-filter: blur(14px);
+  mask-image: none;
+}
+
+.h-main-tabs .h-tab {
+  min-height: 40px;
+  padding: 10px 15px 11px;
+  border-radius: 12px 12px 0 0;
+  border: 1px solid transparent;
+  color: color-mix(in oklab, var(--fg-dim), white 10%);
+  gap: 7px;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.h-main-tabs .h-tab:hover:not([disabled]) {
+  color: var(--fg);
+  background: color-mix(in oklab, var(--bg-2), white 4%);
+  border-color: color-mix(in oklab, var(--border), white 10%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+.h-main-tabs .h-tab.on {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 5%), color-mix(in oklab, var(--bg-2), white 1%));
+  border-color: color-mix(in oklab, var(--border), white 10%);
+  border-bottom-color: color-mix(in oklab, var(--bg-2), white 1%);
+  color: var(--fg);
+  box-shadow: 0 -10px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.03);
+  transform: translateY(-1px);
+}
+
+.h-main-tabs .h-tab.on::after {
+  left: 14px;
+  right: 14px;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--accent), white 6%), color-mix(in oklab, var(--accent), white 24%));
+  box-shadow: 0 0 18px color-mix(in oklab, var(--accent), transparent 56%);
+}
+
+.h-tab-count {
+  border: 1px solid color-mix(in oklab, var(--border), white 10%);
+  background: color-mix(in oklab, var(--bg-3), white 2%);
+  color: color-mix(in oklab, var(--fg-dim), white 14%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+.h-main-tabs .h-tab.on .h-tab-count {
+  border-color: color-mix(in oklab, var(--accent), transparent 62%);
+  background: color-mix(in oklab, var(--accent), transparent 86%);
+  color: color-mix(in oklab, var(--accent), white 14%);
+}
+
+.h-panel {
+  border-radius: 16px;
+  border-color: color-mix(in oklab, var(--border), white 8%);
+  box-shadow: 0 18px 44px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+.h-panel-head {
+  min-height: 36px;
+  padding: 9px 12px;
+  border-bottom-color: color-mix(in oklab, var(--border), white 6%);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 6%), color-mix(in oklab, var(--bg-2), white 1%));
+}
+
+.h-panel-title {
+  color: color-mix(in oklab, var(--fg-dim), white 22%);
+  font-weight: 700;
+  letter-spacing: 0.11em;
+}
+
+.h-panel-count {
+  color: color-mix(in oklab, var(--fg-dim), white 10%);
+}
+
+.h-bsfull-subtabs {
+  gap: 6px;
+  margin-left: 12px;
+  padding: 2px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--bg-3), transparent 8%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+.h-bsfull-sub {
+  min-height: 30px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border-color: transparent;
+  color: color-mix(in oklab, var(--fg-dim), white 10%);
+}
+
+.h-bsfull-sub:hover {
+  background: color-mix(in oklab, var(--bg-3), white 4%);
+}
+
+.h-bsfull-sub.on {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 6%), color-mix(in oklab, var(--bg-2), white 1%));
+  border-color: color-mix(in oklab, var(--border), white 10%);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.14);
+}
+
+.h-bsfull-caption {
+  color: color-mix(in oklab, var(--fg-dim), white 14%);
+}
+
+.h-bsfull-live {
+  border-color: color-mix(in oklab, var(--good), transparent 60%);
+  background: color-mix(in oklab, var(--good), transparent 92%);
+}
+@media (max-width: 760px) {
+  .h-tabs.h-main-tabs {
+    margin: 8px 12px 0;
+    padding: 7px 10px 0;
+    border-radius: 14px 14px 0 0;
+  }
+
+  .h-main-tabs .h-tab {
+    min-height: 36px;
+    padding: 8px 12px 10px;
+  }
+
+  .h-bsfull-subtabs {
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .h-bsfull-subtabs::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Papercusp harness refinement pass 2: elevate the main workspace tabs further. */
+.h-tabs.h-main-tabs {
+  gap: 8px;
+  padding: 9px 14px 2px;
+  border-color: color-mix(in oklab, var(--border), white 10%);
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in oklab, var(--accent), transparent 93%), transparent 15rem),
+    linear-gradient(180deg, color-mix(in oklab, var(--bg), white 6%), color-mix(in oklab, var(--bg), transparent 0%));
+  box-shadow: 0 18px 36px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.h-main-tabs .h-tab {
+  position: relative;
+  isolation: isolate;
+  min-height: 42px;
+  padding: 10px 16px 12px;
+  color: color-mix(in oklab, var(--fg-dim), white 14%);
+  letter-spacing: 0.09em;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.28);
+}
+
+.h-main-tabs .h-tab svg {
+  width: 14px;
+  height: 14px;
+  color: color-mix(in oklab, var(--fg-dim), white 10%);
+  opacity: 0.88;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.18));
+  transition: color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.h-main-tabs .h-tab:hover:not([disabled]) svg,
+.h-main-tabs .h-tab.on svg {
+  color: color-mix(in oklab, var(--accent), white 8%);
+  opacity: 1;
+}
+
+.h-main-tabs .h-tab:hover:not([disabled]) {
+  transform: translateY(-1px);
+}
+
+.h-main-tabs .h-tab.on {
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 7%), color-mix(in oklab, var(--bg-2), white 1%)),
+    radial-gradient(circle at 50% 0%, color-mix(in oklab, var(--accent), transparent 90%), transparent 72%);
+  box-shadow: 0 -12px 26px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.h-main-tabs .h-tab.on::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 6px;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+}
+
+.h-main-tabs .h-tab.on::after {
+  left: 16px;
+  right: 16px;
+  bottom: 4px;
+  height: 3px;
+}
+
+.h-tab-count {
+  min-width: 20px;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 9px;
+  letter-spacing: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+@media (max-width: 760px) {
+  .h-tabs.h-main-tabs {
+    gap: 6px;
+    padding: 8px 10px 2px;
+  }
+
+  .h-main-tabs .h-tab {
+    min-height: 37px;
+    padding: 8px 12px 10px;
+    letter-spacing: 0.08em;
+  }
+
+  .h-main-tabs .h-tab svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .h-main-tabs .h-tab.on::after {
+    left: 14px;
+    right: 14px;
+  }
+}
+
+/* Papercusp harness targeted layout fixes: feature queue header, inbox actions, and issue readability. */
+.h-feature-toolrow {
+  width: min(620px, 82%);
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.h-feature-toolrow::-webkit-scrollbar {
+  display: none;
+}
+
+.h-feature-search {
+  flex: 1 1 auto;
+  min-width: 170px;
+}
+
+.h-feature-add,
+.h-feature-result-count,
+.h-feature-mode,
+.h-feature-toolrow > select,
+.h-feature-toolrow > input[aria-label="Filter by tag"] {
+  flex: 0 0 auto;
+}
+
+.h-feature-add {
+  white-space: nowrap;
+}
+
+.h-feature-result-count {
+  white-space: nowrap;
+}
+
+.h-feature-mode {
+  min-width: max-content;
+}
+
+.h-inbox-top-actions {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  max-width: none;
+}
+
+.h-issue {
+  align-items: start;
+}
+
+.h-issue-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+  line-height: 1.28;
+}
+
+.h-issue-meta {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.h-issue-right {
+  align-self: start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+@media (max-width: 760px) {
+  .h-feature-toolrow {
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 4px;
+    grid-template-areas:
+      "search add add"
+      "mode mode mode";
+    overflow: visible;
+  }
+
+  .h-feature-search { grid-area: search; }
+  .h-feature-add { grid-area: add; }
+  .h-feature-mode { grid-area: mode; width: 100%; }
+
+  .h-inbox-top-actions {
+    max-width: none;
+  }
+}
+
+/* Papercusp harness follow-up: keep Architect inbox top actions on a single line. */
+.h-inbox-command-top {
+  align-items: center;
+}
+
+.h-inbox-top-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+  max-width: none;
+}
+
+.h-inbox-top-actions .h-inbox-action {
+  min-height: 23px;
+  padding-inline: 6px;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .h-inbox-command-top {
+    align-items: flex-start;
+  }
+
+  .h-inbox-top-actions {
+    justify-content: flex-start;
+  }
+}
+
+.h-inbox-top-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  width: max-content;
+  min-width: max-content;
+}
+@media (max-width: 760px) {
+  .h-inbox-top-actions {
+    width: auto;
+    min-width: 0;
   }
 }

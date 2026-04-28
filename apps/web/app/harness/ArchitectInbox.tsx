@@ -280,8 +280,8 @@ export default function ArchitectInbox({ slug, onFeatureFocus }: Props) {
             <button type="button" className="h-inbox-action ghost" onClick={loadReviews} disabled={loading}>
               {loading ? 'syncing' : 'sync'}
             </button>
-            <button type="button" className="h-inbox-action ghost" onClick={openLatest} disabled={!latestTarget}>latest</button>
             <button type="button" className="h-inbox-action primary" onClick={() => openComposer()}>+ idea</button>
+            <button type="button" className="h-inbox-action ghost" onClick={openLatest} disabled={!latestTarget}>latest</button>
           </div>
         </div>
 

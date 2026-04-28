@@ -3,8 +3,9 @@
  *
  *   Step 1   — invoke scoper MODE=initial when validation-contract.md or
  *              features.json is missing (fresh-mission setup)
- *   Step 1.5 — invoke reviewer MODE=plan to challenge scoper output;
- *              exit 7 on VERDICT: reject
+ *   Step 1.5 — invoke plan-gate MODE=plan to challenge scoper output;
+ *              exit 7 on VERDICT: reject (legacy alias 'reviewer' still
+ *              works via ROLE_ALIASES — see prompt-resolve.ts)
  *   Step 2   — ensure-docs.sh scaffold
  *   Step 3   — post-planner auto-checkpoints (per config.checkpoints.types)
  *   Step 4   — git worktree prune (when branchIsolation.useWorktrees)
@@ -19,14 +20,14 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { configGet } from './config.js';
-import { featuresExist } from './state.js';
-import { invoke } from './invoke.js';
-import { runHook } from './hooks.js';
-import { git } from './git.js';
-import type { InvokeContext } from './invoke.js';
-import type { Logger } from './log.js';
-import type { HarnessConfig } from './types.js';
+import { configGet } from './config';
+import { featuresExist } from './state';
+import { invoke } from './invoke';
+import { runHook } from './hooks';
+import { git } from './git';
+import type { InvokeContext } from './invoke';
+import type { Logger } from './log';
+import type { HarnessConfig } from './types';
 
 export interface PreLoopResult {
   /** Reason the pre-loop signaled "stop here, exit". null if loop should run. */
@@ -62,18 +63,22 @@ export async function runPreLoop(
     logger.log('PLAN: existing contract + features found. Skipping scoper.');
   }
 
-  // Step 1.5: PLAN-REVIEW — challenge the scoper output (idempotent: skips
-  // if plan-review.md already exists).
+  // Step 1.5: PLAN-GATE — challenge the scoper output (idempotent: skips
+  // if plan-review.md already exists). The role was historically called
+  // 'reviewer' but is now 'plan-gate'; resolvePromptFile honors both names
+  // via ROLE_ALIASES, so user configs that still reference `reviewer` keep
+  // working. Config keys also accept both `planGate.enabled` (canonical)
+  // and `planReviewer.enabled` (legacy) for the same reason.
   const planReviewPath = join(ctx.stateDir, 'plan-review.md');
-  if (
-    configGet<boolean>(cfg, 'planReviewer.enabled', true) === true &&
-    !existsSync(planReviewPath)
-  ) {
-    logger.log('PLAN-REVIEW: challenging scoper output');
+  const planGateEnabled =
+    configGet<boolean>(cfg, 'planGate.enabled', undefined as unknown as boolean) ??
+    configGet<boolean>(cfg, 'planReviewer.enabled', true);
+  if (planGateEnabled === true && !existsSync(planReviewPath)) {
+    logger.log('PLAN-GATE: challenging scoper output');
     try {
-      await invoke(ctx, 'reviewer', ['MODE=plan']);
+      await invoke(ctx, 'plan-gate', ['MODE=plan']);
     } catch (err) {
-      logger.log(`REVIEWER error: ${(err as Error).message}`);
+      logger.log(`PLAN-GATE error: ${(err as Error).message}`);
     }
     if (existsSync(planReviewPath)) {
       const body = readFileSync(planReviewPath, 'utf8');
@@ -81,19 +86,19 @@ export async function runPreLoop(
         .split(/\r?\n/)
         .filter((l) => /^VERDICT:/i.test(l))
         .pop() ?? '';
-      logger.log(`PLAN-REVIEW: ${verdictLine || 'no verdict line found'}`);
+      logger.log(`PLAN-GATE: ${verdictLine || 'no verdict line found'}`);
       if (/reject/i.test(verdictLine)) {
-        logger.log('⛔ Plan reviewer rejected — writing escalation and exiting 7.');
+        logger.log('⛔ Plan-gate rejected — writing escalation and exiting 7.');
         writeFileSync(
           join(ctx.stateDir, 'escalation.md'),
-          '# Plan reviewer rejected the plan\n\n' +
+          '# Plan-gate rejected the plan\n\n' +
             'See .harness/plan-review.md for details.\n',
         );
-        logger.notifyEvent('escalate', 'Plan reviewer rejected the planner output');
+        logger.notifyEvent('escalate', 'Plan-gate rejected the scoper output');
         return { stop: 'plan-rejected', exitCode: 7 };
       }
     } else {
-      logger.log('PLAN-REVIEW: no plan-review.md produced, continuing without review');
+      logger.log('PLAN-GATE: no plan-review.md produced, continuing without gate');
     }
   }
 
@@ -148,7 +153,7 @@ function firePostPlannerCheckpoints(
     const body =
       `# Checkpoint: ${name} (auto, triggerOn=post-planner)\n\n` +
       `Requested at: ${isoNow}\n` +
-      `Trigger: planner + plan-reviewer both passed for the first time.\n\n` +
+      `Trigger: scoper + plan-gate both passed for the first time.\n\n` +
       'Review the plan in `.harness/features.json` and `.harness/validation-contract.md`.\n\n' +
       '## How to grant\n' +
       `- UI: /api/harness/<slug>/checkpoint/${name}/grant\n` +

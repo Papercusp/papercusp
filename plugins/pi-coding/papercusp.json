@@ -1,0 +1,31 @@
+{
+  "name": "@papercupai/pi-coding",
+  "version": "0.1.1",
+  "kind": "plugin",
+  "papercusp": "^0.1.0",
+  "description": "Embed the Pi coding-agent terminal as a dashboard tab.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "capabilities": [
+    "ui:dashboard-tab"
+  ],
+  "dashboardTabs": [
+    {
+      "id": "pi",
+      "label": "Pi",
+      "icon": "Terminal",
+      "iframeUrlConfigKey": "piUrl",
+      "replaces": ["pi"]
+    }
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "piUrl": {
+        "type": "string",
+        "default": "http://localhost:3055/pi",
+        "description": "Base URL for the Pi terminal endpoint."
+      }
+    }
+  }
+}

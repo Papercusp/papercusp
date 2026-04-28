@@ -67,7 +67,7 @@ test('parseDecision — argument-less verbs return null arg', () => {
 
 test('DECISION_VERBS — every verb is listed', () => {
   // Sanity: keep this list in sync with bash's regex group.
-  assert.equal(DECISION_VERBS.length, 17);
+  assert.equal(DECISION_VERBS.length, 19);
   assert.ok(DECISION_VERBS.includes('DONE'));
   assert.ok(DECISION_VERBS.includes('NEXT_WORKER'));
   assert.ok(DECISION_VERBS.includes('NEXT_WORKER_CEO_MODE'));

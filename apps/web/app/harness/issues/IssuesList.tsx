@@ -153,6 +153,9 @@ export function IssuesList({ slug, onCount }: { slug: string; onCount?: (n: numb
 
   const refresh = () => setReloadTick((t) => t + 1);
 
+  if (!slug) {
+    return <div className="h-empty"><Inbox size={16} className="h-empty-icon" /><span>Pick a project to see issues.</span></div>;
+  }
   if (error) {
     return <div className="h-empty"><span style={{ color: 'var(--bad)' }}>{error}</span></div>;
   }

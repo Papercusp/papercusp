@@ -4,7 +4,7 @@
  *
  * Subcommands:
  *   init <slug> [--from <harness>]   Scaffold a new project directory.
- *   install <slug>[@version]          Fetch a published harness from the marketplace.
+ *   install <slug>[@version]          Fetch a published harness template from the marketplace.
  *   list                              Show installed harnesses.
  *   publish                           Pack current dir + upload to the marketplace.
  *   run [project-slug]                Delegate to the harness substrate's run.sh.
@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 
 const PAPERCUSP_ROOT = join(homedir(), '.papercusp');
 const HARNESSES_DIR = join(PAPERCUSP_ROOT, 'harnesses');
+const GLOBAL_PLUGINS_DIR = join(PAPERCUSP_ROOT, 'global-plugins');
 const PROJECTS_DIR = join(PAPERCUSP_ROOT, 'projects');
 const REGISTRY_PATH = join(PAPERCUSP_ROOT, 'registry.json');
 const LEGACY_REGISTRY_PATH = join(homedir(), '.restart-harness-projects.json');
@@ -46,6 +47,7 @@ function colorize(s: string, code: string): string {
 const dim = (s: string) => colorize(s, '2');
 const red = (s: string) => colorize(s, '31');
 const green = (s: string) => colorize(s, '32');
+const yellow = (s: string) => colorize(s, '33');
 const cyan = (s: string) => colorize(s, '36');
 const bold = (s: string) => colorize(s, '1');
 
@@ -97,7 +99,9 @@ async function readCredentials(): Promise<Record<string, string | undefined>> {
 }
 
 function isValidSlug(s: string): boolean {
-  return /^[a-z0-9][a-z0-9._-]{0,63}$/.test(s);
+  // Bare or scoped (@owner/pkg). Used for cmdInstall/cmdInit/etc.
+  return /^@[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._-]{0,63}$/i.test(s)
+    || /^[a-z0-9][a-z0-9._-]{0,63}$/.test(s);
 }
 
 // ─── Subcommands ──────────────────────────────────────────────────────────
@@ -113,7 +117,7 @@ ${bold('Commands:')}
                                        --from defaults to a blank template; use a marketplace slug to
                                        seed from a published harness.
 
-  ${cyan('install <slug>[@version]')}          Fetch a published harness from the marketplace into
+  ${cyan('install <slug>[@version]')}          Fetch a published harness template from the marketplace into
                                        ~/.papercusp/harnesses/<slug>/. Latest version if not specified.
 
   ${cyan('uninstall <slug>')}                  Remove an installed harness template (does not affect projects
@@ -123,12 +127,25 @@ ${bold('Commands:')}
 
   ${cyan('publish')}                           Pack the current directory's harness template + manifest and
                                        upload to the marketplace. Requires a papercusp.json in cwd.
+                                       Auto-compiles index.ts → index.js (CommonJS) for plugin
+                                       publishes if .js is missing or stale; pass --no-compile to skip.
 
   ${cyan('run')} [project-slug]                Run the harness loop. If no slug, uses cwd's harness state.
 
   ${cyan('scaffold-schema <slug>')}            Provision the per-harness Postgres schema for an existing project.
 
   ${cyan('doctor')}                            Check prerequisites (Postgres, claude CLI, marketplace reachable).
+
+  ${cyan('plugin <subcommand>')}              Per-harness plugin lifecycle. \`papercusp plugin help\` for details.
+                                       Subcommands: list, enable, disable, config, invoke.
+
+  ${cyan('upgrade-pin <slug>')}              Re-pin a withdrawn/quarantined plugin in the harness lockfile to its latest active version.
+
+  ${cyan('lock check')} [--harness <slug>]   Inspect papercusp.lock entries against the registry; flag retracted/missing.
+  ${cyan('lock upgrade-all')} [--harness …]  Run upgrade-pin on every entry that's withdrawn or quarantined.
+
+  ${cyan('migrate-tabs')} [--harness <slug>]  Install + enable the 3 default tab plugins (vscode-server / pi-coding / docs-viewer)
+                                       and remind you to set PAPERCUSP_TABS_FROM_PLUGINS=1 (P7 cutover).
 
   ${cyan('help')}                              Show this help.
 
@@ -151,7 +168,7 @@ async function cmdDoctor(): Promise<void> {
   // Postgres reachability via psql -c 'SELECT 1'
   const pgUser = process.env.PGUSER ?? 'harness_app';
   const pgHost = process.env.PGHOST ?? 'localhost';
-  const pgDb = process.env.HARNESS_PG_DB ?? 'restart_harness';
+  const pgDb = process.env.HARNESS_PG_DB ?? 'papercusp';
   const pgPwd = process.env.PGPASSWORD ?? 'harness_app_pwd';
   const psql = spawnSync('psql', ['-U', pgUser, '-h', pgHost, '-d', pgDb, '-tAc', 'SELECT 1'], {
     env: { ...process.env, PGPASSWORD: pgPwd },
@@ -208,6 +225,62 @@ async function cmdDoctor(): Promise<void> {
     ok = false;
   }
 
+  // ── Plugin ecosystem health ──────────────────────────────────────────
+  console.log('');
+  console.log(bold('plugin ecosystem'));
+
+  // Marketplace operator-secrets file
+  const opSecrets = join(homedir(), '.papercusp', 'marketplace-secrets.env');
+  if (existsSync(opSecrets)) {
+    const raw = await fs.readFile(opSecrets, 'utf8').catch(() => '');
+    const hasOpToken = /^PAPERCUSP_MARKETPLACE_OPERATOR_TOKEN=/m.test(raw);
+    const hasSvcToken = /^PAPERCUSP_MARKETPLACE_SERVICE_TOKENS=/m.test(raw);
+    console.log(`  ${hasOpToken ? green('✓') : dim('—')} operator token ${hasOpToken ? 'configured' : 'absent'} (marketplace-ops dashboard)`);
+    console.log(`  ${hasSvcToken ? green('✓') : dim('—')} service token ${hasSvcToken ? 'configured' : 'absent'} (papercusp publish for CI)`);
+  } else {
+    console.log(`  ${dim('—')} ${opSecrets} not present`);
+    console.log(`    ${dim('only needed if you run the marketplace locally + dashboard ops')}`);
+  }
+
+  // P7 cutover flag
+  const tabsFromPlugins = process.env.PAPERCUSP_TABS_FROM_PLUGINS === '1';
+  console.log(`  ${tabsFromPlugins ? green('✓') : dim('—')} PAPERCUSP_TABS_FROM_PLUGINS=${tabsFromPlugins ? '1' : '<unset>'} (P7 plugin-tab cutover)`);
+
+  // audit schema migrations
+  if (psql.status === 0) {
+    const checkAuditTables = spawnSync('psql', [
+      '-U', pgUser, '-h', pgHost, '-d', pgDb, '-tAc',
+      "SELECT tablename FROM pg_tables WHERE schemaname='audit' AND tablename IN ('action_executions','operator_actions') ORDER BY tablename",
+    ], { env: { ...process.env, PGPASSWORD: pgPwd }, encoding: 'utf8', timeout: 3000 });
+    const found = checkAuditTables.stdout.trim().split('\n').filter(Boolean);
+    const hasActions = found.includes('action_executions');
+    const hasOps = found.includes('operator_actions');
+    console.log(`  ${hasActions ? green('✓') : red('✗')} audit.action_executions ${hasActions ? 'migrated' : 'missing'} (006-action-executions.sql)`);
+    console.log(`  ${hasOps ? green('✓') : red('✗')} audit.operator_actions ${hasOps ? 'migrated' : 'missing'} (007-operator-actions.sql)`);
+    if (!hasActions || !hasOps) ok = false;
+  }
+
+  // Installed plugins
+  try {
+    const globalPluginsDir = join(homedir(), '.papercusp', 'global-plugins');
+    if (existsSync(globalPluginsDir)) {
+      const top = await fs.readdir(globalPluginsDir, { withFileTypes: true });
+      let count = 0;
+      for (const entry of top) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith('@')) {
+          const inner = await fs.readdir(join(globalPluginsDir, entry.name), { withFileTypes: true }).catch(() => []);
+          count += inner.filter((i) => i.isDirectory()).length;
+        } else {
+          count++;
+        }
+      }
+      console.log(`  ${green('✓')} ${count} plugin${count === 1 ? '' : 's'} installed under ${dim(globalPluginsDir)}`);
+    } else {
+      console.log(`  ${dim('—')} no plugins installed yet (${dim(globalPluginsDir)} doesn't exist)`);
+    }
+  } catch {}
+
   console.log('');
   console.log(ok ? green('all good — ready to run a harness') : red('fix the above before continuing'));
   process.exit(ok ? 0 : 1);
@@ -249,26 +322,153 @@ async function fetchToFile(url: string, destPath: string): Promise<void> {
   await pipeline(Readable.fromWeb(r.body as any), createWriteStream(destPath));
 }
 
-async function cmdInstall(arg: string | undefined): Promise<void> {
-  if (!arg) die('install: usage: papercusp install <slug>[@version]');
-  const [slug, version] = arg.split('@');
+async function cmdInstall(args: string[]): Promise<void> {
+  // --from-lock rehydrates from a harness's lockfile.
+  const fromLockIdx = args.indexOf('--from-lock');
+  if (fromLockIdx >= 0) {
+    return cmdInstallFromLock(args);
+  }
+
+  // Strip flag tokens out of args; remaining positionals are the install arg.
+  const flags = new Set([
+    '--harness',
+    '--accept-capabilities',
+    '--accept-capabilities=all',
+    '--accept-capabilities=current',
+  ]);
+  let harnessSlug: string | null = null;
+  let acceptCapabilities: 'current' | 'all' | null = null;
+  const positional: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--harness' && args[i + 1]) {
+      harnessSlug = args[i + 1];
+      i++;
+      continue;
+    }
+    if (a === '--accept-capabilities') {
+      acceptCapabilities = 'current';
+      continue;
+    }
+    if (a === '--accept-capabilities=all') {
+      acceptCapabilities = 'all';
+      continue;
+    }
+    if (a === '--accept-capabilities=current') {
+      acceptCapabilities = 'current';
+      continue;
+    }
+    if (a.startsWith('-') && flags.has(a.split('=')[0])) continue;
+    positional.push(a);
+  }
+
+  const arg = positional[0];
+  if (!arg) die('install: usage: papercusp install <slug>[@version] [--harness <slug>] [--accept-capabilities[=current|=all]]');
+  const { slug, version } = parseSlugAtVersion(arg);
   if (!isValidSlug(slug)) die(`install: invalid slug "${slug}"`);
 
+  return installOne(slug, version, { harnessSlug, requiredBy: 'user', acceptCapabilities });
+}
+
+/** Split a `slug[@version]` string. Handles scoped names (`@owner/pkg`) whose
+ *  leading '@' is part of the slug, not the version separator. */
+function parseSlugAtVersion(arg: string): { slug: string; version: string | undefined } {
+  if (arg.startsWith('@')) {
+    // Scoped: slug is `@owner/pkg`, version (if any) is after the *next* '@'.
+    const rest = arg.slice(1);
+    const at = rest.indexOf('@');
+    if (at < 0) return { slug: arg, version: undefined };
+    return { slug: '@' + rest.slice(0, at), version: rest.slice(at + 1) };
+  }
+  const at = arg.indexOf('@');
+  if (at < 0) return { slug: arg, version: undefined };
+  return { slug: arg.slice(0, at), version: arg.slice(at + 1) };
+}
+
+interface InstallOpts {
+  harnessSlug: string | null;
+  requiredBy: string;          // 'user' or the slug of the plugin that pulled this in
+  acceptCapabilities?: 'current' | 'all' | null;
+}
+
+/**
+ * Core single-package install. Downloads, extracts, branches by `kind`:
+ *   - `template` (default) → ~/.papercusp/harnesses/<slug>/  (existing behavior)
+ *   - `plugin`             → ~/.papercusp/global-plugins/<slug>/
+ *
+ * For plugins: if a target harness is known, write/update the lockfile with the
+ * pinned (slug, version, integrity, requiredBy) tuple and recurse into the
+ * manifest's `requires`.
+ */
+async function installOne(slug: string, version: string | undefined, opts: InstallOpts): Promise<void> {
   await ensureRoot();
   console.log(`fetching ${cyan(slug + (version ? `@${version}` : ' (latest)'))} from ${MARKETPLACE_URL}`);
 
-  // Resolve version if not specified.
+  // Fetch catalog detail first so we can probe kind + capabilities before
+  // downloading anything. This is what powers the install-time consent prompt.
+  let probedKind: 'plugin' | 'template' = 'template';
+  let probedManifest: any = null;
   let resolvedVersion = version;
-  if (!resolvedVersion) {
-    const r = await fetch(`${MARKETPLACE_URL}/catalog/${slug}`);
+  try {
+    const r = await fetch(`${MARKETPLACE_URL}/catalog/${encodeURIComponent(slug)}`);
     if (!r.ok) die(`install: ${slug} not found in marketplace (HTTP ${r.status})`);
-    const d = await r.json() as { versions: string[] };
-    if (!d.versions?.length) die(`install: ${slug} has no published versions`);
-    resolvedVersion = d.versions[0];
-    console.log(`  resolved latest = ${resolvedVersion}`);
+    const d = await r.json() as { versions: string[]; kind?: string; latest?: { kind?: string } };
+    if (!resolvedVersion) {
+      if (!d.versions?.length) die(`install: ${slug} has no published versions`);
+      resolvedVersion = d.versions[0];
+      console.log(`  resolved latest = ${resolvedVersion}`);
+    }
+    // Per-slug catalog returns kind on the `latest` manifest; the catalog index
+    // returns it at the top level. Honor either.
+    if (d.kind === 'plugin' || d.latest?.kind === 'plugin') probedKind = 'plugin';
+    if (d.latest) probedManifest = d.latest;
+  } catch (e: any) {
+    if (!resolvedVersion) die(`install: catalog probe failed: ${e?.message ?? e}`);
   }
 
-  const installDir = join(HARNESSES_DIR, slug);
+  // ── Consent prompt (plugins, harness known) ─────────────────────────────
+  if (probedKind === 'plugin' && opts.harnessSlug && probedManifest) {
+    const { promptConsent, isAlreadyExtended, diffCapabilitiesSinceGrant } = await import('./consent.ts');
+    const newCaps = Array.isArray(probedManifest.capabilities) ? probedManifest.capabilities : [];
+    // Show a diff vs the most recent prior grant for this plugin in this harness.
+    const diff = await diffCapabilitiesSinceGrant(slug, opts.harnessSlug, newCaps);
+    if (diff && (diff.added.length > 0 || diff.removed.length > 0)) {
+      console.log('');
+      console.log(bold(`Capabilities diff since last install (v${diff.priorVersion} → v${resolvedVersion}):`));
+      if (diff.added.length > 0) {
+        console.log(`  ${green('+')} ${diff.added.length} new capabilit${diff.added.length === 1 ? 'y' : 'ies'}:`);
+        for (const c of diff.added) console.log(`    ${green('+')} ${c}`);
+      }
+      if (diff.removed.length > 0) {
+        console.log(`  ${dim('-')} ${diff.removed.length} removed capabilit${diff.removed.length === 1 ? 'y' : 'ies'}:`);
+        for (const c of diff.removed) console.log(`    ${dim('-')} ${c}`);
+      }
+    }
+    const alreadyExtended = await isAlreadyExtended(slug, resolvedVersion!);
+    if (!alreadyExtended) {
+      const result = await promptConsent({
+        manifest: {
+          name: probedManifest.name ?? slug,
+          version: probedManifest.version ?? resolvedVersion!,
+          kind: 'plugin',
+          description: probedManifest.description,
+          capabilities: newCaps,
+        },
+        harnessSlug: opts.harnessSlug,
+        acceptCurrentHarness: opts.acceptCapabilities === 'current',
+        acceptAllHarnesses: opts.acceptCapabilities === 'all',
+      });
+      if (!result.granted) {
+        die(`install: capability consent refused for ${slug}@${resolvedVersion}`, 4);
+      }
+    } else {
+      console.log(green(`  ✓ capabilities auto-granted (extended-to-all in extended-grants.json)`));
+    }
+  }
+
+  const baseDir = probedKind === 'plugin' ? GLOBAL_PLUGINS_DIR : HARNESSES_DIR;
+  const installDir = join(baseDir, slug);
   if (existsSync(installDir)) {
     console.log(`  ${dim('cleaning previous install at')} ${installDir}`);
     await fs.rm(installDir, { recursive: true, force: true });
@@ -276,10 +476,21 @@ async function cmdInstall(arg: string | undefined): Promise<void> {
   await fs.mkdir(installDir, { recursive: true });
 
   // Download tarball.
-  const tarballPath = join(installDir, `${slug}-${resolvedVersion}.tar.gz`);
+  const safeName = slug.replace(/[/@]/g, '_');
+  const tarballPath = join(installDir, `${safeName}-${resolvedVersion}.tar.gz`);
   console.log(`  downloading tarball...`);
-  await fetchToFile(`${MARKETPLACE_URL}/download/${slug}/${resolvedVersion}`, tarballPath);
+  await fetchToFile(
+    `${MARKETPLACE_URL}/download/${encodeURIComponent(slug)}/${encodeURIComponent(resolvedVersion!)}`,
+    tarballPath,
+  );
   console.log(`  ${green('✓')} ${dim(tarballPath)}`);
+
+  // Compute integrity hash.
+  const tarballBytes = await fs.readFile(tarballPath);
+  const integrity = 'sha256-' + (await import('node:crypto'))
+    .createHash('sha256')
+    .update(tarballBytes)
+    .digest('hex');
 
   // Extract.
   console.log(`  extracting...`);
@@ -292,6 +503,20 @@ async function cmdInstall(arg: string | undefined): Promise<void> {
   const manifest = await readJson<any>(manifestPath);
   if (!manifest) die(`install: tarball missing papercusp.json`);
   if (manifest.name !== slug) die(`install: manifest name "${manifest.name}" doesn't match install slug "${slug}"`);
+  // Authoritative kind from the on-disk manifest. If our probe was wrong (older
+  // marketplace deploy that didn't include kind), move the dir to the right place.
+  const finalKind: 'plugin' | 'template' = manifest.kind === 'plugin' ? 'plugin' : 'template';
+  if (finalKind === 'plugin' && baseDir !== GLOBAL_PLUGINS_DIR) {
+    const realDir = join(GLOBAL_PLUGINS_DIR, slug);
+    // Scoped slugs need the @owner subdir; recursive mkdir of the parent.
+    await fs.mkdir(dirname(realDir), { recursive: true });
+    if (existsSync(realDir)) await fs.rm(realDir, { recursive: true, force: true });
+    await fs.rename(installDir, realDir);
+  } else if (finalKind === 'template' && baseDir !== HARNESSES_DIR) {
+    const realDir = join(HARNESSES_DIR, slug);
+    if (existsSync(realDir)) await fs.rm(realDir, { recursive: true, force: true });
+    await fs.rename(installDir, realDir);
+  }
 
   // If the manifest declared a `schema` array, run those DDL files against
   // Postgres so the per-plugin tables are ready before the user runs init.
@@ -299,7 +524,7 @@ async function cmdInstall(arg: string | undefined): Promise<void> {
     console.log(`  applying ${manifest.schema.length} schema DDL file(s)...`);
     const pgUser = process.env.PGUSER ?? 'postgres_app';
     const pgPwd = process.env.PGPASSWORD ?? 'postgres';
-    const pgDb = process.env.HARNESS_PG_DB ?? 'restart_harness';
+    const pgDb = process.env.HARNESS_PG_DB ?? 'papercusp';
     const pgHost = process.env.PGHOST ?? 'localhost';
     let applied = 0;
     for (const rel of manifest.schema as string[]) {
@@ -324,9 +549,115 @@ async function cmdInstall(arg: string | undefined): Promise<void> {
     }
   }
 
+  // ── Lockfile + transitive requires (plugins only, harness known) ──────────
+  if (finalKind === 'plugin' && opts.harnessSlug) {
+    const { addToLock } = await import('./lockfile.ts');
+    const { capsHash } = await import('./consent.ts');
+    const grantedCapsHash = Array.isArray(manifest.capabilities)
+      ? capsHash(manifest.capabilities as string[])
+      : null;
+    await addToLock(opts.harnessSlug, slug, {
+      version: resolvedVersion!,
+      integrity,
+      kind: 'plugin',
+      grantedCapsHash,
+      requiredBy: opts.requiredBy,
+      addedAt: new Date().toISOString(),
+    });
+    console.log(`  ${green('✓')} pinned in ${cyan(opts.harnessSlug)} papercusp.lock`);
+
+    // Recurse into requires.
+    const requires: string[] = Array.isArray(manifest.requires) ? manifest.requires : [];
+    for (const dep of requires) {
+      if (!isValidSlug(dep)) {
+        console.log(`  ${red('✗')} skipping invalid required slug "${dep}"`);
+        continue;
+      }
+      const depManifestPath = join(GLOBAL_PLUGINS_DIR, dep, 'papercusp.json');
+      if (existsSync(depManifestPath)) {
+        // Already installed; just pin into the lockfile under requiredBy=this slug.
+        try {
+          const m = JSON.parse(await fs.readFile(depManifestPath, 'utf8')) as { version: string };
+          await addToLock(opts.harnessSlug, dep, {
+            version: m.version,
+            integrity: 'sha256-already-installed',
+            kind: 'plugin',
+            grantedCapsHash: null,
+            requiredBy: slug,
+            addedAt: new Date().toISOString(),
+          });
+          console.log(`  ${dim(`already installed: ${dep}@${m.version} (pinned via ${slug})`)}`);
+        } catch {
+          // Manifest unreadable — re-fetch.
+          await installOne(dep, undefined, { harnessSlug: opts.harnessSlug, requiredBy: slug });
+        }
+      } else {
+        console.log(`  ${dim(`recursive install: ${dep} (required by ${slug})`)}`);
+        await installOne(dep, undefined, { harnessSlug: opts.harnessSlug, requiredBy: slug });
+      }
+    }
+
+    // Surface recommends (do NOT install — spec §14.9.7 transitivity rule).
+    const recommends: string[] = Array.isArray(manifest.recommends) ? manifest.recommends : [];
+    if (recommends.length > 0) {
+      console.log('');
+      console.log(yellow(`  recommends: ${recommends.join(', ')}`));
+      console.log(dim(`  (not auto-installed; run \`papercusp install <slug> --harness ${opts.harnessSlug}\` to accept)`));
+    }
+  }
+
   console.log('');
   console.log(green(`installed ${slug}@${resolvedVersion}`));
-  console.log(`next: ${cyan(`papercusp init my-project --from ${slug}`)}`);
+  if (finalKind === 'plugin') {
+    if (opts.harnessSlug) {
+      console.log(`next: ${cyan(`papercusp plugin enable ${slug} --harness ${opts.harnessSlug}`)}`);
+    } else {
+      console.log(`next: ${cyan(`papercusp plugin enable ${slug} --harness <harness-slug>`)}`);
+    }
+  } else {
+    console.log(`next: ${cyan(`papercusp init my-project --from ${slug}`)}`);
+  }
+}
+
+async function cmdInstallFromLock(args: string[]): Promise<void> {
+  // --from-lock requires a harness slug; default to detection.
+  let harnessSlug: string | null = null;
+  const harnessIdx = args.indexOf('--harness');
+  if (harnessIdx >= 0 && args[harnessIdx + 1]) harnessSlug = args[harnessIdx + 1];
+  if (!harnessSlug) {
+    // Detect from cwd's registered harness.
+    const reg = await readRegistry();
+    const found = reg.projects.find((p) => p.path === process.cwd());
+    if (found) harnessSlug = found.slug;
+  }
+  if (!harnessSlug) {
+    die('install --from-lock: pass --harness <slug> or run from inside a registered harness project');
+  }
+
+  const { readLock, validateLockAgainstInstalled } = await import('./lockfile.ts');
+  const lock = await readLock(harnessSlug);
+  const slugs = Object.keys(lock.entries);
+  if (slugs.length === 0) {
+    console.log(dim(`papercusp.lock for ${harnessSlug} is empty — nothing to do`));
+    return;
+  }
+  console.log(`installing ${cyan(String(slugs.length))} pinned plugin(s) for ${cyan(harnessSlug)}`);
+  const validation = await validateLockAgainstInstalled(harnessSlug);
+  const toInstall = validation.missing.length > 0
+    ? validation.missing.map((m) => m.split('@')[0])
+    : [];
+  if (toInstall.length === 0) {
+    console.log(green('  ✓ all pinned plugins already installed'));
+    return;
+  }
+  for (const slug of toInstall) {
+    const entry = lock.entries[slug];
+    if (!entry) continue;
+    console.log('');
+    await installOne(slug, entry.version, { harnessSlug, requiredBy: entry.requiredBy });
+  }
+  console.log('');
+  console.log(green(`✓ rehydrated ${toInstall.length} plugin(s) from lockfile`));
 }
 
 async function copyDir(src: string, dst: string): Promise<void> {
@@ -347,19 +678,170 @@ async function cmdUninstall(slug: string | undefined): Promise<void> {
   console.log(`${dim('(projects you initialised from this template are untouched)')}`);
 }
 
+interface SubprojectSpec {
+  suffix: string;
+  kind: 'org' | 'department' | 'coding';
+  department_slug?: string;
+  dir: string;
+}
+
+async function scaffoldSubproject(opts: {
+  slug: string;
+  path: string;
+  kind: SubprojectSpec['kind'];
+  department_slug?: string;
+  templateDir: string;
+}): Promise<void> {
+  await fs.mkdir(opts.path, { recursive: true });
+  await fs.mkdir(join(opts.path, '.harness'), { recursive: true });
+
+  // Copy template files (excluding tarball + top-level manifest)
+  if (existsSync(opts.templateDir)) {
+    const entries = await fs.readdir(opts.templateDir);
+    for (const e of entries) {
+      if (e.endsWith('.tar.gz')) continue;
+      if (e === 'papercusp.json') continue;
+      await copyDir(join(opts.templateDir, e), join(opts.path, e));
+    }
+  }
+
+  // Default .harness/config.json if the template didn't bundle one.
+  const configPath = join(opts.path, '.harness', 'config.json');
+  if (!existsSync(configPath)) {
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          phase: opts.kind === 'org' ? 'org' : opts.kind === 'department' ? 'department' : 'staging',
+          harness_kind: opts.kind,
+          ...(opts.kind === 'department' && opts.department_slug ? { dept: opts.department_slug } : {}),
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+  }
+
+  // Register
+  const reg = await readRegistry();
+  if (!reg.projects.find((p) => p.slug === opts.slug)) {
+    const entry: Record<string, unknown> = {
+      slug: opts.slug,
+      path: opts.path,
+      addedAt: new Date().toISOString(),
+    };
+    if (opts.kind !== 'coding') entry.harness_kind = opts.kind;
+    if (opts.kind === 'department' && opts.department_slug) entry.department_slug = opts.department_slug;
+    reg.projects.push(entry as any);
+    await writeRegistry(reg);
+  }
+
+  const tag = opts.kind === 'org'
+    ? dim('(org parent)')
+    : opts.kind === 'department' && opts.department_slug
+    ? dim(`(dept=${opts.department_slug})`)
+    : '';
+  console.log(`  ${green('✓')} ${cyan(opts.slug)} ${tag}`);
+}
+
 async function cmdInit(args: string[]): Promise<void> {
   const slug = args[0];
-  if (!slug) die('init: usage: papercusp init <slug> [--from <harness>]');
+  if (!slug) die('init: usage: papercusp init <slug> [--from <harness>] [--target <path>]');
   if (!isValidSlug(slug)) die(`init: invalid slug "${slug}"`);
   const fromIdx = args.indexOf('--from');
   const fromHarness = fromIdx >= 0 ? args[fromIdx + 1] : null;
+  const targetIdx = args.indexOf('--target');
+  const targetArg = targetIdx >= 0 ? args[targetIdx + 1] : null;
 
   await ensureRoot();
-  const projectsRoot = process.env.PAPERCUSP_PROJECTS_ROOT ?? PROJECTS_DIR;
-  const projectPath = join(projectsRoot, slug);
-  if (existsSync(projectPath)) die(`init: ${projectPath} already exists`);
-  await fs.mkdir(projectPath, { recursive: true });
-  await fs.mkdir(join(projectPath, '.harness'), { recursive: true });
+
+  // Detect multi-topology by reading the bundled manifest of --from <harness>.
+  let topology: 'single' | 'multi' = 'single';
+  let subprojects: SubprojectSpec[] = [];
+  if (fromHarness) {
+    const manifestPath = join(HARNESSES_DIR, fromHarness, 'papercusp.json');
+    if (existsSync(manifestPath)) {
+      try {
+        const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+        if (manifest?.topology === 'multi' && Array.isArray(manifest.subprojects)) {
+          topology = 'multi';
+          subprojects = manifest.subprojects as SubprojectSpec[];
+        }
+      } catch {}
+    }
+  }
+
+  if (topology === 'multi') {
+    if (targetArg) die('init: --target is not supported with multi-topology templates');
+    if (!fromHarness) die('init: multi-topology requires --from <harness>');
+    const templateRootDir = join(HARNESSES_DIR, fromHarness);
+
+    const projectsRoot = process.env.PAPERCUSP_PROJECTS_ROOT ?? PROJECTS_DIR;
+
+    // Validate all derived slugs + paths up front so we fail before partial scaffolding.
+    for (const sp of subprojects) {
+      const childSlug = slug + sp.suffix;
+      if (!isValidSlug(childSlug)) die(`init: derived slug "${childSlug}" is invalid`);
+      const childPath = join(projectsRoot, childSlug);
+      if (existsSync(childPath)) die(`init: ${childPath} already exists`);
+    }
+
+    console.log(
+      `multi-topology install: ${cyan(fromHarness)} → ${cyan(slug)} ` +
+      `(${subprojects.length} sub-harnesses)`,
+    );
+
+    for (const sp of subprojects) {
+      const childSlug = slug + sp.suffix;
+      const childPath = join(projectsRoot, childSlug);
+      const subTemplateDir = join(templateRootDir, sp.dir);
+      await scaffoldSubproject({
+        slug: childSlug,
+        path: childPath,
+        kind: sp.kind,
+        department_slug: sp.department_slug,
+        templateDir: subTemplateDir,
+      });
+    }
+
+    console.log('');
+    console.log(green(`✓ ${slug} initialized — ${subprojects.length} sub-harnesses registered`));
+    console.log(`next steps:`);
+    for (const sp of subprojects) {
+      console.log(`  ${cyan(`papercusp scaffold-schema ${slug}${sp.suffix}`)}`);
+    }
+    console.log(`  ${cyan(`papercusp run ${slug}`)}                (start the parent loop)`);
+    return;
+  }
+
+  // -- Single-project path --
+  let projectPath: string;
+  let isExistingRepo = false;
+  if (targetArg) {
+    projectPath = resolve(targetArg);
+    if (!existsSync(projectPath)) die(`init: target path "${projectPath}" does not exist`);
+    if (existsSync(join(projectPath, '.harness'))) {
+      die(`init: target "${projectPath}" already has a .harness/ directory — already initialized?`);
+    }
+    isExistingRepo = true;
+    await fs.mkdir(join(projectPath, '.harness'), { recursive: true });
+  } else {
+    const projectsRoot = process.env.PAPERCUSP_PROJECTS_ROOT ?? PROJECTS_DIR;
+    projectPath = join(projectsRoot, slug);
+    if (existsSync(projectPath)) die(`init: ${projectPath} already exists`);
+    await fs.mkdir(projectPath, { recursive: true });
+    await fs.mkdir(join(projectPath, '.harness'), { recursive: true });
+  }
+
+  const writeIfAbsent = async (relPath: string, contents: string) => {
+    const full = join(projectPath, relPath);
+    if (isExistingRepo && existsSync(full)) {
+      console.log(`  ${dim('keeping existing')} ${relPath}`);
+      return;
+    }
+    await fs.writeFile(full, contents, 'utf8');
+  };
 
   if (fromHarness) {
     const templateDir = join(HARNESSES_DIR, fromHarness);
@@ -367,24 +849,31 @@ async function cmdInit(args: string[]): Promise<void> {
       die(`init: harness "${fromHarness}" not installed (try \`papercusp install ${fromHarness}\` first)`);
     }
     console.log(`seeding from ${cyan(fromHarness)} → ${dim(projectPath)}`);
-    // Copy everything except the tarball + manifest itself.
     const entries = await fs.readdir(templateDir);
     for (const e of entries) {
       if (e.endsWith('.tar.gz')) continue;
-      if (e === 'papercusp.json') continue; // manifest stays in harnesses/, not the project
-      await copyDir(join(templateDir, e), join(projectPath, e));
+      if (e === 'papercusp.json') continue;
+      const targetEntryPath = join(projectPath, e);
+      if (isExistingRepo && existsSync(targetEntryPath)) {
+        console.log(`  ${dim('keeping existing')} ${e}`);
+        continue;
+      }
+      await copyDir(join(templateDir, e), targetEntryPath);
     }
   } else {
-    // Blank template.
-    console.log(`creating blank project at ${dim(projectPath)}`);
-    await fs.writeFile(join(projectPath, 'SPEC.md'), `# ${slug}\n\n## Goals\n\n(write what this project should accomplish)\n`, 'utf8');
-    await fs.writeFile(
-      join(projectPath, 'AGENTS.md'),
-      `# Conventions for ${slug}\n\n(write coding conventions, libraries to prefer, etc.)\n`,
-      'utf8',
+    console.log(
+      isExistingRepo
+        ? `attaching harness skeleton to ${dim(projectPath)}`
+        : `creating blank project at ${dim(projectPath)}`,
     );
+    await writeIfAbsent('SPEC.md', `# ${slug}\n\n## Goals\n\n(write what this project should accomplish)\n`);
+    await writeIfAbsent('AGENTS.md', `# Conventions for ${slug}\n\n(write coding conventions, libraries to prefer, etc.)\n`);
+  }
+
+  const configPath = join(projectPath, '.harness', 'config.json');
+  if (!existsSync(configPath)) {
     await fs.writeFile(
-      join(projectPath, '.harness', 'config.json'),
+      configPath,
       JSON.stringify(
         {
           phase: 'staging',
@@ -399,10 +888,9 @@ async function cmdInit(args: string[]): Promise<void> {
     );
   }
 
-  // Register.
   const reg = await readRegistry();
   if (!reg.projects.find((p) => p.slug === slug)) {
-    reg.projects.push({ slug, path: projectPath, addedAt: new Date().toISOString() });
+    reg.projects.push({ slug, path: projectPath, addedAt: new Date().toISOString() } as any);
     await writeRegistry(reg);
   }
 
@@ -423,8 +911,76 @@ async function cmdPublish(args: string[] = []): Promise<void> {
   if (!isValidSlug(manifest.name)) die(`publish: invalid manifest.name "${manifest.name}"`);
 
   const acknowledgeSecrets = args.includes('--acknowledge-secrets');
+  const skipCompile = args.includes('--no-compile');
+  const skipSbom = args.includes('--no-sbom');
+  const sbomFile = (() => {
+    const ix = args.findIndex((a) => a === '--sbom' || a.startsWith('--sbom='));
+    if (ix < 0) return null;
+    if (args[ix].startsWith('--sbom=')) return args[ix].slice(7);
+    return args[ix + 1] ?? null;
+  })();
 
   console.log(`publishing ${cyan(`${manifest.name}@${manifest.version}`)} to ${MARKETPLACE_URL}`);
+
+  // ── Auto-compile TypeScript plugin entry ────────────────────────────
+  // Plugins must ship CommonJS index.js for the substrate's plugin loader
+  // (see distribution.mdx §11.1.1: Turbopack rejects bundler-opaque
+  // dynamic ESM imports; we use createRequire which is CJS-only).
+  //
+  // If the publish dir has index.ts but no sibling index.js (or .js is
+  // older than .ts), compile it now via `npx tsc --module commonjs`.
+  // Skipped with --no-compile or when index.ts is absent.
+  const tsEntry = join(cwd, 'index.ts');
+  const jsEntry = join(cwd, 'index.js');
+  if (!skipCompile && existsSync(tsEntry)) {
+    let needsCompile = false;
+    if (!existsSync(jsEntry)) {
+      needsCompile = true;
+    } else {
+      const tsStat = await fs.stat(tsEntry);
+      const jsStat = await fs.stat(jsEntry);
+      if (tsStat.mtimeMs > jsStat.mtimeMs) needsCompile = true;
+    }
+    if (needsCompile) {
+      console.log(`  compiling ${cyan('index.ts → index.js')} (CommonJS for substrate loader)...`);
+      const tsc = spawnSync(
+        'npx',
+        [
+          '--quiet',
+          '-p', 'typescript',
+          'tsc',
+          '--target', 'es2022',
+          '--module', 'commonjs',
+          '--moduleResolution', 'node',
+          '--skipLibCheck',
+          '--noEmit', 'false',
+          '--declaration', 'false',
+          '--allowJs', 'false',
+          '--outDir', cwd,
+          tsEntry,
+        ],
+        { encoding: 'utf8', cwd },
+      );
+      // tsc returns nonzero on type errors but still emits .js; we accept
+      // emit success by checking the file mtime moved forward.
+      const newJsExists = existsSync(jsEntry);
+      if (!newJsExists) {
+        if (tsc.error?.message?.includes('ENOENT')) {
+          die(`publish: TypeScript compiler not found. Install it (npm i -g typescript) or run \`tsc --module commonjs index.ts\` manually then re-publish with --no-compile.`);
+        }
+        die(`publish: tsc failed to emit index.js. Stderr:\n${tsc.stderr || tsc.stdout || '(no output)'}`);
+      }
+      if (tsc.status !== 0) {
+        // Type errors but emit succeeded — warn loudly and continue.
+        console.log(`  ${dim('⚠ tsc reported type errors but index.js was emitted; publishing anyway')}`);
+        console.log(`  ${dim('  (run with --no-compile to skip; fix types in index.ts to clear the warning)')}`);
+      } else {
+        console.log(`  ${green('✓')} compiled cleanly`);
+      }
+    } else {
+      console.log(`  ${dim('index.js up-to-date with index.ts; skipping compile')}`);
+    }
+  }
 
   // ── Secret scrub ────────────────────────────────────────────────────
   // Scan the source tree BEFORE packing. Hard-reject paths fail
@@ -489,13 +1045,15 @@ async function cmdPublish(args: string[] = []): Promise<void> {
 
   // Pack a tarball of cwd (excluding bloat). Write the tarball to /tmp so
   // it doesn't end up self-including, which tar would race on.
-  const tarballPath = join('/tmp', `papercusp-publish-${manifest.name}-${manifest.version}-${Date.now()}.tar.gz`);
+  // Scoped names contain '/' which is illegal in filenames — flatten to '__'.
+  const safeName = String(manifest.name).replace(/[/@]/g, '_');
+  const tarballPath = join('/tmp', `papercusp-publish-${safeName}-${manifest.version}-${Date.now()}.tar.gz`);
 
   // If we have findings to scrub, stage the cwd into a temp dir with
   // placeholder substitutions, then tar that. Otherwise tar the cwd directly.
   let stagingDir: string | null = null;
   if (scanResult.findings.length > 0 && acknowledgeSecrets) {
-    stagingDir = await fs.mkdtemp(join('/tmp', `papercusp-stage-${manifest.name}-`));
+    stagingDir = await fs.mkdtemp(join('/tmp', `papercusp-stage-${safeName}-`));
     const replaced = replaceSecretsWithPlaceholders(filesForScan, scanResult.findings);
     for (const f of allFiles) {
       const dest = join(stagingDir, f.path);
@@ -546,19 +1104,31 @@ async function cmdPublish(args: string[] = []): Promise<void> {
     form.append('readme', await fs.readFile(join(cwd, 'README.md'), 'utf8'));
   }
 
-  // Auth header (if configured).
+  // Auth header (if configured). Priority:
+  //   1. PAPERCUSP_SERVICE_TOKEN env (CI / seed scripts) — non-interactive
+  //   2. credentials.json sessionToken (set by `papercusp login`, OAuth Device Flow)
+  //   3. credentials.json github_pat (legacy; backward compat)
   const creds = await readCredentials();
   const headers: Record<string, string> = {};
-  if (creds.github_pat) {
+  if (process.env.PAPERCUSP_SERVICE_TOKEN) {
+    headers['authorization'] = `Bearer ${process.env.PAPERCUSP_SERVICE_TOKEN}`;
+  } else if (creds.sessionToken) {
+    headers['authorization'] = `Bearer ${creds.sessionToken}`;
+  } else if (creds.github_pat) {
     headers['authorization'] = `Bearer ${creds.github_pat}`;
   }
 
   console.log(`  uploading...`);
-  const r = await fetch(`${MARKETPLACE_URL}/publish/${manifest.name}/${manifest.version}`, {
-    method: 'POST',
-    body: form,
-    headers,
-  });
+  // Scoped names (@owner/pkg) contain a '/' — encode so Hono's :slug param
+  // matches a single path segment.
+  const r = await fetch(
+    `${MARKETPLACE_URL}/publish/${encodeURIComponent(manifest.name)}/${encodeURIComponent(manifest.version)}`,
+    {
+      method: 'POST',
+      body: form,
+      headers,
+    },
+  );
 
   // Cleanup tarball + staging dir regardless.
   await fs.unlink(tarballPath).catch(() => {});
@@ -572,21 +1142,97 @@ async function cmdPublish(args: string[] = []): Promise<void> {
   console.log('');
   console.log(green(`✓ published ${manifest.name}@${manifest.version}`));
   console.log(`  ${dim(JSON.stringify(result))}`);
+
+  // ── M14: SBOM upload ────────────────────────────────────────────────
+  // Either upload --sbom <file> or auto-generate via cyclonedx-npm if a
+  // package-lock.json is present. Best-effort: failures don't fail the
+  // publish (which already succeeded). Skip with --no-sbom.
+  if (skipSbom) {
+    console.log(`  ${dim('SBOM upload skipped (--no-sbom)')}`);
+    return;
+  }
+  let sbomBytes: Buffer | null = null;
+  let sbomSource = '';
+  if (sbomFile) {
+    if (!existsSync(sbomFile)) {
+      console.warn(yellow(`  warn: --sbom ${sbomFile} not found; skipping SBOM upload`));
+    } else {
+      sbomBytes = await fs.readFile(sbomFile);
+      sbomSource = `from ${sbomFile}`;
+    }
+  } else if (existsSync(join(cwd, 'package-lock.json'))) {
+    console.log(`  ${dim('generating CycloneDX SBOM via cyclonedx-npm…')}`);
+    const cdx = spawnSync(
+      'npx',
+      ['--quiet', '--package=@cyclonedx/cyclonedx-npm', 'cyclonedx-npm',
+       '--output-format=JSON', '--output-reproducible', '--spec-version=1.5'],
+      { cwd, encoding: 'utf8' },
+    );
+    if (cdx.status === 0 && cdx.stdout) {
+      sbomBytes = Buffer.from(cdx.stdout, 'utf8');
+      sbomSource = 'auto-generated (CycloneDX 1.5)';
+    } else {
+      console.warn(yellow(`  warn: cyclonedx-npm failed; skipping SBOM (rerun with --sbom <file> to upload manually)`));
+      if (cdx.stderr) console.warn(dim(`    ${cdx.stderr.split('\n').slice(0, 3).join('\n    ')}`));
+    }
+  }
+  if (!sbomBytes) return;
+  const sbomUrl = `${MARKETPLACE_URL}/v1/packages/${encodeURIComponent(manifest.name)}/${encodeURIComponent(manifest.version)}/sbom`;
+  const sbomRes = await fetch(sbomUrl, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: sbomBytes,
+  }).catch((e: Error) => ({ ok: false, status: 0, text: async () => e.message }) as Response);
+  if (!sbomRes.ok) {
+    const text = await sbomRes.text().catch(() => '');
+    console.warn(yellow(`  warn: SBOM upload failed (HTTP ${sbomRes.status}): ${text.slice(0, 200)}`));
+    return;
+  }
+  const sbomJson = await sbomRes.json().catch(() => ({})) as { format?: string; status?: string };
+  console.log(`  ${green('✓')} SBOM uploaded ${dim(`(${sbomSource}, ${sbomBytes.length} bytes${sbomJson.format ? `, ${sbomJson.format}` : ''})`)}`);
+  if (sbomJson.status === 'pending-scan') {
+    console.log(`  ${dim('vulnerability scan queued; results at: ' + MARKETPLACE_URL.replace('api.', '') + `/marketplace/${encodeURIComponent(manifest.name)}`)}`);
+  }
 }
 
 async function cmdRun(args: string[]): Promise<void> {
-  const slug = args[0];
+  const allowWithdrawn = args.includes('--allow-withdrawn');
+  const skipRetractionCheck = args.includes('--skip-retraction-check');
+  const slug = args.find((a) => !a.startsWith('-'));
   let projectPath = process.cwd();
+  let harnessSlug: string | null = slug ?? null;
 
   if (slug) {
     const reg = await readRegistry();
     const found = reg.projects.find((p) => p.slug === slug);
     if (!found) die(`run: project "${slug}" not registered (try \`papercusp list\`)`);
     projectPath = found.path;
+  } else {
+    // Detect from cwd's registered project so we can run the retraction check.
+    const reg = await readRegistry();
+    const found = reg.projects.find((p) => p.path === projectPath);
+    if (found) harnessSlug = found.slug;
   }
 
   if (!existsSync(join(projectPath, '.harness'))) {
     die(`run: ${projectPath} is not a harness project (no .harness/ dir)`);
+  }
+
+  // Retraction-aware lockfile load (spec §14.9.6).
+  if (harnessSlug && !skipRetractionCheck) {
+    const { checkRetractionStates } = await import('./lockfile.ts');
+    const result = await checkRetractionStates(harnessSlug, MARKETPLACE_URL, { allowWithdrawn });
+    for (const note of result.notes) {
+      const colored = note.startsWith('[QUARANTINED]')
+        ? red(note)
+        : note.startsWith('[withdrawn]') && !allowWithdrawn
+        ? red(note)
+        : yellow(note);
+      console.error(colored);
+    }
+    if (result.status === 'block') {
+      die(`run: ${result.blocked.length} retracted plugin(s) blocking startup`, 2);
+    }
   }
 
   const substrate = process.env.PAPERCUSP_HARNESS_DIR ?? join(homedir(), 'autonomous-harness');
@@ -612,29 +1258,63 @@ async function cmdRun(args: string[]): Promise<void> {
   child.on('exit', (code) => process.exit(code ?? 0));
 }
 
-async function cmdScaffoldSchema(slug: string | undefined): Promise<void> {
-  if (!slug) die('scaffold-schema: usage: papercusp scaffold-schema <slug>');
-  if (!isValidSlug(slug)) die(`scaffold-schema: invalid slug "${slug}"`);
-
-  // Locate the framework's scaffold script.
+function locateScaffoldScript(): string {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
-  // Walk up to find Restart/bin/scaffold-harness-schema.sh
   let candidate = __dirname;
-  let scaffoldScript: string | null = null;
   for (let i = 0; i < 6; i++) {
     const probe = join(candidate, 'bin', 'scaffold-harness-schema.sh');
-    if (existsSync(probe)) {
-      scaffoldScript = probe;
-      break;
-    }
+    if (existsSync(probe)) return probe;
     candidate = dirname(candidate);
   }
-  if (!scaffoldScript) die('scaffold-schema: could not locate bin/scaffold-harness-schema.sh');
+  die('scaffold-schema: could not locate bin/scaffold-harness-schema.sh');
+}
 
-  console.log(`scaffolding Postgres schema for ${cyan(slug)}`);
-  const child = spawn('bash', [scaffoldScript, slug], { stdio: 'inherit' });
-  child.on('exit', (code) => process.exit(code ?? 0));
+function runScaffold(scaffoldScript: string, slug: string): Promise<number> {
+  return new Promise((resolve) => {
+    const child = spawn('bash', [scaffoldScript, slug], { stdio: 'inherit' });
+    child.on('exit', (code) => resolve(code ?? 0));
+  });
+}
+
+async function cmdScaffoldSchema(args: string[]): Promise<void> {
+  const recursive = args.includes('--recursive') || args.includes('-r');
+  const slug = args.find((a) => !a.startsWith('-'));
+  if (!slug) die('scaffold-schema: usage: papercusp scaffold-schema <slug> [--recursive]');
+  if (!isValidSlug(slug)) die(`scaffold-schema: invalid slug "${slug}"`);
+
+  const scaffoldScript = locateScaffoldScript();
+
+  let slugs: string[];
+  if (recursive) {
+    const reg = await readRegistry();
+    const children = reg.projects
+      .filter((p) => p.slug.startsWith(`${slug}-`))
+      .map((p) => p.slug)
+      .sort();
+    slugs = [slug, ...children];
+    if (children.length === 0) {
+      console.log(`${dim('--recursive: no children of')} ${slug} ${dim('— scaffolding parent only')}`);
+    } else {
+      console.log(`scaffolding ${cyan(String(slugs.length))} schemas: ${slugs.map((s) => cyan(s)).join(', ')}`);
+    }
+  } else {
+    slugs = [slug];
+    console.log(`scaffolding Postgres schema for ${cyan(slug)}`);
+  }
+
+  let firstFailure = 0;
+  for (const s of slugs) {
+    if (slugs.length > 1) console.log(`\n${dim('—')} ${cyan(s)}`);
+    const code = await runScaffold(scaffoldScript, s);
+    if (code !== 0 && firstFailure === 0) firstFailure = code;
+  }
+
+  if (slugs.length > 1) {
+    console.log('');
+    console.log(firstFailure === 0 ? green(`✓ ${slugs.length} schemas scaffolded`) : red(`✗ at least one schema failed (exit ${firstFailure})`));
+  }
+  process.exit(firstFailure);
 }
 
 // ─── Dispatch ─────────────────────────────────────────────────────────────
@@ -652,7 +1332,7 @@ async function main(): Promise<void> {
     case 'init':
       return cmdInit(args);
     case 'install':
-      return cmdInstall(args[0]);
+      return cmdInstall(args);
     case 'uninstall':
       return cmdUninstall(args[0]);
     case 'list':
@@ -662,14 +1342,101 @@ async function main(): Promise<void> {
     case 'run':
       return cmdRun(args);
     case 'scaffold-schema':
-      return cmdScaffoldSchema(args[0]);
+      return cmdScaffoldSchema(args);
     case 'doctor':
       return cmdDoctor();
+    case 'migrate-config':
+      return cmdMigrateConfig(args[0]);
+    case 'plugin': {
+      const { cmdPlugin } = await import('./plugin-cli.ts');
+      return cmdPlugin(args);
+    }
+    case 'upgrade-pin': {
+      const { cmdUpgradePin } = await import('./plugin-cli.ts');
+      return cmdUpgradePin(args);
+    }
+    case 'lock': {
+      const { cmdLock } = await import('./plugin-cli.ts');
+      return cmdLock(args);
+    }
+    case 'migrate-tabs': {
+      const { cmdMigrateTabs } = await import('./plugin-cli.ts');
+      return cmdMigrateTabs(args);
+    }
     default:
       console.error(red(`unknown command: ${cmd}`));
       console.error(`run \`papercusp help\` for usage`);
       process.exit(2);
   }
+}
+
+async function cmdMigrateConfig(slug: string | undefined): Promise<void> {
+  if (!slug) die('migrate-config: usage: papercusp migrate-config <slug>');
+  const reg = await readRegistry();
+  const project = reg.projects.find((p) => p.slug === slug);
+  if (!project) die(`migrate-config: no registered project "${slug}"`);
+
+  const configPath = join(project.path, '.harness', 'config.json');
+  if (!existsSync(configPath)) die(`migrate-config: no config.json at ${configPath}`);
+
+  const raw = await fs.readFile(configPath, 'utf8');
+  let config: any;
+  try { config = JSON.parse(raw); } catch (e) { die(`migrate-config: invalid JSON at ${configPath}`); }
+
+  const changes: string[] = [];
+  const before = JSON.stringify(config);
+
+  // 1. Rename models.planner → models.scoper.
+  if (config.models?.planner && !config.models?.scoper) {
+    config.models.scoper = config.models.planner;
+    delete config.models.planner;
+    changes.push('models.planner → models.scoper');
+  }
+  // 2. Add models.reviewer default if missing (scoper/reviewer were split out).
+  if (config.models && !config.models.reviewer) {
+    config.models.reviewer = 'claude-opus-4-7';
+    changes.push('added models.reviewer (claude-opus-4-7)');
+  }
+  // 3. Add timeouts defaults if missing.
+  if (!config.timeouts) {
+    config.timeouts = { scoper: 300, worker: 900, validator: 600, reviewer: 300, orchestrator: 120 };
+    changes.push('added timeouts');
+  } else {
+    if (!config.timeouts.scoper && config.timeouts.planner) {
+      config.timeouts.scoper = config.timeouts.planner;
+      delete config.timeouts.planner;
+      changes.push('timeouts.planner → timeouts.scoper');
+    }
+    if (!config.timeouts.reviewer) {
+      config.timeouts.reviewer = 300;
+      changes.push('added timeouts.reviewer (300s)');
+    }
+  }
+  // 4. Add maxCostUsd default if missing.
+  if (config.maxCostUsd == null) {
+    config.maxCostUsd = 10;
+    changes.push('added maxCostUsd (10)');
+  }
+  // 5. promptOverrides — rename planner→scoper if present.
+  if (config.promptOverrides?.planner && !config.promptOverrides?.scoper) {
+    config.promptOverrides.scoper = config.promptOverrides.planner;
+    delete config.promptOverrides.planner;
+    changes.push('promptOverrides.planner → promptOverrides.scoper');
+  }
+
+  if (JSON.stringify(config) === before) {
+    console.log(`${green('✓')} ${slug} config already current — no changes`);
+    return;
+  }
+
+  // Backup + write.
+  const backupPath = `${configPath}.bak.${Date.now()}`;
+  await fs.writeFile(backupPath, raw, 'utf8');
+  await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+
+  console.log(`${green('✓')} ${slug} config migrated:`);
+  for (const c of changes) console.log(`  ${dim('•')} ${c}`);
+  console.log(`  ${dim('backup at')} ${backupPath}`);
 }
 
 main().catch((e) => {

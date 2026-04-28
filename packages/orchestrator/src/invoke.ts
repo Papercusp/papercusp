@@ -20,11 +20,11 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { configGet, readConfig } from './config.js';
-import { buildPrompt } from './prompt-build.js';
-import { resolvePromptFile } from './prompt-resolve.js';
-import { extractFeatureId, makeRunId } from './run-id.js';
-import type { InvokeResult } from './types.js';
+import { configGet, readConfig } from './config';
+import { buildPrompt } from './prompt-build';
+import { resolvePromptFile } from './prompt-resolve';
+import { extractFeatureId, makeRunId } from './run-id';
+import type { InvokeResult } from './types';
 
 export interface InvokeContext {
   /** HARNESS_DIR — root of the @papercusp/harness install. */

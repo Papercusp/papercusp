@@ -7,6 +7,14 @@
  *   4. prompts/$role.md                            (default fallback)
  *
  * Returns the first path that exists. Returns null if none of them do.
+ *
+ * Role aliasing: a small map of legacy role names → canonical role names.
+ * When code (or a user's config.json) references the legacy name, we walk
+ * the canonical name's candidates FIRST, then fall through to the legacy
+ * name's candidates so user-supplied overrides at the legacy path keep
+ * working during the deprecation period.
+ *
+ *   reviewer → plan-gate    (renamed for clarity vs. validator)
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,11 +28,16 @@ export interface PromptResolveContext {
   dept: string;
 }
 
-/** Build the candidate path list (most specific first). Useful for testing. */
-export function promptCandidates(
-  ctx: PromptResolveContext,
-  role: string,
-): string[] {
+/**
+ * Legacy role name → canonical role name. When resolving, we try the
+ * canonical name first and fall back to the legacy name for backwards
+ * compatibility with user configs that still reference the old name.
+ */
+export const ROLE_ALIASES: Record<string, string> = {
+  reviewer: 'plan-gate',
+};
+
+function candidatesFor(ctx: PromptResolveContext, role: string): string[] {
   const candidates: string[] = [];
   const promptsRoot = join(ctx.harnessDir, 'prompts');
 
@@ -40,9 +53,23 @@ export function promptCandidates(
     candidates.push(join(promptsRoot, 'department', `${role}.md`));
   }
   candidates.push(join(promptsRoot, `${role}.md`));
+  return candidates;
+}
+
+/** Build the candidate path list (most specific first). Useful for testing. */
+export function promptCandidates(
+  ctx: PromptResolveContext,
+  role: string,
+): string[] {
+  // If the requested role has a canonical alias, walk the canonical name's
+  // candidates first, then fall through to the legacy name's candidates.
+  const canonical = ROLE_ALIASES[role];
+  const all = canonical
+    ? [...candidatesFor(ctx, canonical), ...candidatesFor(ctx, role)]
+    : candidatesFor(ctx, role);
 
   // Dedupe while preserving order.
-  return Array.from(new Set(candidates));
+  return Array.from(new Set(all));
 }
 
 /**

@@ -30,8 +30,10 @@ function makeFixture(setup: (fx: Omit<Fixture, 'cleanup'>) => void = () => {}): 
   mkdirSync(join(harnessDir, 'prompts'), { recursive: true });
   mkdirSync(join(harnessDir, 'identity'), { recursive: true });
   mkdirSync(logDir, { recursive: true });
-  // Stub the prompts pre-loop might call.
-  for (const role of ['scoper', 'reviewer']) {
+  // Stub the prompts pre-loop might call. 'reviewer' kept here to also
+  // exercise the ROLE_ALIASES fallback path — pre-loop now invokes
+  // 'plan-gate' but the legacy 'reviewer.md' file should still resolve.
+  for (const role of ['scoper', 'plan-gate', 'reviewer']) {
     writeFileSync(join(harnessDir, 'prompts', `${role}.md`), `# ${role}`);
   }
   const fx = { harnessDir, projectDir, stateDir, logDir };
@@ -167,7 +169,7 @@ test('runPreLoop — plan-review reject exits 7 + writes escalation', async () =
     assert.ok(existsSync(join(fx.stateDir, 'escalation.md')));
     assert.match(
       readFileSync(join(fx.stateDir, 'escalation.md'), 'utf8'),
-      /Plan reviewer rejected/,
+      /Plan-gate rejected/,
     );
     assert.ok(log.some((l) => l.startsWith('event:escalate')));
   } finally {

@@ -15,25 +15,40 @@
  */
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import {
   fetchContributions,
   resolveComponent,
   type DashboardTabContribution,
 } from './plugin-runtime';
+import { makeBrowserApi } from './browser-papercusp-api';
 
 interface PluginTabsProps {
   slug: string;
-  /** Optional — additional props passed to each tab's component */
+  /** Optional — additional props passed to each tab's component (merged on top of {slug, api, readOnly}). */
   componentProps?: Record<string, unknown>;
   /** Optional — placeholder shown while a tab is loading */
   fallback?: React.ReactNode;
+  /** Optional — render plugin tabs in read-only mode (default false). */
+  readOnly?: boolean;
 }
 
-export default function PluginTabs({ slug, componentProps, fallback }: PluginTabsProps) {
+export default function PluginTabs({ slug, componentProps, fallback, readOnly = false }: PluginTabsProps) {
   const [tabs, setTabs] = useState<DashboardTabContribution[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState<string | null>(null);
+
+  // Per-(slug, plugin) browser API. Memoized so each plugin tab gets a
+  // stable api reference across renders.
+  const apiCache = useMemo(() => new Map<string, ReturnType<typeof makeBrowserApi>>(), [slug]);
+  const apiFor = (pluginName: string) => {
+    let api = apiCache.get(pluginName);
+    if (!api) {
+      api = makeBrowserApi(slug, pluginName);
+      apiCache.set(pluginName, api);
+    }
+    return api;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -69,7 +84,18 @@ export default function PluginTabs({ slug, componentProps, fallback }: PluginTab
   }
 
   const activeTab = tabs.find((t) => t.id === active) ?? tabs[0];
-  const ActiveComponent = resolveComponent(activeTab);
+  // Pattern 1 — render mode picked per-tab. Iframe wins if both are set
+  // (cheaper to validate at runtime; no rebuild required to update).
+  const renderMode: 'iframe' | 'react' | 'invalid' =
+    activeTab.iframeUrl
+      ? 'iframe'
+      : (activeTab.componentRoot && activeTab.componentId)
+        ? 'react'
+        : 'invalid';
+  const ActiveComponent =
+    renderMode === 'react'
+      ? resolveComponent({ componentRoot: activeTab.componentRoot!, componentId: activeTab.componentId! })
+      : null;
 
   return (
     <div className="plugin-tabs">
@@ -100,10 +126,37 @@ export default function PluginTabs({ slug, componentProps, fallback }: PluginTab
           );
         })}
       </div>
-      <div role="tabpanel" style={{ padding: 12 }}>
-        <Suspense fallback={fallback ?? <div aria-busy>Loading {activeTab.label}…</div>}>
-          <ActiveComponent {...(componentProps ?? {})} />
-        </Suspense>
+      <div role="tabpanel" style={{ padding: 12, height: '100%' }}>
+        {renderMode === 'iframe' && (
+          <iframe
+            key={activeTab.pluginName + ':' + activeTab.id}
+            src={activeTab.iframeUrl}
+            title={`${activeTab.label} (${activeTab.pluginName})`}
+            // Pattern 1 v2 capability gating happens via CSP from the
+            // host. Defaults are tight; plugin can request relaxations
+            // through its capabilities[] manifest (future work).
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+            referrerPolicy="strict-origin-when-cross-origin"
+            style={{ width: '100%', height: '100%', minHeight: 600, border: 0, display: 'block' }}
+          />
+        )}
+        {renderMode === 'react' && ActiveComponent && (
+          <Suspense fallback={fallback ?? <div aria-busy>Loading {activeTab.label}…</div>}>
+            <ActiveComponent
+              {...({
+                slug,
+                api: apiFor(activeTab.pluginName),
+                readOnly,
+                ...(componentProps ?? {}),
+              } as any)}
+            />
+          </Suspense>
+        )}
+        {renderMode === 'invalid' && (
+          <div role="alert" style={{ color: 'var(--sl-color-red, #c00)' }}>
+            Plugin "{activeTab.pluginName}" tab "{activeTab.id}" declares neither an iframeUrl nor a (componentRoot, componentId) pair. Update the manifest.
+          </div>
+        )}
       </div>
     </div>
   );

@@ -17,7 +17,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { harnessSlug } from './state.js';
+import { harnessSlug } from './state';
 
 export interface FirePluginHookOptions {
   hookName: string;
