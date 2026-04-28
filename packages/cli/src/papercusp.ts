@@ -927,8 +927,8 @@ async function cmdInit(args: string[]): Promise<void> {
         const dirSlug = pluginDirBasename(p.slug);
         const flatPluginDir = join(GLOBAL_PLUGINS_DIR, dirSlug);
         const scopedPluginDir = join(GLOBAL_PLUGINS_DIR, p.slug);
-        const installedFlat = existsSync(flatPluginDir);
-        const installedScoped = existsSync(scopedPluginDir);
+        const installedFlat = existsSync(join(flatPluginDir, 'papercusp.json'));
+        const installedScoped = existsSync(join(scopedPluginDir, 'papercusp.json'));
         if (!installedFlat && !installedScoped) {
           console.log(`  ${cyan('install')} ${p.slug}${p.version ? '@' + p.version : ''}`);
           const installArgs = ['install', p.version ? `${p.slug}@${p.version}` : p.slug, '--accept-capabilities'];
@@ -945,8 +945,17 @@ async function cmdInit(args: string[]): Promise<void> {
         }
         // Bridge: scoped installs (`~/.papercusp/global-plugins/@scope/name/`)
         // — symlink to the flat name so `cmdPluginEnable` (which keys by
-        // basename) finds it. Idempotent.
-        if (!existsSync(flatPluginDir) && existsSync(scopedPluginDir)) {
+        // basename) finds it. Idempotent. Replace empty stub dirs and
+        // stale (broken-target) symlinks that would otherwise mask it.
+        if (existsSync(scopedPluginDir) && !existsSync(join(flatPluginDir, 'papercusp.json'))) {
+          const lst = await fs.lstat(flatPluginDir).catch(() => null);
+          if (lst) {
+            if (lst.isSymbolicLink()) {
+              await fs.unlink(flatPluginDir);
+            } else {
+              await fs.rm(flatPluginDir, { recursive: true, force: true });
+            }
+          }
           await fs.symlink(scopedPluginDir, flatPluginDir).catch(() => { /* ignore EEXIST race */ });
         }
         if (p.autoEnable === false) {
