@@ -136,6 +136,9 @@ ${cyan('Options')}
   --include-project  Also include the project source tree (off by default — snapshots are
                      state-only by default; the source code lives in the parent harness or
                      git remote).
+  --include-logs     Include .harness/logs/ + pi-sessions/ + screenshots/. Off by default
+                     because logs balloon the tarball (often 100x larger) and are derived
+                     from agent_runs in Postgres anyway. Turn on for debug-reproduction snapshots.
 
   ${cyan('fork:')}
   <new-harness-slug> Project slug to register. Default: <sourceHarness>-fork-<n> (auto-incremented).
@@ -259,11 +262,13 @@ async function cmdSnapshotPublish(args: string[]): Promise<void> {
   let name: string | null = null;
   let note: string | null = null;
   let includeProject = false;
+  let includeLogs = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--name' && args[i + 1]) { name = args[i + 1]; i++; continue; }
     if (a === '--note' && args[i + 1]) { note = args[i + 1]; i++; continue; }
     if (a === '--include-project') { includeProject = true; continue; }
+    if (a === '--include-logs') { includeLogs = true; continue; }
     if (a.startsWith('--')) {
       die(`snapshot publish: unknown flag "${a}"`);
     }
@@ -320,6 +325,19 @@ async function cmdSnapshotPublish(args: string[]): Promise<void> {
   const includeArgs = includeProject
     ? ['.']
     : ['.harness'];
+  // Exclude transient/derived data by default. `.harness/logs/` is the worst
+  // offender (often hundreds of MB; sheets snapshot was 32MB tarball, ~99%
+  // logs). Logs are derived from agent_runs which are PG-canonical anyway,
+  // so a fork doesn't lose anything by missing them. `--include-logs` is
+  // available for debugging/reproduction snapshots.
+  const transientExcludes = includeLogs
+    ? []
+    : [
+        '--exclude=.harness/logs',
+        '--exclude=.harness/pi-sessions',
+        '--exclude=.harness/screenshots',
+        '--exclude=.harness/pending-reviews',
+      ];
   const tarArgs = [
     'czf',
     tarballPath,
@@ -327,10 +345,15 @@ async function cmdSnapshotPublish(args: string[]): Promise<void> {
     '--exclude=.git',
     '--exclude=.next',
     '--exclude=*.tar.gz',
+    ...transientExcludes,
     '-C', tarSourceDir,
     ...includeArgs,
   ];
-  console.log(`  packing tarball (${includeProject ? 'project + .harness' : '.harness only'})...`);
+  const contentLabel = [
+    includeProject ? 'project + .harness' : '.harness only',
+    includeLogs ? 'with logs' : 'no logs',
+  ].join(', ');
+  console.log(`  packing tarball (${contentLabel})...`);
   const tar = spawnSync('tar', tarArgs, { encoding: 'utf8' });
   if (tar.status !== 0) die(`snapshot publish: tar failed: ${tar.stderr}`);
   const stat = await fs.stat(tarballPath);
