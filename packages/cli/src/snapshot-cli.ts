@@ -105,6 +105,7 @@ export async function cmdSnapshot(args: string[]): Promise<void> {
   const rest = args.slice(1);
   switch (sub) {
     case 'publish': return cmdSnapshotPublish(rest);
+    case 'fork':    return cmdSnapshotFork(rest);
     case 'help':
     case '--help':
     case undefined:
@@ -117,13 +118,18 @@ export async function cmdSnapshot(args: string[]): Promise<void> {
 }
 
 function cmdSnapshotHelp(): void {
-  console.log(`${cyan('papercusp snapshot')} — publish frozen harness state to the marketplace
+  console.log(`${cyan('papercusp snapshot')} — publish + fork frozen harness state from the marketplace
 
-${cyan('publish <harness-slug>')} ${dim('[--name <slug>] [--note "<text>"]')}
+${cyan('publish <harness-slug>')} ${dim('[--name <slug>] [--note "<text>"] [--include-project]')}
                                  ${dim('Bundle the harness\'s .harness/ directory (features, decisions, audit history)')}
                                  ${dim('and push to the marketplace as kind=snapshot.')}
 
+${cyan('fork <snapshot-slug>')} ${dim('[<new-harness-slug>] [--path <dir>]')}
+                                 ${dim('Download a published snapshot and scaffold a new harness from it.')}
+                                 ${dim('Registers the new harness in ~/.papercusp/registry.json.')}
+
 ${cyan('Options')}
+  ${cyan('publish:')}
   --name <slug>      Override the published name (default: <harness>-snapshot-<date>-iter<N>).
                      Use @<owner>/<name> for scoped names (requires \`papercusp login\`).
   --note "<text>"    Description shown on the marketplace listing (default: auto from state).
@@ -131,13 +137,117 @@ ${cyan('Options')}
                      state-only by default; the source code lives in the parent harness or
                      git remote).
 
+  ${cyan('fork:')}
+  <new-harness-slug> Project slug to register. Default: <sourceHarness>-fork-<n> (auto-incremented).
+  --path <dir>       Where to extract. Default: $HOME/<new-harness-slug>.
+
 ${cyan('Examples')}
   ${dim('# Publish current state of "sheets" harness')}
   papercusp snapshot publish sheets
 
-  ${dim('# Custom name + note')}
-  papercusp snapshot publish sheets --name @aviynw/sheets-mvp1 --note "Spreadsheet MVP at iter 24"
+  ${dim('# Fork an existing snapshot into ~/sheets-fork')}
+  papercusp snapshot fork sheets-snapshot-20260429-iter1
 `);
+}
+
+async function cmdSnapshotFork(args: string[]): Promise<void> {
+  const positional: string[] = [];
+  let path: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--path' && args[i + 1]) { path = args[i + 1]; i++; continue; }
+    if (a.startsWith('--')) die(`snapshot fork: unknown flag "${a}"`);
+    positional.push(a);
+  }
+  const snapshotSlug = positional[0];
+  if (!snapshotSlug) die('snapshot fork: usage: papercusp snapshot fork <snapshot-slug> [<new-harness-slug>] [--path <dir>]');
+  if (!isValidSlug(snapshotSlug)) die(`snapshot fork: invalid snapshot slug "${snapshotSlug}"`);
+  const requestedHarnessSlug = positional[1] ?? null;
+
+  // 1. Fetch the snapshot manifest from the marketplace.
+  console.log(`fetching ${cyan(snapshotSlug)} from ${MARKETPLACE_URL}...`);
+  const detailUrl = `${MARKETPLACE_URL}/catalog/${encodeURIComponent(snapshotSlug)}`;
+  const r = await fetch(detailUrl);
+  if (!r.ok) die(`snapshot fork: ${detailUrl} → HTTP ${r.status}`);
+  const detail = await r.json() as {
+    versions?: string[];
+    latest?: { version: string; kind?: string; snapshot?: { sourceHarness?: string } };
+  };
+  if (!detail.latest) die(`snapshot fork: ${snapshotSlug} has no published versions`);
+  const latest = detail.latest;
+  if (latest.kind !== 'snapshot') {
+    die(`snapshot fork: "${snapshotSlug}" is kind="${latest.kind ?? 'unknown'}", not "snapshot". Use \`papercusp install\` for plugins/harnesses.`);
+  }
+  const sourceHarness = latest.snapshot?.sourceHarness ?? snapshotSlug;
+  const version = latest.version;
+
+  // 2. Resolve target slug + path. Auto-increment if collision.
+  const reg = await readRegistry();
+  let newSlug = requestedHarnessSlug ?? `${sourceHarness}-fork`;
+  if (!isValidSlug(newSlug)) die(`snapshot fork: derived/given new-harness-slug "${newSlug}" is not a valid slug`);
+  if (!requestedHarnessSlug) {
+    let n = 1;
+    while (reg.projects.some((p) => p.slug === newSlug)) {
+      n += 1;
+      newSlug = `${sourceHarness}-fork-${n}`;
+    }
+  } else if (reg.projects.some((p) => p.slug === newSlug)) {
+    die(`snapshot fork: harness "${newSlug}" already registered. Pick a different slug or remove the existing one with \`papercusp uninstall ${newSlug}\`.`);
+  }
+
+  const targetPath = path ?? join(homedir(), newSlug);
+  if (existsSync(targetPath)) {
+    die(`snapshot fork: target path ${targetPath} already exists. Pick a fresh dir with --path or remove the existing one.`);
+  }
+
+  console.log(`  source:  ${dim(sourceHarness)}`);
+  console.log(`  new:     ${cyan(newSlug)}`);
+  console.log(`  path:    ${dim(targetPath)}`);
+
+  // 3. Download tarball.
+  const safeName = snapshotSlug.replace(/[/@]/g, '_');
+  const tarballUrl = `${MARKETPLACE_URL}/download/${encodeURIComponent(snapshotSlug)}/${encodeURIComponent(version)}`;
+  const tarballPath = join('/tmp', `papercusp-fork-${safeName}-${Date.now()}.tar.gz`);
+  console.log(`  downloading...`);
+  const tarRes = await fetch(tarballUrl);
+  if (!tarRes.ok) die(`snapshot fork: tarball ${tarballUrl} → HTTP ${tarRes.status}`);
+  const arrayBuf = await tarRes.arrayBuffer();
+  await fs.writeFile(tarballPath, Buffer.from(arrayBuf));
+  const stat = await fs.stat(tarballPath);
+  console.log(`  ${green('✓')} ${stat.size} bytes`);
+
+  // 4. Extract.
+  await fs.mkdir(targetPath, { recursive: true });
+  const tarExtract = spawnSync('tar', ['xzf', tarballPath, '-C', targetPath], { encoding: 'utf8' });
+  await fs.unlink(tarballPath).catch(() => {});
+  if (tarExtract.status !== 0) {
+    // Cleanup the half-extracted dir to keep state consistent.
+    await fs.rm(targetPath, { recursive: true, force: true }).catch(() => {});
+    die(`snapshot fork: tar extract failed: ${tarExtract.stderr}`);
+  }
+
+  // 5. Register in ~/.papercusp/registry.json. Re-use sourceHarness's harness_kind
+  //    if known; otherwise default to 'coding' (most common).
+  const sourceProject = reg.projects.find((p) => p.slug === sourceHarness);
+  const harnessKind = sourceProject?.harnessKind ?? 'coding';
+  reg.projects.push({
+    slug: newSlug,
+    path: targetPath,
+    harnessKind,
+    addedAt: new Date().toISOString(),
+  });
+  await writeJson(REGISTRY_PATH, reg);
+  await writeJson(LEGACY_REGISTRY_PATH, reg);
+
+  console.log('');
+  console.log(green(`✓ forked ${snapshotSlug}@${version} as ${newSlug}`));
+  console.log(`  ${dim('open in operator: http://localhost:3055/harness (pick "' + newSlug + '")')}`);
+  console.log(`  ${dim('run from cli:    papercusp run ' + newSlug)}`);
+}
+
+async function writeJson(path: string, value: unknown): Promise<void> {
+  await fs.mkdir(join(path, '..'), { recursive: true }).catch(() => {});
+  await fs.writeFile(path, JSON.stringify(value, null, 2), 'utf8');
 }
 
 async function readCredentials() {
