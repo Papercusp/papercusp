@@ -139,6 +139,10 @@ ${bold('Commands:')}
   ${cyan('plugin <subcommand>')}              Per-harness plugin lifecycle. \`papercusp plugin help\` for details.
                                        Subcommands: list, enable, disable, config, invoke.
 
+  ${cyan('snapshot publish <slug>')}          Bundle a harness's frozen state (.harness/) and publish it
+                                       to the marketplace as kind=snapshot. Others can browse + fork.
+                                       \`papercusp snapshot help\` for details.
+
   ${cyan('upgrade-pin <slug>')}              Re-pin a withdrawn/quarantined plugin in the harness lockfile to its latest active version.
 
   ${cyan('lock check')} [--harness <slug>]   Inspect papercusp.lock entries against the registry; flag retracted/missing.
@@ -1514,6 +1518,10 @@ async function main(): Promise<void> {
     case 'plugin': {
       const { cmdPlugin } = await import('./plugin-cli.ts');
       return cmdPlugin(args);
+    }
+    case 'snapshot': {
+      const { cmdSnapshot } = await import('./snapshot-cli.ts');
+      return cmdSnapshot(args);
     }
     case 'upgrade-pin': {
       const { cmdUpgradePin } = await import('./plugin-cli.ts');
