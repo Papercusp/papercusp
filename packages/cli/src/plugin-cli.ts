@@ -561,6 +561,169 @@ export async function cmdPluginUninstall(args: string[]): Promise<void> {
   }
 }
 
+/**
+ * Rename an installed plugin's on-disk slug across global-plugins,
+ * per-harness enable state, per-harness config files, and granted
+ * capabilities. The plugin's manifest `name` field is NOT modified —
+ * the rename is purely the dir-basename slug used by the operator
+ * runtime + state files. Callers who also need the manifest renamed
+ * (e.g. when republishing under a new scoped name) edit
+ * `papercusp.json` themselves before or after running this command.
+ *
+ * Two common scenarios:
+ *   1. Dev-symlink rename: ~/.papercusp/global-plugins/old → source-dir
+ *      gets repointed at the source's new location; this command updates
+ *      the slug in every state file the operator reads. (Covered by
+ *      moving the symlink itself OR running this command after.)
+ *   2. Post-republish migration: user has installed both old and new
+ *      from the marketplace; this command consolidates config + grants
+ *      onto the new slug while uninstalling the old.
+ */
+export async function cmdPluginRename(args: string[]): Promise<void> {
+  const oldSlug = args[0];
+  const newSlug = args[1];
+  if (!oldSlug || !newSlug) {
+    die(
+      'plugin rename: usage: papercusp plugin rename <old-slug> <new-slug>\n' +
+        '  Renames the on-disk slug; migrates per-harness enable/config + grants.\n' +
+        '  Does not change the manifest name field — edit papercusp.json yourself if needed.',
+    );
+  }
+  if (oldSlug === newSlug) die(`plugin rename: <old-slug> and <new-slug> are the same`);
+
+  const oldDir = join(GLOBAL_PLUGINS_DIR, oldSlug);
+  const newDir = join(GLOBAL_PLUGINS_DIR, newSlug);
+  // Detect symlinks via lstat so we don't follow into the target.
+  let oldKind: 'dir' | 'symlink' | 'absent' = 'absent';
+  try {
+    const st = await fs.lstat(oldDir);
+    oldKind = st.isSymbolicLink() ? 'symlink' : st.isDirectory() ? 'dir' : 'absent';
+  } catch (e: any) {
+    if (e?.code !== 'ENOENT') throw e;
+  }
+  if (oldKind === 'absent') {
+    die(`plugin rename: ${oldDir} does not exist — nothing to rename`);
+  }
+
+  let newAlreadyExists = false;
+  try {
+    await fs.lstat(newDir);
+    newAlreadyExists = true;
+  } catch (e: any) {
+    if (e?.code !== 'ENOENT') throw e;
+  }
+  if (newAlreadyExists) {
+    die(
+      `plugin rename: ${newDir} already exists — refusing to clobber. ` +
+        `Run \`papercusp plugin uninstall ${newSlug}\` first if you want to replace it.`,
+    );
+  }
+
+  await fs.rename(oldDir, newDir);
+  console.log(`${green('✓')} renamed ${dim(oldDir)} → ${cyan(newDir)} ${dim('(' + oldKind + ')')}`);
+
+  // Walk every harness, migrate enable + config state.
+  const migratedHarnesses: string[] = [];
+  if (existsSync(HARNESSES_DIR)) {
+    const harnesses = await fs.readdir(HARNESSES_DIR, { withFileTypes: true });
+    for (const h of harnesses) {
+      if (!h.isDirectory()) continue;
+      let touched = false;
+
+      // enabled-plugins.json — swap old key → new key (keep version/timestamp/hash)
+      const enabledFile = join(HARNESSES_DIR, h.name, 'enabled-plugins.json');
+      const enabled = await readJson<EnabledPluginsFile>(enabledFile);
+      if (enabled?.enabled[oldSlug]) {
+        if (enabled.enabled[newSlug]) {
+          console.log(
+            `  ${yellow('!')} ${h.name}: both ${oldSlug} and ${newSlug} were enabled; ` +
+              `keeping ${newSlug}'s entry, dropping ${oldSlug}`,
+          );
+          delete enabled.enabled[oldSlug];
+        } else {
+          enabled.enabled[newSlug] = enabled.enabled[oldSlug];
+          delete enabled.enabled[oldSlug];
+        }
+        await writeJson(enabledFile, enabled);
+        touched = true;
+      }
+
+      // plugin-configs/<slug>.json — rename file
+      const oldConfig = join(HARNESSES_DIR, h.name, 'plugin-configs', `${oldSlug}.json`);
+      const newConfig = join(HARNESSES_DIR, h.name, 'plugin-configs', `${newSlug}.json`);
+      if (existsSync(oldConfig)) {
+        if (existsSync(newConfig)) {
+          // Don't clobber a hand-authored config under the new slug.
+          console.log(
+            `  ${yellow('!')} ${h.name}: ${newSlug}.json already exists; ` +
+              `leaving ${oldSlug}.json in place — review manually`,
+          );
+        } else {
+          await fs.rename(oldConfig, newConfig);
+          touched = true;
+        }
+      }
+
+      // plugin-data/<slug>/ — invoke-time mirror dir (cmdPluginInvoke writes config.json here)
+      const oldDataDir = join(HARNESSES_DIR, h.name, 'plugin-data', oldSlug);
+      const newDataDir = join(HARNESSES_DIR, h.name, 'plugin-data', newSlug);
+      if (existsSync(oldDataDir) && !existsSync(newDataDir)) {
+        await fs.rename(oldDataDir, newDataDir);
+        touched = true;
+      }
+
+      if (touched) migratedHarnesses.push(h.name);
+    }
+  }
+
+  // Capability grants — keys are typically `<slug>` or `<slug>@<version>` or
+  // `<slug>:<harness>:<cap>`. Rewrite any key whose first colon-separated
+  // segment matches the old slug (with or without an @version suffix).
+  let grantsRenamed = 0;
+  for (const file of ['granted-capabilities.json', 'extended-grants.json']) {
+    const path = join(PAPERCUSP_ROOT, file);
+    const data = await readJson<{ grants?: Record<string, unknown>; extended?: Record<string, unknown> }>(path);
+    if (!data) continue;
+    const target = data.grants ?? data.extended;
+    if (!target) continue;
+    const updated: Record<string, unknown> = {};
+    let changed = false;
+    for (const [key, value] of Object.entries(target)) {
+      const head = key.split(':')[0];
+      const headSlug = head.split('@')[0];
+      if (headSlug === oldSlug) {
+        const renamedHead = head.replace(oldSlug, newSlug);
+        const newKey = renamedHead + key.slice(head.length);
+        updated[newKey] = value;
+        grantsRenamed++;
+        changed = true;
+      } else {
+        updated[key] = value;
+      }
+    }
+    if (changed) {
+      if (data.grants) data.grants = updated;
+      else data.extended = updated;
+      await writeJson(path, data);
+    }
+  }
+
+  console.log('');
+  console.log(green(`✓ rename complete: ${oldSlug} → ${newSlug}`));
+  if (migratedHarnesses.length > 0) {
+    console.log(dim(`  migrated state in ${migratedHarnesses.length} harness(es): ${migratedHarnesses.join(', ')}`));
+  }
+  if (grantsRenamed > 0) {
+    console.log(dim(`  rewrote ${grantsRenamed} grant key(s)`));
+  }
+  console.log(
+    dim(
+      `  the operator picks up the rename on its next plugin-runtime probe; ` +
+        `restart it (or hit /api/plugins/global) if you want immediate refresh.`,
+    ),
+  );
+}
+
 export async function cmdPluginConfig(args: string[]): Promise<void> {
   const parsed = parseHarnessFlag(args);
   const slug = parsed.rest[0];
@@ -1114,6 +1277,8 @@ export async function cmdPlugin(args: string[]): Promise<void> {
       return cmdPluginDisable(rest);
     case 'uninstall':
       return cmdPluginUninstall(rest);
+    case 'rename':
+      return cmdPluginRename(rest);
     case 'config':
       return cmdPluginConfig(rest);
     case 'invoke':
@@ -1131,6 +1296,7 @@ ${bold('Subcommands:')}
   ${cyan('enable <slug>')} [--harness <slug>] [--accept-defaults]   Enable a plugin in a harness; prompts configSchema.
   ${cyan('disable <slug>')} [--harness <slug>]                 Disable a plugin in a harness (preserves config).
   ${cyan('uninstall <slug>')} [--purge-grants]                Remove the plugin globally + disable in every harness.
+  ${cyan('rename <old-slug> <new-slug>')}                     Rename an installed plugin's on-disk slug; migrates per-harness enable/config + grants.
   ${cyan('config <slug>')} [--harness <slug>] [--set k=v]…     Edit plugin config ($EDITOR if TTY; or --set repeated).
   ${cyan('invoke <slug> <action>')} [--harness <slug>] [--params '<json>'] [--dry-run]
                                               Manually fire a plugin action (operator-facing). Exits 5 on ok=false.
