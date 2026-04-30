@@ -41,6 +41,49 @@ async function readWebhookUrl(): Promise<string | null> {
   return process.env.SLACK_WEBHOOK_URL ?? null;
 }
 
+interface NotifyResult {
+  ok: boolean;
+  result?: { posted: boolean; channel?: string };
+  error?: string;
+}
+
+async function runNotify(
+  ctx: PapercuspContext,
+  p: Partial<NotifyParams>,
+  signal: AbortSignal | undefined,
+): Promise<NotifyResult> {
+  if (!p.text || typeof p.text !== 'string') {
+    return { ok: false, error: 'slack-notifier: params.text is required (string)' };
+  }
+  const url = await readWebhookUrl();
+  if (!url) {
+    return { ok: false, error: 'slack-notifier: SLACK_WEBHOOK_URL not configured (export it in the substrate process env)' };
+  }
+  const config = await readConfig(ctx);
+  const body = {
+    text: p.text,
+    channel: p.channel ?? config.defaultChannel,
+    username: config.username ?? 'papercusp',
+    icon_emoji: config.icon ?? ':paperclip:',
+  };
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      return { ok: false, error: `slack-notifier: HTTP ${r.status}${text ? ' — ' + text.slice(0, 200) : ''}` };
+    }
+    return { ok: true, result: { posted: true, channel: body.channel } };
+  } catch (e: any) {
+    if (e?.name === 'AbortError') return { ok: false, error: 'slack-notifier: aborted (timeout)' };
+    return { ok: false, error: e?.message ?? String(e) };
+  }
+}
+
 const plugin: Plugin = {
   kind: 'plugin',
   name: '@papercupai/slack-notifier',
@@ -73,39 +116,36 @@ const plugin: Plugin = {
     },
   ],
   async init(ctx) {
-    ctx.actions.register('notify', async (innerCtx, params, signal) => {
-      const p = (params ?? {}) as Partial<NotifyParams>;
-      if (!p.text || typeof p.text !== 'string') {
-        return { ok: false, error: 'slack-notifier: params.text is required (string)' };
-      }
+    ctx.actions!.register('notify', async (innerCtx, params, signal) => {
+      return runNotify(innerCtx, (params ?? {}) as Partial<NotifyParams>, signal);
+    });
+  },
+  hooks: {
+    // Mission completed — post a Slack notification. Silent skip when
+    // SLACK_WEBHOOK_URL isn't set (enabled-but-not-configured-for-auto).
+    // Logs+swallows real errors; we never want a Slack blip to be reported
+    // as a mission failure.
+    async afterDone(ctx: PapercuspContext) {
       const url = await readWebhookUrl();
       if (!url) {
-        return { ok: false, error: 'slack-notifier: SLACK_WEBHOOK_URL not configured (export it in the substrate process env)' };
+        ctx.log('slack-notifier: afterDone — skipped (SLACK_WEBHOOK_URL not configured)');
+        return;
       }
-      const config = await readConfig(innerCtx);
-      const body = {
-        text: p.text,
-        channel: p.channel ?? config.defaultChannel,
-        username: config.username ?? 'papercusp',
-        icon_emoji: config.icon ?? ':paperclip:',
-      };
       try {
-        const r = await fetch(url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-          signal,
-        });
-        if (!r.ok) {
-          const text = await r.text().catch(() => '');
-          return { ok: false, error: `slack-notifier: HTTP ${r.status}${text ? ' — ' + text.slice(0, 200) : ''}` };
+        const r = await runNotify(
+          ctx,
+          { text: `:white_check_mark: Mission complete: \`${ctx.installSlug}\`` },
+          undefined,
+        );
+        if (r.ok) {
+          ctx.log(`slack-notifier: afterDone posted to ${r.result?.channel ?? '(default channel)'}`);
+        } else {
+          ctx.log(`slack-notifier: afterDone failed — ${r.error}`);
         }
-        return { ok: true, result: { posted: true, channel: body.channel } };
       } catch (e: any) {
-        if (e?.name === 'AbortError') return { ok: false, error: 'slack-notifier: aborted (timeout)' };
-        return { ok: false, error: e?.message ?? String(e) };
+        ctx.log(`slack-notifier: afterDone threw — ${e?.message ?? String(e)}`);
       }
-    });
+    },
   },
 };
 

@@ -1,0 +1,152 @@
+{
+  "kind": "plugin",
+  "name": "@papercupai/linear-sync",
+  "version": "0.1.0",
+  "papercusp": "^0.1.0",
+  "description": "Sync papercusp harness state to a Linear team: create an issue per feature, append comments on status transitions, list issues by label. Demonstrates capability-gated GraphQL integration with single-key auth + idempotent upserts.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "main": "./index.ts",
+  "capabilities": [
+    "secrets:read:LINEAR_API_KEY",
+    "http:fetch:api.linear.app",
+    "events:listen:feature-passed",
+    "events:listen:feature-failed",
+    "events:listen:proposal-accepted",
+    "events:listen:mission-done"
+  ],
+  "actions": [
+    {
+      "name": "create-issue",
+      "label": "Create Linear issue",
+      "surfaces": [
+        "harness-toolbar",
+        "feature-row",
+        "mission-done"
+      ],
+      "capabilities": [
+        "secrets:read:LINEAR_API_KEY",
+        "http:fetch:api.linear.app"
+      ],
+      "serverHandler": {
+        "timeoutSec": 15
+      },
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Issue title. Required."
+          },
+          "description": {
+            "type": "string",
+            "description": "Issue body in Markdown."
+          },
+          "teamKey": {
+            "type": "string",
+            "description": "Linear team key (e.g. 'ENG'). Overrides config.defaultTeamKey."
+          },
+          "teamId": {
+            "type": "string",
+            "description": "Linear team UUID. Overrides teamKey lookup."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label names. Missing labels are created on the team."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "If set, plugin auto-labels '<labelPrefix>-key-<value>' and searches for a pre-existing issue with that label before creating. Returns the existing issue's id+identifier if found. Recommended source: feature_id."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "post-comment",
+      "label": "Post Linear comment",
+      "surfaces": [
+        "feature-row"
+      ],
+      "capabilities": [
+        "secrets:read:LINEAR_API_KEY",
+        "http:fetch:api.linear.app"
+      ],
+      "serverHandler": {
+        "timeoutSec": 10
+      },
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "issueId": {
+            "type": "string",
+            "description": "Linear issue UUID. Required (one of issueId or identifier)."
+          },
+          "identifier": {
+            "type": "string",
+            "description": "Linear issue identifier, e.g. 'ENG-42'. Resolved to UUID before posting."
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment body in Markdown. Required."
+          }
+        },
+        "required": [
+          "body"
+        ]
+      }
+    },
+    {
+      "name": "list-issues",
+      "label": "List Linear issues for harness",
+      "surfaces": [
+        "plugin-detail"
+      ],
+      "capabilities": [
+        "secrets:read:LINEAR_API_KEY",
+        "http:fetch:api.linear.app"
+      ],
+      "serverHandler": {
+        "timeoutSec": 15
+      },
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "labelName": {
+            "type": "string",
+            "description": "Override the default 'papercusp-{slug}' label filter."
+          }
+        }
+      }
+    }
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "defaultTeamKey": {
+        "type": "string",
+        "description": "Default Linear team key (e.g. 'ENG'). Resolved to UUID at runtime."
+      },
+      "defaultTeamId": {
+        "type": "string",
+        "description": "Default Linear team UUID. Bypasses teamKey lookup if set."
+      },
+      "labelPrefix": {
+        "type": "string",
+        "default": "papercusp",
+        "description": "Issues get auto-labeled '{prefix}-{harness-slug}' for filtering."
+      },
+      "createOnFeaturePassed": {
+        "type": "boolean",
+        "default": false,
+        "description": "When a feature passes, auto-create a Linear issue summarizing the change."
+      }
+    }
+  },
+  "icon": "GitPullRequest"
+}

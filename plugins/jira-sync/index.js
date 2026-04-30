@@ -1,8 +1,41 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 async function readConfig(ctx) {
-    const { promises: fs } = await Promise.resolve().then(() => require('node:fs'));
-    const { join } = await Promise.resolve().then(() => require('node:path'));
+    const { promises: fs } = await Promise.resolve().then(() => __importStar(require('node:fs')));
+    const { join } = await Promise.resolve().then(() => __importStar(require('node:path')));
     try {
         return JSON.parse(await fs.readFile(join(ctx.pluginDataDir, 'config.json'), 'utf8'));
     }
@@ -42,6 +75,80 @@ async function jiraFetch(creds, path, init = {}) {
             ...(init.body ? { 'content-type': 'application/json' } : {}),
         },
     });
+}
+async function runCreateIssue(ctx, p, signal) {
+    if (!p.summary || typeof p.summary !== 'string') {
+        return { ok: false, error: 'jira-sync: params.summary is required (string)' };
+    }
+    const creds = await readCreds();
+    if (!creds) {
+        return {
+            ok: false,
+            error: 'jira-sync: JIRA_API_TOKEN, JIRA_EMAIL, JIRA_BASE_URL must all be set in the substrate process env',
+        };
+    }
+    const config = await readConfig(ctx);
+    const projectKey = p.projectKey ?? config.defaultProjectKey;
+    if (!projectKey) {
+        return { ok: false, error: 'jira-sync: projectKey not provided and config.defaultProjectKey is unset' };
+    }
+    const labelPrefix = config.labelPrefix ?? 'papercusp';
+    const slugLabel = `${labelPrefix}-${ctx.installSlug ?? 'unknown'}`;
+    const idempotencyLabel = p.idempotencyKey ? `${labelPrefix}-key-${p.idempotencyKey}` : null;
+    const labels = Array.from(new Set([...(p.labels ?? []), slugLabel, ...(idempotencyLabel ? [idempotencyLabel] : [])]));
+    try {
+        if (idempotencyLabel) {
+            const jql = `project = "${projectKey}" AND labels = "${idempotencyLabel}"`;
+            const findUrl = `/search?jql=${encodeURIComponent(jql)}&fields=summary&maxResults=1`;
+            const findRes = await jiraFetch(creds, findUrl, { method: 'GET', signal });
+            if (findRes.ok) {
+                const findJson = (await findRes.json());
+                if (findJson.total > 0 && findJson.issues[0]) {
+                    const existing = findJson.issues[0];
+                    return {
+                        ok: true,
+                        result: {
+                            issueKey: existing.key,
+                            id: existing.id,
+                            url: `${creds.baseUrl}/browse/${existing.key}`,
+                            reused: true,
+                        },
+                    };
+                }
+            }
+        }
+    }
+    catch (e) {
+        if (e?.name === 'AbortError')
+            return { ok: false, error: 'jira-sync: aborted (timeout) during find-before-create' };
+    }
+    const body = {
+        fields: {
+            project: { key: projectKey },
+            issuetype: { name: p.issueType ?? config.defaultIssueType ?? 'Task' },
+            summary: p.summary,
+            ...(p.description ? { description: adfDoc(p.description) } : {}),
+            labels,
+        },
+    };
+    try {
+        const r = await jiraFetch(creds, '/issue', {
+            method: 'POST',
+            body: JSON.stringify(body),
+            signal,
+        });
+        if (!r.ok) {
+            const text = await r.text().catch(() => '');
+            return { ok: false, error: `jira-sync: HTTP ${r.status}${text ? ' — ' + text.slice(0, 300) : ''}` };
+        }
+        const json = (await r.json());
+        return { ok: true, result: { issueKey: json.key, id: json.id, url: `${creds.baseUrl}/browse/${json.key}`, reused: false } };
+    }
+    catch (e) {
+        if (e?.name === 'AbortError')
+            return { ok: false, error: 'jira-sync: aborted (timeout)' };
+        return { ok: false, error: e?.message ?? String(e) };
+    }
 }
 const plugin = {
     kind: 'plugin',
@@ -99,87 +206,7 @@ const plugin = {
     ],
     async init(ctx) {
         ctx.actions.register('create-issue', async (innerCtx, params, signal) => {
-            const p = (params ?? {});
-            if (!p.summary || typeof p.summary !== 'string') {
-                return { ok: false, error: 'jira-sync: params.summary is required (string)' };
-            }
-            const creds = await readCreds();
-            if (!creds) {
-                return {
-                    ok: false,
-                    error: 'jira-sync: JIRA_API_TOKEN, JIRA_EMAIL, JIRA_BASE_URL must all be set in the substrate process env',
-                };
-            }
-            const config = await readConfig(innerCtx);
-            const projectKey = p.projectKey ?? config.defaultProjectKey;
-            if (!projectKey) {
-                return { ok: false, error: 'jira-sync: projectKey not provided and config.defaultProjectKey is unset' };
-            }
-            const labelPrefix = config.labelPrefix ?? 'papercusp';
-            const slugLabel = `${labelPrefix}-${innerCtx.harness?.slug ?? 'unknown'}`;
-            const idempotencyLabel = p.idempotencyKey ? `${labelPrefix}-key-${p.idempotencyKey}` : null;
-            const labels = Array.from(new Set([...(p.labels ?? []), slugLabel, ...(idempotencyLabel ? [idempotencyLabel] : [])]));
-            // Find-before-create: if an idempotency label is set, search for an
-            // existing issue with it first. If found, return that issue's key
-            // instead of creating a duplicate. Re-running an action mid-flight
-            // (retries, replays of mission-done events) won't pile up dupes.
-            try {
-                if (idempotencyLabel) {
-                    const jql = `project = "${projectKey}" AND labels = "${idempotencyLabel}"`;
-                    const findUrl = `/search?jql=${encodeURIComponent(jql)}&fields=summary&maxResults=1`;
-                    const findRes = await jiraFetch(creds, findUrl, { method: 'GET', signal });
-                    if (findRes.ok) {
-                        const findJson = (await findRes.json());
-                        if (findJson.total > 0 && findJson.issues[0]) {
-                            const existing = findJson.issues[0];
-                            return {
-                                ok: true,
-                                result: {
-                                    issueKey: existing.key,
-                                    id: existing.id,
-                                    url: `${creds.baseUrl}/browse/${existing.key}`,
-                                    reused: true,
-                                },
-                            };
-                        }
-                    }
-                    // If find fails (network error, perms), fall through to create —
-                    // the create call will fail with a clearer error if creds are bad.
-                }
-            }
-            catch (e) {
-                if (e?.name === 'AbortError')
-                    return { ok: false, error: 'jira-sync: aborted (timeout) during find-before-create' };
-                // Non-abort errors fall through to create. Tracked at the issue
-                // level — Jira's tolerance for stale label searches is uncertain.
-            }
-            const body = {
-                fields: {
-                    project: { key: projectKey },
-                    issuetype: { name: p.issueType ?? config.defaultIssueType ?? 'Task' },
-                    summary: p.summary,
-                    ...(p.description ? { description: adfDoc(p.description) } : {}),
-                    labels,
-                },
-            };
-            try {
-                const r = await jiraFetch(creds, '/issue', {
-                    method: 'POST',
-                    body: JSON.stringify(body),
-                    signal,
-                });
-                if (!r.ok) {
-                    const text = await r.text().catch(() => '');
-                    return { ok: false, error: `jira-sync: HTTP ${r.status}${text ? ' — ' + text.slice(0, 300) : ''}` };
-                }
-                const json = (await r.json());
-                return { ok: true, result: { issueKey: json.key, id: json.id, url: `${creds.baseUrl}/browse/${json.key}`, reused: false } };
-            }
-            catch (e) {
-                if (e?.name === 'AbortError')
-                    return { ok: false, error: 'jira-sync: aborted (timeout)' };
-                return { ok: false, error: e?.message ?? String(e) };
-            }
+            return runCreateIssue(innerCtx, (params ?? {}), signal);
         });
         ctx.actions.register('post-comment', async (_innerCtx, params, signal) => {
             const p = (params ?? {});
@@ -215,7 +242,7 @@ const plugin = {
                 return { ok: false, error: 'jira-sync: credentials not configured' };
             const config = await readConfig(innerCtx);
             const labelPrefix = config.labelPrefix ?? 'papercusp';
-            const slug = innerCtx.harness?.slug ?? 'unknown';
+            const slug = innerCtx.installSlug ?? 'unknown';
             const jql = p.jql ?? `labels = "${labelPrefix}-${slug}" ORDER BY created DESC`;
             try {
                 const r = await jiraFetch(creds, `/search?jql=${encodeURIComponent(jql)}&fields=summary,status,labels`, {
@@ -247,6 +274,62 @@ const plugin = {
                 return { ok: false, error: e?.message ?? String(e) };
             }
         });
+    },
+    hooks: {
+        // Mission completed — auto-create a "Mission complete" Jira issue.
+        // Idempotent on installSlug so replays of the mission-done event don't
+        // pile up. Silent skip when not configured (no projectKey or creds).
+        async afterDone(ctx) {
+            const cfg = await readConfig(ctx);
+            if (!cfg.defaultProjectKey) {
+                ctx.log('jira-sync: afterDone — skipped (defaultProjectKey not configured)');
+                return;
+            }
+            try {
+                const r = await runCreateIssue(ctx, {
+                    summary: `Mission complete: ${ctx.installSlug}`,
+                    description: `Harness ${ctx.installSlug} reported mission-done.`,
+                    idempotencyKey: `mission-${ctx.installSlug}`,
+                }, undefined);
+                if (r.ok) {
+                    ctx.log(`jira-sync: afterDone → ${r.result?.issueKey}${r.result?.reused ? ' (reused)' : ''}`);
+                }
+                else {
+                    ctx.log(`jira-sync: afterDone failed — ${r.error}`);
+                }
+            }
+            catch (e) {
+                ctx.log(`jira-sync: afterDone threw — ${e?.message ?? String(e)}`);
+            }
+        },
+        // Feature passed — only fires when config.createOnFeaturePassed is true.
+        // Idempotent on featureId so retries don't duplicate. We never throw;
+        // a CI-tracker hiccup must not be reported as a feature regression.
+        async onFeaturePassed(ctx, featureId) {
+            const cfg = await readConfig(ctx);
+            if (!cfg.createOnFeaturePassed)
+                return;
+            if (!cfg.defaultProjectKey) {
+                ctx.log('jira-sync: onFeaturePassed — skipped (defaultProjectKey not configured)');
+                return;
+            }
+            try {
+                const r = await runCreateIssue(ctx, {
+                    summary: `Feature passed: ${featureId}`,
+                    description: `Harness ${ctx.installSlug} reported feature ${featureId} passed validation.`,
+                    idempotencyKey: `feature-${featureId}`,
+                }, undefined);
+                if (r.ok) {
+                    ctx.log(`jira-sync: onFeaturePassed(${featureId}) → ${r.result?.issueKey}${r.result?.reused ? ' (reused)' : ''}`);
+                }
+                else {
+                    ctx.log(`jira-sync: onFeaturePassed(${featureId}) failed — ${r.error}`);
+                }
+            }
+            catch (e) {
+                ctx.log(`jira-sync: onFeaturePassed(${featureId}) threw — ${e?.message ?? String(e)}`);
+            }
+        },
     },
 };
 /* ─────────────────────────────────────────────────────────────────────
