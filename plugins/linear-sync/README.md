@@ -1,93 +1,93 @@
 # @papercupai/linear-sync
 
-Sync Papercusp harness state to a Linear team.
+**Bidirectional background sync** between a Papercusp harness's `harness_features` and `harness_issues` queues and a Linear team. GraphQL counterpart to [`@papercupai/jira-sync`](../jira-sync/README.md) — same architecture, same data flow, different transport.
 
-## What it does
+> **v0.2.0 is a complete redesign.** v0.1's manual `create-issue` actions and dashboard buttons are gone. The model now: every harness feature IS a Linear issue, every tagged Linear issue IS a feature/bug row. Continuous, automatic.
 
-Three actions:
+## How it works
 
-| Action | What |
+| Trigger | When | Latency |
+|---|---|---|
+| `cron: */30s` | every 30 seconds | safety-net catch-all |
+| `webhook` (Linear → us) | Linear fires `Issue` webhook | sub-second |
+| lifecycle hook `onPostValidator` | a worker/validator finishes a feature | immediate |
+| lifecycle hook `beforeMissionStart` / `afterDone` | mission boundaries | immediate |
+
+The sync engine is identical to jira-sync; only the API calls differ:
+- `IssueCreate` mutation instead of `POST /issue`
+- `IssueUpdate` instead of `PUT /issue/<key>`
+- State transition is part of `IssueUpdate.stateId`, not a separate transitions endpoint
+- Labels resolved per-team via `team.labels`, missing names auto-created with `IssueLabelCreate`
+
+## Mapping
+
+| Harness | Linear |
 |---|---|
-| `create-issue` | Create a Linear issue with auto-label `papercusp-<harness-slug>` |
-| `post-comment` | Append a comment to any issue by UUID or identifier (e.g. `ENG-42`) |
-| `list-issues` | Filter by label; defaults to `papercusp-<slug>` |
+| `harness_features.feature_id` | issue with labels `papercusp-<slug>` + `papercusp-feat-<feature_id>` |
+| `harness_features.title` | title |
+| `harness_features.summary` | description (markdown) |
+| `harness_features.status` | state (resolved by name → `state.id`), default map: To Do / In Progress / Done / In Review / Backlog / Done |
+| `harness_features.tags` | labels (union with plugin-owned ones) |
+| `harness_issues.issue_id` (`I-NNNN`) | issue with labels `papercusp-<slug>` + `papercusp-issue-<issue_id>` + `papercusp-bug` |
 
-## Surfaces
-
-| Surface | Action |
-|---|---|
-| `harness-toolbar` | `create-issue` (manual button) |
-| `feature-row` | `create-issue` + `post-comment` (per-feature actions) |
-| `mission-done` | `create-issue` (auto-runs, summary configurable) |
-| `plugin-detail` | `list-issues` |
+State names must exist in the team's workflow. Missing states fall through to the issue's existing state and the conflict is logged. Override via `config.statusMap`.
 
 ## Configuration
 
-Set one environment variable in the substrate process:
-
 ```sh
-export LINEAR_API_KEY=lin_api_...   # https://linear.app/settings/api
+export LINEAR_API_KEY=lin_api_...        # https://linear.app/<workspace>/settings/api
+export LINEAR_WEBHOOK_SECRET=...         # optional; required if you wire Linear webhooks
 ```
 
-Personal API keys go in bare; OAuth bearer tokens with the `Bearer ` prefix are passed through as-is. The substrate's capability gate (`secrets:read:LINEAR_API_KEY`) makes sure the plugin only sees this one var.
-
-Plugin-level config (in `<state>/plugins/linear-sync/config.json`):
+`<state>/plugins/linear-sync/config.json`:
 
 ```json
 {
   "defaultTeamKey": "ENG",
   "labelPrefix": "papercusp",
-  "createOnFeaturePassed": false
+  "statusMap": {
+    "todo": "Todo",
+    "in_progress": "In Progress",
+    "passed": "Done",
+    "failing": "In Review",
+    "blocked": "Backlog",
+    "done": "Done"
+  }
 }
 ```
 
-`defaultTeamId` (UUID) bypasses the team-key lookup if you'd rather hard-code it.
+Either `defaultTeamKey` (resolved at sync time) or `defaultTeamId` (UUID, faster) is required.
 
-## Capabilities declared
+## Wiring Linear webhooks (recommended)
 
-- `secrets:read:LINEAR_API_KEY`
-- `http:fetch:api.linear.app`
-- `events:listen:feature-passed`
-- `events:listen:feature-failed`
-- `events:listen:proposal-accepted`
-- `events:listen:mission-done`
+Linear → Settings → API → Webhooks → New webhook:
 
-## Compared to jira-sync
+- URL: `https://<your-papercusp-host>/api/plugins/_papercupai_linear-sync/webhook?slug=<harness-slug>`
+- Resources: `Issue`, `Comment`, `Issue label`
+- Headers: `Linear-Signature: $LINEAR_WEBHOOK_SECRET`
 
-| | `jira-sync` | `linear-sync` |
-|---|---|---|
-| Auth | Three secrets (token + email + base URL), Basic-auth | One secret (`LINEAR_API_KEY`), bearer-style |
-| Transport | REST + ADF for rich text | GraphQL + Markdown for descriptions/comments |
-| Project addressing | Project key (e.g. `ENG`) | Team UUID, or team key resolved via GraphQL |
-| Labels | Strings; created implicitly by Jira | Must exist as `IssueLabel` rows; plugin auto-creates missing ones on the team |
-| Idempotency | Label `papercusp-key-<id>` + JQL find | Label `papercusp-key-<id>` + GraphQL filter find |
+Webhook fires bump `cursors.remote_cursor` backwards by 5 minutes — the next 30s tick handles the change. We don't sync inline because Linear's webhook timeout is short and a real sync can take seconds.
 
-## Idempotency
+## Conflict policy
 
-Pass `idempotencyKey` to `create-issue`:
+Same as jira-sync. **Harness wins always** for title/description/status/owned labels. Remote-only metadata (assignee, priority, project) is mirrored read-only into `plugin_linear_sync.links.remote_meta`.
 
-```json
-{
-  "title": "Feature F-042: add bulk export",
-  "teamKey": "ENG",
-  "idempotencyKey": "F-042"
-}
-```
+## Schema
 
-The plugin labels the issue `papercusp-key-F-042` and queries Linear for any existing issue with that label first. If found, returns `result.reused: true` with the existing identifier; otherwise creates a new one with `result.reused: false`. Re-running the action — from a retry, an event replay, or a routine — won't pile up duplicates.
-
-Recommended source for the key: the harness's `feature_id`.
+`plugin_linear_sync` schema with the same three tables as jira-sync (`links`, `cursors`, `conflicts`). Plus a column `external_identifier` (Linear's human-readable e.g. `ENG-42`) alongside `external_id` (UUID).
 
 ## API endpoints
 
-- `GET /api/plugins/_papercupai_linear-sync/ping` — liveness + `configured` flag
-- `GET /api/plugins/_papercupai_linear-sync/viewer` — proves credentials by fetching the authenticated viewer + org
+Mounted at `/api/plugins/_papercupai_linear-sync/*`:
 
-## TODO
-
-- Wire `createOnFeaturePassed` config into feature-passed event handler
-- Optional state-transition mapping (Linear workflow states ↔ harness statuses)
-- Project / cycle / assignee fields on `create-issue`
+| Method | Path | Description |
+|---|---|---|
+| GET | `/ping` | health + configured? |
+| GET | `/status?slug=<s>` | linkCount, cursor, recentConflicts |
+| GET | `/links?slug=<s>` | full link rows |
+| GET | `/conflicts?slug=<s>` | recent conflict log |
+| POST | `/sync?slug=<s>` | trigger a sync now |
+| POST | `/webhook?slug=<s>` | Linear webhook receiver |
 
 ## License
 

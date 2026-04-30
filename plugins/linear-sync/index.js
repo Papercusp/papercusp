@@ -1,4 +1,15 @@
 "use strict";
+/**
+ * @papercupai/linear-sync — bidirectional background sync between a harness's
+ * features/issues queues and a Linear team. Mirrors jira-sync's architecture
+ * (see docs/issue-tracker-sync.md).
+ *
+ * Differences from jira-sync:
+ *   - GraphQL transport instead of REST
+ *   - Status modeled as `state.id` per-team (must be resolved by name)
+ *   - Labels are first-class: `IssueLabelCreate` / `IssueLabel` lookup
+ *   - Identifier vs id: Linear has both — we store both
+ */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -33,7 +44,19 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.runSync = runSync;
 const LINEAR_ENDPOINT = 'https://api.linear.app/graphql';
+const DEFAULT_STATUS_MAP = {
+    todo: 'Todo',
+    in_progress: 'In Progress',
+    passed: 'Done',
+    failing: 'In Review',
+    blocked: 'Backlog',
+    done: 'Done',
+};
+/* ─────────────────────────────────────────────────────────────────────
+ * Config / creds
+ * ───────────────────────────────────────────────────────────────────── */
 async function readConfig(ctx) {
     const { promises: fs } = await Promise.resolve().then(() => __importStar(require('node:fs')));
     const { join } = await Promise.resolve().then(() => __importStar(require('node:path')));
@@ -44,359 +67,705 @@ async function readConfig(ctx) {
         return {};
     }
 }
-async function readKey() {
-    const k = process.env.LINEAR_API_KEY;
-    if (!k)
-        return null;
-    return k;
+function readKey() {
+    return process.env.LINEAR_API_KEY ?? null;
 }
-function authHeader(key) {
-    return /^Bearer\s/i.test(key) ? key : key;
-}
-async function linearFetch(key, query, variables, signal) {
+async function gql(key, query, variables = {}) {
     const r = await fetch(LINEAR_ENDPOINT, {
         method: 'POST',
         headers: {
-            authorization: authHeader(key),
+            authorization: key,
             'content-type': 'application/json',
             accept: 'application/json',
         },
         body: JSON.stringify({ query, variables }),
-        signal,
     });
     if (!r.ok) {
-        const text = await r.text().catch(() => '');
-        throw new Error(`linear-sync: HTTP ${r.status}${text ? ' — ' + text.slice(0, 300) : ''}`);
+        const t = await r.text().catch(() => '');
+        throw new Error(`linear: HTTP ${r.status} — ${t.slice(0, 300)}`);
     }
-    return (await r.json());
+    const json = (await r.json());
+    if (json.errors?.length)
+        throw new Error(`linear: ${json.errors.map((e) => e.message).join('; ')}`);
+    return json.data;
 }
-async function resolveTeamId(key, teamKey, signal) {
-    const res = await linearFetch(key, `query($key: String!) { teams(filter: { key: { eq: $key } }, first: 1) { nodes { id } } }`, { key: teamKey }, signal);
-    return res.data?.teams?.nodes?.[0]?.id ?? null;
+/* ─────────────────────────────────────────────────────────────────────
+ * Postgres
+ * ───────────────────────────────────────────────────────────────────── */
+let _pgClient = null;
+async function pg() {
+    if (_pgClient)
+        return _pgClient;
+    const postgres = (await Promise.resolve().then(() => __importStar(require('postgres')))).default;
+    const url = process.env.HARNESS_ADMIN_DATABASE_URL ||
+        process.env.HARNESS_DATABASE_URL ||
+        'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
+    _pgClient = postgres(url, { onnotice: () => { }, max: 2, idle_timeout: 30 });
+    return _pgClient;
 }
-async function resolveLabelIds(key, teamId, names, signal) {
+function harnessSchema(slug) {
+    return 'harness_' + slug.replace(/-/g, '_');
+}
+async function ensureSchema(ctx) {
+    const sql = await pg();
+    const { promises: fs } = await Promise.resolve().then(() => __importStar(require('node:fs')));
+    const { join, dirname } = await Promise.resolve().then(() => __importStar(require('node:path')));
+    const here = (typeof __dirname === 'string') ? __dirname : dirname(eval('import.meta.url').replace('file://', ''));
+    const ddl = await fs.readFile(join(here, 'schema.sql'), 'utf8');
+    await sql.unsafe(ddl);
+    ctx.log('linear-sync: schema ensured');
+}
+async function ensureCursor(slug) {
+    const sql = await pg();
+    await sql `
+    INSERT INTO plugin_linear_sync.cursors (harness_slug)
+    VALUES (${slug})
+    ON CONFLICT (harness_slug) DO NOTHING
+  `;
+}
+/* ─────────────────────────────────────────────────────────────────────
+ * Hashing
+ * ───────────────────────────────────────────────────────────────────── */
+async function sha256(s) {
+    const { createHash } = await Promise.resolve().then(() => __importStar(require('node:crypto')));
+    return createHash('sha256').update(s).digest('hex');
+}
+function canonical(o) {
+    if (o === null || typeof o !== 'object')
+        return JSON.stringify(o);
+    if (Array.isArray(o))
+        return '[' + o.map(canonical).join(',') + ']';
+    const obj = o;
+    const keys = Object.keys(obj).sort();
+    return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonical(obj[k])).join(',') + '}';
+}
+async function hashLocalFeature(f) {
+    return sha256(canonical({
+        title: f.title,
+        summary: f.summary ?? '',
+        status: f.status,
+        tags: (f.tags ?? []).slice().sort(),
+    }));
+}
+async function hashLocalIssue(i) {
+    return sha256(canonical({
+        title: i.title,
+        severity: i.severity,
+        status: i.status,
+        repro: i.repro ?? '',
+        evidence: i.evidence ?? '',
+        suggested_fix: i.suggested_fix ?? '',
+        linked: i.linked_feature_id ?? '',
+    }));
+}
+async function hashRemote(r, statusMap) {
+    const inverse = invertMap(statusMap);
+    return sha256(canonical({
+        title: r.title ?? '',
+        description: r.description ?? '',
+        status: inverse[r.state?.name ?? ''] ?? r.state?.name ?? '',
+        labels: (r.labels?.nodes ?? []).map((l) => l.name).slice().sort(),
+    }));
+}
+function invertMap(m) {
+    const out = {};
+    for (const [k, v] of Object.entries(m))
+        out[v] = k;
+    return out;
+}
+/* ─────────────────────────────────────────────────────────────────────
+ * Local data access
+ * ───────────────────────────────────────────────────────────────────── */
+async function readLocalFeatures(slug, sinceTs) {
+    const sql = await pg();
+    const schema = harnessSchema(slug);
+    const rows = await sql.unsafe(`SELECT feature_id, title, summary, status, tags, updated_ts
+     FROM ${schema}.harness_features
+     WHERE harness_slug = $1 AND updated_ts > $2
+     ORDER BY updated_ts ASC LIMIT 500`, [slug, sinceTs]);
+    return rows.map((r) => ({
+        feature_id: r.feature_id, title: r.title, summary: r.summary,
+        status: r.status, tags: Array.isArray(r.tags) ? r.tags : (r.tags ?? null),
+        updated_ts: Number(r.updated_ts),
+    }));
+}
+async function readLocalIssues(slug, sinceTs) {
+    const sql = await pg();
+    const schema = harnessSchema(slug);
+    const rows = await sql.unsafe(`SELECT issue_id, title, severity, status, repro, evidence, suggested_fix, linked_feature_id, updated_ts
+     FROM ${schema}.harness_issues
+     WHERE harness_slug = $1 AND updated_ts > $2
+     ORDER BY updated_ts ASC LIMIT 500`, [slug, sinceTs]);
+    return rows.map((r) => ({
+        issue_id: r.issue_id, title: r.title, severity: r.severity, status: r.status,
+        repro: r.repro, evidence: r.evidence, suggested_fix: r.suggested_fix,
+        linked_feature_id: r.linked_feature_id, updated_ts: Number(r.updated_ts),
+    }));
+}
+async function getLink(slug, kind, id) {
+    const sql = await pg();
+    const rows = await sql `
+    SELECT * FROM plugin_linear_sync.links
+    WHERE harness_slug = ${slug} AND entity_kind = ${kind} AND entity_id = ${id}
+  `;
+    return rows[0] ?? null;
+}
+async function upsertLink(row) {
+    const sql = await pg();
+    await sql `
+    INSERT INTO plugin_linear_sync.links
+      (harness_slug, entity_kind, entity_id, external_id, external_identifier, external_url,
+       local_hash, remote_hash, remote_meta, tombstoned, last_synced_at)
+    VALUES
+      (${row.harness_slug}, ${row.entity_kind}, ${row.entity_id},
+       ${row.external_id}, ${row.external_identifier}, ${row.external_url},
+       ${row.local_hash}, ${row.remote_hash}, ${sql.json(row.remote_meta)},
+       ${row.tombstoned ?? false}, now())
+    ON CONFLICT (harness_slug, entity_kind, entity_id) DO UPDATE SET
+      external_id = EXCLUDED.external_id,
+      external_identifier = EXCLUDED.external_identifier,
+      external_url = EXCLUDED.external_url,
+      local_hash = EXCLUDED.local_hash,
+      remote_hash = EXCLUDED.remote_hash,
+      remote_meta = EXCLUDED.remote_meta,
+      tombstoned = EXCLUDED.tombstoned,
+      last_synced_at = now()
+  `;
+}
+async function logConflict(row) {
+    const sql = await pg();
+    await sql `
+    INSERT INTO plugin_linear_sync.conflicts
+      (harness_slug, entity_kind, entity_id, external_id, field,
+       local_value, remote_value, resolution)
+    VALUES
+      (${row.slug}, ${row.kind}, ${row.entityId}, ${row.externalId},
+       ${row.field}, ${sql.json(row.localValue)}, ${sql.json(row.remoteValue)},
+       ${row.resolution})
+  `;
+}
+/* ─────────────────────────────────────────────────────────────────────
+ * Linear lookups (team, label, state)
+ * ───────────────────────────────────────────────────────────────────── */
+const ISSUE_FIELDS = `
+  id identifier url title description
+  state { id name type }
+  labels(first: 50) { nodes { id name } }
+  priority
+  assignee { displayName email }
+  updatedAt
+`;
+const teamCache = new Map(); // teamKey → teamId
+async function resolveTeamId(key, teamKey) {
+    if (teamCache.has(teamKey))
+        return teamCache.get(teamKey);
+    const data = await gql(key, `query($k: String!) { teams(filter: { key: { eq: $k } }, first: 1) { nodes { id } } }`, { k: teamKey });
+    const id = data?.teams?.nodes?.[0]?.id ?? null;
+    if (id)
+        teamCache.set(teamKey, id);
+    return id;
+}
+const stateCache = new Map();
+async function resolveStateByName(key, teamId, name) {
+    let perTeam = stateCache.get(teamId);
+    if (!perTeam) {
+        const data = await gql(key, `query($id: String!) { team(id: $id) { states { nodes { id name type } } } }`, { id: teamId });
+        const nodes = data?.team?.states?.nodes ?? [];
+        perTeam = new Map(nodes.map((n) => [n.name.toLowerCase(), n]));
+        stateCache.set(teamId, perTeam);
+    }
+    return perTeam.get(name.toLowerCase()) ?? null;
+}
+async function resolveLabelIds(key, teamId, names) {
     if (names.length === 0)
         return [];
-    const res = await linearFetch(key, `query($teamId: String!) { team(id: $teamId) { labels(first: 250) { nodes { id name } } } }`, { teamId }, signal);
-    const existing = res.data?.team?.labels?.nodes ?? [];
+    const data = await gql(key, `query($id: String!) { team(id: $id) { labels(first: 250) { nodes { id name } } } }`, { id: teamId });
+    const existing = data?.team?.labels?.nodes ?? [];
     const byName = new Map(existing.map((l) => [l.name.toLowerCase(), l.id]));
-    const ids = [];
+    const out = [];
     for (const n of names) {
         const hit = byName.get(n.toLowerCase());
         if (hit) {
-            ids.push(hit);
+            out.push(hit);
             continue;
         }
-        const created = await linearFetch(key, `mutation($input: IssueLabelCreateInput!) { issueLabelCreate(input: $input) { success issueLabel { id } } }`, { input: { name: n, teamId } }, signal);
-        const newId = created.data?.issueLabelCreate?.issueLabel?.id;
+        const created = await gql(key, `mutation($i: IssueLabelCreateInput!) { issueLabelCreate(input: $i) { issueLabel { id } } }`, { i: { name: n, teamId } });
+        const newId = created?.issueLabelCreate?.issueLabel?.id;
         if (newId)
-            ids.push(newId);
+            out.push(newId);
     }
-    return ids;
+    return out;
 }
-async function findIssueByLabel(key, labelName, signal) {
-    const res = await linearFetch(key, `query($name: String!) {
-       issues(filter: { labels: { name: { eq: $name } } }, first: 1) {
-         nodes { id identifier url }
-       }
-     }`, { name: labelName }, signal);
-    const node = res.data?.issues?.nodes?.[0];
-    return node ?? null;
+/* ─────────────────────────────────────────────────────────────────────
+ * Remote calls
+ * ───────────────────────────────────────────────────────────────────── */
+async function fetchRemoteById(key, id) {
+    const data = await gql(key, `query($id: String!) { issue(id: $id) { ${ISSUE_FIELDS} } }`, { id });
+    return data?.issue ?? null;
 }
-async function runCreateIssue(ctx, p, signal) {
-    if (!p.title || typeof p.title !== 'string') {
-        return { ok: false, error: 'linear-sync: params.title is required (string)' };
+async function fetchRemoteForHarness(key, slug, labelPrefix, since) {
+    const filter = { labels: { name: { eq: `${labelPrefix}-${slug}` } } };
+    if (since)
+        filter.updatedAt = { gt: since.toISOString() };
+    const data = await gql(key, `query($f: IssueFilter!) { issues(filter: $f, first: 100) { nodes { ${ISSUE_FIELDS} } } }`, { f: filter });
+    return data?.issues?.nodes ?? [];
+}
+async function createRemote(key, p) {
+    const input = {
+        teamId: p.teamId,
+        title: p.title,
+        description: p.description,
+        labelIds: p.labelIds,
+    };
+    if (p.stateId)
+        input.stateId = p.stateId;
+    const data = await gql(key, `mutation($i: IssueCreateInput!) { issueCreate(input: $i) { issue { ${ISSUE_FIELDS} } } }`, { i: input });
+    if (!data?.issueCreate?.issue)
+        throw new Error('linear createRemote: no issue returned');
+    return data.issueCreate.issue;
+}
+async function updateRemote(key, id, patch) {
+    const input = {};
+    if (patch.title !== undefined)
+        input.title = patch.title;
+    if (patch.description !== undefined)
+        input.description = patch.description;
+    if (patch.stateId !== undefined)
+        input.stateId = patch.stateId;
+    if (patch.labelIds !== undefined)
+        input.labelIds = patch.labelIds;
+    if (Object.keys(input).length === 0)
+        return;
+    await gql(key, `mutation($id: String!, $i: IssueUpdateInput!) { issueUpdate(id: $id, input: $i) { success } }`, { id, i: input });
+}
+/* ─────────────────────────────────────────────────────────────────────
+ * Local mutators (remote → local)
+ * ───────────────────────────────────────────────────────────────────── */
+async function writeLocalFeatureFromRemote(slug, featureId, r, statusMap) {
+    const sql = await pg();
+    const schema = harnessSchema(slug);
+    const inverse = invertMap(statusMap);
+    const status = inverse[r.state?.name ?? ''] ?? 'todo';
+    const now = Date.now();
+    await sql.unsafe(`INSERT INTO ${schema}.harness_features
+       (harness_slug, feature_id, title, summary, status, created_ts, updated_ts)
+     VALUES ($1, $2, $3, $4, $5, $6, $6)
+     ON CONFLICT (harness_slug, feature_id) DO UPDATE SET
+       title = EXCLUDED.title, summary = EXCLUDED.summary,
+       status = EXCLUDED.status, updated_ts = EXCLUDED.updated_ts`, [slug, featureId, r.title ?? '', r.description ?? null, status, now]);
+}
+async function writeLocalIssueFromRemote(slug, issueId, r) {
+    const sql = await pg();
+    const schema = harnessSchema(slug);
+    const now = Date.now();
+    const status = (r.state?.type === 'completed' || r.state?.type === 'canceled') ? 'closed' : 'open';
+    await sql.unsafe(`INSERT INTO ${schema}.harness_issues
+       (harness_slug, issue_id, title, severity, source, status, found_at, created_ts, updated_ts, repro)
+     VALUES ($1, $2, $3, 'normal', 'linear-sync', $4, now(), $5, $5, $6)
+     ON CONFLICT (harness_slug, issue_id) DO UPDATE SET
+       title = EXCLUDED.title, status = EXCLUDED.status,
+       updated_ts = EXCLUDED.updated_ts, repro = EXCLUDED.repro`, [slug, issueId, r.title ?? '', status, now, r.description ?? null]);
+}
+async function mintIssueId(slug) {
+    const sql = await pg();
+    const schema = harnessSchema(slug);
+    const rows = await sql.unsafe(`SELECT MAX(CAST(SUBSTRING(issue_id FROM 3) AS BIGINT)) AS max FROM ${schema}.harness_issues WHERE harness_slug = $1`, [slug]);
+    const next = Number(rows[0]?.max ?? 0) + 1;
+    return `I-${String(next).padStart(4, '0')}`;
+}
+function emptyStats() {
+    return { pushedCreated: 0, pushedUpdated: 0, pushedTransitioned: 0, pulledCreated: 0, pulledUpdated: 0, conflicts: 0, errors: [] };
+}
+function extractRemoteMeta(r) {
+    return {
+        priority: r.priority ?? null,
+        assignee: r.assignee?.displayName ?? r.assignee?.email ?? null,
+        updatedAt: r.updatedAt,
+    };
+}
+function unionLabels(...lists) {
+    const s = new Set();
+    for (const list of lists)
+        for (const x of list)
+            s.add(x);
+    return Array.from(s).sort();
+}
+async function syncFeature(ctx, key, cfg, feature, stats) {
+    const slug = ctx.installSlug ?? 'unknown';
+    const slugLabel = `${cfg.labelPrefix}-${slug}`;
+    const idLabel = `${cfg.labelPrefix}-feat-${feature.feature_id}`;
+    const baseLabels = unionLabels([slugLabel, idLabel], feature.tags ?? []);
+    const link = await getLink(slug, 'feature', feature.feature_id);
+    const localHashNow = await hashLocalFeature(feature);
+    const targetStateName = cfg.statusMap[feature.status];
+    const targetState = targetStateName ? await resolveStateByName(key, cfg.teamId, targetStateName) : null;
+    if (!link) {
+        const labelIds = await resolveLabelIds(key, cfg.teamId, baseLabels);
+        const remote = await createRemote(key, {
+            teamId: cfg.teamId,
+            title: feature.title,
+            description: feature.summary ?? '',
+            labelIds,
+            stateId: targetState?.id,
+        });
+        const remoteHash = await hashRemote(remote, cfg.statusMap);
+        await upsertLink({
+            harness_slug: slug, entity_kind: 'feature', entity_id: feature.feature_id,
+            external_id: remote.id, external_identifier: remote.identifier, external_url: remote.url,
+            local_hash: localHashNow, remote_hash: remoteHash, remote_meta: extractRemoteMeta(remote),
+        });
+        stats.pushedCreated++;
+        ctx.log(`linear-sync: created ${remote.identifier} ← feature/${feature.feature_id}`);
+        return;
     }
-    const key = await readKey();
+    const remote = await fetchRemoteById(key, link.external_id);
+    if (!remote) {
+        await upsertLink({ ...link, tombstoned: true, local_hash: localHashNow });
+        return;
+    }
+    const remoteHashNow = await hashRemote(remote, cfg.statusMap);
+    const localChanged = localHashNow !== link.local_hash;
+    const remoteChanged = remoteHashNow !== link.remote_hash;
+    if (!localChanged && !remoteChanged)
+        return;
+    if (localChanged) {
+        const remoteLabelNames = (remote.labels?.nodes ?? []).map((l) => l.name);
+        const labelIds = await resolveLabelIds(key, cfg.teamId, unionLabels(remoteLabelNames, baseLabels));
+        await updateRemote(key, remote.id, {
+            title: feature.title,
+            description: feature.summary ?? '',
+            labelIds,
+            stateId: targetState?.id,
+        });
+        stats.pushedUpdated++;
+        if (targetState && remote.state?.id !== targetState.id)
+            stats.pushedTransitioned++;
+    }
+    if (remoteChanged && localChanged) {
+        if (remote.title !== feature.title) {
+            await logConflict({ slug, kind: 'feature', entityId: feature.feature_id, externalId: remote.id, field: 'title', localValue: feature.title, remoteValue: remote.title, resolution: 'local-wins' });
+            stats.conflicts++;
+        }
+    }
+    const fresh = await fetchRemoteById(key, remote.id);
+    const finalRemoteHash = fresh ? await hashRemote(fresh, cfg.statusMap) : remoteHashNow;
+    await upsertLink({
+        harness_slug: slug, entity_kind: 'feature', entity_id: feature.feature_id,
+        external_id: remote.id, external_identifier: remote.identifier, external_url: remote.url,
+        local_hash: localHashNow, remote_hash: finalRemoteHash,
+        remote_meta: extractRemoteMeta(fresh ?? remote),
+    });
+}
+async function syncIssue(ctx, key, cfg, issue, stats) {
+    const slug = ctx.installSlug ?? 'unknown';
+    const slugLabel = `${cfg.labelPrefix}-${slug}`;
+    const idLabel = `${cfg.labelPrefix}-issue-${issue.issue_id}`;
+    const bugLabel = `${cfg.labelPrefix}-bug`;
+    const baseLabels = [slugLabel, idLabel, bugLabel];
+    const description = [
+        issue.repro ? `### Repro\n${issue.repro}` : '',
+        issue.evidence ? `### Evidence\n${issue.evidence}` : '',
+        issue.suggested_fix ? `### Suggested fix\n${issue.suggested_fix}` : '',
+        issue.linked_feature_id ? `### Linked feature\n${issue.linked_feature_id}` : '',
+    ].filter(Boolean).join('\n\n');
+    const link = await getLink(slug, 'issue', issue.issue_id);
+    const localHashNow = await hashLocalIssue(issue);
+    if (!link) {
+        const labelIds = await resolveLabelIds(key, cfg.teamId, baseLabels);
+        const remote = await createRemote(key, { teamId: cfg.teamId, title: issue.title, description, labelIds });
+        await upsertLink({
+            harness_slug: slug, entity_kind: 'issue', entity_id: issue.issue_id,
+            external_id: remote.id, external_identifier: remote.identifier, external_url: remote.url,
+            local_hash: localHashNow, remote_hash: await hashRemote(remote, cfg.statusMap), remote_meta: extractRemoteMeta(remote),
+        });
+        stats.pushedCreated++;
+        return;
+    }
+    const remote = await fetchRemoteById(key, link.external_id);
+    if (!remote) {
+        await upsertLink({ ...link, tombstoned: true, local_hash: localHashNow });
+        return;
+    }
+    const remoteHashNow = await hashRemote(remote, cfg.statusMap);
+    if (localHashNow === link.local_hash && remoteHashNow === link.remote_hash)
+        return;
+    if (localHashNow !== link.local_hash) {
+        const remoteLabelNames = (remote.labels?.nodes ?? []).map((l) => l.name);
+        const labelIds = await resolveLabelIds(key, cfg.teamId, unionLabels(remoteLabelNames, baseLabels));
+        await updateRemote(key, remote.id, { title: issue.title, description, labelIds });
+        stats.pushedUpdated++;
+    }
+    const fresh = await fetchRemoteById(key, remote.id);
+    await upsertLink({
+        harness_slug: slug, entity_kind: 'issue', entity_id: issue.issue_id,
+        external_id: remote.id, external_identifier: remote.identifier, external_url: remote.url,
+        local_hash: localHashNow,
+        remote_hash: fresh ? await hashRemote(fresh, cfg.statusMap) : remoteHashNow,
+        remote_meta: extractRemoteMeta(fresh ?? remote),
+    });
+}
+async function pullRemoteToLocal(ctx, key, cfg, stats) {
+    const slug = ctx.installSlug ?? 'unknown';
+    const sql = await pg();
+    const cur = await sql `SELECT remote_cursor FROM plugin_linear_sync.cursors WHERE harness_slug = ${slug}`;
+    const since = cur[0]?.remote_cursor && new Date(cur[0].remote_cursor).getTime() > 0
+        ? new Date(cur[0].remote_cursor) : undefined;
+    const remotes = await fetchRemoteForHarness(key, slug, cfg.labelPrefix, since);
+    for (const r of remotes) {
+        const labelNames = (r.labels?.nodes ?? []).map((l) => l.name);
+        const featLabel = labelNames.find((l) => l.startsWith(`${cfg.labelPrefix}-feat-`));
+        const issueLabel = labelNames.find((l) => l.startsWith(`${cfg.labelPrefix}-issue-`));
+        const isBug = labelNames.includes(`${cfg.labelPrefix}-bug`);
+        if (featLabel) {
+            const featureId = featLabel.replace(`${cfg.labelPrefix}-feat-`, '');
+            const link = await getLink(slug, 'feature', featureId);
+            if (!link) {
+                await writeLocalFeatureFromRemote(slug, featureId, r, cfg.statusMap);
+                const newFeat = (await readLocalFeatures(slug, 0)).find((x) => x.feature_id === featureId);
+                if (newFeat) {
+                    await upsertLink({
+                        harness_slug: slug, entity_kind: 'feature', entity_id: featureId,
+                        external_id: r.id, external_identifier: r.identifier, external_url: r.url,
+                        local_hash: await hashLocalFeature(newFeat), remote_hash: await hashRemote(r, cfg.statusMap),
+                        remote_meta: extractRemoteMeta(r),
+                    });
+                }
+                stats.pulledCreated++;
+            }
+        }
+        else if (issueLabel) {
+            const issueId = issueLabel.replace(`${cfg.labelPrefix}-issue-`, '');
+            const link = await getLink(slug, 'issue', issueId);
+            if (!link) {
+                await writeLocalIssueFromRemote(slug, issueId, r);
+                stats.pulledCreated++;
+            }
+        }
+        else if (isBug) {
+            const newId = await mintIssueId(slug);
+            await writeLocalIssueFromRemote(slug, newId, r);
+            const newIssue = (await readLocalIssues(slug, 0)).find((x) => x.issue_id === newId);
+            if (newIssue) {
+                await upsertLink({
+                    harness_slug: slug, entity_kind: 'issue', entity_id: newId,
+                    external_id: r.id, external_identifier: r.identifier, external_url: r.url,
+                    local_hash: await hashLocalIssue(newIssue), remote_hash: await hashRemote(r, cfg.statusMap),
+                    remote_meta: extractRemoteMeta(r),
+                });
+            }
+            stats.pulledCreated++;
+        }
+    }
+    await sql `UPDATE plugin_linear_sync.cursors SET remote_cursor = now() WHERE harness_slug = ${slug}`;
+}
+async function effectiveCfg(ctx, key) {
+    const cfg = await readConfig(ctx);
+    let teamId = cfg.defaultTeamId;
+    if (!teamId && cfg.defaultTeamKey) {
+        const id = await resolveTeamId(key, cfg.defaultTeamKey);
+        if (!id)
+            return null;
+        teamId = id;
+    }
+    if (!teamId)
+        return null;
+    return {
+        teamId,
+        labelPrefix: cfg.labelPrefix ?? 'papercusp',
+        statusMap: cfg.statusMap ?? DEFAULT_STATUS_MAP,
+    };
+}
+async function runSync(ctx, opts = {}) {
+    const stats = emptyStats();
+    const slug = ctx.installSlug ?? 'unknown';
+    const key = readKey();
     if (!key) {
-        return { ok: false, error: 'linear-sync: LINEAR_API_KEY must be set in the substrate process env' };
+        ctx.log('linear-sync: runSync — skipped (LINEAR_API_KEY not set)');
+        return stats;
     }
-    const config = await readConfig(ctx);
-    const labelPrefix = config.labelPrefix ?? 'papercusp';
-    const slugLabel = `${labelPrefix}-${ctx.installSlug ?? 'unknown'}`;
-    const idempotencyLabel = p.idempotencyKey ? `${labelPrefix}-key-${p.idempotencyKey}` : null;
+    const cfg = await effectiveCfg(ctx, key);
+    if (!cfg) {
+        ctx.log('linear-sync: runSync — skipped (defaultTeamKey/Id not configured)');
+        return stats;
+    }
+    await ensureSchema(ctx);
+    await ensureCursor(slug);
+    const sql = await pg();
+    const cur = await sql `SELECT local_cursor FROM plugin_linear_sync.cursors WHERE harness_slug = ${slug}`;
+    const localCursor = opts.full ? 0 : Number(cur[0]?.local_cursor ?? 0);
+    const features = await readLocalFeatures(slug, localCursor);
+    const issues = await readLocalIssues(slug, localCursor);
+    let maxTs = localCursor;
+    for (const f of features) {
+        try {
+            await syncFeature(ctx, key, cfg, f, stats);
+            maxTs = Math.max(maxTs, f.updated_ts);
+        }
+        catch (e) {
+            stats.errors.push({ entity: `feature/${f.feature_id}`, error: e?.message ?? String(e) });
+        }
+    }
+    for (const i of issues) {
+        try {
+            await syncIssue(ctx, key, cfg, i, stats);
+            maxTs = Math.max(maxTs, i.updated_ts);
+        }
+        catch (e) {
+            stats.errors.push({ entity: `issue/${i.issue_id}`, error: e?.message ?? String(e) });
+        }
+    }
+    await sql `UPDATE plugin_linear_sync.cursors SET local_cursor = ${maxTs} WHERE harness_slug = ${slug}`;
     try {
-        let teamId = p.teamId ?? config.defaultTeamId;
-        if (!teamId) {
-            const teamKey = p.teamKey ?? config.defaultTeamKey;
-            if (!teamKey) {
-                return {
-                    ok: false,
-                    error: 'linear-sync: provide teamId or teamKey (or set defaultTeamKey/defaultTeamId in config)',
-                };
-            }
-            teamId = (await resolveTeamId(key, teamKey, signal)) ?? undefined;
-            if (!teamId) {
-                return { ok: false, error: `linear-sync: no team found with key '${teamKey}'` };
-            }
-        }
-        if (idempotencyLabel) {
-            const existing = await findIssueByLabel(key, idempotencyLabel, signal);
-            if (existing) {
-                return {
-                    ok: true,
-                    result: {
-                        id: existing.id,
-                        identifier: existing.identifier,
-                        url: existing.url,
-                        reused: true,
-                    },
-                };
-            }
-        }
-        const labelNames = Array.from(new Set([...(p.labels ?? []), slugLabel, ...(idempotencyLabel ? [idempotencyLabel] : [])]));
-        const labelIds = await resolveLabelIds(key, teamId, labelNames, signal);
-        const res = await linearFetch(key, `mutation($input: IssueCreateInput!) {
-         issueCreate(input: $input) {
-           success
-           issue { id identifier url title }
-         }
-       }`, {
-            input: {
-                teamId,
-                title: p.title,
-                description: p.description ?? undefined,
-                labelIds: labelIds.length > 0 ? labelIds : undefined,
-            },
-        }, signal);
-        if (res.errors?.length) {
-            return { ok: false, error: `linear-sync: ${res.errors.map((e) => e.message).join('; ')}` };
-        }
-        const issue = res.data?.issueCreate?.issue;
-        if (!res.data?.issueCreate?.success || !issue) {
-            return { ok: false, error: 'linear-sync: issueCreate returned success=false' };
-        }
-        return {
-            ok: true,
-            result: { id: issue.id, identifier: issue.identifier, url: issue.url, reused: false },
-        };
+        await pullRemoteToLocal(ctx, key, cfg, stats);
     }
     catch (e) {
-        if (e?.name === 'AbortError')
-            return { ok: false, error: 'linear-sync: aborted (timeout)' };
-        return { ok: false, error: e?.message ?? String(e) };
+        stats.errors.push({ entity: 'remote-pull', error: e?.message ?? String(e) });
     }
+    if (opts.full)
+        await sql `UPDATE plugin_linear_sync.cursors SET last_full_sync = now() WHERE harness_slug = ${slug}`;
+    ctx.log(`linear-sync: tick ↑${stats.pushedCreated}c/${stats.pushedUpdated}u/${stats.pushedTransitioned}t ↓${stats.pulledCreated}c err=${stats.errors.length}`);
+    return stats;
 }
+/* ─────────────────────────────────────────────────────────────────────
+ * Plugin manifest
+ * ───────────────────────────────────────────────────────────────────── */
 const plugin = {
     kind: 'plugin',
     name: '@papercupai/linear-sync',
-    version: '0.1.0',
+    version: '0.2.0',
     papercusp: '^0.1.0',
-    description: 'Sync harness state to Linear (issues, comments, label search).',
+    description: 'Bidirectional background sync between harness features/issues and a Linear team.',
     capabilities: [
+        'db:plugin-schema',
         'secrets:read:LINEAR_API_KEY',
+        'secrets:read:LINEAR_WEBHOOK_SECRET',
         'http:fetch:api.linear.app',
         'events:listen:feature-passed',
         'events:listen:feature-failed',
         'events:listen:proposal-accepted',
         'events:listen:mission-done',
+        'routines:read',
+        'routines:write',
+        'tasks:read',
+        'tasks:write',
+    ],
+    schema: {
+        schemaName: 'plugin_linear_sync',
+        sqlPaths: ['./schema.sql'],
+    },
+    routines: [
+        { name: 'sync-tick', trigger: { kind: 'cron', expr: '*/30 * * * * *' }, targetRole: 'linear-sync.runSync', concurrency: 'skip', catchup: 'skip-old' },
+        { name: 'webhook', trigger: { kind: 'webhook', tokenEnv: 'LINEAR_WEBHOOK_SECRET' }, targetRole: 'linear-sync.runSync', concurrency: 'queue' },
+        { name: 'manual-sync', trigger: { kind: 'api', method: 'POST' }, targetRole: 'linear-sync.runSync', concurrency: 'queue' },
     ],
     actions: [
-        {
-            name: 'create-issue',
-            label: 'Create Linear issue',
-            surfaces: ['harness-toolbar', 'feature-row', 'mission-done'],
-            capabilities: ['secrets:read:LINEAR_API_KEY', 'http:fetch:api.linear.app'],
-            serverHandler: { timeoutSec: 15 },
-        },
-        {
-            name: 'post-comment',
-            label: 'Post Linear comment',
-            surfaces: ['feature-row'],
-            capabilities: ['secrets:read:LINEAR_API_KEY', 'http:fetch:api.linear.app'],
-            serverHandler: { timeoutSec: 10 },
-        },
-        {
-            name: 'list-issues',
-            label: 'List Linear issues for harness',
-            surfaces: ['plugin-detail'],
-            capabilities: ['secrets:read:LINEAR_API_KEY', 'http:fetch:api.linear.app'],
-            serverHandler: { timeoutSec: 15 },
-        },
+        { name: 'force-sync', label: 'Force full sync', surfaces: ['plugin-detail'], capabilities: ['secrets:read:LINEAR_API_KEY', 'http:fetch:api.linear.app'], serverHandler: { timeoutSec: 60 } },
+        { name: 'backfill-local-to-remote', label: 'Push every harness feature/issue to Linear', surfaces: ['plugin-detail'], capabilities: ['secrets:read:LINEAR_API_KEY', 'http:fetch:api.linear.app'], serverHandler: { timeoutSec: 300 } },
+        { name: 'backfill-remote-to-local', label: 'Import every Linear issue tagged for this harness', surfaces: ['plugin-detail'], capabilities: ['secrets:read:LINEAR_API_KEY', 'http:fetch:api.linear.app'], serverHandler: { timeoutSec: 300 } },
     ],
     async init(ctx) {
-        ctx.actions.register('create-issue', async (innerCtx, params, signal) => {
-            return runCreateIssue(innerCtx, (params ?? {}), signal);
-        });
-        ctx.actions.register('post-comment', async (_innerCtx, params, signal) => {
-            const p = (params ?? {});
-            if (!p.body || (!p.issueId && !p.identifier)) {
-                return { ok: false, error: 'linear-sync: params.body and one of issueId/identifier are required' };
-            }
-            const key = await readKey();
-            if (!key)
-                return { ok: false, error: 'linear-sync: LINEAR_API_KEY not configured' };
-            try {
-                let issueId = p.issueId;
-                if (!issueId && p.identifier) {
-                    const res = await linearFetch(key, `query($id: String!) { issue(id: $id) { id } }`, { id: p.identifier }, signal);
-                    issueId = res.data?.issue?.id;
-                    if (!issueId) {
-                        return { ok: false, error: `linear-sync: no issue found with identifier '${p.identifier}'` };
-                    }
-                }
-                const res = await linearFetch(key, `mutation($input: CommentCreateInput!) {
-             commentCreate(input: $input) {
-               success
-               comment { id url }
-             }
-           }`, { input: { issueId, body: p.body } }, signal);
-                if (res.errors?.length) {
-                    return { ok: false, error: `linear-sync: ${res.errors.map((e) => e.message).join('; ')}` };
-                }
-                const c = res.data?.commentCreate?.comment;
-                if (!res.data?.commentCreate?.success || !c) {
-                    return { ok: false, error: 'linear-sync: commentCreate returned success=false' };
-                }
-                return { ok: true, result: { commentId: c.id, url: c.url, issueId } };
-            }
-            catch (e) {
-                if (e?.name === 'AbortError')
-                    return { ok: false, error: 'linear-sync: aborted (timeout)' };
-                return { ok: false, error: e?.message ?? String(e) };
-            }
-        });
-        ctx.actions.register('list-issues', async (innerCtx, params, signal) => {
-            const p = (params ?? {});
-            const key = await readKey();
-            if (!key)
-                return { ok: false, error: 'linear-sync: LINEAR_API_KEY not configured' };
-            const config = await readConfig(innerCtx);
-            const labelPrefix = config.labelPrefix ?? 'papercusp';
+        ctx.actions.register('force-sync', async (innerCtx) => ({ ok: true, result: await runSync(innerCtx, { full: true }) }));
+        ctx.actions.register('backfill-local-to-remote', async (innerCtx) => {
+            const sql = await pg();
             const slug = innerCtx.installSlug ?? 'unknown';
-            const labelName = p.labelName ?? `${labelPrefix}-${slug}`;
-            try {
-                const res = await linearFetch(key, `query($name: String!) {
-             issues(filter: { labels: { name: { eq: $name } } }, first: 50, orderBy: createdAt) {
-               nodes {
-                 id
-                 identifier
-                 title
-                 url
-                 state { name type }
-                 labels { nodes { name } }
-               }
-             }
-           }`, { name: labelName }, signal);
-                if (res.errors?.length) {
-                    return { ok: false, error: `linear-sync: ${res.errors.map((e) => e.message).join('; ')}` };
-                }
-                const nodes = res.data?.issues?.nodes ?? [];
-                return {
-                    ok: true,
-                    result: {
-                        total: nodes.length,
-                        issues: nodes.map((i) => ({
-                            id: i.id,
-                            identifier: i.identifier,
-                            title: i.title,
-                            url: i.url,
-                            state: i.state?.name,
-                            stateType: i.state?.type,
-                            labels: (i.labels?.nodes ?? []).map((l) => l.name),
-                        })),
-                    },
-                };
-            }
-            catch (e) {
-                if (e?.name === 'AbortError')
-                    return { ok: false, error: 'linear-sync: aborted (timeout)' };
-                return { ok: false, error: e?.message ?? String(e) };
-            }
+            await sql `UPDATE plugin_linear_sync.cursors SET local_cursor = 0 WHERE harness_slug = ${slug}`;
+            return { ok: true, result: await runSync(innerCtx, { full: true }) };
+        });
+        ctx.actions.register('backfill-remote-to-local', async (innerCtx) => {
+            const sql = await pg();
+            const slug = innerCtx.installSlug ?? 'unknown';
+            await sql `UPDATE plugin_linear_sync.cursors SET remote_cursor = 'epoch' WHERE harness_slug = ${slug}`;
+            return { ok: true, result: await runSync(innerCtx, { full: true }) };
         });
     },
     hooks: {
-        async afterDone(ctx) {
-            const cfg = await readConfig(ctx);
-            if (!cfg.defaultTeamKey && !cfg.defaultTeamId) {
-                ctx.log('linear-sync: afterDone — skipped (no defaultTeamKey/defaultTeamId configured)');
-                return;
-            }
-            const key = await readKey();
-            if (!key) {
-                ctx.log('linear-sync: afterDone — skipped (LINEAR_API_KEY not configured)');
-                return;
-            }
+        async onLoad(ctx) {
             try {
-                const r = await runCreateIssue(ctx, {
-                    title: `Mission complete: ${ctx.installSlug}`,
-                    description: `Harness ${ctx.installSlug} reported mission-done.`,
-                    idempotencyKey: `mission-${ctx.installSlug}`,
-                }, undefined);
-                if (r.ok) {
-                    ctx.log(`linear-sync: afterDone → ${r.result?.identifier}${r.result?.reused ? ' (reused)' : ''}`);
-                }
-                else {
-                    ctx.log(`linear-sync: afterDone failed — ${r.error}`);
-                }
+                await ensureSchema(ctx);
+                if (ctx.installSlug)
+                    await ensureCursor(ctx.installSlug);
             }
             catch (e) {
-                ctx.log(`linear-sync: afterDone threw — ${e?.message ?? String(e)}`);
+                ctx.log(`linear-sync: onLoad — ${e?.message ?? String(e)}`);
             }
         },
-        async onFeaturePassed(ctx, featureId) {
-            const cfg = await readConfig(ctx);
-            if (!cfg.createOnFeaturePassed)
-                return;
-            if (!cfg.defaultTeamKey && !cfg.defaultTeamId) {
-                ctx.log('linear-sync: onFeaturePassed — skipped (no defaultTeamKey/defaultTeamId configured)');
-                return;
-            }
-            const key = await readKey();
-            if (!key) {
-                ctx.log('linear-sync: onFeaturePassed — skipped (LINEAR_API_KEY not configured)');
-                return;
-            }
+        async beforeMissionStart(ctx) {
             try {
-                const r = await runCreateIssue(ctx, {
-                    title: `Feature passed: ${featureId}`,
-                    description: `Harness ${ctx.installSlug} reported feature ${featureId} passed validation.`,
-                    idempotencyKey: `feature-${featureId}`,
-                }, undefined);
-                if (r.ok) {
-                    ctx.log(`linear-sync: onFeaturePassed(${featureId}) → ${r.result?.identifier}${r.result?.reused ? ' (reused)' : ''}`);
-                }
-                else {
-                    ctx.log(`linear-sync: onFeaturePassed(${featureId}) failed — ${r.error}`);
-                }
+                await runSync(ctx, {});
             }
             catch (e) {
-                ctx.log(`linear-sync: onFeaturePassed(${featureId}) threw — ${e?.message ?? String(e)}`);
+                ctx.log(`linear-sync: beforeMissionStart — ${e?.message ?? String(e)}`);
+            }
+        },
+        async onPostValidator(ctx) {
+            try {
+                await runSync(ctx, {});
+            }
+            catch (e) {
+                ctx.log(`linear-sync: onPostValidator — ${e?.message ?? String(e)}`);
+            }
+        },
+        async afterDone(ctx) {
+            try {
+                await runSync(ctx, { full: true });
+            }
+            catch (e) {
+                ctx.log(`linear-sync: afterDone — ${e?.message ?? String(e)}`);
             }
         },
     },
 };
-/* ─────────────────────────────────────────────────────────────────────
- * apiRoutes — plugin-mounted HTTP endpoints.
- * Mounted at /api/plugins/_papercupai_linear-sync/* by the host.
- * ───────────────────────────────────────────────────────────────────── */
 const apiRoutes = {
     async fetch(req) {
         const url = new URL(req.url);
         const path = url.pathname.replace(/^.*\/plugins\/[^/]+/, '') || url.pathname;
+        const slug = url.searchParams.get('slug') ?? 'unknown';
         if (path === '/ping' || path.endsWith('/ping')) {
-            const key = await readKey();
-            return Response.json({
-                ok: true,
-                plugin: '@papercupai/linear-sync',
-                version: '0.1.0',
-                configured: key !== null,
-            });
+            return Response.json({ ok: true, plugin: '@papercupai/linear-sync', version: '0.2.0', configured: readKey() !== null });
         }
-        if ((path === '/viewer' || path.endsWith('/viewer')) && req.method === 'GET') {
-            const key = await readKey();
-            if (!key) {
-                return Response.json({ ok: false, error: 'LINEAR_API_KEY not configured' }, { status: 503 });
-            }
+        if (path.endsWith('/status') && req.method === 'GET') {
             try {
-                const res = await linearFetch(key, `query { viewer { id name email } organization { id name urlKey } }`, {});
-                if (res.errors?.length) {
-                    return Response.json({ ok: false, error: res.errors.map((e) => e.message).join('; ') }, { status: 502 });
-                }
-                return Response.json({ ok: true, viewer: res.data?.viewer, organization: res.data?.organization });
+                const sql = await pg();
+                const links = await sql `SELECT count(*)::bigint AS n FROM plugin_linear_sync.links WHERE harness_slug = ${slug} AND NOT tombstoned`;
+                const cur = await sql `SELECT * FROM plugin_linear_sync.cursors WHERE harness_slug = ${slug}`;
+                const drift = await sql `SELECT count(*)::bigint AS n FROM plugin_linear_sync.conflicts WHERE harness_slug = ${slug} AND resolved_at > now() - interval '24 hours'`;
+                return Response.json({ ok: true, slug, linkCount: Number(links[0]?.n ?? 0), cursor: cur[0] ?? null, recentConflicts: Number(drift[0]?.n ?? 0) });
             }
             catch (e) {
-                return Response.json({ ok: false, error: e?.message ?? String(e) }, { status: 502 });
+                return Response.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
+            }
+        }
+        if (path.endsWith('/links') && req.method === 'GET') {
+            const sql = await pg();
+            const rows = await sql `SELECT * FROM plugin_linear_sync.links WHERE harness_slug = ${slug} ORDER BY last_synced_at DESC LIMIT 200`;
+            return Response.json({ ok: true, links: rows });
+        }
+        if (path.endsWith('/conflicts') && req.method === 'GET') {
+            const sql = await pg();
+            const rows = await sql `SELECT * FROM plugin_linear_sync.conflicts WHERE harness_slug = ${slug} ORDER BY resolved_at DESC LIMIT 50`;
+            return Response.json({ ok: true, conflicts: rows });
+        }
+        if (path.endsWith('/webhook') && req.method === 'POST') {
+            const secret = process.env.LINEAR_WEBHOOK_SECRET;
+            const provided = req.headers.get('linear-signature') ?? url.searchParams.get('secret');
+            if (secret && provided !== secret)
+                return Response.json({ ok: false, error: 'bad secret' }, { status: 401 });
+            const sql = await pg();
+            await sql `UPDATE plugin_linear_sync.cursors SET remote_cursor = LEAST(remote_cursor, now() - interval '5 minutes') WHERE harness_slug = ${slug}`;
+            return Response.json({ ok: true, queued: true });
+        }
+        if (path.endsWith('/sync') && req.method === 'POST') {
+            const ctx = {
+                installSlug: slug, projectDir: process.cwd(),
+                stateDir: process.env.PAPERCUSP_STATE_DIR ?? `${process.env.HOME}/.papercusp/harnesses/${slug}`,
+                pluginDataDir: `${process.env.HOME}/.papercusp/harnesses/${slug}/plugins/linear-sync`,
+                log: (m) => console.log(`[linear-sync] ${m}`),
+            };
+            try {
+                return Response.json({ ok: true, stats: await runSync(ctx, {}) });
+            }
+            catch (e) {
+                return Response.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
             }
         }
         return Response.json({ error: 'not found', path }, { status: 404 });

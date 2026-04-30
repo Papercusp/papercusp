@@ -1,157 +1,117 @@
 {
   "kind": "plugin",
   "name": "@papercupai/jira-sync",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "papercusp": "^0.1.0",
-  "description": "Sync papercusp harness state to a Jira project: create an issue per feature, append comments on status transitions, optionally bulk-export pending proposals. Demonstrates capability-gated REST integration with auth headers + idempotent upserts.",
+  "description": "Bidirectional background sync between harness features/issues and a Jira Cloud project. No dashboard CTAs — runs on a 30s cron, reacts to Jira webhooks, and pushes harness state changes via lifecycle hooks. Harness wins on field conflicts; remote-only metadata (assignee, priority) is mirrored read-only into a JSONB sidecar.",
   "author": "Papercusp",
   "license": "MIT",
-  "main": "./index.ts",
+  "main": "./index.js",
   "capabilities": [
+    "db:plugin-schema",
     "secrets:read:JIRA_API_TOKEN",
     "secrets:read:JIRA_EMAIL",
     "secrets:read:JIRA_BASE_URL",
+    "secrets:read:JIRA_WEBHOOK_SECRET",
     "http:fetch:*.atlassian.net",
+    "http:fetch:api.atlassian.com",
     "events:listen:feature-passed",
     "events:listen:feature-failed",
     "events:listen:proposal-accepted",
-    "events:listen:mission-done"
+    "events:listen:mission-done",
+    "routines:read",
+    "routines:write",
+    "tasks:read",
+    "tasks:write"
+  ],
+  "schema": {
+    "schemaName": "plugin_jira_sync",
+    "sqlPaths": ["./schema.sql"]
+  },
+  "routines": [
+    {
+      "name": "sync-tick",
+      "trigger": { "kind": "cron", "expr": "*/30 * * * * *" },
+      "targetRole": "jira-sync.runSync",
+      "concurrency": "skip",
+      "catchup": "skip-old"
+    },
+    {
+      "name": "webhook",
+      "trigger": { "kind": "webhook", "tokenEnv": "JIRA_WEBHOOK_SECRET" },
+      "targetRole": "jira-sync.runSync",
+      "concurrency": "queue"
+    },
+    {
+      "name": "manual-sync",
+      "trigger": { "kind": "api", "method": "POST" },
+      "targetRole": "jira-sync.runSync",
+      "concurrency": "queue"
+    }
   ],
   "actions": [
     {
-      "name": "create-issue",
-      "label": "Create Jira issue",
-      "surfaces": [
-        "harness-toolbar",
-        "feature-row",
-        "mission-done"
-      ],
+      "name": "force-sync",
+      "label": "Force full sync",
+      "surfaces": ["plugin-detail"],
       "capabilities": [
         "secrets:read:JIRA_API_TOKEN",
         "secrets:read:JIRA_EMAIL",
         "secrets:read:JIRA_BASE_URL",
         "http:fetch:*.atlassian.net"
       ],
-      "serverHandler": {
-        "timeoutSec": 15
-      },
-      "paramsSchema": {
-        "type": "object",
-        "properties": {
-          "summary": {
-            "type": "string",
-            "description": "Issue title. Required."
-          },
-          "description": {
-            "type": "string",
-            "description": "Issue body (Atlassian Document Format text or plaintext)."
-          },
-          "projectKey": {
-            "type": "string",
-            "description": "Override the configured default Jira project key."
-          },
-          "issueType": {
-            "type": "string",
-            "description": "Issue type name (Task, Bug, Story\u2026). Defaults to configured value."
-          },
-          "labels": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "idempotencyKey": {
-            "type": "string",
-            "description": "If set, plugin auto-labels '<labelPrefix>-key-<value>' and searches for a pre-existing issue with that label before creating. Returns the existing issue key if found. Recommended source: feature_id, so re-runs (event replays, retries) don't duplicate issues."
-          }
-        },
-        "required": [
-          "summary"
-        ]
-      }
+      "serverHandler": { "timeoutSec": 60 }
     },
     {
-      "name": "post-comment",
-      "label": "Post Jira comment",
-      "surfaces": [
-        "feature-row"
-      ],
+      "name": "backfill-local-to-remote",
+      "label": "Push every harness feature/issue to Jira",
+      "surfaces": ["plugin-detail"],
       "capabilities": [
         "secrets:read:JIRA_API_TOKEN",
         "secrets:read:JIRA_EMAIL",
         "secrets:read:JIRA_BASE_URL",
         "http:fetch:*.atlassian.net"
       ],
-      "serverHandler": {
-        "timeoutSec": 10
-      },
-      "paramsSchema": {
-        "type": "object",
-        "properties": {
-          "issueKey": {
-            "type": "string",
-            "description": "Jira issue key, e.g. PRJ-42. Required."
-          },
-          "body": {
-            "type": "string",
-            "description": "Comment text. Required."
-          }
-        },
-        "required": [
-          "issueKey",
-          "body"
-        ]
-      }
+      "serverHandler": { "timeoutSec": 300 }
     },
     {
-      "name": "list-issues",
-      "label": "List Jira issues for harness",
-      "surfaces": [
-        "plugin-detail"
-      ],
+      "name": "backfill-remote-to-local",
+      "label": "Import every Jira issue tagged for this harness",
+      "surfaces": ["plugin-detail"],
       "capabilities": [
         "secrets:read:JIRA_API_TOKEN",
         "secrets:read:JIRA_EMAIL",
         "secrets:read:JIRA_BASE_URL",
         "http:fetch:*.atlassian.net"
       ],
-      "serverHandler": {
-        "timeoutSec": 15
-      },
-      "paramsSchema": {
-        "type": "object",
-        "properties": {
-          "jql": {
-            "type": "string",
-            "description": "Override the default 'labels = papercusp-{slug}' JQL."
-          }
-        }
-      }
+      "serverHandler": { "timeoutSec": 300 }
     }
   ],
-  "configSchema": {
-    "type": "object",
-    "properties": {
-      "defaultProjectKey": {
-        "type": "string",
-        "description": "Default Jira project key (e.g. ENG)."
-      },
-      "defaultIssueType": {
-        "type": "string",
-        "default": "Task",
-        "description": "Default issue type. 'Task' is universal across projects."
-      },
-      "labelPrefix": {
-        "type": "string",
-        "default": "papercusp",
-        "description": "Issues get auto-labeled '{prefix}-{harness-slug}' for filtering."
-      },
-      "createOnFeaturePassed": {
-        "type": "boolean",
-        "default": false,
-        "description": "When a feature passes, auto-create a Jira issue summarizing the change."
-      }
+  "config": {
+    "defaultProjectKey": {
+      "type": "string",
+      "required": true,
+      "description": "Jira project key (e.g. ENG, PAPER)"
+    },
+    "defaultIssueType": {
+      "type": "string",
+      "default": "Task",
+      "description": "Issue type used for harness features"
+    },
+    "bugIssueType": {
+      "type": "string",
+      "default": "Bug",
+      "description": "Issue type used for harness bugs (harness_issues)"
+    },
+    "labelPrefix": {
+      "type": "string",
+      "default": "papercusp",
+      "description": "Label prefix; the plugin owns labels matching `<prefix>-*`"
+    },
+    "fullSyncIntervalSec": {
+      "type": "number",
+      "default": 3600,
+      "description": "How often to run a full reconcile (cursor reset). Default 1 hour."
     }
-  },
-  "icon": "CheckSquare"
+  }
 }
