@@ -877,7 +877,7 @@ export async function cmdUpgradePin(args: string[]): Promise<void> {
 const DEFAULT_TAB_PLUGINS = [
   '@papercupai/vscode-server',
   '@papercupai/pi-coding',
-  '@papercupai/docs-viewer',
+  '@papercupai/fumadocs',
 ];
 
 export async function cmdMigrateTabs(args: string[]): Promise<void> {
