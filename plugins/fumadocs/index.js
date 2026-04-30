@@ -9,8 +9,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // against an in-host registry. For marketplace runtime install, it's unused.
 const plugin = {
     kind: 'plugin',
-    name: '@papercupai/docs-viewer',
-    version: '0.1.1',
+    name: '@papercupai/fumadocs',
+    version: '0.2.0',
     papercusp: '^0.1.0',
     description: 'Docs site embedded in a dashboard tab.',
     capabilities: ['ui:dashboard-tab'],

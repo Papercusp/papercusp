@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 // Tab rendering is driven by the manifest's `dashboardTabs[].iframeUrlConfigKey`
-// (papercusp.json). See sibling notes in docs-viewer/index.ts.
+// (papercusp.json). See sibling notes in fumadocs/index.ts.
 const plugin = {
     kind: 'plugin',
     name: '@papercupai/vscode-server',

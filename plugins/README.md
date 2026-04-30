@@ -9,7 +9,7 @@ marketplace under the `@papercupai` scope; install at runtime via
 | `@papercupai/vscode-server` | P5 | `dashboardTabs` | Smallest pilot — iframe code-server. |
 | `@papercupai/cloudflare-pages` | P6 | `actions` + `routines` | First server-runtime plugin; secrets + http:fetch. |
 | `@papercupai/pi-coding` | P7 | `dashboardTabs` | Replaces legacy hard-coded `pi` tab once feature flag flips. |
-| `@papercupai/docs-viewer` | P7 | `dashboardTabs` | Replaces legacy hard-coded `docs` tab. |
+| `@papercupai/fumadocs` | P7 | `dashboardTabs` | Replaces legacy hard-coded `docs` tab. |
 | `@papercupai/slack-notifier` | P9 | `actions` + `routines` | Slack incoming-webhook integration; secrets:read + http:fetch on a single host. |
 | `@papercupai/postgres-manager` | P9 | `actions` only | 3 actions (migrate/inspect/reset) sharing one capability — `db:plugin-schema`. |
 | `@papercupai/notion-export` | P9 | `actions` only | Posts mission summary to a Notion database; secrets:read + http:fetch:api.notion.com. |

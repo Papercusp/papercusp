@@ -1,5 +1,5 @@
 /**
- * @papercupai/docs-viewer — embed the docs site as a harness dashboard tab.
+ * @papercupai/fumadocs — embed the docs site as a harness dashboard tab.
  *
  * Reference plugin for spec §14.7 P7 — replaces the legacy hard-coded `docs`
  * tab. Activation gated by the PAPERCUSP_TABS_FROM_PLUGINS feature flag.
@@ -15,8 +15,8 @@ import type { Plugin } from '@papercusp/plugin-sdk';
 // against an in-host registry. For marketplace runtime install, it's unused.
 const plugin: Plugin = {
   kind: 'plugin',
-  name: '@papercupai/docs-viewer',
-  version: '0.1.1',
+  name: '@papercupai/fumadocs',
+  version: '0.2.0',
   papercusp: '^0.1.0',
   description: 'Docs site embedded in a dashboard tab.',
   capabilities: ['ui:dashboard-tab'],

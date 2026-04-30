@@ -1,6 +1,6 @@
 {
-  "name": "@papercupai/docs-viewer",
-  "version": "0.1.1",
+  "name": "@papercupai/fumadocs",
+  "version": "0.2.0",
   "kind": "plugin",
   "papercusp": "^0.1.0",
   "description": "Embed the harness's docs site (Fumadocs) as a dashboard tab.",
@@ -11,7 +11,7 @@
   ],
   "dashboardTabs": [
     {
-      "id": "docs",
+      "id": "fumadocs",
       "label": "Docs",
       "icon": "BookOpen",
       "iframeUrlConfigKey": "docsUrl",
