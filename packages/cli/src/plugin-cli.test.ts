@@ -10,7 +10,7 @@ import { promises as fs, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { cmdPluginEnable, cmdPluginDisable, cmdPluginConfig } from './plugin-cli.ts';
+import { cmdPluginEnable, cmdPluginDisable, cmdPluginConfig, cmdPluginRename } from './plugin-cli.ts';
 
 const HARNESS = `plugin-cli-test-${process.pid}`;
 const SLUG = `pcli-fixture-${process.pid}`;
@@ -99,6 +99,158 @@ describe('cmdPluginDisable', () => {
     await cmdPluginDisable(['not-enabled', '--harness', HARNESS]);
     const enabled = JSON.parse(await fs.readFile(ENABLED_PATH, 'utf8'));
     assert.deepEqual(enabled.enabled, {});
+  });
+});
+
+describe('cmdPluginRename', () => {
+  const OLD = `pcli-rename-old-${process.pid}`;
+  const NEW = `pcli-rename-new-${process.pid}`;
+  const OLD_DIR = join(ROOT, 'global-plugins', OLD);
+  const NEW_DIR = join(ROOT, 'global-plugins', NEW);
+  const RENAME_HARNESS = `pcli-rename-harness-${process.pid}`;
+  const RENAME_HARNESS_DIR = join(ROOT, 'harnesses', RENAME_HARNESS);
+  const GRANTS_PATH = join(ROOT, 'granted-capabilities.json');
+
+  before(async () => {
+    await fs.mkdir(OLD_DIR, { recursive: true });
+    await fs.writeFile(
+      join(OLD_DIR, 'papercusp.json'),
+      JSON.stringify({ name: OLD, version: '0.0.1', kind: 'plugin' }),
+    );
+  });
+
+  after(async () => {
+    await fs.rm(OLD_DIR, { recursive: true, force: true });
+    await fs.rm(NEW_DIR, { recursive: true, force: true });
+    await fs.rm(RENAME_HARNESS_DIR, { recursive: true, force: true });
+    if (existsSync(GRANTS_PATH)) {
+      const data = JSON.parse(await fs.readFile(GRANTS_PATH, 'utf8'));
+      const grants = data.grants ?? {};
+      for (const k of Object.keys(grants)) {
+        if (k.startsWith(OLD) || k.startsWith(NEW)) delete grants[k];
+      }
+      data.grants = grants;
+      await fs.writeFile(GRANTS_PATH, JSON.stringify(data, null, 2));
+    }
+  });
+
+  beforeEach(async () => {
+    await fs.rm(NEW_DIR, { recursive: true, force: true });
+    await fs.rm(RENAME_HARNESS_DIR, { recursive: true, force: true });
+    if (!existsSync(OLD_DIR)) {
+      await fs.mkdir(OLD_DIR, { recursive: true });
+      await fs.writeFile(
+        join(OLD_DIR, 'papercusp.json'),
+        JSON.stringify({ name: OLD, version: '0.0.1', kind: 'plugin' }),
+      );
+    }
+    if (existsSync(GRANTS_PATH)) {
+      const data = JSON.parse(await fs.readFile(GRANTS_PATH, 'utf8'));
+      const grants = data.grants ?? {};
+      for (const k of Object.keys(grants)) {
+        if (k.startsWith(OLD) || k.startsWith(NEW)) delete grants[k];
+      }
+      data.grants = grants;
+      await fs.writeFile(GRANTS_PATH, JSON.stringify(data, null, 2));
+    }
+  });
+
+  it('moves the global-plugins dir + migrates per-harness state', async () => {
+    await fs.mkdir(join(RENAME_HARNESS_DIR, 'plugin-configs'), { recursive: true });
+    await fs.mkdir(join(RENAME_HARNESS_DIR, 'plugin-data', OLD), { recursive: true });
+    await fs.writeFile(
+      join(RENAME_HARNESS_DIR, 'enabled-plugins.json'),
+      JSON.stringify({ enabled: { [OLD]: { version: '0.0.1', enabledAt: 'x', configHash: 'sha256-x' } } }),
+    );
+    await fs.writeFile(
+      join(RENAME_HARNESS_DIR, 'plugin-configs', `${OLD}.json`),
+      JSON.stringify({ k: 'v' }),
+    );
+    await fs.writeFile(
+      join(RENAME_HARNESS_DIR, 'plugin-data', OLD, 'runtime.json'),
+      JSON.stringify({ runtime: 'old' }),
+    );
+
+    await cmdPluginRename([OLD, NEW]);
+
+    assert.equal(existsSync(OLD_DIR), false, 'old dir gone');
+    assert.equal(existsSync(NEW_DIR), true, 'new dir created');
+    assert.equal(existsSync(join(RENAME_HARNESS_DIR, 'plugin-configs', `${OLD}.json`)), false);
+    assert.equal(existsSync(join(RENAME_HARNESS_DIR, 'plugin-configs', `${NEW}.json`)), true);
+    assert.equal(existsSync(join(RENAME_HARNESS_DIR, 'plugin-data', OLD)), false);
+    assert.equal(existsSync(join(RENAME_HARNESS_DIR, 'plugin-data', NEW)), true);
+    const enabled = JSON.parse(
+      await fs.readFile(join(RENAME_HARNESS_DIR, 'enabled-plugins.json'), 'utf8'),
+    );
+    assert.equal(enabled.enabled[NEW]?.version, '0.0.1');
+    assert.equal(enabled.enabled[OLD], undefined);
+  });
+
+  it('rewrites granted-capabilities keys keyed by old slug', async () => {
+    const baseGrants = existsSync(GRANTS_PATH)
+      ? JSON.parse(await fs.readFile(GRANTS_PATH, 'utf8'))
+      : { grants: {} };
+    baseGrants.grants ??= {};
+    baseGrants.grants[`${OLD}:harnessA:tasks:read`] = { grantedAt: 'x' };
+    baseGrants.grants[`${OLD}@0.0.1:harnessB:secrets:read:FOO`] = { grantedAt: 'x' };
+    baseGrants.grants['unrelated-plugin:harnessA:tasks:read'] = { grantedAt: 'x' };
+    await fs.writeFile(GRANTS_PATH, JSON.stringify(baseGrants, null, 2));
+
+    await cmdPluginRename([OLD, NEW]);
+
+    const grants = JSON.parse(await fs.readFile(GRANTS_PATH, 'utf8')).grants;
+    assert.equal(grants[`${OLD}:harnessA:tasks:read`], undefined);
+    assert.equal(grants[`${OLD}@0.0.1:harnessB:secrets:read:FOO`], undefined);
+    assert.ok(grants[`${NEW}:harnessA:tasks:read`], 'first renamed grant present');
+    assert.ok(grants[`${NEW}@0.0.1:harnessB:secrets:read:FOO`], 'versioned renamed grant present');
+    assert.ok(grants['unrelated-plugin:harnessA:tasks:read'], 'unrelated grant preserved');
+  });
+
+  it('rejects when old slug does not exist', async () => {
+    const exit = process.exit;
+    let exitCode: number | null = null;
+    (process as { exit: typeof process.exit }).exit = ((c?: number) => {
+      exitCode = c ?? 0;
+      throw new Error('process.exit-stub');
+    }) as typeof process.exit;
+    try {
+      await assert.rejects(() => cmdPluginRename(['definitely-not-installed', NEW]));
+      assert.equal(exitCode, 1);
+    } finally {
+      (process as { exit: typeof process.exit }).exit = exit;
+    }
+  });
+
+  it('rejects when new slug already exists', async () => {
+    await fs.mkdir(NEW_DIR, { recursive: true });
+    await fs.writeFile(join(NEW_DIR, 'papercusp.json'), '{}');
+    const exit = process.exit;
+    let exitCode: number | null = null;
+    (process as { exit: typeof process.exit }).exit = ((c?: number) => {
+      exitCode = c ?? 0;
+      throw new Error('process.exit-stub');
+    }) as typeof process.exit;
+    try {
+      await assert.rejects(() => cmdPluginRename([OLD, NEW]));
+      assert.equal(exitCode, 1);
+    } finally {
+      (process as { exit: typeof process.exit }).exit = exit;
+    }
+  });
+
+  it('rejects when old and new are the same', async () => {
+    const exit = process.exit;
+    let exitCode: number | null = null;
+    (process as { exit: typeof process.exit }).exit = ((c?: number) => {
+      exitCode = c ?? 0;
+      throw new Error('process.exit-stub');
+    }) as typeof process.exit;
+    try {
+      await assert.rejects(() => cmdPluginRename([OLD, OLD]));
+      assert.equal(exitCode, 1);
+    } finally {
+      (process as { exit: typeof process.exit }).exit = exit;
+    }
   });
 });
 
