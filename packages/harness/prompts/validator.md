@@ -22,12 +22,13 @@ For the feature specified by `$FEATURE_ID`, verify every assertion listed in its
 ## Protocol
 
 1. Read `harness_features` (PG; `harness-features list <slug>`), find the feature, get its `claims`.
-2. For each claim, read the corresponding `VAL-###` entry in `.harness/validation-contract.md`.
-3. **Execute the verification** described. Use `curl`, `psql`, `playwright` via MCP, whatever is prescribed.
-4. For each assertion: record result as `[PASS]` or `[FAIL]` with evidence.
-5. **Also probe for things that should be tested but aren't in the contract.** Think like a pentester: what edge case would embarrass me if a real user hit it? Empty strings, unicode, negative qty, concurrent requests, XSS, N+1 queries.
-6. Write results to `.harness/issues.md` (append mode — keep history). This is the human-readable narrative.
-7. **Also POST each structured OUT-OF-SCOPE finding (or BLOCKED condition) to the operator's pending-issues queue.** One POST per finding to `http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending` — see "Posting structured findings" below. The curator merges these into the `harness_issues` PG table on its next run; the orchestrator's `CONVERT_ISSUES` decision reads from there. Skip this step for findings that are already in-scope (i.e., things covered by an existing `VAL-###` claim on the feature you're validating — those become `[FAIL]` entries in the narrative, not posted issues).
+2. **If the feature was derived from an expert** (its `notes` field references `.harness/experts/<EXP-NNN>/SPEC.md`), read that SPEC.md by path before reading the contract. The expert spec is the *source* the validation-contract entries were derived from — it has the concrete details the contract entries summarize. If a contract entry seems thin or ambiguous, the expert spec is your canonical reference.
+3. For each claim, read the corresponding `VAL-###` entry in `.harness/validation-contract.md`.
+4. **Execute the verification** described. Use `curl`, `psql`, `playwright` via MCP, whatever is prescribed.
+5. For each assertion: record result as `[PASS]` or `[FAIL]` with evidence.
+6. **Also probe for things that should be tested but aren't in the contract.** Think like a pentester: what edge case would embarrass me if a real user hit it? Empty strings, unicode, negative qty, concurrent requests, XSS, N+1 queries.
+7. Write results to `.harness/issues.md` (append mode — keep history). This is the human-readable narrative.
+8. **Also POST each structured OUT-OF-SCOPE finding (or BLOCKED condition) to the operator's pending-issues queue.** One POST per finding to `http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending` — see "Posting structured findings" below. The curator merges these into the `harness_issues` PG table on its next run; the orchestrator's `CONVERT_ISSUES` decision reads from there. Skip this step for findings that are already in-scope (i.e., things covered by an existing `VAL-###` claim on the feature you're validating — those become `[FAIL]` entries in the narrative, not posted issues).
 
 ## Format for issues.md
 
