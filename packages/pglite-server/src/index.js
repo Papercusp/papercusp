@@ -38,18 +38,31 @@ export async function startPgliteServer(opts) {
 
   const db = await PGlite.create({ dataDir });
 
+  // Roles created with LOGIN + a default password matching what
+  // libs/db/src/connection.ts expects in its non-pglite default URL
+  // (`harness_<role>_pwd`). Without LOGIN, pglite-socket rejects every
+  // connection with "password authentication failed for user X" —
+  // pglite-socket runs the postgres wire protocol, which respects the
+  // role's rolcanlogin attribute even though pglite itself is
+  // single-user.
   await db.exec(`
-    DO $$ BEGIN
+    DO $pg$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_app') THEN
-        CREATE ROLE harness_app NOLOGIN;
+        CREATE ROLE harness_app LOGIN PASSWORD 'harness_app_pwd';
+      ELSE
+        ALTER ROLE harness_app LOGIN PASSWORD 'harness_app_pwd';
       END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_admin') THEN
-        CREATE ROLE harness_admin NOLOGIN;
+        CREATE ROLE harness_admin LOGIN PASSWORD 'harness_admin_pwd';
+      ELSE
+        ALTER ROLE harness_admin LOGIN PASSWORD 'harness_admin_pwd';
       END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_zero') THEN
-        CREATE ROLE harness_zero NOLOGIN;
+        CREATE ROLE harness_zero LOGIN PASSWORD 'harness_zero_pwd';
+      ELSE
+        ALTER ROLE harness_zero LOGIN PASSWORD 'harness_zero_pwd';
       END IF;
-    END $$;
+    END $pg$;
   `);
 
   // First-boot DDL bootstrap. If a `dbSqlDir` is supplied and the
