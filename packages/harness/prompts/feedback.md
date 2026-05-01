@@ -27,6 +27,13 @@ write **one** new turn, and exit. The orchestrator then runs the
 expert again to read your reply and decide whether to push back or
 end.
 
+**API-only writes — do NOT use the `Write` or `Edit` tools.** Read
+turns with `Read`; write your turn via curl `POST .../turn`. The
+harness's allowed-tools config typically permits only `Bash` + `Read` +
+`Edit`; even with `Edit` available, the turn file shape is
+server-managed (`turn-NNN-(expert|feedback).md` numbering) and direct
+writes break the orchestrator's "who's waiting on whom" inspection.
+
 You do NOT close the conversation yourself; the expert closes it (via
 `POST /end`) and provides the verdict. Your job is to keep producing
 honest critique on every turn — when the expert closes the
@@ -41,13 +48,22 @@ verdict the expert summarizes.
 2. Read the conversation so far in your assigned `feedback/<FEEDBACK_ID>/`
    directory. Find the latest `turn-NNN-expert.md` — that's the message
    you need to respond to.
-3. Write **one** turn — your critique or response — by POSTing:
+3. **You MUST end your invocation by POSTing your turn via curl.** This
+   is non-negotiable — without the POST, your work is lost and the
+   orchestrator will re-dispatch you, wasting tokens. Use `jq` or a
+   heredoc to build the JSON body so quotes/newlines escape correctly:
    ```bash
+   BODY="$(jq -nR --arg b "$(cat <<'CRITIQUE'
+   <your full critique here, including ISSUES: block at the bottom>
+   CRITIQUE
+   )" '{from: "feedback", body: $b}')"
    curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/$EXPERT_ID/feedback/$FEEDBACK_ID/turn" \
-     -H "content-type: application/json" \
-     -d '{"from":"feedback","body":"<your reply>"}'
+     -H "content-type: application/json" -d "$BODY"
    ```
-4. Exit. The orchestrator runs the expert next.
+4. Verify the POST returned `{"ok":true,"turn":"turn-NNN-feedback.md"}`
+   (status 200). If it failed, retry; do not exit until your turn is
+   recorded on disk.
+5. Exit. The orchestrator runs the expert next.
 
 ### What goes in your turn
 

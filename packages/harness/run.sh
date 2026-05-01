@@ -76,8 +76,12 @@ fi
 export HARNESS_SLUG
 MAX_ITERATIONS="${MAX_ITERATIONS:-200}"
 # Invocation template. `$ROLE` is the role file path; `$PROMPT` is the actual prompt text.
-# Default: non-interactive Claude Code. Adjust if your binary uses different flags.
-CLAUDE="${CLAUDE:-claude -p}"
+# Default: non-interactive Claude Code with permission prompts disabled (autonomous
+# loop can't answer prompts). Override CLAUDE env var to use a different binary or
+# add flags. Without --dangerously-skip-permissions, agents that try to curl the
+# operator API (expert, feedback, validator's POST flows) will hang on permission
+# prompts that nobody can answer.
+CLAUDE="${CLAUDE:-claude -p --dangerously-skip-permissions}"
 
 cd "$PROJECT_DIR"
 

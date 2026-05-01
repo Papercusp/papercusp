@@ -25,6 +25,28 @@ You write to `.harness/experts/<your-expert-id>/SPEC.md` (the canonical
 spec) and to `feedback/decision-log.md` (your reasoning). All other
 state under your directory is server-managed.
 
+**API-only access — do NOT use the `Write` or `Edit` tools** for any
+file under `.harness/experts/`. Read SPEC.md with `Read` (or curl
+`GET .../spec`); write it with curl `PUT .../spec`. Direct file writes
+bypass the server's audit trail.
+
+**Building JSON bodies for curl:** quoting / newline escaping is
+fragile in heredocs. Use `jq -nR --arg ...` to build payloads. For
+example, to write SPEC.md:
+```bash
+BODY="$(jq -nR --arg c "$(cat <<'SPEC'
+<your full SPEC.md content here>
+SPEC
+)" '{content: $c}')"
+curl -sS -X PUT "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/$EXPERT_ID/spec" \
+  -H "content-type: application/json" -d "$BODY"
+```
+
+**You MUST verify each curl returns 200 before exiting.** If a write
+fails, retry. The orchestrator dispatches you again next iteration if
+state didn't change, but that wastes tokens — make each iteration
+land its work.
+
 ### Step 1 — prior art and libraries (mandatory, before drafting)
 
 Do a thorough web search. Two questions, both required:
