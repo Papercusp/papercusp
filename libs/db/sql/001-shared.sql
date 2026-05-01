@@ -113,3 +113,22 @@ END;
 $$ LANGUAGE plpgsql;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.harness_features_consolidated TO harness_app, harness_admin;
+
+-- ───────────────────────────────────────────────────────────────────────
+-- plugin_enables: cross-harness mirror of each harness's
+-- enabled-plugins.json. Source-of-truth is the JSON; the operator's
+-- lib/plugin-enables-pg.ts mirrors writes into this table so reads
+-- (Zero, /api/plugins/enabled) can use one PG query instead of
+-- fanning over ~/.papercusp/harnesses/<slug>/enabled-plugins.json.
+-- ───────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS harness_shared.plugin_enables (
+  harness_slug TEXT NOT NULL,
+  plugin_slug  TEXT NOT NULL,
+  version      TEXT NOT NULL DEFAULT '',
+  config_hash  TEXT NOT NULL DEFAULT '',
+  enabled_at   TEXT NOT NULL DEFAULT '',
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (harness_slug, plugin_slug)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.plugin_enables TO harness_app, harness_admin;
