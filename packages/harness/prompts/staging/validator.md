@@ -1,6 +1,6 @@
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
-> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3001/api/harness/<your-slug>/status | jq .features`.
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
 >
 > **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
 >
@@ -26,7 +26,15 @@ For the feature specified by `$FEATURE_ID`, verify every assertion listed in its
 4. For each assertion: record result as `[PASS]` or `[FAIL]` with evidence.
 5. **Also probe for things that should be tested but aren't in the contract.** Think like a pentester: what edge case would embarrass me if a real user hit it? Empty strings, unicode, negative qty, concurrent requests, XSS, N+1 queries.
 6. Write results to `.harness/issues.md` (append mode — keep history). This is the human-readable narrative.
-7. **Also emit structured JSONL to `.harness/pending-issues.jsonl` (append mode)** — one JSON object per line, one line per OUT-OF-SCOPE finding or BLOCKED condition. The curator merges these into `.harness/issues.json` (the structured tracker) on its next run; the orchestrator's `CONVERT_ISSUES` decision reads from there. Skip this step for findings that are already in-scope (i.e., things covered by an existing `VAL-###` claim on the feature you're validating — those become `[FAIL]` entries in the narrative, not issues).
+7. **Also POST each structured OUT-OF-SCOPE finding (or BLOCKED condition) to the operator's pending-issues queue.** One POST per finding to `http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending`:
+
+```bash
+curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending" \
+  -H "content-type: application/json" \
+  -d '{"title":"<one-line>","severity":"major","foundDuring":"<feature-id>","evidence":"<...>","repro":"<...>","suggestedFix":"<...>","codePointer":"<path:line>"}'
+```
+
+The curator merges these into `harness_issues` (PG) on its next run; the orchestrator's `CONVERT_ISSUES` decision reads from there. Skip this step for findings already in-scope (those become `[FAIL]` entries in the narrative, not posted issues).
 
 ## Format for issues.md
 

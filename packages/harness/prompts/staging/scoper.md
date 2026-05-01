@@ -1,6 +1,16 @@
+> **2026-05-01 migration note**: When you (the scoper) finish planning, write features by **POSTing to the operator's import endpoint**:
+>
+> ```bash
+> curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/features/import" \
+>   -H "content-type: application/json" \
+>   -d '{"features":[{"id":"F-001","title":"...","status":"todo","claims":["VAL-001 ..."]}]}'
+> ```
+>
+> Returns `{ok:true, inserted:<N>, updated:<M>, total:<N+M>}`. INSERT…ON CONFLICT semantics — re-running with the same id updates title/status/summary in place. Run.sh's legacy `features.json → psql` shim was removed; if you write the file instead, it'll be renamed to `.deprecated` with a WARN and never imported.
+>
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
-> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3001/api/harness/<your-slug>/status | jq .features`.
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
 >
 > **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
 >
