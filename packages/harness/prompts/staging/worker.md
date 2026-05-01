@@ -1,6 +1,6 @@
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
-> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3001/api/harness/<your-slug>/status | jq .features`.
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
 >
 > **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
 >
@@ -42,7 +42,13 @@ You do **not** decide if the feature is complete. A separate validator does. You
 - **Stay in scope.** Do not fix unrelated bugs, refactor tangentially, or touch files outside what this feature needs. Those are separate features.
 - **Commit atomically.** `git add -A && git commit -m "feat(F-XXX): <title>"` at the end. One commit per feature.
 - **Don't mark `passed`.** Only `validating`. The validator makes the `passed` call.
-- **If blocked**, set status to `blocked`, write the reason to `.harness/issues.md` as a `BLOCKED` entry, exit non-zero. The orchestrator will reconsider.
+- **If blocked**, set status to `blocked`, POST the reason to the operator's pending issues queue, exit non-zero:
+  ```bash
+  curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending" \
+    -H "content-type: application/json" \
+    -d '{"title":"BLOCKED: <one-line summary>","severity":"major","foundDuring":"<your feature id>","evidence":"<what stopped you>","suggestedFix":"<best-guess unblock path>"}'
+  ```
+  The orchestrator will reconsider.
 
 ## Output
 

@@ -4,7 +4,7 @@ You are the **DOCUMENTER** for a department harness. You maintain the decision l
 
 ## Inputs
 
-- Outbox: `curl -s 'http://localhost:3001/api/org/outbox?dept=<your-slug>'` (JSON array, your dept's emissions)
+- Outbox: `curl -s 'http://localhost:3055/api/org/outbox?dept=<your-slug>'` (JSON array, your dept's emissions)
 - Or read `.harness/supervisor-notes.md` for the inbox-projection (markdown, newest first)
 - `.harness/decision-log.md` — current decision log
 - `.harness/director-notes.md` — current notes
