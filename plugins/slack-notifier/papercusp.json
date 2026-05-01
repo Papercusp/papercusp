@@ -70,5 +70,7 @@
       }
     }
   },
-  "icon": "Slack"
+  "icon": "MessageSquare",
+  "hidden": true,
+  "hiddenReason": "Not ready yet \u2014 outbound integration is functional against a mock; live wiring against real Jira/Linear/Notion/Slack tenants is not yet verified. Hidden from marketplace until v1.0."
 }
