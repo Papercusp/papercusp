@@ -7,14 +7,14 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { papercuspRoot } from './papercusp-root.ts';
 import { join } from 'node:path';
 
 import { cmdPluginEnable, cmdPluginDisable, cmdPluginConfig, cmdPluginRename } from './plugin-cli.ts';
 
 const HARNESS = `plugin-cli-test-${process.pid}`;
 const SLUG = `pcli-fixture-${process.pid}`;
-const ROOT = join(homedir(), '.papercusp');
+const ROOT = papercuspRoot();
 const HARNESS_DIR = join(ROOT, 'harnesses', HARNESS);
 const PLUGIN_DIR = join(ROOT, 'global-plugins', SLUG);
 const ENABLED_PATH = join(HARNESS_DIR, 'enabled-plugins.json');
