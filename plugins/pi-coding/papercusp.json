@@ -14,21 +14,16 @@
       "id": "pi",
       "label": "Pi",
       "icon": "Terminal",
-      "iframeUrlConfigKey": "piUrl",
       "replaces": [
         "pi"
-      ]
+      ],
+      "componentRoot": "@restart/papercup-shared",
+      "componentId": "PiTerminalsDock"
     }
   ],
   "configSchema": {
     "type": "object",
-    "properties": {
-      "piUrl": {
-        "type": "string",
-        "default": "http://localhost:3055/pi",
-        "description": "Base URL for the Pi terminal endpoint."
-      }
-    }
+    "properties": {}
   },
   "icon": "Terminal"
 }

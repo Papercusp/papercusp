@@ -17,13 +17,13 @@
  * modules and are NOT touched here.
  */
 import { promises as fs, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as readline from 'node:readline';
 
-const PAPERCUSP_ROOT = join(homedir(), '.papercusp');
+import { papercuspRoot } from './papercusp-root.ts';
+const PAPERCUSP_ROOT = papercuspRoot();
 const GLOBAL_PLUGINS_DIR = join(PAPERCUSP_ROOT, 'global-plugins');
 const HARNESSES_DIR = join(PAPERCUSP_ROOT, 'harnesses');
 
@@ -112,7 +112,32 @@ async function resolveHarness(args: string[]): Promise<{ harness: string; rest: 
 }
 
 async function loadInstalledManifest(slug: string): Promise<PluginManifest | null> {
-  return readJson<PluginManifest>(join(GLOBAL_PLUGINS_DIR, slug, 'papercusp.json'));
+  // 1) Direct path — handles bare slugs (`fumadocs`) and `@scope/<name>` when
+  //    the install layout matches. Fastest path; covers the common case.
+  const direct = await readJson<PluginManifest>(join(GLOBAL_PLUGINS_DIR, slug, 'papercusp.json'));
+  if (direct) return direct;
+  // 2) Fallback — scan top-level plus one level into any `@scope/` dir and
+  //    match by manifest `name`. Mirrors the runtime loader's behaviour
+  //    (apps/operator/app/api/_hono/plugins.ts > listPluginsIn) so the CLI
+  //    can find a plugin even when its dirname doesn't match the manifest
+  //    name (e.g. `fumadocs/` shipping `@papercupai/fumadocs`).
+  if (!existsSync(GLOBAL_PLUGINS_DIR)) return null;
+  const entries = await fs.readdir(GLOBAL_PLUGINS_DIR, { withFileTypes: true }).catch(() => []);
+  for (const e of entries) {
+    if (e.name.startsWith('.')) continue;
+    const top = join(GLOBAL_PLUGINS_DIR, e.name);
+    const m = await readJson<PluginManifest>(join(top, 'papercusp.json'));
+    if (m?.name === slug) return m;
+    if (m?.name) continue; // top-level plugin with a different name; don't recurse
+    if (!e.name.startsWith('@')) continue;
+    const inner = await fs.readdir(top, { withFileTypes: true }).catch(() => []);
+    for (const sub of inner) {
+      if (sub.name.startsWith('.')) continue;
+      const subM = await readJson<PluginManifest>(join(top, sub.name, 'papercusp.json'));
+      if (subM?.name === slug) return subM;
+    }
+  }
+  return null;
 }
 
 async function loadEnabledFile(harnessSlug: string): Promise<EnabledPluginsFile> {
@@ -878,12 +903,16 @@ export async function cmdPluginInvoke(args: string[]): Promise<void> {
     die(`plugin invoke: ${slug} default export is not a Plugin object`);
   }
 
+  // Action declarations live in the manifest (papercusp.json). The runtime
+  // Plugin object only carries the SDK-typed surface (init, hooks, etc).
+  const declaredActions = (manifest as { actions?: unknown }).actions;
+
   const audit = new InMemoryAuditWriter();
   let registry: InstanceType<typeof ServerActionRegistry>;
   try {
-    registry = new ServerActionRegistry((plugin as any).actions, {
-      pluginName: (plugin as any).name,
-      pluginCapabilities: (plugin as any).capabilities,
+    registry = new ServerActionRegistry(declaredActions as never, {
+      pluginName: (plugin as any).name ?? manifest.name,
+      pluginCapabilities: (plugin as any).capabilities ?? manifest.capabilities,
       audit,
     });
   } catch (e: any) {
@@ -905,8 +934,8 @@ export async function cmdPluginInvoke(args: string[]): Promise<void> {
   }
   registry.seal();
 
-  const declaredNames = Array.isArray((plugin as any).actions)
-    ? (plugin as any).actions.map((a: { name: string }) => a.name)
+  const declaredNames = Array.isArray(declaredActions)
+    ? (declaredActions as { name: string }[]).map((a) => a.name)
     : [];
   if (!registry.has(actionName)) {
     const known = registry.registeredNames();

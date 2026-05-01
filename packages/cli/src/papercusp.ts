@@ -30,7 +30,8 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
-const PAPERCUSP_ROOT = join(homedir(), '.papercusp');
+import { papercuspPath, papercuspRoot } from './papercusp-root.ts';
+const PAPERCUSP_ROOT = papercuspRoot();
 const HARNESSES_DIR = join(PAPERCUSP_ROOT, 'harnesses');
 const GLOBAL_PLUGINS_DIR = join(PAPERCUSP_ROOT, 'global-plugins');
 const PROJECTS_DIR = join(PAPERCUSP_ROOT, 'projects');
@@ -96,6 +97,36 @@ async function writeRegistry(reg: Registry): Promise<void> {
 
 async function readCredentials(): Promise<Record<string, string | undefined>> {
   return (await readJson<Record<string, string | undefined>>(CREDENTIALS_PATH)) ?? {};
+}
+
+/**
+ * Normalize manifest.schema into a list of `{schemaName?, ddlPath}` rows.
+ * Accepts:
+ *   - Single PluginSchemaDef object: `{schemaName, ddlPath}`
+ *   - Array of PluginSchemaDef objects.
+ *   - Legacy string-only array of DDL paths.
+ *   - Anything else → empty list (silently skipped).
+ */
+export function normalizeSchemaField(input: unknown): Array<{ schemaName?: string; ddlPath: string }> {
+  if (!input) return [];
+  const rows: Array<{ schemaName?: string; ddlPath: string }> = [];
+  const items = Array.isArray(input) ? input : [input];
+  for (const item of items) {
+    if (typeof item === 'string') {
+      rows.push({ ddlPath: item });
+      continue;
+    }
+    if (item && typeof item === 'object') {
+      const obj = item as { schemaName?: unknown; ddlPath?: unknown };
+      if (typeof obj.ddlPath === 'string' && obj.ddlPath.length > 0) {
+        rows.push({
+          schemaName: typeof obj.schemaName === 'string' ? obj.schemaName : undefined,
+          ddlPath: obj.ddlPath,
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 function isValidSlug(s: string): boolean {
@@ -234,7 +265,7 @@ async function cmdDoctor(): Promise<void> {
   console.log(bold('plugin ecosystem'));
 
   // Marketplace operator-secrets file
-  const opSecrets = join(homedir(), '.papercusp', 'marketplace-secrets.env');
+  const opSecrets = papercuspPath('marketplace-secrets.env');
   if (existsSync(opSecrets)) {
     const raw = await fs.readFile(opSecrets, 'utf8').catch(() => '');
     const hasOpToken = /^PAPERCUSP_MARKETPLACE_OPERATOR_TOKEN=/m.test(raw);
@@ -266,7 +297,7 @@ async function cmdDoctor(): Promise<void> {
 
   // Installed plugins
   try {
-    const globalPluginsDir = join(homedir(), '.papercusp', 'global-plugins');
+    const globalPluginsDir = papercuspPath('global-plugins');
     if (existsSync(globalPluginsDir)) {
       const top = await fs.readdir(globalPluginsDir, { withFileTypes: true });
       let count = 0;
@@ -522,19 +553,31 @@ async function installOne(slug: string, version: string | undefined, opts: Insta
     await fs.rename(installDir, realDir);
   }
 
-  // If the manifest declared a `schema` array, run those DDL files against
-  // Postgres so the per-plugin tables are ready before the user runs init.
-  if (Array.isArray(manifest.schema) && manifest.schema.length > 0) {
-    console.log(`  applying ${manifest.schema.length} schema DDL file(s)...`);
+  // If the manifest declared a `schema` field, run the DDL against Postgres
+  // so per-plugin tables are ready before the user enables the plugin.
+  //
+  // Two accepted shapes:
+  //   1. Canonical (matches SDK's `PluginSchemaDef`):
+  //        "schema": { "schemaName": "myplugin", "ddlPath": "sql/init.sql" }
+  //      OR an array of those objects when the plugin owns multiple schemas.
+  //   2. Legacy: a bare string array of DDL paths.
+  //        "schema": ["sql/001.sql", "sql/002.sql"]
+  //
+  // Both forms are normalized to a list of `{ schemaName?, ddlPath }` rows
+  // and run in declared order, ON_ERROR_STOP=1 for each.
+  const schemaRows = normalizeSchemaField(manifest.schema);
+  if (schemaRows.length > 0) {
+    console.log(`  applying ${schemaRows.length} schema DDL file(s)...`);
     const pgUser = process.env.PGUSER ?? 'postgres_app';
     const pgPwd = process.env.PGPASSWORD ?? 'postgres';
     const pgDb = process.env.HARNESS_PG_DB ?? 'papercusp';
     const pgHost = process.env.PGHOST ?? 'localhost';
     let applied = 0;
-    for (const rel of manifest.schema as string[]) {
-      const ddlPath = join(installDir, rel);
+    for (const row of schemaRows) {
+      const ddlPath = join(installDir, row.ddlPath);
+      const label = row.schemaName ? `${row.ddlPath} (schema=${row.schemaName})` : row.ddlPath;
       if (!existsSync(ddlPath)) {
-        console.log(`  ${dim(`skip (missing): ${rel}`)}`);
+        console.log(`  ${dim(`skip (missing): ${label}`)}`);
         continue;
       }
       const psql = spawnSync('psql', [
@@ -542,10 +585,10 @@ async function installOne(slug: string, version: string | undefined, opts: Insta
         '-U', pgUser, '-h', pgHost, '-d', pgDb, '-f', ddlPath,
       ], { encoding: 'utf8', env: { ...process.env, PGPASSWORD: pgPwd }, timeout: 30_000 });
       if (psql.status === 0) {
-        console.log(`  ${green('✓')} applied ${dim(rel)}`);
+        console.log(`  ${green('✓')} applied ${dim(label)}`);
         applied++;
       } else {
-        console.log(`  ${red('✗')} ${rel}: ${psql.stderr.trim().slice(0, 200)}`);
+        console.log(`  ${red('✗')} ${label}: ${psql.stderr.trim().slice(0, 200)}`);
       }
     }
     if (applied === 0) {

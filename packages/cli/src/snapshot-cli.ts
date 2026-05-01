@@ -15,7 +15,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const PAPERCUSP_ROOT = join(homedir(), '.papercusp');
+import { papercuspRoot } from './papercusp-root.ts';
+const PAPERCUSP_ROOT = papercuspRoot();
 const REGISTRY_PATH = join(PAPERCUSP_ROOT, 'registry.json');
 const LEGACY_REGISTRY_PATH = join(homedir(), '.restart-harness-projects.json');
 const CREDENTIALS_PATH = join(PAPERCUSP_ROOT, 'credentials.json');
@@ -106,6 +107,13 @@ export async function cmdSnapshot(args: string[]): Promise<void> {
   switch (sub) {
     case 'publish': return cmdSnapshotPublish(rest);
     case 'fork':    return cmdSnapshotFork(rest);
+    case 'list':
+    case 'ls':      return cmdSnapshotList(rest);
+    case 'info':
+    case 'show':    return cmdSnapshotInfo(rest);
+    case 'delete':
+    case 'rm':      return cmdSnapshotDelete(rest);
+    case 'publish-id': return cmdSnapshotPublishId(rest);
     case 'help':
     case '--help':
     case undefined:
@@ -120,7 +128,7 @@ export async function cmdSnapshot(args: string[]): Promise<void> {
 function cmdSnapshotHelp(): void {
   console.log(`${cyan('papercusp snapshot')} — publish + fork frozen harness state from the marketplace
 
-${cyan('publish <harness-slug>')} ${dim('[--name <slug>] [--note "<text>"] [--include-project]')}
+${cyan('publish <harness-slug>')} ${dim('[--name <slug>] [--note "<text>"] [--icon <Lucide>] [--include-project]')}
                                  ${dim('Bundle the harness\'s .harness/ directory (features, decisions, audit history)')}
                                  ${dim('and push to the marketplace as kind=snapshot.')}
 
@@ -128,11 +136,28 @@ ${cyan('fork <snapshot-slug>')} ${dim('[<new-harness-slug>] [--path <dir>]')}
                                  ${dim('Download a published snapshot and scaffold a new harness from it.')}
                                  ${dim('Registers the new harness in ~/.papercusp/registry.json.')}
 
+${cyan('list')} ${dim('[--harness <slug>] [--json]')}
+                                 ${dim('List local snapshots captured by the operator under each registered')}
+                                 ${dim('harness\'s .harness/snapshots/. Same data as the /snapshots UI.')}
+
+${cyan('info <snap-id>')} ${dim('[--json]')}
+                                 ${dim('Inspect a local snapshot\'s manifest: source harness, files, plugins,')}
+                                 ${dim('redactions, capture options. Useful before forking.')}
+
+${cyan('delete <snap-id>')} ${dim('[-f]')}
+                                 ${dim('Delete a local snapshot tarball. Pass -f to skip confirmation.')}
+
+${cyan('publish-id <snap-id>')} ${dim('[--slug <name>] [--version <ver>]')}
+                                 ${dim('Upload an already-captured local snapshot to the marketplace.')}
+                                 ${dim('Differs from `publish`, which re-captures from the live project.')}
+
 ${cyan('Options')}
   ${cyan('publish:')}
   --name <slug>      Override the published name (default: <harness>-snapshot-<date>-iter<N>).
                      Use @<owner>/<name> for scoped names (requires \`papercusp login\`).
   --note "<text>"    Description shown on the marketplace listing (default: auto from state).
+  --icon <Lucide>    Icon name (Lucide React) for the marketplace card. Default: inherit from
+                     source template's manifest, falling back to "Layers".
   --include-project  Also include the project source tree (off by default — snapshots are
                      state-only by default; the source code lives in the parent harness or
                      git remote).
@@ -257,16 +282,45 @@ async function readCredentials() {
   return (await readJson<Record<string, string | undefined>>(CREDENTIALS_PATH)) ?? {};
 }
 
+/**
+ * Best-effort lookup of a template's icon so a published snapshot inherits
+ * a meaningful glyph instead of falling back to the generic "Layers"
+ * shape. Sources tried, in order:
+ *   1. Project's own papercusp.json (`<projectDir>/papercusp.json` icon field)
+ *   2. Marketplace catalog entry for the same slug as the source harness
+ * Returns null if neither has an icon (caller picks a default).
+ */
+async function fetchTemplateIcon(harnessSlug: string): Promise<string | null> {
+  const reg = await readRegistry();
+  const project = reg.projects.find((p) => p.slug === harnessSlug);
+  if (project) {
+    const local = await readJson<{ icon?: string }>(join(project.path, 'papercusp.json'));
+    if (typeof local?.icon === 'string' && local.icon) return local.icon;
+  }
+  try {
+    const r = await fetch(`${MARKETPLACE_URL}/catalog/${encodeURIComponent(harnessSlug)}`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!r.ok) return null;
+    const d = await r.json() as { latest?: { icon?: string | null } };
+    return typeof d.latest?.icon === 'string' ? d.latest.icon : null;
+  } catch {
+    return null;
+  }
+}
+
 async function cmdSnapshotPublish(args: string[]): Promise<void> {
   const positional: string[] = [];
   let name: string | null = null;
   let note: string | null = null;
+  let icon: string | null = null;
   let includeProject = false;
   let includeLogs = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--name' && args[i + 1]) { name = args[i + 1]; i++; continue; }
     if (a === '--note' && args[i + 1]) { note = args[i + 1]; i++; continue; }
+    if (a === '--icon' && args[i + 1]) { icon = args[i + 1]; i++; continue; }
     if (a === '--include-project') { includeProject = true; continue; }
     if (a === '--include-logs') { includeLogs = true; continue; }
     if (a.startsWith('--')) {
@@ -298,6 +352,10 @@ async function cmdSnapshotPublish(args: string[]): Promise<void> {
   const desc = note ?? `Snapshot of "${harnessSlug}" at iteration ${state.iteration}` +
     (totalFeatures > 0 ? ` (${passed}/${totalFeatures} features passed)` : '');
 
+  // Inherit the source template's icon by default. --icon overrides;
+  // anything not declared falls back to "Layers".
+  const sourceIcon = icon ?? await fetchTemplateIcon(harnessSlug) ?? 'Layers';
+
   const manifest = {
     name: finalName,
     version,
@@ -305,6 +363,7 @@ async function cmdSnapshotPublish(args: string[]): Promise<void> {
     papercusp: '^0.1.0',
     description: desc,
     license: 'MIT',
+    icon: sourceIcon,
     snapshot: {
       sourceHarness: harnessSlug,
       sourceProjectPath: project.path,
@@ -416,6 +475,278 @@ papercusp install ${finalName}
   console.log(green(`✓ snapshot published: ${finalName}@${version}`));
   console.log(`  ${dim('view at: ' + (MARKETPLACE_URL.replace('api.', '') || 'http://localhost:3060') + '/marketplace/' + finalName + '/')}`);
   console.log(`  ${dim('fork:   papercusp install ' + finalName)}`);
+  if ((result as any).manifestUrl) {
+    console.log(`  ${dim('manifest: ' + (result as any).manifestUrl)}`);
+  }
+}
+
+interface LocalSnapshotRow {
+  id: string;
+  harnessSlug: string;
+  tarballPath: string;
+  bytes: number;
+  name: string | null;
+  description: string | null;
+  createdAtMs: number;
+}
+
+async function readManifestFromTarballSync(tarballPath: string, id: string): Promise<unknown | null> {
+  // Manifest is at `<id>/manifest.json` inside the tarball (the lib's
+  // stage layout uses the snapshot id as the top-level dir).
+  const r = spawnSync('tar', ['-xzOf', tarballPath, `${id}/manifest.json`], { encoding: 'utf8' });
+  if (r.status !== 0) return null;
+  try { return JSON.parse(r.stdout); } catch { return null; }
+}
+
+async function cmdSnapshotList(args: string[]): Promise<void> {
+  let filterSlug: string | null = null;
+  let asJson = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--harness' && args[i + 1]) { filterSlug = args[i + 1]; i++; continue; }
+    if (a === '--json') { asJson = true; continue; }
+    if (a.startsWith('--')) die(`snapshot list: unknown flag "${a}"`);
+  }
+
+  const reg = await readRegistry();
+  const rows: LocalSnapshotRow[] = [];
+  for (const project of reg.projects) {
+    if (filterSlug && project.slug !== filterSlug) continue;
+    const dir = join(project.path, '.harness', 'snapshots');
+    let entries: string[];
+    try { entries = await fs.readdir(dir); } catch { continue; }
+    for (const name of entries) {
+      if (!name.startsWith('snap_') || !name.endsWith('.tar.gz')) continue;
+      const tarballPath = join(dir, name);
+      let stat;
+      try { stat = await fs.stat(tarballPath); } catch { continue; }
+      const id = name.replace(/\.tar\.gz$/, '');
+      const m = (await readManifestFromTarballSync(tarballPath, id)) as
+        | { name?: string; description?: string; createdAt?: number } | null;
+      rows.push({
+        id,
+        harnessSlug: project.slug,
+        tarballPath,
+        bytes: stat.size,
+        name: m?.name ?? null,
+        description: m?.description ?? null,
+        createdAtMs: m?.createdAt ?? stat.mtimeMs,
+      });
+    }
+  }
+  rows.sort((a, b) => b.createdAtMs - a.createdAtMs);
+
+  if (asJson) {
+    console.log(JSON.stringify(rows, null, 2));
+    return;
+  }
+
+  if (rows.length === 0) {
+    console.log(dim(filterSlug
+      ? `no local snapshots for harness "${filterSlug}".`
+      : 'no local snapshots found across registered harnesses.'));
+    console.log(dim('capture one from the harness dashboard\'s "save snapshot" button.'));
+    return;
+  }
+
+  for (const r of rows) {
+    const date = new Date(r.createdAtMs).toISOString().replace('T', ' ').slice(0, 16);
+    const mb = (r.bytes / 1e6).toFixed(1);
+    console.log(`${cyan(r.id)}  ${dim(date)}  ${r.harnessSlug}  ${dim(`${mb} MB`)}`);
+    if (r.name) console.log(`  ${r.name}`);
+    if (r.description) console.log(`  ${dim(r.description)}`);
+  }
+  console.log('');
+  console.log(dim(`${rows.length} snapshot${rows.length === 1 ? '' : 's'}`));
+}
+
+async function findLocalSnapshotById(id: string): Promise<{ harnessSlug: string; tarballPath: string; bytes: number; manifest: any } | null> {
+  const reg = await readRegistry();
+  for (const project of reg.projects) {
+    const tarballPath = join(project.path, '.harness', 'snapshots', `${id}.tar.gz`);
+    if (!existsSync(tarballPath)) continue;
+    const stat = await fs.stat(tarballPath);
+    const m = await readManifestFromTarballSync(tarballPath, id);
+    if (!m) continue;
+    return { harnessSlug: project.slug, tarballPath, bytes: stat.size, manifest: m };
+  }
+  return null;
+}
+
+async function cmdSnapshotInfo(args: string[]): Promise<void> {
+  let asJson = false;
+  let id: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--json') { asJson = true; continue; }
+    if (a.startsWith('--')) die(`snapshot info: unknown flag "${a}"`);
+    if (id === null) { id = a; continue; }
+    die(`snapshot info: unexpected argument "${a}"`);
+  }
+  if (!id) die('snapshot info: usage: papercusp snapshot info <snap-id> [--json]');
+
+  const found = await findLocalSnapshotById(id);
+  if (!found) die(`snapshot info: no local snapshot "${id}" found across registered harnesses.`);
+
+  if (asJson) {
+    console.log(JSON.stringify({
+      id,
+      harnessSlug: found.harnessSlug,
+      tarballPath: found.tarballPath,
+      bytes: found.bytes,
+      manifest: found.manifest,
+    }, null, 2));
+    return;
+  }
+
+  const m = found.manifest as {
+    name?: string;
+    description?: string;
+    license?: string;
+    createdAt?: number;
+    template?: { name?: string; version?: string };
+    files?: unknown[];
+    excluded?: unknown[];
+    plugins?: Array<{ name?: string; version?: string; capabilities?: string[] }>;
+    redactions?: { blockedSecretsTier?: string; verifiedHits?: number; highRecallHits?: number };
+    partial?: boolean;
+  };
+  const date = m.createdAt ? new Date(m.createdAt).toISOString().replace('T', ' ').slice(0, 19) : '?';
+  const mb = (found.bytes / 1e6).toFixed(2);
+
+  console.log(`${cyan(id)}`);
+  console.log(`  ${dim('name:        ')}${m.name ?? dim('(unset)')}`);
+  if (m.description) console.log(`  ${dim('description: ')}${m.description}`);
+  console.log(`  ${dim('harness:     ')}${found.harnessSlug}`);
+  if (m.template?.name) console.log(`  ${dim('template:    ')}${m.template.name}@${m.template.version ?? '?'}`);
+  console.log(`  ${dim('captured:    ')}${date}`);
+  console.log(`  ${dim('size:        ')}${mb} MB`);
+  console.log(`  ${dim('license:     ')}${m.license ?? '(unset)'}`);
+  console.log(`  ${dim('files:       ')}${m.files?.length ?? 0} (${m.excluded?.length ?? 0} excluded)`);
+  if (m.partial) console.log(`  ${dim('partial:     ')}yes`);
+
+  const r = m.redactions ?? {};
+  const redactSummary =
+    (r.verifiedHits ?? 0) === 0 && (r.highRecallHits ?? 0) === 0
+      ? 'clean'
+      : `${r.verifiedHits ?? 0} verified, ${r.highRecallHits ?? 0} warnings (tier=${r.blockedSecretsTier ?? '?'})`;
+  console.log(`  ${dim('redactions:  ')}${redactSummary}`);
+
+  if (m.plugins && m.plugins.length > 0) {
+    console.log(`  ${dim('plugins:')}`);
+    for (const p of m.plugins) {
+      console.log(`    - ${p.name}@${p.version ?? '?'}${p.capabilities?.length ? dim(`  [${p.capabilities.length} caps]`) : ''}`);
+    }
+  }
+
+  console.log('');
+  console.log(`  ${dim('tarball:  ' + found.tarballPath)}`);
+}
+
+async function cmdSnapshotDelete(args: string[]): Promise<void> {
+  let force = false;
+  let id: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-f' || a === '--force') { force = true; continue; }
+    if (a.startsWith('-')) die(`snapshot delete: unknown flag "${a}"`);
+    if (id === null) { id = a; continue; }
+    die(`snapshot delete: unexpected argument "${a}"`);
+  }
+  if (!id) die('snapshot delete: usage: papercusp snapshot delete <snap-id> [-f]');
+
+  const found = await findLocalSnapshotById(id);
+  if (!found) die(`snapshot delete: no local snapshot "${id}" found.`);
+
+  if (!force) {
+    const m = found.manifest as { name?: string };
+    const label = m.name ? `"${m.name}" (${id})` : id;
+    process.stdout.write(`Delete ${label} from ${found.harnessSlug}? [y/N] `);
+    const answer = await new Promise<string>((resolve) => {
+      let buf = '';
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', (d) => {
+        buf += d;
+        if (buf.includes('\n')) { process.stdin.pause(); resolve(buf.trim()); }
+      });
+      process.stdin.resume();
+    });
+    if (!/^y(es)?$/i.test(answer)) {
+      console.log(dim('cancelled.'));
+      return;
+    }
+  }
+
+  await fs.unlink(found.tarballPath);
+  await fs.unlink(found.tarballPath + '.sha256').catch(() => {});
+  console.log(green(`✓ deleted ${id}`));
+}
+
+async function cmdSnapshotPublishId(args: string[]): Promise<void> {
+  let id: string | null = null;
+  let slug: string | null = null;
+  let version: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--slug' && args[i + 1]) { slug = args[i + 1]; i++; continue; }
+    if (a === '--version' && args[i + 1]) { version = args[i + 1]; i++; continue; }
+    if (a.startsWith('--')) die(`snapshot publish-id: unknown flag "${a}"`);
+    if (id === null) { id = a; continue; }
+    die(`snapshot publish-id: unexpected argument "${a}"`);
+  }
+  if (!id) die('snapshot publish-id: usage: papercusp snapshot publish-id <snap-id> [--slug <name>] [--version <ver>]');
+
+  const found = await findLocalSnapshotById(id);
+  if (!found) die(`snapshot publish-id: no local snapshot "${id}" found.`);
+  const m = found.manifest as { name?: string; description?: string; license?: string; harnessSlug?: string; createdAt?: number };
+
+  const date = new Date(m.createdAt ?? Date.now()).toISOString().slice(0, 10).replace(/-/g, '');
+  const finalSlug = slug ?? `${found.harnessSlug}-snapshot-${date}`;
+  if (!isValidSlug(finalSlug)) die(`snapshot publish-id: derived/given slug "${finalSlug}" is not valid.`);
+  const finalVersion = version ?? `1.0.0-ts${Date.now()}`;
+
+  const sourceIcon = (m as { icon?: string }).icon ?? await fetchTemplateIcon(found.harnessSlug) ?? 'Layers';
+
+  const manifestPayload = {
+    name: finalSlug,
+    version: finalVersion,
+    kind: 'snapshot' as const,
+    papercusp: '^0.1.0',
+    description: m.description ?? m.name ?? `Snapshot ${id}`,
+    license: m.license ?? 'MIT',
+    icon: sourceIcon,
+    snapshot: {
+      sourceHarness: found.harnessSlug,
+      capturedSnapshotId: id,
+      original: m,
+    },
+  };
+
+  const tarballBuf = await fs.readFile(found.tarballPath);
+  const form = new FormData();
+  form.append('manifest', JSON.stringify(manifestPayload));
+  form.append('tarball', new Blob([new Uint8Array(tarballBuf)], { type: 'application/gzip' }), `${finalSlug}-${finalVersion}.tar.gz`);
+
+  const creds = await readCredentials();
+  const headers: Record<string, string> = {};
+  if (process.env.PAPERCUSP_SERVICE_TOKEN) {
+    headers['authorization'] = `Bearer ${process.env.PAPERCUSP_SERVICE_TOKEN}`;
+  } else if (creds.sessionToken) {
+    headers['authorization'] = `Bearer ${creds.sessionToken}`;
+  } else if (creds.github_pat) {
+    headers['authorization'] = `Bearer ${creds.github_pat}`;
+  }
+
+  const url = `${MARKETPLACE_URL}/publish/${encodeURIComponent(finalSlug)}/${encodeURIComponent(finalVersion)}`;
+  console.log(`uploading ${cyan(id)} → ${cyan(`${finalSlug}@${finalVersion}`)} to ${MARKETPLACE_URL}...`);
+  const r = await fetch(url, { method: 'POST', body: form, headers });
+  if (!r.ok) {
+    const text = await r.text();
+    die(`snapshot publish-id: HTTP ${r.status}: ${text.slice(0, 400)}`);
+  }
+  const result = await r.json().catch(() => ({}));
+  console.log('');
+  console.log(green(`✓ published ${finalSlug}@${finalVersion}`));
   if ((result as any).manifestUrl) {
     console.log(`  ${dim('manifest: ' + (result as any).manifestUrl)}`);
   }

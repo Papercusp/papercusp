@@ -5,13 +5,13 @@
 import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { resolveRequires, resolveLockfile } from './lock-resolve.ts';
 
+import { papercuspPath } from './papercusp-root.ts';
 const PREFIX = `lockresolve-${process.pid}`;
-const GLOBAL_DIR = join(homedir(), '.papercusp', 'global-plugins');
+const GLOBAL_DIR = papercuspPath('global-plugins');
 
 const allSlugs: string[] = [];
 

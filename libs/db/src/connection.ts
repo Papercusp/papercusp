@@ -40,16 +40,31 @@ const _harnessClients = new Map<string, { sql: Sql; drizzle: ReturnType<typeof d
 
 function buildClient(connectionUrl: string, searchPath: string[]): Sql {
   const sp = searchPath.map((s) => `"${s.replace(/"/g, '""')}"`).join(', ');
+  // Desktop pglite mode: PAPERCUSP_PGLITE_SOCKET_DIR points at a unix
+  // socket dir. We override `host` in the options so postgres-js connects
+  // through the socket regardless of what the URL says. The URL still
+  // needs a parseable host (use `localhost`) — postgres-js's URL parser
+  // doesn't decode percent-encoded socket paths, and the canonical
+  // empty-host form (`postgres://user@/db?host=/sock`) is rejected by
+  // Node's `new URL()` which is called on the connection string at
+  // module load time elsewhere in the operator chain.
+  const pgliteSocket = process.env.PAPERCUSP_PGLITE_SOCKET_DIR;
   return postgres(connectionUrl, {
     onnotice: () => {},
     connection: {
       search_path: sp,
     },
-    // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 8 for real Postgres;
-    // desktop builds set it to 1 because pglite-socket serializes queries
-    // internally and currently can't handle parameterized queries arriving
-    // concurrently across multiple sockets.
-    max: Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 8),
+    ...(pgliteSocket ? { host: pgliteSocket } : {}),
+    // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 4 — earlier
+    // default of 8 multiplied with ~20 registered harnesses pushed us
+    // past Postgres's max_connections=100 in dev. Desktop builds set it
+    // to 1 because pglite-socket serializes queries internally.
+    max: Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 4),
+    // Auto-close connections that sit idle for >30s. Prevents per-harness
+    // pools from accumulating idle conns indefinitely (Next.js dev mode
+    // module re-instantiation otherwise leaks the prior pool's sockets).
+    // Override via PAPERCUSP_DB_IDLE_TIMEOUT (seconds; 0 disables).
+    idle_timeout: Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_TIMEOUT) || 30),
     // BIGINT → number. Our timestamps and attempt counts fit safely in Number's
     // 2^53 range; expected_cost_cents won't realistically exceed it. Override
     // case-by-case if a column ever needs full BIGINT precision.

@@ -8,7 +8,6 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import {
@@ -20,7 +19,8 @@ import {
   promptConsent,
 } from './consent.ts';
 
-const ROOT = join(homedir(), '.papercusp');
+import { papercuspRoot } from './papercusp-root.ts';
+const ROOT = papercuspRoot();
 const grantedPath = join(ROOT, 'granted-capabilities.json');
 const extendedPath = join(ROOT, 'extended-grants.json');
 

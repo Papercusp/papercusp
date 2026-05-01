@@ -16,7 +16,7 @@ import type { Plugin } from '@papercusp/plugin-sdk';
 const plugin: Plugin = {
   kind: 'plugin',
   name: '@papercupai/fumadocs',
-  version: '0.2.0',
+  version: '0.2.1',
   papercusp: '^0.1.0',
   description: 'Docs site embedded in a dashboard tab.',
   capabilities: ['ui:dashboard-tab'],

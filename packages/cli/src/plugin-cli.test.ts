@@ -7,11 +7,11 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs, existsSync } from 'node:fs';
-import { papercuspRoot } from './papercusp-root.ts';
 import { join } from 'node:path';
 
 import { cmdPluginEnable, cmdPluginDisable, cmdPluginConfig, cmdPluginRename } from './plugin-cli.ts';
 
+import { papercuspRoot } from './papercusp-root.ts';
 const HARNESS = `plugin-cli-test-${process.pid}`;
 const SLUG = `pcli-fixture-${process.pid}`;
 const ROOT = papercuspRoot();
@@ -123,6 +123,7 @@ describe('cmdPluginRename', () => {
     await fs.rm(OLD_DIR, { recursive: true, force: true });
     await fs.rm(NEW_DIR, { recursive: true, force: true });
     await fs.rm(RENAME_HARNESS_DIR, { recursive: true, force: true });
+    // Strip any test grant keys we may have left behind.
     if (existsSync(GRANTS_PATH)) {
       const data = JSON.parse(await fs.readFile(GRANTS_PATH, 'utf8'));
       const grants = data.grants ?? {};
@@ -135,6 +136,7 @@ describe('cmdPluginRename', () => {
   });
 
   beforeEach(async () => {
+    // Reset every iteration: re-create OLD dir, drop NEW, drop harness state, drop test grant keys.
     await fs.rm(NEW_DIR, { recursive: true, force: true });
     await fs.rm(RENAME_HARNESS_DIR, { recursive: true, force: true });
     if (!existsSync(OLD_DIR)) {

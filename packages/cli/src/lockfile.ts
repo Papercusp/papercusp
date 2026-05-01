@@ -11,10 +11,10 @@
  * (spec §14.9.6 — three retraction states map to three load behaviors).
  */
 import { promises as fs, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-const PAPERCUSP_ROOT = join(homedir(), '.papercusp');
+import { papercuspRoot } from './papercusp-root.ts';
+const PAPERCUSP_ROOT = papercuspRoot();
 const HARNESSES_DIR = join(PAPERCUSP_ROOT, 'harnesses');
 
 export interface LockEntry {

@@ -1,9 +1,9 @@
 {
   "name": "@papercupai/fumadocs",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "kind": "plugin",
   "papercusp": "^0.1.0",
-  "description": "Embed the harness's docs site (Fumadocs) as a dashboard tab.",
+  "description": "Embed the harness PROJECT docs as a dashboard tab. Reads markdown from <projectPath>/docs/ and renders with react-markdown + remark-gfm.",
   "author": "Papercusp",
   "license": "MIT",
   "capabilities": [
@@ -25,8 +25,8 @@
     "properties": {
       "docsUrl": {
         "type": "string",
-        "default": "http://localhost:3055/docs",
-        "description": "Base URL of the docs site."
+        "default": "http://localhost:3055/project-docs",
+        "description": "Base URL of the per-harness project docs viewer. Renders <projectPath>/docs/."
       }
     }
   },

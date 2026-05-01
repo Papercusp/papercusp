@@ -5,7 +5,6 @@
 import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
 
@@ -21,9 +20,10 @@ import {
   type RetractionState,
 } from './lockfile.ts';
 
+import { papercuspPath } from './papercusp-root.ts';
 const HARNESS = `lockfile-test-${process.pid}`;
-const HARNESS_DIR = join(homedir(), '.papercusp', 'harnesses', HARNESS);
-const GLOBAL_DIR = join(homedir(), '.papercusp', 'global-plugins');
+const HARNESS_DIR = papercuspPath('harnesses', HARNESS);
+const GLOBAL_DIR = papercuspPath('global-plugins');
 const FAKE_INSTALLED = `lockfile-test-fake-plugin-${process.pid}`;
 const FAKE_INSTALL_DIR = join(GLOBAL_DIR, FAKE_INSTALLED);
 

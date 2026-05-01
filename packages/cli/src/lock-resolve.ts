@@ -9,10 +9,10 @@
  * resolver returns them separately so the install command can prompt.
  */
 import { promises as fs, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const PAPERCUSP_ROOT = join(homedir(), '.papercusp');
+import { papercuspRoot } from './papercusp-root.ts';
+const PAPERCUSP_ROOT = papercuspRoot();
 const GLOBAL_PLUGINS_DIR = join(PAPERCUSP_ROOT, 'global-plugins');
 const HARNESSES_DIR = join(PAPERCUSP_ROOT, 'harnesses');
 

@@ -10,12 +10,12 @@
  * (plugin, version) into other harnesses skip the prompt entirely.
  */
 import { promises as fs, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import * as readline from 'node:readline';
 
-const PAPERCUSP_ROOT = join(homedir(), '.papercusp');
+import { papercuspRoot } from './papercusp-root.ts';
+const PAPERCUSP_ROOT = papercuspRoot();
 const GRANTED_PATH = join(PAPERCUSP_ROOT, 'granted-capabilities.json');
 const EXTENDED_PATH = join(PAPERCUSP_ROOT, 'extended-grants.json');
 
