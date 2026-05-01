@@ -22,6 +22,7 @@ import {
 import { join } from 'node:path';
 import { configGet, readConfig } from './config';
 import { buildPrompt } from './prompt-build';
+import { fetchSubstrateContext } from './tiered-context';
 import { resolvePromptFile } from './prompt-resolve';
 import { extractFeatureId, makeRunId } from './run-id';
 import type { InvokeResult } from './types';
@@ -221,6 +222,22 @@ export async function invoke(
   // 8. Memory directory exists.
   ensureMemoryFiles(ctx.stateDir);
 
+  // 8.5 Substrate context (Tier 1 + Tier 2 + Tier 3 + bounded supervisor inbox).
+  // Best-effort; empty string on any fetch failure.
+  let selfSlug = configGet<string>(cfg, 'slug', '');
+  if (!selfSlug) {
+    // Fallback to projectDir basename (matches what the file registry uses).
+    const m = ctx.projectDir.match(/[^/]+$/);
+    if (m) selfSlug = m[0];
+  }
+  const parentSlug = configGet<string>(cfg, 'parent_slug', '') || null;
+  let substrateContext = '';
+  if (selfSlug) {
+    try {
+      substrateContext = await fetchSubstrateContext({ selfSlug, parentSlug });
+    } catch { /* leave empty */ }
+  }
+
   // 9. Build the prompt.
   const prompt = buildPrompt({
     role,
@@ -233,6 +250,7 @@ export async function invoke(
     featureId,
     runId,
     extras,
+    substrateContext,
   });
 
   // 10. Spawn claude.

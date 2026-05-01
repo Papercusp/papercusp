@@ -1052,9 +1052,11 @@ async function handleNextWorkerCeoMode(
   logger.log(`WORKER (ceo mode): ${workerOut.slice(0, 200) || '(no output)'}`);
 
   const callingDept = configGet<string>(cfg, 'dept', '');
+  const harnessToken = configGet<string>(cfg, 'harness_token', '');
   await processActionsBlock({
     stdout: workerOut,
     callingDept: callingDept || undefined,
+    bearerToken: harnessToken || undefined,
     log: logger.log,
   });
 

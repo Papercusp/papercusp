@@ -32,6 +32,13 @@ export interface BuildPromptInput {
   runId: string;
   /** Extra context lines (e.g. `["MODE=initial"]`, `["FEATURE_ID=F-001"]`). */
   extras: readonly string[];
+  /**
+   * Pre-fetched substrate-context block (Tier 1 preamble + Tier 2 neighbor
+   * view + Tier 3 capabilities + bounded supervisor-inbox). Computed by
+   * the caller (invoke.ts) via fetchSubstrateContext() and passed in.
+   * Empty string disables — the prompt still works without it.
+   */
+  substrateContext?: string;
 }
 
 function fileContents(path: string): string {
@@ -46,6 +53,14 @@ function fileContents(path: string): string {
 
 export function buildPrompt(input: BuildPromptInput): string {
   const out: string[] = [];
+
+  // 0. Substrate context (Tier 1 + Tier 2 + Tier 3 + bounded inbox).
+  // Goes BEFORE the role prompt so role-specific instructions can refer
+  // back to "the parent harness above" / "the available templates above".
+  if (input.substrateContext && input.substrateContext.trim()) {
+    out.push(input.substrateContext);
+    out.push('\n---\n');
+  }
 
   // 1. Role prompt file (always — caller asserts it exists).
   out.push(fileContents(input.promptFile));

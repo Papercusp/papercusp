@@ -1,17 +1,26 @@
 /**
  * Action-block executor. Parses worker output for a markdown-fenced
  * ```actions ... ``` block containing a JSON array, then POSTs each
- * action to `/api/org/admin/execute-action` on localhost:3001.
+ * action to `/api/admin/execute-action` on the operator (default :3055).
+ *
+ * Auth: every request carries `Authorization: Bearer <token>` where the
+ * token is the harness's own `harness_token` (read from
+ * .harness/config.json). The executor derives `callingHarness` from the
+ * token, so we don't include it in the body.
  *
  * Mirrors bash's process_actions_block. Used by department workers
  * (NEXT_WORKER_CEO_MODE branch) and any other role that emits typed
  * action blocks.
  */
+import { randomUUID } from 'node:crypto';
+
 export interface ProcessActionsOptions {
   /** Worker stdout to scan. */
   stdout: string;
   /** Optional callingDept slug (read from config.json `dept` in bash). */
   callingDept?: string;
+  /** Bearer token for /api/admin/execute-action (harness_token from config.json). */
+  bearerToken?: string;
   /** Logger for per-action results. */
   log: (message: string) => void;
   /** Override the API endpoint (test harness uses this). */
@@ -80,17 +89,20 @@ export async function processActionsBlock(
   }
   opts.log(`ACTIONS: ${actions.length} op(s) detected`);
 
-  const apiUrl = opts.apiUrl ?? 'http://localhost:3001/api/org/admin/execute-action';
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  const apiUrl = opts.apiUrl ?? `${operatorBase}/api/admin/execute-action`;
   const timeoutMs = opts.timeoutMs ?? 30_000;
 
   let errors = 0;
   for (let i = 0; i < actions.length; i++) {
     const action = actions[i];
-    const body = opts.callingDept
-      ? JSON.stringify({ action, callingDept: opts.callingDept })
-      : JSON.stringify({ action });
+    const body = JSON.stringify({
+      actionId: randomUUID(),
+      action,
+      ...(opts.callingDept ? { callingDept: opts.callingDept } : {}),
+    });
 
-    const result = await postActionWithTimeout(apiUrl, body, timeoutMs);
+    const result = await postActionWithTimeout(apiUrl, body, timeoutMs, opts.bearerToken);
     opts.log(`  action ${i + 1}/${actions.length}: ${result.responseText}`);
     if (!result.ok) errors++;
   }
@@ -107,13 +119,16 @@ async function postActionWithTimeout(
   url: string,
   body: string,
   timeoutMs: number,
+  bearerToken?: string,
 ): Promise<ActionPostResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (bearerToken) headers['Authorization'] = `Bearer ${bearerToken}`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers,
       body,
       signal: controller.signal,
     });

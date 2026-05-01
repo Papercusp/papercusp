@@ -1013,19 +1013,29 @@ process_actions_block() {
     log "ACTIONS: $(printf '%s' "$actions_json" | python3 -c 'import json,sys; print(len(json.loads(sys.stdin.read())))') op(s) detected"
     local action_count
     action_count="$(printf '%s' "$actions_json" | python3 -c 'import json,sys; print(len(json.loads(sys.stdin.read())))')"
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
     local i=0
     while [ "$i" -lt "$action_count" ]; do
         local single_action
         single_action="$(printf '%s' "$actions_json" | INDEX="$i" python3 -c 'import json,sys,os; print(json.dumps(json.loads(sys.stdin.read())[int(os.environ["INDEX"])]))')"
+        local action_id; action_id="$(uuidgen 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
         local body
         if [ -n "$calling_dept" ]; then
-            body="$(printf '{"action": %s, "callingDept": "%s"}' "$single_action" "$calling_dept")"
+            body="$(printf '{"actionId": "%s", "action": %s, "callingDept": "%s"}' "$action_id" "$single_action" "$calling_dept")"
         else
-            body="$(printf '{"action": %s}' "$single_action")"
+            body="$(printf '{"actionId": "%s", "action": %s}' "$action_id" "$single_action")"
+        fi
+        local auth_args=()
+        if [ -n "$harness_token" ]; then
+            auth_args=(-H "Authorization: Bearer $harness_token")
         fi
         local resp
-        resp="$(curl -sS -X POST -H 'content-type: application/json' --max-time 30 \
-            -d "$body" 'http://localhost:3001/api/org/admin/execute-action' 2>&1 || echo '{"ok":false,"error":"curl failed"}')"
+        resp="$(curl -sS -X POST -H 'content-type: application/json' "${auth_args[@]}" --max-time 30 \
+            -d "$body" "$operator_base/api/admin/execute-action" 2>&1 || echo '{"ok":false,"error":"curl failed"}')"
         log "  action $((i+1))/$action_count: $resp"
         i=$((i+1))
     done
@@ -1033,13 +1043,27 @@ process_actions_block() {
 
 run_hook() {
     # run_hook <name>
-    # Invokes .harness/hooks/<name>.sh if it exists and is executable.
+    # Resolution order:
+    #   1. <STATE_DIR>/hooks/<name>.sh (per-harness override)
+    #   2. <repo>/libs/papercusp/packages/harness/hooks/builtins/<name>.sh (substrate builtin)
+    # If neither exists, this is a no-op.
+    #
     # Env vars (ROLE, FEATURE_ID, RC, REASON, etc.) must be exported by the
     # caller. Hook stdout/stderr → .harness/logs/hooks/<ts>-<name>.log.
     # Non-zero exit is logged as a warning but does NOT halt the mission.
     local hook="$1"
     local script="$STATE_DIR/hooks/${hook}.sh"
-    [ -x "$script" ] || return 0
+    if [ ! -x "$script" ]; then
+        # Fall through to builtin resolver. HOME-dir bin first, then the
+        # path relative to this run.sh's own location.
+        local self_dir; self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        local builtin="$self_dir/hooks/builtins/${hook}.sh"
+        if [ -x "$builtin" ]; then
+            script="$builtin"
+        else
+            return 0
+        fi
+    fi
     mkdir -p "$LOG_DIR/hooks"
     local ts; ts="$(date +%s)"
     local logfile="$LOG_DIR/hooks/${ts}-${hook}.log"
