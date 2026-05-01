@@ -16,8 +16,8 @@ You run in a fresh context. You make one specific decision, then exit: given the
 
 1. `.harness/validation-contract.md` — the binding contract.
 2. `harness_features` (PG; `harness-features list <slug>`) — the work queue.
-3. `.harness/issues.json` — the structured issue tracker (curator-maintained). This is your authoritative source for discovered-work promotion decisions. Schema: `{issues: [{id, title, severity, status, linkedFeatureId, codePointer, suggestedFix, attempts, ...}], nextId}`. If missing, treat as empty.
-4. `.harness/issues.md` — accumulated validator findings (narrative prose). Read only for context and pre-structured history; do not parse for promotion decisions — use `issues.json`.
+3. **Issues tracker** (PG `harness_<slug>.harness_issues` via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq`). This is your authoritative source for discovered-work promotion decisions. Schema returned: `{issues: [{id, title, severity, status, linkedFeatureId, codePointer, suggestedFix, attempts, ...}], nextId}`. If empty, treat as no findings.
+4. `.harness/issues.md` — accumulated validator findings (narrative prose). Read only for context and pre-structured history; do not parse for promotion decisions — use the issues-list endpoint.
 5. `.harness/supervisor-notes.md` if present — **authoritative guidance from the supervisor or human operator**. Each block starts with `## <speaker> <ISO timestamp>`. Treat the newest block as the current direction; prior blocks are historical. If a newer block conflicts with older feature state (e.g. a feature marked `failing` was told to "skip for now"), follow the newer block.
 
 ## Decide one of these outcomes
@@ -69,7 +69,7 @@ NEXT_VALIDATOR <FEATURE_ID>
 ```
 
 ### D. "convert_issues"
-Read `.harness/issues.json`. Pick every issue with `status: "open"` AND no `linkedFeatureId` AND `severity` of `critical` or `major`. (Minor/nit issues require human promotion via the UI — don't auto-promote them.)
+Get the structured issues via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq`. Pick every issue with `status: "open"` AND no `linkedFeatureId` AND `severity` of `critical` or `major`. (Minor/nit issues require human promotion via the UI — don't auto-promote them.)
 
 For each selected issue, atomically:
 1. Pick the next `F-FIX-NNN` id by scanning existing feature ids in `harness_features` (PG) (take `max(N) + 1`, zero-padded to 3).
@@ -85,10 +85,15 @@ For each selected issue, atomically:
      "notes": <join of issue.evidence + "\n\n" + (issue.suggestedFix prefixed with "Suggested fix: ") if present>
    }
    ```
-3. Update the issue in `issues.json`: set `linkedFeatureId = "F-FIX-NNN"`, `status = "fixing"`, and append a note `{by: "orchestrator", text: "Promoted to F-FIX-NNN"}`.
+3. Update the issue via the operator endpoint:
+   ```bash
+   curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/issues/$ISSUE_ID/update" \
+     -H "content-type: application/json" \
+     -d '{"status":"fixing","linkedFeatureId":"F-FIX-NNN","by":"orchestrator","note":"Promoted to F-FIX-NNN"}'
+   ```
 4. If you added a `VAL-FIX-NNN` claim that doesn't yet exist in `.harness/validation-contract.md`, append a stub entry describing the assertion (one paragraph; the worker will read it).
 
-Write both `harness_features` (PG) and `issues.json` atomically. Do not edit `issues.md` — it's narrative-only and append-only.
+Both writes (PG `harness_features` via `POST /api/harness/<slug>/features` + the issues-update endpoint) are independent — the operator handles each atomically. Do not edit `issues.md` — it's narrative-only and append-only.
 
 **Do not run this decision if there are no qualifying issues** (empty selection). Pick a different decision.
 
