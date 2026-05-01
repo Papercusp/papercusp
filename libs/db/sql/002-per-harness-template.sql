@@ -183,6 +183,65 @@ CREATE TABLE IF NOT EXISTS {{SCHEMA}}.harness_snapshots (
 CREATE INDEX IF NOT EXISTS hs_ts_idx       ON {{SCHEMA}}.harness_snapshots(harness_slug, ts DESC);
 CREATE INDEX IF NOT EXISTS hs_iter_idx     ON {{SCHEMA}}.harness_snapshots(harness_slug, iter_num DESC);
 
+-- ── Multi-harness spawning support (008) ─────────────────────────────────
+
+-- Per-harness shared-secret token used to authenticate this harness's
+-- requests to /api/admin/execute-action. Generated once at scaffold time;
+-- stored alongside the .harness/config.json:harness_token file. Mirrored
+-- to harness_shared.token_index for O(1) bearer→slug resolution.
+CREATE TABLE IF NOT EXISTS {{SCHEMA}}.config_token (
+  token TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Cross-harness message inbox. `from_slug` is server-derived from the
+-- bearer token at insert time; never trust the body's `from`.
+CREATE TABLE IF NOT EXISTS {{SCHEMA}}.messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  from_slug TEXT NOT NULL,
+  to_slug TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  body TEXT,
+  parent_message_id UUID,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  acknowledged_at TIMESTAMPTZ,
+  CHECK (status IN ('pending', 'acknowledged', 'archived'))
+);
+CREATE INDEX IF NOT EXISTS messages_status_idx ON {{SCHEMA}}.messages(status, created_at);
+CREATE INDEX IF NOT EXISTS messages_to_idx     ON {{SCHEMA}}.messages(to_slug, status);
+CREATE INDEX IF NOT EXISTS messages_from_idx   ON {{SCHEMA}}.messages(from_slug, created_at);
+
+-- Supervisor-side rolling notes. Auto-appended on inbound Directive kind
+-- messages (so the receiving harness's prompt-build can surface fresh
+-- guidance without re-reading the whole inbox).
+CREATE TABLE IF NOT EXISTS {{SCHEMA}}.supervisor_notes (
+  id BIGSERIAL PRIMARY KEY,
+  body TEXT NOT NULL,
+  source TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- executeAction idempotency cache. caller_slug is the bearer-derived
+-- identity; target_slug carries the receiving harness for cross-harness
+-- ops (NULL for self-ops like mark_message_status).
+CREATE TABLE IF NOT EXISTS {{SCHEMA}}.executed_actions (
+  action_id UUID PRIMARY KEY,
+  op TEXT NOT NULL,
+  caller_slug TEXT NOT NULL,
+  target_slug TEXT,
+  reason TEXT,
+  request JSONB NOT NULL,
+  response JSONB NOT NULL,
+  executed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS executed_actions_caller_idx ON {{SCHEMA}}.executed_actions(caller_slug, executed_at DESC);
+CREATE INDEX IF NOT EXISTS executed_actions_target_idx ON {{SCHEMA}}.executed_actions(target_slug, executed_at DESC);
+CREATE INDEX IF NOT EXISTS executed_actions_op_idx     ON {{SCHEMA}}.executed_actions(op, executed_at DESC);
+
+-- ──────────────────────────────────────────────────────────────────────────
+
 GRANT USAGE ON SCHEMA {{SCHEMA}} TO harness_app, harness_admin;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {{SCHEMA}} TO harness_app, harness_admin;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {{SCHEMA}} TO harness_app, harness_admin;
