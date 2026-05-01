@@ -2148,7 +2148,8 @@ EOF_CHECKPOINT
 
         # Try the API first (preferred — gets full Hono context + auth).
         # Fall back to direct shell exec if API unreachable.
-        api_url="http://localhost:3001/api/harness/${child_slug}/invoke?role=${child_role}"
+        operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+        api_url="${operator_base}/api/harness/${child_slug}/invoke?role=${child_role}"
         if curl -sf -X POST -H 'content-type: application/json' --max-time 120 -d '{}' "$api_url" -o "$LOG_DIR/nexth-${child_slug}-$(date +%s).json" 2>/dev/null; then
             log "  → dispatched via API ($api_url)"
         else

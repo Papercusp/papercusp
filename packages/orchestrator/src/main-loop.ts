@@ -1092,7 +1092,8 @@ async function handleNextHarness(
   const childRole = roleMatch?.[1] ?? 'orchestrator';
   logger.log(`NEXT_HARNESS ${childSlug} --role=${childRole}`);
 
-  const apiUrl = `http://localhost:3001/api/harness/${childSlug}/invoke?role=${childRole}`;
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  const apiUrl = `${operatorBase}/api/harness/${childSlug}/invoke?role=${childRole}`;
   const apiOk = await postJson(apiUrl, '{}', 120_000);
   if (apiOk.ok) {
     const ts = Math.floor(Date.now() / 1000);
