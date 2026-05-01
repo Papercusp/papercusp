@@ -640,7 +640,13 @@ fire_plugin_hook() {
     if command -v papercusp-fire-hook >/dev/null 2>&1; then
         fire_hook_cli="papercusp-fire-hook"
     elif [ -x "$HARNESS_DIR/../packages/papercusp-plugin-loader/bin/fire-hook" ]; then
+        # Legacy in-tree layout (libs/papercusp/packages/...).
         fire_hook_cli="$HARNESS_DIR/../packages/papercusp-plugin-loader/bin/fire-hook"
+    elif [ -x "$HARNESS_DIR/../../../../packages/plugin-loader/bin/fire-hook" ]; then
+        # Post-2026-04-28 split layout: harness at
+        # papercup/libs/papercusp/packages/harness/, loader at
+        # papercup/packages/plugin-loader/.
+        fire_hook_cli="$HARNESS_DIR/../../../../packages/plugin-loader/bin/fire-hook"
     fi
     if [ -z "$fire_hook_cli" ]; then
         log "  plugins: papercusp-fire-hook CLI not found — skipping hook=$hook_name"
@@ -1379,49 +1385,15 @@ if [ ! -f "$STATE_DIR/validation-contract.md" ] || ! features_exist; then
     plan_out="$(invoke scoper "MODE=initial")"
     echo "$plan_out" | tail -3 | tee -a "$LOG_DIR/run.log"
 
-    # 2026-04-26: scoper still writes features.json (legacy behavior). Import it
-    # into Postgres (harness_<slug_with_underscores>.harness_features), then rename.
+    # 2026-05-01: scoper now POSTs features directly to
+    # /api/harness/<slug>/features/import per scoper.md (top of file, the
+    # 2026-05-01 migration banner). The transient features.json + psql import
+    # shim that lived here previously is removed. If you see a scoper that
+    # still writes features.json on disk, fix the prompt — don't restore the
+    # shim.
     if [ -f "$STATE_DIR/features.json" ]; then
-        log "PLAN: importing scoper's features.json into SQL (Postgres)"
-        SLUG="$(harness_slug)" STATE_DIR="$STATE_DIR" \
-        PGUSER="${HARNESS_APP_USER:-harness_app}" \
-        PGPASSWORD="${HARNESS_APP_PWD:-harness_app_pwd}" \
-        PGHOST="${PGHOST:-localhost}" \
-        PGDATABASE="${HARNESS_PG_DB:-papercusp}" \
-        python3 -c '
-import json, os, sys, time, subprocess
-slug = os.environ["SLUG"]
-schema = "harness_" + slug.replace("-", "_").lower()
-fp = os.path.join(os.environ["STATE_DIR"], "features.json")
-data = json.load(open(fp))
-now = int(time.time() * 1000)
-def q(v):
-    if v is None: return "NULL"
-    if isinstance(v, bool): return "true" if v else "false"
-    if isinstance(v, (int, float)): return str(v)
-    if isinstance(v, (dict, list)): return "$json$" + json.dumps(v) + "$json$::jsonb"
-    return "$txt$" + str(v).replace("$txt$", "$txt2$") + "$txt$"
-n = 0
-sqls = [f"SET search_path TO {schema}, harness_shared, public;"]
-for f in data.get("features", []):
-    sqls.append(
-        "INSERT INTO harness_features "
-        "(harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, "
-        " kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts) VALUES "
-        f"({q(slug)}, {q(f['id'])}, {q(f.get('title',''))}, {q(f.get('summary'))}, {q(f.get('status','todo'))}, "
-        f"{q(f.get('attempts',0))}, {q(json.dumps(f['claims']) if f.get('claims') else None)}, {q(f.get('notes'))}, "
-        f"{q(f.get('metadata'))}, {q(f.get('kind'))}, {q(f.get('project_id'))}, {q(f.get('expected_cost_cents'))}, "
-        f"{q(f.get('tags'))}, {q(bool(f.get('needs_human_review')))}, {q(f.get('ts'))}, {q(now)}, {q(now)}) "
-        "ON CONFLICT (harness_slug, feature_id) DO UPDATE SET title=EXCLUDED.title, status=EXCLUDED.status, summary=EXCLUDED.summary, updated_ts=EXCLUDED.updated_ts;"
-    )
-    n += 1
-script = "\n".join(sqls)
-r = subprocess.run(["psql", "-v", "ON_ERROR_STOP=1", "-q"], input=script, text=True, capture_output=True)
-if r.returncode != 0:
-    print("import failed:", r.stderr, file=sys.stderr); sys.exit(1)
-print(f"  imported {n} features", file=sys.stderr)
-' 2>&1 | tee -a "$LOG_DIR/run.log"
-        mv "$STATE_DIR/features.json" "$STATE_DIR/features.json.legacy" 2>/dev/null || true
+        log "WARN: scoper wrote features.json on disk (deprecated). The substrate no longer imports it; features in that file will not enter PG. Update the scoper prompt to POST /features/import. Renaming to .legacy."
+        mv "$STATE_DIR/features.json" "$STATE_DIR/features.json.deprecated" 2>/dev/null || true
     fi
 
     if [ ! -f "$STATE_DIR/validation-contract.md" ] || ! features_exist; then
@@ -1531,6 +1503,9 @@ for cp in "$STATE_DIR"/checkpoint-*.md; do
 done
 
 iteration=0
+# Fire beforeMissionStart for every plugin reachable from this project.
+# Best-effort; failures are logged to plugins.log and don't gate the run.
+fire_plugin_hook beforeMissionStart || true
 while [ $iteration -lt $MAX_ITERATIONS ]; do
     iteration=$((iteration + 1))
     log "── iteration $iteration ──"
@@ -1551,6 +1526,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
         | grep -oE '(DONE|CONVERTED|NEXT_WORKER_CEO_MODE|NEXT_WORKER|NEXT_VALIDATOR|NEXT_ARCHITECT|NEXT_TESTER|NEXT_SECURITY|GENERATE_TESTS|RUN_TESTS|NEXT_MONITOR|READY_FOR_PROD|FEATURE_FREEZE|NEXT_HARNESS|IDLE|ESCALATE|CHECKPOINT)([[:space:]]+[A-Za-z0-9_.-]+)?' \
         | tail -1)"
     log "ORCH decision: $decision (role=$primary_role)"
+    fire_plugin_hook onPostOrchestrator --decision="$decision" || true
 
     case "$decision" in
     DONE)
@@ -1627,6 +1603,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
         log "NEXT_WORKER_CEO_MODE $fid (CEO mode)"
         worker_out="$(invoke worker "FEATURE_ID=$fid" "MODE=ceo" "MESSAGE_ID=$fid")"
         log "WORKER (ceo mode): ${worker_out:-(no output)}"
+        fire_plugin_hook onPostWorker --feature-id="$fid" || true
         # Read calling dept from this harness's config.json
         ceo_dept_slug="$(CONFIG="$STATE_DIR/config.json" python3 -c '
 import json, os
@@ -1680,6 +1657,7 @@ except Exception:
                 (
                     FEATURE_ID="$lane_fid"
                     invoke worker "FEATURE_ID=$lane_fid" "COMPETITION_PARENT=$fid" "COMPETITION_LANE=$i" > /dev/null
+                    fire_plugin_hook onPostWorker --feature-id="$lane_fid" || true
                     ( cd "$wt" && git add -A && git diff --cached --quiet || git commit --quiet -m "worker: $lane_fid (competition lane $i)" 2>&1 | head -3 )
                 ) &
                 competition_pids+=("$!")
@@ -1712,6 +1690,7 @@ PY
                 invoke worker "FEATURE_ID=$fid" > /dev/null
                 worker_rc=$?
                 ROLE=worker FEATURE_ID="$fid" RC="$worker_rc" PROJECT_DIR="$PROJECT_DIR" STATE_DIR="$STATE_DIR" run_hook post-worker
+                fire_plugin_hook onPostWorker --feature-id="$fid" || true
                 FEATURE_ID="$fid" branch_iso_post_worker
                 FEATURE_ID="$fid" auto_screenshot_post_worker
                 feature_set_status "$fid" "validating"
@@ -1727,6 +1706,7 @@ PY
             worker_rc=$?
             wip_checkpoint_stop "$wip_pid"
             ROLE=worker FEATURE_ID="$fid" RC="$worker_rc" PROJECT_DIR="$PROJECT_DIR" STATE_DIR="$STATE_DIR" run_hook post-worker
+            fire_plugin_hook onPostWorker --feature-id="$fid" || true
             FEATURE_ID="$fid" branch_iso_post_worker
             FEATURE_ID="$fid" auto_screenshot_post_worker
         fi
@@ -1742,6 +1722,11 @@ PY
         invoke validator "FEATURE_ID=$fid" > /dev/null
         validator_rc=$?
         ROLE=validator FEATURE_ID="$fid" RC="$validator_rc" PROJECT_DIR="$PROJECT_DIR" STATE_DIR="$STATE_DIR" run_hook post-validator
+        if [ "$validator_rc" -eq 0 ]; then
+            fire_plugin_hook onPostValidator --feature-id="$fid" --status=passed || true
+        else
+            fire_plugin_hook onPostValidator --feature-id="$fid" --status=failing || true
+        fi
 
         # Competition mode: if a manifest exists for this feature, parse
         # validator's output for COMPETITION_WINNER lane-<N> and merge that
