@@ -939,7 +939,7 @@ async function cmdInit(args: string[]): Promise<void> {
         {
           phase: 'staging',
           models: { scoper: 'claude-opus-4-7', worker: 'claude-sonnet-4-6', validator: 'claude-opus-4-7', orchestrator: 'claude-haiku-4-5', reviewer: 'claude-opus-4-7' },
-          timeouts: { worker: 900, validator: 600, scoper: 300, reviewer: 300, orchestrator: 120 },
+          timeouts: { worker: 900, validator: 600, scoper: 600, reviewer: 300, orchestrator: 120 },
           maxCostUsd: 10,
         },
         null,
@@ -1614,7 +1614,7 @@ async function cmdMigrateConfig(slug: string | undefined): Promise<void> {
   }
   // 3. Add timeouts defaults if missing.
   if (!config.timeouts) {
-    config.timeouts = { scoper: 300, worker: 900, validator: 600, reviewer: 300, orchestrator: 120 };
+    config.timeouts = { scoper: 600, worker: 900, validator: 600, reviewer: 300, orchestrator: 120 };
     changes.push('added timeouts');
   } else {
     if (!config.timeouts.scoper && config.timeouts.planner) {
