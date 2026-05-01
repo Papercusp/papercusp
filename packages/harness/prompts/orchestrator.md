@@ -164,25 +164,37 @@ These three only apply when `scoper.useExperts` is enabled in `.harness/config.j
 
 The expert flow has three states the orchestrator cycles through. Read it via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts | jq` — returns `{experts: [{id, status, agentCount, ...}]}`. Statuses: `drafting | gathering_feedback | awaiting_user | final | max_rounds | error | cancelled | superseded`.
 
-**Decision rule (apply in order):**
+**Decision rule (apply in order). Both expert and feedback are one-shot per invocation; the orchestrator drives the back-and-forth by inspecting conversation state.**
 
-1. **Any expert with status=`drafting` or `gathering_feedback` AND `userEngaged=false`?** Pick the one with oldest `updatedAt` and emit:
+1. **Any in-flight feedback conversation waiting on the feedback agent's reply?**
+   ```bash
+   curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts | jq '.experts[] | select(.status == "gathering_feedback") | .id' \
+     | while read eid; do
+         curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts/$eid/feedback \
+           | jq ".feedback[] | select(.ended==false) | \"$eid.\(.id)\""
+       done
    ```
-   NEXT_EXPERT <EXP-NNN>
-   ```
-   The expert does one iteration of work per invocation. It may write its SPEC.md, open a feedback conversation (`POST /experts/<id>/feedback`), and write its opening turn — then exit, expecting you to dispatch the feedback agent next.
-
-2. **Any in-flight feedback conversation that needs the feedback agent's reply?** Check `curl /experts/<id>/feedback | jq` — entries with `ended:false` and where the most recent turn file is `turn-NNN-expert.md` (waiting on the feedback side). Emit:
+   For each non-ended conversation, list the directory `.harness/experts/<eid>/feedback/<fbid>/`: if the most recent `turn-NNN-*.md` filename ends with `-expert.md`, the conversation is waiting on the feedback agent. Emit:
    ```
    NEXT_FEEDBACK <EXP-NNN>.<FB-NNN>
    ```
    Note the `.` separator — single token because of the regex constraint.
 
+2. **Any expert that needs to act next?** A non-terminal, non-engaged expert needs an iteration if:
+   - it's in `drafting` (hasn't written initial SPEC.md yet), OR
+   - one of its conversations has a feedback turn waiting for the expert's response (latest turn file ends with `-feedback.md`), OR
+   - none of its conversations are in-flight AND its outer loop hasn't terminated (so it should spawn the next persona).
+   Pick the one with oldest `updatedAt` and emit:
+   ```
+   NEXT_EXPERT <EXP-NNN>
+   ```
+   Skip experts with `userEngaged=true` — the user is in chat with them.
+
 3. **Any expert that just hit `final` or `max_rounds` since the last scoper run?** The scoper needs to derive features from those finalized specs. Emit:
    ```
    NEXT_SCOPER phase2
    ```
-   The scoper is idempotent — re-running with no new finalizations is a no-op. So when in doubt, you can emit it; the cost is one invocation.
+   The scoper is idempotent — re-running with no new finalizations is a no-op.
 
 4. **Any expert with `status=awaiting_user`?** Don't dispatch it — the user is engaged in chat. Move on.
 

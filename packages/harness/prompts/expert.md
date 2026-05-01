@@ -77,28 +77,64 @@ already solid.
 
 ### Step 4 — feedback loop (inner loop: per agent)
 
+**You are invoked one iteration at a time by the orchestrator.** Each
+invocation, you do *one thing* (open a conversation, write one turn,
+or end a conversation), update state via API, and exit. The orchestrator
+then dispatches the feedback agent or you again based on conversation
+state. **You do NOT emit decision verbs to stdout** — those only work
+for the orchestrator role. You drive the loop by calling API
+endpoints.
+
 For each feedback agent:
 
-1. Open the conversation: emit `SPAWN_FEEDBACK <persona>`. The server
-   creates `feedback/FB-NNN/`, returns the conversation id, and spawns
-   a feedback agent with that persona.
-2. Send your opening prompt: the current `SPEC.md` plus a specific
-   question for this persona ("from a security standpoint, where does
-   this leak secrets?"). Do not just dump the spec.
-3. Have a real back-and-forth. Read their critique, ask follow-ups,
-   push back when they're hand-waving, concede when they have a point,
-   ask for concrete failure modes when they only describe risks
-   abstractly.
-4. **You decide when this conversation has stopped being constructive.**
-   That's the inner-loop termination. The server enforces
-   `expert.maxTurnsPerAgent` (default 15) as a backstop only.
-5. End the conversation: emit `END_FEEDBACK FB-NNN`. The feedback agent
-   produces `verdict.json` listing every concrete `newIssues` the
-   conversation surfaced (with severity), plus which prior-FB issues
-   this agent independently re-raised.
-6. Incorporate the verdict into `SPEC.md`. Note your reasoning in
-   `feedback/decision-log.md` — what you accepted, what you rejected,
-   why.
+1. **Open the conversation.** Run:
+   ```bash
+   curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback" \
+     -H "content-type: application/json" -d '{"persona":"security"}'
+   ```
+   Returns `{feedbackId: "FB-NNN", ...}`. Then write your opening prompt:
+   ```bash
+   curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback/FB-NNN/turn" \
+     -H "content-type: application/json" \
+     -d '{"from":"expert","body":"<current SPEC.md plus your specific question for this persona>"}'
+   ```
+   Then exit. The orchestrator dispatches the feedback agent next.
+
+2. **Read the feedback agent's reply.** When you're invoked again for
+   this expert, read the latest `turn-NNN-feedback.md` file under
+   `.harness/experts/<your-id>/feedback/FB-NNN/`. Decide whether to
+   push back, ask a follow-up, or end the conversation.
+
+3. **Continue the back-and-forth.** If you have more to say, append
+   another expert turn:
+   ```bash
+   curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback/FB-NNN/turn" \
+     -H "content-type: application/json" \
+     -d '{"from":"expert","body":"<your follow-up>"}'
+   ```
+   Then exit; orchestrator dispatches feedback again.
+
+4. **End the conversation when no longer constructive.** **You decide
+   when to end** — the inner-loop termination is your call. The server
+   enforces `expert.maxTurnsPerAgent` (default 15) as a backstop only.
+   When ending, summarize the conversation's `newIssues` honestly (these
+   feed the convergence gate; lying breaks termination):
+   ```bash
+   curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback/FB-NNN/end" \
+     -H "content-type: application/json" \
+     -d '{"verdict":{"newIssues":[{"summary":"...","severity":"critical|major|minor|trivial","specLines":"L42-L58"}],"coversPriorIssues":["FB-001#issue-2"]}}'
+   ```
+   Be ruthlessly honest: list ONLY what this agent surfaced that wasn't
+   already in prior verdicts. Empty list is the convergence signal.
+
+5. **Incorporate.** After ending, update `SPEC.md` with the issues you
+   accepted (`PUT /experts/<id>/spec`). Append your reasoning to
+   `feedback/decision-log.md`. Then exit.
+
+When you exit after step 4 or 5, the server has already snapshotted
+SPEC.md to `rounds/round-NNN.md` and run the convergence check. If
+two consecutive verdicts have no substantive issues, your status flips
+to `final`.
 
 ### Step 5 — outer-loop termination
 

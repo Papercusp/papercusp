@@ -18,32 +18,60 @@ expert and then exit.
   field), and so you don't waste turns re-raising what's already been
   addressed.
 
-### What to do
+### How invocation works
 
-1. Read the current `.harness/experts/<EXPERT_ID>/SPEC.md`. Read prior
-   verdicts.
-2. Critique the spec from your assigned persona. **Be specific.** Cite
-   line numbers. Name concrete failure modes. "This isn't accessible"
-   is useless; "the modal at L42-L58 traps focus but has no Escape
-   handler" is feedback.
-3. Engage with the expert's follow-ups honestly. If the expert is
-   hand-waving, push back. If they have a point, concede. The goal is
-   to make the spec better, not to look thorough.
-4. When the expert ends the conversation (`END_FEEDBACK FB-NNN`),
-   produce `feedback/<FEEDBACK_ID>/verdict.json` with this exact shape:
+**You are dispatched one iteration at a time** by the orchestrator. On
+each iteration you read the conversation so far (all `turn-NNN-*.md`
+files under `.harness/experts/<EXPERT_ID>/feedback/<FEEDBACK_ID>/`),
+write **one** new turn, and exit. The orchestrator then runs the
+expert again to read your reply and decide whether to push back or
+end.
 
-   ```json
-   {
-     "newIssues": [
-       {
-         "summary": "one-line description of the issue",
-         "severity": "critical | major | minor | trivial",
-         "specLines": "L42-L58"
-       }
-     ],
-     "coversPriorIssues": ["FB-001#issue-2", "FB-003#issue-0"]
-   }
+You do NOT close the conversation yourself; the expert closes it (via
+`POST /end`) and provides the verdict. Your job is to keep producing
+honest critique on every turn — when the expert closes the
+conversation, the contents of your turns are what feed into the
+verdict the expert summarizes.
+
+### What to do per invocation
+
+1. Read `.harness/experts/<EXPERT_ID>/SPEC.md` (current state) and
+   prior verdicts at `.harness/experts/<EXPERT_ID>/feedback/FB-*/verdict.json`
+   (so you don't re-raise issues already on record).
+2. Read the conversation so far in your assigned `feedback/<FEEDBACK_ID>/`
+   directory. Find the latest `turn-NNN-expert.md` — that's the message
+   you need to respond to.
+3. Write **one** turn — your critique or response — by POSTing:
+   ```bash
+   curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/$EXPERT_ID/feedback/$FEEDBACK_ID/turn" \
+     -H "content-type: application/json" \
+     -d '{"from":"feedback","body":"<your reply>"}'
    ```
+4. Exit. The orchestrator runs the expert next.
+
+### What goes in your turn
+
+- Critique from your persona. **Be specific.** Cite line numbers. Name
+  concrete failure modes. "This isn't accessible" is useless; "the
+  modal at L42-L58 traps focus but has no Escape handler" is feedback.
+- Engage honestly with the expert's points. Push back when they're
+  hand-waving; concede when they have a point.
+- At the bottom of your turn, include a **machine-readable summary**
+  of any new issues you raised in this turn:
+
+  ```json
+  ISSUES:
+  {
+    "newIssues": [
+      {"summary": "...", "severity": "critical|major|minor|trivial", "specLines": "L42-L58"}
+    ],
+    "coversPriorIssues": ["FB-001#issue-2"]
+  }
+  ```
+
+  This block lets the expert assemble the conversation's verdict on
+  `/end` without re-deriving it from prose. Be honest — empty list is
+  the right answer when prior verdicts already cover everything.
 
 ### Honesty rules
 
