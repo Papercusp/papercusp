@@ -58,3 +58,28 @@ CREATE INDEX IF NOT EXISTS summaries_ts_idx        ON papercup_shared.directive_
 GRANT USAGE ON SCHEMA papercup_shared TO harness_app, harness_admin;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA papercup_shared TO harness_app, harness_admin;
 ALTER DEFAULT PRIVILEGES IN SCHEMA papercup_shared GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO harness_app, harness_admin;
+
+-- ───────────────────────────────────────────────────────────────────────
+-- briefings: quarterly executive briefings (script + render artifacts).
+-- Schema mirrors the columns declared in @restart/zero-harness's
+-- briefings table so zeroPostgresJS's schema validation can find every
+-- column it expects. Driven by apps/papercup's briefing pipeline.
+-- ───────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS papercup_shared.briefings (
+  id                TEXT PRIMARY KEY,
+  title             TEXT NOT NULL,
+  quarter           TEXT NOT NULL,
+  status            TEXT NOT NULL,
+  created_at        BIGINT NOT NULL,
+  script_path       TEXT,
+  duration_seconds  BIGINT,
+  youtube_url       TEXT,
+  youtube_video_id  TEXT,
+  thumbnail_url     TEXT,
+  render_log        TEXT,
+  error             TEXT,
+  summary           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS briefings_quarter_idx ON papercup_shared.briefings(quarter);
+CREATE INDEX IF NOT EXISTS briefings_status_idx  ON papercup_shared.briefings(status);

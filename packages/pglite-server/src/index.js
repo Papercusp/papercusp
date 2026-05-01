@@ -84,6 +84,35 @@ export async function startPgliteServer(opts) {
         const ddl = await readFile(join(opts.dbSqlDir, f), 'utf8');
         await db.exec(ddl);
       }
+
+      // Per-harness schema stubs.
+      //
+      // @restart/zero-harness declares per-harness tables for a fixed list
+      // of HARNESS_SLUGS (sheets, org, org_business, …) and zeroPostgresJS's
+      // strict schema validation requires every declared table to exist
+      // before any query executes. The CLI's `papercusp scaffold-schema`
+      // creates these on demand for harnesses the user actually runs, but
+      // for desktop/pglite mode we want every Zero-declared schema to
+      // exist up front (otherwise /api/zero-harness/rest-query 500s with
+      // 'Table "harness_<slug>.harness_features" is defined in your zero
+      // schema but does not exist in the database').
+      //
+      // Render 002-per-harness-template.sql against each known slug.
+      // Empty schemas; populated lazily as the user's projects produce
+      // features/issues/etc.
+      const tmplPath = join(opts.dbSqlDir, '002-per-harness-template.sql');
+      if (existsSync(tmplPath)) {
+        const HARNESS_SLUGS = opts?.harnessSlugs ?? [
+          'sheets', 'org', 'org_business', 'org_coordination', 'org_management',
+          'org_marketing', 'org_rd', 'org_technology', 'restart',
+        ];
+        const tmpl = await readFile(tmplPath, 'utf8');
+        for (const slug of HARNESS_SLUGS) {
+          const ddl = tmpl.replaceAll('{{SCHEMA}}', `harness_${slug}`);
+          if (debug) console.log(`[pglite-server]   apply per-harness-template (slug=${slug})`);
+          await db.exec(ddl);
+        }
+      }
     } else if (debug) {
       console.log(`[pglite-server] harness_shared exists — skipping DDL bootstrap`);
     }
