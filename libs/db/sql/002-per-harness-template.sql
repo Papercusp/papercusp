@@ -196,10 +196,13 @@ CREATE TABLE IF NOT EXISTS {{SCHEMA}}.config_token (
 
 -- Cross-harness message inbox. `from_slug` is server-derived from the
 -- bearer token at insert time; never trust the body's `from`.
+-- Optional `to_role` narrows the recipient to a specific role within the
+-- target harness; receiver's prompt-build filters on (to_role IS NULL OR to_role = me).
 CREATE TABLE IF NOT EXISTS {{SCHEMA}}.messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   from_slug TEXT NOT NULL,
   to_slug TEXT NOT NULL,
+  to_role TEXT,
   kind TEXT NOT NULL,
   subject TEXT NOT NULL,
   body TEXT,
@@ -212,6 +215,7 @@ CREATE TABLE IF NOT EXISTS {{SCHEMA}}.messages (
 CREATE INDEX IF NOT EXISTS messages_status_idx ON {{SCHEMA}}.messages(status, created_at);
 CREATE INDEX IF NOT EXISTS messages_to_idx     ON {{SCHEMA}}.messages(to_slug, status);
 CREATE INDEX IF NOT EXISTS messages_from_idx   ON {{SCHEMA}}.messages(from_slug, created_at);
+CREATE INDEX IF NOT EXISTS messages_to_role_idx ON {{SCHEMA}}.messages(to_slug, to_role) WHERE to_role IS NOT NULL;
 
 -- Supervisor-side rolling notes. Auto-appended on inbound Directive kind
 -- messages (so the receiving harness's prompt-build can surface fresh
@@ -222,6 +226,19 @@ CREATE TABLE IF NOT EXISTS {{SCHEMA}}.supervisor_notes (
   source TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Directive summaries — long-running directive memory. Append-only.
+-- Used by the director's prompt-build to surface compressed context for
+-- directives that span many iterations. Indexed by (directive_id, ts).
+CREATE TABLE IF NOT EXISTS {{SCHEMA}}.directive_summaries (
+  id BIGSERIAL PRIMARY KEY,
+  directive_id TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'ceo',
+  summary TEXT NOT NULL,
+  caller_slug TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS directive_summaries_directive_idx ON {{SCHEMA}}.directive_summaries(directive_id, created_at DESC);
 
 -- executeAction idempotency cache. caller_slug is the bearer-derived
 -- identity; target_slug carries the receiving harness for cross-harness
