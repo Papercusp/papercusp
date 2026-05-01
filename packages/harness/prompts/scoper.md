@@ -106,7 +106,7 @@ You are a skeptical product manager. Watch the mission against a vague north-sta
 - `GOAL.md` — vague north-star. Treat as the authoritative aspiration.
 - `SPEC.md` — concrete spec. Evaluate whether it's an incomplete reflection of GOAL.
 - `harness_features` (PG; `harness-features list <slug>`) — current feature list + statuses.
-- `.harness/issues.md` — last round of validator findings.
+- Last round of validator findings — `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.status == "open" or .status == "fixing")'`. The legacy narrative-prose file at `.harness/issues.md` is preserved for context but not the canonical source.
 - `.harness/proposals/*.md` — your prior proposals (don't repeat yourself).
 
 ### Process

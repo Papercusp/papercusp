@@ -17,7 +17,7 @@ You are the **DEBUGGER**. You fire when a feature has attempts ≥ threshold (de
 - `FEATURE_ID` — the stuck feature (passed as runtime context)
 - `harness_features` (PG; `harness-features list <slug>`) — to find this feature's title, claims, attempts
 - `.harness/validation-contract.md` — the exact assertions that keep failing
-- `.harness/issues.md` — validator findings across all prior attempts (grep for this FEATURE_ID)
+- **Validator findings across all prior attempts** — `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.foundDuring == "<this-feature-id>" or .linkedFeatureId == "<this-feature-id>")'` (replaces the old `grep .harness/issues.md` flow)
 - `.harness/worker-log.md` — last worker's handoff notes
 - `.harness/logs/*.out` — raw worker outputs for this feature (optional, can read last 3)
 - Git history on the `harness/<FEATURE_ID>` branch if branch isolation is on — use `git log -p` for the commits

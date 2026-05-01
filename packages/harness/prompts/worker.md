@@ -28,8 +28,8 @@ You do **not** decide if the feature is complete. A separate validator does. You
 3. `harness_features` (PG; `harness-features list <slug>`) — find your feature, read its `claims` list.
 4. `AGENTS.md` or `CLAUDE.md` if present — project-specific conventions.
 5. `.harness/knowledge.md` if it exists — accumulated learnings from prior features.
-6. `.harness/notes/<FEATURE_ID>.md` if present — **feature-scoped operator notes**. The user wrote these to steer YOUR work on THIS feature. Each block begins with `## <author> <ISO timestamp>`; the newest block at the bottom is the most current direction. If a note conflicts with the spec or your prior plan, follow the note unless it asks you to break a hard constraint declared in SPEC.md or AGENTS.md (in which case proceed but flag the conflict in `.harness/issues.md`).
-7. **Project context** (auto-injected if your feature has `project_id` set) — appears in your prompt under `## Project context (curated by Project Manager)`. This is the project's living spec: architectural decisions, invariants, conventions, gotchas, external dependencies. Treat it as authoritative for THIS project's operating context. If something in the project context contradicts a fresh-context discovery you made, prefer the project context AND flag the discrepancy in `.harness/issues.md` so the next PM run can reconcile.
+6. `.harness/notes/<FEATURE_ID>.md` if present — **feature-scoped operator notes**. The user wrote these to steer YOUR work on THIS feature. Each block begins with `## <author> <ISO timestamp>`; the newest block at the bottom is the most current direction. If a note conflicts with the spec or your prior plan, follow the note unless it asks you to break a hard constraint declared in SPEC.md or AGENTS.md (in which case proceed but flag the conflict via `POST /api/harness/$HARNESS_SLUG/issues/append-pending` with `severity:"minor"` and a clear title).
+7. **Project context** (auto-injected if your feature has `project_id` set) — appears in your prompt under `## Project context (curated by Project Manager)`. This is the project's living spec: architectural decisions, invariants, conventions, gotchas, external dependencies. Treat it as authoritative for THIS project's operating context. If something in the project context contradicts a fresh-context discovery you made, prefer the project context AND flag the discrepancy via `POST /api/harness/$HARNESS_SLUG/issues/append-pending` so the next PM run can reconcile.
 
 ## Rules
 
@@ -37,7 +37,13 @@ You do **not** decide if the feature is complete. A separate validator does. You
 - **Stay in scope.** Do not fix unrelated bugs, refactor tangentially, or touch files outside what this feature needs. Those are separate features.
 - **Commit atomically.** `git add -A && git commit -m "feat(F-XXX): <title>"` at the end. One commit per feature.
 - **Don't mark `passed`.** Only `validating`. The validator makes the `passed` call.
-- **If blocked**, set status to `blocked`, write the reason to `.harness/issues.md` as a `BLOCKED` entry, exit non-zero. The orchestrator will reconsider.
+- **If blocked**, set status to `blocked`, POST the reason to the operator's pending issues queue, exit non-zero:
+  ```bash
+  curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending" \
+    -H "content-type: application/json" \
+    -d '{"title":"BLOCKED: <one-line summary>","severity":"major","foundDuring":"<your feature id>","evidence":"<what stopped you>","suggestedFix":"<best-guess unblock path>"}'
+  ```
+  The orchestrator will reconsider.
 
 ## Output
 

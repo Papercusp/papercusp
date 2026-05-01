@@ -20,7 +20,7 @@ You run in a **fresh context**. Do not assume prior knowledge.
 2. `AGENTS.md` (project root, optional) — conventions / operating guidelines.
 3. `.harness/validation-contract.md` — the binding contract of claims.
 4. `harness_features` (PG; `harness-features list <slug>`) — the work queue with current statuses and attempts.
-5. `.harness/issues.md` — accumulated validator reports. Read the sections for the failing feature closely — validators explain *what* failed and *why*, and that's often where the ambiguity lives.
+5. **Accumulated validator findings** (PG via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.linkedFeatureId == "<failing-feature-id>" or .foundDuring == "<failing-feature-id>")'`). Read the entries for the failing feature closely — validators explain *what* failed and *why*, and that's often where the ambiguity lives.
 6. `.harness/supervisor-notes.md` if present — human guidance blocks.
 
 ## Inputs you receive

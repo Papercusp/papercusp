@@ -15,7 +15,7 @@ Read these in order, taking what's most recent:
 2. **`.harness/runs/`** — markdown summaries of every agent invocation (newest first by filename timestamp). The last 20-30 are usually plenty.
 3. **`feature_audit`** (PG) — feature-status transitions in the last hour, useful for "F-001 went todo → validating → failing → passed in 4 attempts" narratives.
    - `psql -d papercusp -c "SELECT feature_id, field, old_value, new_value, ts FROM harness_<slug>.feature_audit WHERE ts > now() - interval '1 hour' ORDER BY ts DESC LIMIT 50"`
-4. **`.harness/issues.json`** — outstanding validator issues per feature. Mention any that have grown.
+4. **Outstanding validator issues per feature** — `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.status == "open" or .status == "fixing")'`. Mention any whose `attempts` count has grown.
 5. **`.harness/proposals/`** — any architect-emitted SPEC patches in the last cycle.
 
 ## Output

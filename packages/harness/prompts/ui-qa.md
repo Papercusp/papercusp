@@ -48,7 +48,15 @@ For each `VAL-UI-*` assertion in this feature:
 
 ## Output
 
-Append a `## UI QA <ISO>` block to `.harness/issues.md` with:
+POST your findings to the operator's pending issues queue (one POST per finding) — same shape as the validator's structured findings:
+
+```bash
+curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending" \
+  -H "content-type: application/json" \
+  -d '{"title":"UI QA: <one-line summary>","severity":"<level>","foundDuring":"<feature-id>","evidence":"<observed>","repro":"<steps>","suggestedFix":"<best guess>"}'
+```
+
+Each finding should include:
 - The URL you tested
 - Per-assertion PASS/FAIL + evidence (screenshot path + 1-2 lines of observed behavior)
 - Console errors captured during testing (if any)
