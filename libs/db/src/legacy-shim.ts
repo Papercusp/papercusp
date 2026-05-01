@@ -15,7 +15,7 @@
  *   const row = await c.prepare('SELECT * FROM projects WHERE id = ?').get(id);
  *   const rows = await c.prepare('SELECT * FROM harness_features WHERE harness_slug = ?').all(slug);
  *   await c.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(id, name);
- *   await c.transaction(async () => { ... })();
+ *   await c.transaction(async (tx) => { ... });
  *
  * NOT supported:
  *   - .iterate() (we don't use it)
@@ -61,7 +61,15 @@ export interface LegacyPrepared {
 
 export interface LegacyClient {
   prepare(sql: string): LegacyPrepared;
-  transaction<T>(fn: (tx: LegacyClient) => Promise<T>): () => Promise<T>;
+  /**
+   * Run `fn` inside a Postgres transaction. Awaits the resulting Promise
+   * directly — call as `await c.transaction(async (tx) => { ... })`.
+   *
+   * (Pre-2026-05-01 this returned `() => Promise<T>` and required a trailing
+   * `()` invocation, which all 13 call sites omitted — silently bypassing
+   * the transaction. The signature now matches the actual call-site usage.)
+   */
+  transaction<T>(fn: (tx: LegacyClient) => Promise<T>): Promise<T>;
 }
 
 function makeClient(sqlTag: Sql | TransactionSql): LegacyClient {
@@ -83,11 +91,10 @@ function makeClient(sqlTag: Sql | TransactionSql): LegacyClient {
         },
       };
     },
-    transaction<T>(fn: (tx: LegacyClient) => Promise<T>): () => Promise<T> {
-      return () =>
-        (sqlTag as Sql).begin(async (txTag) => {
-          return await fn(makeClient(txTag));
-        }) as Promise<T>;
+    transaction<T>(fn: (tx: LegacyClient) => Promise<T>): Promise<T> {
+      return (sqlTag as Sql).begin(async (txTag) => {
+        return await fn(makeClient(txTag));
+      }) as Promise<T>;
     },
   };
 }
