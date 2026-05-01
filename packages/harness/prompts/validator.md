@@ -27,7 +27,7 @@ For the feature specified by `$FEATURE_ID`, verify every assertion listed in its
 4. For each assertion: record result as `[PASS]` or `[FAIL]` with evidence.
 5. **Also probe for things that should be tested but aren't in the contract.** Think like a pentester: what edge case would embarrass me if a real user hit it? Empty strings, unicode, negative qty, concurrent requests, XSS, N+1 queries.
 6. Write results to `.harness/issues.md` (append mode — keep history). This is the human-readable narrative.
-7. **Also emit structured JSONL to `.harness/pending-issues.jsonl` (append mode)** — one JSON object per line, one line per OUT-OF-SCOPE finding or BLOCKED condition. The curator merges these into `.harness/issues.json` (the structured tracker) on its next run; the orchestrator's `CONVERT_ISSUES` decision reads from there. Skip this step for findings that are already in-scope (i.e., things covered by an existing `VAL-###` claim on the feature you're validating — those become `[FAIL]` entries in the narrative, not issues).
+7. **Also POST each structured OUT-OF-SCOPE finding (or BLOCKED condition) to the operator's pending-issues queue.** One POST per finding to `http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending` — see "Posting structured findings" below. The curator merges these into the `harness_issues` PG table on its next run; the orchestrator's `CONVERT_ISSUES` decision reads from there. Skip this step for findings that are already in-scope (i.e., things covered by an existing `VAL-###` claim on the feature you're validating — those become `[FAIL]` entries in the narrative, not posted issues).
 
 ## Format for issues.md
 
@@ -49,14 +49,25 @@ For the feature specified by `$FEATURE_ID`, verify every assertion listed in its
 - /login endpoint has no rate limit (tested 50 req/s succeeded). Noted.
 ```
 
-## Format for `.harness/pending-issues.jsonl`
+## Posting structured findings
 
-One JSON object per line. No array wrapper, no commas between lines. Append only — never rewrite. Example (two findings from the same round):
+Each finding is one POST to the operator. Do **NOT** write directly to `.harness/pending-issues.jsonl` — the operator owns that file as a transient queue. The endpoint accepts the same shape you'd have written to the file:
 
+```bash
+curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending" \
+  -H "content-type: application/json" \
+  -d '{
+    "title": "/login has no rate limit",
+    "severity": "major",
+    "foundDuring": "F-AUTH-001",
+    "evidence": "50 req/s from single IP returned 50×200. No 429 at any load tested.",
+    "repro": "ab -n 50 -c 10 -p login.json localhost:3000/api/auth/login",
+    "suggestedFix": "Add middleware e.g. express-rate-limit at apps/shop-api/src/auth/auth.controller.ts",
+    "codePointer": "apps/shop-api/src/auth/auth.controller.ts:12"
+  }'
 ```
-{"title":"/login has no rate limit","severity":"major","foundDuring":"F-AUTH-001","evidence":"50 req/s from single IP returned 50×200. No 429 at any load tested.","repro":"ab -n 50 -c 10 -p login.json localhost:3000/api/auth/login","suggestedFix":"Add middleware e.g. express-rate-limit at apps/shop-api/src/auth/auth.controller.ts","codePointer":"apps/shop-api/src/auth/auth.controller.ts:12"}
-{"title":"Concurrent login races create multiple sessions","severity":"minor","foundDuring":"F-AUTH-001","evidence":"Two parallel POSTs with same credentials each issue a distinct session cookie.","repro":"(curl -X POST ... & curl -X POST ...) | grep Set-Cookie","codePointer":"apps/shop-api/src/auth/auth.service.ts:47"}
-```
+
+POST one per finding. The operator appends to its server-side queue; the next /triage call (curator or human-triggered) merges into `harness_issues` (PG).
 
 **Required fields:** `title`, `severity` (one of `critical|major|minor|nit`), `foundDuring` (the feature id you were validating).
 
@@ -70,7 +81,7 @@ One JSON object per line. No array wrapper, no commas between lines. Append only
 - `minor` — edge case, perf issue, UX papercut, recoverable error.
 - `nit` — cosmetic, typo, style, non-blocking suggestion.
 
-**Dedup within a single run:** don't emit the same finding twice in one validation round. Across rounds, don't worry about it — the curator dedupes on merge by `(title, codePointer)` similarity.
+**Dedup within a single run:** don't POST the same finding twice in one validation round. Across rounds, don't worry about it — the curator dedupes on merge by `(title, codePointer)` similarity.
 
 ## Status update
 
