@@ -164,39 +164,31 @@ These three only apply when `scoper.useExperts` is enabled in `.harness/config.j
 
 The expert flow has three states the orchestrator cycles through. Read it via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts | jq` — returns `{experts: [{id, status, agentCount, ...}]}`. Statuses: `drafting | gathering_feedback | awaiting_user | final | max_rounds | error | cancelled | superseded`.
 
-**Decision rule (apply in order). Both expert and feedback are one-shot per invocation; the orchestrator drives the back-and-forth by inspecting conversation state.**
+**Decision rule.** Both expert and feedback are one-shot per invocation; the orchestrator drives the back-and-forth by reading the `nextAction` field on each expert (computed server-side, no shell-pipeline gymnastics needed):
 
-1. **Any in-flight feedback conversation waiting on the feedback agent's reply?**
-   ```bash
-   curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts | jq '.experts[] | select(.status == "gathering_feedback") | .id' \
-     | while read eid; do
-         curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts/$eid/feedback \
-           | jq ".feedback[] | select(.ended==false) | \"$eid.\(.id)\""
-       done
-   ```
-   For each non-ended conversation, list the directory `.harness/experts/<eid>/feedback/<fbid>/`: if the most recent `turn-NNN-*.md` filename ends with `-expert.md`, the conversation is waiting on the feedback agent. Emit:
-   ```
-   NEXT_FEEDBACK <EXP-NNN>.<FB-NNN>
-   ```
-   Note the `.` separator — single token because of the regex constraint.
+```bash
+curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts | jq '.experts[] | {id, status, updatedAt, nextAction}'
+```
 
-2. **Any expert that needs to act next?** A non-terminal, non-engaged expert needs an iteration if:
-   - it's in `drafting` (hasn't written initial SPEC.md yet), OR
-   - one of its conversations has a feedback turn waiting for the expert's response (latest turn file ends with `-feedback.md`), OR
-   - none of its conversations are in-flight AND its outer loop hasn't terminated (so it should spawn the next persona).
-   Pick the one with oldest `updatedAt` and emit:
-   ```
-   NEXT_EXPERT <EXP-NNN>
-   ```
-   Skip experts with `userEngaged=true` — the user is in chat with them.
+Each expert's `nextAction` is one of:
 
-3. **Any expert that just hit `final` or `max_rounds` since the last scoper run?** The scoper needs to derive features from those finalized specs. Emit:
-   ```
-   NEXT_SCOPER phase2
-   ```
-   The scoper is idempotent — re-running with no new finalizations is a no-op.
+- `"dispatch_expert"` — invoke `NEXT_EXPERT <expert-id>`
+- `"dispatch_feedback:FB-NNN"` — invoke `NEXT_FEEDBACK <expert-id>.FB-NNN`
+- `"wait"` — user is in chat with this expert; skip
+- `"done"` — terminal status; counts toward scoper-phase-2 trigger
 
-4. **Any expert with `status=awaiting_user`?** Don't dispatch it — the user is engaged in chat. Move on.
+Pick the expert with the oldest `updatedAt` whose `nextAction` is `"dispatch_expert"` or `"dispatch_feedback:..."` and emit the matching verb. Skip `wait` and `done`.
+
+If every non-`done` expert is `wait`, but there's at least one `done` expert whose features haven't been derived yet, emit:
+```
+NEXT_SCOPER phase2
+```
+The scoper is idempotent — re-running with no new finalizations is a no-op.
+
+The verb format reminder:
+- `NEXT_EXPERT EXP-001`
+- `NEXT_FEEDBACK EXP-001.FB-007` — the `.` separator is required (the orchestrator regex's character class is `[A-Za-z0-9_.-]`)
+- `NEXT_SCOPER phase2` — the bare token (no `=`)
 
 These decisions interleave with the usual NEXT_WORKER/NEXT_VALIDATOR cycle. If features are ready (status=todo/failing), prefer those — workers can run in parallel with the expert flow because experts only block features that explicitly depend on a not-yet-final expert.
 

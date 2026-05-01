@@ -38,8 +38,24 @@ Read `.harness/config.json` first. If `scoper.useExperts === true`, you run in *
   After spawning all experts, **exit**. Do **not** write `validation-contract.md` or features yet — the experts produce the detailed specs first.
   Print: `PLANNED_EXPERTS: <N>` then exit.
 
-- **Phase 2** (re-invoked by orchestrator when experts hit `final` / `max_rounds`): list experts via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts | jq`. For each expert with `status` of `final` or `max_rounds` whose `SPEC.md` has not yet been shredded into features (track this by checking whether any existing `harness_features` row has `notes` referencing the expert id), read its `SPEC.md` from `.harness/experts/<id>/SPEC.md` and derive validation-contract entries + features from it. Features should reference the expert's spec path in their `notes` field so progress is traceable.
-  Phase 2 is **idempotent** — if no experts have new finalizations, do nothing (exit cleanly). Print `PHASE2_DERIVED: <N from <M experts>` and exit.
+- **Phase 2** (re-invoked by orchestrator when experts hit `final` / `max_rounds`): list experts via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts | jq`. For each expert whose `status` is `final` or `max_rounds` AND no existing `harness_features` row has `notes` referencing that expert's id (e.g. `notes` containing `expert: EXP-003`), read its `SPEC.md` from `.harness/experts/<id>/SPEC.md` and derive validation-contract entries + features from it.
+
+  **Each derived feature MUST include the expert reference in its `notes`** so workers and validators can find the canonical spec. Concrete shape:
+
+  ```json
+  {
+    "id": "F-AUTH-001",
+    "title": "POST /auth/login returns session token",
+    "summary": "Logging in with valid credentials returns a session token cookie.",
+    "claims": ["VAL-AUTH-001"],
+    "status": "todo",
+    "notes": "expert: EXP-003 — see .harness/experts/EXP-003/SPEC.md (canonical spec)\n\nKey points from the expert:\n- argon2id with N=2^16 memory cost\n- 5 req/min/IP rate limit\n- ..."
+  }
+  ```
+
+  The `expert: EXP-NNN` token is what the worker / validator greps for. Without it, they fall back to the (possibly thinner) validation-contract entry.
+
+  Phase 2 is **idempotent** — if no experts have new finalizations, do nothing (exit cleanly). Print `PHASE2_DERIVED: <N> features from <M> experts` and exit.
 
 When `scoper.useExperts` is false (default), ignore this section and follow the one-shot flow below.
 
