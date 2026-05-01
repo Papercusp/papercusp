@@ -1107,7 +1107,9 @@ except Exception:
             FEATURE_ID=*)
                 local fid="${extra#FEATURE_ID=}"
                 # Only include if it looks like a real feature id (F-...)
-                if [[ "$fid" =~ ^F-[A-Z0-9-]+$ ]]; then
+                # or an expert/feedback instance id (EXP-NNN, FB-NNN). Cost
+                # attribution rolls up per id via the run_id suffix.
+                if [[ "$fid" =~ ^(F|EXP|FB)-[A-Z0-9-]+$ ]]; then
                     feature_tag="-$fid"
                     feature_id="$fid"
                 fi
