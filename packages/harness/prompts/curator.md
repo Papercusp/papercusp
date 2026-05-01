@@ -18,16 +18,14 @@ You have a **fresh context**. Nothing is in your head. Everything is on disk.
 
 ## Required reads (in order)
 
-1. `.harness/pending-issues.jsonl` — validator's un-triaged structured findings.
-   Your FIRST step is to merge these into `.harness/issues.json`. See "Process
-   pending issues" below.
+1. **Pending issues queue** — fresh validator findings awaiting triage (see
+   "Process pending issues" below; this is your FIRST step).
 2. `.harness/memory/raw.md` — the append-only log of one-liner observations
    written by planner/worker/validator/orchestrator during this run.
 3. `.harness/memory/MEMORY.md` — the previously-curated durable store. If
    missing, treat as empty.
 4. `harness_features` (PG; `harness-features list <slug>`) — current feature queue (status, attempts).
-5. `.harness/issues.json` — structured issue tracker (after you've merged
-   pending into it). Schema in "Process pending issues" below.
+5. **Issues tracker** (PG `harness_<slug>.harness_issues` via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq`) — structured issue tracker (after you've triggered triage). Schema below in "Process pending issues".
 6. `.harness/issues.md` — narrative validator findings (human-readable prose,
    append-only). Use for context, do not edit.
 7. `.harness/escalation.md` if present — the escalation reason.
@@ -36,11 +34,30 @@ You have a **fresh context**. Nothing is in your head. Everything is on disk.
 
 ## Process pending issues (always first)
 
-`.harness/pending-issues.jsonl` accumulates structured OUT-OF-SCOPE findings
-from the validator between your runs. Merge them into `.harness/issues.json`
-(the durable structured tracker) before anything else.
+The validator POSTs structured OUT-OF-SCOPE findings to the operator's
+pending queue between your runs. Trigger the merge into the durable issues
+tracker before anything else:
 
-### Schema of `.harness/issues.json`
+```bash
+curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/triage" | jq
+# returns { ok: true, merged: <N>, deduped: <M> }
+```
+
+The operator runs the dedup algorithm (jaccard title similarity ≥0.85 and/or
+exact `codePointer` match against open/acknowledged issues), increments
+`attempts` + appends a "Resurfaced during ..." note on duplicates, and
+assigns new `I-NNNN` ids to genuinely-new findings. Pending queue is
+truncated post-merge.
+
+Use the merge counts in your output line. The structured tracker at this
+point reflects the latest state — read it via `curl
+http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq` for any
+follow-up reasoning.
+
+### Schema of the structured issues tracker
+
+This is the shape returned from `GET /api/harness/$HARNESS_SLUG/issues-list`
+(it mirrors the legacy `.harness/issues.json`):
 
 ```
 {
@@ -66,40 +83,37 @@ from the validator between your runs. Merge them into `.harness/issues.json`
 }
 ```
 
-If `issues.json` is missing, initialize it as `{"issues": [], "nextId": 1}`.
+### Merge algorithm (handled by the operator)
 
-### Merge algorithm
+The /triage endpoint runs this for you, but the rules are documented here so
+you can reason about the resulting state:
 
-For each line of `pending-issues.jsonl`:
+1. Each pending entry is parsed as JSON; malformed lines skipped.
+2. **Dedup**: looks for an existing open/acknowledged issue where either
+   `codePointer` matches exactly, or the lowercased title has ≥85% Jaccard
+   token overlap. Hits get `attempts++` and a "Resurfaced during ..." note;
+   severity bumps up if the pending finding is higher.
+3. **New entries** get a freshly-allocated `I-NNNN` id with `source:"validator"`,
+   `status:"open"`, `attempts:0`, `notes:[]`, `foundAt:now`,
+   `linkedFeatureId:null`, and the title/severity/foundDuring/repro/evidence/
+   suggestedFix/codePointer from the pending entry.
+4. Pending queue is truncated post-merge.
 
-1. Parse the JSON. Skip malformed lines (don't crash).
-2. **Dedup**: look for an existing issue where BOTH:
-   - `codePointer` matches exactly (if both have one), **or** the lowercased
-     title has ≥85% token overlap (Jaccard on word tokens), AND
-   - `status` is not `closed` or `wontfix`.
-3. **If duplicate found**:
-   - Increment its `attempts` by 1.
-   - Append a note: `{ts: <now ISO>, by: "validator", text: "Resurfaced during <foundDuring> round"}`.
-   - If the pending entry's `severity` is higher than the existing one, bump
-     the existing severity up.
-4. **If new**:
-   - Assign `id = "I-" + String(nextId).padStart(4, "0")`.
-   - Increment `nextId`.
-   - Set `source: "validator"`, `status: "open"`, `attempts: 0`, `notes: []`,
-     `foundAt` = now (ISO), `linkedFeatureId: null`.
-   - Copy over `title`, `severity`, `foundDuring`, `repro`, `evidence`,
-     `suggestedFix`, `codePointer` from the pending entry.
-   - Append to `issues.issues` (newest first — `unshift`).
-5. **Auto-close stale**: for each existing `open` or `acknowledged` issue
-   whose `codePointer` was verified passing in this round (i.e., its feature
-   id appears in `harness_features` (PG) with `status: "passed"` AND no new pending
-   entry mentions the same `codePointer`), set `status: "closed"` and append
-   `{by: "curator", text: "Code path verified green during <round>"}`.
+### Auto-close stale issues (your work, post-triage)
 
-After merging, **truncate `pending-issues.jsonl` to empty** and write the
-updated `issues.json` atomically.
+After /triage runs, for each open or acknowledged issue whose `codePointer`
+was verified passing in this round (its feature appears in `harness_features`
+with `status: "passed"` AND no new pending entry mentions the same pointer),
+mark it closed:
 
-Output: include in your stdout line the merge counts (see Output section).
+```bash
+curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/issues/$ISSUE_ID/update" \
+  -H "content-type: application/json" \
+  -d '{"status":"closed","by":"curator","note":"Code path verified green during <round>"}'
+```
+
+Output: include the merge counts from `/triage`'s response in your stdout
+line (see Output section).
 
 ## What to produce
 
