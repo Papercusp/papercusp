@@ -54,6 +54,26 @@ else
     HARNESS_DB_PATH=""
 fi
 export HARNESS_PHASE HARNESS_PORT HARNESS_DB_PATH
+# Resolve the slug from ~/.restart-harness-projects.json so agent prompts
+# (expert, feedback, validator, etc.) can reference $HARNESS_SLUG inline
+# in their curl snippets. Inline lookup because harness_slug() (the helper
+# function) is defined later in this file.
+if [ -z "${HARNESS_SLUG:-}" ]; then
+    if [ -f "$HOME/.restart-harness-projects.json" ]; then
+        HARNESS_SLUG="$(REG="$HOME/.restart-harness-projects.json" PD="$PROJECT_DIR" python3 -c '
+import json, os, sys
+try:
+    r = json.load(open(os.environ["REG"]))
+    for p in r.get("projects", []):
+        if p.get("path") == os.environ["PD"]:
+            print(p.get("slug", "")); sys.exit(0)
+except Exception:
+    pass
+' 2>/dev/null)"
+    fi
+    [ -z "$HARNESS_SLUG" ] && HARNESS_SLUG="$(basename "$PROJECT_DIR")"
+fi
+export HARNESS_SLUG
 MAX_ITERATIONS="${MAX_ITERATIONS:-200}"
 # Invocation template. `$ROLE` is the role file path; `$PROMPT` is the actual prompt text.
 # Default: non-interactive Claude Code. Adjust if your binary uses different flags.
