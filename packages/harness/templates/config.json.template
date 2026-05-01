@@ -88,6 +88,22 @@
     ]
   },
 
+  "_comment_scoper_experts": "When true, the scoper runs in two phases: phase 1 decomposes SPEC.md into high-level areas and spawns one expert per area; phase 2 (re-invoked when experts finalize) derives the validation contract + features from the experts' detailed specs. When false (default), scoper is one-shot. Opt in on harness templates that benefit from a deep planning pass.",
+  "scoper": {
+    "useExperts": false
+  },
+
+  "_comment_expert": "Bounds for the expert role's feedback loop. The expert decides how many feedback agents to consult and how many turns per agent (sizingHints are guidance, not limits); these are the absolute caps. maxAgents triggers the max_rounds terminal status; maxTurnsPerAgent is per-conversation.",
+  "expert": {
+    "maxAgents": 12,
+    "maxTurnsPerAgent": 15,
+    "sizingHints": {
+      "small":    { "agentsTarget": 2,  "turnsTarget": 1 },
+      "standard": { "agentsTarget": 4,  "turnsTarget": 3 },
+      "large":    { "agentsTarget": 10, "turnsTarget": 15 }
+    }
+  },
+
   "_comment_smoke": "claudecode-orchestrator-inspired service smoke-test gate. Runs bin/service-smoke-test.sh on DONE (and optionally after each feature pass). If any URL returns non-expectStatus, reopens the most recent passed feature as failing.",
   "smokeTest": {
     "enabled": false,

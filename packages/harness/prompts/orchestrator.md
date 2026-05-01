@@ -158,6 +158,36 @@ NEXT_SUMMARIZER
 
 The summarizer takes no argument; it scans state on its own.
 
+### D''''. "next_expert <EXP-NNN>" / "next_feedback <EXP-NNN.FB-NNN>" / "next_scoper [MODE=phase2]"
+
+These three only apply when `scoper.useExperts` is enabled in `.harness/config.json`. If that flag is false, ignore this section — the scoper is one-shot and there are no expert instances.
+
+The expert flow has three states the orchestrator cycles through. Read it via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts | jq` — returns `{experts: [{id, status, agentCount, ...}]}`. Statuses: `drafting | gathering_feedback | awaiting_user | final | max_rounds | error | cancelled | superseded`.
+
+**Decision rule (apply in order):**
+
+1. **Any expert with status=`drafting` or `gathering_feedback` AND `userEngaged=false`?** Pick the one with oldest `updatedAt` and emit:
+   ```
+   NEXT_EXPERT <EXP-NNN>
+   ```
+   The expert does one iteration of work per invocation. It may write its SPEC.md, open a feedback conversation (`POST /experts/<id>/feedback`), and write its opening turn — then exit, expecting you to dispatch the feedback agent next.
+
+2. **Any in-flight feedback conversation that needs the feedback agent's reply?** Check `curl /experts/<id>/feedback | jq` — entries with `ended:false` and where the most recent turn file is `turn-NNN-expert.md` (waiting on the feedback side). Emit:
+   ```
+   NEXT_FEEDBACK <EXP-NNN>.<FB-NNN>
+   ```
+   Note the `.` separator — single token because of the regex constraint.
+
+3. **Any expert that just hit `final` or `max_rounds` since the last scoper run?** The scoper needs to derive features from those finalized specs. Emit:
+   ```
+   NEXT_SCOPER phase2
+   ```
+   The scoper is idempotent — re-running with no new finalizations is a no-op. So when in doubt, you can emit it; the cost is one invocation.
+
+4. **Any expert with `status=awaiting_user`?** Don't dispatch it — the user is engaged in chat. Move on.
+
+These decisions interleave with the usual NEXT_WORKER/NEXT_VALIDATOR cycle. If features are ready (status=todo/failing), prefer those — workers can run in parallel with the expert flow because experts only block features that explicitly depend on a not-yet-final expert.
+
 ### E. "escalate <reason>"
 A feature is stuck (>=5 attempts failing) OR multiple features are simultaneously blocked. Don't loop forever. Write a summary to `.harness/escalation.md` and print:
 ```

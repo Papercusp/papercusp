@@ -1523,7 +1523,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
     primary_role="$(config_get 'primaryRole' 'orchestrator')"
     decision="$(invoke "$primary_role" \
         | sed -E 's/[*`]+//g; s/^[[:space:]]+//; s/[[:space:]]+$//' \
-        | grep -oE '(DONE|CONVERTED|NEXT_WORKER_CEO_MODE|NEXT_WORKER|NEXT_VALIDATOR|NEXT_ARCHITECT|NEXT_TESTER|NEXT_SECURITY|GENERATE_TESTS|RUN_TESTS|NEXT_MONITOR|READY_FOR_PROD|FEATURE_FREEZE|NEXT_HARNESS|IDLE|ESCALATE|CHECKPOINT)([[:space:]]+[A-Za-z0-9_.-]+)?' \
+        | grep -oE '(DONE|CONVERTED|NEXT_WORKER_CEO_MODE|NEXT_WORKER|NEXT_VALIDATOR|NEXT_ARCHITECT|NEXT_TESTER|NEXT_SECURITY|GENERATE_TESTS|RUN_TESTS|NEXT_MONITOR|READY_FOR_PROD|FEATURE_FREEZE|NEXT_HARNESS|NEXT_EXPERT|NEXT_FEEDBACK|NEXT_SCOPER|IDLE|ESCALATE|CHECKPOINT)([[:space:]]+[A-Za-z0-9_.-]+)?' \
         | tail -1)"
     log "ORCH decision: $decision (role=$primary_role)"
     fire_plugin_hook onPostOrchestrator --decision="$decision" || true
@@ -1940,6 +1940,64 @@ except Exception as e:
             log "ARCHITECT produced no actionable verdict; leaving $fid untouched."
             ;;
         esac
+        ;;
+
+    NEXT_EXPERT*)
+        # Format: NEXT_EXPERT EXP-NNN
+        # The expert is an instanced role: identity + state lives in
+        # .harness/experts/<EXP-id>/. We pass FEATURE_ID=<EXP-id> so the
+        # invoke() pipeline picks it up (assembleRolePrompt detects EXP-
+        # prefix and injects EXPERT_DIR / EXPERT_SPEC into the runtime
+        # context). The expert reads identity.json itself.
+        eid="${decision##NEXT_EXPERT }"
+        [ "$eid" = "NEXT_EXPERT" ] && eid=""
+        if [ -z "$eid" ]; then
+            log "ERROR: NEXT_EXPERT missing expert id"
+        else
+            log "EXPERT $eid starting"
+            invoke expert "FEATURE_ID=$eid" "EXPERT_ID=$eid" >/dev/null
+            log "EXPERT $eid iteration complete"
+        fi
+        ;;
+
+    NEXT_FEEDBACK*)
+        # Format: NEXT_FEEDBACK EXP-NNN.FB-NNN  (separator is `.` because
+        # the orchestrator regex's char class is [A-Za-z0-9_.-]; `/` and
+        # `:` would not match.)
+        fb_arg="${decision##NEXT_FEEDBACK }"
+        [ "$fb_arg" = "NEXT_FEEDBACK" ] && fb_arg=""
+        eid="${fb_arg%%.*}"
+        fbid="${fb_arg##*.}"
+        if [ -z "$eid" ] || [ -z "$fbid" ] || [ "$eid" = "$fbid" ]; then
+            log "ERROR: NEXT_FEEDBACK expects EXP-NNN.FB-NNN; got '$fb_arg'"
+        else
+            # Read the assigned persona from disk so the feedback agent's
+            # runtime context knows which lens to use.
+            persona=""
+            persona_path="$STATE_DIR/experts/$eid/feedback/$fbid/persona.txt"
+            if [ -f "$persona_path" ]; then
+                persona="$(cat "$persona_path")"
+            fi
+            log "FEEDBACK $eid/$fbid starting (persona=$persona)"
+            invoke feedback "FEEDBACK_ID=$fbid" "EXPERT_ID=$eid" "FEEDBACK_PERSONA=$persona" >/dev/null
+            log "FEEDBACK $eid/$fbid iteration complete"
+        fi
+        ;;
+
+    NEXT_SCOPER*)
+        # Format: NEXT_SCOPER  (no arg, defaults to phase1) or  NEXT_SCOPER phase2
+        # Re-invokes the scoper. In phase2 mode the scoper derives features
+        # from finalized experts. Idempotent — re-running with no new
+        # finalizations is a no-op.
+        sc_phase="${decision##NEXT_SCOPER }"
+        [ "$sc_phase" = "NEXT_SCOPER" ] && sc_phase=""
+        log "SCOPER starting${sc_phase:+ (phase=$sc_phase)}"
+        if [ -n "$sc_phase" ]; then
+            invoke scoper "SCOPER_PHASE=$sc_phase" >/dev/null
+        else
+            invoke scoper >/dev/null
+        fi
+        log "SCOPER complete"
         ;;
 
     NEXT_TESTER*)
