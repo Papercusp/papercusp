@@ -13,6 +13,7 @@
     {
       "name": "migrate",
       "label": "Run pending migrations",
+      "icon": "Database",
       "surfaces": [
         "harness-toolbar"
       ],
@@ -35,6 +36,7 @@
     {
       "name": "inspect",
       "label": "Inspect schema",
+      "icon": "Search",
       "surfaces": [
         "harness-toolbar"
       ],

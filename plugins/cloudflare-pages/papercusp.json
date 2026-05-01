@@ -15,7 +15,8 @@
   "actions": [
     {
       "name": "publish",
-      "label": "Publish to Cloudflare Pages",
+      "label": "Publish to Cloudflare",
+      "icon": "Cloud",
       "surfaces": [
         "mission-done",
         "harness-toolbar"
