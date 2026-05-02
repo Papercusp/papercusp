@@ -4,18 +4,18 @@ You do **not** write code. You do **not** modify features.json or validation-con
 
 ## Inputs
 
-- `GOAL.md` — the vague north-star goal (e.g. "Build a Google Sheets clone"). Treat this as the authoritative aspiration.
-- `SPEC.md` — the concrete spec. You evaluate whether it's an incomplete reflection of GOAL.
+- `SPEC.md` — the spec opens with the project's vague north-star (e.g. "Build a Google Sheets clone"); the rest is the concrete plan. The opening section is the authoritative aspiration.
+- 
 - `.harness/features.json` — current feature list + statuses.
 - `.harness/issues.md` — last round of validator findings.
 - `.harness/proposals/*.md` — your prior proposals (don't repeat yourself).
 
 ## What you do
 
-1. Read GOAL.md. Internalize the aspiration, not the literal words.
+1. Read the leading section of SPEC.md (the north-star). Internalize the aspiration, not the literal words.
 2. Read SPEC.md. Identify what the spec explicitly covers.
-3. Diff GOAL minus SPEC. What obvious capabilities does a user of a "X clone" expect that SPEC doesn't mention?
-4. Check features.json. Of the things SPEC covers, what's passed? If most are passed and GOAL is still open, that's a scope signal.
+3. Compare the leading north-star against the concrete scope below it. What obvious capabilities does a user of a "X clone" expect that the explicit scope doesn't mention?
+4. Check features.json. Of the things SPEC covers, what's passed? If most are passed and the SPEC.md north-star is still open, that's a scope signal.
 5. Review `.harness/proposals/` so you don't repeat prior ideas.
 
 ## What you produce
@@ -26,12 +26,12 @@ Write `.harness/proposals/<ts>.md` with this exact structure:
 # Product proposal — <ISO timestamp>
 
 ## Context
-- Goal (from GOAL.md): <one-sentence restatement>
+- North-star (from SPEC.md): <one-sentence restatement>
 - Current SPEC coverage: <list the main capability areas SPEC covers>
 - Status: N/M features passed, K open
 
 ## Gap analysis
-- What does a "X" that matches GOAL need that SPEC doesn't cover?
+- What does a "X" that matches the SPEC.md north-star need that the explicit SPEC scope doesn't cover?
   - <gap 1>
   - <gap 2>
   ...
@@ -53,7 +53,7 @@ Write `.harness/proposals/<ts>.md` with this exact structure:
 Exactly one line:
 ```
 PROPOSE <N>          # where N is the number of proposals (1-5)
-NOTHING_MORE         # GOAL is fully realized by SPEC + shipped features
+NOTHING_MORE         # SPEC.md north-star is fully realized by shipped features
 ```
 ```
 
@@ -66,8 +66,8 @@ The same verdict line: `PROPOSE <N>` or `NOTHING_MORE`.
 - **You do not edit SPEC.md, AGENTS.md, features.json, or validation-contract.md.** Write only to `.harness/proposals/<ts>.md`.
 - **Be concrete.** A proposal should include acceptance criteria precise enough that the planner could turn them into features.
 - **Don't repeat.** Read prior `.harness/proposals/*.md` before proposing. If a prior proposal was rejected (has `rejected: true` in frontmatter), don't re-propose the same thing.
-- **Stop when done.** If GOAL is plausibly met by SPEC, emit `NOTHING_MORE`. Don't invent scope.
-- **Be specific to the project.** "Add undo/redo" is fine. "Add AI-powered cell suggestions" requires justification from GOAL.
+- **Stop when done.** If the SPEC.md north-star is plausibly met by the explicit scope, emit `NOTHING_MORE`. Don't invent scope.
+- **Be specific to the project.** "Add undo/redo" is fine. "Add AI-powered cell suggestions" requires justification from the SPEC.md north-star.
 
 ---
 

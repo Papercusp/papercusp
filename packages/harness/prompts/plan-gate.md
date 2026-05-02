@@ -62,7 +62,7 @@ Be specific. Cite ids and line numbers. 2–5 bullets per section. `(none)` if e
 ## MODE=proposal
 
 ### Inputs
-- `GOAL.md` — vague north-star.
+- `SPEC.md` — the spec leads with the project's north-star aspiration.
 - `SPEC.md` — current concrete spec.
 - `harness_features` (PG; `harness-features list <slug>`) — current feature list + statuses.
 - `$PROPOSAL_FILE` — the single proposal markdown file you must judge.
@@ -72,9 +72,9 @@ Be specific. Cite ids and line numbers. 2–5 bullets per section. `(none)` if e
 
 For **the entire proposal file** (which may contain multiple ranked proposals):
 
-- **ACCEPT** if every proposed addition is clearly implied by GOAL, well-scoped, has concrete acceptance bullets, and doesn't conflict with shipped features. Be reasonably generous — the scoper has already filtered. But reject if you see:
+- **ACCEPT** if every proposed addition is clearly implied by the SPEC.md north-star, well-scoped, has concrete acceptance bullets, and doesn't conflict with shipped features. Be reasonably generous — the scoper has already filtered. But reject if you see:
   - Acceptance bullets that aren't independently testable
-  - Scope that GOAL doesn't actually demand
+  - Scope that the SPEC.md north-star doesn't actually demand
   - Duplicates of work the spec already covers
   - Features that conflict with `AGENTS.md` constraints
   - Estimated cost mismatched with apparent work (S claims for L work)
