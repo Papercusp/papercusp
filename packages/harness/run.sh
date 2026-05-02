@@ -111,11 +111,47 @@ mkdir -p "$STATE_DIR" "$LOG_DIR"
 # consume this for filtering/tabs/search; run.log is kept for human tail.
 LOG_JSONL="$LOG_DIR/run.log.jsonl"
 
+# Rotation cap (bytes) for run.log.jsonl. Override with PAPERCUSP_LOG_ROTATE_BYTES.
+# Default 50 MiB — enough for a multi-day mission, small enough that gzipped
+# rotations don't pile up.
+LOG_ROTATE_BYTES="${PAPERCUSP_LOG_ROTATE_BYTES:-52428800}"
+LOG_ROTATE_KEEP="${PAPERCUSP_LOG_ROTATE_KEEP:-5}"
+
+# Probe the JSONL file size; if past the cap, rotate to .1.gz and start
+# a fresh empty file. Older rotations are renumbered .1 → .2, .2 → .3, …
+# up to LOG_ROTATE_KEEP. Cheaper than logrotate(8) and avoids depending
+# on a system service.
+_log_rotate_if_needed() {
+    [ -f "$LOG_JSONL" ] || return 0
+    local size
+    size=$(stat -c '%s' "$LOG_JSONL" 2>/dev/null || stat -f '%z' "$LOG_JSONL" 2>/dev/null || echo 0)
+    [ "$size" -lt "$LOG_ROTATE_BYTES" ] && return 0
+    # Cycle .N-1 → .N from highest down (so we don't overwrite live data).
+    local i=$((LOG_ROTATE_KEEP - 1))
+    while [ "$i" -gt 0 ]; do
+        if [ -f "$LOG_JSONL.$i.gz" ]; then
+            mv -f "$LOG_JSONL.$i.gz" "$LOG_JSONL.$((i + 1)).gz"
+        fi
+        i=$((i - 1))
+    done
+    # Move current → .1, then gzip in background. Doing the gzip async
+    # keeps the next log() call from blocking on a multi-MB compress.
+    mv -f "$LOG_JSONL" "$LOG_JSONL.1"
+    ( gzip -f "$LOG_JSONL.1" 2>/dev/null & )
+    # Drop anything past KEEP.
+    i=$((LOG_ROTATE_KEEP + 1))
+    while [ -f "$LOG_JSONL.$i.gz" ]; do
+        rm -f "$LOG_JSONL.$i.gz"
+        i=$((i + 1))
+    done
+}
+
 # Append a single JSONL event. Keeps run.sh's only python3 dep (already
 # used elsewhere in this file) for safe JSON encoding of the message —
 # bash's `printf %q` doesn't escape control chars correctly for JSON.
 _log_jsonl() {
     local source="$1"; local level="$2"; local msg="$3"; local ts="$4"
+    _log_rotate_if_needed
     SRC="$source" LEVEL="$level" MSG="$msg" TS="$ts" python3 -c '
 import json, os, sys
 sys.stdout.write(json.dumps({
