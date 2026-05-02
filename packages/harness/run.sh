@@ -106,10 +106,49 @@ fi
 
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 
+# Structured JSONL companion to run.log. Each line is a single LogEvent
+# {ts, source, level, msg, corrId?, attrs?}. Plugin host + operator UI
+# consume this for filtering/tabs/search; run.log is kept for human tail.
+LOG_JSONL="$LOG_DIR/run.log.jsonl"
+
+# Append a single JSONL event. Keeps run.sh's only python3 dep (already
+# used elsewhere in this file) for safe JSON encoding of the message —
+# bash's `printf %q` doesn't escape control chars correctly for JSON.
+_log_jsonl() {
+    local source="$1"; local level="$2"; local msg="$3"; local ts="$4"
+    SRC="$source" LEVEL="$level" MSG="$msg" TS="$ts" python3 -c '
+import json, os, sys
+sys.stdout.write(json.dumps({
+    "ts": os.environ["TS"],
+    "source": os.environ["SRC"],
+    "level": os.environ["LEVEL"],
+    "msg": os.environ["MSG"],
+}) + "\n")
+' >> "$LOG_JSONL" 2>/dev/null || true
+}
+
+# Classify a log message into a level by looking for known patterns.
+# Mirrors classifyLine() in libs/ui-primitives/src/LogView.tsx so the
+# server-side classification matches what the legacy text-driven UI
+# does. Once the UI is purely JSONL-driven this can move to a single
+# shared definition.
+_log_level() {
+    local msg="$1"
+    case "$msg" in
+        *ERROR*|*FATAL*|*Aborting*|*Traceback*) printf 'error' ;;
+        *WARN*|*Warning*)                       printf 'warn' ;;
+        *"ORCH decision:"*)                     printf 'decision' ;;
+        "── iteration "*"──"*)                  printf 'iteration' ;;
+        "PLAN:"*)                               printf 'plan' ;;
+        *)                                       printf 'info' ;;
+    esac
+}
+
 log() {
     local ts
     ts="$(date -Iseconds)"
     printf '[%s] %s\n' "$ts" "$*" | tee -a "$LOG_DIR/run.log"
+    _log_jsonl "harness" "$(_log_level "$*")" "$*" "$ts"
 }
 
 config_get() {
