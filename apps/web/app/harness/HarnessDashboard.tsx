@@ -1037,7 +1037,7 @@ export default function HarnessDashboard() {
           aria-selected={activePanel === 'proposals'}
           onClick={() => activeSlug && setActivePanel('proposals')}
           disabled={!activeSlug}
-          title={activeSlug ? `Product proposals — scope expansion from GOAL.md${pendingProposals > 0 ? ` · ${pendingProposals} pending` : ''}` : 'Select a project to view proposals'}
+          title={activeSlug ? `Product proposals — scope expansion from SPEC.md${pendingProposals > 0 ? ` · ${pendingProposals} pending` : ''}` : 'Select a project to view proposals'}
         >
           🪄 proposals
           {pendingProposals > 0 && <span className="h-tab-count">{pendingProposals}</span>}

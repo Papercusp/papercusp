@@ -181,9 +181,9 @@ export default function ProposalsPanel({ slug }: Props) {
 
   const loadGoal = useCallback(async () => {
     try {
-      const d = await fetch(`/api/harness/${slug}/goal`).then((r) => r.json());
-      setGoal(d.content ?? '');
-      setGoalDraft(d.content ?? '');
+      const d = await fetch(`/api/harness/${slug}/spec`).then((r) => r.json());
+      setGoal(d.spec ?? '');
+      setGoalDraft(d.spec ?? '');
     } catch {}
   }, [slug]);
 
@@ -222,15 +222,15 @@ export default function ProposalsPanel({ slug }: Props) {
   const saveGoal = useCallback(async () => {
     setBusy(true);
     try {
-      const r = await fetch(`/api/harness/${slug}/goal`, {
+      const r = await fetch(`/api/harness/${slug}/spec`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ content: goalDraft }),
+        body: JSON.stringify({ spec: goalDraft }),
       });
       if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
       setGoal(goalDraft);
       setEditingGoal(false);
-      setToast('GOAL.md saved');
+      setToast('SPEC.md saved');
     } catch (e) {
       setToast(`save failed: ${e}`);
     } finally {
@@ -241,7 +241,7 @@ export default function ProposalsPanel({ slug }: Props) {
 
   const runProductReview = useCallback(async () => {
     if (!goal.trim()) {
-      setToast('Set a GOAL.md first');
+      setToast('Set a SPEC.md first');
       setTimeout(() => setToast(null), 3000);
       return;
     }
@@ -544,7 +544,7 @@ export default function ProposalsPanel({ slug }: Props) {
     <div className="h-proposals-panel" data-proposals-panel>
       <div className={`h-proposals-goal ${editingGoal ? 'is-editing' : ''}`}>
         <div className="h-proposals-goal-head">
-          <span>GOAL.md</span>
+          <span>SPEC.md</span>
           {!editingGoal && (
             <span className={`h-proposals-goal-preview ${hasGoal ? '' : 'empty'}`}>
               {goal || 'Set a north-star goal before proposing scope.'}
@@ -564,7 +564,7 @@ export default function ProposalsPanel({ slug }: Props) {
                   type="button"
                   onClick={runProductReview}
                   disabled={busy || !hasGoal}
-                  title={!hasGoal ? 'Set a GOAL.md first' : 'Run the product agent to propose new scope'}
+                  title={!hasGoal ? 'Set a SPEC.md first' : 'Run the product agent to propose new scope'}
                   className="h-proposal-btn primary"
                 >
                   {busy ? 'working…' : 'propose'}
@@ -579,7 +579,7 @@ export default function ProposalsPanel({ slug }: Props) {
               value={goalDraft}
               onChange={(e) => setGoalDraft(e.target.value)}
               rows={2}
-              aria-label="Edit GOAL.md"
+              aria-label="Edit SPEC.md"
             />
           </div>
         )}
@@ -698,7 +698,7 @@ export default function ProposalsPanel({ slug }: Props) {
             {items.length === 0 ? (
               <div className="h-proposal-empty">
                 <b>No proposals yet</b>
-                <span>Click <em>propose</em> to have the product agent read GOAL.md + SPEC.md and suggest scoped features.</span>
+                <span>Click <em>propose</em> to have the product agent read SPEC.md and suggest scoped features.</span>
               </div>
             ) : filteredItems.length === 0 ? (
               <div className="h-proposal-empty">

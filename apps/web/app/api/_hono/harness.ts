@@ -1863,8 +1863,13 @@ harness.post('/:slug/proposals/:id/reject', async (c) => {
 harness.post('/:slug/product-review', async (c) => {
   const project = resolveProject(c.req.param('slug'));
   if (!project) return c.json({ error: 'unknown project' }, 404);
+  // GOAL.md was the legacy north-star file. SPEC.md now holds both
+  // north-star + scope, so accept either being present.
+  const specPath = join(project.path, 'SPEC.md');
   const goalPath = join(project.path, 'GOAL.md');
-  if (!existsSync(goalPath)) return c.json({ error: 'GOAL.md not found in project root' }, 400);
+  if (!existsSync(specPath) && !existsSync(goalPath)) {
+    return c.json({ error: 'SPEC.md not found in project root' }, 400);
+  }
 
   return new Promise<Response>((resolve) => {
     const { execFile } = require('node:child_process');
@@ -1893,11 +1898,17 @@ harness.post('/:slug/product-review', async (c) => {
   }) as Promise<Response>;
 });
 
+// Legacy alias: GOAL.md and SPEC.md were once separate. SPEC.md is now
+// the single source of truth; the /goal endpoints read/write SPEC.md and
+// fall back to GOAL.md only if the former is missing (back-compat for
+// harnesses created before the consolidation).
 harness.get('/:slug/goal', (c) => {
   const project = resolveProject(c.req.param('slug'));
   if (!project) return c.json({ error: 'unknown project' }, 404);
-  const p = join(project.path, 'GOAL.md');
-  return c.json({ content: safeRead(p) });
+  const specPath = join(project.path, 'SPEC.md');
+  const legacyGoal = join(project.path, 'GOAL.md');
+  const content = safeRead(specPath) ?? safeRead(legacyGoal);
+  return c.json({ content });
 });
 
 harness.put('/:slug/goal', async (c) => {
@@ -1905,7 +1916,7 @@ harness.put('/:slug/goal', async (c) => {
   if (!project) return c.json({ error: 'unknown project' }, 404);
   const body = await c.req.json().catch(() => ({})) as { content?: string };
   if (typeof body.content !== 'string') return c.json({ error: 'content required' }, 400);
-  const dest = join(project.path, 'GOAL.md');
+  const dest = join(project.path, 'SPEC.md');
   const tmp = `${dest}.tmp.${Date.now()}`;
   await writeFile(tmp, body.content, 'utf8');
   await rename(tmp, dest);
