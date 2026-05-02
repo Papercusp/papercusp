@@ -200,17 +200,16 @@ async function cmdDoctor(): Promise<void> {
   const node = process.versions.node;
   console.log(`  ${green('✓')} node ${node}`);
 
-  // Postgres reachability via psql -c 'SELECT 1'
+  // Postgres reachability via postgres-js (no system psql required).
   const pgUser = process.env.PGUSER ?? 'harness_app';
   const pgHost = process.env.PGHOST ?? 'localhost';
   const pgDb = process.env.HARNESS_PG_DB ?? 'papercusp';
   const pgPwd = process.env.PGPASSWORD ?? 'harness_app_pwd';
-  const psql = spawnSync('psql', ['-U', pgUser, '-h', pgHost, '-d', pgDb, '-tAc', 'SELECT 1'], {
-    env: { ...process.env, PGPASSWORD: pgPwd },
-    encoding: 'utf8',
-    timeout: 3000,
-  });
-  if (psql.status === 0 && psql.stdout.trim() === '1') {
+  const { buildPgUrl, runQuery } = await import('./pg-client.ts');
+  const pgUrl = buildPgUrl({ user: pgUser, password: pgPwd, host: pgHost, database: pgDb });
+  const pingRows = await runQuery<{ '?column?': number }>(pgUrl, 'SELECT 1', 3000);
+  const pgReachable = pingRows !== null && pingRows.length === 1;
+  if (pgReachable) {
     console.log(`  ${green('✓')} postgres @ ${pgUser}@${pgHost}/${pgDb}`);
   } else {
     console.log(`  ${red('✗')} postgres unreachable @ ${pgUser}@${pgHost}/${pgDb}`);
@@ -282,12 +281,13 @@ async function cmdDoctor(): Promise<void> {
   console.log(`  ${tabsFromPlugins ? green('✓') : dim('—')} PAPERCUSP_TABS_FROM_PLUGINS=${tabsFromPlugins ? '1' : '<unset>'} (P7 plugin-tab cutover)`);
 
   // audit schema migrations
-  if (psql.status === 0) {
-    const checkAuditTables = spawnSync('psql', [
-      '-U', pgUser, '-h', pgHost, '-d', pgDb, '-tAc',
+  if (pgReachable) {
+    const auditRows = await runQuery<{ tablename: string }>(
+      pgUrl,
       "SELECT tablename FROM pg_tables WHERE schemaname='audit' AND tablename IN ('action_executions','operator_actions') ORDER BY tablename",
-    ], { env: { ...process.env, PGPASSWORD: pgPwd }, encoding: 'utf8', timeout: 3000 });
-    const found = checkAuditTables.stdout.trim().split('\n').filter(Boolean);
+      3000,
+    );
+    const found = (auditRows ?? []).map((r) => r.tablename);
     const hasActions = found.includes('action_executions');
     const hasOps = found.includes('operator_actions');
     console.log(`  ${hasActions ? green('✓') : red('✗')} audit.action_executions ${hasActions ? 'migrated' : 'missing'} (006-action-executions.sql)`);
@@ -572,6 +572,8 @@ async function installOne(slug: string, version: string | undefined, opts: Insta
     const pgPwd = process.env.PGPASSWORD ?? 'postgres';
     const pgDb = process.env.HARNESS_PG_DB ?? 'papercusp';
     const pgHost = process.env.PGHOST ?? 'localhost';
+    const { buildPgUrl, applySqlFile } = await import('./pg-client.ts');
+    const ddlUrl = buildPgUrl({ user: pgUser, password: pgPwd, host: pgHost, database: pgDb });
     let applied = 0;
     for (const row of schemaRows) {
       const ddlPath = join(installDir, row.ddlPath);
@@ -580,15 +582,12 @@ async function installOne(slug: string, version: string | undefined, opts: Insta
         console.log(`  ${dim(`skip (missing): ${label}`)}`);
         continue;
       }
-      const psql = spawnSync('psql', [
-        '-v', 'ON_ERROR_STOP=1', '-q',
-        '-U', pgUser, '-h', pgHost, '-d', pgDb, '-f', ddlPath,
-      ], { encoding: 'utf8', env: { ...process.env, PGPASSWORD: pgPwd }, timeout: 30_000 });
-      if (psql.status === 0) {
+      const result = await applySqlFile(ddlUrl, ddlPath, 30_000);
+      if (result.ok) {
         console.log(`  ${green('✓')} applied ${dim(label)}`);
         applied++;
       } else {
-        console.log(`  ${red('✗')} ${label}: ${psql.stderr.trim().slice(0, 200)}`);
+        console.log(`  ${red('✗')} ${label}: ${result.error}`);
       }
     }
     if (applied === 0) {
