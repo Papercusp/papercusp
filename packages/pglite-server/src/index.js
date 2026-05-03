@@ -1,4 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
+import { pgDump } from '@electric-sql/pglite-tools/pg_dump';
 // Forked socket server with per-handler batch stickiness — see
 // packages/pglite-server/src/socket-server.js for the rationale. The
 // upstream package interleaves messages from concurrent socket clients
@@ -7,6 +8,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from './socket-server.js';
 import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -126,14 +128,55 @@ export async function startPgliteServer(opts) {
   const server = new PGLiteSocketServer({ db, path: socketPath, debug, maxConnections });
   await server.start();
 
+  // Admin HTTP endpoint — exposes pglite-tools' WASM pg_dump so the
+  // operator/CLI can produce snapshot dumps without a system pg_dump
+  // binary. Localhost-only; no auth (single-user desktop). Disabled
+  // unless an explicit port is given via PGLITE_ADMIN_PORT or opts.
+  // Endpoint:
+  //   POST /admin/pg-dump   { args: string[] }   →  text/plain SQL
+  const adminPort = opts?.adminPort ?? (
+    process.env.PGLITE_ADMIN_PORT ? Number(process.env.PGLITE_ADMIN_PORT) : undefined
+  );
+  let adminHttp = null;
+  if (adminPort) {
+    adminHttp = createHttpServer(async (req, res) => {
+      if (req.method !== 'POST' || req.url !== '/admin/pg-dump') {
+        res.writeHead(404, { 'content-type': 'text/plain' });
+        res.end('not found\n');
+        return;
+      }
+      try {
+        const chunks = [];
+        for await (const c of req) chunks.push(c);
+        const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
+        const args = Array.isArray(body.args) ? body.args : [];
+        if (debug) console.log(`[pglite-server] admin pg-dump args=${JSON.stringify(args)}`);
+        const file = await pgDump({ pg: db, args });
+        const text = await file.text();
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(text);
+      } catch (e) {
+        res.writeHead(500, { 'content-type': 'text/plain' });
+        res.end(`pg_dump failed: ${e?.message ?? String(e)}\n`);
+      }
+    });
+    await new Promise((resolve, reject) => {
+      adminHttp.once('error', reject);
+      adminHttp.listen(adminPort, '127.0.0.1', () => resolve());
+    });
+    if (debug) console.log(`[pglite-server] admin HTTP on http://127.0.0.1:${adminPort}`);
+  }
+
   return {
     db,
     server,
     socketPath,
     socketDir,
     port,
+    adminPort: adminPort ?? null,
     async stop() {
       await server.stop();
+      if (adminHttp) await new Promise((r) => adminHttp.close(() => r()));
       await db.close();
     },
   };

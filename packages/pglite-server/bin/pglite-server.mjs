@@ -8,11 +8,15 @@ const port = process.env.PGLITE_PORT ? Number(process.env.PGLITE_PORT) : undefin
 // If set, point at a directory of .sql files; first boot will apply them
 // before the socket starts accepting client connections.
 const dbSqlDir = process.env.PGLITE_DB_SQL_DIR;
+const adminPort = process.env.PGLITE_ADMIN_PORT ? Number(process.env.PGLITE_ADMIN_PORT) : undefined;
 
-const handle = await startPgliteServer({ dataDir, socketDir, port, debug, dbSqlDir });
+const handle = await startPgliteServer({ dataDir, socketDir, port, debug, dbSqlDir, adminPort });
 
 console.log(`[pglite-server] ready on unix socket: ${handle.socketPath}`);
 console.log(`[pglite-server] connect via: postgresql://harness_app@localhost/papercusp?host=${handle.socketDir}`);
+if (handle.adminPort) {
+  console.log(`[pglite-server] admin HTTP on: http://127.0.0.1:${handle.adminPort}`);
+}
 
 const shutdown = async (sig) => {
   console.log(`[pglite-server] ${sig} — shutting down`);
