@@ -113,6 +113,44 @@ except Exception:
 ' 2>/dev/null
 }
 
+# One-time deprecation warning for the legacy `product.*` config namespace.
+# `proposals.*` is the canonical namespace as of 2026-04-30; `product.*` is
+# still honored as a fallback in run.sh. This warning fires once per run if a
+# user has `product.*` keys without the matching `proposals.*` equivalent,
+# nudging them to migrate before the fallback is removed.
+warn_deprecated_product_keys() {
+    [ -f "$STATE_DIR/config.json" ] || return 0
+    [ -f "$STATE_DIR/.product-keys-warned" ] && return 0
+    local found
+    found="$(CONFIG="$STATE_DIR/config.json" python3 -c '
+import json, os
+try:
+    d = json.load(open(os.environ["CONFIG"]))
+    p_old = d.get("product") or {}
+    p_new = d.get("proposals") or {}
+    # Map legacy → canonical key names.
+    aliases = {
+      "enabled": "enabled",
+      "triggerOnDone": "triggerOnDone",
+      "triggerOnNearDone": "triggerOnNearDone",
+      "nearDoneThreshold": "nearDoneThreshold",
+      "mode": "autoApply",
+      "replanOnAccept": "replanOnAccept",
+    }
+    miss = [f"product.{k} → proposals.{v}" for k, v in aliases.items() if k in p_old and v not in p_new]
+    print("\n".join(miss))
+except Exception:
+    pass
+' 2>/dev/null)"
+    if [ -n "$found" ]; then
+        log "WARN: legacy product.* config keys in use without proposals.* equivalents:"
+        printf '%s\n' "$found" | while read -r line; do log "WARN:   $line"; done
+        log "WARN: rename product.* to proposals.* in .harness/config.json — fallback will be removed."
+        : > "$STATE_DIR/.product-keys-warned"
+    fi
+}
+warn_deprecated_product_keys
+
 branch_iso_enabled() {
     [ "$(config_get 'branchIsolation.enabled' 'false')" = "true" ]
 }
