@@ -12008,3 +12008,298 @@ body:has(.h-root) .pc-header nav button:not(.pc-header-cta):hover {
   color: color-mix(in oklab, var(--fg), var(--accent) 16%) !important;
   background: color-mix(in oklab, var(--accent), transparent 84%) !important;
 }
+
+/* Darker dashboard/top-bar contrast restoration: stronger separation, same layout. */
+.h-root {
+  --h-topbar-surface: rgba(6, 14, 24, 0.92);
+  --h-topbar-surface-soft: rgba(8, 18, 31, 0.88);
+  --h-topbar-surface-strong: rgba(10, 23, 38, 0.94);
+  --h-topbar-border: rgba(125, 211, 252, 0.30);
+  --h-topbar-border-strong: rgba(125, 211, 252, 0.46);
+}
+
+.h-header {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(125, 211, 252, 0.12), transparent 31rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.006)),
+    var(--h-topbar-surface) !important;
+  border-bottom-color: rgba(125, 211, 252, 0.22) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+.h-project-card,
+.h-quick-action-row,
+.h-phase-plan-row,
+.h-tabs.h-main-tabs {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.01)),
+    var(--h-topbar-surface-soft) !important;
+}
+
+.h-project,
+.h-project-progress,
+.h-project-count,
+.h-chip,
+.h-decision-chip,
+.h-quick-action-btn,
+.h-phase-plan-actions .h-btn,
+.h-overview-action,
+.h-focus-card,
+.h-top-collapse-btn,
+.h-feature-search,
+.h-feature-project-filter,
+.h-feature-tag-filter,
+.h-feature-mode,
+.h-feature-add {
+  border-color: var(--h-topbar-border) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.016)),
+    var(--h-topbar-surface-strong) !important;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(125, 211, 252, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+}
+
+.h-stat {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.014)),
+    var(--h-topbar-surface-strong) !important;
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(125, 211, 252, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+.h-project-phases .h-phase-item,
+.h-main-tabs .h-tab {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)),
+    rgba(9, 21, 36, 0.90) !important;
+  border-color: rgba(125, 211, 252, 0.26) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 8px 18px rgba(0, 0, 0, 0.16) !important;
+}
+
+.h-project-phases .h-phase-item.active,
+.h-main-tabs .h-tab.on,
+.h-main-tabs .h-tab[aria-selected="true"] {
+  border-color: var(--h-topbar-border-strong) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.18), rgba(125, 211, 252, 0.05)),
+    rgba(8, 20, 34, 0.94) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.075), 0 10px 24px rgba(0, 0, 0, 0.2) !important;
+}
+
+.h-feature-filter {
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--h-feature-filter-tone), transparent 78%), rgba(8, 20, 34, 0.94)),
+    rgba(8, 20, 34, 0.94) !important;
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.22),
+    0 0 0 1px color-mix(in oklab, var(--h-feature-filter-tone), transparent 78%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+.h-feature-filter:hover,
+.h-feature-filter:focus-visible {
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--h-feature-filter-tone), transparent 70%), rgba(8, 20, 34, 0.96)),
+    rgba(8, 20, 34, 0.96) !important;
+}
+
+.h-feature-filter.active {
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--h-feature-filter-tone), transparent 60%), rgba(8, 20, 34, 0.98)),
+    rgba(8, 20, 34, 0.98) !important;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.30),
+    0 0 0 1px color-mix(in oklab, var(--h-feature-filter-tone), transparent 44%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.h-feature-filter strong {
+  background: color-mix(in oklab, var(--h-feature-filter-tone), transparent 78%) !important;
+  border-color: color-mix(in oklab, var(--h-feature-filter-tone), transparent 38%) !important;
+}
+
+/* Top-bar controls adopt the richer feature-filter pill contrast without changing layout. */
+.h-project,
+.h-project-progress,
+.h-project-count,
+.h-project-phases .h-phase-item,
+.h-project-phases .h-phase-open,
+.h-header-side .h-btn,
+.h-phase-plan-row .h-phase-plan-focus,
+.h-phase-plan-row .h-plan-review-banner.compact,
+.h-phase-plan-row .h-plan-review-banner.compact button,
+.h-phase-plan-actions .h-btn,
+.h-decision-chip,
+.h-quick-action-btn {
+  --h-topbar-pill-tone: var(--accent-strong);
+}
+
+.h-project-phases .h-phase-item.phase-staging { --h-topbar-pill-tone: #3b82f6; }
+.h-project-phases .h-phase-item.phase-testing { --h-topbar-pill-tone: #a855f7; }
+.h-project-phases .h-phase-item.phase-production { --h-topbar-pill-tone: #10b981; }
+.h-project-progress,
+.h-project-count.todo {
+  --h-topbar-pill-tone: color-mix(in oklab, var(--fg-dim), white 16%);
+}
+.h-project-count.blocked,
+.h-phase-plan-row .h-plan-review-banner.compact,
+.h-phase-plan-row .h-plan-review-banner.compact button {
+  --h-topbar-pill-tone: var(--warn);
+}
+.h-project-count.passed,
+.h-phase-plan-actions .h-btn.primary {
+  --h-topbar-pill-tone: var(--good);
+}
+.h-phase-plan-actions .h-btn.danger {
+  --h-topbar-pill-tone: var(--bad);
+}
+.h-project,
+.h-project-progress,
+.h-project-count,
+.h-project-phases .h-phase-item,
+.h-project-phases .h-phase-open,
+.h-header-side .h-btn,
+.h-phase-plan-row .h-phase-plan-focus,
+.h-phase-plan-row .h-plan-review-banner.compact,
+.h-phase-plan-row .h-plan-review-banner.compact button,
+.h-phase-plan-actions .h-btn,
+.h-decision-chip,
+.h-quick-action-btn {
+  border-color: color-mix(in oklab, var(--h-topbar-pill-tone), transparent 28%) !important;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--h-topbar-pill-tone), transparent 84%), rgba(8, 20, 34, 0.96)),
+    rgba(8, 20, 34, 0.96) !important;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.20),
+    0 0 0 1px color-mix(in oklab, var(--h-topbar-pill-tone), transparent 82%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+.h-project-progress,
+.h-project-count,
+.h-project-phases .h-phase-open,
+.h-header-side .h-btn,
+.h-phase-plan-row .h-plan-review-banner.compact button,
+.h-phase-plan-actions .h-btn,
+.h-decision-chip {
+  border-radius: 999px !important;
+}
+
+.h-header-side .h-btn:hover,
+.h-header-side .h-btn:focus-visible,
+.h-phase-plan-row .h-plan-review-banner.compact button:hover,
+.h-phase-plan-row .h-plan-review-banner.compact button:focus-visible,
+.h-phase-plan-actions .h-btn:hover,
+.h-phase-plan-actions .h-btn:focus-visible,
+.h-project-phases .h-phase-open:hover,
+.h-project-phases .h-phase-open:focus-visible,
+.h-quick-action-btn:hover,
+.h-quick-action-btn:focus-visible {
+  border-color: color-mix(in oklab, var(--h-topbar-pill-tone), transparent 14%) !important;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--h-topbar-pill-tone), transparent 74%), rgba(8, 20, 34, 0.98)),
+    rgba(8, 20, 34, 0.98) !important;
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.24),
+    0 0 0 1px color-mix(in oklab, var(--h-topbar-pill-tone), transparent 70%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.075) !important;
+}
+
+.h-project-phases .h-phase-item.active,
+.h-header-side .h-btn[aria-pressed="true"],
+.h-phase-plan-actions .h-btn.primary,
+.h-decision-chip {
+  border-color: color-mix(in oklab, var(--h-topbar-pill-tone), transparent 10%) !important;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--h-topbar-pill-tone), transparent 66%), rgba(8, 20, 34, 0.98)),
+    rgba(8, 20, 34, 0.98) !important;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.28),
+    0 0 0 1px color-mix(in oklab, var(--h-topbar-pill-tone), transparent 54%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.h-project-phases .h-phase-open,
+.h-project-progress,
+.h-project-count {
+  color: color-mix(in oklab, var(--h-topbar-pill-tone), white 28%) !important;
+}
+
+.h-phase-plan-row .h-phase-plan-focus strong,
+.h-quick-action-btn span,
+.h-header-side .h-btn,
+.h-phase-plan-actions .h-btn,
+.h-decision-chip strong {
+  color: color-mix(in oklab, var(--fg), white 6%) !important;
+}
+
+.h-phase-plan-row .h-phase-plan-focus .h-focus-title,
+.h-quick-action-btn em,
+.h-quick-action-copy strong {
+  color: color-mix(in oklab, var(--fg-dim), white 22%) !important;
+}
+
+/* Darker queue / inbox / git surfaces restored toward the issues-tab palette. */
+.h-feature-queue-panel > .h-panel-body,
+.h-inbox-shell,
+.h-git-panel {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(125, 211, 252, 0.10), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), rgba(255, 255, 255, 0.008)),
+    rgba(7, 17, 29, 0.84) !important;
+}
+
+.h-feature-toolbar,
+.h-inbox-command,
+.h-git-command,
+.h-git-summary {
+  border-color: rgba(125, 211, 252, 0.22) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012)),
+    rgba(8, 20, 34, 0.92) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+}
+
+.h-inbox-feed,
+.h-git-list {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.012), rgba(255, 255, 255, 0.004)) !important;
+}
+
+.h-feature-row,
+.h-inbox-row,
+.h-git-row {
+  border-color: rgba(125, 211, 252, 0.16) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0.006)),
+    rgba(9, 19, 33, 0.82) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.028) !important;
+}
+
+.h-feature-row:hover,
+.h-feature-row:focus-visible,
+.h-inbox-row:hover,
+.h-inbox-row:focus-visible,
+.h-git-row:hover,
+.h-git-row:focus-visible {
+  border-color: rgba(125, 211, 252, 0.30) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.075), rgba(255, 255, 255, 0.012)),
+    rgba(10, 22, 37, 0.88) !important;
+}
+
+.h-inbox-metric,
+.h-git-summary span {
+  border-color: rgba(125, 211, 252, 0.18) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    rgba(9, 20, 34, 0.90) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+.h-inbox-section-title {
+  background: linear-gradient(180deg, rgba(8, 20, 34, 0.98), rgba(8, 20, 34, 0.90)) !important;
+}
