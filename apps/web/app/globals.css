@@ -61,6 +61,9 @@ code, pre, kbd {
 }
 
 .pc-header {
+  position: sticky;
+  top: 0;
+  z-index: 1300;
   display: flex;
   align-items: center;
   gap: 16px;
