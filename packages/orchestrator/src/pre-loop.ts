@@ -3,8 +3,8 @@
  *
  *   Step 1   — invoke scoper MODE=initial when validation-contract.md or
  *              features.json is missing (fresh-mission setup)
- *   Step 1.5 — invoke plan-gate MODE=plan to challenge scoper output;
- *              exit 7 on VERDICT: reject (legacy alias 'reviewer' still
+ *   Step 1.5 — invoke reviewer MODE=plan to challenge scoper output;
+ *              exit 7 on VERDICT: reject (the formerly-aliased name 'plan-gate'
  *              works via ROLE_ALIASES — see prompt-resolve.ts)
  *   Step 2   — ensure-docs.sh scaffold
  *   Step 3   — post-planner auto-checkpoints (per config.checkpoints.types)
@@ -63,22 +63,16 @@ export async function runPreLoop(
     logger.log('PLAN: existing contract + features found. Skipping scoper.');
   }
 
-  // Step 1.5: PLAN-GATE — challenge the scoper output (idempotent: skips
-  // if plan-review.md already exists). The role was historically called
-  // 'reviewer' but is now 'plan-gate'; resolvePromptFile honors both names
-  // via ROLE_ALIASES, so user configs that still reference `reviewer` keep
-  // working. Config keys also accept both `planGate.enabled` (canonical)
-  // and `planReviewer.enabled` (legacy) for the same reason.
+  // Step 1.5: REVIEWER — challenge the scoper output (idempotent: skips
+  // if plan-review.md already exists). One canonical name now: `reviewer`.
   const planReviewPath = join(ctx.stateDir, 'plan-review.md');
-  const planGateEnabled =
-    configGet<boolean>(cfg, 'planGate.enabled', undefined as unknown as boolean) ??
-    configGet<boolean>(cfg, 'planReviewer.enabled', true);
+  const planGateEnabled = configGet<boolean>(cfg, 'planReviewer.enabled', true);
   if (planGateEnabled === true && !existsSync(planReviewPath)) {
-    logger.log('PLAN-GATE: challenging scoper output');
+    logger.log('REVIEWER: challenging scoper output (MODE=plan)');
     try {
-      await invoke(ctx, 'plan-gate', ['MODE=plan']);
+      await invoke(ctx, 'reviewer', ['MODE=plan']);
     } catch (err) {
-      logger.log(`PLAN-GATE error: ${(err as Error).message}`);
+      logger.log(`REVIEWER error: ${(err as Error).message}`);
     }
     if (existsSync(planReviewPath)) {
       const body = readFileSync(planReviewPath, 'utf8');
@@ -153,7 +147,7 @@ function firePostPlannerCheckpoints(
     const body =
       `# Checkpoint: ${name} (auto, triggerOn=post-planner)\n\n` +
       `Requested at: ${isoNow}\n` +
-      `Trigger: scoper + plan-gate both passed for the first time.\n\n` +
+      `Trigger: scoper + reviewer both passed for the first time.\n\n` +
       'Review the plan in `.harness/features.json` and `.harness/validation-contract.md`.\n\n' +
       '## How to grant\n' +
       `- UI: /api/harness/<slug>/checkpoint/${name}/grant\n` +

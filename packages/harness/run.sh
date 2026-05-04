@@ -694,16 +694,16 @@ review_pending_proposals() {
     # into features.json + validation-contract.md so the next harness loop
     # iteration actually has work to pick up.
     if [ "$accepted_count" -gt 0 ]; then
-        # Canonical key: reviewer.replanOnAccept. Legacy fallback:
-        # product.replanOnAccept (still respected for projects that set it
-        # before the role consolidation). Default false — auto-replan is
-        # destructive (it appends to features.json + the contract).
+        # Default true: accept means accept. The unified MODE=replan path
+        # is non-destructive (delta-merge into the existing queue), so
+        # there's no reason to gate it. Set explicitly to false to opt out.
+        # Legacy product.replanOnAccept is still honored when set.
         local replan_on_accept
         replan_on_accept="$(config_get 'reviewer.replanOnAccept' '')"
         if [ -z "$replan_on_accept" ]; then
-            replan_on_accept="$(config_get 'product.replanOnAccept' 'false')"
+            replan_on_accept="$(config_get 'product.replanOnAccept' 'true')"
         fi
-        if [ "$replan_on_accept" = "true" ]; then
+        if [ "$replan_on_accept" != "false" ]; then
             log "  reviewer: $accepted_count proposal(s) accepted — invoking scoper (MODE=replan)"
             local replan_out
             replan_out="$(invoke scoper "MODE=replan")"
@@ -959,12 +959,18 @@ snapshot_state() {
     # Prunes oldest snapshots beyond config.json → snapshotRetention (default 50).
     local iter_num="$1"
     local ts; ts="$(date +%s)"
-    local snap_dir="$STATE_DIR/snapshots/${ts}-iter-$(printf '%03d' "$iter_num")"
+    local snap_id="${ts}-iter-$(printf '%03d' "$iter_num")"
+    local snap_dir="$STATE_DIR/snapshots/${snap_id}"
     mkdir -p "$snap_dir"
-    [ -f "$STATE_DIR/features.json" ]           && cp "$STATE_DIR/features.json"           "$snap_dir/" || true
     [ -f "$STATE_DIR/validation-contract.md" ]  && cp "$STATE_DIR/validation-contract.md"  "$snap_dir/" || true
     [ -f "$STATE_DIR/supervisor-notes.md" ]     && cp "$STATE_DIR/supervisor-notes.md"     "$snap_dir/" || true
     [ -f "$STATE_DIR/config.json" ]             && cp "$STATE_DIR/config.json"             "$snap_dir/" || true
+
+    # Mirror harness_features rows into harness_shared.snapshot_features
+    # so restore can round-trip the work queue. Best-effort; if the web
+    # tier is unreachable, the snapshot is still useful for FS state.
+    curl -sS -m 5 -o /dev/null -X POST \
+      "http://localhost:3055/api/harness/${HARNESS_SLUG}/snapshots/${snap_id}/record-pg-state" 2>/dev/null || true
 
     # Prune oldest beyond retention limit.
     local retention=50
@@ -1682,21 +1688,29 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
         # Optional: run scoper (proposal mode, formerly the `product` role) to
         # propose next-phase features. The reviewer then auto-approves any
         # proposals it deems appropriate by appending them to SPEC.md.
-        if [ "$(config_get 'product.enabled' 'false')" = "true" ] && [ "$(config_get 'product.triggerOnDone' 'false')" = "true" ]; then
-            if [ -f "$PROJECT_DIR/GOAL.md" ]; then
+        # Proposals after DONE: gated by proposals.enabled (canonical) or
+        # legacy product.enabled. Default false — opt-in flow.
+        proposals_enabled="$(config_get 'proposals.enabled' "$(config_get 'product.enabled' 'false')")"
+        proposals_after_done="$(config_get 'proposals.afterDone' "$(config_get 'product.triggerOnDone' 'false')")"
+        if [ "$proposals_enabled" = "true" ] && [ "$proposals_after_done" = "true" ]; then
+            if [ -f "$PROJECT_DIR/SPEC.md" ]; then
                 mkdir -p "$STATE_DIR/proposals"
-                log "SCOPER starting (triggerOnDone, proposal mode)"
+                log "SCOPER starting (afterDone, proposal mode)"
                 product_out="$(invoke scoper "MODE=proposal")"
                 log "SCOPER: ${product_out:-(no output)}"
-                # Auto-apply via reviewer: judge each pending proposal, accept
-                # the ones the reviewer green-lights. config.product.mode kept
-                # for backward compat: anything other than "propose-only" runs
-                # the reviewer gate.
-                if [ "$(config_get 'product.mode' 'auto-apply')" != "propose-only" ]; then
+                # Auto-apply reviewer-approved unless explicitly opted out.
+                # Legacy: product.mode == 'propose-only' opts out; new key
+                # is proposals.autoApply (default true).
+                auto_apply="$(config_get 'proposals.autoApply' '')"
+                if [ -z "$auto_apply" ]; then
+                    legacy_mode="$(config_get 'product.mode' 'auto-apply')"
+                    [ "$legacy_mode" = "propose-only" ] && auto_apply="false" || auto_apply="true"
+                fi
+                if [ "$auto_apply" != "false" ]; then
                     review_pending_proposals
                 fi
             else
-                log "SCOPER skipped: no GOAL.md in project dir"
+                log "SCOPER skipped: no SPEC.md in project dir"
             fi
         fi
 
@@ -2289,13 +2303,15 @@ except Exception:
     # Cost accounting + cap (config.json → maxCostUsd). Exits 6 if over.
     check_cost_cap
 
-    # Optional: product role trigger when mission is near-done (>= threshold passed).
+    # Optional: scoper proposal trigger when mission is near-done (>= threshold passed).
     # Fires at most once per mission via a sentinel file.
-    if [ "$(config_get 'product.enabled' 'false')" = "true" ] && \
-       [ "$(config_get 'product.triggerOnNearDone' 'true')" = "true" ] && \
-       [ -f "$PROJECT_DIR/GOAL.md" ] && \
+    proposals_enabled="$(config_get 'proposals.enabled' "$(config_get 'product.enabled' 'false')")"
+    near_done_enabled="$(config_get 'proposals.nearDoneEnabled' "$(config_get 'product.triggerOnNearDone' 'true')")"
+    if [ "$proposals_enabled" = "true" ] && \
+       [ "$near_done_enabled" = "true" ] && \
+       [ -f "$PROJECT_DIR/SPEC.md" ] && \
        [ ! -f "$STATE_DIR/.product-near-done-fired" ]; then
-        threshold_pct="$(config_get 'product.nearDoneThreshold' '0.8')"
+        threshold_pct="$(config_get 'proposals.nearDoneThreshold' "$(config_get 'product.nearDoneThreshold' '0.8')")"
         pct_passed="$(STATE_DIR="$STATE_DIR" python3 -c '
 import json, os
 try:
@@ -2314,7 +2330,12 @@ except Exception:
             log "SCOPER starting (near-done threshold $threshold_pct reached, $(printf '%.0f%%' "$(python3 -c "print(float('$pct_passed')*100)")") passed, proposal mode)"
             product_out="$(invoke scoper "MODE=proposal")"
             log "SCOPER: ${product_out:-(no output)}"
-            if [ "$(config_get 'product.mode' 'auto-apply')" != "propose-only" ]; then
+            auto_apply="$(config_get 'proposals.autoApply' '')"
+            if [ -z "$auto_apply" ]; then
+                legacy_mode="$(config_get 'product.mode' 'auto-apply')"
+                [ "$legacy_mode" = "propose-only" ] && auto_apply="false" || auto_apply="true"
+            fi
+            if [ "$auto_apply" != "false" ]; then
                 review_pending_proposals
             fi
             touch "$STATE_DIR/.product-near-done-fired"

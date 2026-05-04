@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { X, ArrowUpRight, CheckCircle, XCircle, Eye, MessageSquarePlus } from 'lucide-react';
+import { useState } from 'react';
+import { Drawer } from 'vaul';
+import { X, ArrowUpRight, MessageSquarePlus } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Issue, IssueStatus } from './types';
+import type { Issue } from './types';
 
 async function call(slug: string, id: string, action: string, body: any) {
   const res = await fetch(`/api/harness/${slug}/issues/${id}/${action}`, {
@@ -17,41 +18,16 @@ async function call(slug: string, id: string, action: string, body: any) {
 }
 
 export function IssueDetail({
-  slug, issue, onClose, onChange, onRefreshAll,
+  slug, issue, onClose, onChange,
 }: {
   slug: string;
   issue: Issue;
   onClose: () => void;
   onChange: (next: Issue) => void;
-  onRefreshAll: () => void;
 }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const updateStatus = async (status: IssueStatus) => {
-    setBusy(true);
-    try {
-      const next = await call(slug, issue.id, 'update', { status });
-      onChange(next);
-    } catch (e: any) { toast.error(`Update failed: ${e.message ?? e}`); }
-    finally { setBusy(false); }
-  };
-
-  const promote = async () => {
-    setBusy(true);
-    try {
-      const res = await call(slug, issue.id, 'promote', {});
-      onChange(res.issue);
-      onRefreshAll();
-    } catch (e: any) { toast.error(`Promote failed: ${e.message ?? e}`); }
-    finally { setBusy(false); }
-  };
 
   const addNote = async () => {
     if (!note.trim()) return;
@@ -65,18 +41,26 @@ export function IssueDetail({
   };
 
   return (
-    <div role="dialog" aria-modal="true" onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
-      zIndex: 60, display: 'flex', justifyContent: 'flex-end',
-    }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: 'min(720px, 72vw)', height: '100%',
-        background: 'var(--bg-2)', borderLeft: '1px solid var(--border)',
-        display: 'flex', flexDirection: 'column',
-      }}>
+    <Drawer.Root open onOpenChange={(o) => { if (!o) onClose(); }} direction="right">
+      <Drawer.Portal>
+        <Drawer.Overlay style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.65)' }} />
+        <Drawer.Content
+          aria-describedby={undefined}
+          style={{
+            position: 'fixed', top: 0, right: 0, bottom: 0,
+            width: 'min(720px, 72vw)',
+            background: '#17131f', borderLeft: '1px solid var(--border)',
+            display: 'flex', flexDirection: 'column',
+            zIndex: 61, outline: 'none',
+          }}
+        >
+          <Drawer.Title style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}>
+            Issue {issue.id}
+          </Drawer.Title>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
           borderBottom: '1px solid var(--border)', flexShrink: 0,
+          background: '#17131f',
         }}>
           <span className={`h-issue-sev sev-${issue.severity}`}>{issue.severity}</span>
           <span className="h-issue-id">{issue.id}</span>
@@ -89,7 +73,7 @@ export function IssueDetail({
           </button>
         </div>
 
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px', background: '#17131f' }}>
           <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px', color: 'var(--fg)' }}>
             {issue.title}
           </h2>
@@ -135,6 +119,8 @@ export function IssueDetail({
         <div style={{
           borderTop: '1px solid var(--border)', padding: '10px 16px',
           display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', flexShrink: 0,
+          background: '#17131f',
+          boxShadow: '0 -12px 28px rgba(0,0,0,0.18)',
         }}>
           <input
             type="text"
@@ -151,39 +137,26 @@ export function IssueDetail({
           <button className="h-btn ghost" disabled={busy || !note.trim()} onClick={addNote}>
             <MessageSquarePlus size={13} /> note
           </button>
-          <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-          {!issue.linkedFeatureId && issue.status !== 'closed' && issue.status !== 'wontfix' && (
-            <button className="h-btn primary" disabled={busy} onClick={promote}>
-              <ArrowUpRight size={13} /> promote to feature
-            </button>
-          )}
-          {issue.status !== 'acknowledged' && issue.status !== 'closed' && (
-            <button className="h-btn ghost" disabled={busy} onClick={() => updateStatus('acknowledged')}>
-              <Eye size={13} /> acknowledge
-            </button>
-          )}
-          {issue.status !== 'closed' && (
-            <button className="h-btn ghost" disabled={busy} onClick={() => updateStatus('closed')}>
-              <CheckCircle size={13} /> close
-            </button>
-          )}
-          {issue.status !== 'wontfix' && (
-            <button className="h-btn ghost" disabled={busy} onClick={() => updateStatus('wontfix')}>
-              <XCircle size={13} /> won't fix
-            </button>
-          )}
         </div>
-      </div>
-    </div>
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
   );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div style={{
+      marginBottom: 14,
+      padding: '11px 12px 10px',
+      border: '1px solid var(--border)',
+      borderRadius: 12,
+      background: '#1c1824',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
+    }}>
       <div style={{
         fontSize: 10, fontWeight: 600, letterSpacing: 0.7,
-        textTransform: 'uppercase', color: 'var(--fg-dim)', marginBottom: 6,
+        textTransform: 'uppercase', color: 'var(--fg-dim)', marginBottom: 8,
       }}>{title}</div>
       {children}
     </div>

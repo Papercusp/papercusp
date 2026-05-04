@@ -1,12 +1,16 @@
 export * from './schema';
 export {
   getOrgPg,
+  getOrgPgApp,
   getHarnessPg,
   _resetForTests,
   type OrgPgHandle,
 } from './connection';
+export { withWorkspace, withWorkspaceQuery } from './workspace-context';
+export type { WorkspaceTxOptions } from './workspace-context';
 export {
   getLegacyClient,
+  withWorkspaceLegacy,
   type LegacyClient,
   type LegacyPrepared,
 } from './legacy-shim';

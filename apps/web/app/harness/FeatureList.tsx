@@ -1,9 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Tooltip } from './Tooltip';
+import { Select } from './Select';
+import { Checkbox } from './Checkbox';
+import { openFeatureChat } from './PiTerminalsDock';
 import { COLORS, FONTS, RADIUS, SIZES, STATUS, STATUS_ORDER, BOARD_COLUMN_ORDER, HarnessStatus, getStatusMeta } from './theme';
 import { StatusPill, IdPill, IconButton, KbdHint } from './primitives';
+import { RichGrid, type ColumnDef } from '@restart/grid-core';
 
+const OperatorNoteForm = dynamic(() => import('./OperatorNoteForm'), { ssr: false });
 interface Feature {
   id: string;
   title: string;
@@ -36,17 +43,21 @@ const BUILT_IN_VIEWS: SavedView[] = [
 ];
 
 interface Props {
+  slug: string;
   features: Feature[];
   activeFeatureId: string | null;
   onSelect: (f: Feature) => void;
   onReset: (id: string) => void;
+  onEdit: (f: Feature) => void;
+  onOpenInPi?: (id: string) => void;
+  onSwitchToPi?: () => void;
   onAdd: () => void;
   onBatchReset: (ids: string[]) => void;
   onBatchDelete: (ids: string[]) => void;
 }
 
 export default function FeatureList({
-  features, activeFeatureId, onSelect, onReset, onAdd, onBatchReset, onBatchDelete,
+  slug, features, activeFeatureId, onSelect, onReset, onEdit, onOpenInPi, onSwitchToPi, onAdd, onBatchReset, onBatchDelete,
 }: Props) {
   const [mode, setMode] = useState<ViewMode>('list');
   const [viewId, setViewId] = useState<string>('all');
@@ -165,6 +176,10 @@ export default function FeatureList({
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* Header: filters + search + view mode + actions */}
       <div className="h-feature-toolbar">
+        <span className="h-feature-toolbar-title">
+          Feature Queue <strong>{features.length}</strong>
+        </span>
+
         <div className="h-feature-viewbar" role="tablist" aria-label="Feature filters">
           {BUILT_IN_VIEWS.map((v) => {
             const active = v.id === viewId;
@@ -189,84 +204,79 @@ export default function FeatureList({
         </div>
 
         <div className="h-feature-toolrow">
-          <div className="h-feature-search">
-            <span className="h-feature-search-icon" aria-hidden="true">⌕</span>
-            <input
-              ref={searchRef}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search features…"
-              className="h-feature-search-input"
-              aria-label="Search features"
+          <div className="h-feature-primary-filters">
+            <Select
+              value={projectFilter}
+              onChange={setProjectFilter}
+              ariaLabel="Filter by project"
+              triggerClassName="h-feature-project-filter"
+              contentStyle={{ minWidth: 160 }}
+              options={[
+                { value: 'all', label: 'All projects' },
+                { value: '__none', label: 'No project' },
+                ...projectOptions.map((pid) => ({ value: pid, label: pid })),
+              ]}
             />
-            {search && (
-              <button
-                type="button"
-                className="h-feature-search-clear"
-                onClick={() => { setSearch(''); searchRef.current?.focus(); }}
-                aria-label="Clear feature search"
-              >
-                ×
-              </button>
-            )}
+
+            <input
+              value={tagFilter}
+              onChange={(e) => setTagFilter(e.target.value)}
+              placeholder="Tag…"
+              aria-label="Filter by tag"
+              className="h-feature-tag-filter"
+            />
+
+            <div className="h-feature-search">
+              <span className="h-feature-search-icon" aria-hidden="true">⌕</span>
+              <input
+                ref={searchRef}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search features…"
+                className="h-feature-search-input"
+                aria-label="Search features"
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="h-feature-search-clear"
+                  onClick={() => { setSearch(''); searchRef.current?.focus(); }}
+                  aria-label="Clear feature search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           </div>
 
-          <button type="button" className="h-feature-add" onClick={onAdd}>
-            + new
-          </button>
+          <div className="h-feature-secondary-tools">
+            <Tooltip label="Filtered features">
+              <span className="h-feature-result-count">
+                {filtered.length}/{features.length} shown
+              </span>
+            </Tooltip>
 
-          {/* Item 7: project filter dropdown (small fixed list) */}
-          {projectOptions.length > 0 && (
-            <select
-              value={projectFilter}
-              onChange={(e) => setProjectFilter(e.target.value)}
-              aria-label="Filter by project"
-              style={{
-                fontSize: SIZES.xs, padding: '4px 8px', borderRadius: RADIUS.sm,
-                border: `1px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.text,
-              }}
-            >
-              <option value="all">All projects</option>
-              <option value="__none">No project</option>
-              {projectOptions.map((pid) => (
-                <option key={pid} value={pid}>{pid}</option>
-              ))}
-            </select>
-          )}
+            <div className="h-feature-mode" role="group" aria-label="View mode">
+              {(['list', 'board'] as ViewMode[]).map((m) => {
+                const active = mode === m;
+                return (
+                  <Tooltip key={m} label={`${m} view`}>
+                    <button
+                      className={`h-feature-mode-btn${active ? ' active' : ''}`}
+                      onClick={() => setMode(m)}
+                      aria-pressed={active}
+                      type="button"
+                    >
+                      {m}
+                    </button>
+                  </Tooltip>
+                );
+              })}
+            </div>
 
-          {/* Item 7: tag search (free-form, can grow infinitely) */}
-          <input
-            value={tagFilter}
-            onChange={(e) => setTagFilter(e.target.value)}
-            placeholder="Tag…"
-            aria-label="Filter by tag"
-            style={{
-              fontSize: SIZES.xs, padding: '4px 8px', borderRadius: RADIUS.sm,
-              border: `1px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.text,
-              width: 90,
-            }}
-          />
-
-          <span className="h-feature-result-count" title="Filtered features">
-            {filtered.length}/{features.length} shown
-          </span>
-
-          <div className="h-feature-mode" role="group" aria-label="View mode">
-            {(['list', 'board'] as ViewMode[]).map((m) => {
-              const active = mode === m;
-              return (
-                <button
-                  key={m}
-                  className={`h-feature-mode-btn${active ? ' active' : ''}`}
-                  onClick={() => setMode(m)}
-                  title={`${m} view`}
-                  aria-pressed={active}
-                  type="button"
-                >
-                  {m}
-                </button>
-              );
-            })}
+            <button type="button" className="h-feature-add" onClick={onAdd}>
+              + new
+            </button>
           </div>
         </div>
       </div>
@@ -296,12 +306,17 @@ export default function FeatureList({
           </div>
         ) : mode === 'list' ? (
           <ListView
+            slug={slug}
             features={filtered}
             focusIdx={focusIdx}
             activeId={activeFeatureId}
             selected={selected}
             onSelect={onSelect}
             onToggleSelect={(id) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
+            onReset={onReset}
+            onEdit={onEdit}
+            onOpenInPi={onOpenInPi}
+            onSwitchToPi={onSwitchToPi}
             compact={isCompact}
           />
         ) : (
@@ -335,146 +350,282 @@ export default function FeatureList({
 // ─── List view ─────────────────────────────────────────────────────
 
 function ListView({
-  features, focusIdx, activeId, selected, onSelect, onToggleSelect, compact = false,
+  slug, features, focusIdx, activeId, selected, onSelect, onToggleSelect, onReset, onEdit, onOpenInPi, onSwitchToPi, compact = false,
 }: {
+  slug: string;
   features: Feature[];
   focusIdx: number;
   activeId: string | null;
   selected: Set<string>;
   onSelect: (f: Feature) => void;
   onToggleSelect: (id: string) => void;
+  onReset: (id: string) => void;
+  onEdit: (f: Feature) => void;
+  onOpenInPi?: (id: string) => void;
+  onSwitchToPi?: () => void;
   compact?: boolean;
 }) {
-  return (
-    <div>
-      {features.map((f, i) => {
-        const isFocus = i === focusIdx;
-        const isActive = f.id === activeId;
-        const isSel = selected.has(f.id);
-        return (
-          <div
-            key={f.id}
-            data-feat-idx={i}
-            className={`h-feature-row status-${f.status}${compact ? ' compact' : ''}${isFocus ? ' is-focused' : ''}${isActive ? ' is-active' : ''}${isSel ? ' is-selected' : ''}`}
-            role="button"
-            tabIndex={0}
-            aria-selected={isActive || isFocus}
-            aria-label={`${f.id}: ${f.summary || f.title} (${getStatusMeta(f.status).label})`}
-            onClick={() => onSelect(f)}
-            onKeyDown={(e) => {
-              if ((e.target as HTMLElement).tagName === 'INPUT') return;
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelect(f);
-              }
-            }}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: compact ? 'auto minmax(0, 1fr) auto' : 'auto auto minmax(0, 1fr) auto auto',
-              alignItems: 'center',
-              gap: compact ? 8 : 10,
-              padding: compact ? '8px 10px' : '6px 10px',
-              borderLeft: `2px solid ${isFocus ? COLORS.accent : isActive ? COLORS.accent : 'transparent'}`,
-              background: isSel ? 'rgba(94,106,210,0.10)' : (isActive ? COLORS.surfaceHover : 'transparent'),
-              borderBottom: `1px solid ${COLORS.borderSubtle}`,
-              cursor: 'pointer',
-              minHeight: compact ? 52 : 34,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={isSel}
-              onClick={(e) => e.stopPropagation()}
-              onChange={() => onToggleSelect(f.id)}
-              style={{ accentColor: COLORS.accent, margin: 0, cursor: 'pointer' }}
+  const [noteFeatureId, setNoteFeatureId] = useState<string | null>(null);
+  const [chatBusyId, setChatBusyId] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<{ id: string; message: string } | null>(null);
+
+  const startChat = useCallback(async (row: Feature) => {
+    if (!slug) return;
+    setChatBusyId(row.id);
+    setChatError(null);
+    try {
+      const res = await openFeatureChat({
+        slug,
+        role: 'worker',
+        featureId: row.id,
+        title: row.summary || row.title,
+      });
+      if ('error' in res) {
+        setNoteFeatureId(row.id);
+        setChatError({ id: row.id, message: res.error });
+        return;
+      }
+      onSwitchToPi?.();
+    } finally {
+      setChatBusyId(null);
+    }
+  }, [slug, onSwitchToPi]);
+  const columns: ColumnDef<Feature>[] = useMemo(() => {
+    const cols: ColumnDef<Feature>[] = [
+      {
+        key: 'select',
+        header: '',
+        width: 0.18,
+        align: 'center',
+        render: ({ row }) => (
+          <span onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex' }}>
+            <Checkbox
+              checked={selected.has(row.id)}
+              onChange={() => onToggleSelect(row.id)}
+              ariaLabel={`Select ${row.id}`}
             />
-            {!compact && <StatusPill status={f.status} showLabel={false} size="xs" />}
-            <div style={{
-              display: 'flex',
-              alignItems: compact ? 'stretch' : 'center',
-              flexDirection: compact ? 'column' : 'row',
-              gap: compact ? 4 : 10,
-              minWidth: 0,
-            }}>
-              {compact ? (
-                <>
-                  <span
-                    title={f.title}
-                    style={{
-                      color: COLORS.text,
-                      fontSize: SIZES.sm,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >{f.summary || f.title}</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, color: COLORS.textDim, fontSize: SIZES.xs }}>
-                    <StatusPill status={f.status} showLabel={false} size="xs" />
-                    <span style={{ fontFamily: FONTS.mono, color: COLORS.textMuted, flexShrink: 0 }}>{f.id}</span>
-                    {f.claims && f.claims.length > 0 && <span style={{ flexShrink: 0 }}>{f.claims.length} claims</span>}
-                    {f.attempts > 0 && <span style={{ marginLeft: 'auto', fontFamily: FONTS.mono, color: f.attempts >= 3 ? STATUS.blocked.text : COLORS.textDim }}>×{f.attempts}</span>}
-                  </span>
-                </>
-              ) : (
-                <>
+          </span>
+        ),
+      },
+    ];
+    if (!compact) {
+      cols.push({
+        key: 'statusDot',
+        header: '',
+        width: 0.18,
+        align: 'center',
+        render: ({ row }) => <StatusPill status={row.status} showLabel={false} size="xs" />,
+      });
+      cols.push({
+        key: 'id',
+        header: 'ID',
+        width: 0.7,
+        render: ({ row }) => (
+          <span style={{
+            fontFamily: FONTS.mono,
+            fontSize: SIZES.xs,
+            color: COLORS.textMuted,
+            letterSpacing: '0.02em',
+          }}>{row.id}</span>
+        ),
+      });
+    }
+    cols.push({
+      key: 'title',
+      header: compact ? 'Feature' : 'Title',
+      width: compact ? 4 : 3.15,
+      render: ({ row }) => {
+        const claimsCount = row.claims?.length ?? 0;
+        if (compact) {
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, width: '100%' }}>
+              <span className="h-feature-row-title" title={row.title} style={{
+                color: COLORS.text, fontSize: SIZES.sm,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>{row.summary || row.title}</span>
+              <span className="h-feature-row-meta" style={{ display: 'flex', alignItems: 'center', gap: 7, color: COLORS.textDim, fontSize: SIZES.xs }}>
+                <StatusPill status={row.status} showLabel={false} size="xs" />
+                <span className="h-feature-row-id" style={{ fontFamily: FONTS.mono, color: COLORS.textMuted }}>{row.id}</span>
+                {claimsCount > 0 && <span>{claimsCount} claims</span>}
+                {row.attempts > 0 && (
                   <span style={{
+                    marginLeft: 'auto',
                     fontFamily: FONTS.mono,
-                    fontSize: SIZES.xs,
-                    color: COLORS.textMuted,
-                    letterSpacing: '0.02em',
-                    flexShrink: 0,
-                  }}>{f.id}</span>
-                  <span
-                    title={f.title}
-                    style={{
-                      color: COLORS.text,
-                      fontSize: SIZES.sm,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >{f.summary || f.title}</span>
-                  {f.claims && f.claims.length > 0 && (
-                    <span style={{
-                      fontSize: '0.65rem',
-                      color: COLORS.textDim,
-                      background: COLORS.bg,
-                      padding: '1px 6px',
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${COLORS.borderSubtle}`,
-                      flexShrink: 0,
-                    }}>
-                      {f.claims.length} claims
-                    </span>
-                  )}
-                </>
-              )}
+                    color: row.attempts >= 3 ? STATUS.blocked.text : COLORS.textDim,
+                  }}>×{row.attempts}</span>
+                )}
+              </span>
             </div>
-            {!compact && (
-              <span style={{
-                fontFamily: FONTS.mono,
-                fontSize: SIZES.xs,
-                color: f.attempts >= 3 ? STATUS.blocked.text : COLORS.textDim,
-                textAlign: 'right',
-                minWidth: 20,
-              }}>{f.attempts}</span>
+          );
+        }
+        return (
+          <span className="h-feature-row-main" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, minWidth: 0, width: '100%' }}>
+            <span className="h-feature-row-title" title={row.title} style={{
+              color: COLORS.text, fontSize: SIZES.sm,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{row.summary || row.title}</span>
+            {claimsCount > 0 && (
+              <span className="h-feature-claims-chip" style={{
+                fontSize: '0.65rem', color: COLORS.textDim, background: COLORS.bg,
+                padding: '1px 6px', borderRadius: RADIUS.sm,
+                border: `1px solid ${COLORS.borderSubtle}`, flexShrink: 0,
+              }}>{claimsCount} claims</span>
             )}
-            <span style={{
-              fontSize: SIZES.xs,
-              color: getStatusMeta(f.status).text,
-              whiteSpace: 'nowrap',
-              minWidth: compact ? 62 : 80,
-              textAlign: 'right',
-              fontWeight: compact ? 600 : 400,
-            }}>{getStatusMeta(f.status).label}</span>
-          </div>
+          </span>
         );
-      })}
-    </div>
+      },
+    });
+    if (!compact) {
+      cols.push({
+        key: 'attempts',
+        header: 'Try',
+        width: 0.4,
+        align: 'right',
+        render: ({ row }) => (
+          <span style={{
+            fontFamily: FONTS.mono,
+            fontSize: SIZES.xs,
+            color: row.attempts >= 3 ? STATUS.blocked.text : COLORS.textDim,
+          }}>{row.attempts}</span>
+        ),
+      });
+    }
+    cols.push({
+      key: 'status',
+      header: 'Status',
+      width: compact ? 0.7 : 0.78,
+      align: 'right',
+      render: ({ row }) => (
+        <span className="h-feature-status-text">{getStatusMeta(row.status).label}</span>
+      ),
+    });
+    if (!compact) {
+      cols.push({
+        key: 'actions',
+        header: '',
+        width: 2.08,
+        align: 'right',
+        render: ({ row }) => {
+          const noteOpen = noteFeatureId === row.id;
+          const chatBusy = chatBusyId === row.id;
+          return (
+            <div className="h-feature-row-actions" onClick={(e) => e.stopPropagation()}>
+              <Tooltip label="Steer this feature — expands an inline note area for the worker">
+                <button
+                  type="button"
+                  className={`h-feature-row-action${noteOpen ? ' active' : ''}`}
+                  aria-expanded={noteOpen}
+                  onClick={() => setNoteFeatureId(noteOpen ? null : row.id)}
+                >
+                  steer
+                </button>
+              </Tooltip>
+              <Tooltip label="Open a worker chat for this feature in consoles">
+                <button
+                  type="button"
+                  className="h-feature-row-action"
+                  disabled={chatBusy}
+                  onClick={() => void startChat(row)}
+                >
+                  {chatBusy ? 'chat…' : 'chat'}
+                </button>
+              </Tooltip>
+              <Tooltip label="Open this feature in the Pi console lane">
+                <button type="button" className="h-feature-row-action" onClick={() => onOpenInPi?.(row.id)}>
+                  open in pi
+                </button>
+              </Tooltip>
+              <Tooltip label="Edit this feature">
+                <button type="button" className="h-feature-row-action" onClick={() => onEdit(row)}>
+                  edit
+                </button>
+              </Tooltip>
+              <Tooltip label="Reset this feature to todo">
+                <button type="button" className="h-feature-row-action danger" onClick={() => onReset(row.id)}>
+                  reset
+                </button>
+              </Tooltip>
+            </div>
+          );
+        },
+      });
+    }
+    return cols;
+  }, [chatBusyId, compact, noteFeatureId, onEdit, onOpenInPi, onReset, onToggleSelect, selected, startChat]);
+
+  // Map per-row aria/data attributes + per-row background to mirror the
+  // pre-RichGrid behaviour (focus ring on keyboard focus, active row tint,
+  // selected row bg).
+  const richRowProps = useMemo(() => {
+    return (ctx: { row: Feature; rowIndex: number }) => {
+      const f = ctx.row;
+      const i = ctx.rowIndex;
+      const isFocus = i === focusIdx;
+      const isActive = f.id === activeId;
+      const isSel = selected.has(f.id);
+      const isNoteOpen = f.id === noteFeatureId;
+      const cls =
+        `h-feature-row status-${f.status}` +
+        (compact ? ' compact' : '') +
+        (isFocus ? ' is-focused' : '') +
+        (isActive ? ' is-active' : '') +
+        (isSel ? ' is-selected' : '') +
+        (isNoteOpen ? ' is-steering' : '');
+      const collapseOnLeave = isNoteOpen ? {
+        onPointerLeave: () => setNoteFeatureId(null),
+        onMouseOut: (e: any) => {
+          const next = e.relatedTarget as Node | null;
+          if (!next || !e.currentTarget.contains(next)) setNoteFeatureId(null);
+        },
+      } : {};
+      return {
+        className: cls,
+        tabIndex: 0,
+        'aria-label': `${f.id}: ${f.summary || f.title} (${getStatusMeta(f.status).label})`,
+        'data-feat-idx': i,
+        ...collapseOnLeave,
+      };
+    };
+  }, [activeId, compact, focusIdx, noteFeatureId, selected]);
+
+  const richGetRowBg = useMemo(
+    () => (row: Feature, _idx: number, _isSelected: boolean) => {
+      const isActive = row.id === activeId;
+      const isSel = selected.has(row.id);
+      if (isSel) return 'rgba(94,106,210,0.10)';
+      if (isActive) return COLORS.surfaceHover;
+      return 'transparent';
+    },
+    [activeId, selected],
+  );
+
+  return (
+    <RichGrid<Feature>
+      rows={features}
+      columns={columns}
+      getRowId={(f) => f.id}
+      onRowClick={(f) => onSelect(f)}
+      rowProps={richRowProps}
+      getRowBg={richGetRowBg}
+      expandedRowKey={noteFeatureId}
+      renderExpandedRow={(row) => (
+        <div className="h-feature-inline-note" onClick={(e) => e.stopPropagation()}>
+          <div className="h-feature-inline-note-head">
+            <strong>Steer · {row.id}</strong>
+            <button type="button" onClick={() => setNoteFeatureId(null)}>close</button>
+          </div>
+          {chatError?.id === row.id && (
+            <div className="h-feature-inline-note-error">chat failed: {chatError.message}</div>
+          )}
+          <OperatorNoteForm slug={slug} featureId={row.id} />
+        </div>
+      )}
+      inline
+    />
   );
 }
 
-// ─── Board view ────────────────────────────────────────────────────
+// ─── Board view ──────────────────────────────────────────────────
 
 function BoardView({
   features, activeId, selected, onSelect, onToggleSelect,
@@ -548,13 +699,13 @@ function BoardView({
                         marginBottom: 2,
                         display: 'flex', alignItems: 'center', gap: 4,
                       }}>
-                        <input
-                          type="checkbox"
-                          checked={isSel}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={() => onToggleSelect(f.id)}
-                          style={{ accentColor: COLORS.accent, margin: 0 }}
-                        />
+                        <span onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex' }}>
+                          <Checkbox
+                            checked={isSel}
+                            onChange={() => onToggleSelect(f.id)}
+                            ariaLabel={`Select ${f.id}`}
+                          />
+                        </span>
                         {f.id}
                         {f.attempts > 0 && (
                           <span style={{

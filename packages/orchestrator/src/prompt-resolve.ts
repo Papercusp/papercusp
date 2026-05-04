@@ -8,13 +8,13 @@
  *
  * Returns the first path that exists. Returns null if none of them do.
  *
- * Role aliasing: a small map of legacy role names → canonical role names.
- * When code (or a user's config.json) references the legacy name, we walk
- * the canonical name's candidates FIRST, then fall through to the legacy
- * name's candidates so user-supplied overrides at the legacy path keep
- * working during the deprecation period.
+ * Role aliasing: a map of legacy role names → canonical role names.
+ * When code (or a user's config.json) references the legacy name, we
+ * walk the canonical name's candidates FIRST, then fall through to the
+ * legacy name's candidates so user-supplied overrides at the legacy
+ * path keep working during the deprecation period.
  *
- *   reviewer → plan-gate    (renamed for clarity vs. validator)
+ * Currently empty — `plan-gate` was retired in favor of `reviewer`.
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -29,13 +29,13 @@ export interface PromptResolveContext {
 }
 
 /**
- * Legacy role name → canonical role name. When resolving, we try the
- * canonical name first and fall back to the legacy name for backwards
- * compatibility with user configs that still reference the old name.
+ * Legacy role name → canonical role name. The codebase consolidated on
+ * `reviewer` (run.sh invokes it; identity/reviewer.md exists). The old
+ * `plan-gate` prompt was removed in favor of one canonical name.
+ *
+ * This map exists for future renames; today no aliases are active.
  */
-export const ROLE_ALIASES: Record<string, string> = {
-  reviewer: 'plan-gate',
-};
+export const ROLE_ALIASES: Record<string, string> = {};
 
 function candidatesFor(ctx: PromptResolveContext, role: string): string[] {
   const candidates: string[] = [];

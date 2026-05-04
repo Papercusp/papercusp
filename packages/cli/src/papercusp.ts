@@ -10,6 +10,8 @@
  *   run [project-slug]                Delegate to the harness substrate's run.sh.
  *   scaffold-schema <slug>            Provision the per-harness Postgres schema.
  *   doctor                            Check prerequisites (Postgres, claude, env).
+ *   plugin <subcmd>                   Plugin management (install/enable/disable/...).
+ *   snapshot <subcmd>                 Snapshot management (create/list/info/install).
  *   help                              Show this help.
  *
  * Storage layout:
@@ -258,6 +260,23 @@ async function cmdDoctor(): Promise<void> {
   } else {
     console.log(`  ${red('✗')} substrate missing run.sh @ ${substrate}`);
     ok = false;
+  }
+
+  // ── Snapshot binaries ────────────────────────────────────────────────
+  console.log('');
+  console.log(bold('snapshot binaries'));
+  try {
+    const { probeAll } = await import('@papercusp/export-state');
+    for (const r of await probeAll()) {
+      if (r.found) {
+        console.log(`  ${green('✓')} ${r.name} ${dim(r.version ?? '')}`);
+      } else {
+        console.log(`  ${yellow('!')} ${r.name} not on PATH`);
+        if (r.hint) console.log(`    ${dim(r.hint)}`);
+      }
+    }
+  } catch (e: unknown) {
+    console.log(`  ${dim('snapshot binary probe failed: ' + (e instanceof Error ? e.message : String(e)))}`);
   }
 
   // ── Plugin ecosystem health ──────────────────────────────────────────

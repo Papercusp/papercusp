@@ -746,10 +746,6 @@ export default function HarnessDashboard() {
       {/* ── Mission header ─────────────────────────────────── */}
       <div className={`h-header${status?.alive ? ' alive' : ''}`}>
         <div className="h-header-main">
-          <div className="h-brand">
-            <span className="h-brand-kicker"><Activity size={12} /> autonomous workspace</span>
-            <span className="h-title">Harness Control</span>
-          </div>
 
           <div className="h-project-card">
             <div className="h-project-topline">

@@ -116,7 +116,7 @@ export default function PhaseTabs({ slug, activePhase, onChange }: Props) {
         return (
           <div
             key={p}
-            className={`h-phase-item${isActive ? ' active' : ''}${exists ? '' : ' disabled'}`}
+            className={`h-phase-item phase-${p}${isActive ? ' active' : ''}${exists ? '' : ' disabled'}`}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '4px 10px',

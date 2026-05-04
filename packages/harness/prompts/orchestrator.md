@@ -269,7 +269,7 @@ In addition to `ESCALATE`, you may emit a **named checkpoint** when the mission 
 
 **When to emit:**
 - `config.json → checkpoints.types[]` lists configured checkpoint types with a `name`, `description`, and `triggerDoc` describing when to fire each.
-- Common types: `architecture-locked` (after scoper + plan-gate both pass), `db-schema-approved` (when a feature first claims a schema migration), `pre-ship` (before emitting DONE).
+- Common types: `architecture-locked` (after scoper + reviewer both pass), `db-schema-approved` (when a feature first claims a schema migration), `pre-ship` (before emitting DONE).
 - Only emit a checkpoint type **once per mission** — once granted, `.harness/checkpoint-<name>.md` is deleted; don't re-emit.
 
 **Syntax:**
@@ -279,7 +279,7 @@ CHECKPOINT <name> <optional context message>
 
 Examples:
 ```
-CHECKPOINT architecture-locked Scoper + plan-gate both approved; schema includes 3 new Drizzle tables.
+CHECKPOINT architecture-locked Scoper + reviewer both approved; schema includes 3 new Drizzle tables.
 CHECKPOINT pre-ship 37/37 features passed. Awaiting release approval.
 ```
 

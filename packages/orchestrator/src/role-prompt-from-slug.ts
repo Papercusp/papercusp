@@ -139,6 +139,23 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
   }
   for (const e of opts.extras ?? []) extras.push(e);
 
+  // Expert instance context. When the role is `expert` and the featureId
+  // looks like an EXP- id, load the instance's identity.json + SPEC.md and
+  // expose them as runtime-context bullets. Lets the chat surface address
+  // a specific expert without any new plumbing — the chat path passes the
+  // EXP-id as featureId, the assembler does the rest.
+  if (opts.role === 'expert' && opts.featureId && /^EXP-\d{3,}$/.test(opts.featureId)) {
+    const expertDir = join(stateDir, 'experts', opts.featureId);
+    if (existsSync(expertDir)) {
+      const identityPath = join(expertDir, 'identity.json');
+      const specPath = join(expertDir, 'SPEC.md');
+      extras.push(`EXPERT_ID=${opts.featureId}`);
+      extras.push(`EXPERT_DIR=${expertDir}`);
+      if (existsSync(identityPath)) extras.push(`EXPERT_IDENTITY=${identityPath}`);
+      if (existsSync(specPath)) extras.push(`EXPERT_SPEC=${specPath}`);
+    }
+  }
+
   let text = buildPrompt({
     role: opts.role,
     promptFile,

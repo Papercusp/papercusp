@@ -107,3 +107,24 @@ export function getLegacyClient(slug?: string): LegacyClient {
   const handle = slug ? getHarnessPg(slug) : getOrgPg();
   return makeClient(handle.sql);
 }
+
+/**
+ * Run `fn` against a legacy client whose connection has `app.workspace_id`
+ * set. The callback receives a `LegacyClient` bound to a transaction; all
+ * `.prepare(...).all/get/run` calls inside the callback see the GUC and
+ * therefore RLS predicates pass for the active workspace.
+ *
+ * Use this when retrofitting older `getLegacyClient(slug).prepare(...)` code
+ * paths that need workspace-aware harness_shared.* reads after 010-RLS lands.
+ */
+export async function withWorkspaceLegacy<T>(
+  slug: string | undefined,
+  workspaceId: string,
+  fn: (db: LegacyClient) => Promise<T>,
+): Promise<T> {
+  const handle = slug ? getHarnessPg(slug) : getOrgPg();
+  return (handle.sql as Sql).begin(async (txTag) => {
+    await txTag`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    return await fn(makeClient(txTag));
+  }) as Promise<T>;
+}

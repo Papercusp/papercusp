@@ -28,8 +28,13 @@ CREATE TABLE IF NOT EXISTS {{SCHEMA}}.harness_features (
   taken_by TEXT,
   taken_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ,
+  -- Deprecation: set when status='deprecated' to record why the feature
+  -- was retired (typically: SPEC.md no longer references it). Code is
+  -- not auto-removed; this is a metadata-only retirement.
+  deprecation_reason TEXT,
   PRIMARY KEY (harness_slug, feature_id)
 );
+ALTER TABLE {{SCHEMA}}.harness_features ADD COLUMN IF NOT EXISTS deprecation_reason TEXT;
 CREATE INDEX IF NOT EXISTS hf_status_idx  ON {{SCHEMA}}.harness_features(harness_slug, status);
 CREATE INDEX IF NOT EXISTS hf_project_idx ON {{SCHEMA}}.harness_features(project_id);
 CREATE INDEX IF NOT EXISTS hf_review_idx  ON {{SCHEMA}}.harness_features(needs_human_review);
@@ -105,11 +110,19 @@ CREATE TABLE IF NOT EXISTS {{SCHEMA}}.harness_proposals (
   review_verdict TEXT,                      -- 'accept' | 'reject' | 'defer' | NULL
   review_summary TEXT,
   reviewed_at BIGINT,
+  applied_at BIGINT,                        -- when applied to SPEC.md (epoch ms); NULL if pending/rejected
+  rejected_at BIGINT,                       -- when rejected (epoch ms); NULL if pending/applied
   ts BIGINT NOT NULL,                       -- file mtime (epoch ms)
   created_ts BIGINT NOT NULL,
   updated_ts BIGINT NOT NULL,
   PRIMARY KEY (harness_slug, proposal_id)
 );
+-- Idempotent column adds for harnesses created before applied_at /
+-- rejected_at landed (the CREATE TABLE IF NOT EXISTS above is no-op
+-- when the table already exists, so the columns wouldn't otherwise
+-- get added on re-template).
+ALTER TABLE {{SCHEMA}}.harness_proposals ADD COLUMN IF NOT EXISTS applied_at BIGINT;
+ALTER TABLE {{SCHEMA}}.harness_proposals ADD COLUMN IF NOT EXISTS rejected_at BIGINT;
 CREATE INDEX IF NOT EXISTS hp_status_idx   ON {{SCHEMA}}.harness_proposals(harness_slug, status);
 CREATE INDEX IF NOT EXISTS hp_verdict_idx  ON {{SCHEMA}}.harness_proposals(harness_slug, review_verdict);
 CREATE INDEX IF NOT EXISTS hp_ts_idx       ON {{SCHEMA}}.harness_proposals(harness_slug, ts DESC);

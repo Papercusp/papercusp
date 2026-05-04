@@ -27,16 +27,27 @@
       "import": "./src/role-prompt-from-slug.ts",
       "default": "./src/role-prompt-from-slug.ts"
     },
+    "./decision-parse": {
+      "types": "./src/decision-parse.ts",
+      "import": "./src/decision-parse.ts",
+      "default": "./src/decision-parse.ts"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
     "papercusp-orchestrate": "./bin/run.ts"
   },
   "scripts": {
-    "test": "node --test --import tsx src/**/*.test.ts"
+    "test": "vitest run",
+    "test:legacy": "node --test --import tsx src/**/*.test.ts",
+    "test:slow": "vitest run --config vitest.slow.config.ts --testTimeout 600000"
   },
   "dependencies": {
     "@papercusp/harness": "*",
     "tsx": "^4.7.0"
+  },
+  "devDependencies": {
+    "@papercusp/test-config": "*",
+    "vitest": "^4.1.4"
   }
 }

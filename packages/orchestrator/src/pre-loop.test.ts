@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import {
   chmodSync,
@@ -30,10 +30,8 @@ function makeFixture(setup: (fx: Omit<Fixture, 'cleanup'>) => void = () => {}): 
   mkdirSync(join(harnessDir, 'prompts'), { recursive: true });
   mkdirSync(join(harnessDir, 'identity'), { recursive: true });
   mkdirSync(logDir, { recursive: true });
-  // Stub the prompts pre-loop might call. 'reviewer' kept here to also
-  // exercise the ROLE_ALIASES fallback path — pre-loop now invokes
-  // 'plan-gate' but the legacy 'reviewer.md' file should still resolve.
-  for (const role of ['scoper', 'plan-gate', 'reviewer']) {
+  // Stub the prompts pre-loop will call.
+  for (const role of ['scoper', 'reviewer']) {
     writeFileSync(join(harnessDir, 'prompts', `${role}.md`), `# ${role}`);
   }
   const fx = { harnessDir, projectDir, stateDir, logDir };

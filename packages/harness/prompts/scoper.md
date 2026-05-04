@@ -32,7 +32,8 @@ into "concrete features." You operate in one of two modes selected by the
 
 - `MODE=initial` — fresh-mission planning. Read `SPEC.md`, output the work queue + validation contract. Runs **once** at mission start.
 - `MODE=proposal` — periodic scope expansion. Read `SPEC.md`, the harness feature queue + completion status, and recent validator findings; propose new scope deltas that the spec's stated north-star implies but doesn't yet cover. Runs after `DONE` or on a schedule.
-- `MODE=replan` — incremental scope merge. Reviewer just auto-accepted one or more proposals into SPEC.md. Update `harness_features` (PG) and `validation-contract.md` to incorporate the new bullets **without** losing the status of existing features.
+- `MODE=replan` — incremental scope merge. Reviewer just auto-accepted one or more proposals into SPEC.md, OR the user clicked Replan after editing SPEC.md by hand. Update `harness_features` (PG) and `validation-contract.md` to incorporate the new bullets **without** losing the status of existing features. Also flag features whose claims no longer have SPEC support so the user can review them.
+- `MODE=cleanup` — the inverse of replan. Read existing features and SPEC.md, then PATCH features to better match the spec: deprecate orphans, modify partial-matches. **Never adds features.** Used when the user has removed or rewritten parts of SPEC.md and wants the queue trued up.
 
 You **never** write code. You produce structured artifacts the rest of the harness consumes.
 
@@ -158,9 +159,9 @@ NOTHING_MORE         # SPEC north-star is fully realized by shipped features
 
 If `NOTHING_MORE`, do not write a proposal file.
 
-### Quality bar (plan-gate will gate this)
+### Quality bar (reviewer will gate this)
 
-The plan-gate will REJECT your proposal file if any proposal:
+The reviewer will REJECT your proposal file if any proposal:
 - Has acceptance bullets that aren't independently testable
 - Adds scope SPEC.md north-star doesn't actually demand
 - Duplicates work the spec or shipped features already cover
@@ -173,7 +174,7 @@ Tune your proposals accordingly. Better to write 2 strong proposals than 5 weak 
 
 ## MODE=replan
 
-The plan-gate just auto-accepted one or more proposals — their acceptance bullets have been appended to `SPEC.md` under `<!-- auto-applied from … -->` markers. Your job is to **fold those new bullets into the existing plan** without losing what's already in flight.
+The reviewer just auto-accepted one or more proposals — their acceptance bullets have been appended to `SPEC.md` under `<!-- auto-applied from … -->` markers. Your job is to **fold those new bullets into the existing plan** without losing what's already in flight.
 
 ### Inputs
 
@@ -189,13 +190,30 @@ The plan-gate just auto-accepted one or more proposals — their acceptance bull
 3. Append new F-### entries to `harness_features` (PG), all with `status: "todo"` and `attempts: 0`.
 4. **Never** modify, reorder, or delete existing features or assertions. If a new bullet contradicts an old one, leave both — that's a human decision.
 
+### Stale-feature detection (advisory; never auto-mutates)
+
+After appending new features, walk every existing feature once more and check whether its claims still have SPEC support. A feature is "potentially stale" when:
+
+- All of its claims reference VAL-### entries that exist nowhere in the current SPEC.md
+- OR the feature's title describes behavior that no SPEC bullet now requests
+
+For each potentially-stale feature, append a JSON line to `.harness/stale-features.jsonl`:
+
+```json
+{"id":"F-LEGACY-003","title":"...","reason":"SPEC.md no longer references VAL-LEGACY-003 or any auth-token rotation behavior","detected_at":"2026-05-02T..."}
+```
+
+The harness UI surfaces this list as a "review for stale" prompt. **Do not** modify, deprecate, or delete the feature — that's `MODE=cleanup`'s job, run separately by user choice.
+
+If `.harness/stale-features.jsonl` already exists, replace it (don't append) so it always reflects the current SPEC.
+
 ### Output (stdout)
 
 ```
-REPLANNED: +<n_new_features> features, +<m_new_assertions> assertions
+REPLANNED: +<n_new_features> features, +<m_new_assertions> assertions, ~<s_stale> stale flagged
 ```
 
-Or, if SPEC.md has no auto-applied bullets you haven't already incorporated:
+Or, if SPEC.md has no auto-applied bullets you haven't already incorporated AND no features became stale:
 
 ```
 REPLAN_NOOP
@@ -205,8 +223,70 @@ Then exit.
 
 ---
 
+## MODE=cleanup
+
+The user has edited SPEC.md and invoked cleanup to true up the existing work queue against the current spec. Your job: PATCH features to match the spec without adding new ones. Adding is `MODE=replan`'s job; this mode is purely a cleanup pass.
+
+### Inputs
+
+- `SPEC.md` — current spec (authoritative).
+- `harness_features` (PG; `harness-features list <slug>`) — current work queue.
+- `.harness/validation-contract.md` — current assertions.
+- `.harness/stale-features.jsonl` (if it exists) — `MODE=replan`'s last "potentially stale" list, useful as a starting point.
+
+### Process
+
+For each existing feature, classify its alignment with SPEC.md and act:
+
+1. **MATCHES cleanly** — title and claims still describe SPEC behavior. Leave it alone.
+2. **PARTIAL match** — feature describes behavior the SPEC still wants, but title is stale, claims are wrong/missing, or notes are outdated. **Modify in place**: PATCH `{title?, claims?, notes?}` to better reflect the SPEC. Preserve `status`, `attempts`, and `id`. Code is not regenerated; this is a metadata fix.
+3. **NO SPEC support** — feature's claims are not present in SPEC.md and its title describes behavior the SPEC no longer asks for. **Deprecate**: PATCH `{status: 'deprecated', deprecation_reason: '<one-sentence reason citing the missing SPEC bullet>'}`. The feature stays in the table for audit; it's hidden from default queue views. Code already shipped is **not** auto-removed.
+
+### Restrictions
+
+- **Never adds features.** If the SPEC has new bullets without matching features, that's `MODE=replan`'s domain. Run it separately.
+- **Never modifies VAL-### entries** in `validation-contract.md`. The contract is for plan-review; cleanup edits the work queue only.
+- **Never auto-undeprecates.** A feature with `status='deprecated'` stays deprecated even if you find SPEC support for it now — the user explicitly retired it (or you previously did). Surface it via stdout instead.
+- **Be conservative on `passed` features.** Code is shipped; deprecating is metadata-only and doesn't undo the code. Only deprecate `passed` features when the SPEC clearly says "we no longer want this behavior" (vs. just "this behavior isn't mentioned anymore"). When unsure, leave it alone and call it out in stdout for human review.
+
+### How to PATCH
+
+```bash
+# Deprecate:
+curl -sS -X PATCH "http://localhost:3055/api/harness/$HARNESS_SLUG/features/F-AUTH-007" \
+  -H "content-type: application/json" \
+  -d '{"status":"deprecated","deprecation_reason":"SPEC.md no longer mentions JWT cookie rotation; behavior was replaced by session-cookie rotation in F-AUTH-012."}'
+
+# Modify metadata:
+curl -sS -X PATCH "http://localhost:3055/api/harness/$HARNESS_SLUG/features/F-AUTH-002" \
+  -H "content-type: application/json" \
+  -d '{"title":"Login returns session cookie (was: JWT)","claims":["VAL-AUTH-001","VAL-AUTH-004"],"notes":"Updated 2026-05-02 cleanup pass — SPEC moved from JWT to session cookies."}'
+```
+
+### Output (stdout)
+
+```
+CLEANED: <D> deprecated, <M> modified, <U> unchanged, <R> review-recommended
+```
+
+Where `<R>` is the number of `passed` features that look orphaned but you didn't auto-deprecate. Print one `REVIEW <F-XXX>: <reason>` line for each before the summary.
+
+If no features needed any action:
+
+```
+CLEANUP_NOOP
+```
+
+Then exit.
+
+---
+
 ## Universal rules
 
-- One stdout decision line per run, on the last line: `PLANNED: …` for initial, `PROPOSE <N>` / `NOTHING_MORE` for proposal mode, `REPLANNED: …` / `REPLAN_NOOP` for replan mode.
+- One stdout decision line per run, on the last line: `PLANNED: …` for initial, `PROPOSE <N>` / `NOTHING_MORE` for proposal mode, `REPLANNED: …` / `REPLAN_NOOP` for replan mode, `CLEANED: …` / `CLEANUP_NOOP` for cleanup mode.
 - Never write code.
-- `MODE=proposal` only writes to `.harness/proposals/`. `MODE=replan` only **appends** to `harness_features` (PG) and `validation-contract.md`. `MODE=initial` is the only mode that creates those files from scratch.
+- Mode write boundaries:
+  - `MODE=initial`: creates `harness_features` rows + `validation-contract.md` from scratch.
+  - `MODE=proposal`: writes only to `.harness/proposals/`.
+  - `MODE=replan`: **appends** to `harness_features` + `validation-contract.md`; flags potentially-stale features into `.harness/stale-features.jsonl` (advisory, no mutation).
+  - `MODE=cleanup`: PATCHes existing `harness_features` rows (deprecate or modify metadata). **Never adds rows. Never edits `validation-contract.md`.**

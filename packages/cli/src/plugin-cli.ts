@@ -67,6 +67,31 @@ interface PluginManifest {
   configSchema?: Record<string, unknown>;
   uiSchema?: Record<string, unknown>;
   defaultConfig?: Record<string, unknown>;
+  /** §16 — restrict plugin to specific template kinds (e.g. ["coding"]). */
+  requiresTemplateKinds?: string[];
+}
+
+/**
+ * Resolve a harness instance's templateKind. Source order:
+ *   1. ~/.papercusp/harnesses/<slug>/papercusp.json `templateKind` field
+ *   2. Same manifest's `topology: "multi"` ⇒ "org"
+ *   3. ~/.papercusp/registry.json projects[].harness_kind ("coding" | "org" | "department")
+ *   4. Default "coding" (back-compat for harnesses without any kind hint)
+ */
+async function harnessTemplateKind(harness: string): Promise<string> {
+  const m = await readJson<Record<string, unknown>>(
+    join(HARNESSES_DIR, harness, 'papercusp.json'),
+  );
+  if (m) {
+    if (typeof m.templateKind === 'string') return m.templateKind;
+    if (m.topology === 'multi') return 'org';
+  }
+  const reg = await readJson<{
+    projects?: Array<{ slug: string; harness_kind?: string }>;
+  }>(join(PAPERCUSP_ROOT, 'registry.json'));
+  const project = reg?.projects?.find((p) => p.slug === harness);
+  if (project?.harness_kind) return project.harness_kind;
+  return 'coding';
 }
 
 interface EnabledPluginsFile {
@@ -450,6 +475,16 @@ export async function cmdPluginEnable(args: string[]): Promise<void> {
   }
   if (manifest.kind && manifest.kind !== 'plugin') {
     die(`plugin enable: ${slug} has kind="${manifest.kind}", not "plugin"`);
+  }
+
+  if (manifest.requiresTemplateKinds && manifest.requiresTemplateKinds.length > 0) {
+    const kind = await harnessTemplateKind(harness);
+    if (!manifest.requiresTemplateKinds.includes(kind)) {
+      die(
+        `plugin enable: ${slug} requires templateKinds=[${manifest.requiresTemplateKinds.join(', ')}]; ` +
+          `harness "${harness}" is kind="${kind}"`,
+      );
+    }
   }
 
   const enabled = await loadEnabledFile(harness);
@@ -892,10 +927,10 @@ export async function cmdPluginInvoke(args: string[]): Promise<void> {
 
   // Run in-process. tsx (the CLI launcher) loads .ts files transparently.
   const { ServerActionRegistry, ActionRegistryError } = await import(
-    '../../../../../packages/papercusp-plugin-loader/src/actions.ts'
+    '../../../../../packages/plugin-loader/src/actions.ts'
   );
   const { InMemoryAuditWriter } = await import(
-    '../../../../../packages/papercusp-plugin-loader/src/audit.ts'
+    '../../../../../packages/plugin-loader/src/audit.ts'
   );
   const mod = await import(entry);
   const plugin = (mod as any).default ?? mod;

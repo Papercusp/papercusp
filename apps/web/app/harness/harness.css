@@ -494,6 +494,226 @@
 }
 .h-md th { background: var(--bg-3); font-weight: 600; }
 
+/* Base sizing for the per-tab panel container. Without this, panels
+   whose content exceeds the available viewport space would overflow
+   past the bottom of the page with no scrollbar — .h-root has a fixed
+   calc(100vh - chrome) height, so growth has nowhere to go. */
+.h-main-shell {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.h-main-shell > * {
+  min-height: 0;
+}
+
+/* Summary tab reader polish: keep the changelog dense, but easier to scan. */
+.h-main-shell.embed > .h-md {
+  scroll-padding-block: 18px;
+  --h-summary-measure: min(100%, 760px);
+  --h-summary-body-inset: 14px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--accent), transparent 62%) transparent;
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+}
+
+.h-main-shell.embed > .h-md::selection,
+.h-main-shell.embed > .h-md *::selection {
+  background: color-mix(in oklab, var(--accent), transparent 74%);
+  color: var(--fg);
+}
+
+.h-main-shell.embed > .h-md > :first-child {
+  margin-top: 0;
+}
+
+.h-main-shell.embed > .h-md h2,
+.h-main-shell.embed > .h-md p,
+.h-main-shell.embed > .h-md ul,
+.h-main-shell.embed > .h-md ol,
+.h-main-shell.embed > .h-md blockquote,
+.h-main-shell.embed > .h-md pre,
+.h-main-shell.embed > .h-md table,
+.h-main-shell.embed > .h-md hr {
+  max-width: var(--h-summary-measure);
+}
+
+.h-main-shell.embed > .h-md h2 {
+  margin-top: 22px;
+  margin-bottom: 8px;
+  color: color-mix(in oklab, var(--accent), white 14%);
+  line-height: 1.35;
+  letter-spacing: 0.005em;
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+  padding-left: 12px;
+  padding-block: 2px 3px;
+  border-left: 2px solid color-mix(in oklab, var(--accent), transparent 36%);
+  border-radius: 8px;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--accent), transparent 92%), transparent 78%);
+  box-shadow: inset 8px 0 18px -18px color-mix(in oklab, var(--accent), white 24%);
+}
+
+.h-main-shell.embed > .h-md hr + h2 {
+  margin-top: 0;
+}
+
+.h-main-shell.embed > .h-md p {
+  margin: 8px 0 0;
+  color: color-mix(in oklab, var(--fg), var(--fg-dim) 18%);
+  line-height: 1.68;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
+  padding-left: var(--h-summary-body-inset);
+}
+
+.h-main-shell.embed > .h-md ul,
+.h-main-shell.embed > .h-md ol {
+  box-sizing: border-box;
+  padding-left: calc(var(--h-summary-body-inset) + 22px);
+}
+
+.h-main-shell.embed > .h-md blockquote,
+.h-main-shell.embed > .h-md pre,
+.h-main-shell.embed > .h-md table {
+  margin-left: var(--h-summary-body-inset);
+  max-width: calc(760px - var(--h-summary-body-inset));
+  width: calc(100% - var(--h-summary-body-inset));
+  box-sizing: border-box;
+}
+
+.h-main-shell.embed > .h-md li {
+  margin-block: 4px;
+  padding-left: 2px;
+}
+
+.h-main-shell.embed > .h-md li::marker {
+  color: color-mix(in oklab, var(--accent), white 8%);
+}
+
+.h-main-shell.embed > .h-md .h-fid-chip {
+  min-height: 19px;
+  padding-inline: 7px;
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  white-space: nowrap;
+}
+
+.h-main-shell.embed > .h-md .h-fid-chip:hover {
+  text-decoration: none;
+}
+
+.h-main-shell.embed > .h-md::-webkit-scrollbar {
+  width: 10px;
+}
+
+.h-main-shell.embed > .h-md::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: color-mix(in oklab, var(--accent), transparent 62%);
+}
+
+.h-main-shell.embed > .h-md::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.h-main-shell.embed > .h-md hr {
+  border: 0;
+  height: 1px;
+  margin: 16px 0 18px;
+  margin-left: var(--h-summary-body-inset);
+  width: calc(100% - var(--h-summary-body-inset));
+  max-width: calc(760px - var(--h-summary-body-inset));
+  box-sizing: border-box;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent), transparent 55%),
+    color-mix(in oklab, var(--border), transparent 12%) 38%,
+    transparent 100%
+  );
+}
+
+.h-main-shell.embed > .h-md code {
+  border: 1px solid color-mix(in oklab, var(--border), transparent 28%);
+  border-radius: 5px;
+}
+
+.h-main-shell.embed > .h-md :not(pre) > code {
+  color: color-mix(in oklab, var(--counter), white 8%);
+  background: color-mix(in oklab, var(--bg-3), var(--accent) 8%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+  white-space: nowrap;
+}
+
+.h-main-shell.embed > .h-md pre {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--accent), transparent 66%) transparent;
+}
+
+.h-main-shell.embed > .h-md pre::-webkit-scrollbar {
+  height: 8px;
+}
+
+.h-main-shell.embed > .h-md pre::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: color-mix(in oklab, var(--accent), transparent 66%);
+}
+
+.h-main-shell.embed > .h-md a:not(.h-fid-chip) {
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  transition: color var(--dur-fast) var(--ease-out), text-decoration-color var(--dur-fast) var(--ease-out);
+}
+
+.h-main-shell.embed > .h-md a:not(.h-fid-chip):hover {
+  color: color-mix(in oklab, var(--accent), white 18%);
+}
+
+.h-main-shell.embed > .h-md a:focus-visible,
+.h-main-shell.embed > .h-md .h-fid-chip:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent), white 10%);
+  outline-offset: 2px;
+  text-decoration: none;
+}
+
+@media (max-width: 760px) {
+  .h-main-shell.embed > .h-md {
+    --h-summary-body-inset: 0px;
+  }
+
+  .h-main-shell.embed > .h-md h2 {
+    margin-top: 18px;
+    padding-left: 10px;
+    line-height: 1.32;
+  }
+
+  .h-main-shell.embed > .h-md p {
+    line-height: 1.62;
+    padding-left: 0;
+  }
+
+  .h-main-shell.embed > .h-md :not(pre) > code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .h-main-shell.embed > .h-md .h-fid-chip {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* ── JSON viewer theme override ─────────────────────────────── */
 .h-json {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -819,6 +1039,10 @@
   flex-shrink: 0;
 }
 
+/* The "open" affordance badge — appears on hover. Renamed from the
+   bare `h-issue-open` class (which collided with the row's
+   `h-issue-{status}` class when status === 'open' and made entire rows
+   transparent + display:none). */
 .h-issue-open-affordance {
   opacity: 0;
   transform: translateX(-2px);
@@ -868,7 +1092,6 @@
 .h-issue-status.st-fixing       { background: color-mix(in oklab, var(--info), transparent 82%); color: var(--info); border-color: color-mix(in oklab, var(--info), transparent 60%); }
 .h-issue-status.st-closed       { background: color-mix(in oklab, var(--good), transparent 82%); color: var(--good); border-color: color-mix(in oklab, var(--good), transparent 60%); }
 .h-issue-status.st-wontfix      { background: color-mix(in oklab, var(--fg-dim), transparent 88%); color: var(--fg-dim); border-color: color-mix(in oklab, var(--fg-dim), transparent 70%); text-decoration: line-through; }
-.h-issue-status.st-passed       { background: color-mix(in oklab, var(--good), transparent 78%); color: var(--good); border-color: color-mix(in oklab, var(--good), transparent 55%); }
 
 .h-issue-pre {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -2339,6 +2562,11 @@
 }
 
 .h-cmd {
+  position: fixed !important;
+  top: 12vh;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 101 !important;
   width: min(700px, 92vw);
   max-height: 72vh;
   overflow: hidden;
@@ -2346,8 +2574,10 @@
   flex-direction: column;
   border: 1px solid color-mix(in oklab, var(--border), white 12%);
   border-radius: 18px;
-  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 7%), color-mix(in oklab, var(--bg-2), black 3%));
-  box-shadow: 0 34px 90px rgba(0,0,0,0.58), inset 0 1px 0 rgba(255,255,255,0.045);
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 7%), color-mix(in oklab, var(--bg-2), black 3%)),
+    var(--bg);
+  box-shadow: 0 34px 90px rgba(0,0,0,0.72), inset 0 1px 0 rgba(255,255,255,0.045);
 }
 
 .h-cmd-inputbar {
@@ -3940,12 +4170,9 @@
    their normal useful size instead of being squeezed under the Papercup
    tabs/header chrome. */
 .papercup-route .h-root {
-  /* Fill the iframe viewport. The papercup tab bar above .h-root measures
-     ~116px at standalone desktop widths but wraps to ~132px when the
-     iframe is narrower (e.g. embedded in /papercup inside admin shell
-     with the git history sidebar). Subtract the wrapped height so the
-     embed case fits without scroll; the standalone case gets a small
-     gap which is acceptable. Floor at 720px for very short viewports. */
+  /* Fill the iframe viewport (papercup tab bar is ~92px above .h-root)
+     so the harness fits without forcing a page scroll. Floor at 720px
+     for very short viewports so the inner panels stay usable. */
   height: calc(100dvh - 132px);
   min-height: 720px;
 }
@@ -6905,379 +7132,4879 @@
     display: none;
   }
 }
+/* ── Radix Tabs → existing `.on` visual states ───────────────────────────── */
+.h-inbox-filter[data-state="active"] {
+  color: var(--fg);
+  border-color: color-mix(in oklab, var(--accent), transparent 48%);
+}
+.h-proposal-filter[data-state="active"] {
+  color: var(--fg);
+  border-color: color-mix(in oklab, var(--accent), transparent 45%);
+  background: color-mix(in oklab, var(--accent), transparent 90%);
+}
+.h-proposal-filter.status-pending[data-state="active"] {
+  border-color: color-mix(in oklab, var(--warn), transparent 50%);
+  background: color-mix(in oklab, var(--warn), transparent 91%);
+}
+.h-proposal-filter.status-applied[data-state="active"] {
+  border-color: color-mix(in oklab, var(--good), transparent 54%);
+  background: color-mix(in oklab, var(--good), transparent 92%);
+}
+.h-proposal-filter.status-rejected[data-state="active"] {
+  border-color: color-mix(in oklab, var(--bad), transparent 56%);
+  background: color-mix(in oklab, var(--bad), transparent 93%);
+}
+.h-bsfull-sub[data-state="active"] {
+  background: var(--bg-3);
+  color: var(--fg);
+  border-color: var(--border);
+}
+/* Outer HarnessDashboard tabs render content imperatively (no Tabs.Content),
+   so Radix sets aria-selected but not data-state=active. Match aria-selected. */
+.h-tab[aria-selected="true"] {
+  color: var(--fg);
+  background: var(--bg-3);
+}
 
-/* Papercusp harness polish: richer workspace rail and calmer panel chrome without changing behavior. */
+/* ── cmdk → existing .h-cmd-* mappings ──────────────────────────────────── */
+.h-cmd-row[data-selected="true"] {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.h-cmd-group [cmdk-group-heading] {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+  padding: 8px 14px 4px;
+}
+.h-cmd-group:not(:first-child) [cmdk-group-heading] {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.h-cmd-group[hidden] {
+  display: none;
+}
+
+/* ── Radix Select hover/highlight ───────────────────────────────────────── */
+.h-select-item[data-highlighted] {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+
+/* Compact harness restoration: match the prior dense layout while keeping Radix-backed controls. */
+body:has(.h-top-collapse-inline) main {
+  z-index: 70;
+}
+.h-root {
+  position: relative;
+}
+.h-header {
+  position: relative;
+  align-items: center !important;
+  gap: 10px !important;
+  min-height: 0 !important;
+  padding: 8px 16px 6px !important;
+}
+.h-top-collapse-btn.h-top-collapse-inline {
+  position: fixed !important;
+  top: 57px !important;
+  left: 50% !important;
+  z-index: 1000 !important;
+  transform: translate(-50%, -50%) !important;
+  width: auto !important;
+  height: 23px !important;
+  min-height: 23px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 11px !important;
+  border-radius: 999px !important;
+  white-space: nowrap !important;
+  background: color-mix(in oklab, var(--bg-3), white 2%) !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.04) !important;
+}
+.h-header-main {
+  flex: 1 1 auto !important;
+  grid-template-columns: minmax(128px, 168px) minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+}
+.h-brand {
+  gap: 2px !important;
+}
+.h-brand-kicker {
+  font-size: 9px !important;
+  letter-spacing: 0.1em !important;
+}
+.h-title {
+  font-size: 14px !important;
+  letter-spacing: -0.01em !important;
+}
+.h-project-card {
+  flex: 1 1 auto !important;
+  gap: 4px !important;
+  padding: 6px 8px !important;
+  border-radius: 10px !important;
+  min-width: 0 !important;
+}
+.h-project-topline,
+.h-project-meta {
+  justify-content: flex-start !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+.h-project-topline {
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  min-height: 28px !important;
+  scrollbar-width: none;
+}
+.h-project-topline::-webkit-scrollbar {
+  display: none;
+}
+.h-project-label,
+.h-project-phases .h-phase-label {
+  display: none !important;
+}
+.h-project-phases {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+}
+.h-project-phases .h-phase-strip {
+  flex-wrap: nowrap !important;
+  gap: 4px !important;
+  padding: 0 !important;
+  border-bottom: 0 !important;
+  background: transparent !important;
+}
+.h-project-phases .h-phase-item {
+  flex: 0 0 auto !important;
+  min-height: 26px !important;
+  padding: 2px 7px !important;
+  gap: 4px !important;
+  border-radius: 7px !important;
+  font-size: 10px !important;
+}
+.h-project-phases .h-phase-dot {
+  width: 6px !important;
+  height: 6px !important;
+}
+.h-project-phases .h-phase-meta,
+.h-project-phases .h-phase-cost,
+.h-project-phases .h-phase-open {
+  font-size: 9px !important;
+}
+.h-project-topline-statuses {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+.h-project-topline-statuses .h-overview-pulse,
+.h-project-topline-statuses .h-overview-lanes {
+  flex: 0 0 auto !important;
+  width: fit-content !important;
+  min-width: 0 !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  padding: 0 8px !important;
+  border-radius: 8px !important;
+}
+.h-project-pulse .h-pulse-feed {
+  min-height: 24px !important;
+}
+.h-project-pulse .h-pulse-title,
+.h-running-head span {
+  font-size: 9px !important;
+}
+.h-running-head {
+  gap: 5px !important;
+  margin: 0 !important;
+}
+.h-running-lanes {
+  display: inline-flex !important;
+  gap: 4px !important;
+}
+.h-running-lane {
+  min-height: 20px !important;
+  padding: 1px 6px !important;
+  font-size: 10px !important;
+}
+.h-project-badges {
+  flex: 0 0 auto !important;
+  margin-left: auto !important;
+}
+.h-project {
+  height: 30px !important;
+  min-height: 30px !important;
+  border-radius: 9px !important;
+}
+.h-project-meta {
+  flex-wrap: nowrap !important;
+}
+.h-project-path {
+  flex: 1 1 auto !important;
+  font-size: 10.5px !important;
+}
+.h-project-meta-status {
+  margin-left: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+.h-project-count {
+  display: inline-flex !important;
+  align-items: baseline !important;
+  gap: 3px !important;
+  padding: 1px 6px !important;
+  border-radius: 999px !important;
+  border: 1px solid color-mix(in oklab, var(--border), transparent 28%) !important;
+  font-size: 10px !important;
+  color: var(--fg-dim) !important;
+}
+.h-progress-rail {
+  display: none !important;
+}
+.h-header-side {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  align-items: flex-end !important;
+  gap: 5px !important;
+}
+.h-stats {
+  flex-wrap: nowrap !important;
+  gap: 5px !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+}
+.h-stat {
+  min-width: 0 !important;
+  height: 30px !important;
+  padding: 3px 8px !important;
+  border-radius: 9px !important;
+}
+.h-stat-label {
+  font-size: 8.5px !important;
+}
+.h-stat-value {
+  font-size: 12px !important;
+}
+.h-phase-plan-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  min-height: 36px !important;
+  padding: 3px 16px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  flex-wrap: nowrap !important;
+  scrollbar-width: none;
+}
+.h-phase-plan-row::-webkit-scrollbar {
+  display: none;
+}
+.h-phase-plan-row .h-phase-plan-focus {
+  flex: 0 0 330px !important;
+  max-width: 430px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  display: inline-flex !important;
+  grid-template-rows: none !important;
+  align-items: center !important;
+  gap: 6px !important;
+  overflow: hidden !important;
+  padding: 0 10px !important;
+}
+.h-phase-plan-row .h-phase-plan-focus .h-overline,
+.h-phase-plan-row .h-phase-plan-focus strong,
+.h-phase-plan-row .h-phase-plan-focus .h-focus-title {
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+.h-phase-plan-row .h-phase-plan-focus .h-focus-title {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+}
+.h-phase-plan-row .h-phase-plan-review,
+.h-phase-plan-row .h-plan-review-banner.compact {
+  flex: 0 0 auto !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  margin: 0 !important;
+}
+.h-phase-plan-row .h-plan-review-banner.compact {
+  min-width: 272px !important;
+  max-width: 360px !important;
+  overflow: hidden !important;
+}
+.h-phase-plan-actions {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  margin-left: auto !important;
+}
+.h-phase-plan-actions .h-btn {
+  min-height: 30px !important;
+  height: 30px !important;
+  padding: 0 9px !important;
+}
+.h-phase-plan-decision {
+  flex: 0 0 auto !important;
+  max-width: 320px !important;
+}
+.h-mission-overview {
+  display: none !important;
+}
 .h-tabs.h-main-tabs {
-  margin: 10px 24px 0;
-  padding: 8px 12px 0;
-  border: 1px solid color-mix(in oklab, var(--border), white 8%);
-  border-bottom: 0;
-  border-radius: 16px 16px 0 0;
-  background: linear-gradient(180deg, color-mix(in oklab, var(--bg), white 5%), color-mix(in oklab, var(--bg), transparent 0%));
-  box-shadow: 0 14px 32px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.025);
-  backdrop-filter: blur(14px);
-  mask-image: none;
+  margin: 0 !important;
+  padding: 5px 16px 0 !important;
+  border-radius: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
 }
-
 .h-main-tabs .h-tab {
-  min-height: 40px;
-  padding: 10px 15px 11px;
-  border-radius: 12px 12px 0 0;
-  border: 1px solid transparent;
+  min-height: 28px !important;
+  padding: 4px 10px 5px !important;
+  border-radius: 8px 8px 0 0 !important;
+}
+.h-feature-queue-panel > .h-panel-head {
+  display: none !important;
+}
+.h-feature-queue-panel > .h-panel-body {
+  overflow: hidden !important;
+}
+.h-feature-toolbar {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  padding: 7px 10px !important;
+  scrollbar-width: none;
+}
+.h-feature-toolbar::-webkit-scrollbar {
+  display: none;
+}
+.h-feature-toolbar-title {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in oklab, var(--border), white 6%);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--bg-2), white 3%);
+  color: color-mix(in oklab, var(--fg-dim), white 20%);
+  font-size: 10.5px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.h-feature-toolbar-title strong {
+  color: var(--fg);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+.h-feature-viewbar {
+  flex: 0 0 auto !important;
+  padding: 0 !important;
+  gap: 3px !important;
+  mask-image: none !important;
+}
+.h-feature-toolrow {
+  flex: 1 0 auto !important;
+  width: auto !important;
+  min-width: max-content !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  grid-template-columns: none !important;
+}
+.h-feature-primary-filters,
+.h-feature-secondary-tools {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+  min-width: 0 !important;
+}
+.h-feature-primary-filters {
+  flex: 1 1 auto !important;
+}
+.h-feature-secondary-tools {
+  flex: 0 0 auto !important;
+}
+.h-feature-project-filter {
+  flex: 0 0 128px;
+  width: 128px;
+  max-width: 160px;
+  height: 30px;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in oklab, var(--border), transparent 10%);
+  border-radius: 9px;
+  background: color-mix(in oklab, var(--bg-2), white 1%);
   color: color-mix(in oklab, var(--fg-dim), white 10%);
-  gap: 7px;
-  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  font: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.h-feature-project-filter > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.h-feature-tag-filter {
+  flex: 0 0 90px;
+  width: 90px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in oklab, var(--border), transparent 10%);
+  border-radius: 9px;
+  background: color-mix(in oklab, var(--bg-2), white 1%);
+  color: color-mix(in oklab, var(--fg-dim), white 10%);
+  font: inherit;
+  font-size: 10.5px;
+  outline: none;
+}
+.h-feature-search {
+  flex: 1 1 220px !important;
+  min-width: 180px !important;
+  min-height: 30px !important;
+}
+.h-feature-filter,
+.h-feature-mode-btn,
+.h-feature-add {
+  min-height: 26px !important;
 }
 
-.h-main-tabs .h-tab:hover:not([disabled]) {
-  color: var(--fg);
-  background: color-mix(in oklab, var(--bg-2), white 4%);
-  border-color: color-mix(in oklab, var(--border), white 10%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+/* Compact harness restoration tuning: prevent inline PulseFeed styles from expanding the header. */
+.h-project-pulse > div {
+  height: 24px !important;
+  min-height: 24px !important;
+  padding: 0 !important;
+  gap: 6px !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+.h-project-pulse > div > span {
+  font-size: 9px !important;
+  line-height: 1 !important;
+}
+.h-project-pulse > div > div {
+  flex: 0 1 auto !important;
+  gap: 6px !important;
+  max-width: 132px !important;
+  font-size: 10px !important;
+  scrollbar-width: none;
+}
+.h-project-pulse > div > div::-webkit-scrollbar {
+  display: none;
+}
+.h-project-card {
+  padding: 5px 8px !important;
+  gap: 3px !important;
+}
+.h-project {
+  height: 26px !important;
+  min-height: 26px !important;
+  padding-block: 0 !important;
+}
+.h-project-meta {
+  min-height: 18px !important;
+}
+.h-project-progress,
+.h-project-count {
+  font-size: 9.5px !important;
+}
+.h-stat {
+  height: 26px !important;
+  padding: 2px 7px !important;
+}
+.h-stat-value {
+  font-size: 11.5px !important;
+}
+.h-phase-plan-row {
+  min-height: 34px !important;
+  padding-block: 2px !important;
+}
+.h-phase-plan-row .h-plan-review-banner.compact {
+  display: flex !important;
+  align-items: center !important;
+  height: 30px !important;
+  padding: 0 8px !important;
+}
+.h-phase-plan-row .h-plan-review-banner.compact > div {
+  height: 100% !important;
+}
+.h-phase-plan-row .h-plan-review-banner.compact button {
+  height: 22px !important;
+  padding: 0 7px !important;
 }
 
-.h-main-tabs .h-tab.on {
-  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 5%), color-mix(in oklab, var(--bg-2), white 1%));
-  border-color: color-mix(in oklab, var(--border), white 10%);
-  border-bottom-color: color-mix(in oklab, var(--bg-2), white 1%);
-  color: var(--fg);
-  box-shadow: 0 -10px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.03);
-  transform: translateY(-1px);
+/* ── Approved harness restoration: keep library migration, restore visual polish ── */
+.h-top-collapse-btn.h-top-collapse-inline {
+  position: absolute !important;
+  top: -11px !important;
+  left: 50% !important;
+  z-index: 12 !important;
+  transform: translateX(-50%) !important;
+  width: auto !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  padding: 0 12px !important;
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  color: color-mix(in oklab, var(--fg), white 4%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-3), white 8%), color-mix(in oklab, var(--bg-2), black 4%)) !important;
+  border: 1px solid color-mix(in oklab, var(--border), white 18%) !important;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.07) !important;
 }
 
-.h-main-tabs .h-tab.on::after {
-  left: 14px;
-  right: 14px;
-  bottom: 3px;
-  height: 3px;
+.h-dynamic-fallback {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: min(520px, 100%);
+  min-height: 24px;
+  margin: 4px 16px;
+  padding: 3px 9px;
   border-radius: 999px;
-  background: linear-gradient(90deg, color-mix(in oklab, var(--accent), white 6%), color-mix(in oklab, var(--accent), white 24%));
-  box-shadow: 0 0 18px color-mix(in oklab, var(--accent), transparent 56%);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.2;
+  color: color-mix(in oklab, var(--fg-dim), white 12%);
+  background: color-mix(in oklab, var(--bg-3), transparent 20%);
+  border: 1px solid color-mix(in oklab, var(--border), transparent 18%);
+  color: color-mix(in oklab, var(--bad), white 22%);
+  background: color-mix(in oklab, var(--bad), transparent 91%);
+  border-color: color-mix(in oklab, var(--bad), transparent 58%);
 }
 
-.h-tab-count {
+.h-dynamic-fallback-detail {
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in oklab, var(--fg-dim), white 2%);
+}
+
+.h-dynamic-fallback button {
+  min-height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
   border: 1px solid color-mix(in oklab, var(--border), white 10%);
-  background: color-mix(in oklab, var(--bg-3), white 2%);
+  background: color-mix(in oklab, var(--bg-2), white 4%);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.h-decision-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  max-width: min(360px, 34vw);
+  padding: 0 11px;
+  border-radius: 999px;
+  color: color-mix(in oklab, var(--fg), var(--accent) 9%);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent), transparent 78%), color-mix(in oklab, var(--bg-3), white 3%));
+  border: 1px solid color-mix(in oklab, var(--accent), transparent 46%);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.055);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.h-decision-chip span {
   color: color-mix(in oklab, var(--fg-dim), white 14%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+  font-size: 9.5px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
-.h-main-tabs .h-tab.on .h-tab-count {
-  border-color: color-mix(in oklab, var(--accent), transparent 62%);
+.h-decision-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+.h-project-meta-status {
+  gap: 6px !important;
+}
+
+.h-project-progress,
+.h-project-count {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  min-height: 18px !important;
+  padding: 1px 7px !important;
+  border-radius: 999px !important;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace !important;
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.035em !important;
+  line-height: 1 !important;
+  color: color-mix(in oklab, var(--fg-dim), white 18%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-3), white 4%), color-mix(in oklab, var(--bg-2), black 2%)) !important;
+  border: 1px solid color-mix(in oklab, var(--border), white 8%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04) !important;
+  text-transform: uppercase !important;
+}
+
+.h-project-count.todo { border-color: color-mix(in oklab, var(--fg-dim), transparent 50%) !important; }
+.h-project-count.blocked { color: color-mix(in oklab, var(--warn), white 10%) !important; border-color: color-mix(in oklab, var(--warn), transparent 48%) !important; background: color-mix(in oklab, var(--warn), transparent 91%) !important; }
+.h-project-count.passed { color: color-mix(in oklab, var(--good), white 6%) !important; border-color: color-mix(in oklab, var(--good), transparent 54%) !important; background: color-mix(in oklab, var(--good), transparent 92%) !important; }
+.h-project-count strong { color: inherit !important; font-weight: 900 !important; }
+
+.h-inbox-top-actions {
+  max-width: none !important;
+  flex-wrap: nowrap !important;
+  justify-content: flex-end !important;
+}
+
+.h-inbox-command-top {
+  align-items: flex-start !important;
+}
+
+.h-inbox-top-actions .h-inbox-action.primary {
+  order: 3;
+  min-width: 48px;
+}
+
+.h-feature-row > div > div,
+.h-issue > div > div {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+.h-feature-row-title {
+  font-size: 12.4px !important;
+  font-weight: 760 !important;
+  letter-spacing: -0.012em !important;
+  line-height: 1.24 !important;
+  color: color-mix(in oklab, var(--fg), white 4%) !important;
+}
+
+.h-feature-row-meta,
+.h-feature-row-id,
+.h-feature-status-text {
+  font-size: 10.5px !important;
+  line-height: 1.2 !important;
+}
+
+.h-feature-row-id {
+  letter-spacing: 0.025em;
+}
+
+.h-feature-status-text {
+  color: color-mix(in oklab, var(--fg-dim), white 14%) !important;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+.h-feature-claims-chip {
+  font-size: 9.5px !important;
+  font-weight: 750 !important;
+  color: color-mix(in oklab, var(--fg-dim), white 8%) !important;
+}
+
+.h-feature-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.h-feature-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--border), white 8%);
+  background: color-mix(in oklab, var(--bg-3), transparent 12%);
+  color: color-mix(in oklab, var(--fg-dim), white 20%);
+  font-size: 10px;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+}
+
+.h-feature-row-action:hover:not(:disabled),
+.h-feature-row-action.active {
+  color: var(--fg);
+  border-color: color-mix(in oklab, var(--accent), transparent 48%);
   background: color-mix(in oklab, var(--accent), transparent 86%);
-  color: color-mix(in oklab, var(--accent), white 14%);
 }
 
+.h-feature-row-action.danger:hover:not(:disabled) {
+  color: color-mix(in oklab, var(--bad), white 20%);
+  border-color: color-mix(in oklab, var(--bad), transparent 52%);
+  background: color-mix(in oklab, var(--bad), transparent 90%);
+}
+
+.h-feature-row-action:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.h-feature-inline-note {
+  margin: 0 10px 8px 30px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--accent), transparent 62%);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 3%), color-mix(in oklab, var(--bg), white 1%));
+  box-shadow: 0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.035);
+}
+
+.h-feature-inline-note-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--fg);
+  font-size: 11px;
+}
+
+.h-feature-inline-note-head strong {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+
+.h-feature-inline-note-head button {
+  border: 1px solid color-mix(in oklab, var(--border), white 8%);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 10px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.h-feature-inline-note-error {
+  margin-bottom: 8px;
+  color: color-mix(in oklab, var(--bad), white 22%);
+  font-size: 11px;
+}
+
+.h-issue > div {
+  min-height: 62px !important;
+}
+
+.h-issue-body {
+  gap: 3px !important;
+  min-width: 0;
+}
+
+.h-issue-title {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  white-space: normal !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  font-size: 12.4px !important;
+  font-weight: 760 !important;
+  letter-spacing: -0.01em !important;
+  line-height: 1.25 !important;
+  color: color-mix(in oklab, var(--fg), white 4%) !important;
+}
+
+.h-issue-meta {
+  min-height: 16px;
+  gap: 7px !important;
+  flex-wrap: wrap !important;
+  font-size: 10px !important;
+  line-height: 1.25 !important;
+  color: color-mix(in oklab, var(--fg-dim), white 8%) !important;
+}
+
+.h-issue-source,
+.h-issue-id,
+.h-issue-feat,
+.h-issue-code {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.h-issue-code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h-issue-right {
+  display: inline-flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  min-width: 0;
+}
+
+.h-issue-right-top,
+.h-issue-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.h-issue-row-actions {
+  flex-wrap: wrap;
+}
+
+.h-issue-open-affordance {
+  display: none !important;
+}
+
+.h-issue-row-action {
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--border), white 8%);
+  background: color-mix(in oklab, var(--bg-3), transparent 12%);
+  color: color-mix(in oklab, var(--fg-dim), white 18%);
+  font-size: 9.5px;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.h-issue-row-action:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: color-mix(in oklab, var(--accent), transparent 50%);
+  background: color-mix(in oklab, var(--accent), transparent 88%);
+}
+
+.h-issue-row-action.primary {
+  color: color-mix(in oklab, var(--accent), white 24%);
+  border-color: color-mix(in oklab, var(--accent), transparent 45%);
+  background: color-mix(in oklab, var(--accent), transparent 88%);
+}
+
+.h-issue-row-action.success {
+  color: color-mix(in oklab, var(--good), white 10%);
+  border-color: color-mix(in oklab, var(--good), transparent 55%);
+  background: color-mix(in oklab, var(--good), transparent 92%);
+}
+
+.h-issue-row-action.danger {
+  color: color-mix(in oklab, var(--bad), white 18%);
+  border-color: color-mix(in oklab, var(--bad), transparent 56%);
+  background: color-mix(in oklab, var(--bad), transparent 92%);
+}
+
+.h-issue-row-action:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+
+/* Issue rows carry inline containment from RichGrid; override it so restored two-line rows can size to their action stack. */
+.h-issue {
+  min-height: 70px !important;
+  height: auto !important;
+  contain: paint !important;
+  padding: 4px 8px 4px 10px !important;
+}
+
+.h-issue > div {
+  min-height: 62px !important;
+}
+
+.h-feature-row-actions {
+  gap: 3px;
+}
+
+.h-feature-row-action {
+  padding-inline: 6px;
+  font-size: 9.5px;
+}
+
+
+/* Gentle polish pass: keep the current design/layout, improve finish only. */
 .h-panel {
-  border-radius: 16px;
-  border-color: color-mix(in oklab, var(--border), white 8%);
-  box-shadow: 0 18px 44px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.02);
+  box-shadow: 0 16px 34px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.025);
 }
 
 .h-panel-head {
-  min-height: 36px;
-  padding: 9px 12px;
-  border-bottom-color: color-mix(in oklab, var(--border), white 6%);
-  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 6%), color-mix(in oklab, var(--bg-2), white 1%));
-}
-
-.h-panel-title {
-  color: color-mix(in oklab, var(--fg-dim), white 22%);
-  font-weight: 700;
-  letter-spacing: 0.11em;
-}
-
-.h-panel-count {
-  color: color-mix(in oklab, var(--fg-dim), white 10%);
-}
-
-.h-bsfull-subtabs {
-  gap: 6px;
-  margin-left: 12px;
-  padding: 2px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--bg-3), transparent 8%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
-}
-
-.h-bsfull-sub {
-  min-height: 30px;
-  padding: 5px 11px;
-  border-radius: 999px;
-  border-color: transparent;
-  color: color-mix(in oklab, var(--fg-dim), white 10%);
-}
-
-.h-bsfull-sub:hover {
-  background: color-mix(in oklab, var(--bg-3), white 4%);
-}
-
-.h-bsfull-sub.on {
-  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 6%), color-mix(in oklab, var(--bg-2), white 1%));
-  border-color: color-mix(in oklab, var(--border), white 10%);
-  box-shadow: 0 8px 18px rgba(0,0,0,0.14);
-}
-
-.h-bsfull-caption {
-  color: color-mix(in oklab, var(--fg-dim), white 14%);
-}
-
-.h-bsfull-live {
-  border-color: color-mix(in oklab, var(--good), transparent 60%);
-  background: color-mix(in oklab, var(--good), transparent 92%);
-}
-@media (max-width: 760px) {
-  .h-tabs.h-main-tabs {
-    margin: 8px 12px 0;
-    padding: 7px 10px 0;
-    border-radius: 14px 14px 0 0;
-  }
-
-  .h-main-tabs .h-tab {
-    min-height: 36px;
-    padding: 8px 12px 10px;
-  }
-
-  .h-bsfull-subtabs {
-    width: 100%;
-    margin-left: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .h-bsfull-subtabs::-webkit-scrollbar {
-    display: none;
-  }
-}
-
-/* Papercusp harness refinement pass 2: elevate the main workspace tabs further. */
-.h-tabs.h-main-tabs {
-  gap: 8px;
-  padding: 9px 14px 2px;
-  border-color: color-mix(in oklab, var(--border), white 10%);
-  background:
-    radial-gradient(circle at 18% 0%, color-mix(in oklab, var(--accent), transparent 93%), transparent 15rem),
-    linear-gradient(180deg, color-mix(in oklab, var(--bg), white 6%), color-mix(in oklab, var(--bg), transparent 0%));
-  box-shadow: 0 18px 36px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.03);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 4%), color-mix(in oklab, var(--bg-2), white 1%));
 }
 
 .h-main-tabs .h-tab {
+  transition: transform 120ms var(--ease-out), box-shadow 120ms var(--ease-out), border-color 120ms var(--ease-out), background 120ms var(--ease-out);
+}
+
+.h-main-tabs .h-tab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.14);
+}
+
+.h-main-tabs .h-tab[aria-selected="true"] {
+  box-shadow: 0 10px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.035);
+}
+
+.h-inbox-command,
+.h-project-card,
+.h-feature-toolbar {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
+}
+
+.h-inbox-action,
+.h-chip,
+.h-btn,
+.h-feature-project-filter,
+.h-feature-tag-filter,
+.h-feature-search,
+.h-feature-mode-btn,
+.h-feature-add {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.h-inbox-search:focus,
+.h-feature-search:focus-within,
+.h-feature-project-filter:focus-within,
+.h-feature-tag-filter:focus {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent), transparent 58%), 0 10px 22px rgba(0,0,0,0.14);
+}
+
+.h-feature-row {
+  border: 1px solid color-mix(in oklab, var(--border), transparent 22%);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 2%), color-mix(in oklab, var(--bg), white 1%));
+}
+
+.h-feature-row:hover,
+.h-feature-row:focus-visible {
+  box-shadow: 0 14px 28px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.h-issue {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 2%), color-mix(in oklab, var(--bg), white 1%));
+}
+
+.h-issue:hover,
+.h-issue:focus-visible {
+  box-shadow: 0 12px 26px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.025);
+}
+
+.h-feature-row-action,
+.h-issue-row-action {
+  box-shadow: 0 6px 14px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.035);
+}
+
+/* Restored feature queue filter chrome: richer pills without changing behavior. */
+.h-feature-filter {
+  color: color-mix(in oklab, var(--fg-dim), white 18%) !important;
+  border-color: color-mix(in oklab, var(--border), white 8%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-3), white 4%), color-mix(in oklab, var(--bg-2), black 2%)) !important;
+  box-shadow: 0 5px 14px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.045) !important;
+  letter-spacing: 0.015em;
+  transition: transform 120ms var(--ease-out), color 120ms var(--ease-out), border-color 120ms var(--ease-out), background 120ms var(--ease-out), box-shadow 120ms var(--ease-out) !important;
+}
+
+.h-feature-filter:hover,
+.h-feature-filter:focus-visible {
+  color: color-mix(in oklab, var(--fg), white 6%) !important;
+  border-color: color-mix(in oklab, var(--accent), transparent 56%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-3), white 7%), color-mix(in oklab, var(--bg-2), white 1%)) !important;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06) !important;
+  transform: translateY(-0.5px);
+}
+
+.h-feature-filter.active {
+  color: color-mix(in oklab, var(--fg), var(--accent) 18%) !important;
+  border-color: color-mix(in oklab, var(--accent), transparent 42%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent), transparent 78%), color-mix(in oklab, var(--bg-3), white 4%)) !important;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.24), 0 0 0 1px color-mix(in oklab, var(--accent), transparent 76%), inset 0 1px 0 rgba(255,255,255,0.065) !important;
+}
+
+.h-feature-filter strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: inherit !important;
+  background: color-mix(in oklab, var(--bg), white 7%);
+  border: 1px solid color-mix(in oklab, currentColor, transparent 78%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  opacity: 0.9 !important;
+}
+
+.h-feature-filter:nth-child(2) { border-color: color-mix(in oklab, var(--info), transparent 62%) !important; }
+.h-feature-filter:nth-child(3) { border-color: color-mix(in oklab, var(--warn), transparent 62%) !important; }
+.h-feature-filter:nth-child(4) { border-color: color-mix(in oklab, var(--bad), transparent 64%) !important; }
+.h-feature-filter:nth-child(6) { border-color: color-mix(in oklab, var(--good), transparent 66%) !important; }
+.h-feature-filter:nth-child(1) {
+  color: color-mix(in oklab, var(--accent), white 30%) !important;
+  border-color: color-mix(in oklab, var(--accent), transparent 38%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent), transparent 82%), color-mix(in oklab, var(--bg-3), white 4%)) !important;
+}
+
+.h-feature-filter:nth-child(2) {
+  color: color-mix(in oklab, var(--info), white 28%) !important;
+  border-color: color-mix(in oklab, var(--info), transparent 36%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--info), transparent 82%), color-mix(in oklab, var(--bg-3), white 4%)) !important;
+}
+
+.h-feature-filter:nth-child(3) {
+  color: color-mix(in oklab, var(--warn), white 18%) !important;
+  border-color: color-mix(in oklab, var(--warn), transparent 34%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--warn), transparent 81%), color-mix(in oklab, var(--bg-3), white 4%)) !important;
+}
+
+.h-feature-filter:nth-child(4) {
+  color: color-mix(in oklab, var(--bad), white 26%) !important;
+  border-color: color-mix(in oklab, var(--bad), transparent 36%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bad), transparent 83%), color-mix(in oklab, var(--bg-3), white 4%)) !important;
+}
+
+.h-feature-filter:nth-child(5) {
+  color: color-mix(in oklab, var(--fg-dim), white 28%) !important;
+  border-color: color-mix(in oklab, var(--fg-dim), transparent 42%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--fg-dim), transparent 87%), color-mix(in oklab, var(--bg-3), white 4%)) !important;
+}
+
+.h-feature-filter:nth-child(6) {
+  color: color-mix(in oklab, var(--good), white 18%) !important;
+  border-color: color-mix(in oklab, var(--good), transparent 38%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--good), transparent 84%), color-mix(in oklab, var(--bg-3), white 4%)) !important;
+}
+
+.h-feature-filter:nth-child(7) {
+  color: color-mix(in oklab, #c084fc, white 18%) !important;
+  border-color: color-mix(in oklab, #c084fc, transparent 42%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, #c084fc, transparent 86%), color-mix(in oklab, var(--bg-3), white 4%)) !important;
+}
+
+.h-feature-filter strong {
+  background: color-mix(in oklab, currentColor, transparent 88%) !important;
+  border-color: color-mix(in oklab, currentColor, transparent 62%) !important;
+}
+
+.h-feature-search,
+.h-feature-project-filter,
+.h-feature-tag-filter,
+.h-feature-mode,
+.h-feature-add {
+  border-color: color-mix(in oklab, var(--border), white 8%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-3), white 3%), color-mix(in oklab, var(--bg-2), black 2%)) !important;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.04) !important;
+}
+
+.h-feature-search:focus-within,
+.h-feature-project-filter:focus-within,
+.h-feature-tag-filter:focus {
+  border-color: color-mix(in oklab, var(--accent), transparent 46%) !important;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent), transparent 68%), 0 10px 22px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+
+.h-feature-mode-btn.active,
+.h-feature-add:hover {
+  color: color-mix(in oklab, var(--fg), var(--accent) 16%) !important;
+  background: color-mix(in oklab, var(--accent), transparent 84%) !important;
+}
+
+.h-feature-inline-note {
+  background: #1d1826;
+}
+
+
+/* Collapsed top section: center the expand control above the main tabs. */
+.h-top-collapse-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 0 4px;
   position: relative;
-  isolation: isolate;
-  min-height: 42px;
-  padding: 10px 16px 12px;
-  color: color-mix(in oklab, var(--fg-dim), white 14%);
-  letter-spacing: 0.09em;
-  text-shadow: 0 1px 0 rgba(0,0,0,0.28);
+  z-index: 24;
 }
 
-.h-main-tabs .h-tab svg {
-  width: 14px;
-  height: 14px;
+.h-top-collapse-btn.h-top-collapse-floating {
+  position: static !important;
+  transform: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  min-height: 22px !important;
+  height: 22px !important;
+  padding: 0 12px !important;
+  border-radius: 999px !important;
+  white-space: nowrap !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  color: color-mix(in oklab, var(--fg), white 4%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-3), white 8%), color-mix(in oklab, var(--bg-2), black 4%)) !important;
+  border: 1px solid color-mix(in oklab, var(--border), white 18%) !important;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.07) !important;
+  cursor: pointer !important;
+}
+
+
+/* Compact header refinement: stat cards + now-running lane + denser issue rows. */
+.h-stat {
+  display: grid !important;
+  grid-template-rows: auto auto !important;
+  align-content: center !important;
+  gap: 1px !important;
+  min-width: 66px !important;
+  height: 28px !important;
+  padding: 3px 8px 4px !important;
+  border-radius: 10px !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-3), white 5%), color-mix(in oklab, var(--bg-2), black 2%)) !important;
+  border: 1px solid color-mix(in oklab, var(--border), white 10%) !important;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.045) !important;
+}
+
+.h-stat-label {
+  font-size: 7.5px !important;
+  line-height: 1 !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.13em !important;
+  color: color-mix(in oklab, var(--fg-dim), white 16%) !important;
+}
+
+.h-stat-value {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  font-size: 12.5px !important;
+  line-height: 1.05 !important;
+  font-weight: 820 !important;
+  letter-spacing: -0.015em !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+.h-stat-value svg {
+  width: 11px !important;
+  height: 11px !important;
+  opacity: 0.9;
+}
+
+.h-running-head {
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 8px !important;
+  line-height: 1 !important;
+  letter-spacing: 0.12em !important;
+  color: color-mix(in oklab, var(--fg-dim), white 14%) !important;
+}
+
+.h-running-head strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--accent), transparent 55%);
+  background: color-mix(in oklab, var(--accent), transparent 90%);
+  color: color-mix(in oklab, var(--accent), white 16%);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+.h-running-lane {
+  min-height: 19px !important;
+  padding: 0 7px !important;
+  font-size: 9.5px !important;
+  line-height: 1 !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.h-running-lane.idle {
   color: color-mix(in oklab, var(--fg-dim), white 10%);
-  opacity: 0.88;
-  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.18));
-  transition: color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--border), white 5%);
+  background: color-mix(in oklab, var(--bg-3), transparent 18%);
+  font-weight: 650;
 }
 
-.h-main-tabs .h-tab:hover:not([disabled]) svg,
-.h-main-tabs .h-tab.on svg {
-  color: color-mix(in oklab, var(--accent), white 8%);
+.h-running-title {
+  font-size: 9.5px !important;
+  line-height: 1 !important;
+}
+
+.h-running-time {
+  font-size: 9px !important;
+  color: color-mix(in oklab, var(--fg-dim), white 4%) !important;
+}
+
+.h-issue {
+  min-height: 60px !important;
+  padding: 3px 8px 3px 10px !important;
+}
+
+.h-issue > div {
+  min-height: 54px !important;
+}
+
+.h-issue-body {
+  gap: 2px !important;
+}
+
+.h-issue-title {
+  line-height: 1.2 !important;
+}
+
+.h-issue-meta {
+  min-height: 14px;
+  font-size: 9.5px !important;
+  line-height: 1.15 !important;
+}
+
+.h-issue-right {
+  gap: 4px !important;
+}
+
+
+/* Keep the compact now-running control as a single aligned pill. */
+.h-project-topline-statuses .h-project-lanes {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 6px !important;
+  width: auto !important;
+  max-width: min(360px, 34vw) !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  padding: 0 8px !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  border: 1px solid color-mix(in oklab, var(--border), white 8%) !important;
+  border-radius: 999px !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-3), white 4%), color-mix(in oklab, var(--bg-2), black 3%)) !important;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.04) !important;
+}
+
+.h-project-topline-statuses .h-project-lanes .h-running-head {
+  flex: 0 0 auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+}
+
+.h-project-topline-statuses .h-project-lanes .h-running-head span {
+  display: inline-block !important;
+  max-width: none !important;
+  overflow: visible !important;
+  white-space: nowrap !important;
+  font-size: 8px !important;
+  line-height: 1 !important;
+}
+
+.h-project-topline-statuses .h-project-lanes .h-running-head strong {
+  min-height: 16px !important;
+  height: 16px !important;
+  padding: 0 5px !important;
+  line-height: 15px !important;
+}
+
+.h-project-topline-statuses .h-project-lanes .h-running-lanes {
+  flex: 1 1 auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  min-width: 0 !important;
+  width: auto !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+.h-project-topline-statuses .h-project-lanes .h-running-lane {
+  flex: 0 1 auto !important;
+  max-width: 190px !important;
+  min-height: 18px !important;
+  height: 18px !important;
+  padding: 0 7px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.h-project-topline-statuses .h-project-lanes .h-running-title {
+  min-width: 0 !important;
+  max-width: 112px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* At the 1280px operator viewport, prioritize the now-running chip over pulse text so it never clips to just "NO". */
+@media (max-width: 1320px) {
+  .h-project-topline-statuses .h-overview-pulse {
+    display: none !important;
+  }
+
+  .h-project-topline-statuses .h-project-lanes {
+    width: 154px !important;
+    max-width: 154px !important;
+    gap: 5px !important;
+    padding-inline: 7px !important;
+  }
+
+  .h-project-topline-statuses .h-project-lanes .h-running-head {
+    gap: 4px !important;
+  }
+
+  .h-project-topline-statuses .h-project-lanes .h-running-head span {
+    font-size: 7.8px !important;
+    letter-spacing: 0.1em !important;
+  }
+
+  .h-project-topline-statuses .h-project-lanes .h-running-head strong {
+    min-width: 26px !important;
+    justify-content: center !important;
+    padding-inline: 4px !important;
+  }
+
+  .h-project-topline-statuses .h-project-lanes .h-running-lane.idle {
+    width: 34px !important;
+    padding-inline: 0 !important;
+    justify-content: center !important;
+    font-size: 0 !important;
+  }
+
+  .h-project-topline-statuses .h-project-lanes .h-running-lane.idle::after {
+    content: "open";
+    font-size: 9px;
+    line-height: 1;
+  }
+}
+
+/* Make room for the running-lane chip in the compressed header. */
+@media (max-width: 1320px) {
+  .h-project-topline {
+    overflow: hidden !important;
+  }
+
+  .h-project-phases {
+    flex: 0 1 auto !important;
+    min-width: 0 !important;
+    max-width: calc(100% - 164px) !important;
+    overflow: hidden !important;
+  }
+
+  .h-project-phases .h-phase-strip {
+    overflow: hidden !important;
+  }
+
+  .h-project-phases .h-phase-meta,
+  .h-project-phases .h-phase-cost,
+  .h-project-phases .h-phase-open {
+    display: none !important;
+  }
+
+  .h-project-phases .h-phase-item {
+    flex: 0 0 auto !important;
+    max-width: 92px !important;
+  }
+
+  .h-project-phases .h-phase-name {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .h-project-topline-statuses {
+    flex: 0 0 154px !important;
+    width: 154px !important;
+    min-width: 154px !important;
+  }
+}
+
+/* Small usability polish: improve contrast, scanability, and focus without changing layout or copy. */
+.h-root {
+  background:
+    radial-gradient(circle at 14% 0%, rgba(56, 189, 248, 0.10), transparent 30%),
+    radial-gradient(circle at 92% 8%, rgba(125, 211, 252, 0.07), transparent 24%),
+    var(--bg);
+}
+
+.h-main-shell.dashboard {
+  padding-top: 12px;
+}
+
+.h-dashboard-grid {
+  gap: 8px !important;
+}
+
+.h-dashboard-panel-anchor > .h-panel,
+.h-compact-panel,
+.h-compact-inbox {
+  border-color: rgba(125, 211, 252, 0.24);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.h-panel-head,
+.h-compact-panel-head {
+  border-bottom-color: rgba(125, 211, 252, 0.20);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.070), rgba(255, 255, 255, 0.026)),
+    rgba(10, 22, 37, 0.76);
+}
+
+.h-panel-title,
+.h-compact-panel-head {
+  color: color-mix(in oklab, var(--fg), var(--accent-cool) 18%);
+}
+
+.h-feature-toolbar,
+.h-issues-toolbar {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.058), rgba(255, 255, 255, 0.018)),
+    rgba(8, 18, 31, 0.66);
+}
+
+.h-feature-search,
+.h-project,
+.h-feature-mode,
+.h-feature-add {
+  border-color: rgba(125, 211, 252, 0.22);
+}
+
+.h-feature-search:focus-within,
+.h-project:focus,
+.h-project:focus-visible {
+  border-color: rgba(125, 211, 252, 0.58);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.16);
+}
+
+.h-feature-filter.active,
+.h-feature-mode-btn.active,
+.h-inbox-filter[data-state="active"],
+.h-proposal-filter[data-state="active"] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 0 0 1px rgba(56, 189, 248, 0.08);
+}
+
+.h-feature-row {
+  margin-block: 3px;
+}
+
+.h-feature-row:hover,
+.h-feature-row:focus-visible {
+  background: rgba(56, 189, 248, 0.055);
+  outline-color: rgba(125, 211, 252, 0.34);
+}
+
+.h-feature-row.is-focused,
+.h-feature-row.is-active,
+.h-feature-row.is-selected {
+  background: rgba(56, 189, 248, 0.072);
+}
+
+.h-feature-row input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.h-agent-table thead {
+  background: rgba(13, 29, 48, 0.96);
+  box-shadow: 0 1px 0 rgba(125, 211, 252, 0.16);
+}
+
+.h-agent-table td {
+  color: color-mix(in oklab, var(--fg), var(--fg-dim) 12%);
+}
+
+.h-log-line:hover,
+.h-agent-table tr[role="button"]:hover,
+.h-agent-table tr[role="button"]:focus-visible {
+  background: rgba(56, 189, 248, 0.065);
+}
+
+.h-resize-h,
+.h-resize-v {
+  background: rgba(125, 211, 252, 0.22);
+}
+
+.h-resize-h[data-resize-handle-state="hover"],
+.h-resize-h[data-resize-handle-state="drag"],
+.h-resize-v[data-resize-handle-state="hover"],
+.h-resize-v[data-resize-handle-state="drag"] {
+  background: var(--accent);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
+}
+
+/* Proposals page usability polish: clearer queue controls without changing copy or workflow. */
+.h-proposals-panel .h-proposal-toolbar {
+  border-bottom-color: rgba(125, 211, 252, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.022)),
+    rgba(8, 18, 31, 0.78);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+}
+
+.h-proposals-panel .h-proposal-search {
+  border-color: rgba(125, 211, 252, 0.28);
+  background: rgba(4, 10, 20, 0.62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.h-proposals-panel .h-proposal-search:focus {
+  border-color: rgba(125, 211, 252, 0.68);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.h-proposals-panel .h-proposal-filter {
+  border-color: rgba(125, 211, 252, 0.20);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.h-proposals-panel .h-proposal-filter:hover {
+  color: var(--fg);
+  border-color: rgba(125, 211, 252, 0.34);
+  background: rgba(125, 211, 252, 0.075);
+}
+
+.h-proposals-panel .h-proposal-filter.on {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(56, 189, 248, 0.10);
+}
+
+.h-proposals-panel .h-proposal-toolbar-controls .h-proposal-sort,
+.h-proposals-panel .h-proposal-sort {
+  flex-basis: 118px;
+  min-width: 112px;
+  height: 30px;
+  padding: 0 6px 0 8px;
+  border-color: rgba(125, 211, 252, 0.42);
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.18), rgba(125, 211, 252, 0.060)),
+    rgba(7, 18, 32, 0.88);
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.h-proposals-panel .h-proposal-sort span {
+  color: color-mix(in oklab, var(--accent-cool), white 10%);
+  opacity: 0.95;
+}
+
+.h-proposals-panel .h-proposal-sort [aria-label="Sort proposals"] {
+  min-width: 64px !important;
+  height: 24px !important;
+  padding: 0 7px !important;
+  justify-content: space-between !important;
+  color: var(--fg) !important;
+  background: rgba(4, 10, 20, 0.44) !important;
+  border: 1px solid rgba(125, 211, 252, 0.28) !important;
+  border-radius: 7px !important;
+  font-size: 11px !important;
+  font-weight: 780 !important;
+}
+
+.h-proposals-panel .h-proposal-sort [aria-label="Sort proposals"] svg {
+  color: var(--accent-cool);
+}
+
+.h-proposals-panel .h-proposal-mini.ghost {
+  border-color: rgba(125, 211, 252, 0.18);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.h-proposals-panel .h-proposal-mini.ghost:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: rgba(125, 211, 252, 0.34);
+  background: rgba(125, 211, 252, 0.075);
+}
+
+.h-proposals-panel .h-proposal-select-all {
+  color: color-mix(in oklab, var(--fg-dim), white 18%);
+  background: rgba(125, 211, 252, 0.055);
+}
+
+.h-proposals-panel .h-proposal-item {
+  border-color: rgba(125, 211, 252, 0.055);
+}
+
+.h-proposals-panel .h-proposal-item:hover,
+.h-proposals-panel .h-proposal-item.is-active {
+  border-color: rgba(125, 211, 252, 0.30);
+  background: rgba(125, 211, 252, 0.075);
+}
+
+.h-proposals-panel .h-proposal-item.is-active {
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.20), 0 8px 20px rgba(0, 0, 0, 0.16);
+}
+
+.h-proposals-panel .h-proposal-detail-head {
+  border-bottom-color: rgba(125, 211, 252, 0.22);
+  background:
+    linear-gradient(90deg, rgba(125, 211, 252, 0.090), transparent),
+    rgba(5, 13, 24, 0.72);
+}
+
+.h-proposals-panel .h-proposal-doc {
+  border-color: rgba(125, 211, 252, 0.22);
+}
+
+/* Brainstorm tab usability polish: clearer writing surface, tabs, and partner panel without changing workflow. */
+.h-main-shell.brainstorm-full {
+  background: radial-gradient(circle at 16% 0%, rgba(56, 189, 248, 0.075), transparent 28%);
+}
+
+.h-bsfull-grid,
+.h-bsfull-stack {
+  gap: 14px;
+}
+
+.h-bsfull-panel {
+  border-color: rgba(125, 211, 252, 0.26);
+  box-shadow:
+    0 16px 38px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.h-bsfull-head {
+  border-bottom-color: rgba(125, 211, 252, 0.20);
+}
+
+.h-bsfull-panel.primary .h-bsfull-head {
+  background:
+    linear-gradient(90deg, rgba(56, 189, 248, 0.16), transparent 56%),
+    rgba(10, 22, 37, 0.82);
+}
+
+.h-bsfull-panel.partner .h-bsfull-head {
+  background:
+    linear-gradient(90deg, rgba(52, 211, 153, 0.12), transparent 56%),
+    rgba(10, 22, 37, 0.82);
+}
+
+.h-bsfull-caption {
+  color: color-mix(in oklab, var(--fg-dim), white 18%);
+}
+
+.h-bsfull-subtabs {
+  gap: 5px;
+  padding: 3px;
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  border-radius: 10px;
+  background: rgba(4, 10, 20, 0.34);
+}
+
+.h-bsfull-sub {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border-color: transparent;
+  color: color-mix(in oklab, var(--fg-dim), white 12%);
+  font-weight: 680;
+}
+
+.h-bsfull-sub:hover {
+  color: var(--fg);
+  background: rgba(125, 211, 252, 0.08);
+}
+
+.h-bsfull-sub[data-state="active"],
+.h-bsfull-sub.on {
+  color: var(--fg);
+  border-color: rgba(125, 211, 252, 0.30);
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.16), rgba(125, 211, 252, 0.06));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.h-bsfull-main {
+  background:
+    radial-gradient(circle at 14% 0%, rgba(56, 189, 248, 0.10), transparent 18rem),
+    rgba(4, 10, 20, 0.18);
+}
+
+.h-brainstorm-write {
+  background: linear-gradient(180deg, rgba(11, 18, 32, 0.82), rgba(4, 10, 20, 0.72));
+}
+
+.h-brainstorm-savehint {
+  min-height: 18px;
+  padding: 4px 10px 0;
+  color: var(--fg-mute);
+  font-size: 11px;
+  text-align: right;
+}
+
+.h-brainstorm-write .bn-container {
+  padding: 8px 10px 14px;
+}
+
+.h-brainstorm-write .bn-editor,
+.h-brainstorm-write .ProseMirror {
+  max-width: 960px;
+  width: min(100%, 960px);
+  margin: 0 auto;
+  padding: 18px 22px 28px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.h-bsfull-partner-body {
+  background: rgba(4, 10, 20, 0.18);
+}
+
+.h-bsfull-partner-body .h-chat-empty {
+  border-color: rgba(125, 211, 252, 0.22);
+  background: rgba(125, 211, 252, 0.055);
+}
+
+.h-bsfull-partner-body .h-chat-composer {
+  border-top: 1px solid rgba(125, 211, 252, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(4, 10, 20, 0.40));
+}
+
+.h-bsfull-partner-body .h-chat-input {
+  border-color: rgba(125, 211, 252, 0.24);
+  background: rgba(4, 10, 20, 0.58);
+}
+
+.h-bsfull-partner-body .h-chat-input:focus,
+.h-bsfull-partner-body .h-chat-input:focus-within {
+  border-color: rgba(125, 211, 252, 0.58);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.14);
+}
+
+@media (max-width: 760px) {
+  .h-bsfull-grid,
+.h-bsfull-stack {
+    gap: 12px;
+  }
+
+  .h-brainstorm-write .bn-container {
+    padding: 6px 8px 12px;
+  }
+
+  .h-brainstorm-write .bn-editor,
+  .h-brainstorm-write .ProseMirror {
+    padding: 14px 16px 22px;
+    border-radius: 12px;
+  }
+}
+
+/* Top-bar usability polish: clearer grouping and contrast without increasing height. */
+.h-header {
+  border-bottom-color: rgba(125, 211, 252, 0.22);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(125, 211, 252, 0.12), transparent 32%),
+    linear-gradient(135deg, rgba(13, 27, 43, 0.96), rgba(8, 18, 31, 0.96));
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.20);
+}
+
+.h-brand-kicker {
+  color: color-mix(in oklab, var(--accent-strong), white 10%);
+}
+
+.h-project-card {
+  border-color: rgba(125, 211, 252, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.020)),
+    rgba(9, 20, 34, 0.82);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.h-project {
+  border-color: rgba(125, 211, 252, 0.24);
+  background: rgba(255, 255, 255, 0.050);
+}
+
+.h-project:hover,
+.h-project:focus,
+.h-project:focus-visible {
+  border-color: rgba(125, 211, 252, 0.54);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.14);
+}
+
+.h-project-path,
+.h-project-progress {
+  color: color-mix(in oklab, var(--fg-dim), white 20%);
+}
+
+.h-status-chip,
+.h-escalated-pill {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.h-stat {
+  border-color: rgba(125, 211, 252, 0.20);
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.h-stat-label {
+  color: color-mix(in oklab, var(--fg-dim), white 14%);
+}
+
+.h-header-actions .h-btn {
+  border-color: rgba(125, 211, 252, 0.22);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.h-header-actions .h-btn:hover {
+  border-color: rgba(125, 211, 252, 0.40);
+  background: rgba(125, 211, 252, 0.075);
+}
+
+.h-running-strip {
+  border-color: rgba(125, 211, 252, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
+    rgba(9, 19, 32, 0.80);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.h-running-head {
+  color: color-mix(in oklab, var(--fg-dim), white 20%);
+}
+
+.h-running-lane {
+  border-color: rgba(125, 211, 252, 0.18);
+  background: rgba(255, 255, 255, 0.040);
+}
+
+.h-running-lane.live {
+  border-color: rgba(52, 211, 153, 0.36);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.h-mission-overview,
+.h-mission-overview.has-action {
+  gap: 10px;
+}
+
+.h-focus-card,
+.h-status-distribution,
+.h-overview-action {
+  border-color: rgba(125, 211, 252, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+    rgba(8, 18, 31, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.h-focus-card strong,
+.h-status-token strong {
+  color: color-mix(in oklab, var(--fg), white 4%);
+}
+
+.h-focus-title,
+.h-status-token {
+  color: color-mix(in oklab, var(--fg-dim), white 18%);
+}
+
+.h-overview-action:hover,
+.h-overview-action:focus-visible,
+.h-focus-card:hover:not(:disabled),
+.h-focus-card:focus-visible {
+  border-color: rgba(125, 211, 252, 0.38);
+}
+
+.h-quick-action-row {
+  border-top-color: rgba(125, 211, 252, 0.20) !important;
+  border-bottom-color: rgba(125, 211, 252, 0.20) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(56, 189, 248, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.060), rgba(255, 255, 255, 0.020)) !important;
+}
+
+.h-quick-action-copy strong {
+  color: color-mix(in oklab, var(--fg-dim), white 22%) !important;
+}
+
+.h-quick-action-btn {
+  border-color: rgba(125, 211, 252, 0.30) !important;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.16), rgba(56, 189, 248, 0.070)) !important;
+}
+
+.h-quick-action-btn:hover {
+  border-color: rgba(125, 211, 252, 0.48) !important;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.22), rgba(56, 189, 248, 0.09)) !important;
+}
+
+/* Continued top-bar polish: stronger grouping in the compact strips, same height. */
+.h-phase-plan-row {
+  border-top: 1px solid rgba(125, 211, 252, 0.16) !important;
+  border-bottom: 1px solid rgba(125, 211, 252, 0.16) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)),
+    rgba(8, 18, 31, 0.70) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
+}
+
+.h-phase-plan-row .h-phase-plan-focus {
+  border-color: rgba(125, 211, 252, 0.24) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+}
+
+.h-phase-plan-row .h-phase-plan-focus .h-overline {
+  color: color-mix(in oklab, var(--accent-cool), white 10%) !important;
+}
+
+.h-phase-plan-row .h-phase-plan-focus strong {
+  color: color-mix(in oklab, var(--fg), white 4%) !important;
+}
+
+.h-phase-plan-row .h-phase-plan-focus .h-focus-title {
+  color: color-mix(in oklab, var(--fg-dim), white 18%) !important;
+}
+
+.h-phase-plan-row .h-phase-plan-review,
+.h-phase-plan-row .h-plan-review-banner.compact {
+  border-color: rgba(125, 211, 252, 0.26) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+.h-phase-plan-actions .h-btn {
+  border-color: rgba(125, 211, 252, 0.22) !important;
+  background: rgba(255, 255, 255, 0.035) !important;
+}
+
+.h-phase-plan-actions .h-btn:hover {
+  border-color: rgba(125, 211, 252, 0.38) !important;
+  background: rgba(125, 211, 252, 0.075) !important;
+}
+
+.h-decision-chip {
+  border-color: rgba(125, 211, 252, 0.34) !important;
+  background:
+    linear-gradient(180deg, rgba(56, 189, 248, 0.18), rgba(56, 189, 248, 0.06)),
+    rgba(7, 18, 32, 0.88) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+.h-decision-chip span {
+  color: color-mix(in oklab, var(--accent-cool), white 6%) !important;
+}
+
+.h-tabs.h-main-tabs {
+  border-top: 1px solid rgba(125, 211, 252, 0.14);
+  border-bottom-color: rgba(125, 211, 252, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.016)),
+    rgba(7, 17, 29, 0.78);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.h-main-tabs .h-tab {
+  color: color-mix(in oklab, var(--fg-dim), white 12%);
+}
+
+.h-main-tabs .h-tab:hover {
+  color: var(--fg);
+  background: rgba(125, 211, 252, 0.06);
+}
+
+.h-main-tabs .h-tab.on,
+.h-main-tabs .h-tab[aria-selected="true"] {
+  border-color: rgba(125, 211, 252, 0.24);
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.15), rgba(125, 211, 252, 0.05)),
+    rgba(8, 18, 31, 0.80);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.h-quick-action-buttons {
+  gap: 8px !important;
+}
+
+.h-quick-action-btn {
+  border-color: rgba(125, 211, 252, 0.34) !important;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+
+.h-quick-action-btn span {
+  color: color-mix(in oklab, var(--fg), white 4%) !important;
+}
+
+.h-quick-action-btn em {
+  color: color-mix(in oklab, var(--fg-dim), white 20%) !important;
+}
+
+/* run.log pane usability polish: keep controls visible and log rows easier to scan without changing content. */
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-panel-body {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.016), rgba(255, 255, 255, 0)), color-mix(in oklab, var(--bg), white 1%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tabs {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px 6px 6px;
+  overflow-x: visible;
+  overflow-y: visible;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tabs-spacer {
+  flex: 1 1 10px;
+  min-width: 0;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar {
+  margin-left: auto;
+  padding: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 4px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle {
+  min-height: 24px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle {
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log {
+  scrollbar-gutter: stable;
+  tab-size: 2;
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.034), rgba(125, 211, 252, 0) 34%), color-mix(in oklab, var(--bg), white 1%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line {
+  grid-template-columns: 18px 38px 96px minmax(0, auto) minmax(50px, auto) minmax(0, 1fr);
+  column-gap: 7px;
+  padding-block: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.018);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:not(:has(.h-log-source)) .h-log-msg {
+  grid-column: 5 / -1;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:hover .h-log-msg {
+  color: color-mix(in oklab, var(--fg), var(--fg-dim) 28%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line .h-log-source,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tag {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+@media (max-width: 760px) {
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line {
+    grid-template-columns: 16px 34px 82px minmax(0, auto) minmax(42px, auto) minmax(0, 1fr);
+    column-gap: 5px;
+  }
+
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line .h-log-source {
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* run.log second-pass polish: slightly clearer hierarchy, hover/focus states, and scan anchors. */
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-panel-head {
+  background: linear-gradient(90deg, rgba(125, 211, 252, 0.052), rgba(255, 255, 255, 0.012) 48%, transparent);
+  border-bottom-color: rgba(125, 211, 252, 0.14);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-panel-title {
+  color: color-mix(in oklab, var(--fg), var(--fg-dim) 24%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-panel-count {
+  color: color-mix(in oklab, var(--accent-cool), white 8%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab.active {
+  box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--accent-cool), transparent 18%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:hover,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn:hover,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle:hover {
+  background: rgba(125, 211, 252, 0.070);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:focus-visible,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn:focus-visible,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle:focus-visible,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pin:focus-visible,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-collapse-badge:focus-visible,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmark-chip:focus-visible,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-load-older:focus-visible,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-unseen-pill:focus-visible {
+  outline: 1px solid rgba(125, 211, 252, 0.62);
+  outline-offset: 2px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-no {
+  color: color-mix(in oklab, var(--fg-dim), white 9%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-ts {
+  color: color-mix(in oklab, var(--fg-dim), white 14%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-msg {
+  line-height: 1.52;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:hover,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:focus-within {
+  background: linear-gradient(90deg, rgba(125, 211, 252, 0.082), rgba(125, 211, 252, 0.030) 44%, rgba(255, 255, 255, 0.012));
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pin {
+  opacity: 0.26;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:hover .h-log-pin,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:focus-within .h-log-pin,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pin.active {
   opacity: 1;
 }
 
-.h-main-tabs .h-tab:hover:not([disabled]) {
-  transform: translateY(-1px);
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-scrubber {
+  height: 20px;
+  padding-inline: 6px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.024), rgba(255, 255, 255, 0)), color-mix(in oklab, var(--bg-2), black 5%);
 }
 
-.h-main-tabs .h-tab.on {
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-scrubber-bar {
+  border-radius: 999px 999px 2px 2px;
+  opacity: 0.72;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-scrubber-bar:hover:not(:disabled),
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-scrubber-bar.has-errors:hover {
+  opacity: 1;
+}
+
+/* run.log third-pass polish: copy, scroll, and pinned-row readability refinements. */
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-body {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.024);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log {
+  font-variant-ligatures: none;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(125, 211, 252, 0.28) transparent;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log::selection,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log *::selection {
+  background: rgba(125, 211, 252, 0.22);
+  color: var(--fg);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line {
+  scroll-margin-block: 38px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:nth-child(2n) {
+  background: rgba(255, 255, 255, 0.016);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.bookmarked {
+  box-shadow: inset 3px 0 0 color-mix(in oklab, var(--accent-cool), transparent 14%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.bookmarked .h-log-msg {
+  color: color-mix(in oklab, var(--fg), var(--fg-dim) 18%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-source {
+  margin-top: 1px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tag {
+  margin-top: 1px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-link {
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgba(125, 211, 252, 0.46);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-link:hover {
+  background: rgba(125, 211, 252, 0.070);
+  border-radius: 3px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-load-older {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.035), rgba(255, 255, 255, 0.006)), color-mix(in oklab, var(--bg-2), black 4%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmarks {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.034), rgba(255, 255, 255, 0.006)), color-mix(in oklab, var(--bg-2), black 4%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmark-chip {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.044);
+}
+
+/* run.log fourth-pass polish: compact control states, severity cues, and long-line readability. */
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tabs {
+  row-gap: 5px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab {
+  border-radius: 5px 5px 3px 3px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab-count {
+  border: 1px solid rgba(125, 211, 252, 0.12);
+  line-height: 1.35;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle {
+  font-weight: 720;
+  line-height: 1.25;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:active,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn:active,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle:active {
+  transform: translateY(1px);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-msg {
+  overflow-wrap: anywhere;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.error,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-error {
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.12);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.warn,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-warn {
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.10);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-decision {
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.10);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-collapse-badge {
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-unseen-pill {
+  backdrop-filter: blur(8px);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-empty {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.028), rgba(255, 255, 255, 0.006));
+}
+
+@media (max-width: 760px) {
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar {
+    justify-content: flex-start;
+  }
+
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn,
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle {
+    padding-inline: 8px;
+  }
+}
+
+/* run.log fifth-pass polish: source clipping, hover context, and compact scan affordances. */
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-source {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:hover .h-log-no,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:focus-within .h-log-no {
+  color: color-mix(in oklab, var(--fg-dim), white 18%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:hover .h-log-ts,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:focus-within .h-log-ts {
+  color: color-mix(in oklab, var(--fg-dim), white 26%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-plan {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--info), transparent 90%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-invoke {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--good), transparent 90%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle.paused {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.050), 0 0 0 1px rgba(251, 191, 36, 0.05);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-scrubber-bar.has-errors {
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.10);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmark-chip:hover {
+  border-color: rgba(125, 211, 252, 0.46);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-load-older:hover:not(:disabled) {
+  border-bottom-color: rgba(125, 211, 252, 0.22);
+}
+
+@media (max-width: 760px) {
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab {
+    padding-inline: 8px;
+  }
+
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-source {
+    max-width: 68px;
+  }
+}
+
+/* run.log sixth-pass polish: softer control depth, clearer row focus, and motion comfort. */
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-container {
+  isolation: isolate;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab.active .h-log-tab-count {
+  border-color: rgba(125, 211, 252, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.040);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line {
+  background-clip: padding-box;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:hover .h-log-source,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:focus-within .h-log-source {
+  border-color: rgba(125, 211, 252, 0.36);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:hover .h-log-tag,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:focus-within .h-log-tag {
+  filter: brightness(1.08);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmarks-label {
+  color: color-mix(in oklab, var(--accent-cool), var(--fg-dim) 36%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-unseen-pill:hover {
+  transform: translateX(-50%) translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-unseen-pill {
+    animation: none;
+  }
+
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab,
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn,
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle,
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pin,
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-scrubber-bar {
+    transition-duration: 1ms;
+  }
+}
+
+@media (max-width: 760px) {
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-scrubber {
+    height: 18px;
+  }
+}
+
+/* run.log seventh-pass polish: grouped controls, severity context, and bookmark readability. */
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tabs {
+  box-shadow: inset 0 -1px 0 rgba(125, 211, 252, 0.075);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar {
+  column-gap: 5px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn + .h-log-toolbar-btn {
+  margin-left: 1px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-iteration {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.030);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.error .h-log-no,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-error .h-log-no {
+  color: color-mix(in oklab, var(--bad), white 16%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.warn .h-log-no,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-warn .h-log-no {
+  color: color-mix(in oklab, var(--warn), white 10%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pin.active {
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.32);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-collapse-badge {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmark-ts {
+  color: color-mix(in oklab, var(--accent-cool), var(--fg-dim) 32%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmark-msg {
+  color: color-mix(in oklab, var(--fg), var(--fg-dim) 22%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-scrubber-bar:disabled {
+  opacity: 0.26;
+}
+
+@media (max-width: 760px) {
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tabs {
+    padding-inline: 5px;
+  }
+
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar {
+    column-gap: 4px;
+  }
+}
+
+/* run.log eighth-pass polish: final density, affordance, and empty-state tuning. */
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab-count {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.026);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle {
+  min-width: 0;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:hover .h-log-collapse-badge,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:focus-within .h-log-collapse-badge {
+  border-color: rgba(251, 191, 36, 0.48);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-plan .h-log-ts {
+  color: color-mix(in oklab, var(--info), white 4%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-invoke .h-log-ts {
+  color: color-mix(in oklab, var(--good), white 2%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-decision .h-log-ts {
+  color: color-mix(in oklab, var(--accent-cool), white 4%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-link:focus-visible {
+  border-radius: 3px;
+  outline: 1px solid rgba(125, 211, 252, 0.62);
+  outline-offset: 2px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-scrubber-bar:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-empty-icon {
+  color: color-mix(in oklab, var(--accent-cool), var(--fg-dim) 24%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmarks::-webkit-scrollbar,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tabs::-webkit-scrollbar {
+  height: 6px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmarks::-webkit-scrollbar-thumb,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tabs::-webkit-scrollbar-thumb {
+  background: rgba(125, 211, 252, 0.20);
+  border-radius: 999px;
+}
+
+@media (max-width: 760px) {
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab-count {
+    min-width: 16px;
+    padding-inline: 4px;
+  }
+}
+
+/* run.log ninth-pass polish: quiet edge cases, timestamp cues, and chip refinement. */
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-source,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tag {
+  min-width: 0;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.error .h-log-ts,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-error .h-log-ts {
+  color: color-mix(in oklab, var(--bad), white 18%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.warn .h-log-ts,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-warn .h-log-ts {
+  color: color-mix(in oklab, var(--warn), white 10%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-plan .h-log-no {
+  color: color-mix(in oklab, var(--info), white 2%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-invoke .h-log-no {
+  color: color-mix(in oklab, var(--good), white 2%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-link-app {
+  border-radius: 3px;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-link-app:hover {
+  background: rgba(125, 211, 252, 0.075);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-load-older:focus-visible,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmark-chip:focus-visible {
+  box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.12);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmarks::-webkit-scrollbar-track,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tabs::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.012);
+  border-radius: 999px;
+}
+
+@media (max-width: 760px) {
+  .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line {
+    padding-inline: 5px 7px;
+  }
+}
+
+/* run.log tenth-pass polish: ultra-small spacing, chip hover, and tail-state clarity. */
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:hover .h-log-tab-count {
+  border-color: rgba(125, 211, 252, 0.28);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-toolbar-btn:focus-visible,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pause-toggle:focus-visible {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 0 0 2px rgba(125, 211, 252, 0.10);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line:hover .h-log-source {
+  color: color-mix(in oklab, var(--accent-cool), white 6%);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.error .h-log-source,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-error .h-log-source {
+  border-color: rgba(248, 113, 113, 0.32);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.warn .h-log-source,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line.kind-warn .h-log-source {
+  border-color: rgba(251, 191, 36, 0.28);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-pin:hover {
+  transform: scale(1.06);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-load-older {
+  letter-spacing: 0.01em;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-unseen-pill {
+  font-weight: 780;
+  letter-spacing: 0.01em;
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-bookmark-chip:active,
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-load-older:active {
+  transform: translateY(1px);
+}
+
+.h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-empty {
+  color: color-mix(in oklab, var(--fg-dim), white 8%);
+}
+
+/* ── Config tab left alignment + attached plugin tabs ────────── */
+.h-main-shell.embed:has(.h-config-panel) {
+  padding-top: 0 !important;
+}
+
+.h-config-rail {
+  min-height: 30px !important;
+  padding: 0 16px !important;
+  border-top: 0 !important;
+  background: color-mix(in oklab, var(--bg), white 1.5%) !important;
+}
+
+.h-config-tab {
+  position: relative;
+  margin-bottom: -1px !important;
+  min-height: 30px !important;
+  padding: 5px 10px 6px !important;
+  border: 1px solid rgba(125, 211, 252, 0.13) !important;
+  border-bottom: 1px solid rgba(125, 211, 252, 0.10) !important;
+  border-radius: 8px 8px 0 0 !important;
   background:
-    linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 7%), color-mix(in oklab, var(--bg-2), white 1%)),
-    radial-gradient(circle at 50% 0%, color-mix(in oklab, var(--accent), transparent 90%), transparent 72%);
-  box-shadow: 0 -12px 26px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.04);
+    linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.006)),
+    rgba(8, 18, 31, 0.38) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.030) !important;
+}
+.h-config-tab:hover {
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.095), rgba(125, 211, 252, 0.026)),
+    rgba(8, 18, 31, 0.56) !important;
+  border-color: rgba(125, 211, 252, 0.28) !important;
+  border-bottom-color: rgba(125, 211, 252, 0.12) !important;
+  color: var(--text-1) !important;
 }
 
-.h-main-tabs .h-tab.on::before {
+.h-config-tab.is-active {
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.16), rgba(125, 211, 252, 0.055)),
+    color-mix(in oklab, var(--bg-2), white 2%) !important;
+  border-color: rgba(125, 211, 252, 0.38) !important;
+  border-bottom-color: color-mix(in oklab, var(--bg-2), white 2%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.060), 0 0 0 1px rgba(125, 211, 252, 0.050) !important;
+}
+
+.h-config-tab.is-active::after {
   content: "";
   position: absolute;
   left: 10px;
   right: 10px;
-  top: 6px;
-  height: 1px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px 999px 0 0;
+  background: linear-gradient(90deg, var(--accent-cool), var(--accent));
 }
 
-.h-main-tabs .h-tab.on::after {
-  left: 16px;
-  right: 16px;
-  bottom: 4px;
-  height: 3px;
+.h-manifest-editor-head .h-manifest-section-tabs {
+  order: 0;
 }
 
-.h-tab-count {
-  min-width: 20px;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 2px 7px;
-  font-size: 9px;
-  letter-spacing: 0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
-}
-@media (max-width: 760px) {
-  .h-tabs.h-main-tabs {
-    gap: 6px;
-    padding: 8px 10px 2px;
-  }
-
-  .h-main-tabs .h-tab {
-    min-height: 37px;
-    padding: 8px 12px 10px;
-    letter-spacing: 0.08em;
-  }
-
-  .h-main-tabs .h-tab svg {
-    width: 13px;
-    height: 13px;
-  }
-
-  .h-main-tabs .h-tab.on::after {
-    left: 14px;
-    right: 14px;
-  }
+.h-manifest-editor-head .h-manifest-path {
+  order: 1;
 }
 
-/* Papercusp harness targeted layout fixes: feature queue header, inbox actions, and issue readability. */
-.h-feature-toolrow {
-  width: min(620px, 82%);
+.h-manifest-editor-head .h-manifest-live-note {
+  order: 2;
+}
+
+.h-manifest-editor-head .h-manifest-actions {
+  order: 3;
+}
+
+.h-manifest-view-toggle {
+  order: 0;
+  margin-left: 0 !important;
+}
+
+.h-manifest-view-description {
+  order: 1;
+}
+
+
+/* Proposals row left-control follow-up: align checkbox/star lanes with calmer spacing. */
+.h-proposals-panel .h-proposal-list .h-proposal-item > div {
+  grid-template-columns: 36px 32px minmax(0, 1fr) !important;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item > div > div:nth-child(1) {
+  min-width: 36px !important;
+  padding-left: 10px !important;
+  padding-right: 6px !important;
+  justify-content: center !important;
+  overflow: visible !important;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item > div > div:nth-child(2) {
+  min-width: 32px !important;
+  padding-inline: 6px !important;
+  justify-content: center !important;
+  overflow: visible !important;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item > div > div:nth-child(3) {
+  min-width: 0 !important;
+  padding-left: 9px !important;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item [role="checkbox"] {
+  flex: 0 0 14px;
+  margin: 0 auto;
+  transform: none;
+  background: color-mix(in oklab, var(--bg-2), white 3%) !important;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item [role="checkbox"][data-state="checked"],
+.h-proposals-panel .h-proposal-list .h-proposal-item [role="checkbox"][data-state="indeterminate"] {
+  border-color: rgba(125, 211, 252, 0.62) !important;
+  background: rgba(125, 211, 252, 0.16) !important;
+}
+
+.h-proposals-panel .h-proposal-pin {
+  width: 20px;
+  height: 20px;
+  margin: 0 auto;
+  transform: none;
+}
+
+.h-proposals-panel .h-proposal-pin:hover,
+.h-proposals-panel .h-proposal-pin:focus-visible {
+  transform: translateY(-1px);
+}
+
+.h-proposals-panel .h-proposal-item-spacer {
+  width: 14px !important;
+  min-width: 14px;
+  margin: 0 auto;
+  transform: none;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item::before {
+  left: 3px;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item.is-active::before {
+  left: 3px;
+  width: 4px;
+}
+
+.h-proposals-panel .h-proposal-select-all {
+  padding-left: 11px;
+}
+
+.h-proposals-panel .h-proposal-select-all [role="checkbox"] {
+  flex: 0 0 14px;
+  margin-left: 1px;
+}
+
+/* Eleventh top-bar pass: tiny affordance polish; visual-only and density-safe. */
+body:has(.h-root) .pc-header nav a,
+body:has(.h-root) .pc-header nav button,
+.h-project-phases .h-phase-name,
+.h-project-path,
+.h-stat-label,
+.h-focus-title,
+.h-quick-action-btn em,
+.h-main-tabs .h-tab {
+  -webkit-font-smoothing: antialiased !important;
+}
+
+body:has(.h-root) .pc-header nav a:hover,
+body:has(.h-root) .pc-header nav button:hover {
+  text-shadow: 0 0 14px rgba(125, 211, 252, 0.18), 0 1px 0 rgba(0,0,0,0.24) !important;
+}
+
+.h-project-card:hover .h-project,
+.h-project-card:focus-within .h-project {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.075), 0 0 0 1px rgba(125, 211, 252, 0.060) !important;
+}
+
+.h-project-phases .h-phase-item:not(.disabled):hover .h-phase-name,
+.h-project-phases .h-phase-item.active .h-phase-name {
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.16) !important;
+}
+
+.h-project-count,
+.h-project-progress,
+.h-status-chip,
+.h-stat {
+  color-scheme: dark !important;
+}
+
+.h-stat:hover .h-stat-value svg,
+.h-stat-button:focus-visible .h-stat-value svg {
+  filter: drop-shadow(0 0 9px rgba(125, 211, 252, 0.32)) brightness(1.08) !important;
+}
+
+.h-phase-plan-row .h-phase-plan-focus:hover .h-overline,
+.h-phase-plan-row .h-phase-plan-focus:focus-visible .h-overline {
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.20) !important;
+}
+
+.h-phase-plan-row .h-btn:hover,
+.h-phase-plan-row .h-btn:focus-visible {
+  text-shadow: 0 0 11px rgba(125, 211, 252, 0.14), 0 1px 0 rgba(0,0,0,0.22) !important;
+}
+
+.h-quick-action-btn:not(.missing):hover span,
+.h-quick-action-btn:not(.missing):focus-visible span {
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.20) !important;
+}
+
+.h-quick-action-btn:not(.missing):hover em,
+.h-quick-action-btn:not(.missing):focus-visible em {
+  text-shadow: 0 0 9px rgba(125, 211, 252, 0.12) !important;
+}
+
+.h-main-tabs .h-tab:not([disabled]):hover svg,
+.h-main-tabs .h-tab:focus-visible svg {
+  filter: drop-shadow(0 0 9px rgba(125, 211, 252, 0.28)) brightness(1.08) !important;
+}
+
+.h-main-tabs .h-tab[aria-selected="true"]::after {
+  opacity: 0.95 !important;
+}
+
+/* Twelfth top-bar pass: density-safe usability refinements; no spacing changes. */
+body:has(.h-root) .pc-header,
+.h-header,
+.h-phase-plan-row,
+.h-quick-action-row,
+.h-tabs.h-main-tabs {
+  isolation: isolate;
+}
+
+body:has(.h-root) .pc-header nav a,
+body:has(.h-root) .pc-header nav button,
+.h-header-actions .h-btn,
+.h-project,
+.h-project-phases .h-phase-item,
+.h-stat-button,
+.h-phase-plan-row button,
+.h-quick-action-btn,
+.h-main-tabs .h-tab {
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+body:has(.h-root) .pc-header nav a:focus-visible,
+body:has(.h-root) .pc-header nav button:focus-visible,
+.h-header-actions .h-btn:focus-visible,
+.h-project:focus-visible,
+.h-project-phases .h-phase-item:focus-visible,
+.h-stat-button:focus-visible,
+.h-phase-plan-row button:focus-visible,
+.h-quick-action-btn:focus-visible,
+.h-main-tabs .h-tab:focus-visible {
+  outline: 1px solid rgba(186, 230, 253, 0.72) !important;
+  outline-offset: -2px !important;
+  box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.065) !important;
+}
+
+.h-project-card {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.050), 0 8px 18px rgba(0, 0, 0, 0.13) !important;
+}
+
+.h-project-card::before {
+  opacity: 0.48 !important;
+}
+
+.h-phase-plan-row .h-phase-plan-focus,
+.h-phase-plan-row .h-plan-review-banner.compact {
+  border-color: rgba(125, 211, 252, 0.24) !important;
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.070), rgba(255, 255, 255, 0.018)) !important;
+}
+
+.h-quick-action-btn {
+  border-color: rgba(125, 211, 252, 0.30) !important;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.125), rgba(56, 189, 248, 0.050)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 6px 16px rgba(0, 0, 0, 0.14) !important;
+}
+
+.h-quick-action-btn:not(.missing):hover,
+.h-quick-action-btn:not(.missing):focus-visible {
+  border-color: rgba(125, 211, 252, 0.48) !important;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.165), rgba(56, 189, 248, 0.065)) !important;
+}
+
+.h-main-tabs .h-tab[aria-selected="true"] {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.135), rgba(125, 211, 252, 0.045)), color-mix(in oklab, var(--bg-2), white 3%) !important;
+}
+
+.h-phase-plan-row,
+.h-quick-action-row,
+.h-tabs.h-main-tabs {
+  scrollbar-color: rgba(125, 211, 252, 0.30) transparent;
+}
+
+.h-phase-plan-row::after,
+.h-quick-action-row::after,
+.h-tabs.h-main-tabs::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 28px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(8, 18, 31, 0.72));
+  opacity: 0.76;
+}
+
+.h-phase-plan-row:focus-within::after,
+.h-quick-action-row:focus-within::after,
+.h-tabs.h-main-tabs:focus-within::after {
+  opacity: 0.42;
+}
+
+/* Spacing-preserving main-tab affordance polish: clearer tab button edges without changing height. */
+.h-main-tabs .h-tab[role="tab"] {
+  border-color: rgba(125, 211, 252, 0.14) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.006)),
+    rgba(8, 18, 31, 0.42) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
+}
+
+.h-main-tabs .h-tab[role="tab"]:not([disabled]):not([aria-selected="true"]):hover,
+.h-main-tabs .h-tab[role="tab"]:not([disabled]):not(.on):hover {
+  transform: none !important;
+  border-color: rgba(125, 211, 252, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.105), rgba(125, 211, 252, 0.030)),
+    rgba(8, 18, 31, 0.58) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+}
+
+.h-main-tabs .h-tab[role="tab"].on,
+.h-main-tabs .h-tab[role="tab"][aria-selected="true"] {
+  border-color: rgba(125, 211, 252, 0.38) !important;
+  border-bottom-color: rgba(8, 18, 31, 0.96) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.18), rgba(125, 211, 252, 0.070)),
+    rgba(8, 18, 31, 0.96) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    0 0 0 1px rgba(125, 211, 252, 0.060) !important;
+}
+
+.h-main-tabs .h-tab[role="tab"][disabled] {
+  border-color: rgba(125, 211, 252, 0.08) !important;
+  background: rgba(8, 18, 31, 0.22) !important;
+}
+
+/* Header critical CTAs on harness pages: keep the new dark-metal treatment above harness-specific polish. */
+body:has(.h-root) .pc-header .pc-header-cta {
+  color: #e9fbff !important;
+  border-color: rgba(125, 211, 252, 0.46) !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.72), 0 0 12px rgba(125, 211, 252, 0.20) !important;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(255,255,255,0.24), transparent 18%),
+    linear-gradient(110deg, rgba(255,255,255,0.10), transparent 18% 72%, rgba(255,255,255,0.06)),
+    repeating-linear-gradient(100deg, rgba(255,255,255,0.045) 0 1px, transparent 1px 5px),
+    linear-gradient(180deg, #26323c 0%, #111a24 42%, #070b10 100%) !important;
+  box-shadow:
+    0 0 0 1px rgba(2, 6, 12, 0.84),
+    0 12px 28px rgba(0, 0, 0, 0.44),
+    0 0 26px rgba(8, 145, 178, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.88),
+    inset 0 -10px 22px rgba(0, 0, 0, 0.34) !important;
+}
+
+body:has(.h-root) .pc-header .pc-header-cta--operator {
+  border-color: rgba(248, 113, 113, 0.34) !important;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(255,255,255,0.22), transparent 18%),
+    radial-gradient(circle at 82% 50%, rgba(239, 68, 68, 0.18), transparent 35%),
+    repeating-linear-gradient(100deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 5px),
+    linear-gradient(180deg, #2b3138 0%, #151821 42%, #08090d 100%) !important;
+  box-shadow:
+    0 0 0 1px rgba(2, 6, 12, 0.88),
+    0 12px 30px rgba(0, 0, 0, 0.48),
+    0 0 24px rgba(239, 68, 68, 0.20),
+    0 0 18px rgba(8, 145, 178, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.23),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.90) !important;
+}
+
+body:has(.h-root) .pc-header .pc-header-cta:hover,
+body:has(.h-root) .pc-header .pc-header-cta:focus-visible {
+  color: #fff !important;
+  border-color: rgba(224, 247, 255, 0.74) !important;
+  filter: brightness(1.05) saturate(1.10) !important;
+  box-shadow:
+    0 0 0 1px rgba(2, 6, 12, 0.86),
+    0 16px 36px rgba(0, 0, 0, 0.54),
+    0 0 34px rgba(34, 211, 238, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.90) !important;
+}
+
+body:has(.h-root) .pc-header .pc-header-cta--operator:hover,
+body:has(.h-root) .pc-header .pc-header-cta--operator:focus-visible {
+  border-color: rgba(252, 165, 165, 0.60) !important;
+  box-shadow:
+    0 0 0 1px rgba(2, 6, 12, 0.88),
+    0 16px 36px rgba(0, 0, 0, 0.58),
+    0 0 32px rgba(239, 68, 68, 0.30),
+    0 0 20px rgba(34, 211, 238, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
+}
+
+/* Thirteenth top-bar pass: clearer scan states with fixed metrics. */
+body:has(.h-root) .pc-header-cta {
+  background: linear-gradient(180deg, rgba(186, 230, 253, 0.92), rgba(34, 211, 238, 0.74)) !important;
+  color: #06111d !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.28) !important;
+}
+
+body:has(.h-root) .pc-header nav a:not(.pc-header-cta):hover,
+body:has(.h-root) .pc-header nav button:not(.pc-header-cta):hover {
+  background: rgba(125, 211, 252, 0.045) !important;
+  box-shadow: inset 0 -1px 0 rgba(125, 211, 252, 0.22) !important;
+}
+
+.h-project-phases .h-phase-item.active,
+.h-project-phases .h-phase-item:not(.disabled):hover,
+.h-project-phases .h-phase-item:not(.disabled):focus-visible {
+  background: rgba(125, 211, 252, 0.078) !important;
+  border-color: rgba(125, 211, 252, 0.28) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+}
+
+.h-project-count,
+.h-project-progress,
+.h-status-chip,
+.h-stat {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+}
+
+.h-status-chip.live,
+.h-project-progress {
+  filter: saturate(1.08) brightness(1.03);
+}
+
+.h-stat-button:hover .h-stat,
+.h-stat-button:focus-visible .h-stat {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.080), rgba(255, 255, 255, 0.018)) !important;
+}
+
+.h-phase-plan-row .h-phase-plan-focus strong,
+.h-phase-plan-row .h-phase-plan-focus .h-focus-title,
+.h-phase-plan-row .h-plan-review-banner.compact strong {
+  color: color-mix(in oklab, var(--fg), white 8%) !important;
+  text-shadow: 0 0 12px rgba(125, 211, 252, 0.14) !important;
+}
+
+.h-phase-plan-row .h-btn.ghost,
+.h-phase-plan-row .h-btn.danger,
+.h-phase-plan-row .h-btn.primary {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.052) !important;
+}
+
+.h-quick-action-copy strong {
+  color: color-mix(in oklab, var(--fg-dim), white 28%) !important;
+}
+
+.h-quick-action-btn svg {
+  filter: drop-shadow(0 0 8px rgba(125, 211, 252, 0.24));
+}
+
+.h-quick-action-btn:not(.missing):hover svg,
+.h-quick-action-btn:not(.missing):focus-visible svg {
+  filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.34)) brightness(1.08);
+}
+
+.h-main-tabs .h-tab {
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.22) !important;
+}
+
+.h-main-tabs .h-tab:not([disabled]):hover,
+.h-main-tabs .h-tab:focus-visible {
+  background: rgba(125, 211, 252, 0.075) !important;
+}
+
+.h-main-tabs .h-tab[aria-selected="true"] {
+  border-color: rgba(125, 211, 252, 0.32) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.090), 0 0 0 1px rgba(125, 211, 252, 0.090), 0 -8px 18px rgba(125, 211, 252, 0.035) !important;
+}
+
+.h-main-tabs .h-tab[aria-selected="true"] .h-tab-count,
+.h-main-tabs .h-tab:not([disabled]):hover .h-tab-count {
+  filter: brightness(1.08) saturate(1.08);
+}
+
+/* Collapse/expand top-section control: slimmer overlapped metal tab. */
+.h-top-collapse-row {
+  position: relative !important;
+  z-index: 85 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  pointer-events: none !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline,
+.h-top-collapse-btn.h-top-collapse-floating {
+  min-height: 17px !important;
+  height: 17px !important;
+  gap: 5px !important;
+  padding: 0 9px 0 5px !important;
+  border-radius: 999px !important;
+  font-size: 8px !important;
+  font-weight: 850 !important;
+  letter-spacing: 0.08em !important;
+  color: color-mix(in oklab, var(--accent-cool), white 18%) !important;
+  border-color: rgba(125, 211, 252, 0.34) !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.13), rgba(255,255,255,0.025) 42%, rgba(0,0,0,0.18)),
+    repeating-linear-gradient(100deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 5px),
+    linear-gradient(180deg, rgba(18, 37, 53, 0.96), rgba(4, 10, 19, 0.98)) !important;
+  box-shadow:
+    0 7px 18px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(2, 6, 12, 0.70),
+    0 0 14px rgba(56, 189, 248, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.68) !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline {
+  top: -8px !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-floating {
+  position: relative !important;
+  top: -8px !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+
+.h-top-collapse-btn::before {
+  background:
+    linear-gradient(105deg, transparent 0 28%, rgba(255, 255, 255, 0.12) 42%, transparent 58%),
+    radial-gradient(circle at 50% 105%, rgba(56, 189, 248, 0.18), transparent 52%) !important;
+  opacity: 0.72 !important;
+}
+
+.h-top-collapse-btn::after {
+  left: 10px !important;
+  right: 10px !important;
+  bottom: 1px !important;
+  height: 1px !important;
+  opacity: 0.82 !important;
+}
+
+.h-top-collapse-icon {
+  width: 11px !important;
+  height: 11px !important;
+  padding: 1px !important;
+  border-width: 1px !important;
+  background: rgba(56, 189, 248, 0.12) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 0 8px rgba(56, 189, 248, 0.13) !important;
+}
+
+.h-top-collapse-label {
+  top: 0 !important;
+  line-height: 1 !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline:hover {
+  transform: translateX(-50%) translateY(-0.5px) !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-floating:hover {
+  transform: translateY(-0.5px) !important;
+}
+
+.h-top-collapse-btn:focus-visible {
+  outline-width: 1px !important;
+  outline-offset: 2px !important;
+}
+
+@media (max-width: 720px) {
+  .h-top-collapse-btn.h-top-collapse-inline,
+  .h-top-collapse-btn.h-top-collapse-floating {
+    min-height: 16px !important;
+    height: 16px !important;
+    padding: 0 8px 0 5px !important;
+    font-size: 7.5px !important;
+  }
+}
+
+/* Collapsed state: keep the expand tab visible while it overlaps the tabs below. */
+.h-root.top-chrome-collapsed .h-top-collapse-row {
+  height: 8px !important;
+  min-height: 8px !important;
+  margin-bottom: -5px !important;
+}
+
+.h-root.top-chrome-collapsed .h-top-collapse-btn.h-top-collapse-floating {
+  top: 0 !important;
+  z-index: 2 !important;
+  transform: translateY(-1px) !important;
+}
+
+.h-root.top-chrome-collapsed .h-top-collapse-btn.h-top-collapse-floating:hover {
+  transform: translateY(-1.5px) !important;
+}
+
+/* Tab cleanup: plugin/source details live in tooltips, not separate ⓘ buttons. */
+.h-main-tabs .h-tab-info,
+.h-main-tabs .h-tab-source-info,
+.h-main-tabs button[aria-label*="info" i],
+.h-main-tabs button[aria-label*="source" i] {
+  display: none !important;
+}
+
+/* Dashboard follow-up: separate top status clusters and calm empty-state
+   CTA pileups. The previous "hide quote on /harness" rule was reversed
+   by user request — the quote is now centred in the navbar on every
+   page (see globals.css). */
+
+.h-project-topline {
+  align-items: flex-start !important;
+}
+
+.h-project-topline-statuses {
+  margin-left: auto !important;
+  padding-left: 10px !important;
+  border-left: 1px solid rgba(125, 211, 252, 0.14) !important;
+}
+
+.h-header-side .h-stats {
+  padding: 3px 0 3px 10px !important;
+  gap: 6px !important;
+  border-left: 1px solid rgba(125, 211, 252, 0.14) !important;
+  border-radius: 10px !important;
+  background: linear-gradient(90deg, rgba(125, 211, 252, 0.040), rgba(255, 255, 255, 0.010)) !important;
+}
+
+.h-stat-label {
+  text-transform: uppercase !important;
+  letter-spacing: 0.10em !important;
+}
+
+.h-feature-row-title {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  white-space: normal !important;
+}
+
+.h-feature-row-id {
+  opacity: 0.72;
+}
+
+.h-inbox-template-grid {
   display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-}
-
-.h-feature-toolrow::-webkit-scrollbar {
-  display: none;
-}
-
-.h-feature-search {
-  flex: 1 1 auto;
-  min-width: 170px;
-}
-
-.h-feature-add,
-.h-feature-result-count,
-.h-feature-mode,
-.h-feature-toolrow > select,
-.h-feature-toolrow > input[aria-label="Filter by tag"] {
-  flex: 0 0 auto;
-}
-
-.h-feature-add {
-  white-space: nowrap;
-}
-
-.h-feature-result-count {
-  white-space: nowrap;
-}
-
-.h-feature-mode {
-  min-width: max-content;
-}
-
-.h-inbox-top-actions {
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-  max-width: none;
-}
-
-.h-issue {
-  align-items: start;
-}
-
-.h-issue-title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  white-space: normal;
-  line-height: 1.28;
-}
-
-.h-issue-meta {
   flex-wrap: wrap;
+}
+
+.h-inbox-template-grid button {
+  width: auto;
+  max-width: 220px;
+  border-radius: 999px;
+}
+
+/* Dashboard follow-up: de-duplicate phase stats, keep VS Code visible, and calm dense empty states. */
+.h-phase-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
   min-width: 0;
 }
 
-.h-issue-right {
-  align-self: start;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-@media (max-width: 760px) {
-  .h-feature-toolrow {
-    display: grid;
-    width: 100%;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 4px;
-    grid-template-areas:
-      "search add add"
-      "mode mode mode";
-    overflow: visible;
-  }
-
-  .h-feature-search { grid-area: search; }
-  .h-feature-add { grid-area: add; }
-  .h-feature-mode { grid-area: mode; width: 100%; }
-
-  .h-inbox-top-actions {
-    max-width: none;
-  }
-}
-
-/* Papercusp harness follow-up: keep Architect inbox top actions on a single line. */
-.h-inbox-command-top {
+.h-phase-summary-chip {
+  display: inline-flex;
   align-items: center;
-}
-
-.h-inbox-top-actions {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: max-content;
-  align-items: center;
-  justify-content: flex-end;
   gap: 4px;
-  flex: 0 0 auto;
-  max-width: none;
+  min-height: 22px;
+  padding: 0 8px;
+  color: color-mix(in oklab, var(--fg-dim), white 16%);
+  font-size: 10px;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.034);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
 }
 
-.h-inbox-top-actions .h-inbox-action {
-  min-height: 23px;
-  padding-inline: 6px;
-  white-space: nowrap;
-}
-@media (max-width: 760px) {
-  .h-inbox-command-top {
-    align-items: flex-start;
-  }
-
-  .h-inbox-top-actions {
-    justify-content: flex-start;
-  }
+.h-phase-summary-chip strong {
+  color: color-mix(in oklab, var(--fg), white 6%);
 }
 
-.h-inbox-top-actions {
+.h-main-tabs {
+  gap: 3px !important;
+}
+
+.h-main-tabs .h-tab {
+  padding: 4px 8px 5px !important;
+  font-size: 11px !important;
+}
+
+.h-inbox-template-dock {
   display: flex;
-  flex-wrap: nowrap;
-  width: max-content;
-  min-width: max-content;
+  flex-wrap: wrap;
+  align-items: flex-start;
 }
-@media (max-width: 760px) {
-  .h-inbox-top-actions {
-    width: auto;
-    min-width: 0;
+
+.h-inbox-template-dock-head {
+  width: 100%;
+}
+
+.h-plan-review-banner.compact strong,
+.h-plan-review-banner.compact code {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.16);
+}
+
+/* Restore historical phase pills: compact, phase-colored active border, stats inline. */
+.h-project-phases .h-phase-item {
+  background: transparent !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.h-project-phases .h-phase-item:not(.disabled):hover,
+.h-project-phases .h-phase-item:not(.disabled):focus-visible {
+  background: color-mix(in oklab, var(--bg-2), white 3%) !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
+.h-project-phases .h-phase-item.active,
+.h-project-phases .h-phase-item.active:not(.disabled):hover,
+.h-project-phases .h-phase-item.active:not(.disabled):focus-visible {
+  background: color-mix(in oklab, var(--bg-2), white 4%) !important;
+  box-shadow: none !important;
+}
+
+.h-project-phases .h-phase-item.phase-staging.active,
+.h-project-phases .h-phase-item.phase-staging.active:not(.disabled):hover,
+.h-project-phases .h-phase-item.phase-staging.active:not(.disabled):focus-visible {
+  border-color: #3b82f6 !important;
+}
+
+.h-project-phases .h-phase-item.phase-testing.active,
+.h-project-phases .h-phase-item.phase-testing.active:not(.disabled):hover,
+.h-project-phases .h-phase-item.phase-testing.active:not(.disabled):focus-visible {
+  border-color: #a855f7 !important;
+}
+
+.h-project-phases .h-phase-item.phase-production.active,
+.h-project-phases .h-phase-item.phase-production.active:not(.disabled):hover,
+.h-project-phases .h-phase-item.phase-production.active:not(.disabled):focus-visible {
+  border-color: #10b981 !important;
+}
+
+.h-project-phases .h-phase-item .h-phase-name,
+.h-project-phases .h-phase-item:not(.disabled):hover .h-phase-name,
+.h-project-phases .h-phase-item.active .h-phase-name {
+  text-shadow: none !important;
+}
+
+.h-project-phases .h-phase-item .h-phase-dot,
+.h-project-phases .h-phase-item:not(.disabled):hover .h-phase-dot,
+.h-project-phases .h-phase-item.active .h-phase-dot {
+  filter: none !important;
+}
+
+/* Header selector card: fill the freed brand column so the harness selector box returns to the wide layout. */
+.h-header-main {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.h-header-main .h-project-card {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+}
+
+/* Restore phase-specific color tints for every environment pill, not just the active one. */
+.h-project-phases .h-phase-item.phase-staging {
+  background: color-mix(in oklab, #3b82f6, transparent 92%) !important;
+  border-color: color-mix(in oklab, #3b82f6, transparent 54%) !important;
+}
+
+.h-project-phases .h-phase-item.phase-testing {
+  background: color-mix(in oklab, #a855f7, transparent 92%) !important;
+  border-color: color-mix(in oklab, #a855f7, transparent 54%) !important;
+}
+
+.h-project-phases .h-phase-item.phase-production {
+  background: color-mix(in oklab, #10b981, transparent 92%) !important;
+  border-color: color-mix(in oklab, #10b981, transparent 54%) !important;
+}
+
+.h-project-phases .h-phase-item.phase-staging:not(.disabled):hover,
+.h-project-phases .h-phase-item.phase-staging:not(.disabled):focus-visible,
+.h-project-phases .h-phase-item.phase-staging.active {
+  background: color-mix(in oklab, #3b82f6, transparent 86%) !important;
+  border-color: #3b82f6 !important;
+}
+
+.h-project-phases .h-phase-item.phase-testing:not(.disabled):hover,
+.h-project-phases .h-phase-item.phase-testing:not(.disabled):focus-visible,
+.h-project-phases .h-phase-item.phase-testing.active {
+  background: color-mix(in oklab, #a855f7, transparent 86%) !important;
+  border-color: #a855f7 !important;
+}
+
+.h-project-phases .h-phase-item.phase-production:not(.disabled):hover,
+.h-project-phases .h-phase-item.phase-production:not(.disabled):focus-visible,
+.h-project-phases .h-phase-item.phase-production.active {
+  background: color-mix(in oklab, #10b981, transparent 86%) !important;
+  border-color: #10b981 !important;
+}
+
+.h-project-phases .h-phase-item.disabled {
+  opacity: 0.68 !important;
+}
+
+/* Match the provided screenshot: dark phase pills with colored outlines and visible inline stats/open chips. */
+.h-project-phases,
+.h-project-phases .h-phase-strip {
+  max-width: none !important;
+  overflow: visible !important;
+}
+
+.h-project-phases .h-phase-item {
+  max-width: none !important;
+  background: rgba(8, 18, 31, 0.78) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04) !important;
+}
+
+.h-project-phases .h-phase-meta,
+.h-project-phases .h-phase-cost {
+  display: inline !important;
+}
+
+.h-project-phases .h-phase-open {
+  display: inline-flex !important;
+}
+
+.h-project-phases .h-phase-item.phase-staging,
+.h-project-phases .h-phase-item.phase-staging.active,
+.h-project-phases .h-phase-item.phase-staging:not(.disabled):hover,
+.h-project-phases .h-phase-item.phase-staging:not(.disabled):focus-visible {
+  background: rgba(8, 18, 31, 0.82) !important;
+  border-color: color-mix(in oklab, #3b82f6, transparent 36%) !important;
+}
+
+.h-project-phases .h-phase-item.phase-testing,
+.h-project-phases .h-phase-item.phase-testing.active,
+.h-project-phases .h-phase-item.phase-testing:not(.disabled):hover,
+.h-project-phases .h-phase-item.phase-testing:not(.disabled):focus-visible {
+  background: rgba(8, 18, 31, 0.82) !important;
+  border-color: color-mix(in oklab, #a855f7, transparent 36%) !important;
+}
+
+.h-project-phases .h-phase-item.phase-production,
+.h-project-phases .h-phase-item.phase-production.active,
+.h-project-phases .h-phase-item.phase-production:not(.disabled):hover,
+.h-project-phases .h-phase-item.phase-production:not(.disabled):focus-visible {
+  background: rgba(8, 18, 31, 0.82) !important;
+  border-color: color-mix(in oklab, #10b981, transparent 36%) !important;
+}
+
+.h-project-phases .h-phase-item.disabled {
+  opacity: 1 !important;
+}
+
+/* Phase action menu readability: solid popout surface and clearer button affordances. */
+.h-phase-action-menu {
+  isolation: isolate;
+  backdrop-filter: none !important;
+  background: linear-gradient(180deg, #0d1829 0%, #07101d 100%) !important;
+  border: 1px solid rgba(125, 211, 252, 0.26) !important;
+  border-radius: 7px !important;
+  padding: 6px !important;
+  min-width: 190px !important;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+}
+
+.h-phase-action-menu-item {
+  padding: 4px !important;
+  border-radius: 6px !important;
+}
+
+.h-phase-action-menu-item:hover {
+  background: rgba(125, 211, 252, 0.060) !important;
+}
+
+.h-phase-action-menu-btn {
+  min-height: 30px;
+  justify-content: space-between;
+  padding: 6px 9px !important;
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.105), rgba(125, 211, 252, 0.045)) !important;
+  border: 1px solid rgba(125, 211, 252, 0.28) !important;
+  border-radius: 6px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.060);
+}
+
+.h-phase-action-menu-btn:not(:disabled):hover {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.155), rgba(125, 211, 252, 0.065)) !important;
+  border-color: rgba(125, 211, 252, 0.44) !important;
+  color: var(--fg) !important;
+}
+
+.h-phase-action-menu-btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.h-phase-action-menu-btn:focus-visible {
+  outline: 1px solid rgba(125, 211, 252, 0.68);
+  outline-offset: 2px;
+}
+
+.h-phase-action-menu-btn:disabled {
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.125), rgba(251, 191, 36, 0.050)) !important;
+  border-color: rgba(251, 191, 36, 0.32) !important;
+}
+
+.h-phase-action-menu-note {
+  padding: 3px 7px 2px;
+}
+
+.h-phase-action-menu-link {
+  padding: 3px 6px;
+  border-radius: 5px;
+}
+
+.h-phase-action-menu-link:hover {
+  background: rgba(88, 166, 255, 0.12);
+}
+
+/* ── Motion refinement pass ─────────────────────────────────────────── */
+.h-main-shell.pc-animate-in {
+  transform-origin: top center;
+}
+.h-tabs.h-main-tabs .h-tab {
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.h-main-tabs .h-tab:hover,
+.h-main-tabs .h-tab[aria-selected="true"] {
+  transform: translateY(-1px);
+}
+.h-main-tabs .h-tab[aria-selected="true"] {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 14px 28px rgba(0, 0, 0, 0.16);
+}
+.h-add-plugin-popover {
+  transform-origin: top right;
+}
+.h-add-plugin-popover button {
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.h-add-plugin-popover button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.h-feature-peek-overlay,
+.h-issue-detail-overlay {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.h-feature-peek-drawer,
+.h-issue-detail-drawer {
+  transform-origin: right center;
+  box-shadow: -26px 0 64px rgba(0, 0, 0, 0.42);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .h-tabs.h-main-tabs .h-tab,
+  .h-add-plugin-popover button {
+    transition-duration: 0.01ms !important;
   }
+}
+
+/* ── Mission Control ignition ───────────────────────────────────────── */
+.h-root {
+  position: relative;
+  isolation: isolate;
+}
+
+.h-root--preignite {
+  overflow: hidden;
+}
+
+.h-root--preignite > * {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.h-root--igniting > * {
+  position: relative;
+  z-index: 1;
+}
+
+.h-root--preignite::before,
+.h-root--preignite::after,
+.h-root--igniting::before,
+.h-root--igniting::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.h-root--preignite::before,
+.h-root--igniting::before {
+  background:
+    radial-gradient(circle at 22% 0%, rgba(125, 211, 252, 0.18), transparent 22rem),
+    radial-gradient(circle at 78% 12%, rgba(45, 212, 191, 0.12), transparent 24rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 28%);
+}
+
+.h-root--preignite::before {
+  opacity: 0.62;
+}
+
+.h-root--igniting::before {
+  opacity: 0;
+  transform: scale(0.985);
+  transform-origin: 50% 0%;
+  animation: h-ignition-halo 920ms var(--ease-out) both;
+}
+
+.h-root--igniting::after {
+  inset: -12% -30% 14% -30%;
+  background: linear-gradient(
+    112deg,
+    transparent 18%,
+    rgba(125, 211, 252, 0) 34%,
+    rgba(125, 211, 252, 0.18) 46%,
+    rgba(215, 243, 255, 0.32) 50%,
+    rgba(45, 212, 191, 0.18) 54%,
+    transparent 72%
+  );
+  opacity: 0;
+  transform: translate3d(-22%, 0, 0) skewX(-18deg);
+  transform-origin: 50% 0%;
+  animation: h-ignition-sweep 1050ms var(--ease-out) 60ms both;
+}
+
+@keyframes h-ignition-halo {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  38% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+}
+
+@keyframes h-ignition-sweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-24%, 0, 0) skewX(-18deg);
+  }
+  18% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(24%, 0, 0) skewX(-18deg);
+  }
+}
+
+@keyframes h-ignition-stage-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale(0.985);
+  }
+  55% {
+    opacity: 1;
+    transform: translate3d(0, -2px, 0) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes h-ignition-panel-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0) scale(0.985);
+  }
+  60% {
+    opacity: 1;
+    transform: translate3d(0, -1px, 0) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.h-root--igniting .h-header,
+.h-root--igniting .h-phase-plan-row,
+.h-root--igniting .h-quick-action-row,
+.h-root--igniting .h-tab-strip,
+.h-root--igniting .h-guide-strip,
+.h-root--igniting .h-main-shell,
+.h-root--igniting .h-dashboard-panel-anchor {
+  will-change: transform, opacity;
+}
+
+.h-root--igniting .h-header {
+  animation: h-ignition-stage-in 520ms var(--ease-out) 40ms both;
+  transform-origin: top center;
+}
+
+.h-root--igniting .h-phase-plan-row {
+  animation: h-ignition-stage-in 500ms var(--ease-out) 130ms both;
+}
+
+.h-root--igniting .h-quick-action-row {
+  animation: h-ignition-stage-in 500ms var(--ease-out) 190ms both;
+}
+
+.h-root--igniting .h-tab-strip,
+.h-root--igniting .h-guide-strip {
+  animation: h-ignition-stage-in 500ms var(--ease-out) 230ms both;
+}
+
+.h-root--igniting .h-main-shell {
+  animation: h-ignition-stage-in 560ms var(--ease-out) 290ms both;
+  transform-origin: top center;
+}
+
+.h-root--igniting .h-dashboard-panel-anchor[data-dashboard-panel="features"] {
+  animation: h-ignition-panel-in 620ms var(--ease-out) 340ms both;
+}
+
+.h-root--igniting .h-dashboard-panel-anchor[data-dashboard-panel="issues"] {
+  animation: h-ignition-panel-in 620ms var(--ease-out) 410ms both;
+}
+
+.h-root--igniting .h-dashboard-panel-anchor[data-dashboard-panel="agents"],
+.h-root--igniting .h-dashboard-panel-anchor[data-dashboard-panel="inbox"],
+.h-root--igniting .h-dashboard-panel-anchor[data-dashboard-panel="git"] {
+  animation: h-ignition-panel-in 620ms var(--ease-out) 470ms both;
+}
+
+.h-root--igniting .h-dashboard-panel-anchor[data-dashboard-panel="logs"] {
+  animation: h-ignition-panel-in 620ms var(--ease-out) 530ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .h-root--igniting::before,
+  .h-root--igniting::after,
+  .h-root--igniting .h-header,
+  .h-root--igniting .h-phase-plan-row,
+  .h-root--igniting .h-quick-action-row,
+  .h-root--igniting .h-tab-strip,
+  .h-root--igniting .h-guide-strip,
+  .h-root--igniting .h-main-shell,
+  .h-root--igniting .h-dashboard-panel-anchor {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+  }
+}
+
+/* Keep the collapse/expand top-section tab above every adjacent panel/header layer. */
+.h-header:has(.h-top-collapse-inline),
+.h-top-collapse-row {
+  position: relative !important;
+  z-index: 2147483000 !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline,
+.h-top-collapse-btn.h-top-collapse-floating {
+  z-index: 2147483001 !important;
+  pointer-events: auto !important;
+}
+
+.h-root.top-chrome-collapsed .h-top-collapse-row {
+  z-index: 2147483000 !important;
+}
+
+.h-root.top-chrome-collapsed .h-top-collapse-btn.h-top-collapse-floating {
+  z-index: 2147483001 !important;
+}
+
+/* Opaque command/actions popups: keep the dark theme but prevent page content from bleeding through text. */
+.h-cmd {
+  isolation: isolate !important;
+  background: linear-gradient(180deg, #0b1727 0%, #07101d 100%) !important;
+  color: var(--fg) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  /* Centering: must use `translate` (independent property) — not
+     `transform` — because the slide-down keyframe animates `transform`
+     and would otherwise wipe out a `translateX(-50%)` for the duration
+     of the open animation, causing a visible "appears off-right then
+     snaps to center" jump on first open. */
+  position: fixed !important;
+  top: 12vh !important;
+  left: 50% !important;
+  translate: -50% 0 !important;
+  transform: none;
+}
+
+.h-cmd-row:hover,
+.h-cmd-row.selected {
+  background: linear-gradient(90deg, #0f2840 0%, #0b1b2d 100%) !important;
+}
+
+.h-phase-action-menu {
+  isolation: isolate !important;
+  background: #07101d !important;
+  color: var(--fg) !important;
+  border-color: rgba(125, 211, 252, 0.24) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.h-phase-action-menu-item:hover {
+  background: #0e2033 !important;
+}
+
+/* Harness metallic frost polish: small visual-only surface refinements. */
+.h-header,
+.h-phase-plan-row,
+.h-quick-action-row,
+.h-tabs.h-main-tabs,
+.h-config-rail {
+  border-color: rgba(125, 211, 252, 0.16) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.050), rgba(255, 255, 255, 0.014)),
+    linear-gradient(90deg, rgba(125, 211, 252, 0.055), transparent 24% 76%, rgba(215, 243, 255, 0.035)),
+    rgba(7, 16, 29, 0.86) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 -1px 0 rgba(125, 211, 252, 0.070),
+    0 10px 30px rgba(0, 0, 0, 0.16) !important;
+}
+
+.h-stat,
+.h-project,
+.h-project-card,
+.h-project-phases .h-phase-item,
+.h-phase-plan-row .h-phase-plan-focus,
+.h-phase-plan-row .h-plan-review-banner.compact,
+.h-quick-action-btn,
+.h-config-field,
+.h-config-plugin-pane > .pc-card {
+  border-color: rgba(125, 211, 252, 0.15) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.048), rgba(255, 255, 255, 0.014)),
+    rgba(9, 19, 34, 0.70) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.050),
+    0 10px 24px rgba(0, 0, 0, 0.13) !important;
+}
+
+.h-btn,
+.h-btn-icon,
+.h-config-tab,
+.h-main-tabs .h-tab {
+  border-color: rgba(125, 211, 252, 0.14) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)),
+    rgba(9, 19, 34, 0.56) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.040) !important;
+}
+
+.h-btn:hover,
+.h-btn:focus-visible,
+.h-btn-icon:hover,
+.h-btn-icon:focus-visible,
+.h-config-tab:hover,
+.h-config-tab:focus-visible,
+.h-main-tabs .h-tab:hover,
+.h-main-tabs .h-tab:focus-visible,
+.h-project-phases .h-phase-item:not(.disabled):hover,
+.h-quick-action-btn:hover,
+.h-quick-action-btn:focus-visible,
+.h-config-field:focus-within {
+  border-color: rgba(125, 211, 252, 0.34) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.105), rgba(255, 255, 255, 0.018)),
+    rgba(10, 22, 38, 0.74) !important;
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.060) !important;
+}
+
+.h-btn.primary,
+.h-phase-plan-row .h-btn.primary,
+.h-quick-action-btn:not(.missing) {
+  border-color: rgba(45, 212, 191, 0.34) !important;
+  background:
+    linear-gradient(180deg, rgba(45, 212, 191, 0.18), rgba(45, 212, 191, 0.070)),
+    rgba(7, 16, 29, 0.70) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.060),
+    0 10px 24px rgba(45, 212, 191, 0.070) !important;
+}
+
+.h-main-tabs .h-tab.on,
+.h-main-tabs .h-tab[aria-selected="true"],
+.h-config-tab.is-active,
+.h-project-phases .h-phase-item.active {
+  color: color-mix(in oklab, var(--fg), white 6%) !important;
+  border-color: rgba(125, 211, 252, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.145), rgba(125, 211, 252, 0.045)),
+    rgba(9, 19, 34, 0.72) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.070),
+    0 8px 22px rgba(0, 0, 0, 0.16) !important;
+}
+
+.h-stat-label,
+.h-project-path,
+.h-phase-plan-row .h-overline,
+.h-config-tab,
+.h-main-tabs .h-tab:not([aria-selected="true"]) {
+  color: color-mix(in oklab, var(--fg-dim), white 14%) !important;
+}
+
+.h-stat-value,
+.h-project-name,
+.h-phase-plan-row .h-phase-plan-focus strong,
+.h-quick-action-btn span {
+  color: color-mix(in oklab, var(--fg), white 4%) !important;
+  text-shadow: none !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline,
+.h-top-collapse-btn.h-top-collapse-floating {
+  border-color: rgba(125, 211, 252, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.016)),
+    rgba(7, 16, 29, 0.88) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 8px 22px rgba(0, 0, 0, 0.22) !important;
+}
+
+.h-root:has(.h-config-panel) .h-main-shell {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(125, 211, 252, 0.040), transparent 32rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.014), transparent 9rem) !important;
+}
+
+.h-config-body,
+.h-config-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.016), transparent 9rem),
+    rgba(3, 8, 17, 0.84) !important;
+}
+
+/* Harness contrast pass: clearer separation between bands, panels, and controls. */
+.h-header {
+  border-bottom-color: rgba(125, 211, 252, 0.24) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(125, 211, 252, 0.13), transparent 30rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.012)),
+    rgba(6, 15, 27, 0.92) !important;
+}
+
+.h-phase-plan-row {
+  border-top-color: rgba(125, 211, 252, 0.20) !important;
+  border-bottom-color: rgba(125, 211, 252, 0.20) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.040), rgba(255, 255, 255, 0.010)),
+    rgba(8, 18, 31, 0.84) !important;
+}
+
+.h-quick-action-row {
+  border-top-color: rgba(125, 211, 252, 0.22) !important;
+  border-bottom-color: rgba(125, 211, 252, 0.22) !important;
+  background:
+    linear-gradient(180deg, rgba(45, 212, 191, 0.10), rgba(56, 189, 248, 0.035)),
+    rgba(8, 18, 31, 0.86) !important;
+}
+
+.h-tabs.h-main-tabs,
+.h-config-rail {
+  border-top-color: rgba(125, 211, 252, 0.18) !important;
+  border-bottom-color: rgba(125, 211, 252, 0.22) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.010)),
+    rgba(5, 13, 24, 0.88) !important;
+}
+
+.h-dashboard-panel-anchor > .h-panel,
+.h-inbox-command,
+.h-feature-toolbar,
+.h-project-card,
+.h-config-plugin-pane > .pc-card {
+  border-color: rgba(125, 211, 252, 0.17) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.050), rgba(255, 255, 255, 0.014)),
+    rgba(9, 19, 34, 0.76) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 12px 28px rgba(0, 0, 0, 0.16) !important;
+}
+
+.h-panel-head {
+  border-bottom-color: rgba(125, 211, 252, 0.20) !important;
+  background:
+    linear-gradient(90deg, rgba(125, 211, 252, 0.10), rgba(255, 255, 255, 0.018) 42%, rgba(45, 212, 191, 0.040)),
+    rgba(10, 20, 36, 0.90) !important;
+}
+
+.h-panel-body {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 9rem),
+    rgba(5, 12, 22, 0.62) !important;
+}
+
+.h-stat,
+.h-project,
+.h-project-phases .h-phase-item,
+.h-inbox-metric,
+.h-inbox-row {
+  border-color: rgba(125, 211, 252, 0.18) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.016)),
+    rgba(10, 20, 36, 0.72) !important;
+}
+
+.h-btn,
+.h-btn-icon,
+.h-inbox-action,
+.h-inbox-filter,
+.h-config-tab,
+.h-main-tabs .h-tab {
+  border-color: rgba(125, 211, 252, 0.20) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.060), rgba(255, 255, 255, 0.016)),
+    rgba(10, 20, 36, 0.74) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.050),
+    0 6px 16px rgba(0, 0, 0, 0.10) !important;
+}
+
+.h-btn:hover,
+.h-btn:focus-visible,
+.h-btn-icon:hover,
+.h-btn-icon:focus-visible,
+.h-inbox-action:hover:not(:disabled),
+.h-inbox-action:focus-visible,
+.h-inbox-filter:hover,
+.h-inbox-filter:focus-visible,
+.h-config-tab:hover,
+.h-config-tab:focus-visible,
+.h-main-tabs .h-tab:hover,
+.h-main-tabs .h-tab:focus-visible {
+  border-color: rgba(125, 211, 252, 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.14), rgba(255, 255, 255, 0.020)),
+    rgba(10, 22, 38, 0.80) !important;
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.06),
+    0 8px 18px rgba(14, 165, 233, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.060) !important;
+}
+
+.h-btn.primary,
+.h-phase-plan-row .h-btn.primary,
+.h-quick-action-btn:not(.missing),
+.h-inbox-action.primary {
+  border-color: rgba(45, 212, 191, 0.40) !important;
+  background:
+    linear-gradient(180deg, rgba(45, 212, 191, 0.24), rgba(45, 212, 191, 0.085)),
+    rgba(7, 16, 29, 0.72) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.065),
+    0 8px 18px rgba(45, 212, 191, 0.10) !important;
+}
+
+.h-btn.danger,
+.h-phase-plan-row .h-btn.danger,
+.h-inbox-action.danger {
+  border-color: rgba(251, 113, 133, 0.34) !important;
+  background:
+    linear-gradient(180deg, rgba(251, 113, 133, 0.16), rgba(251, 113, 133, 0.050)),
+    rgba(24, 12, 20, 0.72) !important;
+}
+
+.h-main-tabs .h-tab.on,
+.h-main-tabs .h-tab[aria-selected="true"],
+.h-config-tab.is-active,
+.h-inbox-filter.on,
+.h-inbox-filter[data-state="active"],
+.h-project-phases .h-phase-item.active {
+  border-color: rgba(125, 211, 252, 0.34) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.18), rgba(125, 211, 252, 0.055)),
+    rgba(9, 19, 34, 0.78) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    0 8px 20px rgba(14, 165, 233, 0.08) !important;
+}
+
+/* Command palette must stay centered while its open/close animation runs. */
+@keyframes h-cmd-slide-down-in-centered {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes h-cmd-slide-down-out-centered {
+  from {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px) scale(0.985);
+  }
+}
+
+.h-cmd[data-anim="slide-down"][data-state="open"] {
+  animation-name: h-cmd-slide-down-in-centered !important;
+}
+
+.h-cmd[data-anim="slide-down"][data-state="closed"] {
+  animation-name: h-cmd-slide-down-out-centered !important;
+}
+
+/* Futuristic metal command-surface pass.
+   Visual-only: no component/text/spacing changes; keeps locked chrome heights intact. */
+.h-root {
+  --h-metal-deep: rgba(3, 8, 17, 0.96);
+  --h-metal-plate: rgba(9, 20, 34, 0.84);
+  --h-metal-plate-2: rgba(14, 27, 44, 0.78);
+  --h-metal-line: rgba(125, 211, 252, 0.24);
+  --h-metal-line-strong: rgba(186, 230, 253, 0.48);
+  --h-metal-glint: rgba(255, 255, 255, 0.075);
+  --h-metal-teal: rgba(45, 212, 191, 0.16);
+  --h-metal-blue: rgba(56, 189, 248, 0.16);
+  --h-metal-violet: rgba(129, 140, 248, 0.10);
+  background:
+    radial-gradient(circle at 18% -8%, rgba(125, 211, 252, 0.12), transparent 30rem),
+    radial-gradient(circle at 84% 4%, rgba(45, 212, 191, 0.075), transparent 24rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.018), transparent 28%, rgba(125, 211, 252, 0.020) 62%, transparent),
+    var(--h-metal-deep) !important;
+}
+
+.h-root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.045) 50%, transparent) top / 100% 1px no-repeat,
+    repeating-linear-gradient(90deg, rgba(125, 211, 252, 0.018) 0 1px, transparent 1px 96px),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.010) 0 1px, transparent 1px 72px);
+  opacity: 0.52;
+}
+
+.h-header,
+.h-phase-plan-row,
+.h-quick-action-row,
+.h-tabs.h-main-tabs,
+.h-config-rail {
+  border-color: var(--h-metal-line) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.072), rgba(255, 255, 255, 0.014)),
+    linear-gradient(90deg, rgba(125, 211, 252, 0.075), transparent 26% 74%, rgba(45, 212, 191, 0.052)),
+    var(--h-metal-plate) !important;
+  box-shadow:
+    inset 0 1px 0 var(--h-metal-glint),
+    inset 0 -1px 0 rgba(125, 211, 252, 0.10),
+    0 14px 34px rgba(0, 0, 0, 0.18) !important;
+}
+
+.h-header {
+  color: color-mix(in oklab, var(--fg), white 3%);
+}
+
+.h-brand-kicker,
+.h-panel-title,
+.h-running-head,
+.h-overline,
+.h-stat-label,
+.h-config-tab,
+.h-main-tabs .h-tab:not([aria-selected="true"]) {
+  color: color-mix(in oklab, var(--fg-dim), white 20%) !important;
+}
+
+.h-project-card,
+.h-stat,
+.h-status-chip,
+.h-escalated-pill,
+.h-running-strip,
+.h-running-lane,
+.h-focus-card,
+.h-status-distribution,
+.h-overview-action,
+.h-decision-chip,
+.h-project,
+.h-project-phases .h-phase-item,
+.h-phase-plan-row .h-phase-plan-focus,
+.h-phase-plan-row .h-phase-plan-review,
+.h-phase-plan-row .h-plan-review-banner.compact,
+.h-config-field,
+.h-inbox-metric,
+.h-inbox-row {
+  border-color: rgba(125, 211, 252, 0.22) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.014)),
+    linear-gradient(135deg, rgba(125, 211, 252, 0.046), transparent 54%, rgba(45, 212, 191, 0.030)),
+    var(--h-metal-plate-2) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.060),
+    0 8px 22px rgba(0, 0, 0, 0.13) !important;
+}
+
+.h-panel,
+.h-dashboard-panel-anchor > .h-panel,
+.h-inbox-command,
+.h-feature-toolbar,
+.h-config-plugin-pane > .pc-card,
+.h-config-plugin-pane .h-plugin-card,
+.h-manifest-editor,
+.h-plugin-config-editor {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.012)),
+    radial-gradient(circle at 50% 0%, rgba(125, 211, 252, 0.050), transparent 18rem),
+    rgba(6, 14, 26, 0.88) !important;
+  border-color: rgba(125, 211, 252, 0.20) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.014),
+    0 16px 36px rgba(0, 0, 0, 0.20) !important;
+  background-clip: padding-box;
+}
+
+.h-panel-head,
+.h-manifest-editor-head,
+.h-manifest-section-tabs,
+.h-manifest-file-tabs,
+.h-manifest-view-bar,
+.h-plugin-action-row {
+  border-color: rgba(125, 211, 252, 0.18) !important;
+  background:
+    linear-gradient(90deg, rgba(125, 211, 252, 0.105), rgba(255, 255, 255, 0.018) 45%, rgba(45, 212, 191, 0.050)),
+    rgba(7, 17, 30, 0.92) !important;
+}
+
+.h-panel-body,
+.h-config-panel,
+.h-config-body {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(125, 211, 252, 0.040), transparent 24rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.014), transparent 9rem),
+    rgba(3, 9, 18, 0.84) !important;
+  scrollbar-color: rgba(125, 211, 252, 0.28) transparent;
+}
+
+.h-btn,
+.h-btn-icon,
+.h-main-tabs .h-tab,
+.h-config-tab,
+.h-manifest-action,
+.h-manifest-section-tab,
+.h-manifest-file-tab,
+.h-plugin-config-toggle,
+.h-plugin-action-row button,
+.h-inbox-action,
+.h-inbox-filter,
+.h-quick-action-btn {
+  border-color: rgba(125, 211, 252, 0.22) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.066), rgba(255, 255, 255, 0.014)),
+    rgba(9, 20, 34, 0.76) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 6px 16px rgba(0, 0, 0, 0.10) !important;
+}
+
+.h-btn:hover,
+.h-btn:focus-visible,
+.h-btn-icon:hover,
+.h-btn-icon:focus-visible,
+.h-main-tabs .h-tab:hover,
+.h-main-tabs .h-tab:focus-visible,
+.h-config-tab:hover,
+.h-config-tab:focus-visible,
+.h-manifest-action:hover:not(:disabled),
+.h-manifest-action:focus-visible,
+.h-manifest-section-tab:hover,
+.h-manifest-file-tab:hover,
+.h-plugin-config-toggle:hover,
+.h-inbox-action:hover:not(:disabled),
+.h-inbox-filter:hover,
+.h-quick-action-btn:hover,
+.h-quick-action-btn:focus-visible,
+.h-project:hover,
+.h-project:focus-visible,
+.h-project-card:focus-within,
+.h-focus-card:hover:not(:disabled),
+.h-focus-card:focus-visible,
+.h-overview-action:hover,
+.h-overview-action:focus-visible {
+  border-color: var(--h-metal-line-strong) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.155), rgba(255, 255, 255, 0.018)),
+    rgba(10, 23, 39, 0.84) !important;
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.075),
+    0 9px 20px rgba(14, 165, 233, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.075) !important;
+}
+
+.h-main-tabs .h-tab.on,
+.h-main-tabs .h-tab[aria-selected="true"],
+.h-config-tab.is-active,
+.h-manifest-section-tab.is-active,
+.h-manifest-file-tab.is-active,
+.h-inbox-filter.on,
+.h-inbox-filter[data-state="active"],
+.h-project-phases .h-phase-item.active {
+  color: color-mix(in oklab, var(--fg), white 7%) !important;
+  border-color: rgba(125, 211, 252, 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(186, 230, 253, 0.18), rgba(56, 189, 248, 0.070)),
+    rgba(8, 19, 33, 0.88) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.095),
+    inset 0 -1px 0 rgba(125, 211, 252, 0.20),
+    0 10px 24px rgba(14, 165, 233, 0.10) !important;
+}
+
+.h-main-tabs .h-tab.on::after,
+.h-main-tabs .h-tab[aria-selected="true"]::after,
+.h-config-tab.is-active::after {
+  background: linear-gradient(90deg, rgba(186, 230, 253, 0.96), rgba(45, 212, 191, 0.92), rgba(125, 211, 252, 0.96)) !important;
+  box-shadow: 0 0 16px rgba(125, 211, 252, 0.50), 0 0 28px rgba(45, 212, 191, 0.18) !important;
+}
+
+.h-btn.primary,
+.h-phase-plan-row .h-btn.primary,
+.h-quick-action-btn:not(.missing),
+.h-inbox-action.primary,
+.h-manifest-action-primary:not(:disabled) {
+  color: #eaffff !important;
+  border-color: rgba(45, 212, 191, 0.48) !important;
+  background:
+    linear-gradient(180deg, rgba(45, 212, 191, 0.30), rgba(20, 184, 166, 0.105)),
+    rgba(6, 18, 29, 0.88) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    0 10px 22px rgba(45, 212, 191, 0.13) !important;
+}
+
+.h-btn.danger,
+.h-phase-plan-row .h-btn.danger,
+.h-inbox-action.danger {
+  border-color: rgba(251, 113, 133, 0.44) !important;
+  background:
+    linear-gradient(180deg, rgba(251, 113, 133, 0.20), rgba(251, 113, 133, 0.055)),
+    rgba(27, 12, 22, 0.82) !important;
+}
+
+.h-status-segment.in_progress,
+.h-status-token.in_progress > span,
+.h-pulse-dot.live {
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.34);
+}
+
+.h-status-segment.passed,
+.h-status-token.passed > span {
+  box-shadow: 0 0 12px rgba(45, 212, 191, 0.26);
+}
+
+.h-status-segment.blocked,
+.h-status-token.blocked > span,
+.h-phase-plan-row .h-phase-plan-focus.failing,
+.h-phase-plan-row .h-phase-plan-focus.blocked,
+.h-phase-plan-row .h-phase-plan-review {
+  box-shadow:
+    inset 2px 0 0 color-mix(in oklab, var(--warn), white 8%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 8px 20px rgba(0, 0, 0, 0.13) !important;
+}
+
+.h-project-path,
+.h-project-progress,
+.h-focus-title,
+.h-status-token,
+.h-panel-count,
+.h-empty,
+.h-config-field small,
+.h-plugin-config-path,
+.h-manifest-description {
+  color: color-mix(in oklab, var(--fg-dim), white 18%) !important;
+}
+
+.h-stat-value,
+.h-project-name,
+.h-focus-card strong,
+.h-status-token strong,
+.h-quick-action-btn span,
+.h-panel-title,
+.h-manifest-path {
+  color: color-mix(in oklab, var(--fg), white 5%) !important;
+}
+
+.h-config-plugin-pane :is(input, textarea, select),
+.h-manifest-editor :is(input, textarea, select),
+.h-root .h-project {
+  border-color: rgba(125, 211, 252, 0.24) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.050), rgba(255, 255, 255, 0.010)),
+    rgba(3, 10, 20, 0.78) !important;
+  color: color-mix(in oklab, var(--fg), white 4%) !important;
+}
+
+.h-config-plugin-pane :is(input, textarea, select):focus,
+.h-manifest-editor :is(input, textarea, select):focus {
+  border-color: rgba(125, 211, 252, 0.56) !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+  outline: none;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline,
+.h-top-collapse-btn.h-top-collapse-floating {
+  border-color: rgba(186, 230, 253, 0.38) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.080), rgba(255, 255, 255, 0.016)),
+    rgba(7, 16, 29, 0.94) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.080),
+    0 8px 24px rgba(0, 0, 0, 0.26),
+    0 0 18px rgba(125, 211, 252, 0.14) !important;
+}
+
+.h-empty-icon,
+.h-header-icon,
+.h-btn svg,
+.h-main-tabs .h-tab svg {
+  filter: drop-shadow(0 0 8px rgba(125, 211, 252, 0.18));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .h-root *,
+  .h-root *::before,
+  .h-root *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}
+
+/* Metallic contrast tune-up for feature filters and info strips.
+   Visual-only: color, border, and light/shadow treatment; no text, feature, or spacing changes. */
+.h-feature-filter {
+  --h-feature-filter-tone: rgba(125, 211, 252, 0.96);
+  color: color-mix(in oklab, var(--fg), var(--h-feature-filter-tone) 16%) !important;
+  border-color: color-mix(in oklab, var(--h-feature-filter-tone), transparent 50%) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.088), rgba(255, 255, 255, 0.016)),
+    color-mix(in oklab, rgba(8, 19, 33, 0.92) 76%, var(--h-feature-filter-tone) 24%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.085),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.32) !important;
+}
+
+.h-feature-filter:nth-child(2) { --h-feature-filter-tone: rgba(56, 189, 248, 0.98); }
+.h-feature-filter:nth-child(3) { --h-feature-filter-tone: rgba(251, 113, 133, 0.96); }
+.h-feature-filter:nth-child(4) { --h-feature-filter-tone: rgba(251, 191, 36, 0.98); }
+.h-feature-filter:nth-child(5) { --h-feature-filter-tone: rgba(203, 213, 225, 0.96); }
+.h-feature-filter:nth-child(6) { --h-feature-filter-tone: rgba(45, 212, 191, 0.96); }
+.h-feature-filter:nth-child(7) { --h-feature-filter-tone: rgba(148, 163, 184, 0.86); }
+
+.h-feature-filter:hover,
+.h-feature-filter:focus-visible,
+.h-feature-filter.active {
+  color: #f8fdff !important;
+  border-color: color-mix(in oklab, var(--h-feature-filter-tone), white 12%) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.145), rgba(255, 255, 255, 0.024)),
+    color-mix(in oklab, rgba(8, 19, 33, 0.86) 58%, var(--h-feature-filter-tone) 42%) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--h-feature-filter-tone), transparent 70%),
+    0 0 18px color-mix(in oklab, var(--h-feature-filter-tone), transparent 76%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+}
+
+.h-feature-filter strong {
+  opacity: 1 !important;
+  color: color-mix(in oklab, var(--fg), white 8%) !important;
+  text-shadow: 0 0 8px color-mix(in oklab, var(--h-feature-filter-tone), transparent 52%);
+}
+
+.h-feature-toolbar-title,
+.h-feature-project-filter,
+.h-feature-tag-filter,
+.h-feature-search,
+.h-feature-mode,
+.h-feature-mode-btn,
+.h-feature-add,
+.h-guide-action,
+.h-chip,
+.h-tab-count {
+  border-color: rgba(186, 230, 253, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.076), rgba(255, 255, 255, 0.014)),
+    rgba(10, 22, 36, 0.86) !important;
+  color: color-mix(in oklab, var(--fg), white 5%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28) !important;
+}
+
+.h-feature-search:focus-within,
+.h-feature-project-filter:focus-within,
+.h-feature-tag-filter:focus,
+.h-feature-add:hover,
+.h-feature-mode-btn:hover,
+.h-feature-mode-btn.active,
+.h-guide-action:hover {
+  border-color: rgba(125, 211, 252, 0.50) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.165), rgba(255, 255, 255, 0.020)),
+    rgba(9, 22, 38, 0.90) !important;
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10) !important;
+}
+
+.h-guide-strip,
+.h-pending-banner,
+.h-dynamic-fallback,
+.h-feature-inline-note {
+  border-color: rgba(125, 211, 252, 0.34) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.135), rgba(255, 255, 255, 0.018)),
+    radial-gradient(circle at 8% 0%, rgba(45, 212, 191, 0.105), transparent 18rem),
+    rgba(6, 16, 29, 0.90) !important;
+  color: color-mix(in oklab, var(--fg), white 4%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.085),
+    0 12px 26px rgba(0, 0, 0, 0.16) !important;
+}
+
+.h-panel,
+.h-feature-queue-panel {
+  border-color: rgba(125, 211, 252, 0.27) !important;
+}
+
+/* Top-bar information boxes: continue the metallic contrast treatment.
+   Visual-only: stronger surfaces, readable labels, and clearer action affordances. */
+.h-header-side .h-stats {
+  border-left-color: rgba(186, 230, 253, 0.22) !important;
+}
+
+.h-stat,
+.h-status-chip,
+.h-project-topline-statuses .h-overview-pulse,
+.h-project-topline-statuses .h-overview-lanes,
+.h-running-lane {
+  border-color: rgba(186, 230, 253, 0.30) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.092), rgba(255, 255, 255, 0.018)),
+    linear-gradient(135deg, rgba(125, 211, 252, 0.075), transparent 56%, rgba(45, 212, 191, 0.042)),
+    rgba(7, 18, 31, 0.92) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.095),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.30),
+    0 0 0 1px rgba(125, 211, 252, 0.030) !important;
+}
+
+.h-stat::before,
+.h-decision-chip::before,
+.h-phase-plan-row .h-phase-plan-focus::before,
+.h-phase-plan-row .h-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 0 18%, rgba(255, 255, 255, 0.075) 28%, transparent 42% 100%);
+  opacity: 0.34;
+}
+
+.h-stat-label,
+.h-running-head,
+.h-project-pulse .h-pulse-title,
+.h-phase-plan-row .h-overline,
+.h-decision-chip span {
+  color: rgba(203, 232, 244, 0.88) !important;
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.18) !important;
+}
+
+.h-stat-value,
+.h-status-chip,
+.h-running-lane,
+.h-decision-chip strong,
+.h-phase-plan-row .h-phase-plan-focus strong,
+.h-phase-plan-row .h-btn {
+  color: color-mix(in oklab, var(--fg), white 8%) !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.24), 0 0 10px rgba(125, 211, 252, 0.11) !important;
+}
+
+.h-stat-value.good,
+.h-status-chip.live,
+.h-running-lane.live {
+  color: #d8fff4 !important;
+  border-color: rgba(45, 212, 191, 0.48) !important;
+  background:
+    linear-gradient(180deg, rgba(45, 212, 191, 0.20), rgba(45, 212, 191, 0.050)),
+    rgba(5, 22, 29, 0.92) !important;
+}
+
+.h-stat-value.warn,
+.h-phase-plan-row .h-phase-plan-focus.blocked,
+.h-phase-plan-row .h-phase-plan-focus.failing,
+.h-phase-plan-row .h-phase-plan-review {
+  color: #fff2c4 !important;
+  border-color: rgba(251, 191, 36, 0.46) !important;
+}
+
+.h-stat-value.bad,
+.h-phase-plan-actions .h-btn.danger {
+  color: #ffe4e8 !important;
+  border-color: rgba(251, 113, 133, 0.48) !important;
+}
+
+.h-status-chip.idle,
+.h-running-lane.idle {
+  color: rgba(213, 226, 238, 0.88) !important;
+  border-color: rgba(148, 163, 184, 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(148, 163, 184, 0.125), rgba(255, 255, 255, 0.014)),
+    rgba(9, 18, 30, 0.90) !important;
+}
+
+.h-status-chip .h-pulse-dot.idle,
+.h-running-lane.idle .h-running-dot {
+  background: rgba(203, 213, 225, 0.95) !important;
+  opacity: 0.9 !important;
+  filter: drop-shadow(0 0 7px rgba(203, 213, 225, 0.30)) !important;
+}
+
+.h-decision-chip,
+.h-phase-plan-row .h-phase-plan-focus,
+.h-phase-plan-row .h-plan-review-banner.compact,
+.h-phase-plan-row .h-overview-action {
+  position: relative !important;
+  overflow: hidden !important;
+  border-color: rgba(186, 230, 253, 0.36) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.145), rgba(255, 255, 255, 0.020)),
+    radial-gradient(circle at 8% 0%, rgba(45, 212, 191, 0.095), transparent 15rem),
+    rgba(7, 18, 31, 0.92) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.30),
+    0 0 0 1px rgba(125, 211, 252, 0.045) !important;
+}
+
+.h-decision-chip {
+  border-color: rgba(168, 85, 247, 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(168, 85, 247, 0.185), rgba(56, 189, 248, 0.055)),
+    rgba(10, 16, 34, 0.94) !important;
+}
+
+.h-phase-plan-row .h-phase-plan-focus:hover,
+.h-phase-plan-row .h-phase-plan-focus:focus-visible,
+.h-decision-chip:hover,
+.h-phase-plan-actions .h-btn:hover,
+.h-phase-plan-actions .h-btn:focus-visible,
+.h-stat:hover,
+.h-stat-button:focus-visible .h-stat,
+.h-running-lane:hover {
+  border-color: rgba(186, 230, 253, 0.56) !important;
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.10),
+    0 0 18px rgba(56, 189, 248, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.13) !important;
+}
+
+.h-phase-plan-actions .h-btn {
+  position: relative !important;
+  overflow: hidden !important;
+  border-color: rgba(186, 230, 253, 0.34) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.082), rgba(255, 255, 255, 0.014)),
+    rgba(10, 21, 35, 0.88) !important;
+}
+
+.h-phase-plan-actions .h-btn.ghost:hover,
+.h-phase-plan-actions .h-btn.ghost:focus-visible {
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.150), rgba(255, 255, 255, 0.018)),
+    rgba(8, 22, 38, 0.92) !important;
+}
+
+.h-phase-plan-actions .h-btn.danger:hover,
+.h-phase-plan-actions .h-btn.danger:focus-visible {
+  border-color: rgba(251, 113, 133, 0.62) !important;
+  background:
+    linear-gradient(180deg, rgba(251, 113, 133, 0.210), rgba(251, 113, 133, 0.055)),
+    rgba(30, 12, 22, 0.92) !important;
+}
+
+/* Reapplied feature queue status filter chrome: strong colors, same behavior. */
+.h-feature-filter {
+  --h-feature-filter-tone: var(--accent);
+  color: color-mix(in oklab, var(--h-feature-filter-tone), white 24%) !important;
+  border-color: color-mix(in oklab, var(--h-feature-filter-tone), transparent 38%) !important;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--h-feature-filter-tone), transparent 80%),
+    color-mix(in oklab, var(--bg-3), white 4%)
+  ) !important;
+  box-shadow:
+    0 8px 18px rgba(0,0,0,0.18),
+    0 0 0 1px color-mix(in oklab, var(--h-feature-filter-tone), transparent 82%),
+    inset 0 1px 0 rgba(255,255,255,0.055) !important;
+  letter-spacing: 0.015em;
+  transition: transform 120ms var(--ease-out), color 120ms var(--ease-out), border-color 120ms var(--ease-out), background 120ms var(--ease-out), box-shadow 120ms var(--ease-out) !important;
+}
+
+.h-feature-filter:nth-child(1) { --h-feature-filter-tone: var(--accent); }
+.h-feature-filter:nth-child(2) { --h-feature-filter-tone: var(--accent-strong); }
+.h-feature-filter:nth-child(3) { --h-feature-filter-tone: var(--warn); }
+.h-feature-filter:nth-child(4) { --h-feature-filter-tone: var(--bad); }
+.h-feature-filter:nth-child(5) { --h-feature-filter-tone: color-mix(in oklab, var(--fg-dim), white 16%); }
+.h-feature-filter:nth-child(6) { --h-feature-filter-tone: var(--good); }
+.h-feature-filter:nth-child(7) { --h-feature-filter-tone: #c084fc; }
+
+.h-feature-filter:hover,
+.h-feature-filter:focus-visible {
+  color: color-mix(in oklab, var(--h-feature-filter-tone), white 38%) !important;
+  border-color: color-mix(in oklab, var(--h-feature-filter-tone), transparent 24%) !important;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--h-feature-filter-tone), transparent 72%),
+    color-mix(in oklab, var(--bg-3), white 6%)
+  ) !important;
+  box-shadow:
+    0 10px 24px rgba(0,0,0,0.24),
+    0 0 0 1px color-mix(in oklab, var(--h-feature-filter-tone), transparent 68%),
+    inset 0 1px 0 rgba(255,255,255,0.07) !important;
+  transform: translateY(-0.5px);
+}
+
+.h-feature-filter.active {
+  color: color-mix(in oklab, var(--h-feature-filter-tone), white 44%) !important;
+  border-color: color-mix(in oklab, var(--h-feature-filter-tone), transparent 12%) !important;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--h-feature-filter-tone), transparent 66%),
+    color-mix(in oklab, var(--bg-3), white 8%)
+  ) !important;
+  box-shadow:
+    0 12px 28px rgba(0,0,0,0.28),
+    0 0 0 1px color-mix(in oklab, var(--h-feature-filter-tone), transparent 52%),
+    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+}
+
+.h-feature-filter strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  padding: 0 5px;
+  color: inherit !important;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--h-feature-filter-tone), transparent 82%) !important;
+  border: 1px solid color-mix(in oklab, var(--h-feature-filter-tone), transparent 46%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.055);
+  opacity: 1 !important;
+}
+
+.h-feature-search,
+.h-feature-project-filter,
+.h-feature-tag-filter,
+.h-feature-mode,
+.h-feature-add {
+  border-color: color-mix(in oklab, var(--border), white 8%) !important;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bg-3), white 3%), color-mix(in oklab, var(--bg-2), black 2%)) !important;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.04) !important;
+}
+
+.h-feature-search:focus-within,
+.h-feature-project-filter:focus-within,
+.h-feature-tag-filter:focus {
+  border-color: color-mix(in oklab, var(--accent), transparent 46%) !important;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent), transparent 68%), 0 10px 22px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+
+.h-feature-mode-btn.active,
+.h-feature-add:hover {
+  color: color-mix(in oklab, var(--fg), var(--accent) 16%) !important;
+  background: color-mix(in oklab, var(--accent), transparent 84%) !important;
 }

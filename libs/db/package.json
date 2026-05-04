@@ -7,5 +7,12 @@
     "@restart/papercup-db": "*",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "@papercusp/test-config": "*",
+    "vitest": "^4.1.4"
   }
 }
