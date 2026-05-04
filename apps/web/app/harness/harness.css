@@ -12303,3 +12303,312 @@ body:has(.h-root) .pc-header nav button:not(.pc-header-cta):hover {
 .h-inbox-section-title {
   background: linear-gradient(180deg, rgba(8, 20, 34, 0.98), rgba(8, 20, 34, 0.90)) !important;
 }
+
+/* Maximal HUD experiment branch: mirrored harness overlay pass */
+@keyframes h-hud-scanline {
+  0% { transform: translate3d(-18%, 0, 0); opacity: 0; }
+  18% { opacity: 0.28; }
+  54% { opacity: 0.58; }
+  100% { transform: translate3d(20%, 0, 0); opacity: 0; }
+}
+@keyframes h-hud-pulse {
+  0%, 100% { transform: scale(0.92); opacity: 0.42; }
+  50% { transform: scale(1.04); opacity: 0.82; }
+}
+@keyframes h-hud-ring {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes h-hud-log-flicker {
+  0%, 100% { opacity: 0.16; }
+  48% { opacity: 0.42; }
+  52% { opacity: 0.08; }
+  58% { opacity: 0.36; }
+}
+
+.h-root--maximal-hud {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.h-root--maximal-hud > .h-hud-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.h-root--maximal-hud .h-header,
+.h-root--maximal-hud .h-phase-plan-row,
+.h-root--maximal-hud .h-quick-action-row,
+.h-root--maximal-hud .h-tabs.h-main-tabs,
+.h-root--maximal-hud .h-main-shell,
+.h-root--maximal-hud .h-dashboard-panel-anchor {
+  position: relative;
+}
+.h-root--maximal-hud .h-header,
+.h-root--maximal-hud .h-phase-plan-row,
+.h-root--maximal-hud .h-quick-action-row,
+.h-root--maximal-hud .h-tabs.h-main-tabs {
+  overflow: hidden;
+}
+
+.h-hud-overlay {
+  overflow: hidden;
+}
+.h-hud-overlay__grid,
+.h-hud-overlay__scanline,
+.h-hud-overlay__wash,
+.h-hud-dial,
+.h-hud-node,
+.h-hud-marquee {
+  position: absolute;
+}
+.h-hud-overlay__grid {
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(125, 211, 252, 0.12), transparent 26rem),
+    radial-gradient(circle at 82% 12%, rgba(45, 212, 191, 0.08), transparent 24rem),
+    repeating-linear-gradient(90deg, rgba(125, 211, 252, 0.04) 0 1px, transparent 1px 88px),
+    repeating-linear-gradient(180deg, rgba(125, 211, 252, 0.028) 0 1px, transparent 1px 68px);
+  opacity: 0.34;
+}
+.h-hud-overlay__scanline {
+  top: 0;
+  bottom: 0;
+  left: -18%;
+  width: 38%;
+  background: linear-gradient(90deg, transparent, rgba(186, 230, 253, 0.22), rgba(34, 211, 238, 0.18), transparent);
+  animation: h-hud-scanline 3.4s ease-in-out infinite;
+  mix-blend-mode: screen;
+}
+.h-hud-overlay__wash {
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.032), rgba(255, 255, 255, 0)),
+    radial-gradient(circle at 50% 18%, rgba(125, 211, 252, 0.1), transparent 28rem),
+    radial-gradient(circle at 50% 100%, rgba(34, 211, 238, 0.06), transparent 26rem);
+  opacity: 0.44;
+}
+
+.h-hud-node {
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  opacity: 0.7;
+  filter: drop-shadow(0 0 16px rgba(34, 211, 238, 0.18));
+}
+.h-hud-node--left {
+  top: 126px;
+  left: 12px;
+}
+.h-hud-node--right {
+  right: 16px;
+  top: 184px;
+}
+.h-hud-node .hud-reticle-glyph__frame,
+.h-hud-node .hud-reticle-glyph__halo,
+.h-hud-node .hud-reticle-glyph__axis {
+  stroke: rgba(186, 230, 253, 0.62);
+}
+
+.h-hud-dial {
+  top: 28px;
+  right: 18px;
+  width: 132px;
+  height: 132px;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 0 20px rgba(34, 211, 238, 0.18));
+}
+.h-hud-dial-ring {
+  position: absolute;
+  inset: 0;
+}
+.h-hud-dial-ring--outer {
+  animation: h-hud-ring 22s linear infinite;
+}
+.h-hud-dial-ring--inner {
+  inset: 12px;
+  animation: h-hud-ring 12s linear infinite reverse;
+}
+.h-hud-dial-copy {
+  position: absolute;
+  inset: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.08), rgba(34, 211, 238, 0.06) 58%, transparent 100%);
+  box-shadow: inset 0 0 24px rgba(125, 211, 252, 0.12), 0 0 22px rgba(34, 211, 238, 0.12);
+  animation: h-hud-pulse 2.8s ease-in-out infinite;
+}
+.h-hud-dial-frame {
+  inset: 10px;
+}
+.h-hud-marquee {
+  inset: auto 18px 14px 18px;
+}
+
+.h-root--maximal-hud .h-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 0 18%, rgba(255, 255, 255, 0.08) 28%, transparent 38%, rgba(125, 211, 252, 0.08) 52%, transparent 64%, rgba(45, 212, 191, 0.1) 80%, transparent 100%);
+  opacity: 0.48;
+  pointer-events: none;
+}
+.h-root--maximal-hud .h-header.alive::before {
+  animation: h-hud-scanline 3.2s ease-in-out infinite;
+}
+.h-root--maximal-hud .h-phase-plan-row::after,
+.h-root--maximal-hud .h-quick-action-row::after,
+.h-root--maximal-hud .h-tabs.h-main-tabs::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.12), transparent);
+  opacity: 0.28;
+  pointer-events: none;
+  animation: h-hud-scanline 3.8s ease-in-out infinite;
+}
+.h-root--maximal-hud .h-running-lane.live {
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.16),
+    0 0 24px rgba(34, 211, 238, 0.18),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.h-root--maximal-hud .h-running-lane.live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+  opacity: 0.28;
+  pointer-events: none;
+  animation: h-hud-scanline 2.4s ease-in-out infinite;
+}
+.h-root--maximal-hud .h-pulse-dot.live {
+  position: relative;
+  box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.36);
+}
+.h-root--maximal-hud .h-pulse-dot.live::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.26);
+  animation: hPulse 1.8s ease-out infinite;
+}
+.h-root--maximal-hud .h-pill.in_progress,
+.h-root--maximal-hud .h-pill.validating {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 0 18px rgba(34, 211, 238, 0.12);
+}
+.h-root--maximal-hud .h-dashboard-panel-anchor {
+  transform-style: preserve-3d;
+}
+.h-root--maximal-hud .h-dashboard-panel-anchor::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(125, 211, 252, 0.08);
+  clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%, 0 14px);
+  pointer-events: none;
+}
+.h-root--maximal-hud .h-dashboard-panel-anchor::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, transparent 0 34%, rgba(255,255,255,0.08) 44%, transparent 52%) -120% 0 / 34% 100% no-repeat,
+    linear-gradient(180deg, rgba(125, 211, 252, 0.05), rgba(255,255,255,0.01));
+  opacity: 0.72;
+  pointer-events: none;
+  animation: h-hud-scanline 3.6s ease-in-out infinite;
+}
+.h-root--maximal-hud .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line {
+  overflow: hidden;
+}
+.h-root--maximal-hud .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(186, 230, 253, 0.16), transparent);
+  opacity: 0.2;
+  pointer-events: none;
+  animation: h-hud-log-flicker 2.2s linear infinite;
+}
+.h-root--maximal-hud .h-main-shell.dashboard {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+@media (max-width: 960px) {
+  .h-hud-dial {
+    width: 112px;
+    height: 112px;
+  }
+  .h-hud-node--right {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .h-hud-node,
+  .h-hud-dial {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .h-hud-overlay__scanline,
+  .h-hud-dial-ring--outer,
+  .h-hud-dial-ring--inner,
+  .h-hud-dial-copy,
+  .h-root--maximal-hud .h-header.alive::before,
+  .h-root--maximal-hud .h-phase-plan-row::after,
+  .h-root--maximal-hud .h-quick-action-row::after,
+  .h-root--maximal-hud .h-tabs.h-main-tabs::after,
+  .h-root--maximal-hud .h-running-lane.live::after,
+  .h-root--maximal-hud .h-dashboard-panel-anchor::after,
+  .h-root--maximal-hud .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-line::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+
+/* Maximal HUD experiment branch: mirrored harness text supplement */
+.h-hud-node {
+  overflow: hidden;
+}
+.h-hud-node__reticle {
+  position: absolute;
+  inset: 0;
+}
+.h-hud-node span,
+.h-hud-node strong,
+.h-hud-dial-copy span,
+.h-hud-dial-copy strong {
+  position: relative;
+  z-index: 1;
+  display: block;
+  text-align: center;
+}
+.h-hud-node span,
+.h-hud-dial-copy span {
+  color: rgba(215, 246, 255, 0.68);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(34, 211, 238, 0.12);
+}
+.h-hud-node strong,
+.h-hud-dial-copy strong {
+  color: #ffffff;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 14px rgba(34, 211, 238, 0.18);
+}
+.h-hud-dial-copy {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  padding: 18px;
+}

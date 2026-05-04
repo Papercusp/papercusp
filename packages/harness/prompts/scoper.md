@@ -207,11 +207,76 @@ The harness UI surfaces this list as a "review for stale" prompt. **Do not** mod
 
 If `.harness/stale-features.jsonl` already exists, replace it (don't append) so it always reflects the current SPEC.
 
+### Cross-cutting experts (post-replan)
+
+After you've finished writing product features, decide whether the SPEC additions warrant consulting any cross-cutting experts. These are autonomous specialist roles that write their own features (tagged `kind != 'product'`) for concerns outside the scoper's domain.
+
+**Discover the available roles** by GETting the registry — don't hardcode the list:
+
+```bash
+curl -sS "http://localhost:3055/api/harness/$HARNESS_SLUG/expert-roles" | jq .
+```
+
+Returns:
+```json
+{
+  "roles": [
+    {
+      "id": "infra-reviewer",
+      "whenUseful": "Consult when SPEC additions might affect the deployment pipeline...",
+      "output": { "kind": "features", "featureKind": "infra" },
+      ...
+    },
+    {
+      "id": "security-reviewer",
+      "whenUseful": "Consult when SPEC additions touch authentication...",
+      "output": { "kind": "features", "featureKind": "security" },
+      ...
+    }
+  ]
+}
+```
+
+For each role in the registry, read its `whenUseful` description and decide whether the new SPEC bullets in this replan match. Most replans match zero roles — that's fine. Only consult when there's a clear match.
+
+For each role you decide to consult, POST to `/api/harness/$HARNESS_SLUG/experts/dispatch`:
+
+```bash
+curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/dispatch" \
+  -H "content-type: application/json" \
+  -d "$(cat <<JSON
+{
+  "role": "infra-reviewer",
+  "reason": "<one sentence on why this consult is needed>",
+  "context": {
+    "linkedProposalId": "<proposal-id-or-null>",
+    "newSpecBullets": ["- <verbatim bullet>", "- <verbatim bullet>"]
+  }
+}
+JSON
+)"
+```
+
+Returns `{"ok": true, "expertId": "ua-N", "userActionId": N}` or `{"ok": false, "error": "lock-held", ...}` (409). Do not retry on 409 — another dispatch is already in flight; it sees the same SPEC. Move on.
+
+The expert runs autonomously **in parallel with you**. You do not wait for it. It will write its own features and they'll appear in `harness_features` with `kind: "infra"` (or other non-`product` kind for future roles).
+
+### Preserving expert-written features
+
+When walking existing features (for the stale-flagging pass above, or for any other reason), you MUST treat features where `kind` is anything other than `'product'` (or NULL — NULL is treated as legacy product) as **not yours**. Specifically:
+
+- **Never delete** them.
+- **Never rewrite** their title, summary, or claims.
+- **Never include them in `.harness/stale-features.jsonl`** — staleness for non-product features is the responsible expert's call, not yours.
+- If you believe one is now obsolete due to a SPEC removal, you may PATCH `status='deprecated'` with a `deprecation_reason`, but never DELETE. The next dispatch of the responsible expert will decide whether to finalise-retire or restore.
+
 ### Output (stdout)
 
 ```
-REPLANNED: +<n_new_features> features, +<m_new_assertions> assertions, ~<s_stale> stale flagged
+REPLANNED: +<n_new_features> features, +<m_new_assertions> assertions, ~<s_stale> stale flagged, experts=<list-or-none>
 ```
+
+Where `<list-or-none>` is a comma-separated list of expert role names you dispatched, or the literal `none`.
 
 Or, if SPEC.md has no auto-applied bullets you haven't already incorporated AND no features became stale:
 
