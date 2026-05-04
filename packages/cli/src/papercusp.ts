@@ -351,7 +351,19 @@ async function cmdList(): Promise<void> {
 
 async function fetchToFile(url: string, destPath: string): Promise<void> {
   const r = await fetch(url);
-  if (!r.ok) throw new Error(`HTTP ${r.status}: ${url}`);
+  if (!r.ok) {
+    // The marketplace returns structured JSON for diagnosable failures
+    // (R2 unconfigured, tarball missing, etc.). Surface the `hint` so the
+    // user sees an actionable message instead of a bare HTTP code.
+    const body = await r.text().catch(() => '');
+    let hint = '';
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed?.error) hint = parsed.error;
+      if (parsed?.hint) hint += hint ? ` — ${parsed.hint}` : parsed.hint;
+    } catch { /* not JSON */ }
+    throw new Error(hint ? `HTTP ${r.status}: ${hint}` : `HTTP ${r.status}: ${url}`);
+  }
   if (!r.body) throw new Error(`empty response body: ${url}`);
   await fs.mkdir(dirname(destPath), { recursive: true });
   await pipeline(Readable.fromWeb(r.body as any), createWriteStream(destPath));
@@ -447,7 +459,19 @@ async function installOne(slug: string, version: string | undefined, opts: Insta
   let resolvedVersion = version;
   try {
     const r = await fetch(`${MARKETPLACE_URL}/catalog/${encodeURIComponent(slug)}`);
-    if (!r.ok) die(`install: ${slug} not found in marketplace (HTTP ${r.status})`);
+    if (!r.ok) {
+      // Surface the marketplace's diagnostic hint when present (e.g.
+      // "tarball in R2 but R2 is not configured...") instead of a bare
+      // HTTP code.
+      const body = await r.text().catch(() => '');
+      let detail = '';
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed?.hint) detail = ` — ${parsed.hint}`;
+        else if (parsed?.error) detail = ` — ${parsed.error}`;
+      } catch { /* not JSON */ }
+      die(`install: ${slug} not found in marketplace (HTTP ${r.status})${detail}`);
+    }
     const d = await r.json() as { versions: string[]; kind?: string; latest?: { kind?: string } };
     if (!resolvedVersion) {
       if (!d.versions?.length) die(`install: ${slug} has no published versions`);
@@ -916,6 +940,10 @@ async function cmdInit(args: string[]): Promise<void> {
       await fs.mkdir(join(projectPath, '.harness'), { recursive: true });
       await fs.copyFile(tmplManifest, join(projectPath, '.harness', 'papercusp.json'));
     }
+    if (!existsSync(join(projectPath, 'docs'))) {
+      await fs.mkdir(join(projectPath, 'docs'), { recursive: true });
+      await writeIfAbsent('docs/index.md', `# ${slug} docs\n\nThis is the harness's project documentation. The Docs tab in the operator UI renders any \`.md\` / \`.mdx\` file under \`docs/\`.\n\nReplace this stub with your project overview, then add more files for guides, decisions, runbooks, etc.\n`);
+    }
   } else {
     console.log(
       isExistingRepo
@@ -924,6 +952,8 @@ async function cmdInit(args: string[]): Promise<void> {
     );
     await writeIfAbsent('SPEC.md', `# ${slug}\n\n## Goals\n\n(write what this project should accomplish)\n`);
     await writeIfAbsent('AGENTS.md', `# Conventions for ${slug}\n\n(write coding conventions, libraries to prefer, etc.)\n`);
+    await fs.mkdir(join(projectPath, 'docs'), { recursive: true });
+    await writeIfAbsent('docs/index.md', `# ${slug} docs\n\nThis is the harness's project documentation. The Docs tab in the operator UI renders any \`.md\` / \`.mdx\` file under \`docs/\`.\n\nReplace this stub with your project overview, then add more files for guides, decisions, runbooks, etc.\n`);
   }
 
   // .harness/config.json comes from the template (every template that

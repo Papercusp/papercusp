@@ -296,6 +296,71 @@ async function promptBoolean(
   return promptBoolean(ctx, key, prop, defaultValue);
 }
 
+/**
+ * Apply schema-evolution aliases declared at `configSchema.aliases`:
+ *   { "oldName": "newName" }  → rename oldName → newName (preserves value)
+ *   { "oldName": null }       → drop oldName from old configs
+ *
+ * No-op when the schema declares no aliases or the config has no matching
+ * old keys. New keys (already in their canonical form) are untouched.
+ */
+function applyConfigAliases(
+  config: Record<string, unknown>,
+  schema: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return config;
+  const aliases = (schema as { aliases?: unknown }).aliases;
+  if (!aliases || typeof aliases !== 'object' || Array.isArray(aliases)) return config;
+  const aliasMap = aliases as Record<string, string | null>;
+  if (Object.keys(aliasMap).length === 0) return config;
+  const out: Record<string, unknown> = { ...config };
+  for (const [oldKey, newKey] of Object.entries(aliasMap)) {
+    if (!(oldKey in out)) continue;
+    const value = out[oldKey];
+    delete out[oldKey];
+    if (newKey === null) continue; // removal — drop and move on
+    if (newKey in out) continue;   // canonical key already present — keep new, drop old
+    out[newKey] = value;
+  }
+  return out;
+}
+
+/**
+ * Strip any field whose value equals the manifest's schema default. Such
+ * fields are redundant in the per-harness config — the resolver falls back
+ * to the manifest default at read time. Pruning lets new manifest defaults
+ * take effect when plugins are upgraded, instead of frozen-at-first-enable.
+ *
+ * Recurses into nested object schemas; arrays compared by JSON equality.
+ */
+function pruneSchemaDefaults(
+  config: Record<string, unknown>,
+  schema: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return config;
+  const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(config)) {
+    const prop = properties[k];
+    if (!prop) { out[k] = v; continue; }
+    if (prop.type === 'object' && prop.properties && typeof v === 'object' && v !== null && !Array.isArray(v)) {
+      const pruned = pruneSchemaDefaults(v as Record<string, unknown>, prop);
+      if (Object.keys(pruned).length > 0) out[k] = pruned;
+      continue;
+    }
+    if ('default' in prop) {
+      const def = prop.default;
+      if (Array.isArray(v) && Array.isArray(def)) {
+        if (JSON.stringify(v) === JSON.stringify(def)) continue;
+      } else if (v === def) {
+        continue;
+      }
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
 async function promptObject(
   ctx: PromptCtx,
   schema: Record<string, unknown>,
@@ -455,11 +520,28 @@ export async function cmdPluginEnable(args: string[]): Promise<void> {
   const enabled = await loadEnabledFile(harness);
   const existing = enabled.enabled[slug];
 
+  // Canonicalise the on-disk config path on the manifest's `name` field so
+  // the resolver (which reads `<manifest-name>.json`) and writes agree
+  // regardless of which slug form the user typed (`fumadocs` vs
+  // `@papercupai/fumadocs`).
+  const canonicalSlug = manifest.name ?? slug;
+
   // Ensure the harness dir exists.
   await fs.mkdir(join(HARNESSES_DIR, harness), { recursive: true });
   await fs.mkdir(join(HARNESSES_DIR, harness, 'plugin-configs'), { recursive: true });
-  const configPath = join(HARNESSES_DIR, harness, 'plugin-configs', `${slug}.json`);
-  const existingConfig = (await readJson<Record<string, unknown>>(configPath)) ?? {};
+  const configPath = join(HARNESSES_DIR, harness, 'plugin-configs', `${canonicalSlug}.json`);
+  const legacyPath = join(HARNESSES_DIR, harness, 'plugin-configs', `${slug}.json`);
+  // Read existing config from canonical path; fall back to legacy for
+  // back-compat with files written before canonicalisation. Apply schema
+  // aliases so old field names get migrated forward before re-prompting.
+  const rawExisting =
+    (await readJson<Record<string, unknown>>(configPath))
+    ?? (await readJson<Record<string, unknown>>(legacyPath))
+    ?? {};
+  const existingConfig = applyConfigAliases(
+    rawExisting,
+    manifest.configSchema as Record<string, unknown> | undefined,
+  );
 
   let config: Record<string, unknown> = {};
   if (manifest.configSchema) {
@@ -483,13 +565,29 @@ export async function cmdPluginEnable(args: string[]): Promise<void> {
     } finally {
       rl.close();
     }
+    config = pruneSchemaDefaults(config, manifest.configSchema as Record<string, unknown>);
   } else {
     config = manifest.defaultConfig ?? {};
   }
 
   await writeJson(configPath, config);
+  // Migrate-on-write: if the user typed a non-canonical slug and a legacy
+  // file exists at that path, retire it so future reads stay on the
+  // canonical path.
+  if (canonicalSlug !== slug && existsSync(legacyPath)) {
+    try { await fs.unlink(legacyPath); } catch { /* best-effort */ }
+  }
 
-  enabled.enabled[slug] = {
+  // Canonicalise enabled-plugins.json key too: prefer manifest name, but
+  // preserve an existing entry under the legacy slug if one is there.
+  const enabledKey = enabled.enabled[canonicalSlug] ? canonicalSlug
+    : enabled.enabled[slug] ? slug
+    : canonicalSlug;
+  if (enabledKey !== canonicalSlug && enabled.enabled[enabledKey]) {
+    enabled.enabled[canonicalSlug] = enabled.enabled[enabledKey];
+    delete enabled.enabled[enabledKey];
+  }
+  enabled.enabled[canonicalSlug] = {
     version: manifest.version,
     enabledAt: new Date().toISOString(),
     configHash: configHash(config),
@@ -962,6 +1060,137 @@ export async function cmdPluginInvoke(args: string[]): Promise<void> {
   if ((result as { ok?: boolean }).ok === false) process.exit(5);
 }
 
+// ─── plugin verify — flag configHash drift in enabled-plugins.json ─────────
+
+export async function cmdPluginVerify(args: string[]): Promise<void> {
+  const all = args.includes('--all');
+  const fix = args.includes('--fix');
+  const parsed = parseHarnessFlag(args.filter((a) => a !== '--all' && a !== '--fix'));
+
+  const targets: string[] = [];
+  if (all) {
+    const dirs = await fs.readdir(HARNESSES_DIR, { withFileTypes: true }).catch(() => []);
+    targets.push(...dirs.filter((d) => d.isDirectory()).map((d) => d.name));
+  } else {
+    const { harness } = parsed.harness ? { harness: parsed.harness } : await resolveHarness(args);
+    targets.push(harness);
+  }
+
+  // Build dir-base → canonical-name map from installed manifests so we can
+  // detect enabled-plugins.json keys that should be renamed alongside the
+  // already-canonicalised config files.
+  const canonByBase = new Map<string, string>();
+  const walkPlugins = async (dir: string): Promise<void> => {
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue;
+      const sub = join(dir, e.name);
+      const manifest = await readJson<{ name?: string }>(join(sub, 'papercusp.json'));
+      if (manifest?.name && e.name !== manifest.name) canonByBase.set(e.name, manifest.name);
+      else if (e.isDirectory() && e.name.startsWith('@')) await walkPlugins(sub);
+    }
+  };
+  await walkPlugins(GLOBAL_PLUGINS_DIR);
+
+  let totalDrifted = 0;
+  let totalChecked = 0;
+  let totalFixed = 0;
+
+  for (const harness of targets) {
+    const enabled = await loadEnabledFile(harness);
+    const slugs = Object.keys(enabled.enabled);
+    if (slugs.length === 0) continue;
+
+    type Drift = { slug: string; stored: string; actual: string; reason: 'hash-drift' | 'config-missing' | 'slug-mismatch'; canonicalSlug?: string };
+    const drifted: Drift[] = [];
+    for (const slug of slugs) {
+      totalChecked++;
+      const entry = enabled.enabled[slug];
+      const configPath = join(HARNESSES_DIR, harness, 'plugin-configs', `${slug}.json`);
+      let cfg = await readJson<Record<string, unknown>>(configPath);
+
+      // If config is missing at the legacy slug path, look for it at the
+      // canonical scoped path before declaring it gone.
+      let canonicalSlug: string | undefined;
+      if (cfg === null) {
+        const canon = canonByBase.get(slug);
+        if (canon) {
+          const canonicalPath = join(HARNESSES_DIR, harness, 'plugin-configs', `${canon}.json`);
+          const canonCfg = await readJson<Record<string, unknown>>(canonicalPath);
+          if (canonCfg !== null) {
+            cfg = canonCfg;
+            canonicalSlug = canon;
+          }
+        }
+      }
+
+      const actual = configHash(cfg ?? {});
+      if (canonicalSlug) {
+        drifted.push({ slug, stored: entry.configHash, actual, reason: 'slug-mismatch', canonicalSlug });
+      } else if (cfg === null) {
+        drifted.push({ slug, stored: entry.configHash, actual, reason: 'config-missing' });
+      } else if (actual !== entry.configHash) {
+        drifted.push({ slug, stored: entry.configHash, actual, reason: 'hash-drift' });
+      }
+    }
+
+    if (drifted.length === 0) continue;
+    totalDrifted += drifted.length;
+
+    console.log(bold(harness) + dim(` (${slugs.length} enabled, ${drifted.length} drifted)`));
+    for (const d of drifted) {
+      const tag = d.reason === 'config-missing' ? red('config-missing')
+        : d.reason === 'slug-mismatch' ? yellow('slug-mismatch')
+        : yellow('hash-drift');
+      console.log(`  ${tag}  ${cyan(d.slug)}${d.canonicalSlug ? dim(` → ${d.canonicalSlug}`) : ''}`);
+      if (d.reason !== 'slug-mismatch') {
+        console.log(`    stored: ${dim(d.stored)}`);
+        console.log(`    actual: ${dim(d.actual)}`);
+      }
+    }
+
+    if (fix) {
+      // Process slug-mismatches first (rename keys) before rewriting hashes.
+      for (const d of drifted) {
+        if (d.reason === 'slug-mismatch' && d.canonicalSlug) {
+          enabled.enabled[d.canonicalSlug] = { ...enabled.enabled[d.slug], configHash: d.actual };
+          delete enabled.enabled[d.slug];
+          totalFixed++;
+        } else if (d.reason === 'hash-drift') {
+          enabled.enabled[d.slug].configHash = d.actual;
+          totalFixed++;
+        }
+        // config-missing: don't auto-fix (the entry is genuinely orphaned;
+        // user should disable+re-enable, or delete the entry manually).
+      }
+      await saveEnabledFile(harness, enabled);
+      const fixedHere = drifted.filter((d) => d.reason !== 'config-missing').length;
+      const skipped = drifted.length - fixedHere;
+      console.log(green(`  ✓ updated enabled-plugins.json (${fixedHere} fixed${skipped ? `, ${skipped} skipped — see config-missing entries above` : ''})`));
+    }
+  }
+
+  if (totalDrifted === 0) {
+    console.log(green(`✓ no drift across ${totalChecked} enabled-plugin entr${totalChecked === 1 ? 'y' : 'ies'}`));
+  } else {
+    console.log('');
+    console.log(`${totalChecked} checked, ${yellow(`${totalDrifted} drifted`)}${fix ? `, ${green(`${totalFixed} fixed`)}` : ''}`);
+    if (!fix) {
+      console.log(dim('  re-run with --fix to update enabled-plugins.json hashes from disk'));
+      process.exit(1);
+    } else if (totalFixed > 0) {
+      // The JSON files are now consistent, but the operator's Postgres
+      // mirror at harness_shared.plugin_enables won't pick up renames
+      // until something writes through the mirror path. Most commonly the
+      // "Add plugin" popover surfaces stale legacy slugs as still-enabled
+      // because of this. Run the backfill to reconcile.
+      console.log('');
+      console.log(yellow('  PG mirror may now be stale. Reconcile with:'));
+      console.log(dim('    node ' + 'papercup/scripts/backfill-plugin-enables.mjs'));
+    }
+  }
+}
+
 // ─── plugin watch (P8 — dev-mode "restart needed" notifier) ────────────────
 
 export async function cmdPluginWatch(args: string[]): Promise<void> {
@@ -1314,6 +1543,12 @@ export async function cmdPlugin(args: string[]): Promise<void> {
       return cmdPluginInvoke(rest);
     case 'watch':
       return cmdPluginWatch(rest);
+    case 'verify':
+      return cmdPluginVerify(rest);
+    case 'init': {
+      const { cmdPluginInit } = await import('./plugin-init-cli.ts');
+      return cmdPluginInit(rest);
+    }
     case undefined:
     case 'help':
     case '--help':
@@ -1321,6 +1556,8 @@ export async function cmdPlugin(args: string[]): Promise<void> {
       console.log(`${bold('papercusp plugin')} — per-harness plugin lifecycle
 
 ${bold('Subcommands:')}
+  ${cyan('init <new-name>')} [--template <slug>] [--from-path <dir>] [--into <dir>] [--publisher <@scope>]
+                                              Scaffold a new plugin from a reference template (default: cloudflare-stack).
   ${cyan('list')} [--harness <slug>]                          Show installed + enabled-for-harness map.
   ${cyan('enable <slug>')} [--harness <slug>] [--accept-defaults]   Enable a plugin in a harness; prompts configSchema.
   ${cyan('disable <slug>')} [--harness <slug>]                 Disable a plugin in a harness (preserves config).
@@ -1330,6 +1567,7 @@ ${bold('Subcommands:')}
   ${cyan('invoke <slug> <action>')} [--harness <slug>] [--params '<json>'] [--dry-run]
                                               Manually fire a plugin action (operator-facing). Exits 5 on ok=false.
   ${cyan('watch <slug>')} [--src <dir>]                       Dev-mode: tail plugin source for changes; emits "restart needed" hints.
+  ${cyan('verify')} [--harness <slug>] [--all] [--fix]        Recompute configHash from disk + flag drift in enabled-plugins.json.
 
 ${dim('Plugins are installed via `papercusp install <slug>` and live in ~/.papercusp/global-plugins/.')}
 ${dim('Per-harness state at ~/.papercusp/harnesses/<harness-slug>/{enabled-plugins.json, plugin-configs/}.')}`);

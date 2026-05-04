@@ -55,11 +55,16 @@ function buildClient(connectionUrl: string, searchPath: string[]): Sql {
       search_path: sp,
     },
     ...(pgliteSocket ? { host: pgliteSocket } : {}),
-    // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 4 — earlier
-    // default of 8 multiplied with ~20 registered harnesses pushed us
-    // past Postgres's max_connections=100 in dev. Desktop builds set it
-    // to 1 because pglite-socket serializes queries internally.
-    max: Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 4),
+    // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 2 — operators
+    // with ~20 registered harnesses each open a per-harness pool, so
+    // 20 × 2 = 40 idle connections leaves 60+ slots for other clients
+    // (snapshot pg_dump, marketplace-api, zero-cache, etc.) under
+    // Postgres's max_connections=100. Earlier defaults of 4 and 8 saturated
+    // the slot table and produced "remaining connection slots are reserved
+    // for roles with the SUPERUSER attribute" failures from the snapshot
+    // and marketplace endpoints. Desktop builds set it to 1 because
+    // pglite-socket serializes queries internally.
+    max: Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 2),
     // Auto-close connections that sit idle for >30s. Prevents per-harness
     // pools from accumulating idle conns indefinitely (Next.js dev mode
     // module re-instantiation otherwise leaks the prior pool's sockets).
