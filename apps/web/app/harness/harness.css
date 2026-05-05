@@ -264,7 +264,9 @@
   border-radius: 0 !important;
   border: none !important;
   box-shadow: 0 -2px 60px rgba(0, 0, 0, 0.55);
-  background: var(--bg-2);
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--bg-2), white 5%), color-mix(in oklab, var(--bg-2), black 4%)),
+    var(--bg) !important;
   opacity: 0;
   transform: translateY(14px) scale(0.986);
   transform-origin: center top;
@@ -1440,7 +1442,7 @@
 
 .h-stats {
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 7px;
   margin-left: 0;
 }
@@ -1478,7 +1480,7 @@
 .h-header-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 7px;
 }
@@ -13697,4 +13699,1427 @@ body:has(.h-root) .pc-header .pc-voice-settings-link:focus-visible,
   background:
     radial-gradient(circle at 16% 0%, rgba(250, 245, 255, 0.24), transparent 48%),
     linear-gradient(180deg, rgba(167, 139, 250, 0.44), rgba(38, 20, 58, 0.98)) !important;
+}
+
+/* Harness artifact actions: stable, distinct styles for template vs snapshot saves. */
+.h-root .h-stats .h-save-template-btn {
+  --h-topbar-control-tone: #38bdf8;
+  color: #e0faff !important;
+  border-color: rgba(56, 189, 248, 0.66) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(224, 250, 255, 0.22), transparent 46%),
+    linear-gradient(180deg, rgba(56, 189, 248, 0.34), rgba(4, 16, 31, 0.98)) !important;
+  box-shadow:
+    inset 3px 0 0 rgba(125, 211, 252, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.30),
+    0 0 0 1px rgba(56, 189, 248, 0.18),
+    0 0 18px rgba(56, 189, 248, 0.13) !important;
+}
+
+.h-root .h-stats .h-save-template-btn:hover,
+.h-root .h-stats .h-save-template-btn:focus-visible {
+  border-color: rgba(125, 211, 252, 0.84) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(240, 249, 255, 0.28), transparent 48%),
+    linear-gradient(180deg, rgba(56, 189, 248, 0.46), rgba(6, 24, 42, 0.99)) !important;
+  box-shadow:
+    inset 3px 0 0 rgba(186, 230, 253, 0.70),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.30),
+    0 0 0 1px rgba(56, 189, 248, 0.24),
+    0 0 24px rgba(56, 189, 248, 0.18) !important;
+}
+
+.h-root .h-stats .h-save-snapshot-btn {
+  --h-topbar-control-tone: #f59e0b;
+  color: #fff4d6 !important;
+  border-color: rgba(245, 158, 11, 0.66) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 244, 214, 0.22), transparent 46%),
+    linear-gradient(180deg, rgba(245, 158, 11, 0.34), rgba(36, 18, 6, 0.98)) !important;
+  box-shadow:
+    inset 3px 0 0 rgba(251, 191, 36, 0.56),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(245, 158, 11, 0.18),
+    0 0 18px rgba(245, 158, 11, 0.13) !important;
+}
+
+.h-root .h-stats .h-save-snapshot-btn:hover,
+.h-root .h-stats .h-save-snapshot-btn:focus-visible {
+  border-color: rgba(251, 191, 36, 0.86) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 251, 235, 0.28), transparent 48%),
+    linear-gradient(180deg, rgba(245, 158, 11, 0.48), rgba(48, 25, 8, 0.99)) !important;
+  box-shadow:
+    inset 3px 0 0 rgba(253, 224, 71, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(245, 158, 11, 0.24),
+    0 0 24px rgba(245, 158, 11, 0.18) !important;
+}
+
+/* Main workspace tabs: subtle per-tab color accents for faster scanning. */
+.h-root .h-main-tabs .h-tab {
+  --h-main-tab-accent: #7dd3fc;
+  --h-main-tab-accent-rgb: 125, 211, 252;
+  position: relative;
+  border-color: rgba(var(--h-main-tab-accent-rgb), 0.15);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--h-main-tab-accent-rgb), 0.065), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.006)),
+    rgba(5, 15, 27, 0.62);
+}
+
+.h-root .h-main-tabs .h-tab::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 3px;
+  height: 1px;
+  pointer-events: none;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(var(--h-main-tab-accent-rgb), 0.54), transparent);
+  opacity: 0.42;
+}
+
+.h-root .h-main-tabs .h-tab:hover {
+  border-color: rgba(var(--h-main-tab-accent-rgb), 0.30);
+  color: color-mix(in oklab, var(--fg), var(--h-main-tab-accent) 10%);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--h-main-tab-accent-rgb), 0.13), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.010)),
+    rgba(7, 18, 31, 0.76);
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 0 0 1px rgba(var(--h-main-tab-accent-rgb), 0.055);
+}
+
+.h-root .h-main-tabs .h-tab[aria-selected="true"] {
+  border-color: rgba(var(--h-main-tab-accent-rgb), 0.38);
+  color: var(--fg);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--h-main-tab-accent-rgb), 0.20), transparent 72%),
+    linear-gradient(180deg, rgba(var(--h-main-tab-accent-rgb), 0.17), rgba(255, 255, 255, 0.018)),
+    rgba(7, 18, 31, 0.86);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 0 1px rgba(var(--h-main-tab-accent-rgb), 0.10),
+    0 0 18px rgba(var(--h-main-tab-accent-rgb), 0.08);
+}
+
+.h-root .h-main-tabs .h-tab[aria-selected="true"]::after {
+  background: linear-gradient(90deg, rgba(var(--h-main-tab-accent-rgb), 0.88), color-mix(in oklab, var(--h-main-tab-accent), white 30%));
+  box-shadow: 0 0 14px rgba(var(--h-main-tab-accent-rgb), 0.34);
+}
+
+.h-root .h-main-tabs .h-tab:nth-child(1) { --h-main-tab-accent: #38bdf8; --h-main-tab-accent-rgb: 56, 189, 248; } /* brainstorm */
+.h-root .h-main-tabs .h-tab:nth-child(2) { --h-main-tab-accent: #f59e0b; --h-main-tab-accent-rgb: 245, 158, 11; } /* proposals */
+.h-root .h-main-tabs .h-tab:nth-child(3) { --h-main-tab-accent: #22d3ee; --h-main-tab-accent-rgb: 34, 211, 238; } /* dashboard */
+.h-root .h-main-tabs .h-tab:nth-child(4) { --h-main-tab-accent: #a78bfa; --h-main-tab-accent-rgb: 167, 139, 250; } /* summary */
+.h-root .h-main-tabs .h-tab:nth-child(5) { --h-main-tab-accent: #60a5fa; --h-main-tab-accent-rgb: 96, 165, 250; } /* docs/plugin */
+.h-root .h-main-tabs .h-tab:nth-child(6) { --h-main-tab-accent: #34d399; --h-main-tab-accent-rgb: 52, 211, 153; } /* pi/plugin */
+.h-root .h-main-tabs .h-tab:nth-child(7) { --h-main-tab-accent: #818cf8; --h-main-tab-accent-rgb: 129, 140, 248; } /* vs code/plugin */
+.h-root .h-main-tabs .h-tab:nth-child(8) { --h-main-tab-accent: #f472b6; --h-main-tab-accent-rgb: 244, 114, 182; } /* experts */
+.h-root .h-main-tabs .h-tab:nth-child(9) { --h-main-tab-accent: #2dd4bf; --h-main-tab-accent-rgb: 45, 212, 191; } /* insights */
+.h-root .h-main-tabs .h-tab:nth-child(10) { --h-main-tab-accent: #c084fc; --h-main-tab-accent-rgb: 192, 132, 252; } /* config */
+.h-root .h-main-tabs .h-tab:nth-child(11) { --h-main-tab-accent: #94a3b8; --h-main-tab-accent-rgb: 148, 163, 184; } /* add/plugin overflow */
+
+/* Main workspace tabs: stable value-based accent mapping and stronger painted state. */
+.h-root .h-main-tabs .h-tab[id$="trigger-brainstorm"] { --h-main-tab-accent: #38bdf8; --h-main-tab-accent-rgb: 56, 189, 248; }
+.h-root .h-main-tabs .h-tab[id$="trigger-proposals"] { --h-main-tab-accent: #f59e0b; --h-main-tab-accent-rgb: 245, 158, 11; }
+.h-root .h-main-tabs .h-tab[id$="trigger-dashboard"] { --h-main-tab-accent: #22d3ee; --h-main-tab-accent-rgb: 34, 211, 238; }
+.h-root .h-main-tabs .h-tab[id$="trigger-summary"] { --h-main-tab-accent: #a78bfa; --h-main-tab-accent-rgb: 167, 139, 250; }
+.h-root .h-main-tabs .h-tab[id$="trigger-plugin:fumadocs"] { --h-main-tab-accent: #60a5fa; --h-main-tab-accent-rgb: 96, 165, 250; }
+.h-root .h-main-tabs .h-tab[id$="trigger-plugin:pi"] { --h-main-tab-accent: #34d399; --h-main-tab-accent-rgb: 52, 211, 153; }
+.h-root .h-main-tabs .h-tab[id$="trigger-plugin:vscode"] { --h-main-tab-accent: #818cf8; --h-main-tab-accent-rgb: 129, 140, 248; }
+.h-root .h-main-tabs .h-tab[id$="trigger-experts"] { --h-main-tab-accent: #f472b6; --h-main-tab-accent-rgb: 244, 114, 182; }
+.h-root .h-main-tabs .h-tab[id$="trigger-insights"] { --h-main-tab-accent: #2dd4bf; --h-main-tab-accent-rgb: 45, 212, 191; }
+.h-root .h-main-tabs .h-tab[id$="trigger-config"] { --h-main-tab-accent: #c084fc; --h-main-tab-accent-rgb: 192, 132, 252; }
+
+.h-root .h-main-tabs .h-tab {
+  --h-topbar-control-tone: var(--h-main-tab-accent);
+  border-color: rgba(var(--h-main-tab-accent-rgb), 0.24) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--h-main-tab-accent-rgb), 0.11), transparent 72%),
+    linear-gradient(180deg, rgba(var(--h-main-tab-accent-rgb), 0.075), rgba(3, 10, 20, 0.98)) !important;
+}
+
+.h-root .h-main-tabs .h-tab:hover {
+  border-color: rgba(var(--h-main-tab-accent-rgb), 0.38) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--h-main-tab-accent-rgb), 0.18), transparent 72%),
+    linear-gradient(180deg, rgba(var(--h-main-tab-accent-rgb), 0.12), rgba(4, 13, 24, 0.98)) !important;
+}
+
+.h-root .h-main-tabs .h-tab[aria-selected="true"] {
+  --h-topbar-control-tone: var(--h-main-tab-accent);
+  border-color: rgba(var(--h-main-tab-accent-rgb), 0.48) !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(var(--h-main-tab-accent-rgb), 0.28), transparent 76%),
+    linear-gradient(180deg, rgba(var(--h-main-tab-accent-rgb), 0.20), rgba(3, 10, 20, 0.99)) !important;
+}
+
+/* Harness topbar contrast continuation v8: darken environment cards and pulse/running shells. */
+.h-root .h-project-phases .h-phase-item.phase-staging {
+  border-color: rgba(96, 165, 250, 0.68) !important;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(96, 165, 250, 0.18), transparent 76%),
+    linear-gradient(180deg, rgba(59, 130, 246, 0.16), rgba(3, 10, 20, 0.99)) !important;
+}
+
+.h-root .h-project-phases .h-phase-item.phase-testing {
+  border-color: rgba(167, 139, 250, 0.68) !important;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(167, 139, 250, 0.18), transparent 76%),
+    linear-gradient(180deg, rgba(168, 85, 247, 0.16), rgba(3, 10, 20, 0.99)) !important;
+}
+
+.h-root .h-project-phases .h-phase-item.phase-production {
+  border-color: rgba(52, 211, 153, 0.68) !important;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(52, 211, 153, 0.18), transparent 76%),
+    linear-gradient(180deg, rgba(16, 185, 129, 0.16), rgba(3, 10, 20, 0.99)) !important;
+}
+
+.h-root .h-project-phases .h-phase-item.phase-staging:hover,
+.h-root .h-project-phases .h-phase-item.phase-staging:focus-visible,
+.h-root .h-project-phases .h-phase-item.phase-staging.active {
+  border-color: rgba(96, 165, 250, 0.86) !important;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(96, 165, 250, 0.26), transparent 76%),
+    linear-gradient(180deg, rgba(59, 130, 246, 0.24), rgba(4, 13, 25, 1)) !important;
+}
+
+.h-root .h-project-phases .h-phase-item.phase-testing:hover,
+.h-root .h-project-phases .h-phase-item.phase-testing:focus-visible,
+.h-root .h-project-phases .h-phase-item.phase-testing.active {
+  border-color: rgba(196, 181, 253, 0.86) !important;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(167, 139, 250, 0.26), transparent 76%),
+    linear-gradient(180deg, rgba(168, 85, 247, 0.24), rgba(4, 13, 25, 1)) !important;
+}
+
+.h-root .h-project-phases .h-phase-item.phase-production:hover,
+.h-root .h-project-phases .h-phase-item.phase-production:focus-visible,
+.h-root .h-project-phases .h-phase-item.phase-production.active {
+  border-color: rgba(110, 231, 183, 0.86) !important;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(52, 211, 153, 0.26), transparent 76%),
+    linear-gradient(180deg, rgba(16, 185, 129, 0.24), rgba(4, 13, 25, 1)) !important;
+}
+
+.h-root .h-project-pulse > div,
+.h-root .h-project-topline-statuses .h-project-lanes {
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(125, 211, 252, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.34) !important;
+}
+
+.h-root .h-project-pulse > div {
+  border-color: rgba(56, 189, 248, 0.48) !important;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(224, 250, 255, 0.10), transparent 46%),
+    linear-gradient(180deg, rgba(56, 189, 248, 0.20), rgba(4, 16, 31, 0.995)) !important;
+}
+
+.h-root .h-project-pulse > div > div > span {
+  background: rgba(3, 10, 20, 0.50) !important;
+  border-color: rgba(125, 211, 252, 0.22) !important;
+}
+
+.h-root .h-project-topline-statuses .h-project-lanes {
+  border-color: rgba(34, 211, 238, 0.50) !important;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(224, 250, 255, 0.09), transparent 46%),
+    linear-gradient(180deg, rgba(34, 211, 238, 0.20), rgba(3, 15, 27, 0.995)) !important;
+  filter: saturate(1.12) contrast(1.06);
+}
+
+.h-root .h-project-topline-statuses .h-project-lanes .h-running-head strong {
+  border-color: rgba(224, 250, 255, 0.66) !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.12), transparent 68%),
+    linear-gradient(180deg, rgba(103, 232, 249, 0.34), rgba(8, 47, 73, 0.94)) !important;
+  box-shadow:
+    0 0 0 1px rgba(103, 232, 249, 0.22),
+    0 0 16px rgba(34, 211, 238, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+}
+
+.h-root .h-project-topline-statuses .h-project-lanes .h-running-lane.idle {
+  border-color: rgba(203, 213, 225, 0.54) !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.08), transparent 64%),
+    linear-gradient(180deg, rgba(203, 213, 225, 0.20), rgba(15, 23, 42, 0.98)) !important;
+  box-shadow:
+    0 0 0 1px rgba(203, 213, 225, 0.10),
+    0 0 12px rgba(148, 163, 184, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.34) !important;
+}
+
+/* Dashboard chrome contrast v9: shorter issues header, darker issues/agents frames, clearer run.log tabs. */
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] > .h-panel,
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="agents"] > .h-panel {
+  border-color: rgba(125, 211, 252, 0.22) !important;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(125, 211, 252, 0.045), transparent 54%),
+    linear-gradient(180deg, rgba(5, 18, 31, 0.98), rgba(3, 10, 20, 0.99)) !important;
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(125, 211, 252, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-head,
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="agents"] .h-panel-head {
+  border-bottom-color: rgba(125, 211, 252, 0.18) !important;
+  background:
+    linear-gradient(90deg, rgba(125, 211, 252, 0.070), rgba(56, 189, 248, 0.026) 42%, rgba(255, 255, 255, 0.010)),
+    rgba(3, 10, 20, 0.94) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.060),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.34) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-title,
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="agents"] .h-panel-title {
+  color: color-mix(in oklab, var(--fg), #7dd3fc 16%) !important;
+  text-shadow: 0 0 12px rgba(125, 211, 252, 0.16);
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-count,
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="agents"] .h-panel-count {
+  color: color-mix(in oklab, var(--accent-cool), white 8%) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-head {
+  min-height: 28px !important;
+  padding: 4px 8px 3px !important;
+  gap: 6px !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions {
+  gap: 3px !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions .h-tab {
+  min-height: 22px !important;
+  padding: 2px 8px 3px !important;
+  border: 1px solid rgba(125, 211, 252, 0.16) !important;
+  border-bottom-color: rgba(125, 211, 252, 0.08) !important;
+  border-radius: 7px 7px 0 0 !important;
+  background: rgba(3, 10, 20, 0.50) !important;
+  line-height: 1.15 !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions .h-tab.on {
+  color: #e0faff !important;
+  border-color: rgba(125, 211, 252, 0.38) !important;
+  border-bottom-color: rgba(4, 16, 28, 0.96) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(125, 211, 252, 0.18), transparent 72%),
+    linear-gradient(180deg, rgba(56, 189, 248, 0.15), rgba(4, 16, 28, 0.96)) !important;
+  box-shadow: inset 0 2px 0 rgba(125, 211, 252, 0.48), 0 0 14px rgba(56, 189, 248, 0.10) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tabs {
+  padding: 5px 6px 0 !important;
+  gap: 4px !important;
+  border-bottom-color: rgba(125, 211, 252, 0.20) !important;
+  background:
+    linear-gradient(180deg, rgba(6, 20, 34, 0.98), rgba(3, 10, 20, 0.99)) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab {
+  position: relative !important;
+  min-height: 25px !important;
+  padding: 4px 10px 5px !important;
+  border: 1px solid rgba(125, 211, 252, 0.18) !important;
+  border-bottom-color: rgba(125, 211, 252, 0.11) !important;
+  border-radius: 8px 8px 0 0 !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.060), rgba(255, 255, 255, 0.010)),
+    rgba(5, 15, 27, 0.84) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.060),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.26) !important;
+  margin-bottom: -1px !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 3px;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.42), transparent);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:hover {
+  color: #e0faff !important;
+  border-color: rgba(125, 211, 252, 0.32) !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.10), rgba(255, 255, 255, 0.014)),
+    rgba(7, 20, 34, 0.92) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab.active {
+  color: #f0fdff !important;
+  border-color: rgba(125, 211, 252, 0.42) !important;
+  border-bottom-color: rgba(5, 18, 31, 0.99) !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(125, 211, 252, 0.18), transparent 70%),
+    linear-gradient(180deg, rgba(56, 189, 248, 0.15), rgba(5, 18, 31, 0.99)) !important;
+  box-shadow:
+    inset 0 2px 0 rgba(125, 211, 252, 0.62),
+    0 -1px 16px rgba(56, 189, 248, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.090) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: rgba(5, 18, 31, 0.99);
+  pointer-events: none;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab-count {
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  background: rgba(3, 10, 20, 0.48) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab.active .h-log-tab-count {
+  color: #f0fdff !important;
+  border-color: rgba(125, 211, 252, 0.36);
+  background: rgba(56, 189, 248, 0.18) !important;
+}
+
+/* Harness topbar text sharpness v10: keep contrast in chrome, not text blur. */
+.h-root .h-project-card,
+.h-root .h-phase-plan-row,
+.h-root .h-quick-action-row,
+.h-root .h-tabs.h-main-tabs,
+.h-root .h-header-side,
+.h-root .h-project-topline-statuses,
+.h-root .h-project-pulse,
+.h-root .h-feature-toolbar {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.h-root .h-tabs.h-main-tabs {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.h-root .h-project-card :is(.h-project, .h-project-path, .h-project-progress, .h-project-count, .h-project-count *, .h-status-chip, .h-status-chip *),
+.h-root .h-project-phases :is(.h-phase-item, .h-phase-item *, .h-phase-open, .h-phase-actions-btn),
+.h-root .h-project-topline-statuses :is(.h-overview-pulse, .h-overview-pulse *, .h-overview-lanes, .h-overview-lanes *, .h-project-lanes, .h-project-lanes *, .h-running-head, .h-running-head *, .h-running-lane),
+.h-root .h-project-pulse :is(div, span, strong),
+.h-root .h-stats :is(.h-stat, .h-stat *, .h-save-template-btn, .h-save-snapshot-btn),
+.h-root .h-phase-plan-row :is(.h-phase-plan-focus, .h-phase-plan-focus *, .h-plan-review-banner, .h-plan-review-banner *, .h-phase-plan-actions .h-btn, .h-phase-plan-actions .h-btn *, .h-decision-chip, .h-decision-chip *),
+.h-root .h-quick-action-row :is(.h-quick-action-copy, .h-quick-action-copy *, .h-quick-action-btn, .h-quick-action-btn *),
+.h-root .h-main-tabs :is(.h-tab, .h-tab *, .h-add-plugin-tab, .h-add-plugin-tab *, .h-config-tab, .h-config-tab *),
+.h-root .h-feature-toolbar :is(.h-feature-toolbar-title, .h-feature-toolbar-title *, .h-feature-filter, .h-feature-filter *, .h-feature-project-filter, .h-feature-tag-filter, .h-feature-search, .h-feature-mode, .h-feature-add) {
+  text-shadow: none !important;
+}
+
+.h-root :is(
+  .h-project-phases .h-phase-item,
+  .h-project-phases .h-phase-open,
+  .h-project-progress,
+  .h-project-count,
+  .h-status-chip,
+  .h-stat,
+  .h-stat-button:hover .h-stat,
+  .h-stat-button:focus-visible .h-stat,
+  .h-phase-plan-row .h-phase-plan-focus,
+  .h-phase-plan-row .h-plan-review-banner.compact,
+  .h-phase-plan-row .h-phase-plan-review,
+  .h-phase-plan-row .h-overview-action,
+  .h-phase-plan-row .h-btn,
+  .h-phase-plan-row .h-btn.primary,
+  .h-phase-plan-row .h-btn.danger,
+  .h-header-side .h-btn,
+  .h-decision-chip,
+  .h-quick-action-btn,
+  .h-project-pulse,
+  .h-project-pulse > div,
+  .h-project-topline-statuses .h-project-lanes,
+  .h-main-tabs .h-tab,
+  .h-main-tabs .h-tab[aria-selected="true"],
+  .h-main-tabs .h-tab:not([disabled]):hover,
+  .h-main-tabs .h-tab:not([disabled]):active,
+  .h-feature-filter,
+  .h-feature-project-filter,
+  .h-feature-tag-filter,
+  .h-feature-search,
+  .h-feature-mode,
+  .h-feature-add
+) {
+  filter: none !important;
+}
+
+/* Harness topbar text sharpness v10b: clear remaining status/collapse compositing. */
+.h-root :is(
+  .h-project-card,
+  .h-project-card:hover,
+  .h-project-card:focus-within,
+  .h-project-meta-status,
+  .h-project-meta-status:hover,
+  .h-project-meta-status:hover .h-project-progress,
+  .h-project-meta-status:hover .h-project-count,
+  .h-status-chip,
+  .h-status-chip:hover,
+  .h-top-collapse-btn,
+  .h-top-collapse-btn:hover,
+  .h-top-collapse-btn:focus-visible,
+  .h-top-collapse-label
+) {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  text-shadow: none !important;
+}
+
+/* Harness topbar text sharpness v10c: direct overrides for status chip/collapse label. */
+.h-root .h-status-chip,
+.h-root .h-status-chip *,
+.h-top-collapse-btn,
+.h-top-collapse-btn *,
+.h-top-collapse-label {
+  text-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Harness topbar text sharpness v10d: status chip backdrop fallback. */
+html body .h-root .h-project-card .h-project-badges .h-status-chip,
+html body .h-root .h-project-card .h-status-chip,
+html body .h-root .h-status-chip.h-status-chip {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Harness topbar text sharpness v10e: neutralize status-chip backdrop filter explicitly. */
+html body .h-root .h-status-chip.h-status-chip {
+  backdrop-filter: blur(0px) saturate(1) !important;
+  -webkit-backdrop-filter: blur(0px) saturate(1) !important;
+}
+
+/* Harness topbar text sharpness v10f: accepted neutral status-chip backdrop syntax. */
+html body .h-root .h-status-chip.h-status-chip {
+  backdrop-filter: saturate(100%) !important;
+  -webkit-backdrop-filter: saturate(100%) !important;
+}
+
+/* Harness topbar text sharpness v10g: numeric neutral status-chip backdrop filter. */
+html body .h-root .h-status-chip.h-status-chip {
+  backdrop-filter: saturate(0.999) !important;
+  -webkit-backdrop-filter: saturate(0.999) !important;
+}
+
+/* Visual effects preference: minimal/calm mode for mirrored harness HUD chrome.
+   Do not change locked bar heights; only remove decorative motion layers. */
+html[data-visual-effects='minimal'] .h-root *,
+html[data-visual-effects='minimal'] .h-root *::before,
+html[data-visual-effects='minimal'] .h-root *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+html[data-visual-effects='minimal'] .h-hud-overlay__scanline,
+html[data-visual-effects='minimal'] .h-hud-overlay__grid,
+html[data-visual-effects='minimal'] .h-hud-overlay__wash,
+html[data-visual-effects='minimal'] .h-hud-node,
+html[data-visual-effects='minimal'] .h-hud-marquee {
+  display: none !important;
+}
+
+html[data-visual-effects='minimal'] .h-hud-dial-ring,
+html[data-visual-effects='minimal'] .h-hud-dial-ring--outer,
+html[data-visual-effects='minimal'] .h-hud-dial-ring--inner,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-tabs.h-main-tabs::before,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-tabs.h-main-tabs::after,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-main-tabs .h-tab::before,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-main-tabs .h-tab::after,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-main-tabs .h-tab[aria-selected='true']::before,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-main-tabs .h-tab[aria-selected='true']::after,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-main-tabs .h-tab.on::before,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-main-tabs .h-tab.on::after {
+  animation: none !important;
+  content: none !important;
+  display: none !important;
+}
+
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-header,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-phase-plan-row,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-quick-action-row,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-tabs.h-main-tabs,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-dashboard-panel-anchor,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-running-lane,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-pulse-dot,
+html[data-visual-effects='minimal'] .h-root--maximal-hud .h-tab {
+  transform: none !important;
+  filter: none !important;
+}
+
+/* Pane overflow stability: animated HUD chrome and wide tool rows must not surface
+   horizontal scrollbars on harness panes. Keep vertical scrolling intact. */
+.h-main-shell.dashboard,
+.h-dashboard-panel-anchor,
+.h-dashboard-panel-anchor > .h-panel,
+.h-dashboard-panel-anchor > .h-panel > .h-panel-body {
+  min-width: 0;
+}
+
+.h-main-shell.dashboard,
+.h-dashboard-panel-anchor,
+.h-dashboard-panel-anchor > .h-panel > .h-panel-body {
+  overflow-x: hidden !important;
+}
+
+.h-dashboard-panel-anchor > .h-panel > .h-panel-body > * {
+  min-width: 0;
+}
+
+/* Harness topbar text sharpness v11: render button text directly instead of
+   rasterizing it through glow/filter layers or grayscale font smoothing. */
+.h-root :is(
+  .h-header,
+  .h-header *,
+  .h-project-card,
+  .h-project-card *,
+  .h-project-phases,
+  .h-project-phases *,
+  .h-project-topline-statuses,
+  .h-project-topline-statuses *,
+  .h-project-pulse,
+  .h-project-pulse *,
+  .h-stats,
+  .h-stats *,
+  .h-phase-plan-row,
+  .h-phase-plan-row *,
+  .h-quick-action-row,
+  .h-quick-action-row *,
+  .h-tabs.h-main-tabs,
+  .h-tabs.h-main-tabs *,
+  .h-guide-strip,
+  .h-guide-strip *
+) {
+  -webkit-font-smoothing: subpixel-antialiased !important;
+  -moz-osx-font-smoothing: auto !important;
+  text-rendering: auto !important;
+  text-shadow: none !important;
+}
+
+.h-root :is(
+  .h-project-card,
+  .h-project-meta-status,
+  .h-project-phases .h-phase-item,
+  .h-project-phases .h-phase-open,
+  .h-phase-setup-btn,
+  .h-project-progress,
+  .h-project-count,
+  .h-status-chip,
+  .h-project-topline-statuses,
+  .h-project-topline-statuses .h-overview-pulse,
+  .h-project-topline-statuses .h-overview-lanes,
+  .h-project-topline-statuses .h-project-lanes,
+  .h-project-topline-statuses .h-running-lane,
+  .h-project-pulse,
+  .h-project-pulse > div,
+  .h-stats .h-stat,
+  .h-phase-plan-row .h-btn,
+  .h-phase-plan-row .h-phase-plan-focus,
+  .h-phase-plan-row .h-plan-review-banner,
+  .h-phase-plan-row .h-overview-action,
+  .h-decision-chip,
+  .h-quick-action-btn,
+  .h-tabs.h-main-tabs,
+  .h-tabs.h-main-tabs .h-tab
+) {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.h-root :is(
+  .h-project-phases .h-phase-item,
+  .h-project-phases .h-phase-open,
+  .h-phase-setup-btn,
+  .h-project-pulse,
+  .h-project-pulse > div,
+  .h-project-topline-statuses .h-project-lanes,
+  .h-project-topline-statuses .h-running-lane,
+  .h-phase-plan-row .h-btn,
+  .h-quick-action-btn,
+  .h-tabs.h-main-tabs .h-tab
+) {
+  transform: none !important;
+}
+
+/* Harness topbar text sharpness v11b: high-specificity override for earlier
+   top-bar polish rules that used !important shadows / grayscale smoothing. */
+html body .h-root.h-root :is(
+  .h-project-card,
+  .h-project-card *,
+  .h-project-phases,
+  .h-project-phases *,
+  .h-phase-setup-btn,
+  .h-phase-setup-btn *,
+  .h-project-topline-statuses,
+  .h-project-topline-statuses *,
+  .h-project-pulse,
+  .h-project-pulse *,
+  .h-stats,
+  .h-stats *,
+  .h-phase-plan-row,
+  .h-phase-plan-row *,
+  .h-quick-action-row,
+  .h-quick-action-row *,
+  .h-tabs.h-main-tabs,
+  .h-tabs.h-main-tabs *,
+  .h-feature-toolbar,
+  .h-feature-toolbar *
+) {
+  -webkit-font-smoothing: subpixel-antialiased !important;
+  -moz-osx-font-smoothing: auto !important;
+  text-rendering: auto !important;
+  text-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html body .h-root.h-root :is(
+  .h-project-phases .h-phase-item,
+  .h-project-phases .h-phase-open,
+  .h-phase-setup-btn,
+  .h-project-pulse,
+  .h-project-pulse > div,
+  .h-project-topline-statuses .h-project-lanes,
+  .h-project-topline-statuses .h-running-lane,
+  .h-phase-plan-row .h-btn,
+  .h-quick-action-btn,
+  .h-tabs.h-main-tabs .h-tab,
+  .h-feature-toolbar .h-feature-filter
+) {
+  transform: none !important;
+}
+
+/* Main workspace tabs v11: stable, distinct hint colors per tab label. */
+.h-root .h-main-tabs .h-tab.h-tab--brainstorm { --h-main-tab-accent: #38bdf8; --h-main-tab-accent-rgb: 56, 189, 248; }
+.h-root .h-main-tabs .h-tab.h-tab--proposals { --h-main-tab-accent: #f59e0b; --h-main-tab-accent-rgb: 245, 158, 11; }
+.h-root .h-main-tabs .h-tab.h-tab--dashboard { --h-main-tab-accent: #22d3ee; --h-main-tab-accent-rgb: 34, 211, 238; }
+.h-root .h-main-tabs .h-tab.h-tab--summary { --h-main-tab-accent: #8b5cf6; --h-main-tab-accent-rgb: 139, 92, 246; }
+.h-root .h-main-tabs .h-tab.h-tab--docs { --h-main-tab-accent: #3b82f6; --h-main-tab-accent-rgb: 59, 130, 246; }
+.h-root .h-main-tabs .h-tab.h-tab--pi { --h-main-tab-accent: #22c55e; --h-main-tab-accent-rgb: 34, 197, 94; }
+.h-root .h-main-tabs .h-tab.h-tab--vscode { --h-main-tab-accent: #6366f1; --h-main-tab-accent-rgb: 99, 102, 241; }
+.h-root .h-main-tabs .h-tab.h-tab--experts { --h-main-tab-accent: #f472b6; --h-main-tab-accent-rgb: 244, 114, 182; }
+.h-root .h-main-tabs .h-tab.h-tab--insights { --h-main-tab-accent: #14b8a6; --h-main-tab-accent-rgb: 20, 184, 166; }
+.h-root .h-main-tabs .h-tab.h-tab--config { --h-main-tab-accent: #e879f9; --h-main-tab-accent-rgb: 232, 121, 249; }
+.h-root .h-main-tabs .h-tab.h-tab--plugin { --h-main-tab-accent: #94a3b8; --h-main-tab-accent-rgb: 148, 163, 184; }
+
+/* Main workspace tabs v11b: keep label-specific hints visible even when disabled/base CSS loads later. */
+.h-root .h-main-tabs .h-tab[class*="h-tab--"] {
+  border-color: rgba(var(--h-main-tab-accent-rgb), 0.28) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--h-main-tab-accent-rgb), 0.12), transparent 72%),
+    linear-gradient(180deg, rgba(var(--h-main-tab-accent-rgb), 0.080), rgba(3, 10, 20, 0.98)) !important;
+}
+
+.h-root .h-main-tabs .h-tab[class*="h-tab--"][disabled] {
+  opacity: 0.58 !important;
+  color: color-mix(in oklab, var(--fg-dim), var(--h-main-tab-accent) 18%) !important;
+  border-color: rgba(var(--h-main-tab-accent-rgb), 0.20) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--h-main-tab-accent-rgb), 0.075), transparent 72%),
+    linear-gradient(180deg, rgba(var(--h-main-tab-accent-rgb), 0.045), rgba(3, 10, 20, 0.96)) !important;
+}
+
+/* Harness top chrome tab-switch stability: full HUD effects may animate the
+   content panel, but persistent top bars must not fade/slide when tabs change. */
+.h-root--maximal-hud :is(
+  .h-header,
+  .h-phase-plan-row,
+  .h-quick-action-row,
+  .h-tabs.h-main-tabs
+) {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+}
+
+/* Harness non-dashboard chrome v12: carry dashboard's darker metallic shell across other tabs. */
+.h-root .h-main-shell.embed,
+.h-root .h-main-shell.brainstorm-full {
+  position: relative;
+  background:
+    radial-gradient(circle at 14% -8%, rgba(125, 211, 252, 0.050), transparent 30rem),
+    radial-gradient(circle at 88% 0%, rgba(167, 139, 250, 0.034), transparent 24rem),
+    linear-gradient(180deg, rgba(3, 12, 24, 0.98), rgba(2, 8, 18, 0.995)) !important;
+}
+
+.h-root .h-main-shell.embed > *,
+.h-root .h-main-shell.brainstorm-full > .h-bsfull-panel {
+  border: 1px solid rgba(125, 211, 252, 0.20);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(125, 211, 252, 0.060), transparent 54%),
+    linear-gradient(180deg, rgba(6, 20, 34, 0.985), rgba(3, 10, 20, 0.995)) !important;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(125, 211, 252, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+.h-root .h-main-shell.embed > .h-proposals-panel,
+.h-root .h-main-shell.embed > .h-config-panel,
+.h-root .h-main-shell.embed > .experts-panel,
+.h-root .h-main-shell.embed > .h-plugin-embed-shell,
+.h-root .h-main-shell.brainstorm-full > .h-bsfull-panel {
+  overflow: hidden;
+}
+
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposals-goal,
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-toolbar,
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-detail-head,
+.h-root .h-main-shell.embed > .h-config-panel .h-config-rail,
+.h-root .h-main-shell.embed > .experts-panel > div:first-child,
+.h-root .h-main-shell.brainstorm-full .h-bsfull-head {
+  border-bottom-color: rgba(125, 211, 252, 0.18) !important;
+  background:
+    linear-gradient(90deg, rgba(125, 211, 252, 0.070), rgba(56, 189, 248, 0.026) 42%, rgba(255, 255, 255, 0.010)),
+    rgba(3, 10, 20, 0.94) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.060),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.34) !important;
+}
+
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposals-sidebar,
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-detail,
+.h-root .h-main-shell.embed > .h-config-panel .h-config-body {
+  background: rgba(4, 12, 22, 0.70) !important;
+}
+
+.h-root .h-plugin-embed-shell {
+  overflow: hidden;
+}
+
+.h-root .h-plugin-embed-frame {
+  background: rgba(4, 12, 22, 0.98) !important;
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.h-root .h-plugin-embed-loading {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(125, 211, 252, 0.09), transparent 48%),
+    linear-gradient(180deg, rgba(6, 20, 34, 0.985), rgba(3, 10, 20, 0.995)) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] > .h-panel {
+  border-color: rgba(125, 211, 252, 0.22) !important;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(125, 211, 252, 0.045), transparent 54%),
+    linear-gradient(180deg, rgba(5, 18, 31, 0.98), rgba(3, 10, 20, 0.99)) !important;
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(125, 211, 252, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-panel-head {
+  min-height: 28px !important;
+  padding: 4px 8px 3px !important;
+  gap: 6px !important;
+  border-bottom-color: rgba(125, 211, 252, 0.18) !important;
+  background:
+    linear-gradient(90deg, rgba(125, 211, 252, 0.070), rgba(56, 189, 248, 0.026) 42%, rgba(255, 255, 255, 0.010)),
+    rgba(3, 10, 20, 0.94) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.060),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.34) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-panel-title {
+  color: color-mix(in oklab, var(--fg), #7dd3fc 16%) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-panel-count {
+  color: color-mix(in oklab, var(--accent-cool), white 8%) !important;
+}
+
+/* Harness non-dashboard chrome v13: continue the dashboard metallic language across the other tabs. */
+.h-root .h-main-shell.embed,
+.h-root .h-main-shell.brainstorm-full {
+  --h-tab-metal-border: rgba(125, 211, 252, 0.28);
+  --h-tab-metal-border-soft: rgba(125, 211, 252, 0.16);
+  --h-tab-metal-surface: rgba(3, 10, 20, 0.985);
+  --h-tab-metal-surface-2: rgba(6, 18, 32, 0.965);
+  --h-tab-metal-highlight: rgba(125, 211, 252, 0.085);
+  --h-tab-metal-violet: rgba(167, 139, 250, 0.050);
+}
+
+.h-root .h-main-shell.brainstorm-full > .h-bsfull {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+}
+
+.h-root .h-main-shell.embed > *,
+.h-root .h-main-shell.brainstorm-full .h-bsfull-panel {
+  position: relative;
+  isolation: isolate;
+  border-color: var(--h-tab-metal-border) !important;
+  background:
+    radial-gradient(circle at 10% -6%, var(--h-tab-metal-highlight), transparent 34rem),
+    radial-gradient(circle at 92% 0%, var(--h-tab-metal-violet), transparent 26rem),
+    linear-gradient(180deg, var(--h-tab-metal-surface-2), var(--h-tab-metal-surface)) !important;
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(125, 211, 252, 0.065),
+    inset 0 1px 0 rgba(255, 255, 255, 0.065),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.38) !important;
+}
+
+.h-root .h-main-shell.embed > *::before,
+.h-root .h-main-shell.brainstorm-full .h-bsfull-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.46), rgba(255, 255, 255, 0.14), transparent);
+}
+
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposals-goal,
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-toolbar,
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-detail-head,
+.h-root .h-main-shell.embed > .h-config-panel .h-config-rail,
+.h-root .h-main-shell.embed > .experts-panel > div:first-child,
+.h-root .h-main-shell.embed > .h-insights-panel .h-insights-head,
+.h-root .h-main-shell.brainstorm-full .h-bsfull-head {
+  border-bottom-color: var(--h-tab-metal-border-soft) !important;
+  background:
+    linear-gradient(90deg, rgba(125, 211, 252, 0.105), rgba(56, 189, 248, 0.040) 42%, rgba(255, 255, 255, 0.014)),
+    linear-gradient(180deg, rgba(8, 23, 38, 0.98), rgba(3, 10, 20, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.070),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 1px 0 rgba(125, 211, 252, 0.035) !important;
+}
+
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposals-workbench,
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposals-sidebar,
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-detail,
+.h-root .h-main-shell.embed > .h-config-panel .h-config-body,
+.h-root .h-main-shell.embed > .experts-panel > div:not(:first-child),
+.h-root .h-main-shell.embed > .h-insights-panel .h-insights-body,
+.h-root .h-main-shell.brainstorm-full .h-bsfull-main,
+.h-root .h-main-shell.brainstorm-full .h-bsfull-partner-body {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(125, 211, 252, 0.044), transparent 28rem),
+    linear-gradient(180deg, rgba(3, 12, 24, 0.82), rgba(2, 8, 18, 0.92)) !important;
+}
+
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-list,
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-doc-shell,
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-empty,
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-outline,
+.h-root .h-main-shell.embed > .h-config-panel .h-config-plugin-pane > .pc-card,
+.h-root .h-main-shell.embed > .experts-panel .experts-spec-md pre,
+.h-root .h-main-shell.embed > .h-insights-panel .h-insights-kpi,
+.h-root .h-main-shell.embed > .h-insights-panel .h-insights-mini-card {
+  border-color: rgba(125, 211, 252, 0.19) !important;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(125, 211, 252, 0.052), transparent 18rem),
+    linear-gradient(180deg, rgba(8, 20, 34, 0.91), rgba(3, 10, 20, 0.96)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 10px 26px rgba(0, 0, 0, 0.22) !important;
+}
+
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-item {
+  border-color: rgba(125, 211, 252, 0.105) !important;
+  background: linear-gradient(180deg, rgba(6, 17, 30, 0.70), rgba(3, 10, 20, 0.82)) !important;
+}
+
+.h-root .h-main-shell.embed > .h-proposals-panel .h-proposal-item.is-active {
+  border-color: rgba(56, 189, 248, 0.58) !important;
+  background: linear-gradient(90deg, rgba(14, 116, 144, 0.22), rgba(5, 20, 35, 0.88)) !important;
+  box-shadow: inset 3px 0 0 rgba(56, 189, 248, 0.78), 0 0 24px rgba(56, 189, 248, 0.08) !important;
+}
+
+.h-root .h-main-shell.embed > .h-config-panel .h-config-tab,
+.h-root .h-main-shell.brainstorm-full .h-bsfull-sub {
+  border-color: rgba(125, 211, 252, 0.16) !important;
+  background: linear-gradient(180deg, rgba(10, 25, 41, 0.90), rgba(3, 10, 20, 0.94)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.h-root .h-main-shell.embed > .h-config-panel .h-config-tab:hover,
+.h-root .h-main-shell.brainstorm-full .h-bsfull-sub:hover {
+  border-color: rgba(125, 211, 252, 0.34) !important;
+  background: linear-gradient(180deg, rgba(14, 35, 54, 0.96), rgba(5, 15, 28, 0.98)) !important;
+}
+
+.h-root .h-main-shell.embed > .h-config-panel .h-config-tab.on,
+.h-root .h-main-shell.embed > .h-config-panel .h-config-tab[aria-selected="true"],
+.h-root .h-main-shell.brainstorm-full .h-bsfull-sub.on,
+.h-root .h-main-shell.brainstorm-full .h-bsfull-sub[data-state="active"],
+.h-root .h-main-shell.brainstorm-full .h-bsfull-sub[aria-selected="true"] {
+  color: color-mix(in oklab, var(--fg), #7dd3fc 15%) !important;
+  border-color: rgba(56, 189, 248, 0.52) !important;
+  background: linear-gradient(180deg, rgba(18, 53, 73, 0.92), rgba(5, 18, 31, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 18px rgba(56, 189, 248, 0.10) !important;
+}
+
+.h-root .h-plugin-embed-shell,
+.h-root .h-plugin-embed-frame {
+  border-radius: 14px;
+}
+
+.h-root .h-plugin-embed-shell--pi {
+  overflow: hidden;
+}
+
+/* Proposals tab v14: denser rows, stronger selection/star affordances, metallic status controls. */
+.h-proposals-panel .h-proposal-list {
+  padding: 4px !important;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item {
+  margin-bottom: 3px !important;
+  border-radius: 9px !important;
+}
+
+.h-proposals-panel .h-proposal-row-button {
+  gap: 3px !important;
+  padding: 5px 8px 5px 0 !important;
+}
+
+.h-proposals-panel .h-proposal-row-title {
+  font-size: 11.5px !important;
+  line-height: 1.16 !important;
+}
+
+.h-proposals-panel .h-proposal-row-age {
+  font-size: 9px !important;
+  color: color-mix(in oklab, var(--fg-faint), white 16%) !important;
+}
+
+.h-proposals-panel .h-proposal-badge {
+  min-height: 16px !important;
+  padding-inline: 6px !important;
+  border-color: rgba(125, 211, 252, 0.22) !important;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.15), transparent 32%),
+    linear-gradient(180deg, rgba(18, 38, 56, 0.88), rgba(4, 12, 22, 0.94)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.36),
+    0 4px 12px rgba(0, 0, 0, 0.14) !important;
+}
+
+.h-proposals-panel .h-proposal-badge.status-pending,
+.h-proposals-panel .h-proposal-filter.status-pending {
+  color: color-mix(in oklab, var(--warn), white 24%) !important;
+  border-color: rgba(250, 204, 21, 0.44) !important;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.18), transparent 32%),
+    linear-gradient(180deg, rgba(96, 72, 18, 0.54), rgba(22, 16, 6, 0.90)) !important;
+}
+
+.h-proposals-panel .h-proposal-badge.status-applied,
+.h-proposals-panel .h-proposal-filter.status-applied,
+.h-proposals-panel .h-proposal-badge.review-accept {
+  color: color-mix(in oklab, var(--good), white 24%) !important;
+  border-color: rgba(34, 197, 94, 0.44) !important;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.16), transparent 32%),
+    linear-gradient(180deg, rgba(18, 82, 52, 0.55), rgba(4, 24, 17, 0.92)) !important;
+}
+
+.h-proposals-panel .h-proposal-badge.status-rejected,
+.h-proposals-panel .h-proposal-filter.status-rejected,
+.h-proposals-panel .h-proposal-badge.review-reject {
+  color: color-mix(in oklab, var(--bad), white 26%) !important;
+  border-color: rgba(248, 113, 113, 0.45) !important;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.15), transparent 32%),
+    linear-gradient(180deg, rgba(88, 26, 38, 0.56), rgba(26, 8, 14, 0.92)) !important;
+}
+
+.h-proposals-panel .h-proposal-badge.review-defer {
+  border-color: rgba(148, 163, 184, 0.34) !important;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(36, 48, 64, 0.58), rgba(8, 14, 24, 0.92)) !important;
+}
+
+.h-proposals-panel .h-proposal-filter,
+.h-proposals-panel .h-proposal-mini,
+.h-proposals-panel .h-proposal-btn {
+  border-color: rgba(125, 211, 252, 0.24) !important;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.13), transparent 32%),
+    linear-gradient(180deg, rgba(12, 30, 48, 0.90), rgba(3, 10, 20, 0.96)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.34),
+    0 6px 16px rgba(0, 0, 0, 0.16) !important;
+}
+
+.h-proposals-panel .h-proposal-filter:hover,
+.h-proposals-panel .h-proposal-mini:hover:not(:disabled),
+.h-proposals-panel .h-proposal-btn:hover:not(:disabled) {
+  border-color: rgba(125, 211, 252, 0.40) !important;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(18, 43, 65, 0.96), rgba(5, 15, 28, 0.98)) !important;
+}
+
+.h-proposals-panel .h-proposal-filter[data-state="active"],
+.h-proposals-panel .h-proposal-filter[aria-selected="true"],
+.h-proposals-panel .h-proposal-mini.on,
+.h-proposals-panel .h-proposal-shortlist-detail.on {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.34),
+    0 0 18px rgba(56, 189, 248, 0.12) !important;
+}
+
+.h-proposals-panel .h-proposal-btn.good,
+.h-proposals-panel .h-proposal-mini.good {
+  color: color-mix(in oklab, var(--good), white 28%) !important;
+  border-color: rgba(34, 197, 94, 0.48) !important;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(19, 91, 57, 0.62), rgba(4, 27, 18, 0.96)) !important;
+}
+
+.h-proposals-panel .h-proposal-btn.danger,
+.h-proposals-panel .h-proposal-mini.bad {
+  color: color-mix(in oklab, var(--bad), white 30%) !important;
+  border-color: rgba(248, 113, 113, 0.50) !important;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(96, 28, 42, 0.62), rgba(28, 7, 13, 0.96)) !important;
+}
+
+.h-proposals-panel .h-proposal-pin {
+  width: 23px !important;
+  height: 23px !important;
+  opacity: 0.92 !important;
+  color: color-mix(in oklab, var(--warn), white 14%) !important;
+  border-color: rgba(250, 204, 21, 0.34) !important;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(255, 255, 255, 0.22), transparent 34%),
+    linear-gradient(180deg, rgba(92, 69, 20, 0.58), rgba(18, 13, 5, 0.94)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    0 0 12px rgba(250, 204, 21, 0.12) !important;
+}
+
+.h-proposals-panel .h-proposal-pin:hover,
+.h-proposals-panel .h-proposal-pin:focus-visible,
+.h-proposals-panel .h-proposal-pin.on {
+  opacity: 1 !important;
+  color: #fff7cc !important;
+  border-color: rgba(250, 204, 21, 0.66) !important;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(255, 255, 255, 0.30), transparent 36%),
+    linear-gradient(180deg, rgba(130, 98, 22, 0.72), rgba(32, 22, 6, 0.96)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 20px rgba(250, 204, 21, 0.22) !important;
+}
+
+.h-proposals-panel .h-proposal-check,
+.h-proposals-panel .h-proposal-list .h-proposal-item [role="checkbox"],
+.h-proposals-panel .h-proposal-list .h-proposal-item input[type="checkbox"] {
+  width: 16px !important;
+  height: 16px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+  border: 1px solid rgba(125, 211, 252, 0.46) !important;
+  border-radius: 5px !important;
+  color: #e0f7ff !important;
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.20), transparent 34%),
+    linear-gradient(180deg, rgba(22, 54, 76, 0.82), rgba(3, 12, 24, 0.96)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 14px rgba(56, 189, 248, 0.14) !important;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item input.h-proposal-check[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.h-proposals-panel .h-proposal-check[data-state="checked"],
+.h-proposals-panel .h-proposal-check[data-state="indeterminate"],
+.h-proposals-panel .h-proposal-list .h-proposal-item input.h-proposal-check[type="checkbox"]:checked {
+  border-color: rgba(56, 189, 248, 0.76) !important;
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.28), transparent 34%),
+    linear-gradient(180deg, rgba(25, 98, 132, 0.82), rgba(5, 28, 44, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 20px rgba(56, 189, 248, 0.24) !important;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item input.h-proposal-check[type="checkbox"]:checked {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23e0f7ff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M2.2 6.4 4.8 9l5-6'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.28), transparent 34%),
+    linear-gradient(180deg, rgba(25, 98, 132, 0.82), rgba(5, 28, 44, 0.98)) !important;
+  background-position: center, center, center;
+  background-repeat: no-repeat;
+  background-size: 11px 11px, auto, auto;
+}
+
+.h-proposals-panel .h-proposal-list .h-proposal-item .h-proposal-check[role="checkbox"][data-state="checked"],
+.h-proposals-panel .h-proposal-list .h-proposal-item .h-proposal-check[role="checkbox"][data-state="indeterminate"] {
+  border-color: rgba(56, 189, 248, 0.76) !important;
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.28), transparent 34%),
+    linear-gradient(180deg, rgba(25, 98, 132, 0.82), rgba(5, 28, 44, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 20px rgba(56, 189, 248, 0.24) !important;
+}
+
+/* Proposals tab v15: make the review flow, status filters, and action outcomes easier to understand. */
+.h-proposals-panel .h-proposals-blurb {
+  max-width: 720px;
+}
+
+.h-proposals-panel .h-proposals-flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.h-proposals-panel .h-proposals-flow span {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(255,255,255,0.12), transparent 34%),
+    linear-gradient(180deg, rgba(9, 24, 40, 0.78), rgba(3, 10, 20, 0.88));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.055);
+}
+
+.h-proposals-panel .h-proposals-flow b {
+  flex: 0 0 auto;
+  color: color-mix(in oklab, var(--fg), #7dd3fc 12%);
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.h-proposals-panel .h-proposals-flow em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in oklab, var(--fg-dim), white 9%);
+  font-size: 10.5px;
+  font-style: normal;
+}
+
+.h-proposals-panel .h-proposals-view-tabs {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.055), 0 8px 18px rgba(0,0,0,0.18);
+}
+
+.h-proposals-panel .h-proposals-view-tab[data-state="active"],
+.h-proposals-panel .h-proposals-view-tab[aria-selected="true"] {
+  color: color-mix(in oklab, var(--fg), #7dd3fc 12%) !important;
+  background: linear-gradient(180deg, rgba(18, 53, 73, 0.90), rgba(5, 18, 31, 0.98)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.085), 0 0 14px rgba(56,189,248,0.10);
+}
+
+.h-proposals-panel .h-proposal-filter {
+  min-height: 38px !important;
+  align-items: center !important;
+  padding: 4px 7px !important;
+}
+
+.h-proposals-panel .h-proposal-filter > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  line-height: 1.05;
+}
+
+.h-proposals-panel .h-proposal-filter small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in oklab, var(--fg-faint), white 16%);
+  font-size: 8.5px;
+  font-weight: 760;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.h-proposals-panel .h-proposal-filter b {
+  min-width: 20px;
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+}
+
+.h-proposals-panel .h-proposal-toolbar-titleline::after {
+  content: "Pending needs review · Applied is in SPEC.md · Rejected stays out";
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in oklab, var(--fg-faint), white 10%);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.h-proposals-panel .h-proposal-mini {
+  min-height: 27px !important;
+  padding-inline: 10px !important;
+}
+
+.h-proposals-panel .h-proposal-sort > span {
+  color: color-mix(in oklab, var(--fg-dim), white 10%);
+  font-weight: 900;
+  letter-spacing: 0.10em;
+}
+
+.h-proposals-panel .h-proposal-select-all {
+  color: color-mix(in oklab, var(--fg), #7dd3fc 8%) !important;
+}
+
+.h-proposals-panel .h-proposal-bulkbar {
+  gap: 7px;
+}
+
+.h-proposals-panel .h-proposal-bulkbar span {
+  color: color-mix(in oklab, var(--fg), white 4%);
+}
+
+.h-proposals-panel .h-proposal-detail-head {
+  grid-template-areas:
+    "title metrics"
+    "title actions"
+    "title hint" !important;
+  align-items: start !important;
+}
+
+.h-proposals-panel .h-proposal-action-hint {
+  grid-area: hint;
+  justify-self: end;
+  max-width: min(100%, 520px);
+  margin-top: 1px;
+  padding: 6px 9px;
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  border-radius: 9px;
+  color: color-mix(in oklab, var(--fg-dim), white 12%);
+  background: linear-gradient(90deg, rgba(125, 211, 252, 0.046), rgba(255,255,255,0.012));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.h-proposals-panel .h-proposal-action-hint.status-pending {
+  border-color: rgba(250, 204, 21, 0.24);
+  background: linear-gradient(90deg, rgba(250, 204, 21, 0.060), rgba(125, 211, 252, 0.020));
+}
+
+.h-proposals-panel .h-proposal-action-hint.status-applied {
+  border-color: rgba(34, 197, 94, 0.24);
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.060), rgba(125, 211, 252, 0.018));
+}
+
+.h-proposals-panel .h-proposal-action-hint.status-rejected {
+  border-color: rgba(248, 113, 113, 0.24);
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.055), rgba(125, 211, 252, 0.016));
+}
+
+.h-proposals-panel .h-proposal-detail-actions .h-proposal-btn {
+  min-height: 30px;
+  padding-inline: 12px;
+}
+
+.h-proposals-panel .h-proposal-detail-empty span {
+  max-width: 420px;
+}
+
+@media (max-width: 980px) {
+  .h-proposals-panel .h-proposals-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .h-proposals-panel .h-proposal-detail-head {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      "title"
+      "metrics"
+      "actions"
+      "hint" !important;
+  }
+
+  .h-proposals-panel .h-proposal-detail-metrics,
+  .h-proposals-panel .h-proposal-detail-actions,
+  .h-proposals-panel .h-proposal-action-hint {
+    justify-self: stretch;
+    justify-content: flex-start;
+    text-align: left;
+  }
 }
