@@ -10,6 +10,8 @@
  *   run [project-slug]                Delegate to the harness substrate's run.sh.
  *   scaffold-schema <slug>            Provision the per-harness Postgres schema.
  *   doctor                            Check prerequisites (Postgres, claude, env).
+ *   plugin <subcmd>                   Plugin management (install/enable/disable/...).
+ *   snapshot <subcmd>                 Snapshot management (create/list/info/install).
  *   help                              Show this help.
  *
  * Storage layout:
@@ -200,16 +202,17 @@ async function cmdDoctor(): Promise<void> {
   const node = process.versions.node;
   console.log(`  ${green('✓')} node ${node}`);
 
-  // Postgres reachability via postgres-js (no system psql required).
+  // Postgres reachability via psql -c 'SELECT 1'
   const pgUser = process.env.PGUSER ?? 'harness_app';
   const pgHost = process.env.PGHOST ?? 'localhost';
   const pgDb = process.env.HARNESS_PG_DB ?? 'papercusp';
   const pgPwd = process.env.PGPASSWORD ?? 'harness_app_pwd';
-  const { buildPgUrl, runQuery } = await import('./pg-client.ts');
-  const pgUrl = buildPgUrl({ user: pgUser, password: pgPwd, host: pgHost, database: pgDb });
-  const pingRows = await runQuery<{ '?column?': number }>(pgUrl, 'SELECT 1', 3000);
-  const pgReachable = pingRows !== null && pingRows.length === 1;
-  if (pgReachable) {
+  const psql = spawnSync('psql', ['-U', pgUser, '-h', pgHost, '-d', pgDb, '-tAc', 'SELECT 1'], {
+    env: { ...process.env, PGPASSWORD: pgPwd },
+    encoding: 'utf8',
+    timeout: 3000,
+  });
+  if (psql.status === 0 && psql.stdout.trim() === '1') {
     console.log(`  ${green('✓')} postgres @ ${pgUser}@${pgHost}/${pgDb}`);
   } else {
     console.log(`  ${red('✗')} postgres unreachable @ ${pgUser}@${pgHost}/${pgDb}`);
@@ -217,15 +220,26 @@ async function cmdDoctor(): Promise<void> {
     ok = false;
   }
 
-  // claude CLI
+  // Agent CLI — claude (default) or omp (oh-my-pi). At least one must
+  // be on PATH; AGENT_BACKEND env selects which the operator drives.
   const claudePath = spawnSync('which', ['claude'], { encoding: 'utf8' });
-  if (claudePath.status === 0 && claudePath.stdout.trim()) {
+  const ompPath = spawnSync('which', ['omp'], { encoding: 'utf8' });
+  const haveClaude = claudePath.status === 0 && claudePath.stdout.trim();
+  const haveOmp = ompPath.status === 0 && ompPath.stdout.trim();
+  if (haveClaude) {
     console.log(`  ${green('✓')} claude CLI @ ${claudePath.stdout.trim()}`);
-  } else {
-    console.log(`  ${red('✗')} claude CLI not on PATH`);
-    console.log(`    ${dim('install from https://docs.claude.com/en/docs/claude-code/setup')}`);
+  }
+  if (haveOmp) {
+    console.log(`  ${green('✓')} omp CLI @ ${ompPath.stdout.trim()}`);
+  }
+  if (!haveClaude && !haveOmp) {
+    console.log(`  ${red('✗')} no agent CLI on PATH (need claude or omp)`);
+    console.log(`    ${dim('claude: https://docs.claude.com/en/docs/claude-code/setup')}`);
+    console.log(`    ${dim('omp:    bun add -g @oh-my-pi/pi-coding-agent')}`);
     ok = false;
   }
+  const backend = (process.env.AGENT_BACKEND ?? 'claude-code').toLowerCase();
+  console.log(`  ${dim(`active backend: ${backend === 'omp' ? 'omp' : 'claude-code'} (override with AGENT_BACKEND)`)}`);
 
   // Credentials
   const creds = await readCredentials();
@@ -259,6 +273,23 @@ async function cmdDoctor(): Promise<void> {
     ok = false;
   }
 
+  // ── Snapshot binaries ────────────────────────────────────────────────
+  console.log('');
+  console.log(bold('snapshot binaries'));
+  try {
+    const { probeAll } = await import('@papercusp/export-state');
+    for (const r of await probeAll()) {
+      if (r.found) {
+        console.log(`  ${green('✓')} ${r.name} ${dim(r.version ?? '')}`);
+      } else {
+        console.log(`  ${yellow('!')} ${r.name} not on PATH`);
+        if (r.hint) console.log(`    ${dim(r.hint)}`);
+      }
+    }
+  } catch (e: unknown) {
+    console.log(`  ${dim('snapshot binary probe failed: ' + (e instanceof Error ? e.message : String(e)))}`);
+  }
+
   // ── Plugin ecosystem health ──────────────────────────────────────────
   console.log('');
   console.log(bold('plugin ecosystem'));
@@ -281,13 +312,12 @@ async function cmdDoctor(): Promise<void> {
   console.log(`  ${tabsFromPlugins ? green('✓') : dim('—')} PAPERCUSP_TABS_FROM_PLUGINS=${tabsFromPlugins ? '1' : '<unset>'} (P7 plugin-tab cutover)`);
 
   // audit schema migrations
-  if (pgReachable) {
-    const auditRows = await runQuery<{ tablename: string }>(
-      pgUrl,
+  if (psql.status === 0) {
+    const checkAuditTables = spawnSync('psql', [
+      '-U', pgUser, '-h', pgHost, '-d', pgDb, '-tAc',
       "SELECT tablename FROM pg_tables WHERE schemaname='audit' AND tablename IN ('action_executions','operator_actions') ORDER BY tablename",
-      3000,
-    );
-    const found = (auditRows ?? []).map((r) => r.tablename);
+    ], { env: { ...process.env, PGPASSWORD: pgPwd }, encoding: 'utf8', timeout: 3000 });
+    const found = checkAuditTables.stdout.trim().split('\n').filter(Boolean);
     const hasActions = found.includes('action_executions');
     const hasOps = found.includes('operator_actions');
     console.log(`  ${hasActions ? green('✓') : red('✗')} audit.action_executions ${hasActions ? 'migrated' : 'missing'} (006-action-executions.sql)`);
@@ -351,19 +381,7 @@ async function cmdList(): Promise<void> {
 
 async function fetchToFile(url: string, destPath: string): Promise<void> {
   const r = await fetch(url);
-  if (!r.ok) {
-    // The marketplace returns structured JSON for diagnosable failures
-    // (R2 unconfigured, tarball missing, etc.). Surface the `hint` so the
-    // user sees an actionable message instead of a bare HTTP code.
-    const body = await r.text().catch(() => '');
-    let hint = '';
-    try {
-      const parsed = JSON.parse(body);
-      if (parsed?.error) hint = parsed.error;
-      if (parsed?.hint) hint += hint ? ` — ${parsed.hint}` : parsed.hint;
-    } catch { /* not JSON */ }
-    throw new Error(hint ? `HTTP ${r.status}: ${hint}` : `HTTP ${r.status}: ${url}`);
-  }
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${url}`);
   if (!r.body) throw new Error(`empty response body: ${url}`);
   await fs.mkdir(dirname(destPath), { recursive: true });
   await pipeline(Readable.fromWeb(r.body as any), createWriteStream(destPath));
@@ -459,19 +477,7 @@ async function installOne(slug: string, version: string | undefined, opts: Insta
   let resolvedVersion = version;
   try {
     const r = await fetch(`${MARKETPLACE_URL}/catalog/${encodeURIComponent(slug)}`);
-    if (!r.ok) {
-      // Surface the marketplace's diagnostic hint when present (e.g.
-      // "tarball in R2 but R2 is not configured...") instead of a bare
-      // HTTP code.
-      const body = await r.text().catch(() => '');
-      let detail = '';
-      try {
-        const parsed = JSON.parse(body);
-        if (parsed?.hint) detail = ` — ${parsed.hint}`;
-        else if (parsed?.error) detail = ` — ${parsed.error}`;
-      } catch { /* not JSON */ }
-      die(`install: ${slug} not found in marketplace (HTTP ${r.status})${detail}`);
-    }
+    if (!r.ok) die(`install: ${slug} not found in marketplace (HTTP ${r.status})`);
     const d = await r.json() as { versions: string[]; kind?: string; latest?: { kind?: string } };
     if (!resolvedVersion) {
       if (!d.versions?.length) die(`install: ${slug} has no published versions`);
@@ -596,8 +602,6 @@ async function installOne(slug: string, version: string | undefined, opts: Insta
     const pgPwd = process.env.PGPASSWORD ?? 'postgres';
     const pgDb = process.env.HARNESS_PG_DB ?? 'papercusp';
     const pgHost = process.env.PGHOST ?? 'localhost';
-    const { buildPgUrl, applySqlFile } = await import('./pg-client.ts');
-    const ddlUrl = buildPgUrl({ user: pgUser, password: pgPwd, host: pgHost, database: pgDb });
     let applied = 0;
     for (const row of schemaRows) {
       const ddlPath = join(installDir, row.ddlPath);
@@ -606,12 +610,15 @@ async function installOne(slug: string, version: string | undefined, opts: Insta
         console.log(`  ${dim(`skip (missing): ${label}`)}`);
         continue;
       }
-      const result = await applySqlFile(ddlUrl, ddlPath, 30_000);
-      if (result.ok) {
+      const psql = spawnSync('psql', [
+        '-v', 'ON_ERROR_STOP=1', '-q',
+        '-U', pgUser, '-h', pgHost, '-d', pgDb, '-f', ddlPath,
+      ], { encoding: 'utf8', env: { ...process.env, PGPASSWORD: pgPwd }, timeout: 30_000 });
+      if (psql.status === 0) {
         console.log(`  ${green('✓')} applied ${dim(label)}`);
         applied++;
       } else {
-        console.log(`  ${red('✗')} ${label}: ${result.error}`);
+        console.log(`  ${red('✗')} ${label}: ${psql.stderr.trim().slice(0, 200)}`);
       }
     }
     if (applied === 0) {
@@ -940,10 +947,6 @@ async function cmdInit(args: string[]): Promise<void> {
       await fs.mkdir(join(projectPath, '.harness'), { recursive: true });
       await fs.copyFile(tmplManifest, join(projectPath, '.harness', 'papercusp.json'));
     }
-    if (!existsSync(join(projectPath, 'docs'))) {
-      await fs.mkdir(join(projectPath, 'docs'), { recursive: true });
-      await writeIfAbsent('docs/index.md', `# ${slug} docs\n\nThis is the harness's project documentation. The Docs tab in the operator UI renders any \`.md\` / \`.mdx\` file under \`docs/\`.\n\nReplace this stub with your project overview, then add more files for guides, decisions, runbooks, etc.\n`);
-    }
   } else {
     console.log(
       isExistingRepo
@@ -952,8 +955,6 @@ async function cmdInit(args: string[]): Promise<void> {
     );
     await writeIfAbsent('SPEC.md', `# ${slug}\n\n## Goals\n\n(write what this project should accomplish)\n`);
     await writeIfAbsent('AGENTS.md', `# Conventions for ${slug}\n\n(write coding conventions, libraries to prefer, etc.)\n`);
-    await fs.mkdir(join(projectPath, 'docs'), { recursive: true });
-    await writeIfAbsent('docs/index.md', `# ${slug} docs\n\nThis is the harness's project documentation. The Docs tab in the operator UI renders any \`.md\` / \`.mdx\` file under \`docs/\`.\n\nReplace this stub with your project overview, then add more files for guides, decisions, runbooks, etc.\n`);
   }
 
   // .harness/config.json comes from the template (every template that
