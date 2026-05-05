@@ -7,7 +7,34 @@
  */
 import { harnessRoot } from '@papercusp/harness/paths';
 import { readConfig, resolvePhase } from './config';
-import type { OrchestratorEnv } from './types';
+import type { AgentBackend, OrchestratorEnv } from './types';
+
+/**
+ * Resolve which agent backend to drive. Reads `AGENT_BACKEND` directly,
+ * else infers from the agent command (`omp` keyword → omp, otherwise
+ * claude-code). The explicit env var wins so users can force the parser
+ * even when shelling through wrappers.
+ */
+export function resolveAgentBackend(agentCmd: string): AgentBackend {
+  const explicit = (process.env.AGENT_BACKEND ?? '').trim().toLowerCase();
+  if (explicit === 'omp' || explicit === 'pi') return 'omp';
+  if (explicit === 'claude-code' || explicit === 'claude') return 'claude-code';
+  // Infer from the binary name in agentCmd.
+  const first = agentCmd.split(/\s+/).filter(Boolean)[0] ?? '';
+  if (/(^|\/)(omp|pi)$/.test(first)) return 'omp';
+  return 'claude-code';
+}
+
+/**
+ * Resolve the agent invocation command. `AGENT_CMD` wins over the
+ * legacy `CLAUDE` env (back-compat) so existing harness installs keep
+ * working without an env-var migration.
+ */
+export function resolveAgentCmd(): string {
+  const fromAgent = process.env.AGENT_CMD;
+  if (fromAgent && fromAgent.trim()) return fromAgent;
+  return process.env.CLAUDE ?? 'claude -p';
+}
 
 export interface ResolvedPaths {
   harnessDir: string;
@@ -28,12 +55,14 @@ export function resolveEnv(): OrchestratorEnv & ResolvedPaths {
   const paths = resolvePaths();
   const cfg = readConfig(paths.stateDir);
   const { phase, port, dbPath } = resolvePhase(cfg);
+  const claudeCmd = resolveAgentCmd();
 
   return {
     ...paths,
     maxIterations: parseInt(process.env.MAX_ITERATIONS ?? '200', 10),
     iterationSleep: parseFloat(process.env.ITERATION_SLEEP ?? '2'),
-    claudeCmd: process.env.CLAUDE ?? 'claude -p',
+    claudeCmd,
+    agentBackend: resolveAgentBackend(claudeCmd),
     phase,
     port,
     dbPath,

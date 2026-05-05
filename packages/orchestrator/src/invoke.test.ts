@@ -52,7 +52,7 @@ test('extractResult — pulls "result" event from stream-json log', () => {
     '',
   ].join('\n'));
   try {
-    assert.equal(extractResult(path, true), 'NEXT_WORKER F-001');
+    assert.equal(extractResult(path, 'claude-stream-json'), 'NEXT_WORKER F-001');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -63,7 +63,7 @@ test('extractResult — returns "" if no result event found', () => {
   const path = join(dir, 'log.jsonl');
   writeFileSync(path, '{"type":"assistant","message":"nothing terminal"}\n');
   try {
-    assert.equal(extractResult(path, true), '');
+    assert.equal(extractResult(path, 'claude-stream-json'), '');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -74,7 +74,7 @@ test('extractResult — plain-text mode returns file as-is', () => {
   const path = join(dir, 'log.jsonl');
   writeFileSync(path, 'plain output\n');
   try {
-    assert.equal(extractResult(path, false), 'plain output\n');
+    assert.equal(extractResult(path, 'none'), 'plain output\n');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -90,7 +90,7 @@ test('extractResult — handles malformed lines mixed with valid result', () => 
     '',
   ].join('\n'));
   try {
-    assert.equal(extractResult(path, true), 'DONE');
+    assert.equal(extractResult(path, 'claude-stream-json'), 'DONE');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

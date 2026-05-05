@@ -4,7 +4,18 @@
 
 set -eu
 HARNESS_DIR="${HARNESS_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
-CLAUDE="${CLAUDE:-claude -p}"
+CLAUDE="${AGENT_CMD:-${CLAUDE:-claude -p}}"
+AGENT_BACKEND="${AGENT_BACKEND:-}"
+if [ -z "$AGENT_BACKEND" ]; then
+    case "$CLAUDE" in
+        omp*|*/omp*|pi*|*/pi*) AGENT_BACKEND=omp ;;
+        *) AGENT_BACKEND=claude-code ;;
+    esac
+fi
+# claude-code wants --dangerously-skip-permissions for headless; omp -p is
+# already non-interactive and rejects unknown flags.
+SMOKE_EXTRA=""
+[ "$AGENT_BACKEND" = "claude-code" ] && SMOKE_EXTRA="--dangerously-skip-permissions"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
@@ -31,7 +42,7 @@ mkdir -p .harness
     echo "## Runtime context"
     echo "- Working directory: $TEST_DIR"
     echo "- State directory: $TEST_DIR/.harness"
-} | $CLAUDE --dangerously-skip-permissions > /tmp/planner-smoke.out 2>&1
+} | $CLAUDE $SMOKE_EXTRA > /tmp/planner-smoke.out 2>&1
 
 echo "--- stdout (last 5 lines) ---"
 tail -5 /tmp/planner-smoke.out

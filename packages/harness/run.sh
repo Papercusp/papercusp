@@ -54,10 +54,47 @@ else
     HARNESS_DB_PATH=""
 fi
 export HARNESS_PHASE HARNESS_PORT HARNESS_DB_PATH
+# Resolve the slug from ~/.restart-harness-projects.json so agent prompts
+# (expert, feedback, validator, etc.) can reference $HARNESS_SLUG inline
+# in their curl snippets. Inline lookup because harness_slug() (the helper
+# function) is defined later in this file.
+if [ -z "${HARNESS_SLUG:-}" ]; then
+    if [ -f "$HOME/.restart-harness-projects.json" ]; then
+        HARNESS_SLUG="$(REG="$HOME/.restart-harness-projects.json" PD="$PROJECT_DIR" python3 -c '
+import json, os, sys
+try:
+    r = json.load(open(os.environ["REG"]))
+    for p in r.get("projects", []):
+        if p.get("path") == os.environ["PD"]:
+            print(p.get("slug", "")); sys.exit(0)
+except Exception:
+    pass
+' 2>/dev/null)"
+    fi
+    [ -z "$HARNESS_SLUG" ] && HARNESS_SLUG="$(basename "$PROJECT_DIR")"
+fi
+export HARNESS_SLUG
 MAX_ITERATIONS="${MAX_ITERATIONS:-200}"
 # Invocation template. `$ROLE` is the role file path; `$PROMPT` is the actual prompt text.
-# Default: non-interactive Claude Code. Adjust if your binary uses different flags.
-CLAUDE="${CLAUDE:-claude -p}"
+# Default: non-interactive Claude Code with permission prompts disabled (autonomous
+# loop can't answer prompts). Override CLAUDE env var to use a different binary or
+# add flags. Without --dangerously-skip-permissions, agents that try to curl the
+# operator API (expert, feedback, validator's POST flows) will hang on permission
+# prompts that nobody can answer.
+# Agent invocation template. Prefer the new $AGENT_CMD env (which is
+# backend-neutral — point at `claude -p`, `omp -p`, or any wrapper); fall
+# back to legacy $CLAUDE for back-compat with existing harness installs.
+# $AGENT_BACKEND ('claude-code' | 'omp') selects the structured-stream
+# format we append; default 'claude-code'.
+CLAUDE="${AGENT_CMD:-${CLAUDE:-claude -p --dangerously-skip-permissions}}"
+AGENT_BACKEND="${AGENT_BACKEND:-}"
+if [ -z "$AGENT_BACKEND" ]; then
+    case "$CLAUDE" in
+        omp*|*/omp*|pi*|*/pi*) AGENT_BACKEND=omp ;;
+        *) AGENT_BACKEND=claude-code ;;
+    esac
+fi
+export CLAUDE AGENT_BACKEND
 
 cd "$PROJECT_DIR"
 
@@ -82,10 +119,85 @@ fi
 
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 
+# Structured JSONL companion to run.log. Each line is a single LogEvent
+# {ts, source, level, msg, corrId?, attrs?}. Plugin host + operator UI
+# consume this for filtering/tabs/search; run.log is kept for human tail.
+LOG_JSONL="$LOG_DIR/run.log.jsonl"
+
+# Rotation cap (bytes) for run.log.jsonl. Override with PAPERCUSP_LOG_ROTATE_BYTES.
+# Default 50 MiB — enough for a multi-day mission, small enough that gzipped
+# rotations don't pile up.
+LOG_ROTATE_BYTES="${PAPERCUSP_LOG_ROTATE_BYTES:-52428800}"
+LOG_ROTATE_KEEP="${PAPERCUSP_LOG_ROTATE_KEEP:-5}"
+
+# Probe the JSONL file size; if past the cap, rotate to .1.gz and start
+# a fresh empty file. Older rotations are renumbered .1 → .2, .2 → .3, …
+# up to LOG_ROTATE_KEEP. Cheaper than logrotate(8) and avoids depending
+# on a system service.
+_log_rotate_if_needed() {
+    [ -f "$LOG_JSONL" ] || return 0
+    local size
+    size=$(stat -c '%s' "$LOG_JSONL" 2>/dev/null || stat -f '%z' "$LOG_JSONL" 2>/dev/null || echo 0)
+    [ "$size" -lt "$LOG_ROTATE_BYTES" ] && return 0
+    # Cycle .N-1 → .N from highest down (so we don't overwrite live data).
+    local i=$((LOG_ROTATE_KEEP - 1))
+    while [ "$i" -gt 0 ]; do
+        if [ -f "$LOG_JSONL.$i.gz" ]; then
+            mv -f "$LOG_JSONL.$i.gz" "$LOG_JSONL.$((i + 1)).gz"
+        fi
+        i=$((i - 1))
+    done
+    # Move current → .1, then gzip in background. Doing the gzip async
+    # keeps the next log() call from blocking on a multi-MB compress.
+    mv -f "$LOG_JSONL" "$LOG_JSONL.1"
+    ( gzip -f "$LOG_JSONL.1" 2>/dev/null & )
+    # Drop anything past KEEP.
+    i=$((LOG_ROTATE_KEEP + 1))
+    while [ -f "$LOG_JSONL.$i.gz" ]; do
+        rm -f "$LOG_JSONL.$i.gz"
+        i=$((i + 1))
+    done
+}
+
+# Append a single JSONL event. Keeps run.sh's only python3 dep (already
+# used elsewhere in this file) for safe JSON encoding of the message —
+# bash's `printf %q` doesn't escape control chars correctly for JSON.
+_log_jsonl() {
+    local source="$1"; local level="$2"; local msg="$3"; local ts="$4"
+    _log_rotate_if_needed
+    SRC="$source" LEVEL="$level" MSG="$msg" TS="$ts" python3 -c '
+import json, os, sys
+sys.stdout.write(json.dumps({
+    "ts": os.environ["TS"],
+    "source": os.environ["SRC"],
+    "level": os.environ["LEVEL"],
+    "msg": os.environ["MSG"],
+}) + "\n")
+' >> "$LOG_JSONL" 2>/dev/null || true
+}
+
+# Classify a log message into a level by looking for known patterns.
+# Mirrors classifyLine() in libs/ui-primitives/src/LogView.tsx so the
+# server-side classification matches what the legacy text-driven UI
+# does. Once the UI is purely JSONL-driven this can move to a single
+# shared definition.
+_log_level() {
+    local msg="$1"
+    case "$msg" in
+        *ERROR*|*FATAL*|*Aborting*|*Traceback*) printf 'error' ;;
+        *WARN*|*Warning*)                       printf 'warn' ;;
+        *"ORCH decision:"*)                     printf 'decision' ;;
+        "── iteration "*"──"*)                  printf 'iteration' ;;
+        "PLAN:"*)                               printf 'plan' ;;
+        *)                                       printf 'info' ;;
+    esac
+}
+
 log() {
     local ts
     ts="$(date -Iseconds)"
     printf '[%s] %s\n' "$ts" "$*" | tee -a "$LOG_DIR/run.log"
+    _log_jsonl "harness" "$(_log_level "$*")" "$*" "$ts"
 }
 
 config_get() {
@@ -112,44 +224,6 @@ except Exception:
     print(os.environ["DEFAULT"])
 ' 2>/dev/null
 }
-
-# One-time deprecation warning for the legacy `product.*` config namespace.
-# `proposals.*` is the canonical namespace as of 2026-04-30; `product.*` is
-# still honored as a fallback in run.sh. This warning fires once per run if a
-# user has `product.*` keys without the matching `proposals.*` equivalent,
-# nudging them to migrate before the fallback is removed.
-warn_deprecated_product_keys() {
-    [ -f "$STATE_DIR/config.json" ] || return 0
-    [ -f "$STATE_DIR/.product-keys-warned" ] && return 0
-    local found
-    found="$(CONFIG="$STATE_DIR/config.json" python3 -c '
-import json, os
-try:
-    d = json.load(open(os.environ["CONFIG"]))
-    p_old = d.get("product") or {}
-    p_new = d.get("proposals") or {}
-    # Map legacy → canonical key names.
-    aliases = {
-      "enabled": "enabled",
-      "triggerOnDone": "triggerOnDone",
-      "triggerOnNearDone": "triggerOnNearDone",
-      "nearDoneThreshold": "nearDoneThreshold",
-      "mode": "autoApply",
-      "replanOnAccept": "replanOnAccept",
-    }
-    miss = [f"product.{k} → proposals.{v}" for k, v in aliases.items() if k in p_old and v not in p_new]
-    print("\n".join(miss))
-except Exception:
-    pass
-' 2>/dev/null)"
-    if [ -n "$found" ]; then
-        log "WARN: legacy product.* config keys in use without proposals.* equivalents:"
-        printf '%s\n' "$found" | while read -r line; do log "WARN:   $line"; done
-        log "WARN: rename product.* to proposals.* in .harness/config.json — fallback will be removed."
-        : > "$STATE_DIR/.product-keys-warned"
-    fi
-}
-warn_deprecated_product_keys
 
 branch_iso_enabled() {
     [ "$(config_get 'branchIsolation.enabled' 'false')" = "true" ]
@@ -633,16 +707,16 @@ review_pending_proposals() {
     # into features.json + validation-contract.md so the next harness loop
     # iteration actually has work to pick up.
     if [ "$accepted_count" -gt 0 ]; then
-        # Canonical key: reviewer.replanOnAccept. Legacy fallback:
-        # product.replanOnAccept (still respected for projects that set it
-        # before the role consolidation). Default false — auto-replan is
-        # destructive (it appends to features.json + the contract).
+        # Default true: accept means accept. The unified MODE=replan path
+        # is non-destructive (delta-merge into the existing queue), so
+        # there's no reason to gate it. Set explicitly to false to opt out.
+        # Legacy product.replanOnAccept is still honored when set.
         local replan_on_accept
         replan_on_accept="$(config_get 'reviewer.replanOnAccept' '')"
         if [ -z "$replan_on_accept" ]; then
-            replan_on_accept="$(config_get 'product.replanOnAccept' 'false')"
+            replan_on_accept="$(config_get 'product.replanOnAccept' 'true')"
         fi
-        if [ "$replan_on_accept" = "true" ]; then
+        if [ "$replan_on_accept" != "false" ]; then
             log "  reviewer: $accepted_count proposal(s) accepted — invoking scoper (MODE=replan)"
             local replan_out
             replan_out="$(invoke scoper "MODE=replan")"
@@ -898,12 +972,18 @@ snapshot_state() {
     # Prunes oldest snapshots beyond config.json → snapshotRetention (default 50).
     local iter_num="$1"
     local ts; ts="$(date +%s)"
-    local snap_dir="$STATE_DIR/snapshots/${ts}-iter-$(printf '%03d' "$iter_num")"
+    local snap_id="${ts}-iter-$(printf '%03d' "$iter_num")"
+    local snap_dir="$STATE_DIR/snapshots/${snap_id}"
     mkdir -p "$snap_dir"
-    [ -f "$STATE_DIR/features.json" ]           && cp "$STATE_DIR/features.json"           "$snap_dir/" || true
     [ -f "$STATE_DIR/validation-contract.md" ]  && cp "$STATE_DIR/validation-contract.md"  "$snap_dir/" || true
     [ -f "$STATE_DIR/supervisor-notes.md" ]     && cp "$STATE_DIR/supervisor-notes.md"     "$snap_dir/" || true
     [ -f "$STATE_DIR/config.json" ]             && cp "$STATE_DIR/config.json"             "$snap_dir/" || true
+
+    # Mirror harness_features rows into harness_shared.snapshot_features
+    # so restore can round-trip the work queue. Best-effort; if the web
+    # tier is unreachable, the snapshot is still useful for FS state.
+    curl -sS -m 5 -o /dev/null -X POST \
+      "http://localhost:3055/api/harness/${HARNESS_SLUG}/snapshots/${snap_id}/record-pg-state" 2>/dev/null || true
 
     # Prune oldest beyond retention limit.
     local retention=50
@@ -1051,19 +1131,29 @@ process_actions_block() {
     log "ACTIONS: $(printf '%s' "$actions_json" | python3 -c 'import json,sys; print(len(json.loads(sys.stdin.read())))') op(s) detected"
     local action_count
     action_count="$(printf '%s' "$actions_json" | python3 -c 'import json,sys; print(len(json.loads(sys.stdin.read())))')"
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
     local i=0
     while [ "$i" -lt "$action_count" ]; do
         local single_action
         single_action="$(printf '%s' "$actions_json" | INDEX="$i" python3 -c 'import json,sys,os; print(json.dumps(json.loads(sys.stdin.read())[int(os.environ["INDEX"])]))')"
+        local action_id; action_id="$(uuidgen 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
         local body
         if [ -n "$calling_dept" ]; then
-            body="$(printf '{"action": %s, "callingDept": "%s"}' "$single_action" "$calling_dept")"
+            body="$(printf '{"actionId": "%s", "action": %s, "callingDept": "%s"}' "$action_id" "$single_action" "$calling_dept")"
         else
-            body="$(printf '{"action": %s}' "$single_action")"
+            body="$(printf '{"actionId": "%s", "action": %s}' "$action_id" "$single_action")"
+        fi
+        local auth_args=()
+        if [ -n "$harness_token" ]; then
+            auth_args=(-H "Authorization: Bearer $harness_token")
         fi
         local resp
-        resp="$(curl -sS -X POST -H 'content-type: application/json' --max-time 30 \
-            -d "$body" 'http://localhost:3001/api/org/admin/execute-action' 2>&1 || echo '{"ok":false,"error":"curl failed"}')"
+        resp="$(curl -sS -X POST -H 'content-type: application/json' "${auth_args[@]}" --max-time 30 \
+            -d "$body" "$operator_base/api/admin/execute-action" 2>&1 || echo '{"ok":false,"error":"curl failed"}')"
         log "  action $((i+1))/$action_count: $resp"
         i=$((i+1))
     done
@@ -1071,13 +1161,27 @@ process_actions_block() {
 
 run_hook() {
     # run_hook <name>
-    # Invokes .harness/hooks/<name>.sh if it exists and is executable.
+    # Resolution order:
+    #   1. <STATE_DIR>/hooks/<name>.sh (per-harness override)
+    #   2. <repo>/libs/papercusp/packages/harness/hooks/builtins/<name>.sh (substrate builtin)
+    # If neither exists, this is a no-op.
+    #
     # Env vars (ROLE, FEATURE_ID, RC, REASON, etc.) must be exported by the
     # caller. Hook stdout/stderr → .harness/logs/hooks/<ts>-<name>.log.
     # Non-zero exit is logged as a warning but does NOT halt the mission.
     local hook="$1"
     local script="$STATE_DIR/hooks/${hook}.sh"
-    [ -x "$script" ] || return 0
+    if [ ! -x "$script" ]; then
+        # Fall through to builtin resolver. HOME-dir bin first, then the
+        # path relative to this run.sh's own location.
+        local self_dir; self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        local builtin="$self_dir/hooks/builtins/${hook}.sh"
+        if [ -x "$builtin" ]; then
+            script="$builtin"
+        else
+            return 0
+        fi
+    fi
     mkdir -p "$LOG_DIR/hooks"
     local ts; ts="$(date +%s)"
     local logfile="$LOG_DIR/hooks/${ts}-${hook}.log"
@@ -1145,7 +1249,9 @@ except Exception:
             FEATURE_ID=*)
                 local fid="${extra#FEATURE_ID=}"
                 # Only include if it looks like a real feature id (F-...)
-                if [[ "$fid" =~ ^F-[A-Z0-9-]+$ ]]; then
+                # or an expert/feedback instance id (EXP-NNN, FB-NNN). Cost
+                # attribution rolls up per id via the run_id suffix.
+                if [[ "$fid" =~ ^(F|EXP|FB)-[A-Z0-9-]+$ ]]; then
                     feature_tag="-$fid"
                     feature_id="$fid"
                 fi
@@ -1169,12 +1275,19 @@ except Exception:
     local out="$LOG_DIR/${run_id}.out"
     local err="$LOG_DIR/${run_id}.err"
 
-    # Stream-json mode gives us live progress, tool calls, token usage,
-    # and cost. Falls back to plain text if the caller overrode CLAUDE
-    # with a CLI that doesn't support these flags.
+    # Structured-stream mode gives us live progress, tool calls, token
+    # usage, and cost. Backend-aware: claude-code → stream-json,
+    # omp/pi-coding-agent → --mode json. Falls back to plain text if
+    # the caller's $CLAUDE override doesn't support either.
     local extra_flags=""
-    if [[ "$CLAUDE" == *"claude"* ]] && [[ "$CLAUDE" != *"stream-json"* ]]; then
-        extra_flags="--output-format stream-json --verbose --include-partial-messages"
+    if [ "$AGENT_BACKEND" = "omp" ]; then
+        if [[ "$CLAUDE" != *"--mode "* ]]; then
+            extra_flags="--mode json --no-session"
+        fi
+    else
+        if [[ "$CLAUDE" == *"claude"* ]] && [[ "$CLAUDE" != *"stream-json"* ]]; then
+            extra_flags="--output-format stream-json --verbose --include-partial-messages"
+        fi
     fi
 
     # Per-role invocation timeout from .harness/config.json. Value in seconds.
@@ -1561,7 +1674,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
     primary_role="$(config_get 'primaryRole' 'orchestrator')"
     decision="$(invoke "$primary_role" \
         | sed -E 's/[*`]+//g; s/^[[:space:]]+//; s/[[:space:]]+$//' \
-        | grep -oE '(DONE|CONVERTED|NEXT_WORKER_CEO_MODE|NEXT_WORKER|NEXT_VALIDATOR|NEXT_ARCHITECT|NEXT_TESTER|NEXT_SECURITY|GENERATE_TESTS|RUN_TESTS|NEXT_MONITOR|READY_FOR_PROD|FEATURE_FREEZE|NEXT_HARNESS|IDLE|ESCALATE|CHECKPOINT)([[:space:]]+[A-Za-z0-9_.-]+)?' \
+        | grep -oE '(DONE|CONVERTED|NEXT_WORKER_CEO_MODE|NEXT_WORKER|NEXT_VALIDATOR|NEXT_ARCHITECT|NEXT_TESTER|NEXT_SECURITY|GENERATE_TESTS|RUN_TESTS|NEXT_MONITOR|READY_FOR_PROD|FEATURE_FREEZE|NEXT_HARNESS|NEXT_EXPERT|NEXT_FEEDBACK|NEXT_SCOPER|IDLE|ESCALATE|CHECKPOINT)([[:space:]]+[A-Za-z0-9_.-]+)?' \
         | tail -1)"
     log "ORCH decision: $decision (role=$primary_role)"
     fire_plugin_hook onPostOrchestrator --decision="$decision" || true
@@ -1595,21 +1708,29 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
         # Optional: run scoper (proposal mode, formerly the `product` role) to
         # propose next-phase features. The reviewer then auto-approves any
         # proposals it deems appropriate by appending them to SPEC.md.
-        if [ "$(config_get 'product.enabled' 'false')" = "true" ] && [ "$(config_get 'product.triggerOnDone' 'false')" = "true" ]; then
-            if [ -f "$PROJECT_DIR/GOAL.md" ]; then
+        # Proposals after DONE: gated by proposals.enabled (canonical) or
+        # legacy product.enabled. Default false — opt-in flow.
+        proposals_enabled="$(config_get 'proposals.enabled' "$(config_get 'product.enabled' 'false')")"
+        proposals_after_done="$(config_get 'proposals.afterDone' "$(config_get 'product.triggerOnDone' 'false')")"
+        if [ "$proposals_enabled" = "true" ] && [ "$proposals_after_done" = "true" ]; then
+            if [ -f "$PROJECT_DIR/SPEC.md" ]; then
                 mkdir -p "$STATE_DIR/proposals"
-                log "SCOPER starting (triggerOnDone, proposal mode)"
+                log "SCOPER starting (afterDone, proposal mode)"
                 product_out="$(invoke scoper "MODE=proposal")"
                 log "SCOPER: ${product_out:-(no output)}"
-                # Auto-apply via reviewer: judge each pending proposal, accept
-                # the ones the reviewer green-lights. config.product.mode kept
-                # for backward compat: anything other than "propose-only" runs
-                # the reviewer gate.
-                if [ "$(config_get 'product.mode' 'auto-apply')" != "propose-only" ]; then
+                # Auto-apply reviewer-approved unless explicitly opted out.
+                # Legacy: product.mode == 'propose-only' opts out; new key
+                # is proposals.autoApply (default true).
+                auto_apply="$(config_get 'proposals.autoApply' '')"
+                if [ -z "$auto_apply" ]; then
+                    legacy_mode="$(config_get 'product.mode' 'auto-apply')"
+                    [ "$legacy_mode" = "propose-only" ] && auto_apply="false" || auto_apply="true"
+                fi
+                if [ "$auto_apply" != "false" ]; then
                     review_pending_proposals
                 fi
             else
-                log "SCOPER skipped: no GOAL.md in project dir"
+                log "SCOPER skipped: no SPEC.md in project dir"
             fi
         fi
 
@@ -1980,6 +2101,64 @@ except Exception as e:
         esac
         ;;
 
+    NEXT_EXPERT*)
+        # Format: NEXT_EXPERT EXP-NNN
+        # The expert is an instanced role: identity + state lives in
+        # .harness/experts/<EXP-id>/. We pass FEATURE_ID=<EXP-id> so the
+        # invoke() pipeline picks it up (assembleRolePrompt detects EXP-
+        # prefix and injects EXPERT_DIR / EXPERT_SPEC into the runtime
+        # context). The expert reads identity.json itself.
+        eid="${decision##NEXT_EXPERT }"
+        [ "$eid" = "NEXT_EXPERT" ] && eid=""
+        if [ -z "$eid" ]; then
+            log "ERROR: NEXT_EXPERT missing expert id"
+        else
+            log "EXPERT $eid starting"
+            invoke expert "FEATURE_ID=$eid" "EXPERT_ID=$eid" >/dev/null
+            log "EXPERT $eid iteration complete"
+        fi
+        ;;
+
+    NEXT_FEEDBACK*)
+        # Format: NEXT_FEEDBACK EXP-NNN.FB-NNN  (separator is `.` because
+        # the orchestrator regex's char class is [A-Za-z0-9_.-]; `/` and
+        # `:` would not match.)
+        fb_arg="${decision##NEXT_FEEDBACK }"
+        [ "$fb_arg" = "NEXT_FEEDBACK" ] && fb_arg=""
+        eid="${fb_arg%%.*}"
+        fbid="${fb_arg##*.}"
+        if [ -z "$eid" ] || [ -z "$fbid" ] || [ "$eid" = "$fbid" ]; then
+            log "ERROR: NEXT_FEEDBACK expects EXP-NNN.FB-NNN; got '$fb_arg'"
+        else
+            # Read the assigned persona from disk so the feedback agent's
+            # runtime context knows which lens to use.
+            persona=""
+            persona_path="$STATE_DIR/experts/$eid/feedback/$fbid/persona.txt"
+            if [ -f "$persona_path" ]; then
+                persona="$(cat "$persona_path")"
+            fi
+            log "FEEDBACK $eid/$fbid starting (persona=$persona)"
+            invoke feedback "FEEDBACK_ID=$fbid" "EXPERT_ID=$eid" "FEEDBACK_PERSONA=$persona" >/dev/null
+            log "FEEDBACK $eid/$fbid iteration complete"
+        fi
+        ;;
+
+    NEXT_SCOPER*)
+        # Format: NEXT_SCOPER  (no arg, defaults to phase1) or  NEXT_SCOPER phase2
+        # Re-invokes the scoper. In phase2 mode the scoper derives features
+        # from finalized experts. Idempotent — re-running with no new
+        # finalizations is a no-op.
+        sc_phase="${decision##NEXT_SCOPER }"
+        [ "$sc_phase" = "NEXT_SCOPER" ] && sc_phase=""
+        log "SCOPER starting${sc_phase:+ (phase=$sc_phase)}"
+        if [ -n "$sc_phase" ]; then
+            invoke scoper "SCOPER_PHASE=$sc_phase" >/dev/null
+        else
+            invoke scoper >/dev/null
+        fi
+        log "SCOPER complete"
+        ;;
+
     NEXT_TESTER*)
         val_id="${decision##NEXT_TESTER }"
         [ "$val_id" = "NEXT_TESTER" ] && val_id=""
@@ -2102,7 +2281,8 @@ EOF_CHECKPOINT
 
         # Try the API first (preferred — gets full Hono context + auth).
         # Fall back to direct shell exec if API unreachable.
-        api_url="http://localhost:3001/api/harness/${child_slug}/invoke?role=${child_role}"
+        operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+        api_url="${operator_base}/api/harness/${child_slug}/invoke?role=${child_role}"
         if curl -sf -X POST -H 'content-type: application/json' --max-time 120 -d '{}' "$api_url" -o "$LOG_DIR/nexth-${child_slug}-$(date +%s).json" 2>/dev/null; then
             log "  → dispatched via API ($api_url)"
         else
@@ -2143,13 +2323,15 @@ except Exception:
     # Cost accounting + cap (config.json → maxCostUsd). Exits 6 if over.
     check_cost_cap
 
-    # Optional: product role trigger when mission is near-done (>= threshold passed).
+    # Optional: scoper proposal trigger when mission is near-done (>= threshold passed).
     # Fires at most once per mission via a sentinel file.
-    if [ "$(config_get 'product.enabled' 'false')" = "true" ] && \
-       [ "$(config_get 'product.triggerOnNearDone' 'true')" = "true" ] && \
-       [ -f "$PROJECT_DIR/GOAL.md" ] && \
+    proposals_enabled="$(config_get 'proposals.enabled' "$(config_get 'product.enabled' 'false')")"
+    near_done_enabled="$(config_get 'proposals.nearDoneEnabled' "$(config_get 'product.triggerOnNearDone' 'true')")"
+    if [ "$proposals_enabled" = "true" ] && \
+       [ "$near_done_enabled" = "true" ] && \
+       [ -f "$PROJECT_DIR/SPEC.md" ] && \
        [ ! -f "$STATE_DIR/.product-near-done-fired" ]; then
-        threshold_pct="$(config_get 'product.nearDoneThreshold' '0.8')"
+        threshold_pct="$(config_get 'proposals.nearDoneThreshold' "$(config_get 'product.nearDoneThreshold' '0.8')")"
         pct_passed="$(STATE_DIR="$STATE_DIR" python3 -c '
 import json, os
 try:
@@ -2168,7 +2350,12 @@ except Exception:
             log "SCOPER starting (near-done threshold $threshold_pct reached, $(printf '%.0f%%' "$(python3 -c "print(float('$pct_passed')*100)")") passed, proposal mode)"
             product_out="$(invoke scoper "MODE=proposal")"
             log "SCOPER: ${product_out:-(no output)}"
-            if [ "$(config_get 'product.mode' 'auto-apply')" != "propose-only" ]; then
+            auto_apply="$(config_get 'proposals.autoApply' '')"
+            if [ -z "$auto_apply" ]; then
+                legacy_mode="$(config_get 'product.mode' 'auto-apply')"
+                [ "$legacy_mode" = "propose-only" ] && auto_apply="false" || auto_apply="true"
+            fi
+            if [ "$auto_apply" != "false" ]; then
                 review_pending_proposals
             fi
             touch "$STATE_DIR/.product-near-done-fired"
