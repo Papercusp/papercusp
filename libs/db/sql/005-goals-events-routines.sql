@@ -115,37 +115,40 @@ BEGIN
       schema_rec.schema_name
     );
 
+    -- Index names match the 002 per-harness template (bare hf_<name>_idx).
+    -- With IF NOT EXISTS this becomes a no-op when 002 already created
+    -- them. Earlier versions of this migration used schema-prefixed names
+    -- (`<schema>_hf_*_idx`) and produced a duplicate of every index on
+    -- every harness_features table — 4 redundant indexes per schema, ~72
+    -- across the workspace. Cleaned up 2026-05-05.
+
     -- Index for atomic checkout: find available work fast
     EXECUTE format(
-      'CREATE INDEX IF NOT EXISTS %I
+      'CREATE INDEX IF NOT EXISTS hf_available_idx
          ON %I.harness_features(harness_slug, status)
          WHERE taken_by IS NULL',
-      schema_rec.schema_name || '_hf_available_idx',
       schema_rec.schema_name
     );
 
     -- Index for orphan recovery: find expired checkouts
     EXECUTE format(
-      'CREATE INDEX IF NOT EXISTS %I
+      'CREATE INDEX IF NOT EXISTS hf_expires_idx
          ON %I.harness_features(expires_at)
          WHERE taken_by IS NOT NULL',
-      schema_rec.schema_name || '_hf_expires_idx',
       schema_rec.schema_name
     );
 
     -- Index for goal-ancestry queries
     EXECUTE format(
-      'CREATE INDEX IF NOT EXISTS %I
+      'CREATE INDEX IF NOT EXISTS hf_goal_idx
          ON %I.harness_features(goal_id)',
-      schema_rec.schema_name || '_hf_goal_idx',
       schema_rec.schema_name
     );
 
     -- Index for parent-ancestry queries
     EXECUTE format(
-      'CREATE INDEX IF NOT EXISTS %I
+      'CREATE INDEX IF NOT EXISTS hf_parent_idx
          ON %I.harness_features(harness_slug, parent_id)',
-      schema_rec.schema_name || '_hf_parent_idx',
       schema_rec.schema_name
     );
   END LOOP;

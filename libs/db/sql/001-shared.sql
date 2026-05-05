@@ -18,7 +18,17 @@ CREATE TABLE IF NOT EXISTS harness_shared.audit_log (
 );
 CREATE INDEX IF NOT EXISTS audit_ts_idx      ON harness_shared.audit_log(ts);
 CREATE INDEX IF NOT EXISTS audit_action_idx  ON harness_shared.audit_log(action);
-CREATE INDEX IF NOT EXISTS audit_subject_idx ON harness_shared.audit_log(subject);
+-- Composite on (subject, ts DESC) replaces the bare (subject) index —
+-- serves the same point-lookups AND lets MAX(ts) WHERE subject = ?
+-- (operator-trigger-state.ts) be an O(1) index-only seek instead of a
+-- range scan. Composite on (actor, action, ts DESC) covers the
+-- operator-* read paths (operator-standing-candidates,
+-- operator-ack-latency, operator-card-reconstruction, operator-stats).
+CREATE INDEX IF NOT EXISTS audit_subject_ts_idx      ON harness_shared.audit_log(subject, ts DESC);
+CREATE INDEX IF NOT EXISTS audit_actor_action_ts_idx ON harness_shared.audit_log(actor, action, ts DESC);
+-- Drop the old single-column subject index if present from earlier installs;
+-- the (subject, ts DESC) composite serves the same lookups.
+DROP INDEX IF EXISTS harness_shared.audit_subject_idx;
 
 -- Project registry. Some columns (owning_dept, vertical) are convenience
 -- fields used by org-style demos; framework code treats them as optional.
