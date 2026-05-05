@@ -8,7 +8,8 @@
     "embedded-postgres-server": "bin/embedded-postgres-server.mjs"
   },
   "dependencies": {
-    "embedded-postgres": "^18.3.0-beta.17"
+    "embedded-postgres": "^18.3.0-beta.17",
+    "postgres": "^3.4.0"
   },
   "license": "MIT"
 }
