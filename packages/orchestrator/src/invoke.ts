@@ -335,6 +335,15 @@ export async function invoke(
   const cwd = cwdOverride || ctx.projectDir;
   const startedAt = Date.now();
 
+  // omp's `-p` mode reads the message from a positional arg (or `@file`),
+  // not from stdin. Materialise the prompt and append `@<path>` to argv.
+  let ompPromptPath: string | undefined;
+  if (agentBackend === 'omp' && streamFormat !== 'none') {
+    ompPromptPath = join(ctx.logDir, `${runId}.prompt.md`);
+    writeFileSync(ompPromptPath, prompt, 'utf8');
+    finalArgv.push(`@${ompPromptPath}`);
+  }
+
   // Open the output streams ourselves so we can control buffering.
   // Use writeFileSync to truncate, then append as data arrives.
   writeFileSync(jsonlPath, '');
@@ -364,12 +373,16 @@ export async function invoke(
         ctx.log(`  stdin error: ${err.message}`);
       }
     });
-    try {
-      child.stdin.write(prompt);
-      child.stdin.end();
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EPIPE') {
-        ctx.log(`  stdin write error: ${(err as Error).message}`);
+    if (agentBackend === 'omp') {
+      try { child.stdin.end(); } catch { /* EPIPE-safe */ }
+    } else {
+      try {
+        child.stdin.write(prompt);
+        child.stdin.end();
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EPIPE') {
+          ctx.log(`  stdin write error: ${(err as Error).message}`);
+        }
       }
     }
 
