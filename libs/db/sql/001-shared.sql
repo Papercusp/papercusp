@@ -126,20 +126,15 @@ CREATE TABLE IF NOT EXISTS harness_shared.plugin_enables (
   plugin_slug  TEXT NOT NULL,
   version      TEXT NOT NULL DEFAULT '',
   config_hash  TEXT NOT NULL DEFAULT '',
-<<<<<<< Updated upstream
   -- Zero schema declares this as `number` (epoch ms). Was TEXT in the
   -- first iteration; the type mismatch broke zeroPostgresJS's strict
   -- schema validation.
   enabled_at   BIGINT NOT NULL DEFAULT 0,
-=======
-  enabled_at   TEXT NOT NULL DEFAULT '',
->>>>>>> Stashed changes
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (harness_slug, plugin_slug)
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.plugin_enables TO harness_app, harness_admin;
-<<<<<<< Updated upstream
 
 -- ───────────────────────────────────────────────────────────────────────
 -- plugin_configs: cross-harness mirror of each harness's
@@ -156,5 +151,3 @@ CREATE TABLE IF NOT EXISTS harness_shared.plugin_configs (
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.plugin_configs TO harness_app, harness_admin;
-=======
->>>>>>> Stashed changes

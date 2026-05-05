@@ -1,0 +1,14 @@
+{
+  "name": "@restart/embedded-postgres-server",
+  "version": "0.1.0",
+  "description": "Boot a real Postgres (via embedded-postgres) with logical replication enabled. Sibling to @restart/pglite-server; same handle shape, real PG underneath.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "embedded-postgres-server": "bin/embedded-postgres-server.mjs"
+  },
+  "dependencies": {
+    "embedded-postgres": "^18.3.0-beta.17"
+  },
+  "license": "MIT"
+}
