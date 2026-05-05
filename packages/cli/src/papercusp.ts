@@ -220,15 +220,26 @@ async function cmdDoctor(): Promise<void> {
     ok = false;
   }
 
-  // claude CLI
+  // Agent CLI — claude (default) or omp (oh-my-pi). At least one must
+  // be on PATH; AGENT_BACKEND env selects which the operator drives.
   const claudePath = spawnSync('which', ['claude'], { encoding: 'utf8' });
-  if (claudePath.status === 0 && claudePath.stdout.trim()) {
+  const ompPath = spawnSync('which', ['omp'], { encoding: 'utf8' });
+  const haveClaude = claudePath.status === 0 && claudePath.stdout.trim();
+  const haveOmp = ompPath.status === 0 && ompPath.stdout.trim();
+  if (haveClaude) {
     console.log(`  ${green('✓')} claude CLI @ ${claudePath.stdout.trim()}`);
-  } else {
-    console.log(`  ${red('✗')} claude CLI not on PATH`);
-    console.log(`    ${dim('install from https://docs.claude.com/en/docs/claude-code/setup')}`);
+  }
+  if (haveOmp) {
+    console.log(`  ${green('✓')} omp CLI @ ${ompPath.stdout.trim()}`);
+  }
+  if (!haveClaude && !haveOmp) {
+    console.log(`  ${red('✗')} no agent CLI on PATH (need claude or omp)`);
+    console.log(`    ${dim('claude: https://docs.claude.com/en/docs/claude-code/setup')}`);
+    console.log(`    ${dim('omp:    bun add -g @oh-my-pi/pi-coding-agent')}`);
     ok = false;
   }
+  const backend = (process.env.AGENT_BACKEND ?? 'claude-code').toLowerCase();
+  console.log(`  ${dim(`active backend: ${backend === 'omp' ? 'omp' : 'claude-code'} (override with AGENT_BACKEND)`)}`);
 
   // Credentials
   const creds = await readCredentials();
