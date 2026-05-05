@@ -1391,7 +1391,12 @@ except Exception:
                 --run-id "$run_id" \
                 "${_extras_args[@]}" \
                 > "$_prompt_tmp" 2>>"$err"; then
-            ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2>> "$err" ) < "$_prompt_tmp"
+            if [ "$AGENT_BACKEND" = "omp" ]; then
+                # omp -p reads message from positional arg, not stdin.
+                ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags "@$_prompt_tmp" > "$jsonl" 2>> "$err" ) < /dev/null
+            else
+                ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2>> "$err" ) < "$_prompt_tmp"
+            fi
             rm -f "$_prompt_tmp"
         else
             log "  role=$role TS prompt-assembly failed (rc=$?), falling back to bash inline"
@@ -1459,7 +1464,13 @@ except Exception:
                 echo "  Do not dump logs. Do not duplicate existing lines. Skip silently if you"
                 echo "  have nothing generalizable to add."
             fi
-        } | ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2> "$err" )
+        } > "$LOG_DIR/${run_id}.prompt.md"
+        if [ "$AGENT_BACKEND" = "omp" ]; then
+            # omp -p reads message from positional arg, not stdin.
+            ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags "@$LOG_DIR/${run_id}.prompt.md" > "$jsonl" 2> "$err" ) < /dev/null
+        else
+            ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2> "$err" ) < "$LOG_DIR/${run_id}.prompt.md"
+        fi
     fi
     local rc=$?
     if [ "$rc" = "124" ]; then

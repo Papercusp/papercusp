@@ -388,6 +388,17 @@ export async function invoke(
   const cwd = cwdOverride || ctx.projectDir;
   const startedAt = Date.now();
 
+  // omp's `-p` mode reads the message from a positional arg (or `@file`),
+  // not from stdin. Materialise the prompt to a tmpfile and append
+  // `@<path>` to argv. We write into LOG_DIR so it lives alongside the
+  // .jsonl/.err output for postmortem and gets pruned with the rest.
+  let ompPromptPath: string | undefined;
+  if (agentBackend === 'omp' && streamFormat !== 'none') {
+    ompPromptPath = join(ctx.logDir, `${runId}.prompt.md`);
+    writeFileSync(ompPromptPath, prompt, 'utf8');
+    finalArgv.push(`@${ompPromptPath}`);
+  }
+
   // Open the output streams ourselves so we can control buffering.
   // Use writeFileSync to truncate, then append as data arrives.
   writeFileSync(jsonlPath, '');
@@ -417,12 +428,18 @@ export async function invoke(
         ctx.log(`  stdin error: ${err.message}`);
       }
     });
-    try {
-      child.stdin.write(prompt);
-      child.stdin.end();
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EPIPE') {
-        ctx.log(`  stdin write error: ${(err as Error).message}`);
+    // claude reads stdin; omp reads from `@file` positional. For omp we
+    // still close stdin so the child doesn't block on a TTY check.
+    if (agentBackend === 'omp') {
+      try { child.stdin.end(); } catch { /* EPIPE-safe */ }
+    } else {
+      try {
+        child.stdin.write(prompt);
+        child.stdin.end();
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EPIPE') {
+          ctx.log(`  stdin write error: ${(err as Error).message}`);
+        }
       }
     }
 
