@@ -25,7 +25,8 @@ import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
 import { resolvePromptFile } from './prompt-resolve';
 import { extractFeatureId, makeRunId } from './run-id';
-import type { InvokeResult } from './types';
+import type { AgentBackend, InvokeResult } from './types';
+import { resolveAgentBackend } from './env';
 
 export interface InvokeContext {
   /** HARNESS_DIR — root of the @papercusp/harness install. */
@@ -40,6 +41,12 @@ export interface InvokeContext {
   phase: string;
   /** $CLAUDE invocation template. e.g. `claude -p` or `claude -p --model sonnet`. */
   claudeCmd: string;
+  /**
+   * Agent backend driving the spawn. Selects the structured-output flag
+   * set + the result parser. Defaults to inferring from `claudeCmd`
+   * (omp/pi binary → 'omp', otherwise 'claude-code').
+   */
+  agentBackend?: AgentBackend;
   /** Optional override for the dept slug (otherwise read from config.json). */
   dept?: string;
   /**
@@ -113,29 +120,135 @@ export function resolveModel(cfg: ReturnType<typeof readConfig>, role: string): 
 }
 
 /**
- * Parse the final result text from a stream-json log. The terminal event has
- * `{"type":"result","result":"...","total_cost_usd":N,...}`. If parsing fails
- * (or the cmd wasn't claude), returns the file contents as-is.
+ * What kind of structured stream the spawned agent is emitting (or `none` for
+ * plain-text / passthrough commands). Drives both the extra flag set we
+ * append AND the result-extraction parser.
  */
-export function extractResult(jsonlPath: string, isStreamJson: boolean): string {
+export type StreamFormat = 'claude-stream-json' | 'omp-json' | 'none';
+
+/**
+ * Pick the structured-output flag set for a given backend, unless the
+ * caller's command already specifies one (so manual overrides are
+ * preserved). Returns `'none'` when the command is bare bash or similar
+ * and we shouldn't inject anything.
+ */
+export function selectStreamFormat(
+  agentBackend: AgentBackend,
+  agentCmd: string,
+): StreamFormat {
+  const argv = splitCommand(agentCmd);
+  const cmd = agentCmd.toLowerCase();
+
+  if (agentBackend === 'omp') {
+    // omp/pi-coding-agent uses `--mode json` for structured streaming.
+    if (cmd.includes('--mode ')) return 'none';   // user picked their own mode
+    const mentionsOmp = argv.some((a) => /(?:^|\/)(omp|pi)$/.test(a));
+    return mentionsOmp ? 'omp-json' : 'none';
+  }
+
+  // claude-code path (default).
+  if (cmd.includes('stream-json')) return 'none';
+  const mentionsClaude = argv.some((a) => a.includes('claude'));
+  return mentionsClaude ? 'claude-stream-json' : 'none';
+}
+
+/**
+ * Extra CLI flags to append for structured streaming. Decoupled from
+ * `selectStreamFormat` so callers can log/test the flag list directly.
+ */
+export function streamFormatFlags(fmt: StreamFormat): string[] {
+  switch (fmt) {
+    case 'claude-stream-json':
+      return ['--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+    case 'omp-json':
+      return ['--mode', 'json', '--no-session'];
+    case 'none':
+      return [];
+  }
+}
+
+/**
+ * Parse the final assistant text from a structured-stream log file.
+ *
+ * For `claude-stream-json`: the terminal event is
+ *   `{"type":"result","result":"...","total_cost_usd":N,...}`.
+ *
+ * For `omp-json`: events are `{"type":"message_update", message, assistantMessageEvent}` /
+ *   `{"type":"message_end", message: AssistantMessage}` / `{"type":"agent_end", messages}`.
+ *   The final assistant text is the last assistant `message_end` (or the
+ *   `done` assistantMessageEvent), reconstructed from the message's text content blocks.
+ *
+ * For `none`: returns the file contents verbatim (matches old fallback).
+ */
+export function extractResult(jsonlPath: string, format: StreamFormat): string {
   let data = '';
   try { data = readFileSync(jsonlPath, 'utf8'); } catch { return ''; }
-  if (!isStreamJson) return data;
-  // Walk lines from the end — terminal "result" event is near the bottom.
+  if (format === 'none') return data;
+
   const lines = data.trimEnd().split(/\r?\n/);
+
+  if (format === 'claude-stream-json') {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      try {
+        const obj = JSON.parse(line);
+        if (obj && typeof obj === 'object' && obj.type === 'result' && typeof obj.result === 'string') {
+          return obj.result;
+        }
+      } catch { /* claude can interleave non-JSON occasionally */ }
+    }
+    return '';
+  }
+
+  // omp-json: walk from the end, find the last message_end / done /
+  // agent_end carrying an assistant message. Pull text-content blocks.
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (!line) continue;
-    try {
-      const obj = JSON.parse(line);
-      if (obj && typeof obj === 'object' && obj.type === 'result' && typeof obj.result === 'string') {
-        return obj.result;
+    let obj: any;
+    try { obj = JSON.parse(line); } catch { continue; }
+    if (!obj || typeof obj !== 'object') continue;
+
+    // Direct message_end with the final assistant message.
+    if (obj.type === 'message_end' && obj.message?.role === 'assistant') {
+      const text = collectAssistantText(obj.message);
+      if (text) return text;
+    }
+    // assistantMessageEvent.type === 'done' carries the final message too.
+    if (
+      obj.type === 'message_update'
+      && obj.assistantMessageEvent?.type === 'done'
+      && obj.assistantMessageEvent.message
+    ) {
+      const text = collectAssistantText(obj.assistantMessageEvent.message);
+      if (text) return text;
+    }
+    // agent_end has the full messages list — last assistant entry wins.
+    if (obj.type === 'agent_end' && Array.isArray(obj.messages)) {
+      for (let j = obj.messages.length - 1; j >= 0; j--) {
+        const m = obj.messages[j];
+        if (m?.role === 'assistant') {
+          const text = collectAssistantText(m);
+          if (text) return text;
+          break;
+        }
       }
-    } catch {
-      // Skip malformed lines — claude can interleave non-JSON occasionally.
     }
   }
   return '';
+}
+
+/** Concatenate text-typed content blocks from an omp/pi-ai assistant message. */
+function collectAssistantText(message: any): string {
+  if (!message || !Array.isArray(message.content)) return '';
+  const parts: string[] = [];
+  for (const block of message.content) {
+    if (block && block.type === 'text' && typeof block.text === 'string') {
+      parts.push(block.text);
+    }
+  }
+  return parts.join('').trim();
 }
 
 /** Initialize the empty memory files bash creates on first invocation. */
@@ -187,14 +300,12 @@ export async function invoke(
     if (wt && existsSync(wt)) cwdOverride = wt;
   }
 
-  // 4. Stream-JSON detection (only when the command involves `claude`).
+  // 4. Backend-aware structured-stream detection. Defaults to inferring
+  //    from the binary name in claudeCmd (omp/pi → omp, otherwise claude-code).
   const argv = splitCommand(ctx.claudeCmd);
-  const cmdMentionsClaude = argv.some((a) => a.includes('claude'));
-  const cmdAlreadyHasStreamJson = ctx.claudeCmd.includes('stream-json');
-  const isStreamJson = cmdMentionsClaude && !cmdAlreadyHasStreamJson;
-  const extraFlags: string[] = isStreamJson
-    ? ['--output-format', 'stream-json', '--verbose', '--include-partial-messages']
-    : [];
+  const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(ctx.claudeCmd);
+  const streamFormat = selectStreamFormat(agentBackend, ctx.claudeCmd);
+  const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
 
   // 5. Per-role model — only inject if user didn't already pass --model.
   const cmdAlreadyHasModel = ctx.claudeCmd.includes('--model ');
@@ -317,8 +428,8 @@ export async function invoke(
   });
 
   // 11. Extract result text and write to .out.
-  const finalText = extractResult(jsonlPath, isStreamJson);
-  writeFileSync(outPath, isStreamJson ? `${finalText}\n` : finalText);
+  const finalText = extractResult(jsonlPath, streamFormat);
+  writeFileSync(outPath, streamFormat !== 'none' ? `${finalText}\n` : finalText);
 
   ctx.log(`invoke ${role} rc=${outcome.exitCode} (stdout: ${outPath})`);
   if (outcome.exitCode === 124) {

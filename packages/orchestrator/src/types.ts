@@ -62,6 +62,15 @@ export interface FeatureRecord {
 /** Top-level shape of `.harness/features.json` (object or array form). */
 export type FeaturesJson = { features: FeatureRecord[] } | FeatureRecord[];
 
+/**
+ * Which agent CLI is being driven. Determines stream-output parsing +
+ * default flag set. `claude-code` (Anthropic claude-cli) emits
+ * `stream-json` events with `content_block_delta`; `omp`
+ * (`@oh-my-pi/pi-coding-agent`) emits its own `--mode json` event
+ * stream with `message_update`/`text_delta`/`tool_call`/`state_update`.
+ */
+export type AgentBackend = 'claude-code' | 'omp';
+
 /** Args passed to the orchestrator entry point. */
 export interface OrchestratorEnv {
   /** Absolute path to the harness install (HARNESS_DIR env var). */
@@ -74,6 +83,8 @@ export interface OrchestratorEnv {
   iterationSleep: number;
   /** Override for the agent invocation command. Default `claude -p`. */
   claudeCmd: string;
+  /** Backend driving the spawn — selects parser + extra flags. Default 'claude-code'. */
+  agentBackend: AgentBackend;
   /** Phase resolved from config.json (defaulted to "staging"). */
   phase: HarnessPhase;
   /** Optional port for phase-aware prompts. */

@@ -13,7 +13,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { configGet, readConfig } from '../src/config.js';
-import { resolvePaths } from '../src/env.js';
+import { resolvePaths, resolveAgentBackend, resolveAgentCmd } from '../src/env.js';
 import { createLogger } from '../src/log.js';
 import { runMainLoop } from '../src/main-loop.js';
 
@@ -56,7 +56,8 @@ async function runTs(): Promise<never> {
 
   const cfg = readConfig(stateDir);
   const phase = (cfg.phase as string) ?? 'staging';
-  const claudeCmd = process.env.CLAUDE ?? 'claude -p';
+  const claudeCmd = resolveAgentCmd();
+  const agentBackend = resolveAgentBackend(claudeCmd);
   const maxIterations = parseInt(process.env.MAX_ITERATIONS ?? '200', 10);
   const iterationSleepMs = (parseFloat(process.env.ITERATION_SLEEP ?? '2') || 0) * 1000;
 
@@ -68,6 +69,7 @@ async function runTs(): Promise<never> {
       logDir,
       phase,
       claudeCmd,
+      agentBackend,
       dept: configGet<string>(cfg, 'dept', ''),
       log: logger.log,
     },

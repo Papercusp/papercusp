@@ -81,7 +81,20 @@ MAX_ITERATIONS="${MAX_ITERATIONS:-200}"
 # add flags. Without --dangerously-skip-permissions, agents that try to curl the
 # operator API (expert, feedback, validator's POST flows) will hang on permission
 # prompts that nobody can answer.
-CLAUDE="${CLAUDE:-claude -p --dangerously-skip-permissions}"
+# Agent invocation template. Prefer the new $AGENT_CMD env (which is
+# backend-neutral — point at `claude -p`, `omp -p`, or any wrapper); fall
+# back to legacy $CLAUDE for back-compat with existing harness installs.
+# $AGENT_BACKEND ('claude-code' | 'omp') selects the structured-stream
+# format we append; default 'claude-code'.
+CLAUDE="${AGENT_CMD:-${CLAUDE:-claude -p --dangerously-skip-permissions}}"
+AGENT_BACKEND="${AGENT_BACKEND:-}"
+if [ -z "$AGENT_BACKEND" ]; then
+    case "$CLAUDE" in
+        omp*|*/omp*|pi*|*/pi*) AGENT_BACKEND=omp ;;
+        *) AGENT_BACKEND=claude-code ;;
+    esac
+fi
+export CLAUDE AGENT_BACKEND
 
 cd "$PROJECT_DIR"
 
@@ -1262,12 +1275,19 @@ except Exception:
     local out="$LOG_DIR/${run_id}.out"
     local err="$LOG_DIR/${run_id}.err"
 
-    # Stream-json mode gives us live progress, tool calls, token usage,
-    # and cost. Falls back to plain text if the caller overrode CLAUDE
-    # with a CLI that doesn't support these flags.
+    # Structured-stream mode gives us live progress, tool calls, token
+    # usage, and cost. Backend-aware: claude-code → stream-json,
+    # omp/pi-coding-agent → --mode json. Falls back to plain text if
+    # the caller's $CLAUDE override doesn't support either.
     local extra_flags=""
-    if [[ "$CLAUDE" == *"claude"* ]] && [[ "$CLAUDE" != *"stream-json"* ]]; then
-        extra_flags="--output-format stream-json --verbose --include-partial-messages"
+    if [ "$AGENT_BACKEND" = "omp" ]; then
+        if [[ "$CLAUDE" != *"--mode "* ]]; then
+            extra_flags="--mode json --no-session"
+        fi
+    else
+        if [[ "$CLAUDE" == *"claude"* ]] && [[ "$CLAUDE" != *"stream-json"* ]]; then
+            extra_flags="--output-format stream-json --verbose --include-partial-messages"
+        fi
     fi
 
     # Per-role invocation timeout from .harness/config.json. Value in seconds.

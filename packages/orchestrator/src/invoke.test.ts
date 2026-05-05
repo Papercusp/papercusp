@@ -10,6 +10,8 @@ import {
   resolvePromptOverride,
   resolveTimeout,
   resolveModel,
+  selectStreamFormat,
+  streamFormatFlags,
 } from './invoke.js';
 
 interface Fixture {
@@ -52,7 +54,7 @@ test('extractResult — pulls "result" event from stream-json log', () => {
     '',
   ].join('\n'));
   try {
-    assert.equal(extractResult(path, true), 'NEXT_WORKER F-001');
+    assert.equal(extractResult(path, 'claude-stream-json'), 'NEXT_WORKER F-001');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -63,7 +65,7 @@ test('extractResult — returns "" if no result event found', () => {
   const path = join(dir, 'log.jsonl');
   writeFileSync(path, '{"type":"assistant","message":"nothing terminal"}\n');
   try {
-    assert.equal(extractResult(path, true), '');
+    assert.equal(extractResult(path, 'claude-stream-json'), '');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -74,7 +76,7 @@ test('extractResult — plain-text mode returns file as-is', () => {
   const path = join(dir, 'log.jsonl');
   writeFileSync(path, 'plain output\n');
   try {
-    assert.equal(extractResult(path, false), 'plain output\n');
+    assert.equal(extractResult(path, 'none'), 'plain output\n');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -90,7 +92,7 @@ test('extractResult — handles malformed lines mixed with valid result', () => 
     '',
   ].join('\n'));
   try {
-    assert.equal(extractResult(path, true), 'DONE');
+    assert.equal(extractResult(path, 'claude-stream-json'), 'DONE');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -252,4 +254,91 @@ test('invoke — produces .jsonl, .out, .err artifacts', async () => {
   } finally {
     fx.cleanup();
   }
+});
+
+test('extractResult — omp message_end with assistant text', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'orch-'));
+  const path = join(dir, 'log.jsonl');
+  writeFileSync(path, [
+    JSON.stringify({ type: 'turn_start' }),
+    JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'NEXT_WORKER ' } }),
+    JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'F-001' } }),
+    JSON.stringify({
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'NEXT_WORKER F-001' }],
+        usage: { input: 100, output: 5 },
+      },
+    }),
+  ].join('\n'));
+  try {
+    assert.equal(extractResult(path, 'omp-json'), 'NEXT_WORKER F-001');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('extractResult — omp falls back to assistantMessageEvent.done', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'orch-'));
+  const path = join(dir, 'log.jsonl');
+  writeFileSync(path, [
+    JSON.stringify({
+      type: 'message_update',
+      assistantMessageEvent: {
+        type: 'done',
+        reason: 'stop',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'DONE' }],
+          usage: { input: 1, output: 1 },
+        },
+      },
+    }),
+  ].join('\n'));
+  try {
+    assert.equal(extractResult(path, 'omp-json'), 'DONE');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('extractResult — omp returns "" on no terminal event', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'orch-'));
+  const path = join(dir, 'log.jsonl');
+  writeFileSync(path, JSON.stringify({ type: 'turn_start' }) + '\n');
+  try {
+    assert.equal(extractResult(path, 'omp-json'), '');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('selectStreamFormat — claude-code with `claude -p` → claude-stream-json', () => {
+  assert.equal(selectStreamFormat('claude-code', 'claude -p'), 'claude-stream-json');
+});
+
+test('selectStreamFormat — claude-code with override containing stream-json → none', () => {
+  assert.equal(selectStreamFormat('claude-code', 'claude -p --output-format stream-json'), 'none');
+});
+
+test('selectStreamFormat — claude-code with non-claude binary → none', () => {
+  assert.equal(selectStreamFormat('claude-code', 'cat'), 'none');
+  assert.equal(selectStreamFormat('claude-code', 'bash -c echo'), 'none');
+});
+
+test('selectStreamFormat — omp with `omp -p` → omp-json', () => {
+  assert.equal(selectStreamFormat('omp', 'omp -p'), 'omp-json');
+  assert.equal(selectStreamFormat('omp', '/usr/local/bin/omp -p'), 'omp-json');
+  assert.equal(selectStreamFormat('omp', 'pi -p'), 'omp-json');
+});
+
+test('selectStreamFormat — omp with caller-supplied --mode → none', () => {
+  assert.equal(selectStreamFormat('omp', 'omp --mode rpc'), 'none');
+});
+
+test('streamFormatFlags — produces backend-specific flag set', () => {
+  assert.deepEqual(streamFormatFlags('claude-stream-json'), ['--output-format', 'stream-json', '--verbose', '--include-partial-messages']);
+  assert.deepEqual(streamFormatFlags('omp-json'), ['--mode', 'json', '--no-session']);
+  assert.deepEqual(streamFormatFlags('none'), []);
 });
