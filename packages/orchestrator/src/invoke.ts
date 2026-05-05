@@ -111,10 +111,20 @@ export function resolveTimeout(cfg: ReturnType<typeof readConfig>, role: string)
   return 0;
 }
 
-/** Per-role model from config.json (e.g. "sonnet"). */
+/** Per-role model. Config.json wins; falls back to AGENT_MODELS env JSON. */
 export function resolveModel(cfg: ReturnType<typeof readConfig>, role: string): string {
-  const m = configGet<string>(cfg, `models.${role}`, '');
-  return m;
+  const fromConfig = configGet<string>(cfg, `models.${role}`, '');
+  if (fromConfig) return fromConfig;
+  const envJson = process.env.AGENT_MODELS;
+  if (!envJson) return '';
+  try {
+    const map = JSON.parse(envJson);
+    if (map && typeof map === 'object' && !Array.isArray(map)) {
+      const v = (map as Record<string, unknown>)[role];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+  } catch { /* malformed AGENT_MODELS — silently ignore */ }
+  return '';
 }
 
 /**
