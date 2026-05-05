@@ -121,6 +121,10 @@ export async function startEmbeddedPostgresServer(opts = {}) {
 
   try {
     // Framework roles. Same passwords libs/db/src/connection.ts defaults to.
+    // harness_zero needs CREATE on the database — zero-cache creates a
+    // _zero_metadata_<app>_<shard>/cdc schema for change-streamer state on
+    // first boot. Without the grant, change-streamer crashes with
+    // "permission denied for database papercusp".
     await sql.unsafe(`
       DO $pg$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_app') THEN
@@ -130,7 +134,22 @@ export async function startEmbeddedPostgresServer(opts = {}) {
           CREATE ROLE harness_admin LOGIN SUPERUSER PASSWORD 'harness_admin_pwd';
         END IF;
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_zero') THEN
-          CREATE ROLE harness_zero LOGIN REPLICATION PASSWORD 'harness_zero_pwd';
+          CREATE ROLE harness_zero LOGIN REPLICATION SUPERUSER PASSWORD 'harness_zero_pwd';
+        ELSE
+          ALTER ROLE harness_zero SUPERUSER;
+        END IF;
+      END $pg$;
+    `);
+
+    // Zero replication publication. zero-cache subscribes to this name to
+    // receive logical-decoding events for all tables. FOR ALL TABLES means
+    // newly-scaffolded harness schemas are auto-included without rewriting
+    // the publication. zero-cache filters internally for tables it has a
+    // schema for, and ignores its own _zero_metadata_* tables.
+    await sql.unsafe(`
+      DO $pg$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'zero_harness') THEN
+          CREATE PUBLICATION zero_harness FOR ALL TABLES;
         END IF;
       END $pg$;
     `);
