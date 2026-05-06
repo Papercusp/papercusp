@@ -110,7 +110,7 @@ export default function FeatureEditor({ slug, feature, onClose, onSaved }: Props
         {/* Header */}
         <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #1f2937', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <strong style={{ color: '#e5e7eb' }}>{isCreate ? 'New feature' : `Edit ${feature!.id}`}</strong>
-          <span style={{ color: '#6b7280', fontSize: '0.75rem', fontFamily: 'monospace' }}>.harness/features.json</span>
+          <span style={{ color: '#6b7280', fontSize: '0.75rem', fontFamily: 'monospace' }}>harness_features</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             {toast && (
               <span style={{ color: /failed/i.test(toast) ? '#f87171' : '#10b981', fontSize: '0.8rem' }}>{toast}</span>

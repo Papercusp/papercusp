@@ -1294,7 +1294,7 @@ harness.get('/:slug/health', async (c) => {
   // Verdict
   const checks: Array<{ name: string; ok: boolean; detail?: string }> = [
     { name: 'spec_present',        ok: existsSync(join(project.path, 'SPEC.md')) },
-    { name: 'features_present',    ok: existsSync(join(harnessDir(project), 'features.json')) },
+    { name: 'features_present',    ok: (await parseFeatures(project)).length > 0 },
     { name: 'contract_present',    ok: existsSync(join(harnessDir(project), 'validation-contract.md')) },
     { name: 'not_escalated',       ok: !escalated, detail: escalated ? 'see escalation.md' : undefined },
     { name: 'no_pending_checkpoints', ok: pendingCheckpoints === 0, detail: pendingCheckpoints > 0 ? `${pendingCheckpoints} awaiting grant` : undefined },
@@ -3316,7 +3316,13 @@ harness.post('/:slug/architect/chat', async (c) => {
   // stream text and, when ready, emit a diff block with a special marker.
   const spec = safeRead(join(project.path, 'SPEC.md')) ?? '';
   const contract = safeRead(join(harnessDir(project), 'validation-contract.md')) ?? '';
-  const features = safeRead(join(harnessDir(project), 'features.json')) ?? '';
+  // Features live in Postgres (harness_features) post-2026-04-27 migration.
+  const featuresList = await parseFeatures(project);
+  const features = JSON.stringify(
+    { features: featuresList.map((f) => ({ id: f.id, title: f.title, status: f.status, attempts: f.attempts })) },
+    null,
+    2,
+  );
   const issues = safeRead(join(harnessDir(project), 'issues.md')) ?? '';
   let reviewContext = '';
   if (body.reviewId) {
@@ -3337,7 +3343,7 @@ ${spec.slice(0, 8000)}
 ## validation-contract.md
 ${contract.slice(0, 6000)}
 
-## features.json (summary)
+## features (harness_features in Postgres — summary)
 ${features.slice(0, 3000)}
 
 ## issues.md tail
@@ -3526,7 +3532,13 @@ harness.post('/:slug/brainstorm/chat', async (c) => {
 
   const spec = safeRead(join(project.path, 'SPEC.md')) ?? '';
   const brainstorm = safeRead(brainstormPath(project)) ?? '';
-  const features = safeRead(join(harnessDir(project), 'features.json')) ?? '';
+  // Same as the Architect chat: features live in harness_features (PG).
+  const featuresList = await parseFeatures(project);
+  const features = JSON.stringify(
+    { features: featuresList.map((f) => ({ id: f.id, title: f.title, status: f.status })) },
+    null,
+    2,
+  );
 
   const systemPrompt = `You are a BRAINSTORM PARTNER for a software project. You're chatting with the human supervisor of a coding harness to help them explore ideas before they become features.
 
@@ -3537,7 +3549,7 @@ Current state:
 ## SPEC.md
 ${spec.slice(0, 6000)}
 
-## Existing features.json (summary)
+## Existing features (harness_features in Postgres — summary)
 ${features.slice(0, 2000)}
 
 ## Brainstorm scratchpad (what the user is working on)
@@ -3546,7 +3558,7 @@ ${brainstorm.slice(0, 8000)}
 Rules:
 - Lead with ideas, tradeoffs, analogues from other domains. Be concrete.
 - When an idea matures enough to be acted on, emit a fenced action block:
-  - \`\`\`promote:feature — append to features.json as a new todo feature. Put a short title on the first line, then markdown body explaining intent + optional claims.
+  - \`\`\`promote:feature — create a new todo feature in harness_features. Put a short title on the first line, then markdown body explaining intent + optional claims.
   - \`\`\`promote:spec — insert into SPEC.md under a "## Brainstormed" section.
   - \`\`\`promote:issue — file as an issue in issues.json. First line is title; rest is evidence/context.
 - Don't promote too eagerly. Wait until the user signals the idea is ready, or ask them first.

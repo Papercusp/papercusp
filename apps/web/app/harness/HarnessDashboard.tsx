@@ -663,10 +663,10 @@ export default function HarnessDashboard() {
       });
       cs.push({
         id: 'replan', section: 'Control',
-        title: 'Re-plan — regenerate features.json + contract from SPEC.md',
+        title: 'Re-plan — regenerate features + contract from SPEC.md',
         icon: '🔄', keywords: 'replan regenerate planner spec',
         perform: async () => {
-          if (!confirm('Re-run the planner? Current features.json + contract will be backed up and replaced.')) return;
+          if (!confirm('Re-run the planner? Current features + contract will be backed up and replaced.')) return;
           toast.info('Re-planning… (may take a few minutes)');
           try {
             const r = await fetch(`/api/harness/${activeSlug}/replan?phase=${activePhase}`, {
@@ -1018,7 +1018,7 @@ export default function HarnessDashboard() {
       {/* ── Main-area tab switcher ─────────────────────────────── */}
       <div className="h-tabs h-main-tabs" role="tablist" aria-label="Harness workspace sections">
         <button
-          className={`h-tab${activePanel === 'brainstorm' ? ' on' : ''}`}
+          className={`h-tab h-tab--brainstorm${activePanel === 'brainstorm' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'brainstorm'}
           onClick={() => activeSlug && setActivePanel('brainstorm')}
@@ -1028,7 +1028,7 @@ export default function HarnessDashboard() {
           <Lightbulb size={13} /> brainstorm
         </button>
         <button
-          className={`h-tab${activePanel === 'proposals' ? ' on' : ''}`}
+          className={`h-tab h-tab--proposals${activePanel === 'proposals' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'proposals'}
           onClick={() => activeSlug && setActivePanel('proposals')}
@@ -1039,7 +1039,7 @@ export default function HarnessDashboard() {
           {pendingProposals > 0 && <span className="h-tab-count">{pendingProposals}</span>}
         </button>
         <button
-          className={`h-tab${activePanel === 'dashboard' ? ' on' : ''}`}
+          className={`h-tab h-tab--dashboard${activePanel === 'dashboard' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'dashboard'}
           onClick={() => setActivePanel('dashboard')}
@@ -1048,7 +1048,7 @@ export default function HarnessDashboard() {
           <LayoutDashboard size={13} /> dashboard
         </button>
         <button
-          className={`h-tab${activePanel === 'summary' ? ' on' : ''}`}
+          className={`h-tab h-tab--summary${activePanel === 'summary' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'summary'}
           onClick={() => setActivePanel('summary')}
@@ -1057,7 +1057,7 @@ export default function HarnessDashboard() {
           <FileText size={13} /> summary
         </button>
         <button
-          className={`h-tab${activePanel === 'docs' ? ' on' : ''}`}
+          className={`h-tab h-tab--docs${activePanel === 'docs' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'docs'}
           onClick={() => setActivePanel('docs')}
@@ -1066,7 +1066,7 @@ export default function HarnessDashboard() {
           <BookOpen size={13} /> docs
         </button>
         <button
-          className={`h-tab${activePanel === 'vscode' ? ' on' : ''}`}
+          className={`h-tab h-tab--vscode${activePanel === 'vscode' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'vscode'}
           onClick={() => setActivePanel('vscode')}
@@ -1075,7 +1075,7 @@ export default function HarnessDashboard() {
           <Code2 size={13} /> vscode
         </button>
         <button
-          className={`h-tab${activePanel === 'insights' ? ' on' : ''}`}
+          className={`h-tab h-tab--insights${activePanel === 'insights' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'insights'}
           onClick={() => setActivePanel('insights')}
@@ -1084,7 +1084,7 @@ export default function HarnessDashboard() {
           <TrendingUp size={13} /> insights
         </button>
         <button
-          className={`h-tab${activePanel === 'config' ? ' on' : ''}`}
+          className={`h-tab h-tab--config${activePanel === 'config' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'config'}
           onClick={() => setActivePanel('config')}
@@ -1093,7 +1093,7 @@ export default function HarnessDashboard() {
           <SlidersHorizontal size={13} /> config
         </button>
         <button
-          className={`h-tab${activePanel === 'plugins' ? ' on' : ''}`}
+          className={`h-tab h-tab--plugin${activePanel === 'plugins' ? ' on' : ''}`}
           role="tab"
           aria-selected={activePanel === 'plugins'}
           onClick={() => setActivePanel('plugins')}

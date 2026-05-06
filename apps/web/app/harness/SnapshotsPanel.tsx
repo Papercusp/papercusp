@@ -55,7 +55,7 @@ export default function SnapshotsPanel({ slug, onClose, onRestored }: Props) {
 
   const restore = useCallback(async () => {
     if (!selected) return;
-    if (!confirm(`Restore mission state from ${selected.id}? Current features.json, validation-contract.md${includeNotes ? ', supervisor-notes.md' : ''}${includeConfig ? ', config.json' : ''} will be overwritten.`)) return;
+    if (!confirm(`Restore mission state from ${selected.id}? Current features (harness_features in Postgres), validation-contract.md${includeNotes ? ', supervisor-notes.md' : ''}${includeConfig ? ', config.json' : ''} will be overwritten.`)) return;
     setBusy(true);
     try {
       const r = await fetch(`/api/harness/${slug}/snapshots/${selected.id}/restore`, {
@@ -220,7 +220,7 @@ export default function SnapshotsPanel({ slug, onClose, onRestored }: Props) {
                     also restore config.json (per-role models)
                   </label>
                   <div style={{ marginTop: '0.25rem', color: '#6b7280', fontSize: '0.7rem' }}>
-                    features.json and validation-contract.md are always restored when present.
+                    features (harness_features rows) and validation-contract.md are always restored when present.
                   </div>
                 </div>
 

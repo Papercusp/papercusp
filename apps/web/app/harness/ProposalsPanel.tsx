@@ -33,11 +33,17 @@ const STATUS_COPY: Record<ProposalStatus, string> = {
   rejected: 'Declined / archived',
 };
 
+const STATUS_HINT: Record<ProposalStatus, string> = {
+  pending: 'needs review',
+  applied: 'in SPEC.md',
+  rejected: 'kept out',
+};
+
 const SORT_LABEL: Record<SortMode, string> = {
-  newest: 'Newest',
-  oldest: 'Oldest',
-  largest: 'Largest',
-  smallest: 'Smallest',
+  newest: 'Newest first',
+  oldest: 'Oldest first',
+  largest: 'Most detail',
+  smallest: 'Least detail',
 };
 
 function fmtTs(ts: number): string {
@@ -58,12 +64,6 @@ function fmtAge(ts: number): string {
   return fmtTs(ts);
 }
 
-function fmtBytes(sizeBytes: number): string {
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return '0 B';
-  if (sizeBytes < 1024) return `${sizeBytes} B`;
-  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(sizeBytes < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function humanizeId(id: string): string {
   const cleaned = id
@@ -397,7 +397,7 @@ export default function ProposalsPanel({ slug }: Props) {
   }, [slug, checkedPending, loadList]);
 
   const replanNow = useCallback(async () => {
-    if (!confirm('Run /replan now? Existing features.json + validation-contract.md are backed up and replaced.')) return;
+    if (!confirm('Run /replan now? Existing features (harness_features) + validation-contract.md are backed up and replaced.')) return;
     setBusy(true);
     setToast('Re-planning… (may take a few minutes)');
     try {
@@ -539,6 +539,13 @@ export default function ProposalsPanel({ slug }: Props) {
   const statusCount = (status: StatusFilter) => (status === 'all' ? counts.all : counts[status]);
   const toastKind = toast && /failed|error|reject/i.test(toast) ? 'bad' : 'good';
   const hasGoal = goal.trim().length > 0;
+  const detailActionHint = selectedItem?.status === 'pending'
+    ? 'Apply writes this proposal to SPEC.md. Reject keeps it out of the plan.'
+    : selectedItem?.status === 'applied'
+      ? 'Already applied to SPEC.md. Copy markdown if you want to reuse the proposal text.'
+      : selectedItem?.status === 'rejected'
+        ? 'Rejected proposals stay out of SPEC.md. Copy markdown if you want to revisit it later.'
+        : 'Select a proposal to preview the details and choose an action.';
 
   return (
     <div className="h-proposals-panel" data-proposals-panel>
@@ -567,11 +574,16 @@ export default function ProposalsPanel({ slug }: Props) {
                   title={!hasGoal ? 'Set a SPEC.md first' : 'Run the product agent to propose new scope'}
                   className="h-proposal-btn primary"
                 >
-                  {busy ? 'working…' : 'propose'}
+                  {busy ? 'working…' : 'generate proposals'}
                 </button>
               </>
             )}
           </div>
+        </div>
+        <div className="h-proposals-flow" aria-label="Proposal workflow">
+          <span aria-label="Step 1, generate: product agent reads SPEC.md"><b>1. Generate</b><em>product agent reads SPEC.md</em></span>
+          <span aria-label="Step 2, review: choose apply or reject"><b>2. Review</b><em>choose apply or reject</em></span>
+          <span aria-label="Step 3, replan: accepted scope becomes features"><b>3. Replan</b><em>accepted scope becomes features</em></span>
         </div>
         {editingGoal && (
           <div className="h-proposals-goal-editor">
@@ -594,7 +606,7 @@ export default function ProposalsPanel({ slug }: Props) {
 
       {pendingReplanPrompt > 0 && !replanOnAccept && (
         <div className="h-proposal-replan">
-          <span><b>{pendingReplanPrompt}</b> new acceptance bullet(s) appended to SPEC.md. Run <code>/replan</code> to regenerate features.json + contract.</span>
+          <span><b>{pendingReplanPrompt}</b> new acceptance bullet(s) appended to SPEC.md. Run <code>/replan</code> to regenerate features + contract.</span>
           <button type="button" onClick={replanNow} disabled={busy} className="h-proposal-btn primary">{busy ? '…' : 'replan now'}</button>
           <button type="button" onClick={() => setPendingReplanPrompt(0)} className="h-proposal-btn ghost">dismiss</button>
         </div>
@@ -614,7 +626,7 @@ export default function ProposalsPanel({ slug }: Props) {
                 ref={searchRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search id/status…"
+                placeholder="Search proposals…"
                 aria-label="Search proposals"
                 className="h-proposal-search"
               />
@@ -629,28 +641,31 @@ export default function ProposalsPanel({ slug }: Props) {
                     aria-selected={statusFilter === status}
                     onClick={() => setStatusFilter(status)}
                     className={`h-proposal-filter ${statusFilter === status ? 'on' : ''} ${status !== 'all' ? `status-${status}` : ''}`}
+                    aria-label={status === 'all'
+                      ? `All proposals, ${statusCount(status)} total`
+                      : `${STATUS_LABEL[status]} proposals: ${STATUS_HINT[status]}, ${statusCount(status)} total`}
                   >
-                    <span>{status === 'all' ? 'All' : STATUS_LABEL[status]}</span>
+                    <span>{status === 'all' ? 'All' : STATUS_LABEL[status]}<small>{status === 'all' ? 'entire queue' : STATUS_HINT[status]}</small></span>
                     <b>{statusCount(status)}</b>
                   </button>
                 ))}
               </div>
               <label className="h-proposal-sort">
-                <span>sort</span>
+                <span>Sort</span>
                 <select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)} aria-label="Sort proposals">
                   {(Object.keys(SORT_LABEL) as SortMode[]).map((mode) => (
                     <option key={mode} value={mode}>{SORT_LABEL[mode]}</option>
                   ))}
                 </select>
               </label>
-              <button type="button" onClick={focusNextPending} disabled={!nextPending} className="h-proposal-mini ghost">next</button>
+              <button type="button" onClick={focusNextPending} disabled={!nextPending} className="h-proposal-mini ghost">next pending</button>
               <button
                 type="button"
                 onClick={() => setShortlistOnly((on) => !on)}
                 disabled={shortlisted.size === 0}
                 className={`h-proposal-mini ghost ${shortlistOnly ? 'on' : ''}`}
               >
-                shortlist {shortlisted.size}
+                starred {shortlisted.size}
               </button>
               <button
                 type="button"
@@ -658,10 +673,10 @@ export default function ProposalsPanel({ slug }: Props) {
                 disabled={filteredItems.length === 0}
                 className={`h-proposal-mini ghost ${filteredItems.length > 0 && visibleShortlistedCount === filteredItems.length ? 'on' : ''}`}
               >
-                {filteredItems.length > 0 && visibleShortlistedCount === filteredItems.length ? 'unstar' : 'star view'}
+                {filteredItems.length > 0 && visibleShortlistedCount === filteredItems.length ? 'unstar visible' : 'star visible'}
               </button>
               {(query || statusFilter !== 'all' || sortMode !== 'newest' || shortlistOnly) && (
-                <button type="button" onClick={resetView} className="h-proposal-mini ghost">clear</button>
+                <button type="button" onClick={resetView} className="h-proposal-mini ghost">reset view</button>
               )}
               <div className="h-proposal-hotkeys" aria-hidden="true">
                 <kbd>/</kbd><span>search</span>
@@ -681,15 +696,15 @@ export default function ProposalsPanel({ slug }: Props) {
                 checked={checkedVisiblePending.length === visiblePendingIds.length && visiblePendingIds.length > 0}
                 onChange={toggleVisiblePending}
               />
-              <span>{checkedVisiblePending.length > 0 ? `${checkedVisiblePending.length} selected` : `Select ${visiblePendingIds.length} visible pending`}</span>
+              <span>{checkedVisiblePending.length > 0 ? `${checkedVisiblePending.length} selected` : `Select ${visiblePendingIds.length} pending proposals`}</span>
             </label>
           )}
 
           {checkedPending.length > 0 && (
             <div className="h-proposal-bulkbar">
               <span><b>{checkedPending.length}</b> pending selected</span>
-              <button type="button" onClick={bulkAccept} disabled={busy} className="h-proposal-mini good">accept</button>
-              <button type="button" onClick={bulkReject} disabled={busy} className="h-proposal-mini bad">reject</button>
+              <button type="button" onClick={bulkAccept} disabled={busy} className="h-proposal-mini good">apply selected</button>
+              <button type="button" onClick={bulkReject} disabled={busy} className="h-proposal-mini bad">reject selected</button>
               <button type="button" onClick={() => setChecked(new Set())} className="h-proposal-mini ghost">clear</button>
             </div>
           )}
@@ -698,7 +713,7 @@ export default function ProposalsPanel({ slug }: Props) {
             {items.length === 0 ? (
               <div className="h-proposal-empty">
                 <b>No proposals yet</b>
-                <span>Click <em>propose</em> to have the product agent read SPEC.md and suggest scoped features.</span>
+                <span>Click <em>generate proposals</em> to have the product agent read SPEC.md and suggest scoped features.</span>
               </div>
             ) : filteredItems.length === 0 ? (
               <div className="h-proposal-empty">
@@ -712,7 +727,7 @@ export default function ProposalsPanel({ slug }: Props) {
                 const isChecked = checked.has(p.id);
                 const isShortlisted = shortlisted.has(p.id);
                 const rowTitle = humanizeId(p.id);
-                const rowMeta = `${STATUS_LABEL[p.status]} · ${fmtTs(p.ts)} · ${fmtBytes(p.sizeBytes)} · ${STATUS_COPY[p.status]}`;
+                const rowMeta = `${STATUS_LABEL[p.status]} · ${fmtTs(p.ts)} · ${STATUS_COPY[p.status]}`;
                 const isoTs = p.ts ? new Date(p.ts).toISOString() : undefined;
                 return (
                   <div
@@ -728,6 +743,7 @@ export default function ProposalsPanel({ slug }: Props) {
                         onChange={(e) => { e.stopPropagation(); toggleCheck(p.id); }}
                         onClick={(e) => e.stopPropagation()}
                         aria-label={`Select proposal ${p.id}`}
+                        className="h-proposal-check"
                       />
                     ) : (
                       <span className="h-proposal-item-spacer" aria-hidden="true" />
@@ -761,7 +777,6 @@ export default function ProposalsPanel({ slug }: Props) {
                         </span>
                       )}
                       <time className="h-proposal-row-age" dateTime={isoTs}>{fmtAge(p.ts)}</time>
-                      <span className="h-proposal-row-size">{fmtBytes(p.sizeBytes)}</span>
                     </button>
                   </div>
                 );
@@ -795,7 +810,6 @@ export default function ProposalsPanel({ slug }: Props) {
                   <span><b>{contentStats.bullets}</b> bullets</span>
                   <span><b>{contentStats.nonEmpty}</b> lines</span>
                   <span><b>{contentStats.signals}</b> signals</span>
-                  <span><b>{fmtBytes(selectedItem.sizeBytes)}</b></span>
                   <span>{fmtTs(selectedItem.ts)}</span>
                   {selectedIndex >= 0 && <span><b>{selectedIndex + 1}</b>/{filteredItems.length}</span>}
                 </div>
@@ -805,16 +819,17 @@ export default function ProposalsPanel({ slug }: Props) {
                     onClick={() => toggleShortlist(selectedItem.id)}
                     className={`h-proposal-btn ghost h-proposal-shortlist-detail ${shortlisted.has(selectedItem.id) ? 'on' : ''}`}
                   >
-                    {shortlisted.has(selectedItem.id) ? 'shortlisted' : 'shortlist'}
+                    {shortlisted.has(selectedItem.id) ? 'starred' : 'star for later'}
                   </button>
-                  <button type="button" onClick={copyProposal} disabled={!content.trim()} className="h-proposal-btn ghost">copy md</button>
+                  <button type="button" onClick={copyProposal} disabled={!content.trim()} className="h-proposal-btn ghost">copy markdown</button>
                   {selectedItem.status === 'pending' && (
                     <>
-                      <button type="button" onClick={() => accept(selectedItem.id)} disabled={busy} className="h-proposal-btn good">accept → SPEC.md</button>
-                      <button type="button" onClick={() => reject(selectedItem.id)} disabled={busy} className="h-proposal-btn danger">reject</button>
+                      <button type="button" onClick={() => accept(selectedItem.id)} disabled={busy} className="h-proposal-btn good">apply to SPEC.md</button>
+                      <button type="button" onClick={() => reject(selectedItem.id)} disabled={busy} className="h-proposal-btn danger">reject proposal</button>
                     </>
                   )}
                 </div>
+                <div className={`h-proposal-action-hint status-${selectedItem.status}`}>{detailActionHint}</div>
               </div>
               {(contentStats.outline.length > 0 || contentStats.signals > 0) && (
                 <div className="h-proposal-outline" aria-label="Proposal outline">
