@@ -141,18 +141,37 @@ export async function startEmbeddedPostgresServer(opts = {}) {
       END $pg$;
     `);
 
-    // Zero replication publication. zero-cache subscribes to this name to
-    // receive logical-decoding events for all tables. FOR ALL TABLES means
-    // newly-scaffolded harness schemas are auto-included without rewriting
-    // the publication. zero-cache filters internally for tables it has a
-    // schema for, and ignores its own _zero_metadata_* tables.
+    // Zero replication publication. Scoped to schemas the harness owns.
+    // FOR ALL TABLES had captured zero-cache's own bookkeeping schemas
+    // (papercusp_0/cvr, papercusp_0/cdc, audit) which OOMed zero-cache
+    // during initial replication on workspaces with accumulated history.
+    // FOR TABLES IN SCHEMA auto-includes new tables added to listed
+    // schemas, and per-harness schemas are added on-demand by the
+    // bootstrap helper that scaffolds them.
     await sql.unsafe(`
       DO $pg$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'zero_harness') THEN
-          CREATE PUBLICATION zero_harness FOR ALL TABLES;
+          CREATE PUBLICATION zero_harness FOR TABLES IN SCHEMA harness_shared, papercup_shared;
         END IF;
       END $pg$;
     `);
+    // Add per-harness schemas to the publication. Idempotent — duplicates
+    // raise a notice we ignore.
+    const perHarnessSchemas = await sql.unsafe(`
+      SELECT schema_name FROM information_schema.schemata
+      WHERE schema_name LIKE 'harness\\_%' ESCAPE '\\'
+        AND schema_name <> 'harness_shared'
+    `);
+    for (const { schema_name } of perHarnessSchemas) {
+      // schema_name comes from information_schema and is filtered to harness_*
+      // pattern above; safe to interpolate but validate strictly anyway.
+      if (!/^harness_[a-z0-9_]+$/i.test(schema_name)) continue;
+      try {
+        await sql.unsafe(`ALTER PUBLICATION zero_harness ADD TABLES IN SCHEMA ${schema_name}`);
+      } catch {
+        // Already in publication — ignore.
+      }
+    }
 
     // Apply migrations.
     if (opts.dbSqlDir && existsSync(opts.dbSqlDir)) {
@@ -171,8 +190,16 @@ export async function startEmbeddedPostgresServer(opts = {}) {
         const tmpl = await readFile(tmplPath, 'utf8');
         const slugs = opts.harnessSlugs ?? DEFAULT_HARNESS_SLUGS;
         for (const slug of slugs) {
-          const ddl = tmpl.replaceAll('{{SCHEMA}}', `harness_${slug}`);
+          const schemaName = `harness_${slug}`;
+          const ddl = tmpl.replaceAll('{{SCHEMA}}', schemaName);
           await sql.unsafe(ddl);
+          if (/^harness_[a-z0-9_]+$/i.test(schemaName)) {
+            try {
+              await sql.unsafe(`ALTER PUBLICATION zero_harness ADD TABLES IN SCHEMA ${schemaName}`);
+            } catch {
+              // Already in publication.
+            }
+          }
         }
         log(`per-harness template applied across ${slugs.length} slugs`);
       }
