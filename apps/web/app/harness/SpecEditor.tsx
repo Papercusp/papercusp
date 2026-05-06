@@ -208,7 +208,11 @@ export default function SpecEditor({ slug, projectPath, alive, onClose, inline =
         border: inline ? 'none' : '1px solid #374151',
         borderRadius: inline ? 0 : 6,
         width: inline ? '100%' : '90vw',
-        height: inline ? '100%' : '90vh',
+        // Inline: use flex:1 + align-self:stretch so we fill the parent
+        // (.h-config-body) regardless of its flex direction. `height: 100%`
+        // doesn't resolve reliably when the parent's height comes from
+        // `flex: 1 1 0%` rather than an explicit value.
+        ...(inline ? { flex: 1, alignSelf: 'stretch', minHeight: 0 } : { height: '90vh' }),
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}
       onClick={(e) => e.stopPropagation()}
