@@ -13,6 +13,24 @@ set -o pipefail
 
 HARNESS_DIR="${HARNESS_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}"
 PROJECT_DIR="${PROJECT_DIR:-$PWD}"
+
+# Phase 3 / Item 3: source the PG-status helper. All write functions
+# (pg_write_status, pg_write_lane, pg_clear_lanes, pg_clear_running)
+# live in lib/pg-status.sh next to run.sh, isolating Phase-3 writes
+# from the rest of run.sh's lifecycle so paperclip edits to other
+# parts don't clobber them.
+# shellcheck source=lib/pg-status.sh
+if [ -f "$HARNESS_DIR/lib/pg-status.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$HARNESS_DIR/lib/pg-status.sh"
+else
+    # Stub the functions so unconditional callers don't break a run.sh
+    # that's been deployed before lib/pg-status.sh shipped alongside.
+    pg_write_status() { :; }
+    pg_write_lane() { :; }
+    pg_clear_lanes() { :; }
+    pg_clear_running() { :; }
+fi
 STATE_DIR="$PROJECT_DIR/.harness"
 LOG_DIR="$STATE_DIR/logs"
 
@@ -1668,12 +1686,50 @@ for cp in "$STATE_DIR"/checkpoint-*.md; do
 done
 
 iteration=0
+
+# Phase 3: clear agent_runs.running on graceful exit. SIGKILL'd runs get
+# swept by the operator's harness-status-sweep within ~30s.
+trap 'pg_clear_running "$(harness_slug 2>/dev/null || echo unknown)" 2>/dev/null || true' EXIT
+
+# Compute (total, passed, todo, blocked) feature counts from per-harness PG.
+# Echoes "total passed todo blocked" on stdout. Empty on failure.
+_phase3_feature_counts() {
+    local slug="$1"
+    local schema="harness_${slug//-/_}"
+    if ! command -v psql >/dev/null 2>&1; then return 0; fi
+    PGPASSWORD="${HARNESS_APP_PWD:-harness_app_pwd}" \
+    PGOPTIONS="-c search_path=${schema},harness_shared,public" \
+    psql -U "${HARNESS_APP_USER:-harness_app}" -h "${PGHOST:-localhost}" \
+         -d "${HARNESS_PG_DB:-papercusp}" -At -F ' ' \
+         -c "SELECT
+               COUNT(*),
+               COUNT(*) FILTER (WHERE status = 'passed'),
+               COUNT(*) FILTER (WHERE status = 'todo'),
+               COUNT(*) FILTER (WHERE status = 'blocked')
+             FROM harness_features" 2>/dev/null
+}
+
 # Fire beforeMissionStart for every plugin reachable from this project.
 # Best-effort; failures are logged to plugins.log and don't gate the run.
 fire_plugin_hook beforeMissionStart || true
 while [ $iteration -lt $MAX_ITERATIONS ]; do
     iteration=$((iteration + 1))
     log "── iteration $iteration ──"
+
+    # Phase 3: write status row at iteration start. Best-effort; helper
+    # absorbs failures so we never gate the loop on a status-write hiccup.
+    {
+        _phase3_slug="$(harness_slug 2>/dev/null || echo unknown)"
+        _phase3_phase="${PAPERCUSP_PHASE:-staging}"
+        _phase3_counts="$(_phase3_feature_counts "$_phase3_slug")"
+        # _phase3_counts is "total passed todo blocked" or empty
+        # shellcheck disable=SC2086
+        set -- $_phase3_counts
+        pg_write_status "$_phase3_slug" "$_phase3_phase" "running" \
+            "$iteration" "${1:-0}" "${2:-0}" "${3:-0}" "${4:-0}" \
+            "" 2>/dev/null || true
+    } &
+    # Don't block iteration on the status write.
 
     # Ask the phase's primary advancing role what to do next.
     # 2026-04-26: was hard-coded to "orchestrator". The org phase declares
