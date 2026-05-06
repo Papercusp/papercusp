@@ -892,6 +892,7 @@
 .h-header.alive {
   position: relative;
   overflow: hidden;
+  animation: h-header-alive-pulse 1.9s ease-in-out infinite;
 }
 .h-header.alive::after {
   content: "";
@@ -1783,6 +1784,7 @@
   border-color: color-mix(in oklab, var(--good), transparent 62%);
   background: linear-gradient(90deg, color-mix(in oklab, var(--good), transparent 88%), color-mix(in oklab, var(--accent), transparent 92%));
   cursor: pointer;
+  animation: h-running-lane-bob 1.3s ease-in-out infinite;
 }
 
 .h-running-lane.live:hover {
@@ -12380,6 +12382,42 @@ body:has(.h-top-collapse-inline) main {
   58% { opacity: 0.36; }
 }
 
+/* CSS replacements for the GSAP infinite loops that previously animated
+ * these elements. CSS animations run on the compositor and don't churn
+ * React's commit path. */
+@keyframes h-hud-grid-scroll {
+  from { background-position: 0 0; }
+  to   { background-position: 0 180px; }
+}
+@keyframes h-hud-node-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-5px); }
+}
+@keyframes h-pulse-dot-pulse {
+  from {
+    transform: scale(0.8);
+    box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.48);
+  }
+  to {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 15px rgba(34, 211, 238, 0);
+  }
+}
+@keyframes h-running-lane-bob {
+  0%, 100% {
+    transform: translateY(0);
+    box-shadow: 0 0 0 1px rgba(103, 232, 249, 0), 0 0 0 rgba(34, 211, 238, 0);
+  }
+  50% {
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.24), 0 0 28px rgba(34, 211, 238, 0.22);
+  }
+}
+@keyframes h-header-alive-pulse {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.08); }
+}
+
 .h-root--maximal-hud {
   position: relative;
   overflow: hidden;
@@ -12425,6 +12463,7 @@ body:has(.h-top-collapse-inline) main {
     repeating-linear-gradient(90deg, rgba(125, 211, 252, 0.04) 0 1px, transparent 1px 88px),
     repeating-linear-gradient(180deg, rgba(125, 211, 252, 0.028) 0 1px, transparent 1px 68px);
   opacity: 0.34;
+  animation: h-hud-grid-scroll 8s linear infinite;
 }
 .h-hud-overlay__scanline {
   top: 0;
@@ -12455,10 +12494,12 @@ body:has(.h-top-collapse-inline) main {
 .h-hud-node--left {
   top: 126px;
   left: 12px;
+  animation: h-hud-node-bob 2.2s ease-in-out infinite;
 }
 .h-hud-node--right {
   right: 16px;
   top: 184px;
+  animation: h-hud-node-bob 2.2s ease-in-out infinite 0.24s;
 }
 .h-hud-node .hud-reticle-glyph__frame,
 .h-hud-node .hud-reticle-glyph__halo,
