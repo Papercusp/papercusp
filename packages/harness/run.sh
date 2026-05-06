@@ -489,7 +489,8 @@ feature_set_status() {
     # API-first; psql fallback if web is down.
     local fid="$1" status="$2"
     local slug; slug="$(harness_slug)"
-    local api_url="http://localhost:3001/api/harness/$slug/features/$fid"
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local api_url="${operator_base}/api/harness/$slug/features/$fid"
     if curl -sf -X PATCH -H 'content-type: application/json' --max-time 5 \
         -H "x-actor: run.sh" \
         -d "{\"status\": \"$status\"}" "$api_url" > /dev/null 2>&1; then
@@ -1040,8 +1041,9 @@ for p in r.get("projects", []):
 # Returns features as JSON array. Tries API first, falls back to psql.
 features_json() {
     local slug; slug="$(harness_slug)"
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
     local resp
-    if resp="$(curl -sf --max-time 3 "http://localhost:3001/api/harness/$slug/status" 2>/dev/null)"; then
+    if resp="$(curl -sf --max-time 3 "${operator_base}/api/harness/$slug/status" 2>/dev/null)"; then
         echo "$resp" | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin).get("features", [])))'
         return 0
     fi
@@ -1079,8 +1081,9 @@ features_exist() {
 # Returns the attempts count for a given feature id (or "0" if not found).
 feature_attempts() {
     local fid="$1"; local slug; slug="$(harness_slug)"
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
     local resp
-    if resp="$(curl -sf --max-time 3 "http://localhost:3001/api/harness/$slug/status" 2>/dev/null)"; then
+    if resp="$(curl -sf --max-time 3 "${operator_base}/api/harness/$slug/status" 2>/dev/null)"; then
         echo "$resp" | FID="$fid" python3 -c 'import sys,json,os
 fid = os.environ["FID"]
 for f in json.load(sys.stdin).get("features", []):
