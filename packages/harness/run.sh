@@ -1296,6 +1296,18 @@ except Exception:
     local out="$LOG_DIR/${run_id}.out"
     local err="$LOG_DIR/${run_id}.err"
 
+    # Phase 3: write the lane row so the dashboard's lanes tile shows
+    # which (role, feature) is currently mid-invoke. pg_clear_lanes at
+    # iteration end empties them; the harness-status-sweep drops stale
+    # rows whose recorded PID is gone (covers SIGKILL'd workers).
+    # Backgrounded so a status-write hiccup never blocks the actual
+    # agent invocation.
+    {
+        _phase3_lane_slug="$(harness_slug 2>/dev/null || echo unknown)"
+        pg_write_lane "$_phase3_lane_slug" "${PAPERCUSP_PHASE:-staging}" \
+            "$role" "$feature_id" 2>/dev/null || true
+    } &
+
     # Structured-stream mode gives us live progress, tool calls, token
     # usage, and cost. Backend-aware: claude-code → stream-json,
     # omp/pi-coding-agent → --mode json. Falls back to plain text if
@@ -2431,6 +2443,14 @@ except Exception:
             touch "$STATE_DIR/.product-near-done-fired"
         fi
     fi
+
+    # Phase 3: clear lanes at iteration end. Lane rows are per-iteration
+    # ephemeral; the next iteration's invoke() calls will repopulate them.
+    # Backgrounded so the loop never blocks on a status-write hiccup.
+    {
+        _phase3_clear_slug="$(harness_slug 2>/dev/null || echo unknown)"
+        pg_clear_lanes "$_phase3_clear_slug" "${PAPERCUSP_PHASE:-staging}" 2>/dev/null || true
+    } &
 
     # Polite backoff between iterations.
     sleep "${ITERATION_SLEEP:-2}"

@@ -97,35 +97,18 @@ CREATE INDEX IF NOT EXISTS ar_feature_idx  ON {{SCHEMA}}.agent_runs(harness_slug
 CREATE INDEX IF NOT EXISTS ar_ts_idx       ON {{SCHEMA}}.agent_runs(harness_slug, ts DESC);
 CREATE INDEX IF NOT EXISTS ar_running_idx  ON {{SCHEMA}}.agent_runs(harness_slug, running) WHERE running = TRUE;
 
--- Product proposal metadata. The proposal body + reviewer verdict body
--- stay on disk in `.harness/proposals/<id>.md` + `.<id>.review.md` (S3+DB
--- pattern — filesystem holds the markdown blob, PG holds queryable metadata
--- so Zero can subscribe). `proposal_id` IS the filename (e.g.
--- `2026-04-24T22-38-19Z.md`).
-CREATE TABLE IF NOT EXISTS {{SCHEMA}}.harness_proposals (
-  harness_slug TEXT NOT NULL,
-  proposal_id TEXT NOT NULL,
-  size_bytes BIGINT NOT NULL DEFAULT 0,
-  status TEXT NOT NULL,                     -- 'pending' | 'applied' | 'rejected'
-  review_verdict TEXT,                      -- 'accept' | 'reject' | 'defer' | NULL
-  review_summary TEXT,
-  reviewed_at BIGINT,
-  applied_at BIGINT,                        -- when applied to SPEC.md (epoch ms); NULL if pending/rejected
-  rejected_at BIGINT,                       -- when rejected (epoch ms); NULL if pending/applied
-  ts BIGINT NOT NULL,                       -- file mtime (epoch ms)
-  created_ts BIGINT NOT NULL,
-  updated_ts BIGINT NOT NULL,
-  PRIMARY KEY (harness_slug, proposal_id)
-);
--- Idempotent column adds for harnesses created before applied_at /
--- rejected_at landed (the CREATE TABLE IF NOT EXISTS above is no-op
--- when the table already exists, so the columns wouldn't otherwise
--- get added on re-template).
-ALTER TABLE {{SCHEMA}}.harness_proposals ADD COLUMN IF NOT EXISTS applied_at BIGINT;
-ALTER TABLE {{SCHEMA}}.harness_proposals ADD COLUMN IF NOT EXISTS rejected_at BIGINT;
-CREATE INDEX IF NOT EXISTS hp_status_idx   ON {{SCHEMA}}.harness_proposals(harness_slug, status);
-CREATE INDEX IF NOT EXISTS hp_verdict_idx  ON {{SCHEMA}}.harness_proposals(harness_slug, review_verdict);
-CREATE INDEX IF NOT EXISTS hp_ts_idx       ON {{SCHEMA}}.harness_proposals(harness_slug, ts DESC);
+-- harness_proposals (per-schema) retired in Item 1 of the polling-removal
+-- arc — ProposalsPanel now reads harness_shared.harness_proposals_shared,
+-- which the harness FS watcher (apps/operator/lib/harness-fs-watcher.ts)
+-- writes directly from .harness/proposals/*.md. The per-schema dual-write
+-- (syncProposalsToPg in apps/operator/app/api/_hono/harness.ts) was
+-- removed in commit 900ac2d — no remaining reader, no remaining writer.
+--
+-- New harnesses skip the table entirely. Existing harnesses keep their
+-- orphan table sitting in PG harmlessly; a DROP TABLE migration is its
+-- own follow-up if it's worth the irreversible step. (Per the v3 plan,
+-- we kept Item 1 staged across two commits specifically so this DDL drop
+-- could land after commit A had time to bake.)
 
 -- Curator-owned issue tracker. Mirrors the legacy `.harness/issues.json`
 -- shape; `notes` stays inline JSONB (always a small array per row).
