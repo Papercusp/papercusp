@@ -1434,7 +1434,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 10px;
   min-width: 340px;
   max-width: 620px;
@@ -4584,8 +4584,10 @@
   min-height: max(calc(100vh - var(--app-nav-height, 49px)), 1040px);
 }
 .h-main-shell.embed:has(.h-proposals-panel) {
+  /* Floor at 760px so smaller viewports stay usable; remove the max
+   * cap so the shell fills the available height like dashboard +
+   * brainstorm. */
   min-height: 760px;
-  max-height: 760px;
 }
 
 /* ── Proposals tab: dense product-review workbench ───────────────
@@ -6713,16 +6715,19 @@
   }
 }
 
-/* Git main workspace tab + starred commit workflow. */
+/* Git main workspace tab + starred commit workflow.
+ * Same shape as dashboard + brainstorm: shell fills the available
+ * height, panel fills inside it. The 760px floor keeps small viewports
+ * usable; max caps removed so we don't truncate on normal screens. */
 .h-main-shell.embed:has(.h-git-panel) {
   min-height: 760px;
-  max-height: 760px;
 }
 .h-main-shell.embed .h-git-panel {
   width: 100%;
-  height: 760px;
+  flex: 1;
+  height: auto;
   min-height: 760px;
-  max-height: 760px;
+  max-height: none;
 }
 .h-git-filter-row {
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -7501,7 +7506,7 @@ body:has(.h-top-collapse-inline) main {
   flex: 0 0 auto !important;
   min-width: 0 !important;
   max-width: none !important;
-  align-items: flex-end !important;
+  align-items: flex-start !important;
   gap: 5px !important;
 }
 .h-stats {
@@ -12977,6 +12982,28 @@ body:has(.h-root) .pc-header .pc-voice-settings-link:focus-visible,
     inset 0 1px 0 rgba(255, 255, 255, 0.085) !important;
 }
 
+/* Keep microphone chrome readable inside the harness top bar: same tone, less glass sheen. */
+body:has(.h-root) .pc-header .pc-voice-btn {
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in oklab, var(--h-topbar-control-tone), transparent 90%), transparent 76%),
+    linear-gradient(180deg, color-mix(in oklab, var(--h-topbar-control-tone), transparent 93%), rgba(5, 13, 24, 0.99)) !important;
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.25),
+    0 0 0 1px color-mix(in oklab, var(--h-topbar-control-tone), transparent 82%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+}
+
+body:has(.h-root) .pc-header .pc-voice-btn:hover,
+body:has(.h-root) .pc-header .pc-voice-btn:focus-visible {
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in oklab, var(--h-topbar-control-tone), transparent 84%), transparent 76%),
+    linear-gradient(180deg, color-mix(in oklab, var(--h-topbar-control-tone), transparent 88%), var(--h-topbar-control-base)) !important;
+  box-shadow:
+    0 12px 25px rgba(0, 0, 0, 0.29),
+    0 0 0 1px color-mix(in oklab, var(--h-topbar-control-tone), transparent 72%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+}
+
 .h-root .h-main-tabs .h-tab[aria-selected="true"],
 .h-root .h-main-tabs .h-tab.on,
 .h-root .h-project-phases .h-phase-item.active,
@@ -15122,4 +15149,60 @@ html body .h-root.h-root :is(
     justify-content: flex-start;
     text-align: left;
   }
+}
+
+/* Issues filters: give active / all / closed distinct tints while keeping the shared chip language. */
+.h-issues-filter.h-issues-filter--active {
+  border-color: rgba(34, 197, 94, 0.18);
+  background: linear-gradient(180deg, rgba(11, 28, 22, 0.88), rgba(3, 10, 20, 0.96));
+}
+
+.h-issues-filter.h-issues-filter--all {
+  border-color: rgba(56, 189, 248, 0.18);
+  background: linear-gradient(180deg, rgba(11, 24, 36, 0.88), rgba(3, 10, 20, 0.96));
+}
+
+.h-issues-filter.h-issues-filter--closed {
+  border-color: rgba(167, 139, 250, 0.18);
+  background: linear-gradient(180deg, rgba(22, 17, 40, 0.88), rgba(3, 10, 20, 0.96));
+}
+
+.h-issues-filter.h-issues-filter--active.on {
+  color: color-mix(in oklab, var(--good), white 22%) !important;
+  border-color: rgba(34, 197, 94, 0.42) !important;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255,255,255,0.14), transparent 34%),
+    linear-gradient(180deg, rgba(18, 82, 52, 0.58), rgba(4, 24, 17, 0.96)) !important;
+}
+
+.h-issues-filter.h-issues-filter--all.on {
+  color: color-mix(in oklab, var(--accent-cool, #7dd3fc), white 18%) !important;
+  border-color: rgba(56, 189, 248, 0.42) !important;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255,255,255,0.14), transparent 34%),
+    linear-gradient(180deg, rgba(18, 53, 73, 0.58), rgba(5, 18, 31, 0.96)) !important;
+}
+
+.h-issues-filter.h-issues-filter--closed.on {
+  color: color-mix(in oklab, #c4b5fd, white 10%) !important;
+  border-color: rgba(167, 139, 250, 0.42) !important;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255,255,255,0.14), transparent 34%),
+    linear-gradient(180deg, rgba(74, 49, 126, 0.52), rgba(18, 11, 38, 0.96)) !important;
+}
+
+/* Issues filters v2: keep each filter visibly tinted even when not selected. */
+.h-issues-toolbar .h-issues-filter.h-issues-filter--active:not(.on) {
+  border-color: rgba(34, 197, 94, 0.20) !important;
+  background: linear-gradient(180deg, rgba(11, 28, 22, 0.88), rgba(3, 10, 20, 0.96)) !important;
+}
+
+.h-issues-toolbar .h-issues-filter.h-issues-filter--all:not(.on) {
+  border-color: rgba(56, 189, 248, 0.22) !important;
+  background: linear-gradient(180deg, rgba(11, 24, 36, 0.88), rgba(3, 10, 20, 0.96)) !important;
+}
+
+.h-issues-toolbar .h-issues-filter.h-issues-filter--closed:not(.on) {
+  border-color: rgba(167, 139, 250, 0.22) !important;
+  background: linear-gradient(180deg, rgba(22, 17, 40, 0.88), rgba(3, 10, 20, 0.96)) !important;
 }
