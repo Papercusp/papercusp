@@ -12385,10 +12385,9 @@ body:has(.h-top-collapse-inline) main {
 /* CSS replacements for the GSAP infinite loops that previously animated
  * these elements. CSS animations run on the compositor and don't churn
  * React's commit path. */
-@keyframes h-hud-grid-scroll {
-  from { background-position: 0 0; }
-  to   { background-position: 0 180px; }
-}
+/* h-hud-grid-scroll keyframe removed: animating background-position forces
+ * main-thread paint per frame and produces ~60 long-tasks/sec at idle.
+ * The grid is decorative; static is fine. See operator harness.css. */
 @keyframes h-hud-node-bob {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-5px); }
@@ -12463,7 +12462,7 @@ body:has(.h-top-collapse-inline) main {
     repeating-linear-gradient(90deg, rgba(125, 211, 252, 0.04) 0 1px, transparent 1px 88px),
     repeating-linear-gradient(180deg, rgba(125, 211, 252, 0.028) 0 1px, transparent 1px 68px);
   opacity: 0.34;
-  animation: h-hud-grid-scroll 8s linear infinite;
+  /* Static grid — see operator harness.css for the long-task explainer. */
 }
 .h-hud-overlay__scanline {
   top: 0;
