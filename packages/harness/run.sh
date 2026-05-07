@@ -1579,26 +1579,48 @@ except Exception:
         log "  role=$role TIMED OUT after ${timeout_seconds}s (rc=124)"
     fi
 
-    # Extract final result text. stream-json's terminal event has
-    # {"type":"result","result":"...","total_cost_usd":N,...}.
+    # Extract final result text. Backend-aware:
+    #   - claude-code stream-json: terminal event {"type":"result","result":"...","total_cost_usd":N,...}
+    #   - omp -p --mode json: terminal event "turn_end" with the
+    #     assistant message at .message.content[*].text. There's no
+    #     `result` field — omp aggregates content blocks into .message.
+    # We read the WHOLE file (not just tail -5) because omp's session
+    # event is at the top and turn_end can be far from the tail with
+    # tool-rich runs. Both branches accumulate into `text`; whichever
+    # event-shape matched wins.
     # Plain-text fallback: $jsonl IS the plain text output.
     if [ -n "$extra_flags" ]; then
         local final
-        final="$(tail -5 "$jsonl" 2>/dev/null | python3 -c '
+        final="$(python3 -c '
 import sys, json
 text = ""
-for line in sys.stdin:
-    line = line.strip()
-    if not line: continue
-    try:
-        obj = json.loads(line)
-        if obj.get("type") == "result":
-            text = obj.get("result", "")
-            break
-    except Exception:
-        pass
+with open(sys.argv[1]) as f:
+    for line in f:
+        line = line.strip()
+        if not line: continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        t = obj.get("type")
+        # claude-code shape
+        if t == "result":
+            text = obj.get("result", text)
+            continue
+        # omp shape — turn_end/message_end with role:"assistant" carries
+        # the final aggregated text. Prefer the LAST one we see
+        # (overrides earlier partials).
+        if t in ("turn_end", "message_end"):
+            msg = obj.get("message") or {}
+            if msg.get("role") == "assistant":
+                parts = []
+                for block in msg.get("content", []) or []:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        parts.append(block.get("text", ""))
+                if parts:
+                    text = "".join(parts)
 print(text)
-' 2>/dev/null)"
+' "$jsonl" 2>/dev/null)"
         printf '%s\n' "$final" > "$out"
     else
         cp "$jsonl" "$out"
