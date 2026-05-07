@@ -60,7 +60,7 @@ cat > eas.json <<EOF
   "submit": {
     "production": {
       "ios": { "appleId": "set-via-secrets", "ascAppId": "set-via-secrets" },
-      "android": { "serviceAccountKeyPath": "/home/marsh-office/.restart-org/secrets/google-play-service-account.json" }
+      "android": { "serviceAccountKeyPath": "set-via-secrets" }
     }
   }
 }

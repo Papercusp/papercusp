@@ -19,7 +19,14 @@ mkdir -p "$LOG_DIR"
 TS="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 LOG="$LOG_DIR/$TS.log"
 
-SECRETS="$HOME/.restart-org/secrets"
+# Canonical secrets path is ~/.papercusp/secrets/; legacy
+# ~/.restart-org/secrets/ honored for harnesses that pre-date the
+# workspace migration.
+if [ -d "$HOME/.papercusp/secrets" ]; then
+  SECRETS="$HOME/.papercusp/secrets"
+else
+  SECRETS="$HOME/.restart-org/secrets"
+fi
 
 require_secret() {
   if [ ! -f "$SECRETS/$1.txt" ] && [ ! -f "$SECRETS/$1.json" ]; then

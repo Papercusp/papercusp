@@ -34,10 +34,15 @@ if [ ! -f "$HARNESS_ROOT/app.json" ] && [ ! -f "$HARNESS_ROOT/app.config.js" ] &
   write_fail "No Expo app.json / app.config found at $HARNESS_ROOT. Run \`npx create-expo-app .\` first."
 fi
 
-# 2. Get EAS token
-EAS_TOKEN_FILE="$HOME/.restart-org/secrets/eas-token.txt"
-if [ ! -f "$EAS_TOKEN_FILE" ]; then
-  write_fail "Missing EAS token. Set via: curl -X PUT http://localhost:3001/api/org/secrets/eas-token -d '{\"value\":\"<your-eas-token>\"}'"
+# 2. Get EAS token. Canonical secrets path is ~/.papercusp/secrets/;
+# legacy ~/.restart-org/secrets/ is honored for harnesses that pre-date
+# the workspace migration.
+EAS_TOKEN_FILE=""
+for cand in "$HOME/.papercusp/secrets/eas-token.txt" "$HOME/.restart-org/secrets/eas-token.txt"; do
+  if [ -f "$cand" ]; then EAS_TOKEN_FILE="$cand"; break; fi
+done
+if [ -z "$EAS_TOKEN_FILE" ]; then
+  write_fail "Missing EAS token. Set via: curl -X PUT http://localhost:3055/api/org/secrets/eas-token -d '{\"value\":\"<your-eas-token>\"}' (canonical store: ~/.papercusp/secrets/eas-token.txt)"
 fi
 export EAS_NO_VCS=1
 export EXPO_TOKEN="$(cat "$EAS_TOKEN_FILE")"
