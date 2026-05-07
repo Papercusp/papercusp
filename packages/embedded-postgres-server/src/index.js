@@ -33,10 +33,32 @@ const DEFAULT_OWNER = 'postgres';
 const DEFAULT_OWNER_PWD = 'postgres';
 
 const PER_HARNESS_TEMPLATE = '002-per-harness-template.sql';
-const DEFAULT_HARNESS_SLUGS = [
-  'sheets', 'org', 'org_business', 'org_coordination', 'org_management',
-  'org_marketing', 'org_rd', 'org_technology', 'restart',
-];
+
+/**
+ * Read the slug list from harness_shared.harness_registry. Returns an
+ * empty array on first boot (registry table doesn't exist or is empty)
+ * — the caller treats that as "no schemas to provision yet."
+ *
+ * Slugs in the registry use hyphens; PG schema names use underscores.
+ * Returned slugs are already underscore-form (matches the existing
+ * `harness_<slug>` schema naming convention).
+ */
+async function readRegisteredSlugs(sql, log) {
+  try {
+    const rows = await sql`
+      SELECT (jsonb_array_elements(payload->'projects'))->>'slug' AS slug
+        FROM harness_shared.harness_registry
+    `;
+    const slugs = rows
+      .map((r) => r.slug)
+      .filter((s) => typeof s === 'string' && s.length > 0)
+      .map((s) => s.replace(/-/g, '_'));
+    return Array.from(new Set(slugs));
+  } catch (e) {
+    log(`registry read failed (${e?.message ?? e}); no schemas pre-provisioned this boot`);
+    return [];
+  }
+}
 
 /**
  * @param {object} opts
@@ -45,7 +67,7 @@ const DEFAULT_HARNESS_SLUGS = [
  * @param {string} [opts.dbName]       Database to create + connect to. Default: papercusp.
  * @param {boolean} [opts.debug]
  * @param {string} [opts.dbSqlDir]     Directory of *.sql migration files. If set, migrations apply on every boot.
- * @param {string[]} [opts.harnessSlugs]
+ * @param {string[]} [opts.harnessSlugs] Override the slug list. Default: read from `harness_shared.harness_registry`. Pass an explicit list only for tests / first-boot fixtures.
  * @param {(m: string) => void} [opts.onLog]
  */
 export async function startEmbeddedPostgresServer(opts = {}) {
@@ -188,7 +210,10 @@ export async function startEmbeddedPostgresServer(opts = {}) {
       if (existsSync(tmplPath)) {
         const { readFile } = await import('node:fs/promises');
         const tmpl = await readFile(tmplPath, 'utf8');
-        const slugs = opts.harnessSlugs ?? DEFAULT_HARNESS_SLUGS;
+        // Slug list comes from harness_shared.harness_registry by default
+        // — what's actually registered, not a hardcoded list. Callers can
+        // override via opts.harnessSlugs for tests / first-boot fixtures.
+        const slugs = opts.harnessSlugs ?? await readRegisteredSlugs(sql, log);
         for (const slug of slugs) {
           const schemaName = `harness_${slug}`;
           const ddl = tmpl.replaceAll('{{SCHEMA}}', schemaName);
@@ -201,7 +226,7 @@ export async function startEmbeddedPostgresServer(opts = {}) {
             }
           }
         }
-        log(`per-harness template applied across ${slugs.length} slugs`);
+        log(`per-harness template applied across ${slugs.length} slugs (from registry)`);
       }
     } else if (opts.dbSqlDir) {
       log(`dbSqlDir=${opts.dbSqlDir} does not exist — skipping migrations`);
