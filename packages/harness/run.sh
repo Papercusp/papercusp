@@ -73,23 +73,30 @@ else
     HARNESS_DB_PATH=""
 fi
 export HARNESS_PHASE HARNESS_PORT HARNESS_DB_PATH
-# Resolve the slug from ~/.restart-harness-projects.json so agent prompts
-# (expert, feedback, validator, etc.) can reference $HARNESS_SLUG inline
-# in their curl snippets. Inline lookup because harness_slug() (the helper
+# Resolve the slug from the papercusp workspace registry (canonical) or the
+# legacy ~/.restart-harness-projects.json (for harnesses that pre-date the
+# workspace migration). Inline lookup because harness_slug() (the helper
 # function) is defined later in this file.
 if [ -z "${HARNESS_SLUG:-}" ]; then
-    if [ -f "$HOME/.restart-harness-projects.json" ]; then
-        HARNESS_SLUG="$(REG="$HOME/.restart-harness-projects.json" PD="$PROJECT_DIR" python3 -c '
+    HARNESS_SLUG="$(PAPERCUSP_ROOT="${PAPERCUSP_ROOT:-$HOME/.papercusp-workspaces/default}" \
+                    HOME="$HOME" PD="$PROJECT_DIR" python3 -c '
 import json, os, sys
-try:
-    r = json.load(open(os.environ["REG"]))
-    for p in r.get("projects", []):
-        if p.get("path") == os.environ["PD"]:
-            print(p.get("slug", "")); sys.exit(0)
-except Exception:
-    pass
+home = os.environ["HOME"]; pd = os.environ["PD"]
+candidates = [
+    os.path.join(os.environ.get("PAPERCUSP_ROOT", ""), "registry.json"),
+    os.path.join(home, ".restart-harness-projects.json"),
+]
+for path in candidates:
+    if not (path and os.path.exists(path)):
+        continue
+    try:
+        r = json.load(open(path))
+        for p in r.get("projects", []):
+            if p.get("path") == pd:
+                print(p.get("slug", "")); sys.exit(0)
+    except Exception:
+        continue
 ' 2>/dev/null)"
-    fi
     [ -z "$HARNESS_SLUG" ] && HARNESS_SLUG="$(basename "$PROJECT_DIR")"
 fi
 export HARNESS_SLUG
@@ -644,15 +651,28 @@ apply_proposal_to_spec() {
     # Extracts bullets, appends them to SPEC.md with a marker comment, and
     # marks the proposal file as applied. Returns 0 on success, 1 if nothing
     # was applicable.
+    #
+    # Each early-return path logs why — silent skips here used to leave
+    # proposals stuck in pending+verdict=accept state that looked like
+    # "auto-accepted" in the UI even though nothing landed in SPEC.md.
     local proposal="$1"
-    [ -z "$proposal" ] && return 1
-    [ ! -f "$proposal" ] && return 1
-    [ ! -f "$PROJECT_DIR/SPEC.md" ] && return 1
+    if [ -z "$proposal" ]; then
+        log "  apply: empty proposal arg — skipping"
+        return 1
+    fi
+    if [ ! -f "$proposal" ]; then
+        log "  apply: proposal file '$proposal' not found — skipping"
+        return 1
+    fi
+    if [ ! -f "$PROJECT_DIR/SPEC.md" ]; then
+        log "  apply: $PROJECT_DIR/SPEC.md not found — cannot append acceptance bullets"
+        return 1
+    fi
 
     local extracted
     extracted="$(extract_proposal_bullets "$proposal")"
     if [ -z "$extracted" ]; then
-        log "  apply: no acceptance bullets extracted from $(basename "$proposal") — skipping"
+        log "  apply: no acceptance bullets extracted from $(basename "$proposal") — proposal stays pending. Inspect: missing **Acceptance bar** section, or bullets formatted unexpectedly."
         return 1
     fi
     {
@@ -690,6 +710,23 @@ review_pending_proposals() {
         if grep -q "^applied: true" "$proposal" 2>/dev/null; then
             continue
         fi
+        # Short-circuit `NOTHING_MORE` proposals — these are scoper output
+        # that explicitly declares no new features to add. Sending them
+        # through reviewer wastes a token round-trip, and the historical
+        # behavior was for reviewer to verdict=accept (agreeing nothing
+        # was needed) and then apply to fail with "0 bullets," leaving
+        # the proposal stuck in pending+verdict=accept forever. Mark
+        # them applied directly so the UI doesn't dangle them.
+        if grep -qE "^\s*NOTHING_MORE\s*$" "$proposal" 2>/dev/null; then
+            log "  reviewer: $(basename "$proposal") declares NOTHING_MORE — marking applied (no bullets to land in SPEC.md)"
+            {
+                echo "---"
+                echo "applied: true"
+                echo "appliedAt: $(date -Iseconds)"
+                echo "appliedReason: nothing_more"
+            } >> "$proposal"
+            continue
+        fi
         local review="${proposal%.md}.review.md"
         if [ -f "$review" ]; then
             # Already reviewed — respect prior verdict, don't re-invoke
@@ -714,6 +751,12 @@ review_pending_proposals() {
                 if apply_proposal_to_spec "$proposal"; then
                     log "  reviewer: auto-accepted $(basename "$proposal")"
                     accepted_count=$((accepted_count + 1))
+                else
+                    # Verdict says accept but apply couldn't run. The
+                    # apply_proposal_to_spec call above already logged
+                    # the specific reason; add a top-level summary so
+                    # it's obvious the verdict didn't take effect.
+                    log "  reviewer: VERDICT=accept on $(basename "$proposal") but apply skipped — proposal will show 'reviewer: accept (not applied)' in the UI until you apply it manually or fix the cause"
                 fi
                 ;;
             *[Rr]eject*|*[Dd]efer*)
@@ -1039,22 +1082,30 @@ except Exception:
 # schema). These helpers prefer curl-to-API; if the web tier is down, they
 # fall back to direct psql against the per-harness schema.
 
-# Resolve the registry slug for the current PROJECT_DIR.
-# Reads ~/.restart-harness-projects.json. Cached in $_HARNESS_SLUG.
+# Resolve the registry slug for the current PROJECT_DIR. Tries the
+# papercusp workspace registry first, then the legacy global file.
+# Cached in $_HARNESS_SLUG.
 _HARNESS_SLUG=""
 harness_slug() {
     if [ -n "$_HARNESS_SLUG" ]; then echo "$_HARNESS_SLUG"; return; fi
-    local registry="$HOME/.restart-harness-projects.json"
-    if [ -f "$registry" ]; then
-        _HARNESS_SLUG="$(REG="$registry" PD="$PROJECT_DIR" python3 -c '
-import json, os
-r = json.load(open(os.environ["REG"]))
-for p in r.get("projects", []):
-    if p.get("path") == os.environ["PD"]:
-        print(p.get("slug", ""))
-        break
+    _HARNESS_SLUG="$(PAPERCUSP_ROOT="${PAPERCUSP_ROOT:-$HOME/.papercusp-workspaces/default}" \
+                     HOME="$HOME" PD="$PROJECT_DIR" python3 -c '
+import json, os, sys
+home = os.environ["HOME"]; pd = os.environ["PD"]
+for path in [
+    os.path.join(os.environ.get("PAPERCUSP_ROOT", ""), "registry.json"),
+    os.path.join(home, ".restart-harness-projects.json"),
+]:
+    if not (path and os.path.exists(path)):
+        continue
+    try:
+        r = json.load(open(path))
+        for p in r.get("projects", []):
+            if p.get("path") == pd:
+                print(p.get("slug", "")); sys.exit(0)
+    except Exception:
+        continue
 ' 2>/dev/null)"
-    fi
     [ -z "$_HARNESS_SLUG" ] && _HARNESS_SLUG="$(basename "$PROJECT_DIR")"
     echo "$_HARNESS_SLUG"
 }
@@ -2372,20 +2423,27 @@ EOF_CHECKPOINT
             log "  → dispatched via API ($api_url)"
         else
             log "  → API unreachable, falling back to direct shell exec"
-            child_path="$(REGISTRY=$HOME/.restart-harness-projects.json SLUG=$child_slug python3 -c '
+            child_path="$(PAPERCUSP_ROOT="${PAPERCUSP_ROOT:-$HOME/.papercusp-workspaces/default}" \
+                          HOME=$HOME SLUG=$child_slug python3 -c '
 import json, os, sys
-try:
-    d = json.load(open(os.environ["REGISTRY"]))
-    for p in d.get("projects", []):
-        if p.get("slug") == os.environ["SLUG"]:
-            print(p.get("path", ""))
-            break
-except Exception:
-    pass
+home = os.environ["HOME"]; slug = os.environ["SLUG"]
+for path in [
+    os.path.join(os.environ.get("PAPERCUSP_ROOT", ""), "registry.json"),
+    os.path.join(home, ".restart-harness-projects.json"),
+]:
+    if not (path and os.path.exists(path)):
+        continue
+    try:
+        d = json.load(open(path))
+        for p in d.get("projects", []):
+            if p.get("slug") == slug:
+                print(p.get("path", "")); sys.exit(0)
+    except Exception:
+        continue
 ' 2>/dev/null)"
             if [ -z "$child_path" ] || [ ! -d "$child_path" ]; then
                 log "  ERROR: child harness path not found for slug '$child_slug'"
-                log "  Check ~/.restart-harness-projects.json"
+                log "  Check papercusp workspace registry.json or legacy ~/.restart-harness-projects.json"
             else
                 ( cd "$child_path" && PROJECT_DIR="$child_path" MAX_ITERATIONS=1 bash "$HARNESS_DIR/run.sh" ) 2>&1 | tee -a "$LOG_DIR/run.log" | head -100
             fi

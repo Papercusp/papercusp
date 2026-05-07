@@ -77,12 +77,31 @@ function homeDirPath(): string {
   return process.env.HOME ?? homedir();
 }
 
-/** Resolve a slug to its registered project dir. Returns null if not found. */
+/**
+ * Resolve a slug to its registered project dir. Returns null if not found.
+ *
+ * Resolution order:
+ *   1. The active papercusp workspace's registry.json (canonical post-2026-04).
+ *   2. The legacy ~/.restart-harness-projects.json file (for harnesses that
+ *      pre-date the workspace migration and haven't been re-registered).
+ */
 export function lookupProjectDir(slug: string): string | null {
-  const registryPath = join(homeDirPath(), '.restart-harness-projects.json');
-  if (!existsSync(registryPath)) return null;
+  // 1. Papercusp workspace registry (current source of truth).
+  const wsRoot = process.env.PAPERCUSP_ROOT
+    ?? join(homeDirPath(), '.papercusp-workspaces', 'default');
+  const wsRegistryPath = join(wsRoot, 'registry.json');
+  if (existsSync(wsRegistryPath)) {
+    try {
+      const data = JSON.parse(readFileSync(wsRegistryPath, 'utf8')) as RegistryFile;
+      const hit = data.projects?.find((p) => p.slug === slug)?.path;
+      if (hit) return hit;
+    } catch { /* fall through to legacy */ }
+  }
+  // 2. Legacy global registry (pre-workspace).
+  const legacyPath = join(homeDirPath(), '.restart-harness-projects.json');
+  if (!existsSync(legacyPath)) return null;
   try {
-    const data = JSON.parse(readFileSync(registryPath, 'utf8')) as RegistryFile;
+    const data = JSON.parse(readFileSync(legacyPath, 'utf8')) as RegistryFile;
     return data.projects?.find((p) => p.slug === slug)?.path ?? null;
   } catch {
     return null;
@@ -98,7 +117,7 @@ export function lookupProjectDir(slug: string): string | null {
 export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPrompt {
   const projectDir = lookupProjectDir(opts.slug);
   if (!projectDir) {
-    throw new Error(`assembleRolePrompt: harness "${opts.slug}" not registered in ~/.restart-harness-projects.json`);
+    throw new Error(`assembleRolePrompt: harness "${opts.slug}" not registered in any known registry (papercusp workspace registry.json or legacy ~/.restart-harness-projects.json)`);
   }
   const stateDir = join(projectDir, '.harness');
   const harnessDir = harnessRoot();

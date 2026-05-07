@@ -1157,20 +1157,27 @@ async function postJson(url: string, body: string, timeoutMs: number): Promise<P
 }
 
 /**
- * Look up a child harness's project dir from `~/.restart-harness-projects.json`.
- * Mirrors bash's python heredoc.
+ * Look up a child harness's project dir. Tries the active papercusp
+ * workspace registry first, then falls back to the legacy
+ * ~/.restart-harness-projects.json.
  */
 function lookupHarnessPath(slug: string): string | null {
-  const registryPath = join(process.env.HOME ?? '', '.restart-harness-projects.json');
-  if (!existsSync(registryPath)) return null;
-  try {
-    const data = JSON.parse(readFileSync(registryPath, 'utf8'));
-    const projects = (data?.projects ?? []) as Array<{ slug?: string; path?: string }>;
-    const match = projects.find((p) => p.slug === slug);
-    return match?.path ?? null;
-  } catch {
-    return null;
+  const home = process.env.HOME ?? '';
+  const wsRoot = process.env.PAPERCUSP_ROOT ?? join(home, '.papercusp-workspaces', 'default');
+  const candidates = [
+    join(wsRoot, 'registry.json'),
+    join(home, '.restart-harness-projects.json'),
+  ];
+  for (const registryPath of candidates) {
+    if (!existsSync(registryPath)) continue;
+    try {
+      const data = JSON.parse(readFileSync(registryPath, 'utf8'));
+      const projects = (data?.projects ?? []) as Array<{ slug?: string; path?: string }>;
+      const match = projects.find((p) => p.slug === slug);
+      if (match?.path) return match.path;
+    } catch { /* try next */ }
   }
+  return null;
 }
 
 /**
