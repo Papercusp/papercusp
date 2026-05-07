@@ -76,12 +76,23 @@ print(json.dumps(out))
 #   $2 phase
 #   $3 role
 #   $4 feature_id (optional)
+#   $5 pid (optional — defaults to caller's $, i.e. the harness's bash pid)
+#
+# WHY explicit pid: the harness-status-sweep deletes lane rows whose
+# recorded PID is gone (`kill -0 <pid>` fails). Earlier this function
+# recorded `os.getpid()` of the python helper that builds the JSON
+# body — python exits in <1s, so within ~30s the sweeper would always
+# delete the lane. Symptom: dashboard ActiveAgentsBar showed "No
+# agents in flight" while the harness was actively iterating.
+#
+# Pass the harness's bash pid ($ in the caller, or $BASHPID for a
+# subshell) so liveness == "harness still running this iteration".
 pg_write_lane() {
-    local slug="$1" phase="$2" role="$3" feature_id="${4:-}"
+    local slug="$1" phase="$2" role="$3" feature_id="${4:-}" pid="${5:-$}"
     local body
-    body=$(PHASE="$phase" ROLE="$role" FID="$feature_id" python3 -c "
+    body=$(PHASE="$phase" ROLE="$role" FID="$feature_id" PID="$pid" python3 -c "
 import json, os
-out = { 'phase': os.environ['PHASE'], 'role': os.environ['ROLE'], 'pid': os.getpid() }
+out = { 'phase': os.environ['PHASE'], 'role': os.environ['ROLE'], 'pid': int(os.environ['PID']) }
 fid = os.environ.get('FID', '').strip()
 if fid: out['featureId'] = fid
 print(json.dumps(out))

@@ -1371,10 +1371,17 @@ except Exception:
     # rows whose recorded PID is gone (covers SIGKILL'd workers).
     # Backgrounded so a status-write hiccup never blocks the actual
     # agent invocation.
+    #
+    # CRITICAL: capture $ (harness pid) BEFORE the subshell. Inside
+    # the `{...} &` block, $ would be the subshell's pid (dies the
+    # moment curl returns), and the sweeper would delete the lane
+    # within 30s. We want the harness pid → "lane alive iff harness
+    # still iterating".
+    _phase3_lane_pid=$
     {
         _phase3_lane_slug="$(harness_slug 2>/dev/null || echo unknown)"
         pg_write_lane "$_phase3_lane_slug" "${PAPERCUSP_PHASE:-staging}" \
-            "$role" "$feature_id" 2>/dev/null || true
+            "$role" "$feature_id" "$_phase3_lane_pid" 2>/dev/null || true
     } &
 
     # Structured-stream mode gives us live progress, tool calls, token
