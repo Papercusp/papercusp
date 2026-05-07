@@ -1157,25 +1157,37 @@ async function postJson(url: string, body: string, timeoutMs: number): Promise<P
 }
 
 /**
- * Look up a child harness's project dir. Tries the active papercusp
- * workspace registry first, then falls back to the legacy
- * ~/.restart-harness-projects.json.
+ * Look up a child harness's project dir. Tries the operator HTTP API
+ * (canonical — PG-backed harness_shared.harness_registry) first, then
+ * falls back to the legacy ~/.restart-harness-projects.json.
+ *
+ * The HTTP call is synchronous via execFileSync(curl) since this fn is
+ * called from sync contexts. 3s timeout; falls through silently on any
+ * failure.
  */
 function lookupHarnessPath(slug: string): string | null {
   const home = process.env.HOME ?? '';
-  const wsRoot = process.env.PAPERCUSP_ROOT ?? join(home, '.papercusp-workspaces', 'default');
-  const candidates = [
-    join(wsRoot, 'registry.json'),
-    join(home, '.restart-harness-projects.json'),
-  ];
-  for (const registryPath of candidates) {
-    if (!existsSync(registryPath)) continue;
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  // 1. Operator HTTP API.
+  try {
+    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
+    const out = execFileSync('curl', [
+      '-sf', '--max-time', '3', `${operatorBase}/api/harness/projects`,
+    ], { encoding: 'utf8', timeout: 4000 });
+    const data = JSON.parse(out);
+    const projects = (data?.projects ?? []) as Array<{ slug?: string; path?: string }>;
+    const match = projects.find((p) => p.slug === slug);
+    if (match?.path) return match.path;
+  } catch { /* fall through */ }
+  // 2. Legacy file.
+  const legacyPath = join(home, '.restart-harness-projects.json');
+  if (existsSync(legacyPath)) {
     try {
-      const data = JSON.parse(readFileSync(registryPath, 'utf8'));
+      const data = JSON.parse(readFileSync(legacyPath, 'utf8'));
       const projects = (data?.projects ?? []) as Array<{ slug?: string; path?: string }>;
       const match = projects.find((p) => p.slug === slug);
       if (match?.path) return match.path;
-    } catch { /* try next */ }
+    } catch { /* fall through */ }
   }
   return null;
 }

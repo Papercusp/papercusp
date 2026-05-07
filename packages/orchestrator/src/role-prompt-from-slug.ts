@@ -81,22 +81,21 @@ function homeDirPath(): string {
  * Resolve a slug to its registered project dir. Returns null if not found.
  *
  * Resolution order:
- *   1. The active papercusp workspace's registry.json (canonical post-2026-04).
- *   2. The legacy ~/.restart-harness-projects.json file (for harnesses that
- *      pre-date the workspace migration and haven't been re-registered).
+ *   1. Operator HTTP API (canonical — PG-backed harness_shared.harness_registry).
+ *   2. Legacy ~/.restart-harness-projects.json (pre-workspace harnesses).
  */
 export function lookupProjectDir(slug: string): string | null {
-  // 1. Papercusp workspace registry (current source of truth).
-  const wsRoot = process.env.PAPERCUSP_ROOT
-    ?? join(homeDirPath(), '.papercusp-workspaces', 'default');
-  const wsRegistryPath = join(wsRoot, 'registry.json');
-  if (existsSync(wsRegistryPath)) {
-    try {
-      const data = JSON.parse(readFileSync(wsRegistryPath, 'utf8')) as RegistryFile;
-      const hit = data.projects?.find((p) => p.slug === slug)?.path;
-      if (hit) return hit;
-    } catch { /* fall through to legacy */ }
-  }
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  // 1. Operator HTTP API (sync via curl).
+  try {
+    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
+    const out = execFileSync('curl', [
+      '-sf', '--max-time', '3', `${operatorBase}/api/harness/projects`,
+    ], { encoding: 'utf8', timeout: 4000 });
+    const data = JSON.parse(out) as RegistryFile;
+    const hit = data.projects?.find((p) => p.slug === slug)?.path;
+    if (hit) return hit;
+  } catch { /* fall through to legacy */ }
   // 2. Legacy global registry (pre-workspace).
   const legacyPath = join(homeDirPath(), '.restart-harness-projects.json');
   if (!existsSync(legacyPath)) return null;

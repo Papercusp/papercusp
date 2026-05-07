@@ -73,30 +73,37 @@ else
     HARNESS_DB_PATH=""
 fi
 export HARNESS_PHASE HARNESS_PORT HARNESS_DB_PATH
-# Resolve the slug from the papercusp workspace registry (canonical) or the
-# legacy ~/.restart-harness-projects.json (for harnesses that pre-date the
-# workspace migration). Inline lookup because harness_slug() (the helper
-# function) is defined later in this file.
+# Resolve the slug. Try the operator HTTP API first (canonical — backed by
+# harness_shared.harness_registry in PG). Fall back to the legacy
+# ~/.restart-harness-projects.json file for harnesses that pre-date the
+# workspace migration or when the operator isn't running.
 if [ -z "${HARNESS_SLUG:-}" ]; then
-    HARNESS_SLUG="$(PAPERCUSP_ROOT="${PAPERCUSP_ROOT:-$HOME/.papercusp-workspaces/default}" \
-                    HOME="$HOME" PD="$PROJECT_DIR" python3 -c '
+    operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    api_resp="$(curl -sf --max-time 3 "${operator_base}/api/harness/projects" 2>/dev/null || true)"
+    if [ -n "$api_resp" ]; then
+        HARNESS_SLUG="$(printf '%s' "$api_resp" | PD="$PROJECT_DIR" python3 -c '
 import json, os, sys
-home = os.environ["HOME"]; pd = os.environ["PD"]
-candidates = [
-    os.path.join(os.environ.get("PAPERCUSP_ROOT", ""), "registry.json"),
-    os.path.join(home, ".restart-harness-projects.json"),
-]
-for path in candidates:
-    if not (path and os.path.exists(path)):
-        continue
-    try:
-        r = json.load(open(path))
-        for p in r.get("projects", []):
-            if p.get("path") == pd:
-                print(p.get("slug", "")); sys.exit(0)
-    except Exception:
-        continue
+try:
+    r = json.load(sys.stdin)
+    for p in r.get("projects", []):
+        if p.get("path") == os.environ["PD"]:
+            print(p.get("slug", "")); sys.exit(0)
+except Exception:
+    pass
 ' 2>/dev/null)"
+    fi
+    if [ -z "$HARNESS_SLUG" ] && [ -f "$HOME/.restart-harness-projects.json" ]; then
+        HARNESS_SLUG="$(REG="$HOME/.restart-harness-projects.json" PD="$PROJECT_DIR" python3 -c '
+import json, os, sys
+try:
+    r = json.load(open(os.environ["REG"]))
+    for p in r.get("projects", []):
+        if p.get("path") == os.environ["PD"]:
+            print(p.get("slug", "")); sys.exit(0)
+except Exception:
+    pass
+' 2>/dev/null)"
+    fi
     [ -z "$HARNESS_SLUG" ] && HARNESS_SLUG="$(basename "$PROJECT_DIR")"
 fi
 export HARNESS_SLUG
@@ -1082,30 +1089,38 @@ except Exception:
 # schema). These helpers prefer curl-to-API; if the web tier is down, they
 # fall back to direct psql against the per-harness schema.
 
-# Resolve the registry slug for the current PROJECT_DIR. Tries the
-# papercusp workspace registry first, then the legacy global file.
-# Cached in $_HARNESS_SLUG.
+# Resolve the registry slug for the current PROJECT_DIR. Tries the operator
+# HTTP API (canonical — PG-backed) first, then the legacy
+# ~/.restart-harness-projects.json file. Cached in $_HARNESS_SLUG.
 _HARNESS_SLUG=""
 harness_slug() {
     if [ -n "$_HARNESS_SLUG" ]; then echo "$_HARNESS_SLUG"; return; fi
-    _HARNESS_SLUG="$(PAPERCUSP_ROOT="${PAPERCUSP_ROOT:-$HOME/.papercusp-workspaces/default}" \
-                     HOME="$HOME" PD="$PROJECT_DIR" python3 -c '
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local api_resp; api_resp="$(curl -sf --max-time 3 "${operator_base}/api/harness/projects" 2>/dev/null || true)"
+    if [ -n "$api_resp" ]; then
+        _HARNESS_SLUG="$(printf '%s' "$api_resp" | PD="$PROJECT_DIR" python3 -c '
 import json, os, sys
-home = os.environ["HOME"]; pd = os.environ["PD"]
-for path in [
-    os.path.join(os.environ.get("PAPERCUSP_ROOT", ""), "registry.json"),
-    os.path.join(home, ".restart-harness-projects.json"),
-]:
-    if not (path and os.path.exists(path)):
-        continue
-    try:
-        r = json.load(open(path))
-        for p in r.get("projects", []):
-            if p.get("path") == pd:
-                print(p.get("slug", "")); sys.exit(0)
-    except Exception:
-        continue
+try:
+    r = json.load(sys.stdin)
+    for p in r.get("projects", []):
+        if p.get("path") == os.environ["PD"]:
+            print(p.get("slug", "")); sys.exit(0)
+except Exception:
+    pass
 ' 2>/dev/null)"
+    fi
+    if [ -z "$_HARNESS_SLUG" ] && [ -f "$HOME/.restart-harness-projects.json" ]; then
+        _HARNESS_SLUG="$(REG="$HOME/.restart-harness-projects.json" PD="$PROJECT_DIR" python3 -c '
+import json, os, sys
+try:
+    r = json.load(open(os.environ["REG"]))
+    for p in r.get("projects", []):
+        if p.get("path") == os.environ["PD"]:
+            print(p.get("slug", "")); sys.exit(0)
+except Exception:
+    pass
+' 2>/dev/null)"
+    fi
     [ -z "$_HARNESS_SLUG" ] && _HARNESS_SLUG="$(basename "$PROJECT_DIR")"
     echo "$_HARNESS_SLUG"
 }
@@ -2423,27 +2438,35 @@ EOF_CHECKPOINT
             log "  → dispatched via API ($api_url)"
         else
             log "  → API unreachable, falling back to direct shell exec"
-            child_path="$(PAPERCUSP_ROOT="${PAPERCUSP_ROOT:-$HOME/.papercusp-workspaces/default}" \
-                          HOME=$HOME SLUG=$child_slug python3 -c '
+            api_resp="$(curl -sf --max-time 3 "${operator_base}/api/harness/projects" 2>/dev/null || true)"
+            child_path=""
+            if [ -n "$api_resp" ]; then
+                child_path="$(printf '%s' "$api_resp" | SLUG="$child_slug" python3 -c '
 import json, os, sys
-home = os.environ["HOME"]; slug = os.environ["SLUG"]
-for path in [
-    os.path.join(os.environ.get("PAPERCUSP_ROOT", ""), "registry.json"),
-    os.path.join(home, ".restart-harness-projects.json"),
-]:
-    if not (path and os.path.exists(path)):
-        continue
-    try:
-        d = json.load(open(path))
-        for p in d.get("projects", []):
-            if p.get("slug") == slug:
-                print(p.get("path", "")); sys.exit(0)
-    except Exception:
-        continue
+try:
+    d = json.load(sys.stdin)
+    for p in d.get("projects", []):
+        if p.get("slug") == os.environ["SLUG"]:
+            print(p.get("path", "")); sys.exit(0)
+except Exception:
+    pass
 ' 2>/dev/null)"
+            fi
+            if [ -z "$child_path" ] && [ -f "$HOME/.restart-harness-projects.json" ]; then
+                child_path="$(REGISTRY=$HOME/.restart-harness-projects.json SLUG=$child_slug python3 -c '
+import json, os, sys
+try:
+    d = json.load(open(os.environ["REGISTRY"]))
+    for p in d.get("projects", []):
+        if p.get("slug") == os.environ["SLUG"]:
+            print(p.get("path", "")); sys.exit(0)
+except Exception:
+    pass
+' 2>/dev/null)"
+            fi
             if [ -z "$child_path" ] || [ ! -d "$child_path" ]; then
                 log "  ERROR: child harness path not found for slug '$child_slug'"
-                log "  Check papercusp workspace registry.json or legacy ~/.restart-harness-projects.json"
+                log "  Operator API ($operator_base/api/harness/projects) and legacy ~/.restart-harness-projects.json both missed"
             else
                 ( cd "$child_path" && PROJECT_DIR="$child_path" MAX_ITERATIONS=1 bash "$HARNESS_DIR/run.sh" ) 2>&1 | tee -a "$LOG_DIR/run.log" | head -100
             fi
