@@ -26,10 +26,16 @@ BEGIN
     -- Drop the per-harness physical tables. CASCADE drops their indexes
     -- and any remaining triggers. Their data already lives in
     -- harness_shared.*_consolidated via the trigger backfill from 029-031.
-    EXECUTE format('DROP TABLE IF EXISTS %I.harness_features CASCADE', s);
-    EXECUTE format('DROP TABLE IF EXISTS %I.harness_issues CASCADE', s);
-    EXECUTE format('DROP TABLE IF EXISTS %I.agent_runs CASCADE', s);
-    EXECUTE format('DROP TABLE IF EXISTS %I.harness_snapshots CASCADE', s);
+    -- Idempotence: on re-run the names refer to VIEWs (created below);
+    -- DROP TABLE IF EXISTS errors with "is not a table", so try VIEW first.
+    BEGIN EXECUTE format('DROP VIEW IF EXISTS %I.harness_features CASCADE', s);    EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN EXECUTE format('DROP TABLE IF EXISTS %I.harness_features CASCADE', s);   EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN EXECUTE format('DROP VIEW IF EXISTS %I.harness_issues CASCADE', s);      EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN EXECUTE format('DROP TABLE IF EXISTS %I.harness_issues CASCADE', s);     EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN EXECUTE format('DROP VIEW IF EXISTS %I.agent_runs CASCADE', s);          EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN EXECUTE format('DROP TABLE IF EXISTS %I.agent_runs CASCADE', s);         EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN EXECUTE format('DROP VIEW IF EXISTS %I.harness_snapshots CASCADE', s);   EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN EXECUTE format('DROP TABLE IF EXISTS %I.harness_snapshots CASCADE', s);  EXCEPTION WHEN OTHERS THEN NULL; END;
 
     -- Replace with auto-updatable views over the consolidated tables.
     EXECUTE format($v$
