@@ -46,7 +46,9 @@ pg_write_status() {
     local total="${5:-0}" passed="${6:-0}" todo="${7:-0}" blocked="${8:-0}"
     local cost="${9:-}"
     local body
-    body=$(python3 -c "
+    body=$(PHASE="$phase" STATUS="$status" ITERATION="$iteration" \
+           TOTAL="$total" PASSED="$passed" TODO="$todo" BLOCKED="$blocked" \
+           COST="$cost" python3 -c "
 import json, sys, os
 out = {
     'phase': os.environ['PHASE'],
@@ -63,10 +65,7 @@ if cost:
     try: out['costUsd'] = float(cost)
     except ValueError: pass
 print(json.dumps(out))
-" \
-        PHASE="$phase" STATUS="$status" ITERATION="$iteration" \
-        TOTAL="$total" PASSED="$passed" TODO="$todo" BLOCKED="$blocked" \
-        COST="$cost" 2>/dev/null) || return 0
+" 2>/dev/null) || return 0
     _phase3_curl_post "$(_phase3_op_base)/api/harness/$slug/orchestrator/status" "$body"
 }
 
@@ -80,13 +79,13 @@ print(json.dumps(out))
 pg_write_lane() {
     local slug="$1" phase="$2" role="$3" feature_id="${4:-}"
     local body
-    body=$(python3 -c "
+    body=$(PHASE="$phase" ROLE="$role" FID="$feature_id" python3 -c "
 import json, os
 out = { 'phase': os.environ['PHASE'], 'role': os.environ['ROLE'], 'pid': os.getpid() }
 fid = os.environ.get('FID', '').strip()
 if fid: out['featureId'] = fid
 print(json.dumps(out))
-" PHASE="$phase" ROLE="$role" FID="$feature_id" 2>/dev/null) || return 0
+" 2>/dev/null) || return 0
     _phase3_curl_post "$(_phase3_op_base)/api/harness/$slug/orchestrator/lane" "$body"
 }
 
