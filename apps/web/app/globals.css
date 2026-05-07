@@ -243,3 +243,27 @@ p { margin: 8px 0 16px; color: var(--fg-dim); }
   color: var(--fg-mute);
   font-style: italic;
 }
+
+
+/* Header chrome text sharpness: avoid glow/filter compositing on nav boxes. */
+.pc-header :is(.pc-header-cta, .pc-voice-btn, .pc-voice-settings-link, nav a) {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.pc-header :is(.pc-header-cta, .pc-header-cta *, .pc-voice-btn, .pc-voice-btn *, .pc-voice-settings-link, .pc-voice-settings-link *, nav a) {
+  text-shadow: none !important;
+}
+
+.pc-header :is(.pc-header-cta, .pc-header-cta--mission.is-current, .pc-voice-btn, .pc-voice-btn-icon, .pc-voice-settings-link) {
+  filter: none !important;
+}
+
+.pc-header :is(.pc-header-cta, .pc-voice-btn) {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.pc-header :is(.pc-header-cta-label, .pc-header-cta-glyph, .pc-voice-btn-label) {
+  transform: none !important;
+}

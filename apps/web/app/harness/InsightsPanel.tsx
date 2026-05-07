@@ -60,6 +60,7 @@ export default function InsightsPanel({
 
   const inner = (
     <div
+      className="h-insights-panel"
       onClick={(e) => e.stopPropagation()}
       style={{
         width: inline ? '100%' : 'min(720px, 94vw)',
@@ -73,7 +74,7 @@ export default function InsightsPanel({
         overflow: 'hidden',
       }}
     >
-      <div style={{
+      <div className="h-insights-head" style={{
         padding: '10px 14px',
         borderBottom: `1px solid ${COLORS.border}`,
         display: 'flex', alignItems: 'center', gap: 10,
@@ -87,7 +88,7 @@ export default function InsightsPanel({
         )}
       </div>
 
-        <div style={{ padding: 16, overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="h-insights-body" style={{ padding: 16, overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           {/* Top KPIs */}
           <KpiCard label="Passed" value={`${stats.passed}/${features.length}`} sub={`${Math.round(100 * stats.passed / Math.max(1, features.length))}%`} />
           <KpiCard label="Stuck (≥3 attempts)" value={String(stats.stuckCount)} sub={stats.stuckCount > 0 ? `${Math.round(stats.failRate * 100)}% of work` : 'none'} color={stats.stuckCount > 0 ? STATUS.blocked.text : COLORS.text} />
@@ -99,7 +100,7 @@ export default function InsightsPanel({
           />
 
           {/* Status distribution bar chart */}
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div className="h-insights-section" style={{ gridColumn: '1 / -1' }}>
             <SectionTitle>Status distribution</SectionTitle>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {STATUS_ORDER.map((st) => {
@@ -125,7 +126,7 @@ export default function InsightsPanel({
           </div>
 
           {/* Attempts histogram */}
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div className="h-insights-section" style={{ gridColumn: '1 / -1' }}>
             <SectionTitle>Attempts histogram</SectionTitle>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
               {stats.attemptsHist.map((count, i) => {
@@ -133,7 +134,7 @@ export default function InsightsPanel({
                 const color = i < 2 ? COLORS.textMuted : i < 3 ? STATUS.in_progress.solid : i < 4 ? STATUS.blocked.solid : STATUS.failing.solid;
                 const pct = (count / maxAttemptsBin) * 100;
                 return (
-                  <div key={i} style={{
+                  <div key={i} className="h-insights-mini-card" style={{
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
                     gap: 4,
                     padding: 8,
@@ -166,7 +167,7 @@ export default function InsightsPanel({
 
           {/* Stuck features list */}
           {stats.stuckCount > 0 && (
-            <div style={{ gridColumn: '1 / -1' }}>
+            <div className="h-insights-section" style={{ gridColumn: '1 / -1' }}>
               <SectionTitle>
                 Stuck features <span style={{ color: STATUS.blocked.text }}>· {stats.stuckCount}</span>
               </SectionTitle>
@@ -227,7 +228,7 @@ export default function InsightsPanel({
 
 function KpiCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div style={{
+    <div className="h-insights-kpi" style={{
       background: COLORS.bg,
       border: `1px solid ${COLORS.borderSubtle}`,
       borderRadius: RADIUS.sm,

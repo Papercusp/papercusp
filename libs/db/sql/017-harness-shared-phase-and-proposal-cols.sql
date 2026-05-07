@@ -12,6 +12,57 @@
 -- This migration codifies the additive changes so a fresh DB or a
 -- repaired existing DB can match the Zero schema without depending on
 -- ensure-schema firing at the right time.
+--
+-- The CREATE TABLE IF NOT EXISTS blocks below mirror the runtime DDL in
+-- apps/operator/lib/ensure-schema.ts so this migration is self-sufficient
+-- on a fresh PG data dir (the operator's lazy ensure-* runs after PG
+-- bootstrap, so the table doesn't exist yet when the bootstrap migration
+-- runner reaches this file).
+
+-- harness_summaries: cross-harness mirror of .harness/summary.md.
+CREATE TABLE IF NOT EXISTS harness_shared.harness_summaries (
+  harness_slug  TEXT NOT NULL,
+  phase         TEXT NOT NULL DEFAULT 'staging',
+  content       TEXT NOT NULL DEFAULT '',
+  mtime_ms      BIGINT NOT NULL DEFAULT 0,
+  updated_at    BIGINT NOT NULL DEFAULT 0,
+  workspace_id  TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (harness_slug, phase)
+);
+
+-- pending_reviews: cross-harness mirror of .harness/pending-reviews/*.json.
+CREATE TABLE IF NOT EXISTS harness_shared.pending_reviews (
+  harness_slug TEXT NOT NULL,
+  phase        TEXT NOT NULL DEFAULT 'staging',
+  review_id    TEXT NOT NULL,
+  feature_id   TEXT,
+  kind         TEXT NOT NULL,
+  payload      JSONB NOT NULL,
+  ts           BIGINT NOT NULL,
+  resolved     BOOLEAN NOT NULL DEFAULT FALSE,
+  mtime_ms     BIGINT NOT NULL DEFAULT 0,
+  workspace_id TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (harness_slug, phase, review_id)
+);
+
+-- harness_proposals_shared: cross-harness mirror of .harness/proposals/*.json.
+CREATE TABLE IF NOT EXISTS harness_shared.harness_proposals_shared (
+  harness_slug    TEXT NOT NULL,
+  phase           TEXT NOT NULL DEFAULT 'staging',
+  proposal_id     TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'pending',
+  review_verdict  TEXT,
+  review_summary  TEXT,
+  reviewed_at     BIGINT,
+  applied_at      BIGINT,
+  rejected_at     BIGINT,
+  size_bytes      BIGINT NOT NULL DEFAULT 0,
+  payload         JSONB NOT NULL,
+  ts              BIGINT NOT NULL,
+  mtime_ms        BIGINT NOT NULL DEFAULT 0,
+  workspace_id    TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (harness_slug, phase, proposal_id)
+);
 
 -- harness_summaries: add `phase` for staging/testing/production triple-mirror.
 ALTER TABLE harness_shared.harness_summaries

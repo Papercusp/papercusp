@@ -308,7 +308,7 @@ export function IssuesList({ slug, onCount }: { slug: string; onCount?: (n: numb
             return (
               <button
                 key={f}
-                className={`h-chip${filter === f ? ' on' : ''}`}
+                className={`h-chip h-issues-filter h-issues-filter--${f}${filter === f ? ' on' : ''}`}
                 onClick={() => setFilter(f)}
                 aria-pressed={filter === f}
               >

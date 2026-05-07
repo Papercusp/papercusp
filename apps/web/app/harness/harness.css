@@ -3396,7 +3396,15 @@
 .h-fid-pop {
   min-width: 300px;
   max-width: 440px;
-  background: var(--bg-2);
+  /* Solid surface (--bg-2 was rgba 0.045 white — text underneath
+   * bled through and made the popover unreadable). Also opt out of
+   * any inherited backdrop-filter from .pc-header so the surface
+   * stays opaque regardless of stacking context. Falls back to
+   * --bg-1 in case --bg-popover isn't defined in this app's globals. */
+  background: var(--bg-popover, var(--bg-1, #0d1829));
+  isolation: isolate;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border: 1px solid color-mix(in oklab, var(--border), white 10%);
   border-radius: 8px;
   padding: 10px 12px;

@@ -6,7 +6,8 @@
 #   ~/autonomous-harness/run.sh
 #
 # Requires SPEC.md in the current directory. Will create .harness/.
-# Override CLAUDE to change how agents are invoked (defaults to `claude -p`).
+# Override AGENT_CMD (or legacy CLAUDE) to change how agents are invoked
+# (defaults to `omp -p`, which routes through Meridian + Claude Max).
 
 set -u
 set -o pipefail
@@ -103,13 +104,15 @@ MAX_ITERATIONS="${MAX_ITERATIONS:-200}"
 # backend-neutral — point at `claude -p`, `omp -p`, or any wrapper); fall
 # back to legacy $CLAUDE for back-compat with existing harness installs.
 # $AGENT_BACKEND ('claude-code' | 'omp') selects the structured-stream
-# format we append; default 'claude-code'.
-CLAUDE="${AGENT_CMD:-${CLAUDE:-claude -p --dangerously-skip-permissions}}"
+# format we append; default is 'omp' since omp routes through Meridian
+# and the user's Claude Max subscription, avoiding direct API quotas.
+CLAUDE="${AGENT_CMD:-${CLAUDE:-omp -p}}"
 AGENT_BACKEND="${AGENT_BACKEND:-}"
 if [ -z "$AGENT_BACKEND" ]; then
     case "$CLAUDE" in
         omp*|*/omp*|pi*|*/pi*) AGENT_BACKEND=omp ;;
-        *) AGENT_BACKEND=claude-code ;;
+        claude*|*/claude*) AGENT_BACKEND=claude-code ;;
+        *) AGENT_BACKEND=omp ;;
     esac
 fi
 export CLAUDE AGENT_BACKEND

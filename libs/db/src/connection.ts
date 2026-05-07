@@ -82,20 +82,34 @@ function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: 
     connection: {
       search_path: sp,
     },
+    // Skip postgres-js's prepared-statement plan caching. ~80% of the
+    // ~1.1s cold-reconnect cost we measured was prepared-statement
+    // registration on a fresh connection. Disabling it makes cold
+    // reconnects ~300ms instead of ~1100ms. Per-query cost goes up
+    // slightly (no plan caching), but our queries are simple SELECTs
+    // and the trade is overwhelmingly worth it for polling-heavy dev.
+    // Production is unaffected because connections in prod live long
+    // enough that the one-time prepare cost amortizes anyway.
+    prepare: false,
     ...(pgliteSocket ? { host: pgliteSocket } : {}),
-    // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 4 — earlier
-    // default of 8 multiplied with ~20 registered harnesses pushed us
-    // past Postgres's max_connections=100 in dev. Desktop builds set it
-    // to 1 because pglite-socket serializes queries internally.
-    // Per-harness pools pass maxOverride=1: with ~20 harnesses, even max=4
-    // each saturates max_connections=100 once each pool warms up.
-    max: maxOverride ?? Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 4),
-    // Close idle connections aggressively. Default 5s is short enough
-    // that pools touched by polling endpoints (status, plan-review,
-    // log/stream) actually go idle between bursts and release. The
-    // earlier 30s default never triggered because polling intervals
-    // were shorter than the timeout.
-    idle_timeout: Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_TIMEOUT) || 5),
+    // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 8 — was 4 but
+    // any burst of ~5 concurrent requests (polling endpoints all firing
+    // on the same tick) queued the 5th request behind a free slot. With
+    // ~20 registered harnesses, per-harness pools still pass maxOverride=1
+    // so the org-shared pool's 8 doesn't multiply across harnesses. The
+    // ~100 connection ceiling stays comfortable.
+    // Desktop builds set this to 1 because pglite-socket serializes
+    // queries internally.
+    max: maxOverride ?? Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 8),
+    // Close idle connections after 60s. Was 5s — that was so aggressive
+    // that polling endpoints (OperatorActionLog every 4s, NotificationCenter
+    // every 8s, status every 5s) usually hit a cold reconnect because the
+    // previous request's connection had just been closed. Cold reconnect
+    // costs ~1.1s in dev (auth + search_path + prepared-statement setup)
+    // — measured directly: query=19ms warm vs query=1178ms cold. 60s
+    // covers all current poll intervals so connections actually get
+    // reused across polls.
+    idle_timeout: Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_TIMEOUT) || 60),
     // Hard cap on connection age. Even if a pool is hot, recycle the
     // socket every ~10 min so a long-lived dev session doesn't pin
     // stale conns indefinitely.

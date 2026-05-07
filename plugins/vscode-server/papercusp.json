@@ -1,6 +1,6 @@
 {
   "name": "@papercupai/vscode-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "kind": "plugin",
   "papercusp": "^0.1.0",
   "description": "Embed code-server as a dashboard tab. Iframes the operator's local code-server install at the active harness's project directory.",
@@ -15,6 +15,7 @@
       "label": "VS Code",
       "icon": "Code",
       "iframeUrlConfigKey": "codeServerUrl",
+      "iframeAppendProjectFolder": true,
       "replaces": [
         "vscode"
       ]

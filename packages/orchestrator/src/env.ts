@@ -11,9 +11,9 @@ import type { AgentBackend, OrchestratorEnv } from './types';
 
 /**
  * Resolve which agent backend to drive. Reads `AGENT_BACKEND` directly,
- * else infers from the agent command (`omp` keyword → omp, otherwise
- * claude-code). The explicit env var wins so users can force the parser
- * even when shelling through wrappers.
+ * else infers from the agent command (`omp`/`pi` → omp, `claude` →
+ * claude-code, anything else → omp). The explicit env var wins so users
+ * can force the parser even when shelling through wrappers.
  */
 export function resolveAgentBackend(agentCmd: string): AgentBackend {
   const explicit = (process.env.AGENT_BACKEND ?? '').trim().toLowerCase();
@@ -22,7 +22,8 @@ export function resolveAgentBackend(agentCmd: string): AgentBackend {
   // Infer from the binary name in agentCmd.
   const first = agentCmd.split(/\s+/).filter(Boolean)[0] ?? '';
   if (/(^|\/)(omp|pi)$/.test(first)) return 'omp';
-  return 'claude-code';
+  if (/(^|\/)claude$/.test(first)) return 'claude-code';
+  return 'omp';
 }
 
 /**
@@ -33,7 +34,7 @@ export function resolveAgentBackend(agentCmd: string): AgentBackend {
 export function resolveAgentCmd(): string {
   const fromAgent = process.env.AGENT_CMD;
   if (fromAgent && fromAgent.trim()) return fromAgent;
-  return process.env.CLAUDE ?? 'claude -p';
+  return process.env.CLAUDE ?? 'omp -p';
 }
 
 export interface ResolvedPaths {
