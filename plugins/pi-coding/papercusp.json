@@ -18,7 +18,8 @@
         "pi"
       ],
       "componentRoot": "@restart/papercup-shared",
-      "componentId": "PiTerminalsDock"
+      "componentId": "PiTerminalsDock",
+      "embedMode": "inline-dock"
     }
   ],
   "configSchema": {
