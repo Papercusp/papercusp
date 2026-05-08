@@ -6,6 +6,7 @@ import { Drawer } from 'vaul';
 import { X } from 'lucide-react';
 import { COLORS, FONTS, RADIUS, SIZES, STATUS, HarnessStatus } from './theme';
 import { StatusPill, IdPill, RolePill, KbdHint } from './primitives';
+import { HarnessMarkdownView } from './HarnessMarkdownView';
 
 const FeatureTimelinePanel = dynamic(() => import('./FeatureTimelinePanel'), { ssr: false });
 
@@ -312,13 +313,11 @@ export default function FeaturePeekPanel({
                 </button>
               </div>
               {showDebug && (
-                <pre style={{
-                  background: COLORS.bg, color: COLORS.text,
-                  padding: '10px 12px', borderRadius: RADIUS.sm,
-                  fontFamily: FONTS.mono, fontSize: SIZES.xs,
-                  whiteSpace: 'pre-wrap', maxHeight: '30vh', overflow: 'auto',
-                  margin: 0, border: `1px solid ${COLORS.borderSubtle}`,
-                }}>{debugNote}</pre>
+                <HarnessMarkdownView
+                  value={debugNote}
+                  className="h-debug-markdown"
+                  emptyLabel="No debugger notes."
+                />
               )}
             </Section>
           )}
@@ -372,21 +371,11 @@ export default function FeaturePeekPanel({
           {/* Issues for this feature */}
           {issuesForFeature && (
             <Section title="Validator issues">
-              <pre style={{
-                margin: 0,
-                fontFamily: FONTS.mono,
-                fontSize: SIZES.xs,
-                color: COLORS.text,
-                background: COLORS.bg,
-                border: `1px solid ${COLORS.borderSubtle}`,
-                borderRadius: RADIUS.sm,
-                padding: '8px 10px',
-                whiteSpace: 'pre-wrap',
-                maxHeight: 300,
-                overflow: 'auto',
-              }}>
-                {issuesForFeature}
-              </pre>
+              <HarnessMarkdownView
+                value={issuesForFeature}
+                className="h-validator-issues-markdown"
+                emptyLabel="No validator issues."
+              />
             </Section>
           )}
 

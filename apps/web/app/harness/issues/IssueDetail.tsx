@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import type { Issue } from './types';
 import { useSyncQuery } from '@restart/sync';
 import { KbdHint, RolePill } from '../primitives';
+import { HarnessMarkdownView } from '../HarnessMarkdownView';
 
 const FeatureTimelinePanel = dynamic(() => import('../FeatureTimelinePanel'), { ssr: false });
 
@@ -144,17 +145,17 @@ export function IssueDetail({
 
           {issue.evidence && (
             <Section title="Evidence">
-              <pre className="h-issue-pre">{issue.evidence}</pre>
+              <HarnessMarkdownView value={issue.evidence} className="h-issue-markdown" />
             </Section>
           )}
           {issue.repro && (
             <Section title="Reproduction">
-              <pre className="h-issue-pre">{issue.repro}</pre>
+              <HarnessMarkdownView value={issue.repro} className="h-issue-markdown" />
             </Section>
           )}
           {issue.suggestedFix && (
             <Section title="Suggested fix">
-              <pre className="h-issue-pre">{issue.suggestedFix}</pre>
+              <HarnessMarkdownView value={issue.suggestedFix} className="h-issue-markdown" />
             </Section>
           )}
 
@@ -166,7 +167,7 @@ export function IssueDetail({
                     <div style={{ fontSize: 10, color: 'var(--fg-dim)', marginBottom: 2 }}>
                       {n.by} · {new Date(n.ts).toLocaleString()}
                     </div>
-                    <div style={{ whiteSpace: 'pre-wrap' }}>{n.text}</div>
+                    <HarnessMarkdownView value={n.text} className="h-note-markdown" emptyLabel="No note content." />
                   </div>
                 ))}
               </div>
