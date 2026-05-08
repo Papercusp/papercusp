@@ -38,8 +38,14 @@ export interface LanePool {
   release(id: number): void;
   /** Block until every active lane has resolved. Used before validator runs. */
   waitAll(): Promise<void>;
+  /** Block until no lanes match `featureId`. Used to drain a single
+   *  feature's competitors before its validator runs (other features'
+   *  competitions keep running in the background). */
+  waitForFeature(featureId: string): Promise<void>;
   /** How many lanes are currently in flight. */
   count(): number;
+  /** How many lanes are tagged with `featureId`. */
+  countForFeature(featureId: string): number;
 }
 
 let _idCounter = 0;
@@ -60,6 +66,33 @@ export function parallelMaxWorkers(cfg: HarnessConfig): number {
 export function parallelMode(cfg: HarnessConfig): 'lane' | 'competition' {
   const v = configGet<string>(cfg, 'parallelWorkers.mode', 'lane');
   return v === 'competition' ? 'competition' : 'lane';
+}
+
+/**
+ * How many workers compete on EACH feature in competition mode.
+ *
+ * Pre-2026-05-07: competition always used `max` (i.e. all available
+ * concurrency on a single feature, validator picks winner). That works
+ * but doesn't let a user run multiple smaller competitions in parallel.
+ *
+ * Post-2026-05-07: `parallelWorkers.workersPerFeature` lets users tune
+ * the per-feature competition size separately. Example: max=10,
+ * workersPerFeature=2 → up to 5 simultaneous 2-way competitions
+ * (5 features × 2 workers each = 10 lanes).
+ *
+ * Default for back-compat: when unset and mode=='competition', return
+ * `max` (preserves the legacy "all-on-one" behavior). When unset and
+ * mode=='lane', return 1 (one worker per feature, the lane-mode
+ * semantics).
+ */
+export function parallelWorkersPerFeature(cfg: HarnessConfig): number {
+  const v = configGet<unknown>(cfg, 'parallelWorkers.workersPerFeature', undefined);
+  if (v !== undefined && v !== null) {
+    const n = typeof v === 'number' ? v : parseInt(String(v), 10);
+    if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  }
+  // Back-compat default per mode.
+  return parallelMode(cfg) === 'competition' ? parallelMaxWorkers(cfg) : 1;
 }
 
 /**
@@ -150,8 +183,21 @@ export function createLanePool(stateDir: string, max: number): LanePool {
       }
     },
 
+    async waitForFeature(featureId: string): Promise<void> {
+      const isMatch = (l: LaneRecord): boolean => l.feature_id === featureId;
+      while ([...lanes.values()].some(isMatch)) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    },
+
     count(): number {
       return lanes.size;
+    },
+
+    countForFeature(featureId: string): number {
+      let n = 0;
+      for (const l of lanes.values()) if (l.feature_id === featureId) n += 1;
+      return n;
     },
   };
 }

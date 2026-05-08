@@ -5,7 +5,7 @@ intervention, based on the Anthropic Mar 2026 ("Harness design for long-running
 application development") and Factory.ai Apr 2026 ("How Missions Work")
 architectures.
 
-Four roles, each invoked with a **fresh context** via `claude -p`:
+Four roles, each invoked with a **fresh context** via the agent CLI (default `omp -p` via Meridian + Claude Max; `claude -p` when `AGENT_BACKEND=claude-code`):
 
 | Role | Role file | When it runs | What it decides |
 |------|-----------|--------------|-----------------|
@@ -66,13 +66,14 @@ And the dual failure mode:
 > agent that implemented something is worse at objectively evaluating its own
 > work than a fresh, unbiased reviewer.
 
-Every invocation of a role starts with `claude -p` + the role prompt + pointers
-to state files. No shared context. Agents communicate through `.harness/*.md`.
+Every invocation of a role starts with the agent CLI (`omp -p` or `claude -p`)
++ the role prompt + pointers to state files. No shared context. Agents
+communicate through `.harness/*.md`.
 
 ## Configuration knobs
 
 ```bash
-CLAUDE="claude -p"                    # invocation template (change if using Devin/Aider/etc.)
+AGENT_CMD="omp -p"                    # invocation template (default; set to "claude -p" or any wrapper)
 MAX_ITERATIONS=200                    # safety cap; bumps cost to infinity otherwise
 ITERATION_SLEEP=2                     # seconds between iterations
 NOTIFY="push-notify-cmd"              # called on mission events: done, escalate, cost-cap, max-iter
@@ -119,7 +120,7 @@ Optional per-project config. Missing file → current behavior for all roles.
 }
 ```
 
-- **`models.<role>`** — passed as `--model <value>` to `claude -p` for that role. Accepts aliases (`opus`, `sonnet`, `haiku`) or full IDs. If `$CLAUDE` env already contains `--model`, user wins.
+- **`models.<role>`** — passed as `--model <value>` to the agent CLI for that role. Accepts aliases (`opus`, `sonnet`, `haiku`) or full IDs (omp does fuzzy matching; claude wants exact IDs). If `$AGENT_CMD`/`$CLAUDE` env already contains `--model`, user wins.
 - **`promptOverrides.<role>`** — **appended** to the role's baseline prompt as a "Droid specialization" section. Three forms:
   - Inline string: used verbatim
   - Relative path (`./...` or ending in `.md`/`.txt`): resolved from `.harness/`

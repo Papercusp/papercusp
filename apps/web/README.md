@@ -42,8 +42,11 @@ This app powers `papercuspai.com`. It serves:
   `harness_app` / `harness_admin` roles, and applies the framework DDL plus
   the Papercup demo's extra DDL.
 
-- **Anthropic API key**. The harness invokes `claude -p` for every role.
-  Add yours at `/settings/api-keys` once the dev server is up.
+- **Claude Max subscription** (recommended) **OR** an Anthropic API key.
+  The harness defaults to `omp -p` (oh-my-pi) which routes through
+  Meridian + Claude Max OAuth — no API key needed if `claude login` has
+  been run. Falls back to direct `claude -p` if `AGENT_BACKEND=claude-code`
+  is set. API key slot lives at `/settings/api-keys`.
 
 - **Node 22+**.
 

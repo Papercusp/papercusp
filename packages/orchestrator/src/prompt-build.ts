@@ -1,5 +1,6 @@
 /**
- * Prompt assembler. Builds the full text fed to `claude -p` stdin.
+ * Prompt assembler. Builds the full text fed to the agent CLI (omp via
+ * @file argument, claude via stdin).
  *
  * Bash equivalent: the big `{ cat $prompt_file; … }` block at the end of
  * invoke(). Sections (some conditional):

@@ -1,7 +1,8 @@
 /**
  * @papercusp/orchestrator — TypeScript port of the harness orchestrator
- * (`run.sh`). Drops the bash prereq for Windows users while keeping
- * `claude -p` shell-out so Claude Max subscriptions continue to work.
+ * (`run.sh`). Drops the bash prereq for Windows users while keeping the
+ * agent CLI shell-out (`omp -p` default via Meridian, `claude -p` opt-in)
+ * so Claude Max subscriptions continue to work without API keys.
  *
  * Status: STAGE 0 — skeleton + read-only utilities only. The actual
  * iteration loop still goes through bash run.sh until later stages port

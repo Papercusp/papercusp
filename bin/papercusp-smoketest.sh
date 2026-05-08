@@ -64,13 +64,21 @@ if [[ ! -x "$PAPERCUSP" ]]; then
   fail "papercusp CLI not found at $PAPERCUSP (run npm install)"
 else
   doctor_out=$($PAPERCUSP doctor 2>&1 || true)
-  for check in 'node' 'postgres @' 'claude CLI' 'marketplace' 'substrate'; do
+  for check in 'node' 'postgres @' 'marketplace' 'substrate'; do
     if echo "$doctor_out" | grep -q "✓.*$check"; then
       ok "doctor: $check"
     else
       fail "doctor: $check"
     fi
   done
+  # Agent CLI: at least one of {claude, omp} must be installed. omp is the
+  # default backend post-2026-05-06; production images may ship omp without
+  # claude (or vice versa), so accept either.
+  if echo "$doctor_out" | grep -qE "✓.*(claude|omp) CLI"; then
+    ok "doctor: agent CLI (claude or omp)"
+  else
+    fail "doctor: agent CLI (need at least one of claude/omp on PATH)"
+  fi
 fi
 
 section "4. Marketplace round-trip"

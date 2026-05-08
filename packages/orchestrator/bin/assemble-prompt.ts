@@ -17,7 +17,8 @@
  * Output: assembled prompt text on stdout. Exit 0 on success, 1 on any
  * resolution error (unknown slug, missing prompt file, etc.).
  *
- * Bash callers should pipe the stdout directly to claude -p:
+ * Bash callers should pipe the stdout directly to the agent CLI (the
+ * $CLAUDE / $AGENT_CMD env, defaulting to `omp -p`):
  *
  *   prompt="$(npx tsx ...assemble-prompt.ts --slug X --role worker --feature-id F-001)"
  *   echo "$prompt" | $CLAUDE ...

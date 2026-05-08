@@ -4,12 +4,13 @@
 
 set -eu
 HARNESS_DIR="${HARNESS_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
-CLAUDE="${AGENT_CMD:-${CLAUDE:-claude -p}}"
+CLAUDE="${AGENT_CMD:-${CLAUDE:-omp -p}}"
 AGENT_BACKEND="${AGENT_BACKEND:-}"
 if [ -z "$AGENT_BACKEND" ]; then
     case "$CLAUDE" in
         omp*|*/omp*|pi*|*/pi*) AGENT_BACKEND=omp ;;
-        *) AGENT_BACKEND=claude-code ;;
+        claude*|*/claude*) AGENT_BACKEND=claude-code ;;
+        *) AGENT_BACKEND=omp ;;
     esac
 fi
 # claude-code wants --dangerously-skip-permissions for headless; omp -p is

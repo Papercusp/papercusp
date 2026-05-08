@@ -25,6 +25,10 @@
   .check-list .detail { color: #9a9a9a; flex: 1; word-break: break-word; }
   .hint-block { margin-top: 12px; padding: 10px 14px; background: #1a1d22; border-radius: 6px; max-width: 480px; text-align: left; font-size: 12.5px; line-height: 1.5; }
   .hint-block strong { color: #fcd34d; }
+  .install-btn { margin-top: 12px; padding: 8px 16px; background: #1f3a5f; color: #cce4ff; border: 1px solid #2d5688; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .install-btn:hover { background: #244878; }
+  .install-btn:disabled { opacity: 0.5; cursor: wait; }
+  .install-log { margin-top: 8px; padding: 8px 12px; background: #0a0a0a; border-radius: 4px; max-width: 480px; max-height: 200px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 11.5px; color: #9a9a9a; text-align: left; white-space: pre-wrap; word-break: break-word; }
 </style>
 </head>
 <body>
@@ -34,6 +38,8 @@
     <p class="msg" id="msg">starting harness sidecar…</p>
     <ul class="check-list" id="checks" style="display:none"></ul>
     <div class="hint-block" id="install-hint" style="display:none"></div>
+    <button class="install-btn" id="install-btn" style="display:none">Install AI Stack (claude + meridian + omp)</button>
+    <pre class="install-log" id="install-log" style="display:none"></pre>
     <p class="msg" id="dev-hint" style="display:none">
       Dev mode? Run <code>npm run dev:papercusp</code> in another terminal, then refresh.
     </p>
@@ -78,8 +84,14 @@
     if (failed.find(c => c.name === 'postgres')) {
       lines.push('<strong>PostgreSQL on :5432</strong> — install from <code>https://postgresql.org/download/</code>, then <code>brew services start postgresql</code> (mac) or <code>sudo systemctl start postgresql</code> (Linux).');
     }
+    if (failed.find(c => c.name === 'pi')) {
+      lines.push('<strong>omp (oh-my-pi)</strong> — default agent backend. Install via <code>npm i -g @oh-my-pi/cli</code>. Then run <code>omp /login</code>.');
+    }
+    if (failed.find(c => c.name === 'meridian')) {
+      lines.push('<strong>meridian</strong> — routes omp through your Claude Max subscription (no API key required). Install via <code>npm i -g @rynfar/meridian</code>, then run <code>meridian</code> in a terminal to start the daemon on <code>:3456</code>.');
+    }
     if (failed.find(c => c.name === 'claude')) {
-      lines.push('<strong>claude CLI</strong> — install via <code>npm i -g @anthropic-ai/claude-code</code>.');
+      lines.push('<strong>claude CLI (optional)</strong> — only needed if you switch to <code>AGENT_BACKEND=claude-code</code>. Install via the official script at <a href="https://docs.anthropic.com/en/docs/claude-code/setup" target="_blank">docs.anthropic.com</a>, or run <code>claude login</code> if already installed.');
     }
     if (failed.find(c => c.name === 'bash')) {
       lines.push('<strong>bash</strong> — needed to run the orchestrator. macOS/Linux already have it; Windows: install <a href="https://git-scm.com/download/win" target="_blank">Git for Windows</a>, which ships <code>bash.exe</code>.');
@@ -89,7 +101,70 @@
     }
     hint.innerHTML = lines.join('<br><br>');
     hint.style.display = '';
+    // Surface one-click installer if any of the auto-installable
+    // components are missing. (Bash + node + postgres + harness are
+    // host-level prereqs we can't fix from the app.)
+    const autoInstallable = ['claude', 'meridian', 'pi'];
+    if (failed.some(c => autoInstallable.includes(c.name))) {
+      document.getElementById('install-btn').style.display = '';
+    }
   }
+
+  function appendLog(line) {
+    const log = document.getElementById('install-log');
+    log.style.display = '';
+    log.textContent += line;
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function runInstall() {
+    const btn = document.getElementById('install-btn');
+    btn.disabled = true;
+    btn.textContent = 'Installing…';
+    appendLog(`→ POST ${sidecarBase()}/api/desktop/install-claude-stack\n`);
+    try {
+      const r = await fetch(`${sidecarBase()}/api/desktop/install-claude-stack`, { method: 'POST' });
+      if (!r.ok || !r.body) throw new Error('install responded ' + r.status);
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        // Parse SSE: blocks separated by \n\n.
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          let event = 'message';
+          let data = '';
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) event = line.slice(6).trim();
+            else if (line.startsWith('data:')) data += line.slice(5).trim();
+          }
+          if (!data) continue;
+          let payload;
+          try { payload = JSON.parse(data); } catch { continue; }
+          if (event === 'log' && payload.line) appendLog(payload.line);
+          else if (event === 'step') appendLog(`[${payload.name}] ${payload.status}\n`);
+          else if (event === 'done') {
+            appendLog(`\n${payload.ok ? '✓ done' : '✗ failed'}: ${payload.hint || payload.reason || ''}\n`);
+            btn.textContent = payload.ok ? 'Re-running checks…' : 'Install failed — retry';
+            btn.disabled = !payload.ok;
+            // Reload preflight on success.
+            if (payload.ok) setTimeout(() => location.reload(), 1500);
+          }
+        }
+      }
+    } catch (err) {
+      appendLog(`error: ${err.message}\n`);
+      btn.disabled = false;
+      btn.textContent = 'Install failed — retry';
+    }
+  }
+
+  document.getElementById('install-btn').addEventListener('click', runInstall);
 
   let attempt = 0;
   let everReached = false;

@@ -11,7 +11,7 @@ set -u
 HARNESS_DIR="${HARNESS_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
 PROJECT_DIR="${PROJECT_DIR:-$PWD}"
 STATE_DIR="$PROJECT_DIR/.harness"
-CLAUDE="${AGENT_CMD:-${CLAUDE:-claude -p}}"
+CLAUDE="${AGENT_CMD:-${CLAUDE:-omp -p}}"
 NOTIFY="${NOTIFY:-}" # override with a command like "pushnotify" or "slack-send"
 
 cd "$PROJECT_DIR"

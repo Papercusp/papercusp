@@ -41,6 +41,7 @@ import {
   isCompetitionMode,
   isLaneMode,
   parallelMaxWorkers,
+  parallelWorkersPerFeature,
   parseCompetitionVerdict,
   readCompetitionManifest,
   writeCompetitionManifest,
@@ -429,7 +430,7 @@ async function handleNextWorker(
   }
 
   if (isCompetitionMode(cfg)) {
-    return handleCompetitionWorker(fid, ctx, logger, cfg);
+    return handleCompetitionWorker(fid, ctx, logger, cfg, lanePool);
   }
   if (isLaneMode(cfg)) {
     return handleParallelLaneWorker(fid, ctx, logger, cfg, lanePool);
@@ -536,12 +537,21 @@ async function handleNextValidator(
     return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
   }
 
-  // Drain parallel worker lanes before running the validator — running git
-  // operations concurrently with workers committing in their lanes risks
-  // index conflicts.
-  if (lanePool.count() > 0) {
-    logger.log(`  parallel: waiting on ${lanePool.count()} worker lane(s)…`);
-    await lanePool.waitAll();
+  // Drain THIS feature's parallel worker lanes before running the
+  // validator — running git operations concurrently with workers
+  // committing in their lanes risks index conflicts. Other features'
+  // competitions keep running (the hybrid case: 5 features × 2 workers
+  // each — when feature A is ready to validate, only its 2 lanes need
+  // to drain; B/C/D/E's 8 lanes keep working).
+  const perFeatureCount = lanePool.countForFeature(fid);
+  if (perFeatureCount > 0) {
+    logger.log(
+      `  parallel: waiting on ${perFeatureCount} worker lane(s) for ${fid}…` +
+        (lanePool.count() > perFeatureCount
+          ? ` (${lanePool.count() - perFeatureCount} other-feature lane(s) keep running)`
+          : ''),
+    );
+    await lanePool.waitForFeature(fid);
   }
 
   const branchIsoCtx = {
@@ -632,18 +642,43 @@ async function handleNextValidator(
 }
 
 /**
- * Competition-mode worker: spawn N workers on the SAME feature in sibling
- * git worktrees. Wait for all to finish. Write the manifest so the next
- * validator iteration knows which worktrees to compare.
+ * Competition-mode worker: spawn `workersPerFeature` workers on the SAME
+ * feature in sibling git worktrees. Each worker grabs a slot from the
+ * shared LanePool so multiple competitions can run concurrently across
+ * different features (max=10 + workersPerFeature=2 → up to 5 simultaneous
+ * 2-way competitions).
+ *
+ * Returns immediately after registering the lanes — the actual worker
+ * Promise.all + manifest write happen in a void(async) IIFE so the
+ * orchestrator can dispatch the next decision (another NEXT_WORKER for
+ * a different feature, typically) while these workers run.
+ *
+ * The validator path drains lanes per-feature (waitForFeature(fid)) so
+ * other features' competitions stay live while feature A is being
+ * validated.
  */
 async function handleCompetitionWorker(
   fid: string,
   ctx: InvokeContext,
   logger: Logger,
   cfg: ReturnType<typeof readConfig>,
+  lanePool: LanePool,
 ): Promise<DispatchResult> {
   const max = parallelMaxWorkers(cfg);
-  logger.log(`COMPETITION: spawning ${max} workers on ${fid}`);
+  const perFeature = parallelWorkersPerFeature(cfg);
+  // Clamp: can't run more workers per feature than max (would deadlock
+  // the acquire loop). User-set workersPerFeature > max is a config
+  // error; clamp + warn rather than hang.
+  const effectivePer = Math.min(perFeature, max);
+  if (effectivePer !== perFeature) {
+    logger.log(
+      `  competition: workersPerFeature=${perFeature} > max=${max}; clamping to ${effectivePer}`,
+    );
+  }
+  logger.log(
+    `COMPETITION: spawning ${effectivePer} workers on ${fid}` +
+      ` (pool ${lanePool.count()}/${max} before this)`,
+  );
   // on-competition-start hook (informational).
   runHook('on-competition-start', {
     stateDir: ctx.stateDir,
@@ -651,7 +686,7 @@ async function handleCompetitionWorker(
     logDir: ctx.logDir,
     env: {
       FEATURE_ID: fid,
-      LANE_COUNT: String(max),
+      LANE_COUNT: String(effectivePer),
       PROJECT_DIR: ctx.projectDir,
       STATE_DIR: ctx.stateDir,
     },
@@ -669,52 +704,78 @@ async function handleCompetitionWorker(
   const worktreesRoot = join(ctx.stateDir, 'worktrees');
   mkdirSync(worktreesRoot, { recursive: true });
 
-  // Spawn N workers concurrently, each in its own worktree.
-  const lanePromises: Promise<void>[] = [];
-  for (let i = 1; i <= max; i++) {
-    const laneFid = `${fid}-lane-${i}`;
-    const wt = join(worktreesRoot, laneFid);
-    const br = `harness/${laneFid}`;
-    if (!existsSync(wt)) {
-      const r = git(['worktree', 'add', '-B', br, wt, base], { cwd: ctx.projectDir });
-      if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
-    }
-    logger.log(`  competition lane ${i}: ${wt}`);
-
-    const lanePromise = (async () => {
-      try {
-        await invoke(
-          { ...ctx, worktreePathFor: () => wt },
-          'worker',
-          [
-            `FEATURE_ID=${laneFid}`,
-            `COMPETITION_PARENT=${fid}`,
-            `COMPETITION_LANE=${i}`,
-          ],
-        );
-      } catch (err) {
-        logger.log(`  competition lane ${i} error: ${(err as Error).message}`);
-      }
-      // Commit any staged changes in this lane's worktree.
-      git(['add', '-A'], { cwd: wt });
-      const status = git(['diff', '--cached', '--quiet'], { cwd: wt });
-      if (status.exitCode !== 0) {
-        const r = git(
-          ['commit', '--quiet', '-m', `worker: ${laneFid} (competition lane ${i})`],
-          { cwd: wt },
-        );
-        if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
-      }
-    })();
-    lanePromises.push(lanePromise);
+  // Acquire `effectivePer` lane slots up front. Each acquire blocks
+  // on the global cap (max), so this naturally serializes when the
+  // pool is full. After all slots are reserved, spawn the workers
+  // ASYNC and return.
+  const laneIds: number[] = [];
+  for (let i = 1; i <= effectivePer; i++) {
+    laneIds.push(await lanePool.acquire(fid));
   }
 
-  // Wait for all competitors.
-  await Promise.all(lanePromises);
+  // Spawn workers + manifest write in the background. Orchestrator
+  // resumes immediately so the next NEXT_WORKER decision can run.
+  void (async () => {
+    const lanePromises: Promise<void>[] = [];
+    for (let i = 0; i < effectivePer; i++) {
+      const laneNum = i + 1;
+      const laneId = laneIds[i];
+      const laneFid = `${fid}-lane-${laneNum}`;
+      const wt = join(worktreesRoot, laneFid);
+      const br = `harness/${laneFid}`;
+      if (!existsSync(wt)) {
+        const r = git(['worktree', 'add', '-B', br, wt, base], { cwd: ctx.projectDir });
+        if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
+      }
+      logger.log(`  competition lane ${laneNum} (${fid}): ${wt}`);
 
-  setFeatureStatus(ctx.stateDir, fid, 'validating');
-  writeCompetitionManifest(ctx.stateDir, fid, max);
-  logger.log(`COMPETITION: manifest ${competitionManifestPath(ctx.stateDir, fid)} written`);
+      const lanePromise = (async () => {
+        try {
+          await invoke(
+            { ...ctx, worktreePathFor: () => wt },
+            'worker',
+            [
+              `FEATURE_ID=${laneFid}`,
+              `COMPETITION_PARENT=${fid}`,
+              `COMPETITION_LANE=${laneNum}`,
+            ],
+          );
+        } catch (err) {
+          logger.log(`  competition lane ${laneNum} (${fid}) error: ${(err as Error).message}`);
+        }
+        // Commit any staged changes in this lane's worktree.
+        git(['add', '-A'], { cwd: wt });
+        const status = git(['diff', '--cached', '--quiet'], { cwd: wt });
+        if (status.exitCode !== 0) {
+          const r = git(
+            ['commit', '--quiet', '-m', `worker: ${laneFid} (competition lane ${laneNum})`],
+            { cwd: wt },
+          );
+          if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
+        }
+        // Release this lane's slot so other features (or this same
+        // feature's next attempt after a fail) can dispatch.
+        lanePool.release(laneId);
+      })();
+      lanePromises.push(lanePromise);
+    }
+
+    // Wait for THIS feature's competitors only. Other features keep running.
+    await Promise.all(lanePromises);
+
+    // Write the competition manifest so the validator iteration can
+    // compare worktrees. handleNextValidator's waitForFeature(fid)
+    // ensures it waits until this point before reading the manifest.
+    setFeatureStatus(ctx.stateDir, fid, 'validating');
+    writeCompetitionManifest(ctx.stateDir, fid, effectivePer);
+    logger.log(
+      `COMPETITION: manifest ${competitionManifestPath(ctx.stateDir, fid)} written` +
+        ` (${effectivePer}-way for ${fid})`,
+    );
+  })();
+
+  // Return immediately — orchestrator can dispatch another NEXT_WORKER
+  // for a different feature while this competition runs in the background.
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 

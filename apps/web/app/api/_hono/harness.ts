@@ -146,7 +146,7 @@ function launchRun(project: ProjectEntry, extra?: string): { ok: true; logPath: 
     cwd: project.path,
     env: {
       ...process.env,
-      CLAUDE: process.env.CLAUDE ?? 'claude -p --dangerously-skip-permissions',
+      CLAUDE: process.env.AGENT_CMD ?? process.env.CLAUDE ?? 'omp -p',
       ...(extra ? Object.fromEntries(extra.split(/\s+/).filter(Boolean).map((kv: string) => kv.split('='))) : {}),
     },
     detached: true,
@@ -959,7 +959,7 @@ except Exception:
       cwd: project.path,
       env: {
         ...process.env,
-        CLAUDE: process.env.CLAUDE ?? 'claude -p --dangerously-skip-permissions',
+        CLAUDE: process.env.AGENT_CMD ?? process.env.CLAUDE ?? 'omp -p',
         MAX_ITERATIONS: '1',
       },
     });
@@ -1837,7 +1837,7 @@ harness.post('/:slug/proposals/:id/accept', async (c) => {
       }
       const child = spawn('bash', ['-c', `MAX_ITERATIONS=0 ${runScript} >> /tmp/harness-replan-${project.slug}.log 2>&1 &`], {
         cwd: project.path,
-        env: { ...process.env, CLAUDE: process.env.CLAUDE ?? 'claude -p --dangerously-skip-permissions' },
+        env: { ...process.env, CLAUDE: process.env.AGENT_CMD ?? process.env.CLAUDE ?? 'omp -p' },
         detached: true,
         stdio: 'ignore',
       });
@@ -1887,7 +1887,7 @@ harness.post('/:slug/product-review', async (c) => {
       source <(awk '/^(log|config_get|invoke|run_hook|snapshot_state|notify_event)\\(\\)/,/^}/' $HARNESS_DIR/run.sh)
       invoke scoper "MODE=proposal"
     `;
-    execFile('bash', ['-c', wrapper], { env: { ...process.env, CLAUDE: process.env.CLAUDE ?? 'claude -p --dangerously-skip-permissions' }, maxBuffer: 4 * 1024 * 1024, timeout: 10 * 60_000 },
+    execFile('bash', ['-c', wrapper], { env: { ...process.env, CLAUDE: process.env.AGENT_CMD ?? process.env.CLAUDE ?? 'omp -p' }, maxBuffer: 4 * 1024 * 1024, timeout: 10 * 60_000 },
       (err: any, stdout: string, stderr: string) => {
         if (err) {
           resolve(c.json({ ok: false, error: String(err.message || err).slice(0, 400), stderr: stderr?.slice(0, 500) ?? '' }, 500));
@@ -2156,7 +2156,7 @@ harness.post('/:slug/replan', async (c) => {
       cwd: project.path,
       env: {
         ...process.env,
-        CLAUDE: process.env.CLAUDE ?? 'claude -p --dangerously-skip-permissions',
+        CLAUDE: process.env.AGENT_CMD ?? process.env.CLAUDE ?? 'omp -p',
       },
       maxBuffer: 1024 * 1024,
       timeout: 5 * 60_000,
@@ -2178,7 +2178,7 @@ harness.post('/:slug/supervisor', async (c) => {
   if (!existsSync(script)) return c.json({ error: 'supervisor.sh not found' }, 500);
   return new Promise((resolve) => {
     const { execFile } = require('node:child_process');
-    execFile('bash', [script], { cwd: project.path, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, CLAUDE: process.env.CLAUDE ?? 'claude -p --dangerously-skip-permissions' } }, (err: any, stdout: string, stderr: string) => {
+    execFile('bash', [script], { cwd: project.path, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, CLAUDE: process.env.AGENT_CMD ?? process.env.CLAUDE ?? 'omp -p' } }, (err: any, stdout: string, stderr: string) => {
       if (err) {
         resolve(c.json({ ok: false, error: String(err.message || err), stderr: stderr ?? '', stdout: stdout ?? '' }, 500));
         return;

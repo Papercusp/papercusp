@@ -1,15 +1,17 @@
 /**
- * `invoke <role> [extras...]` — spawn `claude -p` (or whatever $CLAUDE
- * resolves to) with the assembled prompt on stdin, capturing two outputs:
+ * `invoke <role> [extras...]` — spawn the agent CLI (default `omp -p`,
+ * or whatever $AGENT_CMD/$CLAUDE resolves to) with the assembled prompt,
+ * capturing three outputs:
  *
  *   <logDir>/<runId>.jsonl  — raw stream-json events (UI tails this)
  *   <logDir>/<runId>.out    — the final result text (orchestrator parses this)
  *   <logDir>/<runId>.err    — stderr (logged on non-zero exit)
  *
- * Mirrors bash run.sh's invoke() function. Keeps `claude -p` as a child
+ * Mirrors bash run.sh's invoke() function. Keeps the agent CLI as a child
  * process specifically so users on Claude Max subscriptions continue to
- * authenticate via Claude Code's CLI session — the SDK route would lose
- * that capability.
+ * authenticate via Claude Code's CLI session (omp routes via Meridian's
+ * Claude Code SDK; claude-code uses its own session) — the direct-SDK
+ * route would lose that capability.
  */
 import { spawn } from 'node:child_process';
 import {
@@ -39,7 +41,8 @@ export interface InvokeContext {
   logDir: string;
   /** Resolved phase from config.json (defaulted to "staging"). */
   phase: string;
-  /** $CLAUDE invocation template. e.g. `claude -p` or `claude -p --model sonnet`. */
+  /** Agent invocation template. e.g. `omp -p`, `claude -p --model sonnet`, or any wrapper.
+      Resolved from $AGENT_CMD ?? $CLAUDE; default `omp -p`. */
   claudeCmd: string;
   /**
    * Agent backend driving the spawn. Selects the structured-output flag
@@ -275,7 +278,8 @@ function ensureMemoryFiles(stateDir: string): void {
 }
 
 /**
- * Run `claude -p` (or override) for a given role. Returns the captured result.
+ * Run the agent CLI (`omp -p` default, `claude -p` opt-in, or override) for a
+ * given role. Returns the captured result.
  *
  * Pipes the assembled prompt to stdin; captures stream-json (or plain text)
  * to <logDir>/<runId>.jsonl, stderr to .err. Final result text is extracted
@@ -428,9 +432,12 @@ export async function invoke(
         ctx.log(`  stdin error: ${err.message}`);
       }
     });
-    // claude reads stdin; omp reads from `@file` positional. For omp we
-    // still close stdin so the child doesn't block on a TTY check.
-    if (agentBackend === 'omp') {
+    // Gate on streamFormat, not agentBackend: omp's @file convention
+    // only applies when we're actually invoking omp/pi (streamFormat ===
+    // 'omp-json'). For any other backend or for omp-with-stub-binary
+    // (e.g. claudeCmd='cat' in tests), feed the prompt via stdin like
+    // claude-code does — that's the universal Unix interface.
+    if (streamFormat === 'omp-json') {
       try { child.stdin.end(); } catch { /* EPIPE-safe */ }
     } else {
       try {

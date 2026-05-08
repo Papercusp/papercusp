@@ -18,6 +18,7 @@ import {
   isLaneMode,
   parallelMaxWorkers,
   parallelMode,
+  parallelWorkersPerFeature,
   parseCompetitionVerdict,
   readCompetitionManifest,
   writeCompetitionManifest,
@@ -238,4 +239,101 @@ test('parseCompetitionVerdict — case insensitive', () => {
     parseCompetitionVerdict('competition_winner lane-7'),
     { kind: 'winner', lane: 7 },
   );
+});
+
+// ─── Hybrid competition (workersPerFeature) ─────────────────────
+
+test('parallelWorkersPerFeature — defaults to 1 in lane mode (no override)', () => {
+  assert.equal(parallelWorkersPerFeature({ parallelWorkers: { max: 10, mode: 'lane' } }), 1);
+});
+
+test('parallelWorkersPerFeature — defaults to max in competition mode (back-compat)', () => {
+  assert.equal(
+    parallelWorkersPerFeature({ parallelWorkers: { max: 10, mode: 'competition' } }),
+    10,
+    'competition without workersPerFeature preserves legacy "all on one" behavior',
+  );
+});
+
+test('parallelWorkersPerFeature — explicit value wins', () => {
+  assert.equal(
+    parallelWorkersPerFeature({
+      parallelWorkers: { max: 10, mode: 'competition', workersPerFeature: 2 },
+    }),
+    2,
+    'hybrid: 2 workers per feature, 10 max → 5 simultaneous competitions',
+  );
+});
+
+test('parallelWorkersPerFeature — invalid (0/neg/NaN) falls back to mode default', () => {
+  assert.equal(
+    parallelWorkersPerFeature({
+      parallelWorkers: { max: 8, mode: 'competition', workersPerFeature: 0 },
+    }),
+    8,
+    'fallback to max for competition',
+  );
+  assert.equal(
+    parallelWorkersPerFeature({
+      parallelWorkers: { max: 4, mode: 'competition', workersPerFeature: -2 },
+    }),
+    4,
+  );
+});
+
+test('parallelWorkersPerFeature — floors fractional values', () => {
+  assert.equal(
+    parallelWorkersPerFeature({
+      parallelWorkers: { max: 10, mode: 'competition', workersPerFeature: 2.7 },
+    }),
+    2,
+  );
+});
+
+test('createLanePool — countForFeature reports per-feature lane counts', async () => {
+  const { dir, cleanup } = makeStateDir();
+  try {
+    const pool = createLanePool(dir, 4);
+    await pool.acquire('F-A');
+    await pool.acquire('F-A');
+    await pool.acquire('F-B');
+    assert.equal(pool.count(), 3, 'total = 3');
+    assert.equal(pool.countForFeature('F-A'), 2, 'F-A has 2 lanes');
+    assert.equal(pool.countForFeature('F-B'), 1, 'F-B has 1 lane');
+    assert.equal(pool.countForFeature('F-Z'), 0, 'F-Z has none');
+  } finally {
+    cleanup();
+  }
+});
+
+test('createLanePool — waitForFeature resolves only when feature lanes drain', async () => {
+  const { dir, cleanup } = makeStateDir();
+  try {
+    const pool = createLanePool(dir, 4);
+    // Capture the actual ids — nextId() is module-global so we can't
+    // hardcode 1/2/3 (other tests' acquires bumped the counter).
+    const a1 = await pool.acquire('F-A');
+    const a2 = await pool.acquire('F-A');
+    const b1 = await pool.acquire('F-B'); // unrelated; should NOT block waitForFeature('F-A')
+
+    let drained = false;
+    const drainPromise = pool.waitForFeature('F-A').then(() => { drained = true; });
+
+    // Releasing F-B should not resolve waitForFeature('F-A').
+    pool.release(b1);
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(drained, false, 'F-B drain alone does not satisfy waitForFeature(F-A)');
+
+    // Release one of F-A's lanes — still 1 left, should not resolve.
+    pool.release(a1);
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(drained, false, '1 of 2 F-A lanes drained does not resolve waitForFeature(F-A)');
+
+    // Release the second F-A lane — now should resolve.
+    pool.release(a2);
+    await drainPromise;
+    assert.equal(drained, true, 'all F-A lanes drained → waitForFeature(F-A) resolves');
+  } finally {
+    cleanup();
+  }
 });
