@@ -244,8 +244,46 @@ _log_level() {
 log() {
     local ts
     ts="$(date -Iseconds)"
-    printf '[%s] %s\n' "$ts" "$*" | tee -a "$LOG_DIR/run.log"
+    local raw_line; raw_line="$(printf '[%s] %s' "$ts" "$*")"
+    printf '%s\n' "$raw_line" | tee -a "$LOG_DIR/run.log"
     _log_jsonl "harness" "$(_log_level "$*")" "$*" "$ts"
+    _post_log_event "$raw_line" "$(_log_level "$*")" "$*" "$ts" &
+}
+
+# POST one log line to the operator's in-process log bus so SSE
+# subscribers (HarnessDashboard log panel + raw run.log tail) see it
+# without waiting for fs.watch + 5s re-stat. Runs in background so
+# bash never blocks on curl latency. Silently no-ops if curl/jq are
+# unavailable, the operator is unreachable, or no harness_token is set
+# (CLI fallback). Used in tandem with the existing tee/_log_jsonl
+# writes — those are still authoritative on disk for backfill.
+_post_log_event() {
+    local raw_line="$1"; local level="$2"; local msg="$3"; local ts="$4"
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    local jsonl_line
+    jsonl_line="$(SRC="harness" LEVEL="$level" MSG="$msg" TS="$ts" python3 -c '
+import json, os, sys
+sys.stdout.write(json.dumps({
+    "ts": os.environ["TS"],
+    "source": os.environ["SRC"],
+    "level": os.environ["LEVEL"],
+    "msg": os.environ["MSG"],
+}))
+' 2>/dev/null)" || return 0
+    local body
+    body="$(LOG="$jsonl_line" RAW="$raw_line" python3 -c '
+import json, os, sys
+sys.stdout.write(json.dumps({"log": os.environ["LOG"], "raw": os.environ["RAW"]}))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 2 \
+        -d "$body" "$operator_base/api/internal/log-event" >/dev/null 2>&1 || true
 }
 
 config_get() {
