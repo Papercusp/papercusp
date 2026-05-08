@@ -20,13 +20,13 @@ function makeMockPg(initialRows: Array<Record<string, unknown>> = []): {
     if (/INSERT INTO harness_shared\.harness_run_output/.test(sql)) {
       const [
         workspace_id, harness_slug, run_id, role,
-        jsonl_body, out_body, err_body,
+        prompt_body, jsonl_body, out_body, err_body,
         exit_code, duration_ms, started_at, ended_at,
       ] = vals;
       const existing = state.rows.find((r) => r.run_id === run_id);
       const row = {
         workspace_id, harness_slug, run_id, role,
-        jsonl_body, out_body, err_body,
+        prompt_body, jsonl_body, out_body, err_body,
         exit_code, duration_ms, started_at, ended_at,
       };
       if (existing) Object.assign(existing, row); else state.rows.push(row);
@@ -54,6 +54,7 @@ describe('run-output-pg', () => {
     await recordRunOutputPg(ctx(mock), {
       runId: 'r1',
       role: 'worker',
+      promptBody: '',
       jsonlBody: '{"type":"result"}',
       outBody: 'final text',
       errBody: 'warn: foo',
@@ -78,6 +79,7 @@ describe('run-output-pg', () => {
     await recordRunOutputPg(ctx(mock), {
       runId: 'r2',
       role: 'validator',
+      promptBody: '',
       jsonlBody: 'jsonl',
       outBody: 'out',
       errBody: 'err',
@@ -105,6 +107,7 @@ describe('run-output-pg', () => {
     await recordRunOutputPg(ctx(mock), {
       runId: 'big',
       role: null,
+      promptBody: '',
       jsonlBody: huge,
       outBody: '',
       errBody: '',
@@ -120,14 +123,29 @@ describe('run-output-pg', () => {
     assert.match(written, /\[truncated/);
   });
 
+  test('recordRunOutputPg — preserves prompt body (Phase 5 ephemeral file is gone after run)', async () => {
+    const mock = makeMockPg();
+    const promptText = 'Role: scoper\n\nMission: build X\n\n[memory excerpt]';
+    await recordRunOutputPg(ctx(mock), {
+      runId: 'r-prompt', role: 'scoper', promptBody: promptText,
+      jsonlBody: '', outBody: '', errBody: '',
+      exitCode: 0, durationMs: 100, startedAt: 1, endedAt: 101,
+    });
+    assert.equal(mock.state.rows[0].prompt_body, promptText);
+    const round = await readRunOutputPg(ctx(mock), 'r-prompt');
+    assert.equal(round!.promptBody, promptText);
+  });
+
   test('recordRunOutputPg — second call with same run_id updates the row', async () => {
     const mock = makeMockPg();
     await recordRunOutputPg(ctx(mock), {
-      runId: 'r3', role: 'a', jsonlBody: 'first', outBody: '', errBody: '',
+      runId: 'r3', role: 'a', promptBody: '',
+      jsonlBody: 'first', outBody: '', errBody: '',
       exitCode: 0, durationMs: 0, startedAt: 0, endedAt: 0,
     });
     await recordRunOutputPg(ctx(mock), {
-      runId: 'r3', role: 'b', jsonlBody: 'second', outBody: '', errBody: '',
+      runId: 'r3', role: 'b', promptBody: '',
+      jsonlBody: 'second', outBody: '', errBody: '',
       exitCode: 1, durationMs: 100, startedAt: 0, endedAt: 100,
     });
     assert.equal(mock.state.rows.length, 1);

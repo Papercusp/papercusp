@@ -18,6 +18,7 @@
  *     harness_slug TEXT NOT NULL,
  *     run_id       TEXT NOT NULL,
  *     role         TEXT,
+ *     prompt_body  TEXT NOT NULL DEFAULT '',
  *     jsonl_body   TEXT NOT NULL DEFAULT '',
  *     out_body     TEXT NOT NULL DEFAULT '',
  *     err_body     TEXT NOT NULL DEFAULT '',
@@ -45,6 +46,7 @@ export interface RunOutputPgContext {
 export interface RunOutputRow {
   runId: string;
   role: string | null;
+  promptBody: string;
   jsonlBody: string;
   outBody: string;
   errBody: string;
@@ -60,6 +62,7 @@ export const RUN_OUTPUT_DDL = `
     harness_slug TEXT NOT NULL,
     run_id       TEXT NOT NULL,
     role         TEXT,
+    prompt_body  TEXT NOT NULL DEFAULT '',
     jsonl_body   TEXT NOT NULL DEFAULT '',
     out_body     TEXT NOT NULL DEFAULT '',
     err_body     TEXT NOT NULL DEFAULT '',
@@ -69,6 +72,9 @@ export const RUN_OUTPUT_DDL = `
     ended_at     BIGINT NOT NULL,
     PRIMARY KEY (workspace_id, harness_slug, run_id)
   );
+  -- Idempotent column add for tables created before Phase 5.
+  ALTER TABLE harness_shared.harness_run_output
+    ADD COLUMN IF NOT EXISTS prompt_body TEXT NOT NULL DEFAULT '';
   CREATE INDEX IF NOT EXISTS harness_run_output_recent_idx
     ON harness_shared.harness_run_output (workspace_id, harness_slug, ended_at DESC);
 `;
@@ -93,15 +99,17 @@ export async function recordRunOutputPg(
   await ctx.pg`
     INSERT INTO harness_shared.harness_run_output
       (workspace_id, harness_slug, run_id, role,
-       jsonl_body, out_body, err_body,
+       prompt_body, jsonl_body, out_body, err_body,
        exit_code, duration_ms, started_at, ended_at)
     VALUES (
       ${ctx.workspaceId}, ${ctx.harnessSlug}, ${row.runId}, ${row.role},
-      ${clamp(row.jsonlBody)}, ${clamp(row.outBody)}, ${clamp(row.errBody)},
+      ${clamp(row.promptBody)}, ${clamp(row.jsonlBody)},
+      ${clamp(row.outBody)}, ${clamp(row.errBody)},
       ${row.exitCode}, ${row.durationMs}, ${row.startedAt}, ${row.endedAt}
     )
     ON CONFLICT (workspace_id, harness_slug, run_id) DO UPDATE SET
       role        = EXCLUDED.role,
+      prompt_body = EXCLUDED.prompt_body,
       jsonl_body  = EXCLUDED.jsonl_body,
       out_body    = EXCLUDED.out_body,
       err_body    = EXCLUDED.err_body,
@@ -119,6 +127,7 @@ export async function readRunOutputPg(
   const rows = await ctx.pg<{
     run_id: string;
     role: string | null;
+    prompt_body: string;
     jsonl_body: string;
     out_body: string;
     err_body: string;
@@ -127,7 +136,7 @@ export async function readRunOutputPg(
     started_at: number | bigint;
     ended_at: number | bigint;
   }[]>`
-    SELECT run_id, role, jsonl_body, out_body, err_body,
+    SELECT run_id, role, prompt_body, jsonl_body, out_body, err_body,
            exit_code, duration_ms, started_at, ended_at
       FROM harness_shared.harness_run_output
      WHERE workspace_id = ${ctx.workspaceId}
@@ -140,6 +149,7 @@ export async function readRunOutputPg(
   return {
     runId: r.run_id,
     role: r.role,
+    promptBody: r.prompt_body ?? '',
     jsonlBody: r.jsonl_body,
     outBody: r.out_body,
     errBody: r.err_body,

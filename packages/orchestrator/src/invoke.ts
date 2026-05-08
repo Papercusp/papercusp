@@ -18,7 +18,9 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -420,12 +422,18 @@ export async function invoke(
   const startedAt = Date.now();
 
   // omp's `-p` mode reads the message from a positional arg (or `@file`),
-  // not from stdin. Materialise the prompt to a tmpfile and append
-  // `@<path>` to argv. We write into LOG_DIR so it lives alongside the
-  // .jsonl/.err output for postmortem and gets pruned with the rest.
+  // not from stdin. Materialise the prompt to an ephemeral tmpfile under
+  // ramTmpRoot() (Linux: /dev/shm tmpfs; macOS/Windows: page-cache-backed
+  // os.tmpdir()), pass `@<path>` as argv, and rm the dir in the finally
+  // block after spawn close. The harness directory stays pure-code; the
+  // prompt body still lands in harness_run_output's prompt_body column
+  // for post-hoc replay/debugging (Phase 4 + 5 working together).
+  let ompPromptDir: string | undefined;
   let ompPromptPath: string | undefined;
   if (agentBackend === 'omp' && streamFormat !== 'none') {
-    ompPromptPath = join(ctx.logDir, `${runId}.prompt.md`);
+    const { ramTmpRoot } = await import('./tmpfs');
+    ompPromptDir = mkdtempSync(join(ramTmpRoot(), 'papercusp-'));
+    ompPromptPath = join(ompPromptDir, 'prompt.md');
     writeFileSync(ompPromptPath, prompt, 'utf8');
     finalArgv.push(`@${ompPromptPath}`);
   }
@@ -515,6 +523,7 @@ export async function invoke(
         {
           runId,
           role,
+          promptBody: prompt,
           jsonlBody,
           outBody,
           errBody,
@@ -545,6 +554,14 @@ export async function invoke(
     } catch {
       // ignore — log was just a courtesy
     }
+  }
+
+  // Phase 5: clean up the ephemeral omp prompt tmpdir. Always runs —
+  // even on subprocess crash + PG-ingest failure — so /tmp doesn't
+  // accumulate stale dirs. SIGKILL'd orchestrators leak; the OS sweeper
+  // (systemd-tmpfiles on Linux, launchd on macOS) reaps them.
+  if (ompPromptDir) {
+    try { rmSync(ompPromptDir, { recursive: true, force: true }); } catch { /* best-effort */ }
   }
 
   return {
