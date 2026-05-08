@@ -16065,6 +16065,96 @@ html body .h-root.h-root :is(
   }
 }
 
+
+/* Pane tint pass: give sibling controls distinct visual identities without
+   changing dashboard structure. */
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions > .h-tab {
+  border-color: color-mix(in oklab, var(--issue-tab-accent, var(--accent-cool)), transparent 66%) !important;
+  background:
+    radial-gradient(circle at 16% 12%, color-mix(in oklab, var(--issue-tab-accent, var(--accent-cool)), transparent 82%), transparent 36%),
+    linear-gradient(180deg, color-mix(in oklab, var(--issue-tab-accent, var(--accent-cool)), transparent 91%), rgba(3, 10, 20, 0.96)) !important;
+  color: color-mix(in oklab, var(--issue-tab-accent, var(--accent-cool)), white 22%) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions > .h-tab:nth-of-type(1) {
+  --issue-tab-accent: #7dd3fc;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions > .h-tab:nth-of-type(2) {
+  --issue-tab-accent: #a7f3d0;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions > .h-tab:nth-of-type(3) {
+  --issue-tab-accent: #fbbf24;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions > .h-tab.on {
+  border-color: color-mix(in oklab, var(--issue-tab-accent, var(--accent-cool)), white 4%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 0 18px color-mix(in oklab, var(--issue-tab-accent, var(--accent-cool)), transparent 82%) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab {
+  border-color: color-mix(in oklab, var(--log-tab-accent, var(--accent-cool)), transparent 70%) !important;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--log-tab-accent, var(--accent-cool)), transparent 93%), rgba(3, 10, 20, 0.94)) !important;
+  color: color-mix(in oklab, var(--log-tab-accent, var(--accent-cool)), white 26%) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:nth-of-type(6n + 1) { --log-tab-accent: #7dd3fc; }
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:nth-of-type(6n + 2) { --log-tab-accent: #a7f3d0; }
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:nth-of-type(6n + 3) { --log-tab-accent: #c4b5fd; }
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:nth-of-type(6n + 4) { --log-tab-accent: #fbbf24; }
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:nth-of-type(6n + 5) { --log-tab-accent: #fb7185; }
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab:nth-of-type(6n) { --log-tab-accent: #38bdf8; }
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab.active {
+  border-color: color-mix(in oklab, var(--log-tab-accent, var(--accent-cool)), white 4%) !important;
+  box-shadow:
+    inset 0 -2px 0 color-mix(in oklab, var(--log-tab-accent, var(--accent-cool)), transparent 18%),
+    0 0 16px color-mix(in oklab, var(--log-tab-accent, var(--accent-cool)), transparent 84%) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-tab-count {
+  border-color: color-mix(in oklab, var(--log-tab-accent, var(--accent-cool)), transparent 72%) !important;
+  background: color-mix(in oklab, var(--log-tab-accent, var(--accent-cool)), transparent 90%) !important;
+}
+
+.h-root .h-git-panel :is(button, .h-btn-icon) {
+  border-color: color-mix(in oklab, var(--git-button-accent, var(--accent-cool)), transparent 70%) !important;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--git-button-accent, var(--accent-cool)), transparent 92%), rgba(3, 10, 20, 0.95)) !important;
+  color: color-mix(in oklab, var(--git-button-accent, var(--accent-cool)), white 24%) !important;
+}
+
+.h-root .h-git-panel :is(button, .h-btn-icon):is(:hover, :focus-visible, .on, [aria-selected="true"]) {
+  border-color: color-mix(in oklab, var(--git-button-accent, var(--accent-cool)), white 2%) !important;
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in oklab, var(--git-button-accent, var(--accent-cool)), transparent 80%), transparent 36%),
+    linear-gradient(180deg, color-mix(in oklab, var(--git-button-accent, var(--accent-cool)), transparent 86%), rgba(3, 10, 20, 0.96)) !important;
+}
+
+.h-root .h-git-actions .h-btn-icon { --git-button-accent: #7dd3fc; }
+.h-root .h-git-clear { --git-button-accent: #fb7185; }
+.h-root .h-git-filter-row .h-git-filter:nth-of-type(1) { --git-button-accent: #7dd3fc; }
+.h-root .h-git-filter-row .h-git-filter:nth-of-type(2) { --git-button-accent: #a7f3d0; }
+.h-root .h-git-filter-row .h-git-filter:nth-of-type(3) { --git-button-accent: #c4b5fd; }
+.h-root .h-git-filter-row .h-git-filter:nth-of-type(4) { --git-button-accent: #fbbf24; }
+.h-root .h-git-ref-rail .h-git-ref-chip:nth-of-type(4n + 1) { --git-button-accent: #38bdf8; }
+.h-root .h-git-ref-rail .h-git-ref-chip:nth-of-type(4n + 2) { --git-button-accent: #a7f3d0; }
+.h-root .h-git-ref-rail .h-git-ref-chip:nth-of-type(4n + 3) { --git-button-accent: #c4b5fd; }
+.h-root .h-git-ref-rail .h-git-ref-chip:nth-of-type(4n) { --git-button-accent: #fbbf24; }
+.h-root .h-git-author-rail button:nth-of-type(4n + 1) { --git-button-accent: #7dd3fc; }
+.h-root .h-git-author-rail button:nth-of-type(4n + 2) { --git-button-accent: #a7f3d0; }
+.h-root .h-git-author-rail button:nth-of-type(4n + 3) { --git-button-accent: #c4b5fd; }
+.h-root .h-git-author-rail button:nth-of-type(4n) { --git-button-accent: #fb7185; }
+.h-root .h-git-row-bookmark { --git-button-accent: #fbbf24; }
+.h-root .h-git-row-bookmark.on { --git-button-accent: #f59e0b; }
+
+.h-root .h-proposals-panel .h-proposal-outline {
+  display: none !important;
+}
 /* Right-side drawer feedback pass r2: polish readability, scroll hooks,
    and selected lifecycle semantics. */
 .h-feature-peek-drawer,
