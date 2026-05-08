@@ -15,8 +15,14 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 
 export interface BuildPromptInput {
   role: string;
-  /** Path to the resolved prompt file (e.g. prompts/staging/worker.md). */
+  /** Path to the resolved prompt file (e.g. prompts/staging/worker.md).
+   *  Empty string when `inlinePrompt` is supplied — the inline string
+   *  replaces what would otherwise come from the file. */
   promptFile: string;
+  /** Inline prompt body. When non-empty, used instead of `promptFile`'s
+   *  contents — for ad-hoc invocations like the chunk-loop driver
+   *  that build the prompt programmatically. */
+  inlinePrompt?: string;
   /** Per-role specialization (config.json → promptOverrides.<role>). May be empty. */
   promptOverride: string;
   /** Path to <stateDir>. Used to read memory/summary.md and to print "State directory" hint. */
@@ -63,8 +69,13 @@ export function buildPrompt(input: BuildPromptInput): string {
     out.push('\n---\n');
   }
 
-  // 1. Role prompt file (always — caller asserts it exists).
-  out.push(fileContents(input.promptFile));
+  // 1. Role prompt file (always — caller asserts it exists), unless
+  //    the caller supplied an inline prompt (chunk-loop driver, etc.).
+  if (input.inlinePrompt && input.inlinePrompt.length > 0) {
+    out.push(input.inlinePrompt);
+  } else {
+    out.push(fileContents(input.promptFile));
+  }
 
   // 2. Per-role specialization override.
   if (input.promptOverride) {

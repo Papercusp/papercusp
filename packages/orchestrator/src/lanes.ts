@@ -168,6 +168,21 @@ export function parallelWorkersPerFeature(cfg: HarnessConfig): number {
 }
 
 /**
+ * `parallelWorkers.useChunkLoop` — feature flag for the new
+ * worker chunk loop (atomic file-locks per chunk, L1 typecheck gate,
+ * up-front planning, escalate-to-debugger on N strikes). Defaults to
+ * `false` for one release after landing so the legacy single-shot
+ * worker path stays the default; flip to `true` per-harness once the
+ * chunk-loop is verified, then default-on later.
+ */
+export function useChunkLoop(cfg: HarnessConfig): boolean {
+  const v = configGet<unknown>(cfg, 'parallelWorkers.useChunkLoop', false);
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') return v === 'true' || v === '1';
+  return false;
+}
+
+/**
  * `parallelWorkers.workingStateCheck` — the L1 typecheck command the
  * worker chunk loop runs after each chunk's edits. Defaults to
  * `pnpm typecheck` because that's what the papercup-shaped repo

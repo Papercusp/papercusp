@@ -325,23 +325,44 @@ function ensureMemoryFiles(stateDir: string): void {
  * to <logDir>/<runId>.jsonl, stderr to .err. Final result text is extracted
  * to .out for the orchestrator's decision parser.
  */
+/**
+ * Optional overrides for ad-hoc invocations (chunk-loop driver, etc.).
+ * `inlinePrompt` short-circuits the prompt-file resolution — useful
+ * when the caller has built the prompt programmatically and doesn't
+ * want to write it to disk first. `cwd` overrides the working
+ * directory the agent runs in (otherwise inferred from
+ * `ctx.worktreePathFor` based on the FEATURE_ID extra).
+ */
+export interface InvokeOptions {
+  inlinePrompt?: string;
+  cwd?: string;
+}
+
 export async function invoke(
   ctx: InvokeContext,
   role: string,
   extras: readonly string[] = [],
+  options: InvokeOptions = {},
 ): Promise<InvokeResult> {
   const cfg = readConfig(ctx.stateDir);
   const dept = ctx.dept ?? configGet<string>(cfg, 'dept', '');
 
-  // 1. Resolve prompt file (with phase + dept fallback chain).
-  const promptFile = resolvePromptFile(
-    { harnessDir: ctx.harnessDir, phase: ctx.phase, dept },
-    role,
-  );
-  if (!promptFile) {
-    throw new Error(
-      `invoke: no prompt file for role=${role} (looked under ${ctx.harnessDir}/prompts)`,
+  // 1. Resolve prompt file (with phase + dept fallback chain), unless
+  //    the caller supplied an inlinePrompt — in which case we skip the
+  //    file resolution entirely and pass the inline string through to
+  //    buildPrompt as-is.
+  let promptFile = '';
+  if (!options.inlinePrompt) {
+    const resolved = resolvePromptFile(
+      { harnessDir: ctx.harnessDir, phase: ctx.phase, dept },
+      role,
     );
+    if (!resolved) {
+      throw new Error(
+        `invoke: no prompt file for role=${role} (looked under ${ctx.harnessDir}/prompts)`,
+      );
+    }
+    promptFile = resolved;
   }
 
   // 2. Feature ID + run ID.
@@ -350,9 +371,13 @@ export async function invoke(
   const nowSec = (ctx.nowSeconds ?? (() => Math.floor(Date.now() / 1000)))();
   const runId = makeRunId(role, featureId, nowSec);
 
-  // 3. Worktree cwd override.
+  // 3. Worktree cwd override. Caller's `options.cwd` wins; otherwise
+  //    we infer from the registered worktreePathFor + the FEATURE_ID
+  //    extra.
   let cwdOverride = '';
-  if (featureId && ctx.worktreePathFor) {
+  if (options.cwd && existsSync(options.cwd)) {
+    cwdOverride = options.cwd;
+  } else if (featureId && ctx.worktreePathFor) {
     const wt = ctx.worktreePathFor(featureId) ?? '';
     if (wt && existsSync(wt)) cwdOverride = wt;
   }
@@ -410,6 +435,7 @@ export async function invoke(
   const prompt = buildPrompt({
     role,
     promptFile,
+    inlinePrompt: options.inlinePrompt,
     promptOverride,
     stateDir: ctx.stateDir,
     harnessDir: ctx.harnessDir,

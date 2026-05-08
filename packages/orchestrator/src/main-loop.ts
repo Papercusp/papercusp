@@ -47,10 +47,23 @@ import {
   parallelWorkersPerFeature,
   parseCompetitionVerdict,
   readCompetitionManifest,
+  useChunkLoop,
   writeCompetitionManifest,
   type AdaptiveTiers,
 } from './lanes';
 import type { LanePool } from './lanes';
+import { FileLockQueue } from './file-lock-queue';
+import { driveChunkLoop } from './chunk-loop-driver';
+import {
+  type ChunkImplementResult,
+  type ChunkLoopFeature,
+} from './worker-chunk-loop';
+import {
+  formatChunkCommitMessage,
+  planChunksUpfrontPrompt,
+  replanChunkPrompt,
+} from './chunk-plan';
+import { spawnSync as spawnSyncForGit } from 'node:child_process';
 import { git } from './git';
 import { branchIsoBase, worktreePath } from './branch-iso';
 import type { InvokeContext } from './invoke';
@@ -265,6 +278,10 @@ async function runMainLoopBody(
   // and drained by NEXT_VALIDATOR before the validator runs. cfg.parallelWorkers.max
   // is the cap; default 1 (sequential).
   const lanePool = createLanePool(ctx.stateDir, parallelMaxWorkers(cfg));
+  // Process-singleton lock queue used by the chunk-loop path. Shared
+  // across all NEXT_WORKER dispatches so concurrent workers see each
+  // other's holds. Empty / unused when useChunkLoop is false.
+  const lockQueue = new FileLockQueue();
 
   // Adaptive-mode tier configuration is per-harness, stored in the spec
   // at parallelWorkers.adaptive.{tiers,labels,rubric}. Read directly from
@@ -347,7 +364,7 @@ async function runMainLoopBody(
     logger.log(`ORCH decision: ${parsed.raw} (role=${primaryRole})`);
 
     // 2. Dispatch.
-    const dispatch = await dispatchDecision(parsed, ctx, logger, cfg, iteration, sleep, lanePool);
+    const dispatch = await dispatchDecision(parsed, ctx, logger, cfg, iteration, sleep, lanePool, lockQueue);
     if (dispatch.terminal) {
       // Drain in-flight parallel lanes so they don't outlive this exit
       // (e.g. a worker writing to a directory the caller is about to clean up).
@@ -444,6 +461,7 @@ async function dispatchDecision(
   iteration: number,
   sleep: (ms: number) => Promise<void>,
   lanePool: LanePool,
+  lockQueue: FileLockQueue,
 ): Promise<DispatchResult> {
   switch (parsed.verb) {
     case 'DONE':
@@ -468,7 +486,7 @@ async function dispatchDecision(
       return handleNextHarness(parsed, ctx, logger);
 
     case 'NEXT_WORKER':
-      return handleNextWorker(parsed, ctx, logger, cfg, lanePool);
+      return handleNextWorker(parsed, ctx, logger, cfg, lanePool, lockQueue);
 
     case 'NEXT_WORKER_CEO_MODE':
       return handleNextWorkerCeoMode(parsed, ctx, logger, cfg);
@@ -604,11 +622,20 @@ async function handleNextWorker(
   logger: Logger,
   cfg: ReturnType<typeof readConfig>,
   lanePool: LanePool,
+  lockQueue: FileLockQueue,
 ): Promise<DispatchResult> {
   const fid = parsed.arg ?? '';
   if (!fid) {
     logger.log(`ERROR: NEXT_WORKER without feature id: ${parsed.raw}`);
     return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
+  }
+
+  // Chunk-loop path takes priority over the legacy modes when enabled.
+  // It runs ONE feature end-to-end through plan → chunk-loop → commit,
+  // returning when the feature is done or escalated. Concurrent
+  // dispatches share the lockQueue.
+  if (useChunkLoop(cfg)) {
+    return handleChunkLoopWorker(fid, ctx, logger, cfg, lockQueue);
   }
 
   if (isAdaptiveMode(cfg)) {
@@ -1814,4 +1841,200 @@ function runSmokeTest(ctx: InvokeContext, logger: Logger): number {
     }
   }
   return result.status ?? 1;
+}
+
+// ─── Chunk-loop driver path (parallelWorkers.useChunkLoop=true) ─────
+
+/**
+ * Concrete LLM bridges that connect the worker-chunk-loop to the
+ * existing `invoke()` machinery. The loop itself is dependency-injected
+ * so this file is the only place that knows about both sides.
+ *
+ * High level: each chunk-loop callback (`plan`, `implement`, `replan`,
+ * `escalate`) renders the appropriate prompt from chunk-plan.ts, feeds
+ * it to `invoke(ctx, role, extras, { inlinePrompt, cwd })`, and
+ * returns the agent's raw output. For `implement` we additionally
+ * scan `git status --porcelain` in the scratch dir to discover which
+ * files the LLM actually touched (reported back to the loop for
+ * lock-extension decisions).
+ */
+async function handleChunkLoopWorker(
+  fid: string,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+  lockQueue: FileLockQueue,
+): Promise<DispatchResult> {
+  // Resolve the feature record so we can give the LLM a useful
+  // description. Falls back to id-only when state isn't readable.
+  const features = await readFeatures(ctx.stateDir, stateCtx(ctx)).catch(() => []);
+  const fRow = features.find((f: { id: string }) => f.id === fid);
+  const feature: ChunkLoopFeature = {
+    id: fid,
+    title: (fRow?.title as string) ?? fid,
+    description: (fRow?.summary as string) ?? `Feature ${fid}`,
+    context: typeof fRow?.notes === 'string' ? (fRow.notes as string) : undefined,
+  };
+
+  logger.log(`CHUNK_LOOP starting for ${fid}`);
+  await setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true, ctx: stateCtx(ctx) });
+
+  const outcome = await driveChunkLoop({
+    feature,
+    cfg,
+    lockQueue,
+    repoPath: ctx.projectDir,
+    pg: ctx.pg,
+    workspaceId: ctx.workspaceId,
+    harnessSlug: configGet<string>(cfg, 'slug', '') || undefined,
+    log: (msg) => logger.log(msg),
+    llm: {
+      plan: async (f) => {
+        const promptText = planChunksUpfrontPrompt({
+          featureId: f.id,
+          featureTitle: f.title,
+          featureDescription: f.description,
+          context: f.context,
+        });
+        const result = await invoke(ctx, 'worker', [`FEATURE_ID=${f.id}`, 'CHUNK_LOOP_STAGE=plan'], {
+          inlinePrompt: promptText,
+        });
+        return result.output;
+      },
+      implement: async (f, chunk, env): Promise<ChunkImplementResult> => {
+        const result = await invoke(
+          ctx,
+          'worker',
+          [
+            `FEATURE_ID=${f.id}`,
+            `CHUNK_ID=${chunk.id}`,
+            'CHUNK_LOOP_STAGE=implement',
+            `CHUNK_FILES=${chunk.files.join(',')}`,
+            `CHUNK_DESCRIPTION=${chunk.description}`,
+          ],
+          {
+            cwd: env.dir,
+            inlinePrompt: chunkImplementInlinePrompt(f, chunk, env.dir),
+          },
+        );
+        // Discover what the LLM actually wrote by walking git status.
+        const touched = listChangedFiles(env.dir);
+        return {
+          touchedFiles: touched,
+          attemptedChange: (result.output || '').slice(0, 1000),
+        };
+      },
+      replan: async (f, failedId, failedFiles, failedDesc, typecheckError, attemptedChange) => {
+        const promptText = replanChunkPrompt({
+          featureId: f.id,
+          failedChunk: { id: failedId, files: failedFiles, description: failedDesc },
+          typecheckError,
+          attemptedChange,
+        });
+        const result = await invoke(
+          ctx,
+          'worker',
+          [`FEATURE_ID=${f.id}`, `CHUNK_ID=${failedId}`, 'CHUNK_LOOP_STAGE=replan'],
+          { inlinePrompt: promptText },
+        );
+        return result.output;
+      },
+      escalate: async (f, chunkId, chunkFiles, typecheckError, role) => {
+        // Hand off to the configured role (default 'debugger').
+        // The role's existing prompt file applies — we just pass extras
+        // so it knows what to investigate.
+        try {
+          await invoke(ctx, role, [
+            `FEATURE_ID=${f.id}`,
+            `CHUNK_ID=${chunkId}`,
+            `CHUNK_FILES=${chunkFiles.join(',')}`,
+            `TYPECHECK_ERROR_HEAD=${typecheckError.slice(0, 500)}`,
+          ]);
+        } catch (err) {
+          logger.log(`CHUNK_LOOP escalate(${role}) failed: ${(err as Error).message}`);
+          return false;
+        }
+        // Mark the feature failing so the user sees it; the escalated
+        // role's output is a separate orchestrator turn that may
+        // resolve it (e.g., debugger writes a diagnostic note → user
+        // resets → next iteration retries).
+        return false;
+      },
+    },
+  });
+
+  logger.log(`CHUNK_LOOP ${fid} → ${outcome.kind}`);
+
+  if (outcome.kind === 'completed') {
+    await setFeatureStatus(ctx.stateDir, fid, 'validating', { ctx: stateCtx(ctx) });
+  } else if (outcome.kind === 'escalated' || outcome.kind === 'planning_failed' || outcome.kind === 'aborted') {
+    await setFeatureStatus(ctx.stateDir, fid, 'failing', { ctx: stateCtx(ctx) });
+  }
+
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * Build the inline prompt for the worker's per-chunk implement call.
+ * The worker sees: feature context, chunk metadata, the scratch dir
+ * it should edit in, and clear instructions about the L1 invariant
+ * and declared-files contract.
+ */
+function chunkImplementInlinePrompt(
+  feature: ChunkLoopFeature,
+  chunk: { id: string; files: readonly string[]; description: string },
+  scratchDir: string,
+): string {
+  return `You are the WORKER. Implement ONE chunk of feature ${feature.id}.
+
+Feature: ${feature.title}
+${feature.description}
+
+Chunk ${chunk.id}: ${chunk.description}
+Declared files: ${chunk.files.join(', ')}
+
+Working directory: ${scratchDir}
+
+This is a transient scratch worktree at integration HEAD. Edit files
+here in place — do NOT cd out, do NOT touch the main repo. Heavy
+gitignored caches (node_modules, .next, target, etc.) are symlinked
+back to the main repo so typecheckers see warm caches.
+
+Constraints:
+  - Modify ONLY the declared files. If you discover you need to touch
+    additional files, you may — the harness handles lock extension —
+    but be intentional about scope.
+  - The chunk you commit must leave the project in a working state:
+    the typecheck command will run after you finish, and a non-zero
+    exit triggers a re-plan that bundles more work into this chunk.
+  - When done, exit. The harness will copy your edits to the main
+    repo, run the typecheck, and commit.
+
+Do not produce a chunk-plan block — that was already done in the
+planning stage. Just implement.`;
+}
+
+/**
+ * Walk `git status --porcelain` in the scratch dir to find every
+ * file the worker wrote (modified, added, or deleted). Returns paths
+ * relative to the scratch dir (= relative to the main repo).
+ */
+function listChangedFiles(dir: string): string[] {
+  const r = spawnSyncForGit('git', ['status', '--porcelain', '-z'], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
+  if (r.status !== 0) return [];
+  const out: string[] = [];
+  // -z separates entries with NUL; each entry is "XY <path>" where XY
+  // is the index/worktree status. Renames have an arrow-form we don't
+  // bother with for our case (workers don't rename files via git mv).
+  for (const entry of (r.stdout as string).split('\x00')) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    // Entry shape: "XY path" — XY is two chars, then space, then path.
+    const path = trimmed.length >= 3 ? trimmed.slice(3) : trimmed;
+    if (path) out.push(path);
+  }
+  return out;
 }
