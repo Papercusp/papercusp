@@ -279,7 +279,13 @@ async function runMainLoopBody(
   }
 
   // Process previously-granted user checkpoints; refuse to start if pending.
-  const cpAction = checkpointGate(ctx.stateDir);
+  const cpAction = ctx.pg && ctx.workspaceId
+    ? await checkpointGate(ctx.stateDir, {
+        pg: ctx.pg,
+        workspaceId: ctx.workspaceId,
+        harnessSlug: (await import('./state')).harnessSlug(ctx.projectDir),
+      })
+    : checkpointGate(ctx.stateDir);
   if (cpAction.kind === 'granted-cleared') {
     for (const name of cpAction.cleared) {
       logger.log(`✅ Checkpoint granted: ${name.replace(/\.md$/, '')}. Removing.`);
@@ -484,7 +490,7 @@ async function dispatchDecision(
       return handleEscalate(parsed, ctx, logger);
 
     case 'CHECKPOINT':
-      return handleCheckpoint(parsed, ctx, logger, iteration);
+      return await handleCheckpoint(parsed, ctx, logger, iteration);
 
     case 'READY_FOR_PROD':
       return await handleReadyForProd(ctx, logger);
@@ -1414,12 +1420,12 @@ async function handleEscalate(
  *   notify_event checkpoint
  *   exit 8
  */
-function handleCheckpoint(
+async function handleCheckpoint(
   parsed: ParsedDecision,
   ctx: InvokeContext,
   logger: Logger,
   iteration: number,
-): DispatchResult {
+): Promise<DispatchResult> {
   // bash splits "CHECKPOINT <name> <message...>" — reuse parsed.arg as the
   // name token; pull the rest as message from parsed.raw.
   let name = parsed.arg ?? '';
@@ -1446,7 +1452,17 @@ touch ${cpFile}.granted
 Then re-run the harness — it will detect the grant file, delete it and the checkpoint,
 and continue.
 `;
-  writeFileSync(cpFile, body);
+  if (ctx.pg && ctx.workspaceId) {
+    const { fireCheckpointPg } = await import('./checkpoints-pg');
+    const { harnessSlug: getSlug } = await import('./state');
+    await fireCheckpointPg(
+      { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: getSlug(ctx.projectDir) },
+      name,
+      body,
+    );
+  } else {
+    writeFileSync(cpFile, body);
+  }
 
   logger.log(`⏸  CHECKPOINT '${name}' requested. See ${cpFile}`);
   runHook('on-checkpoint-fired', {

@@ -116,7 +116,7 @@ export async function runPreLoop(
   }
 
   // Step 3: post-planner auto-checkpoints.
-  const cpStop = firePostPlannerCheckpoints(ctx, logger, cfg);
+  const cpStop = await firePostPlannerCheckpoints(ctx, logger, cfg);
   if (cpStop) return cpStop;
 
   // Step 4: prune stale worktrees from prior crashes.
@@ -130,11 +130,11 @@ export async function runPreLoop(
 
 /** Inspect config.checkpoints.types[].triggerOn=='post-planner' and fire any
  *  that haven't fired yet. Returns a stop signal if one was fired. */
-function firePostPlannerCheckpoints(
+async function firePostPlannerCheckpoints(
   ctx: InvokeContext,
   logger: Logger,
   cfg: HarnessConfig,
-): PreLoopResult | null {
+): Promise<PreLoopResult | null> {
   if (configGet<boolean>(cfg, 'checkpoints.enabled', false) !== true) return null;
   const types = configGet<unknown>(cfg, 'checkpoints.types', []);
   if (!Array.isArray(types)) return null;
@@ -144,12 +144,10 @@ function firePostPlannerCheckpoints(
     .map((t) => t.name)
     .filter((n): n is string => typeof n === 'string' && n.length > 0);
 
+  const usePg = ctx.pg && ctx.workspaceId;
+
   for (const name of postPlannerNames) {
     const cpFile = join(ctx.stateDir, `checkpoint-${name}.md`);
-    const sentinel = join(ctx.stateDir, `.checkpoint-${name}.fired`);
-    if (existsSync(sentinel) || existsSync(cpFile) || existsSync(`${cpFile}.granted`)) {
-      continue;
-    }
     const isoNow = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
     const body =
       `# Checkpoint: ${name} (auto, triggerOn=post-planner)\n\n` +
@@ -159,9 +157,27 @@ function firePostPlannerCheckpoints(
       '## How to grant\n' +
       `- UI: /api/harness/<slug>/checkpoint/${name}/grant\n` +
       `- CLI: touch ${cpFile}.granted && re-run the harness\n`;
-    mkdirSync(ctx.stateDir, { recursive: true });
-    writeFileSync(cpFile, body);
-    writeFileSync(sentinel, '');
+
+    let actuallyFired: boolean;
+    if (usePg) {
+      const { fireCheckpointPg } = await import('./checkpoints-pg');
+      actuallyFired = await fireCheckpointPg(
+        { pg: ctx.pg!, workspaceId: ctx.workspaceId!, harnessSlug: harnessSlug(ctx.projectDir) },
+        name,
+        body,
+      );
+    } else {
+      const sentinel = join(ctx.stateDir, `.checkpoint-${name}.fired`);
+      if (existsSync(sentinel) || existsSync(cpFile) || existsSync(`${cpFile}.granted`)) {
+        continue;
+      }
+      mkdirSync(ctx.stateDir, { recursive: true });
+      writeFileSync(cpFile, body);
+      writeFileSync(sentinel, '');
+      actuallyFired = true;
+    }
+    if (!actuallyFired) continue;
+
     logger.log(`⏸  Auto-fired checkpoint: ${name} (post-planner). Exiting 8.`);
     runHook('on-checkpoint-fired', {
       stateDir: ctx.stateDir,
