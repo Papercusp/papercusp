@@ -396,7 +396,13 @@ async function runMainLoopBody(
     pruneLogs(ctx.logDir, cfg);
 
     // 5. Cost cap. Aborts the loop with exit code 6 when total >= cap.
-    const cost = evaluateCostCap(cfg, ctx.logDir, ctx.stateDir);
+    const cost = ctx.pg && ctx.workspaceId
+      ? await evaluateCostCap(cfg, ctx.logDir, ctx.stateDir, {
+          pg: ctx.pg,
+          workspaceId: ctx.workspaceId,
+          harnessSlug: (await import('./state')).harnessSlug(ctx.projectDir),
+        })
+      : evaluateCostCap(cfg, ctx.logDir, ctx.stateDir);
     if (cost.cap !== null) {
       logger.log(`  COST total=${cost.total.toFixed(4)} cap=${cost.cap}`);
     } else {
@@ -481,7 +487,7 @@ async function dispatchDecision(
       return handleCheckpoint(parsed, ctx, logger, iteration);
 
     case 'READY_FOR_PROD':
-      return handleReadyForProd(ctx, logger);
+      return await handleReadyForProd(ctx, logger);
 
     case 'NEXT_HARNESS':
       return handleNextHarness(parsed, ctx, logger);
@@ -1465,10 +1471,19 @@ and continue.
  *   log
  *   continue
  */
-function handleReadyForProd(ctx: InvokeContext, logger: Logger): DispatchResult {
-  const flagPath = join(ctx.stateDir, 'ready-for-prod.flag');
-  writeFileSync(flagPath, `${new Date().toISOString()}\n`);
-  logger.log('READY_FOR_PROD — flag written for promotion pipeline.');
+async function handleReadyForProd(ctx: InvokeContext, logger: Logger): Promise<DispatchResult> {
+  if (ctx.pg && ctx.workspaceId) {
+    const { setReadyForProdPg } = await import('./mission-state-pg');
+    await setReadyForProdPg({
+      pg: ctx.pg,
+      workspaceId: ctx.workspaceId,
+      harnessSlug: (await import('./state')).harnessSlug(ctx.projectDir),
+    });
+  } else {
+    const flagPath = join(ctx.stateDir, 'ready-for-prod.flag');
+    writeFileSync(flagPath, `${new Date().toISOString()}\n`);
+  }
+  logger.log('READY_FOR_PROD — flag recorded for promotion pipeline.');
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 
@@ -1559,9 +1574,21 @@ async function handleNextHarness(
   const apiUrl = `${operatorBase}/api/harness/${childSlug}/invoke?role=${childRole}`;
   const apiOk = await postJson(apiUrl, '{}', 120_000);
   if (apiOk.ok) {
-    const ts = Math.floor(Date.now() / 1000);
-    const out = join(ctx.logDir, `nexth-${childSlug}-${ts}.json`);
-    writeFileSync(out, apiOk.body);
+    if (ctx.pg && ctx.workspaceId) {
+      const { recordDispatchPg } = await import('./dispatches-pg');
+      const { harnessSlug: getSlug } = await import('./state');
+      await recordDispatchPg(
+        { pg: ctx.pg, workspaceId: ctx.workspaceId },
+        getSlug(ctx.projectDir),
+        childSlug,
+        childRole,
+        apiOk.body,
+      );
+    } else {
+      const ts = Math.floor(Date.now() / 1000);
+      const out = join(ctx.logDir, `nexth-${childSlug}-${ts}.json`);
+      writeFileSync(out, apiOk.body);
+    }
     logger.log(`  → dispatched via API (${apiUrl})`);
     return { terminal: false, exitCode: 0, reason: 'idle' };
   }

@@ -21,7 +21,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { configGet } from './config';
-import { featuresExist, stateCtx } from './state';
+import { featuresExist, harnessSlug, stateCtx } from './state';
 import { invoke } from './invoke';
 import { runHook } from './hooks';
 import { git } from './git';
@@ -83,11 +83,18 @@ export async function runPreLoop(
       logger.log(`PLAN-GATE: ${verdictLine || 'no verdict line found'}`);
       if (/reject/i.test(verdictLine)) {
         logger.log('⛔ Plan-gate rejected — writing escalation and exiting 7.');
-        writeFileSync(
-          join(ctx.stateDir, 'escalation.md'),
+        const escalationBody =
           '# Plan-gate rejected the plan\n\n' +
-            'See .harness/plan-review.md for details.\n',
-        );
+          'See .harness/plan-review.md for details.\n';
+        if (ctx.pg && ctx.workspaceId) {
+          const { setEscalationPg } = await import('./mission-state-pg');
+          await setEscalationPg(
+            { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: harnessSlug(ctx.projectDir) },
+            escalationBody,
+          );
+        } else {
+          writeFileSync(join(ctx.stateDir, 'escalation.md'), escalationBody);
+        }
         logger.notifyEvent('escalate', 'Plan-gate rejected the scoper output');
         return { stop: 'plan-rejected', exitCode: 7 };
       }

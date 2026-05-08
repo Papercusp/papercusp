@@ -76,8 +76,60 @@ export function sumJsonlCost(logDir: string): number {
   return total;
 }
 
-/** Inspect cost; return what the loop should do about it. Pure function. */
+import type { MissionStatePgContext } from './mission-state-pg';
+import { readCostWarnFiredPg, setCostWarnFiredPg } from './mission-state-pg';
+
+/**
+ * Inspect cost; return what the loop should do about it.
+ *
+ * When `ctx` is provided, uses the harness_mission_state row's
+ * `cost_warn_fired` column instead of the FS sentinel — and returns a
+ * Promise. Without ctx, the legacy synchronous FS-sentinel path runs.
+ */
 export function evaluateCostCap(
+  cfg: HarnessConfig,
+  logDir: string,
+  stateDir: string,
+): CostCapResult;
+export function evaluateCostCap(
+  cfg: HarnessConfig,
+  logDir: string,
+  stateDir: string,
+  ctx: MissionStatePgContext,
+): Promise<CostCapResult>;
+export function evaluateCostCap(
+  cfg: HarnessConfig,
+  logDir: string,
+  stateDir: string,
+  ctx?: MissionStatePgContext,
+): CostCapResult | Promise<CostCapResult> {
+  if (ctx) return evaluateCostCapPg(cfg, logDir, ctx);
+  return evaluateCostCapFs(cfg, logDir, stateDir);
+}
+
+async function evaluateCostCapPg(
+  cfg: HarnessConfig,
+  logDir: string,
+  ctx: MissionStatePgContext,
+): Promise<CostCapResult> {
+  const cap = parseCap(cfg);
+  const total = sumJsonlCost(logDir);
+  if (cap === null) {
+    return { total, cap: null, overCap: false, warned: false, shouldPause: false };
+  }
+  if (total >= cap) {
+    return { total, cap, overCap: true, warned: false, shouldPause: false };
+  }
+  const warnFraction = Number(configGet<unknown>(cfg, 'maxCostUsdWarnThreshold', 0.8));
+  const warnThreshold = cap * (Number.isFinite(warnFraction) ? warnFraction : 0.8);
+  const alreadyFired = await readCostWarnFiredPg(ctx);
+  const atWarn = total >= warnThreshold && !alreadyFired;
+  if (atWarn) await setCostWarnFiredPg(ctx);
+  const shouldPause = atWarn && configGet<boolean>(cfg, 'maxCostUsdAutoPause', false) === true;
+  return { total, cap, overCap: false, warned: atWarn, shouldPause };
+}
+
+function evaluateCostCapFs(
   cfg: HarnessConfig,
   logDir: string,
   stateDir: string,
@@ -94,6 +146,7 @@ export function evaluateCostCap(
   }
 
   // Soft warn — fires once per mission.
+  // FS fallback only; PG-aware version is checkCostCapPg below.
   const sentinelPath = join(stateDir, '.cost-warn-fired');
   const sentinelExists = existsSync(sentinelPath);
   const warnFraction = Number(configGet<unknown>(cfg, 'maxCostUsdWarnThreshold', 0.8));
