@@ -16008,6 +16008,7 @@ html body .h-root.h-root :is(
     grid-column: 1 / -1;
   }
 }
+
 /* Issues + logs polish: clearer issue-filter tint separation, move the
    issues/tests/report tabs to the left side, and remove the run.log
    timeline scrubber graph entirely. */
@@ -16062,4 +16063,53 @@ html body .h-root.h-root :is(
   .h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions {
     margin-left: 0 !important;
   }
+}
+
+/* Right-side drawer feedback pass r2: polish readability, scroll hooks,
+   and selected lifecycle semantics. */
+.h-feature-peek-drawer,
+.h-issue-detail-drawer {
+  min-height: 0 !important;
+}
+
+.h-drawer-body {
+  min-height: 0;
+  overflow-y: auto !important;
+  scrollbar-gutter: stable;
+}
+
+.h-drawer-eyebrow-separator {
+  color: color-mix(in oklab, var(--fg-dim), transparent 20%);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.h-issue-detail-drawer .h-issue-sev,
+.h-issue-detail-drawer .h-issue-status,
+.h-issue-detail-drawer .h-issue-linked,
+.h-issue-detail-drawer .h-issue-id {
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+}
+
+.h-issue-detail-drawer .h-issue-sev,
+.h-issue-detail-drawer .h-issue-status {
+  font-weight: 760 !important;
+}
+
+.h-feature-status-button[aria-pressed="true"],
+.h-feature-status-button.is-current {
+  opacity: 1 !important;
+  color: color-mix(in oklab, var(--fg), white 12%) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.085), rgba(255, 255, 255, 0.020)),
+    color-mix(in oklab, var(--h-popout-accent), transparent 82%) !important;
+}
+
+.h-feature-status-button[aria-pressed="true"]:hover,
+.h-feature-status-button.is-current:hover,
+.h-feature-status-button[aria-pressed="true"]:focus-visible,
+.h-feature-status-button.is-current:focus-visible {
+  transform: none;
 }

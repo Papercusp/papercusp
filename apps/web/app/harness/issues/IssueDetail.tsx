@@ -1,11 +1,23 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Drawer } from 'vaul';
 import { X, ArrowUpRight, MessageSquarePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Issue } from './types';
-import { KbdHint } from '../primitives';
+import { useSyncQuery } from '@restart/sync';
+import { KbdHint, RolePill } from '../primitives';
+
+const FeatureTimelinePanel = dynamic(() => import('../FeatureTimelinePanel'), { ssr: false });
+
+interface IssueAgentRun {
+  harnessSlug: string;
+  runId: string;
+  role: string;
+  featureId?: string | null;
+  ts: number;
+}
 
 async function call(slug: string, id: string, action: string, body: any) {
   const res = await fetch(`/api/harness/${slug}/issues/${id}/${action}`, {
@@ -28,6 +40,15 @@ export function IssueDetail({
 }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const { data: agentRows } = useSyncQuery<IssueAgentRun>({
+    queryName: 'agentRunsConsolidated.bySlug',
+    args: { harnessSlug: slug },
+    enabled: !!slug,
+  });
+  const recentIssueRuns = Array.isArray(agentRows) && issue.linkedFeatureId
+    ? agentRows.filter((r) => r.featureId === issue.linkedFeatureId).slice(0, 8)
+    : [];
 
 
   const addNote = async () => {
@@ -42,6 +63,7 @@ export function IssueDetail({
   };
 
   return (
+    <>
     <Drawer.Root open onOpenChange={(o) => { if (!o) onClose(); }} direction="right">
       <Drawer.Portal>
         <Drawer.Overlay
@@ -80,7 +102,7 @@ export function IssueDetail({
           </button>
         </div>
 
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px', background: '#17131f' }}>
+        <div className="h-drawer-body" style={{ flex: 1, overflow: 'auto', padding: '16px 18px', background: '#17131f' }}>
           <div className="h-drawer-title-card" style={{
             marginBottom: 16,
             padding: '14px 14px 12px',
@@ -99,8 +121,11 @@ export function IssueDetail({
               <span>Issue</span>
               <span aria-hidden>·</span>
               <span className="h-issue-id">{issue.id}</span>
+              <span className="h-drawer-eyebrow-separator" aria-hidden="true">·</span>
               <span className={`h-issue-sev sev-${issue.severity}`}>{issue.severity}</span>
+              <span className="h-drawer-eyebrow-separator" aria-hidden="true">·</span>
               <span className={`h-issue-status st-${issue.status}`}>{issue.status}</span>
+              {issue.linkedFeatureId && <span className="h-drawer-eyebrow-separator" aria-hidden="true">·</span>}
               {issue.linkedFeatureId && (
                 <span className="h-issue-linked"><ArrowUpRight size={11} /> {issue.linkedFeatureId}</span>
               )}
@@ -147,6 +172,49 @@ export function IssueDetail({
               </div>
             </Section>
           )}
+
+          <Section title={`Recent agent runs${recentIssueRuns.length ? ` · ${recentIssueRuns.length}` : ''}`}>
+            {recentIssueRuns.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--fg-dim)', fontStyle: 'italic' }}>
+                {issue.linkedFeatureId ? 'No runs linked to this issue yet.' : 'No linked feature yet, so runs cannot be correlated.'}
+              </div>
+            ) : (
+              <div className="h-feature-run-list" role="list" aria-label="Recent issue agent runs" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {recentIssueRuns.map((r) => {
+                  const runLabel = displayRunId(r);
+                  const runTime = formatRunTs(r.ts);
+                  return (
+                    <div
+                      key={r.runId}
+                      className="h-feature-run-row"
+                      role="listitem"
+                      aria-label={`${r.role || 'unknown'} run ${runLabel} at ${runTime}.`}
+                      style={{
+                        display: 'grid',
+                        alignItems: 'center',
+                        gap: 8,
+                        gridTemplateColumns: 'minmax(7.5rem, auto) auto auto minmax(0, 1fr)',
+                        padding: '6px 8px',
+                        background: '#201a2a',
+                        border: '1px solid var(--border)',
+                        borderRadius: 4,
+                        color: 'var(--fg)',
+                        fontSize: 12,
+                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
+                      }}
+                    >
+                      <RolePill role={r.role} />
+                      <span style={{ color: 'var(--fg-dim)', fontSize: 11 }}>{runTime}</span>
+                      <span aria-hidden style={{ color: 'var(--fg-dim)' }}>·</span>
+                      <code style={{ color: 'var(--fg-dim)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {runLabel}
+                      </code>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
         </div>
 
         <div style={{
@@ -155,6 +223,15 @@ export function IssueDetail({
           background: '#17131f',
           boxShadow: '0 -12px 28px rgba(0,0,0,0.18)',
         }}>
+          <button
+            type="button"
+            className="h-btn ghost"
+            disabled={!issue.linkedFeatureId}
+            onClick={() => setShowTimeline(true)}
+            title={issue.linkedFeatureId ? `View timeline for ${issue.linkedFeatureId}` : 'Link this issue to a feature before viewing a timeline'}
+          >
+            View timeline
+          </button>
           <input
             type="text"
             value={note}
@@ -177,7 +254,35 @@ export function IssueDetail({
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
+    {showTimeline && issue.linkedFeatureId && (
+      <FeatureTimelinePanel
+        slug={slug}
+        featureId={issue.linkedFeatureId}
+        onClose={() => setShowTimeline(false)}
+      />
+    )}
+    </>
   );
+}
+
+function displayRunId(run: { runId: string; role?: string | null }): string {
+  const role = run.role?.trim();
+  let label = run.runId.replace(/\.log$/i, '').trim();
+  if (role) {
+    label = label.replace(new RegExp(`^[-_]?${escapeRegExp(role)}[-_]?`, 'i'), '');
+  }
+  label = label.replace(/^[-_]+/, '').trim();
+  if (!label) label = run.runId.replace(/\.log$/i, '').trim() || 'run';
+  return label.length > 28 ? `…${label.slice(-27)}` : label;
+}
+
+function formatRunTs(ts: number): string {
+  const millis = ts > 0 && ts < 10_000_000_000 ? ts * 1000 : ts;
+  return new Date(millis).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

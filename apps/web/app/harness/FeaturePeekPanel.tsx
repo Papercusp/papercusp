@@ -174,7 +174,7 @@ export default function FeaturePeekPanel({
 
         {/* Body */}
         {/* Body */}
-        <div style={{
+        <div className="h-drawer-body" style={{
           flex: 1,
           overflowY: 'auto',
           padding: '16px 18px 18px',
@@ -199,6 +199,7 @@ export default function FeaturePeekPanel({
               <span aria-hidden>·</span>
               <IdPill id={feature.id} onClick={() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }} />
               {copied && <span style={{ fontSize: SIZES.xs, color: COLORS.successText }}>copied</span>}
+              <span className="h-drawer-eyebrow-separator" aria-hidden="true">·</span>
               <StatusPill status={feature.status} />
             </div>
             <Drawer.Title style={{
@@ -241,8 +242,7 @@ export default function FeaturePeekPanel({
                       key={st}
                       type="button"
                       className={`h-feature-status-button${active ? ' is-current' : ''}`}
-                      onClick={() => onSetStatus(feature.id, st)}
-                      disabled={active}
+                      onClick={() => { if (!active) onSetStatus(feature.id, st); }}
                       aria-pressed={active}
                       aria-label={active ? `Current status: ${ss.label}` : `Move feature to ${ss.label}`}
                       title={active ? `Current status: ${ss.label}` : `Move to: ${ss.label}`}
@@ -254,7 +254,7 @@ export default function FeaturePeekPanel({
                         borderRadius: 999,
                         fontSize: SIZES.xs,
                         color: active ? ss.text : COLORS.textMuted,
-                        cursor: active ? 'default' : 'pointer',
+                        cursor: 'pointer',
                       }}
                     >
                       {active ? <span aria-hidden>✓</span> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: ss.solid }} />}
