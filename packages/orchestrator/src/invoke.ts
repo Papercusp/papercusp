@@ -443,12 +443,18 @@ export async function invoke(
   writeFileSync(jsonlPath, '');
   writeFileSync(errPath, '');
 
-  // Live chunk streaming via in-process bus on the operator (replaces
-  // Phase 4b PG-streaming approach — see design discussion in
-  // ARCHITECTURE.md). Each stdout chunk is HTTP-POSTed to
-  // /api/internal/run-chunk on the operator; the operator's per-run
-  // EventEmitter fans out to SSE subscribers (the AgentThinkingPopover,
-  // PiPanel, etc) without filesystem coupling.
+  // Live chunk streaming via in-process bus on the operator. Each
+  // stdout chunk is HTTP-POSTed to /api/internal/run-chunk on the
+  // operator; the operator's per-run EventEmitter fans out to SSE
+  // subscribers without filesystem coupling.
+  //
+  // OPTIONAL persistence: when PAPERCUSP_PERSIST_CHUNKS=1 AND ctx.pg
+  // is wired, each chunk is ALSO INSERTed into harness_run_chunks for
+  // archival per-chunk replay (timing analysis, fine-grained playback).
+  // The bus delivery does not wait for the PG write — persistence is
+  // a parallel queue. Default OFF: full-body persistence at run exit
+  // (harness_run_output, Phase 4) covers post-hoc replay for ~all use
+  // cases.
   //
   // Falls back to file-only when:
   //   - PAPERCUSP_OPERATOR_BASE is unset/unreachable (CLI-only mode,
@@ -458,7 +464,9 @@ export async function invoke(
   // Phase 4 ingest-at-exit + human tail-f.
   let chunkSeq = 0;
   let chunkPostQueue: Promise<void> = Promise.resolve();
+  let chunkPgQueue: Promise<void> = Promise.resolve();
   const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  const persistChunks = process.env.PAPERCUSP_PERSIST_CHUNKS === '1';
   let harnessToken: string | null = null;
   try {
     const cfgRaw = readFileSync(`${ctx.stateDir}/config.json`, 'utf8');
@@ -467,6 +475,22 @@ export async function invoke(
       harnessToken = cfgJson.harness_token;
     }
   } catch { /* no token → bus disabled, file-only path */ }
+
+  // Pre-resolve the PG chunk-archival path when both flag + ctx.pg are
+  // set. Done before the spawn Promise so the sync stdout handler can
+  // reference appendChunkPg without an `await import`.
+  type ChunkPgCtx = { pg: OrchestratorPg; workspaceId: string; harnessSlug: string };
+  let chunksPgCtx: ChunkPgCtx | null = null;
+  let appendChunkPgFn: ((c: ChunkPgCtx, runId: string, seq: number, data: string) => Promise<void>) | null = null;
+  if (persistChunks && ctx.pg && ctx.workspaceId) {
+    const { harnessSlug: getSlug } = await import('./state');
+    chunksPgCtx = {
+      pg: ctx.pg,
+      workspaceId: ctx.workspaceId,
+      harnessSlug: getSlug(ctx.projectDir),
+    };
+    appendChunkPgFn = (await import('./run-chunks-pg')).appendChunkPg;
+  }
 
   const outcome: SpawnOutcome = await new Promise((resolve) => {
     const child = spawn(command, finalArgv, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -489,9 +513,11 @@ export async function invoke(
     // handler's fs.watch fallback keep the stream functional.
     child.stdout.on('data', (chunk: Buffer) => {
       appendFileSync(jsonlPath, chunk);
+      const mySeq = chunkSeq;
+      const myData = chunk.toString('utf8');
+      let advancedSeq = false;
       if (harnessToken) {
-        const mySeq = chunkSeq++;
-        const myData = chunk.toString('utf8');
+        advancedSeq = true;
         // Serialize POSTs via Promise chain so chunks land in arrival
         // order at the bus even though fetch is async. Errors are
         // swallowed — never break the stream.
@@ -508,6 +534,13 @@ export async function invoke(
           } catch { /* operator unreachable; file path covers us */ }
         });
       }
+      // Optional: also persist to PG for archival per-chunk replay.
+      // Independent queue from the bus POST; both share the seq number.
+      if (chunksPgCtx && appendChunkPgFn) {
+        advancedSeq = true;
+        chunkPgQueue = chunkPgQueue.then(() => appendChunkPgFn!(chunksPgCtx!, runId, mySeq, myData));
+      }
+      if (advancedSeq) chunkSeq++;
     });
     child.stderr.on('data', (chunk: Buffer) => appendFileSync(errPath, chunk));
 
@@ -566,6 +599,12 @@ export async function invoke(
         body: JSON.stringify({ runId, seq: chunkSeq, chunk: '', done: true }),
       });
     } catch { /* operator unreachable; subscribers fall back to file */ }
+  }
+  // Drain the optional PG-archival queue. If a chunk INSERT was still
+  // in flight when the subprocess closed, this lets it complete before
+  // Phase 4 finalization (run_output INSERT) runs.
+  if (chunksPgCtx) {
+    await chunkPgQueue.catch(() => {});
   }
 
   // 11. Extract result text and write to .out.
