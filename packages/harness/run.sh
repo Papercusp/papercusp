@@ -245,9 +245,47 @@ log() {
     local ts
     ts="$(date -Iseconds)"
     local raw_line; raw_line="$(printf '[%s] %s' "$ts" "$*")"
+    local level; level="$(_log_level "$*")"
     printf '%s\n' "$raw_line" | tee -a "$LOG_DIR/run.log"
-    _log_jsonl "harness" "$(_log_level "$*")" "$*" "$ts"
-    _post_log_event "$raw_line" "$(_log_level "$*")" "$*" "$ts" &
+    _log_jsonl "harness" "$level" "$*" "$ts"
+    _post_log_event "$raw_line" "$level" "$*" "$ts" &
+    if [ "$level" = "decision" ]; then
+        _post_decision_event "$ts" "$*" &
+    fi
+}
+
+# When a log line begins with "ORCH decision: <VERB> <args>", classify
+# and POST it to /api/internal/decision-event. Replaces the chokidar
+# mirror that re-tail-grepped run.log on every fs.watch event.
+_post_decision_event() {
+    local ts="$1"; local msg="$2"
+    local rest=${msg#ORCH decision: }
+    local verb=${rest%% *}
+    local args=""
+    case "$rest" in
+        *' '*) args=${rest#* } ;;
+    esac
+    [ -z "$verb" ] && return 0
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    local body
+    body="$(ISO="$ts" VERB="$verb" ARGS="$args" ITER="${PAPERCUSP_CURRENT_ITERATION:-}" python3 -c '
+import json, os, sys
+out = {"iso": os.environ["ISO"], "verb": os.environ["VERB"], "args": os.environ["ARGS"]}
+it = os.environ.get("ITER", "").strip()
+if it:
+    try: out["iteration"] = int(it)
+    except ValueError: pass
+sys.stdout.write(json.dumps(out))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 2 \
+        -d "$body" "$operator_base/api/internal/decision-event" >/dev/null 2>&1 || true
 }
 
 # POST one log line to the operator's in-process log bus so SSE
