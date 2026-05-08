@@ -120,6 +120,19 @@ MAX_ITERATIONS="${MAX_ITERATIONS:-200}"
 # $AGENT_BACKEND ('claude-code' | 'omp') selects the structured-stream
 # format we append; default is 'omp' since omp routes through Meridian
 # and the user's Claude Max subscription, avoiding direct API quotas.
+#
+# When the user has set /settings/agent in the operator UI, the operator
+# mirrors AGENT_BACKEND/AGENT_CMD/AGENT_MODELS into a shell-sourceable
+# file. Source it here so headless `run.sh` invocations from the user's
+# terminal pick up the same toggle the operator process uses. Inline env
+# (e.g. `AGENT_CMD=... ./run.sh`) still wins because the source happens
+# before the parameter expansions below.
+if [ -z "${AGENT_CMD:-}" ] && [ -z "${AGENT_BACKEND:-}" ]; then
+    if [ -f "$HOME/.papercusp/agent/env.sh" ]; then
+        # shellcheck disable=SC1091
+        . "$HOME/.papercusp/agent/env.sh"
+    fi
+fi
 CLAUDE="${AGENT_CMD:-${CLAUDE:-omp -p}}"
 AGENT_BACKEND="${AGENT_BACKEND:-}"
 if [ -z "$AGENT_BACKEND" ]; then
