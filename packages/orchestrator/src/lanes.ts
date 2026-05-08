@@ -168,6 +168,49 @@ export function parallelWorkersPerFeature(cfg: HarnessConfig): number {
 }
 
 /**
+ * `parallelWorkers.workingStateCheck` — the L1 typecheck command the
+ * worker chunk loop runs after each chunk's edits. Defaults to
+ * `pnpm typecheck` because that's what the papercup-shaped repo
+ * targets. Other repos (Python, Rust, Go) override this in their
+ * harness's config.json. Empty string disables the gate (workers
+ * commit without a check; not recommended).
+ */
+export function workingStateCheckCommand(cfg: HarnessConfig): string {
+  const v = configGet<string>(cfg, 'parallelWorkers.workingStateCheck', 'pnpm typecheck');
+  return typeof v === 'string' ? v : 'pnpm typecheck';
+}
+
+/**
+ * `parallelWorkers.replanStrikes` — how many times the worker chunk
+ * loop will replan a single chunk after the L1 typecheck rejects it
+ * before escalating to the debugger. Defaults to 3 — three rounds is
+ * usually enough for the LLM to converge on a working bundle, and
+ * past that escalation gets a smarter look at the failure.
+ */
+export function replanStrikes(cfg: HarnessConfig): number {
+  const v = configGet<unknown>(cfg, 'parallelWorkers.replanStrikes', 3);
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) return Math.floor(v);
+  if (typeof v === 'string') {
+    const n = parseInt(v, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 3;
+}
+
+/**
+ * `parallelWorkers.escalateToRole` — which agent role takes over when
+ * a chunk hits replanStrikes. Defaults to 'debugger'. Other reasonable
+ * values: 'scoper' (if you suspect the feature is misscoped),
+ * 'architect' (if structural rework is needed). The role just has to
+ * exist in the harness's prompt set; misspelled roles fall back to
+ * marking the feature `failing` for user visibility.
+ */
+export function escalateToRole(cfg: HarnessConfig): string {
+  const v = configGet<string>(cfg, 'parallelWorkers.escalateToRole', 'debugger');
+  return typeof v === 'string' && v.length > 0 ? v : 'debugger';
+}
+
+/**
  * Whether competition mode is active for the current config. Requires
  * branchIsolation + worktrees in addition to mode==competition (matches
  * bash gate).
