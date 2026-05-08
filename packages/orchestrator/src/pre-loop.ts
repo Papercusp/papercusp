@@ -21,7 +21,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { configGet } from './config';
-import { featuresExist } from './state';
+import { featuresExist, stateCtx } from './state';
 import { invoke } from './invoke';
 import { runHook } from './hooks';
 import { git } from './git';
@@ -44,7 +44,7 @@ export async function runPreLoop(
 ): Promise<PreLoopResult> {
   // Step 1: PLAN — invoke scoper if mission state is fresh.
   const contractPath = join(ctx.stateDir, 'validation-contract.md');
-  const planNeeded = !existsSync(contractPath) || !featuresExist(ctx.stateDir);
+  const planNeeded = !existsSync(contractPath) || !(await featuresExist(ctx.stateDir, stateCtx(ctx)));
   if (planNeeded) {
     logger.log('PLAN: SPEC.md detected, no contract or features yet. Invoking scoper (initial mode).');
     try {
@@ -55,7 +55,7 @@ export async function runPreLoop(
     } catch (err) {
       logger.log(`SCOPER error: ${(err as Error).message}`);
     }
-    if (!existsSync(contractPath) || !featuresExist(ctx.stateDir)) {
+    if (!existsSync(contractPath) || !(await featuresExist(ctx.stateDir, stateCtx(ctx)))) {
       logger.log(`ERROR: scoper did not produce required artifacts. See ${ctx.logDir}.`);
       return { stop: 'scoper-failed', exitCode: 2 };
     }

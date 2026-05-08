@@ -18,7 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { configGet, readConfig } from './config';
 import { parseDecision } from './decision-parse';
 import { invoke } from './invoke';
-import { featureAttempts, readFeatures, setFeatureStatus } from './state';
+import { featureAttempts, readFeatures, setFeatureStatus, stateCtx } from './state';
 import {
   branchIsoPostValidator,
   branchIsoPostWorker,
@@ -643,7 +643,7 @@ async function handleNextWorker(
   // Optional debugger before the worker.
   if (configGet<boolean>(cfg, 'debugger.enabled', true) === true) {
     const threshold = Number(configGet<unknown>(cfg, 'debugger.threshold', 3));
-    const attempts = featureAttempts(ctx.stateDir, fid);
+    const attempts = await featureAttempts(ctx.stateDir, fid, stateCtx(ctx));
     const debugNote = join(ctx.stateDir, 'debug', `${fid}.md`);
     if (attempts >= threshold && !existsSync(debugNote)) {
       logger.log(
@@ -677,7 +677,7 @@ async function handleNextWorker(
     log: logger.log,
   });
   logger.log(`WORKER ${fid} starting`);
-  setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true });
+  await setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true, ctx: stateCtx(ctx) });
 
   // If worktrees enabled, route the worker subprocess to the worktree dir
   // by passing a worktreePathFor callback to invoke().
@@ -787,7 +787,7 @@ async function handleNextValidator(
   // 'passed' after the validator returns. Validator updates features.json
   // directly; this is the cheapest way to surface the per-feature event.
   const beforeStatus = new Map<string, string>();
-  for (const f of readFeatures(ctx.stateDir)) beforeStatus.set(f.id, f.status);
+  for (const f of (await readFeatures(ctx.stateDir, stateCtx(ctx)))) beforeStatus.set(f.id, f.status);
 
   let validatorRc = 0;
   try {
@@ -819,7 +819,7 @@ async function handleNextValidator(
   // fire passes --feature-id=... so plugin scripts can target the event.
   // Also attach an adaptive-telemetry outcome for the matching pending row,
   // if any (see _adaptiveTelemetryByFeature in handleAdaptiveWorker).
-  for (const f of readFeatures(ctx.stateDir)) {
+  for (const f of (await readFeatures(ctx.stateDir, stateCtx(ctx)))) {
     const before = beforeStatus.get(f.id);
     if (f.status === 'passed' && before !== 'passed') {
       firePluginHook({
@@ -906,7 +906,7 @@ async function handleCompetitionWorker(
     },
     log: logger.log,
   });
-  setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true });
+  await setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true, ctx: stateCtx(ctx) });
 
   const branchIsoCtx = {
     cfg,
@@ -980,7 +980,7 @@ async function handleCompetitionWorker(
     // Write the competition manifest so the validator iteration can
     // compare worktrees. handleNextValidator's waitForFeature(fid)
     // ensures it waits until this point before reading the manifest.
-    setFeatureStatus(ctx.stateDir, fid, 'validating');
+    await setFeatureStatus(ctx.stateDir, fid, 'validating', { ctx: stateCtx(ctx) });
     writeCompetitionManifest(ctx.stateDir, fid, effectivePer);
     logger.log(
       `COMPETITION: manifest ${competitionManifestPath(ctx.stateDir, fid)} written` +
@@ -1109,7 +1109,7 @@ async function handleCompetitionWorkerWithCount(
     },
     log: logger.log,
   });
-  setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true });
+  await setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true, ctx: stateCtx(ctx) });
 
   const branchIsoCtx = {
     cfg,
@@ -1170,7 +1170,7 @@ async function handleCompetitionWorkerWithCount(
 
     await Promise.all(lanePromises);
 
-    setFeatureStatus(ctx.stateDir, fid, 'validating');
+    await setFeatureStatus(ctx.stateDir, fid, 'validating', { ctx: stateCtx(ctx) });
     writeCompetitionManifest(ctx.stateDir, fid, effectivePer);
     logger.log(
       `COMPETITION (adaptive): manifest ${competitionManifestPath(ctx.stateDir, fid)} written` +
@@ -1204,7 +1204,7 @@ async function handleParallelLaneWorker(
   logger.log(
     `WORKER ${fid} starting (parallel lane, ${lanePool.count() - 1}/${max} active before this)`,
   );
-  setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true });
+  await setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true, ctx: stateCtx(ctx) });
 
   const branchIsoCtx = {
     cfg,
@@ -1254,7 +1254,7 @@ async function handleParallelLaneWorker(
       log: logger.log,
     });
     branchIsoPostWorker(branchIsoCtx, fid);
-    setFeatureStatus(ctx.stateDir, fid, 'validating');
+    await setFeatureStatus(ctx.stateDir, fid, 'validating', { ctx: stateCtx(ctx) });
     lanePool.release(laneId);
   })();
 
@@ -1711,10 +1711,10 @@ async function handleNextArchitect(
   logger.log(`ARCHITECT verdict: ${verdict || '(none)'}`);
 
   if (verdict.startsWith('PATCH')) {
-    setFeatureStatus(ctx.stateDir, fid, 'todo', { resetAttempts: true });
+    await setFeatureStatus(ctx.stateDir, fid, 'todo', { resetAttempts: true, ctx: stateCtx(ctx) });
     logger.log(`ARCHITECT patched spec for ${fid}; reset to todo.`);
   } else if (verdict.startsWith('REVIEW')) {
-    setFeatureStatus(ctx.stateDir, fid, 'blocked');
+    await setFeatureStatus(ctx.stateDir, fid, 'blocked', { ctx: stateCtx(ctx) });
     logger.log(`ARCHITECT queued review for ${fid}; blocked until resolved.`);
     logger.notifyEvent('review-pending', `${fid} needs human input`);
   } else {
