@@ -443,22 +443,30 @@ export async function invoke(
   writeFileSync(jsonlPath, '');
   writeFileSync(errPath, '');
 
-  // Phase 4b live PG streaming: pre-resolve the chunk-streaming context
-  // before the spawn Promise so the stdout handler (which is sync) can
-  // reference it without an `await import`.
+  // Live chunk streaming via in-process bus on the operator (replaces
+  // Phase 4b PG-streaming approach — see design discussion in
+  // ARCHITECTURE.md). Each stdout chunk is HTTP-POSTed to
+  // /api/internal/run-chunk on the operator; the operator's per-run
+  // EventEmitter fans out to SSE subscribers (the AgentThinkingPopover,
+  // PiPanel, etc) without filesystem coupling.
+  //
+  // Falls back to file-only when:
+  //   - PAPERCUSP_OPERATOR_BASE is unset/unreachable (CLI-only mode,
+  //     no operator running)
+  //   - harness_token isn't available (legacy harness without one)
+  // The on-disk JSONL still gets every chunk via appendFileSync for
+  // Phase 4 ingest-at-exit + human tail-f.
   let chunkSeq = 0;
-  let chunkPgQueue: Promise<void> = Promise.resolve();
-  let runChunksCtx: { pg: OrchestratorPg; workspaceId: string; harnessSlug: string } | null = null;
-  let appendChunkFn: ((c: NonNullable<typeof runChunksCtx>, runId: string, seq: number, data: string) => Promise<void>) | null = null;
-  if (ctx.pg && ctx.workspaceId) {
-    const { harnessSlug: getSlug } = await import('./state');
-    runChunksCtx = {
-      pg: ctx.pg,
-      workspaceId: ctx.workspaceId,
-      harnessSlug: getSlug(ctx.projectDir),
-    };
-    appendChunkFn = (await import('./run-chunks-pg')).appendChunkPg;
-  }
+  let chunkPostQueue: Promise<void> = Promise.resolve();
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  let harnessToken: string | null = null;
+  try {
+    const cfgRaw = readFileSync(`${ctx.stateDir}/config.json`, 'utf8');
+    const cfgJson = JSON.parse(cfgRaw) as { harness_token?: string };
+    if (typeof cfgJson.harness_token === 'string' && cfgJson.harness_token.length > 0) {
+      harnessToken = cfgJson.harness_token;
+    }
+  } catch { /* no token → bus disabled, file-only path */ }
 
   const outcome: SpawnOutcome = await new Promise((resolve) => {
     const child = spawn(command, finalArgv, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -472,22 +480,33 @@ export async function invoke(
       }, timeoutMs);
     }
 
-    // Phase 4b live PG streaming: when ctx.pg is wired, every stdout
-    // chunk also lands as a row in harness_run_chunks + pg_notify on
-    // 'run:<runId>'. Subscribers (operator SSE endpoint) LISTEN on the
-    // channel and SELECT new rows — direct replacement for fs.watch on
-    // the JSONL file. Chunks remain on disk during the run for
-    // tail -f compat; the disk file becomes prunable once Phase 4
-    // ingest-at-exit row is finalized.
+    // Live streaming via the operator's chunk bus. POST each stdout
+    // chunk to /api/internal/run-chunk; the operator publishes to an
+    // in-process EventEmitter that the SSE handler subscribes to.
+    // Sub-ms latency end-to-end vs ~10-50ms via fs.watch. Best-effort:
+    // if the POST fails (operator down, network hiccup), the on-disk
+    // JSONL still has the chunk and Phase 4 ingest-at-exit + the SSE
+    // handler's fs.watch fallback keep the stream functional.
     child.stdout.on('data', (chunk: Buffer) => {
       appendFileSync(jsonlPath, chunk);
-      if (runChunksCtx && appendChunkFn) {
+      if (harnessToken) {
         const mySeq = chunkSeq++;
         const myData = chunk.toString('utf8');
-        // Serialize PG INSERTs via Promise chain so chunks land in
-        // arrival order even under bursty stdout. Errors are swallowed
-        // inside appendChunkPg — never break the stream.
-        chunkPgQueue = chunkPgQueue.then(() => appendChunkFn!(runChunksCtx!, runId, mySeq, myData));
+        // Serialize POSTs via Promise chain so chunks land in arrival
+        // order at the bus even though fetch is async. Errors are
+        // swallowed — never break the stream.
+        chunkPostQueue = chunkPostQueue.then(async () => {
+          try {
+            await fetch(`${operatorBase}/api/internal/run-chunk`, {
+              method: 'POST',
+              headers: {
+                'authorization': `Bearer ${harnessToken}`,
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({ runId, seq: mySeq, chunk: myData }),
+            });
+          } catch { /* operator unreachable; file path covers us */ }
+        });
       }
     });
     child.stderr.on('data', (chunk: Buffer) => appendFileSync(errPath, chunk));
@@ -533,12 +552,20 @@ export async function invoke(
     });
   });
 
-  // Drain the live-streaming queue (Phase 4b) so the final pg_notify
-  // for the last chunk has fired before the subprocess-exit ingest
-  // overwrites/finalizes state. Errors are already swallowed inside
-  // the queue; this just waits for the chain to settle.
-  if (runChunksCtx) {
-    await chunkPgQueue.catch(() => {});
+  // Drain the live-streaming POST queue + send a final close signal
+  // so subscribers know the run finished. Best-effort throughout.
+  if (harnessToken) {
+    await chunkPostQueue.catch(() => {});
+    try {
+      await fetch(`${operatorBase}/api/internal/run-chunk`, {
+        method: 'POST',
+        headers: {
+          'authorization': `Bearer ${harnessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ runId, seq: chunkSeq, chunk: '', done: true }),
+      });
+    } catch { /* operator unreachable; subscribers fall back to file */ }
   }
 
   // 11. Extract result text and write to .out.
