@@ -63,9 +63,81 @@ export function parallelMaxWorkers(cfg: HarnessConfig): number {
 }
 
 /** Read the parallelism mode (default 'lane'). */
-export function parallelMode(cfg: HarnessConfig): 'lane' | 'competition' {
+export function parallelMode(cfg: HarnessConfig): 'lane' | 'competition' | 'adaptive' {
   const v = configGet<string>(cfg, 'parallelWorkers.mode', 'lane');
-  return v === 'competition' ? 'competition' : 'lane';
+  if (v === 'competition') return 'competition';
+  if (v === 'adaptive') return 'adaptive';
+  return 'lane';
+}
+
+/**
+ * Adaptive-mode tier configuration.
+ *
+ * In adaptive mode the orchestrator LLM picks how many workers to
+ * dispatch per feature from a bounded vocabulary. Tiers and labels are
+ * configured globally in harness_shared.orchestrator_settings (DB-backed,
+ * editable via the /settings/orchestrator UI). The orchestrator main-loop
+ * fetches them at startup and seeds the prompt with both the rubric
+ * and the current free-slot budget.
+ *
+ * Defaults match the static hybrid mode's intuition: {1, 2, 4} =
+ * trivial / normal / hard. Returning an immutable shape (cloned arrays)
+ * so callers can't mutate cached config.
+ */
+export interface AdaptiveTiers {
+  tiers: number[];
+  labels: string[];
+  rubric: string;
+}
+
+export const DEFAULT_ADAPTIVE_TIERS: AdaptiveTiers = {
+  tiers: [1, 2, 4],
+  labels: ['trivial', 'normal', 'hard'],
+  rubric: '',
+};
+
+export function parallelAdaptiveTiers(cfg: HarnessConfig): AdaptiveTiers {
+  const raw = configGet<unknown>(cfg, 'parallelWorkers.adaptive', undefined);
+  if (!raw || typeof raw !== 'object') {
+    return {
+      tiers: [...DEFAULT_ADAPTIVE_TIERS.tiers],
+      labels: [...DEFAULT_ADAPTIVE_TIERS.labels],
+      rubric: DEFAULT_ADAPTIVE_TIERS.rubric,
+    };
+  }
+  const obj = raw as Record<string, unknown>;
+  const tiersIn = Array.isArray(obj.tiers) ? obj.tiers : DEFAULT_ADAPTIVE_TIERS.tiers;
+  const labelsIn = Array.isArray(obj.labels) ? obj.labels : DEFAULT_ADAPTIVE_TIERS.labels;
+  const tiers = tiersIn
+    .map((n) => (typeof n === 'number' ? n : parseInt(String(n), 10)))
+    .filter((n): n is number => Number.isFinite(n) && n > 0)
+    .map((n) => Math.floor(n));
+  const labels = labelsIn.map((s) => String(s ?? ''));
+  // Defensive: if tier/label lengths mismatched, fall back to defaults
+  // rather than mid-render misalignment. Caller (settings PUT) validates
+  // on write, so this branch is for malformed external state.
+  if (tiers.length < 2 || tiers.length !== labels.length) {
+    return {
+      tiers: [...DEFAULT_ADAPTIVE_TIERS.tiers],
+      labels: [...DEFAULT_ADAPTIVE_TIERS.labels],
+      rubric: typeof obj.rubric === 'string' ? obj.rubric : '',
+    };
+  }
+  return {
+    tiers,
+    labels,
+    rubric: typeof obj.rubric === 'string' ? obj.rubric : '',
+  };
+}
+
+/** Whether adaptive parallelism is active for the current config. */
+export function isAdaptiveMode(cfg: HarnessConfig): boolean {
+  return (
+    parallelMode(cfg) === 'adaptive' &&
+    parallelMaxWorkers(cfg) > 1 &&
+    configGet<boolean>(cfg, 'branchIsolation.enabled', false) === true &&
+    configGet<boolean>(cfg, 'branchIsolation.useWorktrees', false) === true
+  );
 }
 
 /**

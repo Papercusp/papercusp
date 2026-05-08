@@ -45,12 +45,21 @@ export interface ParsedDecision {
   verb: DecisionVerb;
   /** Optional argument (feature id, harness slug, etc.). null when absent. */
   arg: string | null;
+  /**
+   * Optional adaptive-mode worker count. Set by `NEXT_WORKER F-X N=k`
+   * (parsed case-insensitively). null when the verb didn't include an
+   * `N=` token. Validated against the configured tier set in the
+   * adaptive handler — invalid values clamp to the smallest tier.
+   */
+  n: number | null;
   /** The exact line that matched (post-stripping). */
   raw: string;
 }
 
 const DECISION_RE = new RegExp(
-  '(' + DECISION_VERBS.join('|') + ')(?:\\s+([A-Za-z0-9_.-]+))?',
+  // Match: VERB [arg] [N=<int>]
+  // The N= token is optional and case-insensitive (LLMs sometimes emit n=2).
+  '(' + DECISION_VERBS.join('|') + ')(?:\\s+([A-Za-z0-9_.-]+))?(?:\\s+[Nn]=([0-9]+))?',
   'g',
 );
 
@@ -75,9 +84,12 @@ export function parseDecision(text: string): ParsedDecision | null {
   let lastMatch: ParsedDecision | null = null;
   // matchAll replays the regex across the full text.
   for (const m of cleaned.matchAll(DECISION_RE)) {
+    const nStr = m[3];
+    const n = nStr ? parseInt(nStr, 10) : null;
     lastMatch = {
       verb: m[1] as DecisionVerb,
       arg: m[2] ?? null,
+      n: Number.isFinite(n) && n !== null && n > 0 ? n : null,
       raw: (m[0] ?? '').trim(),
     };
   }

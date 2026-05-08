@@ -38,13 +38,17 @@ import { firePluginHook } from './plugin-hooks';
 import {
   competitionManifestPath,
   createLanePool,
+  isAdaptiveMode,
   isCompetitionMode,
   isLaneMode,
+  parallelAdaptiveTiers,
   parallelMaxWorkers,
+  parallelMode,
   parallelWorkersPerFeature,
   parseCompetitionVerdict,
   readCompetitionManifest,
   writeCompetitionManifest,
+  type AdaptiveTiers,
 } from './lanes';
 import type { LanePool } from './lanes';
 import { git } from './git';
@@ -54,6 +58,142 @@ import type { Logger } from './log';
 import type { ParsedDecision } from './decision-parse';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+/**
+ * Resolve the harness slug for telemetry calls.
+ *
+ * The orchestrator process inherits HARNESS_SLUG from run.sh. When unset
+ * (e.g. tests, ad-hoc invocations), fall back to the basename of the
+ * project dir — matches the harness registry's slug derivation rule.
+ */
+function harnessSlug(ctx: InvokeContext): string {
+  const fromEnv = process.env.HARNESS_SLUG ?? process.env.PAPERCUSP_HARNESS_SLUG;
+  if (fromEnv && fromEnv.length > 0) return fromEnv;
+  return ctx.projectDir.split(/[\\/]/).filter(Boolean).pop() ?? 'unknown';
+}
+
+/**
+ * Fetch global adaptive-mode tier settings from the operator API.
+ *
+ * Falls back to the static defaults when the API is unreachable so the
+ * orchestrator never blocks on a flaky operator. Cached at module scope
+ * for the lifetime of one main-loop run; tier edits via the settings UI
+ * pick up on the next run.
+ */
+let _adaptiveSettingsCache: AdaptiveTiers | null = null;
+async function fetchOrchestratorSettings(): Promise<AdaptiveTiers> {
+  if (_adaptiveSettingsCache) return _adaptiveSettingsCache;
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const res = await fetch(`${operatorBase}/api/settings/orchestrator`, {
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const data = (await res.json()) as Partial<AdaptiveTiers>;
+      const tiers = Array.isArray(data.tiers) ? data.tiers : [1, 2, 4];
+      const labels = Array.isArray(data.labels) ? data.labels : ['trivial', 'normal', 'hard'];
+      const rubric = typeof data.rubric === 'string' ? data.rubric : '';
+      if (tiers.length >= 2 && tiers.length === labels.length) {
+        _adaptiveSettingsCache = { tiers, labels, rubric };
+        return _adaptiveSettingsCache;
+      }
+    }
+  } catch {
+    // fall through to defaults
+  }
+  _adaptiveSettingsCache = { tiers: [1, 2, 4], labels: ['trivial', 'normal', 'hard'], rubric: '' };
+  return _adaptiveSettingsCache;
+}
+
+/**
+ * Map of feature id → telemetry row id for in-flight adaptive decisions.
+ * Used by handleNextValidator to attach the outcome (pass/fail) to the
+ * decision row recorded at NEXT_WORKER time. Cleared after outcome attaches.
+ */
+const _adaptiveTelemetryByFeature = new Map<string, { id: number; startedAt: number }>();
+
+/**
+ * Record one adaptive-mode allocation decision. Best-effort; logs and
+ * continues on any error. Returns the row id (so tests can verify) or null.
+ */
+async function recordAdaptiveDecision(
+  ctx: InvokeContext,
+  logger: Logger,
+  args: {
+    featureId: string;
+    requestedN: number;
+    actualN: number;
+    tierLabel: string | null;
+    availableAtDecision: number;
+    maxSlots: number;
+  },
+): Promise<number | null> {
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  const slug = harnessSlug(ctx);
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const res = await fetch(
+      `${operatorBase}/api/harness/${slug}/orchestrator/adaptive-telemetry`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(args),
+        signal: ctrl.signal,
+      },
+    );
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { id?: number };
+    if (typeof data.id === 'number') {
+      _adaptiveTelemetryByFeature.set(args.featureId, { id: data.id, startedAt: Date.now() });
+      return data.id;
+    }
+  } catch (err) {
+    logger.log(`  telemetry: insert failed (${(err as Error).message}); continuing`);
+  }
+  return null;
+}
+
+/** Patch the matching pending telemetry row with an outcome. */
+async function attachAdaptiveOutcome(
+  ctx: InvokeContext,
+  logger: Logger,
+  featureId: string,
+  outcome: 'pass' | 'fail' | 'cancelled',
+): Promise<void> {
+  const pending = _adaptiveTelemetryByFeature.get(featureId);
+  if (!pending) return;
+  _adaptiveTelemetryByFeature.delete(featureId);
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  const slug = harnessSlug(ctx);
+  const durationMs = Date.now() - pending.startedAt;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    await fetch(
+      `${operatorBase}/api/harness/${slug}/orchestrator/adaptive-telemetry/${pending.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ outcome, durationMs }),
+        signal: ctrl.signal,
+      },
+    );
+    clearTimeout(timer);
+  } catch (err) {
+    logger.log(`  telemetry: outcome patch failed (${(err as Error).message}); continuing`);
+  }
+}
+
+/** Test-only: clear the adaptive caches. */
+export function _resetAdaptiveCachesForTests(): void {
+  _adaptiveSettingsCache = null;
+  _adaptiveTelemetryByFeature.clear();
+}
 
 /** Fire a Papercusp plugin lifecycle hook with InvokeContext defaults. */
 function fireLifecycleHook(ctx: InvokeContext, hookName: string, log: (m: string) => void): void {
@@ -157,14 +297,75 @@ async function runMainLoopBody(
   // is the cap; default 1 (sequential).
   const lanePool = createLanePool(ctx.stateDir, parallelMaxWorkers(cfg));
 
+  // Adaptive-mode tier configuration is global (DB-backed via the operator
+  // settings API). Fetch once at startup so the orchestrator can include
+  // the rubric + free-slot budget in its prompt every iteration. Falls
+  // back to defaults if the API is unreachable.
+  const adaptiveActive = isAdaptiveMode(cfg);
+  const adaptiveTiers: AdaptiveTiers = adaptiveActive
+    ? await fetchOrchestratorSettings()
+    : parallelAdaptiveTiers(cfg);
+  if (adaptiveActive) {
+    logger.log(
+      `ADAPTIVE: tiers=[${adaptiveTiers.tiers.join(', ')}] labels=[${adaptiveTiers.labels.join(', ')}] max=${parallelMaxWorkers(cfg)}`,
+    );
+  }
+
   // Fire Papercusp plugin lifecycle: beforeMissionStart.
   fireLifecycleHook(ctx, 'beforeMissionStart', logger.log);
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     logger.log(`── iteration ${iteration} ──`);
 
+    // 1a. Pre-orchestrator slot gate. Block the next orchestrator call
+    // until at least one lane slot is free — saves the LLM cost of asking
+    // for a decision we'd just have to clamp/reject. Applies to every
+    // parallel mode (lane / competition / adaptive). When max=1
+    // (sequential) the lane pool only ever holds 0 slots at this point
+    // because each iteration is end-to-end synchronous, so the wait is
+    // a no-op.
+    const maxSlots = parallelMaxWorkers(cfg);
+    if (maxSlots > 1 && lanePool.count() >= maxSlots) {
+      logger.log(
+        `  gate: pool ${lanePool.count()}/${maxSlots} — waiting for a lane to free before invoking orchestrator`,
+      );
+      while (lanePool.count() >= maxSlots) {
+        await sleep(100);
+      }
+    }
+    const availableSlots = Math.max(0, maxSlots - lanePool.count());
+
+    // 1b. Build adaptive-context extras for the primary role's prompt.
+    // The orchestrator prompt itself documents how to use ADAPTIVE_*; we
+    // just inject the live values here. Empty when adaptive mode isn't
+    // active so existing prompts keep their current shape.
+    const orchestratorExtras: string[] = [];
+    if (adaptiveActive) {
+      const tierDocs = adaptiveTiers.tiers
+        .map((n, i) => `${n} (${adaptiveTiers.labels[i] ?? `tier-${i}`})`)
+        .join(', ');
+      orchestratorExtras.push(
+        `PARALLEL_MODE=${parallelMode(cfg)}`,
+        `MAX_SLOTS=${maxSlots}`,
+        `AVAILABLE_SLOTS=${availableSlots}`,
+        `ADAPTIVE_TIERS=${tierDocs}`,
+      );
+      if (adaptiveTiers.rubric.trim().length > 0) {
+        // Rubric goes through extras as a single line — newlines preserved
+        // so the LLM sees the formatted version. Bash-equivalent extras
+        // are typed as readonly string[] and joined with newlines later.
+        orchestratorExtras.push(`ADAPTIVE_RUBRIC=${adaptiveTiers.rubric}`);
+      }
+    } else if (maxSlots > 1) {
+      orchestratorExtras.push(
+        `PARALLEL_MODE=${parallelMode(cfg)}`,
+        `MAX_SLOTS=${maxSlots}`,
+        `AVAILABLE_SLOTS=${availableSlots}`,
+      );
+    }
+
     // 1. Invoke the primary advancing role.
-    const decisionResult = await invoke(ctx, primaryRole);
+    const decisionResult = await invoke(ctx, primaryRole, orchestratorExtras);
     fireLifecycleHook(ctx, 'onPostOrchestrator', logger.log);
     const parsed = parseDecision(decisionResult.output);
 
@@ -429,6 +630,9 @@ async function handleNextWorker(
     return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
   }
 
+  if (isAdaptiveMode(cfg)) {
+    return handleAdaptiveWorker(parsed, fid, ctx, logger, cfg, lanePool);
+  }
   if (isCompetitionMode(cfg)) {
     return handleCompetitionWorker(fid, ctx, logger, cfg, lanePool);
   }
@@ -613,8 +817,11 @@ async function handleNextValidator(
   // Pattern 1 — onFeaturePassed fires per newly-passed feature. Diff before
   // vs after to find features that transitioned status → 'passed'. Each
   // fire passes --feature-id=... so plugin scripts can target the event.
+  // Also attach an adaptive-telemetry outcome for the matching pending row,
+  // if any (see _adaptiveTelemetryByFeature in handleAdaptiveWorker).
   for (const f of readFeatures(ctx.stateDir)) {
-    if (f.status === 'passed' && beforeStatus.get(f.id) !== 'passed') {
+    const before = beforeStatus.get(f.id);
+    if (f.status === 'passed' && before !== 'passed') {
       firePluginHook({
         hookName: 'onFeaturePassed',
         projectDir: ctx.projectDir,
@@ -623,6 +830,13 @@ async function handleNextValidator(
         log: logger.log,
         extraFlags: [`--feature-id=${f.id}`],
       });
+      void attachAdaptiveOutcome(ctx, logger, f.id, 'pass');
+    } else if (
+      (f.status === 'failed' || f.status === 'blocked') &&
+      before !== f.status &&
+      before !== 'passed'
+    ) {
+      void attachAdaptiveOutcome(ctx, logger, f.id, 'fail');
     }
   }
 
@@ -776,6 +990,194 @@ async function handleCompetitionWorker(
 
   // Return immediately — orchestrator can dispatch another NEXT_WORKER
   // for a different feature while this competition runs in the background.
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * Adaptive-mode worker: orchestrator chose N from the configured tier set
+ * (e.g. {1, 2, 4}). N=1 dispatches a single worker (lane-style); N>1
+ * dispatches N competing workers on the same feature (competition-style)
+ * with manifest write so the validator can pick a winner. The pre-loop
+ * slot gate guarantees N ≤ available slots before this point, so we
+ * don't need an in-handler clamp (defensive clamp below is for malformed
+ * verbs only).
+ *
+ * Telemetry: each call inserts a pending row in adaptive_telemetry; the
+ * validator handler patches the outcome (pass/fail). Failures are silent
+ * to avoid blocking dispatch.
+ */
+async function handleAdaptiveWorker(
+  parsed: ParsedDecision,
+  fid: string,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+  lanePool: LanePool,
+): Promise<DispatchResult> {
+  const max = parallelMaxWorkers(cfg);
+  const tiers = await fetchOrchestratorSettings();
+  const requestedN = parsed.n ?? tiers.tiers[0];
+
+  // Validate against the configured tier set. Out-of-vocabulary values
+  // clamp to the closest valid tier ≤ requestedN, defaulting to the
+  // smallest tier when nothing matches. Logs the override for telemetry.
+  let actualN = tiers.tiers[0];
+  if (tiers.tiers.includes(requestedN)) {
+    actualN = requestedN;
+  } else {
+    const candidates = tiers.tiers.filter((t) => t <= requestedN);
+    actualN = candidates.length > 0 ? candidates[candidates.length - 1] : tiers.tiers[0];
+    logger.log(
+      `  adaptive: requested N=${requestedN} not in tier set [${tiers.tiers.join(',')}]; using N=${actualN}`,
+    );
+  }
+
+  // Defensive clamp against the hard concurrency cap. Pre-loop gate makes
+  // this nearly always a no-op, but a stale cfg (or a request larger
+  // than max) would otherwise deadlock the acquire loop.
+  const availableAtDecision = Math.max(0, max - lanePool.count());
+  if (actualN > availableAtDecision) {
+    logger.log(
+      `  adaptive: N=${actualN} > availableSlots=${availableAtDecision}; clamping to ${availableAtDecision || 1}`,
+    );
+    actualN = Math.max(1, availableAtDecision);
+  }
+
+  const tierIdx = tiers.tiers.indexOf(actualN);
+  const tierLabel = tierIdx >= 0 ? tiers.labels[tierIdx] : null;
+
+  // Best-effort telemetry insert; never blocks dispatch on its outcome.
+  await recordAdaptiveDecision(ctx, logger, {
+    featureId: fid,
+    requestedN,
+    actualN,
+    tierLabel,
+    availableAtDecision,
+    maxSlots: max,
+  });
+
+  logger.log(
+    `ADAPTIVE: ${fid} → N=${actualN} (${tierLabel ?? '?'})` +
+      (requestedN !== actualN ? ` [requested ${requestedN}]` : ''),
+  );
+
+  if (actualN === 1) {
+    // Single-worker path: behaves like a parallel lane (1 worker, own
+    // branch, validator merges on PASS). Reuse handleParallelLaneWorker
+    // so the lane pool, branch-iso, and worker hooks fire identically.
+    return handleParallelLaneWorker(fid, ctx, logger, cfg, lanePool);
+  }
+
+  // N>1: competition path. Wrap handleCompetitionWorker by overriding
+  // workersPerFeature for this single dispatch via a synthetic config.
+  // (handleCompetitionWorker reads parallelWorkersPerFeature(cfg); we
+  // can't shadow it without a tweak, so call its core logic inline.)
+  return handleCompetitionWorkerWithCount(fid, actualN, ctx, logger, cfg, lanePool);
+}
+
+/**
+ * Competition-mode worker with an explicit count override.
+ *
+ * Extracted so adaptive mode can choose N per call instead of reading
+ * the static `parallelWorkers.workersPerFeature` config. Logic mirrors
+ * handleCompetitionWorker exactly — kept as a separate function instead
+ * of refactoring to avoid destabilizing the existing competition path.
+ */
+async function handleCompetitionWorkerWithCount(
+  fid: string,
+  count: number,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+  lanePool: LanePool,
+): Promise<DispatchResult> {
+  const max = parallelMaxWorkers(cfg);
+  const effectivePer = Math.min(count, max);
+  logger.log(
+    `COMPETITION (adaptive): spawning ${effectivePer} workers on ${fid}` +
+      ` (pool ${lanePool.count()}/${max} before this)`,
+  );
+  runHook('on-competition-start', {
+    stateDir: ctx.stateDir,
+    projectDir: ctx.projectDir,
+    logDir: ctx.logDir,
+    env: {
+      FEATURE_ID: fid,
+      LANE_COUNT: String(effectivePer),
+      PROJECT_DIR: ctx.projectDir,
+      STATE_DIR: ctx.stateDir,
+    },
+    log: logger.log,
+  });
+  setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true });
+
+  const branchIsoCtx = {
+    cfg,
+    projectDir: ctx.projectDir,
+    stateDir: ctx.stateDir,
+    log: logger.log,
+  };
+  const base = branchIsoBase(branchIsoCtx);
+  const worktreesRoot = join(ctx.stateDir, 'worktrees');
+  mkdirSync(worktreesRoot, { recursive: true });
+
+  const laneIds: number[] = [];
+  for (let i = 1; i <= effectivePer; i++) {
+    laneIds.push(await lanePool.acquire(fid));
+  }
+
+  void (async () => {
+    const lanePromises: Promise<void>[] = [];
+    for (let i = 0; i < effectivePer; i++) {
+      const laneNum = i + 1;
+      const laneId = laneIds[i];
+      const laneFid = `${fid}-lane-${laneNum}`;
+      const wt = join(worktreesRoot, laneFid);
+      const br = `harness/${laneFid}`;
+      if (!existsSync(wt)) {
+        const r = git(['worktree', 'add', '-B', br, wt, base], { cwd: ctx.projectDir });
+        if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
+      }
+      logger.log(`  competition lane ${laneNum} (${fid}): ${wt}`);
+
+      const lanePromise = (async () => {
+        try {
+          await invoke(
+            { ...ctx, worktreePathFor: () => wt },
+            'worker',
+            [
+              `FEATURE_ID=${laneFid}`,
+              `COMPETITION_PARENT=${fid}`,
+              `COMPETITION_LANE=${laneNum}`,
+            ],
+          );
+        } catch (err) {
+          logger.log(`  competition lane ${laneNum} (${fid}) error: ${(err as Error).message}`);
+        }
+        git(['add', '-A'], { cwd: wt });
+        const status = git(['diff', '--cached', '--quiet'], { cwd: wt });
+        if (status.exitCode !== 0) {
+          const r = git(
+            ['commit', '--quiet', '-m', `worker: ${laneFid} (competition lane ${laneNum})`],
+            { cwd: wt },
+          );
+          if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
+        }
+        lanePool.release(laneId);
+      })();
+      lanePromises.push(lanePromise);
+    }
+
+    await Promise.all(lanePromises);
+
+    setFeatureStatus(ctx.stateDir, fid, 'validating');
+    writeCompetitionManifest(ctx.stateDir, fid, effectivePer);
+    logger.log(
+      `COMPETITION (adaptive): manifest ${competitionManifestPath(ctx.stateDir, fid)} written` +
+        ` (${effectivePer}-way for ${fid})`,
+    );
+  })();
+
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 

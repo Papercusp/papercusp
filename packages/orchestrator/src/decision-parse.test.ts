@@ -4,12 +4,12 @@ import { parseDecision, DECISION_VERBS } from './decision-parse.js';
 
 test('parseDecision — bare verb on its own line', () => {
   const out = parseDecision('DONE');
-  assert.deepEqual(out, { verb: 'DONE', arg: null, raw: 'DONE' });
+  assert.deepEqual(out, { verb: 'DONE', arg: null, n: null, raw: 'DONE' });
 });
 
 test('parseDecision — verb + arg', () => {
   const out = parseDecision('NEXT_WORKER F-001');
-  assert.deepEqual(out, { verb: 'NEXT_WORKER', arg: 'F-001', raw: 'NEXT_WORKER F-001' });
+  assert.deepEqual(out, { verb: 'NEXT_WORKER', arg: 'F-001', n: null, raw: 'NEXT_WORKER F-001' });
 });
 
 test('parseDecision — strips markdown emphasis (**bold**)', () => {
@@ -71,4 +71,30 @@ test('DECISION_VERBS — every verb is listed', () => {
   assert.ok(DECISION_VERBS.includes('DONE'));
   assert.ok(DECISION_VERBS.includes('NEXT_WORKER'));
   assert.ok(DECISION_VERBS.includes('NEXT_WORKER_CEO_MODE'));
+});
+
+test('parseDecision — adaptive N=k token', () => {
+  const out = parseDecision('NEXT_WORKER F-001 N=2');
+  assert.deepEqual(out, { verb: 'NEXT_WORKER', arg: 'F-001', n: 2, raw: 'NEXT_WORKER F-001 N=2' });
+});
+
+test('parseDecision — adaptive lowercase n=4', () => {
+  const out = parseDecision('NEXT_WORKER F-007 n=4');
+  assert.equal(out?.n, 4);
+});
+
+test('parseDecision — bare verb still has n=null', () => {
+  const out = parseDecision('DONE');
+  assert.equal(out?.n, null);
+});
+
+test('parseDecision — markdown-wrapped N=k', () => {
+  const out = parseDecision('**NEXT_WORKER F-002 N=4**');
+  assert.equal(out?.n, 4);
+  assert.equal(out?.arg, 'F-002');
+});
+
+test('parseDecision — N=0 ignored as invalid', () => {
+  const out = parseDecision('NEXT_WORKER F-001 N=0');
+  assert.equal(out?.n, null);
 });

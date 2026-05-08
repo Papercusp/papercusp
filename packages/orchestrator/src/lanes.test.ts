@@ -337,3 +337,48 @@ test('createLanePool — waitForFeature resolves only when feature lanes drain',
     cleanup();
   }
 });
+
+import { parallelAdaptiveTiers, isAdaptiveMode, DEFAULT_ADAPTIVE_TIERS } from './lanes';
+
+test('parallelAdaptiveTiers — defaults', () => {
+  const out = parallelAdaptiveTiers({});
+  assert.deepEqual(out.tiers, DEFAULT_ADAPTIVE_TIERS.tiers);
+  assert.deepEqual(out.labels, DEFAULT_ADAPTIVE_TIERS.labels);
+  assert.equal(out.rubric, '');
+});
+
+test('parallelAdaptiveTiers — explicit override', () => {
+  const out = parallelAdaptiveTiers({
+    parallelWorkers: {
+      adaptive: { tiers: [1, 3, 6], labels: ['s', 'm', 'l'], rubric: 'foo' },
+    },
+  } as any);
+  assert.deepEqual(out.tiers, [1, 3, 6]);
+  assert.deepEqual(out.labels, ['s', 'm', 'l']);
+  assert.equal(out.rubric, 'foo');
+});
+
+test('parallelAdaptiveTiers — falls back when shapes mismatch', () => {
+  const out = parallelAdaptiveTiers({
+    parallelWorkers: {
+      adaptive: { tiers: [1, 2], labels: ['only-one'], rubric: 'kept' },
+    },
+  } as any);
+  assert.deepEqual(out.tiers, DEFAULT_ADAPTIVE_TIERS.tiers);
+  assert.equal(out.rubric, 'kept');
+});
+
+test('isAdaptiveMode requires mode + max>1 + worktrees', () => {
+  assert.equal(isAdaptiveMode({}), false);
+  assert.equal(
+    isAdaptiveMode({ parallelWorkers: { mode: 'adaptive', max: 4 } } as any),
+    false,
+  );
+  assert.equal(
+    isAdaptiveMode({
+      parallelWorkers: { mode: 'adaptive', max: 4 },
+      branchIsolation: { enabled: true, useWorktrees: true },
+    } as any),
+    true,
+  );
+});
