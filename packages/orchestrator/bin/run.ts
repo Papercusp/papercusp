@@ -16,6 +16,8 @@ import { configGet, readConfig } from '../src/config.js';
 import { resolvePaths, resolveAgentBackend, resolveAgentCmd } from '../src/env.js';
 import { createLogger } from '../src/log.js';
 import { runMainLoop } from '../src/main-loop.js';
+import { bootstrapOrchestratorPg } from '../src/pg-bootstrap.js';
+import { activeWorkspaceId } from '../src/workspace.js';
 
 const useTs = process.env.PAPERCUSP_USE_TS_ORCHESTRATOR === '1';
 const { harnessDir, projectDir, stateDir, logDir } = resolvePaths();
@@ -61,24 +63,37 @@ async function runTs(): Promise<never> {
   const maxIterations = parseInt(process.env.MAX_ITERATIONS ?? '200', 10);
   const iterationSleepMs = (parseFloat(process.env.ITERATION_SLEEP ?? '2') || 0) * 1000;
 
-  const exit = await runMainLoop({
-    ctx: {
-      harnessDir,
-      projectDir,
-      stateDir,
-      logDir,
-      phase,
-      claudeCmd,
-      agentBackend,
-      dept: configGet<string>(cfg, 'dept', ''),
-      log: logger.log,
-    },
-    logger,
-    maxIterations,
-    iterationSleepMs,
-  });
+  // Activation step 2: opt-in PG bootstrap. PAPERCUSP_USE_PG_STATE=1
+  // attempts to connect; on success, ctx.pg + ctx.workspaceId are set
+  // and Phases 1-7's PG-canonical paths run. On failure, the dormant
+  // FS fallbacks remain — orchestrator behavior unchanged.
+  const pgBoot = await bootstrapOrchestratorPg(logger.log);
+  const workspaceId = pgBoot.pg ? activeWorkspaceId() : undefined;
 
-  process.exit(exit.exitCode);
+  try {
+    const exit = await runMainLoop({
+      ctx: {
+        harnessDir,
+        projectDir,
+        stateDir,
+        logDir,
+        phase,
+        claudeCmd,
+        agentBackend,
+        dept: configGet<string>(cfg, 'dept', ''),
+        log: logger.log,
+        ...(pgBoot.pg ? { pg: pgBoot.pg, workspaceId } : {}),
+      },
+      logger,
+      maxIterations,
+      iterationSleepMs,
+    });
+    if (pgBoot.cleanup) await pgBoot.cleanup();
+    process.exit(exit.exitCode);
+  } catch (err) {
+    if (pgBoot.cleanup) await pgBoot.cleanup();
+    throw err;
+  }
 }
 
 if (useTs) {
