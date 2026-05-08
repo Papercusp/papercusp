@@ -30,6 +30,19 @@ import { extractFeatureId, makeRunId } from './run-id';
 import type { AgentBackend, InvokeResult } from './types';
 import { resolveAgentBackend } from './env';
 
+/**
+ * Postgres client interface the orchestrator uses for PG-canonical state.
+ * Kept as a structural type so callers can pass any postgres-js Sql<{}>
+ * instance (or a test double) without importing `postgres` here. When
+ * undefined, the orchestrator falls back to the legacy filesystem path
+ * (features.json etc) — that fallback is removed once Phase 1 lands.
+ */
+export interface OrchestratorPg {
+  // postgres-js tagged-template signature: pg`SELECT ...`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (template: TemplateStringsArray, ...values: unknown[]): Promise<any[]>;
+}
+
 export interface InvokeContext {
   /** HARNESS_DIR — root of the @papercusp/harness install. */
   harnessDir: string;
@@ -63,6 +76,20 @@ export interface InvokeContext {
   log: (message: string) => void;
   /** Override Date.now / shell time for deterministic tests. */
   nowSeconds?: () => number;
+  /**
+   * PG client for the workspace's Postgres database. Phase 1+ migrate
+   * features.json, lanes.json, escalation, sentinels, dispatches, and
+   * checkpoints onto Postgres; while undefined, the orchestrator falls
+   * back to the legacy filesystem state. Operator wires this up via
+   * `getOrgPg()`; CLI mode bootstraps its own connection.
+   */
+  pg?: OrchestratorPg;
+  /**
+   * Workspace ID for RLS scoping. Required when `pg` is set. Resolved
+   * once at orchestrator startup from `~/.papercusp-workspaces/registry.json`
+   * (the only legitimate pre-DB filesystem read).
+   */
+  workspaceId?: string;
 }
 
 /** What the spawn step actually returns (richer than the public InvokeResult). */
