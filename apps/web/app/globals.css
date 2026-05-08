@@ -267,3 +267,31 @@ p { margin: 8px 0 16px; color: var(--fg-dim); }
 .pc-header :is(.pc-header-cta-label, .pc-header-cta-glyph, .pc-voice-btn-label) {
   transform: none !important;
 }
+
+/* Keep bursty notifications collapsed immediately. Sonner expands the whole
+   toast list on hover/focus and during some mount transitions; when several
+   app events fire together that briefly fills the upper-right of the UI.
+   Force non-front toasts into Sonner's compact stack state even if the
+   library has data-expanded=true. */
+[data-sonner-toaster] [data-sonner-toast][data-front='false'] {
+  --scale: calc(var(--toasts-before) * 0.05 + 1) !important;
+  --y: translateY(calc(var(--lift-amount) * var(--toasts-before))) scale(calc(-1 * var(--scale))) !important;
+  height: var(--front-toast-height) !important;
+  pointer-events: none !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-front='false'][data-styled='true'] > * {
+  opacity: 0 !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-front='false']::after {
+  content: none !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] {
+  transition:
+    transform 140ms ease,
+    opacity 140ms ease,
+    height 140ms ease,
+    box-shadow 140ms ease !important;
+}
