@@ -22,6 +22,38 @@ if [ ! -f "$CONFIG" ]; then
     exit 0
 fi
 
+# POST aggregated smoke result to operator's PG-write endpoint. Replaces
+# the chokidar mirror that read all 4 sibling files. Background &.
+_post_smoke_result() {
+    local status="$1"
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    harness_token="$(jq -r '.harness_token // empty' "$CONFIG" 2>/dev/null || true)"
+    [ -z "$harness_token" ] && return 0
+    local pass_content="" failure_content="" startup_log="" results=""
+    [ -f "$STATE_DIR/smoke-pass.md" ] && pass_content="$(cat "$STATE_DIR/smoke-pass.md")"
+    [ -f "$STATE_DIR/smoke-failure.md" ] && failure_content="$(cat "$STATE_DIR/smoke-failure.md")"
+    [ -f "$STATE_DIR/smoke-startup.log" ] && startup_log="$(cat "$STATE_DIR/smoke-startup.log")"
+    [ -f "$STATE_DIR/smoke-results.json" ] && results="$(cat "$STATE_DIR/smoke-results.json")"
+    local body
+    body="$(STATUS="$status" PASS="$pass_content" FAIL="$failure_content" STARTUP="$startup_log" RESULTS="$results" python3 -c '
+import json, os, sys, time
+out = {"status": os.environ["STATUS"], "mtimeMs": int(time.time()*1000)}
+if os.environ.get("PASS"): out["passContent"] = os.environ["PASS"]
+if os.environ.get("FAIL"): out["failureContent"] = os.environ["FAIL"]
+if os.environ.get("STARTUP"): out["startupLog"] = os.environ["STARTUP"]
+r = os.environ.get("RESULTS", "").strip()
+if r:
+    try: out["results"] = json.loads(r)
+    except Exception: pass
+sys.stdout.write(json.dumps(out))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 5 \
+        -d "$body" "$operator_base/api/internal/smoke-test-event" >/dev/null 2>&1 || true
+}
+
 enabled=$(python3 -c "import json,sys; c=json.load(open('$CONFIG')); print(c.get('smokeTest',{}).get('enabled',False))" 2>/dev/null)
 if [ "$enabled" != "True" ]; then
     echo "smoke-test: smokeTest.enabled=false; skipping"
@@ -113,6 +145,7 @@ All $(python3 -c "import json; print(len(json.load(open('$results_file'))))") UR
 See smoke-results.json for details.
 EOF_PASS
     rm -f "$STATE_DIR/smoke-failure.md"
+    _post_smoke_result "pass" &
     echo "smoke-test: PASS"
     exit 0
 fi
@@ -169,4 +202,5 @@ except Exception as e:
 if [ -n "$REOPEN" ]; then
     echo "smoke-test: FAIL — reopened $REOPEN as failing"
 fi
+_post_smoke_result "fail" &
 exit 1

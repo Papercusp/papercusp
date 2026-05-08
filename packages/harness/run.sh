@@ -257,6 +257,81 @@ log() {
 # When a log line begins with "ORCH decision: <VERB> <args>", classify
 # and POST it to /api/internal/decision-event. Replaces the chokidar
 # mirror that re-tail-grepped run.log on every fs.watch event.
+_post_pr_event() {
+    local feature_id="$1"; local pr_url="$2"
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    local body
+    body="$(FID="$feature_id" URL="$pr_url" python3 -c '
+import json, os, sys, time
+sys.stdout.write(json.dumps({"featureId": os.environ["FID"], "url": os.environ["URL"], "state": "open", "createdAt": int(time.time())}))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 2 \
+        -d "$body" "$operator_base/api/internal/pr-event" >/dev/null 2>&1 || true
+}
+
+_post_debug_note_event() {
+    local feature_id="$1"; local content_path="$2"
+    [ -z "$feature_id" ] && return 0
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    local content=""
+    if [ -f "$content_path" ]; then
+        content="$(cat "$content_path")"
+    fi
+    local body
+    body="$(FID="$feature_id" CONTENT="$content" python3 -c '
+import json, os, sys, time
+sys.stdout.write(json.dumps({"featureId": os.environ["FID"], "content": os.environ["CONTENT"], "mtimeMs": int(time.time()*1000)}))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 2 \
+        -d "$body" "$operator_base/api/internal/feature-debug-note-event" >/dev/null 2>&1 || true
+}
+
+_post_smoke_test_event() {
+    local status="$1"
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    local pass_content="" failure_content="" startup_log="" results=""
+    [ -f "$STATE_DIR/smoke-pass.md" ] && pass_content="$(cat "$STATE_DIR/smoke-pass.md")"
+    [ -f "$STATE_DIR/smoke-failure.md" ] && failure_content="$(cat "$STATE_DIR/smoke-failure.md")"
+    [ -f "$STATE_DIR/smoke-startup.log" ] && startup_log="$(cat "$STATE_DIR/smoke-startup.log")"
+    [ -f "$STATE_DIR/smoke-results.json" ] && results="$(cat "$STATE_DIR/smoke-results.json")"
+    local body
+    body="$(STATUS="$status" PASS="$pass_content" FAIL="$failure_content" STARTUP="$startup_log" RESULTS="$results" python3 -c '
+import json, os, sys, time
+out = {"status": os.environ["STATUS"], "mtimeMs": int(time.time()*1000)}
+if os.environ.get("PASS"): out["passContent"] = os.environ["PASS"]
+if os.environ.get("FAIL"): out["failureContent"] = os.environ["FAIL"]
+if os.environ.get("STARTUP"): out["startupLog"] = os.environ["STARTUP"]
+r = os.environ.get("RESULTS", "").strip()
+if r:
+    try: out["results"] = json.loads(r)
+    except Exception: pass
+sys.stdout.write(json.dumps(out))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 5 \
+        -d "$body" "$operator_base/api/internal/smoke-test-event" >/dev/null 2>&1 || true
+}
+
 _post_decision_event() {
     local ts="$1"; local msg="$2"
     local rest=${msg#ORCH decision: }
@@ -573,23 +648,7 @@ else:
         pr_url="$(printf '%s\n' "$pr_out" | grep -oE 'https?://[^ ]+/pull/[0-9]+' | tail -1)"
         if [ -n "$pr_url" ]; then
             log "  branch-iso: onPass=pr — opened $pr_url"
-            # Persist url into .harness/prs.json keyed by feature id (atomic)
-            FID="$FEATURE_ID" URL="$pr_url" STATE_DIR="$STATE_DIR" python3 -c '
-import json, os, tempfile
-p = os.path.join(os.environ["STATE_DIR"], "prs.json")
-try:
-    d = json.load(open(p))
-except Exception:
-    d = {"prs": {}}
-d.setdefault("prs", {})[os.environ["FID"]] = {
-    "url": os.environ["URL"],
-    "created_at": __import__("time").time(),
-}
-fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p))
-with os.fdopen(fd, "w") as f:
-    json.dump(d, f, indent=2)
-os.replace(tmp, p)
-' 2>/dev/null
+            _post_pr_event "$FEATURE_ID" "$pr_url" &
         else
             log "  branch-iso: onPass=pr — gh pr create did not return a URL (output tail follows)"
             printf '%s\n' "$pr_out" | tail -5 | sed 's/^/    /' | tee -a "$LOG_DIR/run.log"
@@ -2064,6 +2123,7 @@ except Exception:
                 log "DEBUGGER $fid starting (attempts=$attempts_for_fid ≥ $debugger_threshold)"
                 debug_out="$(invoke debugger "FEATURE_ID=$fid")"
                 log "DEBUGGER: ${debug_out:-(no output)}"
+                _post_debug_note_event "$fid" "$debug_note" &
             fi
         fi
 
