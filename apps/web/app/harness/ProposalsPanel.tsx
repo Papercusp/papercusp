@@ -603,12 +603,6 @@ export default function ProposalsPanel({ slug }: Props) {
         <aside className="h-proposals-sidebar" aria-label="Proposal list">
           <div className="h-proposal-toolbar">
             <div className="h-proposal-toolbar-main">
-              <div className="h-proposal-toolbar-titleline">
-                <span className="h-proposal-toolbar-title">Queue</span>
-                <span className="h-proposal-toolbar-count">{filteredItems.length}/{items.length}</span>
-                {shortlisted.size > 0 && <span className="h-proposal-short-count">★ {shortlisted.size}</span>}
-                <span className="h-proposal-toolbar-index"><b>{selectedIndex >= 0 ? selectedIndex + 1 : 0}</b>/{filteredItems.length}</span>
-              </div>
               <input
                 ref={searchRef}
                 value={query}
@@ -617,6 +611,14 @@ export default function ProposalsPanel({ slug }: Props) {
                 aria-label="Search proposals"
                 className="h-proposal-search"
               />
+              <label className="h-proposal-sort">
+                <span>Sort</span>
+                <select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)} aria-label="Sort proposals">
+                  {(Object.keys(SORT_LABEL) as SortMode[]).map((mode) => (
+                    <option key={mode} value={mode}>{SORT_LABEL[mode]}</option>
+                  ))}
+                </select>
+              </label>
             </div>
             <div className="h-proposal-toolbar-controls" aria-label="Proposal queue tools">
               <div className="h-proposal-filter-row" role="tablist" aria-label="Filter proposals by status">
@@ -637,14 +639,6 @@ export default function ProposalsPanel({ slug }: Props) {
                   </button>
                 ))}
               </div>
-              <label className="h-proposal-sort">
-                <span>Sort</span>
-                <select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)} aria-label="Sort proposals">
-                  {(Object.keys(SORT_LABEL) as SortMode[]).map((mode) => (
-                    <option key={mode} value={mode}>{SORT_LABEL[mode]}</option>
-                  ))}
-                </select>
-              </label>
               <button
                 type="button"
                 onClick={() => setShortlistOnly((on) => !on)}

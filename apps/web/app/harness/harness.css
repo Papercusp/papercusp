@@ -16269,3 +16269,35 @@ html body .h-root.h-root :is(
   box-shadow: none !important;
   font-size: 0.78rem !important;
 }
+
+/* Proposal toolbar compaction: search now occupies the removed queue-title row,
+   with sort immediately to its right. */
+.h-proposals-panel .h-proposal-toolbar-main {
+  grid-template-columns: minmax(0, 1fr) minmax(132px, 146px) !important;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.h-proposals-panel .h-proposal-toolbar-main .h-proposal-search {
+  grid-column: auto !important;
+  width: 100%;
+  max-width: none;
+}
+
+.h-proposals-panel .h-proposal-toolbar-main .h-proposal-sort {
+  min-width: 132px;
+  height: 28px;
+  box-sizing: border-box;
+  border-color: rgba(125, 211, 252, 0.20);
+  background: rgba(255, 255, 255, 0.020);
+}
+
+@media (max-width: 640px) {
+  .h-proposals-panel .h-proposal-toolbar-main {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .h-proposals-panel .h-proposal-toolbar-main .h-proposal-sort {
+    min-width: 0;
+  }
+}
