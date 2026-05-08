@@ -172,6 +172,94 @@ test('driveChunkLoop honors config replanStrikes from cfg', async () => {
   }
 });
 
+test('driveChunkLoop reads existing plan from pg and resumes (skips planning)', async () => {
+  const repo = await makeRepo();
+  try {
+    const lockQueue = new FileLockQueue();
+    const cfg: HarnessConfig = {
+      parallelWorkers: { workingStateCheck: 'true' },
+    } as unknown as HarnessConfig;
+
+    // Mock pg that returns a partial plan on SELECT and accepts writes.
+    const calls: string[] = [];
+    const pg = ((template: TemplateStringsArray, ..._values: unknown[]) => {
+      const sql = template.join(' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      calls.push(sql);
+      if (sql.startsWith('select')) {
+        // Three chunks total; first two committed, third pending.
+        return Promise.resolve([
+          {
+            chunk_id: 'F-X-1',
+            chunk_index: 1,
+            files: ['a.ts'],
+            description: 'add a',
+            status: 'committed',
+            strikes: 0,
+            last_error: null,
+            commit_sha: 'aaa1234',
+          },
+          {
+            chunk_id: 'F-X-2',
+            chunk_index: 2,
+            files: ['b.ts'],
+            description: 'add b',
+            status: 'committed',
+            strikes: 0,
+            last_error: null,
+            commit_sha: 'bbb1234',
+          },
+          {
+            chunk_id: 'F-X-3',
+            chunk_index: 3,
+            files: ['c.ts'],
+            description: 'add c',
+            status: 'pending',
+            strikes: 0,
+            last_error: null,
+            commit_sha: null,
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    }) as OrchestratorPg;
+
+    let planCalled = 0;
+    let implementCalled = 0;
+    const implemented: string[] = [];
+
+    const out = await driveChunkLoop({
+      feature: { id: 'F-X', title: 'Demo', description: 'Demo' },
+      cfg,
+      lockQueue,
+      repoPath: repo,
+      pg,
+      workspaceId: 'ws-default',
+      harnessSlug: 'sheets',
+      llm: {
+        plan: async () => {
+          planCalled++;
+          return 'should-not-be-called';
+        },
+        implement: async (_f, c, env) => {
+          implementCalled++;
+          implemented.push(c.id);
+          await fs.writeFile(path.join(env.dir, c.files[0]), `// resumed ${c.id}\n`);
+          return { touchedFiles: c.files, attemptedChange: 'wrote' };
+        },
+        replan: async () => 'unused',
+        escalate: async () => false,
+      },
+    });
+
+    assert.equal(out.kind, 'completed');
+    assert.equal(planCalled, 0, 'planChunks should be skipped on resume');
+    assert.equal(implementCalled, 1, 'only the third (uncommitted) chunk should be implemented');
+    assert.deepEqual(implemented, ['F-X-3']);
+  } finally {
+    await fs.rm(repo, { recursive: true, force: true });
+  }
+});
+
 test('driveChunkLoop passes the configured escalate role to the llm.escalate callback', async () => {
   const repo = await makeRepo();
   try {

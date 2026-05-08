@@ -28,6 +28,7 @@ import {
 import {
   type ChunkPlanPgCtx,
   persistPlan,
+  readPlan,
   setChunkStatus,
   updateChunkPlan,
 } from './chunk-plan-pg.js';
@@ -82,11 +83,53 @@ export async function driveChunkLoop(input: DriverInput): Promise<ChunkLoopOutco
       ? { pg: input.pg, workspaceId: input.workspaceId, harnessSlug: input.harnessSlug }
       : null;
 
+  // Crash-recovery: if there's an existing plan for this feature in
+  // PG, resume from where we left off — skip planning, skip already-
+  // committed chunks. This kicks in when the orchestrator restarts
+  // mid-feature.
+  let resumeFromPlan: ChunkLoopDeps['resumeFromPlan'];
+  if (pgCtx) {
+    try {
+      const existing = await readPlan(pgCtx, input.feature.id);
+      if (existing.length > 0) {
+        const committed = existing
+          .filter((r) => r.status === 'committed')
+          .map((r) => r.chunkId);
+        // Don't resume into a plan that's been fully committed —
+        // the feature is done; let the orchestrator process its
+        // post-state normally. Same for fully-escalated.
+        const allDone = existing.every(
+          (r) => r.status === 'committed' || r.status === 'escalated',
+        );
+        if (!allDone) {
+          resumeFromPlan = {
+            plan: {
+              featureId: input.feature.id,
+              chunks: existing.map((r) => ({
+                id: r.chunkId,
+                files: r.files,
+                description: r.description,
+              })),
+            },
+            committedChunkIds: committed,
+          };
+          log(
+            `chunk-loop-driver: resuming ${input.feature.id} from PG — ${existing.length} chunks, ${committed.length} already committed`,
+          );
+        }
+      }
+    } catch (err) {
+      log(`chunk-loop-driver: readPlan failed: ${(err as Error).message}`);
+      // Fall through to fresh planning.
+    }
+  }
+
   const deps: ChunkLoopDeps = {
     repoPath: input.repoPath,
     lockQueue: input.lockQueue,
     typecheckCommand: workingStateCheckCommand(input.cfg),
     replanStrikes: replanStrikesFromCfg(input.cfg),
+    resumeFromPlan,
     log,
 
     planChunks: input.llm.plan,

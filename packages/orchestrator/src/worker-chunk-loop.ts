@@ -123,6 +123,21 @@ export interface ChunkLoopDeps {
   log?: (msg: string) => void;
   /** Per-chunk typecheck timeout ms. Default 5 minutes. */
   typecheckTimeoutMs?: number;
+  /**
+   * Crash-recovery: when set, the loop skips the planChunks call and
+   * uses this plan as-is, skipping any chunk whose id appears in
+   * `committedChunkIds`. The driver populates this from pg
+   * (`readPlan`) on orchestrator restart so a feature mid-implementation
+   * doesn't get re-planned from scratch and lose its committed work.
+   *
+   * When set, the loop does NOT emit `plan_ready` (the plan is already
+   * persisted; emitting would cause the driver to delete-and-reinsert
+   * the existing rows).
+   */
+  resumeFromPlan?: {
+    plan: ChunkPlan;
+    committedChunkIds: readonly string[];
+  };
 }
 
 export type ChunkProgressEvent =
@@ -144,24 +159,43 @@ export async function runChunkLoop(
   const commitChunk = deps.commitChunk ?? defaultCommitChunk;
 
   // ─── 1. Plan ────────────────────────────────────────────────────
-  let planRaw: string;
-  try {
-    planRaw = await deps.planChunks(feature);
-  } catch (err) {
-    return { kind: 'planning_failed', error: `planChunks threw: ${(err as Error).message}` };
+  let plan: ChunkPlan;
+  const committedFromResume = new Set<string>();
+  if (deps.resumeFromPlan) {
+    plan = deps.resumeFromPlan.plan;
+    for (const id of deps.resumeFromPlan.committedChunkIds) committedFromResume.add(id);
+    log(
+      `chunk-loop: resuming ${feature.id} from PG — ${plan.chunks.length} chunks, ${committedFromResume.size} already committed`,
+    );
+    // Don't emit plan_ready: the persisted plan is already correct.
+  } else {
+    let planRaw: string;
+    try {
+      planRaw = await deps.planChunks(feature);
+    } catch (err) {
+      return { kind: 'planning_failed', error: `planChunks threw: ${(err as Error).message}` };
+    }
+    const planParse = parseChunkPlanBlock(planRaw, feature.id);
+    if (!planParse.ok) {
+      return { kind: 'planning_failed', error: planParse.message };
+    }
+    plan = planParse.value;
+    log(`chunk-loop: plan has ${plan.chunks.length} chunks for ${feature.id}`);
+    await emit(deps, { kind: 'plan_ready', plan });
   }
-  const planParse = parseChunkPlanBlock(planRaw, feature.id);
-  if (!planParse.ok) {
-    return { kind: 'planning_failed', error: planParse.message };
-  }
-  const plan: ChunkPlan = planParse.value;
-  log(`chunk-loop: plan has ${plan.chunks.length} chunks for ${feature.id}`);
-  await emit(deps, { kind: 'plan_ready', plan });
 
   // ─── 2. Iterate chunks ──────────────────────────────────────────
   let committed = 0;
   for (let i = 0; i < plan.chunks.length; i++) {
     let chunk = plan.chunks[i];
+
+    // Skip chunks already committed in a previous orchestrator run
+    // (crash-recovery path).
+    if (committedFromResume.has(chunk.id)) {
+      log(`chunk-loop: ${chunk.id} already committed (resume), skipping`);
+      committed++;
+      continue;
+    }
     await emit(deps, {
       kind: 'chunk_start',
       chunk,
