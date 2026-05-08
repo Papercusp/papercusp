@@ -32,6 +32,31 @@
       "import": "./src/decision-parse.ts",
       "default": "./src/decision-parse.ts"
     },
+    "./mission-state-pg": {
+      "types": "./src/mission-state-pg.ts",
+      "import": "./src/mission-state-pg.ts",
+      "default": "./src/mission-state-pg.ts"
+    },
+    "./dispatches-pg": {
+      "types": "./src/dispatches-pg.ts",
+      "import": "./src/dispatches-pg.ts",
+      "default": "./src/dispatches-pg.ts"
+    },
+    "./checkpoints-pg": {
+      "types": "./src/checkpoints-pg.ts",
+      "import": "./src/checkpoints-pg.ts",
+      "default": "./src/checkpoints-pg.ts"
+    },
+    "./run-output-pg": {
+      "types": "./src/run-output-pg.ts",
+      "import": "./src/run-output-pg.ts",
+      "default": "./src/run-output-pg.ts"
+    },
+    "./snapshots-pg": {
+      "types": "./src/snapshots-pg.ts",
+      "import": "./src/snapshots-pg.ts",
+      "default": "./src/snapshots-pg.ts"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
