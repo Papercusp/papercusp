@@ -246,15 +246,15 @@ export default function ProposalsPanel({ slug }: Props) {
       return;
     }
     setBusy(true);
-    setToast('Running product review (may take a few minutes)…');
+    setToast('Running scoper proposal pass (may take a few minutes)…');
     try {
       const r = await fetch(`/api/harness/${slug}/product-review`, { method: 'POST' });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? `${r.status}`);
-      setToast('product review complete');
+      setToast('scoper proposal pass complete');
       await loadList();
     } catch (e) {
-      setToast(`product-review failed: ${e}`);
+      setToast(`scoper proposal pass failed: ${e}`);
     } finally {
       setBusy(false);
       setTimeout(() => setToast(null), 3500);
@@ -558,7 +558,7 @@ export default function ProposalsPanel({ slug }: Props) {
                   type="button"
                   onClick={runProductReview}
                   disabled={busy || !hasGoal}
-                  title={!hasGoal ? 'Set a SPEC.md first' : 'Run the product agent to propose new scope'}
+                  title={!hasGoal ? 'Set a SPEC.md first' : 'Run the scoper agent (MODE=proposal) to propose new scope'}
                   className="h-proposal-btn primary"
                 >
                   {busy ? 'working…' : 'generate proposals'}
@@ -568,7 +568,7 @@ export default function ProposalsPanel({ slug }: Props) {
           </div>
         </div>
         <div className="h-proposals-flow" aria-label="Proposal workflow">
-          <span aria-label="Step 1, generate: product agent reads SPEC.md"><b>1. Generate</b><em>product agent reads SPEC.md</em></span>
+          <span aria-label="Step 1, generate: scoper agent reads SPEC.md"><b>1. Generate</b><em>scoper agent reads SPEC.md</em></span>
           <span aria-label="Step 2, review: choose apply or reject"><b>2. Review</b><em>choose apply or reject</em></span>
           <span aria-label="Step 3, replan: accepted scope becomes features"><b>3. Replan</b><em>accepted scope becomes features</em></span>
         </div>
@@ -685,7 +685,7 @@ export default function ProposalsPanel({ slug }: Props) {
             {items.length === 0 ? (
               <div className="h-proposal-empty">
                 <b>No proposals yet</b>
-                <span>Click <em>generate proposals</em> to have the product agent read SPEC.md and suggest scoped features.</span>
+                <span>Click <em>generate proposals</em> to have the scoper agent (MODE=proposal) read SPEC.md and suggest scoped features.</span>
               </div>
             ) : filteredItems.length === 0 ? (
               <div className="h-proposal-empty">
