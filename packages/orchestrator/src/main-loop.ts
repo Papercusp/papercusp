@@ -396,7 +396,16 @@ async function runMainLoopBody(
     }
 
     // 3. Snapshot state (for UI rollback).
-    snapshotState(ctx.stateDir, iteration, cfg);
+    if (ctx.pg && ctx.workspaceId) {
+      const { harnessSlug: getSlug } = await import('./state');
+      await snapshotState(ctx.stateDir, iteration, cfg, {
+        pg: ctx.pg,
+        workspaceId: ctx.workspaceId,
+        harnessSlug: getSlug(ctx.projectDir),
+      });
+    } else {
+      snapshotState(ctx.stateDir, iteration, cfg);
+    }
 
     // 4. Prune oldest agent logs beyond logRetention.
     pruneLogs(ctx.logDir, cfg);
