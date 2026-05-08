@@ -40,19 +40,18 @@ function makeMockPg(initialRow: Record<string, unknown> | null = null): {
         row = newRow;
         return [];
       }
-      // Mock SELECTs
-      if (/SELECT cost_warn_fired/.test(sql)) {
-        if (!row) return [];
-        return [{ cost_warn_fired: row.cost_warn_fired === true }];
-      }
-      if (/SELECT escalation_md, cost_warn_fired/.test(sql)) {
+      // Mock SELECTs — order matters: more-specific patterns first.
+      if (/SELECT cost_warn_fired, ready_for_prod_at, lanes/.test(sql)) {
         if (!row) return [];
         return [{
-          escalation_md: row.escalation_md ?? null,
           cost_warn_fired: row.cost_warn_fired === true,
           ready_for_prod_at: row.ready_for_prod_at ?? null,
           lanes: row.lanes ?? [],
         }];
+      }
+      if (/SELECT cost_warn_fired/.test(sql)) {
+        if (!row) return [];
+        return [{ cost_warn_fired: row.cost_warn_fired === true }];
       }
       return [];
     },
@@ -72,19 +71,28 @@ describe('mission-state-pg', () => {
   test('readMissionState — returns empty defaults when no row', async () => {
     const mock = makeMockPg(null);
     const state = await readMissionState(ctxOf(mock));
-    assert.equal(state.escalationMd, null);
     assert.equal(state.costWarnFired, false);
     assert.equal(state.readyForProdAt, null);
     assert.deepEqual(state.lanes, []);
   });
 
-  test('setEscalationPg — issues UPSERT with escalation_md', async () => {
+  test('setEscalationPg — writes to harness_escalations (existing table reuse)', async () => {
     const mock = makeMockPg();
     await setEscalationPg(ctxOf(mock), '# rejected\n');
     assert.equal(mock.queries.length, 1);
-    assert.match(mock.queries[0], /INSERT INTO harness_shared\.harness_mission_state/);
-    assert.match(mock.queries[0], /escalation_md/);
+    assert.match(mock.queries[0], /INSERT INTO harness_shared\.harness_escalations/);
+    // vals = [harness_slug, phase, escalation, mtime_ms, workspace_id]
+    assert.equal(mock.values[0][0], 'sheets');
+    assert.equal(mock.values[0][1], 'staging', 'phase defaults to staging');
     assert.equal(mock.values[0][2], '# rejected\n');
+    assert.equal(typeof mock.values[0][3], 'number');
+    assert.equal(mock.values[0][4], 'default');
+  });
+
+  test('setEscalationPg — explicit phase passed through', async () => {
+    const mock = makeMockPg();
+    await setEscalationPg(ctxOf(mock), 'body', 'production');
+    assert.equal(mock.values[0][1], 'production');
   });
 
   test('setCostWarnFiredPg — issues UPSERT with cost_warn_fired set to true literal', async () => {
@@ -132,13 +140,11 @@ describe('mission-state-pg', () => {
 
   test('readMissionState — returns row data when present', async () => {
     const mock = makeMockPg({
-      escalation_md: '# escalated',
       cost_warn_fired: true,
       ready_for_prod_at: 1234567890000,
       lanes: [{ id: 1, feature_id: 'F-001', started_at: 100 }],
     });
     const state = await readMissionState(ctxOf(mock));
-    assert.equal(state.escalationMd, '# escalated');
     assert.equal(state.costWarnFired, true);
     assert.equal(state.readyForProdAt, 1234567890000);
     assert.equal(state.lanes.length, 1);

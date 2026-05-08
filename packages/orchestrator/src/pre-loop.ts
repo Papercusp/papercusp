@@ -91,6 +91,7 @@ export async function runPreLoop(
           await setEscalationPg(
             { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: harnessSlug(ctx.projectDir) },
             escalationBody,
+            ctx.phase,
           );
         } else {
           writeFileSync(join(ctx.stateDir, 'escalation.md'), escalationBody);
