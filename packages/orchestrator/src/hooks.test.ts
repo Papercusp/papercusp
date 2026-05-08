@@ -165,3 +165,110 @@ test('runHook — log files stamp with timestamp + name', () => {
     fx.cleanup();
   }
 });
+
+test('runHook — Phase 6: auto-injects HARNESS_SLUG, OPERATOR_BASE, optional WORKSPACE_ID', () => {
+  const fx = makeFixture();
+  mkdirSync(join(fx.stateDir, 'hooks'));
+  const script = join(fx.stateDir, 'hooks', 'pre-worker.sh');
+  // Echo the contract env vars so we can assert them in the log.
+  writeFileSync(
+    script,
+    '#!/usr/bin/env bash\n' +
+    'echo "HARNESS_SLUG=$HARNESS_SLUG"\n' +
+    'echo "WORKSPACE_ID=$WORKSPACE_ID"\n' +
+    'echo "OPERATOR_BASE=$OPERATOR_BASE"\n' +
+    'exit 0\n',
+  );
+  chmodSync(script, 0o755);
+  try {
+    const r = runHook('pre-worker', {
+      stateDir: fx.stateDir,
+      projectDir: fx.projectDir, // basename = 'project' → default HARNESS_SLUG
+      logDir: fx.logDir,
+      env: {},
+      log: () => {},
+      workspaceId: 'ws-test',
+    });
+    const out = readFileSync(r.logfile!, 'utf8');
+    assert.match(out, /HARNESS_SLUG=project/);
+    assert.match(out, /WORKSPACE_ID=ws-test/);
+    assert.match(out, /OPERATOR_BASE=http:\/\/localhost:3055/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runHook — explicit harnessSlug overrides projectDir basename', () => {
+  const fx = makeFixture();
+  mkdirSync(join(fx.stateDir, 'hooks'));
+  const script = join(fx.stateDir, 'hooks', 'pre-worker.sh');
+  writeFileSync(
+    script,
+    '#!/usr/bin/env bash\necho "HARNESS_SLUG=$HARNESS_SLUG"\nexit 0\n',
+  );
+  chmodSync(script, 0o755);
+  try {
+    const r = runHook('pre-worker', {
+      stateDir: fx.stateDir,
+      projectDir: fx.projectDir,
+      logDir: fx.logDir,
+      env: {},
+      log: () => {},
+      harnessSlug: 'sheets',
+    });
+    assert.match(readFileSync(r.logfile!, 'utf8'), /HARNESS_SLUG=sheets/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runHook — caller env wins over auto-injection', () => {
+  const fx = makeFixture();
+  mkdirSync(join(fx.stateDir, 'hooks'));
+  const script = join(fx.stateDir, 'hooks', 'pre-worker.sh');
+  writeFileSync(
+    script,
+    '#!/usr/bin/env bash\necho "HARNESS_SLUG=$HARNESS_SLUG"\nexit 0\n',
+  );
+  chmodSync(script, 0o755);
+  try {
+    const r = runHook('pre-worker', {
+      stateDir: fx.stateDir,
+      projectDir: fx.projectDir,
+      logDir: fx.logDir,
+      env: { HARNESS_SLUG: 'override' },
+      log: () => {},
+      harnessSlug: 'auto',
+    });
+    assert.match(readFileSync(r.logfile!, 'utf8'), /HARNESS_SLUG=override/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runHook — OPERATOR_BASE honors PAPERCUSP_OPERATOR_BASE env', () => {
+  const fx = makeFixture();
+  mkdirSync(join(fx.stateDir, 'hooks'));
+  const script = join(fx.stateDir, 'hooks', 'pre-worker.sh');
+  writeFileSync(
+    script,
+    '#!/usr/bin/env bash\necho "OPERATOR_BASE=$OPERATOR_BASE"\nexit 0\n',
+  );
+  chmodSync(script, 0o755);
+  const prev = process.env.PAPERCUSP_OPERATOR_BASE;
+  process.env.PAPERCUSP_OPERATOR_BASE = 'http://my-operator:3070';
+  try {
+    const r = runHook('pre-worker', {
+      stateDir: fx.stateDir,
+      projectDir: fx.projectDir,
+      logDir: fx.logDir,
+      env: {},
+      log: () => {},
+    });
+    assert.match(readFileSync(r.logfile!, 'utf8'), /OPERATOR_BASE=http:\/\/my-operator:3070/);
+  } finally {
+    if (prev === undefined) delete process.env.PAPERCUSP_OPERATOR_BASE;
+    else process.env.PAPERCUSP_OPERATOR_BASE = prev;
+    fx.cleanup();
+  }
+});

@@ -13,6 +13,30 @@
  *
  * On Windows: the user must have bash on PATH (Git for Windows ships it).
  * The desktop bootstrap UI surfaces this prereq when `bash` isn't found.
+ *
+ * # Hook context contract (Phase 6)
+ *
+ * Hooks should never read state from the harness directory's filesystem
+ * (`features.json`, `lanes.json`, etc) — that data is migrating to PG
+ * and the FS files become invalid once the orchestrator's PG path is
+ * activated. Instead, hooks get this auto-injected env:
+ *
+ *   - `HARNESS_SLUG`     — current harness slug (set when known)
+ *   - `WORKSPACE_ID`     — active workspace (RLS-scoped)
+ *   - `OPERATOR_BASE`    — base URL for the operator API
+ *                          (defaults to http://localhost:3055)
+ *   - `PROJECT_DIR`      — same as before
+ *   - `STATE_DIR`        — same as before
+ *
+ * Recommended pattern for hooks that need rich state:
+ *
+ *   ```bash
+ *   # Hook script
+ *   features=$(curl -fsS "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/features")
+ *   status=$(echo "$features" | jq -r '.[] | select(.id == "'"$FEATURE_ID"'") | .status')
+ *   ```
+ *
+ * No filesystem reads, no fragile JSON parsing of harness files.
  */
 import { spawnSync } from 'node:child_process';
 import {
@@ -35,6 +59,16 @@ export interface RunHookOptions {
   env: Record<string, string>;
   /** Logger for the orchestrator's run.log. */
   log: (message: string) => void;
+  /**
+   * Phase 6 context auto-injected as env vars. Hooks consume these to
+   * query operator/PG instead of reading harness FS state.
+   *   - harnessSlug → HARNESS_SLUG
+   *   - workspaceId → WORKSPACE_ID
+   *   - operatorBase → OPERATOR_BASE (defaults to env or http://localhost:3055)
+   */
+  harnessSlug?: string;
+  workspaceId?: string;
+  operatorBase?: string;
 }
 
 export interface RunHookResult {
@@ -62,9 +96,22 @@ export function runHook(hookName: string, opts: RunHookOptions): RunHookResult {
 
   opts.log(`HOOK ${hookName} running (log: ${logfile})`);
 
+  // Phase 6 auto-inject — hooks need these to query operator/PG instead
+  // of reading harness FS state. Caller's explicit env wins on conflict
+  // (e.g. a caller that overrides HARNESS_SLUG for some test scenario).
+  // harnessSlug defaults to basename(projectDir) when not provided —
+  // matches the harness-slug convention used everywhere else.
+  const injected: Record<string, string> = {};
+  injected.HARNESS_SLUG = opts.harnessSlug ?? basenameOf(opts.projectDir);
+  if (opts.workspaceId) injected.WORKSPACE_ID = opts.workspaceId;
+  injected.OPERATOR_BASE =
+    opts.operatorBase ??
+    process.env.PAPERCUSP_OPERATOR_BASE ??
+    'http://localhost:3055';
+
   const result = spawnSync(script, [], {
     cwd: opts.projectDir,
-    env: { ...process.env, ...opts.env },
+    env: { ...process.env, ...injected, ...opts.env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -77,6 +124,13 @@ export function runHook(hookName: string, opts: RunHookOptions): RunHookResult {
     opts.log(`  HOOK ${hookName} failed rc=${exitCode} — continuing (see ${logfile})`);
   }
   return { ran: true, exitCode, logfile };
+}
+
+function basenameOf(p: string): string {
+  // Cross-platform basename without importing path (keeps the module
+  // tree-shakable + avoids circular dep with state.ts).
+  const m = p.replace(/[/\\]+$/, '').match(/[^/\\]+$/);
+  return m ? m[0] : p;
 }
 
 function isExecutable(path: string): boolean {
