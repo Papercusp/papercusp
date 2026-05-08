@@ -42,9 +42,15 @@
  * SELECTs/UPDATEs. Workspaces sharing a slug + checkpoint name would
  * collide, but harness slugs are workspace-unique by convention.
  *
- * pg_notify channels (best-effort, row state remains canonical):
- *   - 'checkpoint:fired'    — on a fresh INSERT
- *   - 'checkpoint:granted'  — on grant flip
+ * pg_notify routing (best-effort, row state remains canonical):
+ *   The orchestrator emits on the `sync_invalidate` channel using the
+ *   operator's existing payload format `{ name: queryName, args: ... }`.
+ *   Operator's sync-sse.ts listener (single dedicated `LISTEN
+ *   sync_invalidate` connection) picks it up and broadcasts to all
+ *   SSE subscribers, which triggers `harnessCheckpoints.byHarness` to
+ *   refetch in the UI. Same channel as every other checkpoint event
+ *   (operator-side INSERT/UPDATE in harness-fs-watcher); the
+ *   orchestrator just plugs into the same bus.
  */
 import type { OrchestratorPg } from './invoke';
 
@@ -97,11 +103,10 @@ export async function fireCheckpointPg(
   if (inserted) {
     try {
       await ctx.pg`
-        SELECT pg_notify('checkpoint:fired',
+        SELECT pg_notify('sync_invalidate',
           ${JSON.stringify({
-            workspace: ctx.workspaceId,
-            harness: ctx.harnessSlug,
-            name,
+            name: 'harnessCheckpoints.byHarness',
+            args: { harnessSlug: ctx.harnessSlug },
           })})
       `;
     } catch {
@@ -172,11 +177,10 @@ export async function grantCheckpointPg(
   if (rows.length > 0) {
     try {
       await ctx.pg`
-        SELECT pg_notify('checkpoint:granted',
+        SELECT pg_notify('sync_invalidate',
           ${JSON.stringify({
-            workspace: ctx.workspaceId,
-            harness: ctx.harnessSlug,
-            name,
+            name: 'harnessCheckpoints.byHarness',
+            args: { harnessSlug: ctx.harnessSlug },
           })})
       `;
     } catch {

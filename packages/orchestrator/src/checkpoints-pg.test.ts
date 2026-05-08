@@ -41,12 +41,8 @@ function makeMockPg(initialRows: Partial<MockState['rows'][number]>[] = []): {
   const pg = async (template: TemplateStringsArray, ...vals: unknown[]) => {
     const sql = template.join('?');
     state.queries.push(sql);
-    if (/SELECT pg_notify\('checkpoint:fired'/.test(sql)) {
-      state.notifies.push({ channel: 'checkpoint:fired', payload: vals[0] as string });
-      return [];
-    }
-    if (/SELECT pg_notify\('checkpoint:granted'/.test(sql)) {
-      state.notifies.push({ channel: 'checkpoint:granted', payload: vals[0] as string });
+    if (/SELECT pg_notify\('sync_invalidate'/.test(sql)) {
+      state.notifies.push({ channel: 'sync_invalidate', payload: vals[0] as string });
       return [];
     }
     if (/INSERT INTO harness_shared\.harness_checkpoints/.test(sql)) {
@@ -113,7 +109,10 @@ describe('checkpoints-pg', () => {
     assert.equal(mock.state.rows[0].granted, false);
     assert.equal(mock.state.rows[0].consumed, false);
     assert.equal(mock.state.notifies.length, 1);
-    assert.equal(mock.state.notifies[0].channel, 'checkpoint:fired');
+    assert.equal(mock.state.notifies[0].channel, 'sync_invalidate');
+    const payload = JSON.parse(mock.state.notifies[0].payload);
+    assert.equal(payload.name, 'harnessCheckpoints.byHarness');
+    assert.equal(payload.args.harnessSlug, 'sheets');
   });
 
   test('fireCheckpointPg — second fire is a no-op (row exists, even if consumed)', async () => {
@@ -146,12 +145,16 @@ describe('checkpoints-pg', () => {
     assert.equal(mock.state.rows.find((r) => r.name === 'a')!.consumed, false);
   });
 
-  test('grantCheckpointPg — flips pending to granted, emits notify', async () => {
+  test('grantCheckpointPg — flips pending to granted, emits sync_invalidate notify', async () => {
     const mock = makeMockPg([{ name: 'plan', granted: false, consumed: false }]);
     const updated = await grantCheckpointPg(ctx(mock), 'plan');
     assert.equal(updated, true);
     assert.equal(mock.state.rows[0].granted, true);
     assert.equal(mock.state.notifies.length, 1);
+    assert.equal(mock.state.notifies[0].channel, 'sync_invalidate');
+    const payload = JSON.parse(mock.state.notifies[0].payload);
+    assert.equal(payload.name, 'harnessCheckpoints.byHarness');
+    assert.equal(payload.args.harnessSlug, 'sheets');
   });
 
   test('grantCheckpointPg — returns false if already granted', async () => {
