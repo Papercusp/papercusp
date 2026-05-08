@@ -257,6 +257,41 @@ log() {
 # When a log line begins with "ORCH decision: <VERB> <args>", classify
 # and POST it to /api/internal/decision-event. Replaces the chokidar
 # mirror that re-tail-grepped run.log on every fs.watch event.
+_post_test_snapshot() {
+    # Snapshot .harness/tests/*.json into PG. Replaces Mirror 6 in
+    # harness-fs-watcher.ts. Called after `invoke tester` finishes.
+    local tests_dir="$STATE_DIR/tests"
+    [ -d "$tests_dir" ] || return 0
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    local body
+    body="$(TESTS_DIR="$tests_dir" python3 -c '
+import json, os, sys, glob
+files = []
+d = os.environ["TESTS_DIR"]
+for p in sorted(glob.glob(os.path.join(d, "*.json"))):
+    test_id = os.path.splitext(os.path.basename(p))[0]
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            payload = json.loads(f.read(262144))
+    except Exception:
+        continue
+    if not isinstance(payload, dict):
+        continue
+    files.append({"testId": test_id, "payload": payload})
+sys.stdout.write(json.dumps({"files": files, "phase": "staging"}))
+' 2>/dev/null)" || return 0
+    [ -z "$body" ] && return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 10 \
+        -d "$body" "$operator_base/api/internal/test-snapshot" >/dev/null 2>&1 || true
+}
+
 _post_curator_outputs() {
     # Snapshot identity/<role>.md (cross-mission, ~/autonomous-harness)
     # and .harness/skills/*.md (per-harness) into PG. Replaces both the
@@ -2699,6 +2734,7 @@ except Exception as e:
         log "TESTER starting${val_id:+ for $val_id}"
         tester_out="$(invoke tester "VAL_ID=$val_id")"
         log "TESTER: ${tester_out:-(no output)}"
+        _post_test_snapshot &
         ;;
 
     NEXT_SECURITY*)
