@@ -64,6 +64,34 @@ EOF
 result="$(tail -1 "$STATE_DIR/logs/supervisor-"*.out 2>/dev/null | tail -1)"
 echo "$(date -Iseconds) $result" >> "$STATE_DIR/logs/supervisor-history.log"
 
+# POST whatever escalation/supervisor-notes the LLM wrote to the
+# operator's PG row (replaces the chokidar mirror).
+_post_supervisor_escalation() {
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$STATE_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$STATE_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    local esc="" notes=""
+    [ -f "$STATE_DIR/escalation.md" ] && esc="$(head -c 262144 "$STATE_DIR/escalation.md" 2>/dev/null || true)"
+    [ -f "$STATE_DIR/supervisor-notes.md" ] && notes="$(head -c 262144 "$STATE_DIR/supervisor-notes.md" 2>/dev/null || true)"
+    [ -z "$esc" ] && [ -z "$notes" ] && return 0
+    local body
+    body="$(ESC="$esc" NOTES="$notes" python3 -c '
+import json, os, sys
+out = {"phase": "staging"}
+if os.environ.get("ESC"):   out["escalation"]       = os.environ["ESC"]
+if os.environ.get("NOTES"): out["supervisorNotes"]  = os.environ["NOTES"]
+sys.stdout.write(json.dumps(out))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 5 \
+        -d "$body" "$operator_base/api/internal/escalation-event" >/dev/null 2>&1 || true
+}
+_post_supervisor_escalation &
+
 if [ -n "$NOTIFY" ] && grep -q "human-needed\|expand" <<<"$result"; then
     $NOTIFY "Harness supervisor: $result ($PROJECT_DIR)"
 fi
