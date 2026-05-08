@@ -25,6 +25,11 @@
  *   - <runId>.prompt.md             (→ ramTmpRoot tmpdir + run_output.prompt_body)
  *   - snapshots/<ts>-iter-NNN/      (→ harness_snapshots rows)
  *   - logs/nexth-*.json             (→ harness_dispatches)
+ *   - experts/<EXP>/identity.json   (→ harness_experts)
+ *   - experts/<EXP>/SPEC.md         (→ harness_experts.spec_content)
+ *   - experts/<EXP>/feedback/<FB>/persona.txt   (→ harness_expert_feedback)
+ *   - experts/<EXP>/feedback/<FB>/verdict.json  (→ harness_expert_feedback.verdict)
+ *   - experts/<EXP>/feedback/<FB>/turn-NNN-*.md (→ harness_expert_turns)
  *
  * Usage:
  *   node audit-harness-fs.mjs <path/to/.harness>
@@ -81,6 +86,47 @@ function audit(harnessDir) {
       for (const e of readdirSync(logsDir)) {
         if (/^nexth-.+\.json$/.test(e)) {
           findings.push({ kind: 'file', key: 'logs/nexth-*.json', path: join(logsDir, e) });
+        }
+      }
+    } catch { /* skip */ }
+  }
+  // Walk experts/<EXP-NNN>/ for files migrated to harness_experts +
+  // harness_expert_feedback + harness_expert_turns. Round audit snapshots
+  // (rounds/round-NNN.md) and chat/ are intentionally allowed.
+  const expertsDir = join(harnessDir, 'experts');
+  if (existsSync(expertsDir)) {
+    try {
+      for (const expId of readdirSync(expertsDir)) {
+        if (!/^EXP-\d{3,}$/.test(expId)) continue;
+        const expRoot = join(expertsDir, expId);
+        let expEntries;
+        try { expEntries = readdirSync(expRoot); } catch { continue; }
+        for (const e of expEntries) {
+          if (e === 'identity.json') {
+            findings.push({ kind: 'file', key: 'experts/<id>/identity.json (→ harness_experts)', path: join(expRoot, e) });
+          } else if (e === 'SPEC.md') {
+            findings.push({ kind: 'file', key: 'experts/<id>/SPEC.md (→ harness_experts.spec_content)', path: join(expRoot, e) });
+          }
+        }
+        const fbRoot = join(expRoot, 'feedback');
+        if (existsSync(fbRoot)) {
+          let fbs;
+          try { fbs = readdirSync(fbRoot); } catch { continue; }
+          for (const fb of fbs) {
+            if (!/^FB-\d{3,}$/.test(fb)) continue;
+            const fbDir = join(fbRoot, fb);
+            let fbEntries;
+            try { fbEntries = readdirSync(fbDir); } catch { continue; }
+            for (const e of fbEntries) {
+              if (e === 'persona.txt') {
+                findings.push({ kind: 'file', key: 'experts/<id>/feedback/<fb>/persona.txt (→ harness_expert_feedback)', path: join(fbDir, e) });
+              } else if (e === 'verdict.json') {
+                findings.push({ kind: 'file', key: 'experts/<id>/feedback/<fb>/verdict.json (→ harness_expert_feedback.verdict)', path: join(fbDir, e) });
+              } else if (/^turn-\d{3}-(expert|feedback)\.md$/.test(e)) {
+                findings.push({ kind: 'file', key: 'experts/<id>/feedback/<fb>/turn-NNN-*.md (→ harness_expert_turns)', path: join(fbDir, e) });
+              }
+            }
+          }
         }
       }
     } catch { /* skip */ }
