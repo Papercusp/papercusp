@@ -16008,3 +16008,58 @@ html body .h-root.h-root :is(
     grid-column: 1 / -1;
   }
 }
+/* Issues + logs polish: clearer issue-filter tint separation, move the
+   issues/tests/report tabs to the left side, and remove the run.log
+   timeline scrubber graph entirely. */
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-head {
+  justify-content: flex-start;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions {
+  margin-left: 8px !important;
+  margin-right: auto;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-issues-filter.h-issues-filter--all:not(.on) {
+  color: color-mix(in oklab, #7dd3fc, white 8%) !important;
+  border-color: rgba(56, 189, 248, 0.34) !important;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(186, 230, 253, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(10, 36, 56, 0.94), rgba(3, 10, 20, 0.98)) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-issues-filter.h-issues-filter--all.on {
+  border-color: rgba(56, 189, 248, 0.56) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    0 0 18px rgba(56, 189, 248, 0.16) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-issues-filter.h-issues-filter--closed:not(.on) {
+  color: color-mix(in oklab, #c4b5fd, white 6%) !important;
+  border-color: rgba(167, 139, 250, 0.34) !important;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(233, 213, 255, 0.11), transparent 34%),
+    linear-gradient(180deg, rgba(34, 18, 64, 0.94), rgba(3, 10, 20, 0.98)) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-issues-filter.h-issues-filter--closed.on {
+  border-color: rgba(167, 139, 250, 0.56) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    0 0 18px rgba(167, 139, 250, 0.16) !important;
+}
+
+.h-root .h-dashboard-panel-anchor[data-dashboard-panel="logs"] .h-log-scrubber {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  .h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-head {
+    align-items: flex-start !important;
+  }
+
+  .h-root .h-dashboard-panel-anchor[data-dashboard-panel="issues"] .h-panel-actions {
+    margin-left: 0 !important;
+  }
+}
