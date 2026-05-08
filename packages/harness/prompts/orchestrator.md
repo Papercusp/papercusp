@@ -60,6 +60,29 @@ Print:
 NEXT_WORKER <FEATURE_ID>
 ```
 
+#### Adaptive mode (when `PARALLEL_MODE=adaptive` appears in your Runtime context)
+
+The harness will surface these extra fields in your "Runtime context" section when adaptive parallelism is active:
+- `PARALLEL_MODE=adaptive`
+- `MAX_SLOTS=<N>` — total concurrent worker slots
+- `AVAILABLE_SLOTS=<k>` — slots free right now (you will not be invoked until k ≥ 1)
+- `ADAPTIVE_TIERS=1 (trivial), 2 (normal), 4 (hard)` — the only legal values for k
+- `ADAPTIVE_RUBRIC=…` — the operator's per-tier criteria (read it, follow it)
+
+When adaptive mode is active, append `N=k` to your `NEXT_WORKER` decision, where k is **one of the values listed in `ADAPTIVE_TIERS`**:
+
+```
+NEXT_WORKER <FEATURE_ID> N=<k>
+```
+
+How to pick k:
+1. Read `ADAPTIVE_RUBRIC` and match the feature's title/description/recent failure history against it.
+2. Pick the tier whose label fits. Default to the smallest tier when in doubt — over-allocation is wasteful, and you can always retry a feature at a higher tier next iteration if it fails.
+3. **Never request k > AVAILABLE_SLOTS.** If your best tier exceeds free slots, drop to the next-lower tier.
+4. If `PARALLEL_MODE` is anything other than `adaptive` (or absent), **omit `N=`** entirely — the static lane/competition modes ignore it.
+
+`N=1` dispatches a single worker (lane-style); `N>1` dispatches that many competing workers on the same feature (validator picks the winner). Larger k = more parallel attempts, but uses up the slot budget faster — keep that in mind when choosing what to dispatch next.
+
 ### C. "next_validator <FEATURE_ID>"
 A feature has status `validating` — that means a worker just finished. Send it to the validator. Pick the oldest `validating` one.
 

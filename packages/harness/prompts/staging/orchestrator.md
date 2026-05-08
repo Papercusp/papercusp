@@ -44,6 +44,16 @@ Print:
 NEXT_WORKER <FEATURE_ID>
 ```
 
+#### Adaptive mode (when `PARALLEL_MODE=adaptive` is in your Runtime context)
+
+If your Runtime context includes `PARALLEL_MODE=adaptive`, append `N=k` to the decision, where k is one of the values in `ADAPTIVE_TIERS` (e.g. 1, 2, or 4). Pick k by matching the feature against `ADAPTIVE_RUBRIC` (also in your context). Never request k > `AVAILABLE_SLOTS`. If `PARALLEL_MODE` is `lane`, `competition`, or absent, omit `N=` entirely.
+
+```
+NEXT_WORKER <FEATURE_ID> N=<k>
+```
+
+`N=1` runs a single worker; `N>1` spawns that many competitors on the feature, with the validator picking a winner. Default to the smallest tier when in doubt.
+
 ### C. "next_validator <FEATURE_ID>"
 A feature has status `validating` — that means a worker just finished. Send it to the validator. Pick the oldest `validating` one.
 
