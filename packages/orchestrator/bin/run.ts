@@ -18,6 +18,7 @@ import { createLogger } from '../src/log.js';
 import { runMainLoop } from '../src/main-loop.js';
 import { bootstrapOrchestratorPg } from '../src/pg-bootstrap.js';
 import { activeWorkspaceId } from '../src/workspace.js';
+import { harnessSlug } from '../src/state.js';
 
 const useTs = process.env.PAPERCUSP_USE_TS_ORCHESTRATOR === '1';
 const { harnessDir, projectDir, stateDir, logDir } = resolvePaths();
@@ -67,7 +68,13 @@ async function runTs(): Promise<never> {
   // attempts to connect; on success, ctx.pg + ctx.workspaceId are set
   // and Phases 1-7's PG-canonical paths run. On failure, the dormant
   // FS fallbacks remain — orchestrator behavior unchanged.
-  const pgBoot = await bootstrapOrchestratorPg(logger.log);
+  //
+  // Pass the harness slug so the pg client's search_path scopes to the
+  // per-harness schema (harness_<slug>,harness_shared,public). Phase 1's
+  // unqualified `harness_features` queries resolve correctly via that
+  // search_path — same pattern as the operator's `dbcFor(slug)`.
+  const slug = harnessSlug(projectDir);
+  const pgBoot = await bootstrapOrchestratorPg(logger.log, { harnessSlug: slug });
   const workspaceId = pgBoot.pg ? activeWorkspaceId() : undefined;
 
   try {
