@@ -1372,12 +1372,14 @@ except Exception:
     # Backgrounded so a status-write hiccup never blocks the actual
     # agent invocation.
     #
-    # CRITICAL: capture $ (harness pid) BEFORE the subshell. Inside
-    # the `{...} &` block, $ would be the subshell's pid (dies the
-    # moment curl returns), and the sweeper would delete the lane
-    # within 30s. We want the harness pid → "lane alive iff harness
-    # still iterating".
-    _phase3_lane_pid=$
+    # CRITICAL: capture the parent shell pid BEFORE the subshell. Inside
+    # the `{...} &` block, the bash special variable expands to the
+    # subshell's pid (dies the moment curl returns), and the sweeper
+    # would delete the lane within 30s. We want the harness pid → "lane
+    # alive iff harness still iterating". Using BASHPID here unambiguously
+    # gets the current (parent) shell pid; bash $ has special quoting
+    # behavior that earlier edits accidentally truncated.
+    _phase3_lane_pid="$BASHPID"
     {
         _phase3_lane_slug="$(harness_slug 2>/dev/null || echo unknown)"
         pg_write_lane "$_phase3_lane_slug" "${PAPERCUSP_PHASE:-staging}" \
