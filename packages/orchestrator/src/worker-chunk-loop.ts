@@ -222,6 +222,12 @@ export async function runChunkLoop(
       let outcome: 'committed' | 'replan' | 'escalate' | 'aborted' = 'replan';
       let typecheckOutput = '';
       let attemptedChange = '';
+      // Distinguishes "real typecheck failure (call replan)" from
+      // "lock-extension contention (skip replan, just re-acquire)".
+      // Can't rely on typecheckOutput emptiness: some typecheck
+      // commands produce empty stderr/stdout on failure (e.g. plain
+      // `false`).
+      let isTypecheckFailure = false;
 
       try {
         const impl = await deps.implementChunk(feature, chunk, env);
@@ -257,6 +263,7 @@ export async function runChunkLoop(
           outcome = 'committed';
         } else {
           strikes++;
+          isTypecheckFailure = true;
           log(`chunk-loop: ${chunk.id} typecheck failed (strike ${strikes}/${replanStrikes})`);
           if (strikes >= replanStrikes) {
             outcome = 'escalate';
@@ -269,6 +276,7 @@ export async function runChunkLoop(
         // Treat as a soft failure (count toward strikes). This catches
         // LLM API errors, file-write errors, etc.
         strikes++;
+        isTypecheckFailure = true;
         typecheckOutput = `[implement error] ${(err as Error).message}`;
         attemptedChange = attemptedChange || `(no summary — implement threw)`;
         outcome = strikes >= replanStrikes ? 'escalate' : 'replan';
@@ -312,7 +320,7 @@ export async function runChunkLoop(
         strikes,
         reason: typecheckOutput.slice(0, 500),
       });
-      if (typecheckOutput) {
+      if (isTypecheckFailure) {
         // Real typecheck failure — ask the LLM to bundle more work in.
         let replanRaw: string;
         try {
