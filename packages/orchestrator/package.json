@@ -52,6 +52,11 @@
       "import": "./src/run-output-pg.ts",
       "default": "./src/run-output-pg.ts"
     },
+    "./run-chunks-pg": {
+      "types": "./src/run-chunks-pg.ts",
+      "import": "./src/run-chunks-pg.ts",
+      "default": "./src/run-chunks-pg.ts"
+    },
     "./snapshots-pg": {
       "types": "./src/snapshots-pg.ts",
       "import": "./src/snapshots-pg.ts",

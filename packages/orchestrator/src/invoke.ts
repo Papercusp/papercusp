@@ -443,6 +443,23 @@ export async function invoke(
   writeFileSync(jsonlPath, '');
   writeFileSync(errPath, '');
 
+  // Phase 4b live PG streaming: pre-resolve the chunk-streaming context
+  // before the spawn Promise so the stdout handler (which is sync) can
+  // reference it without an `await import`.
+  let chunkSeq = 0;
+  let chunkPgQueue: Promise<void> = Promise.resolve();
+  let runChunksCtx: { pg: OrchestratorPg; workspaceId: string; harnessSlug: string } | null = null;
+  let appendChunkFn: ((c: NonNullable<typeof runChunksCtx>, runId: string, seq: number, data: string) => Promise<void>) | null = null;
+  if (ctx.pg && ctx.workspaceId) {
+    const { harnessSlug: getSlug } = await import('./state');
+    runChunksCtx = {
+      pg: ctx.pg,
+      workspaceId: ctx.workspaceId,
+      harnessSlug: getSlug(ctx.projectDir),
+    };
+    appendChunkFn = (await import('./run-chunks-pg')).appendChunkPg;
+  }
+
   const outcome: SpawnOutcome = await new Promise((resolve) => {
     const child = spawn(command, finalArgv, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
 
@@ -455,7 +472,24 @@ export async function invoke(
       }, timeoutMs);
     }
 
-    child.stdout.on('data', (chunk: Buffer) => appendFileSync(jsonlPath, chunk));
+    // Phase 4b live PG streaming: when ctx.pg is wired, every stdout
+    // chunk also lands as a row in harness_run_chunks + pg_notify on
+    // 'run:<runId>'. Subscribers (operator SSE endpoint) LISTEN on the
+    // channel and SELECT new rows — direct replacement for fs.watch on
+    // the JSONL file. Chunks remain on disk during the run for
+    // tail -f compat; the disk file becomes prunable once Phase 4
+    // ingest-at-exit row is finalized.
+    child.stdout.on('data', (chunk: Buffer) => {
+      appendFileSync(jsonlPath, chunk);
+      if (runChunksCtx && appendChunkFn) {
+        const mySeq = chunkSeq++;
+        const myData = chunk.toString('utf8');
+        // Serialize PG INSERTs via Promise chain so chunks land in
+        // arrival order even under bursty stdout. Errors are swallowed
+        // inside appendChunkPg — never break the stream.
+        chunkPgQueue = chunkPgQueue.then(() => appendChunkFn!(runChunksCtx!, runId, mySeq, myData));
+      }
+    });
     child.stderr.on('data', (chunk: Buffer) => appendFileSync(errPath, chunk));
 
     // EPIPE protection: if the subprocess exits before reading our stdin
@@ -498,6 +532,14 @@ export async function invoke(
       resolve({ exitCode, durationMs: Date.now() - startedAt });
     });
   });
+
+  // Drain the live-streaming queue (Phase 4b) so the final pg_notify
+  // for the last chunk has fired before the subprocess-exit ingest
+  // overwrites/finalizes state. Errors are already swallowed inside
+  // the queue; this just waits for the chain to settle.
+  if (runChunksCtx) {
+    await chunkPgQueue.catch(() => {});
+  }
 
   // 11. Extract result text and write to .out.
   const finalText = extractResult(jsonlPath, streamFormat);
