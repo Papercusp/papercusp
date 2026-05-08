@@ -2,34 +2,49 @@
  * Postgres-backed checkpoint signaling — Phase 3 of the orchestrator → PG arc.
  *
  * Replaces filesystem semantics:
- *   - `<stateDir>/checkpoint-<name>.md`         → row with status='pending'
- *   - `<stateDir>/checkpoint-<name>.md.granted` → UPDATE status='granted'
- *   - `<stateDir>/.checkpoint-<name>.fired`     → ANY row's existence (any status)
+ *   - `<stateDir>/checkpoint-<name>.md`         → row, granted=false, consumed=false
+ *   - `<stateDir>/checkpoint-<name>.md.granted` → UPDATE granted=true
+ *   - `<stateDir>/.checkpoint-<name>.fired`     → ANY row's existence (incl. consumed=true)
  *
- * Lifecycle:
- *   pending → granted (via operator UI/CLI) → consumed (orchestrator clears
- *     the gate on its next pre-loop pass).
+ * **Schema reconciliation note (2026-05-08):** the operator's `harness-fs-watcher`
+ * has been writing to `harness_shared.harness_checkpoints` since the bash
+ * run.sh era using a different shape than my original Phase 3 design.
+ * To coexist with the watcher (which mirrors disk → PG when run.sh writes
+ * checkpoint files), the orchestrator's PG path now uses the existing
+ * column names + adds a single boolean column for the consumed sentinel.
  *
- * The "any row exists" predicate replaces the FS sentinel: once a checkpoint
- * has been fired even once, re-firing is suppressed regardless of status.
+ * Schema (existing + Phase 3 ALTER):
  *
- * Schema:
- *
- *   CREATE TABLE harness_shared.harness_checkpoints (
- *     workspace_id TEXT NOT NULL DEFAULT 'default',
- *     harness_slug TEXT NOT NULL,
- *     name         TEXT NOT NULL,
- *     body_md      TEXT NOT NULL,
- *     status       TEXT NOT NULL DEFAULT 'pending',
- *     fired_at     BIGINT NOT NULL,
- *     resolved_at  BIGINT,
- *     PRIMARY KEY (workspace_id, harness_slug, name)
+ *   harness_shared.harness_checkpoints (
+ *     harness_slug      TEXT NOT NULL,
+ *     name              TEXT NOT NULL,
+ *     content           TEXT NOT NULL DEFAULT '',
+ *     waiting_since_ms  BIGINT NOT NULL DEFAULT 0,
+ *     granted           BOOLEAN NOT NULL DEFAULT false,
+ *     consumed          BOOLEAN NOT NULL DEFAULT false,  -- Phase 3 add
+ *     workspace_id      TEXT NOT NULL DEFAULT '',
+ *     PRIMARY KEY (harness_slug, name)
  *   );
  *
- * The operator can subscribe to LISTEN 'checkpoint:fired' for real-time UI
- * updates (writers issue pg_notify on insert); orchestrator can LISTEN
- * 'checkpoint:granted' to wake immediately on user grant. Both notifications
- * are best-effort — the row state is canonical.
+ * Lifecycle:
+ *   pending  (granted=false, consumed=false)  ← INSERT on fire
+ *     ↓
+ *   granted  (granted=true,  consumed=false)  ← UPDATE on user grant
+ *     ↓
+ *   consumed (granted=true,  consumed=true)   ← UPDATE on orchestrator clear
+ *
+ * The "any row exists" predicate (replaces .fired sentinel file) survives
+ * consumption because consumed rows are kept, not deleted.
+ *
+ * The pre-Phase-3 PK is `(harness_slug, name)` not `(workspace_id, harness_slug, name)`
+ * — the harness-fs-watcher and run.sh both wrote with that shape. Phase 3
+ * accepts that and scopes via the `workspace_id` column predicate in
+ * SELECTs/UPDATEs. Workspaces sharing a slug + checkpoint name would
+ * collide, but harness slugs are workspace-unique by convention.
+ *
+ * pg_notify channels (best-effort, row state remains canonical):
+ *   - 'checkpoint:fired'    — on a fresh INSERT
+ *   - 'checkpoint:granted'  — on grant flip
  */
 import type { OrchestratorPg } from './invoke';
 
@@ -41,17 +56,20 @@ export interface CheckpointsPgContext {
 
 export const CHECKPOINTS_DDL = `
   CREATE TABLE IF NOT EXISTS harness_shared.harness_checkpoints (
-    workspace_id TEXT NOT NULL DEFAULT 'default',
-    harness_slug TEXT NOT NULL,
-    name         TEXT NOT NULL,
-    body_md      TEXT NOT NULL,
-    status       TEXT NOT NULL DEFAULT 'pending',
-    fired_at     BIGINT NOT NULL,
-    resolved_at  BIGINT,
-    PRIMARY KEY (workspace_id, harness_slug, name)
+    harness_slug      TEXT NOT NULL,
+    name              TEXT NOT NULL,
+    content           TEXT NOT NULL DEFAULT '',
+    waiting_since_ms  BIGINT NOT NULL DEFAULT 0,
+    granted           BOOLEAN NOT NULL DEFAULT false,
+    consumed          BOOLEAN NOT NULL DEFAULT false,
+    workspace_id      TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (harness_slug, name)
   );
-  CREATE INDEX IF NOT EXISTS harness_checkpoints_status_idx
-    ON harness_shared.harness_checkpoints (workspace_id, harness_slug, status);
+  -- Idempotent column-add for tables created before the Phase 3 reconciliation.
+  ALTER TABLE harness_shared.harness_checkpoints
+    ADD COLUMN IF NOT EXISTS consumed BOOLEAN NOT NULL DEFAULT false;
+  CREATE INDEX IF NOT EXISTS harness_checkpoints_slug_waiting_idx
+    ON harness_shared.harness_checkpoints (harness_slug, waiting_since_ms ASC);
 `;
 
 /**
@@ -64,19 +82,18 @@ export const CHECKPOINTS_DDL = `
 export async function fireCheckpointPg(
   ctx: CheckpointsPgContext,
   name: string,
-  bodyMd: string,
+  content: string,
 ): Promise<boolean> {
   const now = Date.now();
   const rows = await ctx.pg<{ inserted: boolean }[]>`
     INSERT INTO harness_shared.harness_checkpoints
-      (workspace_id, harness_slug, name, body_md, status, fired_at)
-    VALUES (${ctx.workspaceId}, ${ctx.harnessSlug}, ${name}, ${bodyMd},
-            'pending', ${now})
-    ON CONFLICT (workspace_id, harness_slug, name) DO NOTHING
+      (harness_slug, name, content, waiting_since_ms, granted, consumed, workspace_id)
+    VALUES (${ctx.harnessSlug}, ${name}, ${content}, ${now},
+            false, false, ${ctx.workspaceId})
+    ON CONFLICT (harness_slug, name) DO NOTHING
     RETURNING TRUE AS inserted
   `;
   const inserted = rows.length > 0;
-  // Best-effort notify — operator UI subscribers wake on this.
   if (inserted) {
     try {
       await ctx.pg`
@@ -88,51 +105,50 @@ export async function fireCheckpointPg(
           })})
       `;
     } catch {
-      /* notify failed; row is canonical */
+      /* best-effort */
     }
   }
   return inserted;
 }
 
-/** Pending and granted checkpoint names for the active harness. */
+/** Pending and granted (not-yet-consumed) checkpoint names for the active harness. */
 export interface CheckpointStatus {
   pending: string[];
   granted: string[];
 }
 
 export async function listCheckpointsPg(ctx: CheckpointsPgContext): Promise<CheckpointStatus> {
-  const rows = await ctx.pg<{ name: string; status: string }[]>`
-    SELECT name, status FROM harness_shared.harness_checkpoints
-     WHERE workspace_id = ${ctx.workspaceId}
-       AND harness_slug = ${ctx.harnessSlug}
-       AND status IN ('pending', 'granted')
-     ORDER BY fired_at
+  const rows = await ctx.pg<{ name: string; granted: boolean }[]>`
+    SELECT name, granted FROM harness_shared.harness_checkpoints
+     WHERE harness_slug = ${ctx.harnessSlug}
+       AND workspace_id = ${ctx.workspaceId}
+       AND consumed     = false
+     ORDER BY waiting_since_ms
   `;
   const pending: string[] = [];
   const granted: string[] = [];
   for (const r of rows) {
-    if (r.status === 'pending') pending.push(r.name);
-    else if (r.status === 'granted') granted.push(r.name);
+    if (r.granted) granted.push(r.name);
+    else pending.push(r.name);
   }
   return { pending, granted };
 }
 
 /**
- * Mark every granted checkpoint for this harness as 'consumed' (the
+ * Mark every granted-but-not-yet-consumed checkpoint as consumed (the
  * orchestrator has acknowledged the grant and is proceeding). Returns
  * the names that were cleared.
  */
 export async function clearGrantedCheckpointsPg(
   ctx: CheckpointsPgContext,
 ): Promise<string[]> {
-  const now = Date.now();
   const rows = await ctx.pg<{ name: string }[]>`
     UPDATE harness_shared.harness_checkpoints
-       SET status      = 'consumed',
-           resolved_at = COALESCE(resolved_at, ${now})
-     WHERE workspace_id = ${ctx.workspaceId}
-       AND harness_slug = ${ctx.harnessSlug}
-       AND status       = 'granted'
+       SET consumed = true
+     WHERE harness_slug = ${ctx.harnessSlug}
+       AND workspace_id = ${ctx.workspaceId}
+       AND granted      = true
+       AND consumed     = false
     RETURNING name
   `;
   return rows.map((r) => r.name);
@@ -143,14 +159,14 @@ export async function grantCheckpointPg(
   ctx: CheckpointsPgContext,
   name: string,
 ): Promise<boolean> {
-  const now = Date.now();
   const rows = await ctx.pg<{ updated: boolean }[]>`
     UPDATE harness_shared.harness_checkpoints
-       SET status = 'granted', resolved_at = ${now}
-     WHERE workspace_id = ${ctx.workspaceId}
-       AND harness_slug = ${ctx.harnessSlug}
+       SET granted = true
+     WHERE harness_slug = ${ctx.harnessSlug}
+       AND workspace_id = ${ctx.workspaceId}
        AND name         = ${name}
-       AND status       = 'pending'
+       AND granted      = false
+       AND consumed     = false
     RETURNING TRUE AS updated
   `;
   if (rows.length > 0) {
@@ -164,7 +180,7 @@ export async function grantCheckpointPg(
           })})
       `;
     } catch {
-      /* notify is best-effort */
+      /* best-effort */
     }
   }
   return rows.length > 0;
