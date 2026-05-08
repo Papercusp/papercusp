@@ -257,6 +257,30 @@ log() {
 # When a log line begins with "ORCH decision: <VERB> <args>", classify
 # and POST it to /api/internal/decision-event. Replaces the chokidar
 # mirror that re-tail-grepped run.log on every fs.watch event.
+_post_archive_event() {
+    local archive_path="$1"
+    [ -z "$archive_path" ] || [ ! -f "$archive_path" ] && return 0
+    local id; id="$(basename "$archive_path")"
+    local size_bytes; size_bytes="$(stat -c%s "$archive_path" 2>/dev/null || echo 0)"
+    local ts; ts="$(stat -c%Y "$archive_path" 2>/dev/null || date +%s)"
+    ts=$((ts * 1000))
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    local body
+    body="$(ID="$id" SIZE="$size_bytes" TS="$ts" python3 -c '
+import json, os, sys
+sys.stdout.write(json.dumps({"id": os.environ["ID"], "sizeBytes": int(os.environ["SIZE"]), "ts": int(os.environ["TS"]), "phase": "staging"}))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 2 \
+        -d "$body" "$operator_base/api/internal/archive-event" >/dev/null 2>&1 || true
+}
+
 _post_pr_event() {
     local feature_id="$1"; local pr_url="$2"
     local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
@@ -2071,6 +2095,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
             archive_path="$STATE_DIR/archives/${ts_arch}-done.tar.gz"
             if tar czf "$archive_path" -C "$STATE_DIR" --exclude=archives --exclude=./archives . 2>/dev/null; then
                 log "  archiveOnDone: saved $(basename "$archive_path") ($(stat -c%s "$archive_path" 2>/dev/null || echo 0) bytes)"
+                _post_archive_event "$archive_path" &
             fi
         fi
         # Fire registered plugin afterDone hooks (briefings pipeline, etc.).
