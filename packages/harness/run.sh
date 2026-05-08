@@ -257,6 +257,27 @@ log() {
 # When a log line begins with "ORCH decision: <VERB> <args>", classify
 # and POST it to /api/internal/decision-event. Replaces the chokidar
 # mirror that re-tail-grepped run.log on every fs.watch event.
+_post_checkpoint_event() {
+    local name="$1"; local cp_file="$2"
+    [ -z "$name" ] || [ ! -f "$cp_file" ] && return 0
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    local content; content="$(head -c 65536 "$cp_file" 2>/dev/null || true)"
+    local body
+    body="$(NAME="$name" CONTENT="$content" python3 -c '
+import json, os, sys
+sys.stdout.write(json.dumps({"name": os.environ["NAME"], "content": os.environ["CONTENT"]}))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 2 \
+        -d "$body" "$operator_base/api/internal/checkpoint-event" >/dev/null 2>&1 || true
+}
+
 _post_archive_event() {
     local archive_path="$1"
     [ -z "$archive_path" ] || [ ! -f "$archive_path" ] && return 0
@@ -1967,6 +1988,7 @@ Review the plan in \`.harness/features.json\` and \`.harness/validation-contract
 - CLI: touch ${cp_file}.granted && re-run the harness
 EOF_AUTO_CP
         : > "$sentinel"
+        _post_checkpoint_event "$cp_name" "$cp_file" &
         log "⏸  Auto-fired checkpoint: ${cp_name} (post-planner). Exiting 8."
         CHECKPOINT_NAME="$cp_name" TRIGGER="post-planner" PROJECT_DIR="$PROJECT_DIR" STATE_DIR="$STATE_DIR" run_hook on-checkpoint-fired
         notify_event checkpoint "Auto checkpoint: ${cp_name}"
@@ -2642,6 +2664,7 @@ touch ${cp_file}.granted
 Then re-run the harness — it will detect the grant file, delete it and the checkpoint,
 and continue.
 EOF_CHECKPOINT
+        _post_checkpoint_event "$cp_name" "$cp_file" &
         log "⏸  CHECKPOINT '$cp_name' requested. See $cp_file"
         CHECKPOINT_NAME="$cp_name" TRIGGER="orchestrator" PROJECT_DIR="$PROJECT_DIR" STATE_DIR="$STATE_DIR" run_hook on-checkpoint-fired
         notify_event checkpoint "Checkpoint requested: $cp_name"
