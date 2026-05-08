@@ -323,6 +323,28 @@ export async function runChunkLoop(
 
 // ─── Default commit implementation ──────────────────────────────────
 
+// Process-local mutex for git operations on the main repo. Concurrent
+// `git add` / `git commit` from sibling workers race on `.git/index`
+// — even though file-level locks prevent them from editing the same
+// path, the index itself is a shared resource. Serializing commits is
+// the simplest correct answer; commits are fast (<100 ms each) so this
+// adds little wall-clock cost compared to the LLM-bound work.
+let gitIndexMutex: Promise<void> = Promise.resolve();
+async function withGitIndexLock<T>(fn: () => Promise<T>): Promise<T> {
+  let release!: () => void;
+  const next = new Promise<void>((r) => {
+    release = r;
+  });
+  const prev = gitIndexMutex;
+  gitIndexMutex = next;
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
 async function defaultCommitChunk(
   feature: ChunkLoopFeature,
   chunk: Chunk,
@@ -343,24 +365,28 @@ async function defaultCommitChunk(
   // Stage paths individually to handle adds, modifications, and
   // deletes correctly, and to avoid the `git add -A path` "did not
   // match any files" error when a chunk's declared file was deleted.
-  for (const rel of chunk.files) {
-    const srcAbs = path.join(env.dir, rel);
-    const dstAbs = path.join(deps.repoPath, rel);
-    const exists = await fs
-      .stat(srcAbs)
-      .then(() => true)
-      .catch(() => false);
-    if (!exists) {
-      // Worker deleted the file. Remove from working tree + index.
-      await fs.rm(dstAbs, { force: true });
-      await runGit(['rm', '-f', '--ignore-unmatch', '--', rel], deps.repoPath);
-      continue;
+  // The whole copy + add + commit sequence runs under withGitIndexLock
+  // so concurrent workers can't race on `.git/index`.
+  await withGitIndexLock(async () => {
+    for (const rel of chunk.files) {
+      const srcAbs = path.join(env.dir, rel);
+      const dstAbs = path.join(deps.repoPath, rel);
+      const exists = await fs
+        .stat(srcAbs)
+        .then(() => true)
+        .catch(() => false);
+      if (!exists) {
+        // Worker deleted the file. Remove from working tree + index.
+        await fs.rm(dstAbs, { force: true });
+        await runGit(['rm', '-f', '--ignore-unmatch', '--', rel], deps.repoPath);
+        continue;
+      }
+      await fs.mkdir(path.dirname(dstAbs), { recursive: true });
+      await fs.copyFile(srcAbs, dstAbs);
+      await runGit(['add', '--', rel], deps.repoPath);
     }
-    await fs.mkdir(path.dirname(dstAbs), { recursive: true });
-    await fs.copyFile(srcAbs, dstAbs);
-    await runGit(['add', '--', rel], deps.repoPath);
-  }
-  await runGit(['commit', '-q', '-m', formatChunkCommitMessage(chunk)], deps.repoPath);
+    await runGit(['commit', '-q', '-m', formatChunkCommitMessage(chunk)], deps.repoPath);
+  });
 
   function runGit(args: readonly string[], cwd: string): Promise<void> {
     return new Promise((resolve, reject) => {
