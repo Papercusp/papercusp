@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Drawer } from 'vaul';
+import { X } from 'lucide-react';
 import { COLORS, FONTS, RADIUS, SIZES, STATUS, HarnessStatus } from './theme';
-import { StatusPill, IdPill, RolePill, IconButton, KbdHint } from './primitives';
-import { Tooltip } from './Tooltip';
+import { StatusPill, IdPill, RolePill, KbdHint } from './primitives';
 
 const FeatureTimelinePanel = dynamic(() => import('./FeatureTimelinePanel'), { ssr: false });
 
@@ -108,9 +108,16 @@ export default function FeaturePeekPanel({
   return (
     <Drawer.Root open={!!feature} onOpenChange={(o) => { if (!o) onClose(); }} direction="right">
       <Drawer.Portal>
-        <Drawer.Overlay style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.65)' }} />
+        <Drawer.Overlay
+          className="h-feature-peek-overlay"
+          data-anim="fade"
+          style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,0.65)' }}
+        />
         <Drawer.Content
+          className="h-feature-peek-drawer"
+          data-anim="slide-right"
           aria-describedby={undefined}
+          aria-modal="true"
           style={{
             position: 'fixed', top: 0, right: 0, bottom: 0,
             width: 'min(720px, 72vw)',
@@ -118,12 +125,9 @@ export default function FeaturePeekPanel({
             borderLeft: '1px solid var(--border)',
             display: 'flex', flexDirection: 'column',
             overflow: 'hidden',
-            zIndex: 61, outline: 'none',
+            zIndex: 81, outline: 'none',
           }}
         >
-          <Drawer.Title style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}>
-            Feature {feature.id}
-          </Drawer.Title>
         {/* Header */}
         <div style={{
           padding: '12px 16px',
@@ -134,9 +138,7 @@ export default function FeaturePeekPanel({
           gap: 10,
           flexShrink: 0,
         }}>
-          <IdPill id={feature.id} onClick={() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }} />
-          {copied && <span style={{ fontSize: SIZES.xs, color: COLORS.successText }}>copied</span>}
-          <StatusPill status={feature.status} />
+          <span className="h-drawer-topbar-label">Feature detail</span>
           {prUrl && (
             <a
               href={prUrl}
@@ -158,24 +160,16 @@ export default function FeaturePeekPanel({
               View PR ↗
             </a>
           )}
-          <Tooltip label="Close (Esc)">
-            <button
-              onClick={onClose}
-              style={{
-                marginLeft: 'auto',
-                background: 'transparent',
-                color: COLORS.textMuted,
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: 999,
-                padding: '5px 9px',
-                fontSize: SIZES.xs,
-                lineHeight: 1,
-                cursor: 'pointer',
-                fontWeight: 700,
-                whiteSpace: 'nowrap',
-              }}
-            >✕</button>
-          </Tooltip>
+          <button
+            type="button"
+            className="h-btn-icon"
+            onClick={onClose}
+            aria-label="Close feature details"
+            title="Close (Esc)"
+            style={{ marginLeft: 'auto' }}
+          >
+            <X size={14} />
+          </button>
         </div>
 
         {/* Body */}
@@ -186,7 +180,7 @@ export default function FeaturePeekPanel({
           padding: '16px 18px 18px',
           background: '#17131f',
         }}>
-          <div style={{
+          <div className="h-drawer-title-card" style={{
             marginBottom: 18,
             padding: '14px 14px 12px',
             border: `1px solid ${COLORS.border}` ,
@@ -194,7 +188,20 @@ export default function FeaturePeekPanel({
             background: '#1d1826',
             boxShadow: '0 16px 34px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.02)',
           }}>
-            <h2 style={{
+            <div className="h-drawer-eyebrow" aria-label={`Feature ${feature.id}, status ${STATUS[feature.status].label}`} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginBottom: feature.summary ? 8 : 10,
+            }}>
+              <span>Feature</span>
+              <span aria-hidden>·</span>
+              <IdPill id={feature.id} onClick={() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }} />
+              {copied && <span style={{ fontSize: SIZES.xs, color: COLORS.successText }}>copied</span>}
+              <StatusPill status={feature.status} />
+            </div>
+            <Drawer.Title style={{
               margin: 0,
               marginBottom: feature.summary ? 8 : 10,
               fontSize: '1.14rem',
@@ -204,7 +211,7 @@ export default function FeaturePeekPanel({
               lineHeight: 1.4,
             }}>
               {feature.summary || feature.title}
-            </h2>
+            </Drawer.Title>
             {feature.summary && (
               <div style={{
                 fontFamily: FONTS.mono,
@@ -225,16 +232,20 @@ export default function FeaturePeekPanel({
               borderTop: `1px solid ${COLORS.borderSubtle}`,
             }}>
               <span style={{ color: COLORS.textDim }}>Status</span>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              <div className="h-feature-status-controls" role="radiogroup" aria-label="Feature lifecycle status" style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                 {(['todo','in_progress','validating','failing','blocked','passed'] as HarnessStatus[]).map((st) => {
                   const active = st === feature.status;
                   const ss = STATUS[st];
                   return (
                     <button
                       key={st}
+                      type="button"
+                      className={`h-feature-status-button${active ? ' is-current' : ''}`}
                       onClick={() => onSetStatus(feature.id, st)}
                       disabled={active}
-                      title={`Set status to ${ss.label}`}
+                      aria-pressed={active}
+                      aria-label={active ? `Current status: ${ss.label}` : `Move feature to ${ss.label}`}
+                      title={active ? `Current status: ${ss.label}` : `Move to: ${ss.label}`}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: 5,
                         padding: '3px 8px',
@@ -246,7 +257,7 @@ export default function FeaturePeekPanel({
                         cursor: active ? 'default' : 'pointer',
                       }}
                     >
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: ss.solid }} />
+                      {active ? <span aria-hidden>✓</span> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: ss.solid }} />}
                       {ss.label}
                     </button>
                   );
@@ -317,33 +328,43 @@ export default function FeaturePeekPanel({
             {recentRuns.length === 0 ? (
               <Empty>No runs yet</Empty>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {recentRuns.map((r) => (
-                  <button
-                    key={r.runId}
-                    onClick={() => onInspectRun(r.runId)}
-                    title="Inspect this agent run's full output"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '5px 8px',
-                      background: '#201a2a',
-                      border: `1px solid ${COLORS.borderSubtle}`,
-                      borderRadius: RADIUS.sm,
-                      color: COLORS.text,
-                      cursor: 'pointer',
-                      fontSize: SIZES.sm,
-                      textAlign: 'left',
-                      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
-                    }}>
-                    <RolePill role={r.role} />
-                    <span style={{ fontFamily: FONTS.mono, color: COLORS.textMuted, fontSize: SIZES.xs }}>
-                      {r.runId.slice(-20)}
-                    </span>
-                    <span style={{ marginLeft: 'auto', color: COLORS.textDim, fontSize: SIZES.xs }}>
-                      {new Date(r.ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </button>
-                ))}
+              <div className="h-feature-run-list" role="list" aria-label="Recent agent runs" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {recentRuns.map((r) => {
+                  const runLabel = displayRunId(r);
+                  const runTime = new Date(r.ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <div key={r.runId} role="listitem">
+                      <button
+                        type="button"
+                        className="h-feature-run-row"
+                        onClick={() => onInspectRun(r.runId)}
+                        aria-label={`${r.role || 'unknown'} run ${runLabel} at ${runTime}. Inspect full output.`}
+                        title="Inspect this agent run's full output"
+                        style={{
+                          display: 'grid', alignItems: 'center', gap: 8,
+                          gridTemplateColumns: 'minmax(7.5rem, auto) auto auto minmax(0, 1fr)',
+                          padding: '6px 8px',
+                          background: '#201a2a',
+                          border: `1px solid ${COLORS.borderSubtle}`,
+                          borderRadius: RADIUS.sm,
+                          color: COLORS.text,
+                          cursor: 'pointer',
+                          fontSize: SIZES.sm,
+                          textAlign: 'left',
+                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
+                        }}>
+                        <RolePill role={r.role} />
+                        <span style={{ color: COLORS.textDim, fontSize: SIZES.xs }}>
+                          {runTime}
+                        </span>
+                        <span aria-hidden style={{ color: COLORS.textFaint }}>·</span>
+                        <code style={{ fontFamily: FONTS.mono, color: COLORS.textMuted, fontSize: SIZES.xs, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {runLabel}
+                        </code>
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </Section>
@@ -370,7 +391,7 @@ export default function FeaturePeekPanel({
           )}
 
           {/* Actions row */}
-          <div style={{
+          <div className="h-drawer-footer" style={{
             marginTop: 18,
             marginInline: -18,
             marginBottom: -18,
@@ -419,6 +440,21 @@ export default function FeaturePeekPanel({
       )}
     </Drawer.Root>
   );
+}
+
+function displayRunId(run: AgentRun): string {
+  const role = run.role?.trim();
+  let label = run.runId.replace(/\.log$/i, '').trim();
+  if (role) {
+    label = label.replace(new RegExp(`^[-_]?${escapeRegExp(role)}[-_]?`, 'i'), '');
+  }
+  label = label.replace(/^[-_]+/, '').trim();
+  if (!label) label = run.runId.replace(/\.log$/i, '').trim() || 'run';
+  return label.length > 28 ? `…${label.slice(-27)}` : label;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

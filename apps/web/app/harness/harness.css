@@ -15874,3 +15874,137 @@ html body .h-root.h-root :is(
     border-radius: 16px;
   }
 }
+
+/* Right-side drawer feedback pass: semantic header/title hierarchy,
+   structured run rows, and consistent modal controls. */
+.h-feature-peek-drawer,
+.h-issue-detail-drawer {
+  right: 0 !important;
+  left: auto !important;
+  height: auto !important;
+  max-height: 100vh !important;
+}
+
+.h-drawer-topbar-label {
+  color: color-mix(in oklab, var(--fg-dim), white 18%);
+  font-size: 0.72rem;
+  font-weight: 820;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.h-drawer-title-card {
+  position: relative;
+  overflow: hidden;
+  display: block !important;
+  width: auto !important;
+  max-width: none !important;
+}
+
+.h-drawer-title-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--h-popout-accent), transparent 30%), transparent 76%);
+}
+
+.h-drawer-eyebrow {
+  color: color-mix(in oklab, var(--h-popout-accent), white 20%);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.h-drawer-eyebrow .h-issue-id,
+.h-drawer-eyebrow button {
+  text-transform: none;
+  letter-spacing: 0.025em;
+}
+
+.h-drawer-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in oklab, var(--h-popout-accent), transparent 82%);
+}
+
+.h-drawer-meta-strip > span,
+.h-drawer-meta-strip > code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in oklab, var(--h-popout-accent), transparent 82%);
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.045);
+}
+
+.h-feature-status-controls {
+  align-items: center;
+}
+
+.h-feature-status-button {
+  flex: 0 0 auto;
+}
+
+.h-feature-status-button[aria-pressed="true"],
+.h-feature-status-button.is-current {
+  font-weight: 760;
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, currentColor, transparent 82%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10) !important;
+}
+
+.h-feature-status-button:not([aria-pressed="true"]):hover,
+.h-feature-status-button:not([aria-pressed="true"]):focus-visible {
+  color: color-mix(in oklab, var(--fg), white 8%) !important;
+}
+
+.h-feature-run-list {
+  gap: 6px !important;
+}
+
+.h-feature-run-row {
+  min-width: 0;
+  width: 100%;
+}
+
+.h-feature-run-row code {
+  min-width: 0;
+}
+
+.h-feature-run-row:hover,
+.h-feature-run-row:focus-visible {
+  background:
+    linear-gradient(90deg, color-mix(in oklab, var(--h-popout-accent), transparent 90%), transparent 72%),
+    rgba(8, 18, 31, 0.92) !important;
+}
+
+.h-drawer-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+
+.h-drawer-footer-hint {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .h-feature-run-row {
+    grid-template-columns: 1fr auto !important;
+  }
+
+  .h-feature-run-row code {
+    grid-column: 1 / -1;
+  }
+}

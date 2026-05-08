@@ -5,6 +5,7 @@ import { Drawer } from 'vaul';
 import { X, ArrowUpRight, MessageSquarePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Issue } from './types';
+import { KbdHint } from '../primitives';
 
 async function call(slug: string, id: string, action: string, body: any) {
   const res = await fetch(`/api/harness/${slug}/issues/${id}/${action}`, {
@@ -43,45 +44,77 @@ export function IssueDetail({
   return (
     <Drawer.Root open onOpenChange={(o) => { if (!o) onClose(); }} direction="right">
       <Drawer.Portal>
-        <Drawer.Overlay style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.65)' }} />
+        <Drawer.Overlay
+          className="h-issue-detail-overlay"
+          data-anim="fade"
+          style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,0.65)' }}
+        />
         <Drawer.Content
+          className="h-issue-detail-drawer"
+          data-anim="slide-right"
           aria-describedby={undefined}
+          aria-modal="true"
           style={{
             position: 'fixed', top: 0, right: 0, bottom: 0,
             width: 'min(720px, 72vw)',
             background: '#17131f', borderLeft: '1px solid var(--border)',
             display: 'flex', flexDirection: 'column',
-            zIndex: 61, outline: 'none',
+            zIndex: 81, outline: 'none',
           }}
         >
-          <Drawer.Title style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}>
-            Issue {issue.id}
-          </Drawer.Title>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
           borderBottom: '1px solid var(--border)', flexShrink: 0,
           background: '#17131f',
         }}>
-          <span className={`h-issue-sev sev-${issue.severity}`}>{issue.severity}</span>
-          <span className="h-issue-id">{issue.id}</span>
-          <span className={`h-issue-status st-${issue.status}`}>{issue.status}</span>
-          {issue.linkedFeatureId && (
-            <span className="h-issue-linked"><ArrowUpRight size={11} /> {issue.linkedFeatureId}</span>
-          )}
-          <button className="h-btn-icon" onClick={onClose} style={{ marginLeft: 'auto' }}>
+          <span className="h-drawer-topbar-label">Issue detail</span>
+          <button
+            type="button"
+            className="h-btn-icon"
+            onClick={onClose}
+            aria-label="Close issue details"
+            title="Close (Esc)"
+            style={{ marginLeft: 'auto' }}
+          >
             <X size={14} />
           </button>
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px', background: '#17131f' }}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px', color: 'var(--fg)' }}>
-            {issue.title}
-          </h2>
-          <div style={{ fontSize: 11, color: 'var(--fg-dim)', marginBottom: 14 }}>
-            {issue.source === 'human' ? 'filed by human' : `found by ${issue.source}`}
-            {issue.foundDuring && ` during ${issue.foundDuring}`}
-            {' · '}{new Date(issue.foundAt).toLocaleString()}
-            {issue.codePointer && <> · <code style={{ color: 'var(--counter)' }}>{issue.codePointer}</code></>}
+          <div className="h-drawer-title-card" style={{
+            marginBottom: 16,
+            padding: '14px 14px 12px',
+            border: '1px solid var(--border)',
+            borderRadius: 14,
+            background: '#1d1826',
+            boxShadow: '0 16px 34px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.02)',
+          }}>
+            <div className="h-drawer-eyebrow" aria-label={`Issue ${issue.id}, severity ${issue.severity}, status ${issue.status}${issue.linkedFeatureId ? `, linked feature ${issue.linkedFeatureId}` : ''}`} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginBottom: 10,
+            }}>
+              <span>Issue</span>
+              <span aria-hidden>·</span>
+              <span className="h-issue-id">{issue.id}</span>
+              <span className={`h-issue-sev sev-${issue.severity}`}>{issue.severity}</span>
+              <span className={`h-issue-status st-${issue.status}`}>{issue.status}</span>
+              {issue.linkedFeatureId && (
+                <span className="h-issue-linked"><ArrowUpRight size={11} /> {issue.linkedFeatureId}</span>
+              )}
+            </div>
+            <Drawer.Title style={{ fontSize: 17, fontWeight: 700, margin: '0 0 10px', color: 'var(--fg)', lineHeight: 1.35 }}>
+              {issue.title}
+            </Drawer.Title>
+            <div className="h-drawer-meta-strip" aria-label={`${issue.source === 'human' ? 'filed by human' : `found by ${issue.source}`}${issue.foundDuring ? ` during ${issue.foundDuring}` : ''}; ${new Date(issue.foundAt).toLocaleString()}${typeof issue.attempts === 'number' ? `; ${issue.attempts} fix attempt${issue.attempts === 1 ? '' : 's'}` : ''}${issue.codePointer ? `; ${issue.codePointer}` : ''}`} style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+              <span>{issue.source === 'human' ? 'filed by human' : `found by ${issue.source}`}</span>
+              {issue.foundDuring && <span>during {issue.foundDuring}</span>}
+              <span>{new Date(issue.foundAt).toLocaleString()}</span>
+              {typeof issue.attempts === 'number' && <span>{issue.attempts} fix attempt{issue.attempts === 1 ? '' : 's'}</span>}
+              {issue.codePointer && <code style={{ color: 'var(--counter)' }}>{issue.codePointer}</code>}
+            </div>
           </div>
 
           {issue.evidence && (
@@ -127,7 +160,7 @@ export function IssueDetail({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') addNote(); }}
-            placeholder="add a note…"
+            placeholder="Add a note…"
             style={{
               flex: 1, background: 'var(--bg-3)', color: 'var(--fg)',
               border: '1px solid var(--border)', borderRadius: 5,
@@ -135,8 +168,11 @@ export function IssueDetail({
             }}
           />
           <button className="h-btn ghost" disabled={busy || !note.trim()} onClick={addNote}>
-            <MessageSquarePlus size={13} /> note
+            <MessageSquarePlus size={13} /> Add note
           </button>
+          <span className="h-drawer-footer-hint" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-dim)' }}>
+            <KbdHint>Esc</KbdHint> close
+          </span>
         </div>
         </Drawer.Content>
       </Drawer.Portal>
