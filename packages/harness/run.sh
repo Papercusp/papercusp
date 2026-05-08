@@ -1797,11 +1797,30 @@ except Exception:
     pass
 ' 2>/dev/null)"
     fi
-    local timeout_prefix=""
-    if [ -n "$timeout_seconds" ] && command -v timeout >/dev/null 2>&1; then
-        timeout_prefix="timeout $timeout_seconds"
-        log "  role=$role timeout=${timeout_seconds}s"
+    # Default to 30 minutes per role when config doesn't override. Without
+    # this, an invocation that gets stuck on an MCP tool (playwright hang,
+    # voice-mode init failure, etc.) runs forever — and if the parent
+    # bash run.sh exits before it returns, the child orphans to init and
+    # never dies. Override per-role via .harness/config.json timeouts.<role>.
+    if [ -z "$timeout_seconds" ]; then
+        timeout_seconds=1800
     fi
+    local timeout_prefix=""
+    if command -v timeout >/dev/null 2>&1; then
+        timeout_prefix="timeout $timeout_seconds"
+    fi
+    # Linux: setpriv --pdeathsig=TERM makes the kernel SIGTERM the agent
+    # subprocess if THIS bash run.sh dies. Combined with the timeout
+    # above, this kills both classes of stuck process: (a) those that
+    # exceed their per-role budget, and (b) those that get orphaned
+    # (terminal closed, run.sh SIGKILL'd, OOM, etc.). On non-Linux or
+    # systems without setpriv, falls back to no pdeathsig — the timeout
+    # is still in effect.
+    local pdeathsig_prefix=""
+    if command -v setpriv >/dev/null 2>&1 && setpriv --pdeathsig=TERM true >/dev/null 2>&1; then
+        pdeathsig_prefix="setpriv --pdeathsig=TERM"
+    fi
+    log "  role=$role timeout=${timeout_seconds}s${pdeathsig_prefix:+ pdeathsig=TERM}"
 
     # Per-role model + prompt override from .harness/config.json.
     # User-provided $CLAUDE containing --model wins (no double-override).
@@ -1885,9 +1904,9 @@ except Exception:
                 > "$_prompt_tmp" 2>>"$err"; then
             if [ "$AGENT_BACKEND" = "omp" ]; then
                 # omp -p reads message from positional arg, not stdin.
-                ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags "@$_prompt_tmp" > "$jsonl" 2>> "$err" ) < /dev/null
+                ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $pdeathsig_prefix $timeout_prefix $CLAUDE $extra_flags "@$_prompt_tmp" > "$jsonl" 2>> "$err" ) < /dev/null
             else
-                ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2>> "$err" ) < "$_prompt_tmp"
+                ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $pdeathsig_prefix $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2>> "$err" ) < "$_prompt_tmp"
             fi
             rm -f "$_prompt_tmp"
         else
@@ -1959,9 +1978,9 @@ except Exception:
         } > "$LOG_DIR/${run_id}.prompt.md"
         if [ "$AGENT_BACKEND" = "omp" ]; then
             # omp -p reads message from positional arg, not stdin.
-            ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags "@$LOG_DIR/${run_id}.prompt.md" > "$jsonl" 2> "$err" ) < /dev/null
+            ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $pdeathsig_prefix $timeout_prefix $CLAUDE $extra_flags "@$LOG_DIR/${run_id}.prompt.md" > "$jsonl" 2> "$err" ) < /dev/null
         else
-            ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2> "$err" ) < "$LOG_DIR/${run_id}.prompt.md"
+            ( [ -n "$cwd_override" ] && cd "$cwd_override"; stdbuf -oL -eL $pdeathsig_prefix $timeout_prefix $CLAUDE $extra_flags > "$jsonl" 2> "$err" ) < "$LOG_DIR/${run_id}.prompt.md"
         fi
     fi
     local rc=$?
