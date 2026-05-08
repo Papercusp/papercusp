@@ -73,42 +73,6 @@ function harnessSlug(ctx: InvokeContext): string {
 }
 
 /**
- * Fetch global adaptive-mode tier settings from the operator API.
- *
- * Falls back to the static defaults when the API is unreachable so the
- * orchestrator never blocks on a flaky operator. Cached at module scope
- * for the lifetime of one main-loop run; tier edits via the settings UI
- * pick up on the next run.
- */
-let _adaptiveSettingsCache: AdaptiveTiers | null = null;
-async function fetchOrchestratorSettings(): Promise<AdaptiveTiers> {
-  if (_adaptiveSettingsCache) return _adaptiveSettingsCache;
-  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3000);
-    const res = await fetch(`${operatorBase}/api/settings/orchestrator`, {
-      signal: ctrl.signal,
-    });
-    clearTimeout(timer);
-    if (res.ok) {
-      const data = (await res.json()) as Partial<AdaptiveTiers>;
-      const tiers = Array.isArray(data.tiers) ? data.tiers : [1, 2, 4];
-      const labels = Array.isArray(data.labels) ? data.labels : ['trivial', 'normal', 'hard'];
-      const rubric = typeof data.rubric === 'string' ? data.rubric : '';
-      if (tiers.length >= 2 && tiers.length === labels.length) {
-        _adaptiveSettingsCache = { tiers, labels, rubric };
-        return _adaptiveSettingsCache;
-      }
-    }
-  } catch {
-    // fall through to defaults
-  }
-  _adaptiveSettingsCache = { tiers: [1, 2, 4], labels: ['trivial', 'normal', 'hard'], rubric: '' };
-  return _adaptiveSettingsCache;
-}
-
-/**
  * Map of feature id → telemetry row id for in-flight adaptive decisions.
  * Used by handleNextValidator to attach the outcome (pass/fail) to the
  * decision row recorded at NEXT_WORKER time. Cleared after outcome attaches.
@@ -191,7 +155,6 @@ async function attachAdaptiveOutcome(
 
 /** Test-only: clear the adaptive caches. */
 export function _resetAdaptiveCachesForTests(): void {
-  _adaptiveSettingsCache = null;
   _adaptiveTelemetryByFeature.clear();
 }
 
@@ -303,14 +266,11 @@ async function runMainLoopBody(
   // is the cap; default 1 (sequential).
   const lanePool = createLanePool(ctx.stateDir, parallelMaxWorkers(cfg));
 
-  // Adaptive-mode tier configuration is global (DB-backed via the operator
-  // settings API). Fetch once at startup so the orchestrator can include
-  // the rubric + free-slot budget in its prompt every iteration. Falls
-  // back to defaults if the API is unreachable.
+  // Adaptive-mode tier configuration is per-harness, stored in the spec
+  // at parallelWorkers.adaptive.{tiers,labels,rubric}. Read directly from
+  // cfg — no API round-trip — so a flaky operator can never block start.
   const adaptiveActive = isAdaptiveMode(cfg);
-  const adaptiveTiers: AdaptiveTiers = adaptiveActive
-    ? await fetchOrchestratorSettings()
-    : parallelAdaptiveTiers(cfg);
+  const adaptiveTiers: AdaptiveTiers = parallelAdaptiveTiers(cfg);
   if (adaptiveActive) {
     logger.log(
       `ADAPTIVE: tiers=[${adaptiveTiers.tiers.join(', ')}] labels=[${adaptiveTiers.labels.join(', ')}] max=${parallelMaxWorkers(cfg)}`,
@@ -1036,7 +996,7 @@ async function handleAdaptiveWorker(
   lanePool: LanePool,
 ): Promise<DispatchResult> {
   const max = parallelMaxWorkers(cfg);
-  const tiers = await fetchOrchestratorSettings();
+  const tiers = parallelAdaptiveTiers(cfg);
   const requestedN = parsed.n ?? tiers.tiers[0];
 
   // Validate against the configured tier set. Out-of-vocabulary values
