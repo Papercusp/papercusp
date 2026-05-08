@@ -15,7 +15,6 @@
  */
 import { spawn } from 'node:child_process';
 import {
-  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -225,9 +224,21 @@ export function streamFormatFlags(fmt: StreamFormat): string[] {
  *
  * For `none`: returns the file contents verbatim (matches old fallback).
  */
-export function extractResult(jsonlPath: string, format: StreamFormat): string {
+/**
+ * Extract the final assistant text from accumulated stream-json content.
+ * Either pass the raw content directly, or a filesystem path (back-compat
+ * for callers that still keep the JSONL on disk).
+ */
+export function extractResult(source: string, format: StreamFormat): string {
+  // Heuristic: a string with no newlines that exists as a path → treat as path.
+  // Any other input is treated as content directly. Callers that want to be
+  // explicit can use extractResultFromContent.
   let data = '';
-  try { data = readFileSync(jsonlPath, 'utf8'); } catch { return ''; }
+  if (source.length > 0 && !source.includes('\n') && existsSync(source)) {
+    try { data = readFileSync(source, 'utf8'); } catch { return ''; }
+  } else {
+    data = source;
+  }
   if (format === 'none') return data;
 
   const lines = data.trimEnd().split(/\r?\n/);
@@ -410,8 +421,9 @@ export async function invoke(
     substrateContext,
   });
 
-  // 10. Spawn claude.
-  if (!existsSync(ctx.logDir)) mkdirSync(ctx.logDir, { recursive: true });
+  // 10. Spawn claude. logDir creation is deferred until we actually
+  // need to write files (CLI fallback path); PG-canonical mode never
+  // touches the directory.
   const jsonlPath = join(ctx.logDir, `${runId}.jsonl`);
   const outPath = join(ctx.logDir, `${runId}.out`);
   const errPath = join(ctx.logDir, `${runId}.err`);
@@ -438,10 +450,10 @@ export async function invoke(
     finalArgv.push(`@${ompPromptPath}`);
   }
 
-  // Open the output streams ourselves so we can control buffering.
-  // Use writeFileSync to truncate, then append as data arrives.
-  writeFileSync(jsonlPath, '');
-  writeFileSync(errPath, '');
+  // Body accumulators (in-memory). Filesystem JSONL/ERR is only
+  // touched in true-CLI fallback (no operator, no PG) — see writeBodyToDiskAtExit.
+  const jsonlChunks: Buffer[] = [];
+  const errChunks: Buffer[] = [];
 
   // Live chunk streaming via in-process bus on the operator. Each
   // stdout chunk is HTTP-POSTed to /api/internal/run-chunk on the
@@ -460,8 +472,9 @@ export async function invoke(
   //   - PAPERCUSP_OPERATOR_BASE is unset/unreachable (CLI-only mode,
   //     no operator running)
   //   - harness_token isn't available (legacy harness without one)
-  // The on-disk JSONL still gets every chunk via appendFileSync for
-  // Phase 4 ingest-at-exit + human tail-f.
+  // Files are written ONLY at run end (not appended per-chunk) and
+  // ONLY when neither bus nor PG is active — see writeFilesForFallback
+  // below. Default PG-canonical mode produces zero files.
   let chunkSeq = 0;
   let chunkPostQueue: Promise<void> = Promise.resolve();
   let chunkPgQueue: Promise<void> = Promise.resolve();
@@ -512,7 +525,7 @@ export async function invoke(
     // JSONL still has the chunk and Phase 4 ingest-at-exit + the SSE
     // handler's fs.watch fallback keep the stream functional.
     child.stdout.on('data', (chunk: Buffer) => {
-      appendFileSync(jsonlPath, chunk);
+      jsonlChunks.push(chunk);
       const mySeq = chunkSeq;
       const myData = chunk.toString('utf8');
       let advancedSeq = false;
@@ -531,7 +544,7 @@ export async function invoke(
               },
               body: JSON.stringify({ runId, seq: mySeq, chunk: myData }),
             });
-          } catch { /* operator unreachable; file path covers us */ }
+          } catch { /* operator unreachable; in-memory accumulator + Phase 4 covers post-run replay */ }
         });
       }
       // Optional: also persist to PG for archival per-chunk replay.
@@ -542,7 +555,7 @@ export async function invoke(
       }
       if (advancedSeq) chunkSeq++;
     });
-    child.stderr.on('data', (chunk: Buffer) => appendFileSync(errPath, chunk));
+    child.stderr.on('data', (chunk: Buffer) => errChunks.push(chunk));
 
     // EPIPE protection: if the subprocess exits before reading our stdin
     // (e.g. `true`, or a crashed claude binary), the write would throw an
@@ -607,25 +620,32 @@ export async function invoke(
     await chunkPgQueue.catch(() => {});
   }
 
-  // 11. Extract result text and write to .out.
-  const finalText = extractResult(jsonlPath, streamFormat);
-  writeFileSync(outPath, streamFormat !== 'none' ? `${finalText}\n` : finalText);
+  // 11. Extract result text from the in-memory accumulator.
+  const jsonlBody = Buffer.concat(jsonlChunks).toString('utf8');
+  const errBody = Buffer.concat(errChunks).toString('utf8');
+  const finalText = extractResult(jsonlBody, streamFormat);
+  const outBody = streamFormat !== 'none' ? `${finalText}\n` : finalText;
 
-  // 11.5. PG ingest (Phase 4): when ctx.pg is wired, dump the run's
-  // jsonl/out/err into harness_run_output as a single canonical row.
-  // Files remain on disk for live tail + retention pruning; PG holds the
-  // post-hoc replayable copy. Best-effort: a PG failure mustn't fail the
-  // run.
+  // 11.5. Persistence: when ctx.pg is wired, the canonical record is
+  // the harness_run_output row. The on-disk jsonl/out/err files are
+  // skipped entirely — replay reads from PG.
+  //
+  // Files are still written when:
+  //   - PG isn't wired (CLI fallback — user might tail -f), OR
+  //   - PAPERCUSP_KEEP_FILES=1 (explicit override for debug)
+  const writeFilesForFallback = !(ctx.pg && ctx.workspaceId)
+    || process.env.PAPERCUSP_KEEP_FILES === '1';
+  if (writeFilesForFallback) {
+    if (!existsSync(ctx.logDir)) mkdirSync(ctx.logDir, { recursive: true });
+    writeFileSync(jsonlPath, jsonlBody);
+    writeFileSync(errPath, errBody);
+    writeFileSync(outPath, outBody);
+  }
+
   if (ctx.pg && ctx.workspaceId) {
     try {
       const { recordRunOutputPg } = await import('./run-output-pg');
       const { harnessSlug: getSlug } = await import('./state');
-      let jsonlBody = '';
-      let outBody = '';
-      let errBody = '';
-      try { jsonlBody = readFileSync(jsonlPath, 'utf8'); } catch { /* missing */ }
-      try { outBody = readFileSync(outPath, 'utf8'); } catch { /* missing */ }
-      try { errBody = readFileSync(errPath, 'utf8'); } catch { /* missing */ }
       await recordRunOutputPg(
         { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: getSlug(ctx.projectDir) },
         {
@@ -651,16 +671,12 @@ export async function invoke(
     ctx.log(`  role=${role} TIMED OUT after ${timeoutSeconds}s (rc=124)`);
   }
   if (outcome.exitCode !== 0) {
-    try {
-      const errSnippet = readFileSync(errPath, 'utf8').split(/\r?\n/).slice(0, 5);
-      if (errSnippet.some((l) => l.length > 0)) {
-        ctx.log('  stderr (first 5 lines):');
-        for (const line of errSnippet) {
-          if (line.length > 0) ctx.log(`    ${line}`);
-        }
+    const errSnippet = errBody.split(/\r?\n/).slice(0, 5);
+    if (errSnippet.some((l) => l.length > 0)) {
+      ctx.log('  stderr (first 5 lines):');
+      for (const line of errSnippet) {
+        if (line.length > 0) ctx.log(`    ${line}`);
       }
-    } catch {
-      // ignore — log was just a courtesy
     }
   }
 
