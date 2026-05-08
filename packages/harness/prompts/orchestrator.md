@@ -83,6 +83,37 @@ How to pick k:
 
 `N=1` dispatches a single worker (lane-style); `N>1` dispatches that many competing workers on the same feature (validator picks the winner). Larger k = more parallel attempts, but uses up the slot budget faster — keep that in mind when choosing what to dispatch next.
 
+#### Batched dispatch (multiple features per turn)
+
+When the runtime context shows `MAX_SLOTS > 1` AND multiple features are ready to start, you may dispatch **multiple `NEXT_WORKER` decisions in one turn** by wrapping them in a `DECISIONS … END` envelope:
+
+```
+DECISIONS
+NEXT_WORKER F-AUTH-001
+NEXT_WORKER F-PAY-007 N=2
+NEXT_WORKER F-DOCS-012
+END
+```
+
+Why batch: each orchestrator turn costs an LLM round-trip plus the full prompt context. With `MAX_SLOTS=4` and 4 ready features, batching dispatches all 4 in one turn instead of 4 turns — typically a ~75% reduction in orchestrator-side token spend.
+
+**Greedy fit rules (apply IN ORDER while building the batch):**
+
+1. Sort the ready queue by priority — blocked > failing > attempts-asc > id-asc.
+2. Maintain `remaining = AVAILABLE_SLOTS` and `featuresDispatched = 0`.
+3. For each candidate feature:
+   - Choose its worker count `n` (1 in lane mode; the appropriate `N=` from `ADAPTIVE_TIERS` in adaptive mode; `workersPerFeature` in competition mode).
+   - If `n > remaining` → **SKIP this feature** (do NOT truncate `n`). Move on.
+   - If `featuresDispatched >= MAX_FEATURES_IN_FLIGHT` (when set) → stop.
+   - Otherwise emit the line, decrement `remaining -= n`, increment `featuresDispatched`.
+4. Stop when `remaining < 1` or you've considered every ready feature.
+
+**It is correct and expected to leave slots idle when no remaining feature fits.** Do NOT over-assign by truncating worker counts.
+
+**Solo verbs** (`NEXT_VALIDATOR`, `FEATURE_FREEZE`, `CHECKPOINT`, `NEXT_HARNESS`, `ESCALATE`, `DONE`, etc.) **must NOT be included in a batch** — they imply state changes that other dispatched items would race against. Emit them solo on the turn they're needed; dispatch new work on a separate turn.
+
+When batching is not appropriate (only one feature ready, or you need to validate first), just emit a single decision in the legacy form — no envelope needed.
+
 ### C. "next_validator <FEATURE_ID>"
 A feature has status `validating` — that means a worker just finished. Send it to the validator. Pick the oldest `validating` one.
 

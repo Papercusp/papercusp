@@ -168,6 +168,31 @@ export function parallelWorkersPerFeature(cfg: HarnessConfig): number {
 }
 
 /**
+ * `parallelWorkers.maxFeaturesInFlight` — caps the number of distinct
+ * features that can have workers dispatched simultaneously. The
+ * orchestrator's batch-dispatch greedy fit consults this AND
+ * AVAILABLE_SLOTS; the smaller of the two limits the batch size.
+ *
+ *   - null/unset → no separate cap; only AVAILABLE_SLOTS limits.
+ *   - 1 → traditional one-feature-at-a-time behavior.
+ *   - >1 → cap multi-feature concurrency below the worker budget.
+ *
+ * Useful for lane mode (cap "width" without reducing worker count)
+ * and for adaptive (cap distinct features so the orchestrator doesn't
+ * spread workers too thin).
+ */
+export function maxFeaturesInFlight(cfg: HarnessConfig): number | null {
+  const v = configGet<unknown>(cfg, 'parallelWorkers.maxFeaturesInFlight', null);
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) return Math.floor(v);
+  if (typeof v === 'string') {
+    const n = parseInt(v, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+/**
  * `parallelWorkers.useChunkLoop` — feature flag for the new
  * worker chunk loop (atomic file-locks per chunk, L1 typecheck gate,
  * up-front planning, escalate-to-debugger on N strikes). Defaults to

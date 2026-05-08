@@ -16,7 +16,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { configGet, readConfig } from './config';
-import { parseDecision } from './decision-parse';
+import { parseDecision, parseDecisions } from './decision-parse';
 import { invoke } from './invoke';
 import { featureAttempts, readFeatures, setFeatureStatus, stateCtx } from './state';
 import {
@@ -42,6 +42,7 @@ import {
   isCompetitionMode,
   isLaneMode,
   parallelAdaptiveTiers,
+  maxFeaturesInFlight as maxFeaturesInFlightCfg,
   parallelMaxWorkers,
   parallelMode,
   parallelWorkersPerFeature,
@@ -317,6 +318,10 @@ async function runMainLoopBody(
       }
     }
     const availableSlots = Math.max(0, maxSlots - lanePool.count());
+    // Optional cap on distinct features in flight. null = no separate
+    // cap (only AVAILABLE_SLOTS limits). The orchestrator sees this in
+    // its prompt extras and applies it to its greedy fit.
+    const maxFeatures = maxFeaturesInFlightCfg(cfg);
 
     // 1b. Build adaptive-context extras for the primary role's prompt.
     // The orchestrator prompt itself documents how to use ADAPTIVE_*; we
@@ -333,6 +338,9 @@ async function runMainLoopBody(
         `AVAILABLE_SLOTS=${availableSlots}`,
         `ADAPTIVE_TIERS=${tierDocs}`,
       );
+      if (maxFeatures !== null) {
+        orchestratorExtras.push(`MAX_FEATURES_IN_FLIGHT=${maxFeatures}`);
+      }
       if (adaptiveTiers.rubric.trim().length > 0) {
         // Rubric goes through extras as a single line — newlines preserved
         // so the LLM sees the formatted version. Bash-equivalent extras
@@ -345,14 +353,20 @@ async function runMainLoopBody(
         `MAX_SLOTS=${maxSlots}`,
         `AVAILABLE_SLOTS=${availableSlots}`,
       );
+      if (maxFeatures !== null) {
+        orchestratorExtras.push(`MAX_FEATURES_IN_FLIGHT=${maxFeatures}`);
+      }
     }
 
     // 1. Invoke the primary advancing role.
     const decisionResult = await invoke(ctx, primaryRole, orchestratorExtras);
     fireLifecycleHook(ctx, 'onPostOrchestrator', logger.log);
-    const parsed = parseDecision(decisionResult.output);
+    // Batch-aware decision parse — accepts a single decision OR a
+    // `DECISIONS … END` envelope with multiple NEXT_WORKER lines.
+    // SOLO_VERBS in a multi-decision batch reject the whole batch.
+    const batch = parseDecisions(decisionResult.output);
 
-    if (parsed === null) {
+    if (batch.length === 0) {
       logger.log(
         `ERROR: orchestrator returned unparsable decision: '${decisionResult.output.slice(0, 200)}'`,
       );
@@ -361,10 +375,46 @@ async function runMainLoopBody(
       return { exitCode: 4, reason: 'unparsable-decision', iterations: iteration };
     }
 
-    logger.log(`ORCH decision: ${parsed.raw} (role=${primaryRole})`);
+    if (batch.length === 1) {
+      logger.log(`ORCH decision: ${batch[0].raw} (role=${primaryRole})`);
+    } else {
+      logger.log(
+        `ORCH batch (${batch.length} decisions, role=${primaryRole}): ${batch.map((d) => d.raw).join(' | ')}`,
+      );
+    }
 
-    // 2. Dispatch.
-    const dispatch = await dispatchDecision(parsed, ctx, logger, cfg, iteration, sleep, lanePool, lockQueue);
+    // 2. Dispatch — batch-aware. Solo verbs are rejected at parse time
+    // when mixed with others, so any batch of length > 1 is all
+    // batchable verbs (currently only NEXT_WORKER). Greedy fit:
+    // dispatch in order, stop early if a terminal decision lands.
+    let dispatch: DispatchResult = { terminal: false, exitCode: 0, reason: 'idle' };
+    let dispatched = 0;
+    for (const decision of batch) {
+      // Honor maxFeaturesInFlight cap — orchestrator should already
+      // have respected it, but enforce belt-and-suspenders.
+      if (
+        maxFeatures !== null
+        && decision.verb === 'NEXT_WORKER'
+        && dispatched >= maxFeatures
+      ) {
+        logger.log(
+          `  skipping ${decision.raw}: would exceed maxFeaturesInFlight=${maxFeatures}`,
+        );
+        continue;
+      }
+      dispatch = await dispatchDecision(
+        decision,
+        ctx,
+        logger,
+        cfg,
+        iteration,
+        sleep,
+        lanePool,
+        lockQueue,
+      );
+      dispatched++;
+      if (dispatch.terminal) break;
+    }
     if (dispatch.terminal) {
       // Drain in-flight parallel lanes so they don't outlive this exit
       // (e.g. a worker writing to a directory the caller is about to clean up).

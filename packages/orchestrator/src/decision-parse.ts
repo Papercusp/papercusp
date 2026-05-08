@@ -95,3 +95,92 @@ export function parseDecision(text: string): ParsedDecision | null {
   }
   return lastMatch;
 }
+
+/**
+ * Verbs that may NOT appear in a multi-decision batch — they imply a
+ * state change other dispatched items would race against, so they
+ * have to be the sole decision in their turn. Anything not in this
+ * set (currently only NEXT_WORKER) can batch.
+ */
+const SOLO_VERBS = new Set<DecisionVerb>([
+  'NEXT_VALIDATOR',
+  'NEXT_ARCHITECT',
+  'NEXT_PROJECT_MANAGER',
+  'NEXT_SUMMARIZER',
+  'NEXT_TESTER',
+  'NEXT_SECURITY',
+  'GENERATE_TESTS',
+  'RUN_TESTS',
+  'NEXT_MONITOR',
+  'READY_FOR_PROD',
+  'FEATURE_FREEZE',
+  'NEXT_HARNESS',
+  'NEXT_WORKER_CEO_MODE',
+  'CONVERTED',
+  'CHECKPOINT',
+  'ESCALATE',
+  'IDLE',
+  'DONE',
+]);
+
+/**
+ * Parse a multi-decision batch. The orchestrator MAY emit multiple
+ * decisions in one turn for batchable verbs (NEXT_WORKER on independent
+ * features) wrapped in a `DECISIONS … END` envelope:
+ *
+ *   DECISIONS
+ *   NEXT_WORKER F-AUTH-001
+ *   NEXT_WORKER F-PAY-007 N=2
+ *   NEXT_WORKER F-DOCS-012
+ *   END
+ *
+ * If no envelope is present, falls back to single-decision parsing
+ * (parseDecision) and wraps the result in a 1-element array. Returns
+ * an empty array on any parse failure.
+ *
+ * Validation:
+ *   - SOLO_VERBS may not appear in a batch with other decisions. If
+ *     a batch contains any solo verb, the whole batch is rejected
+ *     (returns []). Solo decisions emitted alone — with or without
+ *     the envelope — are accepted.
+ *   - Duplicate feature ids in the same batch are rejected (return []).
+ *   - Empty envelope (DECISIONS … END with nothing between) returns [].
+ */
+export function parseDecisions(text: string): ParsedDecision[] {
+  const cleaned = text.replace(/[*`]+/g, '');
+  const envelope =
+    /(?:^|\n)\s*DECISIONS\s*\n([\s\S]*?)\n\s*END\b/m.exec(cleaned);
+  if (!envelope) {
+    // No envelope: treat as legacy single decision.
+    const single = parseDecision(text);
+    return single ? [single] : [];
+  }
+  const body = envelope[1];
+  const parsed: ParsedDecision[] = [];
+  for (const rawLine of body.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+    const decision = parseDecision(line);
+    if (!decision) continue; // ignore non-decision lines (comments)
+    parsed.push(decision);
+  }
+  if (parsed.length === 0) return [];
+
+  // If the batch is a single decision, allow solo verbs.
+  if (parsed.length === 1) return parsed;
+
+  // Multi-decision batch: every entry must be batchable.
+  const hasSolo = parsed.some((d) => SOLO_VERBS.has(d.verb));
+  if (hasSolo) return [];
+
+  // Reject duplicate feature ids.
+  const seenArgs = new Set<string>();
+  for (const d of parsed) {
+    if (d.arg) {
+      if (seenArgs.has(d.arg)) return [];
+      seenArgs.add(d.arg);
+    }
+  }
+
+  return parsed;
+}
