@@ -495,6 +495,40 @@ export async function invoke(
   const finalText = extractResult(jsonlPath, streamFormat);
   writeFileSync(outPath, streamFormat !== 'none' ? `${finalText}\n` : finalText);
 
+  // 11.5. PG ingest (Phase 4): when ctx.pg is wired, dump the run's
+  // jsonl/out/err into harness_run_output as a single canonical row.
+  // Files remain on disk for live tail + retention pruning; PG holds the
+  // post-hoc replayable copy. Best-effort: a PG failure mustn't fail the
+  // run.
+  if (ctx.pg && ctx.workspaceId) {
+    try {
+      const { recordRunOutputPg } = await import('./run-output-pg');
+      const { harnessSlug: getSlug } = await import('./state');
+      let jsonlBody = '';
+      let outBody = '';
+      let errBody = '';
+      try { jsonlBody = readFileSync(jsonlPath, 'utf8'); } catch { /* missing */ }
+      try { outBody = readFileSync(outPath, 'utf8'); } catch { /* missing */ }
+      try { errBody = readFileSync(errPath, 'utf8'); } catch { /* missing */ }
+      await recordRunOutputPg(
+        { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: getSlug(ctx.projectDir) },
+        {
+          runId,
+          role,
+          jsonlBody,
+          outBody,
+          errBody,
+          exitCode: outcome.exitCode,
+          durationMs: outcome.durationMs,
+          startedAt,
+          endedAt: Date.now(),
+        },
+      );
+    } catch (err) {
+      ctx.log(`  PG ingest failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
   ctx.log(`invoke ${role} rc=${outcome.exitCode} (stdout: ${outPath})`);
   if (outcome.exitCode === 124) {
     ctx.log(`  role=${role} TIMED OUT after ${timeoutSeconds}s (rc=124)`);
