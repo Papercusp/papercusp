@@ -323,7 +323,6 @@ export default function ProposalsPanel({ slug }: Props) {
 
   const selectedItem = useMemo(() => items.find((p) => p.id === selected) ?? null, [items, selected]);
   const selectedIndex = useMemo(() => filteredItems.findIndex((p) => p.id === selected), [filteredItems, selected]);
-  const visibleShortlistedCount = useMemo(() => filteredItems.filter((p) => shortlisted.has(p.id)).length, [filteredItems, shortlisted]);
   const pendingIds = useMemo(() => items.filter((p) => p.status === 'pending').map((p) => p.id), [items]);
   const visiblePendingIds = useMemo(() => filteredItems.filter((p) => p.status === 'pending').map((p) => p.id), [filteredItems]);
   const checkedPending = useMemo(() => pendingIds.filter((id) => checked.has(id)), [pendingIds, checked]);
@@ -451,18 +450,6 @@ export default function ProposalsPanel({ slug }: Props) {
     setSelected(filteredItems[nextIndex]?.id ?? null);
   }, [filteredItems, selected]);
 
-  const toggleVisibleShortlist = useCallback(() => {
-    if (filteredItems.length === 0) return;
-    setShortlisted((prev) => {
-      const next = new Set(prev);
-      const allVisibleShortlisted = filteredItems.every((item) => next.has(item.id));
-      for (const item of filteredItems) {
-        if (allVisibleShortlisted) next.delete(item.id);
-        else next.add(item.id);
-      }
-      return next;
-    });
-  }, [filteredItems]);
 
   const focusNextPending = useCallback(() => {
     if (!nextPending) return;
@@ -658,7 +645,6 @@ export default function ProposalsPanel({ slug }: Props) {
                   ))}
                 </select>
               </label>
-              <button type="button" onClick={focusNextPending} disabled={!nextPending} className="h-proposal-mini ghost">next pending</button>
               <button
                 type="button"
                 onClick={() => setShortlistOnly((on) => !on)}
@@ -666,14 +652,6 @@ export default function ProposalsPanel({ slug }: Props) {
                 className={`h-proposal-mini ghost ${shortlistOnly ? 'on' : ''}`}
               >
                 starred {shortlisted.size}
-              </button>
-              <button
-                type="button"
-                onClick={toggleVisibleShortlist}
-                disabled={filteredItems.length === 0}
-                className={`h-proposal-mini ghost ${filteredItems.length > 0 && visibleShortlistedCount === filteredItems.length ? 'on' : ''}`}
-              >
-                {filteredItems.length > 0 && visibleShortlistedCount === filteredItems.length ? 'unstar visible' : 'star visible'}
               </button>
               {(query || statusFilter !== 'all' || sortMode !== 'newest' || shortlistOnly) && (
                 <button type="button" onClick={resetView} className="h-proposal-mini ghost">reset view</button>
