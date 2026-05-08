@@ -1453,7 +1453,35 @@ run_hook() {
     if [ $rc -ne 0 ]; then
         log "  HOOK $hook failed rc=$rc — continuing (see $logfile)"
     fi
+    _post_hook_log_event "$hook" "$ts" "$logfile" &
     return 0
+}
+
+# POST hook execution log to operator's PG-canonical hook_logs table.
+# Replaces the chokidar mirror that re-scanned .harness/logs/hooks/ on
+# every fs event. Producer captures content + size at write time;
+# operator caps to HOOK_KEEP=50 rows per harness on each insert.
+_post_hook_log_event() {
+    local name="$1"; local ts="$2"; local logfile="$3"
+    [ -z "$name" ] || [ ! -f "$logfile" ] && return 0
+    local size_bytes; size_bytes="$(stat -c%s "$logfile" 2>/dev/null || echo 0)"
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    # Cap content at 256KB to bound the row payload (producer-side, mirrors the operator's MAX_CONTENT_BYTES).
+    local content; content="$(head -c 262144 "$logfile" 2>/dev/null || true)"
+    local body
+    body="$(NAME="$name" TS="$ts" SIZE="$size_bytes" CONTENT="$content" python3 -c '
+import json, os, sys
+sys.stdout.write(json.dumps({"name": os.environ["NAME"], "ts": int(os.environ["TS"]), "sizeBytes": int(os.environ["SIZE"]), "content": os.environ["CONTENT"]}))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 5 \
+        -d "$body" "$operator_base/api/internal/hook-log-event" >/dev/null 2>&1 || true
 }
 
 invoke() {
