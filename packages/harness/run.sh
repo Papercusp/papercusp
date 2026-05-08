@@ -257,6 +257,28 @@ log() {
 # When a log line begins with "ORCH decision: <VERB> <args>", classify
 # and POST it to /api/internal/decision-event. Replaces the chokidar
 # mirror that re-tail-grepped run.log on every fs.watch event.
+_post_plan_review_event() {
+    local cp_file="$STATE_DIR/plan-review.md"
+    [ ! -f "$cp_file" ] && return 0
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+    local content; content="$(head -c 262144 "$cp_file" 2>/dev/null || true)"
+    [ -z "$content" ] && return 0
+    local body
+    body="$(CONTENT="$content" python3 -c '
+import json, os, sys
+sys.stdout.write(json.dumps({"content": os.environ["CONTENT"]}))
+' 2>/dev/null)" || return 0
+    curl -sS -X POST -H 'content-type: application/json' \
+        -H "Authorization: Bearer $harness_token" \
+        --max-time 5 \
+        -d "$body" "$operator_base/api/internal/plan-review-event" >/dev/null 2>&1 || true
+}
+
 _post_escalation_event() {
     # Reads $STATE_DIR/escalation.md and $STATE_DIR/supervisor-notes.md
     # if present and POSTs them in one body. Either-or-both pattern.
@@ -1960,6 +1982,7 @@ if [ "$(config_get 'planReviewer.enabled' 'true')" = "true" ] && [ ! -f "$STATE_
     log "PLAN-REVIEW: challenging scoper output"
     plan_review_out="$(invoke reviewer "MODE=plan")"
     if [ -f "$STATE_DIR/plan-review.md" ]; then
+        _post_plan_review_event &
         verdict_line="$(grep -E '^VERDICT:' "$STATE_DIR/plan-review.md" | tail -1)"
         log "PLAN-REVIEW: ${verdict_line:-no verdict line found}"
         case "$verdict_line" in
