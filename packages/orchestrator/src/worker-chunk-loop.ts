@@ -181,6 +181,11 @@ export async function runChunkLoop(
     }
     plan = planParse.value;
     log(`chunk-loop: plan has ${plan.chunks.length} chunks for ${feature.id}`);
+    if (plan.chunks.length >= 20) {
+      log(
+        `chunk-loop: WARNING — ${feature.id} planned ${plan.chunks.length} chunks (≥20). Likely scope creep or over-decomposition; consider re-scoping the feature.`,
+      );
+    }
     await emit(deps, { kind: 'plan_ready', plan });
   }
 

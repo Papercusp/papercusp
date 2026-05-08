@@ -30,6 +30,14 @@ export interface BranchIsoCtx {
 }
 
 export function branchIsoEnabled(cfg: HarnessConfig): boolean {
+  // Chunk-loop manages locking + commits at a finer granularity (per
+  // chunk, not per feature) and pushes straight to the integration
+  // branch, so per-feature branches and worktrees are bypassed
+  // entirely. branchIsoEnabled returning false short-circuits the
+  // pre/post worker + validator hooks, which is exactly what we want.
+  if (configGet<boolean>(cfg, 'parallelWorkers.useChunkLoop', false) === true) {
+    return false;
+  }
   return configGet<boolean>(cfg, 'branchIsolation.enabled', false) === true;
 }
 
