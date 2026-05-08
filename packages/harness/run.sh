@@ -257,6 +257,78 @@ log() {
 # When a log line begins with "ORCH decision: <VERB> <args>", classify
 # and POST it to /api/internal/decision-event. Replaces the chokidar
 # mirror that re-tail-grepped run.log on every fs.watch event.
+_post_curator_outputs() {
+    # Snapshot identity/<role>.md (cross-mission, ~/autonomous-harness)
+    # and .harness/skills/*.md (per-harness) into PG. Replaces both the
+    # identity-files-watcher chokidar mirror and Mirror 7b9 in
+    # harness-fs-watcher.ts. Called once after `invoke curator` finishes.
+    local operator_base="${PAPERCUSP_OPERATOR_BASE:-http://localhost:3055}"
+    local harness_token=""
+    if [ -f "$HARNESS_DIR/config.json" ]; then
+        harness_token="$(jq -r '.harness_token // empty' "$HARNESS_DIR/config.json" 2>/dev/null || true)"
+    fi
+    [ -z "$harness_token" ] && return 0
+
+    # Identity snapshot.
+    local identity_dir="${HARNESS_DIR}/identity"
+    [ -d "$identity_dir" ] || identity_dir="$HOME/autonomous-harness/identity"
+    if [ -d "$identity_dir" ]; then
+        local body
+        body="$(IDENTITY_DIR="$identity_dir" python3 -c '
+import json, os, sys, glob
+files = []
+d = os.environ["IDENTITY_DIR"]
+for p in sorted(glob.glob(os.path.join(d, "*.md"))):
+    role = os.path.splitext(os.path.basename(p))[0]
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            content = f.read(262144)
+    except Exception:
+        continue
+    files.append({"role": role, "content": content})
+sys.stdout.write(json.dumps({"files": files}))
+' 2>/dev/null)" || body=""
+        if [ -n "$body" ]; then
+            curl -sS -X POST -H 'content-type: application/json' \
+                -H "Authorization: Bearer $harness_token" \
+                --max-time 10 \
+                -d "$body" "$operator_base/api/internal/identity-snapshot" >/dev/null 2>&1 || true
+        fi
+    fi
+
+    # Skill snapshot (per-harness).
+    local skills_dir="$STATE_DIR/skills"
+    if [ -d "$skills_dir" ]; then
+        local body
+        body="$(SKILLS_DIR="$skills_dir" python3 -c '
+import json, os, sys, glob
+files = []
+d = os.environ["SKILLS_DIR"]
+for p in sorted(glob.glob(os.path.join(d, "*.md"))):
+    name = os.path.basename(p)
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            content = f.read(262144)
+    except Exception:
+        continue
+    files.append({"name": name, "content": content})
+sys.stdout.write(json.dumps({"files": files}))
+' 2>/dev/null)" || body=""
+        if [ -n "$body" ]; then
+            curl -sS -X POST -H 'content-type: application/json' \
+                -H "Authorization: Bearer $harness_token" \
+                --max-time 10 \
+                -d "$body" "$operator_base/api/internal/skill-snapshot" >/dev/null 2>&1 || true
+        fi
+    else
+        # Skills dir gone — POST empty list to clear PG rows.
+        curl -sS -X POST -H 'content-type: application/json' \
+            -H "Authorization: Bearer $harness_token" \
+            --max-time 5 \
+            -d '{"files":[]}' "$operator_base/api/internal/skill-snapshot" >/dev/null 2>&1 || true
+    fi
+}
+
 _post_plan_review_event() {
     local cp_file="$STATE_DIR/plan-review.md"
     [ ! -f "$cp_file" ] && return 0
@@ -2161,6 +2233,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
         log "Running curator to distill run memory."
         curator_out="$(invoke curator "TRIGGER=done")"
         log "CURATOR: ${curator_out:-(no output)}"
+        _post_curator_outputs &
         log "Running documenter in consolidate mode."
         documenter_out="$(invoke documenter "TRIGGER=done" "FEATURE_ID=-")"
         log "DOCUMENTER: ${documenter_out:-(no output)}"
@@ -2687,6 +2760,7 @@ except Exception as e:
         log "Running curator to distill run memory before exit."
         curator_out="$(invoke curator "TRIGGER=escalate" "REASON=$reason")"
         log "CURATOR: ${curator_out:-(no output)}"
+        _post_curator_outputs &
         notify_event escalate "$reason"
         exit 3
         ;;
