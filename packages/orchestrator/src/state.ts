@@ -89,12 +89,49 @@ export async function setFeatureStatus(
 }
 
 /**
- * Compute the harness slug from the project directory name. Bash equivalent:
+ * Compute the harness slug. Resolution order:
+ *   1. HARNESS_SLUG / PAPERCUSP_HARNESS_SLUG env (caller-set; fastest)
+ *   2. Operator registry reverse lookup (canonical — handles
+ *      basename(projectDir) ≠ registered slug, e.g. sheets-clone → sheets)
+ *   3. basename(projectDir) — registry's default-derivation fallback
  *
+ * Memoized per projectDir; callers bear no perf cost across multiple
+ * invocations.
+ *
+ * Bash equivalent:
  *   harness_slug() { basename "$PROJECT_DIR"; }
  */
+const _slugCache = new Map<string, string>();
 export function harnessSlug(projectDir: string): string {
-  return basename(projectDir);
+  const fromEnv = process.env.HARNESS_SLUG ?? process.env.PAPERCUSP_HARNESS_SLUG;
+  if (fromEnv && fromEnv.length > 0) return fromEnv;
+  const cached = _slugCache.get(projectDir);
+  if (cached) return cached;
+  const fromRegistry = lookupSlugFromRegistry(projectDir);
+  if (fromRegistry) {
+    _slugCache.set(projectDir, fromRegistry);
+    return fromRegistry;
+  }
+  const fromBasename = basename(projectDir);
+  _slugCache.set(projectDir, fromBasename);
+  return fromBasename;
+}
+
+function lookupSlugFromRegistry(projectDir: string): string | null {
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
+    const out = execFileSync('curl', [
+      '-sf', '--max-time', '3', `${operatorBase}/api/harness/projects`,
+    ], { encoding: 'utf8', timeout: 4000 });
+    const data = JSON.parse(out) as { projects?: Array<{ slug?: string; path?: string }> };
+    const norm = projectDir.replace(/\/+$/, '');
+    const hit = data.projects?.find((p) => (p.path ?? '').replace(/\/+$/, '') === norm)?.slug;
+    return hit && hit.length > 0 ? hit : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Pass-rate as a fraction (0..1). 0 if no features. */
