@@ -1,20 +1,14 @@
 #!/usr/bin/env -S npx tsx
 /**
  * Orchestrator CLI entry point. The TypeScript orchestrator is the
- * default; `PAPERCUSP_USE_TS_ORCHESTRATOR=0` opts back into bash
- * `run.sh` (deprecated, scheduled for removal — kept only as an
- * emergency escape hatch).
+ * canonical and only main-loop driver as of 2026-05-08. The legacy
+ * `PAPERCUSP_USE_TS_ORCHESTRATOR=0` bash-fallback was removed once
+ * parity gaps G4/G5/G6 closed and operator spawn sites moved to TS.
  *
- * Routing logic:
- *   - flag unset (default) → run the TS main loop end-to-end. All
- *     decision verbs are handled including NEXT_EXPERT / NEXT_FEEDBACK /
- *     NEXT_SCOPER (formerly bash-only).
- *   - PAPERCUSP_USE_TS_ORCHESTRATOR=0 → fall back to bash run.sh.
- *     Use only if you hit a TS bug in production AND need to ship; file
- *     a parity issue at the same time so we can delete run.sh.
+ * `bash run.sh` may still exist on disk for backward compat with
+ * external callers (supervisor.sh, other harness scripts) but no
+ * longer drives an iteration loop from this binary.
  */
-import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { configGet, readConfig } from '../src/config.js';
 import { resolvePaths, resolveAgentBackend, resolveAgentCmd } from '../src/env.js';
 import { createLogger } from '../src/log.js';
@@ -23,40 +17,14 @@ import { bootstrapOrchestratorPg } from '../src/pg-bootstrap.js';
 import { activeWorkspaceId } from '../src/workspace.js';
 import { harnessSlug } from '../src/state.js';
 
-// TS is the default. Set PAPERCUSP_USE_TS_ORCHESTRATOR=0 to opt OUT
-// (back to bash run.sh) — emergency escape hatch only.
-const useTs = process.env.PAPERCUSP_USE_TS_ORCHESTRATOR !== '0';
-const { harnessDir, projectDir, stateDir, logDir } = resolvePaths();
-const runShPath = `${harnessDir}/run.sh`;
-
-if (!existsSync(runShPath)) {
+if (process.env.PAPERCUSP_USE_TS_ORCHESTRATOR === '0') {
   process.stderr.write(
-    `[papercusp-orchestrate] ERROR: ${runShPath} not found.\n` +
-      'Set PAPERCUSP_HARNESS_DIR or place the @papercusp/harness package on disk.\n',
+    '[papercusp-orchestrate] WARN: PAPERCUSP_USE_TS_ORCHESTRATOR=0 is no longer honored.\n' +
+    '  The bash run.sh fallback was retired 2026-05-08. Running TS regardless.\n',
   );
-  process.exit(2);
 }
 
-function runBash(): never {
-  const child = spawn('bash', [runShPath], {
-    cwd: projectDir,
-    env: {
-      ...process.env,
-      HARNESS_DIR: harnessDir,
-      PROJECT_DIR: projectDir,
-    },
-    stdio: 'inherit',
-  });
-  child.on('exit', (code) => process.exit(code ?? 0));
-  child.on('error', (err) => {
-    process.stderr.write(
-      `[papercusp-orchestrate] failed to spawn bash: ${err.message}\n`,
-    );
-    process.exit(127);
-  });
-  // never returns — the exit handler does
-  return undefined as never;
-}
+const { harnessDir, projectDir, stateDir, logDir } = resolvePaths();
 
 async function runTs(): Promise<never> {
   const logger = createLogger(stateDir);
@@ -108,13 +76,9 @@ async function runTs(): Promise<never> {
   }
 }
 
-if (useTs) {
-  runTs().catch((err) => {
-    process.stderr.write(
-      `[papercusp-orchestrate] uncaught error in TS loop: ${(err as Error).message}\n`,
-    );
-    process.exit(1);
-  });
-} else {
-  runBash();
-}
+runTs().catch((err) => {
+  process.stderr.write(
+    `[papercusp-orchestrate] uncaught error in TS loop: ${(err as Error).message}\n`,
+  );
+  process.exit(1);
+});

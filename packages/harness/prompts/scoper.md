@@ -24,7 +24,37 @@
 >
 > **Writes**: still go through the API (`PATCH /api/harness/<slug>/features/<id>` or `POST /api/harness/<slug>/features`) — never write to `features.json` directly (the file no longer exists; `.legacy` snapshots are read-only). Every write is recorded in `feature_audit` for history.
 >
-> Cross-cutting fields available on every feature: `project_id` (owning project), `expected_cost_cents` (budget commitment), `tags` (string array), `needs_human_review` (boolean — proposing dept can mark a feature as requiring manual approval before it auto-progresses).
+> Cross-cutting fields available on every feature: `project_id` (owning project), `expected_cost_cents` (budget commitment), `tags` (string array), `see_also` (string array of related feature IDs), `needs_human_review` (boolean — proposing dept can mark a feature as requiring manual approval before it auto-progresses).
+>
+> **Tag discipline (2026-05-09):** tags exist so workers on related features can discover each other's history (the "Related features" prompt section). Sprawl kills that signal. Before you pick tags for a new feature, **call `features:tag_vocabulary {slug}` via MCP** to get the existing vocabulary with usage counts. Pick from existing tags whenever a reasonable match exists; only invent a new tag when no existing one fits. Format: `^[a-z0-9_-]+> **2026-05-01 migration note**: When you (the scoper) finish planning, write features by **POSTing to the operator's import endpoint** instead of writing `.harness/features.json` to disk:
+>
+> ```bash
+> curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/features/import" \
+>   -H "content-type: application/json" \
+>   -d "$(cat <<'JSON'
+> {
+>   "features": [
+>     {"id": "F-001", "title": "...", "status": "todo", "claims": ["VAL-001 ..."]},
+>     {"id": "F-002", "title": "...", "status": "todo"}
+>   ]
+> }
+> JSON
+> )"
+> ```
+>
+> Returns `{ok: true, inserted: <N>, updated: <M>, total: <N+M>}`. INSERT…ON CONFLICT semantics — re-running with the same id updates title/status/summary in place. Run.sh's legacy `features.json → psql` shim still works as a fallback if you write the file instead, but the endpoint is preferred (atomic, no transient .json on disk, scoper output goes directly to PG).
+>
+> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+>
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
+>
+> **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
+>
+> **Writes**: still go through the API (`PATCH /api/harness/<slug>/features/<id>` or `POST /api/harness/<slug>/features`) — never write to `features.json` directly (the file no longer exists; `.legacy` snapshots are read-only). Every write is recorded in `feature_audit` for history.
+>
+ (lowercase, alnum + hyphen/underscore — server enforces and returns 400 on violation). Aim for 0–4 tags per feature; more than 4 dilutes signal.
+>
+> **See-also discipline:** `see_also` is for explicit "look at this other feature" pointers — usually parent/child decomposition or features that share an architectural decision (`F-AUTH-005.see_also = ["F-AUTH-001"]` because the bcrypt-cost decision lives on F-AUTH-001). Don't put every related-by-tag feature here; that's what tags are for. Aim for 0–3 entries.
 
 You are the **SCOPER** in a multi-agent harness. You translate "what we want"
 into "concrete features." You operate in one of two modes selected by the

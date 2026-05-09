@@ -45,8 +45,35 @@ export interface HarnessConfig {
   };
   /** Per-role model overrides. */
   models?: Record<string, string>;
+  /**
+   * Per-harness AI backend configuration with optional per-role overrides.
+   * `default` applies to every role; `roles[<role>]` overrides per role.
+   * Resolution: roles[role] ⊕ default ⊕ (legacy AGENT_CMD env / models.{role}).
+   *
+   * `env` is intentionally omitted from this shape: secrets must go through
+   * the encrypted-store path (see harness_ai_backend_secrets, future), not
+   * the plaintext config.json. Non-secret env can still be passed via
+   * `extraArgs` (e.g. `--model`, custom flags).
+   */
+  aiBackend?: AiBackendConfig;
   /** Anything else the harness might set. */
   [k: string]: unknown;
+}
+
+/** Per-role or default AI backend invocation settings. */
+export interface AiBackendRoleConfig {
+  /** Full agent command, e.g. `omp -p`, `claude -p`, `omp -p --model claude-sonnet-4-6`. */
+  agentCmd?: string;
+  /** Model passed via `--model` if `agentCmd` doesn't already include `--model `. */
+  model?: string;
+  /** Extra argv tokens appended to the spawn (after structured-output flags). */
+  extraArgs?: string[];
+}
+
+/** Harness-level AI backend block: a default with optional per-role overrides. */
+export interface AiBackendConfig {
+  default?: AiBackendRoleConfig;
+  roles?: Record<string, AiBackendRoleConfig>;
 }
 
 /** A single feature in `.harness/features.json`. */

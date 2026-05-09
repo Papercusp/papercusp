@@ -199,6 +199,11 @@ CREATE TABLE IF NOT EXISTS {{SCHEMA}}.messages (
   from_slug TEXT NOT NULL,
   to_slug TEXT NOT NULL,
   to_role TEXT,
+  -- Feature-to-feature messaging (Phase 3, migration 044): both nullable
+  -- so harness-level messages remain backward compatible. When set,
+  -- they identify the source / addressed features within the slug.
+  from_feature_id TEXT,
+  to_feature_id TEXT,
   kind TEXT NOT NULL,
   subject TEXT NOT NULL,
   body TEXT,
@@ -212,6 +217,7 @@ CREATE INDEX IF NOT EXISTS messages_status_idx ON {{SCHEMA}}.messages(status, cr
 CREATE INDEX IF NOT EXISTS messages_to_idx     ON {{SCHEMA}}.messages(to_slug, status);
 CREATE INDEX IF NOT EXISTS messages_from_idx   ON {{SCHEMA}}.messages(from_slug, created_at);
 CREATE INDEX IF NOT EXISTS messages_to_role_idx ON {{SCHEMA}}.messages(to_slug, to_role) WHERE to_role IS NOT NULL;
+CREATE INDEX IF NOT EXISTS messages_to_feature_idx ON {{SCHEMA}}.messages(to_feature_id, status) WHERE to_feature_id IS NOT NULL;
 
 -- Supervisor-side rolling notes. Auto-appended on inbound Directive kind
 -- messages (so the receiving harness's prompt-build can surface fresh

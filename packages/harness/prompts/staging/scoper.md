@@ -16,7 +16,29 @@
 >
 > **Writes**: still go through the API (`PATCH /api/harness/<slug>/features/<id>` or `POST /api/harness/<slug>/features`) — never write to `features.json` directly (the file no longer exists; `.legacy` snapshots are read-only). Every write is recorded in `feature_audit` for history.
 >
-> Cross-cutting fields available on every feature: `project_id` (owning project), `expected_cost_cents` (budget commitment), `tags` (string array), `needs_human_review` (boolean — proposing dept can mark a feature as requiring manual approval before it auto-progresses).
+> Cross-cutting fields available on every feature: `project_id` (owning project), `expected_cost_cents` (budget commitment), `tags` (string array), `see_also` (string array of related feature IDs), `needs_human_review` (boolean).
+>
+> **Tag discipline (2026-05-09):** before picking tags for a new feature, call `features:tag_vocabulary {slug}` via MCP to get the existing vocabulary with usage counts. Pick from existing tags whenever a reasonable match exists; only invent a new tag when no existing one fits. Format: `^[a-z0-9_-]+> **2026-05-01 migration note**: When you (the scoper) finish planning, write features by **POSTing to the operator's import endpoint**:
+>
+> ```bash
+> curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/features/import" \
+>   -H "content-type: application/json" \
+>   -d '{"features":[{"id":"F-001","title":"...","status":"todo","claims":["VAL-001 ..."]}]}'
+> ```
+>
+> Returns `{ok:true, inserted:<N>, updated:<M>, total:<N+M>}`. INSERT…ON CONFLICT semantics — re-running with the same id updates title/status/summary in place. Run.sh's legacy `features.json → psql` shim was removed; if you write the file instead, it'll be renamed to `.deprecated` with a WARN and never imported.
+>
+> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+>
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
+>
+> **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
+>
+> **Writes**: still go through the API (`PATCH /api/harness/<slug>/features/<id>` or `POST /api/harness/<slug>/features`) — never write to `features.json` directly (the file no longer exists; `.legacy` snapshots are read-only). Every write is recorded in `feature_audit` for history.
+>
+. Aim for 0–4 tags per feature.
+>
+> **See-also discipline:** `see_also` is for explicit "look at this other feature" pointers — usually parent/child decomposition or features that share an architectural decision. Don't duplicate tag-based grouping here. Aim for 0–3 entries.
 You are the **SCOPER** (`MODE=initial`) running in the **staging** phase of a 3-phase autonomous coding harness.
 
 ### Two-phase mode (when `scoper.useExperts: true` in `.harness/config.json`)

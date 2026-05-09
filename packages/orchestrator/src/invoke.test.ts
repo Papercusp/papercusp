@@ -10,6 +10,7 @@ import {
   resolvePromptOverride,
   resolveTimeout,
   resolveModel,
+  resolveAgentForRole,
   selectStreamFormat,
   streamFormatFlags,
 } from './invoke.js';
@@ -341,4 +342,78 @@ test('streamFormatFlags — produces backend-specific flag set', () => {
   assert.deepEqual(streamFormatFlags('claude-stream-json'), ['--output-format', 'stream-json', '--verbose', '--include-partial-messages']);
   assert.deepEqual(streamFormatFlags('omp-json'), ['--mode', 'json', '--no-session']);
   assert.deepEqual(streamFormatFlags('none'), []);
+});
+
+test('resolveAgentForRole — empty config falls through to fallbackCmd', () => {
+  const out = resolveAgentForRole({}, 'worker', 'omp -p');
+  assert.equal(out.agentCmd, 'omp -p');
+  assert.deepEqual(out.extraArgs, []);
+});
+
+test('resolveAgentForRole — default applies to every role', () => {
+  const cfg = { aiBackend: { default: { agentCmd: 'claude -p' } } };
+  assert.equal(resolveAgentForRole(cfg, 'worker', 'omp -p').agentCmd, 'claude -p');
+  assert.equal(resolveAgentForRole(cfg, 'orchestrator', 'omp -p').agentCmd, 'claude -p');
+});
+
+test('resolveAgentForRole — role override beats default', () => {
+  const cfg = {
+    aiBackend: {
+      default: { agentCmd: 'claude -p' },
+      roles: { worker: { agentCmd: 'omp -p' } },
+    },
+  };
+  assert.equal(resolveAgentForRole(cfg, 'worker', 'fallback').agentCmd, 'omp -p');
+  assert.equal(resolveAgentForRole(cfg, 'validator', 'fallback').agentCmd, 'claude -p');
+});
+
+test('resolveAgentForRole — extraArgs concatenate (default first, then role)', () => {
+  const cfg = {
+    aiBackend: {
+      default: { extraArgs: ['--max-tokens', '4000'] },
+      roles: { worker: { extraArgs: ['--temperature', '0.2'] } },
+    },
+  };
+  const out = resolveAgentForRole(cfg, 'worker', 'omp -p');
+  assert.deepEqual(out.extraArgs, ['--max-tokens', '4000', '--temperature', '0.2']);
+});
+
+test('resolveAgentForRole — non-role uses only default extraArgs', () => {
+  const cfg = {
+    aiBackend: {
+      default: { extraArgs: ['--default-flag'] },
+      roles: { worker: { extraArgs: ['--worker-only'] } },
+    },
+  };
+  assert.deepEqual(resolveAgentForRole(cfg, 'validator', 'omp -p').extraArgs, ['--default-flag']);
+});
+
+test('resolveAgentForRole — empty/whitespace agentCmd in role falls through', () => {
+  const cfg = {
+    aiBackend: {
+      default: { agentCmd: 'claude -p' },
+      roles: { worker: { agentCmd: '   ' } },
+    },
+  };
+  assert.equal(resolveAgentForRole(cfg, 'worker', 'fallback').agentCmd, 'claude -p');
+});
+
+test('resolveModel — aiBackend.roles.<role>.model wins over models.<role>', () => {
+  const cfg = {
+    models: { worker: 'legacy-model' },
+    aiBackend: { roles: { worker: { model: 'new-model' } } },
+  };
+  assert.equal(resolveModel(cfg as never, 'worker'), 'new-model');
+});
+
+test('resolveModel — aiBackend.default.model used when no role override', () => {
+  const cfg = {
+    aiBackend: { default: { model: 'sonnet-4-6' } },
+  };
+  assert.equal(resolveModel(cfg as never, 'worker'), 'sonnet-4-6');
+});
+
+test('resolveModel — legacy models.<role> still works when aiBackend absent', () => {
+  const cfg = { models: { worker: 'legacy-only' } };
+  assert.equal(resolveModel(cfg as never, 'worker'), 'legacy-only');
 });

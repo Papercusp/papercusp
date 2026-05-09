@@ -32,6 +32,7 @@ import { processActionsBlock } from './actions-block';
 import { evaluateCostCap } from './cost-cap';
 import { pruneLogs } from './prune-logs';
 import { snapshotState } from './snapshot-state';
+import { postArchiveEvent, postCuratorOutputs, postTestSnapshot } from './bus-posts';
 import { runPreLoop } from './pre-loop';
 import { checkpointGate } from './checkpoints';
 import { firePluginHook } from './plugin-hooks';
@@ -70,20 +71,63 @@ import { branchIsoBase, worktreePath } from './branch-iso';
 import type { InvokeContext } from './invoke';
 import type { Logger } from './log';
 import type { ParsedDecision } from './decision-parse';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 
 /**
  * Resolve the harness slug for telemetry calls.
  *
- * The orchestrator process inherits HARNESS_SLUG from run.sh. When unset
- * (e.g. tests, ad-hoc invocations), fall back to the basename of the
- * project dir — matches the harness registry's slug derivation rule.
+ * Resolution order:
+ *   1. HARNESS_SLUG / PAPERCUSP_HARNESS_SLUG env (caller-set; fastest).
+ *   2. Operator registry reverse lookup (canonical — handles cases where
+ *      the slug differs from basename(projectDir), e.g. project at
+ *      /home/foo/sheets-clone registered as slug "sheets").
+ *   3. basename(projectDir) — matches the registry's default derivation
+ *      when no explicit slug was set.
+ *
+ * Memoized per projectDir so we only hit the operator once per run.
  */
+const _slugCache = new Map<string, string>();
 function harnessSlug(ctx: InvokeContext): string {
   const fromEnv = process.env.HARNESS_SLUG ?? process.env.PAPERCUSP_HARNESS_SLUG;
   if (fromEnv && fromEnv.length > 0) return fromEnv;
-  return ctx.projectDir.split(/[\\/]/).filter(Boolean).pop() ?? 'unknown';
+  const cached = _slugCache.get(ctx.projectDir);
+  if (cached) return cached;
+  const fromRegistry = lookupSlugFromRegistry(ctx.projectDir);
+  if (fromRegistry) {
+    _slugCache.set(ctx.projectDir, fromRegistry);
+    return fromRegistry;
+  }
+  const fromBasename = ctx.projectDir.split(/[\\/]/).filter(Boolean).pop() ?? 'unknown';
+  _slugCache.set(ctx.projectDir, fromBasename);
+  return fromBasename;
+}
+
+/**
+ * Synchronous reverse lookup against the operator's harness registry.
+ * Returns null on any failure (operator down, network hiccup, parse
+ * error). Best-effort — caller falls back to basename.
+ */
+function lookupSlugFromRegistry(projectDir: string): string | null {
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  try {
+    // Sync curl. Same pattern as role-prompt-from-slug.ts:lookupProjectDir.
+    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
+    const out = execFileSync('curl', [
+      '-sf', '--max-time', '3', `${operatorBase}/api/harness/projects`,
+    ], { encoding: 'utf8', timeout: 4000 });
+    const data = JSON.parse(out) as { projects?: Array<{ slug?: string; path?: string }> };
+    const norm = projectDir.replace(/\/+$/, '');
+    const hit = data.projects?.find((p) => (p.path ?? '').replace(/\/+$/, '') === norm)?.slug;
+    return hit && hit.length > 0 ? hit : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Test-only — drop the slug cache so a stale lookup doesn't leak across tests. */
+export function _resetHarnessSlugCacheForTests(): void {
+  _slugCache.clear();
 }
 
 /**
@@ -638,6 +682,9 @@ async function handleDone(
   } catch (err) {
     logger.log(`CURATOR error: ${(err as Error).message}`);
   }
+  // G5 — POST identity + skill snapshots after curator finishes.
+  // Mirrors bash _post_curator_outputs. Best-effort.
+  void postCuratorOutputs({ stateDir: ctx.stateDir, harnessDir: ctx.harnessDir }).catch(() => {});
 
   logger.log('Running documenter in consolidate mode.');
   try {
@@ -647,7 +694,31 @@ async function handleDone(
     logger.log(`DOCUMENTER error: ${(err as Error).message}`);
   }
 
-  // (Skipping optional scoper-on-done + archive-on-done — minor polish.)
+  // G4 — archiveOnDone. tar.gz state dir, fire archive event. Mirrors
+  // bash run.sh:2326–2336. Default off (config.archiveOnDone=true to
+  // enable). Best-effort: archive errors are logged and don't gate exit.
+  if (configGet<boolean>(cfg, 'archiveOnDone', false) === true) {
+    try {
+      const archivesDir = join(ctx.stateDir, 'archives');
+      mkdirSync(archivesDir, { recursive: true });
+      const archivePath = join(archivesDir, `${Math.floor(Date.now() / 1000)}-done.tar.gz`);
+      const tarRes = spawnSync(
+        'tar',
+        ['czf', archivePath, '-C', ctx.stateDir, '--exclude=archives', '--exclude=./archives', '.'],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      if (tarRes.status === 0 && existsSync(archivePath)) {
+        const sz = (() => { try { return statSync(archivePath).size; } catch { return 0; } })();
+        logger.log(`  archiveOnDone: saved ${basename(archivePath)} (${sz} bytes)`);
+        const phase = ctx.phase ?? 'staging';
+        void postArchiveEvent({ stateDir: ctx.stateDir, archivePath, phase }).catch(() => {});
+      } else {
+        logger.log(`  archiveOnDone: tar failed (rc=${tarRes.status})`);
+      }
+    } catch (err) {
+      logger.log(`  archiveOnDone error: ${(err as Error).message}`);
+    }
+  }
 
   // Fire registered plugin afterDone hooks (briefings pipeline, etc.).
   firePluginHook({
@@ -721,6 +792,26 @@ async function handleNextWorker(
         logger.log(
           `DEBUGGER: ${(dout.output || '').slice(0, 200) || '(no output)'}`,
         );
+        // PG-canonical capture: read whatever the debugger wrote at
+        // <stateDir>/debug/<fid>.md and UPSERT to PG. Replaces the
+        // never-built `/api/internal/feature-debug-note-event` poster
+        // referenced by bash run.sh. Best-effort.
+        if (ctx.pg && ctx.workspaceId) {
+          try {
+            const { captureDebuggerOutput } = await import('./feature-debug-notes.js');
+            const { harnessSlug: getSlug } = await import('./state.js');
+            const r = await captureDebuggerOutput({
+              pg: ctx.pg,
+              workspaceId: ctx.workspaceId,
+              harnessSlug: getSlug(ctx.projectDir),
+              featureId: fid,
+              stateDir: ctx.stateDir,
+            });
+            if (r.captured) {
+              logger.log(`  debugger output captured to PG (${r.bytes} chars)`);
+            }
+          } catch { /* best-effort */ }
+        }
       } catch (err) {
         logger.log(`DEBUGGER error: ${(err as Error).message}`);
       }
@@ -1873,6 +1964,9 @@ function handleRunTests(ctx: InvokeContext, logger: Logger): DispatchResult {
   for (const line of [...stdout.split(/\r?\n/), ...stderr.split(/\r?\n/)]) {
     if (line.trim().length > 0) logger.log(line);
   }
+  // G6 — POST <stateDir>/tests/*.json snapshot to operator. Mirrors
+  // bash _post_test_snapshot. Best-effort.
+  void postTestSnapshot({ stateDir: ctx.stateDir, phase: ctx.phase }).catch(() => {});
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 
@@ -1945,7 +2039,12 @@ async function handleChunkLoopWorker(
     repoPath: ctx.projectDir,
     pg: ctx.pg,
     workspaceId: ctx.workspaceId,
-    harnessSlug: configGet<string>(cfg, 'slug', '') || undefined,
+    // Slug source order: HARNESS_SLUG env → PAPERCUSP_HARNESS_SLUG env →
+    // config.slug → basename(projectDir). Matches the harness registry's
+    // resolution so chunk-plan rows are queryable from the operator UI
+    // without requiring users to set `slug` in config.json.
+    harnessSlug:
+      (configGet<string>(cfg, 'slug', '') || harnessSlug(ctx)) || undefined,
     log: (msg) => logger.log(msg),
     llm: {
       plan: async (f) => {

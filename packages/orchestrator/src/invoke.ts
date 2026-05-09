@@ -149,6 +149,11 @@ export function resolveTimeout(cfg: ReturnType<typeof readConfig>, role: string)
     /settings/agent page writes). Empty string = use the agent CLI's
     default. */
 export function resolveModel(cfg: ReturnType<typeof readConfig>, role: string): string {
+  // aiBackend role override wins, then aiBackend default, then legacy models.<role>.
+  const fromAiRole = configGet<string>(cfg, `aiBackend.roles.${role}.model`, '');
+  if (fromAiRole) return fromAiRole;
+  const fromAiDefault = configGet<string>(cfg, `aiBackend.default.model`, '');
+  if (fromAiDefault) return fromAiDefault;
   const fromConfig = configGet<string>(cfg, `models.${role}`, '');
   if (fromConfig) return fromConfig;
   const envJson = process.env.AGENT_MODELS;
@@ -161,6 +166,44 @@ export function resolveModel(cfg: ReturnType<typeof readConfig>, role: string): 
     }
   } catch { /* malformed AGENT_MODELS — silently ignore */ }
   return '';
+}
+
+/**
+ * Resolve the agent command + extra args for a role, layering:
+ *   1. config.aiBackend.roles[role]      (most specific)
+ *   2. config.aiBackend.default          (harness-wide override)
+ *   3. fallbackCmd                       (process env: AGENT_CMD/CLAUDE)
+ *
+ * Returns the effective agent command and any role/default extraArgs to
+ * append (in order: default.extraArgs, then role.extraArgs). Model is
+ * still resolved via {@link resolveModel} for back-compat with the
+ * existing `models.<role>` config and AGENT_MODELS env.
+ *
+ * Storing secrets here is NOT supported — values land in plaintext
+ * config.json. For secrets, use the encrypted-credentials store.
+ */
+export function resolveAgentForRole(
+  cfg: ReturnType<typeof readConfig>,
+  role: string,
+  fallbackCmd: string,
+): { agentCmd: string; extraArgs: string[] } {
+  const ai = (cfg.aiBackend as
+    | { default?: { agentCmd?: string; model?: string; extraArgs?: string[] };
+        roles?: Record<string, { agentCmd?: string; model?: string; extraArgs?: string[] }>; }
+    | undefined) ?? {};
+  const def = ai.default ?? {};
+  const rol = ai.roles?.[role] ?? {};
+
+  const agentCmd =
+    (rol.agentCmd && rol.agentCmd.trim()) ||
+    (def.agentCmd && def.agentCmd.trim()) ||
+    fallbackCmd;
+
+  const extraArgs: string[] = [];
+  if (Array.isArray(def.extraArgs)) extraArgs.push(...def.extraArgs.filter((s) => typeof s === 'string'));
+  if (Array.isArray(rol.extraArgs)) extraArgs.push(...rol.extraArgs.filter((s) => typeof s === 'string'));
+
+  return { agentCmd, extraArgs };
 }
 
 /**
@@ -384,19 +427,32 @@ export async function invoke(
 
   // 4. Backend-aware structured-stream detection. Defaults to inferring
   //    from the binary name in claudeCmd (omp/pi → omp, otherwise claude-code).
-  const argv = splitCommand(ctx.claudeCmd);
-  const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(ctx.claudeCmd);
-  const streamFormat = selectStreamFormat(agentBackend, ctx.claudeCmd);
+  //    Per-role / per-harness aiBackend config can override the agent
+  //    command (and append extraArgs) — falls back to ctx.claudeCmd which
+  //    came from process env (AGENT_CMD / CLAUDE).
+  const { agentCmd: roleAgentCmd, extraArgs: roleExtraArgs } =
+    resolveAgentForRole(cfg, role, ctx.claudeCmd);
+  if (roleAgentCmd !== ctx.claudeCmd) {
+    ctx.log(`  role=${role} agentCmd=${roleAgentCmd} (from config.json)`);
+  }
+  const argv = splitCommand(roleAgentCmd);
+  const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(roleAgentCmd);
+  const streamFormat = selectStreamFormat(agentBackend, roleAgentCmd);
   const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
 
   // 5. Per-role model — only inject if user didn't already pass --model.
-  const cmdAlreadyHasModel = ctx.claudeCmd.includes('--model ');
+  const cmdAlreadyHasModel = roleAgentCmd.includes('--model ');
   if (!cmdAlreadyHasModel) {
     const model = resolveModel(cfg, role);
     if (model) {
       extraFlags.push('--model', model);
       ctx.log(`  role=${role} model=${model} (from config.json)`);
     }
+  }
+
+  // 5b. Per-role extraArgs from aiBackend.{default,roles[role]}.extraArgs.
+  if (roleExtraArgs.length > 0) {
+    extraFlags.push(...roleExtraArgs);
   }
 
   // 6. Timeout.
@@ -431,6 +487,61 @@ export async function invoke(
     } catch { /* leave empty */ }
   }
 
+  // 8.6 Feature history — read PG-only (notes + debugger findings + audit
+  // transitions). Best-effort; empty when the feature has no recorded
+  // history yet OR when ctx.pg/workspaceId are unset (CLI mode without
+  // PG bootstrap). Cache-safe: appended at end of prompt by buildPrompt.
+  let featureHistory = '';
+  if (featureId && ctx.pg && ctx.workspaceId) {
+    try {
+      const { fetchFeatureHistory } = await import('./feature-history.js');
+      const { harnessSlug: getSlug } = await import('./state.js');
+      featureHistory = await fetchFeatureHistory({
+        pg: ctx.pg,
+        workspaceId: ctx.workspaceId,
+        harnessSlug: getSlug(ctx.projectDir),
+        featureId,
+      });
+    } catch { /* best-effort; empty section is harmless */ }
+  }
+
+  // 8.7 Materialize per-feature operator notes from PG → FS.
+  //
+  // PG is canonical for `harness_feature_notes`; the FS path
+  // `<stateDir>/notes/<fid>.md` is a transient projection refreshed
+  // here just before the worker spawns. The role prompt at
+  // libs/papercusp/packages/harness/prompts/worker.md instructs the
+  // agent to read this file if present.
+  //
+  // Best-effort. Skipped for non-feature-bound roles (orchestrator,
+  // scoper, etc.) since they don't read the file and it would be
+  // wasted I/O.
+  if (
+    featureId &&
+    (role === 'worker' || role === 'validator' || role === 'debugger') &&
+    ctx.pg && ctx.workspaceId
+  ) {
+    try {
+      const { materializeFeatureNote } = await import('./feature-notes.js');
+      const { materializeFeatureDebugNote } = await import('./feature-debug-notes.js');
+      const { harnessSlug: getSlug } = await import('./state.js');
+      const slug = getSlug(ctx.projectDir);
+      const matInput = {
+        pg: ctx.pg,
+        workspaceId: ctx.workspaceId,
+        harnessSlug: slug,
+        featureId,
+        stateDir: ctx.stateDir,
+      };
+      // Materialize both operator notes and debugger findings in
+      // parallel — independent PG reads, neither depends on the other.
+      await Promise.all([
+        materializeFeatureNote(matInput),
+        materializeFeatureDebugNote(matInput),
+      ]);
+    } catch { /* best-effort — worker prompt handles missing file */ }
+  }
+
   // 9. Build the prompt.
   const prompt = buildPrompt({
     role,
@@ -445,7 +556,40 @@ export async function invoke(
     runId,
     extras,
     substrateContext,
+    featureHistory,
   });
+
+  // Token-spend telemetry — emit once per invoke so we can see how the
+  // prompt budget breaks down across sections in production logs.
+  // Char counts (not tokens; tokens ≈ chars/4 for english).
+  //
+  // Two channels:
+  //   1. Log line (transport) — visible in run.log immediately.
+  //   2. PG row (persistence, async best-effort) — enables the
+  //      operator UI's "what did each turn cost" historical view.
+  // Per architectural rule: log first, persist after. We do NOT
+  // await the PG write; failure to persist is silent.
+  ctx.log(
+    `  prompt-budget role=${role} feature=${featureId ?? '-'} ` +
+    `total=${prompt.length} substrate=${substrateContext.length} ` +
+    `history=${featureHistory.length}`,
+  );
+  if (ctx.pg && ctx.workspaceId) {
+    try {
+      const { recordPromptComposition } = await import('./prompt-telemetry.js');
+      const { harnessSlug: getSlug } = await import('./state.js');
+      recordPromptComposition(ctx.pg, {
+        workspaceId: ctx.workspaceId,
+        harnessSlug: getSlug(ctx.projectDir),
+        featureId,
+        role,
+        runId,
+        totalChars: prompt.length,
+        substrateChars: substrateContext.length,
+        historyChars: featureHistory.length,
+      });
+    } catch { /* best-effort */ }
+  }
 
   // 10. Spawn claude. logDir creation is deferred until we actually
   // need to write files (CLI fallback path); PG-canonical mode never
@@ -532,7 +676,25 @@ export async function invoke(
   }
 
   const outcome: SpawnOutcome = await new Promise((resolve) => {
-    const child = spawn(command, finalArgv, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    // Spawn env: defensively disable omp's autonomous memory backend
+    // for harness invocations. The harness composes the prompt itself
+    // (substrate + role + memory + identity + feature history) and
+    // owns context discipline; we don't want omp's `recall`/`reflect`
+    // to autonomously inject extra context that competes.
+    //
+    // Both env keys covered:
+    //   - `OMP_MEMORIES_ENABLED=false` — pre-backend `memories.enabled` flag
+    //   - `OMP_MEMORY_BACKEND=off`     — explicit backend selection
+    // Per omp's env docs, `OMP_*` keys are mirrored to `PI_*`. Setting
+    // both forms protects against an unannounced rename.
+    const spawnEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      OMP_MEMORIES_ENABLED: 'false',
+      OMP_MEMORY_BACKEND: 'off',
+      PI_MEMORIES_ENABLED: 'false',
+      PI_MEMORY_BACKEND: 'off',
+    };
+    const child = spawn(command, finalArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
 
     let timer: NodeJS.Timeout | undefined;
     let timedOut = false;

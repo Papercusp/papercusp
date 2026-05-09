@@ -46,6 +46,17 @@ export interface BuildPromptInput {
    * Empty string disables — the prompt still works without it.
    */
   substrateContext?: string;
+  /**
+   * Pre-fetched feature-history block (notes + debugger findings +
+   * recent audit transitions). Computed by the caller via
+   * `fetchFeatureHistory()` only when a feature ID is in scope.
+   *
+   * Cache discipline: this content changes per (feature, turn) and is
+   * appended at the END of the assembled prompt — after runtime context
+   * — so it never invalidates the cacheable preamble (role + override +
+   * memory + identity). Empty string disables.
+   */
+  featureHistory?: string;
 }
 
 function fileContents(path: string): string {
@@ -124,6 +135,15 @@ export function buildPrompt(input: BuildPromptInput): string {
     out.push(`  \`[<ISO-8601-timestamp>] ${input.role} <feature_id-or-dash>: <one-line observation>\``);
     out.push('  Do not dump logs. Do not duplicate existing lines. Skip silently if you');
     out.push('  have nothing generalizable to add.');
+  }
+
+  // 6. Feature history — APPENDED LAST so it never invalidates the
+  //    cacheable preamble. Per-feature, per-turn content; expected to
+  //    differ across calls. See feature-history.ts and the "cache
+  //    discipline" comment on `featureHistory` in BuildPromptInput.
+  if (input.featureHistory && input.featureHistory.trim()) {
+    out.push('\n---');
+    out.push(input.featureHistory);
   }
 
   return out.join('\n');
