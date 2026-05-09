@@ -1,14 +1,17 @@
 #!/usr/bin/env -S npx tsx
 /**
- * Orchestrator CLI entry point. Equivalent to invoking
- * `bash <harness>/run.sh`, but routes through the TypeScript implementation
- * when `PAPERCUSP_USE_TS_ORCHESTRATOR=1` is set.
+ * Orchestrator CLI entry point. The TypeScript orchestrator is the
+ * default; `PAPERCUSP_USE_TS_ORCHESTRATOR=0` opts back into bash
+ * `run.sh` (deprecated, scheduled for removal — kept only as an
+ * emergency escape hatch).
  *
  * Routing logic:
- *   - flag unset → spawn bash run.sh (default until parity is verified
- *     in production)
- *   - flag set → run the TS main loop end-to-end; every decision branch
- *     is now handled in TS (Stage 5a closed the last gap)
+ *   - flag unset (default) → run the TS main loop end-to-end. All
+ *     decision verbs are handled including NEXT_EXPERT / NEXT_FEEDBACK /
+ *     NEXT_SCOPER (formerly bash-only).
+ *   - PAPERCUSP_USE_TS_ORCHESTRATOR=0 → fall back to bash run.sh.
+ *     Use only if you hit a TS bug in production AND need to ship; file
+ *     a parity issue at the same time so we can delete run.sh.
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -20,7 +23,9 @@ import { bootstrapOrchestratorPg } from '../src/pg-bootstrap.js';
 import { activeWorkspaceId } from '../src/workspace.js';
 import { harnessSlug } from '../src/state.js';
 
-const useTs = process.env.PAPERCUSP_USE_TS_ORCHESTRATOR === '1';
+// TS is the default. Set PAPERCUSP_USE_TS_ORCHESTRATOR=0 to opt OUT
+// (back to bash run.sh) — emergency escape hatch only.
+const useTs = process.env.PAPERCUSP_USE_TS_ORCHESTRATOR !== '0';
 const { harnessDir, projectDir, stateDir, logDir } = resolvePaths();
 const runShPath = `${harnessDir}/run.sh`;
 
@@ -55,7 +60,7 @@ function runBash(): never {
 
 async function runTs(): Promise<never> {
   const logger = createLogger(stateDir);
-  logger.log('PAPERCUSP_USE_TS_ORCHESTRATOR=1 set — TS orchestrator active');
+  logger.log('TS orchestrator active (default).');
 
   const cfg = readConfig(stateDir);
   const phase = (cfg.phase as string) ?? 'staging';

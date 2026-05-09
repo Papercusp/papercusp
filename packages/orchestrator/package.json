@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "TypeScript port of the Papercusp harness orchestrator (run.sh). Drops the bash prereq for Windows users while keeping the agent CLI shell-out (default `omp -p` via Meridian + Claude Max OAuth, or `claude -p` when AGENT_BACKEND=claude-code) so Claude Max subscriptions continue to work without API keys. Feature-flagged via PAPERCUSP_USE_TS_ORCHESTRATOR — falls through to bash run.sh by default until parity is verified.",
+  "description": "TypeScript port of the Papercusp harness orchestrator. Default since v0.0.x — set PAPERCUSP_USE_TS_ORCHESTRATOR=0 only as an emergency escape hatch back to the deprecated bash run.sh. Drops the bash prereq for Windows users while keeping the agent CLI shell-out (default `omp -p` via Meridian + Claude Max OAuth, or `claude -p` when AGENT_BACKEND=claude-code) so Claude Max subscriptions continue to work without API keys.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {

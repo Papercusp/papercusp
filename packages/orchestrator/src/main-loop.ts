@@ -570,6 +570,15 @@ async function dispatchDecision(
     case 'RUN_TESTS':
       return handleRunTests(ctx, logger);
 
+    case 'NEXT_EXPERT':
+      return handleNextExpert(parsed, ctx, logger);
+
+    case 'NEXT_FEEDBACK':
+      return handleNextFeedback(parsed, ctx, logger);
+
+    case 'NEXT_SCOPER':
+      return handleNextScoper(parsed, ctx, logger);
+
     default: {
       // Unreachable — parseDecision narrows to DECISION_VERBS which we
       // exhaustively handle above. The exhaustive check appeases TS.
@@ -2087,4 +2096,110 @@ function listChangedFiles(dir: string): string[] {
     if (path) out.push(path);
   }
   return out;
+}
+
+// ─── Bash-parity handlers for NEXT_EXPERT / NEXT_FEEDBACK / NEXT_SCOPER ──
+
+/**
+ * NEXT_EXPERT EXP-NNN — invokes the `expert` role for the given
+ * instanced expert. Identity + state lives in
+ * .harness/experts/<EXP-id>/. The invoke pipeline picks up
+ * EXPERT_DIR / EXPERT_SPEC from EXPERT_ID via assembleRolePrompt.
+ *
+ * Mirrors run.sh's NEXT_EXPERT handler (line 2692).
+ */
+async function handleNextExpert(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+): Promise<DispatchResult> {
+  const eid = parsed.arg ?? '';
+  if (!eid) {
+    logger.log('ERROR: NEXT_EXPERT missing expert id');
+    return { terminal: false, exitCode: 0, reason: 'idle' };
+  }
+  logger.log(`EXPERT ${eid} starting`);
+  try {
+    await invoke(ctx, 'expert', [`FEATURE_ID=${eid}`, `EXPERT_ID=${eid}`]);
+  } catch (err) {
+    logger.log(`EXPERT ${eid} error: ${(err as Error).message}`);
+  }
+  logger.log(`EXPERT ${eid} iteration complete`);
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * NEXT_FEEDBACK EXP-NNN.FB-NNN — invokes the `feedback` role for one
+ * feedback instance under an expert. The dot separator is forced by
+ * the orchestrator's argument-character class (`.` is allowed; `/`
+ * `:` aren't).
+ *
+ * Reads the persona from
+ * `<stateDir>/experts/<EXP>/feedback/<FB>/persona.txt` so the
+ * invocation context includes which lens to use.
+ *
+ * Mirrors run.sh's NEXT_FEEDBACK handler (line 2710).
+ */
+async function handleNextFeedback(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+): Promise<DispatchResult> {
+  const fbArg = parsed.arg ?? '';
+  if (!fbArg || !fbArg.includes('.')) {
+    logger.log(`ERROR: NEXT_FEEDBACK expects EXP-NNN.FB-NNN; got '${fbArg}'`);
+    return { terminal: false, exitCode: 0, reason: 'idle' };
+  }
+  const dotIdx = fbArg.indexOf('.');
+  const eid = fbArg.slice(0, dotIdx);
+  const fbid = fbArg.slice(dotIdx + 1);
+  if (!eid || !fbid) {
+    logger.log(`ERROR: NEXT_FEEDBACK expects EXP-NNN.FB-NNN; got '${fbArg}'`);
+    return { terminal: false, exitCode: 0, reason: 'idle' };
+  }
+  let persona = '';
+  const personaPath = join(ctx.stateDir, 'experts', eid, 'feedback', fbid, 'persona.txt');
+  if (existsSync(personaPath)) {
+    try {
+      persona = readFileSync(personaPath, 'utf8').trim();
+    } catch {
+      // non-fatal — fall through with empty persona
+    }
+  }
+  logger.log(`FEEDBACK ${eid}/${fbid} starting (persona=${persona})`);
+  try {
+    await invoke(ctx, 'feedback', [
+      `FEEDBACK_ID=${fbid}`,
+      `EXPERT_ID=${eid}`,
+      `FEEDBACK_PERSONA=${persona}`,
+    ]);
+  } catch (err) {
+    logger.log(`FEEDBACK ${eid}/${fbid} error: ${(err as Error).message}`);
+  }
+  logger.log(`FEEDBACK ${eid}/${fbid} iteration complete`);
+  return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * NEXT_SCOPER [phaseN] — re-invokes the scoper. With no arg, runs the
+ * default phase1; with `phase2`, derives features from finalized
+ * experts. Idempotent — re-running with no new finalizations is a no-op.
+ *
+ * Mirrors run.sh's NEXT_SCOPER handler (line 2734).
+ */
+async function handleNextScoper(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+): Promise<DispatchResult> {
+  const phase = parsed.arg ?? '';
+  logger.log(`SCOPER starting${phase ? ` (phase=${phase})` : ''}`);
+  try {
+    const extras = phase ? [`SCOPER_PHASE=${phase}`] : [];
+    await invoke(ctx, 'scoper', extras);
+  } catch (err) {
+    logger.log(`SCOPER error: ${(err as Error).message}`);
+  }
+  logger.log('SCOPER complete');
+  return { terminal: false, exitCode: 0, reason: 'idle' };
 }

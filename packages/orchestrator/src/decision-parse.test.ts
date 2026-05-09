@@ -67,10 +67,19 @@ test('parseDecision — argument-less verbs return null arg', () => {
 
 test('DECISION_VERBS — every verb is listed', () => {
   // Sanity: keep this list in sync with bash's regex group.
-  assert.equal(DECISION_VERBS.length, 19);
+  // Verbs intentionally added for parity with run.sh: NEXT_EXPERT,
+  // NEXT_FEEDBACK, NEXT_SCOPER. Verbs intentionally removed (orphan
+  // entries with no bash handler and no TS handler): NEXT_PROJECT_MANAGER,
+  // NEXT_SUMMARIZER.
+  assert.equal(DECISION_VERBS.length, 20);
   assert.ok(DECISION_VERBS.includes('DONE'));
   assert.ok(DECISION_VERBS.includes('NEXT_WORKER'));
   assert.ok(DECISION_VERBS.includes('NEXT_WORKER_CEO_MODE'));
+  assert.ok(DECISION_VERBS.includes('NEXT_EXPERT'));
+  assert.ok(DECISION_VERBS.includes('NEXT_FEEDBACK'));
+  assert.ok(DECISION_VERBS.includes('NEXT_SCOPER'));
+  assert.ok(!DECISION_VERBS.includes('NEXT_PROJECT_MANAGER' as never));
+  assert.ok(!DECISION_VERBS.includes('NEXT_SUMMARIZER' as never));
 });
 
 test('parseDecision — adaptive N=k token', () => {
