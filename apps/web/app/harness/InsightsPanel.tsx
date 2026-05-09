@@ -108,24 +108,23 @@ export default function InsightsPanel({
             sub={stats.avgAttemptsPerPassed > 0 ? `avg ${stats.avgAttemptsPerPassed.toFixed(1)} attempts` : ''}
           />
 
-          {/* Status distribution bar chart */}
-          <div className="h-insights-section" style={{ gridColumn: '1 / -1' }}>
+          <div className="h-insights-section h-insights-status-section" style={{ gridColumn: '1 / -1' }}>
             <SectionTitle>Status distribution</SectionTitle>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="h-insights-status-list" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {STATUS_ORDER.map((st) => {
                 const count = stats.byStatus[st];
                 const s = STATUS[st];
                 const pct = (count / maxStatusCount) * 100;
                 return (
-                  <div key={st} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 40px', alignItems: 'center', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: SIZES.xs, color: s.text }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.solid }} />
+                  <div key={st} className="h-insights-status-row" style={{ display: 'grid', gridTemplateColumns: '100px 1fr 40px', alignItems: 'center', gap: 8 }}>
+                    <div className="h-insights-status-label" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: SIZES.xs, color: s.text }}>
+                      <span className="h-insights-status-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: s.solid }} />
                       {s.label}
                     </div>
-                    <div style={{ background: COLORS.bg, borderRadius: 2, height: 14, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: s.solid, transition: 'width 300ms' }} />
+                    <div className="h-insights-status-track" style={{ background: COLORS.bg, borderRadius: 2, height: 14, overflow: 'hidden' }}>
+                      <div className="h-insights-status-fill" style={{ height: '100%', width: `${pct}%`, background: s.solid, transition: 'width 300ms' }} />
                     </div>
-                    <div style={{ fontFamily: FONTS.mono, fontSize: SIZES.xs, color: COLORS.text, textAlign: 'right' }}>
+                    <div className="h-insights-status-count" style={{ fontFamily: FONTS.mono, fontSize: SIZES.xs, color: COLORS.text, textAlign: 'right' }}>
                       {count}
                     </div>
                   </div>
@@ -134,10 +133,9 @@ export default function InsightsPanel({
             </div>
           </div>
 
-          {/* Attempts histogram */}
-          <div className="h-insights-section" style={{ gridColumn: '1 / -1' }}>
+          <div className="h-insights-section h-insights-attempts-section" style={{ gridColumn: '1 / -1' }}>
             <SectionTitle>Attempts histogram</SectionTitle>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+            <div className="h-insights-attempts-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
               {stats.attemptsHist.map((count, i) => {
                 const labels = ['0', '1', '2', '3-4', '5+'];
                 const color = i < 2 ? COLORS.textMuted : i < 3 ? STATUS.in_progress.solid : i < 4 ? STATUS.blocked.solid : STATUS.failing.solid;
@@ -151,10 +149,10 @@ export default function InsightsPanel({
                     borderRadius: RADIUS.sm,
                     border: `1px solid ${COLORS.borderSubtle}`,
                   }}>
-                    <div style={{
+                    <div className="h-insights-attempt-meter" style={{
                       width: '100%', height: 60, display: 'flex', alignItems: 'flex-end',
                     }}>
-                      <div style={{
+                      <div className="h-insights-attempt-bar" style={{
                         width: '100%',
                         height: `${pct}%`,
                         background: color,
@@ -162,10 +160,10 @@ export default function InsightsPanel({
                         transition: 'height 300ms',
                       }} />
                     </div>
-                    <div style={{ fontFamily: FONTS.mono, fontSize: SIZES.base, color: COLORS.text, fontWeight: 600 }}>
+                    <div className="h-insights-attempt-count" style={{ fontFamily: FONTS.mono, fontSize: SIZES.base, color: COLORS.text, fontWeight: 600 }}>
                       {count}
                     </div>
-                    <div style={{ fontSize: SIZES.xs, color: COLORS.textDim }}>
+                    <div className="h-insights-attempt-label" style={{ fontSize: SIZES.xs, color: COLORS.textDim }}>
                       {labels[i]} attempts
                     </div>
                   </div>
@@ -243,13 +241,13 @@ function KpiCard({ label, value, sub, color }: { label: string; value: string; s
       borderRadius: RADIUS.sm,
       padding: '10px 12px',
     }}>
-      <div style={{ fontSize: '0.65rem', color: COLORS.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+      <div className="h-insights-kpi-label" style={{ fontSize: '0.65rem', color: COLORS.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
         {label}
       </div>
-      <div style={{ fontSize: '1.3rem', color: color ?? COLORS.text, fontWeight: 600, fontFamily: FONTS.mono, marginTop: 4 }}>
+      <div className="h-insights-kpi-value" style={{ fontSize: '1.3rem', color: color ?? COLORS.text, fontWeight: 600, fontFamily: FONTS.mono, marginTop: 4 }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: SIZES.xs, color: COLORS.textDim, marginTop: 2 }}>{sub}</div>}
+      {sub && <div className="h-insights-kpi-sub" style={{ fontSize: SIZES.xs, color: COLORS.textDim, marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
