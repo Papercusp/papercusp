@@ -15053,47 +15053,6 @@ html body .h-root.h-root :is(
   max-width: 720px;
 }
 
-.h-proposals-panel .h-proposals-flow {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-  margin-top: 8px;
-}
-
-.h-proposals-panel .h-proposals-flow span {
-  position: relative;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 10px;
-  border: 1px solid rgba(125, 211, 252, 0.18);
-  border-radius: 10px;
-  background:
-    radial-gradient(circle at 12% 10%, rgba(255,255,255,0.12), transparent 34%),
-    linear-gradient(180deg, rgba(9, 24, 40, 0.78), rgba(3, 10, 20, 0.88));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.055);
-}
-
-.h-proposals-panel .h-proposals-flow b {
-  flex: 0 0 auto;
-  color: color-mix(in oklab, var(--fg), #7dd3fc 12%);
-  font-size: 10.5px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.h-proposals-panel .h-proposals-flow em {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: color-mix(in oklab, var(--fg-dim), white 9%);
-  font-size: 10.5px;
-  font-style: normal;
-}
 
 .h-proposals-panel .h-proposals-view-tabs {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.055), 0 8px 18px rgba(0,0,0,0.18);
@@ -15230,9 +15189,6 @@ html body .h-root.h-root :is(
 }
 
 @media (max-width: 980px) {
-  .h-proposals-panel .h-proposals-flow {
-    grid-template-columns: 1fr;
-  }
 
   .h-proposals-panel .h-proposal-detail-head {
     grid-template-columns: 1fr !important;
@@ -16299,5 +16255,153 @@ html body .h-root.h-root :is(
 
   .h-proposals-panel .h-proposal-toolbar-main .h-proposal-sort {
     min-width: 0;
+  }
+}
+
+/* Insights panel redesign: stronger header, metric chips, responsive card grid. */
+.h-root .h-main-shell.embed > .h-insights-panel,
+.h-insights-panel {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(45, 212, 191, 0.12), transparent 28rem),
+    radial-gradient(circle at 90% 12%, rgba(125, 211, 252, 0.09), transparent 22rem),
+    linear-gradient(180deg, rgba(4, 13, 25, 0.98), rgba(2, 8, 18, 0.98)) !important;
+}
+
+.h-root .h-main-shell.embed > .h-insights-panel .h-insights-head,
+.h-insights-panel .h-insights-head {
+  min-height: 72px;
+  align-items: flex-start !important;
+  padding: 14px 16px !important;
+  gap: 14px !important;
+}
+
+.h-insights-title-stack {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.h-insights-title {
+  color: color-mix(in oklab, var(--fg), white 12%) !important;
+  font-size: 20px !important;
+  font-weight: 860 !important;
+  letter-spacing: -0.02em;
+}
+
+.h-insights-subtitle {
+  color: color-mix(in oklab, var(--fg-dim), white 10%) !important;
+  font-size: 11px !important;
+  font-weight: 650;
+}
+
+.h-insights-head-metrics {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.h-insights-head-metrics span {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  color: color-mix(in oklab, var(--fg-dim), white 10%);
+  border: 1px solid rgba(45, 212, 191, 0.22);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.10), transparent 34%),
+    rgba(45, 212, 191, 0.055);
+  font-size: 10.5px;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+.h-insights-head-metrics b {
+  color: color-mix(in oklab, var(--fg), #5eead4 18%);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.h-root .h-main-shell.embed > .h-insights-panel .h-insights-body,
+.h-insights-panel .h-insights-body {
+  padding: 14px !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  align-content: start;
+}
+
+.h-insights-panel .h-insights-kpi {
+  min-height: 86px;
+  position: relative;
+  overflow: hidden;
+  padding: 13px 14px !important;
+  border-radius: 15px !important;
+  isolation: isolate;
+}
+
+.h-insights-panel .h-insights-kpi::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--insight-card-accent, #2dd4bf);
+  box-shadow: 0 0 18px color-mix(in oklab, var(--insight-card-accent, #2dd4bf), transparent 68%);
+}
+
+.h-insights-panel .h-insights-kpi:nth-child(1) { --insight-card-accent: #22c55e; }
+.h-insights-panel .h-insights-kpi:nth-child(2) { --insight-card-accent: #f59e0b; }
+.h-insights-panel .h-insights-kpi:nth-child(3) { --insight-card-accent: #38bdf8; }
+.h-insights-panel .h-insights-kpi:nth-child(4) { --insight-card-accent: #c084fc; }
+
+.h-insights-panel .h-insights-section {
+  padding: 14px;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.07), transparent 22rem),
+    linear-gradient(180deg, rgba(8, 22, 36, 0.78), rgba(3, 10, 20, 0.88));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 12px 26px rgba(0, 0, 0, 0.18);
+}
+
+.h-insights-panel .h-insights-section > div:first-child {
+  color: color-mix(in oklab, var(--fg), #5eead4 12%) !important;
+  margin-bottom: 11px !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+}
+
+.h-insights-panel .h-insights-mini-card {
+  min-height: 118px;
+  justify-content: flex-end;
+  border-radius: 13px !important;
+}
+
+@media (max-width: 980px) {
+  .h-root .h-main-shell.embed > .h-insights-panel .h-insights-body,
+  .h-insights-panel .h-insights-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .h-root .h-main-shell.embed > .h-insights-panel .h-insights-body,
+  .h-insights-panel .h-insights-body {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .h-insights-panel .h-insights-head {
+    flex-direction: column;
+  }
+
+  .h-insights-head-metrics {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
   }
 }

@@ -567,11 +567,6 @@ export default function ProposalsPanel({ slug }: Props) {
             )}
           </div>
         </div>
-        <div className="h-proposals-flow" aria-label="Proposal workflow">
-          <span aria-label="Step 1, generate: scoper agent reads SPEC.md"><b>1. Generate</b><em>scoper agent reads SPEC.md</em></span>
-          <span aria-label="Step 2, review: choose apply or reject"><b>2. Review</b><em>choose apply or reject</em></span>
-          <span aria-label="Step 3, replan: accepted scope becomes features"><b>3. Replan</b><em>accepted scope becomes features</em></span>
-        </div>
         {editingGoal && (
           <div className="h-proposals-goal-editor">
             <textarea

@@ -50,6 +50,8 @@ export default function InsightsPanel({
 
   const maxStatusCount = Math.max(1, ...Object.values(stats.byStatus));
   const maxAttemptsBin = Math.max(1, ...stats.attemptsHist);
+  const passPct = Math.round(100 * stats.passed / Math.max(1, features.length));
+  const tokenTotal = totalInputTokens + totalOutputTokens;
 
   useEffect(() => {
     if (inline) return;
@@ -79,8 +81,15 @@ export default function InsightsPanel({
         borderBottom: `1px solid ${COLORS.border}`,
         display: 'flex', alignItems: 'center', gap: 10,
       }}>
-        <div style={{ fontSize: SIZES.md, color: COLORS.text, fontWeight: 600 }}>Insights</div>
-        <span style={{ fontSize: SIZES.xs, color: COLORS.textDim }}>iteration {iteration} · {features.length} features</span>
+        <div className="h-insights-title-stack">
+          <div className="h-insights-title" style={{ fontSize: SIZES.md, color: COLORS.text, fontWeight: 600 }}>Insights</div>
+          <span className="h-insights-subtitle" style={{ fontSize: SIZES.xs, color: COLORS.textDim }}>iteration {iteration} · {features.length} features</span>
+        </div>
+        <div className="h-insights-head-metrics" aria-label="Insights summary">
+          <span><b>{passPct}%</b> pass rate</span>
+          <span><b>{stats.stuckCount}</b> stuck</span>
+          <span><b>{tokenTotal > 0 ? `${(tokenTotal / 1000).toFixed(0)}k` : '0'}</b> tokens</span>
+        </div>
         {!inline && (
           <span style={{ marginLeft: 'auto' }}>
             <IconButton onClick={onClose}>close</IconButton>
@@ -90,7 +99,7 @@ export default function InsightsPanel({
 
         <div className="h-insights-body" style={{ padding: 16, overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           {/* Top KPIs */}
-          <KpiCard label="Passed" value={`${stats.passed}/${features.length}`} sub={`${Math.round(100 * stats.passed / Math.max(1, features.length))}%`} />
+          <KpiCard label="Passed" value={`${stats.passed}/${features.length}`} sub={`${passPct}%`} />
           <KpiCard label="Stuck (≥3 attempts)" value={String(stats.stuckCount)} sub={stats.stuckCount > 0 ? `${Math.round(stats.failRate * 100)}% of work` : 'none'} color={stats.stuckCount > 0 ? STATUS.blocked.text : COLORS.text} />
           <KpiCard label="Mission cost" value={`$${totalCostUsd.toFixed(2)}`} sub={`${(totalInputTokens/1000).toFixed(0)}k in · ${(totalOutputTokens/1000).toFixed(0)}k out`} />
           <KpiCard
