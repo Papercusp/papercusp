@@ -6,7 +6,6 @@
   "description": "MCP + HTTP tools for the design-phase agent loop. Designer agents use these to validate IR specs, lint anti-patterns, persist accepted specs to PG, browse design memos, and resolve the per-harness DESIGN_SPEC.md fallback chain. Plan: apps/operator/content/docs/design/design-phase-plan.mdx.",
   "author": "Papercusp",
   "license": "MIT",
-  "icon": "Palette",
   "capabilities": [
     "tools:design:validate_spec",
     "tools:design:lint_spec",
