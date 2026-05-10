@@ -1349,6 +1349,10 @@ export async function cmdPlugin(args: string[]): Promise<void> {
       return cmdPluginInvoke(rest);
     case 'watch':
       return cmdPluginWatch(rest);
+    case 'lint': {
+      const { cmdPluginLint } = await import('./plugin-lint.ts');
+      return cmdPluginLint(rest);
+    }
     case undefined:
     case 'help':
     case '--help':
@@ -1365,6 +1369,7 @@ ${bold('Subcommands:')}
   ${cyan('invoke <slug> <action>')} [--harness <slug>] [--params '<json>'] [--dry-run]
                                               Manually fire a plugin action (operator-facing). Exits 5 on ok=false.
   ${cyan('watch <slug>')} [--src <dir>]                       Dev-mode: tail plugin source for changes; emits "restart needed" hints.
+  ${cyan('lint')} [<dir>]                                     Validate papercusp.json against the schema + check entry point. Pre-publish sanity.
 
 ${dim('Plugins are installed via `papercusp install <slug>` and live in ~/.papercusp/global-plugins/.')}
 ${dim('Per-harness state at ~/.papercusp/harnesses/<harness-slug>/{enabled-plugins.json, plugin-configs/}.')}`);
