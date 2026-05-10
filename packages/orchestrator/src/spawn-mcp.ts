@@ -48,7 +48,13 @@ export interface SpawnMcpConfigInput {
   parentSpawnId?: string | null;
 }
 
-const DEFAULT_OPERATOR_URL = 'http://localhost:3070/api/sse';
+// Default port flips on NODE_ENV: dev operator runs on :3055, prod on :3070.
+// Override with PAPERCUSP_OPERATOR_URL when neither default applies (CI,
+// Tauri sidecar with custom port, etc).
+const DEFAULT_OPERATOR_URL =
+  process.env.NODE_ENV === 'development'
+    ? 'http://localhost:3055/api/sse'
+    : 'http://localhost:3070/api/sse';
 
 /** Build the JSON-serializable mcp.json contents for a spawn. */
 export function buildSpawnMcpConfig(input: SpawnMcpConfigInput): {

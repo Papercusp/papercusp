@@ -100,6 +100,13 @@ export interface InvokeContext {
    * (the only legitimate pre-DB filesystem read).
    */
   workspaceId?: string;
+  /**
+   * Extra env vars merged into every spawned agent's process env.
+   * Resolved once at orchestrator startup from PG (Migration 047 —
+   * search-provider keys); attached to ctx so all `invoke()` call
+   * sites pick them up without per-site plumbing.
+   */
+  extraSpawnEnv?: Record<string, string>;
 }
 
 /** What the spawn step actually returns (richer than the public InvokeResult). */
@@ -395,6 +402,14 @@ export interface InvokeOptions {
    * `.mcp.json` so plugin-tool calls from this child carry the lineage.
    */
   parentSpawnId?: string | null;
+  /**
+   * Extra env vars to inject into the spawned agent's process. The
+   * operator passes decrypted search-provider keys (Migration 047) here
+   * so workers/validators/scoper/architect can use OMP's web_search
+   * providers. The orchestrator itself doesn't reach into operator
+   * state — the caller (operator) computes these and passes them in.
+   */
+  extraEnv?: Record<string, string>;
 }
 
 export async function invoke(
@@ -703,8 +718,14 @@ export async function invoke(
     //   - `OMP_MEMORY_BACKEND=off`     — explicit backend selection
     // Per omp's env docs, `OMP_*` keys are mirrored to `PI_*`. Setting
     // both forms protects against an unannounced rename.
+    // Caller-supplied env on the ctx (e.g. decrypted search-provider keys
+    // from Migration 047, resolved once at orchestrator boot). Spread
+    // before the OMP_* memory-disable flags so we don't let the caller
+    // accidentally override those.
     const spawnEnv: NodeJS.ProcessEnv = {
       ...process.env,
+      ...(ctx.extraSpawnEnv ?? {}),
+      ...(options.extraEnv ?? {}),
       OMP_MEMORIES_ENABLED: 'false',
       OMP_MEMORY_BACKEND: 'off',
       PI_MEMORIES_ENABLED: 'false',
