@@ -534,40 +534,70 @@ async function installOne(slug: string, version: string | undefined, opts: Insta
 
   const baseDir = probedKind === 'plugin' ? GLOBAL_PLUGINS_DIR : HARNESSES_DIR;
   const installDir = join(baseDir, slug);
-  if (existsSync(installDir)) {
-    console.log(`  ${dim('cleaning previous install at')} ${installDir}`);
-    await fs.rm(installDir, { recursive: true, force: true });
-  }
-  await fs.mkdir(installDir, { recursive: true });
 
-  // Download tarball.
+  // Atomic install — download + extract into a sibling temp dir first,
+  // then swap into place. Without this, a failed download or bad
+  // tarball leaves the user with no install at all (the previous
+  // working version was already removed). This footgun is most painful
+  // on plugin update: a transient marketplace 503 destroys the working
+  // copy.
   const safeName = slug.replace(/[/@]/g, '_');
-  const tarballPath = join(installDir, `${safeName}-${resolvedVersion}.tar.gz`);
-  console.log(`  downloading tarball...`);
-  await fetchToFile(
-    `${MARKETPLACE_URL}/download/${encodeURIComponent(slug)}/${encodeURIComponent(resolvedVersion!)}`,
-    tarballPath,
-  );
-  console.log(`  ${green('✓')} ${dim(tarballPath)}`);
+  const stagingDir = join(baseDir, `.${safeName}-staging-${process.pid}-${Date.now()}`);
+  await fs.mkdir(stagingDir, { recursive: true });
 
-  // Compute integrity hash.
-  const tarballBytes = await fs.readFile(tarballPath);
-  const integrity = 'sha256-' + (await import('node:crypto'))
-    .createHash('sha256')
-    .update(tarballBytes)
-    .digest('hex');
+  // Track whether we mutated installDir so failure handlers can clean up.
+  let stagingPromoted = false;
+  try {
+    // Download tarball.
+    const tarballPath = join(stagingDir, `${safeName}-${resolvedVersion}.tar.gz`);
+    console.log(`  downloading tarball...`);
+    await fetchToFile(
+      `${MARKETPLACE_URL}/download/${encodeURIComponent(slug)}/${encodeURIComponent(resolvedVersion!)}`,
+      tarballPath,
+    );
+    console.log(`  ${green('✓')} ${dim(tarballPath)}`);
 
-  // Extract.
-  console.log(`  extracting...`);
-  const extract = spawnSync('tar', ['xzf', tarballPath, '-C', installDir], { encoding: 'utf8' });
-  if (extract.status !== 0) die(`install: tar failed: ${extract.stderr}`);
-  console.log(`  ${green('✓')} extracted to ${dim(installDir)}`);
+    // Compute integrity hash.
+    const tarballBytes = await fs.readFile(tarballPath);
+    var integrity = 'sha256-' + (await import('node:crypto'))
+      .createHash('sha256')
+      .update(tarballBytes)
+      .digest('hex');
 
-  // Validate manifest.
+    // Extract into staging.
+    console.log(`  extracting...`);
+    const extract = spawnSync('tar', ['xzf', tarballPath, '-C', stagingDir], { encoding: 'utf8' });
+    if (extract.status !== 0) die(`install: tar failed: ${extract.stderr}`);
+    console.log(`  ${green('✓')} extracted to ${dim(stagingDir)}`);
+
+    // Validate the staged manifest BEFORE swapping. Validating after the
+    // swap would leave a broken install in place if the manifest fails
+    // checks — same footgun the staging strategy is trying to fix.
+    const stagedManifestPath = join(stagingDir, 'papercusp.json');
+    const stagedManifest = await readJson<any>(stagedManifestPath);
+    if (!stagedManifest) die(`install: tarball missing papercusp.json`);
+    if (stagedManifest.name !== slug) die(`install: manifest name "${stagedManifest.name}" doesn't match install slug "${slug}"`);
+
+    // Swap staging → installDir. Remove old install last so a failed
+    // mkdir(parent) above doesn't lose the previous working copy.
+    if (existsSync(installDir)) {
+      console.log(`  ${dim('replacing previous install at')} ${installDir}`);
+      await fs.rm(installDir, { recursive: true, force: true });
+    }
+    await fs.mkdir(dirname(installDir), { recursive: true });
+    await fs.rename(stagingDir, installDir);
+    stagingPromoted = true;
+  } finally {
+    if (!stagingPromoted) {
+      try { await fs.rm(stagingDir, { recursive: true, force: true }); } catch { /* */ }
+    }
+  }
+
+  // Manifest re-read from the now-promoted installDir (re-binds for the
+  // existing downstream code that references `manifest`/`manifestPath`).
   const manifestPath = join(installDir, 'papercusp.json');
   const manifest = await readJson<any>(manifestPath);
   if (!manifest) die(`install: tarball missing papercusp.json`);
-  if (manifest.name !== slug) die(`install: manifest name "${manifest.name}" doesn't match install slug "${slug}"`);
   // Authoritative kind from the on-disk manifest. If our probe was wrong (older
   // marketplace deploy that didn't include kind), move the dir to the right place.
   const finalKind: 'plugin' | 'template' = manifest.kind === 'plugin' ? 'plugin' : 'template';
