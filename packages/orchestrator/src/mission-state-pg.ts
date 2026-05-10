@@ -167,6 +167,36 @@ export async function setReadyForProdPg(ctx: MissionStatePgContext): Promise<voi
   `;
 }
 
+/**
+ * Reset mission-scoped state at the start of a new mission. Clears
+ * `cost_warn_fired` and `ready_for_prod_at`; preserves `lanes`
+ * (the new mission's persistLanesPg call will overwrite them).
+ *
+ * Called from `runMainLoopBody` immediately before the iteration loop
+ * opens, so each `run.sh` invocation gets fresh sentinels.
+ *
+ * Background: when this table was introduced (Phase 2 of the
+ * orchestrator → PG arc), the file-based sentinels it replaced
+ * (`<stateDir>/.cost-warn-fired`, `<stateDir>/ready-for-prod.flag`)
+ * lived in <stateDir>/ which got snapshotted but **not cleared between
+ * runs**. The `cost_warn_fired` semantic was always "fires once per
+ * mission" — a `run.sh` re-invocation was supposed to be a fresh
+ * mission and re-fire the warn at the threshold. Without an explicit
+ * reset, the PG row persists `true` forever once set.
+ */
+export async function clearMissionStatePg(ctx: MissionStatePgContext): Promise<void> {
+  const now = Date.now();
+  await ctx.pg`
+    INSERT INTO harness_shared.harness_mission_state
+      (workspace_id, harness_slug, cost_warn_fired, ready_for_prod_at, updated_at)
+    VALUES (${ctx.workspaceId}, ${ctx.harnessSlug}, false, NULL, ${now})
+    ON CONFLICT (workspace_id, harness_slug) DO UPDATE
+      SET cost_warn_fired   = false,
+          ready_for_prod_at = NULL,
+          updated_at        = EXCLUDED.updated_at
+  `;
+}
+
 /** UPSERT the entire lanes array. Other columns preserved. */
 export async function persistLanesPg(
   ctx: MissionStatePgContext,

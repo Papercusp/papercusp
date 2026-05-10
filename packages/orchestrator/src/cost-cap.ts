@@ -4,7 +4,11 @@
  *   - Sum total_cost_usd across all *.jsonl in <logDir>
  *   - If config.maxCostUsd is set and total >= cap → exit 6
  *   - Soft warn at maxCostUsdWarnThreshold (default 0.8) — fires once
- *     per mission (sentinel file <stateDir>/.cost-warn-fired)
+ *     per mission. Sentinel is `harness_mission_state.cost_warn_fired`
+ *     (PG-canonical) or `<stateDir>/.cost-warn-fired` (FS fallback). The
+ *     PG row is reset to false at mission start by clearMissionStatePg
+ *     in `runMainLoopBody` so each new run.sh invocation re-fires the
+ *     warn at the threshold.
  *   - Optional auto-pause via SIGSTOP when warn threshold hit
  *     (config.maxCostUsdAutoPause)
  *

@@ -342,6 +342,27 @@ async function runMainLoopBody(
   // Fire Papercusp plugin lifecycle: beforeMissionStart.
   fireLifecycleHook(ctx, 'beforeMissionStart', logger.log);
 
+  // Reset mission-scoped state so per-mission sentinels (cost-warn-fired,
+  // ready-for-prod) start fresh on each `run.sh` invocation. The PG row
+  // is keyed (workspace_id, harness_slug); without an explicit reset
+  // here, the file-based "fires once per mission" semantic the doc
+  // strings claim (e.g. cost-cap.ts:148) silently became "fires once
+  // per harness, ever." See clearMissionStatePg's docstring for full
+  // rationale.
+  if (ctx.pg && ctx.workspaceId) {
+    try {
+      const { clearMissionStatePg } = await import('./mission-state-pg');
+      const { harnessSlug } = await import('./state');
+      await clearMissionStatePg({
+        pg: ctx.pg,
+        workspaceId: ctx.workspaceId,
+        harnessSlug: harnessSlug(ctx.projectDir),
+      });
+    } catch (e) {
+      logger.log(`  mission-state reset failed (non-fatal): ${(e as Error).message ?? e}`);
+    }
+  }
+
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     logger.log(`── iteration ${iteration} ──`);
 
