@@ -649,6 +649,111 @@ async function read_token(input) {
   return { content: [{ type: 'text', text: JSON.stringify(tok, null, 2) }] };
 }
 
+async function get_accepted_spec(input, ctx) {
+  if (!input || typeof input.featureId !== 'string') {
+    return { isError: true, content: [{ type: 'text', text: 'get_accepted_spec: input.featureId (string) is required' }] };
+  }
+  const postgres = require('postgres');
+  const url = process.env.HARNESS_ADMIN_DATABASE_URL
+    || process.env.HARNESS_DATABASE_URL
+    || 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+  const sql = postgres(url, { max: 1, idle_timeout: 5 });
+  try {
+    const rows = await sql.begin(async (tx) => {
+      await tx.unsafe(`SELECT set_config('app.workspace_id', $1, true)`, [ctx.workspaceId]);
+      // Resolve the accepted spec via design_spec_id pointer on the feature.
+      return await tx`
+        SELECT a.id, a.payload, a.metadata, a.created_ts
+          FROM harness_shared.harness_features_consolidated f
+          JOIN harness_shared.harness_design_artifacts a
+            ON a.harness_slug = f.harness_slug AND a.id = f.design_spec_id
+         WHERE f.harness_slug = ${ctx.harnessSlug}
+           AND f.feature_id   = ${input.featureId}
+           AND a.kind         = 'spec'
+         LIMIT 1
+      `;
+    });
+    if (rows.length === 0) {
+      return { isError: true, content: [{ type: 'text', text: `no accepted spec for feature ${input.featureId}` }] };
+    }
+    const r = rows[0];
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          specId: r.id,
+          ir: r.payload,
+          metadata: r.metadata,
+          createdTs: r.created_ts == null ? null : Number(r.created_ts),
+        }, null, 2),
+      }],
+    };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+const REVIEW_VERDICTS = new Set(['approved', 'rejected', 'changes-requested']);
+
+async function record_review(input, ctx) {
+  if (!input || typeof input.featureId !== 'string') {
+    return { isError: true, content: [{ type: 'text', text: 'record_review: input.featureId (string) is required' }] };
+  }
+  if (!REVIEW_VERDICTS.has(input.verdict)) {
+    return { isError: true, content: [{ type: 'text', text: `record_review: input.verdict must be one of ${[...REVIEW_VERDICTS].join('|')}` }] };
+  }
+  const postgres = require('postgres');
+  const url = process.env.HARNESS_ADMIN_DATABASE_URL
+    || process.env.HARNESS_DATABASE_URL
+    || 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+  const sql = postgres(url, { max: 1, idle_timeout: 5 });
+  try {
+    const id = `review-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const now = Date.now();
+    const reviewPayload = {
+      verdict: input.verdict,
+      notes: typeof input.notes === 'string' ? input.notes : null,
+      reviewedSpecId: typeof input.specId === 'string' ? input.specId : null,
+    };
+    await sql.begin(async (tx) => {
+      await tx.unsafe(`SELECT set_config('app.workspace_id', $1, true)`, [ctx.workspaceId]);
+      await tx`
+        INSERT INTO harness_shared.harness_design_artifacts
+          (id, harness_slug, feature_id, kind, payload, metadata, created_ts)
+        VALUES (${id}, ${ctx.harnessSlug}, ${input.featureId}, 'review',
+                ${tx.json(reviewPayload)}, ${tx.json({ source: 'reviewer-agent' })}, ${now})
+      `;
+      // Approved keeps design_status=accepted (terminal-ok).
+      // Rejected and changes-requested flip back to 'pending' so the
+      // orchestrator's spawn loop re-spawns a designer with the verdict
+      // notes as new input. Plan §4.2.
+      if (input.verdict !== 'approved') {
+        await tx`
+          UPDATE harness_shared.harness_features_consolidated
+             SET design_status   = 'pending',
+                 design_spec_id  = NULL,
+                 updated_ts      = ${now}
+           WHERE harness_slug = ${ctx.harnessSlug}
+             AND feature_id   = ${input.featureId}
+        `;
+      }
+    });
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          ok: true,
+          reviewId: id,
+          verdict: input.verdict,
+          designStatusAfter: input.verdict === 'approved' ? 'accepted' : 'pending',
+        }, null, 2),
+      }],
+    };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 async function search_registry(input) {
   const ecosystem = (input && input.ecosystem) || 'react-tailwind';
   const query = (input && input.query) || '';
@@ -680,6 +785,8 @@ const tools = {
   get_registry_component,
   list_tokens,
   read_token,
+  get_accepted_spec,
+  record_review,
 };
 
 const plugin = {
@@ -698,9 +805,12 @@ const plugin = {
     'tools:design:get_registry_component',
     'tools:design:list_tokens',
     'tools:design:read_token',
+    'tools:design:get_accepted_spec',
+    'tools:design:record_review',
     'fs:read:design_memos',
     'fs:read:design_tokens',
     'db:write:harness_design_artifacts',
+    'db:write:harness_features_consolidated',
   ],
   tools,
 };

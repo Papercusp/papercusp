@@ -17,9 +17,12 @@
     "tools:design:get_registry_component",
     "tools:design:list_tokens",
     "tools:design:read_token",
+    "tools:design:get_accepted_spec",
+    "tools:design:record_review",
     "fs:read:design_memos",
     "fs:read:design_tokens",
-    "db:write:harness_design_artifacts"
+    "db:write:harness_design_artifacts",
+    "db:write:harness_features_consolidated"
   ],
   "tools": [
     {
@@ -218,6 +221,45 @@
         "worker": { "perRun": 50 }
       },
       "timeoutSec": 5
+    },
+    {
+      "name": "get_accepted_spec",
+      "description": "Fetch the accepted UI IR spec for a feature, resolved via design_spec_id. Returns the IR JSON, metadata (cost telemetry), and creation timestamp. Reviewer agents call this at the start of a post-ship review pass.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "featureId": { "type": "string", "minLength": 1 }
+        },
+        "required": ["featureId"]
+      },
+      "capabilities": ["tools:design:get_accepted_spec"],
+      "roles": ["reviewer", "designer", "architect", "operator"],
+      "rolesQuota": {
+        "reviewer": { "perRun": 30 },
+        "designer": { "perRun": 10 }
+      },
+      "timeoutSec": 10
+    },
+    {
+      "name": "record_review",
+      "description": "Record a reviewer verdict on a feature's accepted spec. Verdicts: 'approved' (keeps design_status=accepted, terminal), 'rejected' (flips design_status back to pending so the orchestrator re-spawns a designer), 'changes-requested' (same flip, with notes for the next designer). Plan §4.2.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "featureId": { "type": "string", "minLength": 1 },
+          "verdict": { "enum": ["approved", "rejected", "changes-requested"] },
+          "notes": { "type": "string" },
+          "specId": { "type": "string", "description": "Optional: the spec id this review applies to (recorded for audit)." }
+        },
+        "required": ["featureId", "verdict"]
+      },
+      "capabilities": ["tools:design:record_review", "db:write:harness_design_artifacts", "db:write:harness_features_consolidated"],
+      "roles": ["reviewer", "operator"],
+      "rolesQuota": {
+        "reviewer": { "perRun": 20 },
+        "operator": { "perRun": 50 }
+      },
+      "timeoutSec": 10
     }
   ]
 }

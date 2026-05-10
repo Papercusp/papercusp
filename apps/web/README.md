@@ -1,6 +1,6 @@
 # Papercusp web app — public framework copy
 
-> **Two-tree architecture (when read inside the `aviynw/Restart` monorepo).**
+> **Two-tree architecture (when read inside the `papercupai/papercup` monorepo).**
 > This directory is the **public-face copy** of the framework's web app.
 > Originally a `papercupai/papercusp` git submodule, it was vendored into
 > the parent repo in commit `636c4219` when `papercupai/*` repos became
