@@ -22,6 +22,11 @@ import type { FeatureRecord } from './types';
 export interface PgStateContext {
   pg: OrchestratorPg;
   workspaceId: string;
+  /** Optional harness slug — when set, used by setFeatureStatusPg for
+   *  the design-phase gate (PAPERCUSP_DESIGN_GATE=1). When unset, gate
+   *  is skipped silently (preserves the no-op behavior of pre-gate
+   *  callers). */
+  harnessSlug?: string;
 }
 
 interface FeatureRow {
@@ -100,6 +105,60 @@ export async function featureAttemptsPg(ctx: PgStateContext, featureId: string):
 }
 
 /**
+ * Design-phase gate: refuses to flip a feature into `in_progress` when
+ * the design phase is still pending.
+ *
+ * Reads needs_design + design_status from harness_shared.harness_features_consolidated
+ * (the canonical store, not per-harness). When needs_design is TRUE and
+ * design_status is NULL or 'pending', throws DesignGateError.
+ *
+ * Off by default — only fires when env PAPERCUSP_DESIGN_GATE=1. Lets
+ * existing harnesses ship without surprise gating; opt-in per workspace
+ * by setting the env in the operator's startup. Once a harness's
+ * features have all been triaged (accepted / ignored), turn the flag
+ * on for that workspace.
+ *
+ * See apps/operator/content/docs/design/design-phase-plan.mdx §2.
+ */
+export class DesignGateError extends Error {
+  readonly featureId: string;
+  readonly designStatus: string | null;
+  constructor(featureId: string, designStatus: string | null) {
+    super(
+      `feature ${featureId} cannot transition to in_progress: ` +
+        `needs_design=true, design_status=${designStatus ?? 'null'} ` +
+        `(must be 'accepted' or 'ignored'). Set design_status=ignored to skip the design phase.`,
+    );
+    this.name = 'DesignGateError';
+    this.featureId = featureId;
+    this.designStatus = designStatus;
+  }
+}
+
+function gateEnabled(): boolean {
+  return process.env.PAPERCUSP_DESIGN_GATE === '1';
+}
+
+async function checkDesignGate(
+  ctx: PgStateContext,
+  featureId: string,
+  harnessSlug: string,
+): Promise<void> {
+  if (!gateEnabled()) return;
+  const rows = await ctx.pg<{ needs_design: boolean; design_status: string | null }[]>`
+    SELECT needs_design, design_status
+      FROM harness_shared.harness_features_consolidated
+     WHERE harness_slug = ${harnessSlug} AND feature_id = ${featureId}
+     LIMIT 1
+  `;
+  const r = rows[0];
+  if (!r) return; // no row → can't gate; let the no-op behavior of UPDATE handle it
+  if (!r.needs_design) return;
+  if (r.design_status === 'accepted' || r.design_status === 'ignored') return;
+  throw new DesignGateError(featureId, r.design_status);
+}
+
+/**
  * Update a feature's status. Bumps or resets attempts per options. Returns
  * the full feature list after the write. No-op if the feature doesn't
  * exist (matches bash `feature_set_status`'s silent no-op behavior).
@@ -110,6 +169,10 @@ export async function setFeatureStatusPg(
   status: FeatureRecord['status'],
   options: { bumpAttempts?: boolean; resetAttempts?: boolean } = {},
 ): Promise<FeatureRecord[]> {
+  const slug = ctx.harnessSlug;
+  if (status === 'in_progress' && slug) {
+    await checkDesignGate(ctx, featureId, slug);
+  }
   const now = Date.now();
   if (options.resetAttempts) {
     await ctx.pg`

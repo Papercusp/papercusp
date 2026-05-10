@@ -39,8 +39,20 @@ export type StateContext = PgStateContext | undefined;
 export function stateCtx(ctx: {
   pg?: PgStateContext['pg'];
   workspaceId?: string;
+  harnessSlug?: string;
+  projectDir?: string;
 }): StateContext {
-  if (ctx.pg && ctx.workspaceId) return { pg: ctx.pg, workspaceId: ctx.workspaceId };
+  if (ctx.pg && ctx.workspaceId) {
+    // harnessSlug is optional; threaded so setFeatureStatusPg can apply
+    // the design-phase gate (PAPERCUSP_DESIGN_GATE=1). Falls back to
+    // basename(projectDir) when not explicitly set — matches the existing
+    // harnessSlug() helper's default-derivation, but without the
+    // synchronous registry round-trip.
+    const slug =
+      ctx.harnessSlug ??
+      (ctx.projectDir ? ctx.projectDir.split(/[/\\]/).filter(Boolean).pop() : undefined);
+    return { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: slug };
+  }
   return undefined;
 }
 
