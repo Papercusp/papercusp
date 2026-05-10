@@ -20,10 +20,13 @@ BEGIN;
   \quit 1
 \endif
 
+-- updated_at is BIGINT epoch-ms (not TIMESTAMPTZ), matching how
+-- mirrorPluginConfig writes it. Use extract+cast to keep the schema
+-- consistent.
 UPDATE harness_shared.plugin_configs
    SET config_ct = pgp_sym_encrypt(config::text, :key),
        config = NULL,
-       updated_at = now()
+       updated_at = (extract(epoch from now()) * 1000)::bigint
  WHERE config IS NOT NULL
    AND config_ct IS NULL;
 
