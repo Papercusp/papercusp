@@ -57,15 +57,18 @@ async function writeIfLarge(content, ctx, format, tag) {
   const filename = `code2prompt-${tag}-${sha}-${ts}.${ext}`;
   const fullPath = join(scratchDir, filename);
   await writeFile(fullPath, content, 'utf8');
+  const sizeBytes = Buffer.byteLength(content, 'utf8');
   const summary = {
     path: fullPath,
-    sizeBytes: Buffer.byteLength(content, 'utf8'),
+    sizeBytes,
     charCount: content.length,
     sample: content.slice(0, 500),
     note: `Output exceeded inline threshold (${inlineThreshold} chars). Use ctx.read or fs reads to fetch the full content.`,
   };
   return {
     content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }],
+    outputRef: fullPath,
+    outputSize: sizeBytes,
   };
 }
 

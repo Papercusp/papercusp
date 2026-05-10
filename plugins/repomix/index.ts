@@ -137,9 +137,10 @@ const pack: ToolHandler<PackInput> = async (input, ctx) => {
 
   ctx.progress(100, `wrote ${fullPath}`);
 
+  const sizeBytes = Buffer.byteLength(result.stdout, 'utf8');
   const summary = {
     path: fullPath,
-    sizeBytes: Buffer.byteLength(result.stdout, 'utf8'),
+    sizeBytes,
     charCount,
     sample: result.stdout.slice(0, 500),
     note: `Output exceeded inline threshold (${inlineThreshold} chars). Use ctx.read or fs reads to fetch the full content.`,
@@ -147,6 +148,8 @@ const pack: ToolHandler<PackInput> = async (input, ctx) => {
 
   return {
     content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }],
+    outputRef: fullPath,
+    outputSize: sizeBytes,
   };
 };
 
