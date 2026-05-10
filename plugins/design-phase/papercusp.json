@@ -1,0 +1,147 @@
+{
+  "name": "@papercupai/design-phase",
+  "version": "0.1.0",
+  "kind": "plugin",
+  "papercusp": "^0.1.0",
+  "description": "MCP + HTTP tools for the design-phase agent loop. Designer agents use these to validate IR specs, lint anti-patterns, persist accepted specs to PG, browse design memos, and resolve the per-harness DESIGN_SPEC.md fallback chain. Plan: apps/operator/content/docs/design/design-phase-plan.mdx.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "icon": "Palette",
+  "capabilities": [
+    "tools:design:validate_spec",
+    "tools:design:lint_spec",
+    "tools:design:submit_spec",
+    "tools:design:list_memos",
+    "tools:design:read_memo",
+    "tools:design:get_design_spec",
+    "fs:read:design_memos",
+    "db:write:harness_design_artifacts"
+  ],
+  "tools": [
+    {
+      "name": "validate_spec",
+      "description": "Schema-validate a UI IR document against the v0.1 JSON Schema. Returns structured errors. Use this before submit_spec to fail fast on shape problems.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ir": { "type": "object", "description": "The IR document to validate." }
+        },
+        "required": ["ir"]
+      },
+      "capabilities": ["tools:design:validate_spec"],
+      "roles": ["designer", "reviewer", "architect", "operator"],
+      "rolesQuota": {
+        "designer": { "perRun": 50 },
+        "reviewer": { "perRun": 20 },
+        "architect": { "perRun": 10 },
+        "operator": { "perRun": 100 }
+      },
+      "timeoutSec": 5
+    },
+    {
+      "name": "lint_spec",
+      "description": "Run anti-pattern lint rules over a UI IR document. Errors block acceptance; warnings flow to the design-crit prompt. Use this alongside validate_spec before submit_spec.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ir": { "type": "object" },
+          "knownTokens": { "type": "array", "items": { "type": "string" } },
+          "knownComponents": { "type": "array", "items": { "type": "string" } },
+          "knownIcons": { "type": "array", "items": { "type": "string" } },
+          "maxDepth": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["ir"]
+      },
+      "capabilities": ["tools:design:lint_spec"],
+      "roles": ["designer", "reviewer", "architect", "operator"],
+      "rolesQuota": {
+        "designer": { "perRun": 50 },
+        "reviewer": { "perRun": 20 },
+        "architect": { "perRun": 10 }
+      },
+      "timeoutSec": 5
+    },
+    {
+      "name": "submit_spec",
+      "description": "Validate + lint + persist a UI IR spec to PG. Writes a row to harness_shared.harness_design_artifacts (kind='spec') and updates harness_features_consolidated.design_status. Refuses if validation or lint errors exist (warnings are OK).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "featureId": { "type": "string", "minLength": 1 },
+          "ir": { "type": "object" },
+          "metadata": {
+            "type": "object",
+            "description": "Cost/token telemetry; passes through to the artifact row.",
+            "properties": {
+              "tokensIn": { "type": "integer" },
+              "tokensOut": { "type": "integer" },
+              "costUsd": { "type": "number" },
+              "modelId": { "type": "string" },
+              "elapsedMs": { "type": "integer" }
+            }
+          }
+        },
+        "required": ["featureId", "ir"]
+      },
+      "capabilities": ["tools:design:submit_spec", "db:write:harness_design_artifacts"],
+      "roles": ["designer"],
+      "rolesQuota": {
+        "designer": { "perRun": 5 }
+      },
+      "timeoutSec": 10
+    },
+    {
+      "name": "list_memos",
+      "description": "List design memos at apps/operator/content/docs/design/*.mdx with their slug, title, and (when frontmatter declares one) status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "enum": ["open", "addressed", "wontfix", "any"],
+            "default": "any"
+          }
+        }
+      },
+      "capabilities": ["tools:design:list_memos", "fs:read:design_memos"],
+      "roles": ["designer", "reviewer", "architect", "operator"],
+      "rolesQuota": {
+        "designer": { "perRun": 10 },
+        "reviewer": { "perRun": 10 }
+      },
+      "timeoutSec": 5
+    },
+    {
+      "name": "read_memo",
+      "description": "Read a single design memo's full markdown body by slug.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "slug": { "type": "string", "minLength": 1 } },
+        "required": ["slug"]
+      },
+      "capabilities": ["tools:design:read_memo", "fs:read:design_memos"],
+      "roles": ["designer", "reviewer", "architect", "operator"],
+      "rolesQuota": {
+        "designer": { "perRun": 20 },
+        "reviewer": { "perRun": 20 }
+      },
+      "timeoutSec": 5
+    },
+    {
+      "name": "get_design_spec",
+      "description": "Resolve the active DESIGN_SPEC.md via the harness → workspace → app-default → empty fallback chain. Returns the layer it came from, the source path, the body markdown, and parsed frontmatter.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "harnessRoot": { "type": "string" },
+          "workspaceRoot": { "type": "string" }
+        }
+      },
+      "capabilities": ["tools:design:get_design_spec", "fs:read:design_memos"],
+      "roles": ["designer", "reviewer", "architect", "operator"],
+      "rolesQuota": {
+        "designer": { "perRun": 5 }
+      },
+      "timeoutSec": 5
+    }
+  ]
+}
