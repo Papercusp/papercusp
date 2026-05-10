@@ -462,6 +462,111 @@ async function persistSpec(workspaceId, harnessSlug, featureId, ir, metadata) {
   }
 }
 
+// ─── component registry (mirror of apps/operator/lib/design-adapter-react-tailwind) ─
+const REGISTRY_REACT_TAILWIND = [
+  {
+    id: 'action.primary',
+    kind: 'component',
+    summary: 'Primary call-to-action button',
+    inputs: [
+      { name: 'label', type: 'string', required: true },
+      { name: 'icon', type: 'icon' },
+      { name: 'disabled', type: 'boolean' },
+      { name: 'loading', type: 'boolean' },
+    ],
+    variants: ['default', 'loading', 'disabled'],
+    states: ['hover', 'focus', 'active'],
+    ecosystems: {
+      'react-tailwind': {
+        sourcePointer: { path: 'libs/papercusp/apps/web/app/harness/Button.tsx' },
+        importHint: "import { Button } from '@papercusp/ui'",
+        propMap: { label: 'children', icon: 'leftIcon' },
+      },
+    },
+  },
+  {
+    id: 'action.secondary',
+    kind: 'component',
+    summary: 'Secondary / ghost button',
+    inputs: [
+      { name: 'label', type: 'string', required: true },
+      { name: 'icon', type: 'icon' },
+    ],
+    variants: ['ghost', 'outline'],
+    ecosystems: {
+      'react-tailwind': {
+        sourcePointer: { path: 'libs/papercusp/apps/web/app/harness/Button.tsx' },
+        importHint: "import { Button } from '@papercusp/ui'",
+        propMap: { label: 'children' },
+      },
+    },
+  },
+  {
+    id: 'control.select',
+    kind: 'component',
+    summary: 'Dropdown select control',
+    inputs: [
+      { name: 'value', type: 'string', required: true },
+      { name: 'options', type: 'array<{value,label}>', required: true },
+      { name: 'placeholder', type: 'string' },
+    ],
+    ecosystems: {
+      'react-tailwind': {
+        sourcePointer: { path: 'libs/papercusp/apps/web/app/harness/Select.tsx' },
+        importHint: "import { Select } from '@papercusp/ui'",
+      },
+    },
+  },
+  {
+    id: 'control.checkbox',
+    kind: 'component',
+    summary: 'Checkbox',
+    inputs: [
+      { name: 'checked', type: 'boolean', required: true },
+      { name: 'label', type: 'string' },
+    ],
+    ecosystems: {
+      'react-tailwind': {
+        sourcePointer: { path: 'libs/papercusp/apps/web/app/harness/Checkbox.tsx' },
+        importHint: "import { Checkbox } from '@papercusp/ui'",
+      },
+    },
+  },
+  {
+    id: 'feedback.banner',
+    kind: 'component',
+    summary: 'Inline banner for status/error/success messages',
+    inputs: [
+      { name: 'tone', type: '"info"|"warning"|"error"|"success"' },
+      { name: 'children', type: 'ReactNode', required: true },
+    ],
+    ecosystems: {
+      'react-tailwind': {
+        sourcePointer: { path: 'libs/papercusp/apps/web/app/harness/Banner.tsx' },
+        importHint: "import { Banner } from '@papercusp/ui'",
+      },
+    },
+  },
+];
+
+const REGISTRIES_BY_ECOSYSTEM = {
+  'react-tailwind': REGISTRY_REACT_TAILWIND,
+};
+
+function searchRegistryEntries(ecosystem, query) {
+  const list = REGISTRIES_BY_ECOSYSTEM[ecosystem] || [];
+  if (!query || !query.trim()) return list;
+  const q = query.toLowerCase();
+  return list.filter((e) => {
+    if (e.id.toLowerCase().includes(q)) return true;
+    if (e.summary.toLowerCase().includes(q)) return true;
+    for (const inp of e.inputs || []) {
+      if (inp.name.toLowerCase().includes(q)) return true;
+    }
+    return false;
+  });
+}
+
 // ─── tool handlers ─────────────────────────────────────────────────
 async function validate_spec(input) {
   if (!input || typeof input.ir !== 'object') {
@@ -526,6 +631,26 @@ async function get_design_spec(input, ctx) {
   return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
 }
 
+async function search_registry(input) {
+  const ecosystem = (input && input.ecosystem) || 'react-tailwind';
+  const query = (input && input.query) || '';
+  const results = searchRegistryEntries(ecosystem, query);
+  return { content: [{ type: 'text', text: JSON.stringify({ ecosystem, results }, null, 2) }] };
+}
+
+async function get_registry_component(input) {
+  if (!input || typeof input.id !== 'string') {
+    return { isError: true, content: [{ type: 'text', text: 'get_registry_component: input.id (string) is required' }] };
+  }
+  const ecosystem = input.ecosystem || 'react-tailwind';
+  const list = REGISTRIES_BY_ECOSYSTEM[ecosystem] || [];
+  const entry = list.find((e) => e.id === input.id);
+  if (!entry) {
+    return { isError: true, content: [{ type: 'text', text: `component "${input.id}" not in ${ecosystem} registry` }] };
+  }
+  return { content: [{ type: 'text', text: JSON.stringify(entry, null, 2) }] };
+}
+
 const tools = {
   validate_spec,
   lint_spec,
@@ -533,6 +658,8 @@ const tools = {
   list_memos,
   read_memo,
   get_design_spec,
+  search_registry,
+  get_registry_component,
 };
 
 const plugin = {
@@ -547,6 +674,8 @@ const plugin = {
     'tools:design:list_memos',
     'tools:design:read_memo',
     'tools:design:get_design_spec',
+    'tools:design:search_registry',
+    'tools:design:get_registry_component',
     'fs:read:design_memos',
     'db:write:harness_design_artifacts',
   ],

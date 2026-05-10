@@ -14,6 +14,8 @@
     "tools:design:list_memos",
     "tools:design:read_memo",
     "tools:design:get_design_spec",
+    "tools:design:search_registry",
+    "tools:design:get_registry_component",
     "fs:read:design_memos",
     "db:write:harness_design_artifacts"
   ],
@@ -140,6 +142,43 @@
       "roles": ["designer", "reviewer", "architect", "operator"],
       "rolesQuota": {
         "designer": { "perRun": 5 }
+      },
+      "timeoutSec": 5
+    },
+    {
+      "name": "search_registry",
+      "description": "Search the active ecosystem's component registry. Returns matching primitives with id, summary, inputs, variants. Designer agents call this first to pick from existing components instead of inventing new ones. v0.1 ships a hand-curated set for react-tailwind.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ecosystem": { "type": "string", "default": "react-tailwind" },
+          "query": { "type": "string", "description": "free-text filter; matches id/summary/input names" }
+        }
+      },
+      "capabilities": ["tools:design:search_registry"],
+      "roles": ["designer", "reviewer", "architect", "operator"],
+      "rolesQuota": {
+        "designer": { "perRun": 30 },
+        "reviewer": { "perRun": 10 }
+      },
+      "timeoutSec": 5
+    },
+    {
+      "name": "get_registry_component",
+      "description": "Get a single registry component's full entry by id (e.g. 'action.primary'). Returns the per-ecosystem source pointer, importHint, propMap, variants, states, examples — everything the implementer agent needs to consume the component.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "ecosystem": { "type": "string", "default": "react-tailwind" }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["tools:design:get_registry_component"],
+      "roles": ["designer", "reviewer", "architect", "operator", "worker"],
+      "rolesQuota": {
+        "designer": { "perRun": 30 },
+        "worker": { "perRun": 30 }
       },
       "timeoutSec": 5
     }
