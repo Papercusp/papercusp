@@ -631,6 +631,24 @@ async function get_design_spec(input, ctx) {
   return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
 }
 
+const TOKEN_HELPERS = require('./tokens.cjs');
+
+async function list_tokens(input) {
+  const r = await TOKEN_HELPERS.listTokens(input && input.category);
+  return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+}
+
+async function read_token(input) {
+  if (!input || typeof input.id !== 'string') {
+    return { isError: true, content: [{ type: 'text', text: 'read_token: input.id (string) is required' }] };
+  }
+  const tok = await TOKEN_HELPERS.readToken(input.id);
+  if (!tok) {
+    return { isError: true, content: [{ type: 'text', text: 'token "' + input.id + '" not found' }] };
+  }
+  return { content: [{ type: 'text', text: JSON.stringify(tok, null, 2) }] };
+}
+
 async function search_registry(input) {
   const ecosystem = (input && input.ecosystem) || 'react-tailwind';
   const query = (input && input.query) || '';
@@ -660,6 +678,8 @@ const tools = {
   get_design_spec,
   search_registry,
   get_registry_component,
+  list_tokens,
+  read_token,
 };
 
 const plugin = {
@@ -676,7 +696,10 @@ const plugin = {
     'tools:design:get_design_spec',
     'tools:design:search_registry',
     'tools:design:get_registry_component',
+    'tools:design:list_tokens',
+    'tools:design:read_token',
     'fs:read:design_memos',
+    'fs:read:design_tokens',
     'db:write:harness_design_artifacts',
   ],
   tools,

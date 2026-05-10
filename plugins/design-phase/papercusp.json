@@ -16,7 +16,10 @@
     "tools:design:get_design_spec",
     "tools:design:search_registry",
     "tools:design:get_registry_component",
+    "tools:design:list_tokens",
+    "tools:design:read_token",
     "fs:read:design_memos",
+    "fs:read:design_tokens",
     "db:write:harness_design_artifacts"
   ],
   "tools": [
@@ -179,6 +182,41 @@
       "rolesQuota": {
         "designer": { "perRun": 30 },
         "worker": { "perRun": 30 }
+      },
+      "timeoutSec": 5
+    },
+    {
+      "name": "list_tokens",
+      "description": "List DTCG tokens from the workspace token store (design/tokens/base.json). Returns flattened entries with id, type, value, description, group. Optional category filter (e.g. 'color', 'space', 'duration'). Designer agents call this to learn what tokens exist before composing IR; lint catches references to unknown tokens.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category": { "type": "string", "description": "Filter by id prefix (e.g. 'color') or DTCG type (e.g. 'dimension')." }
+        }
+      },
+      "capabilities": ["tools:design:list_tokens", "fs:read:design_tokens"],
+      "roles": ["designer", "reviewer", "architect", "operator", "worker"],
+      "rolesQuota": {
+        "designer": { "perRun": 20 },
+        "worker": { "perRun": 20 }
+      },
+      "timeoutSec": 5
+    },
+    {
+      "name": "read_token",
+      "description": "Read a single DTCG token by id (e.g. 'color.bg.surface'). Returns its type, value, description, and group.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1 }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["tools:design:read_token", "fs:read:design_tokens"],
+      "roles": ["designer", "reviewer", "architect", "operator", "worker"],
+      "rolesQuota": {
+        "designer": { "perRun": 50 },
+        "worker": { "perRun": 50 }
       },
       "timeoutSec": 5
     }
