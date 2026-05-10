@@ -607,7 +607,13 @@ async function cmdSnapshotInfo(args: string[]): Promise<void> {
     template?: { name?: string; version?: string };
     files?: unknown[];
     excluded?: unknown[];
-    plugins?: Array<{ name?: string; version?: string; capabilities?: string[] }>;
+    plugins?: Array<{
+      name?: string;
+      version?: string;
+      capabilities?: string[];
+      shapeJson?: string;
+      pluginVersionPinned?: boolean;
+    }>;
     redactions?: { blockedSecretsTier?: string; verifiedHits?: number; highRecallHits?: number };
     partial?: boolean;
   };
@@ -635,7 +641,40 @@ async function cmdSnapshotInfo(args: string[]): Promise<void> {
   if (m.plugins && m.plugins.length > 0) {
     console.log(`  ${dim('plugins:')}`);
     for (const p of m.plugins) {
-      console.log(`    - ${p.name}@${p.version ?? '?'}${p.capabilities?.length ? dim(`  [${p.capabilities.length} caps]`) : ''}`);
+      const pinned = p.pluginVersionPinned !== false ? dim(' pinned') : dim(' floating');
+      const caps = p.capabilities?.length ? dim(`  [${p.capabilities.length} caps]`) : '';
+      console.log(`    - ${p.name}@${p.version ?? '?'}${pinned}${caps}`);
+
+      // Surface share-semantics if the snapshot was captured under V1+.
+      if (p.shapeJson) {
+        try {
+          const shape = JSON.parse(p.shapeJson) as {
+            fields?: Record<string, { reason?: string; oauth?: { provider: string }; description?: string }>;
+            warnings?: string[];
+          };
+          const fields = Object.entries(shape.fields ?? {});
+          if (fields.length > 0) {
+            console.log(`      ${dim('redacted fields:')}`);
+            for (const [name, f] of fields) {
+              const tag =
+                f.reason === 'shareable-false' ? 'publisher-specific' :
+                f.reason === 'secret-strip' ? 'secret' :
+                f.reason === 'secret-warn' ? 'secret (warned)' :
+                f.reason === 'secret-include' ? 'INCLUDED (publisher confirmed)' :
+                f.reason === 'pattern-fallback' ? 'pattern-fallback' :
+                'unknown';
+              const oauth = f.oauth ? dim(` → oauth:${f.oauth.provider}`) : '';
+              console.log(`        · ${name}  ${dim('[' + tag + ']')}${oauth}`);
+            }
+          }
+          if (shape.warnings && shape.warnings.length > 0) {
+            console.log(`      ${dim('warnings:')}`);
+            for (const w of shape.warnings) console.log(`        ⚠ ${w}`);
+          }
+        } catch {
+          // ignore malformed shape
+        }
+      }
     }
   }
 

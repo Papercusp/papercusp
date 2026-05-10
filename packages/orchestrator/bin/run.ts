@@ -38,18 +38,22 @@ async function runTs(): Promise<never> {
   const maxIterations = parseInt(process.env.MAX_ITERATIONS ?? '200', 10);
   const iterationSleepMs = (parseFloat(process.env.ITERATION_SLEEP ?? '2') || 0) * 1000;
 
-  // Activation step 2: opt-in PG bootstrap. PAPERCUSP_USE_PG_STATE=1
-  // attempts to connect; on success, ctx.pg + ctx.workspaceId are set
-  // and Phases 1-7's PG-canonical paths run. On failure, the dormant
-  // FS fallbacks remain — orchestrator behavior unchanged.
-  //
-  // Pass the harness slug so the pg client's search_path scopes to the
-  // per-harness schema (harness_<slug>,harness_shared,public). Phase 1's
-  // unqualified `harness_features` queries resolve correctly via that
-  // search_path — same pattern as the operator's `dbcFor(slug)`.
-  const slug = harnessSlug(projectDir);
-  const pgBoot = await bootstrapOrchestratorPg(logger.log, { harnessSlug: slug });
-  const workspaceId = pgBoot.pg ? activeWorkspaceId() : undefined;
+  const exit = await runMainLoop({
+    ctx: {
+      harnessDir,
+      projectDir,
+      stateDir,
+      logDir,
+      phase,
+      claudeCmd,
+      agentBackend,
+      dept: configGet<string>(cfg, 'dept', ''),
+      log: logger.log,
+    },
+    logger,
+    maxIterations,
+    iterationSleepMs,
+  });
 
   // Pull decrypted search-provider keys (Migration 047) once at boot.
   // Workers/validators/scoper/architect inherit them via ctx.extraSpawnEnv.

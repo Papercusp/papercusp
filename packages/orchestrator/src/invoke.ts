@@ -28,30 +28,8 @@ import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
 import { resolvePromptFile } from './prompt-resolve';
 import { extractFeatureId, makeRunId } from './run-id';
-import { harnessSlug as harnessSlugFromProjectDir } from './state';
-import {
-  buildSpawnMcpConfig as _buildSpawnMcpConfig, // eslint-disable-line @typescript-eslint/no-unused-vars
-  extractChunkId,
-  restoreSpawnMcp,
-  writeSpawnMcp,
-  type SpawnMcpHandle,
-} from './spawn-mcp';
-import { randomUUID } from 'node:crypto';
 import type { AgentBackend, InvokeResult } from './types';
 import { resolveAgentBackend } from './env';
-
-/**
- * Postgres client interface the orchestrator uses for PG-canonical state.
- * Kept as a structural type so callers can pass any postgres-js Sql<{}>
- * instance (or a test double) without importing `postgres` here. When
- * undefined, the orchestrator falls back to the legacy filesystem path
- * (features.json etc) — that fallback is removed once Phase 1 lands.
- */
-export interface OrchestratorPg {
-  // postgres-js tagged-template signature: pg`SELECT ...`
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (template: TemplateStringsArray, ...values: unknown[]): Promise<any[]>;
-}
 
 export interface InvokeContext {
   /** HARNESS_DIR — root of the @papercusp/harness install. */
@@ -68,9 +46,8 @@ export interface InvokeContext {
       Resolved from $AGENT_CMD ?? $CLAUDE; default `omp -p`. */
   claudeCmd: string;
   /**
-   * Agent backend driving the spawn. Selects the structured-output flag
-   * set + the result parser. Defaults to inferring from `claudeCmd`
-   * (omp/pi binary → 'omp', otherwise 'claude-code').
+   * Agent backend driving the spawn. Selects structured-output flag set
+   * + result parser. Defaults to inferring from `claudeCmd`.
    */
   agentBackend?: AgentBackend;
   /** Optional override for the dept slug (otherwise read from config.json). */
@@ -160,16 +137,8 @@ export function resolveTimeout(cfg: ReturnType<typeof readConfig>, role: string)
   return 0;
 }
 
-/** Per-role model resolution. Per-harness `.harness/config.json` wins
-    over the user-level `AGENT_MODELS` env var (which the operator's
-    /settings/agent page writes). Empty string = use the agent CLI's
-    default. */
+/** Per-role model. Config.json wins; falls back to AGENT_MODELS env JSON. */
 export function resolveModel(cfg: ReturnType<typeof readConfig>, role: string): string {
-  // aiBackend role override wins, then aiBackend default, then legacy models.<role>.
-  const fromAiRole = configGet<string>(cfg, `aiBackend.roles.${role}.model`, '');
-  if (fromAiRole) return fromAiRole;
-  const fromAiDefault = configGet<string>(cfg, `aiBackend.default.model`, '');
-  if (fromAiDefault) return fromAiDefault;
   const fromConfig = configGet<string>(cfg, `models.${role}`, '');
   if (fromConfig) return fromConfig;
   const envJson = process.env.AGENT_MODELS;
@@ -185,80 +154,27 @@ export function resolveModel(cfg: ReturnType<typeof readConfig>, role: string): 
 }
 
 /**
- * Resolve the agent command + extra args for a role, layering:
- *   1. config.aiBackend.roles[role]      (most specific)
- *   2. config.aiBackend.default          (harness-wide override)
- *   3. fallbackCmd                       (process env: AGENT_CMD/CLAUDE)
- *
- * Returns the effective agent command and any role/default extraArgs to
- * append (in order: default.extraArgs, then role.extraArgs). Model is
- * still resolved via {@link resolveModel} for back-compat with the
- * existing `models.<role>` config and AGENT_MODELS env.
- *
- * Storing secrets here is NOT supported — values land in plaintext
- * config.json. For secrets, use the encrypted-credentials store.
- */
-export function resolveAgentForRole(
-  cfg: ReturnType<typeof readConfig>,
-  role: string,
-  fallbackCmd: string,
-): { agentCmd: string; extraArgs: string[] } {
-  const ai = (cfg.aiBackend as
-    | { default?: { agentCmd?: string; model?: string; extraArgs?: string[] };
-        roles?: Record<string, { agentCmd?: string; model?: string; extraArgs?: string[] }>; }
-    | undefined) ?? {};
-  const def = ai.default ?? {};
-  const rol = ai.roles?.[role] ?? {};
-
-  const agentCmd =
-    (rol.agentCmd && rol.agentCmd.trim()) ||
-    (def.agentCmd && def.agentCmd.trim()) ||
-    fallbackCmd;
-
-  const extraArgs: string[] = [];
-  if (Array.isArray(def.extraArgs)) extraArgs.push(...def.extraArgs.filter((s) => typeof s === 'string'));
-  if (Array.isArray(rol.extraArgs)) extraArgs.push(...rol.extraArgs.filter((s) => typeof s === 'string'));
-
-  return { agentCmd, extraArgs };
-}
-
-/**
- * What kind of structured stream the spawned agent is emitting (or `none` for
- * plain-text / passthrough commands). Drives both the extra flag set we
- * append AND the result-extraction parser.
+ * What kind of structured stream the spawned agent is emitting. Drives
+ * extra-flag selection AND result parsing.
  */
 export type StreamFormat = 'claude-stream-json' | 'omp-json' | 'none';
 
-/**
- * Pick the structured-output flag set for a given backend, unless the
- * caller's command already specifies one (so manual overrides are
- * preserved). Returns `'none'` when the command is bare bash or similar
- * and we shouldn't inject anything.
- */
 export function selectStreamFormat(
   agentBackend: AgentBackend,
   agentCmd: string,
 ): StreamFormat {
   const argv = splitCommand(agentCmd);
   const cmd = agentCmd.toLowerCase();
-
   if (agentBackend === 'omp') {
-    // omp/pi-coding-agent uses `--mode json` for structured streaming.
-    if (cmd.includes('--mode ')) return 'none';   // user picked their own mode
+    if (cmd.includes('--mode ')) return 'none';
     const mentionsOmp = argv.some((a) => /(?:^|\/)(omp|pi)$/.test(a));
     return mentionsOmp ? 'omp-json' : 'none';
   }
-
-  // claude-code path (default).
   if (cmd.includes('stream-json')) return 'none';
   const mentionsClaude = argv.some((a) => a.includes('claude'));
   return mentionsClaude ? 'claude-stream-json' : 'none';
 }
 
-/**
- * Extra CLI flags to append for structured streaming. Decoupled from
- * `selectStreamFormat` so callers can log/test the flag list directly.
- */
 export function streamFormatFlags(fmt: StreamFormat): string[] {
   switch (fmt) {
     case 'claude-stream-json':
@@ -272,34 +188,13 @@ export function streamFormatFlags(fmt: StreamFormat): string[] {
 
 /**
  * Parse the final assistant text from a structured-stream log file.
- *
- * For `claude-stream-json`: the terminal event is
- *   `{"type":"result","result":"...","total_cost_usd":N,...}`.
- *
- * For `omp-json`: events are `{"type":"message_update", message, assistantMessageEvent}` /
- *   `{"type":"message_end", message: AssistantMessage}` / `{"type":"agent_end", messages}`.
- *   The final assistant text is the last assistant `message_end` (or the
- *   `done` assistantMessageEvent), reconstructed from the message's text content blocks.
- *
- * For `none`: returns the file contents verbatim (matches old fallback).
+ * `claude-stream-json` looks for `{type:"result",result:"..."}`; `omp-json`
+ * walks back to the last `message_end` / `done` assistantMessageEvent.
  */
-/**
- * Extract the final assistant text from accumulated stream-json content.
- * Either pass the raw content directly, or a filesystem path (back-compat
- * for callers that still keep the JSONL on disk).
- */
-export function extractResult(source: string, format: StreamFormat): string {
-  // Heuristic: a string with no newlines that exists as a path → treat as path.
-  // Any other input is treated as content directly. Callers that want to be
-  // explicit can use extractResultFromContent.
+export function extractResult(jsonlPath: string, format: StreamFormat): string {
   let data = '';
-  if (source.length > 0 && !source.includes('\n') && existsSync(source)) {
-    try { data = readFileSync(source, 'utf8'); } catch { return ''; }
-  } else {
-    data = source;
-  }
+  try { data = readFileSync(jsonlPath, 'utf8'); } catch { return ''; }
   if (format === 'none') return data;
-
   const lines = data.trimEnd().split(/\r?\n/);
 
   if (format === 'claude-stream-json') {
@@ -311,26 +206,22 @@ export function extractResult(source: string, format: StreamFormat): string {
         if (obj && typeof obj === 'object' && obj.type === 'result' && typeof obj.result === 'string') {
           return obj.result;
         }
-      } catch { /* claude can interleave non-JSON occasionally */ }
+      } catch { /* claude interleaves non-JSON occasionally */ }
     }
     return '';
   }
 
-  // omp-json: walk from the end, find the last message_end / done /
-  // agent_end carrying an assistant message. Pull text-content blocks.
+  // omp-json
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (!line) continue;
     let obj: any;
     try { obj = JSON.parse(line); } catch { continue; }
     if (!obj || typeof obj !== 'object') continue;
-
-    // Direct message_end with the final assistant message.
     if (obj.type === 'message_end' && obj.message?.role === 'assistant') {
       const text = collectAssistantText(obj.message);
       if (text) return text;
     }
-    // assistantMessageEvent.type === 'done' carries the final message too.
     if (
       obj.type === 'message_update'
       && obj.assistantMessageEvent?.type === 'done'
@@ -339,7 +230,6 @@ export function extractResult(source: string, format: StreamFormat): string {
       const text = collectAssistantText(obj.assistantMessageEvent.message);
       if (text) return text;
     }
-    // agent_end has the full messages list — last assistant entry wins.
     if (obj.type === 'agent_end' && Array.isArray(obj.messages)) {
       for (let j = obj.messages.length - 1; j >= 0; j--) {
         const m = obj.messages[j];
@@ -354,7 +244,6 @@ export function extractResult(source: string, format: StreamFormat): string {
   return '';
 }
 
-/** Concatenate text-typed content blocks from an omp/pi-ai assistant message. */
 function collectAssistantText(message: any): string {
   if (!message || !Array.isArray(message.content)) return '';
   const parts: string[] = [];
@@ -463,19 +352,10 @@ export async function invoke(
     if (wt && existsSync(wt)) cwdOverride = wt;
   }
 
-  // 4. Backend-aware structured-stream detection. Defaults to inferring
-  //    from the binary name in claudeCmd (omp/pi → omp, otherwise claude-code).
-  //    Per-role / per-harness aiBackend config can override the agent
-  //    command (and append extraArgs) — falls back to ctx.claudeCmd which
-  //    came from process env (AGENT_CMD / CLAUDE).
-  const { agentCmd: roleAgentCmd, extraArgs: roleExtraArgs } =
-    resolveAgentForRole(cfg, role, ctx.claudeCmd);
-  if (roleAgentCmd !== ctx.claudeCmd) {
-    ctx.log(`  role=${role} agentCmd=${roleAgentCmd} (from config.json)`);
-  }
-  const argv = splitCommand(roleAgentCmd);
-  const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(roleAgentCmd);
-  const streamFormat = selectStreamFormat(agentBackend, roleAgentCmd);
+  // 4. Stream-JSON detection (only when the command involves `claude`).
+  const argv = splitCommand(ctx.claudeCmd);
+  const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(ctx.claudeCmd);
+  const streamFormat = selectStreamFormat(agentBackend, ctx.claudeCmd);
   const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
 
   // 5. Per-role model — only inject if user didn't already pass --model.
@@ -659,76 +539,18 @@ export async function invoke(
   const startedAt = Date.now();
 
   // omp's `-p` mode reads the message from a positional arg (or `@file`),
-  // not from stdin. Materialise the prompt to an ephemeral tmpfile under
-  // ramTmpRoot() (Linux: /dev/shm tmpfs; macOS/Windows: page-cache-backed
-  // os.tmpdir()), pass `@<path>` as argv, and rm the dir in the finally
-  // block after spawn close. The harness directory stays pure-code; the
-  // prompt body still lands in harness_run_output's prompt_body column
-  // for post-hoc replay/debugging (Phase 4 + 5 working together).
-  let ompPromptDir: string | undefined;
+  // not from stdin. Materialise the prompt and append `@<path>` to argv.
   let ompPromptPath: string | undefined;
   if (agentBackend === 'omp' && streamFormat !== 'none') {
-    const { ramTmpRoot } = await import('./tmpfs');
-    ompPromptDir = mkdtempSync(join(ramTmpRoot(), 'papercusp-'));
-    ompPromptPath = join(ompPromptDir, 'prompt.md');
+    ompPromptPath = join(ctx.logDir, `${runId}.prompt.md`);
     writeFileSync(ompPromptPath, prompt, 'utf8');
     finalArgv.push(`@${ompPromptPath}`);
   }
 
-  // Body accumulators (in-memory). Filesystem JSONL/ERR is only
-  // touched in true-CLI fallback (no operator, no PG) — see writeBodyToDiskAtExit.
-  const jsonlChunks: Buffer[] = [];
-  const errChunks: Buffer[] = [];
-
-  // Live chunk streaming via in-process bus on the operator. Each
-  // stdout chunk is HTTP-POSTed to /api/internal/run-chunk on the
-  // operator; the operator's per-run EventEmitter fans out to SSE
-  // subscribers without filesystem coupling.
-  //
-  // OPTIONAL persistence: when PAPERCUSP_PERSIST_CHUNKS=1 AND ctx.pg
-  // is wired, each chunk is ALSO INSERTed into harness_run_chunks for
-  // archival per-chunk replay (timing analysis, fine-grained playback).
-  // The bus delivery does not wait for the PG write — persistence is
-  // a parallel queue. Default OFF: full-body persistence at run exit
-  // (harness_run_output, Phase 4) covers post-hoc replay for ~all use
-  // cases.
-  //
-  // Falls back to file-only when:
-  //   - PAPERCUSP_OPERATOR_BASE is unset/unreachable (CLI-only mode,
-  //     no operator running)
-  //   - harness_token isn't available (legacy harness without one)
-  // Files are written ONLY at run end (not appended per-chunk) and
-  // ONLY when neither bus nor PG is active — see writeFilesForFallback
-  // below. Default PG-canonical mode produces zero files.
-  let chunkSeq = 0;
-  let chunkPostQueue: Promise<void> = Promise.resolve();
-  let chunkPgQueue: Promise<void> = Promise.resolve();
-  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
-  const persistChunks = process.env.PAPERCUSP_PERSIST_CHUNKS === '1';
-  let harnessToken: string | null = null;
-  try {
-    const cfgRaw = readFileSync(`${ctx.stateDir}/config.json`, 'utf8');
-    const cfgJson = JSON.parse(cfgRaw) as { harness_token?: string };
-    if (typeof cfgJson.harness_token === 'string' && cfgJson.harness_token.length > 0) {
-      harnessToken = cfgJson.harness_token;
-    }
-  } catch { /* no token → bus disabled, file-only path */ }
-
-  // Pre-resolve the PG chunk-archival path when both flag + ctx.pg are
-  // set. Done before the spawn Promise so the sync stdout handler can
-  // reference appendChunkPg without an `await import`.
-  type ChunkPgCtx = { pg: OrchestratorPg; workspaceId: string; harnessSlug: string };
-  let chunksPgCtx: ChunkPgCtx | null = null;
-  let appendChunkPgFn: ((c: ChunkPgCtx, runId: string, seq: number, data: string) => Promise<void>) | null = null;
-  if (persistChunks && ctx.pg && ctx.workspaceId) {
-    const { harnessSlug: getSlug } = await import('./state');
-    chunksPgCtx = {
-      pg: ctx.pg,
-      workspaceId: ctx.workspaceId,
-      harnessSlug: getSlug(ctx.projectDir),
-    };
-    appendChunkPgFn = (await import('./run-chunks-pg')).appendChunkPg;
-  }
+  // Open the output streams ourselves so we can control buffering.
+  // Use writeFileSync to truncate, then append as data arrives.
+  writeFileSync(jsonlPath, '');
+  writeFileSync(errPath, '');
 
   const outcome: SpawnOutcome = await new Promise((resolve) => {
     // Spawn env: defensively disable omp's autonomous memory backend
@@ -858,12 +680,7 @@ export async function invoke(
         ctx.log(`  stdin error: ${err.message}`);
       }
     });
-    // Gate on streamFormat, not agentBackend: omp's @file convention
-    // only applies when we're actually invoking omp/pi (streamFormat ===
-    // 'omp-json'). For any other backend or for omp-with-stub-binary
-    // (e.g. claudeCmd='cat' in tests), feed the prompt via stdin like
-    // claude-code does — that's the universal Unix interface.
-    if (streamFormat === 'omp-json') {
+    if (agentBackend === 'omp') {
       try { child.stdin.end(); } catch { /* EPIPE-safe */ }
     } else {
       try {
@@ -892,73 +709,9 @@ export async function invoke(
     });
   });
 
-  // Drain the live-streaming POST queue + send a final close signal
-  // so subscribers know the run finished. Best-effort throughout.
-  if (harnessToken) {
-    await chunkPostQueue.catch(() => {});
-    try {
-      await fetch(`${operatorBase}/api/internal/run-chunk`, {
-        method: 'POST',
-        headers: {
-          'authorization': `Bearer ${harnessToken}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ runId, seq: chunkSeq, chunk: '', done: true }),
-      });
-    } catch { /* operator unreachable; subscribers fall back to file */ }
-  }
-  // Drain the optional PG-archival queue. If a chunk INSERT was still
-  // in flight when the subprocess closed, this lets it complete before
-  // Phase 4 finalization (run_output INSERT) runs.
-  if (chunksPgCtx) {
-    await chunkPgQueue.catch(() => {});
-  }
-
-  // 11. Extract result text from the in-memory accumulator.
-  const jsonlBody = Buffer.concat(jsonlChunks).toString('utf8');
-  const errBody = Buffer.concat(errChunks).toString('utf8');
-  const finalText = extractResult(jsonlBody, streamFormat);
-  const outBody = streamFormat !== 'none' ? `${finalText}\n` : finalText;
-
-  // 11.5. Persistence: when ctx.pg is wired, the canonical record is
-  // the harness_run_output row. The on-disk jsonl/out/err files are
-  // skipped entirely — replay reads from PG.
-  //
-  // Files are still written when:
-  //   - PG isn't wired (CLI fallback — user might tail -f), OR
-  //   - PAPERCUSP_KEEP_FILES=1 (explicit override for debug)
-  const writeFilesForFallback = !(ctx.pg && ctx.workspaceId)
-    || process.env.PAPERCUSP_KEEP_FILES === '1';
-  if (writeFilesForFallback) {
-    if (!existsSync(ctx.logDir)) mkdirSync(ctx.logDir, { recursive: true });
-    writeFileSync(jsonlPath, jsonlBody);
-    writeFileSync(errPath, errBody);
-    writeFileSync(outPath, outBody);
-  }
-
-  if (ctx.pg && ctx.workspaceId) {
-    try {
-      const { recordRunOutputPg } = await import('./run-output-pg');
-      const { harnessSlug: getSlug } = await import('./state');
-      await recordRunOutputPg(
-        { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: getSlug(ctx.projectDir) },
-        {
-          runId,
-          role,
-          promptBody: prompt,
-          jsonlBody,
-          outBody,
-          errBody,
-          exitCode: outcome.exitCode,
-          durationMs: outcome.durationMs,
-          startedAt,
-          endedAt: Date.now(),
-        },
-      );
-    } catch (err) {
-      ctx.log(`  PG ingest failed (non-fatal): ${(err as Error).message}`);
-    }
-  }
+  // 11. Extract result text and write to .out.
+  const finalText = extractResult(jsonlPath, streamFormat);
+  writeFileSync(outPath, streamFormat !== 'none' ? `${finalText}\n` : finalText);
 
   ctx.log(`invoke ${role} rc=${outcome.exitCode} (stdout: ${outPath})`);
   if (outcome.exitCode === 124) {

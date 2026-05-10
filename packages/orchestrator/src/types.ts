@@ -110,7 +110,7 @@ export interface OrchestratorEnv {
   iterationSleep: number;
   /** Override for the agent invocation command. Default `omp -p`. */
   claudeCmd: string;
-  /** Backend driving the spawn — selects parser + extra flags. Default 'omp'. */
+  /** Backend driving the spawn — selects parser + extra flags. Default 'claude-code'. */
   agentBackend: AgentBackend;
   /** Phase resolved from config.json (defaulted to "staging"). */
   phase: HarnessPhase;

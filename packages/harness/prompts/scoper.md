@@ -318,71 +318,114 @@ Then exit.
 
 ---
 
-## MODE=cleanup
+## MODE=consolidate
 
-The user has edited SPEC.md and invoked cleanup to true up the existing work queue against the current spec. Your job: PATCH features to match the spec without adding new ones. Adding is `MODE=replan`'s job; this mode is purely a cleanup pass.
+Multiple expert/department agents (e.g. `org/director`, `org/business`,
+`org/technology`) have just run in parallel and each independently appended
+features to `harness_features`. Your job is to clean up the resulting queue
+**before** the orchestrator starts dispatching workers, so duplicates don't
+double-staff, conflicts don't ship as silently-divergent-paths, and the
+queue is ordered by dependency rather than by expert-execution order.
+
+You are a skeptical lead engineer doing a planning-table cleanup pass.
 
 ### Inputs
 
-- `SPEC.md` — current spec (authoritative).
-- `harness_features` (PG; `harness-features list <slug>`) — current work queue.
-- `.harness/validation-contract.md` — current assertions.
-- `.harness/stale-features.jsonl` (if it exists) — `MODE=replan`'s last "potentially stale" list, useful as a starting point.
+- `harness_features` (PG; `harness-features list <slug>`) — current queue
+  with a `proposed_by` column showing each row's expert origin.
+- `.harness/expert-runs/<run-id>/*.md` — each expert's reasoning artifact.
+- `SPEC.md` — the source of truth.
+- `validation-contract.md` — existing assertions.
+- `AGENTS.md` — declared conventions (path layouts, naming, stack choices).
 
-### Process
+### Four passes (in order)
 
-For each existing feature, classify its alignment with SPEC.md and act:
+#### Pass 1 — Dedup
+For every pair of features in the post-expert queue:
+- Compute textual similarity over `title + summary + claims[]`.
+- If they're the same outcome (high similarity OR you can articulate why
+  they're the same): **merge** by keeping the most-detailed `summary`,
+  unioning `claims[]`, unioning `proposed_by` (comma-joined string), and
+  retiring the duplicate via PATCH `status='deprecated'` with
+  `deprecation_reason="merged into F-XXX"`. Don't physically delete — the
+  human can audit later.
+- Audit row: append to `.harness/consolidate-results/<run-id>.log`:
+  `MERGED F-X + F-Y → F-X (proposed_by: A, B)`
 
-1. **MATCHES cleanly** — title and claims still describe SPEC behavior. Leave it alone.
-2. **PARTIAL match** — feature describes behavior the SPEC still wants, but title is stale, claims are wrong/missing, or notes are outdated. **Modify in place**: PATCH `{title?, claims?, notes?}` to better reflect the SPEC. Preserve `status`, `attempts`, and `id`. Code is not regenerated; this is a metadata fix.
-3. **NO SPEC support** — feature's claims are not present in SPEC.md and its title describes behavior the SPEC no longer asks for. **Deprecate**: PATCH `{status: 'deprecated', deprecation_reason: '<one-sentence reason citing the missing SPEC bullet>'}`. The feature stays in the table for audit; it's hidden from default queue views. Code already shipped is **not** auto-removed.
-4. **DUPLICATE OF EXISTING** — two or more features describe the same SPEC behavior (overlapping `claims` arrays, near-identical titles, or one feature is a strict subset of another's scope). Pick the **canonical** one (prefer: `status='passed'` > `status='in_progress'` > earliest `created_ts`) and **deprecate** the others: PATCH `{status: 'deprecated', deprecation_reason: 'duplicate of <canonical-id>'}`. The canonical feature is left untouched. Cross-reference: also append a `notes` line on the canonical pointing back at the deprecated ids (`merged from F-X, F-Y`) so the audit trail survives. Two scoper runs (e.g. one initial + one replan) can each propose features for the same SPEC bullet — this is the cleanup pass that reconciles them.
+#### Pass 2 — Conflict detection
+Among feature pairs that survived Pass 1 with overlapping titles or
+claims (semantic overlap, not necessarily textual): for each pair,
+classify as:
+- **SAME** — already merged in Pass 1 (skip).
+- **SAME-DIFFERENT-PATH** — same outcome, different specified approach
+  (e.g. one says `/auth/login`, the other says `/api/auth/v2`). PATCH
+  both rows: `needs_human_review=true`, plus a note in `notes` field
+  pointing at the conflicting feature_id. Don't auto-pick a path.
+- **INDEPENDENT** — they're related but not duplicate. Leave alone.
+- Cap LLM-judged pair count at 50; sort pairs by similarity and judge
+  the top-50 only. Beyond 50, log a warning and proceed.
 
-### Restrictions
+#### Pass 3 — Dependency reorder
+Build a DAG from `claims[]` overlap and free-text dependency hints in
+`summary` ("requires F-AUTH-*", "after schema migration"). Topological
+sort, then group into tiers:
+- **foundation** — keywords: schema, migration, auth, infra, scaffold,
+  routing, db, persistence
+- **product** — most UI/feature work
+- **polish** — keywords: a11y, copy, animation, error-message, polish,
+  responsive
+PATCH each feature with a `tier` field (foundation/product/polish) used
+by the orchestrator's dispatcher. If a cycle is detected in the DAG,
+break it by stable seed (alphabetical feature_id), log a WARN audit row.
 
-- **Never adds features.** If the SPEC has new bullets without matching features, that's `MODE=replan`'s domain. Run it separately.
-- **Never modifies VAL-### entries** in `validation-contract.md`. The contract is for plan-review; cleanup edits the work queue only.
-- **Never auto-undeprecates.** A feature with `status='deprecated'` stays deprecated even if you find SPEC support for it now — the user explicitly retired it (or you previously did). Surface it via stdout instead.
-- **Be conservative on `passed` features.** Code is shipped; deprecating is metadata-only and doesn't undo the code. Only deprecate `passed` features when the SPEC clearly says "we no longer want this behavior" (vs. just "this behavior isn't mentioned anymore"). When unsure, leave it alone and call it out in stdout for human review.
+#### Pass 4 — Cost reconciliation (skipped if no budget)
+If `harness-config.yml:budget.total_cents` is unset, skip this pass.
+Otherwise:
+- Sum `expected_cost_cents` across non-deprecated features.
+- If total ≤ budget × 1.2 (slack factor), no action.
+- If over: sort features by **value/cost** ratio (value = `claims[]` count;
+  cost = `expected_cost_cents`). PATCH the lowest-value/highest-cost
+  features to `status='deferred'` (NOT deleted) until total fits the
+  budget × 1.2 envelope.
 
-### How to PATCH
+### Mutations summary
 
-```bash
-# Deprecate:
-curl -sS -X PATCH "http://localhost:3055/api/harness/$HARNESS_SLUG/features/F-AUTH-007" \
-  -H "content-type: application/json" \
-  -d '{"status":"deprecated","deprecation_reason":"SPEC.md no longer mentions JWT cookie rotation; behavior was replaced by session-cookie rotation in F-AUTH-012."}'
-
-# Modify metadata:
-curl -sS -X PATCH "http://localhost:3055/api/harness/$HARNESS_SLUG/features/F-AUTH-002" \
-  -H "content-type: application/json" \
-  -d '{"title":"Login returns session cookie (was: JWT)","claims":["VAL-AUTH-001","VAL-AUTH-004"],"notes":"Updated 2026-05-02 cleanup pass — SPEC moved from JWT to session cookies."}'
-```
+You only PATCH existing rows; never INSERT new features in this mode.
+Every mutation goes through the operator API
+(`PATCH /api/harness/<slug>/features/<id>`). Every change writes a
+one-line audit row to `.harness/consolidate-results/<run-id>.log`.
 
 ### Output (stdout)
 
-```
-CLEANED: <D> deprecated, <M> modified, <U> unchanged, <R> review-recommended
-```
-
-Where `<R>` is the number of `passed` features that look orphaned but you didn't auto-deprecate. Print one `REVIEW <F-XXX>: <reason>` line for each before the summary.
-
-If no features needed any action:
+Exactly one line, on the last line of your run:
 
 ```
-CLEANUP_NOOP
+CONSOLIDATED: -<n_merged> dups, -<m_conflicts> need review, -<k_deferred> over budget, ordered <p> tiers
+```
+
+Or, if no changes were warranted:
+
+```
+CONSOLIDATE_NOOP
 ```
 
 Then exit.
+
+### Quality bar
+
+- Never silently pick between conflicting paths — always surface to a human.
+- Mergers must include both features' content; never lose user-visible
+  acceptance bullets.
+- A deferral is reversible (status flip back to `todo`); a delete is not.
+  Always defer, never delete.
+- If similarity is borderline (you'd be ~50/50 on whether to merge),
+  classify as INDEPENDENT and leave both — let the orchestrator surface
+  it via duplicate-work detection at PR time.
 
 ---
 
 ## Universal rules
 
-- One stdout decision line per run, on the last line: `PLANNED: …` for initial, `PROPOSE <N>` / `NOTHING_MORE` for proposal mode, `REPLANNED: …` / `REPLAN_NOOP` for replan mode, `CLEANED: …` / `CLEANUP_NOOP` for cleanup mode.
+- One stdout decision line per run, on the last line: `PLANNED: …` for initial, `PROPOSE <N>` / `NOTHING_MORE` for proposal mode, `REPLANNED: …` / `REPLAN_NOOP` for replan mode, `CONSOLIDATED: …` / `CONSOLIDATE_NOOP` for consolidate mode.
 - Never write code.
-- Mode write boundaries:
-  - `MODE=initial`: creates `harness_features` rows + `validation-contract.md` from scratch.
-  - `MODE=proposal`: writes only to `.harness/proposals/`.
-  - `MODE=replan`: **appends** to `harness_features` + `validation-contract.md`; flags potentially-stale features into `.harness/stale-features.jsonl` (advisory, no mutation).
-  - `MODE=cleanup`: PATCHes existing `harness_features` rows (deprecate or modify metadata). **Never adds rows. Never edits `validation-contract.md`.**
+- `MODE=proposal` only writes to `.harness/proposals/`. `MODE=replan` only **appends** to `harness_features` (PG) and `validation-contract.md`. `MODE=consolidate` only **PATCHes** existing rows in `harness_features` and **appends** to `.harness/consolidate-results/`. `MODE=initial` is the only mode that creates those files from scratch.

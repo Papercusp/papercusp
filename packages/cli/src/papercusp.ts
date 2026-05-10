@@ -963,9 +963,20 @@ async function cmdInit(args: string[]): Promise<void> {
   // last-resort fallback only when no template was used.
   const configPath = join(projectPath, '.harness', 'config.json');
   if (!fromHarness && !existsSync(configPath)) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const defaults = require('./harness-defaults.json');
-    await fs.writeFile(configPath, JSON.stringify(defaults, null, 2), 'utf8');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          phase: 'staging',
+          models: { scoper: 'claude-opus-4-7', worker: 'claude-sonnet-4-6', validator: 'claude-opus-4-7', orchestrator: 'claude-haiku-4-5', reviewer: 'claude-opus-4-7' },
+          timeouts: { worker: 900, validator: 600, scoper: 600, reviewer: 300, orchestrator: 120 },
+          maxCostUsd: 10,
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
   }
 
   const reg = await readRegistry();

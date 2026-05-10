@@ -92,28 +92,21 @@ function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: 
     // enough that the one-time prepare cost amortizes anyway.
     prepare: false,
     ...(pgliteSocket ? { host: pgliteSocket } : {}),
-    // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 8 — was 4 but
-    // any burst of ~5 concurrent requests (polling endpoints all firing
-    // on the same tick) queued the 5th request behind a free slot. With
-    // ~20 registered harnesses, per-harness pools still pass maxOverride=1
-    // so the org-shared pool's 8 doesn't multiply across harnesses. The
-    // ~100 connection ceiling stays comfortable.
-    // Desktop builds set this to 1 because pglite-socket serializes
-    // queries internally.
-    max: maxOverride ?? Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 8),
-    // Close idle connections after 60s. Was 5s — that was so aggressive
-    // that polling endpoints (OperatorActionLog every 4s, NotificationCenter
-    // every 8s, status every 5s) usually hit a cold reconnect because the
-    // previous request's connection had just been closed. Cold reconnect
-    // costs ~1.1s in dev (auth + search_path + prepared-statement setup)
-    // — measured directly: query=19ms warm vs query=1178ms cold. 60s
-    // covers all current poll intervals so connections actually get
-    // reused across polls.
-    idle_timeout: Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_TIMEOUT) || 60),
-    // Hard cap on connection age. Even if a pool is hot, recycle the
-    // socket every ~10 min so a long-lived dev session doesn't pin
-    // stale conns indefinitely.
-    max_lifetime: Math.max(60, Number(process.env.PAPERCUSP_DB_MAX_LIFETIME) || 600),
+    // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 2 — operators
+    // with ~20 registered harnesses each open a per-harness pool, so
+    // 20 × 2 = 40 idle connections leaves 60+ slots for other clients
+    // (snapshot pg_dump, marketplace-api, zero-cache, etc.) under
+    // Postgres's max_connections=100. Earlier defaults of 4 and 8 saturated
+    // the slot table and produced "remaining connection slots are reserved
+    // for roles with the SUPERUSER attribute" failures from the snapshot
+    // and marketplace endpoints. Desktop builds set it to 1 because
+    // pglite-socket serializes queries internally.
+    max: Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 2),
+    // Auto-close connections that sit idle for >30s. Prevents per-harness
+    // pools from accumulating idle conns indefinitely (Next.js dev mode
+    // module re-instantiation otherwise leaks the prior pool's sockets).
+    // Override via PAPERCUSP_DB_IDLE_TIMEOUT (seconds; 0 disables).
+    idle_timeout: Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_TIMEOUT) || 30),
     // BIGINT → number. Our timestamps and attempt counts fit safely in Number's
     // 2^53 range; expected_cost_cents won't realistically exceed it. Override
     // case-by-case if a column ever needs full BIGINT precision.

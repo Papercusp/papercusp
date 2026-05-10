@@ -7,7 +7,7 @@ interface Props {
 }
 
 export default function DocsTab({ api }: Props): JSX.Element {
-  const docsUrl = (api.config?.get?.('docsUrl') as string | undefined) ?? 'http://localhost:3055/docs';
+  const docsUrl = (api.config?.get?.('docsUrl') as string | undefined) ?? 'http://localhost:3055/project-docs';
   return (
     <iframe
       src={docsUrl}

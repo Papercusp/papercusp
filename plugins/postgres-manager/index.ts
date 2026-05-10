@@ -36,9 +36,13 @@ async function withClient<T>(fn: (sql: any) => Promise<T>): Promise<T> {
   // We open a fresh connection per action invocation so the substrate's
   // global pool isn't held. Caller is responsible for `await sql.end()`.
   const pg = await import('postgres');
+  // Some host loaders (notably Next/Turbopack) hand back the CJS function
+  // directly without a `.default` namespace wrapper, while native Node ESM
+  // wraps it. Tolerate both shapes.
+  const postgresFn = ((pg as any).default ?? pg) as (url: string, opts?: unknown) => any;
   const url = process.env.HARNESS_DATABASE_URL
     ?? 'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
-  const sql = (pg as { default: (url: string, opts?: unknown) => any }).default(url, {
+  const sql = postgresFn(url, {
     onnotice: () => {},
     max: 1,
     idle_timeout: 1,
