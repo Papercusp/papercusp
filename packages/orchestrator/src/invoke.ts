@@ -28,6 +28,15 @@ import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
 import { resolvePromptFile } from './prompt-resolve';
 import { extractFeatureId, makeRunId } from './run-id';
+import { harnessSlug as harnessSlugFromProjectDir } from './state';
+import {
+  buildSpawnMcpConfig as _buildSpawnMcpConfig, // eslint-disable-line @typescript-eslint/no-unused-vars
+  extractChunkId,
+  restoreSpawnMcp,
+  writeSpawnMcp,
+  type SpawnMcpHandle,
+} from './spawn-mcp';
+import { randomUUID } from 'node:crypto';
 import type { AgentBackend, InvokeResult } from './types';
 import { resolveAgentBackend } from './env';
 
@@ -379,6 +388,13 @@ function ensureMemoryFiles(stateDir: string): void {
 export interface InvokeOptions {
   inlinePrompt?: string;
   cwd?: string;
+  /**
+   * Parent spawn ID, set when this `invoke()` was triggered by another
+   * agent's `orchestrator.spawn` MCP-tool call (Phase 9). Null/undefined
+   * for orchestrator main-loop spawns. Plumbed through to the per-spawn
+   * `.mcp.json` so plugin-tool calls from this child carry the lineage.
+   */
+  parentSpawnId?: string | null;
 }
 
 export async function invoke(
@@ -694,6 +710,32 @@ export async function invoke(
       PI_MEMORIES_ENABLED: 'false',
       PI_MEMORY_BACKEND: 'off',
     };
+
+    // Per-spawn .mcp.json: write the seven-param URL config so OMP
+    // discovers our agent-mcp endpoint with this spawn's harness/role/
+    // feature/chunk/run/spawn baked in. Cleanup runs on close even if
+    // spawn errors. Spec: apps/operator/docs/plugin-mcp-host-design.md (D4).
+    let mcpHandle: SpawnMcpHandle | null = null;
+    if (ctx.workspaceId) {
+      try {
+        const spawnId = randomUUID();
+        const slug = harnessSlugFromProjectDir(ctx.projectDir);
+        const chunkId = extractChunkId(extras);
+        mcpHandle = writeSpawnMcp(cwd, {
+          harnessSlug: slug,
+          workspaceId: ctx.workspaceId,
+          role,
+          runId,
+          spawnId,
+          featureId: featureId || null,
+          chunkId,
+          parentSpawnId: options.parentSpawnId ?? null,
+        });
+      } catch (err) {
+        ctx.log(`  spawn-mcp write failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     const child = spawn(command, finalArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
 
     let timer: NodeJS.Timeout | undefined;
@@ -775,11 +817,13 @@ export async function invoke(
     child.on('error', (err) => {
       ctx.log(`  spawn error: ${err.message}`);
       if (timer) clearTimeout(timer);
+      if (mcpHandle) restoreSpawnMcp(mcpHandle);
       resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
     });
 
     child.on('close', (code) => {
       if (timer) clearTimeout(timer);
+      if (mcpHandle) restoreSpawnMcp(mcpHandle);
       // bash uses exit 124 for timeout (matches `timeout` coreutil).
       const exitCode = timedOut ? 124 : (code ?? 0);
       resolve({ exitCode, durationMs: Date.now() - startedAt });
