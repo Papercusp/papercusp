@@ -18,6 +18,178 @@ const { join } = require('node:path');
 const { homedir } = require('node:os');
 const { existsSync, readFileSync } = require('node:fs');
 
+/* ─── PG persistence (Phase 9 v1.5) ───────────────────────────────────
+ * Mirrors the in-memory Map into harness_shared.spawned_agents so
+ * poll/list_active are durable across operator restarts. PG failures are
+ * best-effort — the plugin still works in pure-memory mode if the table
+ * isn't reachable. */
+
+let _pgClient = null;
+const reapedWorkspaces = new Set();
+
+function pg() {
+  if (_pgClient) return _pgClient;
+  try {
+    const postgres = require('postgres');
+    const url = process.env.HARNESS_DATABASE_URL ||
+      'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
+    _pgClient = postgres(url, { max: 4, idle_timeout: 30, connect_timeout: 5 });
+  } catch (e) {
+    // postgres package missing or connection unconfigured — degrade
+    // gracefully to memory-only mode.
+    return null;
+  }
+  return _pgClient;
+}
+
+async function pgWithWs(workspaceId, fn) {
+  const client = pg();
+  if (!client) return null;
+  try {
+    return await client.begin(async (tx) => {
+      await tx.unsafe(`SELECT set_config('app.workspace_id', $1, true)`, [workspaceId]);
+      return await fn(tx);
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`[orchestrator-spawn] PG op failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+async function pgInsertSpawn(rec) {
+  return pgWithWs(rec.workspaceId, async (tx) => {
+    await tx`
+      INSERT INTO harness_shared.spawned_agents
+        (spawn_id, workspace_id, harness_slug, parent_spawn_id, parent_role,
+         child_role, feature_id, chunk_id, run_id, status, started_at)
+      VALUES (
+        ${rec.spawnId}, ${rec.workspaceId}, ${rec.harnessSlug},
+        ${rec.parentSpawnId}, ${rec.parentRole}, ${rec.childRole},
+        ${rec.featureId}, ${rec.chunkId}, ${rec.runId},
+        ${rec.status}, to_timestamp(${rec.startedAtMs}::double precision / 1000.0)
+      )
+      ON CONFLICT (spawn_id) DO NOTHING
+    `;
+  });
+}
+
+async function pgFinalizeSpawn(rec) {
+  return pgWithWs(rec.workspaceId, async (tx) => {
+    await tx`
+      UPDATE harness_shared.spawned_agents
+         SET status = ${rec.status},
+             finished_at = ${rec.finishedAtMs ? new Date(rec.finishedAtMs) : null},
+             duration_ms = ${rec.durationMs},
+             exit_code = ${rec.exitCode},
+             output_tail = ${rec.output ? rec.output.slice(-2000) : null},
+             error_message = ${rec.error}
+       WHERE spawn_id = ${rec.spawnId}
+    `;
+  });
+}
+
+async function pgGetSpawn(workspaceId, spawnId) {
+  return pgWithWs(workspaceId, async (tx) => {
+    const rows = await tx`
+      SELECT spawn_id, workspace_id, harness_slug, parent_spawn_id, parent_role,
+             child_role, feature_id, chunk_id, run_id, status,
+             started_at, finished_at, duration_ms, exit_code,
+             output_tail, error_message, cancel_requested
+        FROM harness_shared.spawned_agents
+       WHERE spawn_id = ${spawnId}
+       LIMIT 1
+    `;
+    return rows[0] ?? null;
+  });
+}
+
+async function pgListActive(workspaceId, parentSpawnId) {
+  return pgWithWs(workspaceId, async (tx) => {
+    if (parentSpawnId) {
+      return await tx`
+        SELECT spawn_id, workspace_id, harness_slug, parent_spawn_id, parent_role,
+               child_role, feature_id, chunk_id, run_id, status,
+               started_at, finished_at, duration_ms, exit_code,
+               output_tail, error_message, cancel_requested
+          FROM harness_shared.spawned_agents
+         WHERE parent_spawn_id = ${parentSpawnId}
+           AND status = 'running'
+         ORDER BY started_at DESC
+         LIMIT 200
+      `;
+    }
+    return await tx`
+      SELECT spawn_id, workspace_id, harness_slug, parent_spawn_id, parent_role,
+             child_role, feature_id, chunk_id, run_id, status,
+             started_at, finished_at, duration_ms, exit_code,
+             output_tail, error_message, cancel_requested
+        FROM harness_shared.spawned_agents
+       WHERE status = 'running'
+       ORDER BY started_at DESC
+       LIMIT 200
+    `;
+  });
+}
+
+async function pgRequestCancel(workspaceId, spawnId) {
+  return pgWithWs(workspaceId, async (tx) => {
+    await tx`
+      UPDATE harness_shared.spawned_agents
+         SET cancel_requested = true,
+             status = CASE WHEN status = 'running' THEN 'cancelled' ELSE status END,
+             finished_at = COALESCE(finished_at, now())
+       WHERE spawn_id = ${spawnId}
+    `;
+  });
+}
+
+/**
+ * Reap rows still 'running' at process boot for this workspace. Their
+ * owning operator process is gone (we just started); mark them definitively
+ * dead so list_active and the Intel panel don't show ghost rows. One-shot
+ * per workspace per process lifetime.
+ */
+async function pgReapStaleRunning(workspaceId) {
+  if (reapedWorkspaces.has(workspaceId)) return;
+  reapedWorkspaces.add(workspaceId);
+  await pgWithWs(workspaceId, async (tx) => {
+    await tx`
+      UPDATE harness_shared.spawned_agents
+         SET status = 'reaped',
+             finished_at = COALESCE(finished_at, now()),
+             error_message = 'reaped at operator restart — owning process is gone'
+       WHERE status = 'running'
+         AND workspace_id = ${workspaceId}
+    `;
+  });
+}
+
+function pgRowToView(row) {
+  if (!row) return null;
+  const startedAtMs = row.started_at instanceof Date ? row.started_at.getTime() : Number(row.started_at);
+  const finishedAtMs = row.finished_at instanceof Date ? row.finished_at.getTime() : (row.finished_at ? Number(row.finished_at) : null);
+  return {
+    spawnId: row.spawn_id,
+    parentSpawnId: row.parent_spawn_id,
+    parentRole: row.parent_role,
+    childRole: row.child_role,
+    featureId: row.feature_id,
+    chunkId: row.chunk_id,
+    runId: row.run_id,
+    harnessSlug: row.harness_slug,
+    status: row.status,
+    startedAtMs,
+    finishedAtMs,
+    durationMs: row.duration_ms != null ? Number(row.duration_ms) : null,
+    exitCode: row.exit_code,
+    error: row.error_message,
+    output: row.output_tail,
+    cancelRequested: row.cancel_requested === true,
+    fromPg: true,
+  };
+}
+
 /* ─── Allowlist + caps ────────────────────────────────────────────── */
 
 const ALLOWED = {
@@ -206,21 +378,30 @@ async function spawn(input, ctx) {
     };
   }
 
-  // 6. Build the spawn record + InvokeContext + extras.
+  // 6. Reap stale 'running' rows from prior process. One-shot per
+  //    workspace per process. No-op if already done or if PG is down.
+  await pgReapStaleRunning(ctx.workspaceId).catch(() => {});
+
+  // 7. Build the spawn record + InvokeContext + extras.
   const record = makeSpawnRecord(input, ctx, childRole);
   spawns.set(record.spawnId, record);
+
+  // 8. Mirror the launch into PG. Best-effort; we don't fail the spawn
+  //    if PG isn't reachable — in-memory mode still works.
+  await pgInsertSpawn(record).catch(() => {});
 
   const invokeCtx = buildInvokeContext(ctx);
   const extras = [...record.extras];
   if (record.featureId) extras.push(`FEATURE_ID=${record.featureId}`);
   if (record.chunkId) extras.push(`CHUNK_ID=${record.chunkId}`);
 
-  // 7. Fire invoke() in the background. Don't await — return spawnId
-  //    immediately. .then/.catch updates the record.
+  // 9. Fire invoke() in the background. Don't await — return spawnId
+  //    immediately. .then/.catch updates the record AND the PG row.
+  const finalize = () => pgFinalizeSpawn(record).catch(() => {});
   loadOrchestrator()
     .then(({ invoke }) =>
       invoke(invokeCtx, childRole, extras, {
-        parentSpawnId: record.spawnId, // child sees its own spawn id; PG records parent_spawn_id = our record's parentSpawnId via the URL chain
+        parentSpawnId: record.spawnId,
         signal: record.abortController.signal,
       }),
     )
@@ -232,12 +413,14 @@ async function spawn(input, ctx) {
       record.status = record.abortController.signal.aborted
         ? 'cancelled'
         : (result?.exitCode === 0 ? 'done' : 'failed');
+      void finalize();
     })
     .catch((err) => {
       record.finishedAtMs = Date.now();
       record.durationMs = record.finishedAtMs - record.startedAtMs;
       record.error = err instanceof Error ? err.message : String(err);
       record.status = record.abortController.signal.aborted ? 'cancelled' : 'failed';
+      void finalize();
     });
 
   return {
@@ -272,30 +455,50 @@ function recordToView(rec) {
   };
 }
 
-async function poll(input, _ctx) {
+async function poll(input, ctx) {
   const spawnId = String(input.spawnId || '').trim();
+  // In-memory first (live abort handle, freshest state).
   const rec = spawns.get(spawnId);
-  if (!rec) {
-    return {
-      isError: true,
-      content: [{ type: 'text', text: JSON.stringify({
-        code: 'spawn_not_found',
-        message: `No spawn with id "${spawnId}" — either it predates this operator restart or never existed.`,
-      }, null, 2) }],
-    };
+  if (rec) {
+    return { content: [{ type: 'text', text: JSON.stringify(recordToView(rec), null, 2) }] };
   }
-  return { content: [{ type: 'text', text: JSON.stringify(recordToView(rec), null, 2) }] };
+  // Fall back to PG — survives operator restarts.
+  const row = await pgGetSpawn(ctx.workspaceId, spawnId).catch(() => null);
+  if (row) {
+    return { content: [{ type: 'text', text: JSON.stringify(pgRowToView(row), null, 2) }] };
+  }
+  return {
+    isError: true,
+    content: [{ type: 'text', text: JSON.stringify({
+      code: 'spawn_not_found',
+      message: `No spawn with id "${spawnId}" in memory or PG.`,
+    }, null, 2) }],
+  };
 }
 
 async function list_active(input, ctx) {
   const scope = (input && input.scope) === 'all' ? 'all' : 'mine';
+
+  // Reap stale rows once per workspace. No-op after the first call.
+  await pgReapStaleRunning(ctx.workspaceId).catch(() => {});
+
+  // Read in-memory first; merge with PG rows we don't already know about.
+  const seen = new Set();
   const out = [];
   for (const rec of spawns.values()) {
     if (rec.status !== 'running') continue;
     if (scope === 'mine' && rec.parentSpawnId !== ctx.spawnId) continue;
     out.push(recordToView(rec));
+    seen.add(rec.spawnId);
   }
-  // Most recent first.
+  const pgRows = await pgListActive(
+    ctx.workspaceId,
+    scope === 'mine' ? ctx.spawnId : null,
+  ).catch(() => []);
+  for (const row of pgRows || []) {
+    if (seen.has(row.spawn_id)) continue;
+    out.push(pgRowToView(row));
+  }
   out.sort((a, b) => b.startedAtMs - a.startedAtMs);
   return {
     content: [{ type: 'text', text: JSON.stringify({ spawns: out, count: out.length, scope }, null, 2) }],
@@ -304,41 +507,66 @@ async function list_active(input, ctx) {
 
 async function cancel(input, ctx) {
   const spawnId = String(input.spawnId || '').trim();
+  const callerRole = ctx.role;
+  const allowed = ALLOWED[callerRole] || [];
+
+  // Try in-memory first — that path can really kill the child via abort.
   const rec = spawns.get(spawnId);
-  if (!rec) {
+  if (rec) {
+    if (!allowed.includes(rec.childRole)) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: JSON.stringify({
+          code: 'spawn_role_not_allowed',
+          message: `Role "${callerRole}" cannot cancel a "${rec.childRole}" spawn.`,
+        }, null, 2) }],
+      };
+    }
+    if (rec.status !== 'running') {
+      return { content: [{ type: 'text', text: JSON.stringify(recordToView(rec), null, 2) }] };
+    }
+    rec.abortController.abort();
+    rec.status = 'cancelled';
+    rec.finishedAtMs = Date.now();
+    rec.durationMs = rec.finishedAtMs - rec.startedAtMs;
+    await pgFinalizeSpawn(rec).catch(() => {});
+    return { content: [{ type: 'text', text: JSON.stringify(recordToView(rec), null, 2) }] };
+  }
+
+  // Fall back to PG: spawn predates this operator process. We can't
+  // actually kill the child (the process holding its pid is gone) but
+  // we can mark it cancel_requested + status='cancelled' so the UI
+  // reflects user intent.
+  const row = await pgGetSpawn(ctx.workspaceId, spawnId).catch(() => null);
+  if (!row) {
     return {
       isError: true,
       content: [{ type: 'text', text: JSON.stringify({
         code: 'spawn_not_found',
-        message: `No spawn with id "${spawnId}".`,
+        message: `No spawn with id "${spawnId}" in memory or PG.`,
       }, null, 2) }],
     };
   }
-
-  // Same allowlist as spawn — if you can spawn the role, you can cancel
-  // a running instance of it.
-  const callerRole = ctx.role;
-  const allowed = ALLOWED[callerRole] || [];
-  if (!allowed.includes(rec.childRole)) {
+  if (!allowed.includes(row.child_role)) {
     return {
       isError: true,
       content: [{ type: 'text', text: JSON.stringify({
         code: 'spawn_role_not_allowed',
-        message: `Role "${callerRole}" cannot cancel a "${rec.childRole}" spawn. Allowed cancel targets: ${allowed.length ? allowed.join(', ') : '(none)'}.`,
+        message: `Role "${callerRole}" cannot cancel a "${row.child_role}" spawn.`,
       }, null, 2) }],
     };
   }
-
-  if (rec.status !== 'running') {
-    return { content: [{ type: 'text', text: JSON.stringify(recordToView(rec), null, 2) }] };
+  if (row.status !== 'running') {
+    return { content: [{ type: 'text', text: JSON.stringify(pgRowToView(row), null, 2) }] };
   }
-
-  rec.abortController.abort();
-  // Status flips to 'cancelled' when the orchestrator's abort handler
-  // resolves the promise; for poll() responses in the meantime we mark
-  // it eagerly so consumers don't see a stale 'running'.
-  rec.status = 'cancelled';
-  return { content: [{ type: 'text', text: JSON.stringify(recordToView(rec), null, 2) }] };
+  await pgRequestCancel(ctx.workspaceId, spawnId).catch(() => {});
+  const updated = await pgGetSpawn(ctx.workspaceId, spawnId).catch(() => row);
+  return {
+    content: [{ type: 'text', text: JSON.stringify({
+      ...pgRowToView(updated),
+      note: 'cross-restart cancel: the operator process holding this spawn\'s pid is gone; status flipped to cancelled and cancel_requested set, but the child OS process (if still running) was not actually killed. v2: a watcher process can pick up cancel_requested and SIGTERM by stored pid.',
+    }, null, 2) }],
+  };
 }
 
 /* ─── Plugin export ────────────────────────────────────────────────── */
@@ -376,3 +604,4 @@ module.exports._resetSpawnsForTests = function _resetSpawnsForTests() {
   spawns.clear();
 };
 // touch 1778408247
+// touch 1778408955
