@@ -24,33 +24,35 @@ async function tryRead(p) {
   catch (e) { if (e && e.code === 'ENOENT') return null; throw e; }
 }
 
-function candidateRoots() {
-  const cwd = process.cwd();
-  return [
-    path.resolve(cwd, 'apps/operator'),
-    cwd,
-    path.resolve(cwd, '../../apps/operator'),
-    path.resolve(cwd, '../../'),
-  ];
-}
-
 async function loadDtcgFile() {
-  const relPaths = [
-    'design/tokens/base.json',
-    '../design/tokens/base.json',
-    '../../design/tokens/base.json',
+  // Walk up from cwd looking for design/tokens/base.json. The dev
+  // server runs from apps/operator/ (1 level deep); the standalone
+  // prod build runs from .next/standalone/apps/operator/ (4 levels
+  // deep). Fixed-relpath lists missed the prod cwd; this walks up
+  // until it hits the repo root or runs out of parents.
+  const seeds = [
+    process.cwd(),
+    __dirname,
   ];
-  for (const root of candidateRoots()) {
-    for (const rel of relPaths) {
-      const abs = path.resolve(root, rel);
-      const raw = await tryRead(abs);
-      if (raw !== null) {
-        try {
-          return { source: abs, doc: JSON.parse(raw) };
-        } catch (e) {
-          return { source: abs, error: 'parse: ' + e.message };
+  const seen = new Set();
+  for (const seed of seeds) {
+    let cur = seed;
+    for (let i = 0; i < 12; i++) {
+      const candidate = path.resolve(cur, 'design/tokens/base.json');
+      if (!seen.has(candidate)) {
+        seen.add(candidate);
+        const raw = await tryRead(candidate);
+        if (raw !== null) {
+          try {
+            return { source: candidate, doc: JSON.parse(raw) };
+          } catch (e) {
+            return { source: candidate, error: 'parse: ' + e.message };
+          }
         }
       }
+      const parent = path.dirname(cur);
+      if (parent === cur) break;
+      cur = parent;
     }
   }
   return null;
