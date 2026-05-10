@@ -573,6 +573,22 @@ export async function invoke(
     } catch { /* best-effort — worker prompt handles missing file */ }
   }
 
+  // 8b. Pre-fetch per-role identity from PG (Migration 041
+  // `harness_shared.identity_files`). When ctx.pg isn't set, this
+  // returns empty and prompt-build falls back to reading the on-disk
+  // file at <harnessDir>/identity/<role>.md.
+  let identity = '';
+  if (ctx.pg) {
+    try {
+      const rows = await ctx.pg<{ content: string }[]>`
+        SELECT content FROM harness_shared.identity_files
+         WHERE role = ${role}
+         LIMIT 1
+      `;
+      identity = rows[0]?.content ?? '';
+    } catch { /* best-effort; file fallback covers this */ }
+  }
+
   // 9. Build the prompt.
   const prompt = buildPrompt({
     role,
@@ -581,6 +597,7 @@ export async function invoke(
     promptOverride,
     stateDir: ctx.stateDir,
     harnessDir: ctx.harnessDir,
+    identity,
     projectDir: ctx.projectDir,
     cwdOverride,
     featureId,

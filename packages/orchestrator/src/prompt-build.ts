@@ -27,8 +27,15 @@ export interface BuildPromptInput {
   promptOverride: string;
   /** Path to <stateDir>. Used to read memory/summary.md and to print "State directory" hint. */
   stateDir: string;
-  /** Path to <harnessDir>. Used to read identity/<role>.md. */
+  /** Path to <harnessDir>. Used to read identity/<role>.md when no
+   *  pre-fetched identity is supplied. */
   harnessDir: string;
+  /** Pre-fetched cross-mission identity for this role (PG mirror,
+   *  Migration 041). When non-empty, used instead of the file read at
+   *  `<harnessDir>/identity/<role>.md`. The caller (invoke.ts) loads
+   *  it from `harness_shared.identity_files` when `ctx.pg` is set;
+   *  empty string falls through to the file path. */
+  identity?: string;
   /** Path to the project root. Printed in runtime context. */
   projectDir: string;
   /** Worktree cwd if branch-iso is on AND a feature_id is set. Empty string disables. */
@@ -105,8 +112,12 @@ export function buildPrompt(input: BuildPromptInput): string {
     }
   }
 
-  // 4. Per-role identity (cross-mission).
-  const identity = fileContents(`${input.harnessDir}/identity/${input.role}.md`);
+  // 4. Per-role identity (cross-mission). PG-canonical via Migration
+  // 041 when caller passed `input.identity`; otherwise fall back to
+  // the on-disk file (legacy / no-PG path).
+  const identity = (input.identity && input.identity.length > 0)
+    ? input.identity
+    : fileContents(`${input.harnessDir}/identity/${input.role}.md`);
   if (identity) {
     out.push('\n---');
     out.push(`## Your identity (cross-mission memory for the ${input.role} role)\n`);
