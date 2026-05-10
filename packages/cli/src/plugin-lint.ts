@@ -14,7 +14,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { validateManifest } from '@papercusp/plugin-loader/dist/manifest-validate.js';
+import { validateManifest } from '@papercusp/plugin-loader/manifest-validate';
 
 const ENTRY_CANDIDATES = [
   'index.cjs', 'dist/index.cjs',
@@ -40,18 +40,10 @@ export async function cmdPluginLint(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Schema validation (mirrors loader.readManifest).
-  let result;
-  try {
-    result = validateManifest(manifest);
-  } catch (e) {
-    // Fallback: try the source path under the workspace, in case the
-    // dist build hasn't been produced yet.
-    const fallback = await import('../../../../packages/plugin-loader/src/manifest-validate.ts')
-      .catch(() => null);
-    if (!fallback) throw e;
-    result = fallback.validateManifest(manifest);
-  }
+  // Schema validation (mirrors loader.readManifest). Direct import via
+  // the package's `manifest-validate` export — works in both the TS dev
+  // setup and any future built distribution.
+  const result = validateManifest(manifest);
 
   let exit = 0;
 
