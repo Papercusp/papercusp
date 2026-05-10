@@ -410,6 +410,13 @@ export interface InvokeOptions {
    * state — the caller (operator) computes these and passes them in.
    */
   extraEnv?: Record<string, string>;
+  /**
+   * Optional AbortSignal. When aborted, the spawn flow sends SIGTERM
+   * to the child agent process (then SIGKILL after 2s grace via the
+   * existing timeout path). Used by Phase 9's orchestrator.spawn
+   * primitive to implement `orchestrator.cancel`.
+   */
+  signal?: AbortSignal;
 }
 
 export async function invoke(
@@ -783,6 +790,23 @@ export async function invoke(
         timedOut = true;
         try { child.kill('SIGTERM'); } catch { /* ignore */ }
       }, timeoutMs);
+    }
+
+    // Phase 9: caller-supplied AbortSignal lets `orchestrator.cancel`
+    // kill the child mid-flight. SIGTERM first; the orchestrator's
+    // existing exit-handling drains, then we send SIGKILL after 2s if
+    // the child doesn't exit. If the signal is already aborted at spawn
+    // time we kill immediately.
+    let cancelled = false;
+    const onAbort = () => {
+      if (cancelled) return;
+      cancelled = true;
+      try { child.kill('SIGTERM'); } catch { /* ignore */ }
+      setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* ignore */ } }, 2_000).unref();
+    };
+    if (options.signal) {
+      if (options.signal.aborted) onAbort();
+      else options.signal.addEventListener('abort', onAbort, { once: true });
     }
 
     // Live streaming via the operator's chunk bus. POST each stdout
