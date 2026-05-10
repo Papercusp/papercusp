@@ -100,10 +100,17 @@ function startChild(): ChildHandle {
   proc.on('error', (err) => {
     for (const p of handle.pending.values()) p.reject(err);
     handle.pending.clear();
+    // Drop from registry so ensureChild() starts a fresh one next time.
+    for (const [k, h] of children.entries()) {
+      if (h === handle) children.delete(k);
+    }
   });
   proc.on('close', () => {
     for (const p of handle.pending.values()) p.reject(new Error('gitnexus mcp process exited'));
     handle.pending.clear();
+    for (const [k, h] of children.entries()) {
+      if (h === handle) children.delete(k);
+    }
   });
   return handle;
 }
