@@ -13,7 +13,7 @@ import type { Plugin } from '@papercusp/plugin-sdk';
 const plugin: Plugin = {
   kind: 'plugin',
   name: '@papercupai/vscode-server',
-  version: '0.1.1',
+  version: '0.1.2',
   papercusp: '^0.1.0',
   description: 'Embed code-server as a dashboard tab.',
   capabilities: ['ui:dashboard-tab'],
