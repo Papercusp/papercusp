@@ -13,8 +13,9 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { validateManifest } from '@papercusp/plugin-loader/manifest-validate';
+import { lintManifest } from '@papercusp/plugin-loader/manifest-lint';
 
 const ENTRY_CANDIDATES = [
   'index.cjs', 'dist/index.cjs',
@@ -98,6 +99,39 @@ export async function cmdPluginLint(args: string[]): Promise<void> {
         console.log(`✓ ${m.capabilities.length} capability declaration(s) look well-formed`);
       }
     }
+  }
+
+  // Plan-rev3 lint pass: G6 (wasm-actions cross-check against colocated
+  // wit-bindgen .d.ts) + H6 (iframe HTML same-origin asset audit). Pure
+  // helpers from `@papercusp/plugin-loader/manifest-lint`; resolvers
+  // hand the helpers file I/O appropriate to this dir.
+  const lintFindings = await lintManifest(manifest as Parameters<typeof lintManifest>[0], {
+    wasmDts: async (wasmPath: string): Promise<string | null> => {
+      const wasmAbs = join(dir, wasmPath);
+      const dtsCandidates = [
+        wasmAbs.replace(/\.wasm$/, '.d.ts'),
+        join(dirname(wasmAbs), 'bindings.d.ts'),
+        join(dirname(wasmAbs), 'index.d.ts'),
+      ];
+      const found = dtsCandidates.find((p) => existsSync(p));
+      return found ? readFileSync(found, 'utf8') : null;
+    },
+    iframeHtml: (entry: string): string | null => {
+      const abs = join(dir, entry);
+      try { return readFileSync(abs, 'utf8'); } catch { return null; }
+    },
+  });
+  // Skip the bare-wildcard finding — the inline check above already
+  // surfaced it with a richer message. De-dupe by rule.
+  const lintFromHelper = lintFindings.filter((f) => f.rule !== 'bare-wildcard-cap');
+  for (const f of lintFromHelper) {
+    const sigil = f.level === 'error' ? '✗' : '⚠';
+    const tag = f.where ? ` (${f.where})` : '';
+    console.error(`${sigil} ${f.rule}: ${f.message}${tag}`);
+    if (f.level === 'error') exit = 1;
+  }
+  if (lintFromHelper.length === 0) {
+    console.log('✓ no plan-rev3 lint findings (wasm-actions / iframe-same-origin clean)');
   }
 
   process.exit(exit);
