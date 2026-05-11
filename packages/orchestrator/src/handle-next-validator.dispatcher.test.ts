@@ -387,15 +387,29 @@ test('handleNextValidator â€” synth success + validator pass + merge CONFLICT â†
     const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
     assert.equal(won.length, 0, 'on-synthesis-won does NOT fire on merge conflict');
 
-    // Synth branch preserved for manual recovery.
-    const branches = spawnSync('git', ['branch'], {
-      cwd: p.projectDir,
-      encoding: 'utf8',
-    }).stdout;
-    assert.ok(branches.includes('F-MC-synthesis'), 'synth branch preserved');
-    assert.ok(
+    // Feature reverted to 'failing' so orchestrator retries with a
+    // fresh round rather than considering it shipped.
+    const features = p.readFeatures();
+    assert.equal(
+      features.find((f) => f.id === 'F-MC')?.status,
+      'failing',
+      'feature reverted to failing for retry',
+    );
+
+    // All worktrees + branches cleaned up so retry isn't blocked by
+    // leftover state. Manual recovery is via git reflog.
+    assert.equal(
       existsSync(join(p.stateDir, 'worktrees', 'F-MC-synthesis')),
-      'synth worktree preserved',
+      false,
+      'synth worktree dropped for clean retry',
+    );
+    assert.equal(
+      existsSync(join(p.stateDir, 'worktrees', 'F-MC-lane-1')),
+      false,
+    );
+    assert.equal(
+      existsSync(join(p.stateDir, 'worktrees', 'F-MC-lane-2')),
+      false,
     );
   } finally {
     p.cleanup();

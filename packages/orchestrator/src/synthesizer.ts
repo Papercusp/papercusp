@@ -20,7 +20,7 @@ import { invoke, type InvokeContext } from './invoke';
 import { branchIsoBase, worktreePath } from './branch-iso';
 import { runHook } from './hooks';
 import { competitionManifestPath, type CompetitionManifest } from './lanes';
-import { readFeatures, stateCtx } from './state';
+import { readFeatures, setFeatureStatus, stateCtx } from './state';
 import type { HarnessConfig } from './types';
 
 export interface SynthesisResult {
@@ -290,50 +290,50 @@ export async function handleSynthesisOutcome(
   };
   const base = branchIsoBase(branchIsoCtx);
 
+  // Helper: handle a failed checkout/merge by reverting feature to
+  // 'failing' so the orchestrator retries with a fresh round, dropping
+  // synth + lane worktrees so retry isn't blocked by leftover state.
+  // Don't fire on-synthesis-won — the merge didn't land. Reflog is the
+  // recovery path if the user wants to inspect what synth produced.
+  const revertOnMergeFail = async (reason: string): Promise<void> => {
+    log(`SYNTHESIZER: ${fid} ${reason} — reverting to 'failing' for retry`);
+    await setFeatureStatus(ctx.stateDir, fid, 'failing', { ctx: stateCtx(ctx) });
+  };
+
   if (status === 'passed') {
     log(`SYNTHESIZER: ${fid} validator passed → merging ${synthBranch}`);
     const checkout = git(['checkout', base], { cwd: ctx.projectDir });
     if (checkout.exitCode !== 0) {
-      // Can't get onto base (uncommitted state somewhere, or base
-      // branch missing). Preserve the synth worktree + branch so the
-      // user can recover manually. Don't fire on-synthesis-won.
-      log(
-        `SYNTHESIZER: ${fid} checkout ${base} failed (rc=${checkout.exitCode}) — preserving synth branch ${synthBranch} for manual recovery`,
-      );
       if (checkout.outputHead(5)) log(`  ${checkout.outputHead(5)}`);
-      return;
-    }
-    const merge = git(
-      ['merge', '--no-ff', synthBranch, '-m', `synthesizer winner: ${fid}`],
-      { cwd: ctx.projectDir },
-    );
-    if (merge.exitCode !== 0) {
-      // Merge conflict (base moved during synth, or another feature
-      // touched the same lines). Abort the merge to leave base clean,
-      // and preserve the synth branch + worktree so the user can
-      // manually rebase + retry. Do NOT fire on-synthesis-won — the
-      // merge didn't actually land.
-      log(
-        `SYNTHESIZER: ${fid} merge of ${synthBranch} failed (rc=${merge.exitCode}) — aborting; synth branch preserved for manual recovery`,
+      await revertOnMergeFail(`checkout ${base} failed (rc=${checkout.exitCode})`);
+      // Fall through to cleanup below (drop synth + lane worktrees).
+    } else {
+      const merge = git(
+        ['merge', '--no-ff', synthBranch, '-m', `synthesizer winner: ${fid}`],
+        { cwd: ctx.projectDir },
       );
-      if (merge.outputHead(10)) log(`  ${merge.outputHead(10)}`);
-      git(['merge', '--abort'], { cwd: ctx.projectDir });
-      return;
+      if (merge.exitCode !== 0) {
+        if (merge.outputHead(10)) log(`  ${merge.outputHead(10)}`);
+        git(['merge', '--abort'], { cwd: ctx.projectDir });
+        await revertOnMergeFail(`merge of ${synthBranch} failed (rc=${merge.exitCode})`);
+        // Fall through to cleanup.
+      } else {
+        if (merge.outputHead(5)) log(`  ${merge.outputHead(5)}`);
+        runHook('on-synthesis-won', {
+          stateDir: ctx.stateDir,
+          projectDir: ctx.projectDir,
+          logDir: ctx.logDir,
+          env: {
+            FEATURE_ID: fid,
+            SYNTH_BRANCH: synthBranch,
+            LANE_COUNT: String(laneCount),
+            PROJECT_DIR: ctx.projectDir,
+            STATE_DIR: ctx.stateDir,
+          },
+          log,
+        });
+      }
     }
-    if (merge.outputHead(5)) log(`  ${merge.outputHead(5)}`);
-    runHook('on-synthesis-won', {
-      stateDir: ctx.stateDir,
-      projectDir: ctx.projectDir,
-      logDir: ctx.logDir,
-      env: {
-        FEATURE_ID: fid,
-        SYNTH_BRANCH: synthBranch,
-        LANE_COUNT: String(laneCount),
-        PROJECT_DIR: ctx.projectDir,
-        STATE_DIR: ctx.stateDir,
-      },
-      log,
-    });
   } else {
     log(
       `SYNTHESIZER: ${fid} validator did not pass (status=${status || '?'}) → cleaning up without merge`,
