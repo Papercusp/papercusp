@@ -16,6 +16,13 @@ export default defineConfig({
   test: {
     include: ['src/**/*.dispatcher.test.ts'],
     pool: 'forks',
-    testTimeout: 15_000,
+    // Each test spawns 10-20 git subprocesses (worktree add/remove,
+    // branch ops, checkout, merge); in tmpfs this is ~10s per test on
+    // typical hardware. Generous timeout reflects the actual work.
+    testTimeout: 45_000,
+    // forks pool spawns one fork per file; share between files by
+    // running them in a single pool worker so vitest doesn't re-import
+    // main-loop.ts per file (each import is ~5s of TS transform).
+    poolOptions: { forks: { singleFork: true } },
   },
 });

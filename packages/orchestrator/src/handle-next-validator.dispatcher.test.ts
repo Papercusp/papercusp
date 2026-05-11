@@ -35,11 +35,61 @@ beforeEach(() => {
   hook.mockReset();
 });
 
-// Note: the synthesis-success → merge → on-synthesis-won hook firing
-// path is tested at the handleSynthesisOutcome layer in
-// synthesizer-integration.test.ts (which doesn't trigger the
-// fire-and-forget HTTP fetches that keep the worker_threads pool alive
-// past the handler return). Tests here exercise dispatcher-only branches.
+// ─── synthesis success path (full dispatcher) ────────────────────
+
+test('handleNextValidator — synth succeeds + validator passes → merge synth branch + fire on-synthesis-won', async () => {
+  const p = buildOrchTestContext();
+  try {
+    p.addLane('F-1', 1, { 'a.txt': 'lane1\n' });
+    p.addLane('F-1', 2, { 'a.txt': 'lane2\n' });
+    p.writeManifest('F-1', 2);
+    p.setFeatures([{ id: 'F-1', status: 'validating' }]);
+
+    inv.mockImplementation(async (_ctx: any, role: string, extras: string[]) => {
+      if (role === 'synthesizer') {
+        const wt = extras
+          .find((e) => e.startsWith('SYNTHESIS_WORKTREE='))!
+          .split('=', 2)[1];
+        writeFileSync(join(wt, 'a.txt'), 'synthesized\n');
+        return { exitCode: 0, output: '', stderr: '', runId: 'r1' };
+      }
+      if (role === 'validator') {
+        p.setFeatures([{ id: 'F-1', status: 'passed' }]);
+        return { exitCode: 0, output: '', stderr: '', runId: 'r2' };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    const result = await _handleNextValidatorForTests(
+      { verb: 'NEXT_VALIDATOR', arg: 'F-1', raw: 'NEXT_VALIDATOR F-1' } as any,
+      p.ctx,
+      p.logger,
+      p.cfg as any,
+      p.lanePool,
+    );
+
+    assert.equal(result.terminal, false);
+    const roles = inv.mock.calls.map((c: any[]) => c[1]);
+    assert.deepEqual(roles, ['synthesizer', 'validator']);
+    const show = spawnSync('git', ['show', 'main:a.txt'], {
+      cwd: p.projectDir,
+      encoding: 'utf8',
+    });
+    assert.equal(show.stdout, 'synthesized\n');
+    const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
+    assert.equal(won.length, 1);
+    assert.equal(won[0][1].env.FEATURE_ID, 'F-1');
+    assert.equal(won[0][1].env.SYNTH_BRANCH, 'harness/F-1-synthesis');
+    assert.equal(won[0][1].env.LANE_COUNT, '2');
+    assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-1-synthesis')), false);
+    assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-1-lane-1')), false);
+    assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-1-lane-2')), false);
+    assert.equal(existsSync(join(p.stateDir, 'competition-F-1.json')), false);
+  } finally {
+    p.cleanup();
+  }
+});
+
 
 // ─── Bug C: synth-fail N>1 → skip validator, mark failing ────────
 
