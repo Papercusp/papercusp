@@ -71,55 +71,48 @@ export function parallelMode(cfg: HarnessConfig): 'lane' | 'competition' | 'adap
 }
 
 /**
- * Adaptive-mode tier configuration.
+ * Worker-count tier configuration.
  *
- * In adaptive mode the orchestrator LLM picks how many workers to
- * dispatch per feature from a bounded vocabulary. Tiers and labels are
- * configured globally in harness_shared.orchestrator_settings (DB-backed,
- * editable via the /settings/orchestrator UI). The orchestrator main-loop
- * fetches them at startup and seeds the prompt with both the rubric
- * and the current free-slot budget.
+ * When tiers are configured under `parallelWorkers.adaptive`, the
+ * orchestrator LLM picks how many workers to dispatch per feature from
+ * this bounded vocabulary. Defaults: {1, 2, 4} = trivial / normal / hard.
  *
- * Defaults match the static hybrid mode's intuition: {1, 2, 4} =
- * trivial / normal / hard. Returning an immutable shape (cloned arrays)
- * so callers can't mutate cached config.
+ * Returning an immutable shape (cloned arrays) so callers can't mutate
+ * cached config.
  */
-export interface AdaptiveTiers {
+export interface WorkerCountTiers {
   tiers: number[];
   labels: string[];
   rubric: string;
 }
 
-export const DEFAULT_ADAPTIVE_TIERS: AdaptiveTiers = {
+export const DEFAULT_WORKER_COUNT_TIERS: WorkerCountTiers = {
   tiers: [1, 2, 4],
   labels: ['trivial', 'normal', 'hard'],
   rubric: '',
 };
 
-export function parallelAdaptiveTiers(cfg: HarnessConfig): AdaptiveTiers {
+export function workerCountTiers(cfg: HarnessConfig): WorkerCountTiers {
   const raw = configGet<unknown>(cfg, 'parallelWorkers.adaptive', undefined);
   if (!raw || typeof raw !== 'object') {
     return {
-      tiers: [...DEFAULT_ADAPTIVE_TIERS.tiers],
-      labels: [...DEFAULT_ADAPTIVE_TIERS.labels],
-      rubric: DEFAULT_ADAPTIVE_TIERS.rubric,
+      tiers: [...DEFAULT_WORKER_COUNT_TIERS.tiers],
+      labels: [...DEFAULT_WORKER_COUNT_TIERS.labels],
+      rubric: DEFAULT_WORKER_COUNT_TIERS.rubric,
     };
   }
   const obj = raw as Record<string, unknown>;
-  const tiersIn = Array.isArray(obj.tiers) ? obj.tiers : DEFAULT_ADAPTIVE_TIERS.tiers;
-  const labelsIn = Array.isArray(obj.labels) ? obj.labels : DEFAULT_ADAPTIVE_TIERS.labels;
+  const tiersIn = Array.isArray(obj.tiers) ? obj.tiers : DEFAULT_WORKER_COUNT_TIERS.tiers;
+  const labelsIn = Array.isArray(obj.labels) ? obj.labels : DEFAULT_WORKER_COUNT_TIERS.labels;
   const tiers = tiersIn
     .map((n) => (typeof n === 'number' ? n : parseInt(String(n), 10)))
     .filter((n): n is number => Number.isFinite(n) && n > 0)
     .map((n) => Math.floor(n));
   const labels = labelsIn.map((s) => String(s ?? ''));
-  // Defensive: if tier/label lengths mismatched, fall back to defaults
-  // rather than mid-render misalignment. Caller (settings PUT) validates
-  // on write, so this branch is for malformed external state.
   if (tiers.length < 2 || tiers.length !== labels.length) {
     return {
-      tiers: [...DEFAULT_ADAPTIVE_TIERS.tiers],
-      labels: [...DEFAULT_ADAPTIVE_TIERS.labels],
+      tiers: [...DEFAULT_WORKER_COUNT_TIERS.tiers],
+      labels: [...DEFAULT_WORKER_COUNT_TIERS.labels],
       rubric: typeof obj.rubric === 'string' ? obj.rubric : '',
     };
   }
@@ -128,6 +121,51 @@ export function parallelAdaptiveTiers(cfg: HarnessConfig): AdaptiveTiers {
     labels,
     rubric: typeof obj.rubric === 'string' ? obj.rubric : '',
   };
+}
+
+/**
+ * Resolve the worker count for one NEXT_WORKER dispatch.
+ *
+ * Single source of truth that replaces the lane/competition/adaptive
+ * branching at dispatcher time. Logic:
+ *
+ *   - max=1 → always 1.
+ *   - If `parallelWorkers.adaptive` tiers are configured AND the
+ *     orchestrator passed an `N=<k>` via `requestedN`: validate k against
+ *     the tier set (clamp to closest valid tier ≤ k, else smallest tier).
+ *   - Else (no tiers OR no requestedN): use `parallelWorkersPerFeature`.
+ *   - Final result is clamped to `min(max, availableSlots)` with a floor
+ *     of 1.
+ *
+ * Pure function — does not log, does not record telemetry. Caller is
+ * responsible for surfacing tier-mismatch or slot-clamp events.
+ */
+export function resolveWorkerCount(
+  cfg: HarnessConfig,
+  requestedN: number | undefined,
+  availableSlots: number,
+): number {
+  const max = parallelMaxWorkers(cfg);
+  if (max === 1) return 1;
+
+  const hasTiers =
+    configGet<unknown>(cfg, 'parallelWorkers.adaptive', undefined) !== undefined;
+
+  let desired: number;
+  if (hasTiers && requestedN !== undefined) {
+    const tiers = workerCountTiers(cfg).tiers;
+    if (tiers.includes(requestedN)) {
+      desired = requestedN;
+    } else {
+      const lower = tiers.filter((t) => t <= requestedN);
+      desired = lower.length > 0 ? lower[lower.length - 1] : tiers[0];
+    }
+  } else {
+    desired = parallelWorkersPerFeature(cfg);
+  }
+
+  const cap = Math.min(max, Math.max(0, availableSlots));
+  return Math.max(1, Math.min(desired, cap || 1));
 }
 
 /** Whether adaptive parallelism is active for the current config. */

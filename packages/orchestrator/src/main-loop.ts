@@ -42,7 +42,7 @@ import {
   isAdaptiveMode,
   isCompetitionMode,
   isLaneMode,
-  parallelAdaptiveTiers,
+  workerCountTiers,
   maxFeaturesInFlight as maxFeaturesInFlightCfg,
   parallelMaxWorkers,
   parallelMode,
@@ -51,7 +51,7 @@ import {
   readCompetitionManifest,
   useChunkLoop,
   writeCompetitionManifest,
-  type AdaptiveTiers,
+  type WorkerCountTiers,
 } from './lanes';
 import type { LanePool } from './lanes';
 import { FileLockQueue } from './file-lock-queue';
@@ -332,7 +332,7 @@ async function runMainLoopBody(
   // at parallelWorkers.adaptive.{tiers,labels,rubric}. Read directly from
   // cfg — no API round-trip — so a flaky operator can never block start.
   const adaptiveActive = isAdaptiveMode(cfg);
-  const adaptiveTiers: AdaptiveTiers = parallelAdaptiveTiers(cfg);
+  const adaptiveTiers: WorkerCountTiers = workerCountTiers(cfg);
   if (adaptiveActive) {
     logger.log(
       `ADAPTIVE: tiers=[${adaptiveTiers.tiers.join(', ')}] labels=[${adaptiveTiers.labels.join(', ')}] max=${parallelMaxWorkers(cfg)}`,
@@ -793,7 +793,7 @@ async function handleNextWorker(
     return handleAdaptiveWorker(parsed, fid, ctx, logger, cfg, lanePool);
   }
   if (isCompetitionMode(cfg)) {
-    return handleCompetitionWorker(fid, ctx, logger, cfg, lanePool);
+    return handleMultiWorker(fid, parallelWorkersPerFeature(cfg), ctx, logger, cfg, lanePool, 'static');
   }
   if (isLaneMode(cfg)) {
     return handleParallelLaneWorker(fid, ctx, logger, cfg, lanePool);
@@ -1035,10 +1035,10 @@ async function handleNextValidator(
 }
 
 /**
- * Competition-mode worker: spawn `workersPerFeature` workers on the SAME
- * feature in sibling git worktrees. Each worker grabs a slot from the
- * shared LanePool so multiple competitions can run concurrently across
- * different features (max=10 + workersPerFeature=2 → up to 5 simultaneous
+ * Multi-worker dispatch: spawn `count` workers on the SAME feature in
+ * sibling git worktrees. Each worker grabs a slot from the shared
+ * LanePool so multiple multi-worker dispatches can run concurrently
+ * across different features (max=10 + count=2 → up to 5 simultaneous
  * 2-way competitions).
  *
  * Returns immediately after registering the lanes — the actual worker
@@ -1047,29 +1047,36 @@ async function handleNextValidator(
  * a different feature, typically) while these workers run.
  *
  * The validator path drains lanes per-feature (waitForFeature(fid)) so
- * other features' competitions stay live while feature A is being
- * validated.
+ * other features' multi-worker rounds stay live while feature A is
+ * being validated.
+ *
+ * `source` controls the log prefix ('static' → "COMPETITION",
+ * 'adaptive' → "COMPETITION (adaptive)") and whether a workersPerFeature
+ * > max clamp warning fires (only meaningful for the static path; the
+ * adaptive caller has already validated against max).
  */
-async function handleCompetitionWorker(
+async function handleMultiWorker(
   fid: string,
+  count: number,
   ctx: InvokeContext,
   logger: Logger,
   cfg: ReturnType<typeof readConfig>,
   lanePool: LanePool,
+  source: 'static' | 'adaptive' = 'static',
 ): Promise<DispatchResult> {
   const max = parallelMaxWorkers(cfg);
-  const perFeature = parallelWorkersPerFeature(cfg);
   // Clamp: can't run more workers per feature than max (would deadlock
-  // the acquire loop). User-set workersPerFeature > max is a config
-  // error; clamp + warn rather than hang.
-  const effectivePer = Math.min(perFeature, max);
-  if (effectivePer !== perFeature) {
+  // the acquire loop). User-set count > max is a config error in the
+  // static path; clamp + warn rather than hang.
+  const effectivePer = Math.min(count, max);
+  if (effectivePer !== count && source === 'static') {
     logger.log(
-      `  competition: workersPerFeature=${perFeature} > max=${max}; clamping to ${effectivePer}`,
+      `  competition: workersPerFeature=${count} > max=${max}; clamping to ${effectivePer}`,
     );
   }
+  const tag = source === 'adaptive' ? 'COMPETITION (adaptive)' : 'COMPETITION';
   logger.log(
-    `COMPETITION: spawning ${effectivePer} workers on ${fid}` +
+    `${tag}: spawning ${effectivePer} workers on ${fid}` +
       ` (pool ${lanePool.count()}/${max} before this)`,
   );
   // on-competition-start hook (informational).
@@ -1162,7 +1169,7 @@ async function handleCompetitionWorker(
     await setFeatureStatus(ctx.stateDir, fid, 'validating', { ctx: stateCtx(ctx) });
     writeCompetitionManifest(ctx.stateDir, fid, effectivePer);
     logger.log(
-      `COMPETITION: manifest ${competitionManifestPath(ctx.stateDir, fid)} written` +
+      `${tag}: manifest ${competitionManifestPath(ctx.stateDir, fid)} written` +
         ` (${effectivePer}-way for ${fid})`,
     );
   })();
@@ -1194,7 +1201,7 @@ async function handleAdaptiveWorker(
   lanePool: LanePool,
 ): Promise<DispatchResult> {
   const max = parallelMaxWorkers(cfg);
-  const tiers = parallelAdaptiveTiers(cfg);
+  const tiers = workerCountTiers(cfg);
   const requestedN = parsed.n ?? tiers.tiers[0];
 
   // Validate against the configured tier set. Out-of-vocabulary values
@@ -1247,117 +1254,8 @@ async function handleAdaptiveWorker(
     return handleParallelLaneWorker(fid, ctx, logger, cfg, lanePool);
   }
 
-  // N>1: competition path. Wrap handleCompetitionWorker by overriding
-  // workersPerFeature for this single dispatch via a synthetic config.
-  // (handleCompetitionWorker reads parallelWorkersPerFeature(cfg); we
-  // can't shadow it without a tweak, so call its core logic inline.)
-  return handleCompetitionWorkerWithCount(fid, actualN, ctx, logger, cfg, lanePool);
-}
-
-/**
- * Competition-mode worker with an explicit count override.
- *
- * Extracted so adaptive mode can choose N per call instead of reading
- * the static `parallelWorkers.workersPerFeature` config. Logic mirrors
- * handleCompetitionWorker exactly — kept as a separate function instead
- * of refactoring to avoid destabilizing the existing competition path.
- */
-async function handleCompetitionWorkerWithCount(
-  fid: string,
-  count: number,
-  ctx: InvokeContext,
-  logger: Logger,
-  cfg: ReturnType<typeof readConfig>,
-  lanePool: LanePool,
-): Promise<DispatchResult> {
-  const max = parallelMaxWorkers(cfg);
-  const effectivePer = Math.min(count, max);
-  logger.log(
-    `COMPETITION (adaptive): spawning ${effectivePer} workers on ${fid}` +
-      ` (pool ${lanePool.count()}/${max} before this)`,
-  );
-  runHook('on-competition-start', {
-    stateDir: ctx.stateDir,
-    projectDir: ctx.projectDir,
-    logDir: ctx.logDir,
-    env: {
-      FEATURE_ID: fid,
-      LANE_COUNT: String(effectivePer),
-      PROJECT_DIR: ctx.projectDir,
-      STATE_DIR: ctx.stateDir,
-    },
-    log: logger.log,
-  });
-  await setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true, ctx: stateCtx(ctx) });
-
-  const branchIsoCtx = {
-    cfg,
-    projectDir: ctx.projectDir,
-    stateDir: ctx.stateDir,
-    log: logger.log,
-  };
-  const base = branchIsoBase(branchIsoCtx);
-  const worktreesRoot = join(ctx.stateDir, 'worktrees');
-  mkdirSync(worktreesRoot, { recursive: true });
-
-  const laneIds: number[] = [];
-  for (let i = 1; i <= effectivePer; i++) {
-    laneIds.push(await lanePool.acquire(fid));
-  }
-
-  void (async () => {
-    const lanePromises: Promise<void>[] = [];
-    for (let i = 0; i < effectivePer; i++) {
-      const laneNum = i + 1;
-      const laneId = laneIds[i];
-      const laneFid = `${fid}-lane-${laneNum}`;
-      const wt = join(worktreesRoot, laneFid);
-      const br = `harness/${laneFid}`;
-      if (!existsSync(wt)) {
-        const r = git(['worktree', 'add', '-B', br, wt, base], { cwd: ctx.projectDir });
-        if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
-      }
-      logger.log(`  competition lane ${laneNum} (${fid}): ${wt}`);
-
-      const lanePromise = (async () => {
-        try {
-          await invoke(
-            { ...ctx, worktreePathFor: () => wt },
-            'worker',
-            [
-              `FEATURE_ID=${laneFid}`,
-              `COMPETITION_PARENT=${fid}`,
-              `COMPETITION_LANE=${laneNum}`,
-            ],
-          );
-        } catch (err) {
-          logger.log(`  competition lane ${laneNum} (${fid}) error: ${(err as Error).message}`);
-        }
-        git(['add', '-A'], { cwd: wt });
-        const status = git(['diff', '--cached', '--quiet'], { cwd: wt });
-        if (status.exitCode !== 0) {
-          const r = git(
-            ['commit', '--quiet', '-m', `worker: ${laneFid} (competition lane ${laneNum})`],
-            { cwd: wt },
-          );
-          if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
-        }
-        lanePool.release(laneId);
-      })();
-      lanePromises.push(lanePromise);
-    }
-
-    await Promise.all(lanePromises);
-
-    await setFeatureStatus(ctx.stateDir, fid, 'validating', { ctx: stateCtx(ctx) });
-    writeCompetitionManifest(ctx.stateDir, fid, effectivePer);
-    logger.log(
-      `COMPETITION (adaptive): manifest ${competitionManifestPath(ctx.stateDir, fid)} written` +
-        ` (${effectivePer}-way for ${fid})`,
-    );
-  })();
-
-  return { terminal: false, exitCode: 0, reason: 'idle' };
+  // N>1: dispatch competition with the orchestrator-picked count.
+  return handleMultiWorker(fid, actualN, ctx, logger, cfg, lanePool, 'adaptive');
 }
 
 /**

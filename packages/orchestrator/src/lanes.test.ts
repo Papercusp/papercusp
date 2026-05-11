@@ -338,17 +338,17 @@ test('createLanePool — waitForFeature resolves only when feature lanes drain',
   }
 });
 
-import { parallelAdaptiveTiers, isAdaptiveMode, DEFAULT_ADAPTIVE_TIERS } from './lanes';
+import { workerCountTiers, isAdaptiveMode, DEFAULT_WORKER_COUNT_TIERS } from './lanes';
 
-test('parallelAdaptiveTiers — defaults', () => {
-  const out = parallelAdaptiveTiers({});
-  assert.deepEqual(out.tiers, DEFAULT_ADAPTIVE_TIERS.tiers);
-  assert.deepEqual(out.labels, DEFAULT_ADAPTIVE_TIERS.labels);
+test('workerCountTiers — defaults', () => {
+  const out = workerCountTiers({});
+  assert.deepEqual(out.tiers, DEFAULT_WORKER_COUNT_TIERS.tiers);
+  assert.deepEqual(out.labels, DEFAULT_WORKER_COUNT_TIERS.labels);
   assert.equal(out.rubric, '');
 });
 
-test('parallelAdaptiveTiers — explicit override', () => {
-  const out = parallelAdaptiveTiers({
+test('workerCountTiers — explicit override', () => {
+  const out = workerCountTiers({
     parallelWorkers: {
       adaptive: { tiers: [1, 3, 6], labels: ['s', 'm', 'l'], rubric: 'foo' },
     },
@@ -358,13 +358,13 @@ test('parallelAdaptiveTiers — explicit override', () => {
   assert.equal(out.rubric, 'foo');
 });
 
-test('parallelAdaptiveTiers — falls back when shapes mismatch', () => {
-  const out = parallelAdaptiveTiers({
+test('workerCountTiers — falls back when shapes mismatch', () => {
+  const out = workerCountTiers({
     parallelWorkers: {
       adaptive: { tiers: [1, 2], labels: ['only-one'], rubric: 'kept' },
     },
   } as any);
-  assert.deepEqual(out.tiers, DEFAULT_ADAPTIVE_TIERS.tiers);
+  assert.deepEqual(out.tiers, DEFAULT_WORKER_COUNT_TIERS.tiers);
   assert.equal(out.rubric, 'kept');
 });
 
@@ -381,4 +381,81 @@ test('isAdaptiveMode requires mode + max>1 + worktrees', () => {
     } as any),
     true,
   );
+});
+
+import { resolveWorkerCount } from './lanes';
+
+test('resolveWorkerCount — max=1 always returns 1', () => {
+  assert.equal(resolveWorkerCount({} as any, undefined, 10), 1);
+  assert.equal(resolveWorkerCount({} as any, 4, 10), 1);
+  assert.equal(
+    resolveWorkerCount({ parallelWorkers: { max: 1 } } as any, 4, 10),
+    1,
+  );
+});
+
+test('resolveWorkerCount — fixed perFeature path (no tiers)', () => {
+  const cfg = {
+    parallelWorkers: { max: 8, workersPerFeature: 3 },
+  } as any;
+  assert.equal(resolveWorkerCount(cfg, undefined, 10), 3);
+  // ignored requestedN when no tiers configured
+  assert.equal(resolveWorkerCount(cfg, 5, 10), 3);
+});
+
+test('resolveWorkerCount — fixed perFeature clamps to availableSlots', () => {
+  const cfg = {
+    parallelWorkers: { max: 8, workersPerFeature: 4 },
+  } as any;
+  assert.equal(resolveWorkerCount(cfg, undefined, 2), 2);
+  assert.equal(resolveWorkerCount(cfg, undefined, 0), 1);
+});
+
+test('resolveWorkerCount — tiers path picks requestedN when in set', () => {
+  const cfg = {
+    parallelWorkers: {
+      max: 8,
+      adaptive: { tiers: [1, 2, 4], labels: ['t', 'n', 'h'], rubric: '' },
+    },
+  } as any;
+  assert.equal(resolveWorkerCount(cfg, 4, 10), 4);
+  assert.equal(resolveWorkerCount(cfg, 2, 10), 2);
+  assert.equal(resolveWorkerCount(cfg, 1, 10), 1);
+});
+
+test('resolveWorkerCount — tiers path clamps requestedN to closest ≤ tier', () => {
+  const cfg = {
+    parallelWorkers: {
+      max: 8,
+      adaptive: { tiers: [1, 2, 4], labels: ['t', 'n', 'h'], rubric: '' },
+    },
+  } as any;
+  // requested 3 → clamps to 2 (closest ≤)
+  assert.equal(resolveWorkerCount(cfg, 3, 10), 2);
+  // requested 7 → clamps to 4
+  assert.equal(resolveWorkerCount(cfg, 7, 10), 4);
+  // requested 0 → falls back to smallest (1)
+  assert.equal(resolveWorkerCount(cfg, 0, 10), 1);
+});
+
+test('resolveWorkerCount — tiers path clamps to availableSlots', () => {
+  const cfg = {
+    parallelWorkers: {
+      max: 8,
+      adaptive: { tiers: [1, 2, 4], labels: ['t', 'n', 'h'], rubric: '' },
+    },
+  } as any;
+  assert.equal(resolveWorkerCount(cfg, 4, 2), 2);
+  assert.equal(resolveWorkerCount(cfg, 4, 1), 1);
+});
+
+test('resolveWorkerCount — tiers configured but no requestedN → falls back to perFeature', () => {
+  const cfg = {
+    parallelWorkers: {
+      max: 8,
+      workersPerFeature: 2,
+      adaptive: { tiers: [1, 4], labels: ['t', 'h'], rubric: '' },
+    },
+  } as any;
+  assert.equal(resolveWorkerCount(cfg, undefined, 10), 2);
 });
