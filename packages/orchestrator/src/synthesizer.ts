@@ -222,7 +222,13 @@ export async function runSynthesizer(inputs: SynthesisInputs): Promise<Synthesis
     git(['add', '-A'], { cwd: worktree });
     const status = git(['diff', '--cached', '--quiet'], { cwd: worktree });
     if (status.exitCode === 0) {
-      log(`SYNTHESIZER: ${fid} produced no changes — treating as failure`);
+      // The synthesizer was told (in synthesizer.md) to always write
+      // files even when shipping a lane verbatim. Exit-without-writes
+      // means it skipped its review. Logged with a distinct prefix so
+      // operators can grep frequency in run.log; the orchestrator's
+      // legacy fallback (branchIsoPostValidator) will merge the worker's
+      // branch unchecked in that case.
+      log(`SYNTHESIZER_SKIPPED: ${fid} exited without writing any files`);
       return { synthesized: false, reason: 'synthesizer produced no changes from base' };
     }
     const commit = git(

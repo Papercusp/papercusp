@@ -161,6 +161,29 @@ test('parallelWorkersPerFeature — defaults to 1 (no override)', () => {
   assert.equal(parallelWorkersPerFeature({ parallelWorkers: { max: 10 } }), 1);
 });
 
+test('parallelWorkersPerFeature — back-compat: legacy mode=competition + no workersPerFeature → max', () => {
+  // Pre-synthesizer harnesses configured competition mode and left
+  // workersPerFeature unset, expecting it to default to max. Without
+  // this back-compat path they silently degrade to single-worker on
+  // first run after upgrade.
+  assert.equal(
+    parallelWorkersPerFeature({ parallelWorkers: { max: 4, mode: 'competition' } }),
+    4,
+  );
+  // Explicit workersPerFeature still wins.
+  assert.equal(
+    parallelWorkersPerFeature({
+      parallelWorkers: { max: 8, mode: 'competition', workersPerFeature: 2 },
+    }),
+    2,
+  );
+  // mode=lane (or absent) → no back-compat, default stays 1.
+  assert.equal(
+    parallelWorkersPerFeature({ parallelWorkers: { max: 4, mode: 'lane' } }),
+    1,
+  );
+});
+
 test('parallelWorkersPerFeature — explicit value wins', () => {
   assert.equal(
     parallelWorkersPerFeature({

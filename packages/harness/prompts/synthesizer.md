@@ -59,7 +59,7 @@ Don't be conservative. If none of the lanes got something right, write it yourse
 1. `cd $SYNTHESIS_WORKTREE` (you're already there).
 2. Read the inputs above.
 3. Read each candidate (diffs + worktree files as needed).
-4. Edit / create / copy files in `$SYNTHESIS_WORKTREE` to produce the shipping version.
+4. **Always** write files to `$SYNTHESIS_WORKTREE`. Even if you decide to ship one lane verbatim, you must copy its files into your worktree — your worktree starts blank from base. Exiting without writes is read as "synthesizer did nothing" and the harness will skip your review entirely and fall back to merging the worker's branch unchecked.
 5. Optionally write a short note to `$SYNTHESIS_NOTE_PATH` summarizing what came from where and why (1-2 paragraphs; surfaces in the UI for human review). Skip if you have nothing illuminating to say.
 6. Do **not** commit. The harness commits whatever you leave in the worktree.
 7. Do **not** mention which lane each piece came from in your edits — the synthesis is one coherent thing. (The note file is the place for that, if you write one.)

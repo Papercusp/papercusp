@@ -811,17 +811,20 @@ async function handleDone(
 }
 
 /**
- * NEXT_WORKER handler. Routes between three paths:
+ * NEXT_WORKER handler. Routes via resolveWorkerCount(cfg, parsed.n,
+ * availableSlots):
  *
- *   - **competition** (Stage 5a): N workers on the same feature in
- *     sibling worktrees; validator picks a winner via COMPETITION_WINNER.
- *     Requires branchIsolation + useWorktrees + parallelWorkers.mode=='competition'.
- *   - **parallel lane** (Stage 5a): up to N workers run on different
- *     features in parallel, each on its own branch. Requires
- *     branchIsolation + parallelWorkers.max > 1.
- *   - **sequential** (Stage 2c): single worker; default.
+ *   - N > 1 → handleMultiWorker spawns N workers on the same feature in
+ *     sibling worktrees. Requires branchIsolation + useWorktrees.
+ *   - N == 1 + max > 1 + branchIso → handleParallelLaneWorker (one worker
+ *     per feature, multiple features in flight).
+ *   - N == 1 + max == 1 → legacy sequential single-worker path (with
+ *     optional debugger pre-check at attempts ≥ debugger.threshold).
+ *   - useChunkLoop → handleChunkLoopWorker short-circuits everything
+ *     above (per-chunk file locks + L1 typecheck gate + replan loop).
  *
- * All three paths share the optional debugger-threshold pre-check.
+ * After workers commit, handleNextValidator runs the synthesizer pass
+ * and then the validator against the synthesized branch.
  */
 async function handleNextWorker(
   parsed: ParsedDecision,
@@ -995,10 +998,17 @@ async function handleNextWorker(
  *     validator running concurrently with workers)
  *   - branchIsoPreValidator (switches to feature branch / logs worktree)
  *   - log "VALIDATOR <fid> starting"
- *   - invoke validator (with worktree cwd if applicable)
- *   - branchIsoPostValidator (merges/PRs/keeps on PASS)
- *   - if a competition manifest exists for this feature: parse winner,
- *     merge winner branch, drop loser worktrees.
+ *   - run the synthesizer pass (for N>1 manifests, or N=1 with
+ *     synthesizeSingle on + a worker worktree present): synthesizer
+ *     produces a unified <fid>-synthesis branch the validator will
+ *     certify
+ *   - invoke validator (cwd = synthesis worktree on synth success,
+ *     otherwise the feature's worker worktree)
+ *   - handleSynthesisOutcome on synth success: merge synth branch on
+ *     PASS, drop all worktrees on FAIL; fires on-synthesis-won hook
+ *   - on synth failure or no-synth: branchIsoPostValidator + lane
+ *     worktree cleanup (skipped when synth failed with N>1 manifest
+ *     since there's nothing to merge)
  */
 async function handleNextValidator(
   parsed: ParsedDecision,
@@ -1067,13 +1077,21 @@ async function handleNextValidator(
   let synthesisAttempted = false;
   {
     let effectiveManifest = readCompetitionManifest(ctx.stateDir, fid);
-    // N=1 fallback: only synthesize if worktrees are enabled — without
-    // them, the worker committed to the project tree directly (not to
-    // `<stateDir>/worktrees/<fid>`), so the singleLaneManifest path
-    // points at a directory that doesn't exist and the synthesizer
-    // gets empty context. Skip silently in that case; the legacy
-    // single-branch path handles merge via branchIsoPostValidator.
-    if (!effectiveManifest && synthesizeSingle(cfg) && worktreeEnabled(cfg)) {
+    // N=1 fallback: only synthesize if worktrees are enabled AND the
+    // feature's worktree actually exists. Without it the singleLaneManifest
+    // points at a missing directory and the synthesizer gets empty
+    // context. This handles:
+    //   - branchIso/worktrees disabled (no worktree created at all)
+    //   - useChunkLoop=true (writes to projectDir, not a worktree)
+    //   - the worker just didn't create one for any reason
+    // Skip silently; legacy single-branch path handles merge via
+    // branchIsoPostValidator.
+    if (
+      !effectiveManifest &&
+      synthesizeSingle(cfg) &&
+      worktreeEnabled(cfg) &&
+      existsSync(worktreePath(ctx.stateDir, fid))
+    ) {
       effectiveManifest = singleLaneManifest(ctx.stateDir, fid);
     }
     if (effectiveManifest) {
@@ -1107,6 +1125,19 @@ async function handleNextValidator(
     }
   }
 
+  // If synth was attempted with a real multi-lane manifest and failed,
+  // there's no usable branch to validate — the worker's parent branch
+  // (harness/<fid>) has no commits because lanes wrote to -lane-N
+  // branches. Running the validator would either fail noisily against
+  // projectDir or, worse, accidentally pass against ambient state.
+  // Mark the feature failed programmatically and skip validator.
+  const earlyManifestForSkip = readCompetitionManifest(ctx.stateDir, fid);
+  const skipValidatorMultiLaneFail =
+    synthesisAttempted &&
+    !synthesisWorktree &&
+    earlyManifestForSkip !== null &&
+    earlyManifestForSkip.n > 1;
+
   const validatorCtx: InvokeContext = synthesisWorktree
     ? { ...ctx, worktreePathFor: () => synthesisWorktree as string }
     : worktreedCtx;
@@ -1118,12 +1149,20 @@ async function handleNextValidator(
   for (const f of (await readFeatures(ctx.stateDir, stateCtx(ctx)))) beforeStatus.set(f.id, f.status);
 
   let validatorRc = 0;
-  try {
-    const r = await invoke(validatorCtx, 'validator', [`FEATURE_ID=${fid}`]);
-    validatorRc = r.exitCode;
-  } catch (err) {
-    logger.log(`VALIDATOR error: ${(err as Error).message}`);
+  if (skipValidatorMultiLaneFail) {
+    logger.log(
+      `SYNTHESIZER: ${fid} synth failed with ${earlyManifestForSkip!.n} lanes — skipping validator, marking failed`,
+    );
+    await setFeatureStatus(ctx.stateDir, fid, 'failed', { ctx: stateCtx(ctx) });
     validatorRc = 1;
+  } else {
+    try {
+      const r = await invoke(validatorCtx, 'validator', [`FEATURE_ID=${fid}`]);
+      validatorRc = r.exitCode;
+    } catch (err) {
+      logger.log(`VALIDATOR error: ${(err as Error).message}`);
+      validatorRc = 1;
+    }
   }
 
   // post-validator hook.

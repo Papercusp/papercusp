@@ -183,8 +183,16 @@ export function parallelWorkersPerFeature(cfg: HarnessConfig): number {
     const n = typeof v === 'number' ? v : parseInt(String(v), 10);
     if (Number.isFinite(n) && n > 0) return Math.floor(n);
   }
-  // Default: 1 worker per feature. The dispatcher picks the multi-worker
-  // path based on resolveWorkerCount + tier config, not on this default.
+  // Back-compat fallback: pre-synthesizer harnesses configured competition
+  // mode via `parallelWorkers.mode: 'competition'` (now ignored at runtime)
+  // and left workersPerFeature unset, expecting it to default to `max`.
+  // Without this fallback those harnesses silently degrade to 1 worker per
+  // feature on first run after upgrade. Removable once configs are migrated
+  // via the Settings UI (which writes workersPerFeature explicitly).
+  const legacyMode = configGet<string>(cfg, 'parallelWorkers.mode', '');
+  if (legacyMode === 'competition') {
+    return parallelMaxWorkers(cfg);
+  }
   return 1;
 }
 

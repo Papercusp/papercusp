@@ -8,7 +8,7 @@
  *
  * Used at lifecycle points (pre-worker, post-worker, pre-validator,
  * post-validator, on-smoke-pass, on-smoke-fail, on-competition-start,
- * on-competition-won, afterDone). Each hook receives env vars set by the
+ * on-synthesis-won, afterDone). Each hook receives env vars set by the
  * caller — typically ROLE / FEATURE_ID / RC / REASON / TRIGGER.
  *
  * On Windows: the user must have bash on PATH (Git for Windows ships it).
