@@ -14,7 +14,7 @@
  * false — same as bash. Callers can invoke them unconditionally without
  * checking the config first.
  */
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { configGet } from './config';
@@ -82,6 +82,11 @@ export function branchIsoPreWorker(ctx: BranchIsoCtx, featureId: string): void {
     }
     const r = git(['worktree', 'add', '-B', br, wt, base], opts);
     if (r.outputHead(3)) ctx.log(`  ${r.outputHead(3)}`);
+    // Mode 0700 on the worktree root — pairs with .mcp.json mode 0600
+    // to harden against sibling-spawn URL theft. Same-UID access is
+    // unaffected; this is a no-op until workers run under different
+    // UIDs (bwrap/firejail). See apps/operator/docs/spawn-signing-threat-model.md.
+    try { chmodSync(wt, 0o700); } catch { /* best-effort */ }
     ctx.log(`  worktree: lane ${wt} (branch ${br}, off ${base})`);
     return;
   }
