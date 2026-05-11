@@ -10,6 +10,7 @@
     "test": "node --test src/**/*.test.ts"
   },
   "dependencies": {
+    "@papercusp/export-state": "*",
     "postgres": "^3.4.9",
     "tsx": "^4.7.0"
   }
