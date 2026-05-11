@@ -115,8 +115,9 @@ export function scanSource(filePath: string, body: string): { found: Finding[]; 
       },
       label: 'ctx.fetch',
     },
-    // ctx.secrets.get('NAME') / ctx.secrets?.get('NAME') → secrets:read:NAME
-    { re: /\bctx\.secrets\??\.get\s*\(\s*['"`]([^'"`]+)['"`]/g, build: (m) => `secrets:read:${m}`, label: 'ctx.secrets.get' },
+    // ctx.secrets.read('NAME') / ctx.secrets?.read('NAME') → secrets:read:NAME
+    // (real SDK method is `read`, not `get` — see plugin-loader/api-factory.ts)
+    { re: /\bctx\.secrets\??\.read\s*\(\s*['"`]([^'"`]+)['"`]/g, build: (m) => `secrets:read:${m}`, label: 'ctx.secrets.read' },
     // ctx.hookBus.emit('foo.bar') / ctx.hookBus?.emit('foo.bar') → events:emit:foo.bar
     {
       re: /\bctx\.hookBus\??\.emit\s*\(\s*['"`]([^'"`]+)['"`]/g,
@@ -159,7 +160,7 @@ export function scanSource(filePath: string, body: string): { found: Finding[]; 
   const unverifiedPatterns: Array<{ re: RegExp; label: string }> = [
     { re: /\bctx\.spawn\s*\(\s*[a-zA-Z_$][\w$.]*[,)]/g, label: 'ctx.spawn(<dynamic>)' },
     { re: /\bctx\.fetch\s*\(\s*`https?:\/\/\$\{/g, label: 'ctx.fetch(<template-literal>)' },
-    { re: /\bctx\.secrets\??\.get\s*\(\s*[a-zA-Z_$][\w$.]*[,)]/g, label: 'ctx.secrets.get(<dynamic>)' },
+    { re: /\bctx\.secrets\??\.read\s*\(\s*[a-zA-Z_$][\w$.]*[,)]/g, label: 'ctx.secrets.read(<dynamic>)' },
   ];
 
   for (let i = 0; i < lines.length; i++) {

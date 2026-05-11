@@ -18,10 +18,10 @@ describe('scanSource', () => {
     expect(found.map((f) => f.cap)).toEqual(['http:fetch:api.github.com', 'http:fetch:api.foo.com']);
   });
 
-  it('detects ctx.secrets.get and ctx.secrets?.get', () => {
+  it('detects ctx.secrets.read and ctx.secrets?.read', () => {
     const { found } = scanSource('a.ts', `
-      const a = ctx.secrets.get('GH_TOKEN');
-      const b = ctx.secrets?.get('OPENAI_API_KEY');
+      const a = ctx.secrets.read('GH_TOKEN');
+      const b = ctx.secrets?.read('OPENAI_API_KEY');
     `);
     expect(found.map((f) => f.cap)).toEqual([
       'secrets:read:GH_TOKEN',
