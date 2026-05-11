@@ -325,8 +325,12 @@ local function that creates filesystem temp dirs — naming collision only.)
 
 - **Operator card / directive payload auto-derivation** — cards that wrap "row in T changed" pull their payload type from `createSelectSchema(T)`.
 - **Plugin manifest column references + capability enforcement at write time** — plugins declare `writesTo: ['table.column']`; the SDK rejects unauthorized writes.
-- **Auto-generated `/docs/db` reference page** — render `generated.ts` as a browsable schema doc.
-- **Schema diff in CI (drizzle-kit-based breaking-change detector)** — fail PRs that change a column type without a migration.
+- **Auto-generated `/docs/db` reference page** — render `generated.ts` as a browsable schema doc. (Partially covered by `/dev/tables` for in-app use; only missing the permanent shareable docs URL.)
+- **Schema diff in CI** — ✅ shipped: `scripts/check-drizzle-drift.mjs`,
+  `npm run lint:drizzle-drift`, and an informational step in
+  `.github/workflows/test.yml`. Regenerates `generated.ts` against the
+  live test-container PG and fails if the diff is non-empty. Currently
+  `continue-on-error: true` until observed green on a few PRs.
 - **Per-role Zero schema generation from RLS metadata** — unlock follows Unlock 4.
 - **Property-based testing via fast-check generators from Drizzle types** — unlock follows Unlock 5.
 
