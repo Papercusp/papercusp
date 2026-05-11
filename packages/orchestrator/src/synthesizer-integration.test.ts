@@ -522,3 +522,62 @@ test('handleSynthesisOutcome — removes stale manifest after run', async () => 
     p.cleanup();
   }
 });
+
+// ─── handleSynthesisOutcome cleanup-only path ────────────────────
+//
+// Verifies bug-3 behavior: on multi-lane synth failure, lane worktrees
+// + manifest get cleaned up without merging anything. (The
+// handleNextValidator wrapper around this case skips branchIsoPostValidator;
+// here we just verify the worktree/branch teardown shape directly.)
+
+test('handleSynthesisOutcome — N=3 FAIL drops every lane worktree even though synth has no useful commit', async () => {
+  const p = setupProject();
+  try {
+    addLane(p.projectDir, p.stateDir, 'F-OUT-E', 1, { 'e.txt': 'a\n' });
+    addLane(p.projectDir, p.stateDir, 'F-OUT-E', 2, { 'e.txt': 'b\n' });
+    addLane(p.projectDir, p.stateDir, 'F-OUT-E', 3, { 'e.txt': 'c\n' });
+
+    // Synthesis branch was created from base but synth left no edits.
+    // Simulate: branch exists, worktree exists, but no commits beyond base.
+    const synthWt = join(p.stateDir, 'worktrees', 'F-OUT-E-synthesis');
+    const synthBr = 'harness/F-OUT-E-synthesis';
+    spawnSync('git', ['worktree', 'add', '-B', synthBr, synthWt, 'main'], {
+      cwd: p.projectDir,
+    });
+
+    writeFeatures(p.stateDir, 'F-OUT-E', 'failed');
+
+    await handleSynthesisOutcome(
+      'F-OUT-E',
+      synthBr,
+      synthWt,
+      3,
+      makeCtx(p),
+      () => {},
+      {} as any,
+    );
+
+    // No merge happened — e.txt absent from main.
+    const show = spawnSync('git', ['show', 'main:e.txt'], {
+      cwd: p.projectDir,
+      encoding: 'utf8',
+    });
+    assert.notEqual(show.status, 0);
+
+    // All three lane worktrees + the synthesis worktree + their branches gone.
+    assert.equal(existsSync(synthWt), false);
+    for (let i = 1; i <= 3; i++) {
+      assert.equal(
+        existsSync(join(p.stateDir, 'worktrees', `F-OUT-E-lane-${i}`)),
+        false,
+      );
+    }
+    const branches = spawnSync('git', ['branch'], { cwd: p.projectDir, encoding: 'utf8' }).stdout;
+    assert.ok(!branches.includes('F-OUT-E-lane-1'));
+    assert.ok(!branches.includes('F-OUT-E-lane-2'));
+    assert.ok(!branches.includes('F-OUT-E-lane-3'));
+    assert.ok(!branches.includes('F-OUT-E-synthesis'));
+  } finally {
+    p.cleanup();
+  }
+});

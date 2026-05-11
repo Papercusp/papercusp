@@ -148,7 +148,9 @@ Optional per-project config. Missing file → current behavior for all roles.
 - **`wipCheckpoint.enabled`** — boolean (default `false`). During worker invocations, background-commit dirty tree every N seconds with `WIP: <FID> <ts>` messages. Requires `branchIsolation.enabled` (otherwise would pollute main). Use `/ship`-style squash before merge/PR if your downstream flow cares.
 - **`wipCheckpoint.intervalSeconds`** — integer (default 300). Seconds between WIP commits.
 - **`parallelWorkers.max`** — integer (default `1`). Maximum concurrent workers. When `> 1`, workers run in parallel shell subshells with `.harness/lanes.json` tracking live PIDs. **Requires `branchIsolation.enabled: true`** (each concurrent worker must have its own branch — otherwise git conflicts are guaranteed). Validators always run serially; the main loop waits for all worker lanes to drain before invoking a validator.
-- **`parallelWorkers.mode`** — `"lane"` (default) or `"competition"`. `lane` runs different features in parallel. `competition` (Conductor-inspired) runs N workers on the SAME feature in sibling worktrees; the validator sees a `competition-<fid>.json` manifest and emits `COMPETITION_WINNER lane-<N>` — run.sh merges the winner and discards the losers. Requires `branchIsolation.useWorktrees: true`.
+- **`parallelWorkers.workersPerFeature`** — integer (default `1`). When `> 1`, dispatches that many workers on the SAME feature in sibling git worktrees instead of running 1 worker per feature. After workers commit, the synthesizer reads all candidate diffs and merges them into a single `<fid>-synthesis` worktree, which the validator then certifies. Requires `branchIsolation.useWorktrees: true`.
+- **`parallelWorkers.adaptive`** — `{tiers: number[], labels: string[], rubric: string}`. When set, the orchestrator LLM picks N per feature from `tiers` (e.g. `[1, 2, 4]`) based on the rubric. Overrides `workersPerFeature` when present. Requires `branchIsolation.useWorktrees: true`.
+- **`parallelWorkers.synthesizeSingle`** — boolean (default `true`). When `true` and only 1 worker dispatched, the synthesizer still runs as a code-review pass that can edit/polish the single worker's draft. Flip to `false` to skip the extra LLM call on N=1.
 - **`branchIsolation.useWorktrees`** — boolean (default `false`). Composio-inspired. When `true` with `branchIsolation.enabled`, each feature gets its own `.harness/worktrees/<fid>/` filesystem directory instead of switching branches in the main tree. The worker/validator invocations run with cwd set to the worktree. On pass: merge branch + remove worktree; on fail: worktree retained for retry. `git worktree prune` runs at startup to clean up crashed leftovers.
 - **`smokeTest.enabled`** — boolean (default `false`). claudecode-orchestrator-inspired service gate.
 - **`smokeTest.onDone`** — boolean (default `true`). Run `bin/service-smoke-test.sh` when the orchestrator emits DONE. On failure: reopens the most-recently-passed feature as failing and re-enters the loop.
@@ -219,8 +221,8 @@ Lifecycle hooks fire at agent boundaries. All optional.
 | `on-checkpoint-fired.sh` | When a checkpoint is created (auto or via orchestrator) | `CHECKPOINT_NAME TRIGGER PROJECT_DIR STATE_DIR` |
 | `on-smoke-pass.sh` | When the service smoke test passes | `TRIGGER=onDone\|onFeaturePass FEATURE_ID? PROJECT_DIR STATE_DIR` |
 | `on-smoke-fail.sh` | When the service smoke test fails | Same as on-smoke-pass |
-| `on-competition-start.sh` | When N workers spawn on the same feature | `FEATURE_ID LANE_COUNT PROJECT_DIR STATE_DIR` |
-| `on-competition-won.sh` | When a competition winner is merged | `FEATURE_ID WINNER PROJECT_DIR STATE_DIR` |
+| `on-competition-start.sh` | When ≥2 workers spawn on the same feature | `FEATURE_ID LANE_COUNT PROJECT_DIR STATE_DIR` |
+| `on-synthesis-won.sh` | When a synthesized branch passes validation and merges | `FEATURE_ID SYNTH_BRANCH LANE_COUNT PROJECT_DIR STATE_DIR` |
 
 Hook output lands in `.harness/logs/hooks/<ts>-<name>.log`. Non-zero exits are warned but don't halt the mission.
 

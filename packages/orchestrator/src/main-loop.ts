@@ -72,7 +72,7 @@ import {
   synthesizeSingle,
 } from './synthesizer';
 import type { ParsedDecision } from './decision-parse';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 /**

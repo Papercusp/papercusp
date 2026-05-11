@@ -18,6 +18,7 @@ import { configGet } from './config';
 import { git } from './git';
 import { invoke, type InvokeContext } from './invoke';
 import { branchIsoBase, worktreePath } from './branch-iso';
+import { runHook } from './hooks';
 import { competitionManifestPath, type CompetitionManifest } from './lanes';
 import { readFeatures, stateCtx } from './state';
 import type { HarnessConfig } from './types';
@@ -169,6 +170,15 @@ export async function runSynthesizer(inputs: SynthesisInputs): Promise<Synthesis
       writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
     }
 
+    // Pre-create the synthesis-notes dir so the synthesizer LLM's Write
+    // tool can drop <fid>.md without first calling mkdir. Best-effort —
+    // skipped silently if the dir already exists or can't be created.
+    try {
+      mkdirSync(join(ctx.stateDir, 'synthesis-notes'), { recursive: true });
+    } catch {
+      // ignore
+    }
+
     const laneDiffs = buildLaneDiffs(inputs);
     log(`SYNTHESIZER: ${fid} starting (${manifest.n} candidate${manifest.n === 1 ? '' : 's'})`);
 
@@ -277,6 +287,19 @@ export async function handleSynthesisOutcome(
       { cwd: ctx.projectDir },
     );
     if (merge.outputHead(5)) log(`  ${merge.outputHead(5)}`);
+    runHook('on-synthesis-won', {
+      stateDir: ctx.stateDir,
+      projectDir: ctx.projectDir,
+      logDir: ctx.logDir,
+      env: {
+        FEATURE_ID: fid,
+        SYNTH_BRANCH: synthBranch,
+        LANE_COUNT: String(laneCount),
+        PROJECT_DIR: ctx.projectDir,
+        STATE_DIR: ctx.stateDir,
+      },
+      log,
+    });
   } else {
     log(
       `SYNTHESIZER: ${fid} validator did not pass (status=${status || '?'}) → cleaning up without merge`,

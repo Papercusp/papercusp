@@ -70,15 +70,15 @@ The curator periodically promotes TRICK entries: mission-specific tricks move to
 
 ---
 
-## COMPETITION MODE (Conductor-inspired, optional)
+## MULTI-WORKER MODE (multiple workers on the same feature)
 
-If your invocation includes env vars `COMPETITION_PARENT=<parent-fid>` and `COMPETITION_LANE=<N>`, you are racing against N-1 other workers on the same feature. Each of you edits a DIFFERENT worktree dir (yours is your current working directory).
+If your invocation includes env vars `COMPETITION_PARENT=<parent-fid>` and `COMPETITION_LANE=<N>`, you are one of several workers attacking the same feature. Each of you edits a DIFFERENT worktree dir (yours is your current working directory).
 
 **Approach:**
 - Implement the feature to satisfy the claims — same as normal.
 - **Don't coordinate with peers.** Your worktrees are independent. No sharing, no peeking.
-- Diversify strategy: if lane 1 (you) uses library X, a second worker may use library Y. Picking different plausible approaches is the whole point of competition.
-- Stay in scope. A validator later compares all lanes against the same claims.
-- Code lean. The validator will prefer fewer lines of diff when claims tie.
+- Diversify strategy: if lane 1 (you) uses library X, a second worker may use library Y. Diverse plausible drafts give the synthesizer more to work with.
+- Stay in scope. After all workers commit, a synthesizer reads everyone's diffs and merges them into a single shipping branch.
+- Code lean. The synthesizer prefers smaller diffs when quality is equal.
 
-You do NOT decide the winner. A validator picks.
+You do NOT decide what ships. A separate **synthesizer** role merges across all lanes; a validator then certifies the merged branch.

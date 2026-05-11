@@ -79,9 +79,9 @@ How to pick k:
 1. Read `ADAPTIVE_RUBRIC` and match the feature's title/description/recent failure history against it.
 2. Pick the tier whose label fits. Default to the smallest tier when in doubt — over-allocation is wasteful, and you can always retry a feature at a higher tier next iteration if it fails.
 3. **Never request k > AVAILABLE_SLOTS.** If your best tier exceeds free slots, drop to the next-lower tier.
-4. If `PARALLEL_MODE` is anything other than `adaptive` (or absent), **omit `N=`** entirely — the static lane/competition modes ignore it.
+4. If `PARALLEL_MODE` is anything other than `adaptive` (or absent), **omit `N=`** entirely — without tiers configured the harness picks N from a static `workersPerFeature` setting and ignores your `N=`.
 
-`N=1` dispatches a single worker (lane-style); `N>1` dispatches that many competing workers on the same feature (validator picks the winner). Larger k = more parallel attempts, but uses up the slot budget faster — keep that in mind when choosing what to dispatch next.
+`N=1` dispatches a single worker on its own branch/worktree; `N>1` dispatches that many workers on the SAME feature in sibling worktrees. After workers commit, the synthesizer reads all candidate diffs and merges/polishes them into one shipping branch. Larger k = more candidates for the synthesizer, but uses up the slot budget faster.
 
 #### Batched dispatch (multiple features per turn)
 
@@ -102,7 +102,7 @@ Why batch: each orchestrator turn costs an LLM round-trip plus the full prompt c
 1. Sort the ready queue by priority — blocked > failing > attempts-asc > id-asc.
 2. Maintain `remaining = AVAILABLE_SLOTS` and `featuresDispatched = 0`.
 3. For each candidate feature:
-   - Choose its worker count `n` (1 in lane mode; the appropriate `N=` from `ADAPTIVE_TIERS` in adaptive mode; `workersPerFeature` in competition mode).
+   - Choose its worker count `n`: if `PARALLEL_MODE=adaptive`, pick the appropriate `N=` from `ADAPTIVE_TIERS`; otherwise omit `N=` and let the harness apply its static `workersPerFeature` setting (1 by default).
    - If `n > remaining` → **SKIP this feature** (do NOT truncate `n`). Move on.
    - If `featuresDispatched >= MAX_FEATURES_IN_FLIGHT` (when set) → stop.
    - Otherwise emit the line, decrement `remaining -= n`, increment `featuresDispatched`.
