@@ -69,7 +69,7 @@ The conventions (camelCase names, `.from()` aliases, `.optional()`
 flags) are preserved 1:1 with the previous hand-written file. queries.ts
 and every UI consumer remained unchanged. No replica state was modified.
 
-### Phase 3 — Conversion (40 files + pattern toolkit)
+### Phase 3 — Conversion (44 files + pattern toolkit)
 
 Converted files in `apps/operator/`:
 
@@ -118,6 +118,11 @@ Converted files in `apps/operator/`:
 | `app/api/admin/spawn-signing/failures/route.ts` | Conditional and()-WHERE, GROUP BY + count() + orderBy(desc(count())) |
 | `app/api/_hono/experts.ts` | Massive upsert with 12-field EXCLUDED set, **UPDATE…FROM correlated copy lifted to TS as 2-step read+write** |
 | `lib/harness-fs-watcher.ts` | **21 of 22 sql sites converted** — 5 mirror handlers (summary, review, proposal, phases, branch-actions), 4 org tables (charter, departments, projects, with notInArray() orphan-cleanup), git-log INSERT loop + count() preflight, harness_health with existence-check + upsert, reconcile-loop mtime reads, orphan-delete loops |
+| `app/api/_hono/harness.ts` | **10 sql sites converted** — auditFeatureChange (feature_audit_consolidated insert), loadProjectFiles/saveProjectFiles (harness_project_files SELECT + upsert with COALESCE merge), orchestrator/status (harness_status 13-col upsert), orchestrator/lane POST + DELETE (harness_lanes), screenshots POST + DELETE (harness_screenshots), issues/pending + triage (harness_pending_issues), reviews/resolve (pending_reviews UPDATE). Remaining ~22 sites use per-harness `harness_<slug>.*` via `getHarnessPg().sql` (Phase 4 category 2) |
+| `lib/omp-sessions.ts` | spawned_agents SELECT by spawn_id |
+| `lib/agent-tools/ui/dispatch.ts` | ui_intents INSERT RETURNING + poll SELECT + UPDATE timeout with composite predicate |
+| `app/api/ui/presence/route.ts` | ui_clients upsert with `now()` DB-side in both values and conflict-set |
+| `app/api/ui/intents/[id]/result/route.ts` | ui_intents UPDATE status flip with jsonb result column |
 
 Pattern toolkit (covers every PG operation in the codebase):
 
@@ -309,7 +314,7 @@ All planned phases shipped this session:
 - ✅ Phase 2 Option A (Zero schema auto-generated from generated.ts +
   zero-config.json) — see `libs/zero-harness/scripts/generate-schema.mjs`
 - ✅ Phase 2 Option B (drift check) + Option D (suggest tool)
-- ✅ Phase 3 (40 files converted; pattern toolkit covers the rest)
+- ✅ Phase 3 (44 files converted; pattern toolkit covers the rest)
 - ✅ Phase 4 (raw-SQL territory documented above)
 
 The remaining ~140 sql\`\` sites in `apps/operator/{lib,app}/*` either
