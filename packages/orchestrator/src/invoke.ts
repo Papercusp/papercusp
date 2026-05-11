@@ -153,6 +153,29 @@ export function resolvePromptOverride(
   return val;
 }
 
+/**
+ * Resolve the operator app's prompts directory. Walks up from the
+ * orchestrator's cwd looking for `apps/operator/prompts`; honors the
+ * `PAPERCUSP_OPERATOR_PROMPTS_DIR` env override.
+ *
+ * Returns `null` when not found — caller falls through to empty
+ * playbook (no behavior change).
+ */
+export function resolveOperatorPromptsDir(): string | null {
+  const envOverride = process.env.PAPERCUSP_OPERATOR_PROMPTS_DIR;
+  if (envOverride && existsSync(envOverride)) return envOverride;
+  // Walk up from cwd; stop at filesystem root.
+  let dir = process.cwd();
+  for (let i = 0; i < 12; i += 1) {
+    const candidate = `${dir}/apps/operator/prompts`;
+    if (existsSync(candidate)) return candidate;
+    const parent = dir.replace(/\/[^/]+$/, '');
+    if (parent === dir || parent === '') break;
+    dir = parent;
+  }
+  return null;
+}
+
 /** Per-role timeout from config.json (in seconds). 0 = no timeout. */
 export function resolveTimeout(cfg: ReturnType<typeof readConfig>, role: string): number {
   const t = configGet<unknown>(cfg, `timeouts.${role}`, 0);
@@ -596,6 +619,26 @@ export async function invoke(
     } catch { /* best-effort; file fallback covers this */ }
   }
 
+  // 8.8 Cross-tool playbook (`<role>.tools.md` from the operator's
+  // prompts directory). Authored once per role; captures workflows +
+  // patterns that span multiple tools. The operator-app is the single
+  // source of truth for these files — the orchestrator reads them at
+  // spawn time so the agent has the playbook in its system prompt.
+  //
+  // Path resolution: PAPERCUSP_OPERATOR_PROMPTS_DIR env override wins,
+  // otherwise walk up from cwd looking for apps/operator/prompts.
+  // Best-effort: missing files just produce an empty section.
+  let toolsPlaybook = '';
+  try {
+    const promptsDir = resolveOperatorPromptsDir();
+    if (promptsDir) {
+      const playbookPath = `${promptsDir}/${role}.tools.md`;
+      if (existsSync(playbookPath)) {
+        toolsPlaybook = readFileSync(playbookPath, 'utf8');
+      }
+    }
+  } catch { /* best-effort */ }
+
   // 9. Build the prompt.
   const prompt = buildPrompt({
     role,
@@ -612,6 +655,7 @@ export async function invoke(
     extras,
     substrateContext,
     featureHistory,
+    toolsPlaybook,
   });
 
   // Token-spend telemetry — emit once per invoke so we can see how the
@@ -627,7 +671,7 @@ export async function invoke(
   ctx.log(
     `  prompt-budget role=${role} feature=${featureId ?? '-'} ` +
     `total=${prompt.length} substrate=${substrateContext.length} ` +
-    `history=${featureHistory.length}`,
+    `history=${featureHistory.length} playbook=${toolsPlaybook.length}`,
   );
   if (ctx.pg && ctx.workspaceId) {
     try {

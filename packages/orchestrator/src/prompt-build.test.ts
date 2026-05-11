@@ -206,3 +206,87 @@ test('buildPrompt — cwdOverride mentions worktree + project root', () => {
     fx.cleanup();
   }
 });
+
+test('buildPrompt — toolsPlaybook section appears after role prompt + override, before runtime context', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+  });
+  try {
+    const playbook = '# Worker tool playbook\n\n## Cross-tool patterns\n\n- list/get chaining: list first, get for detail.';
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      toolsPlaybook: playbook,
+    });
+    assert.match(out, /# WORKER/);
+    assert.match(out, /Worker tool playbook/);
+    assert.match(out, /list\/get chaining/);
+    // Order: role prompt → playbook → runtime context.
+    const rolePos = out.indexOf('# WORKER');
+    const playbookPos = out.indexOf('Worker tool playbook');
+    const runtimePos = out.indexOf('## Runtime context');
+    assert.ok(rolePos >= 0 && playbookPos > rolePos && runtimePos > playbookPos,
+      `expected order role(${rolePos}) → playbook(${playbookPos}) → runtime(${runtimePos})`);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — empty toolsPlaybook produces no playbook section (backwards-identical)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      toolsPlaybook: '',
+    });
+    assert.match(out, /# WORKER/);
+    // No spurious playbook-section divider when toolsPlaybook is empty.
+    assert.doesNotMatch(out, /tool playbook/i);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — toolsPlaybook with only whitespace is treated as empty', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      toolsPlaybook: '   \n\n\t  \n',
+    });
+    assert.match(out, /# WORKER/);
+    assert.doesNotMatch(out, /tool playbook/i);
+  } finally {
+    fx.cleanup();
+  }
+});

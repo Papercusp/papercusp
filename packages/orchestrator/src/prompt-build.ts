@@ -64,6 +64,21 @@ export interface BuildPromptInput {
    * memory + identity). Empty string disables.
    */
   featureHistory?: string;
+  /**
+   * Cross-tool playbook for the role — content of
+   * `apps/operator/prompts/<role>.tools.md` if it exists. Captures
+   * named workflows + cross-tool patterns + chaining rules that span
+   * multiple tools and can't live in any single tool's `guidance`.
+   *
+   * Caller resolves the path (so this module stays operator-app-agnostic)
+   * and passes the file contents. Empty string disables — the role
+   * just doesn't get the playbook section.
+   *
+   * Inserted AFTER the role prompt (section 1) and BEFORE memory /
+   * identity (sections 3+) so role-specific instructions can refer
+   * back to playbook patterns ("when chaining, see the playbook").
+   */
+  toolsPlaybook?: string;
 }
 
 function fileContents(path: string): string {
@@ -100,6 +115,15 @@ export function buildPrompt(input: BuildPromptInput): string {
     out.push('\n---');
     out.push(`## Droid specialization (from .harness/config.json → promptOverrides.${input.role})\n`);
     out.push(input.promptOverride);
+  }
+
+  // 2b. Tools playbook (cross-tool patterns + named workflows).
+  //     Loaded from apps/operator/prompts/<role>.tools.md by the caller.
+  //     Inserted after the role prompt + specialization so role-specific
+  //     instructions can refer to the playbook patterns.
+  if (input.toolsPlaybook && input.toolsPlaybook.trim()) {
+    out.push('\n---');
+    out.push(input.toolsPlaybook);
   }
 
   // 3. Curated memory — every role except curator.
