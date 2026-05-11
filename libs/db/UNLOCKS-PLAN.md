@@ -131,12 +131,16 @@ row via `?where=<json>`. Foreign keys show in a dedicated column of the
 schema panel + as a `→` indicator on row grid headers.
 
 **WHERE composer**: "+ Filter" button opens an inline composer with a
-column dropdown (filtered to non-generated columns) + value input with
-type-coerced placeholders (`number` / `true / false` / `text`). Multi-key
-filtering ANDs together via the same `?where=<json>` API; each filter
-becomes a dismissible chip in the filter bar, with "clear all" to reset.
-Value coercion handles bigint/integer/numeric/boolean per column type;
-empty input on a nullable column resolves to `null`.
+column dropdown (auto-excludes generated columns), an **operator
+dropdown** (`=`, `≠`, `>`, `≥`, `<`, `≤`, `LIKE`, `ILIKE`, `IS NULL`,
+`NOT NULL`), and a value input with type-coerced placeholders
+(`number` / `true / false` / `text` / `pattern (% wildcards)`).
+Filters AND together via the `?filters=<json>` API (array of
+`[col, op, value]` triples) and render as dismissible chips with the
+chosen operator in each label. Type coercion handles bigint / integer /
+numeric / boolean per column type; valueless operators (`IS NULL` /
+`NOT NULL`) hide the value input. `?where=` remains as the simple
+equality shortcut for FK-walk.
 
 API: `GET /api/dev/tables`, `GET /api/dev/tables/[exportName]`,
 `GET /api/dev/tables/[exportName]/rows?where=&role=&limit=&offset=`.
@@ -146,9 +150,8 @@ schemas), Studio doesn't.
 
 **Deferred follow-ons:** Monaco SQL composer (free-form SQL with our
 RLS-aware execution), per-row "Open in" menu that routes to a harness
-page when the FK is `harness_slug`, richer operators in the WHERE
-composer (currently `=` only — adding `>`, `<`, `LIKE`, `IS NULL`
-needs an API extension beyond the current equality-only `?where=`).
+page when the FK is `harness_slug`, OR-grouped filter clauses (currently
+all filters AND together).
 
 **Why this unlock:** Drizzle Studio covers 80% of the value, but we
 still want a deeper, in-app inspector that knows about our specific
