@@ -47,7 +47,6 @@ import {
   parallelMaxWorkers,
   parallelMode,
   parallelWorkersPerFeature,
-  parseCompetitionVerdict,
   readCompetitionManifest,
   useChunkLoop,
   writeCompetitionManifest,
@@ -74,7 +73,6 @@ import {
   runSynthesizer,
   singleLaneManifest,
   synthesizeSingle,
-  useSynthesizer,
 } from './synthesizer';
 import type { ParsedDecision } from './decision-parse';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -968,16 +966,16 @@ async function handleNextValidator(
       }
     : ctx;
 
-  // ─── Synthesizer step (gated by parallelWorkers.useSynthesizer) ──
-  // When enabled, run synthesis BEFORE the validator. Synthesizer reads
-  // all candidate lanes (real competition manifest, or a synthetic
-  // 1-lane manifest for single-worker dispatches), produces a unified
-  // tree in `<fid>-synthesis` worktree. Validator then runs against
+  // ─── Synthesizer step (always runs) ──────────────────────────────
+  // Synthesizer reads all candidate lanes (real competition manifest for
+  // N>1, synthetic 1-lane manifest for single-worker dispatches when
+  // synthesizeSingle is on), produces a unified tree in the
+  // `<fid>-synthesis` worktree, and the validator then runs against
   // that worktree as a normal single-branch validation.
   let synthesisWorktree: string | null = null;
   let synthesisBr: string | null = null;
   let synthesisRanWithManifest: { n: number } | null = null;
-  if (useSynthesizer(cfg)) {
+  {
     let effectiveManifest = readCompetitionManifest(ctx.stateDir, fid);
     if (!effectiveManifest && synthesizeSingle(cfg)) {
       effectiveManifest = singleLaneManifest(ctx.stateDir, fid);
@@ -994,8 +992,8 @@ async function handleNextValidator(
         synthesisWorktree = result.worktree;
         synthesisBr = result.branch;
         synthesisRanWithManifest = { n: effectiveManifest.n };
-        // Remove the manifest so the validator doesn't try to score
-        // lanes / emit COMPETITION_WINNER. After synth, validator just
+        // Remove the manifest so it doesn't linger in state. With
+        // COMPETITION_WINNER deleted from validator.md, validator just
         // validates the synthesis worktree as a normal feature branch.
         try {
           unlinkSync(competitionManifestPath(ctx.stateDir, fid));
@@ -1004,7 +1002,7 @@ async function handleNextValidator(
         }
       } else {
         logger.log(
-          `SYNTHESIZER: ${fid} skipped (${result.reason ?? 'unknown'}); falling back to direct validation`,
+          `SYNTHESIZER: ${fid} failed (${result.reason ?? 'unknown'}); validating worker output directly`,
         );
       }
     }
@@ -1074,9 +1072,7 @@ async function handleNextValidator(
   if (synthesisWorktree && synthesisBr && synthesisRanWithManifest) {
     // Synthesis path: validator ran against `<fid>-synthesis`. On PASS,
     // merge the synthesis branch and drop ALL worktrees (synthesis +
-    // every lane). On FAIL, drop everything without merging. Skips the
-    // legacy branchIsoPostValidator + competition verdict paths since
-    // the synthesis branch is the canonical artifact now.
+    // every lane). On FAIL, drop everything without merging.
     await handleSynthesisOutcome(
       fid,
       synthesisBr,
@@ -1087,17 +1083,31 @@ async function handleNextValidator(
       cfg,
     );
   } else {
-    // Validator updates features.json itself; branchIsoPostValidator reads
-    // the (possibly-just-changed) status and merges/PRs on PASS.
+    // Synthesizer did not produce a candidate. For single-worker
+    // dispatches this is fine — the worker's branch is the candidate and
+    // branchIsoPostValidator merges it on PASS. For multi-worker
+    // dispatches we still have lane worktrees on disk that need cleanup
+    // (the manifest stayed since synth failed before removing it).
     branchIsoPostValidator(branchIsoCtx, fid);
 
-    // Competition mode: if a manifest exists for this feature, the validator
-    // is expected to have emitted COMPETITION_WINNER lane-N (or "none"). Read
-    // the latest validator .out, parse the verdict, merge the winner branch
-    // into base, drop loser worktrees, remove the manifest.
-    const manifest = readCompetitionManifest(ctx.stateDir, fid);
-    if (manifest) {
-      handleCompetitionVerdict(fid, manifest, ctx, logger, cfg);
+    const staleManifest = readCompetitionManifest(ctx.stateDir, fid);
+    if (staleManifest) {
+      logger.log(
+        `SYNTHESIZER: cleaning up ${staleManifest.n} lane worktree(s) for ${fid} after synth failure`,
+      );
+      for (let i = 1; i <= staleManifest.n; i++) {
+        const wt = join(ctx.stateDir, 'worktrees', `${fid}-lane-${i}`);
+        const br = `harness/${fid}-lane-${i}`;
+        if (existsSync(wt)) {
+          git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
+        }
+        git(['branch', '-D', br], { cwd: ctx.projectDir });
+      }
+      try {
+        unlinkSync(competitionManifestPath(ctx.stateDir, fid));
+      } catch {
+        // ignore
+      }
     }
   }
   return { terminal: false, exitCode: 0, reason: 'idle' };
@@ -1491,111 +1501,6 @@ async function handleParallelLaneWorker(
   })();
 
   return { terminal: false, exitCode: 0, reason: 'idle' };
-}
-
-/**
- * Competition-mode validator post-step. Find the validator's most recent
- * .out file, parse COMPETITION_WINNER, merge the winning lane's branch,
- * and clean up loser worktrees.
- */
-function handleCompetitionVerdict(
-  fid: string,
-  manifest: ReturnType<typeof readCompetitionManifest>,
-  ctx: InvokeContext,
-  logger: Logger,
-  cfg: ReturnType<typeof readConfig>,
-): void {
-  if (!manifest) return;
-  // Find the most recent <ts>-validator-<fid>.out file in logDir.
-  let latestOut = '';
-  let latestTs = 0;
-  try {
-    const entries = readdirSync(ctx.logDir);
-    for (const name of entries) {
-      if (!name.endsWith(`-validator-${fid}.out`)) continue;
-      const tsMatch = /^(\d+)-validator-/.exec(name);
-      if (!tsMatch) continue;
-      const ts = parseInt(tsMatch[1], 10);
-      if (ts > latestTs) {
-        latestTs = ts;
-        latestOut = name;
-      }
-    }
-  } catch {
-    // ignore — log dir may not exist
-  }
-  if (!latestOut) {
-    logger.log('COMPETITION: no validator .out file found; manifest kept for retry.');
-    return;
-  }
-  const validatorOutput = readFileSync(join(ctx.logDir, latestOut), 'utf8');
-  const verdict = parseCompetitionVerdict(validatorOutput);
-
-  if (verdict.kind === 'absent') {
-    logger.log('COMPETITION: validator did not emit COMPETITION_WINNER; manifest kept for retry.');
-    return;
-  }
-
-  if (verdict.kind === 'winner') {
-    const winnerName = `lane-${verdict.lane}`;
-    logger.log(`COMPETITION: winner is ${winnerName}; merging.`);
-    const branchIsoCtx = {
-      cfg,
-      projectDir: ctx.projectDir,
-      stateDir: ctx.stateDir,
-      log: logger.log,
-    };
-    const base = branchIsoBase(branchIsoCtx);
-    const winnerBr = `harness/${fid}-${winnerName}`;
-    git(['checkout', base], { cwd: ctx.projectDir });
-    const merge = git(
-      ['merge', '--no-ff', winnerBr, '-m', `competition winner: ${fid} from ${winnerName}`],
-      { cwd: ctx.projectDir },
-    );
-    if (merge.outputHead(5)) logger.log(`  ${merge.outputHead(5)}`);
-    // Remove all lane worktrees + branches (including the winner's — base
-    // now has the merged content).
-    for (let i = 1; i <= manifest.n; i++) {
-      const wt = join(ctx.stateDir, 'worktrees', `${fid}-lane-${i}`);
-      const br = `harness/${fid}-lane-${i}`;
-      git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
-      git(['branch', '-D', br], { cwd: ctx.projectDir });
-    }
-    try {
-      unlinkSync(competitionManifestPath(ctx.stateDir, fid));
-    } catch {
-      // ignore
-    }
-    logger.log(`COMPETITION: cleaned up; parent ${fid} now carries winner's changes.`);
-    runHook('on-competition-won', {
-      stateDir: ctx.stateDir,
-      projectDir: ctx.projectDir,
-      logDir: ctx.logDir,
-      env: {
-        FEATURE_ID: fid,
-        WINNER: winnerName,
-        PROJECT_DIR: ctx.projectDir,
-        STATE_DIR: ctx.stateDir,
-      },
-      log: logger.log,
-    });
-    return;
-  }
-
-  if (verdict.kind === 'none') {
-    logger.log('COMPETITION: no lane passed; discarding all.');
-    for (let i = 1; i <= manifest.n; i++) {
-      const wt = join(ctx.stateDir, 'worktrees', `${fid}-lane-${i}`);
-      const br = `harness/${fid}-lane-${i}`;
-      git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
-      git(['branch', '-D', br], { cwd: ctx.projectDir });
-    }
-    try {
-      unlinkSync(competitionManifestPath(ctx.stateDir, fid));
-    } catch {
-      // ignore
-    }
-  }
 }
 
 

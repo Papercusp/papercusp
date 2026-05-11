@@ -11,11 +11,6 @@
  * N may be 1: in that case the synthesizer's job is to take a single
  * worker's draft across the finish line (polish, fix obvious bugs,
  * ship). Gated by `parallelWorkers.synthesizeSingle` (default true).
- *
- * The synthesis step is gated by `parallelWorkers.useSynthesizer` for
- * one verification cycle; once flipped on permanently the flag goes
- * away (step 3 of the plan) and the legacy COMPETITION_WINNER path is
- * deleted.
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -31,14 +26,6 @@ export interface SynthesisResult {
   branch?: string;
   worktree?: string;
   reason?: string;
-}
-
-/** Whether the synthesizer step is active for this harness. */
-export function useSynthesizer(cfg: HarnessConfig): boolean {
-  const v = configGet<unknown>(cfg, 'parallelWorkers.useSynthesizer', false);
-  if (typeof v === 'boolean') return v;
-  if (typeof v === 'string') return v === 'true' || v === '1';
-  return false;
 }
 
 /**

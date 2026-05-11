@@ -17,35 +17,7 @@ import {
   synthesisNotePath,
   synthesisWorktreePath,
   synthesizeSingle,
-  useSynthesizer,
 } from './synthesizer';
-
-test('useSynthesizer — default false', () => {
-  assert.equal(useSynthesizer({} as any), false);
-  assert.equal(useSynthesizer({ parallelWorkers: {} } as any), false);
-});
-
-test('useSynthesizer — boolean true', () => {
-  assert.equal(
-    useSynthesizer({ parallelWorkers: { useSynthesizer: true } } as any),
-    true,
-  );
-});
-
-test('useSynthesizer — string "true" / "1"', () => {
-  assert.equal(
-    useSynthesizer({ parallelWorkers: { useSynthesizer: 'true' } } as any),
-    true,
-  );
-  assert.equal(
-    useSynthesizer({ parallelWorkers: { useSynthesizer: '1' } } as any),
-    true,
-  );
-  assert.equal(
-    useSynthesizer({ parallelWorkers: { useSynthesizer: 'no' } } as any),
-    false,
-  );
-});
 
 test('synthesizeSingle — default true', () => {
   assert.equal(synthesizeSingle({} as any), true);
