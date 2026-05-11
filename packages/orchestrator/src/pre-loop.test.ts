@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import {
   chmodSync,
@@ -12,6 +12,17 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runPreLoop } from './pre-loop.js';
+import { seedMemoryStore, _resetMemoryStateForTests } from './state-memory.js';
+
+beforeEach(() => {
+  _resetMemoryStateForTests();
+});
+
+function seedSampleFeatures(stateDir: string): void {
+  seedMemoryStore(stateDir, [
+    { id: 'F-001', title: '', status: 'pending', attempts: 0 },
+  ]);
+}
 
 interface Fixture {
   harnessDir: string;
@@ -42,10 +53,7 @@ function makeFixture(setup: (fx: Omit<Fixture, 'cleanup'>) => void = () => {}): 
 test('runPreLoop — skips scoper when contract + features already exist', async () => {
   const fx = makeFixture();
   writeFileSync(join(fx.stateDir, 'validation-contract.md'), '## contract');
-  writeFileSync(
-    join(fx.stateDir, 'features.json'),
-    JSON.stringify({ features: [{ id: 'F-001', status: 'pending' }] }),
-  );
+  seedSampleFeatures(fx.stateDir);
   try {
     const log: string[] = [];
     const r = await runPreLoop(
@@ -103,10 +111,7 @@ test('runPreLoop — plan-review reject exits 7 + writes escalation', async () =
   const fx = makeFixture();
   // Pre-seed contract + features so scoper is skipped.
   writeFileSync(join(fx.stateDir, 'validation-contract.md'), 'contract');
-  writeFileSync(
-    join(fx.stateDir, 'features.json'),
-    JSON.stringify({ features: [{ id: 'F-001', status: 'pending' }] }),
-  );
+  seedSampleFeatures(fx.stateDir);
   // Pre-seed a plan-review.md with VERDICT: reject. This simulates what the
   // reviewer agent would have written. (We can't actually run the reviewer
   // here without a real agent; simulate its output.)
@@ -178,10 +183,7 @@ test('runPreLoop — plan-review reject exits 7 + writes escalation', async () =
 test('runPreLoop — auto-checkpoint fires when configured + sentinel cleared', async () => {
   const fx = makeFixture();
   writeFileSync(join(fx.stateDir, 'validation-contract.md'), 'contract');
-  writeFileSync(
-    join(fx.stateDir, 'features.json'),
-    JSON.stringify({ features: [{ id: 'F-001', status: 'pending' }] }),
-  );
+  seedSampleFeatures(fx.stateDir);
   writeFileSync(
     join(fx.stateDir, 'plan-review.md'),
     'VERDICT: accept — looks good',
@@ -225,10 +227,7 @@ test('runPreLoop — auto-checkpoint fires when configured + sentinel cleared', 
 test('runPreLoop — auto-checkpoint suppressed once sentinel exists', async () => {
   const fx = makeFixture();
   writeFileSync(join(fx.stateDir, 'validation-contract.md'), 'contract');
-  writeFileSync(
-    join(fx.stateDir, 'features.json'),
-    JSON.stringify({ features: [{ id: 'F-001', status: 'pending' }] }),
-  );
+  seedSampleFeatures(fx.stateDir);
   writeFileSync(join(fx.stateDir, 'plan-review.md'), 'VERDICT: accept');
   writeFileSync(join(fx.stateDir, '.checkpoint-plan-approved.fired'), '');
   const cfg = {

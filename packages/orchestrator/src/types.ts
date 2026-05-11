@@ -1,8 +1,8 @@
 /**
- * Shared types for the orchestrator. Mirror the on-disk shape of state files
- * (`.harness/config.json`, `.harness/features.json`) and the CLI args /
- * orchestrator-decision protocol so we can later replace bash without
- * changing the file format.
+ * Shared types for the orchestrator. `.harness/config.json` is still
+ * on-disk; feature records live in PG (`harness_features` table) or
+ * the in-memory test store (`state-memory.ts`). FeaturesJson here
+ * describes the wire shape used for snapshots and external imports.
  */
 
 /** Harness phase — which prompt set the orchestrator pulls from. */
@@ -76,7 +76,8 @@ export interface AiBackendConfig {
   roles?: Record<string, AiBackendRoleConfig>;
 }
 
-/** A single feature in `.harness/features.json`. */
+/** A single feature record. Canonical store is `harness_features` (PG);
+ * snapshots may emit this shape as JSON for archival. */
 export interface FeatureRecord {
   id: string;
   status: 'pending' | 'in_progress' | 'passed' | 'failed' | 'proposed' | string;
@@ -86,7 +87,8 @@ export interface FeatureRecord {
   [k: string]: unknown;
 }
 
-/** Top-level shape of `.harness/features.json` (object or array form). */
+/** Top-level shape used by snapshots / archival exports of the feature
+ * list (object or array form). Not a runtime store. */
 export type FeaturesJson = { features: FeatureRecord[] } | FeatureRecord[];
 
 /**

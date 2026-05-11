@@ -17,9 +17,10 @@
  * # Hook context contract (Phase 6)
  *
  * Hooks should never read state from the harness directory's filesystem
- * (`features.json`, `lanes.json`, etc) — that data is migrating to PG
- * and the FS files become invalid once the orchestrator's PG path is
- * activated. Instead, hooks get this auto-injected env:
+ * (`lanes.json`, `escalation.md`, etc) — that data lives in PG and the
+ * FS files no longer exist at runtime (PG is canonical; features moved
+ * to `harness_features` in Phase 1). Instead, hooks get this
+ * auto-injected env:
  *
  *   - `HARNESS_SLUG`     — current harness slug (set when known)
  *   - `WORKSPACE_ID`     — active workspace (RLS-scoped)

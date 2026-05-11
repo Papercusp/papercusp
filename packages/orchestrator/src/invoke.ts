@@ -44,8 +44,9 @@ import { resolveAgentBackend } from './env';
  * Postgres client interface the orchestrator uses for PG-canonical state.
  * Kept as a structural type so callers can pass any postgres-js Sql<{}>
  * instance (or a test double) without importing `postgres` here. When
- * undefined, the orchestrator falls back to the legacy filesystem path
- * (features.json etc) — that fallback is removed once Phase 1 lands.
+ * undefined, the orchestrator uses the in-memory feature store
+ * (`state-memory.ts`) — fine for tests and CLI standalone mode.
+ * Production always wires a real PG client.
  */
 export interface OrchestratorPg {
   // postgres-js tagged-template signature: pg`SELECT ...`
@@ -87,11 +88,12 @@ export interface InvokeContext {
   /** Override Date.now / shell time for deterministic tests. */
   nowSeconds?: () => number;
   /**
-   * PG client for the workspace's Postgres database. Phase 1+ migrate
-   * features.json, lanes.json, escalation, sentinels, dispatches, and
-   * checkpoints onto Postgres; while undefined, the orchestrator falls
-   * back to the legacy filesystem state. Operator wires this up via
-   * `getOrgPg()`; CLI mode bootstraps its own connection.
+   * PG client for the workspace's Postgres database. Phase 1+ migrated
+   * features, lanes, escalation, sentinels, dispatches, and checkpoints
+   * onto Postgres; PG is canonical at runtime. When undefined (tests,
+   * CLI standalone), the orchestrator uses the in-memory feature store
+   * — features.json is no longer a supported backend. Operator wires
+   * this up via `getOrgPg()`; CLI mode bootstraps its own connection.
    */
   pg?: OrchestratorPg;
   /**

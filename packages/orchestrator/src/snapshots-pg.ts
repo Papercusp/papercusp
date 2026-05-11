@@ -1,17 +1,13 @@
 /**
  * Postgres-backed mission snapshots — Phase 7 of the orchestrator → PG arc.
  *
- * Replaces directory-copy-per-iteration semantics:
- *
- *   <stateDir>/snapshots/<ts>-iter-<NNN>/
- *     features.json
- *     validation-contract.md
- *     supervisor-notes.md
- *     config.json
- *
- * with one row per snapshot in harness_shared.harness_snapshots holding
- * each artifact as a separate TEXT column. Same retention semantics
- * (default 50, keep oldest first by taken_at via ROW_NUMBER pruning).
+ * Replaces directory-copy-per-iteration semantics — previously the
+ * orchestrator copied artifact files into per-iteration snapshot dirs;
+ * now one row per snapshot in harness_shared.harness_snapshots holds
+ * each artifact as a separate TEXT column. Features come from PG;
+ * validation-contract / supervisor-notes / config are still text on
+ * disk. Same retention semantics (default 50, keep oldest first by
+ * taken_at via ROW_NUMBER pruning).
  *
  * Schema:
  *

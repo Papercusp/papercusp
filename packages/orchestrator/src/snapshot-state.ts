@@ -20,13 +20,14 @@
  *
  * Used for rollback via the harness UI's snapshot list.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { configGet } from './config';
 import {
   snapshotStatePg,
   type SnapshotsPgContext,
 } from './snapshots-pg';
+import { readFeatures, type StateContext } from './state';
 import type { HarnessConfig } from './types';
 import type { OrchestratorPg } from './invoke';
 
@@ -50,7 +51,8 @@ export function snapshotState(
   stateDir: string,
   iterationNumber: number,
   cfg: HarnessConfig,
-): SnapshotResult;
+  ctx: StateContext,
+): SnapshotResult | Promise<SnapshotResult>;
 export function snapshotState(
   stateDir: string,
   iterationNumber: number,
@@ -61,10 +63,15 @@ export function snapshotState(
   stateDir: string,
   iterationNumber: number,
   cfg: HarnessConfig,
-  ctx?: SnapshotPgArgs,
+  ctx: SnapshotPgArgs | StateContext,
 ): SnapshotResult | Promise<SnapshotResult> {
-  if (ctx) return snapshotStateAsync(stateDir, iterationNumber, cfg, ctx);
-  return snapshotStateFs(stateDir, iterationNumber, cfg);
+  // SnapshotPgArgs carries `harnessSlug` explicitly; StateContext (PG)
+  // also has it. Both code paths get unified below.
+  if ((ctx as SnapshotPgArgs).harnessSlug !== undefined &&
+      (ctx as SnapshotPgArgs).pg !== undefined) {
+    return snapshotStateAsync(stateDir, iterationNumber, cfg, ctx as SnapshotPgArgs);
+  }
+  return snapshotStateFs(stateDir, iterationNumber, cfg, ctx as StateContext);
 }
 
 async function snapshotStateAsync(
@@ -86,8 +93,9 @@ async function snapshotStateAsync(
     const features = await readFeaturesPg({ pg: ctx.pg, workspaceId: ctx.workspaceId });
     featuresJson = JSON.stringify({ features });
   } catch {
-    // PG read failed — fall back to disk for the features body.
-    featuresJson = readIfExists(join(stateDir, 'features.json'));
+    // PG read failed — best-effort empty snapshot. There's no FS
+    // fallback for features anymore (PG is canonical).
+    featuresJson = null;
   }
   const validationMd = readIfExists(join(stateDir, 'validation-contract.md'));
   const notesMd = readIfExists(join(stateDir, 'supervisor-notes.md'));
@@ -120,11 +128,12 @@ async function snapshotStateAsync(
   return { path: result.snapshotId, pruned: result.pruned };
 }
 
-function snapshotStateFs(
+async function snapshotStateFs(
   stateDir: string,
   iterationNumber: number,
   cfg: HarnessConfig,
-): SnapshotResult {
+  ctx: StateContext,
+): Promise<SnapshotResult> {
   const ts = Math.floor(Date.now() / 1000);
   const iterStr = String(iterationNumber).padStart(3, '0');
   const snapshotsRoot = join(stateDir, 'snapshots');
@@ -132,8 +141,27 @@ function snapshotStateFs(
   mkdirSync(snapDir, { recursive: true });
 
   let copiedAny = false;
+
+  // Features come from the state context (memory in tests, PG in prod).
+  // They get serialized into a synthetic `features.json` inside the
+  // snapshot dir — for archival/portability only, not as a canonical
+  // file the orchestrator reads at runtime.
+  try {
+    const features = await readFeatures(stateDir, ctx);
+    if (features.length > 0) {
+      writeFileSync(
+        join(snapDir, 'features.json'),
+        JSON.stringify({ features }, null, 2) + '\n',
+      );
+      copiedAny = true;
+    }
+  } catch {
+    // ignore — best effort
+  }
+
+  // The markdown artifacts still live on disk (text-artifacts.ts is the
+  // operator-side PG-canonical path, but orchestrator can read disk).
   for (const name of [
-    'features.json',
     'validation-contract.md',
     'supervisor-notes.md',
     'config.json',

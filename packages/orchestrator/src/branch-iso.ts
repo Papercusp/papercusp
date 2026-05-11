@@ -14,12 +14,12 @@
  * false — same as bash. Callers can invoke them unconditionally without
  * checking the config first.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { configGet } from './config';
 import { branchExists, git, hasStagedChanges } from './git';
-import { setFeatureStatus } from './state';
+import { readFeatures, setFeatureStatus, type StateContext } from './state';
 import type { HarnessConfig } from './types';
 
 export interface BranchIsoCtx {
@@ -147,30 +147,21 @@ export function branchIsoPreValidator(
  * Post-validator: on PASS, merge/PR/keep per `branchIsolation.onPass`.
  * On FAIL, leave the worktree/branch in place so the worker can retry.
  *
- * Reads the feature's status from features.json — caller is expected to
- * have updated it via setFeatureStatus before calling.
+ * Reads the feature's status via the state context (PG canonical;
+ * in-memory in tests). Caller is expected to have updated status via
+ * setFeatureStatus before calling.
  */
-export function branchIsoPostValidator(
+export async function branchIsoPostValidator(
   ctx: BranchIsoCtx,
   featureId: string,
-): void {
+  stateContext: StateContext,
+): Promise<void> {
   if (!branchIsoEnabled(ctx.cfg)) return;
 
-  // Skip merge/PR work on FAIL.
-  // The status check is intentionally lightweight — bash uses python here too.
-  const featuresPath = join(ctx.stateDir, 'features.json');
-  if (!existsSync(featuresPath)) return;
-  let status = '';
-  try {
-    const raw = JSON.parse(readFileSync(featuresPath, 'utf8'));
-    const feats = Array.isArray(raw) ? raw : raw.features;
-    if (Array.isArray(feats)) {
-      const f = feats.find((x: { id: string }) => x.id === featureId);
-      status = f?.status ?? '';
-    }
-  } catch {
-    return;
-  }
+  // Skip merge/PR work on FAIL. Read status from the canonical store.
+  const features = await readFeatures(ctx.stateDir, stateContext);
+  const f = features.find((x) => x.id === featureId);
+  const status = f?.status ?? '';
   if (status !== 'passed') return;
 
   const base = branchIsoBase(ctx);

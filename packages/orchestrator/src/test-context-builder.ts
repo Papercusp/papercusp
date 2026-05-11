@@ -24,8 +24,16 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createLanePool, type LanePool } from './lanes';
 import { writeCompetitionManifest } from './lanes';
+import { readFeaturesMem, seedMemoryStore, _resetMemoryStateForTests } from './state-memory';
 import type { InvokeContext } from './invoke';
 import type { Logger } from './log';
+import type { FeatureRecord } from './types';
+
+// Per-process cleanup: the in-memory feature store is keyed by stateDir,
+// so different tests using different tmpdirs are already isolated. But
+// if tests reuse a stateDir across runs (rare), or you want airtight
+// guarantees, call this from beforeEach.
+export { _resetMemoryStateForTests };
 
 export interface OrchTestContext {
   root: string;
@@ -210,21 +218,13 @@ export function buildOrchTestContext(
     },
 
     setFeatures(features) {
-      writeFileSync(
-        join(stateDir, 'features.json'),
-        JSON.stringify({ features }, null, 2),
-      );
+      // PG-canonical at runtime; in tests we seed the in-memory store
+      // (state-memory.ts). No filesystem features.json anymore.
+      seedMemoryStore(stateDir, features as FeatureRecord[]);
     },
 
     readFeatures() {
-      const path = join(stateDir, 'features.json');
-      if (!existsSync(path)) return [];
-      try {
-        const raw = JSON.parse(readFileSync(path, 'utf8'));
-        return Array.isArray(raw) ? raw : raw.features ?? [];
-      } catch {
-        return [];
-      }
+      return readFeaturesMem({ kind: 'memory', stateDir });
     },
 
     hookFired(name) {

@@ -43,6 +43,7 @@ import { buildCompetitionManifest } from './lanes';
 beforeEach(() => {
   inv.mockReset();
   hook.mockReset();
+  _resetMemoryStateForTests();
 });
 
 interface Project {
@@ -344,12 +345,13 @@ test('runSynthesizer — competition manifest is persisted to disk for the synth
 // ─── handleSynthesisOutcome tests ────────────────────────────────
 
 import { handleSynthesisOutcome } from './synthesizer';
+import { seedMemoryStore, _resetMemoryStateForTests } from './state-memory';
+import type { FeatureRecord } from './types';
 
 function writeFeatures(stateDir: string, fid: string, status: string): void {
-  writeFileSync(
-    join(stateDir, 'features.json'),
-    JSON.stringify({ features: [{ id: fid, status }] }, null, 2),
-  );
+  // Features live in PG at runtime; tests seed the in-memory store
+  // (state-memory.ts). Same path handleSynthesisOutcome reads from.
+  seedMemoryStore(stateDir, [{ id: fid, status, attempts: 0 } as FeatureRecord]);
 }
 
 test('handleSynthesisOutcome — N=2 PASS merges synth branch, drops all worktrees', async () => {
@@ -632,11 +634,10 @@ test('handleSynthesisOutcome — checkout failure reverts feature to failing, cl
       (outcome) => telemetryCalls.push(outcome),
     );
 
-    // Feature reverted to 'failing'.
-    const features = JSON.parse(
-      readFileSync(join(p.stateDir, 'features.json'), 'utf8'),
-    ).features;
-    assert.equal(features.find((f: any) => f.id === 'F-CHK').status, 'failing');
+    // Feature reverted to 'failing'. Read from the in-memory store.
+    const { readFeaturesMem } = await import('./state-memory');
+    const features = readFeaturesMem({ kind: 'memory', stateDir: p.stateDir });
+    assert.equal(features.find((f) => f.id === 'F-CHK')?.status, 'failing');
 
     // on-synthesis-won did NOT fire — merge never landed.
     const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
@@ -720,11 +721,10 @@ test('handleSynthesisOutcome — merge-conflict closes telemetry with fail (Bug 
       (outcome) => telemetryCalls.push(outcome),
     );
 
-    // Bug O: feature reverted to 'failing'.
-    const features = JSON.parse(
-      readFileSync(join(p.stateDir, 'features.json'), 'utf8'),
-    ).features;
-    assert.equal(features.find((f: any) => f.id === 'F-TEL-CONF').status, 'failing');
+    // Bug O: feature reverted to 'failing'. Read from the in-memory store.
+    const { readFeaturesMem } = await import('./state-memory');
+    const features = readFeaturesMem({ kind: 'memory', stateDir: p.stateDir });
+    assert.equal(features.find((f) => f.id === 'F-TEL-CONF')?.status, 'failing');
 
     // Bug P: telemetry closed with 'fail', NOT 'pass'.
     assert.deepEqual(telemetryCalls, ['fail'], 'telemetry must close fail on merge-conflict revert');

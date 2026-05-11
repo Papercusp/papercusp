@@ -2,21 +2,21 @@
  * Feature state reader/writer. Maps to bash run.sh's `features_json`,
  * `features_exist`, `feature_attempts`, `feature_set_status`.
  *
- * As of Phase 1 of the orchestrator → PG arc, every export is async and
- * accepts an optional `pg` + `workspaceId` pair (see `PgStateContext`).
- *   - When PG context is passed, queries hit `harness_features` directly.
- *     PG is canonical; the harness directory's features.json is no longer
- *     read or written by the orchestrator.
- *   - When PG context is omitted, reads/writes fall back to the legacy
- *     filesystem path (features.json in the state dir). Exists for
- *     standalone CLI mode and tests; will be removed once CLI mode
- *     bootstraps its own PG connection.
+ * Storage backends (chosen by the StateContext shape):
+ *   - PG (canonical, production): `harness_features` table in the
+ *     per-harness schema. Pass `{ pg, workspaceId, harnessSlug? }`.
+ *   - In-memory (tests, CLI standalone without PG): process-local Map
+ *     keyed by stateDir. See `state-memory.ts`.
  *
- * `.harness/features.json` shape (legacy fallback):
- *   { "features": [{...}, ...] }   — object form (current)
- *   [{...}, ...]                    — bare array (legacy)
+ * Filesystem (`.harness/features.json`) is NO LONGER supported. PG is
+ * the single source of truth in production. Tests use the in-memory
+ * backend via `seedMemoryStore`/`_resetMemoryStateForTests` (the
+ * test-context-builder wires this automatically).
+ *
+ * Callers always provide a `StateContext`. `stateCtx(invokeCtx)`
+ * derives the right backend from an `InvokeContext`-shaped object —
+ * PG when both `pg` and `workspaceId` are set, memory otherwise.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import {
   readFeaturesPg,
@@ -25,22 +25,36 @@ import {
   setFeatureStatusPg,
   type PgStateContext,
 } from './state-pg';
-import type { FeatureRecord, FeaturesJson } from './types';
-
-/** Optional PG context. When undefined, falls back to filesystem. */
-export type StateContext = PgStateContext | undefined;
+import {
+  readFeaturesMem,
+  featuresExistMem,
+  featureAttemptsMem,
+  setFeatureStatusMem,
+  type MemoryStateContext,
+} from './state-memory';
+import type { FeatureRecord } from './types';
 
 /**
- * Derive the optional state context from an InvokeContext-shaped object.
- * Returns undefined when the orchestrator wasn't given a pg client (CLI
- * standalone mode, tests), in which case callers transparently fall back
- * to the filesystem path.
+ * The runtime state backend. PG in production, memory in tests / CLI
+ * standalone. Always non-optional — every caller must provide one.
+ */
+export type StateContext = PgStateContext | MemoryStateContext;
+
+function isPg(ctx: StateContext): ctx is PgStateContext {
+  return (ctx as PgStateContext).pg !== undefined;
+}
+
+/**
+ * Derive the right state backend from an `InvokeContext`-shaped object.
+ * When PG (`pg` + `workspaceId`) is wired, returns a PG context.
+ * Otherwise returns an in-memory context keyed by `stateDir`.
  */
 export function stateCtx(ctx: {
   pg?: PgStateContext['pg'];
   workspaceId?: string;
   harnessSlug?: string;
   projectDir?: string;
+  stateDir: string;
 }): StateContext {
   if (ctx.pg && ctx.workspaceId) {
     // harnessSlug is optional; threaded so setFeatureStatusPg can apply
@@ -53,36 +67,35 @@ export function stateCtx(ctx: {
       (ctx.projectDir ? ctx.projectDir.split(/[/\\]/).filter(Boolean).pop() : undefined);
     return { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: slug };
   }
-  return undefined;
+  return { kind: 'memory', stateDir: ctx.stateDir };
 }
 
-/** Read and normalize features. Returns [] if absent or malformed. */
+/** Read and normalize features. */
 export async function readFeatures(
-  stateDir: string,
-  ctx?: StateContext,
+  _stateDir: string,
+  ctx: StateContext,
 ): Promise<FeatureRecord[]> {
-  if (ctx) return readFeaturesPg(ctx);
-  return readFeaturesFs(stateDir);
+  if (isPg(ctx)) return readFeaturesPg(ctx);
+  return readFeaturesMem(ctx);
 }
 
 /** Whether features exist AND there is at least one feature record. */
 export async function featuresExist(
-  stateDir: string,
-  ctx?: StateContext,
+  _stateDir: string,
+  ctx: StateContext,
 ): Promise<boolean> {
-  if (ctx) return featuresExistPg(ctx);
-  return readFeaturesFs(stateDir).length > 0;
+  if (isPg(ctx)) return featuresExistPg(ctx);
+  return featuresExistMem(ctx);
 }
 
 /** Number of times a feature has been worked on (zero if not found). */
 export async function featureAttempts(
-  stateDir: string,
+  _stateDir: string,
   featureId: string,
-  ctx?: StateContext,
+  ctx: StateContext,
 ): Promise<number> {
-  if (ctx) return featureAttemptsPg(ctx, featureId);
-  const f = readFeaturesFs(stateDir).find((x) => x.id === featureId);
-  return f?.attempts ?? 0;
+  if (isPg(ctx)) return featureAttemptsPg(ctx, featureId);
+  return featureAttemptsMem(ctx, featureId);
 }
 
 /**
@@ -91,13 +104,15 @@ export async function featureAttempts(
  * (architect's reset-to-todo with attempts=0).
  */
 export async function setFeatureStatus(
-  stateDir: string,
+  _stateDir: string,
   featureId: string,
   status: FeatureRecord['status'],
-  options: { bumpAttempts?: boolean; resetAttempts?: boolean; ctx?: StateContext } = {},
+  options: { bumpAttempts?: boolean; resetAttempts?: boolean; ctx: StateContext },
 ): Promise<FeatureRecord[]> {
-  if (options.ctx) return setFeatureStatusPg(options.ctx, featureId, status, options);
-  return setFeatureStatusFs(stateDir, featureId, status, options);
+  if (isPg(options.ctx)) {
+    return setFeatureStatusPg(options.ctx, featureId, status, options);
+  }
+  return setFeatureStatusMem(options.ctx, featureId, status, options);
 }
 
 /**
@@ -151,46 +166,4 @@ export function passedFraction(features: FeatureRecord[]): number {
   if (features.length === 0) return 0;
   const passed = features.filter((f) => f.status === 'passed').length;
   return passed / features.length;
-}
-
-// ── Legacy filesystem fallback (removed in a later phase) ─────────────
-
-function readFeaturesFs(stateDir: string): FeatureRecord[] {
-  const path = `${stateDir}/features.json`;
-  if (!existsSync(path)) return [];
-  try {
-    const raw = JSON.parse(readFileSync(path, 'utf8')) as FeaturesJson;
-    if (Array.isArray(raw)) return raw;
-    if (raw && typeof raw === 'object' && Array.isArray(raw.features)) {
-      return raw.features;
-    }
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-function setFeatureStatusFs(
-  stateDir: string,
-  featureId: string,
-  status: FeatureRecord['status'],
-  options: { bumpAttempts?: boolean; resetAttempts?: boolean },
-): FeatureRecord[] {
-  const path = `${stateDir}/features.json`;
-  const features = readFeaturesFs(stateDir);
-  const idx = features.findIndex((f) => f.id === featureId);
-  if (idx < 0) return features;
-  const next = { ...features[idx], status };
-  if (options.resetAttempts) next.attempts = 0;
-  else if (options.bumpAttempts) next.attempts = (next.attempts ?? 0) + 1;
-  features[idx] = next;
-  let writeShape: FeaturesJson = features;
-  try {
-    const original = JSON.parse(readFileSync(path, 'utf8')) as FeaturesJson;
-    if (!Array.isArray(original) && original && typeof original === 'object') {
-      writeShape = { ...original, features };
-    }
-  } catch { /* fall through to array form */ }
-  writeFileSync(path, JSON.stringify(writeShape, null, 2) + '\n');
-  return features;
 }

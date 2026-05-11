@@ -558,7 +558,7 @@ async function runMainLoopBody(
         harnessSlug: getSlug(ctx.projectDir),
       });
     } else {
-      snapshotState(ctx.stateDir, iteration, cfg);
+      await snapshotState(ctx.stateDir, iteration, cfg, stateCtx(ctx));
     }
 
     // 4. Prune oldest agent logs beyond logRetention.
@@ -1280,7 +1280,7 @@ async function handleNextValidator(
       synthesisAttempted && staleManifest !== null && staleManifest.n > 1;
 
     if (!synthFailedMultiLane) {
-      branchIsoPostValidator(branchIsoCtx, fid);
+      await branchIsoPostValidator(branchIsoCtx, fid, stateCtx(ctx));
     }
 
     if (staleManifest) {

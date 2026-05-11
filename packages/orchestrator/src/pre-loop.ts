@@ -154,7 +154,7 @@ async function firePostPlannerCheckpoints(
       `# Checkpoint: ${name} (auto, triggerOn=post-planner)\n\n` +
       `Requested at: ${isoNow}\n` +
       `Trigger: scoper + reviewer both passed for the first time.\n\n` +
-      'Review the plan in `.harness/features.json` and `.harness/validation-contract.md`.\n\n' +
+      'Review the plan via the harness UI (Features tab) and `.harness/validation-contract.md`.\n\n' +
       '## How to grant\n' +
       `- UI: /api/harness/<slug>/checkpoint/${name}/grant\n` +
       `- CLI: touch ${cpFile}.granted && re-run the harness\n`;
