@@ -68,7 +68,8 @@
     "papercusp-orchestrate": "./bin/run.ts"
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.dispatcher.config.ts",
+    "test:unit": "vitest run",
     "test:legacy": "node --test --import tsx src/**/*.test.ts",
     "test:slow": "vitest run --config vitest.slow.config.ts --testTimeout 600000",
     "test:dispatcher": "vitest run --config vitest.dispatcher.config.ts"
