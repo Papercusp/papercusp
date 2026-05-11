@@ -429,6 +429,7 @@ export const operator_turnsInHarness_shared = harness_shared.table("operator_tur
 	audio_url: text(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	created_at: bigint({ mode: "number" }).notNull(),
+	tools: jsonb(),
 }, (table) => [
 	index("operator_turns_conv_seq_idx").using("btree", table.conversation_id.asc().nullsLast().op("uuid_ops"), table.seq.asc().nullsLast().op("int4_ops")),
 	foreignKey({
