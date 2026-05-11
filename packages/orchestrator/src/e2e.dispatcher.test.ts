@@ -337,3 +337,240 @@ test('e2e: synthesizeSingle false → worker → validator (no synth) → merge 
     p.cleanup();
   }
 });
+
+test('e2e: merge-conflict reverts feature to failing, no false on-synthesis-won (Bug L+O)', async () => {
+  const p = buildOrchTestContext({
+    cfg: { parallelWorkers: { max: 1, workersPerFeature: 1, synthesizeSingle: true } },
+  });
+  try {
+    p.setFeatures([{ id: 'F-MC', status: 'todo', attempts: 0 }]);
+
+    let orchCallCount = 0;
+    inv.mockImplementation(async (_ctx: any, role: string, extras: string[]) => {
+      if (role === 'orchestrator') {
+        orchCallCount += 1;
+        if (orchCallCount === 1) return { exitCode: 0, output: 'NEXT_WORKER F-MC\n', stderr: '', runId: 'o1' };
+        if (orchCallCount === 2) return { exitCode: 0, output: 'NEXT_VALIDATOR F-MC\n', stderr: '', runId: 'o2' };
+        // Iteration 3 sees feature back at 'failing' — we just want to exit cleanly.
+        return { exitCode: 0, output: 'ESCALATE merge-conflict-test\n', stderr: '', runId: 'o3' };
+      }
+      if (role === 'worker') {
+        const wt = join(p.stateDir, 'worktrees', 'F-MC');
+        writeFileSync(join(wt, 'shared.txt'), 'worker version\n');
+        return { exitCode: 0, output: '', stderr: '', runId: 'w1' };
+      }
+      if (role === 'synthesizer') {
+        const wtExtra = extras.find((e) => e.startsWith('SYNTHESIS_WORKTREE='))!;
+        const synthWt = wtExtra.split('=', 2)[1];
+        writeFileSync(join(synthWt, 'shared.txt'), 'synth version\n');
+        // Simulate base moving during synth: commit a conflicting change directly to main.
+        writeFileSync(join(p.projectDir, 'shared.txt'), 'main-moved version\n');
+        spawnSync('git', ['add', 'shared.txt'], { cwd: p.projectDir });
+        spawnSync('git', ['commit', '--quiet', '-m', 'concurrent main edit'], { cwd: p.projectDir });
+        return { exitCode: 0, output: '', stderr: '', runId: 's1' };
+      }
+      if (role === 'validator') {
+        p.setFeatures([{ id: 'F-MC', status: 'passed', attempts: 1 }]);
+        return { exitCode: 0, output: '', stderr: '', runId: 'v1' };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    const result = await runMainLoop({
+      ctx: p.ctx,
+      logger: p.logger,
+      maxIterations: 5,
+      iterationSleepMs: 0,
+      skipPreLoop: true,
+    });
+
+    // Loop exits via the ESCALATE (we asked for it on iter 3 just to terminate the test).
+    assert.equal(result.reason, 'escalate');
+
+    // Bug O: feature is back at 'failing', NOT stuck at 'passed' that wouldn't be retried.
+    const features = p.readFeatures();
+    assert.equal(features.find((f) => f.id === 'F-MC')?.status, 'failing',
+      'merge conflict must revert feature to failing for retry');
+
+    // Bug L: on-synthesis-won did NOT fire — merge actually failed.
+    const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
+    assert.equal(won.length, 0, 'on-synthesis-won must not fire on merge-conflict');
+
+    // Main has the concurrent edit, NOT the synth output.
+    const show = spawnSync('git', ['show', 'main:shared.txt'], { cwd: p.projectDir, encoding: 'utf8' });
+    assert.equal(show.stdout, 'main-moved version\n', 'main retains the concurrent edit (synth was reverted)');
+
+    // Synth worktree + lane worktree both cleaned up.
+    const wts = readdirSync(join(p.stateDir, 'worktrees'));
+    assert.deepEqual(wts, [], 'all worktrees cleaned after revert');
+
+    // Main is on a clean state (no mid-merge state lingering). Untracked
+    // .harness/ is runtime state and expected; only fail on conflict markers
+    // (UU / AA / DD) or .git/MERGE_HEAD.
+    const status = spawnSync('git', ['status', '--porcelain'], { cwd: p.projectDir, encoding: 'utf8' });
+    const conflictLines = status.stdout.split('\n').filter((l) => /^(UU|AA|DD|AU|UA|DU|UD) /.test(l));
+    assert.deepEqual(conflictLines, [], 'no unresolved merge-conflict markers');
+    assert.equal(existsSync(join(p.projectDir, '.git', 'MERGE_HEAD')), false,
+      '.git/MERGE_HEAD must not linger after revert');
+  } finally {
+    p.cleanup();
+  }
+});
+
+test('e2e: synth fails → feature failing, no merge, retry round runs cleanly', async () => {
+  const p = buildOrchTestContext({
+    cfg: { parallelWorkers: { max: 2, workersPerFeature: 2 } },
+  });
+  try {
+    p.setFeatures([{ id: 'F-SF', status: 'todo', attempts: 0 }]);
+
+    let orchCallCount = 0;
+    let workerInvokes = 0;
+    let synthInvokes = 0;
+    inv.mockImplementation(async (_ctx: any, role: string, extras: string[]) => {
+      if (role === 'orchestrator') {
+        orchCallCount += 1;
+        if (orchCallCount === 1) return { exitCode: 0, output: 'NEXT_WORKER F-SF\n', stderr: '', runId: 'o1' };
+        if (orchCallCount === 2) return { exitCode: 0, output: 'NEXT_VALIDATOR F-SF\n', stderr: '', runId: 'o2' };
+        // After synth failure feature is 'failing'. Retry: NEXT_WORKER again.
+        if (orchCallCount === 3) return { exitCode: 0, output: 'NEXT_WORKER F-SF\n', stderr: '', runId: 'o3' };
+        if (orchCallCount === 4) return { exitCode: 0, output: 'NEXT_VALIDATOR F-SF\n', stderr: '', runId: 'o4' };
+        return { exitCode: 0, output: 'DONE\n', stderr: '', runId: 'oDone' };
+      }
+      if (role === 'worker') {
+        workerInvokes += 1;
+        const fidExtra = extras.find((e) => e.startsWith('FEATURE_ID='))!;
+        const laneFid = fidExtra.split('=', 2)[1];
+        const wt = join(p.stateDir, 'worktrees', laneFid);
+        writeFileSync(join(wt, 'f.txt'), `try ${Math.ceil(workerInvokes / 2)} lane ${laneFid}\n`);
+        return { exitCode: 0, output: '', stderr: '', runId: `w-${workerInvokes}` };
+      }
+      if (role === 'synthesizer') {
+        synthInvokes += 1;
+        if (synthInvokes === 1) {
+          // First synth attempt: simulate LLM failure (non-zero exit, no commit).
+          return { exitCode: 1, output: '', stderr: 'synth failed', runId: 's-fail' };
+        }
+        // Retry attempt: synth succeeds.
+        const wtExtra = extras.find((e) => e.startsWith('SYNTHESIS_WORKTREE='))!;
+        const synthWt = wtExtra.split('=', 2)[1];
+        writeFileSync(join(synthWt, 'f.txt'), 'retry synth output\n');
+        return { exitCode: 0, output: '', stderr: '', runId: 's-ok' };
+      }
+      if (role === 'validator') {
+        p.setFeatures([{ id: 'F-SF', status: 'passed', attempts: 2 }]);
+        return { exitCode: 0, output: '', stderr: '', runId: 'v' };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    const result = await runMainLoop({
+      ctx: p.ctx,
+      logger: p.logger,
+      maxIterations: 10,
+      iterationSleepMs: 0,
+      skipPreLoop: true,
+    });
+
+    assert.equal(result.reason, 'done', 'second round eventually passes → DONE');
+
+    const rolesByName = inv.mock.calls.reduce<Record<string, number>>(
+      (acc: Record<string, number>, c: any[]) => {
+        const role = c[1] as string;
+        acc[role] = (acc[role] ?? 0) + 1;
+        return acc;
+      },
+      {},
+    );
+    assert.equal(rolesByName.worker, 4, '2 workers per round × 2 rounds');
+    assert.equal(rolesByName.synthesizer, 2, '1 synth per round × 2 rounds');
+    // Validator runs only when synth produced a branch (round 2 only).
+    assert.equal(rolesByName.validator, 1, 'validator only runs after successful synth');
+
+    // Feature passed on retry.
+    assert.equal(p.readFeatures().find((f) => f.id === 'F-SF')?.status, 'passed');
+    const show = spawnSync('git', ['show', 'main:f.txt'], { cwd: p.projectDir, encoding: 'utf8' });
+    assert.equal(show.stdout, 'retry synth output\n');
+
+    // No worktrees leaked across the failure round.
+    const wts = readdirSync(join(p.stateDir, 'worktrees'));
+    assert.deepEqual(wts, [], 'no worktree leak after synth-fail + retry');
+  } finally {
+    p.cleanup();
+  }
+});
+
+test('e2e: adaptive tiers → orchestrator picks N=k, telemetry row recorded', async () => {
+  const p = buildOrchTestContext({
+    cfg: {
+      parallelWorkers: {
+        max: 4,
+        adaptive: { tiers: [1, 2, 4], labels: ['trivial', 'normal', 'hard'], rubric: 'test rubric' },
+      },
+    },
+  });
+  try {
+    p.setFeatures([{ id: 'F-AD', status: 'todo', attempts: 0 }]);
+
+    let orchCallCount = 0;
+    let extrasCaptured: string[][] = [];
+    inv.mockImplementation(async (_ctx: any, role: string, extras: string[]) => {
+      if (role === 'orchestrator') {
+        orchCallCount += 1;
+        // Capture extras (lets us verify ADAPTIVE_TIERS / AVAILABLE_SLOTS got injected).
+        if (orchCallCount === 1) extrasCaptured.push([...extras]);
+        if (orchCallCount === 1) return { exitCode: 0, output: 'NEXT_WORKER F-AD N=2\n', stderr: '', runId: 'o1' };
+        if (orchCallCount === 2) return { exitCode: 0, output: 'NEXT_VALIDATOR F-AD\n', stderr: '', runId: 'o2' };
+        return { exitCode: 0, output: 'DONE\n', stderr: '', runId: 'o3' };
+      }
+      if (role === 'worker') {
+        const fidExtra = extras.find((e) => e.startsWith('FEATURE_ID='))!;
+        const laneFid = fidExtra.split('=', 2)[1];
+        const wt = join(p.stateDir, 'worktrees', laneFid);
+        writeFileSync(join(wt, 'g.txt'), `${laneFid}\n`);
+        return { exitCode: 0, output: '', stderr: '', runId: 'w' };
+      }
+      if (role === 'synthesizer') {
+        const wtExtra = extras.find((e) => e.startsWith('SYNTHESIS_WORKTREE='))!;
+        const synthWt = wtExtra.split('=', 2)[1];
+        writeFileSync(join(synthWt, 'g.txt'), 'synth-of-N2\n');
+        return { exitCode: 0, output: '', stderr: '', runId: 's' };
+      }
+      if (role === 'validator') {
+        p.setFeatures([{ id: 'F-AD', status: 'passed', attempts: 1 }]);
+        return { exitCode: 0, output: '', stderr: '', runId: 'v' };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    const result = await runMainLoop({
+      ctx: p.ctx,
+      logger: p.logger,
+      maxIterations: 5,
+      iterationSleepMs: 0,
+      skipPreLoop: true,
+    });
+
+    assert.equal(result.reason, 'done');
+
+    // Orchestrator got the adaptive context.
+    const orchExtras = extrasCaptured[0];
+    assert.ok(orchExtras.some((e) => e.startsWith('PARALLEL_MODE=adaptive')),
+      'PARALLEL_MODE=adaptive injected when tiers configured');
+    assert.ok(orchExtras.some((e) => e.startsWith('ADAPTIVE_TIERS=')),
+      'ADAPTIVE_TIERS extras line injected');
+    assert.ok(orchExtras.some((e) => e.startsWith('AVAILABLE_SLOTS=')),
+      'AVAILABLE_SLOTS extras line injected');
+
+    // Orchestrator requested N=2; dispatcher honored it. 2 worker invocations.
+    const workerCalls = inv.mock.calls.filter((c: any[]) => c[1] === 'worker');
+    assert.equal(workerCalls.length, 2, 'dispatcher honored N=2 from orchestrator');
+
+    // Feature passed, synth output shipped.
+    assert.equal(p.readFeatures().find((f) => f.id === 'F-AD')?.status, 'passed');
+    const show = spawnSync('git', ['show', 'main:g.txt'], { cwd: p.projectDir, encoding: 'utf8' });
+    assert.equal(show.stdout, 'synth-of-N2\n');
+  } finally {
+    p.cleanup();
+  }
+});
