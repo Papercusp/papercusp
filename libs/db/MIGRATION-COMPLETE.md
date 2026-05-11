@@ -165,12 +165,41 @@ the user explicitly wants to revisit after this migration completes:
 - Rewrite `libs/zero-harness/src/queries.ts` to use introspected
   names — dependency of the above
 
+## Verification at completion
+
+- **`tsc --noEmit` against the full operator app: 0 errors.** The Phase
+  1 `.db` field, Phase 1.5 PK injections, and Phase 3 converted
+  call site all type-check cleanly against the introspected schema.
+- **End-to-end live smoke (dev `:3055`):**
+  - POST `/api/harness/sheets/features/F-DRIZZLE-SMOKE/notes` with body
+    → `appendOperatorNote()` → typed `.db.insert(t).values({...})
+    .onConflictDoUpdate({target: [t.workspace_id, t.harness_slug,
+    t.feature_id], set: {...}})` → row landed in
+    `harness_shared.harness_feature_notes` (verified with psql).
+  - GET same path → `readOperatorNotes()` → typed `.db.select({content})
+    .from(t).where(and(eq(...), eq(...), eq(...))).limit(1)` →
+    returned the inserted content + parsed blocks.
+  - Composite-PK upsert (workspace_id, harness_slug, feature_id) works
+    end-to-end against the introspected schema. Phase 1.5's PK injection
+    was load-bearing for this; without it, `onConflictDoUpdate` had no
+    target to target.
+
 ## Risk register at completion
 
 - The broken self-symlink at `papercup/node_modules` was a paperclip-
   induced artifact, not caused by this migration. Drizzle-kit was run
   from `/tmp/drizzle-bootstrap/` to bypass it. The committed schema
-  artifacts are correct; bin/prod's standalone bundle works as before.
+  artifacts are correct.
+- **`bin/prod` rebuild failed in this session** due to two paperclip-
+  induced node_modules issues: (1) a self-loop at
+  `papercup/node_modules/node_modules -> ../node_modules` (removed
+  during this session) and (2) a missing
+  `next/dist/compiled/jest-worker/processChild.js` (deeper install
+  corruption). Neither is caused by the migration. Dev server `:3055`
+  picks up the migration changes correctly — that's where the live
+  smoke ran. Production rebuild will succeed once node_modules is
+  fully reinstalled (`rm -rf node_modules && npm install` from repo
+  root), but that's an operational concern separate from this work.
 - No Zero replica state was modified in this session. Existing
   publication, replication slot, replica process unchanged.
 - All commits pushed to origin/main on both `papercupai/papercup` and
