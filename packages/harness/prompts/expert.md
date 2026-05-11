@@ -176,6 +176,57 @@ The server decides when the outer loop terminates. You don't.
 When the server flips your status to a terminal state, exit. The
 scoper resumes via the orchestrator's event bus.
 
+### Step 5.5 — write the assertion list (do this when you near `final`)
+
+Before the server flips you to `final`, write `assertions.md` listing
+the validation-contract assertions for your feature area. This is the
+binding success criteria that the validator (and workers via the
+contract) will use to decide "done." Phase-2 scoper merges your
+assertions verbatim — don't make the scoper re-derive them from prose.
+
+**Format** — same as `.harness/validation-contract.md` entries:
+
+```
+### VAL-<NAMESPACE>-001: <one-line behavioral claim>
+**Verify:** <how a fresh agent verifies this — curl, psql, Playwright, file check, etc.>
+**Expected evidence:** <what passing looks like — exact response shape, file existence, ≤200ms latency, etc.>
+
+### VAL-<NAMESPACE>-002: ...
+```
+
+**Namespace:** use your expert id without the `EXP-` prefix, padded
+to match your areas. e.g. `EXP-003` (user-auth area) →
+`VAL-AUTH-001`, `VAL-AUTH-002`. Or `EXP-007` (payment area) →
+`VAL-PAY-001`. Make it readable; the namespace shows up in worker /
+validator logs forever.
+
+**Coverage:** every behavior your SPEC.md commits to should appear as
+at least one assertion. The phase-2 scoper will derive features from
+your SPEC.md and link each feature to one or more of your VAL-* IDs
+as its `claims`.
+
+**Write via the API** (canonical, with audit):
+
+```bash
+BODY="$(jq -nR --arg c "$(cat <<'ASRT'
+### VAL-AUTH-001: POST /auth/login returns 200 + JSON {token: string, expiresAt: number} on valid credentials
+**Verify:** curl -X POST localhost:$HARNESS_PORT/auth/login -d '{"user":"alice","pass":"alice-pw"}'
+**Expected evidence:** HTTP 200, JSON body with token (>=20 chars) and expiresAt (unix ms, > now)
+
+### VAL-AUTH-002: ...
+ASRT
+)" '{content: $c}')"
+
+curl -sS -X PUT "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/$EXPERT_ID/assertions" \
+  -H "content-type: application/json" \
+  -d "$BODY"
+```
+
+Returns `{ok: true}`. If you don't write assertions, scoper falls
+back to its pre-existing behavior of inventing them from your SPEC.md
+prose — which works, but the scoper's reading isn't always your
+intent. Always write assertions.
+
 ### Style for SPEC.md
 
 - Lead with a one-paragraph summary a non-engineer would understand.
@@ -191,6 +242,7 @@ scoper resumes via the orchestrator's event bus.
   signal.
 - Do not skip the prior-art search. It's what the scoper relies on to
   avoid duplicating an existing library.
-- Do not write into worker territory: don't enumerate validation-
-  contract assertions, don't write features.json. The scoper does that
-  in phase 2 from your spec.
+- Do not write into worker territory: don't write features. The
+  scoper turns your SPEC.md + assertions.md into the feature queue in
+  phase 2. (You DO write `assertions.md` — see "Step 4.5" below — but
+  not the queue.)

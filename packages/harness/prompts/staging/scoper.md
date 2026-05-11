@@ -60,7 +60,13 @@ Read `.harness/config.json` first. If `scoper.useExperts === true`, you run in *
   After spawning all experts, **exit**. Do **not** write `validation-contract.md` or features yet — the experts produce the detailed specs first.
   Print: `PLANNED_EXPERTS: <N>` then exit.
 
-- **Phase 2** (re-invoked by orchestrator when experts hit `final` / `max_rounds`): list experts via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts | jq`. For each expert whose `status` is `final` or `max_rounds` AND no existing `harness_features` row has `notes` referencing that expert's id (e.g. `notes` containing `expert: EXP-003`), read its `SPEC.md` from `.harness/experts/<id>/SPEC.md` and derive validation-contract entries + features from it.
+- **Phase 2** (re-invoked by orchestrator when experts hit `final` / `max_rounds`): list experts via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/experts | jq`. For each expert whose `status` is `final` or `max_rounds` AND no existing `harness_features` row has `notes` referencing that expert's id (e.g. `notes` containing `expert: EXP-003`):
+
+  1. Read the expert's `SPEC.md`: `curl -sS http://localhost:3055/api/harness/$HARNESS_SLUG/experts/<EXP-id>/spec | jq -r .content`.
+  2. Read the expert's `assertions.md` (the binding success criteria the expert wrote during finalization): `curl -sS http://localhost:3055/api/harness/$HARNESS_SLUG/experts/<EXP-id>/assertions | jq -r .content`.
+  3. Append the expert's assertion entries verbatim to `.harness/validation-contract.md`. **Don't re-derive or paraphrase** — the expert wrote them as the contract, you're just merging them in. Preserve VAL-* IDs exactly; the expert chose the namespace.
+  4. If the expert's `assertions.md` is empty (older experts that pre-date this convention), fall back to the pre-existing behavior: derive validation-contract entries from SPEC.md prose yourself, using a fresh VAL-* namespace.
+  5. Derive features from `SPEC.md` (one feature per natural unit of work). Each feature's `claims` list MUST reference one or more of the expert's VAL-* IDs (from step 3 or 4). Don't invent new VAL-* IDs at this step — the contract is fully populated already.
 
   **Each derived feature MUST include the expert reference in its `notes`** so workers and validators can find the canonical spec. Concrete shape:
 

@@ -393,6 +393,7 @@ export const harnessExpertsInHarnessShared = harnessShared.table("harness_expert
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 	terminationReason: text("termination_reason"),
 	specContent: text("spec_content").default('').notNull(),
+	assertionsContent: text("assertions_content").default('').notNull(),
 }, (table) => [
 	index("he_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.updatedAt.desc().nullsFirst().op("int8_ops")),
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.expertId], name: "harness_experts_pkey"}),
