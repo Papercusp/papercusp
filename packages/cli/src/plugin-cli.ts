@@ -1588,6 +1588,10 @@ export async function cmdPlugin(args: string[]): Promise<void> {
       const { cmdPluginLint } = await import('./plugin-lint.ts');
       return cmdPluginLint(rest);
     }
+    case 'doctor': {
+      const { cmdPluginDoctor } = await import('./plugin-doctor.ts');
+      return cmdPluginDoctor(rest);
+    }
     case undefined:
     case 'help':
     case '--help':
