@@ -299,7 +299,25 @@ if (psql.status === 0) {
     const blk = findTableBlock(schema, tableName);
     if (!blk) continue;
 
-    const pkColsArg = cols.map((c) => 'table.' + c).join(', ');
+    // Map PG column names → the Drizzle field name actually used in the
+    // table block (snake_case under `casing:preserve`, camelCase under
+    // `casing:camel`). Without this, references like `table.workspace_id`
+    // resolve to undefined when the generated.ts field is `workspaceId`.
+    const fieldMap = {};
+    const tableSrc = schema.slice(blk.openBrace + 1, blk.closeBrace);
+    for (const cm of tableSrc.matchAll(/^\s*(\w+):\s*\w+\(\s*["']([^"']+)["']/gm)) {
+      fieldMap[cm[2]] = cm[1]; // pg-column-name → field-name
+    }
+    for (const cm of tableSrc.matchAll(/^\s*(\w+):\s*\w+\(/gm)) {
+      // For columns without explicit pg-name in ctor, the field name IS
+      // the PG column name (casing:preserve behavior). Don't overwrite
+      // an existing camel mapping.
+      if (!(cm[1] in fieldMap) && !Object.values(fieldMap).includes(cm[1])) {
+        fieldMap[cm[1]] = cm[1];
+      }
+    }
+
+    const pkColsArg = cols.map((c) => 'table.' + (fieldMap[c] ?? c)).join(', ');
     const pkLine = '\tprimaryKey({ columns: [' + pkColsArg + '], name: "' + pkName + '"}),';
 
     if (blk.callbackStart === -1) {

@@ -11,7 +11,7 @@ export const operatorPausedInHarnessShared = harnessShared.table("operator_pause
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_paused_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_paused_pkey"}),
 ]);
 
 export const uiClientsInHarnessShared = harnessShared.table("ui_clients", {
@@ -24,7 +24,7 @@ export const uiClientsInHarnessShared = harnessShared.table("ui_clients", {
 	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("ui_clients_last_seen_idx").using("btree", table.lastSeenAt.desc().nullsFirst().op("timestamptz_ops")),
-	primaryKey({ columns: [table.client_id], name: "ui_clients_pkey"}),
+	primaryKey({ columns: [table.clientId], name: "ui_clients_pkey"}),
 
 ]);
 
@@ -58,7 +58,7 @@ export const workspaceBackupSettingsInHarnessShared = harnessShared.table("works
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "workspace_backup_settings_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "workspace_backup_settings_pkey"}),
 ]);
 
 export const backupSnapshotsInHarnessShared = harnessShared.table("backup_snapshots", {
@@ -132,7 +132,7 @@ export const harnessSkillsInHarnessShared = harnessShared.table("harness_skills"
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("harness_skills_lookup_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspace_id, table.harness_slug, table.name], name: "harness_skills_pkey"}),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.name], name: "harness_skills_pkey"}),
 
 ]);
 
@@ -148,7 +148,7 @@ export const mobilePairTokensInHarnessShared = harnessShared.table("mobile_pair_
 	createdAtMs: bigint("created_at_ms", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("mobile_pair_tokens_exp_idx").using("btree", table.expiresAtMs.asc().nullsLast().op("int8_ops")),
-	primaryKey({ columns: [table.pair_token], name: "mobile_pair_tokens_pkey"}),
+	primaryKey({ columns: [table.pairToken], name: "mobile_pair_tokens_pkey"}),
 
 ]);
 
@@ -158,7 +158,7 @@ export const operatorRateLimitInHarnessShared = harnessShared.table("operator_ra
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_rate_limit_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_rate_limit_pkey"}),
 ]);
 
 export const messagesInPapercupShared = papercupShared.table("messages", {
@@ -206,7 +206,7 @@ export const voiceLeaseInHarnessShared = harnessShared.table("voice_lease", {
 }, (table) => [
 	index("voice_lease_expires_idx").using("btree", table.expiresAtMs.asc().nullsLast().op("int8_ops")),
 	check("voice_lease_owner_kind_check", sql`owner_kind = ANY (ARRAY['desktop'::text, 'mobile'::text])`),
-	primaryKey({ columns: [table.workspace_id], name: "voice_lease_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "voice_lease_pkey"}),
 
 ]);
 
@@ -247,7 +247,7 @@ export const harnessFeatureDebugNotesInHarnessShared = harnessShared.table("harn
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("hfdn_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspace_id, table.harness_slug, table.feature_id], name: "harness_feature_debug_notes_pkey"}),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "harness_feature_debug_notes_pkey"}),
 
 ]);
 
@@ -264,7 +264,7 @@ export const pluginEnablesInHarnessShared = harnessShared.table("plugin_enables"
 	index("plugin_enables_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	pgPolicy("plugin_enables_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("plugin_enables_workspace_nonempty", sql`workspace_id <> ''::text`),
-	primaryKey({ columns: [table.harness_slug, table.plugin_slug], name: "plugin_enables_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.pluginSlug], name: "plugin_enables_pkey"}),
 
 ]);
 
@@ -326,7 +326,7 @@ export const harnessFeaturePrsInHarnessShared = harnessShared.table("harness_fea
 	updatedTs: bigint("updated_ts", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("hfp_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspace_id, table.harness_slug, table.feature_id], name: "harness_feature_prs_pkey"}),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "harness_feature_prs_pkey"}),
 
 ]);
 
@@ -369,7 +369,7 @@ export const agentChatsConsolidatedInHarnessShared = harnessShared.table("agent_
 	archivedAt: bigint("archived_at", { mode: "number" }),
 }, (table) => [
 	index("agent_chats_consolidated_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.updatedAt.desc().nullsFirst().op("int8_ops")),
-	primaryKey({ columns: [table.workspace_id, table.harness_slug, table.id], name: "agent_chats_consolidated_pkey"}),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.id], name: "agent_chats_consolidated_pkey"}),
 
 ]);
 
@@ -395,7 +395,7 @@ export const harnessExpertsInHarnessShared = harnessShared.table("harness_expert
 	specContent: text("spec_content").default('').notNull(),
 }, (table) => [
 	index("he_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.updatedAt.desc().nullsFirst().op("int8_ops")),
-	primaryKey({ columns: [table.workspace_id, table.harness_slug, table.expert_id], name: "harness_experts_pkey"}),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.expertId], name: "harness_experts_pkey"}),
 
 ]);
 
@@ -475,7 +475,7 @@ export const spawnedAgentsInHarnessShared = harnessShared.table("spawned_agents"
 	index("spawned_agents_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("text_ops")),
 	index("spawned_agents_running_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(status = 'running'::text)`),
 	pgPolicy("spawned_agents_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.spawn_id], name: "spawned_agents_pkey"}),
+	primaryKey({ columns: [table.spawnId], name: "spawned_agents_pkey"}),
 
 ]);
 
@@ -507,7 +507,22 @@ export const operatorSearchProviderCredentialsInHarnessShared = harnessShared.ta
 	updatedAt: bigint("updated_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
 }, (table) => [
 	pgPolicy("osc_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspace_id], name: "operator_search_provider_credentials_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_search_provider_credentials_pkey"}),
+
+]);
+
+export const harnessProjectFilesInHarnessShared = harnessShared.table("harness_project_files", {
+	harnessSlug: text("harness_slug").primaryKey().notNull(),
+	spec: text(),
+	agents: text(),
+	contract: text(),
+	config: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+	workspaceId: text("workspace_id").default('').notNull(),
+}, (table) => [
+	index("harness_project_files_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.harnessSlug], name: "harness_project_files_pkey"}),
 
 ]);
 
@@ -543,22 +558,7 @@ export const mobileDevicesInHarnessShared = harnessShared.table("mobile_devices"
 	index("mobile_devices_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(revoked_at IS NULL)`),
 	pgPolicy("mobile_devices_workspace_policy", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("mobile_devices_device_kind_check", sql`device_kind = 'mobile'::text`),
-	primaryKey({ columns: [table.device_id], name: "mobile_devices_pkey"}),
-
-]);
-
-export const harnessProjectFilesInHarnessShared = harnessShared.table("harness_project_files", {
-	harnessSlug: text("harness_slug").primaryKey().notNull(),
-	spec: text(),
-	agents: text(),
-	contract: text(),
-	config: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	workspaceId: text("workspace_id").default('').notNull(),
-}, (table) => [
-	index("harness_project_files_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.harness_slug], name: "harness_project_files_pkey"}),
+	primaryKey({ columns: [table.deviceId], name: "mobile_devices_pkey"}),
 
 ]);
 
@@ -662,7 +662,7 @@ export const pluginConfigsInHarnessShared = harnessShared.table("plugin_configs"
 	index("plugin_configs_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	pgPolicy("plugin_configs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("plugin_configs_workspace_nonempty", sql`workspace_id <> ''::text`),
-	primaryKey({ columns: [table.harness_slug, table.plugin_slug], name: "plugin_configs_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.pluginSlug], name: "plugin_configs_pkey"}),
 
 ]);
 
@@ -700,7 +700,7 @@ export const messageRecipientsInPapercupShared = papercupShared.table("message_r
 			foreignColumns: [messagesInPapercupShared.id],
 			name: "message_recipients_message_id_fkey"
 		}).onDelete("cascade"),
-	primaryKey({ columns: [table.message_id, table.dept_slug], name: "message_recipients_pkey"}),
+	primaryKey({ columns: [table.messageId, table.deptSlug], name: "message_recipients_pkey"}),
 
 ]);
 
@@ -1018,7 +1018,7 @@ export const operatorScanLocksInHarnessShared = harnessShared.table("operator_sc
 }, (table) => [
 	index("operator_scan_locks_expires_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
 	pgPolicy("operator_scan_locks_workspace_iso", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspace_id], name: "operator_scan_locks_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_scan_locks_pkey"}),
 
 ]);
 
@@ -1029,7 +1029,7 @@ export const orgCharterInHarnessShared = harnessShared.table("org_charter", {
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.org_id], name: "org_charter_pkey"}),
+	primaryKey({ columns: [table.orgId], name: "org_charter_pkey"}),
 ]);
 
 export const orgNotesInHarnessShared = harnessShared.table("org_notes", {
@@ -1040,7 +1040,7 @@ export const orgNotesInHarnessShared = harnessShared.table("org_notes", {
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.org_id, table.dept_slug], name: "org_notes_pkey"}),
+	primaryKey({ columns: [table.orgId, table.deptSlug], name: "org_notes_pkey"}),
 ]);
 
 export const operatorCredentialsInHarnessShared = harnessShared.table("operator_credentials", {
@@ -1051,7 +1051,7 @@ export const operatorCredentialsInHarnessShared = harnessShared.table("operator_
 	// TODO: failed to parse database type 'bytea'
 	payloadCt: text("payload_ct"),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_credentials_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_credentials_pkey"}),
 ]);
 
 export const orgDecisionsInHarnessShared = harnessShared.table("org_decisions", {
@@ -1062,7 +1062,7 @@ export const orgDecisionsInHarnessShared = harnessShared.table("org_decisions", 
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.org_id, table.dept_slug], name: "org_decisions_pkey"}),
+	primaryKey({ columns: [table.orgId, table.deptSlug], name: "org_decisions_pkey"}),
 ]);
 
 export const operatorBudgetInHarnessShared = harnessShared.table("operator_budget", {
@@ -1071,7 +1071,7 @@ export const operatorBudgetInHarnessShared = harnessShared.table("operator_budge
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_budget_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_budget_pkey"}),
 ]);
 
 export const operatorPublishCredentialsInHarnessShared = harnessShared.table("operator_publish_credentials", {
@@ -1082,7 +1082,7 @@ export const operatorPublishCredentialsInHarnessShared = harnessShared.table("op
 	// TODO: failed to parse database type 'bytea'
 	payloadCt: text("payload_ct"),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_publish_credentials_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_publish_credentials_pkey"}),
 ]);
 
 export const operatorVoiceCredentialsInHarnessShared = harnessShared.table("operator_voice_credentials", {
@@ -1093,7 +1093,7 @@ export const operatorVoiceCredentialsInHarnessShared = harnessShared.table("oper
 	// TODO: failed to parse database type 'bytea'
 	payloadCt: text("payload_ct"),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_voice_credentials_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_voice_credentials_pkey"}),
 ]);
 
 export const operatorMarketplaceTokenInHarnessShared = harnessShared.table("operator_marketplace_token", {
@@ -1104,7 +1104,7 @@ export const operatorMarketplaceTokenInHarnessShared = harnessShared.table("oper
 	// TODO: failed to parse database type 'bytea'
 	payloadCt: text("payload_ct"),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_marketplace_token_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_marketplace_token_pkey"}),
 ]);
 
 export const harnessEscalationsInHarnessShared = harnessShared.table("harness_escalations", {
@@ -1116,7 +1116,7 @@ export const harnessEscalationsInHarnessShared = harnessShared.table("harness_es
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.harness_slug, table.phase], name: "harness_escalations_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.phase], name: "harness_escalations_pkey"}),
 ]);
 
 export const harnessPendingIssuesInHarnessShared = harnessShared.table("harness_pending_issues", {
@@ -1134,7 +1134,7 @@ export const harnessPendingIssuesInHarnessShared = harnessShared.table("harness_
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.harness_slug, table.phase, table.issue_id], name: "harness_pending_issues_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.phase, table.issueId], name: "harness_pending_issues_pkey"}),
 ]);
 
 export const harnessPhasesInHarnessShared = harnessShared.table("harness_phases", {
@@ -1155,7 +1155,7 @@ export const harnessPhasesInHarnessShared = harnessShared.table("harness_phases"
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.harness_slug, table.phase], name: "harness_phases_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.phase], name: "harness_phases_pkey"}),
 ]);
 
 export const harnessTestsInHarnessShared = harnessShared.table("harness_tests", {
@@ -1172,7 +1172,7 @@ export const harnessTestsInHarnessShared = harnessShared.table("harness_tests", 
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.harness_slug, table.phase, table.test_id], name: "harness_tests_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.phase, table.testId], name: "harness_tests_pkey"}),
 ]);
 
 export const orgDepartmentsInHarnessShared = harnessShared.table("org_departments", {
@@ -1188,7 +1188,7 @@ export const orgDepartmentsInHarnessShared = harnessShared.table("org_department
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.org_id, table.dept_slug], name: "org_departments_pkey"}),
+	primaryKey({ columns: [table.orgId, table.deptSlug], name: "org_departments_pkey"}),
 ]);
 
 export const orgProjectsInHarnessShared = harnessShared.table("org_projects", {
@@ -1203,7 +1203,7 @@ export const orgProjectsInHarnessShared = harnessShared.table("org_projects", {
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.org_id, table.project_id], name: "org_projects_pkey"}),
+	primaryKey({ columns: [table.orgId, table.projectId], name: "org_projects_pkey"}),
 ]);
 
 export const orgInboxInHarnessShared = harnessShared.table("org_inbox", {
@@ -1226,7 +1226,7 @@ export const orgInboxInHarnessShared = harnessShared.table("org_inbox", {
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.org_id, table.dept_slug, table.message_id], name: "org_inbox_pkey"}),
+	primaryKey({ columns: [table.orgId, table.deptSlug, table.messageId], name: "org_inbox_pkey"}),
 ]);
 
 export const orgOutboxInHarnessShared = harnessShared.table("org_outbox", {
@@ -1249,7 +1249,7 @@ export const orgOutboxInHarnessShared = harnessShared.table("org_outbox", {
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.org_id, table.dept_slug, table.message_id], name: "org_outbox_pkey"}),
+	primaryKey({ columns: [table.orgId, table.deptSlug, table.messageId], name: "org_outbox_pkey"}),
 ]);
 
 export const operatorLastScanInHarnessShared = harnessShared.table("operator_last_scan", {
@@ -1258,7 +1258,7 @@ export const operatorLastScanInHarnessShared = harnessShared.table("operator_las
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_last_scan_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_last_scan_pkey"}),
 ]);
 
 export const operatorStandingCandidatesInHarnessShared = harnessShared.table("operator_standing_candidates", {
@@ -1267,7 +1267,7 @@ export const operatorStandingCandidatesInHarnessShared = harnessShared.table("op
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_standing_candidates_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_standing_candidates_pkey"}),
 ]);
 
 export const operatorIdleSnapshotInHarnessShared = harnessShared.table("operator_idle_snapshot", {
@@ -1276,7 +1276,7 @@ export const operatorIdleSnapshotInHarnessShared = harnessShared.table("operator
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_idle_snapshot_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_idle_snapshot_pkey"}),
 ]);
 
 export const operatorTtsSpendInHarnessShared = harnessShared.table("operator_tts_spend", {
@@ -1285,7 +1285,7 @@ export const operatorTtsSpendInHarnessShared = harnessShared.table("operator_tts
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_tts_spend_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_tts_spend_pkey"}),
 ]);
 
 export const operatorSttSpendInHarnessShared = harnessShared.table("operator_stt_spend", {
@@ -1294,7 +1294,7 @@ export const operatorSttSpendInHarnessShared = harnessShared.table("operator_stt
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_stt_spend_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_stt_spend_pkey"}),
 ]);
 
 export const operatorVoicePrefsInHarnessShared = harnessShared.table("operator_voice_prefs", {
@@ -1303,7 +1303,7 @@ export const operatorVoicePrefsInHarnessShared = harnessShared.table("operator_v
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_voice_prefs_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_voice_prefs_pkey"}),
 ]);
 
 export const operatorAgentConfigInHarnessShared = harnessShared.table("operator_agent_config", {
@@ -1312,7 +1312,7 @@ export const operatorAgentConfigInHarnessShared = harnessShared.table("operator_
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_agent_config_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_agent_config_pkey"}),
 ]);
 
 export const operatorScannerSessionInHarnessShared = harnessShared.table("operator_scanner_session", {
@@ -1321,7 +1321,7 @@ export const operatorScannerSessionInHarnessShared = harnessShared.table("operat
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_scanner_session_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_scanner_session_pkey"}),
 ]);
 
 export const operatorFirstRunInHarnessShared = harnessShared.table("operator_first_run", {
@@ -1330,7 +1330,7 @@ export const operatorFirstRunInHarnessShared = harnessShared.table("operator_fir
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_first_run_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_first_run_pkey"}),
 ]);
 
 export const operatorUserProfileInHarnessShared = harnessShared.table("operator_user_profile", {
@@ -1339,7 +1339,7 @@ export const operatorUserProfileInHarnessShared = harnessShared.table("operator_
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_user_profile_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_user_profile_pkey"}),
 ]);
 
 export const operatorPromptUserInHarnessShared = harnessShared.table("operator_prompt_user", {
@@ -1348,7 +1348,7 @@ export const operatorPromptUserInHarnessShared = harnessShared.table("operator_p
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_prompt_user_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_prompt_user_pkey"}),
 ]);
 
 export const operatorPreferencesInHarnessShared = harnessShared.table("operator_preferences", {
@@ -1357,7 +1357,7 @@ export const operatorPreferencesInHarnessShared = harnessShared.table("operator_
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_preferences_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_preferences_pkey"}),
 ]);
 
 export const operatorOraclePromptInHarnessShared = harnessShared.table("operator_oracle_prompt", {
@@ -1366,7 +1366,7 @@ export const operatorOraclePromptInHarnessShared = harnessShared.table("operator
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_oracle_prompt_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_oracle_prompt_pkey"}),
 ]);
 
 export const operatorOracleMemoryInHarnessShared = harnessShared.table("operator_oracle_memory", {
@@ -1375,7 +1375,7 @@ export const operatorOracleMemoryInHarnessShared = harnessShared.table("operator
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_oracle_memory_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_oracle_memory_pkey"}),
 ]);
 
 export const harnessSmokeTestInHarnessShared = harnessShared.table("harness_smoke_test", {
@@ -1389,7 +1389,7 @@ export const harnessSmokeTestInHarnessShared = harnessShared.table("harness_smok
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.harness_slug], name: "harness_smoke_test_pkey"}),
+	primaryKey({ columns: [table.harnessSlug], name: "harness_smoke_test_pkey"}),
 ]);
 
 export const harnessPlanReviewInHarnessShared = harnessShared.table("harness_plan_review", {
@@ -1399,7 +1399,7 @@ export const harnessPlanReviewInHarnessShared = harnessShared.table("harness_pla
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.harness_slug], name: "harness_plan_review_pkey"}),
+	primaryKey({ columns: [table.harnessSlug], name: "harness_plan_review_pkey"}),
 ]);
 
 export const harnessHealthInHarnessShared = harnessShared.table("harness_health", {
@@ -1410,7 +1410,7 @@ export const harnessHealthInHarnessShared = harnessShared.table("harness_health"
 	lastCheckMs: bigint("last_check_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.harness_slug], name: "harness_health_pkey"}),
+	primaryKey({ columns: [table.harnessSlug], name: "harness_health_pkey"}),
 ]);
 
 export const provisionAuditLogInHarnessShared = harnessShared.table("provision_audit_log", {
@@ -1432,7 +1432,7 @@ export const harnessRegistryInHarnessShared = harnessShared.table("harness_regis
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "harness_registry_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "harness_registry_pkey"}),
 ]);
 
 export const operatorTrustStoreInHarnessShared = harnessShared.table("operator_trust_store", {
@@ -1443,7 +1443,7 @@ export const operatorTrustStoreInHarnessShared = harnessShared.table("operator_t
 	// TODO: failed to parse database type 'bytea'
 	payloadCt: text("payload_ct"),
 }, (table) => [
-	primaryKey({ columns: [table.workspace_id], name: "operator_trust_store_pkey"}),
+	primaryKey({ columns: [table.workspaceId], name: "operator_trust_store_pkey"}),
 ]);
 
 export const operatorDismissedCardsInHarnessShared = harnessShared.table("operator_dismissed_cards", {
