@@ -83,7 +83,12 @@ export interface OrchTestContextOptions {
 }
 
 const DEFAULT_CFG = {
-  parallelWorkers: { max: 4 },
+  // Production default for useChunkLoop is true (chunk-loop is the
+  // canonical worker model). Tests in this suite predominantly exercise
+  // the synthesizer + branch-iso pipeline, so the test-context default
+  // is `false`. Individual tests that want chunk-loop set it back to
+  // true via the options.cfg override.
+  parallelWorkers: { max: 4, useChunkLoop: false },
   branchIsolation: { enabled: true, useWorktrees: true, baseBranch: 'main' },
 };
 

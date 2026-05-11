@@ -8,7 +8,11 @@ You have a **fresh context**. Do not assume knowledge of previous sessions. All 
 
 One or more worker agents implemented `$FEATURE_ID` independently. Each worker has its own git worktree and branch. You'll see them under `.harness/worktrees/<FEATURE_ID>-lane-<N>/` (or, when `SYNTHESIS_LANE_COUNT=1`, under `.harness/worktrees/<FEATURE_ID>/`).
 
-The harness has already created your working directory: `$SYNTHESIS_WORKTREE`. You're starting from the project's base branch. Your final output is whatever is in this worktree when you finish.
+The harness has already created your working directory: `$SYNTHESIS_WORKTREE`.
+
+**Important — first synthesis vs. retry:** if `harness/<FEATURE_ID>-synthesis` already existed when the workers ran (preserved from a prior round that the validator rejected), the workers branched their lanes off it. In that case you're *iterating* on prior shipped code against the validator's specific complaints — read `$PRIOR_VALIDATOR_LOG` (set on retry rounds) to see what was wrong, and the candidate diffs will be *deltas* relative to the prior synthesis. Don't restart from scratch unless the candidates obviously regressed something. Otherwise, this is a first synthesis — candidates start from base and you're producing the initial shippable version.
+
+Your final output is whatever is in your working directory when you finish.
 
 ## Runtime context
 

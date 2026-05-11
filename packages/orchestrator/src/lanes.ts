@@ -240,14 +240,18 @@ export function maxFeaturesInFlight(cfg: HarnessConfig): number | null {
  * worker chunk loop (atomic file-locks per chunk, L1 typecheck gate,
  * up-front planning, escalate-to-debugger on N strikes). Defaults to
  * `false` for one release after landing so the legacy single-shot
- * worker path stays the default; flip to `true` per-harness once the
- * chunk-loop is verified, then default-on later.
+ * Default is `true` — chunk-loop is the canonical worker execution
+ * model. Branch-isolation path is still in the codebase but is no
+ * longer surfaced in the harness settings UI; explicitly setting
+ * `parallelWorkers.useChunkLoop: false` opts a harness back into the
+ * per-feature-worktree + synthesizer pipeline (e.g. for harnesses
+ * that need the multi-worker synthesis behavior).
  */
 export function useChunkLoop(cfg: HarnessConfig): boolean {
-  const v = configGet<unknown>(cfg, 'parallelWorkers.useChunkLoop', false);
+  const v = configGet<unknown>(cfg, 'parallelWorkers.useChunkLoop', true);
   if (typeof v === 'boolean') return v;
   if (typeof v === 'string') return v === 'true' || v === '1';
-  return false;
+  return true;
 }
 
 /**

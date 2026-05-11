@@ -114,14 +114,24 @@ function priorValidatorLogPath(stateDir: string, fid: string): string | null {
 }
 
 /**
- * Build the env-extra fragment for a retry: when a prior validator log
- * exists, surfaces `PRIOR_VALIDATOR_LOG=<path>` so the worker prompt's
- * required-reads list picks it up before reading SPEC. Returns []
- * (no extras) on the first attempt.
+ * Build the env-extra fragment for a retry. Surfaces:
+ *   - `PRIOR_VALIDATOR_LOG=<path>` — the validator's last `.out` file,
+ *     so the worker reads the rejection reasons before SPEC/contract.
+ *   - `PRIOR_SYNTHESIS_BRANCH=harness/<fid>-synthesis` — the branch
+ *     the worker's worktree is checked out from; surfaces so the
+ *     worker can `git log` it for context or explicitly diff its
+ *     starting point.
+ * Returns [] (no extras) on the first attempt at a feature.
  */
-function priorAttemptExtras(stateDir: string, fid: string): string[] {
+function priorAttemptExtras(stateDir: string, projectDir: string, fid: string): string[] {
   const path = priorValidatorLogPath(stateDir, fid);
-  return path ? [`PRIOR_VALIDATOR_LOG=${path}`] : [];
+  if (!path) return [];
+  const extras = [`PRIOR_VALIDATOR_LOG=${path}`];
+  const synthBr = `harness/${fid}-synthesis`;
+  if (branchExists(synthBr, { cwd: projectDir })) {
+    extras.push(`PRIOR_SYNTHESIS_BRANCH=${synthBr}`);
+  }
+  return extras;
 }
 
 const _slugCache = new Map<string, string>();
@@ -1006,7 +1016,7 @@ async function handleNextWorker(
   try {
     const r = await invoke(worktreedCtx, 'worker', [
       `FEATURE_ID=${fid}`,
-      ...priorAttemptExtras(ctx.stateDir, fid),
+      ...priorAttemptExtras(ctx.stateDir, ctx.projectDir, fid),
     ]);
     workerRc = r.exitCode;
   } catch (err) {
@@ -1466,7 +1476,7 @@ async function handleMultiWorker(
               `FEATURE_ID=${laneFid}`,
               `COMPETITION_PARENT=${fid}`,
               `COMPETITION_LANE=${laneNum}`,
-              ...priorAttemptExtras(ctx.stateDir, fid),
+              ...priorAttemptExtras(ctx.stateDir, ctx.projectDir, fid),
             ],
           );
         } catch (err) {
@@ -1560,7 +1570,7 @@ async function handleParallelLaneWorker(
           ? { ...ctx, worktreePathFor: (id) => worktreePath(ctx.stateDir, id) }
           : ctx,
         'worker',
-        [`FEATURE_ID=${fid}`, ...priorAttemptExtras(ctx.stateDir, fid)],
+        [`FEATURE_ID=${fid}`, ...priorAttemptExtras(ctx.stateDir, ctx.projectDir, fid)],
       );
       workerRc = r.exitCode;
     } catch (err) {
