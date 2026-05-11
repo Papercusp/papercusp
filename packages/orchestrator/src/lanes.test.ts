@@ -14,10 +14,7 @@ import {
   buildCompetitionManifest,
   competitionManifestPath,
   createLanePool,
-  isCompetitionMode,
-  isLaneMode,
   parallelMaxWorkers,
-  parallelMode,
   parallelWorkersPerFeature,
   parseCompetitionVerdict,
   readCompetitionManifest,
@@ -43,61 +40,6 @@ test('parallelMaxWorkers — honors numeric config', () => {
 test('parallelMaxWorkers — rejects non-positive / non-numeric', () => {
   assert.equal(parallelMaxWorkers({ parallelWorkers: { max: 0 } }), 1);
   assert.equal(parallelMaxWorkers({ parallelWorkers: { max: -3 } }), 1);
-});
-
-test('parallelMode — defaults to lane', () => {
-  assert.equal(parallelMode({}), 'lane');
-  assert.equal(parallelMode({ parallelWorkers: { mode: 'unknown' } }), 'lane');
-  assert.equal(parallelMode({ parallelWorkers: { mode: 'competition' } }), 'competition');
-});
-
-test('isCompetitionMode — requires mode + max + branchIso + worktrees', () => {
-  // missing branchIso
-  assert.equal(
-    isCompetitionMode({ parallelWorkers: { max: 4, mode: 'competition' } }),
-    false,
-  );
-  // branchIso but no worktrees
-  assert.equal(
-    isCompetitionMode({
-      parallelWorkers: { max: 4, mode: 'competition' },
-      branchIsolation: { enabled: true },
-    }),
-    false,
-  );
-  // all gates satisfied
-  assert.equal(
-    isCompetitionMode({
-      parallelWorkers: { max: 4, mode: 'competition' },
-      branchIsolation: { enabled: true, useWorktrees: true },
-    }),
-    true,
-  );
-  // max=1 disables even with everything else on
-  assert.equal(
-    isCompetitionMode({
-      parallelWorkers: { max: 1, mode: 'competition' },
-      branchIsolation: { enabled: true, useWorktrees: true },
-    }),
-    false,
-  );
-});
-
-test('isLaneMode — requires max>1 + branchIso (no worktrees needed)', () => {
-  assert.equal(isLaneMode({}), false);
-  assert.equal(isLaneMode({ parallelWorkers: { max: 4 } }), false, 'no branchIso');
-  assert.equal(
-    isLaneMode({ parallelWorkers: { max: 4 }, branchIsolation: { enabled: true } }),
-    true,
-  );
-  // mode=competition is exclusive
-  assert.equal(
-    isLaneMode({
-      parallelWorkers: { max: 4, mode: 'competition' },
-      branchIsolation: { enabled: true },
-    }),
-    false,
-  );
 });
 
 test('createLanePool — acquire/release respects max', async () => {
@@ -243,48 +185,39 @@ test('parseCompetitionVerdict — case insensitive', () => {
 
 // ─── Hybrid competition (workersPerFeature) ─────────────────────
 
-test('parallelWorkersPerFeature — defaults to 1 in lane mode (no override)', () => {
-  assert.equal(parallelWorkersPerFeature({ parallelWorkers: { max: 10, mode: 'lane' } }), 1);
-});
-
-test('parallelWorkersPerFeature — defaults to max in competition mode (back-compat)', () => {
-  assert.equal(
-    parallelWorkersPerFeature({ parallelWorkers: { max: 10, mode: 'competition' } }),
-    10,
-    'competition without workersPerFeature preserves legacy "all on one" behavior',
-  );
+test('parallelWorkersPerFeature — defaults to 1 (no override)', () => {
+  assert.equal(parallelWorkersPerFeature({ parallelWorkers: { max: 10 } }), 1);
 });
 
 test('parallelWorkersPerFeature — explicit value wins', () => {
   assert.equal(
     parallelWorkersPerFeature({
-      parallelWorkers: { max: 10, mode: 'competition', workersPerFeature: 2 },
+      parallelWorkers: { max: 10, workersPerFeature: 2 },
     }),
     2,
     'hybrid: 2 workers per feature, 10 max → 5 simultaneous competitions',
   );
 });
 
-test('parallelWorkersPerFeature — invalid (0/neg/NaN) falls back to mode default', () => {
+test('parallelWorkersPerFeature — invalid (0/neg/NaN) falls back to 1', () => {
   assert.equal(
     parallelWorkersPerFeature({
-      parallelWorkers: { max: 8, mode: 'competition', workersPerFeature: 0 },
+      parallelWorkers: { max: 8, workersPerFeature: 0 },
     }),
-    8,
-    'fallback to max for competition',
+    1,
   );
   assert.equal(
     parallelWorkersPerFeature({
-      parallelWorkers: { max: 4, mode: 'competition', workersPerFeature: -2 },
+      parallelWorkers: { max: 4, workersPerFeature: -2 },
     }),
-    4,
+    1,
   );
 });
 
 test('parallelWorkersPerFeature — floors fractional values', () => {
   assert.equal(
     parallelWorkersPerFeature({
-      parallelWorkers: { max: 10, mode: 'competition', workersPerFeature: 2.7 },
+      parallelWorkers: { max: 10, workersPerFeature: 2.7 },
     }),
     2,
   );
@@ -338,7 +271,7 @@ test('createLanePool — waitForFeature resolves only when feature lanes drain',
   }
 });
 
-import { workerCountTiers, isAdaptiveMode, DEFAULT_WORKER_COUNT_TIERS } from './lanes';
+import { workerCountTiers, DEFAULT_WORKER_COUNT_TIERS } from './lanes';
 
 test('workerCountTiers — defaults', () => {
   const out = workerCountTiers({});
@@ -366,21 +299,6 @@ test('workerCountTiers — falls back when shapes mismatch', () => {
   } as any);
   assert.deepEqual(out.tiers, DEFAULT_WORKER_COUNT_TIERS.tiers);
   assert.equal(out.rubric, 'kept');
-});
-
-test('isAdaptiveMode requires mode + max>1 + worktrees', () => {
-  assert.equal(isAdaptiveMode({}), false);
-  assert.equal(
-    isAdaptiveMode({ parallelWorkers: { mode: 'adaptive', max: 4 } } as any),
-    false,
-  );
-  assert.equal(
-    isAdaptiveMode({
-      parallelWorkers: { mode: 'adaptive', max: 4 },
-      branchIsolation: { enabled: true, useWorktrees: true },
-    } as any),
-    true,
-  );
 });
 
 import { resolveWorkerCount } from './lanes';

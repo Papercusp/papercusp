@@ -62,14 +62,6 @@ export function parallelMaxWorkers(cfg: HarnessConfig): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
 }
 
-/** Read the parallelism mode (default 'lane'). */
-export function parallelMode(cfg: HarnessConfig): 'lane' | 'competition' | 'adaptive' {
-  const v = configGet<string>(cfg, 'parallelWorkers.mode', 'lane');
-  if (v === 'competition') return 'competition';
-  if (v === 'adaptive') return 'adaptive';
-  return 'lane';
-}
-
 /**
  * Worker-count tier configuration.
  *
@@ -168,16 +160,6 @@ export function resolveWorkerCount(
   return Math.max(1, Math.min(desired, cap || 1));
 }
 
-/** Whether adaptive parallelism is active for the current config. */
-export function isAdaptiveMode(cfg: HarnessConfig): boolean {
-  return (
-    parallelMode(cfg) === 'adaptive' &&
-    parallelMaxWorkers(cfg) > 1 &&
-    configGet<boolean>(cfg, 'branchIsolation.enabled', false) === true &&
-    configGet<boolean>(cfg, 'branchIsolation.useWorktrees', false) === true
-  );
-}
-
 /**
  * How many workers compete on EACH feature in competition mode.
  *
@@ -201,8 +183,9 @@ export function parallelWorkersPerFeature(cfg: HarnessConfig): number {
     const n = typeof v === 'number' ? v : parseInt(String(v), 10);
     if (Number.isFinite(n) && n > 0) return Math.floor(n);
   }
-  // Back-compat default per mode.
-  return parallelMode(cfg) === 'competition' ? parallelMaxWorkers(cfg) : 1;
+  // Default: 1 worker per feature. The dispatcher picks the multi-worker
+  // path based on resolveWorkerCount + tier config, not on this default.
+  return 1;
 }
 
 /**
@@ -289,31 +272,6 @@ export function escalateToRole(cfg: HarnessConfig): string {
 }
 
 /**
- * Whether competition mode is active for the current config. Requires
- * branchIsolation + worktrees in addition to mode==competition (matches
- * bash gate).
- */
-export function isCompetitionMode(cfg: HarnessConfig): boolean {
-  return (
-    parallelMode(cfg) === 'competition' &&
-    parallelMaxWorkers(cfg) > 1 &&
-    configGet<boolean>(cfg, 'branchIsolation.enabled', false) === true &&
-    configGet<boolean>(cfg, 'branchIsolation.useWorktrees', false) === true
-  );
-}
-
-/**
- * Whether parallel-lane mode is active. Distinct from competition: same
- * feature → competition; different features → lane.
- */
-export function isLaneMode(cfg: HarnessConfig): boolean {
-  return (
-    parallelMaxWorkers(cfg) > 1 &&
-    parallelMode(cfg) === 'lane' &&
-    configGet<boolean>(cfg, 'branchIsolation.enabled', false) === true
-  );
-}
-
 /**
  * Create an in-process lane pool. The pool persists snapshots to
  * `<stateDir>/lanes.json` so the harness UI's lane indicator keeps

@@ -1808,44 +1808,7 @@ except Exception:
         fi
 
         max_par="$(parallel_max_workers)"
-        par_mode="$(config_get 'parallelWorkers.mode' 'lane')"
-        if [ "$par_mode" = "competition" ] && [ "$max_par" -gt 1 ] && [ "$(config_get 'branchIsolation.enabled' 'false')" = "true" ] && [ "$(config_get 'branchIsolation.useWorktrees' 'false')" = "true" ]; then
-            # Conductor-inspired: N workers on the SAME feature in sibling
-            # worktrees; validator picks a winner. Requires worktrees.
-            log "COMPETITION: spawning $max_par workers on $fid"
-            FEATURE_ID="$fid" LANE_COUNT="$max_par" PROJECT_DIR="$PROJECT_DIR" STATE_DIR="$STATE_DIR" run_hook on-competition-start
-            feature_set_status "$fid" "in_progress"
-            competition_pids=()
-            for i in $(seq 1 "$max_par"); do
-                lane_fid="${fid}-lane-${i}"
-                wt="$STATE_DIR/worktrees/$lane_fid"
-                base="$(branch_iso_base)"
-                br="harness/$lane_fid"
-                mkdir -p "$STATE_DIR/worktrees"
-                [ -d "$wt" ] || ( cd "$PROJECT_DIR" && git worktree add -B "$br" "$wt" "$base" 2>&1 | head -3 )
-                log "  competition lane $i: $wt"
-                (
-                    FEATURE_ID="$lane_fid"
-                    invoke worker "FEATURE_ID=$lane_fid" "COMPETITION_PARENT=$fid" "COMPETITION_LANE=$i" > /dev/null
-                    fire_plugin_hook onPostWorker --feature-id="$lane_fid" || true
-                    ( cd "$wt" && git add -A && git diff --cached --quiet || git commit --quiet -m "worker: $lane_fid (competition lane $i)" 2>&1 | head -3 )
-                ) &
-                competition_pids+=("$!")
-            done
-            # Wait all competitors
-            for pid in "${competition_pids[@]}"; do wait "$pid" || true; done
-            # Mark parent feature ready for competition validator
-            feature_set_status "$fid" "validating"
-            # Record competition manifest so validator knows which worktrees to compare
-            manifest="$STATE_DIR/competition-${fid}.json"
-            python3 - "$fid" "$max_par" "$STATE_DIR" > "$manifest" <<'PY'
-import json, sys, os
-fid, n, state = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-lanes = [{"lane": i, "worktree": os.path.join(state, "worktrees", f"{fid}-lane-{i}"), "branch": f"harness/{fid}-lane-{i}"} for i in range(1, n+1)]
-print(json.dumps({"parentFeatureId": fid, "lanes": lanes, "n": n}, indent=2))
-PY
-            log "COMPETITION: manifest $manifest written"
-        elif [ "$max_par" -gt 1 ] && [ "$(config_get 'branchIsolation.enabled' 'false')" = "true" ]; then
+        if [ "$max_par" -gt 1 ] && [ "$(config_get 'branchIsolation.enabled' 'false')" = "true" ]; then
             # Parallel path: fork the worker + post-steps. Requires branch isolation.
             live="$(lanes_count)"
             if [ "$live" -ge "$max_par" ]; then
@@ -1898,50 +1861,6 @@ PY
             fire_plugin_hook onPostValidator --feature-id="$fid" --status=failing || true
         fi
 
-        # Competition mode: if a manifest exists for this feature, parse
-        # validator's output for COMPETITION_WINNER lane-<N> and merge that
-        # lane, removing the losers.
-        competition_manifest="$STATE_DIR/competition-${fid}.json"
-        if [ -f "$competition_manifest" ]; then
-            # Get validator's latest output (most recent .out file for this fid+validator)
-            latest_out="$(ls -t "$LOG_DIR"/*"-validator-${fid}".out 2>/dev/null | head -1)"
-            winner_lane=""
-            if [ -n "$latest_out" ] && [ -f "$latest_out" ]; then
-                winner_lane="$(grep -oE 'COMPETITION_WINNER lane-[0-9]+' "$latest_out" | head -1 | awk '{print $2}')"
-                winner_none="$(grep -oE 'COMPETITION_WINNER none' "$latest_out" | head -1)"
-            fi
-            if [ -n "$winner_lane" ]; then
-                log "COMPETITION: winner is $winner_lane; merging."
-                winner_wt="$STATE_DIR/worktrees/${fid}-${winner_lane}"
-                winner_br="harness/${fid}-${winner_lane}"
-                base="$(branch_iso_base)"
-                ( cd "$PROJECT_DIR" && {
-                    git checkout "$base" 2>&1 | head -2
-                    git merge --no-ff "$winner_br" -m "competition winner: $fid from $winner_lane" 2>&1 | head -5
-                } )
-                # Remove all lane worktrees + branches
-                n=$(python3 -c "import json; print(json.load(open('$competition_manifest'))['n'])" 2>/dev/null || echo 2)
-                for i in $(seq 1 "$n"); do
-                    lwt="$STATE_DIR/worktrees/${fid}-lane-${i}"
-                    lbr="harness/${fid}-lane-${i}"
-                    ( cd "$PROJECT_DIR" && git worktree remove --force "$lwt" 2>/dev/null; git branch -D "$lbr" 2>/dev/null ) || true
-                done
-                rm -f "$competition_manifest"
-                log "COMPETITION: cleaned up; parent $fid now carries winner's changes."
-                FEATURE_ID="$fid" WINNER="$winner_lane" PROJECT_DIR="$PROJECT_DIR" STATE_DIR="$STATE_DIR" run_hook on-competition-won
-            elif [ -n "$winner_none" ]; then
-                log "COMPETITION: no lane passed; discarding all."
-                n=$(python3 -c "import json; print(json.load(open('$competition_manifest'))['n'])" 2>/dev/null || echo 2)
-                for i in $(seq 1 "$n"); do
-                    lwt="$STATE_DIR/worktrees/${fid}-lane-${i}"
-                    lbr="harness/${fid}-lane-${i}"
-                    ( cd "$PROJECT_DIR" && git worktree remove --force "$lwt" 2>/dev/null; git branch -D "$lbr" 2>/dev/null ) || true
-                done
-                rm -f "$competition_manifest"
-            else
-                log "COMPETITION: validator did not emit COMPETITION_WINNER; manifest kept for retry."
-            fi
-        fi
 
         FEATURE_ID="$fid" branch_iso_post_validator
 

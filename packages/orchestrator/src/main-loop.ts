@@ -39,13 +39,9 @@ import { firePluginHook } from './plugin-hooks';
 import {
   competitionManifestPath,
   createLanePool,
-  isAdaptiveMode,
-  isCompetitionMode,
-  isLaneMode,
   workerCountTiers,
   maxFeaturesInFlight as maxFeaturesInFlightCfg,
   parallelMaxWorkers,
-  parallelMode,
   parallelWorkersPerFeature,
   readCompetitionManifest,
   useChunkLoop,
@@ -332,16 +328,32 @@ async function runMainLoopBody(
   // other's holds. Empty / unused when useChunkLoop is false.
   const lockQueue = new FileLockQueue();
 
-  // Adaptive-mode tier configuration is per-harness, stored in the spec
-  // at parallelWorkers.adaptive.{tiers,labels,rubric}. Read directly from
-  // cfg — no API round-trip — so a flaky operator can never block start.
-  const adaptiveActive = isAdaptiveMode(cfg);
+  // Tier configuration is per-harness, stored in the spec at
+  // parallelWorkers.adaptive.{tiers,labels,rubric}. When tiers are
+  // configured AND max>1 AND worktrees are on, the orchestrator gets
+  // ADAPTIVE_* prompt extras and emits N=k per dispatch.
   const adaptiveTiers: WorkerCountTiers = workerCountTiers(cfg);
+  const hasTiers =
+    configGet<unknown>(cfg, 'parallelWorkers.adaptive', undefined) !== undefined;
+  const adaptiveActive =
+    hasTiers &&
+    parallelMaxWorkers(cfg) > 1 &&
+    configGet<boolean>(cfg, 'branchIsolation.enabled', false) === true &&
+    configGet<boolean>(cfg, 'branchIsolation.useWorktrees', false) === true;
   if (adaptiveActive) {
     logger.log(
       `ADAPTIVE: tiers=[${adaptiveTiers.tiers.join(', ')}] labels=[${adaptiveTiers.labels.join(', ')}] max=${parallelMaxWorkers(cfg)}`,
     );
   }
+
+  // Inline derivation of the cosmetic PARALLEL_MODE label injected into
+  // the orchestrator prompt. The runtime no longer keys off mode — this
+  // string just tells the LLM whether to emit `N=k` (adaptive only).
+  const inferredMode = adaptiveActive
+    ? 'adaptive'
+    : parallelWorkersPerFeature(cfg) > 1
+    ? 'competition'
+    : 'lane';
 
   // Fire Papercusp plugin lifecycle: beforeMissionStart.
   fireLifecycleHook(ctx, 'beforeMissionStart', logger.log);
@@ -402,7 +414,7 @@ async function runMainLoopBody(
         .map((n, i) => `${n} (${adaptiveTiers.labels[i] ?? `tier-${i}`})`)
         .join(', ');
       orchestratorExtras.push(
-        `PARALLEL_MODE=${parallelMode(cfg)}`,
+        `PARALLEL_MODE=${inferredMode}`,
         `MAX_SLOTS=${maxSlots}`,
         `AVAILABLE_SLOTS=${availableSlots}`,
         `ADAPTIVE_TIERS=${tierDocs}`,
@@ -418,7 +430,7 @@ async function runMainLoopBody(
       }
     } else if (maxSlots > 1) {
       orchestratorExtras.push(
-        `PARALLEL_MODE=${parallelMode(cfg)}`,
+        `PARALLEL_MODE=${inferredMode}`,
         `MAX_SLOTS=${maxSlots}`,
         `AVAILABLE_SLOTS=${availableSlots}`,
       );
@@ -793,13 +805,50 @@ async function handleNextWorker(
     return handleChunkLoopWorker(fid, ctx, logger, cfg, lockQueue);
   }
 
-  if (isAdaptiveMode(cfg)) {
-    return handleAdaptiveWorker(parsed, fid, ctx, logger, cfg, lanePool);
+  // Resolve how many workers to dispatch on this feature.
+  //   - max=1 → always 1 (single-worker fast path below).
+  //   - workersPerFeature configured → that many (clamped to max + slots).
+  //   - tier set configured → orchestrator-picked N from the tier vocab.
+  // resolveWorkerCount handles all clamping and tier validation.
+  const max = parallelMaxWorkers(cfg);
+  const availableSlots = Math.max(0, max - lanePool.count());
+  const N = resolveWorkerCount(cfg, parsed.n, availableSlots);
+
+  // Adaptive telemetry: when tiers are configured, record the
+  // requested-vs-actual N for this dispatch. Best-effort; never blocks.
+  const hasTiers =
+    configGet<unknown>(cfg, 'parallelWorkers.adaptive', undefined) !== undefined;
+  if (hasTiers) {
+    const tiers = workerCountTiers(cfg);
+    const requestedN = parsed.n ?? tiers.tiers[0];
+    const tierIdx = tiers.tiers.indexOf(N);
+    const tierLabel = tierIdx >= 0 ? tiers.labels[tierIdx] : null;
+    logger.log(
+      `ADAPTIVE: ${fid} → N=${N} (${tierLabel ?? '?'})` +
+        (requestedN !== N ? ` [requested ${requestedN}]` : ''),
+    );
+    await recordAdaptiveDecision(ctx, logger, {
+      featureId: fid,
+      requestedN,
+      actualN: N,
+      tierLabel,
+      availableAtDecision: availableSlots,
+      maxSlots: max,
+    });
   }
-  if (isCompetitionMode(cfg)) {
-    return handleMultiWorker(fid, parallelWorkersPerFeature(cfg), ctx, logger, cfg, lanePool, 'static');
+
+  if (N > 1) {
+    return handleMultiWorker(
+      fid,
+      N,
+      ctx,
+      logger,
+      cfg,
+      lanePool,
+      hasTiers ? 'adaptive' : 'static',
+    );
   }
-  if (isLaneMode(cfg)) {
+  if (max > 1 && configGet<boolean>(cfg, 'branchIsolation.enabled', false) === true) {
     return handleParallelLaneWorker(fid, ctx, logger, cfg, lanePool);
   }
 
@@ -1047,7 +1096,7 @@ async function handleNextValidator(
   // vs after to find features that transitioned status → 'passed'. Each
   // fire passes --feature-id=... so plugin scripts can target the event.
   // Also attach an adaptive-telemetry outcome for the matching pending row,
-  // if any (see _adaptiveTelemetryByFeature in handleAdaptiveWorker).
+  // if any (see _adaptiveTelemetryByFeature seeded by handleNextWorker).
   for (const f of (await readFeatures(ctx.stateDir, stateCtx(ctx)))) {
     const before = beforeStatus.get(f.id);
     if (f.status === 'passed' && before !== 'passed') {
@@ -1342,85 +1391,6 @@ async function handleMultiWorker(
   // Return immediately — orchestrator can dispatch another NEXT_WORKER
   // for a different feature while this competition runs in the background.
   return { terminal: false, exitCode: 0, reason: 'idle' };
-}
-
-/**
- * Adaptive-mode worker: orchestrator chose N from the configured tier set
- * (e.g. {1, 2, 4}). N=1 dispatches a single worker (lane-style); N>1
- * dispatches N competing workers on the same feature (competition-style)
- * with manifest write so the validator can pick a winner. The pre-loop
- * slot gate guarantees N ≤ available slots before this point, so we
- * don't need an in-handler clamp (defensive clamp below is for malformed
- * verbs only).
- *
- * Telemetry: each call inserts a pending row in adaptive_telemetry; the
- * validator handler patches the outcome (pass/fail). Failures are silent
- * to avoid blocking dispatch.
- */
-async function handleAdaptiveWorker(
-  parsed: ParsedDecision,
-  fid: string,
-  ctx: InvokeContext,
-  logger: Logger,
-  cfg: ReturnType<typeof readConfig>,
-  lanePool: LanePool,
-): Promise<DispatchResult> {
-  const max = parallelMaxWorkers(cfg);
-  const tiers = workerCountTiers(cfg);
-  const requestedN = parsed.n ?? tiers.tiers[0];
-
-  // Validate against the configured tier set. Out-of-vocabulary values
-  // clamp to the closest valid tier ≤ requestedN, defaulting to the
-  // smallest tier when nothing matches. Logs the override for telemetry.
-  let actualN = tiers.tiers[0];
-  if (tiers.tiers.includes(requestedN)) {
-    actualN = requestedN;
-  } else {
-    const candidates = tiers.tiers.filter((t) => t <= requestedN);
-    actualN = candidates.length > 0 ? candidates[candidates.length - 1] : tiers.tiers[0];
-    logger.log(
-      `  adaptive: requested N=${requestedN} not in tier set [${tiers.tiers.join(',')}]; using N=${actualN}`,
-    );
-  }
-
-  // Defensive clamp against the hard concurrency cap. Pre-loop gate makes
-  // this nearly always a no-op, but a stale cfg (or a request larger
-  // than max) would otherwise deadlock the acquire loop.
-  const availableAtDecision = Math.max(0, max - lanePool.count());
-  if (actualN > availableAtDecision) {
-    logger.log(
-      `  adaptive: N=${actualN} > availableSlots=${availableAtDecision}; clamping to ${availableAtDecision || 1}`,
-    );
-    actualN = Math.max(1, availableAtDecision);
-  }
-
-  const tierIdx = tiers.tiers.indexOf(actualN);
-  const tierLabel = tierIdx >= 0 ? tiers.labels[tierIdx] : null;
-
-  // Best-effort telemetry insert; never blocks dispatch on its outcome.
-  await recordAdaptiveDecision(ctx, logger, {
-    featureId: fid,
-    requestedN,
-    actualN,
-    tierLabel,
-    availableAtDecision,
-    maxSlots: max,
-  });
-
-  logger.log(
-    `ADAPTIVE: ${fid} → N=${actualN} (${tierLabel ?? '?'})` +
-      (requestedN !== actualN ? ` [requested ${requestedN}]` : ''),
-  );
-
-  if (actualN === 1) {
-    // Single-worker path: behaves like a parallel lane (1 worker, own
-    // branch, validator merges on PASS). Reuse handleParallelLaneWorker
-    // so the lane pool, branch-iso, and worker hooks fire identically.
-    return handleParallelLaneWorker(fid, ctx, logger, cfg, lanePool);
-  }
-
-  // N>1: dispatch competition with the orchestrator-picked count.
-  return handleMultiWorker(fid, actualN, ctx, logger, cfg, lanePool, 'adaptive');
 }
 
 /**

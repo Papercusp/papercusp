@@ -97,12 +97,10 @@ export {
   buildCompetitionManifest,
   competitionManifestPath,
   createLanePool,
-  isCompetitionMode,
-  isLaneMode,
   parallelMaxWorkers,
-  parallelMode,
   parseCompetitionVerdict,
   readCompetitionManifest,
+  resolveWorkerCount,
   writeCompetitionManifest,
 } from './lanes';
 export type {
