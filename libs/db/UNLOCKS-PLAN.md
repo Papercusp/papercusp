@@ -61,14 +61,26 @@ already needs the same insert/update/delete primitives.
 
 ## Unlock 1 — `drizzle-zod` across plugin SDK + API routes + MCP tools
 
-**Status: foundation shipped + MCP tail at 10/20 (50%).** Foundation:
-`libs/papercusp/libs/db/src/schema/zod.ts` + `schemaOf()` exports.
+**Status: foundation + MCP tail (10/20) + API route tail (12 routes).**
+Foundation: `libs/papercusp/libs/db/src/schema/zod.ts` + `schemaOf()`
+exports.
+
 Converted MCP tools: `goals:get`, `goals:list`, `tasks:get`, `tasks:list`,
 `pending_events:list`, `harness:list`, `harness:get`, `harness:status`,
 `features:get`, `messages:outbox`. Remaining 10 MCP tools all touch
 permanent-raw-SQL categories (per-harness dynamic schemas,
 `jsonb_array_elements`, `tags ?| array` overlap, `EXTRACT(epoch FROM …)`,
 audit-log subquery DELETEs).
+
+**API route tail — 12 internal/* routes converted to Zod body validation:**
+`archive-event`, `checkpoint-event`, `decision-event`, `escalation-event`,
+`feature-debug-note-event`, `hook-log-event`, `identity-snapshot`,
+`plan-review-event`, `pr-event`, `run-chunk`, `skill-snapshot`,
+`smoke-test-event`. Hand-rolled `interface RequestBody` + manual `typeof`
+checks replaced with `BodySchema.safeParse(raw)` + structured issue
+responses. `log-event` (discriminated dual-mode body) and `test-snapshot`
+(bash-payload aliasing transformations) intentionally retained — Zod
+refinements would obscure rather than clarify the business logic.
 
 
 **Why first:** biggest correctness + DX win, and every later unlock benefits
