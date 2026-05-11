@@ -18,8 +18,10 @@
  * for OMP — single mcpServers entry, seven URL query params).
  */
 
-import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHmac } from 'node:crypto';
+import { chmodSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import postgres from 'postgres';
 
 /** Construction inputs — all seven per-spawn URL params plus the host URL. */
 export interface SpawnMcpConfigInput {
@@ -111,7 +113,139 @@ export function writeSpawnMcp(cwd: string, input: SpawnMcpConfigInput): SpawnMcp
   }
   const config = buildSpawnMcpConfig(input);
   writeFileSync(path, JSON.stringify(config, null, 2), 'utf8');
+  // Mode 0600: stop a sibling worker on the same UID from `cat`-ing
+  // this .mcp.json to steal the (signed, role-bearing) URL. Same-UID
+  // root-equivalent code can still read it; this is friction, not
+  // enforcement. See apps/operator/docs/spawn-signing-threat-model.md.
+  try { chmodSync(path, 0o600); } catch { /* best-effort */ }
   return { path, prior, backupPath };
+}
+
+/**
+ * Async variant — same as writeSpawnMcp but also signs the URL params
+ * with the HMAC key stored at `harness_shared.operator_secrets`
+ * (`spawn-signing-key`). Required by the operator's MCP route when
+ * `PAPERCUSP_REQUIRE_SPAWN_SIG=1`; otherwise soft-warn but accept.
+ *
+ * Best-effort: if PG is unreachable or the key row is missing, falls
+ * back to the unsigned URL and logs a warning. The operator side will
+ * also warn — pair the two signals to spot transition issues.
+ *
+ * The operator subprocess that hosts the orchestrator inherits its
+ * PG DSN via env (DATABASE_URL or PAPERCUSP_PG_DSN). If neither is
+ * set we can't sign — that's the only case where we fall back.
+ *
+ * See: apps/operator/lib/spawn-signing.ts for the verification side.
+ */
+export async function writeSignedSpawnMcp(
+  cwd: string,
+  input: SpawnMcpConfigInput,
+  opts: { ttlSec?: number } = {},
+): Promise<SpawnMcpHandle> {
+  const path = join(cwd, FILENAME);
+  let prior: string | null = null;
+  let backupPath: string | null = null;
+  if (existsSync(path)) {
+    prior = readFileSync(path, 'utf8');
+    backupPath = `${path}${BACKUP_SUFFIX}`;
+    renameSync(path, backupPath);
+  }
+  const base = input.operatorUrl ?? process.env.PAPERCUSP_OPERATOR_URL ?? DEFAULT_OPERATOR_URL;
+  const params = buildSpawnUrlParams(input);
+  try {
+    await signSpawnParams(params, opts.ttlSec ?? 24 * 60 * 60);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[spawn-mcp] signing failed (${err instanceof Error ? err.message : String(err)}); ` +
+        'emitting unsigned URL. Operator must be in soft-warn mode for this to work.',
+    );
+  }
+  const config = {
+    mcpServers: { papercusp: { url: `${base}?${params.toString()}` } },
+  };
+  writeFileSync(path, JSON.stringify(config, null, 2), 'utf8');
+  try { chmodSync(path, 0o600); } catch { /* best-effort */ }
+  return { path, prior, backupPath };
+}
+
+/* ─── Signing (HMAC-SHA256 over canonical params) ─────────────────────
+ * Duplicated in apps/operator/lib/spawn-signing.ts because the
+ * orchestrator runs as a separate process and can't import from the
+ * operator app directly. Keep the canonicalization rule in lockstep
+ * with that file or signatures will mismatch.
+ * ──────────────────────────────────────────────────────────────────── */
+
+const SIGNED_PARAM_ALLOWLIST = new Set([
+  'harness',
+  'workspace',
+  'role',
+  'run',
+  'spawn',
+  'feature',
+  'chunk',
+  'parent_spawn',
+  'exp',
+]);
+
+interface KeyCache { buf: Buffer; loadedAt: number; }
+let __keyCache: KeyCache | null = null;
+
+async function loadSigningKey(): Promise<Buffer> {
+  if (__keyCache && Date.now() - __keyCache.loadedAt < 5 * 60 * 1000) return __keyCache.buf;
+  const dsn = process.env.DATABASE_URL ?? process.env.PAPERCUSP_PG_DSN;
+  if (!dsn) throw new Error('no PG DSN in env (DATABASE_URL/PAPERCUSP_PG_DSN)');
+  const sql = postgres(dsn);
+  try {
+    const rows = await sql<{ value_b64: string }[]>`
+      SELECT value_b64 FROM harness_shared.operator_secrets
+      WHERE name = 'spawn-signing-key' LIMIT 1
+    `;
+    if (rows.length === 0) {
+      throw new Error('spawn-signing-key row missing — operator boots mint it on first verify call');
+    }
+    const buf = Buffer.from(rows[0].value_b64, 'base64');
+    __keyCache = { buf, loadedAt: Date.now() };
+    return buf;
+  } finally {
+    try { await sql.end({ timeout: 1 }); } catch { /* ignore */ }
+  }
+}
+
+function canonicalizeForSign(params: URLSearchParams): string {
+  const pairs: Array<[string, string]> = [];
+  const seen = new Set<string>();
+  for (const [k, v] of params.entries()) {
+    if (k === 'sig') continue;
+    if (!SIGNED_PARAM_ALLOWLIST.has(k)) continue;
+    if (seen.has(k)) throw new Error(`duplicate param: ${k}`);
+    seen.add(k);
+    pairs.push([k, v]);
+  }
+  pairs.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return pairs.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+}
+
+async function signSpawnParams(params: URLSearchParams, ttlSec: number): Promise<void> {
+  const exp = Math.floor(Date.now() / 1000) + ttlSec;
+  params.set('exp', String(exp));
+  params.delete('sig');
+  const key = await loadSigningKey();
+  const sig = createHmac('sha256', key).update(canonicalizeForSign(params)).digest('base64url');
+  params.set('sig', sig);
+}
+
+function buildSpawnUrlParams(input: SpawnMcpConfigInput): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set('harness', input.harnessSlug);
+  params.set('workspace', input.workspaceId);
+  params.set('role', input.role);
+  params.set('run', input.runId);
+  params.set('spawn', input.spawnId);
+  if (input.featureId) params.set('feature', input.featureId);
+  if (input.chunkId) params.set('chunk', input.chunkId);
+  if (input.parentSpawnId) params.set('parent_spawn', input.parentSpawnId);
+  return params;
 }
 
 /**

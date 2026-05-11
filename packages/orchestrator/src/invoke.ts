@@ -30,6 +30,9 @@ import { resolvePromptFile } from './prompt-resolve';
 import { extractFeatureId, makeRunId } from './run-id';
 import type { AgentBackend, InvokeResult } from './types';
 import { resolveAgentBackend } from './env';
+import { writeSignedSpawnMcp, type SpawnMcpHandle } from './spawn-mcp';
+import { randomUUID } from 'node:crypto';
+import { extractChunkId } from './spawn-mcp';
 
 export interface InvokeContext {
   /** HARNESS_DIR — root of the @papercusp/harness install. */
@@ -605,7 +608,14 @@ export async function invoke(
         const spawnId = randomUUID();
         const slug = harnessSlugFromProjectDir(ctx.projectDir);
         const chunkId = extractChunkId(extras);
-        mcpHandle = writeSpawnMcp(cwd, {
+        // writeSignedSpawnMcp: writes .mcp.json AND HMAC-signs the URL
+        // params so the operator can verify the spawn ctx wasn't
+        // rewritten by the agent. See apps/operator/lib/spawn-signing.ts
+        // (verification) and apps/operator/docs/spawn-signing-threat-model.md.
+        // Signing is best-effort — falls back to unsigned URL if PG
+        // unreachable; the operator is in soft-warn mode until
+        // PAPERCUSP_REQUIRE_SPAWN_SIG=1.
+        mcpHandle = await writeSignedSpawnMcp(cwd, {
           harnessSlug: slug,
           workspaceId: ctx.workspaceId,
           role,
