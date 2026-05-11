@@ -33,7 +33,6 @@ import {
   buildSpawnMcpConfig as _buildSpawnMcpConfig, // eslint-disable-line @typescript-eslint/no-unused-vars
   extractChunkId,
   restoreSpawnMcp,
-  writeSpawnMcp,
   writeSignedSpawnMcp,
   type SpawnMcpHandle,
 } from './spawn-mcp';
@@ -767,9 +766,15 @@ export async function invoke(
         const spawnId = randomUUID();
         const slug = harnessSlugFromProjectDir(ctx.projectDir);
         const chunkId = extractChunkId(extras);
-        // writeSignedSpawnMcp does best-effort HMAC signing — on PG
-        // failure it falls back to an unsigned URL, which the operator
-        // accepts in soft-warn mode (PAPERCUSP_REQUIRE_SPAWN_SIG!=1).
+        // writeSignedSpawnMcp signs the URL params. In strict mode
+        // (default since 2026-05-11) a signing failure throws — the
+        // outer try/catch below logs `spawn-mcp write failed` and
+        // proceeds with mcpHandle=null, so the agent runs but has no
+        // MCP endpoint. That is the intended failure mode: better to
+        // fail loudly than to emit an unsigned URL the operator will
+        // reject on every tool call. To restore the silent-fallback
+        // (soft-warn) behavior, pass `allowUnsigned: true` here AND
+        // unset PAPERCUSP_REQUIRE_SPAWN_SIG on the operator.
         // No await-time risk: signing is a single PG round-trip against
         // a 32-byte row + an HMAC; total < 50ms in normal operation.
         mcpHandle = await writeSignedSpawnMcp(cwd, {

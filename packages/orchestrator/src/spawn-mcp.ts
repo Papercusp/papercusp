@@ -140,7 +140,16 @@ export function writeSpawnMcp(cwd: string, input: SpawnMcpConfigInput): SpawnMcp
 export async function writeSignedSpawnMcp(
   cwd: string,
   input: SpawnMcpConfigInput,
-  opts: { ttlSec?: number } = {},
+  opts: {
+    ttlSec?: number;
+    /**
+     * If true, emit an unsigned URL with a console warning instead of
+     * throwing when signing fails. Only safe when the operator is
+     * running with PAPERCUSP_REQUIRE_SPAWN_SIG != '1' (soft-warn).
+     * Default: false (strict — signing failure = spawn failure).
+     */
+    allowUnsigned?: boolean;
+  } = {},
 ): Promise<SpawnMcpHandle> {
   const path = join(cwd, FILENAME);
   let prior: string | null = null;
@@ -155,10 +164,32 @@ export async function writeSignedSpawnMcp(
   try {
     await signSpawnParams(params, opts.ttlSec ?? 24 * 60 * 60);
   } catch (err) {
+    // Restore the prior .mcp.json (if any) so a half-written file
+    // doesn't trip the next spawn's read-then-sign cycle.
+    if (backupPath && existsSync(backupPath)) {
+      try { renameSync(backupPath, path); } catch { /* best-effort */ }
+    }
+    // Strict mode is the default since 2026-05-11; an unsigned URL
+    // would hard-reject at the operator with
+    // `spawn_sig_missing_sig_required_mode` — agent boots, hits
+    // its MCP endpoint, every tool call 4xxs, and from the user's
+    // POV the agent silently does nothing. Failing loudly here
+    // gives the caller a clear error to surface. To re-enable the
+    // soft-warn fallback (PAPERCUSP_REQUIRE_SPAWN_SIG != '1' on
+    // the operator), pass `allowUnsigned: true` from the caller —
+    // see comment on opts. Without that, signing failures are
+    // promoted to spawn failures.
+    if (!opts.allowUnsigned) {
+      throw new Error(
+        `[spawn-mcp] signing failed and strict mode is the default; ` +
+          `refusing to emit an unsigned URL. Underlying error: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     // eslint-disable-next-line no-console
     console.warn(
       `[spawn-mcp] signing failed (${err instanceof Error ? err.message : String(err)}); ` +
-        'emitting unsigned URL. Operator must be in soft-warn mode for this to work.',
+        'emitting unsigned URL (caller passed allowUnsigned=true).',
     );
   }
   const config = {
