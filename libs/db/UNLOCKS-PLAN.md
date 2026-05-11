@@ -103,8 +103,22 @@ nullability is encoded in the Zod schema.
 
 ## Unlock 2 — Schema-aware `/dev` table inspector
 
-**Why second:** Drizzle Studio (just shipped) covers 80% of the value, but
-we still want a deeper, in-app inspector that knows about our specific
+**Status: MVP shipped.** `/dev` Tables tab lists all 129 introspected
+tables grouped by schema (`harness_shared` / `papercup_shared`), shows
+columns with PG types + nullability + defaults + PK + FKs + indexes,
+and serves a paginated row grid with admin-role / app-role toggle.
+API: `GET /api/dev/tables`, `GET /api/dev/tables/[exportName]`,
+`GET /api/dev/tables/[exportName]/rows`. Sibling of the embedded Drizzle
+Studio tab; this one knows our app conventions (workspace scoping, RLS
+bypass), Studio doesn't.
+
+**Deferred follow-ons:** Monaco SQL composer, FK-walk navigation
+(jump from a row to its references), per-row "Open in" menu that routes
+to a harness page when the FK is `harness_slug`, WHERE composer that
+builds Drizzle queries from drop-downs.
+
+**Why this unlock:** Drizzle Studio covers 80% of the value, but we
+still want a deeper, in-app inspector that knows about our specific
 patterns — workspace scoping, RLS bypass mode, the harness/operator
 domains. Drizzle Studio doesn't know any of that.
 
@@ -131,28 +145,36 @@ domains. Drizzle Studio doesn't know any of that.
 
 ## Unlock 3 — Auto-generated CRUD admin UI factory
 
-**Why third:** depends on Unlock 1 for the Zod schemas. Once those exist,
-generating an admin page for a new table is ~10 lines.
+**Status: API factory shipped.** UI React component deferred to a follow-up.
 
-**What it gives us:**
-- `<TableAdmin table={generated.hidden_pluginsInHarness_shared} />` renders a paginated grid, an edit form (from the insert Zod), and audit history if `mtime_ms` is present.
-- Replaces several hand-written admin pages: `hidden_plugins`, `operator_budget_tiers`, `operator_settings`, `harness_features`.
-- Plugins can ship admin pages without writing UI code — just declare the tables they own.
+`lib/admin-tables.ts` is the registry — `registerAdminTable({ exportName,
+table, label, editableColumns?, allowDelete? })`. First-party entries:
+`operator_budget_tiers`, `operator_settings`, `hidden_plugins`. Plugins
+extend at boot.
 
-**Steps:**
-1. Build a `TableAdmin` component in `apps/operator/app/_components/admin/`:
-   - Props: `{ table, where?, allowEdit?, allowDelete?, capabilities? }`.
-   - Renders: filterable RichGrid + `RowDrawer` form generated from `createInsertSchema(table)` via `react-hook-form` + `zodResolver`.
-2. Generic API route `app/api/admin/[table]/route.ts` that:
-   - Maps URL slug → `generated[slug]`.
-   - Validates body via `createInsertSchema(table)` / `createUpdateSchema(table)`.
-   - Checks `capabilities.canEditTable(slug, user)` before any write.
-3. Move existing one-off admin pages (`hidden_plugins`, `operator_budget_tiers`, `operator_settings`) to `<TableAdmin table={generated.<table>} />` and delete the bespoke code.
-4. Plugin SDK addition: plugins declare `adminTables: ['<name>']` in their manifest; the operator surfaces a per-plugin admin tab automatically.
+`/api/admin/tables` (GET list of registered) and
+`/api/admin/tables/[exportName]` (GET=list rows, POST=insert,
+PATCH=update by PK, DELETE=remove by PK). Body validation via
+`schemaOf(table).insert / .update`. Editable-column filter strips
+sensitive columns from bodies even when the registry lists the table.
 
-**Risk surface:** medium — the generic API route needs careful capability checks. RLS already enforces workspace; we add a `canEditTable` registry to gate the destructive ops.
+Verified live: full CRUD round-trip on `operator_budget_tiers` —
+GET → 3 rows, POST → row 99 with zod validation rejecting bad types,
+DELETE → 1 row removed.
 
-**Effort:** ~4 days including the capability layer.
+**Deferred:** `<TableAdmin table=...>` React component (form factory
+via `useFormWith(schemaOf(t).insert)` + RichGrid). The thread between
+Zod 4's deep recursive types and `react-hook-form`'s resolver needs a
+narrower type at the call site; doable but worth a focused turn.
+
+**Why this unlock:** new tables → admin pages in ~10 lines. Replaces
+several hand-written admin pages: `hidden_plugins`, `operator_budget_tiers`,
+`operator_settings`. Plugins ship admin pages without writing UI code —
+just declare the tables they own.
+
+**Risk surface:** localhost-only (operator binds 127.0.0.1); same threat
+model as `/dev`. Editable-column filter is the privilege-escalation
+guard.
 
 ---
 
@@ -182,6 +204,16 @@ shipped that. The cleanup work — replacing the custom generator with
 ---
 
 ## Unlock 5 — `makeFixture(table, overrides)` helper
+
+**Status: shipped** in `libs/test-config/src/make-fixture.ts` with
+`makeFixture(t, overrides?)` + `makeFixtures(t, count, overridesFor?)` +
+9 passing tests covering NOT NULL satisfaction, override precedence,
+nullable defaults, hasDefault omission (DB fills it), jsonb-default-{},
+bigint-timestamp-defaults, and batch generation. Exported from
+`@papercusp/test-config`.
+
+Migration tail: drop the existing hand-written factories one at a time
+as tests need maintenance.
 
 **Why last:** small but high-leverage. Replaces ~30 hand-written test factories.
 
