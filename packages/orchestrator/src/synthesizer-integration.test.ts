@@ -597,3 +597,142 @@ test('handleSynthesisOutcome — N=3 FAIL drops every lane worktree even though 
     p.cleanup();
   }
 });
+
+test('handleSynthesisOutcome — checkout failure reverts feature to failing, cleans up (Gap N)', async () => {
+  const p = setupProject();
+  try {
+    addLane(p.projectDir, p.stateDir, 'F-CHK', 1, { 'c.txt': 'lane\n' });
+
+    const synthWt = join(p.stateDir, 'worktrees', 'F-CHK-synthesis');
+    const synthBr = 'harness/F-CHK-synthesis';
+    spawnSync('git', ['worktree', 'add', '-B', synthBr, synthWt, 'main'], {
+      cwd: p.projectDir,
+    });
+    writeFileSync(join(synthWt, 'c.txt'), 'synth\n');
+    spawnSync('git', ['add', '-A'], { cwd: synthWt });
+    spawnSync('git', ['commit', '--quiet', '-m', 'synth'], { cwd: synthWt });
+
+    writeFeatures(p.stateDir, 'F-CHK', 'passed');
+
+    // Force `git checkout main` to fail by leaving an uncommitted change
+    // in projectDir that conflicts with the checkout. This exercises the
+    // checkout-failure branch of revertOnMergeFail (Bug L's checkout-fail
+    // path, previously untested per Gap N).
+    writeFileSync(join(p.projectDir, 'c.txt'), 'uncommitted dirt that would be clobbered\n');
+
+    const telemetryCalls: Array<'pass' | 'fail'> = [];
+    await handleSynthesisOutcome(
+      'F-CHK',
+      synthBr,
+      synthWt,
+      1,
+      makeCtx(p),
+      () => {},
+      {} as any,
+      (outcome) => telemetryCalls.push(outcome),
+    );
+
+    // Feature reverted to 'failing'.
+    const features = JSON.parse(
+      readFileSync(join(p.stateDir, 'features.json'), 'utf8'),
+    ).features;
+    assert.equal(features.find((f: any) => f.id === 'F-CHK').status, 'failing');
+
+    // on-synthesis-won did NOT fire — merge never landed.
+    const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
+    assert.equal(won.length, 0, 'on-synthesis-won must not fire when checkout fails');
+
+    // Bug P: telemetry closed with 'fail', not pending or 'pass'.
+    assert.deepEqual(telemetryCalls, ['fail'], 'telemetry closed with fail on checkout failure');
+
+    // Synth worktree cleaned regardless. (laneCount=1 means the
+    // synthetic single-lane manifest — the feature's own worktree
+    // cleanup is owned by branchIsoPostValidator, not this function.)
+    assert.equal(existsSync(synthWt), false);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test('handleSynthesisOutcome — successful merge closes telemetry with pass (Bug P)', async () => {
+  const p = setupProject();
+  try {
+    addLane(p.projectDir, p.stateDir, 'F-TEL-PASS', 1, { 't.txt': 'lane\n' });
+
+    const synthWt = join(p.stateDir, 'worktrees', 'F-TEL-PASS-synthesis');
+    const synthBr = 'harness/F-TEL-PASS-synthesis';
+    spawnSync('git', ['worktree', 'add', '-B', synthBr, synthWt, 'main'], { cwd: p.projectDir });
+    writeFileSync(join(synthWt, 't.txt'), 'synth\n');
+    spawnSync('git', ['add', '-A'], { cwd: synthWt });
+    spawnSync('git', ['commit', '--quiet', '-m', 'synth'], { cwd: synthWt });
+
+    writeFeatures(p.stateDir, 'F-TEL-PASS', 'passed');
+
+    const telemetryCalls: Array<'pass' | 'fail'> = [];
+    await handleSynthesisOutcome(
+      'F-TEL-PASS',
+      synthBr,
+      synthWt,
+      1,
+      makeCtx(p),
+      () => {},
+      {} as any,
+      (outcome) => telemetryCalls.push(outcome),
+    );
+
+    assert.deepEqual(telemetryCalls, ['pass'], 'telemetry closed pass after on-synthesis-won fires');
+    const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
+    assert.equal(won.length, 1);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test('handleSynthesisOutcome — merge-conflict closes telemetry with fail (Bug P)', async () => {
+  const p = setupProject();
+  try {
+    addLane(p.projectDir, p.stateDir, 'F-TEL-CONF', 1, { 'm.txt': 'lane\n' });
+
+    const synthWt = join(p.stateDir, 'worktrees', 'F-TEL-CONF-synthesis');
+    const synthBr = 'harness/F-TEL-CONF-synthesis';
+    spawnSync('git', ['worktree', 'add', '-B', synthBr, synthWt, 'main'], { cwd: p.projectDir });
+    writeFileSync(join(synthWt, 'm.txt'), 'synth-version\n');
+    spawnSync('git', ['add', '-A'], { cwd: synthWt });
+    spawnSync('git', ['commit', '--quiet', '-m', 'synth'], { cwd: synthWt });
+
+    // Move main forward with a conflicting change while synth's branch
+    // also touched m.txt — guarantees `git merge --no-ff` fails.
+    writeFileSync(join(p.projectDir, 'm.txt'), 'main-moved\n');
+    spawnSync('git', ['add', '-A'], { cwd: p.projectDir });
+    spawnSync('git', ['commit', '--quiet', '-m', 'concurrent main edit'], { cwd: p.projectDir });
+
+    writeFeatures(p.stateDir, 'F-TEL-CONF', 'passed');
+
+    const telemetryCalls: Array<'pass' | 'fail'> = [];
+    await handleSynthesisOutcome(
+      'F-TEL-CONF',
+      synthBr,
+      synthWt,
+      1,
+      makeCtx(p),
+      () => {},
+      {} as any,
+      (outcome) => telemetryCalls.push(outcome),
+    );
+
+    // Bug O: feature reverted to 'failing'.
+    const features = JSON.parse(
+      readFileSync(join(p.stateDir, 'features.json'), 'utf8'),
+    ).features;
+    assert.equal(features.find((f: any) => f.id === 'F-TEL-CONF').status, 'failing');
+
+    // Bug P: telemetry closed with 'fail', NOT 'pass'.
+    assert.deepEqual(telemetryCalls, ['fail'], 'telemetry must close fail on merge-conflict revert');
+
+    // Bug L: on-synthesis-won did NOT fire.
+    const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
+    assert.equal(won.length, 0);
+  } finally {
+    p.cleanup();
+  }
+});

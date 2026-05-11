@@ -1213,6 +1213,12 @@ async function handleNextValidator(
   // fire passes --feature-id=... so plugin scripts can target the event.
   // Also attach an adaptive-telemetry outcome for the matching pending row,
   // if any (see _adaptiveTelemetryByFeature seeded by handleNextWorker).
+  // Bug P: when this dispatch will run handleSynthesisOutcome below, the
+  // 'pass' transition here is provisional — the merge may still fail and
+  // revert the feature to 'failing'. Defer telemetry close to handleSynthesisOutcome
+  // (it owns the closeTelemetry callback) so the row reflects the actual outcome.
+  const deferTelemetryToSynthesisOutcome =
+    synthesisWorktree !== null && synthesisRanWithManifest !== null;
   for (const f of (await readFeatures(ctx.stateDir, stateCtx(ctx)))) {
     const before = beforeStatus.get(f.id);
     if (f.status === 'passed' && before !== 'passed') {
@@ -1224,7 +1230,9 @@ async function handleNextValidator(
         log: logger.log,
         extraFlags: [`--feature-id=${f.id}`],
       });
-      void attachAdaptiveOutcome(ctx, logger, f.id, 'pass');
+      if (!(deferTelemetryToSynthesisOutcome && f.id === fid)) {
+        void attachAdaptiveOutcome(ctx, logger, f.id, 'pass');
+      }
     } else if (
       (f.status === 'failed' || f.status === 'blocked') &&
       before !== f.status &&
@@ -1246,6 +1254,9 @@ async function handleNextValidator(
       ctx,
       logger.log,
       cfg,
+      (outcome) => {
+        void attachAdaptiveOutcome(ctx, logger, fid, outcome);
+      },
     );
   } else {
     // Synthesizer did not produce a candidate. Two distinct sub-cases:

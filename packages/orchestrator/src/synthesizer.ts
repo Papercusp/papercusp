@@ -273,6 +273,7 @@ export async function handleSynthesisOutcome(
   ctx: InvokeContext,
   log: (msg: string) => void,
   cfg: HarnessConfig,
+  closeTelemetry?: (outcome: 'pass' | 'fail') => void,
 ): Promise<void> {
   let status = '';
   for (const f of await readFeatures(ctx.stateDir, stateCtx(ctx))) {
@@ -298,6 +299,10 @@ export async function handleSynthesisOutcome(
   const revertOnMergeFail = async (reason: string): Promise<void> => {
     log(`SYNTHESIZER: ${fid} ${reason} — reverting to 'failing' for retry`);
     await setFeatureStatus(ctx.stateDir, fid, 'failing', { ctx: stateCtx(ctx) });
+    // Bug P: telemetry must reflect the actual outcome. The validator-side
+    // transition loop suppresses the 'pass' close for synthesis-eligible
+    // features, so we own closing the row.
+    if (closeTelemetry) closeTelemetry('fail');
   };
 
   if (status === 'passed') {
@@ -332,6 +337,8 @@ export async function handleSynthesisOutcome(
           },
           log,
         });
+        // Bug P: fire 'pass' telemetry only after merge actually lands.
+        if (closeTelemetry) closeTelemetry('pass');
       }
     }
   } else {

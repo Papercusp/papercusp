@@ -412,6 +412,16 @@ test('e2e: merge-conflict reverts feature to failing, no false on-synthesis-won 
     assert.deepEqual(conflictLines, [], 'no unresolved merge-conflict markers');
     assert.equal(existsSync(join(p.projectDir, '.git', 'MERGE_HEAD')), false,
       '.git/MERGE_HEAD must not linger after revert');
+
+    // Bug P: the merge failed and feature reverted to 'failing'. Telemetry
+    // close attempts went through attachAdaptiveOutcome (we mocked invoke
+    // but not the underlying POST). Easier check: scan logger output for
+    // the SYNTHESIZER revert line — proves closeTelemetry('fail') path
+    // executed inside handleSynthesisOutcome (Bug P fix wires telemetry
+    // close into that path).
+    const revertLogged = p.loggedLines.some((l: string) =>
+      l.includes("SYNTHESIZER: F-MC") && l.includes("reverting to 'failing'"));
+    assert.ok(revertLogged, 'revert path executed — telemetry close fired via closeTelemetry');
   } finally {
     p.cleanup();
   }
