@@ -26,6 +26,6 @@ export default defineConfig({
       'postgres://harness_admin:harness_admin_pwd@localhost:5432/papercusp',
   },
   introspect: {
-    casing: 'preserve',
+    casing: 'camel',
   },
 });
