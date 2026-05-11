@@ -188,24 +188,35 @@ const SIGNED_PARAM_ALLOWLIST = new Set([
   'exp',
 ]);
 
-interface KeyCache { buf: Buffer; loadedAt: number; }
+interface KeyCache { buf: Buffer; rotatedAt: number; loadedAt: number; }
 let __keyCache: KeyCache | null = null;
 
+// Honor PG's authoritative rotated_at so a rotate on the operator
+// invalidates this process's cache on its next read. Spawning is
+// already a heavy op; one indexed PG read is in the noise. The
+// 5-minute TTL is a safety net for when rotated_at can't be read.
 async function loadSigningKey(): Promise<Buffer> {
-  if (__keyCache && Date.now() - __keyCache.loadedAt < 5 * 60 * 1000) return __keyCache.buf;
   const dsn = process.env.DATABASE_URL ?? process.env.PAPERCUSP_PG_DSN;
   if (!dsn) throw new Error('no PG DSN in env (DATABASE_URL/PAPERCUSP_PG_DSN)');
   const sql = postgres(dsn);
   try {
-    const rows = await sql<{ value_b64: string }[]>`
-      SELECT value_b64 FROM harness_shared.operator_secrets
+    const rows = await sql<{ value_b64: string; rotated_at: Date }[]>`
+      SELECT value_b64, rotated_at FROM harness_shared.operator_secrets
       WHERE name = 'spawn-signing-key' LIMIT 1
     `;
     if (rows.length === 0) {
       throw new Error('spawn-signing-key row missing — operator boots mint it on first verify call');
     }
+    const rotatedAt = new Date(rows[0].rotated_at).getTime();
+    if (
+      __keyCache &&
+      __keyCache.rotatedAt === rotatedAt &&
+      Date.now() - __keyCache.loadedAt < 5 * 60 * 1000
+    ) {
+      return __keyCache.buf;
+    }
     const buf = Buffer.from(rows[0].value_b64, 'base64');
-    __keyCache = { buf, loadedAt: Date.now() };
+    __keyCache = { buf, rotatedAt, loadedAt: Date.now() };
     return buf;
   } finally {
     try { await sql.end({ timeout: 1 }); } catch { /* ignore */ }
