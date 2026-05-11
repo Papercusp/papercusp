@@ -11,7 +11,60 @@ collapses them to one source.
 
 ---
 
-## Unlock 1 — `drizzle-zod` across plugin SDK + API routes
+## How drizzle types help our MCP/HTTP wrapper
+
+The MCP tool wrapper (`packages/agent-mcp/src/define-tool.ts`) already takes
+a Zod schema for tool arguments — that schema serves both runtime validation
+and JSON Schema generation for `tools/list`. Drizzle types compound with it
+three ways:
+
+**1. Args schemas for write tools.** Today a "create goal" MCP tool would
+hand-write `z.object({ title: z.string(), body: z.string().optional(), ... })`
+mirroring `goals` columns. With `schemaOf(generated.goalsInHarness_shared).insert`
+the args schema *is* the column shape — NOT NULL becomes required, SQL
+defaults become optional, generated columns are omitted. One source of truth.
+
+**2. Response row types.** Every list/get tool currently returns
+`Array<Record<string, unknown>>`. With `z.infer<typeof schemaOf(t).select>`
+the response shape is the column shape. The agent sees a typed row, MCP
+clients can validate the response against the same schema the server used.
+
+**3. Typed Drizzle queries replace raw SQL.** 20 of 28 first-party MCP
+tools currently use `ctx.tx<Array<Record<string, unknown>>>\`SELECT ...\``.
+Wrapping `ctx.tx` with `drizzle(ctx.tx)` gives the full typed query
+builder while preserving the workspace GUC the RLS layer needs (the
+transaction sets the GUC, drizzle just routes queries through it).
+
+See `packages/agent-mcp/src/tools/goals/{get,list}.ts` for the worked
+example: 27 lines became 35 lines but the response shape is now typed
+end-to-end, and adding a new column to `goals` automatically appears in
+the tool's output without any code change.
+
+A `defineTableTool` higher-order helper (auto-derives args from a table
++ a CRUD mode) is the natural next step — it would collapse the 20 raw-SQL
+tools to ~5-line declarative definitions:
+
+```ts
+defineTableTool({
+  name: 'goals:create',
+  table: generated.goalsInHarness_shared,
+  mode: 'insert',
+  capability: 'goals:write',
+  handler: async (insertRow, ctx) => { ... }
+})
+```
+
+That helper is queued as part of Unlock 3 (the CRUD admin factory), which
+already needs the same insert/update/delete primitives.
+
+---
+
+## Unlock 1 — `drizzle-zod` across plugin SDK + API routes + MCP tools
+
+**Status: foundation shipped** (`libs/papercusp/libs/db/src/schema/zod.ts` +
+`schemaOf()` exports + `goals:get`/`goals:list` proof of concept). Remaining
+work is incremental migration of consumers.
+
 
 **Why first:** biggest correctness + DX win, and every later unlock benefits
 from it. Today plugin JSON Schemas are hand-authored and validated with ajv
@@ -25,21 +78,26 @@ they describe.
 - `react-hook-form` + `zodResolver(insertSchema)` gives typed forms with zero duplication.
 
 **Steps:**
-1. Add `drizzle-zod` to `libs/papercusp/libs/db/package.json`.
-2. Emit `libs/papercusp/libs/db/src/schema/zod.ts` from the same `pull-schema.mjs` pipeline:
-   - For every generated table, export `<name>InsertZ`, `<name>SelectZ`, `<name>UpdateZ`.
-   - This is purely additive — `generated.ts` stays untouched.
+1. ~~Add `drizzle-zod` to `libs/papercusp/libs/db/package.json`.~~ ✅ Done.
+2. ~~Emit a runtime helper at `libs/papercusp/libs/db/src/schema/zod.ts` instead of code-gen — `schemaOf(table)` returns `{ insert, select, update }` zod schemas on demand.~~ ✅ Done. Code-gen rejected because the runtime form is cheaper (~ms per table at import) and never drifts.
 3. Pick three high-value routes for the proof-of-concept:
    - `app/api/operator/budget-tiers` (POST) — server validation.
    - `app/api/internal/test-snapshot` — body shape per row, replaces `TEST_ID_RE` / `VALID_PHASES` hand-rolls.
    - `app/api/dev/drizzle-studio` (already exists; add request body schema once we add params).
 4. Audit `lib/forms/makeAjvResolver` callers; convert each to `zodResolver(insertSchema)` where the form maps to a single table.
 5. Plugin SDK: in `packages/orchestrator/src/plugin-sdk.ts`, expose `pluginConfigSchemaFromTable(t)` helper that wraps `createInsertSchema(t).strip()` so plugin manifests can reference an existing schema by table name instead of inlining JSON.
-6. CI: extend the existing `zero-drift-check` script with a `zod-drift-check.mjs` that fails if `zod.ts` is stale vs `generated.ts`.
+6. **MCP tools** (new): use `schemaOf(table).select` as the response row type for any tool that lists/gets rows from a table. Use `.insert` / `.update` as the args schema for any tool that writes. See `packages/agent-mcp/src/tools/goals/{get,list}.ts` for the pattern.
+
+**Why MCP wins here:** every tool that touches a table currently has
+hand-typed `Array<Record<string, unknown>>` returns and bespoke Zod args.
+20 of 28 MCP tools fall into this bucket. Switching to `schemaOf(t).select`
+gives the agent's response a typed shape that matches the actual columns —
+no more "this row may or may not have `goal_id`" because the column
+nullability is encoded in the Zod schema.
 
 **Risk surface:** small. `drizzle-zod` is additive; the existing hand-authored schemas keep working until each call site is migrated.
 
-**Effort:** ~1 day for the generator + 3 proof-of-concept routes; ~2 more days to migrate the long tail.
+**Effort:** foundation done. Pattern toolkit ready. Remaining tail (~50 call sites: 20 MCP tools + 30 API routes + ajv form callers) is incremental at ~5 min per site.
 
 ---
 
