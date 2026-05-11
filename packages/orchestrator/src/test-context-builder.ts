@@ -121,6 +121,10 @@ export function buildOrchTestContext(
     notifyEvent: () => {},
   } as any;
 
+  // Write config.json so runMainLoop's `readConfig(ctx.stateDir)` sees the
+  // same cfg the dispatcher tests configure via options.
+  writeFileSync(join(stateDir, 'config.json'), JSON.stringify(cfg, null, 2));
+
   const lanePool = createLanePool(stateDir, (cfg.parallelWorkers as any).max ?? 1);
 
   const ctx: InvokeContext = {

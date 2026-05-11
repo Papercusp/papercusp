@@ -45,6 +45,7 @@ import {
   parallelMaxWorkers,
   parallelWorkersPerFeature,
   readCompetitionManifest,
+  resolveWorkerCount,
   useChunkLoop,
   writeCompetitionManifest,
   type WorkerCountTiers,
