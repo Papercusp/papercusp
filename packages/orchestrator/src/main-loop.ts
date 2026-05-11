@@ -39,6 +39,7 @@ import { firePluginHook } from './plugin-hooks';
 import {
   competitionManifestPath,
   createLanePool,
+  hasWorkerCountTiers,
   workerCountTiers,
   maxFeaturesInFlight as maxFeaturesInFlightCfg,
   parallelMaxWorkers,
@@ -368,8 +369,7 @@ async function runMainLoopBody(
   // configured AND max>1 AND worktrees are on, the orchestrator gets
   // ADAPTIVE_* prompt extras and emits N=k per dispatch.
   const adaptiveTiers: WorkerCountTiers = workerCountTiers(cfg);
-  const hasTiers =
-    configGet<unknown>(cfg, 'parallelWorkers.adaptive', undefined) !== undefined;
+  const hasTiers = hasWorkerCountTiers(cfg);
   const adaptiveActive =
     hasTiers &&
     parallelMaxWorkers(cfg) > 1 &&
@@ -859,8 +859,7 @@ async function handleNextWorker(
 
   // Adaptive telemetry: when tiers are configured, record the
   // requested-vs-actual N for this dispatch. Best-effort; never blocks.
-  const hasTiers =
-    configGet<unknown>(cfg, 'parallelWorkers.adaptive', undefined) !== undefined;
+  const hasTiers = hasWorkerCountTiers(cfg);
   if (hasTiers) {
     const tiers = workerCountTiers(cfg);
     const requestedN = parsed.n ?? tiers.tiers[0];
@@ -1151,9 +1150,15 @@ async function handleNextValidator(
   let validatorRc = 0;
   if (skipValidatorMultiLaneFail) {
     logger.log(
-      `SYNTHESIZER: ${fid} synth failed with ${earlyManifestForSkip!.n} lanes — skipping validator, marking failed`,
+      `SYNTHESIZER: ${fid} synth failed with ${earlyManifestForSkip!.n} lanes — skipping validator, marking failing`,
     );
-    await setFeatureStatus(ctx.stateDir, fid, 'failed', { ctx: stateCtx(ctx) });
+    // 'failing' (present-tense) is the retry-candidate state the
+    // orchestrator looks for. 'failed' would orphan the feature.
+    await setFeatureStatus(ctx.stateDir, fid, 'failing', { ctx: stateCtx(ctx) });
+    // Close out the telemetry row's validator-side outcome explicitly.
+    // Without this, the row would stay pending forever even though we
+    // know the dispatch is terminated. Best-effort.
+    void attachAdaptiveOutcome(ctx, logger, fid, 'fail');
     validatorRc = 1;
   } else {
     try {

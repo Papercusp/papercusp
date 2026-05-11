@@ -84,6 +84,21 @@ export const DEFAULT_WORKER_COUNT_TIERS: WorkerCountTiers = {
   rubric: '',
 };
 
+/**
+ * Whether worker-count tiers are configured for this harness. True when
+ * either an explicit `parallelWorkers.adaptive` block exists OR the
+ * legacy `parallelWorkers.mode: 'adaptive'` field is set without a
+ * block (in which case the default tier set [1,2,4] applies). The
+ * legacy fallback keeps pre-synthesizer adaptive configs from silently
+ * degrading to single-worker; removable once configs are migrated.
+ */
+export function hasWorkerCountTiers(cfg: HarnessConfig): boolean {
+  if (configGet<unknown>(cfg, 'parallelWorkers.adaptive', undefined) !== undefined) {
+    return true;
+  }
+  return configGet<string>(cfg, 'parallelWorkers.mode', '') === 'adaptive';
+}
+
 export function workerCountTiers(cfg: HarnessConfig): WorkerCountTiers {
   const raw = configGet<unknown>(cfg, 'parallelWorkers.adaptive', undefined);
   if (!raw || typeof raw !== 'object') {
@@ -140,8 +155,7 @@ export function resolveWorkerCount(
   const max = parallelMaxWorkers(cfg);
   if (max === 1) return 1;
 
-  const hasTiers =
-    configGet<unknown>(cfg, 'parallelWorkers.adaptive', undefined) !== undefined;
+  const hasTiers = hasWorkerCountTiers(cfg);
 
   let desired: number;
   if (hasTiers && requestedN !== undefined) {

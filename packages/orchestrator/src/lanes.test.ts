@@ -372,3 +372,38 @@ test('resolveWorkerCount — tiers configured but no requestedN → falls back t
   } as any;
   assert.equal(resolveWorkerCount(cfg, undefined, 10), 2);
 });
+
+import { hasWorkerCountTiers } from './lanes';
+
+test('hasWorkerCountTiers — explicit adaptive block', () => {
+  assert.equal(
+    hasWorkerCountTiers({ parallelWorkers: { adaptive: { tiers: [1, 4], labels: ['t', 'h'] } } } as any),
+    true,
+  );
+});
+
+test('hasWorkerCountTiers — back-compat: legacy mode=adaptive with no block', () => {
+  // Pre-synthesizer harnesses configured adaptive mode and relied on
+  // the default tier set [1,2,4]. Without back-compat they silently
+  // degrade to single-worker on first run after upgrade.
+  assert.equal(
+    hasWorkerCountTiers({ parallelWorkers: { mode: 'adaptive', max: 4 } } as any),
+    true,
+  );
+});
+
+test('hasWorkerCountTiers — mode=competition or lane → no tiers', () => {
+  assert.equal(hasWorkerCountTiers({ parallelWorkers: { mode: 'competition' } } as any), false);
+  assert.equal(hasWorkerCountTiers({ parallelWorkers: { mode: 'lane' } } as any), false);
+  assert.equal(hasWorkerCountTiers({} as any), false);
+});
+
+test('resolveWorkerCount — back-compat: legacy mode=adaptive + requestedN picks from default tiers', () => {
+  // No explicit adaptive block; legacy mode='adaptive' should still
+  // pick from DEFAULT_WORKER_COUNT_TIERS [1, 2, 4].
+  const cfg = { parallelWorkers: { max: 8, mode: 'adaptive' } } as any;
+  assert.equal(resolveWorkerCount(cfg, 4, 10), 4);
+  assert.equal(resolveWorkerCount(cfg, 2, 10), 2);
+  // out-of-set requestedN clamps to nearest ≤
+  assert.equal(resolveWorkerCount(cfg, 3, 10), 2);
+});

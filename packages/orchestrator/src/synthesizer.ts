@@ -103,12 +103,17 @@ function ensureSynthesisWorktree(inputs: SynthesisInputs): { worktree: string; b
   const worktree = synthesisWorktreePath(ctx.stateDir, fid);
   const branch = synthesisBranch(fid);
   mkdirSync(join(ctx.stateDir, 'worktrees'), { recursive: true });
-  if (!existsSync(worktree)) {
-    const r = git(['worktree', 'add', '-B', branch, worktree, base], {
-      cwd: ctx.projectDir,
-    });
-    if (r.outputHead(3)) log(`  ${r.outputHead(3)}`);
+  // Always start synthesis from a clean worktree. A leftover dir from a
+  // crashed previous run would otherwise have stale files the
+  // synthesizer's prompt assumes aren't there (the prompt frames the
+  // worktree as starting from base).
+  if (existsSync(worktree)) {
+    git(['worktree', 'remove', '--force', worktree], { cwd: ctx.projectDir });
   }
+  const r = git(['worktree', 'add', '-B', branch, worktree, base], {
+    cwd: ctx.projectDir,
+  });
+  if (r.outputHead(3)) log(`  ${r.outputHead(3)}`);
   return { worktree, branch };
 }
 
