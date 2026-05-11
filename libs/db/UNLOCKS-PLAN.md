@@ -82,6 +82,13 @@ responses. `log-event` (discriminated dual-mode body) and `test-snapshot`
 (bash-payload aliasing transformations) intentionally retained — Zod
 refinements would obscure rather than clarify the business logic.
 
+**`makeAjvResolver` audit (2026-05-11):** Both callers
+(`apps/operator/app/harness/HarnessDashboard.tsx` and
+`apps/operator/app/settings/plugins/page.tsx`) use plugin-supplied JSON
+Schemas (`configSchema` from a plugin manifest), not table-shaped data.
+Drizzle-zod doesn't apply — the ajv path is architecturally correct for
+this case. No migration needed.
+
 
 **Why first:** biggest correctness + DX win, and every later unlock benefits
 from it. Today plugin JSON Schemas are hand-authored and validated with ajv
@@ -150,10 +157,15 @@ Sibling of the embedded Drizzle Studio tab; this one knows our app
 conventions (workspace scoping, RLS bypass, FK navigation across
 schemas), Studio doesn't.
 
+**"Open in dashboard ↗" shipped** (2026-05-11): any cell whose column is
+`harness_slug` or `install_slug` renders as a yellow link that opens
+`/harness?slug=<value>` in a new tab. Overrides FK-walk for these
+columns since opening the dashboard is what users actually want 99% of
+the time when they see a harness slug in any row.
+
 **Deferred follow-ons:** Monaco SQL composer (free-form SQL with our
-RLS-aware execution), per-row "Open in" menu that routes to a harness
-page when the FK is `harness_slug`, OR-grouped filter clauses (currently
-all filters AND together).
+RLS-aware execution), OR-grouped filter clauses (currently all filters
+AND together).
 
 **Why this unlock:** Drizzle Studio covers 80% of the value, but we
 still want a deeper, in-app inspector that knows about our specific
@@ -267,8 +279,12 @@ nullable defaults, hasDefault omission (DB fills it), jsonb-default-{},
 bigint-timestamp-defaults, and batch generation. Exported from
 `@papercusp/test-config`.
 
-Migration tail: drop the existing hand-written factories one at a time
-as tests need maintenance.
+Migration tail: the `apps/operator` test suite turns out to use real PG
+transactions with inline row literals rather than reusable factories —
+no large backlog of `makeFooRow()`-style helpers to migrate. The helper
+is available for any future test author who needs schema-driven defaults.
+(Existing `makeFixture` references in orchestrator tests are an unrelated
+local function that creates filesystem temp dirs — naming collision only.)
 
 **Why last:** small but high-leverage. Replaces ~30 hand-written test factories.
 
