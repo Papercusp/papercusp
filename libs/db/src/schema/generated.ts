@@ -279,6 +279,8 @@ export const adaptive_telemetryInHarness_shared = harness_shared.table("adaptive
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	duration_ms: bigint({ mode: "number" }),
 	workspace_id: text().default('').notNull(),
+	synthesized: boolean(),
+	synthesis_error: text(),
 }, (table) => [
 	index("adaptive_telemetry_harness_idx").using("btree", table.harness_slug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
 	index("adaptive_telemetry_pending_idx").using("btree", table.harness_slug.asc().nullsLast().op("text_ops"), table.feature_id.asc().nullsLast().op("text_ops")).where(sql`(outcome IS NULL)`),

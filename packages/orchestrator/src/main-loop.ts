@@ -181,6 +181,40 @@ async function recordAdaptiveDecision(
   return null;
 }
 
+/**
+ * Patch the matching pending telemetry row with the synthesizer
+ * outcome (whether synth ran + an error string when it didn't).
+ * Best-effort; never blocks dispatch.
+ */
+async function attachSynthesisOutcomeTelemetry(
+  ctx: InvokeContext,
+  logger: Logger,
+  featureId: string,
+  synthesized: boolean,
+  synthesisError: string | null,
+): Promise<void> {
+  const pending = _adaptiveTelemetryByFeature.get(featureId);
+  if (!pending) return;
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  const slug = harnessSlug(ctx);
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    await fetch(
+      `${operatorBase}/api/harness/${slug}/orchestrator/adaptive-telemetry/${pending.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ synthesized, synthesisError }),
+        signal: ctrl.signal,
+      },
+    );
+    clearTimeout(timer);
+  } catch (err) {
+    logger.log(`  telemetry: synth-outcome patch failed (${(err as Error).message}); continuing`);
+  }
+}
+
 /** Patch the matching pending telemetry row with an outcome. */
 async function attachAdaptiveOutcome(
   ctx: InvokeContext,
@@ -1063,10 +1097,12 @@ async function handleNextValidator(
         } catch {
           // ignore
         }
+        void attachSynthesisOutcomeTelemetry(ctx, logger, fid, true, null);
       } else {
         logger.log(
           `SYNTHESIZER: ${fid} failed (${result.reason ?? 'unknown'}); validating worker output directly`,
         );
+        void attachSynthesisOutcomeTelemetry(ctx, logger, fid, false, result.reason ?? null);
       }
     }
   }
