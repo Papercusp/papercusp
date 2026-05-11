@@ -427,22 +427,3 @@ export function readCompetitionManifest(
   return null;
 }
 
-// ─── Validator output parsing ────────────────────────────────────
-
-export type CompetitionVerdict =
-  | { kind: 'winner'; lane: number }
-  | { kind: 'none' }
-  | { kind: 'absent' };
-
-/**
- * Parse the validator's output for `COMPETITION_WINNER lane-N` or
- * `COMPETITION_WINNER none`. Returns `{kind:'absent'}` when no winner
- * line is present.
- */
-export function parseCompetitionVerdict(validatorOutput: string): CompetitionVerdict {
-  const noneMatch = /COMPETITION_WINNER\s+none/i.exec(validatorOutput);
-  if (noneMatch) return { kind: 'none' };
-  const laneMatch = /COMPETITION_WINNER\s+lane-(\d+)/i.exec(validatorOutput);
-  if (laneMatch) return { kind: 'winner', lane: parseInt(laneMatch[1], 10) };
-  return { kind: 'absent' };
-}

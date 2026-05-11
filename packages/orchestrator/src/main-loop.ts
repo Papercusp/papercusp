@@ -66,6 +66,7 @@ import { branchIsoBase, worktreePath } from './branch-iso';
 import type { InvokeContext } from './invoke';
 import type { Logger } from './log';
 import {
+  handleSynthesisOutcome,
   runSynthesizer,
   singleLaneManifest,
   synthesizeSingle,
@@ -383,18 +384,23 @@ async function runMainLoopBody(
     logger.log(`── iteration ${iteration} ──`);
 
     // 1a. Pre-orchestrator slot gate. Block the next orchestrator call
-    // until at least one lane slot is free — saves the LLM cost of asking
-    // for a decision we'd just have to clamp/reject. Applies to every
-    // parallel mode (lane / competition / adaptive). When max=1
-    // (sequential) the lane pool only ever holds 0 slots at this point
-    // because each iteration is end-to-end synchronous, so the wait is
-    // a no-op.
+    // until enough lane slots are free for a meaningful dispatch — saves
+    // the LLM cost of asking for a decision we'd just have to clamp.
+    //
+    // Without tiers: wait for >= 1 free slot.
+    // With tiers: wait for >= min(tiers) free slots, so a tiered
+    //   orchestrator that picks the smallest tier never silently
+    //   downgrades. (Picking the next tier up still gets clamped in
+    //   resolveWorkerCount; that's expected and visible in telemetry.)
     const maxSlots = parallelMaxWorkers(cfg);
-    if (maxSlots > 1 && lanePool.count() >= maxSlots) {
+    const slotRequirement = adaptiveActive
+      ? Math.min(...adaptiveTiers.tiers)
+      : 1;
+    if (maxSlots > 1 && maxSlots - lanePool.count() < slotRequirement) {
       logger.log(
-        `  gate: pool ${lanePool.count()}/${maxSlots} — waiting for a lane to free before invoking orchestrator`,
+        `  gate: pool ${lanePool.count()}/${maxSlots}, need ${slotRequirement} free — waiting before invoking orchestrator`,
       );
-      while (lanePool.count() >= maxSlots) {
+      while (maxSlots - lanePool.count() < slotRequirement) {
         await sleep(100);
       }
     }
@@ -1024,12 +1030,20 @@ async function handleNextValidator(
   let synthesisWorktree: string | null = null;
   let synthesisBr: string | null = null;
   let synthesisRanWithManifest: { n: number } | null = null;
+  let synthesisAttempted = false;
   {
     let effectiveManifest = readCompetitionManifest(ctx.stateDir, fid);
-    if (!effectiveManifest && synthesizeSingle(cfg)) {
+    // N=1 fallback: only synthesize if worktrees are enabled — without
+    // them, the worker committed to the project tree directly (not to
+    // `<stateDir>/worktrees/<fid>`), so the singleLaneManifest path
+    // points at a directory that doesn't exist and the synthesizer
+    // gets empty context. Skip silently in that case; the legacy
+    // single-branch path handles merge via branchIsoPostValidator.
+    if (!effectiveManifest && synthesizeSingle(cfg) && worktreeEnabled(cfg)) {
       effectiveManifest = singleLaneManifest(ctx.stateDir, fid);
     }
     if (effectiveManifest) {
+      synthesisAttempted = true;
       const result = await runSynthesizer({
         fid,
         manifest: effectiveManifest,
@@ -1128,18 +1142,34 @@ async function handleNextValidator(
       synthesisWorktree,
       synthesisRanWithManifest.n,
       ctx,
-      logger,
+      logger.log,
       cfg,
     );
   } else {
-    // Synthesizer did not produce a candidate. For single-worker
-    // dispatches this is fine — the worker's branch is the candidate and
-    // branchIsoPostValidator merges it on PASS. For multi-worker
-    // dispatches we still have lane worktrees on disk that need cleanup
-    // (the manifest stayed since synth failed before removing it).
-    branchIsoPostValidator(branchIsoCtx, fid);
-
+    // Synthesizer did not produce a candidate. Two distinct sub-cases:
+    //
+    //   a) Synthesis was never attempted (no manifest + synthesizeSingle
+    //      off, or worktrees disabled). Treat as legacy single-branch:
+    //      run branchIsoPostValidator to merge harness/<fid> on PASS.
+    //
+    //   b) Synthesis was attempted but failed (e.g. synthesizer LLM
+    //      errored, or produced no edits). If a real competition
+    //      manifest exists (N>1 dispatch), the feature has no merged
+    //      worker branch to fall back to — branchIsoPostValidator would
+    //      try to merge harness/<fid> which has no commits. Skip the
+    //      legacy merge and just clean up lane worktrees + manifest.
+    //
+    //      For the synthesis-attempted-but-failed N=1 case (synthetic
+    //      manifest), the worker DID write to harness/<fid> — fall
+    //      through to the legacy merge path.
     const staleManifest = readCompetitionManifest(ctx.stateDir, fid);
+    const synthFailedMultiLane =
+      synthesisAttempted && staleManifest !== null && staleManifest.n > 1;
+
+    if (!synthFailedMultiLane) {
+      branchIsoPostValidator(branchIsoCtx, fid);
+    }
+
     if (staleManifest) {
       logger.log(
         `SYNTHESIZER: cleaning up ${staleManifest.n} lane worktree(s) for ${fid} after synth failure`,
@@ -1160,92 +1190,6 @@ async function handleNextValidator(
     }
   }
   return { terminal: false, exitCode: 0, reason: 'idle' };
-}
-
-/**
- * After-validator handling for the synthesizer path.
- *
- * Reads the (just-updated) feature status. On PASS, merges the synthesis
- * branch into base and drops every related worktree (synthesis + each
- * lane). On non-PASS, drops every worktree without merging — feature
- * stays `failing` and the orchestrator decides next move on the next
- * iteration. Either way, the post-state is "no leftover worktrees for
- * this feature."
- */
-async function handleSynthesisOutcome(
-  fid: string,
-  synthBranch: string,
-  synthWorktree: string,
-  laneCount: number,
-  ctx: InvokeContext,
-  logger: Logger,
-  cfg: ReturnType<typeof readConfig>,
-): Promise<void> {
-  let status = '';
-  for (const f of await readFeatures(ctx.stateDir, stateCtx(ctx))) {
-    if (f.id === fid) {
-      status = f.status;
-      break;
-    }
-  }
-
-  const branchIsoCtx = {
-    cfg,
-    projectDir: ctx.projectDir,
-    stateDir: ctx.stateDir,
-    log: logger.log,
-  };
-  const base = branchIsoBase(branchIsoCtx);
-
-  if (status === 'passed') {
-    logger.log(`SYNTHESIZER: ${fid} validator passed → merging ${synthBranch}`);
-    git(['checkout', base], { cwd: ctx.projectDir });
-    const merge = git(
-      ['merge', '--no-ff', synthBranch, '-m', `synthesizer winner: ${fid}`],
-      { cwd: ctx.projectDir },
-    );
-    if (merge.outputHead(5)) logger.log(`  ${merge.outputHead(5)}`);
-  } else {
-    logger.log(
-      `SYNTHESIZER: ${fid} validator did not pass (status=${status || '?'}) → cleaning up without merge`,
-    );
-  }
-
-  // Drop the synthesis worktree + branch regardless of outcome.
-  git(['worktree', 'remove', '--force', synthWorktree], { cwd: ctx.projectDir });
-  git(['branch', '-D', synthBranch], { cwd: ctx.projectDir });
-
-  // Drop each lane worktree + branch. For the synthetic 1-lane case
-  // (single-worker synthesis), this is the feature's own branch — we
-  // drop it because the synthesis branch has now replaced it on base
-  // (PASS) or it's a dead end (FAIL).
-  if (laneCount > 1) {
-    for (let i = 1; i <= laneCount; i++) {
-      const wt = join(ctx.stateDir, 'worktrees', `${fid}-lane-${i}`);
-      const br = `harness/${fid}-lane-${i}`;
-      if (existsSync(wt)) {
-        git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
-      }
-      git(['branch', '-D', br], { cwd: ctx.projectDir });
-    }
-  } else {
-    // 1-lane synthetic manifest path: the lane "is" the feature's own
-    // worktree (harness/<fid>). Drop it cleanly.
-    const wt = worktreePath(ctx.stateDir, fid);
-    const br = `harness/${fid}`;
-    if (existsSync(wt)) {
-      git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
-    }
-    git(['branch', '-D', br], { cwd: ctx.projectDir });
-  }
-
-  // Remove any stale manifest (should already be gone if synth ran).
-  try {
-    unlinkSync(competitionManifestPath(ctx.stateDir, fid));
-  } catch {
-    // ignore
-  }
-
 }
 
 /**

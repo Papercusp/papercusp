@@ -98,7 +98,6 @@ export {
   competitionManifestPath,
   createLanePool,
   parallelMaxWorkers,
-  parseCompetitionVerdict,
   readCompetitionManifest,
   resolveWorkerCount,
   writeCompetitionManifest,
@@ -106,7 +105,6 @@ export {
 export type {
   CompetitionLane,
   CompetitionManifest,
-  CompetitionVerdict,
   LanePool,
   LaneRecord,
 } from './lanes';

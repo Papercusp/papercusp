@@ -16,6 +16,7 @@
 import { test, vi, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -330,6 +331,193 @@ test('runSynthesizer — competition manifest is persisted to disk for the synth
     assert.equal(manifestJson.parentFeatureId, 'F-G');
     assert.equal(manifestJson.n, 2);
     assert.equal(manifestJson.lanes.length, 2);
+  } finally {
+    p.cleanup();
+  }
+});
+
+// ─── handleSynthesisOutcome tests ────────────────────────────────
+
+import { handleSynthesisOutcome } from './synthesizer';
+
+function writeFeatures(stateDir: string, fid: string, status: string): void {
+  writeFileSync(
+    join(stateDir, 'features.json'),
+    JSON.stringify({ features: [{ id: fid, status }] }, null, 2),
+  );
+}
+
+test('handleSynthesisOutcome — N=2 PASS merges synth branch, drops all worktrees', async () => {
+  const p = setupProject();
+  try {
+    addLane(p.projectDir, p.stateDir, 'F-OUT-A', 1, { 'a.txt': '1\n' });
+    addLane(p.projectDir, p.stateDir, 'F-OUT-A', 2, { 'a.txt': '2\n' });
+
+    // Create the synthesis worktree + commit
+    const synthWt = join(p.stateDir, 'worktrees', 'F-OUT-A-synthesis');
+    const synthBr = 'harness/F-OUT-A-synthesis';
+    spawnSync('git', ['worktree', 'add', '-B', synthBr, synthWt, 'main'], {
+      cwd: p.projectDir,
+    });
+    writeFileSync(join(synthWt, 'a.txt'), 'synthesized\n');
+    spawnSync('git', ['add', '-A'], { cwd: synthWt });
+    spawnSync('git', ['commit', '--quiet', '-m', 'synth'], { cwd: synthWt });
+
+    writeFeatures(p.stateDir, 'F-OUT-A', 'passed');
+
+    await handleSynthesisOutcome(
+      'F-OUT-A',
+      synthBr,
+      synthWt,
+      2,
+      makeCtx(p),
+      () => {},
+      {} as any,
+    );
+
+    // Merge happened: a.txt on main now has synthesized content.
+    const show = spawnSync('git', ['show', 'main:a.txt'], {
+      cwd: p.projectDir,
+      encoding: 'utf8',
+    });
+    assert.equal(show.stdout, 'synthesized\n');
+
+    // Synthesis worktree + branch gone.
+    assert.equal(existsSync(synthWt), false);
+    const branches = spawnSync('git', ['branch'], { cwd: p.projectDir, encoding: 'utf8' }).stdout;
+    assert.ok(!branches.includes('F-OUT-A-synthesis'));
+
+    // Lane worktrees + branches gone.
+    assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-OUT-A-lane-1')), false);
+    assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-OUT-A-lane-2')), false);
+    assert.ok(!branches.includes('F-OUT-A-lane-1'));
+    assert.ok(!branches.includes('F-OUT-A-lane-2'));
+  } finally {
+    p.cleanup();
+  }
+});
+
+test('handleSynthesisOutcome — N=2 FAIL drops all worktrees without merging', async () => {
+  const p = setupProject();
+  try {
+    addLane(p.projectDir, p.stateDir, 'F-OUT-B', 1, { 'b.txt': 'x\n' });
+    addLane(p.projectDir, p.stateDir, 'F-OUT-B', 2, { 'b.txt': 'y\n' });
+    const synthWt = join(p.stateDir, 'worktrees', 'F-OUT-B-synthesis');
+    const synthBr = 'harness/F-OUT-B-synthesis';
+    spawnSync('git', ['worktree', 'add', '-B', synthBr, synthWt, 'main'], {
+      cwd: p.projectDir,
+    });
+    writeFileSync(join(synthWt, 'b.txt'), 'attempted\n');
+    spawnSync('git', ['add', '-A'], { cwd: synthWt });
+    spawnSync('git', ['commit', '--quiet', '-m', 'attempted synth'], { cwd: synthWt });
+
+    // Feature status not 'passed' → no merge expected.
+    writeFeatures(p.stateDir, 'F-OUT-B', 'failed');
+
+    await handleSynthesisOutcome(
+      'F-OUT-B',
+      synthBr,
+      synthWt,
+      2,
+      makeCtx(p),
+      () => {},
+      {} as any,
+    );
+
+    // b.txt on main never existed before, never created now.
+    const show = spawnSync('git', ['show', 'main:b.txt'], {
+      cwd: p.projectDir,
+      encoding: 'utf8',
+    });
+    assert.notEqual(show.status, 0, 'b.txt should not be on main after FAIL');
+
+    // All worktrees + branches gone.
+    assert.equal(existsSync(synthWt), false);
+    assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-OUT-B-lane-1')), false);
+    assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-OUT-B-lane-2')), false);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test('handleSynthesisOutcome — N=1 PASS merges synth + drops feature worktree', async () => {
+  const p = setupProject();
+  try {
+    // For N=1 the "lane" is the feature's own worktree at <stateDir>/worktrees/<fid>.
+    const featWt = join(p.stateDir, 'worktrees', 'F-OUT-C');
+    spawnSync('git', ['worktree', 'add', '-B', 'harness/F-OUT-C', featWt, 'main'], {
+      cwd: p.projectDir,
+    });
+    writeFileSync(join(featWt, 'c.txt'), 'worker draft\n');
+    spawnSync('git', ['add', '-A'], { cwd: featWt });
+    spawnSync('git', ['commit', '--quiet', '-m', 'worker'], { cwd: featWt });
+
+    const synthWt = join(p.stateDir, 'worktrees', 'F-OUT-C-synthesis');
+    const synthBr = 'harness/F-OUT-C-synthesis';
+    spawnSync('git', ['worktree', 'add', '-B', synthBr, synthWt, 'main'], {
+      cwd: p.projectDir,
+    });
+    writeFileSync(join(synthWt, 'c.txt'), 'polished\n');
+    spawnSync('git', ['add', '-A'], { cwd: synthWt });
+    spawnSync('git', ['commit', '--quiet', '-m', 'synth polish'], { cwd: synthWt });
+
+    writeFeatures(p.stateDir, 'F-OUT-C', 'passed');
+
+    await handleSynthesisOutcome(
+      'F-OUT-C',
+      synthBr,
+      synthWt,
+      1, // single-lane case
+      makeCtx(p),
+      () => {},
+      {} as any,
+    );
+
+    // Main now has the polished version.
+    const show = spawnSync('git', ['show', 'main:c.txt'], {
+      cwd: p.projectDir,
+      encoding: 'utf8',
+    });
+    assert.equal(show.stdout, 'polished\n');
+
+    // Feature worktree + branch gone.
+    assert.equal(existsSync(featWt), false);
+    assert.equal(existsSync(synthWt), false);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test('handleSynthesisOutcome — removes stale manifest after run', async () => {
+  const p = setupProject();
+  try {
+    addLane(p.projectDir, p.stateDir, 'F-OUT-D', 1, { 'd.txt': 'x\n' });
+    const synthWt = join(p.stateDir, 'worktrees', 'F-OUT-D-synthesis');
+    const synthBr = 'harness/F-OUT-D-synthesis';
+    spawnSync('git', ['worktree', 'add', '-B', synthBr, synthWt, 'main'], {
+      cwd: p.projectDir,
+    });
+    writeFileSync(join(synthWt, 'd.txt'), 's\n');
+    spawnSync('git', ['add', '-A'], { cwd: synthWt });
+    spawnSync('git', ['commit', '--quiet', '-m', 's'], { cwd: synthWt });
+
+    // Write a stale manifest as if it weren't cleaned by runSynthesizer.
+    const manifestPath = join(p.stateDir, 'competition-F-OUT-D.json');
+    writeFileSync(manifestPath, JSON.stringify({ n: 1 }));
+
+    writeFeatures(p.stateDir, 'F-OUT-D', 'failed');
+
+    await handleSynthesisOutcome(
+      'F-OUT-D',
+      synthBr,
+      synthWt,
+      1,
+      makeCtx(p),
+      () => {},
+      {} as any,
+    );
+
+    assert.equal(existsSync(manifestPath), false, 'stale manifest should be removed');
   } finally {
     p.cleanup();
   }

@@ -16,7 +16,6 @@ import {
   createLanePool,
   parallelMaxWorkers,
   parallelWorkersPerFeature,
-  parseCompetitionVerdict,
   readCompetitionManifest,
   writeCompetitionManifest,
 } from './lanes.js';
@@ -155,33 +154,6 @@ test('readCompetitionManifest — malformed JSON returns null', () => {
   }
 });
 
-test('parseCompetitionVerdict — winner lane', () => {
-  const out = `Some validator notes
-COMPETITION_WINNER lane-2
-More notes`;
-  assert.deepEqual(parseCompetitionVerdict(out), { kind: 'winner', lane: 2 });
-});
-
-test('parseCompetitionVerdict — none', () => {
-  assert.deepEqual(
-    parseCompetitionVerdict('All lanes failed.\nCOMPETITION_WINNER none'),
-    { kind: 'none' },
-  );
-});
-
-test('parseCompetitionVerdict — absent (no marker)', () => {
-  assert.deepEqual(parseCompetitionVerdict('regular validator output'), {
-    kind: 'absent',
-  });
-});
-
-test('parseCompetitionVerdict — case insensitive', () => {
-  // Some agents lowercase decision verbs by accident.
-  assert.deepEqual(
-    parseCompetitionVerdict('competition_winner lane-7'),
-    { kind: 'winner', lane: 7 },
-  );
-});
 
 // ─── Hybrid competition (workersPerFeature) ─────────────────────
 

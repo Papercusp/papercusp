@@ -12,13 +12,14 @@
  * worker's draft across the finish line (polish, fix obvious bugs,
  * ship). Gated by `parallelWorkers.synthesizeSingle` (default true).
  */
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { configGet } from './config';
 import { git } from './git';
 import { invoke, type InvokeContext } from './invoke';
-import { branchIsoBase } from './branch-iso';
+import { branchIsoBase, worktreePath } from './branch-iso';
 import { competitionManifestPath, type CompetitionManifest } from './lanes';
+import { readFeatures, stateCtx } from './state';
 import type { HarnessConfig } from './types';
 
 export interface SynthesisResult {
@@ -230,5 +231,90 @@ export async function runSynthesizer(inputs: SynthesisInputs): Promise<Synthesis
   } catch (err) {
     log(`SYNTHESIZER fatal: ${(err as Error).message}`);
     return { synthesized: false, reason: (err as Error).message };
+  }
+}
+
+/**
+ * After-validator handling for the synthesizer path.
+ *
+ * Reads the (just-updated) feature status. On PASS, merges the synthesis
+ * branch into base and drops every related worktree (synthesis + each
+ * lane). On non-PASS, drops every worktree without merging — feature
+ * stays `failing` and the orchestrator decides next move on the next
+ * iteration. Either way, the post-state is "no leftover worktrees for
+ * this feature."
+ */
+export async function handleSynthesisOutcome(
+  fid: string,
+  synthBranch: string,
+  synthWorktree: string,
+  laneCount: number,
+  ctx: InvokeContext,
+  log: (msg: string) => void,
+  cfg: HarnessConfig,
+): Promise<void> {
+  let status = '';
+  for (const f of await readFeatures(ctx.stateDir, stateCtx(ctx))) {
+    if (f.id === fid) {
+      status = f.status;
+      break;
+    }
+  }
+
+  const branchIsoCtx = {
+    cfg,
+    projectDir: ctx.projectDir,
+    stateDir: ctx.stateDir,
+    log,
+  };
+  const base = branchIsoBase(branchIsoCtx);
+
+  if (status === 'passed') {
+    log(`SYNTHESIZER: ${fid} validator passed → merging ${synthBranch}`);
+    git(['checkout', base], { cwd: ctx.projectDir });
+    const merge = git(
+      ['merge', '--no-ff', synthBranch, '-m', `synthesizer winner: ${fid}`],
+      { cwd: ctx.projectDir },
+    );
+    if (merge.outputHead(5)) log(`  ${merge.outputHead(5)}`);
+  } else {
+    log(
+      `SYNTHESIZER: ${fid} validator did not pass (status=${status || '?'}) → cleaning up without merge`,
+    );
+  }
+
+  // Drop the synthesis worktree + branch regardless of outcome.
+  git(['worktree', 'remove', '--force', synthWorktree], { cwd: ctx.projectDir });
+  git(['branch', '-D', synthBranch], { cwd: ctx.projectDir });
+
+  // Drop each lane worktree + branch. For the synthetic 1-lane case
+  // (single-worker synthesis), this is the feature's own branch — we
+  // drop it because the synthesis branch has now replaced it on base
+  // (PASS) or it's a dead end (FAIL).
+  if (laneCount > 1) {
+    for (let i = 1; i <= laneCount; i++) {
+      const wt = join(ctx.stateDir, 'worktrees', `${fid}-lane-${i}`);
+      const br = `harness/${fid}-lane-${i}`;
+      if (existsSync(wt)) {
+        git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
+      }
+      git(['branch', '-D', br], { cwd: ctx.projectDir });
+    }
+  } else {
+    // 1-lane synthetic manifest path: the lane "is" the feature's own
+    // worktree (harness/<fid>). Drop it cleanly.
+    const wt = worktreePath(ctx.stateDir, fid);
+    const br = `harness/${fid}`;
+    if (existsSync(wt)) {
+      git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
+    }
+    git(['branch', '-D', br], { cwd: ctx.projectDir });
+  }
+
+  // Remove any stale manifest (should already be gone if synth ran).
+  try {
+    unlinkSync(competitionManifestPath(ctx.stateDir, fid));
+  } catch {
+    // ignore
   }
 }
