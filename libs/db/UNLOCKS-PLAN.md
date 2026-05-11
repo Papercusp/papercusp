@@ -132,15 +132,17 @@ schema panel + as a `→` indicator on row grid headers.
 
 **WHERE composer**: "+ Filter" button opens an inline composer with a
 column dropdown (auto-excludes generated columns), an **operator
-dropdown** (`=`, `≠`, `>`, `≥`, `<`, `≤`, `LIKE`, `ILIKE`, `IS NULL`,
-`NOT NULL`), and a value input with type-coerced placeholders
-(`number` / `true / false` / `text` / `pattern (% wildcards)`).
-Filters AND together via the `?filters=<json>` API (array of
-`[col, op, value]` triples) and render as dismissible chips with the
-chosen operator in each label. Type coercion handles bigint / integer /
-numeric / boolean per column type; valueless operators (`IS NULL` /
-`NOT NULL`) hide the value input. `?where=` remains as the simple
-equality shortcut for FK-walk.
+dropdown** (`=`, `≠`, `>`, `≥`, `<`, `≤`, `LIKE`, `ILIKE`, `IN`,
+`NOT IN`, `IS NULL`, `NOT NULL`), and a value input with type-coerced
+placeholders (`number` / `true / false` / `text` / `pattern (%
+wildcards)` / `value1, value2, value3`). Filters AND together via the
+`?filters=<json>` API (array of `[col, op, value]` triples) and render
+as dismissible chips with the chosen operator in each label
+(arrays show up to 4 items + "…N more"). Type coercion handles bigint /
+integer / numeric / boolean per column type and applies per-element
+inside `IN`/`NOT IN` arrays; valueless operators (`IS NULL` / `NOT NULL`)
+hide the value input. `?where=` remains as the simple equality
+shortcut for FK-walk.
 
 API: `GET /api/dev/tables`, `GET /api/dev/tables/[exportName]`,
 `GET /api/dev/tables/[exportName]/rows?where=&role=&limit=&offset=`.
