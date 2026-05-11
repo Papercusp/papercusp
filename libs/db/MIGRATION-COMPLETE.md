@@ -44,30 +44,52 @@ reasons. No big-bang rewrite scheduled.
 - Result: all 125 tables have correct PKs; drizzle-zero now works;
   `.db.insert(...).onConflictDo*()` upserts work.
 
-### Phase 2 (Option B + D) — Drift safety net (`d199121` + `fafe4484`)
-- `scripts/zero-drift-check.mjs` — CI-friendly: compares Zero PG
-  publication membership against the hand-written `libs/zero-harness/
-  src/schema.ts`. Exit 1 if PG tables aren't yet in Zero schema.
-- `scripts/zero-schema-suggest.mjs` — Suggest a starter Zero schema
-  entry in camelCase convention for any PG table.
+### Phase 2 (Option A + B + D) — Zero schema auto-generation
+- **Option A — Auto-generation:** `libs/zero-harness/src/schema.ts`
+  is now auto-generated from `generated.ts` + a hand-maintained
+  `zero-config.json` (rename map). The config has 76 entries — the
+  same table list the hand-written file covered — but the column
+  types and nullability come from PG via the introspected schema, not
+  hand-written. Run `node libs/zero-harness/scripts/generate-schema.mjs
+  --write` after any `.sql` migration. Verification mode (no
+  `--write`) suitable for CI.
+- **Option B — Drift check:** `scripts/zero-drift-check.mjs`
+  cross-checks the Zero PG publication membership against the
+  hand-written `libs/zero-harness/src/schema.ts`. Caught 3 latent
+  orphans (tables declared but not in publication).
+- **Option D — Suggest tool:** `scripts/zero-schema-suggest.mjs`
+  prints a starter Zero schema entry in camelCase convention for any
+  PG table — used when populating `zero-config.json` for a new table.
 - `src/schema/zero-reference.json` — frozen drizzle-zero output dump,
-  committed for diff/audit. Not used at runtime.
+  committed for diff/audit.
 
-**Option A (full Zero schema cutover via drizzle-zero) was deferred.**
-Detailed analysis: the hand-written Zero schema uses camelCase aliases
-that drizzle-zero doesn't preserve. A literal swap would require
-rewriting ~400 column references in `queries.ts` plus every UI
-component consuming the affected rows. A custom generator preserving
-camelCase is feasible (~half day) but the bit-identical verification
-surface is too risky for a no-feedback session without a dedicated
-replica-resync window. The drift check (B) provides the safety the
-cutover would have provided.
+**Net Phase 2 result:** schema.ts went from 1342 lines of hand-
+maintained TS to 1223 lines of auto-generated TS plus a 76-entry config.
+The conventions (camelCase names, `.from()` aliases, `.optional()`
+flags) are preserved 1:1 with the previous hand-written file. queries.ts
+and every UI consumer remained unchanged. No replica state was modified.
 
-### Phase 3 — Sampling + pattern (`*-operator-notes`)
-- `apps/operator/lib/operator-notes.ts` — first conversion. Two queries
-  (read + upsert) → typed `.db.select()` + `.db.insert().onConflictDoUpdate()`.
-- Pattern is documented; the remaining ~161 sql`` call sites are
-  ongoing incremental conversion. No big-bang rewrite scheduled.
+### Phase 3 — Conversion (4 worked examples + pattern toolkit)
+Converted call sites covering the full SQL-pattern surface:
+- `operator-notes.ts` — SELECT WHERE LIMIT, upsert with composite-PK target
+- `publish-credentials.ts` — DELETE WHERE
+- `text-artifacts.ts` — SELECT, upsert, DELETE, **PG-side concat in `set`
+  using `sql\`<col> || EXCLUDED.<col>\`` with `.returning()`**
+- `user-actions.ts` — INSERT RETURNING, UPDATE WHERE, **COALESCE merge
+  in `set` using `sql\`${t.col}\``**
+
+Pattern toolkit (for the ~150 remaining sql`` call sites):
+- `db.select({...}).from(t).where(and(eq(...), eq(...))).limit(1)`
+- `db.insert(t).values({...}).onConflictDoUpdate({target: [...], set: {...}})`
+- `db.insert(t).values({...}).returning({col: t.col})`
+- `db.update(t).set({...}).where(eq(t.id, BigInt(id)))`
+- `db.delete(t).where(and(eq(...), eq(...)))`
+- For PG functions in `set`: `sql\`${t.col} || EXCLUDED.${t.col}\``
+- For RETURNING: `.returning({col: t.col})`
+
+The remaining ~150 sites convert mechanically as files are touched.
+Pattern documented inline + here. tsc clean across the entire
+apps/operator project after each conversion.
 
 ### Phase 4 — Raw-SQL territory (documented in `PHASE0-AUDIT.md`)
 Permanent raw-SQL surface (drizzle never owns these):
