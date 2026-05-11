@@ -282,10 +282,38 @@ function buildInvokeContext(toolCtx) {
 
 /* ─── Spawn engine ─────────────────────────────────────────────────── */
 
+// Register tsx's ESM loader once. The orchestrator package is source-
+// only TypeScript (.ts files, extensionless imports) and exports point
+// at src/*.ts directly. Plain Node 25 ESM can't resolve extensionless
+// TS imports — tsx's loader handles both .ts resolution and the
+// implicit .js→.ts extension mapping. We register lazily on first
+// loadOrchestrator() call so plugins that never spawn don't pay the
+// cost. Idempotent — tsx's register() de-dupes internally.
+let _tsxRegistered = false;
+function ensureTsxRegistered() {
+  if (_tsxRegistered) return;
+  try {
+    // tsx/esm/api is ESM-only; we're in a .cjs context, so use dynamic
+    // import. The register call hooks Node's loader globally for this
+    // process from this point forward.
+    return import('tsx/esm/api').then(({ register }) => {
+      register();
+      _tsxRegistered = true;
+    });
+  } catch (err) {
+    // If tsx isn't available, we'll fall through and the import below
+    // will fail with the original module-resolution error. That's the
+    // honest signal that the runtime is misconfigured.
+    console.warn('[orchestrator-spawn] tsx loader registration failed:', err);
+  }
+}
+
 async function loadOrchestrator() {
   // The orchestrator package re-exports `invoke` from its root (no
-  // `/invoke` subpath in package.json#exports). Next dev compiles
-  // src/index.ts on demand.
+  // `/invoke` subpath in package.json#exports). The package is source-
+  // only TS with extensionless inner imports — register tsx's loader
+  // before importing so Node can resolve them.
+  await ensureTsxRegistered();
   return await import('@papercusp/orchestrator');
 }
 
