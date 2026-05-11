@@ -120,15 +120,23 @@ nullability is encoded in the Zod schema.
 
 ## Unlock 2 — Schema-aware `/dev` table inspector
 
-**Status: MVP shipped + FK-walk shipped.** `/dev` Tables tab lists all 129
-introspected tables grouped by schema, shows columns with PG types +
-nullability + defaults + PK + FKs + indexes, and serves a paginated
-row grid with admin-role / app-role toggle. **FK-walk**: every column
-that's an FK source is rendered as a clickable link — click jumps to
-the referenced table filtered to the referenced row via
-`?where=<json>`; "← back to all rows" clears the filter. Foreign keys
-also show in a dedicated column of the schema panel + as a `→`
-indicator on the row grid header.
+**Status: MVP + FK-walk + WHERE composer shipped.** `/dev` Tables tab lists
+all 129 introspected tables grouped by schema, shows columns with PG
+types + nullability + defaults + PK + FKs + indexes, and serves a
+paginated row grid with admin-role / app-role toggle.
+
+**FK-walk**: every column that's an FK source is rendered as a clickable
+link — click jumps to the referenced table filtered to the referenced
+row via `?where=<json>`. Foreign keys show in a dedicated column of the
+schema panel + as a `→` indicator on row grid headers.
+
+**WHERE composer**: "+ Filter" button opens an inline composer with a
+column dropdown (filtered to non-generated columns) + value input with
+type-coerced placeholders (`number` / `true / false` / `text`). Multi-key
+filtering ANDs together via the same `?where=<json>` API; each filter
+becomes a dismissible chip in the filter bar, with "clear all" to reset.
+Value coercion handles bigint/integer/numeric/boolean per column type;
+empty input on a nullable column resolves to `null`.
 
 API: `GET /api/dev/tables`, `GET /api/dev/tables/[exportName]`,
 `GET /api/dev/tables/[exportName]/rows?where=&role=&limit=&offset=`.
@@ -136,9 +144,11 @@ Sibling of the embedded Drizzle Studio tab; this one knows our app
 conventions (workspace scoping, RLS bypass, FK navigation across
 schemas), Studio doesn't.
 
-**Deferred follow-ons:** Monaco SQL composer, per-row "Open in" menu
-that routes to a harness page when the FK is `harness_slug`, WHERE
-composer that builds Drizzle queries from drop-downs (multi-column).
+**Deferred follow-ons:** Monaco SQL composer (free-form SQL with our
+RLS-aware execution), per-row "Open in" menu that routes to a harness
+page when the FK is `harness_slug`, richer operators in the WHERE
+composer (currently `=` only — adding `>`, `<`, `LIKE`, `IS NULL`
+needs an API extension beyond the current equality-only `?where=`).
 
 **Why this unlock:** Drizzle Studio covers 80% of the value, but we
 still want a deeper, in-app inspector that knows about our specific
