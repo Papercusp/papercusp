@@ -353,9 +353,26 @@ export async function invoke(
   }
 
   // 4. Stream-JSON detection (only when the command involves `claude`).
-  const argv = splitCommand(ctx.claudeCmd);
-  const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(ctx.claudeCmd);
-  const streamFormat = selectStreamFormat(agentBackend, ctx.claudeCmd);
+  // Per-role overrides for cmd + extraArgs come from aiBackend config when
+  // present; otherwise fall back to ctx.claudeCmd / no extra args. This
+  // restores the half-implemented per-role-agent-cmd path that referenced
+  // undefined `roleAgentCmd` and `roleExtraArgs` symbols.
+  const aiBackend = configGet<Record<string, unknown>>(cfg, 'aiBackend', {} as Record<string, unknown>);
+  const aiDefault = (aiBackend?.default as Record<string, unknown>) ?? {};
+  const aiRoles = (aiBackend?.roles as Record<string, Record<string, unknown>>) ?? {};
+  const aiRole = aiRoles[role] ?? {};
+  const roleAgentCmd =
+    (typeof aiRole.cmd === 'string' && aiRole.cmd) ||
+    (typeof aiDefault.cmd === 'string' && aiDefault.cmd) ||
+    ctx.claudeCmd;
+  const roleExtraArgs: string[] =
+    (Array.isArray(aiRole.extraArgs) ? aiRole.extraArgs : null) ??
+    (Array.isArray(aiDefault.extraArgs) ? aiDefault.extraArgs : null) ??
+    [];
+
+  const argv = splitCommand(roleAgentCmd);
+  const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(roleAgentCmd);
+  const streamFormat = selectStreamFormat(agentBackend, roleAgentCmd);
   const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
 
   // 5. Per-role model — only inject if user didn't already pass --model.
