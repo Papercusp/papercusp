@@ -613,6 +613,7 @@ async function cmdSnapshotInfo(args: string[]): Promise<void> {
       capabilities?: string[];
       shapeJson?: string;
       pluginVersionPinned?: boolean;
+      versionPin?: { mode: 'semver' | 'exact' | 'hash'; allowOverride?: string };
     }>;
     redactions?: { blockedSecretsTier?: string; verifiedHits?: number; highRecallHits?: number };
     partial?: boolean;
@@ -641,7 +642,14 @@ async function cmdSnapshotInfo(args: string[]): Promise<void> {
   if (m.plugins && m.plugins.length > 0) {
     console.log(`  ${dim('plugins:')}`);
     for (const p of m.plugins) {
-      const pinned = p.pluginVersionPinned !== false ? dim(' pinned') : dim(' floating');
+      // Prefer v2 versionPin; fall back to v1 pluginVersionPinned for legacy snapshots.
+      const mode = p.versionPin?.mode
+        ?? (p.pluginVersionPinned === false ? 'semver'
+          : p.pluginVersionPinned === true ? 'exact'
+          : 'exact');
+      const pinned = mode === 'exact' ? dim(' pinned')
+        : mode === 'hash' ? dim(' hash-pinned')
+        : dim(' floating');
       const caps = p.capabilities?.length ? dim(`  [${p.capabilities.length} caps]`) : '';
       console.log(`    - ${p.name}@${p.version ?? '?'}${pinned}${caps}`);
 

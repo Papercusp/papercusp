@@ -6,7 +6,7 @@
   "description": "Publish the harness's static export to Cloudflare Pages on mission-done. Demonstrates the action primitive + capability-gated secrets + http:fetch.",
   "author": "Papercusp",
   "publisher": "@papercupai",
-  "pluginVersionPinned": true,
+  "versionPin": { "mode": "exact" },
   "license": "MIT",
   "capabilities": [
     "secrets:read:CLOUDFLARE_API_TOKEN",

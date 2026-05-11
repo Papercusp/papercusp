@@ -8,7 +8,7 @@
   "license": "MIT",
   "main": "./index.js",
   "publisher": "@papercupai",
-  "pluginVersionPinned": true,
+  "versionPin": { "mode": "exact" },
   "capabilities": [
     "http:fetch:api.github.com",
     "compute:exec:git",
