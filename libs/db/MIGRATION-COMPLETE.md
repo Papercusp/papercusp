@@ -69,27 +69,43 @@ The conventions (camelCase names, `.from()` aliases, `.optional()`
 flags) are preserved 1:1 with the previous hand-written file. queries.ts
 and every UI consumer remained unchanged. No replica state was modified.
 
-### Phase 3 — Conversion (15 files + pattern toolkit)
+### Phase 3 — Conversion (31 files + pattern toolkit)
 
-Converted files in `apps/operator/lib`:
+Converted files in `apps/operator/`:
 
 | File | Patterns demonstrated |
 |---|---|
-| `operator-notes.ts` | SELECT WHERE LIMIT, composite-PK upsert |
-| `publish-credentials.ts` | DELETE WHERE |
-| `text-artifacts.ts` | SELECT, upsert, DELETE, **PG-side concat via `sql\`<col> \|\| EXCLUDED.<col>\``**, `.returning()` |
-| `user-actions.ts` | INSERT RETURNING, UPDATE WHERE, **COALESCE merge via `sql\`${t.col}\``** |
-| `cooldown-marks.ts` | Simple SELECT + single-PK upsert |
-| `mobile-pair-store.ts` | DELETE, INSERT, UPDATE RETURNING, `count()` aggregate, `lt()`/`gte()` ranges |
-| `harness-readers.ts` | Multi-eq() WHERE + `desc()` orderBy |
-| `operator-rate-limit.ts` | jsonb payload as typed object |
-| `user-actions-data.ts` | Composed WHERE + orderBy + limit pagination |
-| `autoloop.ts` | Composite-PK upsert, `now()` DB-side, increment via `dsql\`${col} + 1\`` |
-| `provision/state-store.ts` | Composite-PK upsert with jsonb payload |
-| `provision/audit-log.ts` | Insert with optional fields, conditional `and()` building |
-| `system-principal.ts` | **innerJoin with multi-predicate ON clause** |
-| `toast-log-data.ts` | Conditional WHERE pattern via `and()` assembly |
-| `agent-tools/operator/decisions.ts` | **View query via `drizzle(tx)` inside withWorkspace** |
+| `lib/operator-notes.ts` | SELECT WHERE LIMIT, composite-PK upsert |
+| `lib/publish-credentials.ts` | DELETE WHERE |
+| `lib/text-artifacts.ts` | SELECT, upsert, DELETE, **PG-side concat via `sql\`<col> \|\| EXCLUDED.<col>\``**, `.returning()` |
+| `lib/user-actions.ts` | INSERT RETURNING, UPDATE WHERE, **COALESCE merge via `sql\`${t.col}\``** |
+| `lib/cooldown-marks.ts` | Simple SELECT + single-PK upsert |
+| `lib/mobile-pair-store.ts` | DELETE, INSERT, UPDATE RETURNING, `count()` aggregate, `lt()`/`gte()` ranges |
+| `lib/harness-readers.ts` | Multi-eq() WHERE + `desc()` orderBy |
+| `lib/operator-rate-limit.ts` | jsonb payload as typed object |
+| `lib/user-actions-data.ts` | Composed WHERE + orderBy + limit pagination |
+| `lib/autoloop.ts` | Composite-PK upsert, `now()` DB-side, increment via `dsql\`${col} + 1\`` |
+| `lib/provision/state-store.ts` | Composite-PK upsert with jsonb payload |
+| `lib/provision/audit-log.ts` | Insert with optional fields, conditional `and()` building |
+| `lib/system-principal.ts` | **innerJoin with multi-predicate ON clause** |
+| `lib/toast-log-data.ts` | Conditional WHERE pattern via `and()` assembly |
+| `lib/agent-tools/operator/decisions.ts` | **View query via `drizzle(tx)` inside withWorkspace** |
+| `app/api/internal/decision-event/route.ts` | Composite-PK upsert |
+| `app/api/internal/checkpoint-event/route.ts` | Composite-PK upsert |
+| `app/api/internal/archive-event/route.ts` | 3-col composite-PK upsert |
+| `app/api/internal/escalation-event/route.ts` | Upsert with COALESCE merge in SET |
+| `app/api/internal/plan-review-event/route.ts` | Single-PK upsert |
+| `app/api/internal/pr-event/route.ts` | 3-col composite-PK upsert |
+| `app/api/internal/smoke-test-event/route.ts` | Upsert with jsonb payload |
+| `app/api/internal/feature-debug-note-event/route.ts` | Conditional upsert/delete |
+| `app/api/internal/hook-log-event/route.ts` | Upsert (DELETE-with-subquery kept raw) |
+| `app/api/internal/identity-snapshot/route.ts` | Single-PK upsert OR delete |
+| `app/api/internal/skill-snapshot/route.ts` | **`notInArray()` orphan filter + composite-PK upsert** |
+| `app/api/toast-log/route.ts` | INSERT RETURNING (ring-buffer trim kept raw) |
+| `app/api/user-actions/[slug]/[id]/log/route.ts` | Composite-key select |
+| `app/api/operator/conversations/route.ts` | UPDATE with `dsql\`COALESCE(...)\`` in WHERE, INSERT RETURNING |
+| `app/api/admin/rotate-token/route.ts` | Typed upsert + delete (kept dynamic-schema DDL raw) |
+| `app/api/elevenlabs/post-call/route.ts` | `selectDistinct()`, simple UPDATE (kept array_append/CASE raw) |
 
 Pattern toolkit (covers every PG operation in the codebase):
 
@@ -281,7 +297,7 @@ All planned phases shipped this session:
 - ✅ Phase 2 Option A (Zero schema auto-generated from generated.ts +
   zero-config.json) — see `libs/zero-harness/scripts/generate-schema.mjs`
 - ✅ Phase 2 Option B (drift check) + Option D (suggest tool)
-- ✅ Phase 3 (15 files converted; pattern toolkit covers the rest)
+- ✅ Phase 3 (31 files converted; pattern toolkit covers the rest)
 - ✅ Phase 4 (raw-SQL territory documented above)
 
 The remaining ~140 sql\`\` sites in `apps/operator/{lib,app}/*` either
