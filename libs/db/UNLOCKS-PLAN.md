@@ -61,9 +61,14 @@ already needs the same insert/update/delete primitives.
 
 ## Unlock 1 — `drizzle-zod` across plugin SDK + API routes + MCP tools
 
-**Status: foundation shipped** (`libs/papercusp/libs/db/src/schema/zod.ts` +
-`schemaOf()` exports + `goals:get`/`goals:list` proof of concept). Remaining
-work is incremental migration of consumers.
+**Status: foundation shipped + MCP tail at 10/20 (50%).** Foundation:
+`libs/papercusp/libs/db/src/schema/zod.ts` + `schemaOf()` exports.
+Converted MCP tools: `goals:get`, `goals:list`, `tasks:get`, `tasks:list`,
+`pending_events:list`, `harness:list`, `harness:get`, `harness:status`,
+`features:get`, `messages:outbox`. Remaining 10 MCP tools all touch
+permanent-raw-SQL categories (per-harness dynamic schemas,
+`jsonb_array_elements`, `tags ?| array` overlap, `EXTRACT(epoch FROM …)`,
+audit-log subquery DELETEs).
 
 
 **Why first:** biggest correctness + DX win, and every later unlock benefits
@@ -145,7 +150,7 @@ domains. Drizzle Studio doesn't know any of that.
 
 ## Unlock 3 — Auto-generated CRUD admin UI factory
 
-**Status: API factory shipped.** UI React component deferred to a follow-up.
+**Status: API + UI shipped.** Both halves live.
 
 `lib/admin-tables.ts` is the registry — `registerAdminTable({ exportName,
 table, label, editableColumns?, allowDelete? })`. First-party entries:
@@ -162,10 +167,19 @@ Verified live: full CRUD round-trip on `operator_budget_tiers` —
 GET → 3 rows, POST → row 99 with zod validation rejecting bad types,
 DELETE → 1 row removed.
 
-**Deferred:** `<TableAdmin table=...>` React component (form factory
-via `useFormWith(schemaOf(t).insert)` + RichGrid). The thread between
-Zod 4's deep recursive types and `react-hook-form`'s resolver needs a
-narrower type at the call site; doable but worth a focused turn.
+**UI component:** `app/admin/_components/TableAdmin.tsx` mounted at
+`/admin`. Sidebar lists every registered admin table; main pane is a
+paginated grid with per-row Edit/Delete + a "+ New row" modal. Form
+fields are rendered from drizzle column metadata (jsonb → textarea,
+bigint → text-coerced-number, bool → text-coerced-bool); server-side
+zod issues are surfaced inline by-path under each field. Verified live:
+full CRUD round-trip on `operator_budget_tiers` (POST → PATCH → DELETE).
+
+Forms intentionally use controlled inputs instead of
+`useFormWith(zodResolver(...))` — Zod 4's deep recursive insert-schema
+types blow up `react-hook-form`'s resolver inference, and pushing
+validation server-side is simpler + safer (the API factory is the
+source of truth anyway).
 
 **Why this unlock:** new tables → admin pages in ~10 lines. Replaces
 several hand-written admin pages: `hidden_plugins`, `operator_budget_tiers`,
