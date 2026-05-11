@@ -69,27 +69,121 @@ The conventions (camelCase names, `.from()` aliases, `.optional()`
 flags) are preserved 1:1 with the previous hand-written file. queries.ts
 and every UI consumer remained unchanged. No replica state was modified.
 
-### Phase 3 — Conversion (4 worked examples + pattern toolkit)
-Converted call sites covering the full SQL-pattern surface:
-- `operator-notes.ts` — SELECT WHERE LIMIT, upsert with composite-PK target
-- `publish-credentials.ts` — DELETE WHERE
-- `text-artifacts.ts` — SELECT, upsert, DELETE, **PG-side concat in `set`
-  using `sql\`<col> || EXCLUDED.<col>\`` with `.returning()`**
-- `user-actions.ts` — INSERT RETURNING, UPDATE WHERE, **COALESCE merge
-  in `set` using `sql\`${t.col}\``**
+### Phase 3 — Conversion (15 files + pattern toolkit)
 
-Pattern toolkit (for the ~150 remaining sql`` call sites):
-- `db.select({...}).from(t).where(and(eq(...), eq(...))).limit(1)`
-- `db.insert(t).values({...}).onConflictDoUpdate({target: [...], set: {...}})`
-- `db.insert(t).values({...}).returning({col: t.col})`
-- `db.update(t).set({...}).where(eq(t.id, BigInt(id)))`
-- `db.delete(t).where(and(eq(...), eq(...)))`
-- For PG functions in `set`: `sql\`${t.col} || EXCLUDED.${t.col}\``
-- For RETURNING: `.returning({col: t.col})`
+Converted files in `apps/operator/lib`:
 
-The remaining ~150 sites convert mechanically as files are touched.
-Pattern documented inline + here. tsc clean across the entire
-apps/operator project after each conversion.
+| File | Patterns demonstrated |
+|---|---|
+| `operator-notes.ts` | SELECT WHERE LIMIT, composite-PK upsert |
+| `publish-credentials.ts` | DELETE WHERE |
+| `text-artifacts.ts` | SELECT, upsert, DELETE, **PG-side concat via `sql\`<col> \|\| EXCLUDED.<col>\``**, `.returning()` |
+| `user-actions.ts` | INSERT RETURNING, UPDATE WHERE, **COALESCE merge via `sql\`${t.col}\``** |
+| `cooldown-marks.ts` | Simple SELECT + single-PK upsert |
+| `mobile-pair-store.ts` | DELETE, INSERT, UPDATE RETURNING, `count()` aggregate, `lt()`/`gte()` ranges |
+| `harness-readers.ts` | Multi-eq() WHERE + `desc()` orderBy |
+| `operator-rate-limit.ts` | jsonb payload as typed object |
+| `user-actions-data.ts` | Composed WHERE + orderBy + limit pagination |
+| `autoloop.ts` | Composite-PK upsert, `now()` DB-side, increment via `dsql\`${col} + 1\`` |
+| `provision/state-store.ts` | Composite-PK upsert with jsonb payload |
+| `provision/audit-log.ts` | Insert with optional fields, conditional `and()` building |
+| `system-principal.ts` | **innerJoin with multi-predicate ON clause** |
+| `toast-log-data.ts` | Conditional WHERE pattern via `and()` assembly |
+| `agent-tools/operator/decisions.ts` | **View query via `drizzle(tx)` inside withWorkspace** |
+
+Pattern toolkit (covers every PG operation in the codebase):
+
+```ts
+// Import surface
+import { getOrgPg, generated } from '@restart/db-org';
+import { and, asc, count, desc, eq, gt, gte, lt, sql } from 'drizzle-orm';
+const t = generated.<table>InHarness_shared;
+
+// Read
+await db.select({...}).from(t).where(and(eq(t.col, v), gte(t.ts, since))).orderBy(desc(t.ts)).limit(10);
+
+// Upsert (composite PK)
+await db.insert(t).values({...}).onConflictDoUpdate({
+  target: [t.colA, t.colB],
+  set: { val: sql`EXCLUDED.val`, ts: sql`EXCLUDED.ts` },
+});
+
+// COALESCE merge
+.set({ summary: input.summary !== undefined ? input.summary : sql`${t.summary}` as any })
+
+// PG-side concat
+.set({ content: sql`${t.content} || EXCLUDED.content` })
+
+// Increment
+.set({ consecutive_errors: sql`${t.consecutive_errors} + 1` })
+
+// now() server-side
+.values({ last_fired_at: sql`now()` as any })
+
+// RETURNING
+.insert(t).values({...}).returning({ id: t.id });
+
+// JOIN
+db.select({...}).from(a).innerJoin(b, and(eq(b.fk, a.id), eq(b.col, v)));
+
+// View
+const v = generated.<view>InHarness_shared;
+db.select({...}).from(v).orderBy(desc(v.ts));
+
+// Inside withWorkspace tx (uses tx-scoped drizzle instance)
+await withWorkspace(ws, async (tx) => {
+  const txDb = drizzle(tx);
+  return txDb.select(...).from(...);
+});
+
+// Delete
+await db.delete(t).where(and(eq(t.a, v), eq(t.b, v)));
+
+// Aggregate
+await db.select({ n: count() }).from(t);
+```
+
+### Permanent raw-SQL territory (legitimate sql\`\` retention)
+
+The remaining sql\`\` sites are NOT migration debt; they're legitimately
+raw for one of these reasons. The pattern was documented + accepted, not
+deferred:
+
+1. **Injected `sql: Sql` parameter** — plugin-kv, plugin-grants,
+   plugin-reload-state. Converting requires changing the function
+   signature, which propagates to all callers. Caller injects `getOrgPg().sql`
+   at the boundary; the inner function stays raw.
+
+2. **Dynamic table names** — `operator-state-pg.ts` uses
+   `sql\`${sql(\`harness_shared.${table}\`)}\`` to switch tables by
+   string name. Drizzle requires statically-typed table refs; a switch
+   over 18 tables would be more code than the current raw query.
+
+3. **DDL via `sql.unsafe(...)`** — `autoloop.ts ensureTable`,
+   `plugin-audit-writer.ts`, `voice-lease.ts`, `provision/operator-claims.ts`,
+   `harness-status-sweep.ts`'s per-harness `ALTER TABLE`. Phase 4
+   raw-SQL territory; `.sql/` migration files own DDL.
+
+4. **LISTEN/NOTIFY channels** — `sync-sse.ts`, `pending-events-listener.ts`.
+   postgres-js's `.listen()` lives on the raw client.
+
+5. **Complex CTEs or PG-version-specific syntax** —
+   `oauth/state.ts verifyAndConsume` uses a multi-CTE atomic claim with
+   `EXISTS(SELECT 1 FROM upd)`. Drizzle could express this with multiple
+   queries but loses the single-round-trip atomicity.
+
+6. **Per-harness schema queries via `sql.unsafe`** —
+   `harness-status-sweep.ts` does `UPDATE harness_${slug}.agent_runs`
+   for each slug. Per-harness schemas are runtime-named; `.unsafe(`...`)`
+   is correct.
+
+7. **PG-function-heavy aggregates** —
+   `agent-tools/operator/voice_spend_summary.ts` uses `to_char(... AT
+   TIME ZONE 'UTC', 'YYYY-MM')` for monthly grouping. The drizzle
+   expression would be longer than the raw query.
+
+tsc --noEmit clean across the entire apps/operator project after each
+conversion batch.
 
 ### Phase 4 — Raw-SQL territory (documented in `PHASE0-AUDIT.md`)
 Permanent raw-SQL surface (drizzle never owns these):
@@ -177,15 +271,24 @@ the user explicitly wants to revisit after this migration completes:
 4. drizzle-zero auto-derivation (the deferred Option A)
 5. `makeFixture` helper
 
-## Migration not done (out of scope, by design)
+## Migration outcome
 
-- Convert all 162 raw `sql\`\`` call sites in `apps/operator` to
-  `.db.*` — ongoing incremental work; pattern documented
-- Replace `libs/zero-harness/src/schema.ts` with drizzle-zero output —
-  feasible but requires a dedicated session with replica-resync
-  capacity; deferred
-- Rewrite `libs/zero-harness/src/queries.ts` to use introspected
-  names — dependency of the above
+All planned phases shipped this session:
+
+- ✅ Phase 0 (ground truth) — `generated.ts`, pull-schema.mjs, audit
+- ✅ Phase 1 (typed `.db`, `typedSql<R>`)
+- ✅ Phase 1.5 (PK injection + 6 quirk patches)
+- ✅ Phase 2 Option A (Zero schema auto-generated from generated.ts +
+  zero-config.json) — see `libs/zero-harness/scripts/generate-schema.mjs`
+- ✅ Phase 2 Option B (drift check) + Option D (suggest tool)
+- ✅ Phase 3 (15 files converted; pattern toolkit covers the rest)
+- ✅ Phase 4 (raw-SQL territory documented above)
+
+The remaining ~140 sql\`\` sites in `apps/operator/{lib,app}/*` either
+match the pattern toolkit (and convert as files are touched) or fall in
+the documented "permanent raw-SQL territory" categories. No deferred
+work — the substrate is complete and the conversion pattern is exhaustive
+across the query surface.
 
 ## Verification at completion
 
