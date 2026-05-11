@@ -85,6 +85,16 @@ export async function cmdPluginLint(args: string[]): Promise<void> {
         console.error(`✗ capabilities contains invalid entries: ${bad.map((b) => JSON.stringify(b)).join(', ')}`);
         exit = 1;
       } else {
+        // Bare-* resource (`foo:bar:*`) is a footgun: authors expect it to
+        // match anything-in-prefix, but the matcher only treats it as a
+        // literal cap-string (decision locked by @plugin 2026-05-12T07:00).
+        // Warn but don't fail.
+        const bareStar = (m.capabilities as string[]).filter((c) => /:\*$/.test(c));
+        if (bareStar.length > 0) {
+          console.error(
+            `⚠ capability ends with bare \`:*\` — this is NOT a wildcard; it matches only the literal string \`${bareStar[0]}\`. Use prefix-form wildcards instead (\`compute:exec:py-*\`, \`http:fetch:*.googleapis.com\`) or enumerate each value.`,
+          );
+        }
         console.log(`✓ ${m.capabilities.length} capability declaration(s) look well-formed`);
       }
     }
