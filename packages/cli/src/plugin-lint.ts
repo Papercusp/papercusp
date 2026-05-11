@@ -60,14 +60,45 @@ export async function cmdPluginLint(args: string[]): Promise<void> {
 
   // Entry-point sanity check — the loader rejects plugins whose entry
   // file isn't found, so flag that at lint time too.
-  const entry = ENTRY_CANDIDATES.find((c) => existsSync(join(dir, c)));
-  if (!entry) {
-    console.error(
-      `✗ no entry point found (looked for ${ENTRY_CANDIDATES.join(', ')})`,
-    );
-    exit = 1;
+  // Non-JS runtimes (wasm, daemon) have their own entry-point semantics
+  // (runtime.wasmPath / runtime.daemonCommand) which the schema enforces;
+  // they don't need a JS index.* file. Skip the JS-entry check for them.
+  const mRuntime = (manifest as { runtime?: { kind?: string; wasmPath?: string; daemonCommand?: string[] } }).runtime;
+  const runtimeKind = mRuntime?.kind ?? 'js';
+  if (runtimeKind === 'js') {
+    const entry = ENTRY_CANDIDATES.find((c) => existsSync(join(dir, c)));
+    if (!entry) {
+      console.error(
+        `✗ no entry point found (looked for ${ENTRY_CANDIDATES.join(', ')})`,
+      );
+      exit = 1;
+    } else {
+      console.log(`✓ entry point: ${entry}`);
+    }
+  } else if (runtimeKind === 'wasm') {
+    const wasmAbs = mRuntime?.wasmPath ? join(dir, mRuntime.wasmPath) : null;
+    if (!wasmAbs || !existsSync(wasmAbs)) {
+      console.error(`✗ runtime.kind="wasm" but wasmPath '${mRuntime?.wasmPath}' not found at ${wasmAbs}`);
+      exit = 1;
+    } else {
+      console.log(`✓ wasm entry: ${mRuntime!.wasmPath}`);
+    }
+  } else if (runtimeKind === 'daemon') {
+    const cmd = mRuntime?.daemonCommand?.[0];
+    if (!cmd) {
+      console.error('✗ runtime.kind="daemon" but daemonCommand[0] missing');
+      exit = 1;
+    } else if (cmd.startsWith('/') && !existsSync(cmd)) {
+      // Absolute path to a binary that doesn't exist on this host. Note
+      // that this is host-dependent (e.g. /usr/bin/python3 may exist in
+      // prod but not in CI), so emit a warning rather than an error.
+      console.error(`⚠ runtime.daemonCommand[0] = '${cmd}' is absolute but not found on this host (will fail at install time on hosts missing it)`);
+    } else {
+      console.log(`✓ daemon entry: ${mRuntime!.daemonCommand!.join(' ')}`);
+    }
   } else {
-    console.log(`✓ entry point: ${entry}`);
+    console.error(`✗ unknown runtime.kind: '${runtimeKind}'`);
+    exit = 1;
   }
 
   // capabilities[] sanity — declared caps must be non-empty strings; the
