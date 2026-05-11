@@ -30,14 +30,19 @@ import { spawnSync } from 'node:child_process';
 // ─── Mock invoke before any synthesizer import ────────────────────
 // vi.mock is hoisted; use vi.hoisted to declare the spy alongside it
 // so the factory closure captures a real fn instead of TDZ-undefined.
-const { inv } = vi.hoisted(() => ({ inv: vi.fn() as ReturnType<typeof vi.fn> }));
+const { inv, hook } = vi.hoisted(() => ({
+  inv: vi.fn() as ReturnType<typeof vi.fn>,
+  hook: vi.fn() as ReturnType<typeof vi.fn>,
+}));
 vi.mock('./invoke', () => ({ invoke: inv }));
+vi.mock('./hooks', () => ({ runHook: hook }));
 
 import { runSynthesizer, singleLaneManifest } from './synthesizer';
 import { buildCompetitionManifest } from './lanes';
 
 beforeEach(() => {
   inv.mockReset();
+  hook.mockReset();
 });
 
 interface Project {
@@ -392,6 +397,13 @@ test('handleSynthesisOutcome — N=2 PASS merges synth branch, drops all worktre
     assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-OUT-A-lane-2')), false);
     assert.ok(!branches.includes('F-OUT-A-lane-1'));
     assert.ok(!branches.includes('F-OUT-A-lane-2'));
+
+    // on-synthesis-won hook fired with the right env shape.
+    const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
+    assert.equal(won.length, 1, 'on-synthesis-won fires exactly once on PASS');
+    assert.equal(won[0][1].env.FEATURE_ID, 'F-OUT-A');
+    assert.equal(won[0][1].env.SYNTH_BRANCH, 'harness/F-OUT-A-synthesis');
+    assert.equal(won[0][1].env.LANE_COUNT, '2');
   } finally {
     p.cleanup();
   }
@@ -435,6 +447,10 @@ test('handleSynthesisOutcome — N=2 FAIL drops all worktrees without merging', 
     assert.equal(existsSync(synthWt), false);
     assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-OUT-B-lane-1')), false);
     assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-OUT-B-lane-2')), false);
+
+    // on-synthesis-won did NOT fire on FAIL.
+    const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
+    assert.equal(won.length, 0, 'on-synthesis-won does not fire on FAIL');
   } finally {
     p.cleanup();
   }

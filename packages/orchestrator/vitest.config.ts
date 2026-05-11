@@ -8,5 +8,8 @@ export default defineVitestConfig({
     // Pre-existing bug — leaks into the runner's real
     // ~/.papercusp/global-plugins/ dir. See quarantine.txt.
     'src/plugin-hooks.test.ts',
+    // Dispatcher-level tests need pool=forks; run via
+    // vitest.dispatcher.config.ts / `pnpm test:dispatcher`.
+    'src/**/*.dispatcher.test.ts',
   ],
 });

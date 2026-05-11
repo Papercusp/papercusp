@@ -70,7 +70,8 @@
   "scripts": {
     "test": "vitest run",
     "test:legacy": "node --test --import tsx src/**/*.test.ts",
-    "test:slow": "vitest run --config vitest.slow.config.ts --testTimeout 600000"
+    "test:slow": "vitest run --config vitest.slow.config.ts --testTimeout 600000",
+    "test:dispatcher": "vitest run --config vitest.dispatcher.config.ts"
   },
   "dependencies": {
     "@papercusp/harness": "*",

@@ -1009,6 +1009,22 @@ async function handleNextWorker(
  *     worktree cleanup (skipped when synth failed with N>1 manifest
  *     since there's nothing to merge)
  */
+/**
+ * Exported for testability — see test-context-builder.ts and
+ * handle-next-validator.test.ts. Not part of the public API; do not
+ * call from other modules (everything goes through runMainLoop in
+ * production).
+ */
+export async function _handleNextValidatorForTests(
+  parsed: ParsedDecision,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+  lanePool: LanePool,
+): Promise<DispatchResult> {
+  return handleNextValidator(parsed, ctx, logger, cfg, lanePool);
+}
+
 async function handleNextValidator(
   parsed: ParsedDecision,
   ctx: InvokeContext,
