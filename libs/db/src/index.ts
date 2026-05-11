@@ -1,5 +1,11 @@
 export * from './schema';
 export {
+  createInsertSchema,
+  createSelectSchema,
+  createUpdateSchema,
+  schemaOf,
+} from './schema/zod';
+export {
   getOrgPg,
   getOrgPgApp,
   getHarnessPg,

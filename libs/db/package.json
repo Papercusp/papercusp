@@ -6,6 +6,7 @@
   "dependencies": {
     "@restart/papercup-db": "*",
     "drizzle-orm": "^0.45.2",
+    "drizzle-zod": "^0.7.1",
     "postgres": "^3.4.9"
   },
   "scripts": {
