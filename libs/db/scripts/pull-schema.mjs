@@ -155,38 +155,170 @@ if (psql.status === 0) {
       return { schemaName, tableName, cols: colsCsv.split(',') };
     });
 
+  /**
+   * Find a table block via a brace-balanced walker.
+   *
+   * Why not regex: the earlier `[\s\S]*?})` non-greedy match stopped at
+   * the FIRST `})` it saw — which is a column constructor like
+   * `bigint({ mode: "number" })`, not the table-level close. Result:
+   * Fix 5 injected `(table) => [primaryKey(...)]` INTO a column's
+   * constructor args. drizzle-orm tolerated the malformed syntax;
+   * drizzle-zero rejected it (UNLOCK-4-SPIKE.md blocker #1).
+   *
+   * Returns offsets bounding the columns-object close and the
+   * table-level callback (when present), so the injection lands at the
+   * correct spot for both flavors of drizzle-kit output:
+   *   `}, (table) => [...])`  — callback present
+   *   `})`                    — no callback
+   */
+  function findTableBlock(src, tableName) {
+    const reEscaped = tableName.replace(/[.*+?^${}()|[\]\\]/g, (m) => '\\' + m);
+    const openRe = new RegExp(
+      'export const \\w+ = \\w+\\.table\\("' + reEscaped + '", \\{',
+      'm',
+    );
+    const openMatch = src.match(openRe);
+    if (!openMatch || openMatch.index === undefined) return null;
+    const openBrace = openMatch.index + openMatch[0].length - 1;
+    const n = src.length;
+
+    // Phase 1: brace-balanced walk to find columns-object close `}`.
+    let i = openBrace + 1;
+    let depth = 1;
+    while (i < n && depth > 0) {
+      const c = src[i];
+      if (c === '/' && src[i + 1] === '/') { while (i < n && src[i] !== '\n') i++; continue; }
+      if (c === '/' && src[i + 1] === '*') { i += 2; while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i++; i += 2; continue; }
+      if (c === '"' || c === "'") { const q = c; i++; while (i < n && src[i] !== q) { if (src[i] === '\\') i++; i++; } i++; continue; }
+      if (c === '`') {
+        i++;
+        let tdepth = 0;
+        while (i < n) {
+          if (src[i] === '\\') { i += 2; continue; }
+          if (tdepth === 0 && src[i] === '`') { i++; break; }
+          if (src[i] === '$' && src[i + 1] === '{') { tdepth++; i += 2; continue; }
+          if (tdepth > 0 && src[i] === '}') { tdepth--; i++; continue; }
+          i++;
+        }
+        continue;
+      }
+      if (c === '{') depth++;
+      else if (c === '}') depth--;
+      i++;
+    }
+    const closeBrace = i - 1; // index of the `}` closing the columns object
+
+    // Phase 2: from just past `}`, find the closing `)` of `.table(...)`.
+    // Any nested parens (e.g. `(table) =>`, `index(...)`) are stepped
+    // over by paren-balance counting. We're already INSIDE .table()
+    // at this point, so the outer close is hit when parenDepth would
+    // go below zero.
+    let j = i; // i is one past `}`, so j sits at the first non-`}` char
+    let parenDepth = 0;
+    let tableCloseEnd = -1;
+    while (j < n) {
+      const c = src[j];
+      if (c === '/' && src[j + 1] === '/') { while (j < n && src[j] !== '\n') j++; continue; }
+      if (c === '/' && src[j + 1] === '*') { j += 2; while (j < n && !(src[j] === '*' && src[j + 1] === '/')) j++; j += 2; continue; }
+      if (c === '"' || c === "'") { const q = c; j++; while (j < n && src[j] !== q) { if (src[j] === '\\') j++; j++; } j++; continue; }
+      if (c === '`') {
+        j++;
+        let tdepth = 0;
+        while (j < n) {
+          if (src[j] === '\\') { j += 2; continue; }
+          if (tdepth === 0 && src[j] === '`') { j++; break; }
+          if (src[j] === '$' && src[j + 1] === '{') { tdepth++; j += 2; continue; }
+          if (tdepth > 0 && src[j] === '}') { tdepth--; j++; continue; }
+          j++;
+        }
+        continue;
+      }
+      if (c === '(') { parenDepth++; }
+      else if (c === ')') {
+        if (parenDepth === 0) { tableCloseEnd = j + 1; break; }
+        parenDepth--;
+      }
+      j++;
+    }
+    if (tableCloseEnd === -1) return null;
+
+    // Phase 3: detect whether a `, (table) => [...]` callback was
+    // present between closeBrace+1 and tableCloseEnd-1.
+    let p = closeBrace + 1;
+    while (p < n && /\s/.test(src[p])) p++;
+    let callbackStart = -1;
+    let callbackArrayClose = -1;
+    if (src[p] === ',') {
+      callbackStart = p;
+      // Find the closing `]` that pairs with the `[` in the callback body.
+      // We walk between callbackStart and tableCloseEnd, tracking `[`/`]`.
+      let bracketDepth = 0;
+      let lastClose = -1;
+      for (let k = p; k < tableCloseEnd; k++) {
+        const c = src[k];
+        if (c === '/' && src[k + 1] === '/') { while (k < n && src[k] !== '\n') k++; continue; }
+        if (c === '/' && src[k + 1] === '*') { k += 2; while (k < n && !(src[k] === '*' && src[k + 1] === '/')) k++; k += 2; continue; }
+        if (c === '"' || c === "'") { const q = c; k++; while (k < n && src[k] !== q) { if (src[k] === '\\') k++; k++; } continue; }
+        if (c === '`') {
+          k++; let tdepth = 0;
+          while (k < n) {
+            if (src[k] === '\\') { k += 2; continue; }
+            if (tdepth === 0 && src[k] === '`') { break; }
+            if (src[k] === '$' && src[k + 1] === '{') { tdepth++; k += 2; continue; }
+            if (tdepth > 0 && src[k] === '}') { tdepth--; k++; continue; }
+            k++;
+          }
+          continue;
+        }
+        if (c === '[') bracketDepth++;
+        else if (c === ']') { bracketDepth--; if (bracketDepth === 0) lastClose = k; }
+      }
+      callbackArrayClose = lastClose;
+      if (callbackArrayClose === -1) return null;
+    }
+
+    return { openBrace, closeBrace, callbackStart, callbackArrayClose, tableCloseEnd };
+  }
+
   for (const { schemaName: _s, tableName, cols } of compositePks) {
     const pkName = tableName + '_pkey';
     if (schema.includes('name: "' + pkName + '"')) continue;
+
     // Skip if a single-col `.primaryKey()` is already chained on the col.
     if (cols.length === 1) {
-      const colRe = new RegExp('\\b' + cols[0] + ': \\w+\\([^)]*\\)\\.primaryKey\\(\\)');
-      // Check inside this table's block first
-      const blockRe = new RegExp(
-        '(export const \\w+ = \\w+\\.table\\("' + tableName + '", \\{)([\\s\\S]*?)(\\}\\)|\\}, \\(table\\) => \\[[\\s\\S]*?\\]\\))',
-        'm',
+      const colRe = new RegExp(
+        '\\b' + cols[0] + ': \\w+\\([^)]*\\)\\.primaryKey\\(\\)',
       );
-      const blockM = schema.match(blockRe);
-      if (blockM && colRe.test(blockM[2])) continue;
+      const blk = findTableBlock(schema, tableName);
+      if (blk) {
+        const slice = schema.slice(blk.openBrace + 1, blk.closeBrace);
+        if (colRe.test(slice)) continue;
+      }
     }
+
+    const blk = findTableBlock(schema, tableName);
+    if (!blk) continue;
 
     const pkColsArg = cols.map((c) => 'table.' + c).join(', ');
-    const tableBlockRe = new RegExp(
-      '(export const \\w+ = \\w+\\.table\\("' + tableName + '", \\{[\\s\\S]*?)(\\}\\)|\\}, \\(table\\) => \\[[\\s\\S]*?\\]\\))(;?)',
-      'm',
-    );
-    const m = schema.match(tableBlockRe);
-    if (!m) continue;
-
     const pkLine = '\tprimaryKey({ columns: [' + pkColsArg + '], name: "' + pkName + '"}),';
-    let replacement;
-    if (m[2] === '})') {
-      replacement = m[1] + '}, (table) => [\n' + pkLine + '\n])' + m[3];
+
+    if (blk.callbackStart === -1) {
+      // No callback yet — synthesize `, (table) => [ pkLine ]` between
+      // the columns-object close `}` and the table's closing `)`.
+      const insertion = ', (table) => [\n' + pkLine + '\n]';
+      schema = schema.slice(0, blk.closeBrace + 1) + insertion + schema.slice(blk.closeBrace + 1);
     } else {
-      const closing = m[2].replace(/\]\)$/, pkLine + '\n])');
-      replacement = m[1] + closing + m[3];
+      // Inject pkLine inside the existing `[ ... ]`, just before the `]`.
+      // callbackArrayClose is the position of `]`. Walk back over
+      // whitespace; if the preceding char is `,` or `[`, we don't need
+      // to add a leading `,`.
+      let writeAt = blk.callbackArrayClose;
+      while (writeAt > 0 && /\s/.test(schema[writeAt - 1])) writeAt--;
+      const prev = schema[writeAt - 1];
+      const needsLeadingComma = prev !== ',' && prev !== '[';
+      const insertion = (needsLeadingComma ? ',\n' : '\n') + pkLine + '\n';
+      schema = schema.slice(0, writeAt) + insertion + schema.slice(writeAt);
     }
-    schema = schema.replace(m[0], replacement);
     fixedMissingPks++;
   }
 } else {
