@@ -17,7 +17,7 @@
  */
 import { test, vi, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -400,9 +400,11 @@ test('e2e: merge-conflict reverts feature to failing, no false on-synthesis-won 
     const show = spawnSync('git', ['show', 'main:shared.txt'], { cwd: p.projectDir, encoding: 'utf8' });
     assert.equal(show.stdout, 'main-moved version\n', 'main retains the concurrent edit (synth was reverted)');
 
-    // Synth worktree + lane worktree both cleaned up.
+    // Lane worktree cleaned up; synth worktree PRESERVED so the next
+    // retry round branches off it (worker iterates on prior code rather
+    // than restarting from base).
     const wts = readdirSync(join(p.stateDir, 'worktrees'));
-    assert.deepEqual(wts, [], 'all worktrees cleaned after revert');
+    assert.deepEqual(wts, ['F-MC-synthesis'], 'synth worktree preserved on revert; lanes cleaned');
 
     // Main is on a clean state (no mid-merge state lingering). Untracked
     // .harness/ is runtime state and expected; only fail on conflict markers
@@ -580,6 +582,133 @@ test('e2e: adaptive tiers → orchestrator picks N=k, telemetry row recorded', a
     assert.equal(p.readFeatures().find((f) => f.id === 'F-AD')?.status, 'passed');
     const show = spawnSync('git', ['show', 'main:g.txt'], { cwd: p.projectDir, encoding: 'utf8' });
     assert.equal(show.stdout, 'synth-of-N2\n');
+  } finally {
+    p.cleanup();
+  }
+});
+
+test('e2e: validator-reject retry — round 2 worker branches off preserved synth + sees PRIOR_VALIDATOR_LOG', async () => {
+  const p = buildOrchTestContext({
+    cfg: { parallelWorkers: { max: 2, workersPerFeature: 2 } },
+  });
+  try {
+    p.setFeatures([{ id: 'F-RETRY', status: 'todo', attempts: 0 }]);
+
+    let orchCallCount = 0;
+    let synthRound = 0;
+    let validatorRound = 0;
+    // Capture worker invocations for assertions.
+    const workerCalls: Array<{ laneFid: string; extras: string[]; commitOnEntry: string }> = [];
+
+    inv.mockImplementation(async (_ctx: any, role: string, extras: string[]) => {
+      if (role === 'orchestrator') {
+        orchCallCount += 1;
+        // Round 1: workers → validator. Validator will reject.
+        if (orchCallCount === 1) return { exitCode: 0, output: 'NEXT_WORKER F-RETRY\n', stderr: '', runId: 'o1' };
+        if (orchCallCount === 2) return { exitCode: 0, output: 'NEXT_VALIDATOR F-RETRY\n', stderr: '', runId: 'o2' };
+        // Round 2: retry. Validator will pass.
+        if (orchCallCount === 3) return { exitCode: 0, output: 'NEXT_WORKER F-RETRY\n', stderr: '', runId: 'o3' };
+        if (orchCallCount === 4) return { exitCode: 0, output: 'NEXT_VALIDATOR F-RETRY\n', stderr: '', runId: 'o4' };
+        return { exitCode: 0, output: 'DONE\n', stderr: '', runId: 'oDone' };
+      }
+      if (role === 'worker') {
+        const fidExtra = extras.find((e) => e.startsWith('FEATURE_ID='))!;
+        const laneFid = fidExtra.split('=', 2)[1];
+        const wt = join(p.stateDir, 'worktrees', laneFid);
+        // Snapshot what's already in the lane's worktree at the moment
+        // the worker started (proves retry inherited prior code).
+        let commitOnEntry = '(empty)';
+        const existing = join(wt, 'feature.txt');
+        if (existsSync(existing)) {
+          commitOnEntry = readFileSync(existing, 'utf8').trim();
+        }
+        workerCalls.push({ laneFid, extras: [...extras], commitOnEntry });
+        // Round 1: workers write broken code. Round 2: workers write fixed code.
+        const content = synthRound === 0 ? 'BROKEN\n' : 'FIXED\n';
+        writeFileSync(existing, content);
+        return { exitCode: 0, output: '', stderr: '', runId: `w-${laneFid}` };
+      }
+      if (role === 'synthesizer') {
+        synthRound += 1;
+        const wtExtra = extras.find((e) => e.startsWith('SYNTHESIS_WORKTREE='))!;
+        const synthWt = wtExtra.split('=', 2)[1];
+        // Synth just takes whichever lane has content (in tests, lane 1).
+        const laneA = join(p.stateDir, 'worktrees', 'F-RETRY-lane-1', 'feature.txt');
+        const body = existsSync(laneA) ? readFileSync(laneA, 'utf8') : '(missing)\n';
+        writeFileSync(join(synthWt, 'feature.txt'), body);
+        return { exitCode: 0, output: '', stderr: '', runId: `synth-${synthRound}` };
+      }
+      if (role === 'validator') {
+        validatorRound += 1;
+        const runId = `v-${validatorRound}`;
+        const outPath = join(p.logDir, `${runId}.out`);
+        const body = validatorRound === 1
+          ? 'VAL-FAIL: feature.txt content "BROKEN" does not satisfy assertion VAL-001\n'
+          : 'VAL-PASS\n';
+        // Real `invoke` writes the .out file; mock has to do it too so
+        // priorValidatorLogPath finds a real file at the pointer.
+        writeFileSync(outPath, body);
+        if (validatorRound === 1) {
+          p.setFeatures([{ id: 'F-RETRY', status: 'failing', attempts: 1 }]);
+          return { exitCode: 1, output: body, outPath, stderr: '', runId };
+        }
+        p.setFeatures([{ id: 'F-RETRY', status: 'passed', attempts: 2 }]);
+        return { exitCode: 0, output: body, outPath, stderr: '', runId };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    const result = await runMainLoop({
+      ctx: p.ctx,
+      logger: p.logger,
+      maxIterations: 10,
+      iterationSleepMs: 0,
+      skipPreLoop: true,
+    });
+
+    assert.equal(result.reason, 'done', 'second round passes → DONE');
+
+    // 4 worker calls total (2 per round × 2 rounds).
+    assert.equal(workerCalls.length, 4);
+
+    // Round-1 workers had no PRIOR_VALIDATOR_LOG and an empty starting tree.
+    const r1 = workerCalls.slice(0, 2);
+    for (const c of r1) {
+      assert.ok(!c.extras.some((e) => e.startsWith('PRIOR_VALIDATOR_LOG=')),
+        `round-1 lane ${c.laneFid} should NOT have PRIOR_VALIDATOR_LOG`);
+      assert.equal(c.commitOnEntry, '(empty)', `round-1 lane ${c.laneFid} starts empty`);
+    }
+
+    // Round-2 workers:
+    //   1. Got PRIOR_VALIDATOR_LOG pointing at the round-1 validator output
+    //   2. Started from the preserved synth branch (prior BROKEN code, not empty)
+    const r2 = workerCalls.slice(2, 4);
+    for (const c of r2) {
+      const priorLog = c.extras.find((e) => e.startsWith('PRIOR_VALIDATOR_LOG='));
+      assert.ok(priorLog, `round-2 lane ${c.laneFid} should have PRIOR_VALIDATOR_LOG`);
+      // Pointer file should exist on disk pointing at a real .out file.
+      // We don't read it here (test would have to inspect file contents);
+      // existence + non-empty value is enough.
+      const path = priorLog!.split('=', 2)[1];
+      assert.ok(path.length > 0, `round-2 lane ${c.laneFid} PRIOR_VALIDATOR_LOG path non-empty`);
+      assert.equal(c.commitOnEntry, 'BROKEN',
+        `round-2 lane ${c.laneFid} starts with the prior rejected code, not from base`);
+    }
+
+    // After round-2 success: synth worktree cleaned up.
+    const wts = readdirSync(join(p.stateDir, 'worktrees'));
+    assert.deepEqual(wts, [], 'all worktrees cleaned after final success');
+
+    // Last-validator-out pointer also cleaned on success.
+    const ptrPath = join(p.stateDir, 'last-validator-out', 'F-RETRY.path');
+    assert.equal(existsSync(ptrPath), false, 'pointer cleared after success');
+
+    // Main has the FIXED version.
+    const show = spawnSync('git', ['show', 'main:feature.txt'], {
+      cwd: p.projectDir,
+      encoding: 'utf8',
+    });
+    assert.equal(show.stdout, 'FIXED\n');
   } finally {
     p.cleanup();
   }

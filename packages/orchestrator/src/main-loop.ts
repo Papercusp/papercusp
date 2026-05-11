@@ -63,7 +63,7 @@ import {
   replanChunkPrompt,
 } from './chunk-plan';
 import { spawnSync as spawnSyncForGit } from 'node:child_process';
-import { git } from './git';
+import { branchExists, git } from './git';
 import { branchIsoBase, worktreePath } from './branch-iso';
 import type { InvokeContext } from './invoke';
 import type { Logger } from './log';
@@ -90,6 +90,40 @@ import { basename, join } from 'node:path';
  *
  * Memoized per projectDir so we only hit the operator once per run.
  */
+/**
+ * Read the validator's last output path for a feature, if one was
+ * recorded by a prior NEXT_VALIDATOR dispatch. Used to thread
+ * PRIOR_VALIDATOR_LOG into worker invocations on retry — the worker
+ * reads it to learn why its last attempt was rejected, rather than
+ * restarting from scratch.
+ *
+ * Returns null when no pointer exists (first attempt at this feature)
+ * or when the pointed-at .out file is gone (PG-canonical mode pruned
+ * disk logs after a retention boundary).
+ */
+function priorValidatorLogPath(stateDir: string, fid: string): string | null {
+  try {
+    const ptr = join(stateDir, 'last-validator-out', `${fid}.path`);
+    if (!existsSync(ptr)) return null;
+    const path = readFileSync(ptr, 'utf8').trim();
+    if (!path || !existsSync(path)) return null;
+    return path;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build the env-extra fragment for a retry: when a prior validator log
+ * exists, surfaces `PRIOR_VALIDATOR_LOG=<path>` so the worker prompt's
+ * required-reads list picks it up before reading SPEC. Returns []
+ * (no extras) on the first attempt.
+ */
+function priorAttemptExtras(stateDir: string, fid: string): string[] {
+  const path = priorValidatorLogPath(stateDir, fid);
+  return path ? [`PRIOR_VALIDATOR_LOG=${path}`] : [];
+}
+
 const _slugCache = new Map<string, string>();
 function harnessSlug(ctx: InvokeContext): string {
   const fromEnv = process.env.HARNESS_SLUG ?? process.env.PAPERCUSP_HARNESS_SLUG;
@@ -970,7 +1004,10 @@ async function handleNextWorker(
 
   let workerRc = 0;
   try {
-    const r = await invoke(worktreedCtx, 'worker', [`FEATURE_ID=${fid}`]);
+    const r = await invoke(worktreedCtx, 'worker', [
+      `FEATURE_ID=${fid}`,
+      ...priorAttemptExtras(ctx.stateDir, fid),
+    ]);
     workerRc = r.exitCode;
   } catch (err) {
     logger.log(`WORKER error: ${(err as Error).message}`);
@@ -1186,6 +1223,16 @@ async function handleNextValidator(
     try {
       const r = await invoke(validatorCtx, 'validator', [`FEATURE_ID=${fid}`]);
       validatorRc = r.exitCode;
+      // Capture the validator's output path so the next NEXT_WORKER
+      // for this feature can hand it to the worker as
+      // PRIOR_VALIDATOR_LOG. Cleared on PASS — there's nothing to
+      // retry against.
+      try {
+        const ptrDir = join(ctx.stateDir, 'last-validator-out');
+        mkdirSync(ptrDir, { recursive: true });
+        const ptr = join(ptrDir, `${fid}.path`);
+        writeFileSync(ptr, r.outPath ?? '');
+      } catch { /* best-effort */ }
     } catch (err) {
       logger.log(`VALIDATOR error: ${(err as Error).message}`);
       validatorRc = 1;
@@ -1395,7 +1442,17 @@ async function handleMultiWorker(
       const wt = join(worktreesRoot, laneFid);
       const br = `harness/${laneFid}`;
       if (!existsSync(wt)) {
-        const r = git(['worktree', 'add', '-B', br, wt, base], { cwd: ctx.projectDir });
+        // If a preserved synth branch exists from a prior round (validator
+        // rejected the synthesized output, but we kept the branch), start
+        // this lane FROM that branch instead of base. Worker iterates on
+        // prior rejected code with knowledge of why it was rejected
+        // (PRIOR_VALIDATOR_LOG env extra below).
+        const synthBr = `harness/${fid}-synthesis`;
+        const laneBase = branchExists(synthBr, { cwd: ctx.projectDir }) ? synthBr : base;
+        if (laneBase !== base) {
+          logger.log(`  competition lane ${laneNum} (${fid}): retry off ${synthBr}`);
+        }
+        const r = git(['worktree', 'add', '-B', br, wt, laneBase], { cwd: ctx.projectDir });
         if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
       }
       logger.log(`  competition lane ${laneNum} (${fid}): ${wt}`);
@@ -1409,6 +1466,7 @@ async function handleMultiWorker(
               `FEATURE_ID=${laneFid}`,
               `COMPETITION_PARENT=${fid}`,
               `COMPETITION_LANE=${laneNum}`,
+              ...priorAttemptExtras(ctx.stateDir, fid),
             ],
           );
         } catch (err) {
@@ -1502,7 +1560,7 @@ async function handleParallelLaneWorker(
           ? { ...ctx, worktreePathFor: (id) => worktreePath(ctx.stateDir, id) }
           : ctx,
         'worker',
-        [`FEATURE_ID=${fid}`],
+        [`FEATURE_ID=${fid}`, ...priorAttemptExtras(ctx.stateDir, fid)],
       );
       workerRc = r.exitCode;
     } catch (err) {

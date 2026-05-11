@@ -80,7 +80,17 @@ export function branchIsoPreWorker(ctx: BranchIsoCtx, featureId: string): void {
       ctx.log(`  worktree: ${wt} already exists (worker retry)`);
       return;
     }
-    const r = git(['worktree', 'add', '-B', br, wt, base], opts);
+    // If a preserved synth branch exists from a prior round (validator
+    // rejected the synthesized output, but we kept the branch), start
+    // this worker FROM that branch instead of base. Worker iterates on
+    // the prior rejected code with knowledge of why it was rejected
+    // (PRIOR_VALIDATOR_LOG env extra at dispatch time).
+    const synthBr = `harness/${featureId}-synthesis`;
+    const workerBase = branchExists(synthBr, opts) ? synthBr : base;
+    if (workerBase !== base) {
+      ctx.log(`  worktree: retry off ${synthBr}`);
+    }
+    const r = git(['worktree', 'add', '-B', br, wt, workerBase], opts);
     if (r.outputHead(3)) ctx.log(`  ${r.outputHead(3)}`);
     // Mode 0700 on the worktree root — pairs with .mcp.json mode 0600
     // to harden against sibling-spawn URL theft. Same-UID access is

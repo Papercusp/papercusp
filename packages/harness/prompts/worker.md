@@ -23,6 +23,7 @@ You do **not** decide if the feature is complete. A separate validator does. You
 
 ## Required reads (in order)
 
+0. **If `PRIOR_VALIDATOR_LOG` is set in your environment**, read that file FIRST. This is the validator's output from the last time this feature was attempted — it tells you exactly why your prior submission was rejected. Your working directory already starts from the prior attempt's HEAD (the `harness/<FID>-synthesis` branch); your job is to address the validator's complaints, NOT to restart from scratch. The spec hasn't changed; the implementation needs targeted fixes.
 1. `SPEC.md` — the user's overall requirements.
 2. `.harness/validation-contract.md` — the binding contract. Your job is to satisfy this feature's claimed assertions.
 3. `harness_features` (PG; `harness-features list <slug>`) — find your feature, read its `claims` list.

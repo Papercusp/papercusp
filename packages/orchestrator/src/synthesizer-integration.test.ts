@@ -445,10 +445,16 @@ test('handleSynthesisOutcome — N=2 FAIL drops all worktrees without merging', 
     });
     assert.notEqual(show.status, 0, 'b.txt should not be on main after FAIL');
 
-    // All worktrees + branches gone.
-    assert.equal(existsSync(synthWt), false);
+    // Lane worktrees + branches gone — drafts have done their job.
     assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-OUT-B-lane-1')), false);
     assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-OUT-B-lane-2')), false);
+
+    // Synth branch + worktree PRESERVED for next retry round (rejected
+    // code is the starting point so worker iterates against the
+    // validator's complaint instead of restarting from base).
+    assert.equal(existsSync(synthWt), true, 'synth worktree preserved on FAIL');
+    const branches = spawnSync('git', ['branch'], { cwd: p.projectDir, encoding: 'utf8' }).stdout;
+    assert.ok(branches.includes('F-OUT-B-synthesis'), 'synth branch preserved on FAIL');
 
     // on-synthesis-won did NOT fire on FAIL.
     const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
@@ -582,8 +588,7 @@ test('handleSynthesisOutcome — N=3 FAIL drops every lane worktree even though 
     });
     assert.notEqual(show.status, 0);
 
-    // All three lane worktrees + the synthesis worktree + their branches gone.
-    assert.equal(existsSync(synthWt), false);
+    // Lane worktrees + branches gone — drafts have done their job.
     for (let i = 1; i <= 3; i++) {
       assert.equal(
         existsSync(join(p.stateDir, 'worktrees', `F-OUT-E-lane-${i}`)),
@@ -594,7 +599,10 @@ test('handleSynthesisOutcome — N=3 FAIL drops every lane worktree even though 
     assert.ok(!branches.includes('F-OUT-E-lane-1'));
     assert.ok(!branches.includes('F-OUT-E-lane-2'));
     assert.ok(!branches.includes('F-OUT-E-lane-3'));
-    assert.ok(!branches.includes('F-OUT-E-synthesis'));
+
+    // Synth branch + worktree PRESERVED for next retry round.
+    assert.equal(existsSync(synthWt), true, 'synth worktree preserved on FAIL');
+    assert.ok(branches.includes('F-OUT-E-synthesis'), 'synth branch preserved on FAIL');
   } finally {
     p.cleanup();
   }
@@ -646,10 +654,11 @@ test('handleSynthesisOutcome — checkout failure reverts feature to failing, cl
     // Bug P: telemetry closed with 'fail', not pending or 'pass'.
     assert.deepEqual(telemetryCalls, ['fail'], 'telemetry closed with fail on checkout failure');
 
-    // Synth worktree cleaned regardless. (laneCount=1 means the
-    // synthetic single-lane manifest — the feature's own worktree
-    // cleanup is owned by branchIsoPostValidator, not this function.)
-    assert.equal(existsSync(synthWt), false);
+    // Synth branch + worktree PRESERVED for next retry round (worker
+    // iterates against the prior attempt instead of starting from base).
+    assert.equal(existsSync(synthWt), true, 'synth worktree preserved on checkout failure');
+    const branches = spawnSync('git', ['branch'], { cwd: p.projectDir, encoding: 'utf8' }).stdout;
+    assert.ok(branches.includes('F-CHK-synthesis'), 'synth branch preserved on checkout failure');
   } finally {
     p.cleanup();
   }

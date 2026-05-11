@@ -291,11 +291,18 @@ export async function handleSynthesisOutcome(
   };
   const base = branchIsoBase(branchIsoCtx);
 
+  // Tracks whether the synthesis branch was successfully merged into
+  // base. On true, the synth worktree + branch are dropped in cleanup.
+  // On false (validator failed, or merge-conflict-revert, or
+  // checkout-failed), the synth branch + worktree are preserved so the
+  // next NEXT_WORKER round can branch off it and iterate on the prior
+  // attempt with knowledge of why it failed.
+  let mergedSuccessfully = false;
+
   // Helper: handle a failed checkout/merge by reverting feature to
-  // 'failing' so the orchestrator retries with a fresh round, dropping
-  // synth + lane worktrees so retry isn't blocked by leftover state.
-  // Don't fire on-synthesis-won — the merge didn't land. Reflog is the
-  // recovery path if the user wants to inspect what synth produced.
+  // 'failing' so the orchestrator retries with a fresh round.
+  // The synth branch is preserved (see cleanup below) so the retry
+  // starts from the prior attempt's HEAD, not from base.
   const revertOnMergeFail = async (reason: string): Promise<void> => {
     log(`SYNTHESIZER: ${fid} ${reason} — reverting to 'failing' for retry`);
     await setFeatureStatus(ctx.stateDir, fid, 'failing', { ctx: stateCtx(ctx) });
@@ -339,22 +346,37 @@ export async function handleSynthesisOutcome(
         });
         // Bug P: fire 'pass' telemetry only after merge actually lands.
         if (closeTelemetry) closeTelemetry('pass');
+        mergedSuccessfully = true;
       }
     }
   } else {
     log(
-      `SYNTHESIZER: ${fid} validator did not pass (status=${status || '?'}) → cleaning up without merge`,
+      `SYNTHESIZER: ${fid} validator did not pass (status=${status || '?'}) → keeping synth branch for retry`,
     );
   }
 
-  // Drop the synthesis worktree + branch regardless of outcome.
-  git(['worktree', 'remove', '--force', synthWorktree], { cwd: ctx.projectDir });
-  git(['branch', '-D', synthBranch], { cwd: ctx.projectDir });
+  if (mergedSuccessfully) {
+    // PASS path: synth content is merged into base. Drop the worktree
+    // + branch — they have no further use. Also clear the
+    // last-validator-out pointer so a future feature with the same id
+    // (rare, but possible in re-imports) doesn't read a stale path.
+    git(['worktree', 'remove', '--force', synthWorktree], { cwd: ctx.projectDir });
+    git(['branch', '-D', synthBranch], { cwd: ctx.projectDir });
+    try {
+      unlinkSync(join(ctx.stateDir, 'last-validator-out', `${fid}.path`));
+    } catch { /* best-effort */ }
+  } else {
+    // FAIL / revert / validator-rejected: preserve `harness/<fid>-synthesis`
+    // + its worktree. The next NEXT_WORKER round will branch lanes off
+    // this branch (see handleMultiWorker / branchIsoPreWorker) so the
+    // retry starts from the prior attempt's HEAD, with knowledge of the
+    // validator's rejection notes (PRIOR_VALIDATOR_LOG env extra).
+    log(`  preserved ${synthBranch} at ${synthWorktree} for next round`);
+  }
 
-  // Drop each lane worktree + branch. For the synthetic 1-lane case
-  // (single-worker synthesis), this is the feature's own branch — we
-  // drop it because the synthesis branch has now replaced it on base
-  // (PASS) or it's a dead end (FAIL).
+  // Drop each lane worktree + branch — the per-lane drafts have done
+  // their job (synth read their diffs). For the synthetic 1-lane case
+  // (single-worker synthesis), the lane "is" the feature's own branch.
   if (laneCount > 1) {
     for (let i = 1; i <= laneCount; i++) {
       const wt = join(ctx.stateDir, 'worktrees', `${fid}-lane-${i}`);
@@ -365,8 +387,6 @@ export async function handleSynthesisOutcome(
       git(['branch', '-D', br], { cwd: ctx.projectDir });
     }
   } else {
-    // 1-lane synthetic manifest path: the lane "is" the feature's own
-    // worktree (harness/<fid>). Drop it cleanly.
     const wt = worktreePath(ctx.stateDir, fid);
     const br = `harness/${fid}`;
     if (existsSync(wt)) {

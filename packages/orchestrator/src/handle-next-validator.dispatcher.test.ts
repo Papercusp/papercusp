@@ -191,7 +191,7 @@ test('handleNextValidator — no feature worktree → synthesizeSingle silently 
 
 // ─── synth-success but validator fails → cleanup, no merge ───────
 
-test('handleNextValidator — synth succeeds but validator fails → no merge, all worktrees dropped', async () => {
+test('handleNextValidator — synth succeeds but validator fails → no merge, lanes dropped, synth preserved for retry', async () => {
   const p = buildOrchTestContext();
   try {
     p.addLane('F-4', 1, { 'a.txt': '1\n' });
@@ -229,8 +229,10 @@ test('handleNextValidator — synth succeeds but validator fails → no merge, a
       encoding: 'utf8',
     });
     assert.notEqual(show.status, 0, 'a.txt not on main');
-    // All worktrees gone.
-    assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-4-synthesis')), false);
+    // Lane worktrees gone; synth PRESERVED for retry (next worker
+    // round branches off harness/F-4-synthesis with PRIOR_VALIDATOR_LOG).
+    assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-4-synthesis')), true,
+      'synth worktree preserved for retry');
     assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-4-lane-1')), false);
     assert.equal(existsSync(join(p.stateDir, 'worktrees', 'F-4-lane-2')), false);
     // on-synthesis-won did NOT fire (no PASS).
@@ -396,12 +398,12 @@ test('handleNextValidator — synth success + validator pass + merge CONFLICT �
       'feature reverted to failing for retry',
     );
 
-    // All worktrees + branches cleaned up so retry isn't blocked by
-    // leftover state. Manual recovery is via git reflog.
+    // Lanes cleaned up; synth PRESERVED so the retry round branches off
+    // it (worker iterates on prior code rather than restarting from base).
     assert.equal(
       existsSync(join(p.stateDir, 'worktrees', 'F-MC-synthesis')),
-      false,
-      'synth worktree dropped for clean retry',
+      true,
+      'synth worktree preserved for retry',
     );
     assert.equal(
       existsSync(join(p.stateDir, 'worktrees', 'F-MC-lane-1')),
