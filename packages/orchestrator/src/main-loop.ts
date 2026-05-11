@@ -1164,7 +1164,7 @@ async function handleNextValidator(
     : worktreedCtx;
 
   // Capture pre-validator status set so we can detect transitions to
-  // 'passed' after the validator returns. Validator updates features.json
+  // 'passed' after the validator returns. Validator updates harness_features
   // directly; this is the cheapest way to surface the per-feature event.
   const beforeStatus = new Map<string, string>();
   for (const f of (await readFeatures(ctx.stateDir, stateCtx(ctx)))) beforeStatus.set(f.id, f.status);

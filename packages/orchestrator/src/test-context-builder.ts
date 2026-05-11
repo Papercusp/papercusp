@@ -66,9 +66,10 @@ export interface OrchTestContext {
     worktree: string;
     branch: string;
   };
-  /** Write `features.json` with the given features. Overwrites any existing file. */
+  /** Seed the in-memory feature store with the given features.
+   *  Overwrites any prior state for this stateDir. */
   setFeatures(features: Array<{ id: string; status: string; attempts?: number }>): void;
-  /** Read the current `features.json` after handler runs. */
+  /** Read the current features from the in-memory store after handler runs. */
   readFeatures(): Array<{ id: string; status: string; attempts?: number }>;
   /** Whether a hook log file exists for the given hook name. */
   hookFired(name: string): boolean;
