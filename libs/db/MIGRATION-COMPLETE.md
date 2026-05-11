@@ -69,7 +69,7 @@ The conventions (camelCase names, `.from()` aliases, `.optional()`
 flags) are preserved 1:1 with the previous hand-written file. queries.ts
 and every UI consumer remained unchanged. No replica state was modified.
 
-### Phase 3 — Conversion (31 files + pattern toolkit)
+### Phase 3 — Conversion (37 files + pattern toolkit)
 
 Converted files in `apps/operator/`:
 
@@ -106,6 +106,13 @@ Converted files in `apps/operator/`:
 | `app/api/operator/conversations/route.ts` | UPDATE with `dsql\`COALESCE(...)\`` in WHERE, INSERT RETURNING |
 | `app/api/admin/rotate-token/route.ts` | Typed upsert + delete (kept dynamic-schema DDL raw) |
 | `app/api/elevenlabs/post-call/route.ts` | `selectDistinct()`, simple UPDATE (kept array_append/CASE raw) |
+| `app/api/internal/smoke-test-event/route.ts` | Upsert with jsonb payload |
+| `lib/operator-conversations.ts` | Subquery-in-WHERE via Drizzle qb passed to `dsql\`${ot.id} = (${subq})\``, MAX+1 via `dsql<number>\`COALESCE(MAX(...), -1) + 1\``, shared column-map for SELECT and RETURNING |
+| `lib/voice-lease.ts` | Read-modify-write lease semantics with eq()+gte() WHERE |
+| `lib/harness-status-sweep.ts` | Two-step PID-aware sweep: SELECT all + JS filter + DELETE per-row |
+| `lib/operator-audit.ts` | `drizzle(tx)` inside withWorkspace; insert into audit_log view-source table with jsonb details |
+| `lib/operator-scan-lock.ts` | `drizzle(tx)` inside withWorkspace; conditional upsert with `now()` DB-side + `::timestamptz` ISO-string casts |
+| `lib/execute-action.ts` | UPDATE with RETURNING (pause/resume project) |
 
 Pattern toolkit (covers every PG operation in the codebase):
 
@@ -297,7 +304,7 @@ All planned phases shipped this session:
 - ✅ Phase 2 Option A (Zero schema auto-generated from generated.ts +
   zero-config.json) — see `libs/zero-harness/scripts/generate-schema.mjs`
 - ✅ Phase 2 Option B (drift check) + Option D (suggest tool)
-- ✅ Phase 3 (31 files converted; pattern toolkit covers the rest)
+- ✅ Phase 3 (37 files converted; pattern toolkit covers the rest)
 - ✅ Phase 4 (raw-SQL territory documented above)
 
 The remaining ~140 sql\`\` sites in `apps/operator/{lib,app}/*` either
