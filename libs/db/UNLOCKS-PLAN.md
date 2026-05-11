@@ -163,9 +163,23 @@ schemas), Studio doesn't.
 columns since opening the dashboard is what users actually want 99% of
 the time when they see a harness slug in any row.
 
-**Deferred follow-ons:** Monaco SQL composer (free-form SQL with our
-RLS-aware execution), OR-grouped filter clauses (currently all filters
-AND together).
+**Monaco SQL playground shipped** (2026-05-11): new `/dev` tab "SQL".
+`@monaco-editor/react` Monaco mount (vs-dark, sql syntax, Cmd/Ctrl+Enter
+to run) writes to `POST /api/dev/sql`. Server gates on a SELECT / WITH /
+EXPLAIN / SHOW / TABLE / VALUES allowlist (per top-level statement after
+stripping comments + balanced quote/dollar-tag splitting), runs inside
+a transaction with `SET LOCAL statement_timeout = 10s`, and **always
+rolls back** so even read-side-effects (FOR UPDATE etc.) don't escape.
+Last statement's rows render in a sticky-header grid; results capped at
+1000 rows with a truncation indicator. Admin/app role toggle mirrors
+the Tables tab. Verified live: SELECT returns rows + duration; INSERT,
+DROP, and mid-multi-statement INSERT all rejected with structured error;
+WITH … SELECT accepted.
+
+**Deferred follow-ons:** OR-grouped filter clauses (current `?filters=`
+ANDs everything; needs a tree structure for OR groups), column-aware
+autocomplete in Monaco (would need our schema fed to the SQL language
+worker).
 
 **Why this unlock:** Drizzle Studio covers 80% of the value, but we
 still want a deeper, in-app inspector that knows about our specific
