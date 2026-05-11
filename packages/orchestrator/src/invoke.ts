@@ -34,6 +34,7 @@ import {
   extractChunkId,
   restoreSpawnMcp,
   writeSpawnMcp,
+  writeSignedSpawnMcp,
   type SpawnMcpHandle,
 } from './spawn-mcp';
 import { randomUUID } from 'node:crypto';
@@ -766,7 +767,12 @@ export async function invoke(
         const spawnId = randomUUID();
         const slug = harnessSlugFromProjectDir(ctx.projectDir);
         const chunkId = extractChunkId(extras);
-        mcpHandle = writeSpawnMcp(cwd, {
+        // writeSignedSpawnMcp does best-effort HMAC signing — on PG
+        // failure it falls back to an unsigned URL, which the operator
+        // accepts in soft-warn mode (PAPERCUSP_REQUIRE_SPAWN_SIG!=1).
+        // No await-time risk: signing is a single PG round-trip against
+        // a 32-byte row + an HMAC; total < 50ms in normal operation.
+        mcpHandle = await writeSignedSpawnMcp(cwd, {
           harnessSlug: slug,
           workspaceId: ctx.workspaceId,
           role,
