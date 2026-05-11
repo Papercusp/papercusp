@@ -105,7 +105,33 @@ hand-written `index.ts` uses camelCase (`auditLog`, `projects`, etc.).
 to make the schema fully machine-regenerated. Existing camelCase
 re-exports stay as a back-compat layer in `index.ts`.
 
-### 6. Schema-variable naming
+### 7. drizzle-kit drops primary keys (both single and composite)
+
+Of 125 PKs in the live DB, drizzle-kit v0.31.10 emitted only 87 (~70%):
+30 single-col chained `.primaryKey()` + 57 composite `primaryKey({ ... })`.
+**42 single-col PKs and 18 composite PKs were silently dropped.**
+
+This is fatal for two downstream consumers:
+- **drizzle-zero** refuses to generate (throws `No primary keys found in
+  table`) without every table having a PK declared.
+- **Drizzle's `.db.insert(...).onConflictDo*()`** can't target the upsert
+  constraint without a PK in the schema.
+
+Fix 5 in `pull-schema.mjs` re-queries PG for every PK and injects any
+missing ones into the table-config callback. After this step, all 125
+tables have their PKs declared. Without it, Phase 1's typed `.db` is
+useful for `select()` but not for write/upsert flows on the affected
+60 tables.
+
+### 8. Relations file imports `./schema` but we rename to `generated`
+
+drizzle-kit emits `relations.ts` that imports from `"./schema"` (its
+default output filename). We rename the schema file to `generated.ts`
+to make the source-of-truth distinction obvious, so `relations.ts` would
+otherwise dangle. Fix 6 in `pull-schema.mjs` rewrites the relations
+import to `"./generated"`.
+
+### 9. Schema-variable naming
 
 `pgSchema("harness_shared")` is assigned to `harness_shared`, not
 `harnessShared`. Aligning with #4.

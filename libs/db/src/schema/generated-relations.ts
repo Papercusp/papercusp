@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { operator_conversationsInHarness_shared, operator_turnsInHarness_shared, messagesInPapercup_shared, message_commentsInPapercup_shared, message_recipientsInPapercup_shared, goalsInHarness_shared, projectsInHarness_shared, project_spec_revisionsInHarness_shared, mobile_devicesInHarness_shared, mobile_push_tokensInHarness_shared } from "./schema";
+import { operator_conversationsInHarness_shared, operator_turnsInHarness_shared, messagesInPapercup_shared, message_commentsInPapercup_shared, message_recipientsInPapercup_shared, goalsInHarness_shared, projectsInHarness_shared, project_spec_revisionsInHarness_shared, mobile_devicesInHarness_shared, mobile_push_tokensInHarness_shared } from "./generated";
 
 export const operator_turnsInHarness_sharedRelations = relations(operator_turnsInHarness_shared, ({one}) => ({
 	operator_conversationsInHarness_shared: one(operator_conversationsInHarness_shared, {

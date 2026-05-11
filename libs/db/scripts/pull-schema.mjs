@@ -29,6 +29,7 @@ import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdtempSync } fr
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
+import { spawnSync as spawn } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = resolve(__dirname, '..');
@@ -102,11 +103,98 @@ schema = schema.replace(/\w+: unknown\(/g, (match) => {
   return match.replace('unknown(', 'text(');
 });
 
+// Fix 5: drizzle-kit v0.31.10 drops composite primary keys during pull.
+// Re-query PG and inject any missing `primaryKey({ columns: [...] })` into
+// the table-config callback. Without this, drizzle-zero refuses to generate
+// (~"No primary keys found in table") and `.db.insert(...).onConflictDo*`
+// can't target the upsert constraint.
+//
+// Uses `psql -tA` with the same DATABASE_URL the pull config used.
+const dbUrl =
+  process.env.HARNESS_ADMIN_DATABASE_URL ??
+  process.env.DATABASE_URL ??
+  'postgres://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+const pkQuery = `
+  SELECT n.nspname, t.relname,
+    string_agg(a.attname, ',' ORDER BY array_position(c.conkey, a.attnum))
+  FROM pg_constraint c
+  JOIN pg_class t ON c.conrelid = t.oid
+  JOIN pg_namespace n ON t.relnamespace = n.oid
+  JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
+  WHERE c.contype='p' AND n.nspname IN ('harness_shared','papercup_shared')
+    AND array_length(c.conkey, 1) > 1
+  GROUP BY n.nspname, t.relname
+  ORDER BY 1, 2;
+`;
+const psql = spawn('psql', [dbUrl, '-tA', '-F', '|', '-c', pkQuery], {
+  encoding: 'utf8',
+});
+let fixedMissingPks = 0;
+if (psql.status === 0) {
+  const compositePks = psql.stdout
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [schemaName, tableName, colsCsv] = line.split('|');
+      return { schemaName, tableName, cols: colsCsv.split(',') };
+    });
+
+  for (const { schemaName, tableName, cols } of compositePks) {
+    const pkColsArg = cols.map((c) => `table.${c}`).join(', ');
+    const pkName = `${tableName}_pkey`;
+    // Skip if already present.
+    if (schema.includes(`name: "${pkName}"`)) continue;
+
+    // Locate the table block: `export const <ident> = <schemaVar>.table("<tableName>", {`
+    // … then either `}, (table) => [\n  ...\n]);` (existing callback) or `});` (none).
+    const tableBlockRe = new RegExp(
+      String.raw`(export const \w+ = \w+\.table\("${tableName.replace(/[.*+?^${}()|[\]\\]/g, '\\// Fix 4: `unknown(...)` emitted for tsvector + bytea columns (drizzle-kit
+// has no built-in mapping). `unknown` is a TS type, not a value — TS would
+// reject the file. We don't read these from app code (tsvector is FTS-only,
+// bytea is write-only or generated). Treat them as text() so drizzle's
+// type-check is happy and index references stay valid. Raw SQL still
+// reads/writes the actual underlying PG type.
+let fixedUnknownCols = 0;
+schema = schema.replace(/\w+: unknown\(/g, (match) => {
+  fixedUnknownCols++;
+  return match.replace('unknown(', 'text(');
+});')}", \{[\s\S]*?)(\}\)|\}, \(table\) => \[[\s\S]*?\]\));`,
+      'm',
+    );
+    const m = schema.match(tableBlockRe);
+    if (!m) continue;
+
+    const pkLine = `\tprimaryKey({ columns: [${pkColsArg}], name: "${pkName}"}),`;
+    let replacement;
+    if (m[2] === '})') {
+      // No callback yet. Add one.
+      replacement = `${m[1]}}, (table) => [\n${pkLine}\n]);`;
+    } else {
+      // Callback exists. Inject before the closing `])`.
+      replacement = m[1] + m[2].replace(/\]\)$/, `${pkLine}\n])`);
+    }
+    schema = schema.replace(m[0], replacement);
+    fixedMissingPks++;
+  }
+} else {
+  console.warn('    skipped Fix 5 (composite PK injection): psql failed', psql.stderr);
+}
+
+// Fix 6: drizzle-kit names the schema file `schema.ts` and the relations
+// file references it as `from "./schema"`. We rename the schema file to
+// `generated.ts`, so the relations import must follow.
+if (existsSync(relationsPath)) {
+  let rel = readFileSync(relationsPath, 'utf8');
+  rel = rel.replace(/from "\.\/schema"/g, 'from "./generated"');
+  writeFileSync(relationsPath, rel);
+}
+
 writeFileSync(schemaPath, schema);
 console.log(`    fixed ${fixedDefaults} empty-string defaults`);
 console.log(`    fixed ${fixedTimestamps} timestamp modes (string→number)`);
 console.log(`    fixed ${fixedFnDefaults} function-call defaults (wrapped in sql\`\`)`);
 console.log(`    rewrote ${fixedUnknownCols} unsupported-type columns (tsvector/bytea → text)`);
+console.log(`    injected ${fixedMissingPks} missing composite primary keys`);
 
 // Promote: schema.ts → generated.ts, relations.ts → generated-relations.ts
 copyFileSync(schemaPath, join(SCHEMA_DIR, 'generated.ts'));
