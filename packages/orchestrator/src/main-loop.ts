@@ -157,9 +157,9 @@ async function recordAdaptiveDecision(
 ): Promise<number | null> {
   const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
   const slug = harnessSlug(ctx);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3000);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3000);
     const res = await fetch(
       `${operatorBase}/api/harness/${slug}/orchestrator/adaptive-telemetry`,
       {
@@ -169,7 +169,6 @@ async function recordAdaptiveDecision(
         signal: ctrl.signal,
       },
     );
-    clearTimeout(timer);
     if (!res.ok) return null;
     const data = (await res.json()) as { id?: number };
     if (typeof data.id === 'number') {
@@ -178,6 +177,10 @@ async function recordAdaptiveDecision(
     }
   } catch (err) {
     logger.log(`  telemetry: insert failed (${(err as Error).message}); continuing`);
+  } finally {
+    // Always clear; if we don't, fetch-failure paths leave a 3s timer
+    // armed and keep the Node event loop alive past handler return.
+    clearTimeout(timer);
   }
   return null;
 }
@@ -198,9 +201,9 @@ async function attachSynthesisOutcomeTelemetry(
   if (!pending) return;
   const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
   const slug = harnessSlug(ctx);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3000);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3000);
     await fetch(
       `${operatorBase}/api/harness/${slug}/orchestrator/adaptive-telemetry/${pending.id}`,
       {
@@ -210,9 +213,10 @@ async function attachSynthesisOutcomeTelemetry(
         signal: ctrl.signal,
       },
     );
-    clearTimeout(timer);
   } catch (err) {
     logger.log(`  telemetry: synth-outcome patch failed (${(err as Error).message}); continuing`);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -229,9 +233,9 @@ async function attachAdaptiveOutcome(
   const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
   const slug = harnessSlug(ctx);
   const durationMs = Date.now() - pending.startedAt;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3000);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3000);
     await fetch(
       `${operatorBase}/api/harness/${slug}/orchestrator/adaptive-telemetry/${pending.id}`,
       {
@@ -241,9 +245,10 @@ async function attachAdaptiveOutcome(
         signal: ctrl.signal,
       },
     );
-    clearTimeout(timer);
   } catch (err) {
     logger.log(`  telemetry: outcome patch failed (${(err as Error).message}); continuing`);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

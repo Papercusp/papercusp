@@ -27,12 +27,22 @@ vi.mock('./hooks', () => ({
   fireLifecycleHook: () => {},
 }));
 
-import { _handleNextValidatorForTests } from './main-loop';
+import {
+  _handleNextValidatorForTests,
+  _resetAdaptiveCachesForTests,
+  _resetHarnessSlugCacheForTests,
+} from './main-loop';
 import { buildOrchTestContext } from './test-context-builder';
 
 beforeEach(() => {
   inv.mockReset();
   hook.mockReset();
+  // Reset main-loop.ts module-level state. The dispatcher config runs
+  // all *.dispatcher.test.ts files in a single fork to avoid re-import
+  // overhead, so _adaptiveTelemetryByFeature and _slugCache persist
+  // between tests + files without these resets.
+  _resetAdaptiveCachesForTests();
+  _resetHarnessSlugCacheForTests();
 });
 
 // ─── synthesis success path (full dispatcher) ────────────────────
@@ -228,6 +238,165 @@ test('handleNextValidator — synth succeeds but validator fails → no merge, a
       (c: any[]) => c[0] === 'on-synthesis-won',
     );
     assert.equal(synthWonCalls.length, 0);
+  } finally {
+    p.cleanup();
+  }
+});
+
+// ─── Coverage: synthesizeSingle: false ───────────────────────────
+
+test('handleNextValidator — synthesizeSingle: false → synth never runs even when worktree exists', async () => {
+  const p = buildOrchTestContext({
+    cfg: { parallelWorkers: { synthesizeSingle: false } },
+  });
+  try {
+    // Pre-create a feature worktree (simulating N=1 worker output) so
+    // worktreeEnabled + existsSync would normally trigger singleLane
+    // synthesis. The synthesizeSingle:false flag must override that.
+    p.addFeatureWorktree('F-S', { 'a.txt': 'worker draft\n' });
+    p.setFeatures([{ id: 'F-S', status: 'validating' }]);
+
+    inv.mockImplementation(async (_ctx: any, role: string) => {
+      if (role === 'validator') {
+        p.setFeatures([{ id: 'F-S', status: 'passed' }]);
+        return { exitCode: 0, output: '', stderr: '', runId: 'r' };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    await _handleNextValidatorForTests(
+      { verb: 'NEXT_VALIDATOR', arg: 'F-S', raw: 'NEXT_VALIDATOR F-S' } as any,
+      p.ctx,
+      p.logger,
+      p.cfg as any,
+      p.lanePool,
+    );
+
+    const roles = inv.mock.calls.map((c: any[]) => c[1]);
+    assert.deepEqual(roles, ['validator'], 'only validator ran; synth was skipped');
+    const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
+    assert.equal(won.length, 0, 'on-synthesis-won does not fire when synthesizeSingle: false');
+  } finally {
+    p.cleanup();
+  }
+});
+
+// ─── Coverage: useChunkLoop + synthesizeSingle interaction ───────
+
+test('handleNextValidator — useChunkLoop: true + synthesizeSingle: true → synth skipped (no feature worktree exists)', async () => {
+  const p = buildOrchTestContext({
+    cfg: { parallelWorkers: { useChunkLoop: true } },
+  });
+  try {
+    // chunk-loop commits directly to projectDir/main; no per-feature
+    // worktree gets created. The synthetic-1-lane fallback must
+    // existsSync-gate on that worktree path and skip synth silently.
+    // (handleChunkLoopWorker isn't called here — we're testing only
+    // the validator-side dispatch which should detect no worktree.)
+    p.setFeatures([{ id: 'F-CL', status: 'validating' }]);
+
+    inv.mockImplementation(async (_ctx: any, role: string) => {
+      if (role === 'validator') {
+        return { exitCode: 0, output: '', stderr: '', runId: 'r' };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    await _handleNextValidatorForTests(
+      { verb: 'NEXT_VALIDATOR', arg: 'F-CL', raw: 'NEXT_VALIDATOR F-CL' } as any,
+      p.ctx,
+      p.logger,
+      p.cfg as any,
+      p.lanePool,
+    );
+
+    const roles = inv.mock.calls.map((c: any[]) => c[1]);
+    assert.deepEqual(roles, ['validator'], 'synth gated off; only validator ran');
+  } finally {
+    p.cleanup();
+  }
+});
+
+// ─── Bug L: handleSynthesisOutcome merge-conflict handling ───────
+
+test('handleNextValidator — synth success + validator pass + merge CONFLICT → no false hook, synth preserved', async () => {
+  const p = buildOrchTestContext();
+  try {
+    // Set up a conflict: base (main) has a.txt = "base", the synth
+    // branch will produce a.txt = "synth". The handler does `git
+    // checkout base && git merge synth` — but we'll move base forward
+    // to a conflicting state mid-test so the merge fails.
+    spawnSync('git', ['checkout', '-q', 'main'], { cwd: p.projectDir });
+    writeFileSync(join(p.projectDir, 'a.txt'), 'base v1\n');
+    spawnSync('git', ['add', '-A'], { cwd: p.projectDir });
+    spawnSync('git', ['commit', '--quiet', '-m', 'base v1'], { cwd: p.projectDir });
+
+    p.addLane('F-MC', 1, { 'a.txt': 'lane1\n' });
+    p.addLane('F-MC', 2, { 'a.txt': 'lane2\n' });
+    p.writeManifest('F-MC', 2);
+    p.setFeatures([{ id: 'F-MC', status: 'validating' }]);
+
+    inv.mockImplementation(async (_ctx: any, role: string, extras: string[]) => {
+      if (role === 'synthesizer') {
+        const wt = extras
+          .find((e) => e.startsWith('SYNTHESIS_WORKTREE='))!
+          .split('=', 2)[1];
+        // Note: synth worktree starts from main as it was when synth
+        // was invoked. But we'll then update main behind its back.
+        writeFileSync(join(wt, 'a.txt'), 'synth version\n');
+        // Simulate main moving forward during synth: commit a conflicting
+        // change to main from a temp worktree so the synth branch's
+        // merge collides.
+        const tmpWt = join(p.stateDir, 'worktrees', 'side');
+        spawnSync('git', ['worktree', 'add', '-B', 'side-bump', tmpWt, 'main'], {
+          cwd: p.projectDir,
+        });
+        writeFileSync(join(tmpWt, 'a.txt'), 'main moved\n');
+        spawnSync('git', ['add', '-A'], { cwd: tmpWt });
+        spawnSync('git', ['commit', '--quiet', '-m', 'side move'], { cwd: tmpWt });
+        spawnSync('git', ['checkout', 'main'], { cwd: p.projectDir });
+        spawnSync('git', ['merge', '--ff-only', 'side-bump'], { cwd: p.projectDir });
+        spawnSync('git', ['worktree', 'remove', '--force', tmpWt], { cwd: p.projectDir });
+        spawnSync('git', ['branch', '-D', 'side-bump'], { cwd: p.projectDir });
+        return { exitCode: 0, output: '', stderr: '', runId: 'r1' };
+      }
+      if (role === 'validator') {
+        p.setFeatures([{ id: 'F-MC', status: 'passed' }]);
+        return { exitCode: 0, output: '', stderr: '', runId: 'r2' };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    await _handleNextValidatorForTests(
+      { verb: 'NEXT_VALIDATOR', arg: 'F-MC', raw: 'NEXT_VALIDATOR F-MC' } as any,
+      p.ctx,
+      p.logger,
+      p.cfg as any,
+      p.lanePool,
+    );
+
+    // main has 'main moved\n' (the conflicting change), NOT the
+    // synth version (because merge failed and was aborted).
+    const show = spawnSync('git', ['show', 'main:a.txt'], {
+      cwd: p.projectDir,
+      encoding: 'utf8',
+    });
+    assert.equal(show.stdout, 'main moved\n', 'main not corrupted by failed merge');
+
+    // on-synthesis-won did NOT fire (merge failed).
+    const won = hook.mock.calls.filter((c: any[]) => c[0] === 'on-synthesis-won');
+    assert.equal(won.length, 0, 'on-synthesis-won does NOT fire on merge conflict');
+
+    // Synth branch preserved for manual recovery.
+    const branches = spawnSync('git', ['branch'], {
+      cwd: p.projectDir,
+      encoding: 'utf8',
+    }).stdout;
+    assert.ok(branches.includes('F-MC-synthesis'), 'synth branch preserved');
+    assert.ok(
+      existsSync(join(p.stateDir, 'worktrees', 'F-MC-synthesis')),
+      'synth worktree preserved',
+    );
   } finally {
     p.cleanup();
   }

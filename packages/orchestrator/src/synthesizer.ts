@@ -292,11 +292,34 @@ export async function handleSynthesisOutcome(
 
   if (status === 'passed') {
     log(`SYNTHESIZER: ${fid} validator passed → merging ${synthBranch}`);
-    git(['checkout', base], { cwd: ctx.projectDir });
+    const checkout = git(['checkout', base], { cwd: ctx.projectDir });
+    if (checkout.exitCode !== 0) {
+      // Can't get onto base (uncommitted state somewhere, or base
+      // branch missing). Preserve the synth worktree + branch so the
+      // user can recover manually. Don't fire on-synthesis-won.
+      log(
+        `SYNTHESIZER: ${fid} checkout ${base} failed (rc=${checkout.exitCode}) — preserving synth branch ${synthBranch} for manual recovery`,
+      );
+      if (checkout.outputHead(5)) log(`  ${checkout.outputHead(5)}`);
+      return;
+    }
     const merge = git(
       ['merge', '--no-ff', synthBranch, '-m', `synthesizer winner: ${fid}`],
       { cwd: ctx.projectDir },
     );
+    if (merge.exitCode !== 0) {
+      // Merge conflict (base moved during synth, or another feature
+      // touched the same lines). Abort the merge to leave base clean,
+      // and preserve the synth branch + worktree so the user can
+      // manually rebase + retry. Do NOT fire on-synthesis-won — the
+      // merge didn't actually land.
+      log(
+        `SYNTHESIZER: ${fid} merge of ${synthBranch} failed (rc=${merge.exitCode}) — aborting; synth branch preserved for manual recovery`,
+      );
+      if (merge.outputHead(10)) log(`  ${merge.outputHead(10)}`);
+      git(['merge', '--abort'], { cwd: ctx.projectDir });
+      return;
+    }
     if (merge.outputHead(5)) log(`  ${merge.outputHead(5)}`);
     runHook('on-synthesis-won', {
       stateDir: ctx.stateDir,
