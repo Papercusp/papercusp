@@ -379,7 +379,7 @@ export const operator_search_provider_credentialsInHarness_shared = harness_shar
 	workspace_id: text().primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
 	// TODO: failed to parse database type 'bytea'
-	payload_ct: unknown("payload_ct"),
+	payload_ct: text("payload_ct"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updated_at: bigint({ mode: "number" }).default(sql`((EXTRACT(epoch FROM now()) * (1000)`).notNull(),
 }, (table) => [
@@ -497,7 +497,7 @@ export const plugin_configsInHarness_shared = harness_shared.table("plugin_confi
 	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	workspace_id: text().notNull(),
 	// TODO: failed to parse database type 'bytea'
-	config_ct: unknown("config_ct"),
+	config_ct: text("config_ct"),
 }, (table) => [
 	index("plugin_configs_plugin_idx").using("btree", table.plugin_slug.asc().nullsLast().op("text_ops")),
 	index("plugin_configs_workspace_idx").using("btree", table.workspace_id.asc().nullsLast().op("text_ops")),
@@ -586,7 +586,7 @@ export const el_conv_callsInHarness_shared = harness_shared.table("el_conv_calls
 	agent_id: text(),
 	workspace: text(),
 	duration_secs: integer().default(0).notNull(),
-	ym: text().default(to_char(now(), \'YYYY-MM\'::text)).notNull(),
+	ym: text().default(sql`to_char(now(), 'YYYY-MM'::text)`).notNull(),
 }, (table) => [
 	index("el_conv_calls_ym_idx").using("btree", table.ym.asc().nullsLast().op("text_ops")),
 	unique("el_conv_calls_conversation_id_key").on(table.conversation_id),
@@ -638,7 +638,7 @@ export const goalsInHarness_shared = harness_shared.table("goals", {
 	metadata: jsonb(),
 	workspace_id: text().notNull(),
 	// TODO: failed to parse database type 'tsvector'
-	_search: unknown("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(body, ''::text)), 'B'::"char"))`),
+	_search: text("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(body, ''::text)), 'B'::"char"))`),
 }, (table) => [
 	index("goals_install_idx").using("btree", table.install_slug.asc().nullsLast().op("text_ops")),
 	index("goals_parent_idx").using("btree", table.parent_id.asc().nullsLast().op("text_ops")),
@@ -737,7 +737,7 @@ export const audit_logInHarness_shared = harness_shared.table("audit_log", {
 	details: jsonb(),
 	workspace_id: text().notNull(),
 	// TODO: failed to parse database type 'tsvector'
-	_search: unknown("_search").generatedAlwaysAs(sql`((setweight(to_tsvector('simple'::regconfig, COALESCE(subject, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(action, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(actor, ''::text)), 'C'::"char"))`),
+	_search: text("_search").generatedAlwaysAs(sql`((setweight(to_tsvector('simple'::regconfig, COALESCE(subject, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(action, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(actor, ''::text)), 'C'::"char"))`),
 }, (table) => [
 	index("audit_action_idx").using("btree", table.action.asc().nullsLast().op("text_ops")),
 	index("audit_actor_action_ts_idx").using("btree", table.actor.asc().nullsLast().op("int8_ops"), table.action.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
@@ -805,7 +805,7 @@ export const projectsInHarness_shared = harness_shared.table("projects", {
 	parent_slug: text(),
 	workspace_id: text().notNull(),
 	// TODO: failed to parse database type 'tsvector'
-	_search: unknown("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(slug, ''::text)), 'B'::"char"))`),
+	_search: text("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(slug, ''::text)), 'B'::"char"))`),
 }, (table) => [
 	index("projects_parent_idx").using("btree", table.parent_slug.asc().nullsLast().op("text_ops")),
 	index("projects_search_idx").using("gin", table._search.asc().nullsLast().op("tsvector_ops")),
@@ -864,7 +864,7 @@ export const operator_credentialsInHarness_shared = harness_shared.table("operat
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updated_at: bigint({ mode: "number" }).default(0).notNull(),
 	// TODO: failed to parse database type 'bytea'
-	payload_ct: unknown("payload_ct"),
+	payload_ct: text("payload_ct"),
 });
 
 export const org_decisionsInHarness_shared = harness_shared.table("org_decisions", {
@@ -889,7 +889,7 @@ export const operator_publish_credentialsInHarness_shared = harness_shared.table
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updated_at: bigint({ mode: "number" }).default(0).notNull(),
 	// TODO: failed to parse database type 'bytea'
-	payload_ct: unknown("payload_ct"),
+	payload_ct: text("payload_ct"),
 });
 
 export const operator_voice_credentialsInHarness_shared = harness_shared.table("operator_voice_credentials", {
@@ -898,7 +898,7 @@ export const operator_voice_credentialsInHarness_shared = harness_shared.table("
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updated_at: bigint({ mode: "number" }).default(0).notNull(),
 	// TODO: failed to parse database type 'bytea'
-	payload_ct: unknown("payload_ct"),
+	payload_ct: text("payload_ct"),
 });
 
 export const operator_marketplace_tokenInHarness_shared = harness_shared.table("operator_marketplace_token", {
@@ -907,7 +907,7 @@ export const operator_marketplace_tokenInHarness_shared = harness_shared.table("
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updated_at: bigint({ mode: "number" }).default(0).notNull(),
 	// TODO: failed to parse database type 'bytea'
-	payload_ct: unknown("payload_ct"),
+	payload_ct: text("payload_ct"),
 });
 
 export const harness_escalationsInHarness_shared = harness_shared.table("harness_escalations", {
@@ -1192,7 +1192,7 @@ export const operator_trust_storeInHarness_shared = harness_shared.table("operat
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updated_at: bigint({ mode: "number" }).default(0).notNull(),
 	// TODO: failed to parse database type 'bytea'
-	payload_ct: unknown("payload_ct"),
+	payload_ct: text("payload_ct"),
 });
 
 export const operator_dismissed_cardsInHarness_shared = harness_shared.table("operator_dismissed_cards", {
@@ -1857,7 +1857,7 @@ export const harness_features_consolidatedInHarness_shared = harness_shared.tabl
 	expires_at: timestamp({ withTimezone: true, mode: 'string' }),
 	workspace_id: text().notNull(),
 	// TODO: failed to parse database type 'tsvector'
-	_search: unknown("_search").generatedAlwaysAs(sql`((setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(summary, ''::text)), 'B'::"char")) || setweight(to_tsvector('english'::regconfig, COALESCE(notes, ''::text)), 'C'::"char"))`),
+	_search: text("_search").generatedAlwaysAs(sql`((setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(summary, ''::text)), 'B'::"char")) || setweight(to_tsvector('english'::regconfig, COALESCE(notes, ''::text)), 'C'::"char"))`),
 	deprecation_reason: text(),
 	see_also: text().array().default([""]).notNull(),
 	needs_design: boolean().default(false).notNull(),

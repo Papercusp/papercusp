@@ -3,6 +3,7 @@ export {
   getOrgPg,
   getOrgPgApp,
   getHarnessPg,
+  typedSql,
   _resetForTests,
   type OrgPgHandle,
 } from './connection';

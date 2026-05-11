@@ -222,3 +222,22 @@ export type PendingEventRow = typeof pendingEvents.$inferSelect;
 export type PendingEventInsert = typeof pendingEvents.$inferInsert;
 export type RoutineRow = typeof routines.$inferSelect;
 export type RoutineInsert = typeof routines.$inferInsert;
+
+// ─── Introspected schema (Phase 0/1 of Drizzle migration) ───────────
+// `generated` is the canonical Drizzle definition of all 125 tables
+// in `harness_shared` + `papercup_shared`, derived from the live DB
+// via `drizzle-kit pull`. Re-run via `scripts/pull-schema.mjs` after
+// any new `.sql` migration. The hand-written tables above (auditLog,
+// projects, goals, pendingEvents, routines) duplicate 5 of these for
+// back-compat with the type aliases — new code should import from
+// `generated` directly:
+//   import { generated } from '@restart/db-org';
+//   await db.select().from(generated.projectsInHarness_shared);
+//
+// `generatedRelations` exposes the FK graph for drizzle's `db.query.*`
+// relational API.
+//
+// See libs/db/PHASE0-AUDIT.md for naming convention + drizzle-kit
+// v0.31.10 quirks (timestamptz mode, tsvector handling).
+export * as generated from './generated';
+export * as generatedRelations from './generated-relations';

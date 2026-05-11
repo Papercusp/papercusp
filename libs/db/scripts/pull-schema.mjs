@@ -76,9 +76,37 @@ const fixedTimestamps = (
   schema.match(/timestamp\(\{ withTimezone: true, mode: 'number' \}\)/g) ?? []
 ).length;
 
+// Fix 3: function-call defaults emit as raw JS instead of sql`...` wrapping.
+// E.g. drizzle-kit emits  .default(to_char(now(), \'YYYY-MM\'::text))  which
+// references undeclared `to_char` and `now` identifiers. Wrap any line with
+// a backslash-escaped apostrophe inside a default() in sql`...`.
+let fixedFnDefaults = 0;
+schema = schema.replace(
+  /\.default\(([^()]*\\'[^()]*(?:\([^()]*\))*[^()]*)\)/g,
+  (_match, expr) => {
+    fixedFnDefaults++;
+    const unescaped = expr.replace(/\\'/g, "'");
+    return `.default(sql\`${unescaped}\`)`;
+  },
+);
+
+// Fix 4: `unknown(...)` emitted for tsvector + bytea columns (drizzle-kit
+// has no built-in mapping). `unknown` is a TS type, not a value — TS would
+// reject the file. We don't read these from app code (tsvector is FTS-only,
+// bytea is write-only or generated). Treat them as text() so drizzle's
+// type-check is happy and index references stay valid. Raw SQL still
+// reads/writes the actual underlying PG type.
+let fixedUnknownCols = 0;
+schema = schema.replace(/\w+: unknown\(/g, (match) => {
+  fixedUnknownCols++;
+  return match.replace('unknown(', 'text(');
+});
+
 writeFileSync(schemaPath, schema);
 console.log(`    fixed ${fixedDefaults} empty-string defaults`);
 console.log(`    fixed ${fixedTimestamps} timestamp modes (string→number)`);
+console.log(`    fixed ${fixedFnDefaults} function-call defaults (wrapped in sql\`\`)`);
+console.log(`    rewrote ${fixedUnknownCols} unsupported-type columns (tsvector/bytea → text)`);
 
 // Promote: schema.ts → generated.ts, relations.ts → generated-relations.ts
 copyFileSync(schemaPath, join(SCHEMA_DIR, 'generated.ts'));

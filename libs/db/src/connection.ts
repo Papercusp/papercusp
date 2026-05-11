@@ -22,6 +22,20 @@
 import postgres, { Sql } from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as sharedSchema from './schema';
+import * as generatedSchema from './schema/generated';
+import * as generatedRelations from './schema/generated-relations';
+
+// Merged schema for the typed Drizzle instance (`.db`). Includes all
+// 125 introspected tables + their relation graph + the hand-written
+// per-harness factory helpers. Drizzle deduplicates identically-named
+// table refs internally; the hand-written `auditLog`/`projects`/etc.
+// shadow the same PG tables that `generated.audit_logInHarness_shared`
+// covers, which is fine — both accessors point at the same rows.
+const fullSchema = {
+  ...sharedSchema,
+  ...generatedSchema,
+  ...generatedRelations,
+};
 
 // Read env at connection time so test fixtures (which set
 // HARNESS_DATABASE_URL after this module is imported) take effect.
@@ -36,7 +50,13 @@ function adminUrl(): string {
 
 let _adminClient: Sql | null = null;
 let _adminDrizzle: ReturnType<typeof drizzle> | null = null;
-type HarnessClient = { sql: Sql; drizzle: ReturnType<typeof drizzle>; lastUsed: number };
+let _adminDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
+type HarnessClient = {
+  sql: Sql;
+  drizzle: ReturnType<typeof drizzle>;
+  db: ReturnType<typeof drizzle<typeof fullSchema>>;
+  lastUsed: number;
+};
 const _harnessClients = new Map<string, HarnessClient>();
 
 // LRU cap on per-harness pools. Workspaces touch many slugs over time and
@@ -122,8 +142,43 @@ function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: 
 
 export interface OrgPgHandle {
   sql: Sql;
+  /**
+   * @deprecated since Phase 1 of the Drizzle migration. Equivalent to
+   * `.db` but only the 5 hand-written tables are in its schema config.
+   * New code should use `.db` to access all 125 introspected tables.
+   */
   drizzle: ReturnType<typeof drizzle>;
+  /**
+   * Drizzle instance bound to the full introspected schema (all 125
+   * tables + relation graph). Use this for typed queries:
+   *   const { db } = getOrgPg();
+   *   await db.select().from(generated.projectsInHarness_shared);
+   *   const rows = await db.query.projectsInHarness_shared.findMany();
+   */
+  db: ReturnType<typeof drizzle<typeof fullSchema>>;
   schema: typeof sharedSchema;
+}
+
+/**
+ * Typed-result wrapper around a raw postgres-js template tag. Use when
+ * you want to keep the raw SQL (search-path tricks, custom CTEs,
+ * tsvector ops, NOTIFY) but get back a typed row array:
+ *
+ *   type Row = { id: string; ts: number };
+ *   const rows = await typedSql<Row>(getOrgPg().sql)`
+ *     SELECT id, ts FROM audit_log WHERE actor = ${actor}
+ *   `;
+ *
+ * Returns plain arrays (drops postgres-js's Result metadata). Use the
+ * raw `.sql\`...\`` template directly if you need that metadata.
+ */
+export function typedSql<R = Record<string, unknown>>(
+  client: Sql,
+): (strings: TemplateStringsArray, ...params: unknown[]) => Promise<R[]> {
+  return async (strings, ...params) => {
+    const rows = await (client as any)(strings, ...params);
+    return rows as R[];
+  };
 }
 
 /**
@@ -138,12 +193,19 @@ export function getOrgPg(): OrgPgHandle {
   if (!_adminClient) {
     _adminClient = buildClient(adminUrl(), ['harness_shared', 'papercup_shared', 'public']);
     _adminDrizzle = drizzle(_adminClient, { schema: sharedSchema });
+    _adminDb = drizzle(_adminClient, { schema: fullSchema });
   }
-  return { sql: _adminClient, drizzle: _adminDrizzle!, schema: sharedSchema };
+  return {
+    sql: _adminClient,
+    drizzle: _adminDrizzle!,
+    db: _adminDb!,
+    schema: sharedSchema,
+  };
 }
 
 let _appOrgClient: Sql | null = null;
 let _appOrgDrizzle: ReturnType<typeof drizzle> | null = null;
+let _appOrgDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
 
 /**
  * App-role org client. Same search_path as `getOrgPg()` but uses the
@@ -159,8 +221,14 @@ export function getOrgPgApp(): OrgPgHandle {
   if (!_appOrgClient) {
     _appOrgClient = buildClient(appUrl(), ['harness_shared', 'papercup_shared', 'public']);
     _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedSchema });
+    _appOrgDb = drizzle(_appOrgClient, { schema: fullSchema });
   }
-  return { sql: _appOrgClient, drizzle: _appOrgDrizzle!, schema: sharedSchema };
+  return {
+    sql: _appOrgClient,
+    drizzle: _appOrgDrizzle!,
+    db: _appOrgDb!,
+    schema: sharedSchema,
+  };
 }
 
 /**
@@ -183,7 +251,8 @@ export function getHarnessPg(slug: string) {
   const perHarnessMax = Math.max(1, Number(process.env.PAPERCUSP_HARNESS_DB_POOL_MAX) || 1);
   const sql = buildClient(appUrl(), [schemaName, 'harness_shared', 'papercup_shared', 'public'], perHarnessMax);
   const dz = drizzle(sql, { schema: sharedSchema });
-  const handle: HarnessClient = { sql, drizzle: dz, lastUsed: Date.now() };
+  const db = drizzle(sql, { schema: fullSchema });
+  const handle: HarnessClient = { sql, drizzle: dz, db, lastUsed: Date.now() };
   _harnessClients.set(slug, handle);
   return handle;
 }
@@ -197,6 +266,13 @@ export async function _resetForTests() {
   }
   _adminClient = null;
   _adminDrizzle = null;
+  _adminDb = null;
+  if (_appOrgClient) {
+    await _appOrgClient.end({ timeout: 1 }).catch(() => {});
+  }
+  _appOrgClient = null;
+  _appOrgDrizzle = null;
+  _appOrgDb = null;
   for (const h of _harnessClients.values()) {
     await h.sql.end({ timeout: 1 }).catch(() => {});
   }

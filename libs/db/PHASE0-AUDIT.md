@@ -60,19 +60,43 @@ by default. The Zero replica requires `mode: 'number'` for timestamptz
 `SchemaVersionNotSupported` and kills WS for the whole schema). The
 pull-script rewrites every timestamptz to `mode: 'number'`.
 
-### 3. tsvector + bytea columns are 'unknown'
+### 3. tsvector + bytea columns emit `unknown(...)`
+
+drizzle-kit has no built-in mapping for `tsvector` and `bytea`, so it
+emits:
 
 ```ts
 // TODO: failed to parse database type 'tsvector'
 _search: unknown("_search").generatedAlwaysAs(sql`...`),
 ```
 
-Harmless for our use: we never read or write `_search` directly from
-app code; it's a generated FTS column. Keep the `unknown` typing.
-`bytea` only appears on `operator_search_provider_credentials.payload`
-which is handled by an explicit JSONB elsewhere — also fine.
+But `unknown` is a TS type, not a value — this is a compile error. The
+pull script rewrites `unknown(` → `text(` for all 11 occurrences in our
+schema. We never read these columns from app code (tsvector is FTS-only,
+bytea is write-only). Raw SQL still operates on the real PG types. Index
+references like `table._search.op("tsvector_ops")` stay valid because
+the column name still exists; only the JS-side type is loosened.
 
-### 4. Export naming convention
+### 4. Function-call defaults emit raw JS
+
+drizzle-kit emits:
+
+```ts
+ym: text().default(to_char(now(), \'YYYY-MM\'::text)).notNull(),
+```
+
+— which references undeclared `to_char`/`now` identifiers AND has
+broken backslash-quote escaping. The pull script wraps any such
+default in `sql\`...\``, producing:
+
+```ts
+ym: text().default(sql`to_char(now(), 'YYYY-MM'::text)`).notNull(),
+```
+
+Only one occurrence (`harness_shared.el_conv_calls.ym`) at present,
+but the script handles arbitrarily many.
+
+### 5. Export naming convention
 
 Every table exports as `<snake_name>InHarness_shared` or
 `<snake_name>InPapercup_shared`. Ugly but mechanical. The existing
@@ -81,7 +105,7 @@ hand-written `index.ts` uses camelCase (`auditLog`, `projects`, etc.).
 to make the schema fully machine-regenerated. Existing camelCase
 re-exports stay as a back-compat layer in `index.ts`.
 
-### 5. Schema-variable naming
+### 6. Schema-variable naming
 
 `pgSchema("harness_shared")` is assigned to `harness_shared`, not
 `harnessShared`. Aligning with #4.
