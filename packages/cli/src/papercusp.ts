@@ -184,6 +184,10 @@ ${bold('Commands:')}
   ${cyan('migrate-tabs')} [--harness <slug>]  Install + enable the 3 default tab plugins (vscode-server / pi-coding / fumadocs)
                                        and remind you to set PAPERCUSP_TABS_FROM_PLUGINS=1 (P7 cutover).
 
+  ${cyan('operator audit-prefs')}             List operator preferences.md entries (workspace-scoped). Pass
+                                       --remove <N> to drop one, --filter <user-typed|operator-proposed|all>
+                                       to restrict, --workspace <id> to override the active workspace.
+
   ${cyan('help')}                              Show this help.
 
 ${bold('Environment:')}
@@ -1637,6 +1641,10 @@ async function main(): Promise<void> {
     case 'migrate-tabs': {
       const { cmdMigrateTabs } = await import('./plugin-cli.ts');
       return cmdMigrateTabs(args);
+    }
+    case 'operator': {
+      const { cmdOperator } = await import('./operator-cli.ts');
+      return cmdOperator(args);
     }
     default:
       console.error(red(`unknown command: ${cmd}`));

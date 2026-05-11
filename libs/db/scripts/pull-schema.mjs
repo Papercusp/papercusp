@@ -21,6 +21,10 @@
  *   Fix 4: `unknown(...)` for tsvector/bytea rewritten to text().
  *   Fix 5: missing PKs (drizzle-kit drops ~half of them) injected via PG.
  *   Fix 6: relations.ts import rewritten from "./schema" to "./generated".
+ *   Fix 7: drizzle-kit truncates `((EXTRACT(epoch FROM now()) * (1000)::numeric))::bigint`
+ *          at the type-cast colon, producing unbalanced-paren SQL that
+ *          breaks esbuild. Rewrite to a balanced `(EXTRACT(epoch FROM
+ *          now()) * 1000)::bigint`.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
@@ -189,6 +193,47 @@ if (psql.status === 0) {
   console.warn('    skipped Fix 5 (composite PK injection): psql failed', psql.stderr);
 }
 
+// Fix 7: drizzle-kit truncates the PG default for epoch-ms timestamps at
+// the `::numeric` type-cast colon, leaving unbalanced parens that break
+// esbuild. Detect the specific known-broken pattern and rewrite. Same
+// repair is applied to the SQL migration drizzle-kit emits alongside.
+let fixedExtractDefaults = 0;
+{
+  const broken = ".default(sql`((EXTRACT(epoch FROM now()) * (1000)`)";
+  const balanced = ".default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`)";
+  const before = schema.length;
+  while (schema.includes(broken)) {
+    schema = schema.replace(broken, balanced);
+    fixedExtractDefaults++;
+  }
+  // Also catch a variant where Fix 3 already wrapped the truncated
+  // string (one less leading paren than the `default(` form above).
+  const brokenInner = "sql`((EXTRACT(epoch FROM now()) * (1000)`";
+  while (schema.includes(brokenInner)) {
+    schema = schema.replace(brokenInner, "sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`");
+    fixedExtractDefaults++;
+  }
+  void before;
+}
+
+// Repair the SQL migration drizzle-kit drops next to the schema (same
+// truncation; `psql -f` would error if the broken text were ever applied
+// to a fresh DB). The migration filename is timestamped — find by glob.
+{
+  const migDir = SCHEMA_DIR;
+  const fs = await import('node:fs');
+  for (const entry of fs.readdirSync(migDir)) {
+    if (!/^\d{4}_.*\.sql$/.test(entry)) continue;
+    const p = join(migDir, entry);
+    let txt = readFileSync(p, 'utf8');
+    const before = txt;
+    txt = txt
+      .replace(/DEFAULT \(\(EXTRACT\(epoch FROM now\(\)\) \* \(1000\) NOT NULL/g,
+               'DEFAULT ((EXTRACT(epoch FROM now()) * 1000))::bigint NOT NULL');
+    if (txt !== before) writeFileSync(p, txt);
+  }
+}
+
 // Fix 6: rewrite relations import path from "./schema" to "./generated".
 if (existsSync(relationsPath)) {
   let rel = readFileSync(relationsPath, 'utf8');
@@ -202,6 +247,7 @@ console.log(`    fixed ${fixedTimestamps} timestamp modes (string→number)`);
 console.log(`    fixed ${fixedFnDefaults} function-call defaults (wrapped in sql\`\`)`);
 console.log(`    rewrote ${fixedUnknownCols} unsupported-type columns (tsvector/bytea → text)`);
 console.log(`    injected ${fixedMissingPks} missing primary keys`);
+console.log(`    repaired ${fixedExtractDefaults} truncated EXTRACT defaults`);
 
 // Promote: schema.ts → generated.ts, relations.ts → generated-relations.ts
 copyFileSync(schemaPath, join(SCHEMA_DIR, 'generated.ts'));
