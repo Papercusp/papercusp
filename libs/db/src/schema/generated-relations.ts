@@ -1,5 +1,16 @@
 import { relations } from "drizzle-orm/relations";
-import { operator_conversationsInHarness_shared, operator_turnsInHarness_shared, messagesInPapercup_shared, message_commentsInPapercup_shared, message_recipientsInPapercup_shared, goalsInHarness_shared, projectsInHarness_shared, project_spec_revisionsInHarness_shared, mobile_devicesInHarness_shared, mobile_push_tokensInHarness_shared } from "./generated";
+import { backup_snapshotsInHarness_shared, backup_eventsInHarness_shared, operator_conversationsInHarness_shared, operator_turnsInHarness_shared, messagesInPapercup_shared, message_commentsInPapercup_shared, message_recipientsInPapercup_shared, goalsInHarness_shared, projectsInHarness_shared, project_spec_revisionsInHarness_shared, mobile_devicesInHarness_shared, mobile_push_tokensInHarness_shared } from "./generated";
+
+export const backup_eventsInHarness_sharedRelations = relations(backup_eventsInHarness_shared, ({one}) => ({
+	backup_snapshotsInHarness_shared: one(backup_snapshotsInHarness_shared, {
+		fields: [backup_eventsInHarness_shared.snapshot_id],
+		references: [backup_snapshotsInHarness_shared.id]
+	}),
+}));
+
+export const backup_snapshotsInHarness_sharedRelations = relations(backup_snapshotsInHarness_shared, ({many}) => ({
+	backup_eventsInHarness_shareds: many(backup_eventsInHarness_shared),
+}));
 
 export const operator_turnsInHarness_sharedRelations = relations(operator_turnsInHarness_shared, ({one}) => ({
 	operator_conversationsInHarness_shared: one(operator_conversationsInHarness_shared, {
