@@ -6,7 +6,7 @@
   "description": "Provision a full Cloudflare backend (Pages + Workers + D1 + R2 + KV) for a forked harness. Ships setup/teardown/verify scripts that create real resources in the forker's account and template the harness's project files with the new IDs.",
   "author": "Papercusp",
   "publisher": "@papercupai",
-  "pluginVersionPinned": true,
+  "versionPin": { "mode": "exact" },
   "license": "MIT",
   "capabilities": [
     "secrets:read:CLOUDFLARE_API_TOKEN",
