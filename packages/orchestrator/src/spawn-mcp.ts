@@ -185,6 +185,7 @@ const SIGNED_PARAM_ALLOWLIST = new Set([
   'feature',
   'chunk',
   'parent_spawn',
+  'client',
   'exp',
 ]);
 
