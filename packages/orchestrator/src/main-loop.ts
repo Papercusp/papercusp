@@ -70,6 +70,12 @@ import { git } from './git';
 import { branchIsoBase, worktreePath } from './branch-iso';
 import type { InvokeContext } from './invoke';
 import type { Logger } from './log';
+import {
+  runSynthesizer,
+  singleLaneManifest,
+  synthesizeSingle,
+  useSynthesizer,
+} from './synthesizer';
 import type { ParsedDecision } from './decision-parse';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -962,6 +968,52 @@ async function handleNextValidator(
       }
     : ctx;
 
+  // ─── Synthesizer step (gated by parallelWorkers.useSynthesizer) ──
+  // When enabled, run synthesis BEFORE the validator. Synthesizer reads
+  // all candidate lanes (real competition manifest, or a synthetic
+  // 1-lane manifest for single-worker dispatches), produces a unified
+  // tree in `<fid>-synthesis` worktree. Validator then runs against
+  // that worktree as a normal single-branch validation.
+  let synthesisWorktree: string | null = null;
+  let synthesisBr: string | null = null;
+  let synthesisRanWithManifest: { n: number } | null = null;
+  if (useSynthesizer(cfg)) {
+    let effectiveManifest = readCompetitionManifest(ctx.stateDir, fid);
+    if (!effectiveManifest && synthesizeSingle(cfg)) {
+      effectiveManifest = singleLaneManifest(ctx.stateDir, fid);
+    }
+    if (effectiveManifest) {
+      const result = await runSynthesizer({
+        fid,
+        manifest: effectiveManifest,
+        ctx,
+        cfg,
+        log: logger.log,
+      });
+      if (result.synthesized && result.worktree && result.branch) {
+        synthesisWorktree = result.worktree;
+        synthesisBr = result.branch;
+        synthesisRanWithManifest = { n: effectiveManifest.n };
+        // Remove the manifest so the validator doesn't try to score
+        // lanes / emit COMPETITION_WINNER. After synth, validator just
+        // validates the synthesis worktree as a normal feature branch.
+        try {
+          unlinkSync(competitionManifestPath(ctx.stateDir, fid));
+        } catch {
+          // ignore
+        }
+      } else {
+        logger.log(
+          `SYNTHESIZER: ${fid} skipped (${result.reason ?? 'unknown'}); falling back to direct validation`,
+        );
+      }
+    }
+  }
+
+  const validatorCtx: InvokeContext = synthesisWorktree
+    ? { ...ctx, worktreePathFor: () => synthesisWorktree as string }
+    : worktreedCtx;
+
   // Capture pre-validator status set so we can detect transitions to
   // 'passed' after the validator returns. Validator updates features.json
   // directly; this is the cheapest way to surface the per-feature event.
@@ -970,7 +1022,7 @@ async function handleNextValidator(
 
   let validatorRc = 0;
   try {
-    const r = await invoke(worktreedCtx, 'validator', [`FEATURE_ID=${fid}`]);
+    const r = await invoke(validatorCtx, 'validator', [`FEATURE_ID=${fid}`]);
     validatorRc = r.exitCode;
   } catch (err) {
     logger.log(`VALIDATOR error: ${(err as Error).message}`);
@@ -1019,19 +1071,122 @@ async function handleNextValidator(
     }
   }
 
-  // Validator updates features.json itself; branchIsoPostValidator reads
-  // the (possibly-just-changed) status and merges/PRs on PASS.
-  branchIsoPostValidator(branchIsoCtx, fid);
+  if (synthesisWorktree && synthesisBr && synthesisRanWithManifest) {
+    // Synthesis path: validator ran against `<fid>-synthesis`. On PASS,
+    // merge the synthesis branch and drop ALL worktrees (synthesis +
+    // every lane). On FAIL, drop everything without merging. Skips the
+    // legacy branchIsoPostValidator + competition verdict paths since
+    // the synthesis branch is the canonical artifact now.
+    await handleSynthesisOutcome(
+      fid,
+      synthesisBr,
+      synthesisWorktree,
+      synthesisRanWithManifest.n,
+      ctx,
+      logger,
+      cfg,
+    );
+  } else {
+    // Validator updates features.json itself; branchIsoPostValidator reads
+    // the (possibly-just-changed) status and merges/PRs on PASS.
+    branchIsoPostValidator(branchIsoCtx, fid);
 
-  // Competition mode: if a manifest exists for this feature, the validator
-  // is expected to have emitted COMPETITION_WINNER lane-N (or "none"). Read
-  // the latest validator .out, parse the verdict, merge the winner branch
-  // into base, drop loser worktrees, remove the manifest.
-  const manifest = readCompetitionManifest(ctx.stateDir, fid);
-  if (manifest) {
-    handleCompetitionVerdict(fid, manifest, ctx, logger, cfg);
+    // Competition mode: if a manifest exists for this feature, the validator
+    // is expected to have emitted COMPETITION_WINNER lane-N (or "none"). Read
+    // the latest validator .out, parse the verdict, merge the winner branch
+    // into base, drop loser worktrees, remove the manifest.
+    const manifest = readCompetitionManifest(ctx.stateDir, fid);
+    if (manifest) {
+      handleCompetitionVerdict(fid, manifest, ctx, logger, cfg);
+    }
   }
   return { terminal: false, exitCode: 0, reason: 'idle' };
+}
+
+/**
+ * After-validator handling for the synthesizer path.
+ *
+ * Reads the (just-updated) feature status. On PASS, merges the synthesis
+ * branch into base and drops every related worktree (synthesis + each
+ * lane). On non-PASS, drops every worktree without merging — feature
+ * stays `failing` and the orchestrator decides next move on the next
+ * iteration. Either way, the post-state is "no leftover worktrees for
+ * this feature."
+ */
+async function handleSynthesisOutcome(
+  fid: string,
+  synthBranch: string,
+  synthWorktree: string,
+  laneCount: number,
+  ctx: InvokeContext,
+  logger: Logger,
+  cfg: ReturnType<typeof readConfig>,
+): Promise<void> {
+  let status = '';
+  for (const f of await readFeatures(ctx.stateDir, stateCtx(ctx))) {
+    if (f.id === fid) {
+      status = f.status;
+      break;
+    }
+  }
+
+  const branchIsoCtx = {
+    cfg,
+    projectDir: ctx.projectDir,
+    stateDir: ctx.stateDir,
+    log: logger.log,
+  };
+  const base = branchIsoBase(branchIsoCtx);
+
+  if (status === 'passed') {
+    logger.log(`SYNTHESIZER: ${fid} validator passed → merging ${synthBranch}`);
+    git(['checkout', base], { cwd: ctx.projectDir });
+    const merge = git(
+      ['merge', '--no-ff', synthBranch, '-m', `synthesizer winner: ${fid}`],
+      { cwd: ctx.projectDir },
+    );
+    if (merge.outputHead(5)) logger.log(`  ${merge.outputHead(5)}`);
+  } else {
+    logger.log(
+      `SYNTHESIZER: ${fid} validator did not pass (status=${status || '?'}) → cleaning up without merge`,
+    );
+  }
+
+  // Drop the synthesis worktree + branch regardless of outcome.
+  git(['worktree', 'remove', '--force', synthWorktree], { cwd: ctx.projectDir });
+  git(['branch', '-D', synthBranch], { cwd: ctx.projectDir });
+
+  // Drop each lane worktree + branch. For the synthetic 1-lane case
+  // (single-worker synthesis), this is the feature's own branch — we
+  // drop it because the synthesis branch has now replaced it on base
+  // (PASS) or it's a dead end (FAIL).
+  if (laneCount > 1) {
+    for (let i = 1; i <= laneCount; i++) {
+      const wt = join(ctx.stateDir, 'worktrees', `${fid}-lane-${i}`);
+      const br = `harness/${fid}-lane-${i}`;
+      if (existsSync(wt)) {
+        git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
+      }
+      git(['branch', '-D', br], { cwd: ctx.projectDir });
+    }
+  } else {
+    // 1-lane synthetic manifest path: the lane "is" the feature's own
+    // worktree (harness/<fid>). Drop it cleanly.
+    const wt = worktreePath(ctx.stateDir, fid);
+    const br = `harness/${fid}`;
+    if (existsSync(wt)) {
+      git(['worktree', 'remove', '--force', wt], { cwd: ctx.projectDir });
+    }
+    git(['branch', '-D', br], { cwd: ctx.projectDir });
+  }
+
+  // Remove any stale manifest (should already be gone if synth ran).
+  try {
+    unlinkSync(competitionManifestPath(ctx.stateDir, fid));
+  } catch {
+    // ignore
+  }
+
 }
 
 /**

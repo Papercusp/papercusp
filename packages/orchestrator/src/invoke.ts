@@ -774,7 +774,7 @@ export async function invoke(
     appendChunkPgFn = (await import('./run-chunks-pg')).appendChunkPg;
   }
 
-  const outcome: SpawnOutcome = await new Promise((resolve) => {
+  const outcome: SpawnOutcome = await new Promise(async (resolve) => {
     // Spawn env: defensively disable omp's autonomous memory backend
     // for harness invocations. The harness composes the prompt itself
     // (substrate + role + memory + identity + feature history) and
