@@ -69,7 +69,7 @@ The conventions (camelCase names, `.from()` aliases, `.optional()`
 flags) are preserved 1:1 with the previous hand-written file. queries.ts
 and every UI consumer remained unchanged. No replica state was modified.
 
-### Phase 3 — Conversion (39 files + pattern toolkit)
+### Phase 3 — Conversion (40 files + pattern toolkit)
 
 Converted files in `apps/operator/`:
 
@@ -117,6 +117,7 @@ Converted files in `apps/operator/`:
 | `lib/provision/operator-claims.ts` | UPDATE with PG `interval` arithmetic via dsql, DELETE |
 | `app/api/admin/spawn-signing/failures/route.ts` | Conditional and()-WHERE, GROUP BY + count() + orderBy(desc(count())) |
 | `app/api/_hono/experts.ts` | Massive upsert with 12-field EXCLUDED set, **UPDATE…FROM correlated copy lifted to TS as 2-step read+write** |
+| `lib/harness-fs-watcher.ts` | **21 of 22 sql sites converted** — 5 mirror handlers (summary, review, proposal, phases, branch-actions), 4 org tables (charter, departments, projects, with notInArray() orphan-cleanup), git-log INSERT loop + count() preflight, harness_health with existence-check + upsert, reconcile-loop mtime reads, orphan-delete loops |
 
 Pattern toolkit (covers every PG operation in the codebase):
 
@@ -308,7 +309,7 @@ All planned phases shipped this session:
 - ✅ Phase 2 Option A (Zero schema auto-generated from generated.ts +
   zero-config.json) — see `libs/zero-harness/scripts/generate-schema.mjs`
 - ✅ Phase 2 Option B (drift check) + Option D (suggest tool)
-- ✅ Phase 3 (39 files converted; pattern toolkit covers the rest)
+- ✅ Phase 3 (40 files converted; pattern toolkit covers the rest)
 - ✅ Phase 4 (raw-SQL territory documented above)
 
 The remaining ~140 sql\`\` sites in `apps/operator/{lib,app}/*` either
