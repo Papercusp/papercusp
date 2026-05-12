@@ -10,8 +10,7 @@
 -- Indexed prose surfaces (initial):
 --   - harness_escalations.escalation + supervisor_notes  (per-harness)
 --   - harness_brainstorm.content                         (per-harness)
---   - operator_turns.text (only role='assistant' AND seq > now-1000)
---                                                  (per-workspace)
+--   - operator_turns.text — all roles, all turns (per-workspace)
 --
 -- The tsvector column is computed live via a trigger so writers
 -- never need to update it. Indexed via GIN for fast match.
