@@ -993,3 +993,78 @@ test('e2e: chunk-loop typecheck-fail escalation — N strikes triggers escalateT
     p.cleanup();
   }
 });
+
+test('e2e: chunk-loop PASS removes orphan synth worktree from prior synth-mode round', async () => {
+  // Edge case: feature ran under synth pipeline (useChunkLoop=false)
+  // round 1, validator rejected → synth worktree preserved. User
+  // flipped useChunkLoop=true between rounds. Round 2 runs chunk-loop,
+  // validator passes. The chunk-loop PASS cleanup should opportunistically
+  // remove the now-orphan synth worktree + branch.
+  const p = buildOrchTestContext({
+    cfg: { parallelWorkers: { useChunkLoop: true, workingStateCheck: 'true' } },
+  });
+  try {
+    // Pre-create an orphan synth worktree as if a prior synth-mode round
+    // had left one behind. The chunk-loop cleanup should remove it on PASS.
+    const synthWt = join(p.stateDir, 'worktrees', 'F-CL-ORPHAN-synthesis');
+    const synthBr = 'harness/F-CL-ORPHAN-synthesis';
+    spawnSync('git', ['worktree', 'add', '-B', synthBr, synthWt, 'main'], {
+      cwd: p.projectDir,
+    });
+    writeFileSync(join(synthWt, 'leftover.txt'), 'stale\n');
+    spawnSync('git', ['add', '-A'], { cwd: synthWt });
+    spawnSync('git', ['commit', '--quiet', '-m', 'stale synth'], { cwd: synthWt });
+
+    p.setFeatures([{ id: 'F-CL-ORPHAN', status: 'todo', attempts: 0 }]);
+
+    let orchCallCount = 0;
+    inv.mockImplementation(async (_ctx: any, role: string, extras: string[], opts?: { inlinePrompt?: string; cwd?: string }) => {
+      if (role === 'orchestrator') {
+        orchCallCount += 1;
+        if (orchCallCount === 1) return { exitCode: 0, output: 'NEXT_WORKER F-CL-ORPHAN\n', stderr: '', runId: 'o1' };
+        if (orchCallCount === 2) return { exitCode: 0, output: 'NEXT_VALIDATOR F-CL-ORPHAN\n', stderr: '', runId: 'o2' };
+        return { exitCode: 0, output: 'DONE\n', stderr: '', runId: 'oDone' };
+      }
+      if (role === 'worker') {
+        const stage = extras.find((e) => e.startsWith('CHUNK_LOOP_STAGE='))?.split('=', 2)[1];
+        if (stage === 'plan') {
+          return {
+            exitCode: 0,
+            output: '```chunk-plan\n{"chunks":[{"id":"F-CL-ORPHAN-1","files":["new.txt"],"description":"add new"}]}\n```\n',
+            stderr: '', runId: 'pl',
+          };
+        }
+        if (stage === 'implement') {
+          const cwd = opts?.cwd ?? p.projectDir;
+          writeFileSync(join(cwd, 'new.txt'), 'fresh\n');
+          return { exitCode: 0, output: '', stderr: '', runId: 'impl' };
+        }
+      }
+      if (role === 'validator') {
+        p.setFeatures([{ id: 'F-CL-ORPHAN', status: 'passed', attempts: 1 }]);
+        const outPath = join(p.logDir, 'v.out');
+        writeFileSync(outPath, 'VAL-PASS\n');
+        return { exitCode: 0, output: 'VAL-PASS', outPath, stderr: '', runId: 'v' };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    const result = await runMainLoop({
+      ctx: p.ctx,
+      logger: p.logger,
+      maxIterations: 5,
+      iterationSleepMs: 0,
+      skipPreLoop: true,
+    });
+
+    assert.equal(result.reason, 'done');
+    assert.equal(p.readFeatures().find((f) => f.id === 'F-CL-ORPHAN')?.status, 'passed');
+
+    // The orphan synth worktree should have been swept on PASS.
+    assert.equal(existsSync(synthWt), false, 'orphan synth worktree was removed');
+    const branches = spawnSync('git', ['branch'], { cwd: p.projectDir, encoding: 'utf8' }).stdout;
+    assert.ok(!branches.includes('F-CL-ORPHAN-synthesis'), 'orphan synth branch was deleted');
+  } finally {
+    p.cleanup();
+  }
+});

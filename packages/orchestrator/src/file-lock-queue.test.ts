@@ -243,6 +243,12 @@ test('snapshot reflects current holdings + queue length', async () => {
   await new Promise((r) => setTimeout(r, 0));
 });
 
+// Stress test: 5000 lock ops (50 workers × 100 acquires) with brief
+// 0–2ms holds. The internal `elapsed < 30_000` assertion is the real
+// deadlock detector. The vitest `testTimeout: 30_000` ceiling matches
+// it so the test isn't killed early under suite-level CPU contention —
+// in isolation it runs in ~3s, but during the full vitest run other
+// tests starve this one and the default 5s test budget is too tight.
 test('stress: 50 workers, 100 acquires each, no deadlock + all complete', async () => {
   const q = new FileLockQueue();
   const FILES = ['a', 'b', 'c', 'd', 'e'];
@@ -270,4 +276,4 @@ test('stress: 50 workers, 100 acquires each, no deadlock + all complete', async 
   assert.ok(elapsed < 30_000, `stress took ${elapsed}ms — possible deadlock`);
   assert.equal(q.snapshot().queueLength, 0);
   assert.deepEqual(q.snapshot().held, {});
-});
+}, 30_000);

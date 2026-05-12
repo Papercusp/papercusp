@@ -1311,6 +1311,26 @@ async function handleNextValidator(
             );
           } catch { /* best-effort */ }
         }
+        // Orphan-synth-worktree cleanup. If this feature was previously
+        // attempted under the synth pipeline (useChunkLoop=false) and
+        // validator rejected → synth worktree was preserved at
+        // <stateDir>/worktrees/<fid>-synthesis. Then the user flipped
+        // useChunkLoop=true; this round's chunk-loop passed. The
+        // preserved synth worktree is now an orphan — clean it up.
+        // No-op on the common case (no flip happened, branch doesn't
+        // exist). Cheap to attempt unconditionally.
+        const synthWt = join(ctx.stateDir, 'worktrees', `${f.id}-synthesis`);
+        const synthBr = `harness/${f.id}-synthesis`;
+        if (existsSync(synthWt)) {
+          try {
+            const r = git(['worktree', 'remove', '--force', synthWt], { cwd: ctx.projectDir });
+            if (r.outputHead(3)) logger.log(`  ${r.outputHead(3)}`);
+            logger.log(`  chunk-loop cleanup: removed orphan synth worktree ${synthWt}`);
+          } catch { /* best-effort */ }
+        }
+        try {
+          git(['branch', '-D', synthBr], { cwd: ctx.projectDir });
+        } catch { /* best-effort */ }
       }
     } else if (
       (f.status === 'failed' || f.status === 'blocked') &&
