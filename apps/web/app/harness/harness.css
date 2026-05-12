@@ -16513,3 +16513,144 @@ html body .h-root.h-root :is(
     grid-row: 2;
   }
 }
+
+/* Stable harness top-section portal control: keep the same geometry in both
+   states so the URL-backed collapse toggle doesn't hop around while the page
+   re-renders. */
+.h-top-collapse-btn.h-top-collapse-inline {
+  position: fixed !important;
+  top: 48px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  z-index: 1500 !important;
+  pointer-events: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  width: 168px !important;
+  min-height: 22px !important;
+  height: 22px !important;
+  padding: 0 10px !important;
+  border-radius: 999px !important;
+  white-space: nowrap !important;
+  color: color-mix(in oklab, var(--fg), white 8%) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+  border: 1px solid rgba(186, 230, 253, 0.30) !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.11), rgba(255,255,255,0.02) 44%, rgba(0,0,0,0.24)),
+    linear-gradient(180deg, rgba(10, 20, 35, 0.96), rgba(5, 11, 21, 0.98)) !important;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.30),
+    0 0 0 1px rgba(7, 15, 27, 0.72),
+    0 0 18px rgba(56, 189, 248, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline::before {
+  background:
+    linear-gradient(105deg, transparent 0 26%, rgba(255, 255, 255, 0.14) 42%, transparent 58%),
+    radial-gradient(circle at 50% 108%, rgba(56, 189, 248, 0.20), transparent 54%) !important;
+  opacity: 0.82 !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline::after {
+  left: 12px !important;
+  right: 12px !important;
+  bottom: 2px !important;
+  height: 1px !important;
+  opacity: 0.72 !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline:hover,
+.h-top-collapse-btn.h-top-collapse-inline:focus-visible {
+  transform: translateX(-50%) !important;
+  border-color: rgba(186, 230, 253, 0.46) !important;
+  background:
+    linear-gradient(180deg, rgba(186, 230, 253, 0.18), rgba(255, 255, 255, 0.025) 42%, rgba(0,0,0,0.20)),
+    linear-gradient(180deg, rgba(12, 24, 40, 0.98), rgba(7, 14, 25, 0.99)) !important;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(125, 211, 252, 0.14),
+    0 0 22px rgba(56, 189, 248, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline:active {
+  transform: translateX(-50%) !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline .h-top-collapse-icon {
+  width: 12px !important;
+  height: 12px !important;
+  padding: 1px !important;
+  border-width: 1px !important;
+  background: rgba(56, 189, 248, 0.16) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 10px rgba(56, 189, 248, 0.16) !important;
+}
+
+.h-top-collapse-btn.h-top-collapse-inline .h-top-collapse-label {
+  position: relative !important;
+  top: 0 !important;
+  z-index: 1 !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  text-align: center !important;
+  line-height: 1 !important;
+  color: color-mix(in oklab, var(--fg-dim), white 22%) !important;
+}
+
+.h-top-collapse-state {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 34px;
+  min-width: 34px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid rgba(186, 230, 253, 0.24);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.h-top-collapse-btn[data-collapsed="true"] .h-top-collapse-state {
+  border-color: rgba(45, 212, 191, 0.34);
+  background: rgba(45, 212, 191, 0.14);
+  color: color-mix(in oklab, #99f6e4, white 6%) !important;
+}
+
+.h-top-collapse-btn[data-collapsed="false"] .h-top-collapse-state {
+  border-color: rgba(125, 211, 252, 0.30);
+  background: rgba(56, 189, 248, 0.12);
+  color: color-mix(in oklab, #dbeafe, white 6%) !important;
+}
+
+@media (max-width: 720px) {
+  .h-top-collapse-btn.h-top-collapse-inline {
+    width: 156px !important;
+    min-height: 20px !important;
+    height: 20px !important;
+    gap: 6px !important;
+    padding: 0 9px !important;
+    font-size: 9px !important;
+  }
+
+  .h-top-collapse-state {
+    flex-basis: 30px;
+    min-width: 30px;
+    height: 13px;
+    font-size: 7.5px;
+  }
+}
