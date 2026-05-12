@@ -421,6 +421,8 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	outputSize: bigint("output_size", { mode: "number" }),
 	errorMessage: text("error_message"),
 	argsJson: jsonb("args_json"),
+	// 058-tool-invocations-transport: 'http' | 'mcp' | 'ipc' | 'in_process' | null
+	transport: text(),
 }, (table) => [
 	index("tool_invocations_quota_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.windowKey.asc().nullsLast().op("text_ops")).where(sql`(status = 'ok'::text)`),
 	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")),
