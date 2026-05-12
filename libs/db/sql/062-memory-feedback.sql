@@ -14,12 +14,18 @@ CREATE TABLE IF NOT EXISTS harness_shared.memory_feedback (
   user_id     uuid        NOT NULL,
   workspace_id text       NOT NULL,
   action      text        NOT NULL CHECK (action IN ('edit', 'delete', 'forget_all')),
+  -- mem0 metadata.kind snapshot at action time (preference/project/...).
+  -- Lets the learning loop emit per-kind extraction hints without
+  -- another lookup against the (possibly-deleted) memory row.
+  kind        text,
   -- For edits: snapshot of the prior memory text so we can later
   -- compare what mem0 extracted vs what the user actually wanted.
   prior_text  text,
   new_text    text,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE harness_shared.memory_feedback
+  ADD COLUMN IF NOT EXISTS kind text;
 
 CREATE INDEX IF NOT EXISTS memory_feedback_user_idx
   ON harness_shared.memory_feedback (user_id, created_at DESC);
