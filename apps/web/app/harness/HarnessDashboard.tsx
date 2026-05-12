@@ -36,6 +36,7 @@ function openInVSCode(projectPath: string) {
 
 type MainPanel = 'brainstorm' | 'proposals' | 'git' | 'dashboard' | 'summary' | 'docs' | 'vscode' | 'insights' | 'config' | 'plugins';
 
+import { createResilientEventSource } from '@restart/sse';
 import { Panel } from '@restart/ui-primitives';
 import { StatCard } from '@restart/ui-primitives';
 import { StatusPill } from '@restart/ui-primitives';
@@ -308,7 +309,7 @@ export default function HarnessDashboard() {
   const [pendingProposals, setPendingProposals] = useState(0);
   const [activePanel, setActivePanel] = useState<MainPanel>('dashboard');
   const [isCompact, setIsCompact] = useState(false);
-  const esRef = useRef<EventSource | null>(null);
+  const esRef = useRef<{ close: () => void } | null>(null);
   const searchParams = useSearchParams();
   const projectQueryParam = searchParams?.get('project') ?? null;
 
@@ -378,27 +379,26 @@ export default function HarnessDashboard() {
     };
     loadAll();
 
-    const es = new EventSource(`/api/harness/${activeSlug}/stream?phase=${activePhase}`);
-    esRef.current = es;
-
-    es.addEventListener('log', (ev) => {
-      const chunk = (ev as MessageEvent).data as string;
-      setLogLines((prev) => {
-        const next = [...prev, ...chunk.split('\n').filter(Boolean)];
-        return next.length > 5000 ? next.slice(-5000) : next;
-      });
+    const source = createResilientEventSource({
+      url: `/api/harness/${activeSlug}/stream?phase=${activePhase}`,
+      handlers: {
+        log: (chunk) => {
+          setLogLines((prev) => {
+            const next = [...prev, ...chunk.split('\n').filter(Boolean)];
+            return next.length > 5000 ? next.slice(-5000) : next;
+          });
+        },
+        features: (data) => {
+          try {
+            const features = JSON.parse(data);
+            setStatus((prev) => prev ? { ...prev, features } : prev);
+          } catch { /* ignore */ }
+        },
+      },
     });
+    esRef.current = source;
 
-    es.addEventListener('features', (ev) => {
-      try {
-        const features = JSON.parse((ev as MessageEvent).data);
-        setStatus((prev) => prev ? { ...prev, features } : prev);
-      } catch {}
-    });
-
-    es.onerror = () => { /* auto-reconnect */ };
-
-    return () => { es.close(); esRef.current = null; };
+    return () => { source.close(); esRef.current = null; };
   }, [activeSlug, activePhase]);
 
   useEffect(() => {
