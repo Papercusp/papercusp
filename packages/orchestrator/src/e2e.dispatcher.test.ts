@@ -819,3 +819,177 @@ test('e2e: chunk-loop validator-reject retry — round 2 planner sees prior vali
     p.cleanup();
   }
 });
+
+test('e2e: chunk-loop happy path — plan → chunk worker → validator → merge → DONE (no retry)', async () => {
+  const p = buildOrchTestContext({
+    cfg: { parallelWorkers: { useChunkLoop: true, workingStateCheck: 'true' } },
+  });
+  try {
+    p.setFeatures([{ id: 'F-CL-HP', status: 'todo', attempts: 0 }]);
+
+    let orchCallCount = 0;
+    let plannerCallCount = 0;
+    let implementCallCount = 0;
+    inv.mockImplementation(async (_ctx: any, role: string, extras: string[], opts?: { inlinePrompt?: string; cwd?: string }) => {
+      if (role === 'orchestrator') {
+        orchCallCount += 1;
+        if (orchCallCount === 1) return { exitCode: 0, output: 'NEXT_WORKER F-CL-HP\n', stderr: '', runId: 'o1' };
+        if (orchCallCount === 2) return { exitCode: 0, output: 'NEXT_VALIDATOR F-CL-HP\n', stderr: '', runId: 'o2' };
+        return { exitCode: 0, output: 'DONE\n', stderr: '', runId: 'oDone' };
+      }
+      if (role === 'worker') {
+        const stage = extras.find((e) => e.startsWith('CHUNK_LOOP_STAGE='))?.split('=', 2)[1];
+        if (stage === 'plan') {
+          plannerCallCount += 1;
+          // 2-chunk plan to exercise multi-chunk flow.
+          const plan = `\`\`\`chunk-plan
+{
+  "chunks": [
+    { "id": "F-CL-HP-1", "files": ["a.txt"], "description": "add a" },
+    { "id": "F-CL-HP-2", "files": ["b.txt"], "description": "add b" }
+  ]
+}
+\`\`\`
+`;
+          // Round-1 planner should NOT see a retry section.
+          assert.ok(!opts?.inlinePrompt?.includes('Prior validator rejection'),
+            'first-attempt planner prompt should have no retry section');
+          return { exitCode: 0, output: plan, stderr: '', runId: `plan-${plannerCallCount}` };
+        }
+        if (stage === 'implement') {
+          implementCallCount += 1;
+          const cwd = opts?.cwd ?? p.projectDir;
+          const fileExtra = extras.find((e) => e.startsWith('CHUNK_FILES='))!;
+          const files = fileExtra.split('=', 2)[1].split(',');
+          for (const f of files) {
+            writeFileSync(join(cwd, f), `${f}-content\n`);
+          }
+          // First-attempt implement prompt should NOT have retry banner.
+          assert.ok(!opts?.inlinePrompt?.includes('Retry round'),
+            'first-attempt chunk-implement prompt should have no retry banner');
+          return { exitCode: 0, output: '', stderr: '', runId: `impl-${implementCallCount}` };
+        }
+        throw new Error(`unexpected worker stage: ${stage}`);
+      }
+      if (role === 'validator') {
+        const outPath = join(p.logDir, 'val.out');
+        writeFileSync(outPath, 'VAL-PASS\n');
+        p.setFeatures([{ id: 'F-CL-HP', status: 'passed', attempts: 1 }]);
+        return { exitCode: 0, output: 'VAL-PASS', outPath, stderr: '', runId: 'v1' };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    const result = await runMainLoop({
+      ctx: p.ctx,
+      logger: p.logger,
+      maxIterations: 5,
+      iterationSleepMs: 0,
+      skipPreLoop: true,
+    });
+
+    assert.equal(result.reason, 'done');
+    assert.equal(plannerCallCount, 1, '1 planning round for happy path');
+    assert.equal(implementCallCount, 2, '2 chunks implemented');
+
+    // Feature passed.
+    assert.equal(p.readFeatures().find((f) => f.id === 'F-CL-HP')?.status, 'passed');
+
+    // Both files committed to integration branch (the test repo's main).
+    const aShow = spawnSync('git', ['show', 'main:a.txt'], { cwd: p.projectDir, encoding: 'utf8' });
+    const bShow = spawnSync('git', ['show', 'main:b.txt'], { cwd: p.projectDir, encoding: 'utf8' });
+    assert.equal(aShow.stdout, 'a.txt-content\n');
+    assert.equal(bShow.stdout, 'b.txt-content\n');
+
+    // Cleanup: pointer cleared.
+    const ptrPath = join(p.stateDir, 'last-validator-out', 'F-CL-HP.path');
+    assert.equal(existsSync(ptrPath), false, 'pointer cleared after pass');
+  } finally {
+    p.cleanup();
+  }
+});
+
+test('e2e: chunk-loop typecheck-fail escalation — N strikes triggers escalateToRole', async () => {
+  // Exercises the chunk-loop driver's strike-escalation path: when a
+  // chunk's L1 typecheck fails replanStrikes times in a row, the
+  // driver calls onEscalate (configured role) and marks the chunk
+  // 'escalated'. The feature itself is left 'failing' for the
+  // orchestrator to dispatch a retry-or-escalate decision.
+  const p = buildOrchTestContext({
+    cfg: {
+      parallelWorkers: {
+        useChunkLoop: true,
+        // ALWAYS-FAILING typecheck — every chunk implementation hits
+        // the L1 gate failure path.
+        workingStateCheck: 'false',
+        replanStrikes: 2,
+        escalateToRole: 'debugger',
+      },
+    },
+  });
+  try {
+    p.setFeatures([{ id: 'F-CL-ESC', status: 'todo', attempts: 0 }]);
+
+    let escalateCalls = 0;
+    let orchCallCount = 0;
+    inv.mockImplementation(async (_ctx: any, role: string, extras: string[], opts?: { inlinePrompt?: string; cwd?: string }) => {
+      if (role === 'orchestrator') {
+        orchCallCount += 1;
+        if (orchCallCount === 1) return { exitCode: 0, output: 'NEXT_WORKER F-CL-ESC\n', stderr: '', runId: 'o1' };
+        // After chunk-loop returns (with the escalated chunk), feature
+        // is failing — orchestrator can ESCALATE the run.
+        return { exitCode: 0, output: 'ESCALATE chunk-typecheck-stuck\n', stderr: '', runId: 'oEsc' };
+      }
+      if (role === 'worker') {
+        const stage = extras.find((e) => e.startsWith('CHUNK_LOOP_STAGE='))?.split('=', 2)[1];
+        if (stage === 'plan') {
+          return {
+            exitCode: 0,
+            output: '```chunk-plan\n{"chunks":[{"id":"F-CL-ESC-1","files":["bad.ts"],"description":"add bad"}]}\n```\n',
+            stderr: '', runId: 'pl',
+          };
+        }
+        if (stage === 'implement') {
+          // Write a file that will be subject to the always-failing typecheck.
+          const cwd = opts?.cwd ?? p.projectDir;
+          writeFileSync(join(cwd, 'bad.ts'), 'broken\n');
+          return { exitCode: 0, output: '', stderr: '', runId: 'impl' };
+        }
+        if (stage === 'replan') {
+          // Driver re-plans the failed chunk after each strike. Keep
+          // returning the same shape — the typecheck still fails.
+          return {
+            exitCode: 0,
+            output: '```chunk-plan\n{"chunks":[{"id":"F-CL-ESC-1","files":["bad.ts"],"description":"retry bad"}]}\n```\n',
+            stderr: '', runId: 'rpl',
+          };
+        }
+        // No other worker stage in chunk-loop.
+        throw new Error(`unexpected worker stage: ${stage}`);
+      }
+      if (role === 'debugger') {
+        // Escalation invocation. Driver doesn't wait on the boolean
+        // return; we just record it ran.
+        escalateCalls += 1;
+        return { exitCode: 0, output: 'noted', stderr: '', runId: 'dbg' };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    const result = await runMainLoop({
+      ctx: p.ctx,
+      logger: p.logger,
+      maxIterations: 5,
+      iterationSleepMs: 0,
+      skipPreLoop: true,
+    });
+
+    // Loop exits via ESCALATE.
+    assert.equal(result.reason, 'escalate');
+
+    // Debugger role was invoked at least once (the chunk-loop escalation).
+    assert.ok(escalateCalls >= 1, `escalateToRole should have fired at least once, got ${escalateCalls}`);
+  } finally {
+    p.cleanup();
+  }
+});
