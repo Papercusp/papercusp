@@ -16554,6 +16554,11 @@ html body .h-root.h-root :is(
     opacity 140ms ease !important;
 }
 
+.h-top-collapse-btn[data-collapsed="true"].h-top-collapse-inline {
+  top: var(--h-top-collapse-panel-top, 48px) !important;
+  left: var(--h-top-collapse-panel-left, clamp(92px, 22vw, 360px)) !important;
+}
+
 .h-top-collapse-btn.h-top-collapse-inline::before {
   background:
     linear-gradient(105deg, transparent 0 26%, rgba(255, 255, 255, 0.14) 42%, transparent 58%),
