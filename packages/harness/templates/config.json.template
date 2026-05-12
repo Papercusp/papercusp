@@ -73,10 +73,14 @@
     "intervalSeconds": 300
   },
 
-  "_comment_parallel": "Parallel worker lanes. max=1 is sequential (default). max>1 runs N workers concurrently; requires branchIsolation.enabled=true. Validators stay serial. mode=lane runs different features in parallel; mode=competition runs N workers on the same feature and validator picks winner.",
+  "_comment_parallel": "Worker execution model. Defaults to chunk-loop: planner LLM decomposes the feature into chunks, each acquires file-level locks, runs in a scratch worktree, passes an L1 typecheck gate, then commits straight to the integration branch. On validator reject, the prior plan is dropped and the planner replans with the validator's complaints in context (see PRIOR_VALIDATOR_LOG). Set useChunkLoop=false to opt into the alternate synth pipeline (per-feature branches + multi-worker synthesis, requires branchIsolation.enabled=true). max=N runs up to N concurrent workers when chunk-loop's file locks allow; workersPerFeature=M only applies to the synth path.",
   "parallelWorkers": {
     "max": 1,
-    "mode": "lane"
+    "useChunkLoop": true,
+    "workingStateCheck": "pnpm typecheck",
+    "replanStrikes": 3,
+    "escalateToRole": "debugger",
+    "synthesizeSingle": true
   },
 
   "_comment_checkpoints": "Hermes-inspired named human-gated pauses. Orchestrator emits `CHECKPOINT <name>` when a configured milestone is hit; harness exits rc=8 and waits for grant via UI. Each type: { name, description, triggerDoc }.",

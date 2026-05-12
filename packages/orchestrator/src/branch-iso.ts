@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { configGet } from './config';
 import { branchExists, git, hasStagedChanges } from './git';
+import { useChunkLoop } from './lanes';
 import { readFeatures, setFeatureStatus, type StateContext } from './state';
 import type { HarnessConfig } from './types';
 
@@ -33,11 +34,9 @@ export function branchIsoEnabled(cfg: HarnessConfig): boolean {
   // Chunk-loop manages locking + commits at a finer granularity (per
   // chunk, not per feature) and pushes straight to the integration
   // branch, so per-feature branches and worktrees are bypassed
-  // entirely. branchIsoEnabled returning false short-circuits the
-  // pre/post worker + validator hooks, which is exactly what we want.
-  if (configGet<boolean>(cfg, 'parallelWorkers.useChunkLoop', false) === true) {
-    return false;
-  }
+  // entirely. Use the canonical useChunkLoop() helper (lanes.ts) so
+  // the default value stays in one place.
+  if (useChunkLoop(cfg)) return false;
   return configGet<boolean>(cfg, 'branchIsolation.enabled', false) === true;
 }
 
