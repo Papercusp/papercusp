@@ -162,3 +162,43 @@ test('replanChunkPrompt embeds the original chunk + error', () => {
   assert.match(p, /Cannot find name 'foo'/);
   assert.match(p, /Deleted foo\(\) from src\/a\.ts/);
 });
+
+test('planChunksUpfrontPrompt omits retry section when priorValidatorLog is unset', () => {
+  const p = planChunksUpfrontPrompt({
+    featureId: 'F-001',
+    featureTitle: 't',
+    featureDescription: 'd',
+  });
+  assert.ok(!p.includes('Prior validator rejection'), 'no retry section without prior log');
+  assert.ok(!p.includes('RETRY'), 'no RETRY marker without prior log');
+});
+
+test('planChunksUpfrontPrompt includes retry section + prior files + validator body when prior log set', () => {
+  const p = planChunksUpfrontPrompt({
+    featureId: 'F-001',
+    featureTitle: 't',
+    featureDescription: 'd',
+    priorValidatorLog: 'VAL-FAIL: assertion VAL-007 — login endpoint returned 500 not 200',
+    priorFiles: ['src/auth/login.ts', 'src/auth/session.ts'],
+  });
+  assert.match(p, /Prior validator rejection — this is a RETRY/);
+  assert.match(p, /Files already touched on this feature/);
+  assert.match(p, /src\/auth\/login\.ts/);
+  assert.match(p, /src\/auth\/session\.ts/);
+  assert.match(p, /VAL-FAIL: assertion VAL-007/);
+});
+
+test('planChunksUpfrontPrompt truncates long validator output to 8KB', () => {
+  const big = 'X'.repeat(20000);
+  const p = planChunksUpfrontPrompt({
+    featureId: 'F-001',
+    featureTitle: 't',
+    featureDescription: 'd',
+    priorValidatorLog: big,
+  });
+  assert.match(p, /truncated; first 8KB/);
+  // The truncated body itself shouldn't exceed 8192 X's.
+  const xRun = p.match(/X+/);
+  assert.ok(xRun);
+  assert.ok(xRun![0].length <= 8192, `X run too long: ${xRun![0].length}`);
+});

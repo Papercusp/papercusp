@@ -1290,6 +1290,28 @@ async function handleNextValidator(
       if (!(deferTelemetryToSynthesisOutcome && f.id === fid)) {
         void attachAdaptiveOutcome(ctx, logger, f.id, 'pass');
       }
+      // Chunk-loop retry-cleanup. When chunk-loop is the worker model
+      // and the feature just passed validation, drop the
+      // last-validator-out pointer (so a future feature with the same
+      // id doesn't get a stale retry context) and drop the chunk-plan
+      // rows (so a future re-dispatch sees a clean slate). The synth
+      // path handles its own pointer cleanup in handleSynthesisOutcome.
+      if (useChunkLoop(cfg) && f.id === fid) {
+        try {
+          unlinkSync(join(ctx.stateDir, 'last-validator-out', `${f.id}.path`));
+        } catch { /* best-effort */ }
+        if (ctx.pg && ctx.workspaceId) {
+          try {
+            const slug =
+              (configGet<string>(cfg, 'slug', '') || harnessSlug(ctx)) || '';
+            const { dropPlan } = await import('./chunk-plan-pg.js');
+            await dropPlan(
+              { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: slug },
+              f.id,
+            );
+          } catch { /* best-effort */ }
+        }
+      }
     } else if (
       (f.status === 'failed' || f.status === 'blocked') &&
       before !== f.status &&
@@ -2106,6 +2128,36 @@ async function handleChunkLoopWorker(
   logger.log(`CHUNK_LOOP starting for ${fid}`);
   await setFeatureStatus(ctx.stateDir, fid, 'in_progress', { bumpAttempts: true, ctx: stateCtx(ctx) });
 
+  // Build retryContext if a prior validator log exists for this feature.
+  // priorFiles come from the all-committed plan rows in PG (if any) so
+  // the planner knows which files the prior attempt touched.
+  const priorLogPath = priorValidatorLogPath(ctx.stateDir, fid);
+  let retryContext: { priorValidatorLog: string; priorFiles: string[] } | undefined;
+  if (priorLogPath) {
+    try {
+      const body = readFileSync(priorLogPath, 'utf8');
+      let priorFiles: string[] = [];
+      if (ctx.pg && ctx.workspaceId) {
+        try {
+          const slug =
+            (configGet<string>(cfg, 'slug', '') || harnessSlug(ctx)) || '';
+          const { readPlan } = await import('./chunk-plan-pg.js');
+          const existing = await readPlan(
+            { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: slug },
+            fid,
+          );
+          const fileSet = new Set<string>();
+          for (const row of existing) for (const f of row.files) fileSet.add(f);
+          priorFiles = [...fileSet].sort();
+        } catch { /* best-effort */ }
+      }
+      retryContext = { priorValidatorLog: body, priorFiles };
+      logger.log(
+        `CHUNK_LOOP: retry detected for ${fid} — prior validator output ${body.length} chars; ${priorFiles.length} files touched on prior attempt`,
+      );
+    } catch { /* pointer pointed at a missing file — first attempt path */ }
+  }
+
   const outcome = await driveChunkLoop({
     feature,
     cfg,
@@ -2119,14 +2171,17 @@ async function handleChunkLoopWorker(
     // without requiring users to set `slug` in config.json.
     harnessSlug:
       (configGet<string>(cfg, 'slug', '') || harnessSlug(ctx)) || undefined,
+    retryContext,
     log: (msg) => logger.log(msg),
     llm: {
-      plan: async (f) => {
+      plan: async (f, retry) => {
         const promptText = planChunksUpfrontPrompt({
           featureId: f.id,
           featureTitle: f.title,
           featureDescription: f.description,
           context: f.context,
+          priorValidatorLog: retry?.priorValidatorLog,
+          priorFiles: retry?.priorFiles,
         });
         const result = await invoke(ctx, 'worker', [`FEATURE_ID=${f.id}`, 'CHUNK_LOOP_STAGE=plan'], {
           inlinePrompt: promptText,
@@ -2146,7 +2201,7 @@ async function handleChunkLoopWorker(
           ],
           {
             cwd: env.dir,
-            inlinePrompt: chunkImplementInlinePrompt(f, chunk, env.dir),
+            inlinePrompt: chunkImplementInlinePrompt(f, chunk, env.dir, retryContext),
           },
         );
         // Discover what the LLM actually wrote by walking git status.
@@ -2216,12 +2271,30 @@ function chunkImplementInlinePrompt(
   feature: ChunkLoopFeature,
   chunk: { id: string; files: readonly string[]; description: string },
   scratchDir: string,
+  retry?: { priorValidatorLog: string },
 ): string {
+  const retryBanner = retry
+    ? `
+
+⚠️  Retry round — this feature was previously implemented and the
+validator REJECTED that attempt. The planner has decomposed the fix
+into chunks; your chunk targets part of the validator's complaints.
+The relevant validator output is below for context — focus on your
+declared files, but use this to understand WHY the change is needed
+rather than treating the chunk description as the only signal.
+
+Validator output (verbatim, first 4KB):
+\`\`\`
+${retry.priorValidatorLog.slice(0, 4096)}${retry.priorValidatorLog.length > 4096 ? '\n…(truncated)' : ''}
+\`\`\`
+`
+    : '';
+
   return `You are the WORKER. Implement ONE chunk of feature ${feature.id}.
 
 Feature: ${feature.title}
 ${feature.description}
-
+${retryBanner}
 Chunk ${chunk.id}: ${chunk.description}
 Declared files: ${chunk.files.join(', ')}
 

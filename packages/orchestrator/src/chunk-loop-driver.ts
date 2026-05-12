@@ -27,6 +27,7 @@ import {
 } from './lanes.js';
 import {
   type ChunkPlanPgCtx,
+  dropPlan,
   persistPlan,
   readPlan,
   setChunkStatus,
@@ -47,11 +48,26 @@ export interface DriverInput {
   pg?: OrchestratorPg;
   workspaceId?: string;
   harnessSlug?: string;
+  /** Retry context: when set, signals that the previous attempt at
+   *  this feature was rejected by the validator. The driver drops
+   *  the stale plan (if all-committed) and threads this context into
+   *  the planChunks LLM call so chunks target the complaints rather
+   *  than re-implementing from scratch.
+   *
+   *  main-loop.ts populates this from `<stateDir>/last-validator-out/<fid>.path`
+   *  + the prior plan's chunk.files arrays. */
+  retryContext?: {
+    priorValidatorLog: string;
+    priorFiles: string[];
+  };
   /** LLM bridge: each callback runs the worker / debugger role with
    *  the appropriate prompt and returns the raw text. main-loop.ts
    *  wires these to `invoke()`. */
   llm: {
-    plan: (feature: ChunkLoopFeature) => Promise<string>;
+    plan: (
+      feature: ChunkLoopFeature,
+      retryContext?: { priorValidatorLog: string; priorFiles: string[] },
+    ) => Promise<string>;
     implement: ChunkLoopDeps['implementChunk'];
     replan: (
       feature: ChunkLoopFeature,
@@ -83,10 +99,17 @@ export async function driveChunkLoop(input: DriverInput): Promise<ChunkLoopOutco
       ? { pg: input.pg, workspaceId: input.workspaceId, harnessSlug: input.harnessSlug }
       : null;
 
-  // Crash-recovery: if there's an existing plan for this feature in
-  // PG, resume from where we left off — skip planning, skip already-
-  // committed chunks. This kicks in when the orchestrator restarts
-  // mid-feature.
+  // Crash-recovery + retry detection. Three cases against an existing
+  // plan row-set:
+  //   1. Plan exists, NOT all-done → resume mid-feature (orchestrator
+  //      restart). Skip planning, skip already-committed chunks.
+  //   2. Plan exists, all-done, retryContext set → validator REJECTED
+  //      the prior all-committed attempt. Drop the stale plan and
+  //      fall through to fresh planning, threading retryContext into
+  //      planChunks so the planner targets the validator's complaints.
+  //   3. Plan exists, all-done, no retryContext → unusual; the feature
+  //      was done but somehow re-dispatched. Fall through to fresh
+  //      planning (legacy behavior, no retry awareness).
   let resumeFromPlan: ChunkLoopDeps['resumeFromPlan'];
   if (pgCtx) {
     try {
@@ -95,13 +118,18 @@ export async function driveChunkLoop(input: DriverInput): Promise<ChunkLoopOutco
         const committed = existing
           .filter((r) => r.status === 'committed')
           .map((r) => r.chunkId);
-        // Don't resume into a plan that's been fully committed —
-        // the feature is done; let the orchestrator process its
-        // post-state normally. Same for fully-escalated.
         const allDone = existing.every(
           (r) => r.status === 'committed' || r.status === 'escalated',
         );
-        if (!allDone) {
+        if (allDone && input.retryContext) {
+          // Case 2: validator-rejection retry. Drop the stale plan;
+          // fresh planning will run with retryContext below.
+          await dropPlan(pgCtx, input.feature.id);
+          log(
+            `chunk-loop-driver: validator-rejection retry for ${input.feature.id} — dropped ${existing.length}-chunk plan; replanning with prior validator log`,
+          );
+        } else if (!allDone) {
+          // Case 1: resume mid-feature.
           resumeFromPlan = {
             plan: {
               featureId: input.feature.id,
@@ -117,6 +145,7 @@ export async function driveChunkLoop(input: DriverInput): Promise<ChunkLoopOutco
             `chunk-loop-driver: resuming ${input.feature.id} from PG — ${existing.length} chunks, ${committed.length} already committed`,
           );
         }
+        // Case 3: fall through to fresh planning with no retryContext.
       }
     } catch (err) {
       log(`chunk-loop-driver: readPlan failed: ${(err as Error).message}`);
@@ -132,7 +161,7 @@ export async function driveChunkLoop(input: DriverInput): Promise<ChunkLoopOutco
     resumeFromPlan,
     log,
 
-    planChunks: input.llm.plan,
+    planChunks: (feature) => input.llm.plan(feature, input.retryContext),
     implementChunk: input.llm.implement,
     replanChunk: async (feature, failedChunk, typecheckError, attemptedChange) => {
       return input.llm.replan(

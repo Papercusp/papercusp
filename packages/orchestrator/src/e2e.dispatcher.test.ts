@@ -713,3 +713,109 @@ test('e2e: validator-reject retry — round 2 worker branches off preserved synt
     p.cleanup();
   }
 });
+
+test('e2e: chunk-loop validator-reject retry — round 2 planner sees prior validator output', async () => {
+  const p = buildOrchTestContext({
+    cfg: { parallelWorkers: { useChunkLoop: true } },
+  });
+  try {
+    // Pre-populate the integration branch with a working tree + initial commit
+    // so chunk-loop has somewhere to land scratch-worktree commits.
+    p.setFeatures([{ id: 'F-CL', status: 'todo', attempts: 0 }]);
+
+    let orchCallCount = 0;
+    let validatorRound = 0;
+    let plannerCallCount = 0;
+    const plannerPrompts: string[] = [];
+
+    inv.mockImplementation(async (_ctx: any, role: string, extras: string[], opts?: { inlinePrompt?: string; cwd?: string }) => {
+      if (role === 'orchestrator') {
+        orchCallCount += 1;
+        // Round 1: dispatch worker → validator (will reject)
+        if (orchCallCount === 1) return { exitCode: 0, output: 'NEXT_WORKER F-CL\n', stderr: '', runId: 'o1' };
+        if (orchCallCount === 2) return { exitCode: 0, output: 'NEXT_VALIDATOR F-CL\n', stderr: '', runId: 'o2' };
+        // Round 2: retry worker → validator (will pass)
+        if (orchCallCount === 3) return { exitCode: 0, output: 'NEXT_WORKER F-CL\n', stderr: '', runId: 'o3' };
+        if (orchCallCount === 4) return { exitCode: 0, output: 'NEXT_VALIDATOR F-CL\n', stderr: '', runId: 'o4' };
+        return { exitCode: 0, output: 'DONE\n', stderr: '', runId: 'oDone' };
+      }
+      if (role === 'worker') {
+        const stage = extras.find((e) => e.startsWith('CHUNK_LOOP_STAGE='))?.split('=', 2)[1];
+        if (stage === 'plan') {
+          plannerCallCount += 1;
+          if (opts?.inlinePrompt) plannerPrompts.push(opts.inlinePrompt);
+          // Return a single-chunk plan covering one file.
+          const plan = `\`\`\`chunk-plan
+{
+  "chunks": [
+    { "id": "F-CL-1", "files": ["app.txt"], "description": "add app behavior" }
+  ]
+}
+\`\`\`
+`;
+          return { exitCode: 0, output: plan, stderr: '', runId: `plan-${plannerCallCount}` };
+        }
+        if (stage === 'implement') {
+          // Write app.txt in the scratch dir. Round 1 writes BROKEN content
+          // (validator will reject); round 2 writes FIXED.
+          const cwd = opts?.cwd ?? p.projectDir;
+          const content = validatorRound === 0 ? 'BROKEN\n' : 'FIXED\n';
+          writeFileSync(join(cwd, 'app.txt'), content);
+          return { exitCode: 0, output: '', stderr: '', runId: `impl-${plannerCallCount}` };
+        }
+        throw new Error(`unexpected worker stage: ${stage}`);
+      }
+      if (role === 'validator') {
+        validatorRound += 1;
+        const runId = `v-${validatorRound}`;
+        const outPath = join(p.logDir, `${runId}.out`);
+        const body = validatorRound === 1
+          ? 'VAL-FAIL: app.txt content "BROKEN" does not satisfy VAL-CL-001 (expected "FIXED")\n'
+          : 'VAL-PASS\n';
+        writeFileSync(outPath, body);
+        if (validatorRound === 1) {
+          p.setFeatures([{ id: 'F-CL', status: 'failing', attempts: 1 }]);
+          return { exitCode: 1, output: body, outPath, stderr: '', runId };
+        }
+        p.setFeatures([{ id: 'F-CL', status: 'passed', attempts: 2 }]);
+        return { exitCode: 0, output: body, outPath, stderr: '', runId };
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+
+    const result = await runMainLoop({
+      ctx: p.ctx,
+      logger: p.logger,
+      maxIterations: 10,
+      iterationSleepMs: 0,
+      skipPreLoop: true,
+    });
+
+    assert.equal(result.reason, 'done', 'second round passes → DONE');
+
+    // 2 planner calls (round 1 + round 2). Round 2's prompt must include
+    // the validator's prior rejection text.
+    assert.equal(plannerCallCount, 2, '2 planning rounds');
+    assert.equal(plannerPrompts.length, 2);
+
+    // Round-1 planner: no retry section.
+    assert.ok(!plannerPrompts[0].includes('Prior validator rejection'),
+      'round-1 planner prompt should not have retry section');
+
+    // Round-2 planner: must include the retry section + the validator output.
+    assert.match(plannerPrompts[1], /Prior validator rejection — this is a RETRY/);
+    assert.match(plannerPrompts[1], /VAL-FAIL.*BROKEN/);
+    // "Files already touched" hint requires PG (priorFiles is sourced from
+    // the prior chunk-plan rows). This test runs without PG, so the hint
+    // is correctly absent. The PG-mocked unit test in chunk-plan.test.ts
+    // covers the hint emission directly.
+
+    // After success: pointer cleared, plan dropped — verified by mocked
+    // invoke being unable to re-detect retry on a hypothetical 3rd round
+    // (we don't run one; just check the on-disk artifact).
+    const ptrPath = join(p.stateDir, 'last-validator-out', 'F-CL.path');
+    assert.equal(existsSync(ptrPath), false, 'pointer cleared after pass');
+  } finally {
+    p.cleanup();
+  }
+});

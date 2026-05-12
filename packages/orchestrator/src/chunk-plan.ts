@@ -58,14 +58,53 @@ export interface PlanChunksUpfrontInput {
   /** Optional acceptance criteria / hints the orchestrator pulled
    *  from the feature definition. */
   context?: string;
+  /**
+   * Retry context: when set, the planner knows this feature was
+   * previously attempted, the validator REJECTED that attempt, and
+   * the prior plan has been dropped. The planner should plan chunks
+   * that specifically address the validator's complaints rather than
+   * re-implementing the whole feature from scratch.
+   *
+   * `priorValidatorLog` is the full body of the validator's last
+   * `.out` file. `priorFiles` is the set of files the prior plan
+   * touched (helps the planner reason about what's already in place).
+   */
+  priorValidatorLog?: string;
+  priorFiles?: string[];
 }
 
 export function planChunksUpfrontPrompt(input: PlanChunksUpfrontInput): string {
+  const retrySection = input.priorValidatorLog
+    ? `
+
+### Prior validator rejection — this is a RETRY
+
+A previous implementation of this feature was committed but the
+validator REJECTED it. The validator's output is below. Plan chunks
+that specifically address its complaints. Do NOT re-implement the
+whole feature — the foundation is already on the integration branch.
+Target only what's wrong.
+
+${
+  input.priorFiles && input.priorFiles.length > 0
+    ? `Files already touched on this feature's prior attempt:
+${input.priorFiles.map((f) => `  - ${f}`).join('\n')}
+
+`
+    : ''
+}Validator output (verbatim):
+\`\`\`
+${input.priorValidatorLog.slice(0, 8192)}${input.priorValidatorLog.length > 8192 ? '\n…(truncated; first 8KB of validator output above)' : ''}
+\`\`\`
+
+`
+    : '';
+
   return `You are the WORKER for feature ${input.featureId}: ${input.featureTitle}.
 
 ${input.featureDescription}
 
-${input.context ? `Additional context:\n${input.context}\n\n` : ''}Your task: plan the smallest sequence of self-contained chunks that,
+${input.context ? `Additional context:\n${input.context}\n\n` : ''}${retrySection}Your task: plan the smallest sequence of self-contained chunks that,
 when applied in order, complete this feature. Each chunk must leave
 the codebase in a working state — specifically, the project's
 typecheck command must pass after the chunk is committed.
