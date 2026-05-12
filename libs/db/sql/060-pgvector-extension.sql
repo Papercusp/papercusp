@@ -21,9 +21,12 @@
 -- Wrap in a DO block so missing pgvector.so doesn't abort the migration
 -- transaction (which would cause schema_migrations to never record this
 -- file, looping the failed CREATE EXTENSION on every subsequent boot).
-DO $
+-- Uses named dollar-quote ($body$) instead of unnamed ($$) to be robust
+-- against any tool that mangles repeated `$` (some bash heredocs do).
+DO LANGUAGE plpgsql $body$
 BEGIN
   CREATE EXTENSION IF NOT EXISTS vector;
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'pgvector extension not available on this server (%); mem0 will use in-memory fallback.', SQLERRM;
-END $;
+END
+$body$;

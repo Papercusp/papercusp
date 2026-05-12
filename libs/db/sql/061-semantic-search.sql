@@ -26,7 +26,7 @@
 -- this migration becomes a no-op (we still add tsvector columns
 -- but skip vector ones).
 
-DO $$
+DO LANGUAGE plpgsql $body$
 DECLARE
   has_vector boolean;
 BEGIN
@@ -48,5 +48,17 @@ BEGIN
   EXECUTE 'ALTER TABLE harness_shared.operator_turns ADD COLUMN IF NOT EXISTS text_embedding vector(384)';
   EXECUTE 'CREATE INDEX IF NOT EXISTS operator_turns_text_embedding_hnsw ON harness_shared.operator_turns USING hnsw (text_embedding vector_cosine_ops)';
 
+  -- Replica identity for logical replication. The 3 surfaces are
+  -- published via `zero_harness` and need REPLICA IDENTITY for the
+  -- backfill worker's UPDATE statements to succeed. operator_turns
+  -- in particular has no primary key — only NOT NULL on id — so
+  -- DEFAULT can't be used. FULL is safe because backfill writes are
+  -- infrequent (boot-time sweep + occasional re-embed) and the row
+  -- bodies are small (prose, not blobs).
+  EXECUTE 'ALTER TABLE harness_shared.harness_escalations REPLICA IDENTITY FULL';
+  EXECUTE 'ALTER TABLE harness_shared.harness_brainstorm  REPLICA IDENTITY FULL';
+  EXECUTE 'ALTER TABLE harness_shared.operator_turns      REPLICA IDENTITY FULL';
+
   RAISE NOTICE 'pgvector columns + HNSW indexes added; embed-backfill worker will populate on next boot.';
-END $$;
+END
+$body$;
