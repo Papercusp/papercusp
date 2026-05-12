@@ -16555,8 +16555,8 @@ html body .h-root.h-root :is(
 }
 
 .h-top-collapse-btn[data-collapsed="true"].h-top-collapse-inline {
-  top: var(--h-top-collapse-panel-top, 48px) !important;
-  left: var(--h-top-collapse-panel-left, clamp(92px, 22vw, 360px)) !important;
+  top: var(--h-top-collapse-gap-top, 28px) !important;
+  left: var(--h-top-collapse-gap-left, 50%) !important;
 }
 
 .h-top-collapse-btn.h-top-collapse-inline::before {
