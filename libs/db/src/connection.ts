@@ -39,13 +39,117 @@ const fullSchema = {
 
 // Read env at connection time so test fixtures (which set
 // HARNESS_DATABASE_URL after this module is imported) take effect.
+//
+// Resolution chain (added 2026-05-12 — superseded the bare native fallback):
+//   1. Explicit env (HARNESS_DATABASE_URL / HARNESS_ADMIN_DATABASE_URL).
+//      Set by Tauri main when spawning the desktop sidecar — that path
+//      always wins.
+//   2. Discovery file at $HOME/.papercusp/embedded-pg.json — written
+//      by the desktop's Rust main on embedded-PG ready, deleted on
+//      shutdown. Lets `apps/operator npm run dev` (no env set) share
+//      the SAME embedded PG the desktop is running.
+//   3. Native :5432 fallback — only when neither (1) nor (2) is
+//      available. Same string as before so nothing breaks for users
+//      who don't run the desktop.
+//
+// Cached per-process so we don't fs-stat every connection. Re-reading
+// would also produce stale results when the desktop port changes
+// across restarts — env-set callers (Tauri sidecar) get a fresh module
+// load anyway.
+let _resolvedAppUrl: string | null = null;
+let _resolvedAppUrlSource: 'env' | 'discovery' | null = null;
+let _resolvedAdminUrl: string | null = null;
+let _resolvedAdminUrlSource: 'env' | 'discovery' | null = null;
+function readDiscoveryFile(): { user?: string; password?: string; host?: string; port?: number } | null {
+  if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY === '1') return null;
+  try {
+    // Lazy require so this module can be imported in environments
+    // without `node:fs` (browser, edge runtime). The drizzle/postgres
+    // path is server-only in practice but be defensive.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const os = require('node:os') as typeof import('node:os');
+    const path = `${os.homedir()}/.papercusp/embedded-pg.json`;
+    const raw = fs.readFileSync(path, 'utf8');
+    const parsed = JSON.parse(raw) as { host?: string; port?: number; user?: string; password?: string };
+    if (parsed?.port && parsed?.host) return parsed;
+  } catch {
+    // missing / unparseable — fall through to native fallback
+  }
+  return null;
+}
 function appUrl(): string {
-  return process.env.HARNESS_DATABASE_URL
-    ?? 'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
+  if (_resolvedAppUrl && _resolvedAppUrlSource === 'env') return _resolvedAppUrl;
+  if (process.env.HARNESS_DATABASE_URL) {
+    _resolvedAppUrl = process.env.HARNESS_DATABASE_URL;
+    _resolvedAppUrlSource = 'env';
+    return _resolvedAppUrl;
+  }
+  const disc = readDiscoveryFile();
+  if (disc) {
+    // Discovery file ships harness_admin creds; for the app role we
+    // know the convention (harness_app/harness_app_pwd) since both
+    // are auto-created by embedded-postgres-server with fixed pwds.
+    const url = `postgresql://harness_app:harness_app_pwd@${disc.host}:${disc.port}/papercusp`;
+    if (url !== _resolvedAppUrl) {
+      _resolvedAppUrl = url;
+      _resolvedAppUrlSource = 'discovery';
+      // Discovery URL changed — invalidate cached pool so next
+      // getOrgPgApp() call rebuilds. Mirror of the adminUrl()
+      // invalidation block below (E2E round-13 bug #33 — app-side
+      // half of the same pattern).
+      if (_appOrgClient) {
+        try { _appOrgClient.end({ timeout: 1 }).catch(() => {}); } catch {}
+        _appOrgClient = null;
+        _appOrgDrizzle = null;
+        _appOrgDb = null;
+      }
+    }
+    return _resolvedAppUrl;
+  }
+  // Never cache the native fallback.
+  return 'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
 }
 function adminUrl(): string {
-  return process.env.HARNESS_ADMIN_DATABASE_URL
-    ?? 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+  // Env is stable for process lifetime → safe to cache.
+  if (_resolvedAdminUrl && _resolvedAdminUrlSource === 'env') return _resolvedAdminUrl;
+  if (process.env.HARNESS_ADMIN_DATABASE_URL) {
+    _resolvedAdminUrl = process.env.HARNESS_ADMIN_DATABASE_URL;
+    _resolvedAdminUrlSource = 'env';
+    return _resolvedAdminUrl;
+  }
+  // Discovery file can change (desktop restart / port shuffle) — re-read
+  // every call. Never cache the native fallback (poisons pool when
+  // operator boots before desktop writes the discovery file).
+  const disc = readDiscoveryFile();
+  // Embedded-pg always uses fixed passwords, so we don't strictly need the
+  // password in the discovery file — fall back to the known default.
+  // This handles desktops that wrote the discovery file before we added the
+  // password field (release v0.0.1).
+  if (disc?.host && disc?.port) {
+    const user = disc.user || 'harness_admin';
+    const pwd = disc.password || 'harness_admin_pwd';
+    const url = `postgresql://${user}:${pwd}@${disc.host}:${disc.port}/papercusp`;
+    if (url !== _resolvedAdminUrl) {
+      _resolvedAdminUrl = url;
+      _resolvedAdminUrlSource = 'discovery';
+      // Discovery URL changed — invalidate cached pool so next call rebuilds.
+      if (_adminClient) {
+        try { _adminClient.end({ timeout: 1 }).catch(() => {}); } catch {}
+        _adminClient = null;
+        _adminDrizzle = null;
+        _adminDb = null;
+      }
+    }
+    return _resolvedAdminUrl;
+  }
+  return 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+}
+/** Test-only — clears cached URLs so a test that mutates env between cases sees the change. */
+export function _resetUrlCacheForTests(): void {
+  _resolvedAppUrl = null;
+  _resolvedAdminUrl = null;
 }
 
 let _adminClient: Sql | null = null;
@@ -190,8 +294,15 @@ export function typedSql<R = Record<string, unknown>>(
  * remain reachable from unqualified queries (e.g. legacy `INSERT INTO messages`).
  */
 export function getOrgPg(): OrgPgHandle {
+  // Call adminUrl() on every invocation so its discovery-file
+  // change detection fires — it invalidates _adminClient internally
+  // when the discovery URL has changed. Previously this was only
+  // called once at first-client-build, so background workers that
+  // booted before the desktop wrote a new embedded-pg.json caught
+  // the old port forever (E2E round-13 bug #33).
+  const url = adminUrl();
   if (!_adminClient) {
-    _adminClient = buildClient(adminUrl(), ['harness_shared', 'papercup_shared', 'public']);
+    _adminClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public']);
     _adminDrizzle = drizzle(_adminClient, { schema: sharedSchema });
     _adminDb = drizzle(_adminClient, { schema: fullSchema });
   }
@@ -218,8 +329,10 @@ let _appOrgDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
  * spans workspaces (the harness_admin role bypasses RLS).
  */
 export function getOrgPgApp(): OrgPgHandle {
+  // Call appUrl() on every invocation — see comment in getOrgPg().
+  const url = appUrl();
   if (!_appOrgClient) {
-    _appOrgClient = buildClient(appUrl(), ['harness_shared', 'papercup_shared', 'public']);
+    _appOrgClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public']);
     _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedSchema });
     _appOrgDb = drizzle(_appOrgClient, { schema: fullSchema });
   }
