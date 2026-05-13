@@ -16668,3 +16668,204 @@ html body .h-root.h-root :is(
     font-size: 7.5px;
   }
 }
+
+/* Right-side drawer polish v4: make feature/issue inspectors read as first-class
+   HUD panels instead of older purple popouts. Keep this last so it overrides
+   legacy inline styles and the earlier drawer passes above. */
+.h-feature-peek-overlay,
+.h-issue-detail-overlay {
+  background:
+    radial-gradient(circle at 68% 10%, rgba(56, 189, 248, 0.20), transparent 26rem),
+    radial-gradient(circle at 86% 78%, rgba(45, 212, 191, 0.14), transparent 24rem),
+    linear-gradient(90deg, rgba(2, 8, 16, 0.55), rgba(2, 8, 16, 0.88)) !important;
+  backdrop-filter: blur(16px) saturate(155%) brightness(0.82) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(155%) brightness(0.82) !important;
+}
+
+.h-feature-peek-drawer,
+.h-issue-detail-drawer {
+  --h-popout-accent: #38bdf8;
+  --h-popout-accent-2: #2dd4bf;
+  isolation: isolate;
+  width: min(820px, 76vw) !important;
+  overflow: hidden !important;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in oklab, var(--h-popout-accent), transparent 72%), transparent 23rem),
+    radial-gradient(circle at 100% 18%, color-mix(in oklab, var(--h-popout-accent-2), transparent 86%), transparent 22rem),
+    linear-gradient(180deg, rgba(8, 20, 34, 0.990), rgba(2, 8, 16, 0.995)) !important;
+  border-left: 1px solid color-mix(in oklab, var(--h-popout-accent), transparent 42%) !important;
+  box-shadow:
+    -44px 0 110px rgba(0, 0, 0, 0.66),
+    -1px 0 0 rgba(255, 255, 255, 0.07),
+    inset 1px 0 0 color-mix(in oklab, var(--h-popout-accent), transparent 60%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09) !important;
+}
+
+.h-issue-detail-drawer {
+  --h-popout-accent: #fb7185;
+  --h-popout-accent-2: #f59e0b;
+}
+
+.h-feature-peek-drawer::after,
+.h-issue-detail-drawer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.34;
+  background-image:
+    linear-gradient(rgba(125, 211, 252, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(125, 211, 252, 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(90deg, rgba(0,0,0,0.84), rgba(0,0,0,0.20));
+}
+
+.h-feature-peek-drawer > *,
+.h-issue-detail-drawer > * {
+  position: relative;
+  z-index: 1;
+}
+
+.h-feature-peek-drawer > div:nth-of-type(1),
+.h-issue-detail-drawer > div:nth-of-type(1) {
+  min-height: 58px;
+  padding: 15px 22px !important;
+  background:
+    linear-gradient(90deg, color-mix(in oklab, var(--h-popout-accent), transparent 82%), transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.070), rgba(255, 255, 255, 0.015)) !important;
+  border-bottom: 1px solid color-mix(in oklab, var(--h-popout-accent), transparent 62%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 18px 34px rgba(0, 0, 0, 0.24) !important;
+}
+
+.h-drawer-topbar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: color-mix(in oklab, var(--fg), white 12%) !important;
+  font-size: 0.74rem !important;
+  letter-spacing: 0.18em !important;
+  text-shadow: 0 0 18px color-mix(in oklab, var(--h-popout-accent), transparent 64%);
+}
+
+.h-drawer-topbar-label::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--h-popout-accent);
+  box-shadow:
+    0 0 0 4px color-mix(in oklab, var(--h-popout-accent), transparent 84%),
+    0 0 20px color-mix(in oklab, var(--h-popout-accent), transparent 34%);
+}
+
+.h-feature-peek-drawer .h-btn-icon,
+.h-issue-detail-drawer .h-btn-icon {
+  width: 30px;
+  height: 30px;
+  border-color: color-mix(in oklab, var(--h-popout-accent), transparent 50%) !important;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255,255,255,0.14), transparent 32%),
+    rgba(5, 13, 25, 0.86) !important;
+}
+
+.h-feature-peek-drawer .h-drawer-body,
+.h-issue-detail-drawer .h-drawer-body {
+  padding: 20px 22px 24px !important;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.035), transparent 14rem),
+    transparent !important;
+  scrollbar-color: color-mix(in oklab, var(--h-popout-accent), transparent 38%) transparent !important;
+}
+
+.h-drawer-title-card {
+  margin: 0 0 18px !important;
+  padding: 18px 18px 16px !important;
+  border-radius: 22px !important;
+  border-color: color-mix(in oklab, var(--h-popout-accent), transparent 56%) !important;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in oklab, var(--h-popout-accent), transparent 76%), transparent 24rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.018)),
+    rgba(7, 16, 29, 0.94) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.105),
+    0 22px 44px rgba(0, 0, 0, 0.34) !important;
+}
+
+.h-drawer-title-card h2 {
+  font-size: clamp(1.45rem, 1.28rem + 0.58vw, 1.92rem) !important;
+  line-height: 1.14 !important;
+  color: color-mix(in oklab, var(--fg), white 14%) !important;
+}
+
+.h-feature-peek-drawer .h-drawer-body > div:not(.h-drawer-title-card),
+.h-issue-detail-drawer .h-drawer-body > div:not(.h-drawer-title-card) {
+  margin-bottom: 16px !important;
+  padding: 15px 15px 13px !important;
+  border-radius: 18px !important;
+  border-color: color-mix(in oklab, var(--h-popout-accent), transparent 70%) !important;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in oklab, var(--h-popout-accent), transparent 90%), transparent 18rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.012)),
+    rgba(5, 13, 24, 0.90) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.078),
+    0 16px 34px rgba(0, 0, 0, 0.24) !important;
+}
+
+.h-feature-peek-drawer .h-drawer-body > div:not(.h-drawer-title-card) > div:first-child,
+.h-issue-detail-drawer .h-drawer-body > div:not(.h-drawer-title-card) > div:first-child {
+  color: color-mix(in oklab, var(--h-popout-accent), white 18%) !important;
+  font-size: 0.72rem !important;
+  font-weight: 860 !important;
+  letter-spacing: 0.16em !important;
+}
+
+.h-drawer-meta-strip > span,
+.h-drawer-meta-strip > code,
+.h-issue-detail-drawer .h-issue-sev,
+.h-issue-detail-drawer .h-issue-status,
+.h-issue-detail-drawer .h-issue-linked,
+.h-issue-detail-drawer .h-issue-id {
+  min-height: 25px !important;
+  border-color: color-mix(in oklab, var(--h-popout-accent), transparent 66%) !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.052), rgba(255,255,255,0.010)),
+    color-mix(in oklab, var(--h-popout-accent), transparent 91%) !important;
+}
+
+.h-feature-status-button,
+.h-feature-peek-drawer > div:nth-of-type(2) button,
+.h-feature-peek-drawer > div:nth-of-type(2) a,
+.h-issue-detail-drawer > div:nth-of-type(2) button,
+.h-issue-detail-drawer > div:nth-of-type(3) button {
+  min-height: 32px !important;
+  border-radius: 999px !important;
+}
+
+.h-drawer-footer,
+.h-issue-detail-drawer > div:nth-of-type(3) {
+  background:
+    linear-gradient(90deg, color-mix(in oklab, var(--h-popout-accent), transparent 90%), transparent 66%),
+    linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.010)),
+    rgba(2, 8, 16, 0.96) !important;
+  border-top-color: color-mix(in oklab, var(--h-popout-accent), transparent 66%) !important;
+  box-shadow:
+    0 -18px 44px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.060) !important;
+}
+
+.h-issue-detail-drawer input {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.010)),
+    rgba(3, 10, 20, 0.94) !important;
+}
+
+@media (max-width: 860px) {
+  .h-feature-peek-drawer,
+  .h-issue-detail-drawer {
+    width: min(100vw, 820px) !important;
+  }
+}
