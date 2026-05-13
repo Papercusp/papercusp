@@ -11,14 +11,12 @@
 --     last_visited_step?: string,
 --     finished_at?: string,
 --     update_channel?: 'alpha' | 'beta' | 'stable',
---     telemetry_enabled?: boolean,        -- OFF by default; flipped by Step 12
---     telemetry_host?: string,            -- PostHog instance URL (overrides env)
---     telemetry_project_key?: string,     -- PostHog *public* project key. Safe-
---                                         --   by-design plaintext: PostHog
---                                         --   project keys are intended to be
---                                         --   embedded in client-side bundles
---                                         --   (see posthog.com/docs/api). Not
---                                         --   added to ENCRYPTED_TABLES.
+--     telemetry_enabled?: boolean,        -- OFF by default; flipped by Step 12.
+--                                         --   Not a sufficient gate on its own —
+--                                         --   forwarding also requires the shared
+--                                         --   PostHog config (lib/posthog-config)
+--                                         --   to have testingFeatures: true. See
+--                                         --   docs.papercupai.com/posthog.
 --     install_id?: string,                -- Per-install random UUID. Stable
 --                                         --   PostHog distinct_id across
 --                                         --   workspace creation/deletion.
