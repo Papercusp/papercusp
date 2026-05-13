@@ -17021,3 +17021,316 @@ html body .h-root.h-root :is(
     justify-self: start;
   }
 }
+
+/* Right-side drawer simplicity pass: keep the feature/issue accents, but make
+   the inspector feel calmer, easier to scan, and more form-like. */
+.h-feature-peek-overlay,
+.h-issue-detail-overlay {
+  background: linear-gradient(90deg, rgba(2, 8, 16, 0.42), rgba(2, 8, 16, 0.78)) !important;
+  backdrop-filter: blur(10px) saturate(118%) brightness(0.88) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(118%) brightness(0.88) !important;
+}
+
+.h-feature-peek-drawer,
+.h-issue-detail-drawer {
+  width: min(760px, 72vw) !important;
+  background: linear-gradient(180deg, rgba(7, 16, 29, 0.995), rgba(3, 8, 16, 0.995)) !important;
+  border-left-color: color-mix(in oklab, var(--h-popout-accent), transparent 58%) !important;
+  box-shadow:
+    -28px 0 72px rgba(0, 0, 0, 0.56),
+    inset 1px 0 0 color-mix(in oklab, var(--h-popout-accent), transparent 76%) !important;
+}
+
+.h-feature-peek-drawer::after,
+.h-issue-detail-drawer::after {
+  opacity: 0.08 !important;
+  background-size: 72px 72px !important;
+}
+
+.h-feature-peek-drawer > div:nth-of-type(1),
+.h-issue-detail-drawer > div:nth-of-type(1) {
+  min-height: 52px;
+  padding: 12px 20px !important;
+  background: rgba(3, 10, 20, 0.94) !important;
+  border-bottom-color: color-mix(in oklab, var(--h-popout-accent), transparent 76%) !important;
+  box-shadow: none !important;
+}
+
+.h-drawer-topbar-label {
+  gap: 8px;
+  font-size: 0.70rem !important;
+  letter-spacing: 0.12em !important;
+  text-shadow: none !important;
+}
+
+.h-drawer-topbar-label::before {
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--h-popout-accent), transparent 88%) !important;
+}
+
+.h-feature-peek-drawer .h-btn-icon,
+.h-issue-detail-drawer .h-btn-icon {
+  width: 32px;
+  height: 32px;
+  background: rgba(5, 13, 25, 0.72) !important;
+  box-shadow: none !important;
+}
+
+.h-feature-peek-drawer .h-drawer-body,
+.h-issue-detail-drawer .h-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 22px !important;
+  background: transparent !important;
+  line-height: 1.58;
+}
+
+.h-drawer-title-card {
+  margin: 0 !important;
+  padding: 16px 16px 14px !important;
+  border-radius: 16px !important;
+  border-color: color-mix(in oklab, var(--h-popout-accent), transparent 68%) !important;
+  background: rgba(8, 18, 31, 0.78) !important;
+  box-shadow: none !important;
+}
+
+.h-drawer-title-card::before,
+.h-feature-peek-drawer .h-drawer-body > div:not(.h-drawer-title-card)::before,
+.h-feature-peek-drawer .h-drawer-body > div:not(.h-drawer-title-card)::after,
+.h-issue-detail-drawer .h-drawer-body > div:not(.h-drawer-title-card)::before,
+.h-issue-detail-drawer .h-drawer-body > div:not(.h-drawer-title-card)::after {
+  display: none !important;
+}
+
+.h-drawer-title-card h2 {
+  max-width: 34rem;
+  font-size: clamp(1.20rem, 1.08rem + 0.34vw, 1.54rem) !important;
+  line-height: 1.28 !important;
+  letter-spacing: -0.012em !important;
+  text-shadow: none !important;
+}
+
+.h-drawer-eyebrow {
+  gap: 6px !important;
+  color: color-mix(in oklab, var(--h-popout-accent), white 8%) !important;
+  font-size: 0.68rem !important;
+  letter-spacing: 0.08em !important;
+}
+
+.h-feature-peek-drawer .h-drawer-title-card > div:last-child {
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr) !important;
+  column-gap: 12px !important;
+  row-gap: 8px !important;
+  padding-top: 12px !important;
+}
+
+.h-feature-peek-drawer .h-feature-status-controls {
+  gap: 6px 8px !important;
+  padding: 6px !important;
+  border: 1px solid color-mix(in oklab, var(--h-popout-accent), transparent 80%) !important;
+  border-radius: 12px !important;
+  background: rgba(3, 10, 20, 0.46) !important;
+  box-shadow: none !important;
+}
+
+.h-feature-status-button {
+  min-height: 30px !important;
+  padding-inline: 10px !important;
+  font-size: 0.72rem !important;
+  opacity: 0.82;
+  box-shadow: none !important;
+}
+
+.h-feature-status-button[aria-pressed="true"],
+.h-feature-status-button.is-current {
+  opacity: 1;
+  font-weight: 760 !important;
+}
+
+.h-drawer-meta-strip {
+  gap: 6px 8px;
+  padding-top: 8px;
+}
+
+.h-drawer-meta-strip > span,
+.h-drawer-meta-strip > code,
+.h-issue-detail-drawer .h-issue-sev,
+.h-issue-detail-drawer .h-issue-status,
+.h-issue-detail-drawer .h-issue-linked,
+.h-issue-detail-drawer .h-issue-id {
+  min-height: 22px !important;
+  padding-inline: 7px !important;
+  background: rgba(255, 255, 255, 0.035) !important;
+  box-shadow: none !important;
+}
+
+.h-feature-peek-drawer .h-drawer-body > div:not(.h-drawer-title-card),
+.h-issue-detail-drawer .h-drawer-body > div:not(.h-drawer-title-card) {
+  margin-bottom: 0 !important;
+  padding: 14px 16px !important;
+  border-radius: 14px !important;
+  border-color: color-mix(in oklab, var(--h-popout-accent), transparent 78%) !important;
+  background: rgba(6, 14, 25, 0.68) !important;
+  box-shadow: none !important;
+}
+
+.h-feature-peek-drawer .h-drawer-body > div:not(.h-drawer-title-card) > div:first-child,
+.h-issue-detail-drawer .h-drawer-body > div:not(.h-drawer-title-card) > div:first-child {
+  margin-bottom: 10px !important;
+  color: color-mix(in oklab, var(--fg-dim), white 16%) !important;
+  font-size: 0.68rem !important;
+  letter-spacing: 0.10em !important;
+}
+
+.h-feature-peek-drawer .h-markdown-view,
+.h-issue-detail-drawer .h-markdown-view {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: color-mix(in oklab, var(--fg), white 4%) !important;
+  font-size: 0.90rem;
+  line-height: 1.68;
+}
+
+.h-feature-peek-drawer .h-markdown-view :where(p, li),
+.h-issue-detail-drawer .h-markdown-view :where(p, li) {
+  max-width: 68ch;
+}
+
+.h-feature-peek-drawer .h-markdown-view :where(pre, code),
+.h-issue-detail-drawer .h-markdown-view :where(pre, code) {
+  border-color: color-mix(in oklab, var(--h-popout-accent), transparent 82%) !important;
+  background: rgba(2, 8, 16, 0.72) !important;
+}
+
+.h-feature-peek-drawer .h-feature-run-row,
+.h-issue-detail-drawer .h-feature-run-row {
+  border-radius: 12px !important;
+  padding: 8px 10px !important;
+  background: rgba(4, 11, 21, 0.70) !important;
+  box-shadow: none !important;
+}
+
+.h-feature-peek-drawer .h-drawer-footer {
+  display: grid !important;
+  grid-template-columns: auto 1fr auto;
+  align-items: center !important;
+  gap: 10px !important;
+  margin-top: 0 !important;
+  margin-inline: -20px !important;
+  margin-bottom: -22px !important;
+  padding: 12px 20px 14px !important;
+  background: rgba(3, 10, 20, 0.96) !important;
+  border-top-color: color-mix(in oklab, var(--h-popout-accent), transparent 78%) !important;
+  box-shadow: none !important;
+}
+
+.h-feature-peek-drawer .h-drawer-footer > span:last-child {
+  margin-left: 0 !important;
+  justify-self: end;
+}
+
+.h-issue-detail-drawer > div:nth-of-type(3) {
+  display: grid !important;
+  grid-template-columns: auto minmax(14rem, 1fr) auto auto;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 12px 20px 14px !important;
+  background: rgba(3, 10, 20, 0.96) !important;
+  border-top-color: color-mix(in oklab, var(--h-popout-accent), transparent 78%) !important;
+  box-shadow: none !important;
+}
+
+.h-issue-detail-drawer > div:nth-of-type(3) input {
+  min-width: 0;
+  width: 100%;
+  min-height: 38px;
+  border-radius: 10px !important;
+  background: rgba(4, 11, 21, 0.78) !important;
+}
+
+.h-issue-detail-drawer > div:nth-of-type(3) .h-drawer-footer-hint {
+  margin-left: 0 !important;
+  justify-self: end;
+}
+
+
+/* Specificity follow-up for the readability pass: older HUD selectors target
+   structural first children, so restate the calmer shapes with drawer scope. */
+.h-feature-peek-drawer .h-drawer-title-card,
+.h-issue-detail-drawer .h-drawer-title-card {
+  border-radius: 16px !important;
+}
+
+.h-feature-peek-drawer .h-drawer-title-card h2,
+.h-issue-detail-drawer .h-drawer-title-card h2 {
+  font-size: clamp(1.20rem, 1.08rem + 0.34vw, 1.54rem) !important;
+  line-height: 1.28 !important;
+}
+
+.h-feature-peek-drawer > div:nth-of-type(2) > .h-drawer-title-card,
+.h-issue-detail-drawer > div:nth-of-type(2) > .h-drawer-title-card {
+  border-radius: 16px !important;
+}
+
+.h-feature-peek-drawer > div:nth-of-type(2) > .h-drawer-title-card h2,
+.h-issue-detail-drawer > div:nth-of-type(2) > .h-drawer-title-card h2 {
+  font-size: clamp(1.20rem, 1.08rem + 0.34vw, 1.54rem) !important;
+  line-height: 1.28 !important;
+}
+
+.h-feature-peek-drawer > div:nth-of-type(2) > div.h-drawer-title-card:first-child,
+.h-issue-detail-drawer > div:nth-of-type(2) > div.h-drawer-title-card:first-child {
+  border-radius: 16px !important;
+}
+
+.h-feature-peek-drawer > div:nth-of-type(2) > div.h-drawer-title-card:first-child h2,
+.h-issue-detail-drawer > div:nth-of-type(2) > div.h-drawer-title-card:first-child h2 {
+  font-size: clamp(1.20rem, 1.08rem + 0.34vw, 1.54rem) !important;
+  line-height: 1.28 !important;
+}
+
+.h-feature-peek-drawer .h-drawer-body > div:not(.h-drawer-title-card) > div:first-child,
+.h-issue-detail-drawer .h-drawer-body > div:not(.h-drawer-title-card) > div:first-child {
+  text-transform: none !important;
+  font-weight: 720 !important;
+  letter-spacing: 0.015em !important;
+}
+
+.h-feature-peek-drawer > div:nth-of-type(2) > div:not(.h-drawer-title-card):not(.h-drawer-footer),
+.h-issue-detail-drawer > div:nth-of-type(2) > div:not(.h-drawer-title-card):not(:first-of-type) {
+  border-radius: 14px !important;
+}
+
+.h-feature-peek-drawer > div:nth-of-type(2) > div:not(.h-drawer-title-card):not(.h-drawer-footer) > div:first-child,
+.h-issue-detail-drawer > div:nth-of-type(2) > div:not(.h-drawer-title-card):not(:first-of-type) > div:first-child {
+  text-transform: none !important;
+  font-weight: 720 !important;
+  letter-spacing: 0.015em !important;
+}
+@media (max-width: 860px) {
+  .h-feature-peek-drawer,
+  .h-issue-detail-drawer {
+    width: 100vw !important;
+  }
+
+  .h-feature-peek-drawer .h-drawer-body,
+  .h-issue-detail-drawer .h-drawer-body {
+    padding-inline: 16px !important;
+  }
+
+  .h-feature-peek-drawer .h-drawer-footer,
+  .h-issue-detail-drawer > div:nth-of-type(3) {
+    grid-template-columns: 1fr !important;
+    justify-items: stretch;
+  }
+
+  .h-feature-peek-drawer .h-drawer-footer > span:last-child,
+  .h-issue-detail-drawer > div:nth-of-type(3) .h-drawer-footer-hint {
+    justify-self: start;
+  }
+}
