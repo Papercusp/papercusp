@@ -13,7 +13,15 @@
 --     update_channel?: 'alpha' | 'beta' | 'stable',
 --     telemetry_enabled?: boolean,        -- OFF by default; flipped by Step 12
 --     telemetry_host?: string,            -- PostHog instance URL (overrides env)
---     telemetry_project_key?: string,     -- PostHog project key (overrides env)
+--     telemetry_project_key?: string,     -- PostHog *public* project key. Safe-
+--                                         --   by-design plaintext: PostHog
+--                                         --   project keys are intended to be
+--                                         --   embedded in client-side bundles
+--                                         --   (see posthog.com/docs/api). Not
+--                                         --   added to ENCRYPTED_TABLES.
+--     install_id?: string,                -- Per-install random UUID. Stable
+--                                         --   PostHog distinct_id across
+--                                         --   workspace creation/deletion.
 --     updated_at?: string,
 --   }
 
