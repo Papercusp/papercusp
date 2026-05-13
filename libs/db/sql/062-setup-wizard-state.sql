@@ -11,8 +11,9 @@
 --     last_visited_step?: string,
 --     finished_at?: string,
 --     update_channel?: 'alpha' | 'beta' | 'stable',
---     telemetry_enabled?: boolean,
---     telemetry_sink_url?: string,
+--     telemetry_enabled?: boolean,        -- OFF by default; flipped by Step 12
+--     telemetry_host?: string,            -- PostHog instance URL (overrides env)
+--     telemetry_project_key?: string,     -- PostHog project key (overrides env)
 --     updated_at?: string,
 --   }
 
