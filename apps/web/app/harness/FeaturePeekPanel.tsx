@@ -449,6 +449,7 @@ function escapeRegExp(value: string): string {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div
+      className="h-drawer-section"
       style={{
         marginBottom: 18,
         padding: '12px 12px 10px',
@@ -458,7 +459,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
       }}
     >
-      <div style={{
+      <div className="h-drawer-section-title" style={{
         fontSize: '0.72rem',
         color: COLORS.textMuted,
         textTransform: 'uppercase',

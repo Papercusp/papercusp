@@ -218,7 +218,7 @@ export function IssueDetail({
           </Section>
         </div>
 
-        <div style={{
+        <div className="h-drawer-footer h-issue-detail-footer" style={{
           borderTop: '1px solid var(--border)', padding: '10px 16px',
           display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', flexShrink: 0,
           background: '#17131f',
@@ -288,7 +288,7 @@ function escapeRegExp(value: string): string {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{
+    <div className="h-drawer-section" style={{
       marginBottom: 14,
       padding: '11px 12px 10px',
       border: '1px solid var(--border)',
@@ -296,7 +296,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       background: '#1c1824',
       boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
     }}>
-      <div style={{
+      <div className="h-drawer-section-title" style={{
         fontSize: 10, fontWeight: 600, letterSpacing: 0.7,
         textTransform: 'uppercase', color: 'var(--fg-dim)', marginBottom: 8,
       }}>{title}</div>
