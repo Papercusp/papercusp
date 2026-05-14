@@ -38,22 +38,12 @@ async function runTs(): Promise<never> {
   const maxIterations = parseInt(process.env.MAX_ITERATIONS ?? '200', 10);
   const iterationSleepMs = (parseFloat(process.env.ITERATION_SLEEP ?? '2') || 0) * 1000;
 
-  const exit = await runMainLoop({
-    ctx: {
-      harnessDir,
-      projectDir,
-      stateDir,
-      logDir,
-      phase,
-      claudeCmd,
-      agentBackend,
-      dept: configGet<string>(cfg, 'dept', ''),
-      log: logger.log,
-    },
-    logger,
-    maxIterations,
-    iterationSleepMs,
-  });
+  // Bootstrap PG so the orchestrator + spawned roles share one
+  // connection pool (mirrors bin/invoke-once.ts). pgBoot.pg is undefined
+  // when PG isn't reachable — every consumer below guards on it.
+  const slug = harnessSlug(projectDir);
+  const pgBoot = await bootstrapOrchestratorPg(logger.log, { harnessSlug: slug });
+  const workspaceId = pgBoot.pg ? activeWorkspaceId() : undefined;
 
   // Pull decrypted search-provider keys (Migration 047) once at boot.
   // Workers/validators/scoper/architect inherit them via ctx.extraSpawnEnv.
