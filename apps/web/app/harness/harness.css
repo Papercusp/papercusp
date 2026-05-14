@@ -16523,12 +16523,12 @@ html body .h-root.h-root :is(
   }
 }
 
-/* Stable harness top-section portal control: keep the same geometry in both
-   states so the URL-backed collapse toggle doesn't hop around while the page
-   re-renders. */
+/* Stable harness top-section portal control: the same top-edge control is
+   always the first visible harness affordance in both expanded and collapsed
+   modes, so the URL-backed collapse toggle never hops into the tab/panel gap. */
 .h-top-collapse-btn.h-top-collapse-inline {
   position: fixed !important;
-  top: 48px !important;
+  top: calc(env(safe-area-inset-top, 0px) + 6px) !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
   z-index: 1500 !important;
@@ -16536,26 +16536,30 @@ html body .h-root.h-root :is(
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 7px !important;
-  width: 168px !important;
-  min-height: 22px !important;
-  height: 22px !important;
-  padding: 0 10px !important;
+  gap: 8px !important;
+  width: 190px !important;
+  min-height: 30px !important;
+  height: 30px !important;
+  padding: 0 12px !important;
   border-radius: 999px !important;
   white-space: nowrap !important;
-  color: color-mix(in oklab, var(--fg), white 8%) !important;
+  color: color-mix(in oklab, var(--fg), white 12%) !important;
   font-size: 10px !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.04em !important;
-  border: 1px solid rgba(186, 230, 253, 0.30) !important;
+  font-weight: 760 !important;
+  letter-spacing: 0.055em !important;
+  text-transform: uppercase !important;
+  border: 1px solid rgba(186, 230, 253, 0.42) !important;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.11), rgba(255,255,255,0.02) 44%, rgba(0,0,0,0.24)),
-    linear-gradient(180deg, rgba(10, 20, 35, 0.96), rgba(5, 11, 21, 0.98)) !important;
+    linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04) 43%, rgba(0,0,0,0.22)),
+    radial-gradient(circle at 50% 0%, rgba(103, 232, 249, 0.22), transparent 62%),
+    linear-gradient(180deg, rgba(12, 24, 40, 0.98), rgba(4, 10, 19, 0.99)) !important;
   box-shadow:
-    0 10px 24px rgba(0, 0, 0, 0.30),
-    0 0 0 1px rgba(7, 15, 27, 0.72),
-    0 0 18px rgba(56, 189, 248, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+    0 12px 30px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(7, 15, 27, 0.78),
+    0 0 22px rgba(56, 189, 248, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.40) !important;
+  backdrop-filter: blur(12px) saturate(1.12);
   transition:
     border-color 140ms ease,
     background 140ms ease,
@@ -16563,10 +16567,6 @@ html body .h-root.h-root :is(
     opacity 140ms ease !important;
 }
 
-.h-top-collapse-btn[data-collapsed="true"].h-top-collapse-inline {
-  top: var(--h-top-collapse-gap-top, 28px) !important;
-  left: var(--h-top-collapse-gap-left, 50%) !important;
-}
 
 .h-top-collapse-btn.h-top-collapse-inline::before {
   background:
@@ -16602,12 +16602,13 @@ html body .h-root.h-root :is(
 }
 
 .h-top-collapse-btn.h-top-collapse-inline .h-top-collapse-icon {
-  width: 12px !important;
-  height: 12px !important;
-  padding: 1px !important;
+  width: 16px !important;
+  height: 16px !important;
+  padding: 2px !important;
   border-width: 1px !important;
-  background: rgba(56, 189, 248, 0.16) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 10px rgba(56, 189, 248, 0.16) !important;
+  border-color: rgba(103, 232, 249, 0.42) !important;
+  background: rgba(56, 189, 248, 0.18) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 0 12px rgba(56, 189, 248, 0.20) !important;
 }
 
 .h-top-collapse-btn.h-top-collapse-inline .h-top-collapse-label {
@@ -16624,19 +16625,19 @@ html body .h-root.h-root :is(
 .h-top-collapse-state {
   position: relative;
   z-index: 1;
-  flex: 0 0 34px;
-  min-width: 34px;
-  height: 14px;
+  flex: 0 0 42px;
+  min-width: 42px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
   font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-weight: 850;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  border: 1px solid rgba(186, 230, 253, 0.24);
-  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(186, 230, 253, 0.30);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .h-top-collapse-btn[data-collapsed="true"] .h-top-collapse-state {
@@ -16653,18 +16654,19 @@ html body .h-root.h-root :is(
 
 @media (max-width: 720px) {
   .h-top-collapse-btn.h-top-collapse-inline {
-    width: 156px !important;
-    min-height: 20px !important;
-    height: 20px !important;
-    gap: 6px !important;
-    padding: 0 9px !important;
+    top: calc(env(safe-area-inset-top, 0px) + 5px) !important;
+    width: 172px !important;
+    min-height: 28px !important;
+    height: 28px !important;
+    gap: 7px !important;
+    padding: 0 10px !important;
     font-size: 9px !important;
   }
 
   .h-top-collapse-state {
-    flex-basis: 30px;
-    min-width: 30px;
-    height: 13px;
+    flex-basis: 38px;
+    min-width: 38px;
+    height: 17px;
     font-size: 7.5px;
   }
 }
