@@ -1,6 +1,6 @@
 -- Multi-harness spawning + cross-harness coordination support tables.
 --
--- See: apps/operator/content/docs/implementation/multi-harness-spawning.mdx
+-- See: apps/operator/content/internal-docs/implementation/multi-harness-spawning.mdx
 --      apps/operator/app/api/_hono/execute-action.contract.md
 --
 -- Idempotent — safe to re-run.

@@ -1,6 +1,6 @@
 -- Migration 049 — auto-compute needs_design at feature creation.
 --
--- Step 1's plan (apps/operator/content/docs/design/design-phase-plan.mdx
+-- Step 1's plan (apps/operator/content/internal-docs/design/design-phase-plan.mdx
 -- §3) puts the heuristic in TS. That helps writers that go through the
 -- TS lib, but most existing feature writers (linear-sync, jira-sync,
 -- the Hono harness route in libs/papercusp/apps/web) bypass the TS lib

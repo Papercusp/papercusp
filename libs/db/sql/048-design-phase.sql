@@ -1,6 +1,6 @@
 -- Migration 048 — Design phase fields on features + design artifacts table.
 -- Step 1 of the design-phase plan
--- (apps/operator/content/docs/design/design-phase-plan.mdx). Adds the
+-- (apps/operator/content/internal-docs/design/design-phase-plan.mdx). Adds the
 -- minimum schema needed to gate features on design completion. UI, agent,
 -- and adapter wiring follow in later steps.
 --
