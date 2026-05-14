@@ -840,6 +840,61 @@ export async function invoke(
 
     const child = spawn(command, finalArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
 
+    // Write a row to harness_shared.harness_lanes so the operator UI's
+    // "agents in flight" pill bar can subscribe to the live agent set.
+    // Bash run.sh used to do this via `pg_write_lane`; the TS migration
+    // dropped it, leaving the UI stuck on "No agents in flight" / the
+    // "Orchestrator deciding next step…" subtitle even when a worker
+    // was actively spawning. PK is (harness_slug, phase, role) — single
+    // lane per role is fine for the common chunk-loop case; if parallel
+    // workers ever need distinct rows the role string already encodes
+    // the lane.
+    let laneWritePromise: Promise<void> | null = null;
+    const laneSlug = (() => {
+      try { return harnessSlugFromProjectDir(ctx.projectDir); } catch { return ''; }
+    })();
+    if (ctx.pg && ctx.workspaceId && child.pid != null && laneSlug) {
+      const lanePid = child.pid;
+      const pg = ctx.pg;
+      const ws = ctx.workspaceId;
+      const startedAtMs = Date.now();
+      laneWritePromise = (async () => {
+        try {
+          await pg`
+            INSERT INTO harness_shared.harness_lanes
+              (workspace_id, harness_slug, phase, role, feature_id, pid, started_at)
+            VALUES (${ws}, ${laneSlug}, ${ctx.phase}, ${role}, ${featureId ?? null}, ${lanePid}, ${startedAtMs})
+            ON CONFLICT (harness_slug, phase, role) DO UPDATE SET
+              feature_id   = EXCLUDED.feature_id,
+              pid          = EXCLUDED.pid,
+              started_at   = EXCLUDED.started_at,
+              workspace_id = EXCLUDED.workspace_id
+          `;
+        } catch (err) {
+          ctx.log(`  lane write failed: ${(err as Error).message}`);
+        }
+      })();
+    }
+    const clearLane = async () => {
+      if (!ctx.pg || !ctx.workspaceId || !laneSlug) return;
+      const pg = ctx.pg;
+      try {
+        // Wait for the insert (if any) to finish before deleting — a
+        // delete that races ahead of the insert leaves an orphan row
+        // that the operator's status-sweep would have to clean up
+        // later.
+        if (laneWritePromise) await laneWritePromise;
+        await pg`
+          DELETE FROM harness_shared.harness_lanes
+          WHERE harness_slug = ${laneSlug}
+            AND phase = ${ctx.phase}
+            AND role = ${role}
+        `;
+      } catch (err) {
+        ctx.log(`  lane clear failed: ${(err as Error).message}`);
+      }
+    };
+
     let timer: NodeJS.Timeout | undefined;
     let timedOut = false;
     if (timeoutMs) {
@@ -937,12 +992,14 @@ export async function invoke(
       ctx.log(`  spawn error: ${err.message}`);
       if (timer) clearTimeout(timer);
       if (mcpHandle) restoreSpawnMcp(mcpHandle);
+      void clearLane();
       resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
     });
 
     child.on('close', (code) => {
       if (timer) clearTimeout(timer);
       if (mcpHandle) restoreSpawnMcp(mcpHandle);
+      void clearLane();
       // bash uses exit 124 for timeout (matches `timeout` coreutil).
       const exitCode = timedOut ? 124 : (code ?? 0);
       resolve({ exitCode, durationMs: Date.now() - startedAt });
