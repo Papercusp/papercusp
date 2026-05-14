@@ -31,8 +31,32 @@
 import postgres from 'postgres';
 import type { OrchestratorPg } from './invoke';
 
-const DEFAULT_DSN =
+const DEFAULT_DSN_FALLBACK =
   'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+
+/**
+ * Resolve PG DSN: env > discovery file (~/.papercusp/embedded-pg.json,
+ * written by the desktop's Rust main on embedded-PG ready) > native
+ * fallback. Mirrors the resolution chain in
+ * libs/papercusp/libs/db/src/connection.ts so an orchestrator launched
+ * outside Tauri (CLI mode, npm run dev) shares the same embedded PG
+ * the desktop is running.
+ */
+function defaultDsn(): string {
+  if (process.env.PAPERCUSP_DATABASE_URL) return process.env.PAPERCUSP_DATABASE_URL;
+  if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY !== '1') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require('node:fs') as typeof import('node:fs');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const os = require('node:os') as typeof import('node:os');
+      const raw = fs.readFileSync(`${os.homedir()}/.papercusp/embedded-pg.json`, 'utf8');
+      const parsed = JSON.parse(raw) as { url?: string };
+      if (parsed?.url) return parsed.url;
+    } catch { /* fall through */ }
+  }
+  return DEFAULT_DSN_FALLBACK;
+}
 
 export interface BootstrapResult {
   pg: OrchestratorPg | null;
@@ -63,9 +87,20 @@ export async function bootstrapOrchestratorPg(
   opts: BootstrapOptions = {},
 ): Promise<BootstrapResult> {
   if (process.env.PAPERCUSP_USE_PG_STATE !== '1') {
+    // Production callers MUST set this — the in-memory state fallback
+    // is a test-only stub with an empty store. Without PG, pre-loop's
+    // featuresExist() returns false even when the DB has features, the
+    // scoper runs and exits idempotently (since PG already matches
+    // SPEC.md), then pre-loop bails because in-mem is still empty.
+    // Log loudly so this is debuggable from /tmp/harness-<slug>.log.
+    log(
+      'PG bootstrap: PAPERCUSP_USE_PG_STATE!=1 — running with empty in-memory state. ' +
+      'This is a test-only mode; production launchers must set the env var. ' +
+      'See pg-bootstrap.ts header for details.',
+    );
     return { pg: null, cleanup: null, reason: 'opted-out' };
   }
-  const dsn = process.env.PAPERCUSP_DATABASE_URL ?? DEFAULT_DSN;
+  const dsn = defaultDsn();
 
   // Build search_path: harness_<slug> first (so unqualified queries hit
   // the per-harness schema), then harness_shared, then public.

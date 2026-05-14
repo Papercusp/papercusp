@@ -18,13 +18,18 @@ afterEach(() => {
 });
 
 describe('bootstrapOrchestratorPg', () => {
-  test('opted-out — env var unset returns null pg + opted-out reason', async () => {
+  test('opted-out — env var unset returns null pg + opted-out reason + logs warning', async () => {
     const log: string[] = [];
     const r = await bootstrapOrchestratorPg((m) => log.push(m));
     assert.equal(r.pg, null);
     assert.equal(r.cleanup, null);
     assert.equal(r.reason, 'opted-out');
-    assert.equal(log.length, 0, 'opted-out path is silent');
+    // Was previously silent; now logs a loud warning because the
+    // in-memory fallback is test-only and silently breaks pre-loop.
+    assert.ok(
+      log.some((l) => /PAPERCUSP_USE_PG_STATE/.test(l)),
+      'opted-out path should warn about empty in-memory state',
+    );
   });
 
   test('opted-out — env var === "0" returns null pg', async () => {
