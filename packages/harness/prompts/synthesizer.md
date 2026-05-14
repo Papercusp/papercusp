@@ -79,3 +79,12 @@ Don't be conservative. If none of the lanes got something right, write it yourse
 ## Output
 
 Leave the worktree in the state you want shipped. Print a one-line summary of what you did to stdout. The harness commits and validates whatever's in the worktree.
+
+---
+
+## Design history (intentional drops from the original plan)
+
+Two mechanisms from the original synthesizer plan (2026-05-11) were considered and intentionally removed. Recorded here so future contributors don't read their absence as a missing TODO.
+
+- **"Coupled files" worker output** — workers would emit a `## Coupled files` block listing files that must travel together; synthesizer would respect groups when picking per-file. **Dropped** because synthesis no longer does per-file picking: it reads all lane diffs and produces one coherent branch from scratch. Coupling is handled implicitly by the LLM seeing full context. No machine-readable input needed.
+- **Per-lane validator fallback** — on synthesizer failure (LLM timeout, malformed output), run validator against each lane independently and merge the first lane that passes. **Dropped** in favor of the validator-feedback retry path: workers branch off the prior synth branch and read `PRIOR_VALIDATOR_LOG` on next iteration. The retry model covers validator-rejects-synth well; the gap is "synth itself never produces a branch," which today hard-fails the feature. Acceptable until synth-failure rate becomes a measured cost.
