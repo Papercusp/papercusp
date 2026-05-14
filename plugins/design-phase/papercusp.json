@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "kind": "plugin",
   "papercusp": "^0.1.0",
-  "description": "MCP + HTTP tools for the design-phase agent loop. Designer agents use these to validate IR specs, lint anti-patterns, persist accepted specs to PG, browse design memos, and resolve the per-harness DESIGN_SPEC.md fallback chain. Plan: apps/operator/content/docs/design/design-phase-plan.mdx.",
+  "description": "MCP + HTTP tools for the design-phase agent loop. Designer agents use these to validate IR specs, lint anti-patterns, persist accepted specs to PG, browse design memos, and resolve the per-harness DESIGN_SPEC.md fallback chain. Plan: apps/operator/content/internal-docs/design/design-phase-plan.mdx.",
   "author": "Papercusp",
   "license": "MIT",
   "capabilities": [
@@ -99,7 +99,7 @@
     },
     {
       "name": "list_memos",
-      "description": "List design memos at apps/operator/content/docs/design/*.mdx with their slug, title, and (when frontmatter declares one) status.",
+      "description": "List design memos at apps/operator/content/internal-docs/design/*.mdx with their slug, title, and (when frontmatter declares one) status.",
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -118,7 +118,7 @@ export async function featureAttemptsPg(ctx: PgStateContext, featureId: string):
  * features have all been triaged (accepted / ignored), turn the flag
  * on for that workspace.
  *
- * See apps/operator/content/docs/design/design-phase-plan.mdx §2.
+ * See apps/operator/content/internal-docs/design/design-phase-plan.mdx §2.
  */
 export class DesignGateError extends Error {
   readonly featureId: string;

@@ -32,4 +32,4 @@ here.
 | DB schema in `db/`                  | parent repo: `npm run test:all:integration`           |
 | Marketplace UI                      | rebuild `apps/papercup` AND `apps/papercusp` consumers |
 
-See parent-repo `CLAUDE.md` and `apps/operator/content/docs/testing/` for the canonical strategy.
+See parent-repo `CLAUDE.md` and `apps/operator/content/internal-docs/testing/` for the canonical strategy.

@@ -5,7 +5,7 @@
  * design_status from harness_features_consolidated and refuses the
  * 'in_progress' transition when needed.
  *
- * Plan: apps/operator/content/docs/design/design-phase-plan.mdx §2.
+ * Plan: apps/operator/content/internal-docs/design/design-phase-plan.mdx §2.
  */
 import { describe, test, beforeEach, afterEach, expect } from 'vitest';
 import { DesignGateError, setFeatureStatusPg } from './state-pg.js';

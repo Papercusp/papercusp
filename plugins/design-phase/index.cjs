@@ -3,7 +3,7 @@
  * @papercupai/design-phase — runtime artifact, hand-written CommonJS.
  *
  * Provides the MCP + HTTP tools the designer agent calls. Plan §15
- * (MCP surface): apps/operator/content/docs/design/design-phase-plan.mdx.
+ * (MCP surface): apps/operator/content/internal-docs/design/design-phase-plan.mdx.
  *
  * Six tools in v0.1: validate_spec, lint_spec, submit_spec, list_memos,
  * read_memo, get_design_spec. proposeToken / searchRegistry /
