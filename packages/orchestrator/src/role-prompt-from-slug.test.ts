@@ -11,6 +11,12 @@ import { join } from 'node:path';
 import { assembleRolePrompt, lookupProjectDir } from './role-prompt-from-slug.js';
 
 function setupRegistry(): { home: string; projectDir: string; harnessDir: string; cleanup: () => void } {
+  // Pin the operator-API base to a guaranteed-refused port so
+  // lookupProjectDir's HTTP-first branch fails instantly and the test
+  // exercises the legacy-file fallback it was written for. Without this,
+  // a running dev operator at :3055 will respond too slowly and blow
+  // vitest's 5s default timeout.
+  process.env.PAPERCUSP_OPERATOR_BASE = 'http://127.0.0.1:1';
   const home = mkdtempSync(join(tmpdir(), 'role-prompt-'));
   const projectDir = join(home, 'project');
   const stateDir = join(projectDir, '.harness');
