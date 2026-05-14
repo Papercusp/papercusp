@@ -28,6 +28,13 @@ export interface SynthesisResult {
   branch?: string;
   worktree?: string;
   reason?: string;
+  /**
+   * True when the synthesizer ran successfully but chose to ship a
+   * candidate verbatim (zero code changes, but wrote the notes file).
+   * Distinguishable from `synthesized: false` with no `approvedAsIs`,
+   * which means the synthesizer skipped its job entirely.
+   */
+  approvedAsIs?: boolean;
 }
 
 /**
@@ -221,20 +228,30 @@ export async function runSynthesizer(inputs: SynthesisInputs): Promise<Synthesis
       return { synthesized: false, reason: `nonzero exit (${exitCode})` };
     }
 
-    // Commit whatever the synthesizer left in the worktree. An empty
-    // synthesis is a failure — the role's job was to produce a shipping
-    // candidate, and "no changes from base" means it didn't.
+    // Commit whatever the synthesizer left in the worktree. The prompt
+    // tells the synthesizer it MUST write SYNTHESIS_NOTE_PATH even when
+    // shipping a candidate verbatim — so we can distinguish:
+    //   - notes file written, worktree empty → "approved as-is" (ship
+    //     the worker's branch via branchIsoPostValidator).
+    //   - notes file missing, worktree empty → real failure (synth
+    //     skipped its job). Caller marks the feature failing.
     git(['add', '-A'], { cwd: worktree });
     const status = git(['diff', '--cached', '--quiet'], { cwd: worktree });
     if (status.exitCode === 0) {
-      // The synthesizer was told (in synthesizer.md) to always write
-      // files even when shipping a lane verbatim. Exit-without-writes
-      // means it skipped its review. Logged with a distinct prefix so
-      // operators can grep frequency in run.log; the orchestrator's
-      // legacy fallback (branchIsoPostValidator) will merge the worker's
-      // branch unchecked in that case.
-      log(`SYNTHESIZER_SKIPPED: ${fid} exited without writing any files`);
-      return { synthesized: false, reason: 'synthesizer produced no changes from base' };
+      const notesPath = synthesisNotePath(ctx.stateDir, fid);
+      if (existsSync(notesPath)) {
+        log(`SYNTHESIZER_APPROVED: ${fid} accepted candidate verbatim (notes: ${notesPath})`);
+        return {
+          synthesized: false,
+          approvedAsIs: true,
+          reason: 'synthesizer approved candidate verbatim (no code changes needed)',
+        };
+      }
+      log(`SYNTHESIZER_SKIPPED: ${fid} exited without writing any files or notes — treating as failure`);
+      return {
+        synthesized: false,
+        reason: 'synthesizer skipped its job (empty worktree, no notes file)',
+      };
     }
     const commit = git(
       [

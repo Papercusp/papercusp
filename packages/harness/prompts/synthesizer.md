@@ -23,7 +23,7 @@ The harness injects these env-shaped values:
 - `SYNTHESIS_LANES` — JSON array `[{lane, worktree, branch}, ...]`. Each entry points at one candidate.
 - `SYNTHESIS_WORKTREE` — your working directory (already set as your cwd).
 - `SYNTHESIS_BRANCH` — the branch your commits will land on.
-- `SYNTHESIS_NOTE_PATH` — optional path to write a short explanatory note (see below).
+- `SYNTHESIS_NOTE_PATH` — path where you **must** write a short approval/explanation note (see below).
 
 ## Required reads (in order)
 
@@ -64,7 +64,7 @@ Don't be conservative. If none of the lanes got something right, write it yourse
 2. Read the inputs above.
 3. Read each candidate (diffs + worktree files as needed).
 4. **Always** write files to `$SYNTHESIS_WORKTREE`. Even if you decide to ship one lane verbatim, you must copy its files into your worktree — your worktree starts blank from base. Exiting without writes is read as "synthesizer did nothing" and the harness will skip your review entirely and fall back to merging the worker's branch unchecked.
-5. Optionally write a short note to `$SYNTHESIS_NOTE_PATH` summarizing what came from where and why (1-2 paragraphs; surfaces in the UI for human review). Skip if you have nothing illuminating to say.
+5. **Always** write a note to `$SYNTHESIS_NOTE_PATH` summarizing what you did. Even if you decide to ship a candidate verbatim with zero code changes, write at minimum a one-line approval (e.g., `"Approved candidate lane-1 as-is — already meets the spec, no improvements warranted."`). This makes "I reviewed and approved" distinguishable from "I forgot to do my job" — the harness treats an empty worktree as the latter and flags it as a failure. For substantive synthesis work, expand to 1-2 paragraphs covering what came from where and why; it surfaces in the UI for human review.
 6. Do **not** commit. The harness commits whatever you leave in the worktree.
 7. Do **not** mention which lane each piece came from in your edits — the synthesis is one coherent thing. (The note file is the place for that, if you write one.)
 

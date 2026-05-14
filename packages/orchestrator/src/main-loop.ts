@@ -1143,6 +1143,8 @@ async function handleNextValidator(
   let synthesisBr: string | null = null;
   let synthesisRanWithManifest: { n: number } | null = null;
   let synthesisAttempted = false;
+  let synthApprovedAsIs = false;
+  let synthHardFailed = false;
   {
     let effectiveManifest = readCompetitionManifest(ctx.stateDir, fid);
     // N=1 fallback: only synthesize if worktrees are enabled AND the
@@ -1184,10 +1186,21 @@ async function handleNextValidator(
           // ignore
         }
         void attachSynthesisOutcomeTelemetry(ctx, logger, fid, true, null);
+      } else if (result.approvedAsIs) {
+        // Synthesizer ran successfully and explicitly approved a
+        // candidate verbatim (notes file written, no code changes).
+        // Fall through to branchIsoPostValidator — the worker's branch
+        // ships, but tagged as reviewed.
+        logger.log(
+          `SYNTHESIZER: ${fid} approved candidate as-is; validating worker branch directly`,
+        );
+        synthApprovedAsIs = true;
+        void attachSynthesisOutcomeTelemetry(ctx, logger, fid, false, result.reason ?? null);
       } else {
         logger.log(
-          `SYNTHESIZER: ${fid} failed (${result.reason ?? 'unknown'}); validating worker output directly`,
+          `SYNTHESIZER: ${fid} failed (${result.reason ?? 'unknown'})`,
         );
+        synthHardFailed = true;
         void attachSynthesisOutcomeTelemetry(ctx, logger, fid, false, result.reason ?? null);
       }
     }
@@ -1199,12 +1212,17 @@ async function handleNextValidator(
   // branches. Running the validator would either fail noisily against
   // projectDir or, worse, accidentally pass against ambient state.
   // Mark the feature failed programmatically and skip validator.
+  //
+  // Same treatment for the N=1 "synth hard-failed without approval"
+  // case (no notes file written → synth skipped its job): the worker's
+  // branch must not ship unreviewed.
   const earlyManifestForSkip = readCompetitionManifest(ctx.stateDir, fid);
   const skipValidatorMultiLaneFail =
     synthesisAttempted &&
     !synthesisWorktree &&
     earlyManifestForSkip !== null &&
     earlyManifestForSkip.n > 1;
+  const skipValidatorSynthHardFail = synthHardFailed && !synthApprovedAsIs;
 
   const validatorCtx: InvokeContext = synthesisWorktree
     ? { ...ctx, worktreePathFor: () => synthesisWorktree as string }
@@ -1217,9 +1235,12 @@ async function handleNextValidator(
   for (const f of (await readFeatures(ctx.stateDir, stateCtx(ctx)))) beforeStatus.set(f.id, f.status);
 
   let validatorRc = 0;
-  if (skipValidatorMultiLaneFail) {
+  if (skipValidatorMultiLaneFail || skipValidatorSynthHardFail) {
+    const why = skipValidatorMultiLaneFail
+      ? `synth failed with ${earlyManifestForSkip!.n} lanes`
+      : `synth skipped its job (empty worktree, no notes file)`;
     logger.log(
-      `SYNTHESIZER: ${fid} synth failed with ${earlyManifestForSkip!.n} lanes — skipping validator, marking failing`,
+      `SYNTHESIZER: ${fid} ${why} — skipping validator, marking failing`,
     );
     // 'failing' (present-tense) is the retry-candidate state the
     // orchestrator looks for. 'failed' would orphan the feature.

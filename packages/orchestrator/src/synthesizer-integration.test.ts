@@ -214,11 +214,11 @@ test('runSynthesizer N=1 (single lane) happy path — synthesizer polishes worke
   }
 });
 
-test('runSynthesizer no-edits → synthesized:false with reason', async () => {
+test('runSynthesizer no-edits + no notes → synthesized:false, NOT approvedAsIs (real failure)', async () => {
   const p = setupProject();
   try {
     addLane(p.projectDir, p.stateDir, 'F-C', 1, { 'a.txt': 'x\n' });
-    // Mock invoke returns 0 but writes nothing.
+    // Mock invoke returns 0 but writes nothing (no code changes, no notes file).
     inv.mockResolvedValue({ exitCode: 0, output: '', stderr: '', runId: 'fake' });
 
     const result = await runSynthesizer({
@@ -229,7 +229,37 @@ test('runSynthesizer no-edits → synthesized:false with reason', async () => {
       log: () => {},
     });
     assert.equal(result.synthesized, false);
-    assert.match(result.reason ?? '', /produced no changes/);
+    assert.equal(result.approvedAsIs ?? false, false);
+    assert.match(result.reason ?? '', /skipped its job/);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test('runSynthesizer no-edits + notes file → synthesized:false, approvedAsIs:true', async () => {
+  const p = setupProject();
+  try {
+    addLane(p.projectDir, p.stateDir, 'F-CA', 1, { 'a.txt': 'x\n' });
+    // Mock invoke writes the notes file but no code changes.
+    inv.mockImplementation(async (ctx: any, _role: string, _extras: readonly string[]) => {
+      const { mkdirSync: mk, writeFileSync: wf } = require('node:fs') as typeof import('node:fs');
+      const { join: j } = require('node:path') as typeof import('node:path');
+      const notesDir = j(ctx.stateDir, 'synthesis-notes');
+      mk(notesDir, { recursive: true });
+      wf(j(notesDir, 'F-CA.md'), 'Approved candidate lane-1 as-is.\n');
+      return { exitCode: 0, output: '', stderr: '', runId: 'fake' };
+    });
+
+    const result = await runSynthesizer({
+      fid: 'F-CA',
+      manifest: buildCompetitionManifest(p.stateDir, 'F-CA', 1),
+      ctx: makeCtx(p),
+      cfg: {} as any,
+      log: () => {},
+    });
+    assert.equal(result.synthesized, false);
+    assert.equal(result.approvedAsIs, true);
+    assert.match(result.reason ?? '', /approved candidate verbatim/);
   } finally {
     p.cleanup();
   }
