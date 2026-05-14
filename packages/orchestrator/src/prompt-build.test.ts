@@ -290,3 +290,116 @@ test('buildPrompt — toolsPlaybook with only whitespace is treated as empty', (
     fx.cleanup();
   }
 });
+
+test('buildPrompt — sharedGuides appear after toolsPlaybook as additional sections', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+  });
+  try {
+    const playbook = '# Worker tool playbook\n\nfoo';
+    const guideA = '# Finding context\n\nGuide A body';
+    const guideB = '# Handoff\n\nGuide B body';
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      toolsPlaybook: playbook,
+      sharedGuides: [guideA, guideB],
+    });
+    assert.match(out, /Worker tool playbook/);
+    assert.match(out, /Finding context/);
+    assert.match(out, /Handoff/);
+    const playbookPos = out.indexOf('Worker tool playbook');
+    const aPos = out.indexOf('Finding context');
+    const bPos = out.indexOf('Handoff');
+    const runtimePos = out.indexOf('## Runtime context');
+    assert.ok(playbookPos < aPos && aPos < bPos && bPos < runtimePos,
+      `expected order playbook(${playbookPos}) → A(${aPos}) → B(${bPos}) → runtime(${runtimePos})`);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — empty sharedGuides produces no extra section dividers', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      sharedGuides: [],
+    });
+    assert.match(out, /# WORKER/);
+    // No extraneous dividers
+    const dividerCount = (out.match(/\n---\n/g) ?? []).length;
+    assert.ok(dividerCount <= 6, `unexpected divider count: ${dividerCount}`);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — whitespace-only sharedGuides entries are skipped', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+  });
+  try {
+    const real = '# Real guide\n\nbody';
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      sharedGuides: ['   ', '\n\n', real, ''],
+    });
+    assert.match(out, /Real guide/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — sharedGuides work without a toolsPlaybook', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      sharedGuides: ['# Only guide\n\nbody'],
+    });
+    assert.match(out, /# WORKER/);
+    assert.match(out, /Only guide/);
+  } finally {
+    fx.cleanup();
+  }
+});

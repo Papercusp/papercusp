@@ -79,6 +79,13 @@ export interface BuildPromptInput {
    * back to playbook patterns ("when chaining, see the playbook").
    */
   toolsPlaybook?: string;
+  /**
+   * Optional shared cross-role guidance pages (e.g. finding-context.mdx).
+   * Authored in apps/operator/content/docs/agents/ so humans + agents
+   * share one source. Loaded + injected by the caller; rendered after
+   * toolsPlaybook as section 2c.
+   */
+  sharedGuides?: string[];
 }
 
 function fileContents(path: string): string {
@@ -124,6 +131,17 @@ export function buildPrompt(input: BuildPromptInput): string {
   if (input.toolsPlaybook && input.toolsPlaybook.trim()) {
     out.push('\n---');
     out.push(input.toolsPlaybook);
+  }
+
+  // 2c. Shared cross-role guidance (finding-context.mdx, etc.).
+  //      Authored in the public docs site under
+  //      apps/operator/content/docs/agents/ and injected by the caller
+  //      so the doc page and the prompt content share one source.
+  for (const guide of input.sharedGuides ?? []) {
+    if (guide && guide.trim()) {
+      out.push('\n---');
+      out.push(guide);
+    }
   }
 
   // 3. Curated memory — every role except curator.

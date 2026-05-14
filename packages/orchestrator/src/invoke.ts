@@ -178,6 +178,39 @@ export function resolveOperatorPromptsDir(): string | null {
   return null;
 }
 
+/**
+ * Locate apps/operator/content/docs/agents/ for shared cross-role guides
+ * (e.g. finding-context.mdx). Honors the
+ * `PAPERCUSP_OPERATOR_DOCS_AGENTS_DIR` env override.
+ *
+ * Returns `null` when not found — caller falls through to empty
+ * sharedGuides array (no behavior change).
+ */
+export function resolveOperatorDocsAgentsDir(): string | null {
+  const envOverride = process.env.PAPERCUSP_OPERATOR_DOCS_AGENTS_DIR;
+  if (envOverride && existsSync(envOverride)) return envOverride;
+  let dir = process.cwd();
+  for (let i = 0; i < 12; i += 1) {
+    const candidate = `${dir}/apps/operator/content/docs/agents`;
+    if (existsSync(candidate)) return candidate;
+    const parent = dir.replace(/\/[^/]+$/, '');
+    if (parent === dir || parent === '') break;
+    dir = parent;
+  }
+  return null;
+}
+
+/** Strip a leading YAML frontmatter block (--- ... ---) from MDX text. */
+export function stripFrontmatter(raw: string): string {
+  if (!raw.startsWith('---')) return raw;
+  const end = raw.indexOf('\n---', 3);
+  if (end === -1) return raw;
+  // Advance past the closing '---' and the newline after it.
+  let i = end + 4;
+  if (raw[i] === '\n') i += 1;
+  return raw.slice(i);
+}
+
 /** Per-role timeout from config.json (in seconds). 0 = no timeout. */
 export function resolveTimeout(cfg: ReturnType<typeof readConfig>, role: string): number {
   const t = configGet<unknown>(cfg, `timeouts.${role}`, 0);
@@ -641,6 +674,24 @@ export async function invoke(
     }
   } catch { /* best-effort */ }
 
+  // 8.9 Shared cross-role guides — Path B injection per docs-engine plan.
+  // Authored as MDX in apps/operator/content/docs/agents/ so the doc-site
+  // page and the prompt content share one source. We strip leading
+  // frontmatter and pass each guide as a separate section.
+  const sharedGuides: string[] = [];
+  try {
+    const docsAgentsDir = resolveOperatorDocsAgentsDir();
+    if (docsAgentsDir) {
+      for (const name of ['finding-context.mdx']) {
+        const guidePath = `${docsAgentsDir}/${name}`;
+        if (existsSync(guidePath)) {
+          const raw = readFileSync(guidePath, 'utf8');
+          sharedGuides.push(stripFrontmatter(raw));
+        }
+      }
+    }
+  } catch { /* best-effort */ }
+
   // 9. Build the prompt.
   const prompt = buildPrompt({
     role,
@@ -658,6 +709,7 @@ export async function invoke(
     substrateContext,
     featureHistory,
     toolsPlaybook,
+    sharedGuides,
   });
 
   // Token-spend telemetry — emit once per invoke so we can see how the
