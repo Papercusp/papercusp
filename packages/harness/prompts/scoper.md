@@ -220,6 +220,24 @@ The reviewer just auto-accepted one or more proposals — their acceptance bulle
 3. Append new F-### entries to `harness_features` (PG), all with `status: "todo"` and `attempts: 0`.
 4. **Never** modify, reorder, or delete existing features or assertions. If a new bullet contradicts an old one, leave both — that's a human decision.
 
+### Honour `metadata.covers` from `plans:promote`
+
+When an SU agent invokes `plans:promote` (agent-coordination-architecture-v2 §11) the imported features carry `metadata.covers = ["SC-NNN", …]` — the acceptance criteria they already satisfy. Before allocating a new F-* for a SPEC bullet tagged `[SC-NNN]`:
+
+1. Collect the union of `metadata.covers` across every existing feature in PG (`harness-features list <slug> --json | jq '[.[] | .metadata.covers // []] | flatten | unique'`).
+2. If a SPEC bullet's `[SC-NNN]` id is in that set, **skip** it — the work is already represented by a promoted feature. Do not allocate a duplicate F-*.
+3. If the bullet has no `[SC-NNN]` tag (legacy bullets, or hand-edited additions), fall back to the normal title-match heuristic from step 1 above.
+
+Mid-`MODE=replan`, before emitting any new F-* row for a tagged bullet, log to stderr:
+
+```
+covers-skip: [SC-027] already covered by F-AUTO-XXXXX (source_plan=<slug>)
+```
+
+These skips do NOT count toward `REPLANNED:` — they're invisible no-ops. Only genuinely-new bullets contribute to the line.
+
+The same rule applies to `MODE=initial` when promoted features pre-exist (rare — usually `MODE=initial` runs on an empty queue — but possible if the user promotes a plan into a harness whose SPEC already has tagged criteria).
+
 ### Stale-feature detection (advisory; never auto-mutates)
 
 After appending new features, walk every existing feature once more and check whether its claims still have SPEC support. A feature is "potentially stale" when:
