@@ -14,6 +14,27 @@
  */
 import type { Plugin, PapercuspContext } from '@papercusp/plugin-sdk';
 
+// Resolve embedded-PG URL from discovery file (~/.papercusp/embedded-pg.json,
+// written by desktop's Rust main on PG ready). Returns null if no file.
+function readDiscoveryUrl(role: 'app' | 'admin'): string | null {
+  if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY === '1') return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const os = require('node:os') as typeof import('node:os');
+    const raw = fs.readFileSync(`${os.homedir()}/.papercusp/embedded-pg.json`, 'utf8');
+    const parsed = JSON.parse(raw) as { host?: string; port?: number; user?: string; password?: string };
+    if (!parsed?.host || !parsed?.port) return null;
+    if (role === 'admin' && parsed.user && parsed.password) {
+      return `postgresql://${parsed.user}:${parsed.password}@${parsed.host}:${parsed.port}/papercusp`;
+    }
+    return `postgresql://harness_app:harness_app_pwd@${parsed.host}:${parsed.port}/papercusp`;
+  } catch {
+    return null;
+  }
+}
+
 interface Config {
   schemaName?: string;
 }
@@ -41,6 +62,7 @@ async function withClient<T>(fn: (sql: any) => Promise<T>): Promise<T> {
   // wraps it. Tolerate both shapes.
   const postgresFn = ((pg as any).default ?? pg) as (url: string, opts?: unknown) => any;
   const url = process.env.HARNESS_DATABASE_URL
+    ?? readDiscoveryUrl('app')
     ?? 'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
   const sql = postgresFn(url, {
     onnotice: () => {},

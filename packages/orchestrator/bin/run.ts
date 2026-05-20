@@ -82,7 +82,7 @@ async function runTs(): Promise<never> {
 
 runTs().catch((err) => {
   process.stderr.write(
-    `[papercusp-orchestrate] uncaught error in TS loop: ${(err as Error).message}\n`,
+    `[papercusp-orchestrate] uncaught error in TS loop: ${(err as Error).message}\n${(err as Error).stack ?? ''}\n`,
   );
   process.exit(1);
 });

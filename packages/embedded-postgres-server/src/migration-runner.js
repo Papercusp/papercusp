@@ -44,8 +44,17 @@ async function sha256(text) {
  * @param {(s: string) => void} [args.log]
  * @param {(file: string) => boolean} [args.skipFile]   Optional filter; defaults to skipping the per-harness template.
  */
+// Files that the migration runner must NOT auto-apply on boot. These
+// are one-shot manual data backfills that depend on `psql -v` variable
+// substitution (`:key` expansion) — sending them raw to postgres-js
+// produces "syntax error at or near :".
+const MANUAL_ONLY = new Set([
+  '040-plugin-configs-backfill.sql', // requires PAPERCUSP_DB_ENCRYPTION_KEY via psql -v key=...
+  '__seed_restored__.marker',         // sentinel inserted by seed-restore path; not a real migration file
+]);
+
 export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile }) {
-  const skip = skipFile ?? ((f) => f.includes('per-harness-template'));
+  const skip = skipFile ?? ((f) => f.includes('per-harness-template') || MANUAL_ONLY.has(f));
 
   // Ensure tracker exists.
   await client.unsafe(SCHEMA_MIGRATIONS_DDL);
@@ -65,8 +74,17 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
   let appliedCount = 0;
   for (const f of allFiles) {
     if (applied.has(f)) continue;
-    const ddl = await readFile(join(sqlDir, f), 'utf8');
-    const hash = await sha256(ddl);
+    const ddlRaw = await readFile(join(sqlDir, f), 'utf8');
+    // Strip psql metacommands (\set, \if, \else, \endif, \echo, etc.) —
+    // they're psql-client-side directives that postgres-js sends raw to
+    // the server, which throws "syntax error at or near \\". Hash the
+    // RAW contents (so files don't re-apply just because we change the
+    // stripper), but execute the cleaned version.
+    const ddl = ddlRaw
+      .split('\n')
+      .filter((line) => !/^\s*\\[a-z]/i.test(line))
+      .join('\n');
+    const hash = await sha256(ddlRaw);
     log(`apply ${f}`);
     // Apply + record in one transaction so a partial apply doesn't leave
     // schema_migrations claiming success.

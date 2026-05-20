@@ -12,6 +12,26 @@
 
 import type { Plugin, PapercuspContext } from '@papercusp/plugin-sdk';
 
+// Resolve embedded-PG URL from discovery file. Returns null if no file.
+function readDiscoveryUrl(role: 'app' | 'admin'): string | null {
+  if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY === '1') return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const os = require('node:os') as typeof import('node:os');
+    const raw = fs.readFileSync(`${os.homedir()}/.papercusp/embedded-pg.json`, 'utf8');
+    const parsed = JSON.parse(raw) as { host?: string; port?: number; user?: string; password?: string };
+    if (!parsed?.host || !parsed?.port) return null;
+    if (role === 'admin' && parsed.user && parsed.password) {
+      return `postgresql://${parsed.user}:${parsed.password}@${parsed.host}:${parsed.port}/papercusp`;
+    }
+    return `postgresql://harness_app:harness_app_pwd@${parsed.host}:${parsed.port}/papercusp`;
+  } catch {
+    return null;
+  }
+}
+
 interface Config {
   defaultTeamKey?: string;
   defaultTeamId?: string;
@@ -117,6 +137,7 @@ async function pg() {
   const url =
     process.env.HARNESS_ADMIN_DATABASE_URL ||
     process.env.HARNESS_DATABASE_URL ||
+    readDiscoveryUrl('app') ||
     'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
   _pgClient = postgres(url, { onnotice: () => {}, max: 2, idle_timeout: 30 });
   return _pgClient;

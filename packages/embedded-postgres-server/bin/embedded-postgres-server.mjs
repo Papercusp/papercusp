@@ -5,11 +5,13 @@
  * swap one for the other by changing the binary path.
  *
  * Env vars:
- *   PAPERCUSP_PG_DATA_DIR   — Postgres data dir (default: ~/.papercusp/embedded-pg-data)
- *   PAPERCUSP_PG_PORT       — TCP port (default: 5532)
- *   PAPERCUSP_PG_DB_NAME    — DB name (default: papercusp)
- *   PAPERCUSP_PG_SQL_DIR    — Path to *.sql migration directory (optional)
- *   PAPERCUSP_PG_DEBUG      — '1' for verbose logging
+ *   PAPERCUSP_PG_DATA_DIR        — Postgres data dir (default: ~/.papercusp/embedded-pg-data)
+ *   PAPERCUSP_PG_PORT            — TCP port (default: 5532)
+ *   PAPERCUSP_PG_DB_NAME         — DB name (default: papercusp)
+ *   PAPERCUSP_PG_SQL_DIR         — Path to *.sql migration directory (optional)
+ *   PAPERCUSP_PG_SEED_DUMP_PATH  — pg_dump custom-format file to restore on fresh installs
+ *   PAPERCUSP_PG_RESTORE_BIN     — absolute path to pg_restore (default: 'pg_restore' on PATH)
+ *   PAPERCUSP_PG_DEBUG           — '1' for verbose logging
  */
 
 import { startEmbeddedPostgresServer } from '../src/index.js';
@@ -19,12 +21,16 @@ const dataDir = process.env.PAPERCUSP_PG_DATA_DIR;
 const port = process.env.PAPERCUSP_PG_PORT ? Number(process.env.PAPERCUSP_PG_PORT) : undefined;
 const dbName = process.env.PAPERCUSP_PG_DB_NAME;
 const dbSqlDir = process.env.PAPERCUSP_PG_SQL_DIR;
+const seedDumpPath = process.env.PAPERCUSP_PG_SEED_DUMP_PATH;
+const pgRestoreBin = process.env.PAPERCUSP_PG_RESTORE_BIN;
 
 const handle = await startEmbeddedPostgresServer({
   dataDir,
   port,
   dbName,
   dbSqlDir,
+  seedDumpPath,
+  pgRestoreBin,
   debug,
 });
 
