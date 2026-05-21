@@ -285,6 +285,24 @@ export class FileLockQueue {
   }
 
   /**
+   * Read-only peek: for each requested path that's currently held,
+   * return `{ path → ownerId }`. Free paths are absent from the map.
+   *
+   * Added for the file-claim adapter (file-locking #11) so an
+   * adapter-level "acquire failed; here's the contention" path can
+   * report exact holders rather than a cross-product approximation.
+   * Pure read; safe to call mid-grant.
+   */
+  peekHolders(paths: readonly string[]): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const p of paths) {
+      const o = this.heldBy.get(p);
+      if (o !== undefined) out.set(p, o);
+    }
+    return out;
+  }
+
+  /**
    * Reject all pending waiters and refuse new acquires. Held locks are
    * untouched (the caller can still `release` outstanding handles).
    */
