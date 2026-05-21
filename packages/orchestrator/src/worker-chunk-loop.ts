@@ -37,6 +37,14 @@ import {
 } from './chunk-plan.js';
 import { runCheck, setup as setupScratch, teardown as teardownScratch, type ScratchEnv } from './scratch-env.js';
 
+/**
+ * Generous ceiling on a single chunk's file-lock acquire. The lane
+ * supervisor enforces the real budget; this is a last-resort guard so
+ * a degenerate hang (a holder that never releases) surfaces as a typed
+ * LockAcquireTimeoutError instead of an unbounded block.
+ */
+const CHUNK_LOCK_TIMEOUT_MS = 10 * 60_000;
+
 // ─── Types ───────────────────────────────────────────────────────────
 
 export interface ChunkLoopFeature {
@@ -211,7 +219,11 @@ export async function runChunkLoop(
     let strikes = 0;
     while (true) {
       // Acquire locks. May block on the queue.
-      const handle = await deps.lockQueue.acquire(`${feature.id}:${chunk.id}`, chunk.files);
+      const handle = await deps.lockQueue.acquire(
+        `${feature.id}:${chunk.id}`,
+        chunk.files,
+        { timeoutMs: CHUNK_LOCK_TIMEOUT_MS },
+      );
       let env: ScratchEnv | null = null;
       try {
         env = await setupScratch({

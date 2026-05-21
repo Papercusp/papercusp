@@ -13,13 +13,18 @@
  *   4. Supports mid-chunk extension (atomic if all new paths are free,
  *      otherwise the caller must release-all and re-acquire).
  *
- * Deadlock-freedom comes from the canonical-ordering rule: every set is
- * sorted alphabetically before the actual hold is taken, and a waiter
- * only ever waits inside `acquire` (never holding any locks while
- * waiting for a *new* one). The extend operation is best-effort: it
- * succeeds only when every new path is free at the moment of the
- * request; otherwise the caller releases everything and re-acquires the
- * full union.
+ * Deadlock-freedom comes from the no-hold-while-waiting rule: a caller
+ * acquires its whole path set atomically and is never blocked on one
+ * path while holding another — a waiter waits inside `acquire` before
+ * it holds anything. That property alone makes deadlock impossible.
+ * The alphabetical sort is NOT load-bearing for deadlock-freedom (an
+ * earlier version of this header wrongly credited it); the sort only
+ * buys FIFO determinism and stable indexing. An engineer porting this
+ * pattern does not need to sort to stay deadlock-free.
+ *
+ * The extend operation is best-effort: it succeeds only when every new
+ * path is free at the moment of the request; otherwise the caller
+ * releases everything and re-acquires the full union.
  *
  * In-process only. The orchestrator runs in a single Node process; if
  * we ever need cross-process locking, the API surface stays the same
@@ -32,6 +37,41 @@
  * the purpose). Forcing the caller to expand keeps the data model
  * simple.
  */
+
+/**
+ * Thrown by `acquire` when `options.timeoutMs` elapses before the
+ * whole path set could be taken. Carries the paths the caller wanted
+ * and the owners currently holding any of them — a degenerate hang
+ * surfaces as a typed, attributable error instead of a forever-block.
+ */
+export class LockAcquireTimeoutError extends Error {
+  readonly owner: string;
+  readonly paths: readonly string[];
+  readonly timeoutMs: number;
+  readonly contendingOwners: readonly string[];
+  constructor(
+    owner: string,
+    paths: readonly string[],
+    timeoutMs: number,
+    contendingOwners: readonly string[],
+  ) {
+    super(
+      `FileLockQueue.acquire timed out after ${timeoutMs}ms for ${owner} ` +
+        `on [${paths.join(', ')}]; contended by [${contendingOwners.join(', ')}]`,
+    );
+    this.name = 'LockAcquireTimeoutError';
+    this.owner = owner;
+    this.paths = paths;
+    this.timeoutMs = timeoutMs;
+    this.contendingOwners = contendingOwners;
+  }
+}
+
+/** Per-acquire options. Omitted → today's behaviour (no timeout). */
+export interface AcquireOptions {
+  /** Reject with `LockAcquireTimeoutError` after this many ms. */
+  timeoutMs?: number;
+}
 
 export interface LockHandle {
   /** Stable identifier used in diagnostics + reaping. Caller-supplied
@@ -83,7 +123,11 @@ export class FileLockQueue {
    * Paths are normalized: whitespace-trimmed, deduplicated, sorted. The
    * sort is the deadlock-freedom rule.
    */
-  async acquire(owner: string, paths: readonly string[]): Promise<LockHandle> {
+  async acquire(
+    owner: string,
+    paths: readonly string[],
+    options?: AcquireOptions,
+  ): Promise<LockHandle> {
     if (this.destroyed) throw new Error('FileLockQueue destroyed');
     const sorted = canonicalize(paths);
     if (sorted.length === 0) {
@@ -103,14 +147,39 @@ export class FileLockQueue {
     // head waiter's reservation. (Without this, a non-conflicting
     // waiter would sit queued forever even though it could proceed.)
     return new Promise<LockHandle>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const waiter: Waiter = {
         owner,
         paths: sorted,
-        resolve: (h) => resolve(h),
-        reject,
+        resolve: (h) => {
+          if (timer) clearTimeout(timer);
+          resolve(h);
+        },
+        reject: (e) => {
+          if (timer) clearTimeout(timer);
+          reject(e);
+        },
         seq: this.nextSeq++,
       };
       this.waiters.push(waiter);
+      // Opt-in timeout (#8). A degenerate hang (a holder that never
+      // releases) surfaces as a typed error rather than a forever-block.
+      if (options?.timeoutMs !== undefined) {
+        const timeoutMs = options.timeoutMs;
+        timer = setTimeout(() => {
+          const idx = this.waiters.indexOf(waiter);
+          if (idx >= 0) this.waiters.splice(idx, 1);
+          const contending = new Set<string>();
+          for (const p of sorted) {
+            const held = this.heldBy.get(p);
+            if (held) contending.add(held);
+          }
+          // waiter.reject clears the (already-fired) timer, then rejects.
+          waiter.reject(
+            new LockAcquireTimeoutError(owner, sorted, timeoutMs, [...contending]),
+          );
+        }, timeoutMs);
+      }
       this.drainWaiters();
     });
   }
@@ -143,10 +212,10 @@ export class FileLockQueue {
     if (!this.allFree(want)) return false;
 
     this.takeAll(handle.owner, want);
-    (handle as { paths: readonly string[] }).paths = canonicalize([
-      ...handle.paths,
-      ...want,
-    ]);
+    // `LockHandle.paths` is a mutable property (its array type is
+    // readonly, the field itself is not) — assign directly; the old
+    // `as { paths }` cast was gratuitous.
+    handle.paths = canonicalize([...handle.paths, ...want]);
     return true;
   }
 

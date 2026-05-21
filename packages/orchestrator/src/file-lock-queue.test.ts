@@ -277,3 +277,52 @@ test('stress: 50 workers, 100 acquires each, no deadlock + all complete', async 
   assert.equal(q.snapshot().queueLength, 0);
   assert.deepEqual(q.snapshot().held, {});
 }, 30_000);
+
+test('#8 acquire timeout: rejects with LockAcquireTimeoutError while held', async () => {
+  const { LockAcquireTimeoutError } = await import('./file-lock-queue.js');
+  const q = new FileLockQueue();
+  const h1 = await q.acquire('w1', ['src/x.ts']);
+  // w2 wants the same path; it will block. With a 50ms timeout it must
+  // reject rather than wait forever.
+  let err: unknown;
+  try {
+    await q.acquire('w2', ['src/x.ts'], { timeoutMs: 50 });
+  } catch (e) {
+    err = e;
+  }
+  assert.ok(err instanceof LockAcquireTimeoutError, 'expected LockAcquireTimeoutError');
+  const tErr = err as InstanceType<typeof LockAcquireTimeoutError>;
+  assert.equal(tErr.owner, 'w2');
+  assert.deepEqual([...tErr.paths], ['src/x.ts']);
+  assert.deepEqual([...tErr.contendingOwners], ['w1']);
+  // The timed-out waiter is removed from the queue.
+  assert.equal(q.snapshot().queueLength, 0);
+  // The holder is unaffected; releasing it still works.
+  q.release(h1);
+});
+
+test('#8 acquire timeout: does NOT fire when the lock is granted in time', async () => {
+  const q = new FileLockQueue();
+  const h1 = await q.acquire('w1', ['src/y.ts']);
+  // w2 blocks with a generous timeout; we release h1 well before it.
+  const p = q.acquire('w2', ['src/y.ts'], { timeoutMs: 10_000 });
+  q.release(h1);
+  const h2 = await p; // must resolve, not reject
+  assert.deepEqual([...h2.paths], ['src/y.ts']);
+  q.release(h2);
+});
+
+test('#8 acquire with no timeout option blocks indefinitely (unchanged default)', async () => {
+  const q = new FileLockQueue();
+  const h1 = await q.acquire('w1', ['src/z.ts']);
+  let settled = false;
+  const p = q.acquire('w2', ['src/z.ts']).then((h) => {
+    settled = true;
+    return h;
+  });
+  await yieldEventLoop();
+  assert.equal(settled, false, 'no-timeout acquire must still be pending');
+  q.release(h1);
+  const h2 = await p;
+  q.release(h2);
+});
