@@ -179,7 +179,7 @@ export function resolveOperatorPromptsDir(): string | null {
 }
 
 /**
- * Locate apps/operator/content/docs/agents/ for shared cross-role guides
+ * Locate apps/operator-docs/src/content/docs/agents/ for shared cross-role guides
  * (e.g. finding-context.mdx). Honors the
  * `PAPERCUSP_OPERATOR_DOCS_AGENTS_DIR` env override.
  *
@@ -191,7 +191,7 @@ export function resolveOperatorDocsAgentsDir(): string | null {
   if (envOverride && existsSync(envOverride)) return envOverride;
   let dir = process.cwd();
   for (let i = 0; i < 12; i += 1) {
-    const candidate = `${dir}/apps/operator/content/docs/agents`;
+    const candidate = `${dir}/apps/operator-docs/src/content/docs/agents`;
     if (existsSync(candidate)) return candidate;
     const parent = dir.replace(/\/[^/]+$/, '');
     if (parent === dir || parent === '') break;
@@ -675,9 +675,9 @@ export async function invoke(
   } catch { /* best-effort */ }
 
   // 8.9 Shared cross-role guides — Path B injection per docs-engine plan.
-  // Authored as MDX in apps/operator/content/docs/agents/ so the doc-site
-  // page and the prompt content share one source. We strip leading
-  // frontmatter and pass each guide as a separate section.
+  // Authored as MDX in apps/operator-docs/src/content/docs/agents/ so the
+  // doc-site page and the prompt content share one source. We strip
+  // leading frontmatter and pass each guide as a separate section.
   const sharedGuides: string[] = [];
   try {
     const docsAgentsDir = resolveOperatorDocsAgentsDir();

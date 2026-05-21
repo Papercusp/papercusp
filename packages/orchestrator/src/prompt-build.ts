@@ -81,7 +81,7 @@ export interface BuildPromptInput {
   toolsPlaybook?: string;
   /**
    * Optional shared cross-role guidance pages (e.g. finding-context.mdx).
-   * Authored in apps/operator/content/docs/agents/ so humans + agents
+   * Authored in apps/operator-docs/src/content/docs/agents/ so humans + agents
    * share one source. Loaded + injected by the caller; rendered after
    * toolsPlaybook as section 2c.
    */
@@ -135,8 +135,8 @@ export function buildPrompt(input: BuildPromptInput): string {
 
   // 2c. Shared cross-role guidance (finding-context.mdx, etc.).
   //      Authored in the public docs site under
-  //      apps/operator/content/docs/agents/ and injected by the caller
-  //      so the doc page and the prompt content share one source.
+  //      apps/operator-docs/src/content/docs/agents/ and injected by the
+  //      caller so the doc page and the prompt content share one source.
   for (const guide of input.sharedGuides ?? []) {
     if (guide && guide.trim()) {
       out.push('\n---');
