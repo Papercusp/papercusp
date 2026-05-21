@@ -247,8 +247,17 @@ export class FileLockQueue {
   }
 
   /**
-   * Force-release everything held by `owner`. Used by the reaper when
-   * a worker process dies without cleanly releasing.
+   * Force-release everything held by `owner` AND drop its queued
+   * waiters — a complete reap of a dead owner.
+   *
+   * NO PRODUCTION CALLER yet (file-locking #7). Wiring this to abnormal
+   * lane termination needs lane-cancellation infrastructure that does
+   * not exist: `LanePool` is a slot counter with no kill path, and
+   * `runChunkLoop` takes no `AbortSignal`. Until that lands, a wedged
+   * lane's leak is bounded by the next orchestrator restart — the
+   * queue is an in-process Map with no persistence. `reap` is kept as
+   * a correct, tested primitive (exercised by the #11 conformance
+   * suite) and is ready the day lane cancellation is built.
    */
   reap(owner: string): number {
     let n = 0;
