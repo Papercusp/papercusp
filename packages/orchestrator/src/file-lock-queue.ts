@@ -258,6 +258,19 @@ export class FileLockQueue {
         n++;
       }
     }
+    // Also drop any QUEUED waiters for this owner. Without this, a
+    // reaped owner's waiter stays in the queue and `drainWaiters` could
+    // later grant it — handing locks to an owner that no longer exists
+    // (file-locking #7: a complete reap clears holds AND pending
+    // claims). The waiter's promise is rejected so a still-awaiting
+    // caller fails fast rather than hanging.
+    for (let i = this.waiters.length - 1; i >= 0; i--) {
+      if (this.waiters[i].owner === owner) {
+        const [w] = this.waiters.splice(i, 1);
+        w.reject(new Error(`FileLockQueue: waiter for "${owner}" was reaped`));
+        n++;
+      }
+    }
     if (n > 0) this.drainWaiters();
     return n;
   }

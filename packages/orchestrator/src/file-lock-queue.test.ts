@@ -326,3 +326,25 @@ test('#8 acquire with no timeout option blocks indefinitely (unchanged default)'
   const h2 = await p;
   q.release(h2);
 });
+
+test('#7 reap also drops a queued waiter, not just held locks', async () => {
+  const q = new FileLockQueue();
+  const h1 = await q.acquire('w1', ['a']);
+  // w2 queues behind w1 for the same path.
+  let w2Rejected = false;
+  const w2 = q.acquire('w2', ['a']).catch((e: unknown) => {
+    w2Rejected = true;
+    return e;
+  });
+  await yieldEventLoop();
+  assert.equal(q.snapshot().queueLength, 1);
+  // Reaping w2 must drop + reject its queued waiter.
+  const reaped = q.reap('w2');
+  assert.equal(reaped, 1);
+  const err = await w2;
+  assert.equal(w2Rejected, true);
+  assert.match((err as Error).message, /reaped/);
+  assert.equal(q.snapshot().queueLength, 0);
+  // w1 is unaffected.
+  q.release(h1);
+});
