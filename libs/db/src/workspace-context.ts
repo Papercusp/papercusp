@@ -59,6 +59,19 @@ export async function withWorkspace<T>(
   // (templated queries + .unsafe).
   return (sql.begin(async (tx) => {
     const txSql = tx as unknown as Sql;
+    // postgres-js's TransactionSql is a SUBSET of Sql — it omits
+    // `.options` (the parsers/serializers config). drizzle-orm's
+    // `drizzle(client)` reads `client.options.parsers` in its
+    // constructor, so any `drizzle(tx)` inside a withWorkspace callback
+    // throws "Cannot read properties of undefined (reading 'parsers')"
+    // (2026-05-22 P5 follow-up — broke harness:list and every other
+    // agent-mcp read tool, plus the operator scan-lock). parsers /
+    // serializers are connection-scoped, so point the TransactionSql at
+    // the parent connection's options object — that satisfies
+    // `drizzle(tx)` and is a no-op for raw `tx\`...\`` queries (the
+    // parent's options were already drizzle-mutated by getOrgPgApp()).
+    const txOpts = txSql as unknown as { options?: unknown };
+    txOpts.options ??= (sql as unknown as { options?: unknown }).options;
     if (!opts.bypassRlsForAdmin) {
       await txSql`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
     }
