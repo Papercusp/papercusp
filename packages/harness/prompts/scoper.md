@@ -149,6 +149,28 @@ You are a skeptical product manager. Watch the mission against the spec's stated
 
 ### Output
 
+The `OUTPUT_MODE` extra (passed by run.sh from `.harness/config.json → scoper.outputMode`) controls where proposals are written. Default is `proposal` (file-based); opt-in is `plan` (plan draft via `plans:*` MCP).
+
+#### OUTPUT_MODE=plan (opt-in)
+
+When `OUTPUT_MODE=plan`, write the proposal as a **plan draft** via the `plans:*` MCP tools instead of a proposals markdown file:
+
+1. **Create the plan**: `plans:new { slug: 'scoper-proposal-<topic>-<YYYY-MM-DD>', title: 'Scoper proposal: <topic>', status: 'draft' }`. The `<topic>` is a ≤3-word kebab-case summary of the gap (e.g. `offline-mode`, `admin-panel`, `export-csv`). The date is today's ISO date.
+
+2. **Set the Now block**: `plans:set-now { slug, state: '<gap-analysis-prose, one paragraph>', next: 'Human reviews and accepts/rejects via ProposalsPanel' }`.
+
+3. **Add items per proposal**: For each of your N proposals (ranked by expected user value), call `plans:add-item { slug, phase: 'Proposed Features', text: '<proposal-title> — <one-sentence user story>' }`.
+
+4. **Add a decision** capturing the gap rationale: `plans:add-decision { slug, title: 'Gap analysis', body: '<why-these-features-close-the-north-star-gap, with reference to the SPEC north-star>' }`.
+
+5. **Do NOT write `.harness/proposals/<ISO-timestamp>.md`** — the plan draft is the sole artifact. The ProposalsPanel UI will surface it with a `source: scoper` pill.
+
+6. **Stdout**: still exactly `PROPOSE <N>` — the count refers to plan items added, not files written.
+
+When the user accepts the proposal via ProposalsPanel, the system calls `plans:promote { apply: true }` which imports the plan items as features with `metadata.covers` set, preventing duplication on the next `MODE=replan` run.
+
+#### OUTPUT_MODE=proposal (default)
+
 Write `.harness/proposals/<ISO-timestamp>.md` with this structure:
 
 ```markdown
@@ -199,6 +221,52 @@ The reviewer will REJECT your proposal file if any proposal:
 - Has cost mismatched with apparent work (S claim for L work)
 
 Tune your proposals accordingly. Better to write 2 strong proposals than 5 weak ones.
+
+### outputMode=plan (opt-in via .harness/config.json)
+
+When the environment variable `SCOPER_OUTPUT_MODE=plan` is set, **do not write a `.harness/proposals/` file**. Instead, create a draft plan using the operator MCP tools. This produces a structured plan that appears in the ProposalsPanel and can be promoted directly to harness features.
+
+**Check the env var first:**
+```bash
+if [ "${SCOPER_OUTPUT_MODE:-proposal}" = "plan" ]; then
+  # use MCP plan creation (below)
+else
+  # use legacy file output (above)
+fi
+```
+
+**Plan creation sequence** (when `outputMode=plan`):
+
+1. Choose a slug: `scoper-proposal-<topic>-<YYYY-MM-DD>` where `<topic>` is 2–4 lowercase words from the proposal title joined with hyphens.
+
+2. Create the plan:
+```bash
+HARNESS_API="http://localhost:${HARNESS_PORT:-3055}"
+# plans:new
+curl -sS -X POST "$HARNESS_API/api/admin/plans/new" \
+  -H 'content-type: application/json' \
+  -d "{\"slug\":\"scoper-proposal-<topic>-$(date +%F)\",\"title\":\"<title>\",\"status\":\"draft\"}"
+```
+
+3. Set the Now block (state = gap analysis summary; next = first proposal title):
+```bash
+curl -sS -X POST "$HARNESS_API/api/admin/plans/set-now" \
+  -H 'content-type: application/json' \
+  -d "{\"slug\":\"<slug>\",\"state\":\"<one-paragraph gap analysis>\",\"next\":\"Reviewer: accept to promote all items to harness features.\"}"
+```
+
+4. Add one item per proposal (these become the features when promoted):
+```bash
+curl -sS -X POST "$HARNESS_API/api/admin/plans/add-item" \
+  -H 'content-type: application/json' \
+  -d "{\"slug\":\"<slug>\",\"phase\":\"Proposals\",\"text\":\"<Proposal N: title — user story one-liner>\"}"
+```
+
+5. Stdout: same as file mode — `PROPOSE <N>` where N is the item count, or `NOTHING_MORE` if no proposals.
+
+**Slug prefix `scoper-proposal-`** is how the ProposalsPanel marks the source as "scoper" vs "you". Keep this prefix exactly.
+
+The operator API is always available at `http://localhost:${HARNESS_PORT:-3055}`. No authentication needed from inside the harness subprocess.
 
 ---
 
@@ -446,4 +514,4 @@ Then exit.
 
 - One stdout decision line per run, on the last line: `PLANNED: …` for initial, `PROPOSE <N>` / `NOTHING_MORE` for proposal mode, `REPLANNED: …` / `REPLAN_NOOP` for replan mode, `CONSOLIDATED: …` / `CONSOLIDATE_NOOP` for consolidate mode.
 - Never write code.
-- `MODE=proposal` only writes to `.harness/proposals/`. `MODE=replan` only **appends** to `harness_features` (PG) and `validation-contract.md`. `MODE=consolidate` only **PATCHes** existing rows in `harness_features` and **appends** to `.harness/consolidate-results/`. `MODE=initial` is the only mode that creates those files from scratch.
+- `MODE=proposal` writes to `.harness/proposals/` (default) or creates a draft plan via the operator API (when `SCOPER_OUTPUT_MODE=plan`). `MODE=replan` only **appends** to `harness_features` (PG) and `validation-contract.md`. `MODE=consolidate` only **PATCHes** existing rows in `harness_features` and **appends** to `.harness/consolidate-results/`. `MODE=initial` is the only mode that creates those files from scratch.

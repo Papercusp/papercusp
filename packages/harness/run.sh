@@ -1752,7 +1752,8 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
             if [ -f "$PROJECT_DIR/SPEC.md" ]; then
                 mkdir -p "$STATE_DIR/proposals"
                 log "SCOPER starting (afterDone, proposal mode)"
-                product_out="$(invoke scoper "MODE=proposal")"
+                scoper_output_mode="$(config_get 'scoper.outputMode' 'proposal')"
+                product_out="$(invoke scoper "MODE=proposal" "OUTPUT_MODE=$scoper_output_mode")"
                 log "SCOPER: ${product_out:-(no output)}"
                 # Auto-apply reviewer-approved unless explicitly opted out.
                 # Legacy: product.mode == 'propose-only' opts out; new key
@@ -2303,7 +2304,8 @@ except Exception:
         if [ "$fire_it" = "1" ]; then
             mkdir -p "$STATE_DIR/proposals"
             log "SCOPER starting (near-done threshold $threshold_pct reached, $(printf '%.0f%%' "$(python3 -c "print(float('$pct_passed')*100)")") passed, proposal mode)"
-            product_out="$(invoke scoper "MODE=proposal")"
+            scoper_output_mode="$(config_get 'scoper.outputMode' 'proposal')"
+            product_out="$(invoke scoper "MODE=proposal" "OUTPUT_MODE=$scoper_output_mode")"
             log "SCOPER: ${product_out:-(no output)}"
             auto_apply="$(config_get 'proposals.autoApply' '')"
             if [ -z "$auto_apply" ]; then
