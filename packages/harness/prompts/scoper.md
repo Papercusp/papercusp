@@ -222,52 +222,6 @@ The reviewer will REJECT your proposal file if any proposal:
 
 Tune your proposals accordingly. Better to write 2 strong proposals than 5 weak ones.
 
-### outputMode=plan (opt-in via .harness/config.json)
-
-When the environment variable `SCOPER_OUTPUT_MODE=plan` is set, **do not write a `.harness/proposals/` file**. Instead, create a draft plan using the operator MCP tools. This produces a structured plan that appears in the ProposalsPanel and can be promoted directly to harness features.
-
-**Check the env var first:**
-```bash
-if [ "${SCOPER_OUTPUT_MODE:-proposal}" = "plan" ]; then
-  # use MCP plan creation (below)
-else
-  # use legacy file output (above)
-fi
-```
-
-**Plan creation sequence** (when `outputMode=plan`):
-
-1. Choose a slug: `scoper-proposal-<topic>-<YYYY-MM-DD>` where `<topic>` is 2–4 lowercase words from the proposal title joined with hyphens.
-
-2. Create the plan:
-```bash
-HARNESS_API="http://localhost:${HARNESS_PORT:-3055}"
-# plans:new
-curl -sS -X POST "$HARNESS_API/api/admin/plans/new" \
-  -H 'content-type: application/json' \
-  -d "{\"slug\":\"scoper-proposal-<topic>-$(date +%F)\",\"title\":\"<title>\",\"status\":\"draft\"}"
-```
-
-3. Set the Now block (state = gap analysis summary; next = first proposal title):
-```bash
-curl -sS -X POST "$HARNESS_API/api/admin/plans/set-now" \
-  -H 'content-type: application/json' \
-  -d "{\"slug\":\"<slug>\",\"state\":\"<one-paragraph gap analysis>\",\"next\":\"Reviewer: accept to promote all items to harness features.\"}"
-```
-
-4. Add one item per proposal (these become the features when promoted):
-```bash
-curl -sS -X POST "$HARNESS_API/api/admin/plans/add-item" \
-  -H 'content-type: application/json' \
-  -d "{\"slug\":\"<slug>\",\"phase\":\"Proposals\",\"text\":\"<Proposal N: title — user story one-liner>\"}"
-```
-
-5. Stdout: same as file mode — `PROPOSE <N>` where N is the item count, or `NOTHING_MORE` if no proposals.
-
-**Slug prefix `scoper-proposal-`** is how the ProposalsPanel marks the source as "scoper" vs "you". Keep this prefix exactly.
-
-The operator API is always available at `http://localhost:${HARNESS_PORT:-3055}`. No authentication needed from inside the harness subprocess.
-
 ---
 
 ## MODE=replan
