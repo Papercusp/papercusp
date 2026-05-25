@@ -153,11 +153,27 @@ The `OUTPUT_MODE` extra (passed by run.sh from `.harness/config.json → scoper.
 
 #### OUTPUT_MODE=plan (opt-in)
 
-When `OUTPUT_MODE=plan`, write the proposal as a **plan draft** via the `plans:*` MCP tools instead of a proposals markdown file:
+When `OUTPUT_MODE=plan`, write the proposal as a **plan draft** via the `plans:*` MCP tools instead of a proposals markdown file.
+
+**MUST include `?harness=$HARNESS_SLUG`** in every URL — without it, the operator defaults to its primary harness and your plan ends up in the wrong proposals panel. `$HARNESS_SLUG` is already exported in your environment by `run.sh`.
+
+The endpoint base for every call: `http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/<verb>?harness=$HARNESS_SLUG`
 
 1. **Create the plan**: `plans:new { slug: 'scoper-proposal-<topic>-<YYYY-MM-DD>', title: 'Scoper proposal: <topic>', status: 'draft' }`. The `<topic>` is a ≤3-word kebab-case summary of the gap (e.g. `offline-mode`, `admin-panel`, `export-csv`). The date is today's ISO date.
 
+   ```bash
+   curl -sS -X POST "http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/new?harness=$HARNESS_SLUG" \
+     -H 'content-type: application/json' \
+     -d "{\"slug\":\"scoper-proposal-<topic>-$(date +%F)\",\"title\":\"<title>\",\"status\":\"draft\"}"
+   ```
+
 2. **Set the Now block**: `plans:set-now { slug, state: '<gap-analysis-prose, one paragraph>', next: 'Human reviews and accepts/rejects via ProposalsPanel' }`.
+
+   ```bash
+   curl -sS -X POST "http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/set-now?harness=$HARNESS_SLUG" \
+     -H 'content-type: application/json' \
+     -d "{\"slug\":\"<slug>\",\"state\":\"<gap-analysis>\",\"next\":\"Human reviews...\"}"
+   ```
 
 3. **Add items per proposal**: For each of your N proposals (ranked by expected user value), call `plans:add-item { slug, phase: 'Proposed Features', text: '<proposal-title> — <one-sentence user story>' }`.
 
@@ -167,7 +183,7 @@ When `OUTPUT_MODE=plan`, write the proposal as a **plan draft** via the `plans:*
 
 6. **Stdout**: still exactly `PROPOSE <N>` — the count refers to plan items added, not files written.
 
-When the user accepts the proposal via ProposalsPanel, the system calls `plans:promote { apply: true }` which imports the plan items as features with `metadata.covers` set, preventing duplication on the next `MODE=replan` run.
+When the user accepts the proposal via ProposalsPanel, the system calls `plans:promote { apply: true }` which imports the plan items as features with `metadata.covers` set, preventing duplication on the next `MODE=replan` run. Promote also flips the plan from `status: draft` → `status: active`, so the card disappears from the proposals panel.
 
 #### OUTPUT_MODE=proposal (default)
 
