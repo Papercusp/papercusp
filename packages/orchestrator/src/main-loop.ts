@@ -66,6 +66,7 @@ import { spawnSync as spawnSyncForGit } from 'node:child_process';
 import { branchExists, git } from './git';
 import { branchIsoBase, worktreePath } from './branch-iso';
 import type { InvokeContext } from './invoke';
+import { fetchDistributedClaim } from './distributed-claim-fetch';
 import type { Logger } from './log';
 import {
   handleSynthesisOutcome,
@@ -135,6 +136,45 @@ function priorAttemptExtras(stateDir: string, projectDir: string, fid: string): 
 }
 
 const _slugCache = new Map<string, string>();
+/**
+ * Pre-dispatch distributed-claim attempt. Best-effort observability:
+ * logs `[claim] <fid> won|lost (Nms) reason=<reason>` and returns. The
+ * decision to drop on `won: false` is a future config flag; today it
+ * only fills the audit table.
+ *
+ * Skipped (silently) when:
+ *   - PAPERCUSP_OPERATOR_BASE points nowhere reachable: handled by the
+ *     fetch module — won:true with reason=fetch-failed.
+ *   - PAPERCUSP_GITHUB_USER_ID isn't set or is 0/non-positive: no
+ *     identifiable claimer; the operator-side endpoint would reject.
+ */
+async function tryDistributedClaim(
+  featureId: string,
+  ctx: InvokeContext,
+  logger: Logger,
+): Promise<void> {
+  const userIdRaw = process.env.PAPERCUSP_GITHUB_USER_ID ?? '';
+  const userId = userIdRaw ? Number.parseInt(userIdRaw, 10) : 0;
+  if (!Number.isInteger(userId) || userId <= 0) return;
+  // Hono-host (substrate) runs on :3070 — distinct from the SPA :3055.
+  const operatorBase =
+    process.env.PAPERCUSP_SUBSTRATE_BASE ??
+    process.env.PAPERCUSP_HONO_BASE ??
+    'http://localhost:3070';
+  const r = await fetchDistributedClaim({
+    operatorBase,
+    harnessSlug: harnessSlug(ctx),
+    featureId,
+    githubUserId: userId,
+  });
+  logger.log(
+    `[claim] ${featureId} ${r.won ? 'won' : 'LOST'} (${r.latencyMs}ms) ` +
+      `reason=${r.reason}` +
+      (r.winner_pubkey ? ` winner=${r.winner_pubkey.slice(0, 12)}…` : '') +
+      (r.error ? ` error=${r.error}` : ''),
+  );
+}
+
 function harnessSlug(ctx: InvokeContext): string {
   const fromEnv = process.env.HARNESS_SLUG ?? process.env.PAPERCUSP_HARNESS_SLUG;
   if (fromEnv && fromEnv.length > 0) return fromEnv;
@@ -889,6 +929,13 @@ async function handleNextWorker(
     logger.log(`ERROR: NEXT_WORKER without feature id: ${parsed.raw}`);
     return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
   }
+
+  // P-037: pre-dispatch distributed claim. Best-effort; logs the outcome
+  // and continues regardless. The operator-side endpoint records every
+  // attempt in harness_shared.claim_audit for diagnostics. When the
+  // substrate is off / unbound the endpoint returns single-writer-
+  // fallback + won:true so this is a no-op for the legacy path.
+  await tryDistributedClaim(fid, ctx, logger);
 
   // Chunk-loop path takes priority over the legacy modes when enabled.
   // It runs ONE feature end-to-end through plan → chunk-loop → commit,
