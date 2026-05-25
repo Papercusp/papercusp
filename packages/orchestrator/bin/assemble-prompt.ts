@@ -12,7 +12,10 @@
  *     --role <role> \
  *     [--feature-id F-XXX] \
  *     [--run-id <id>] \
- *     [--extra LINE]...        repeatable; runtime-context bullets
+ *     [--extra LINE]...           repeatable; runtime-context bullets
+ *     [--plan-context-file PATH]  path to file containing plan context text
+ *                                  (produced by get-plan-context.ts; only
+ *                                  relevant for worker/validator/reviewer)
  *
  * Output: assembled prompt text on stdout. Exit 0 on success, 1 on any
  * resolution error (unknown slug, missing prompt file, etc.).
@@ -23,6 +26,7 @@
  *   prompt="$(npx tsx ...assemble-prompt.ts --slug X --role worker --feature-id F-001)"
  *   echo "$prompt" | $CLAUDE ...
  */
+import { readFileSync, existsSync } from 'node:fs';
 import { assembleRolePrompt } from '../src/role-prompt-from-slug.js';
 
 interface ParsedArgs {
@@ -31,6 +35,7 @@ interface ParsedArgs {
   featureId?: string;
   runId?: string;
   extras: string[];
+  planContextFile?: string;
 }
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -43,6 +48,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       case '--role': out.role = next ?? ''; i++; break;
       case '--feature-id': out.featureId = next ?? ''; i++; break;
       case '--run-id': out.runId = next ?? ''; i++; break;
+      case '--plan-context-file': out.planContextFile = next ?? ''; i++; break;
       case '--extra':
         if (next) out.extras.push(next);
         i++;
@@ -65,6 +71,13 @@ function main(): void {
     process.exit(2);
   }
 
+  let planContext: string | undefined;
+  if (args.planContextFile && existsSync(args.planContextFile)) {
+    try {
+      planContext = readFileSync(args.planContextFile, 'utf8').trim() || undefined;
+    } catch { /* best-effort */ }
+  }
+
   try {
     const { text } = assembleRolePrompt({
       slug: args.slug,
@@ -73,6 +86,7 @@ function main(): void {
       runId: args.runId || undefined,
       mode: 'autonomous',
       extras: args.extras,
+      planContext,
     });
     process.stdout.write(text);
     if (!text.endsWith('\n')) process.stdout.write('\n');

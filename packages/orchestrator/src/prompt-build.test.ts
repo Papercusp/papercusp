@@ -403,3 +403,98 @@ test('buildPrompt — sharedGuides work without a toolsPlaybook', () => {
     fx.cleanup();
   }
 });
+
+// ── P-012: planContext injection ─────────────────────────────────────────────
+
+test('buildPrompt — planContext is injected before featureHistory', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: 'F-042',
+      runId: 'r1',
+      extras: [],
+      planContext: '## Source Plan Context\n\nNow: doing Phase B.',
+      featureHistory: '## Feature history\n\nSome prior notes.',
+    });
+    const planPos = out.indexOf('Source Plan Context');
+    const histPos = out.indexOf('Feature history');
+    assert.ok(planPos !== -1, 'planContext section not found');
+    assert.ok(histPos !== -1, 'featureHistory section not found');
+    assert.ok(planPos < histPos, 'planContext must appear before featureHistory');
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — empty/undefined planContext produces no extra section', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+  });
+  try {
+    const withUndefined = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      planContext: undefined,
+    });
+    const withEmpty = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      planContext: '   ',
+    });
+    assert.ok(!withUndefined.includes('Source Plan Context'));
+    assert.ok(!withEmpty.includes('Source Plan Context'));
+    assert.strictEqual(withUndefined, withEmpty);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — planContext absent when both planContext and featureHistory present but only featureHistory set', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: 'F-001',
+      runId: 'r1',
+      extras: [],
+      featureHistory: '## Feature history\n\nsome notes.',
+    });
+    assert.ok(!out.includes('Source Plan Context'));
+    assert.ok(out.includes('Feature history'));
+  } finally {
+    fx.cleanup();
+  }
+});

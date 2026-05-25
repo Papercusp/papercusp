@@ -1372,6 +1372,20 @@ except Exception:
     # wild — flip the env flag to enable.
     local _slug; _slug="$(harness_slug)"
     local _ts_assembler="$HARNESS_DIR/../orchestrator/bin/assemble-prompt.ts"
+    local _get_plan_ctx="$HARNESS_DIR/../orchestrator/bin/get-plan-context.ts"
+
+    # Fetch plan context for plan-derived features (worker/validator/reviewer only).
+    # Best-effort: missing context never blocks invocation.
+    local _plan_ctx_file=""
+    local _plan_ctx_roles=",worker,validator,reviewer,"
+    if [ -n "$feature_id" ] && [[ "$_plan_ctx_roles" == *",${role},"* ]] && [ -f "$_get_plan_ctx" ]; then
+        _plan_ctx_file="$(mktemp)"
+        npx tsx "$_get_plan_ctx" --slug "$_slug" --feature-id "$feature_id" \
+            > "$_plan_ctx_file" 2>>"$err" || true
+        # Empty file = no plan origin; clear so callers don't inject noise.
+        [ -s "$_plan_ctx_file" ] || { rm -f "$_plan_ctx_file"; _plan_ctx_file=""; }
+    fi
+
     if [ "${PAPERCUSP_USE_TS_PROMPT_ASSEMBLY:-0}" = "1" ] && [ -f "$_ts_assembler" ]; then
         # Build --extra args from the original positional context lines.
         local _extras_args=()
@@ -1389,6 +1403,7 @@ except Exception:
                 --role "$role" \
                 ${feature_id:+--feature-id "$feature_id"} \
                 --run-id "$run_id" \
+                ${_plan_ctx_file:+--plan-context-file "$_plan_ctx_file"} \
                 "${_extras_args[@]}" \
                 > "$_prompt_tmp" 2>>"$err"; then
             if [ "$AGENT_BACKEND" = "omp" ]; then
@@ -1415,6 +1430,13 @@ except Exception:
                 echo "## Droid specialization (from .harness/config.json → promptOverrides.$role)"
                 echo
                 printf '%s\n' "$role_prompt_override"
+            fi
+
+            # Inject plan context for plan-derived features (worker/validator/reviewer).
+            if [ -n "$_plan_ctx_file" ] && [ -s "$_plan_ctx_file" ]; then
+                echo
+                echo "---"
+                cat "$_plan_ctx_file"
             fi
 
             # Inject curated memory into every role except the curator itself.
@@ -1533,6 +1555,9 @@ print(text)
             fi
         } > "$_summary_path" 2>/dev/null || true
     fi
+
+    # Clean up plan context temp file.
+    [ -n "$_plan_ctx_file" ] && rm -f "$_plan_ctx_file"
 
     cat "$out"
     return $rc

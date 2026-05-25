@@ -65,6 +65,19 @@ export interface BuildPromptInput {
    */
   featureHistory?: string;
   /**
+   * Plan context for a plan-derived feature: the origin plan's `## Now`
+   * block + last 3 decisions. Fetched by the caller from the operator
+   * endpoint `/api/harness/:slug/features/:id/plan-context` so the
+   * orchestrator submodule stays free of operator-layer PG imports.
+   *
+   * Only injected for worker / validator / reviewer roles. Placed before
+   * `featureHistory` so it is in-scope for the agent's main task but
+   * still after the cacheable preamble.
+   *
+   * Empty string / undefined disables.
+   */
+  planContext?: string;
+  /**
    * Cross-tool playbook for the role — content of
    * `apps/operator/prompts/<role>.tools.md` if it exists. Captures
    * named workflows + cross-tool patterns + chaining rules that span
@@ -190,7 +203,15 @@ export function buildPrompt(input: BuildPromptInput): string {
     out.push('  have nothing generalizable to add.');
   }
 
-  // 6. Feature history — APPENDED LAST so it never invalidates the
+  // 6. Plan context — origin plan's ## Now + last 3 decisions for
+  //    plan-derived features. More static than featureHistory so placed
+  //    before it; still after the cacheable preamble.
+  if (input.planContext && input.planContext.trim()) {
+    out.push('\n---');
+    out.push(input.planContext);
+  }
+
+  // 7. Feature history — APPENDED LAST so it never invalidates the
   //    cacheable preamble. Per-feature, per-turn content; expected to
   //    differ across calls. See feature-history.ts and the "cache
   //    discipline" comment on `featureHistory` in BuildPromptInput.

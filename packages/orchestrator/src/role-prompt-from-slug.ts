@@ -42,6 +42,14 @@ export interface AssembleRolePromptOptions {
   /** Extra runtime-context bullets the caller wants in the prompt (e.g. "MODE=replan"). */
   extras?: readonly string[];
   /**
+   * Plan context for a plan-derived feature: the origin plan's `## Now`
+   * block + last 3 decisions. Fetched by the caller (operator or CLI
+   * shim) so this module stays free of operator-layer PG imports.
+   * Only meaningful for worker/validator/reviewer; callers are responsible
+   * for filtering by role. Empty string / undefined disables injection.
+   */
+  planContext?: string;
+  /**
    * Project context to inject. Provided by the caller (which has DB access).
    * If non-empty, gets appended as a `## Project context (curated by Project
    * Manager)` section after `buildPrompt`'s output. Caller decides whether
@@ -185,6 +193,7 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
     featureId: opts.featureId ?? null,
     runId,
     extras,
+    planContext: opts.planContext,
   });
 
   // Project-context injection. Curated by the Project Manager role; appended

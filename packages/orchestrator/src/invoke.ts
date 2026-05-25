@@ -638,6 +638,28 @@ export async function invoke(
     } catch { /* best-effort — worker prompt handles missing file */ }
   }
 
+  // 8.10 Plan context — fetch the origin plan's ## Now + last 3 decisions
+  // for worker/validator/reviewer roles executing plan-derived features.
+  // Fetched over HTTP from the operator so this submodule stays free of
+  // operator-layer PG imports. Best-effort; 3 s timeout; empty on miss.
+  let planContext = '';
+  if (
+    featureId &&
+    (role === 'worker' || role === 'validator' || role === 'reviewer')
+  ) {
+    try {
+      const planCtxBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+      const planCtxRes = await fetch(
+        `${planCtxBase}/api/harness/${harnessSlugFromProjectDir(ctx.projectDir)}/features/${featureId}/plan-context`,
+        { signal: AbortSignal.timeout(3000) },
+      );
+      if (planCtxRes.ok) {
+        const planCtxData = await planCtxRes.json() as { section?: string };
+        planContext = planCtxData.section ?? '';
+      }
+    } catch { /* best-effort — feature has no plan origin or operator unreachable */ }
+  }
+
   // 8b. Pre-fetch per-role identity from PG (Migration 041
   // `harness_shared.identity_files`). When ctx.pg isn't set, this
   // returns empty and prompt-build falls back to reading the on-disk
@@ -707,6 +729,7 @@ export async function invoke(
     runId,
     extras,
     substrateContext,
+    planContext,
     featureHistory,
     toolsPlaybook,
     sharedGuides,
