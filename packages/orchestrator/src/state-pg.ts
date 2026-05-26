@@ -79,6 +79,19 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
            needs_human_review, ts, created_ts, updated_ts
       FROM harness_features
      WHERE workspace_id = ${ctx.workspaceId}
+       AND (
+         -- Features not linked to any plan are always eligible (legacy/manual).
+         source_plan_slug IS NULL
+         OR
+         -- Features from plans must belong to a started plan.
+         source_plan_slug IN (
+           SELECT plan_slug
+             FROM harness_shared.harness_plan_status
+            WHERE workspace_id = ${ctx.workspaceId}
+              AND harness_slug  = ${ctx.harnessSlug ?? ''}
+              AND status        = 'started'
+         )
+       )
      ORDER BY feature_id
   `;
   return rows.map(rowToFeature);
