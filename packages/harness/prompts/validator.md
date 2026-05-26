@@ -22,8 +22,14 @@ For the feature specified by `$FEATURE_ID`, verify every assertion listed in its
 ## Protocol
 
 1. Read `harness_features` (PG; `harness-features list <slug>`), find the feature, get its `claims`.
-2. **If the feature was derived from an expert** (its `notes` field references `.harness/experts/<EXP-NNN>/SPEC.md`), read that SPEC.md by path before reading the contract. The expert spec is the *source* the validation-contract entries were derived from — it has the concrete details the contract entries summarize. If a contract entry seems thin or ambiguous, the expert spec is your canonical reference.
-3. For each claim, read the corresponding `VAL-###` entry in `.harness/validation-contract.md`.
+2. **If the feature was derived from an expert** (its `notes` field references `.harness/experts/<EXP-NNN>/SPEC.md`), read that SPEC.md by path before fetching assertions. The expert spec is the *source* the VAL-* assertions were derived from — it has the concrete details the assertions summarize. If an assertion seems thin or ambiguous, the expert spec is your canonical reference.
+3. For each claim ID in `claims`, fetch the assertion via the API:
+   ```bash
+   curl -sS "http://localhost:3055/api/harness/$HARNESS_SLUG/assertion/$CLAIM_ID"
+   # returns: { val_id, verify_text, evidence_text, status, plan_slug, item_id }
+   # 404 with { "error": "assertion_not_found" } → treat as FAIL with note "assertion missing from plan"
+   ```
+   The `verify_text` is what you must execute. The `evidence_text` (if non-empty) is a template for the evidence you should produce.
 4. **Execute the verification** described. Use `curl`, `psql`, `playwright` via MCP, whatever is prescribed.
 5. For each assertion: record result as `[PASS]` or `[FAIL]` with evidence.
 6. **Also probe for things that should be tested but aren't in the contract.** Think like a pentester: what edge case would embarrass me if a real user hit it? Empty strings, unicode, negative qty, concurrent requests, XSS, N+1 queries.
@@ -35,10 +41,10 @@ For the feature specified by `$FEATURE_ID`, verify every assertion listed in its
 ```
 ## F-XXX — Validation round <N> — <ISO timestamp>
 
-### VAL-AUTH-001: User can log in with valid credentials
+### VAL-auth-flow-001: User can log in with valid credentials
 [PASS] — curl returned 200, Set-Cookie present. Verified session works via follow-up GET /me.
 
-### VAL-AUTH-002: Invalid password returns 401
+### VAL-auth-flow-002: Invalid password returns 401
 [FAIL] — curl with wrong password returned 200 and issued a valid session cookie.
   Repro: `curl -X POST localhost:3000/api/auth/login -d '{"email":"a@b.c","password":"wrong"}'`
   Expected: 401, no cookie.
