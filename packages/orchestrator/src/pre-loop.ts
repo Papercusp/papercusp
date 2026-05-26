@@ -93,7 +93,7 @@ export async function runPreLoop(
             ctx.phase,
           );
         } else {
-          writeFileSync(join(ctx.stateDir, 'escalation.md'), escalationBody);
+          logger.log('No PG context — escalation not persisted. Body: ' + escalationBody.trim());
         }
         logger.notifyEvent('escalate', 'Plan-gate rejected the scoper output');
         return { stop: 'plan-rejected', exitCode: 7 };
