@@ -21,7 +21,7 @@ You run in a **fresh context**. Do not assume prior knowledge.
 3. `.harness/validation-contract.md` — the binding contract of claims.
 4. `harness_features` (PG; `harness-features list <slug>`) — the work queue with current statuses and attempts.
 5. **Accumulated validator findings** (PG via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.linkedFeatureId == "<failing-feature-id>" or .foundDuring == "<failing-feature-id>")'`). Read the entries for the failing feature closely — validators explain *what* failed and *why*, and that's often where the ambiguity lives.
-6. `.harness/supervisor-notes.md` if present — human guidance blocks.
+6. **Open `needs-human` plan items** — human guidance and decisions are expressed as `needs-human` items in the active plan. Fetch with: `curl "http://localhost:3070/api/admin/plans/items?slug=$SOURCE_PLAN_SLUG" | jq '[.items[] | select(.effectiveStatus == "needs-human")]'`. These take precedence over any action you'd otherwise take.
 
 ## Inputs you receive
 
@@ -76,30 +76,37 @@ PATCH <FEATURE_ID> <same one-line summary>
 
 For `preference`, `env-blocker`, `perf-goal`, `cost-cap`, or non-obvious `spec-ambiguity` / `scope-change`:
 
-Write a review request to `.harness/pending-reviews/<id>.json` where `<id>` is `review-<unix_ts>-<FEATURE_ID>-<kind>`. The JSON schema:
+Find the plan item (P-NNN) in the active plan that corresponds to this feature and flip it to `needs-human`, appending a note explaining the question:
 
-```json
-{
-  "id": "review-1777009999-F-004-spec-ambiguity",
-  "featureId": "F-004",
-  "kind": "spec-ambiguity",
-  "summary": "One-line human summary (≤140 chars) — this is what the user sees in the Inbox card.",
-  "question": "The human-readable question the user needs to answer.",
-  "recommendedAnswer": "Your best recommendation if you had to guess. Often useful; if you truly have no lean, say so.",
-  "tradeoff": "The key tradeoff or open decision the user should consider.",
-  "context": "2–6 sentences of grounding: what claim is stuck, what the validator observed, what's already been tried.",
-  "ts": 1777009999,
-  "claim": "The exact original claim or config value that needs clarification.",
-  "resolved": false
-}
+```bash
+curl -s -X POST "http://localhost:3070/api/admin/plans/set-status" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug": "$SOURCE_PLAN_SLUG",
+    "itemId": "P-NNN",
+    "status": "needs-human",
+    "note": "spec-ambiguity [F-004]: <one-line question> — recommended: <your recommendation>"
+  }'
 ```
 
-Create the `.harness/pending-reviews/` directory if it doesn't exist. Make sure `ts` is the current unix timestamp in seconds.
+If no single plan item covers this feature, add a new item to the plan in `## Phase N — <relevant phase>`:
+
+```bash
+curl -s -X POST "http://localhost:3070/api/admin/plans/add-item" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug": "$SOURCE_PLAN_SLUG",
+    "phase": "<phase heading without ##>",
+    "text": "[needs-human] F-004 spec-ambiguity: <one-line question> — recommended: <your lean>"
+  }'
+```
+
+The item surfaces immediately in the human's decision inbox (`plans:items { needsHuman: true }`). The user resolves it by editing the item text and marking it done, which unblocks the orchestrator.
 
 Then print:
 
 ```
-REVIEW <FEATURE_ID> <id> <kind> <one-line question>
+REVIEW <FEATURE_ID> <plan-item-id> <kind> <one-line question>
 ```
 
 ## Rules

@@ -17,7 +17,7 @@ You run in a fresh context. You make one specific decision, then exit: given the
 1. `harness_features` (PG; `harness-features list <slug>`) — the work queue. **Only features from started plans appear here** — the query is pre-filtered by `harness_plan_status`. If `ACTIVE_PLANS` appears in your Runtime context, those are the started plans by name (informational only; the filter is already applied).
 2. **Issues tracker** (PG `harness_<slug>.harness_issues` via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq`). This is your authoritative source for discovered-work promotion decisions. Schema returned: `{issues: [{id, title, severity, status, linkedFeatureId, codePointer, suggestedFix, attempts, ...}], nextId}`. If empty, treat as no findings.
 3. `.harness/issues.md` — accumulated validator findings (narrative prose). Read only for context and pre-structured history; do not parse for promotion decisions — use the issues-list endpoint.
-4. `.harness/supervisor-notes.md` if present — **authoritative guidance from the supervisor or human operator**. Each block starts with `## <speaker> <ISO timestamp>`. Treat the newest block as the current direction; prior blocks are historical.
+4. **Open `needs-human` plan items** — human guidance is expressed as `needs-human` items in the active plan, not as supervisor-notes.md. Fetch with `plans:items { needsHuman: true }` or `curl "http://localhost:3070/api/admin/plans/items?actionable=false&needsHuman=true"`. An open `needs-human` item blocks DONE — you cannot emit DONE while any started plan has an open `needs-human` item.
 
 ## Decide one of these outcomes
 
