@@ -1722,7 +1722,7 @@ async function handleEscalate(
 ): Promise<DispatchResult> {
   const reason = parsed.arg ?? '';
   logger.log(`⛔ ESCALATED: ${reason}`);
-  logger.log(`See ${ctx.stateDir}/escalation.md for details.`);
+  logger.log(`Reason: ${reason || '(none)'}. Check Plans tab → Inbox for milestone gates.`);
   runHook('on-escalate', {
     stateDir: ctx.stateDir,
     projectDir: ctx.projectDir,

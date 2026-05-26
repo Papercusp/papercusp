@@ -162,7 +162,7 @@ Where `<N>` is the number of issues promoted this round.
 ### D'. "next_architect <FEATURE_ID> <reason>"
 A feature has hit `attempts >= 3` and the validator keeps failing it. Before escalating to the human, ask the architect to diagnose the blocker — it may be a vague claim the architect can tighten, or a preference the human must make. Use a short reason that captures what's stuck (e.g. `attempts=4, VAL-FORM-002 failing`).
 
-Call this **at most once per feature per round**. If the architect already tried (see recent log entries for this feature and `.harness/pending-reviews/`) and couldn't resolve, escalate instead.
+Call this **at most once per feature per round**. If the architect already tried (check recent log entries for this feature, and look for a resolved `[needs-human]` plan item tagged to this feature from a prior architect consultation) and couldn't resolve, escalate instead.
 
 Print:
 ```
