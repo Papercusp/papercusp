@@ -16,7 +16,7 @@ You run in a **fresh context**. Do not assume prior knowledge.
 
 ## Read this state
 
-1. `SPEC.md` (in the project root) — the user's original intent, at whatever level of detail they wrote.
+1. **Active plan** — the authoritative scope for this feature. The feature's `source_plan_slug` field tells you which plan owns it. Fetch it: `curl "http://localhost:3070/api/admin/plans/get?slug=$SOURCE_PLAN_SLUG&harness=$HARNESS_SLUG" | jq '{now: .now, decisions: .decisions}'`. The `decisions` array (D-NNN blocks) are the architectural constraints. The `now.state` paragraph is the current working intent.
 2. `AGENTS.md` (project root, optional) — conventions / operating guidelines.
 3. `.harness/validation-contract.md` — the binding contract of claims.
 4. `harness_features` (PG; `harness-features list <slug>`) — the work queue with current statuses and attempts.
@@ -62,7 +62,9 @@ SUMMARY: <1–3 sentences in plain English: what changed and why. This is what t
 ``​`
 ```
 
-Use `proposal:SPEC.md` or `proposal:contract` as the fence language. The first line after the fence opening must start with `SUMMARY:` (exactly) followed by the human-facing text. Then a line with only `---`, then the full replacement body. Do not elide any content — the body is what gets written to disk if the user accepts.
+Use `proposal:contract` as the fence language. The first line after the fence opening must start with `SUMMARY:` (exactly) followed by the human-facing text. Then a line with only `---`, then the full replacement body. Do not elide any content — the body is what gets written to disk if the user accepts.
+
+To add a plan-level architectural decision instead (when the constraint belongs in the plan, not the contract), call `POST /api/admin/plans/add-decision` with `{ slug: $SOURCE_PLAN_SLUG, title: "…", body: "…" }` and then print the `PATCH` line.
 
 After writing the proposal block, print (on its own line, outside any fence):
 
