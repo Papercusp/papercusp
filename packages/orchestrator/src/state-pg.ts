@@ -97,6 +97,20 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
   return rows.map(rowToFeature);
 }
 
+/** Return plan slugs that are currently 'started' for this harness. */
+export async function readStartedPlanSlugsPg(ctx: PgStateContext): Promise<string[]> {
+  if (!ctx.harnessSlug) return [];
+  const rows = await ctx.pg<{ plan_slug: string }[]>`
+    SELECT plan_slug
+      FROM harness_shared.harness_plan_status
+     WHERE workspace_id = ${ctx.workspaceId}
+       AND harness_slug  = ${ctx.harnessSlug}
+       AND status        = 'started'
+     ORDER BY plan_slug
+  `;
+  return rows.map((r) => r.plan_slug);
+}
+
 /** True iff the active workspace has at least one feature row. */
 export async function featuresExistPg(ctx: PgStateContext): Promise<boolean> {
   const rows = await ctx.pg<{ exists: boolean }[]>`

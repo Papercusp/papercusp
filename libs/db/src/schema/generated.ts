@@ -2141,7 +2141,10 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.table("h
 	designStatus: text("design_status"),
 	designSpecId: text("design_spec_id"),
 	discardedDesignWork: boolean("discarded_design_work").default(false).notNull(),
+	sourcePlanSlug: text("source_plan_slug"),
+	sourcePlanItemIds: text("source_plan_item_ids").array(),
 }, (table) => [
+	index("hfc_source_plan_slug_idx").using("btree", table.sourcePlanSlug.asc().nullsLast().op("text_ops")).where(sql`(source_plan_slug IS NOT NULL)`),
 	index("hfc_design_status_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.designStatus.asc().nullsLast().op("text_ops")).where(sql`(design_status IS NOT NULL)`),
 	index("hfc_needs_design_idx").using("btree", table.harnessSlug.asc().nullsLast().op("bool_ops"), table.needsDesign.asc().nullsLast().op("bool_ops")).where(sql`(needs_design = true)`),
 	index("hfc_review_idx").using("btree", table.needsHumanReview.asc().nullsLast().op("bool_ops")),

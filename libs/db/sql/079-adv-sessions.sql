@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS harness_shared.adv_sessions (
   -- Human-readable label shown in the list (e.g. derived from the
   -- plan title at launch time).
   label           TEXT NULL,
+  -- The cwd handed to the launched terminal. Used as the fallback
+  -- session-matching scope when the OMP session id was not linked yet.
+  cwd             TEXT NULL,
   started_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   -- Set by the child-exit listener on the operator process when the
   -- spawned terminal exits. NULL means active.

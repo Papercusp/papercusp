@@ -18,7 +18,8 @@ import { spawnSync } from 'node:child_process';
 import { configGet, readConfig } from './config';
 import { parseDecision, parseDecisions } from './decision-parse';
 import { invoke } from './invoke';
-import { featureAttempts, readFeatures, setFeatureStatus, stateCtx } from './state';
+import { featureAttempts, harnessSlug as harnessSlugFromDir, readFeatures, setFeatureStatus, stateCtx } from './state';
+import { readStartedPlanSlugsPg } from './state-pg';
 import {
   branchIsoPostValidator,
   branchIsoPostWorker,
@@ -566,6 +567,24 @@ async function runMainLoopBody(
       );
       if (maxFeatures !== null) {
         orchestratorExtras.push(`MAX_FEATURES_IN_FLIGHT=${maxFeatures}`);
+      }
+    }
+
+    // Inject ACTIVE_PLANS so the orchestrator knows which plans are started.
+    // The hard filter is in readFeaturesPg (state-pg.ts); this extra is
+    // informational context for the LLM so it can reason about plan scope.
+    if (ctx.pg && ctx.workspaceId) {
+      try {
+        const slugs = await readStartedPlanSlugsPg({
+          pg: ctx.pg,
+          workspaceId: ctx.workspaceId,
+          harnessSlug: harnessSlugFromDir(ctx.projectDir),
+        });
+        if (slugs.length > 0) {
+          orchestratorExtras.push(`ACTIVE_PLANS=${slugs.join(',')}`);
+        }
+      } catch {
+        // Non-fatal — omit the hint if PG is unreachable.
       }
     }
 
