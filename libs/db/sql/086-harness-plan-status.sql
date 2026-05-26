@@ -52,3 +52,7 @@ DROP TRIGGER IF EXISTS hps_updated_at_trigger ON harness_shared.harness_plan_sta
 CREATE TRIGGER hps_updated_at_trigger
   BEFORE UPDATE ON harness_shared.harness_plan_status
   FOR EACH ROW EXECUTE FUNCTION harness_shared.set_hps_updated_at();
+
+-- Access grants: harness_app is the runtime role; harness_admin owns schema.
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.harness_plan_status TO harness_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.harness_plan_status TO harness_admin;
