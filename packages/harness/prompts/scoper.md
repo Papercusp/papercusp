@@ -100,11 +100,11 @@ PLAN=$(curl -sS "http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/get?slug
 HASH=$(echo "$PLAN" | jq -r '.contentHash')
 
 # 2. Edit the markdown — add VAL-* sub-bullets under each - **P-NNN** item line
-# Each sub-bullet block:
-#   - [VAL-{plan-slug}-001] one-line description
+# Each sub-bullet block (use ** bold on the VAL-id line so the parser picks it up):
+#   - **[VAL-{plan-slug}-001]**
 #     - **Verify:** <concrete command or steps>
 #     - **Evidence:** <what to quote as proof>
-#     - **Status:** todo
+#     - **Status:** `todo`
 
 # 3. PUT back (compare-and-swap on expectedHash)
 curl -sS -X POST "http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/set-content?harness=$HARNESS_SLUG" \
@@ -124,14 +124,14 @@ Each assertion has: ID (`VAL-{plan-slug}-NNN`), one-line description, **how to v
 Inline format (each assertion is indented one level under its plan item):
 ```markdown
 - **P-023** Plan item title here
-  - [VAL-my-plan-001] User can log in with valid credentials
+  - **[VAL-my-plan-001]**
     - **Verify:** `curl -X POST localhost:3055/api/auth/login -d '{"email":"a@b.c","password":"correct"}'` returns 200 + Set-Cookie.
     - **Evidence:** curl response body showing `{"ok":true}` + `Set-Cookie` header line.
-    - **Status:** todo
-  - [VAL-my-plan-002] Invalid password returns 401
+    - **Status:** `todo`
+  - **[VAL-my-plan-002]**
     - **Verify:** Same POST with wrong password returns 401 and no Set-Cookie.
     - **Evidence:** curl response showing `HTTP/1.1 401` with no Set-Cookie header.
-    - **Status:** todo
+    - **Status:** `todo`
 ```
 
 ### Rules for the work queue (PG)

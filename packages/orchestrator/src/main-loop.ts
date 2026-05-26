@@ -35,7 +35,7 @@ import { pruneLogs } from './prune-logs';
 import { snapshotState } from './snapshot-state';
 import { postArchiveEvent, postCuratorOutputs, postTestSnapshot } from './bus-posts';
 import { runPreLoop } from './pre-loop';
-import { checkpointGate } from './checkpoints';
+
 import { firePluginHook } from './plugin-hooks';
 import {
   competitionManifestPath,
@@ -362,14 +362,11 @@ export interface MainLoopExit {
     | 'done'
     | 'escalate'
     | 'idle'
-    | 'checkpoint'
     | 'max-iterations'
     | 'unparsable-decision'
     | 'cost-cap'
     | 'plan-rejected'
-    | 'auto-checkpoint'
-    | 'scoper-failed'
-    | 'pending-checkpoint';
+    | 'scoper-failed';
   /** Number of iterations executed (1-based). */
   iterations: number;
 }
@@ -424,26 +421,6 @@ async function runMainLoopBody(
     if (pre.stop !== null) {
       return { exitCode: pre.exitCode, reason: pre.stop, iterations: 0 };
     }
-  }
-
-  // Process previously-granted user checkpoints; refuse to start if pending.
-  const cpAction = ctx.pg && ctx.workspaceId
-    ? await checkpointGate(ctx.stateDir, {
-        pg: ctx.pg,
-        workspaceId: ctx.workspaceId,
-        harnessSlug: (await import('./state')).harnessSlug(ctx.projectDir),
-      })
-    : checkpointGate(ctx.stateDir);
-  if (cpAction.kind === 'granted-cleared') {
-    for (const name of cpAction.cleared) {
-      logger.log(`✅ Checkpoint granted: ${name.replace(/\.md$/, '')}. Removing.`);
-    }
-  } else if (cpAction.kind === 'pending') {
-    for (const name of cpAction.pending) {
-      logger.log(`⏸  Checkpoint pending grant: ${name.replace(/\.md$/, '')}. Exiting.`);
-    }
-    logger.log(`Grant via UI, or run: touch <stateDir>/<checkpoint>.granted; then re-run.`);
-    return { exitCode: 8, reason: 'pending-checkpoint', iterations: 0 };
   }
 
   // Lane pool — one per loop run. Used by NEXT_WORKER (parallel/competition)
@@ -731,7 +708,7 @@ interface DispatchResult {
 
 /**
  * Dispatch a parsed decision. Returns terminal=true when the loop should
- * stop (DONE / ESCALATE / IDLE-with-config / CHECKPOINT) and false otherwise.
+ * stop (DONE / ESCALATE / IDLE-with-config) and false otherwise.
  */
 async function dispatchDecision(
   parsed: ParsedDecision,
@@ -757,7 +734,10 @@ async function dispatchDecision(
       return handleEscalate(parsed, ctx, logger);
 
     case 'CHECKPOINT':
-      return await handleCheckpoint(parsed, ctx, logger, iteration);
+      // CHECKPOINT verb is deprecated — milestone gates are now needs-human plan items.
+      // Log and treat as ESCALATE so the loop halts without writing a checkpoint file.
+      logger.log(`CHECKPOINT verb received (deprecated) — treating as ESCALATE. Use needs-human plan items for milestone gates.`);
+      return handleEscalate(parsed, ctx, logger);
 
     case 'READY_FOR_PROD':
       return await handleReadyForProd(ctx, logger);
@@ -1759,75 +1739,6 @@ async function handleEscalate(
   }
   logger.notifyEvent('escalate', reason);
   return { terminal: true, exitCode: 3, reason: 'escalate' };
-}
-
-/**
- * CHECKPOINT handler. Mirrors bash:
- *   name + message = decision tail
- *   writes <stateDir>/checkpoint-<name>.md with markdown body
- *   fires on-checkpoint-fired hook
- *   notify_event checkpoint
- *   exit 8
- */
-async function handleCheckpoint(
-  parsed: ParsedDecision,
-  ctx: InvokeContext,
-  logger: Logger,
-  iteration: number,
-): Promise<DispatchResult> {
-  // bash splits "CHECKPOINT <name> <message...>" — reuse parsed.arg as the
-  // name token; pull the rest as message from parsed.raw.
-  let name = parsed.arg ?? '';
-  const stripped = parsed.raw.replace(/^CHECKPOINT\s+\S+\s*/, '').trim();
-  const message = stripped;
-  if (!name) {
-    logger.log('CHECKPOINT emitted without name — treating as unnamed escalation.');
-    name = 'unnamed';
-  }
-  const cpFile = join(ctx.stateDir, `checkpoint-${name}.md`);
-  const isoNow = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
-  const body = `# Checkpoint: ${name}
-
-Requested at: ${isoNow}
-Iteration: ${iteration}
-
-${message}
-
-## How to grant
-Grant via UI, or create \`${cpFile}.granted\`:
-\`\`\`
-touch ${cpFile}.granted
-\`\`\`
-Then re-run the harness — it will detect the grant file, delete it and the checkpoint,
-and continue.
-`;
-  if (ctx.pg && ctx.workspaceId) {
-    const { fireCheckpointPg } = await import('./checkpoints-pg');
-    const { harnessSlug: getSlug } = await import('./state');
-    await fireCheckpointPg(
-      { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: getSlug(ctx.projectDir) },
-      name,
-      body,
-    );
-  } else {
-    writeFileSync(cpFile, body);
-  }
-
-  logger.log(`⏸  CHECKPOINT '${name}' requested. See ${cpFile}`);
-  runHook('on-checkpoint-fired', {
-    stateDir: ctx.stateDir,
-    projectDir: ctx.projectDir,
-    logDir: ctx.logDir,
-    env: {
-      CHECKPOINT_NAME: name,
-      TRIGGER: 'orchestrator',
-      PROJECT_DIR: ctx.projectDir,
-      STATE_DIR: ctx.stateDir,
-    },
-    log: logger.log,
-  });
-  logger.notifyEvent('checkpoint', `Checkpoint requested: ${name}`);
-  return { terminal: true, exitCode: 8, reason: 'checkpoint' };
 }
 
 /**
