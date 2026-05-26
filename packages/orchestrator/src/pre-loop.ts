@@ -1,8 +1,8 @@
 /**
  * Pre-main-loop initialization. Mirrors bash run.sh's:
  *
- *   Step 1   — invoke scoper MODE=initial when validation-contract.md or
- *              features.json is missing (fresh-mission setup)
+ *   Step 1   — invoke scoper MODE=initial when no features exist yet
+ *              (fresh-mission setup; plan-based harnesses gate on PG features)
  *   Step 1.5 — invoke reviewer MODE=plan to challenge scoper output;
  *              exit 7 on VERDICT: reject (the formerly-aliased name 'plan-gate'
  *              works via ROLE_ALIASES — see prompt-resolve.ts)
@@ -43,10 +43,9 @@ export async function runPreLoop(
   cfg: HarnessConfig,
 ): Promise<PreLoopResult> {
   // Step 1: PLAN — invoke scoper if mission state is fresh.
-  const contractPath = join(ctx.stateDir, 'validation-contract.md');
-  const planNeeded = !existsSync(contractPath) || !(await featuresExist(ctx.stateDir, stateCtx(ctx)));
+  const planNeeded = !(await featuresExist(ctx.stateDir, stateCtx(ctx)));
   if (planNeeded) {
-    logger.log('PLAN: SPEC.md detected, no contract or features yet. Invoking scoper (initial mode).');
+    logger.log('PLAN: no features found. Invoking scoper (initial mode).');
     try {
       const out = await invoke(ctx, 'scoper', ['MODE=initial']);
       // bash: echo "$plan_out" | tail -3 | tee -a run.log
@@ -55,8 +54,8 @@ export async function runPreLoop(
     } catch (err) {
       logger.log(`SCOPER error: ${(err as Error).message}`);
     }
-    if (!existsSync(contractPath) || !(await featuresExist(ctx.stateDir, stateCtx(ctx)))) {
-      logger.log(`ERROR: scoper did not produce required artifacts. See ${ctx.logDir}.`);
+    if (!(await featuresExist(ctx.stateDir, stateCtx(ctx)))) {
+      logger.log(`ERROR: scoper did not produce features. See ${ctx.logDir}.`);
       return { stop: 'scoper-failed', exitCode: 2 };
     }
   } else {
@@ -154,7 +153,7 @@ async function firePostPlannerCheckpoints(
       `# Checkpoint: ${name} (auto, triggerOn=post-planner)\n\n` +
       `Requested at: ${isoNow}\n` +
       `Trigger: scoper + reviewer both passed for the first time.\n\n` +
-      'Review the plan via the harness UI (Features tab) and `.harness/validation-contract.md`.\n\n' +
+      'Review the plan via the harness UI (Plans tab → Inbox).\n\n' +
       '## How to grant\n' +
       `- UI: /api/harness/<slug>/checkpoint/${name}/grant\n` +
       `- CLI: touch ${cpFile}.granted && re-run the harness\n`;
