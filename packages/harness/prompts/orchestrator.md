@@ -126,7 +126,8 @@ Get the structured issues via `curl http://localhost:3055/api/harness/$HARNESS_S
 
 For each selected issue, atomically:
 1. Pick the next `F-FIX-NNN` id by scanning existing feature ids in `harness_features` (PG) (take `max(N) + 1`, zero-padded to 3).
-2. Append a feature object to `harness_features` (PG):
+2. Determine `source_plan_slug` for the new F-FIX feature: if the issue has a `foundDuring` field (the feature id where the issue was found), look up that feature in `harness_features` and copy its `source_plan_slug`. If the origin feature has no `source_plan_slug`, leave `source_plan_slug` null — the F-FIX feature will not be eligible for the orchestrator until the plan filter is satisfied. If `source_plan_slug` is set, the F-FIX feature IS eligible for the orchestrator loop (treated identically to plan-sourced features, no special handling needed).
+3. Append a feature object to `harness_features` (PG):
    ```
    {
      "id": "F-FIX-NNN",
@@ -135,6 +136,7 @@ For each selected issue, atomically:
      "status": "todo",
      "attempts": 0,
      "sourceIssueId": <issue.id>,
+     "source_plan_slug": <source_plan_slug from step 2, or null>,
      "notes": <join of issue.evidence + "\n\n" + (issue.suggestedFix prefixed with "Suggested fix: ") if present>
    }
    ```
