@@ -36,6 +36,11 @@ export const DECISION_VERBS = [
   'ESCALATE',
   'IDLE',
   'DONE',
+  // Deprecated — milestone gates are now needs-human plan items.
+  // Kept here so parseDecision captures it and routes to the deprecation
+  // handler in main-loop.ts rather than returning null (which would
+  // cause the loop to retry instead of escalating cleanly).
+  'CHECKPOINT',
 ] as const;
 
 export type DecisionVerb = typeof DECISION_VERBS[number];
@@ -121,6 +126,7 @@ const SOLO_VERBS = new Set<DecisionVerb>([
   'ESCALATE',
   'IDLE',
   'DONE',
+  'CHECKPOINT',
 ]);
 
 /**
