@@ -817,6 +817,32 @@ async function handleDone(
 ): Promise<DispatchResult> {
   logger.log('🎉 All features passed.');
 
+  // Needs-human gate (P-010): cannot emit DONE while a started plan has open
+  // needs-human items. Check the operator plans API and re-enter idle loop.
+  const slug = harnessSlug(ctx);
+  if (slug) {
+    try {
+      const substrateBase =
+        process.env.PAPERCUSP_SUBSTRATE_BASE ??
+        process.env.PAPERCUSP_HONO_BASE ??
+        'http://localhost:3070';
+      const url = `${substrateBase}/api/admin/plans/items?needsHuman=true&harness_slugs=${encodeURIComponent(slug)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const body = (await res.json()) as { items?: unknown[] };
+        if (Array.isArray(body.items) && body.items.length > 0) {
+          logger.log(
+            `DONE blocked: ${body.items.length} open needs-human plan item(s) for harness "${slug}". ` +
+            `Resolve them in the Plans tab → Inbox before work can complete.`,
+          );
+          return { terminal: false, exitCode: 0, reason: 'idle' };
+        }
+      }
+    } catch (err) {
+      logger.log(`needs-human gate check failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
   // Smoke-test gate.
   if (
     configGet<boolean>(cfg, 'smokeTest.enabled', false) === true &&

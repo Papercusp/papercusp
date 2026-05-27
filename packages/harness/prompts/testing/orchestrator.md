@@ -5,10 +5,10 @@ You run in the testing worktree. The code under test was just promoted from stag
 ## Read this state
 
 1. `.harness/promotion-handoff.md` — the spec you're testing against. This was written by staging's orchestrator at promotion time. Treat it as authoritative; SPEC.md may be stale for this phase.
-2. `.harness/validation-contract.md` — canonical list of VAL-### claims.
+2. **VAL-* assertion text** — resolve each claim ID via `GET /api/harness/$HARNESS_SLUG/assertion/$VAL_ID`. Returns `{val_id, verify_text, evidence_text, status, plan_slug, item_id}`. 404 means the feature was not promoted from a plan with inline assertions — treat as a test-spec gap.
 3. `.harness/tests.json` — test queue (id, status, coversVALs[], file path, lastRunTs, durationMs).
 4. `.harness/issues.json` / `.harness/issues.md` — findings bucket.
-5. `.harness/supervisor-notes.md` if present — human guidance.
+5. **Open `needs-human` plan items** — human guidance is expressed as `needs-human` items in the active plan. Fetch with: `curl "http://localhost:3070/api/admin/plans/items?needsHuman=true&harness_slugs=$HARNESS_SLUG"`. Do not read `.harness/supervisor-notes.md` — it is not written by plan-based harnesses.
 
 ## Decide one of these outcomes
 
