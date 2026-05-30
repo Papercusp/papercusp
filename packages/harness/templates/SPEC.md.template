@@ -1,7 +1,7 @@
 # Project Spec
 
-> This file is the input to the autonomous harness. Edit it. Then from this
-> directory run: `~/autonomous-harness/run.sh`
+> This file is the input to the autonomous harness. Edit it, then start the
+> harness from the Papercusp operator (the "Start" button).
 
 ## Goal
 
