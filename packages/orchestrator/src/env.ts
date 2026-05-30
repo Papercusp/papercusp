@@ -26,6 +26,25 @@ export function resolveAgentBackend(agentCmd: string): AgentBackend {
 }
 
 /**
+ * Normalize a model id for the target backend's CLI.
+ *
+ * omp/Meridian use the explicit `provider/model` form (e.g.
+ * `anthropic/claude-opus-4-7`), and that is what the operator's
+ * /settings/agent page + per-harness config.json store. The claude CLI's
+ * `--model`, however, rejects the provider prefix — it wants a bare id
+ * (`claude-opus-4-7`) or an alias (`opus`/`sonnet`/`haiku`). So for the
+ * claude-code backend we strip a single leading `provider/` segment;
+ * for omp (and an already-bare id) we pass the value through untouched.
+ * Empty in → empty out.
+ */
+export function normalizeModelForBackend(model: string, backend: AgentBackend): string {
+  if (!model) return '';
+  if (backend !== 'claude-code') return model;
+  const slash = model.indexOf('/');
+  return slash > 0 ? model.slice(slash + 1) : model;
+}
+
+/**
  * Resolve the agent invocation command. `AGENT_CMD` wins over the
  * legacy `CLAUDE` env (back-compat) so existing harness installs keep
  * working without an env-var migration.

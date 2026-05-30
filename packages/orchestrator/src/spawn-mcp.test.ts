@@ -35,6 +35,9 @@ describe('buildSpawnMcpConfig', () => {
       chunkId: 'ck_01HXV9Z',
     });
     expect(Object.keys(cfg.mcpServers)).toEqual(['papercusp']);
+    // `type: 'http'` is required by claude-code's --mcp-config schema (omp
+    // accepts it too). Regression guard for the claude-code backend restore.
+    expect(cfg.mcpServers.papercusp!.type).toBe('http');
     const url = new URL(cfg.mcpServers.papercusp!.url);
     expect(url.searchParams.get('harness')).toBe('sheets');
     expect(url.searchParams.get('workspace')).toBe('default');

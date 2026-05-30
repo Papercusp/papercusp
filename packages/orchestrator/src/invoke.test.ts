@@ -13,6 +13,7 @@ import {
   resolveAgentForRole,
   selectStreamFormat,
   streamFormatFlags,
+  claudeMcpArgs,
 } from './invoke.js';
 
 interface Fixture {
@@ -416,4 +417,38 @@ test('resolveModel — aiBackend.default.model used when no role override', () =
 test('resolveModel — legacy models.<role> still works when aiBackend absent', () => {
   const cfg = { models: { worker: 'legacy-only' } };
   assert.equal(resolveModel(cfg as never, 'worker'), 'legacy-only');
+});
+
+// --- claudeMcpArgs: makes claude-code load the per-spawn signed .mcp.json ---
+
+const MCP_PATH = '/proj/.harness/../.mcp.json';
+
+test('claudeMcpArgs — claude-code + claude-stream + workspace → full flag set', () => {
+  const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p', MCP_PATH, true);
+  assert.deepEqual(args, [
+    '--mcp-config', MCP_PATH, '--strict-mcp-config',
+    '--permission-mode', 'bypassPermissions',
+  ]);
+});
+
+test('claudeMcpArgs — omp backend → [] (omp path-discovers .mcp.json)', () => {
+  assert.deepEqual(claudeMcpArgs('omp', 'omp-json', 'omp -p', MCP_PATH, true), []);
+});
+
+test('claudeMcpArgs — claude-code but no workspace → [] (no .mcp.json is written)', () => {
+  assert.deepEqual(claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p', MCP_PATH, false), []);
+});
+
+test('claudeMcpArgs — non-claude stream (stub binary) → []', () => {
+  assert.deepEqual(claudeMcpArgs('claude-code', 'none', 'cat', MCP_PATH, true), []);
+});
+
+test('claudeMcpArgs — user already passed --mcp-config → we do not double-add it', () => {
+  const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --mcp-config /x.json', MCP_PATH, true);
+  assert.deepEqual(args, ['--permission-mode', 'bypassPermissions']);
+});
+
+test('claudeMcpArgs — user passed --dangerously-skip-permissions → no --permission-mode added', () => {
+  const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --dangerously-skip-permissions', MCP_PATH, true);
+  assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
 });

@@ -60,7 +60,7 @@ const DEFAULT_OPERATOR_URL =
 
 /** Build the JSON-serializable mcp.json contents for a spawn. */
 export function buildSpawnMcpConfig(input: SpawnMcpConfigInput): {
-  mcpServers: Record<string, { url: string }>;
+  mcpServers: Record<string, { type: 'http'; url: string }>;
 } {
   const base = input.operatorUrl ?? process.env.PAPERCUSP_OPERATOR_URL ?? DEFAULT_OPERATOR_URL;
   const params = new URLSearchParams();
@@ -75,6 +75,11 @@ export function buildSpawnMcpConfig(input: SpawnMcpConfigInput): {
   return {
     mcpServers: {
       papercusp: {
+        // `type: 'http'` is required by claude-code's --mcp-config schema.
+        // omp accepts it too — the operator brain's converse path already
+        // ships an explicit `type:'http'` server through omp — so emitting
+        // it unconditionally keeps ONE config shape that both backends load.
+        type: 'http',
         url: `${base}?${params.toString()}`,
       },
     },
@@ -193,7 +198,9 @@ export async function writeSignedSpawnMcp(
     );
   }
   const config = {
-    mcpServers: { papercusp: { url: `${base}?${params.toString()}` } },
+    // `type: 'http'` so claude-code's --mcp-config accepts it; omp loads
+    // it too. See buildSpawnMcpConfig for the rationale.
+    mcpServers: { papercusp: { type: 'http' as const, url: `${base}?${params.toString()}` } },
   };
   writeFileSync(path, JSON.stringify(config, null, 2), 'utf8');
   try { chmodSync(path, 0o600); } catch { /* best-effort */ }

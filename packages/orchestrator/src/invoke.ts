@@ -38,7 +38,7 @@ import {
 } from './spawn-mcp';
 import { randomUUID } from 'node:crypto';
 import type { AgentBackend, InvokeResult } from './types';
-import { resolveAgentBackend } from './env';
+import { resolveAgentBackend, normalizeModelForBackend } from './env';
 
 /**
  * Postgres client interface the orchestrator uses for PG-canonical state.
@@ -329,6 +329,53 @@ export function streamFormatFlags(fmt: StreamFormat): string[] {
 }
 
 /**
+ * Extra CLI args that make claude-code actually load + trust the per-spawn
+ * signed `.mcp.json`.
+ *
+ * omp path-discovers `<cwd>/.mcp.json` and connects automatically.
+ * claude-code does NOT: it treats a project `.mcp.json` as "pending
+ * approval" and, in headless `-p` mode (no way to approve), never connects
+ * to it (verified against claude 2.1.158 — `claude mcp get` reports
+ * unapproved `.mcp.json` servers as "⏸ Pending approval and not connected
+ * to"). `--mcp-config <path>` loads AND trusts the file directly (bypassing
+ * the approval gate); `--strict-mcp-config` restricts the worker to ONLY
+ * that server, not the engineer's personal `~/.claude.json` fleet;
+ * `--permission-mode bypassPermissions` stops the unattended spawn from
+ * blocking on a per-tool approval prompt (workers run in isolated worktrees).
+ *
+ * Returns `[]` for any non-claude backend, a non-claude stream, when no
+ * workspace is set (the `.mcp.json` is only written when `ctx.workspaceId`
+ * is present), or for whichever flags the user already put in AGENT_CMD.
+ */
+export function claudeMcpArgs(
+  agentBackend: AgentBackend,
+  streamFormat: StreamFormat,
+  roleAgentCmd: string,
+  mcpConfigPath: string,
+  hasWorkspace: boolean,
+): string[] {
+  if (
+    agentBackend !== 'claude-code' ||
+    streamFormat !== 'claude-stream-json' ||
+    !hasWorkspace
+  ) {
+    return [];
+  }
+  const out: string[] = [];
+  if (!roleAgentCmd.includes('--mcp-config')) {
+    out.push('--mcp-config', mcpConfigPath, '--strict-mcp-config');
+  }
+  if (
+    !roleAgentCmd.includes('--permission-mode') &&
+    !roleAgentCmd.includes('--dangerously-skip-permissions') &&
+    !roleAgentCmd.includes('--allow-dangerously-skip-permissions')
+  ) {
+    out.push('--permission-mode', 'bypassPermissions');
+  }
+  return out;
+}
+
+/**
  * Parse the final assistant text from a structured-stream log file.
  *
  * For `claude-stream-json`: the terminal event is
@@ -539,7 +586,7 @@ export async function invoke(
   // 5. Per-role model — only inject if user didn't already pass --model.
   const cmdAlreadyHasModel = roleAgentCmd.includes('--model ');
   if (!cmdAlreadyHasModel) {
-    const model = resolveModel(cfg, role);
+    const model = normalizeModelForBackend(resolveModel(cfg, role), agentBackend);
     if (model) {
       extraFlags.push('--model', model);
       ctx.log(`  role=${role} model=${model} (from config.json)`);
@@ -795,6 +842,19 @@ export async function invoke(
     writeFileSync(ompPromptPath, prompt, 'utf8');
     finalArgv.push(`@${ompPromptPath}`);
   }
+
+  // 10b. claude-code MCP wiring — make claude load + trust the per-spawn
+  // signed .mcp.json that writeSignedSpawnMcp drops into cwd below (omp
+  // path-discovers it; claude won't without these flags). See claudeMcpArgs.
+  finalArgv.push(
+    ...claudeMcpArgs(
+      agentBackend,
+      streamFormat,
+      roleAgentCmd,
+      join(cwd, '.mcp.json'),
+      Boolean(ctx.workspaceId),
+    ),
+  );
 
   // Body accumulators (in-memory). Filesystem JSONL/ERR is only
   // touched in true-CLI fallback (no operator, no PG) — see writeBodyToDiskAtExit.
