@@ -54,14 +54,16 @@ NEXT_WORKER <FEATURE_ID> N=<k>
 `N=1` runs a single worker; `N>1` spawns that many workers on the same feature in sibling worktrees, and the synthesizer reads all their diffs after they commit and merges them into one shipping branch. Default to the smallest tier when in doubt.
 
 ### C0. "next_tester <FEATURE_ID> <VAL_ID>"
-A feature has status `validating` (a worker just committed) but **not every VAL in its `claims` has a passing test covering it**. A VAL is *covered* when `GET /api/harness/$HARNESS_SLUG/tests` (the PG mirror of `.harness/tests.json`) has a test whose `coversVALs` includes that VAL with `status: "passing"`.
+A feature has status `validating` (a worker just committed) but **not every test-requiring VAL in its `claims` has a passing test covering it**. A VAL is *covered* when `GET /api/harness/$HARNESS_SLUG/tests` (the PG mirror of `.harness/tests.json`) has a test whose `coversVALs` includes that VAL with `status: "passing"`.
 
-For the oldest `validating` feature, find the first claim VAL with no passing covering test and dispatch the tester to write one:
+A claim VAL is **exempt** from the test gate when its assertion has `requires_test: false` — resolve via `GET /api/harness/$HARNESS_SLUG/assertion/$VAL_ID` (non-testable claims: copy, a design-spec match, a judgement call). Skip exempt VALs here.
+
+For the oldest `validating` feature, find the first **test-requiring** claim VAL with no passing covering test and dispatch the tester to write one:
 ```
 NEXT_TESTER <FEATURE_ID> <VAL_ID>
 ```
 
-Every claim VAL needs a covering test by default. (The `requires_test = false` exemption for non-testable claims — copy, design-spec, etc. — arrives with the `requires_test` column on `harness_plan_assertions` in a later phase; until then treat all claim VALs as requiring a test.) Only once **every** claim VAL has a passing covering test does the feature fall through to C.
+`requires_test` defaults to `true`, so a claim needs a covering test unless explicitly exempted. Only once **every test-requiring** claim VAL has a passing covering test does the feature fall through to C.
 
 ### C. "next_validator <FEATURE_ID>"
 A feature has status `validating`, a worker just finished, **and every claim VAL already has a passing covering test** (otherwise use C0 first). Send it to the validator. Pick the oldest such `validating` one.
