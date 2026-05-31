@@ -16,6 +16,8 @@ import {
   selectStreamFormat,
   streamFormatFlags,
   claudeMcpArgs,
+  FLEET_ALLOWED_TOOLS,
+  FLEET_DISALLOWED_TOOLS,
 } from './invoke.js';
 
 interface Fixture {
@@ -534,12 +536,50 @@ test('resolveModel — legacy models.<role> still works when aiBackend absent', 
 
 const MCP_PATH = '/proj/.harness/../.mcp.json';
 
-test('claudeMcpArgs — claude-code + claude-stream + workspace → full flag set', () => {
+// The permission posture appended after the MCP-load flags: a closed
+// whitelist (dontAsk auto-denies anything not allow-listed in headless -p)
+// plus the Bash command deny backstop. Replaces the old blanket
+// bypassPermissions. See FLEET_ALLOWED_TOOLS / FLEET_DISALLOWED_TOOLS.
+const PERM_POSTURE = [
+  '--permission-mode', 'dontAsk',
+  '--allowed-tools', FLEET_ALLOWED_TOOLS.join(' '),
+  '--disallowed-tools', ...FLEET_DISALLOWED_TOOLS,
+];
+
+test('claudeMcpArgs — claude-code + claude-stream + workspace → mcp-load + closed whitelist', () => {
   const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p', MCP_PATH, true);
   assert.deepEqual(args, [
     '--mcp-config', MCP_PATH, '--strict-mcp-config',
-    '--permission-mode', 'bypassPermissions',
+    ...PERM_POSTURE,
   ]);
+});
+
+test('claudeMcpArgs — allow-list is the safe dev kit + mcp__papercusp wildcard, no dangerous built-ins', () => {
+  // The wildcard carries the (already role-scoped server-side) MCP surface.
+  assert.ok(FLEET_ALLOWED_TOOLS.includes('mcp__papercusp'));
+  // The safe built-in dev kit every role needs is present.
+  for (const safe of ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep']) {
+    assert.ok(FLEET_ALLOWED_TOOLS.includes(safe), `${safe} must be allow-listed`);
+  }
+  // Dangerous automation built-ins must NOT be allow-listed.
+  for (const dangerous of ['Workflow', 'CronCreate', 'EnterWorktree', 'RemoteTrigger', 'Task', 'Monitor']) {
+    assert.ok(!FLEET_ALLOWED_TOOLS.includes(dangerous), `${dangerous} must not be allow-listed`);
+  }
+});
+
+test('claudeMcpArgs — deny-list hard-removes the dangerous EXEMPT tools (dontAsk gating is non-uniform) + dangerous Bash', () => {
+  // These bypass the allow-list under dontAsk (verified: CronCreate/EnterWorktree
+  // run despite omission), so they must be explicitly denied to be closed.
+  for (const exempt of [
+    'CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup',
+    'EnterWorktree', 'ExitWorktree', 'Workflow', 'Task',
+    'RemoteTrigger', 'PushNotification', 'Monitor',
+  ]) {
+    assert.ok(FLEET_DISALLOWED_TOOLS.includes(exempt), `${exempt} must be deny-listed`);
+  }
+  // git push is denied (backstop to the pre-push hook); sudo is denied.
+  assert.ok(FLEET_DISALLOWED_TOOLS.includes('Bash(git push:*)'));
+  assert.ok(FLEET_DISALLOWED_TOOLS.includes('Bash(sudo:*)'));
 });
 
 test('claudeMcpArgs — omp backend → [] (omp path-discovers .mcp.json)', () => {
@@ -554,13 +594,23 @@ test('claudeMcpArgs — non-claude stream (stub binary) → []', () => {
   assert.deepEqual(claudeMcpArgs('claude-code', 'none', 'cat', MCP_PATH, true), []);
 });
 
-test('claudeMcpArgs — user already passed --mcp-config → we do not double-add it', () => {
+test('claudeMcpArgs — user already passed --mcp-config → we do not double-add it (posture still applied)', () => {
   const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --mcp-config /x.json', MCP_PATH, true);
-  assert.deepEqual(args, ['--permission-mode', 'bypassPermissions']);
+  assert.deepEqual(args, PERM_POSTURE);
 });
 
-test('claudeMcpArgs — user passed --dangerously-skip-permissions → no --permission-mode added', () => {
+test('claudeMcpArgs — user passed --dangerously-skip-permissions → they manage perms, we add none of the posture', () => {
   const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --dangerously-skip-permissions', MCP_PATH, true);
+  assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
+});
+
+test('claudeMcpArgs — user set --permission-mode → we do not impose ours (whole posture deferred)', () => {
+  const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --permission-mode plan', MCP_PATH, true);
+  assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
+});
+
+test('claudeMcpArgs — user set --allowed-tools → we defer the whole posture to them', () => {
+  const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --allowed-tools Read', MCP_PATH, true);
   assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
 });
 

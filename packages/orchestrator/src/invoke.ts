@@ -394,8 +394,85 @@ export function streamFormatFlags(fmt: StreamFormat): string[] {
 }
 
 /**
- * Extra CLI args that make claude-code actually load + trust the per-spawn
- * signed `.mcp.json`.
+ * The closed allow-list a headless fleet agent runs under
+ * (`--permission-mode dontAsk`). `mcp__papercusp` is a *server wildcard*:
+ * the per-spawn signed `.mcp.json` is already role-scoped server-side —
+ * surface-filtered by `listMcpProjections(role)` AND denied at call-time by
+ * the dispatch stack's `role-allowlist` step — so the wildcard grants
+ * exactly that role's MCP surface without us enumerating (or drifting from)
+ * it. The rest is the safe built-in dev kit every pipeline role needs.
+ *
+ * `dontAsk` denies a *gated* tool that isn't allow-listed (verified vs
+ * claude 2.1.158: an un-allow-listed gated tool — arbitrary `Bash`, file
+ * writes, `Workflow`, a non-role MCP call — is denied, the model is told,
+ * and it continues; no hang). But gating is NOT uniform: claude exempts a
+ * class of session-local / "meta" tools from the allow-list entirely, so
+ * omitting them does NOT block them (verified: with this exact allow-list,
+ * `CronCreate` still created a job and `EnterWorktree` still ran). Those
+ * dangerous-but-exempt tools are closed via FLEET_DISALLOWED_TOOLS instead
+ * — the allow-list alone is not a complete boundary. (The old setting was a
+ * blanket `--permission-mode bypassPermissions`, under which everything ran.)
+ */
+export const FLEET_ALLOWED_TOOLS: readonly string[] = [
+  'mcp__papercusp',
+  'Read',
+  'Edit',
+  'Write',
+  'Bash',
+  'Glob',
+  'Grep',
+  'WebFetch',
+  'WebSearch',
+];
+
+/**
+ * Hard denies layered on top of the allow-list. `--disallowed-tools` removes
+ * a tool from the spawn ENTIRELY — it wins over the allow-list, over the
+ * dontAsk exemption, and even under `bypassPermissions` (all verified vs
+ * claude 2.1.158: a denied tool reports "No such tool exists in this
+ * environment"). Two jobs:
+ *
+ * 1. **Dangerous *exempt* tools** — the automation/scheduling/spawn/remote
+ *    built-ins a `claude -p` spawn carries that bypass the allow-list under
+ *    dontAsk (see FLEET_ALLOWED_TOOLS). None are needed by a pipeline role;
+ *    `EnterWorktree`/`ExitWorktree` would also violate the repo's
+ *    one-tree/no-worktree rule, and `Workflow`/`Task` are uncontrolled
+ *    sub-agent fan-out outside the orchestrator's spawn graph.
+ * 2. **Dangerous *commands* inside the granted `Bash`** — `Bash` is
+ *    allow-listed (roles need it) and can run anything, so the highest-value,
+ *    no-legit-fleet-use commands are denied here.
+ *
+ * Defense-in-depth, NOT airtight containment, and the code must not pretend
+ * otherwise:
+ *   - `git push` is *primarily* blocked by the repo's pre-push hook —
+ *     command-string matching is evadable (`git -C … push`, aliases,
+ *     `&& git push`). This deny is the backstop.
+ *   - credential reads (the allow-listed `Read` tool reaches any path) and
+ *     network egress (the allow-listed `WebFetch`) are NOT closed here;
+ *     true containment of those needs a network/fs sandbox — tracked as a
+ *     follow-up, not solved by a deny-list.
+ */
+export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
+  // Dangerous built-ins that bypass the allow-list under dontAsk.
+  'CronCreate',
+  'CronDelete',
+  'CronList',
+  'ScheduleWakeup',
+  'EnterWorktree',
+  'ExitWorktree',
+  'Workflow',
+  'Task',
+  'RemoteTrigger',
+  'PushNotification',
+  'Monitor',
+  // Dangerous commands within the (allow-listed) Bash tool.
+  'Bash(sudo:*)',
+  'Bash(git push:*)',
+];
+
+/**
+ * Extra CLI args that make claude-code load + trust the per-spawn signed
+ * `.mcp.json` AND run under a closed whitelist instead of unrestricted.
  *
  * omp path-discovers `<cwd>/.mcp.json` and connects automatically.
  * claude-code does NOT: it treats a project `.mcp.json` as "pending
@@ -404,13 +481,20 @@ export function streamFormatFlags(fmt: StreamFormat): string[] {
  * unapproved `.mcp.json` servers as "⏸ Pending approval and not connected
  * to"). `--mcp-config <path>` loads AND trusts the file directly (bypassing
  * the approval gate); `--strict-mcp-config` restricts the worker to ONLY
- * that server, not the engineer's personal `~/.claude.json` fleet;
- * `--permission-mode bypassPermissions` stops the unattended spawn from
- * blocking on a per-tool approval prompt (workers run in isolated worktrees).
+ * that server, not the engineer's personal `~/.claude.json` fleet.
  *
- * Returns `[]` for any non-claude backend, a non-claude stream, when no
+ * `--permission-mode dontAsk` + `--allowed-tools <whitelist>` is the
+ * permission posture: dontAsk pre-approves the allow-listed tools (no prompt,
+ * no hang) and hard-denies everything else in headless mode — a true
+ * default-deny whitelist (verified vs claude 2.1.158; note `default` mode
+ * sandboxes even allow-listed writes, `dontAsk` does not, which is why we
+ * use dontAsk and not default). `--disallowed-tools` adds the Bash
+ * command-pattern backstop. See FLEET_ALLOWED_TOOLS / FLEET_DISALLOWED_TOOLS.
+ *
+ * Returns `[]` for any non-claude backend, a non-claude stream, or when no
  * workspace is set (the `.mcp.json` is only written when `ctx.workspaceId`
- * is present), or for whichever flags the user already put in AGENT_CMD.
+ * is present). If the user manages MCP loading or the permission posture
+ * themselves in AGENT_CMD, we defer to them for that part.
  */
 export function claudeMcpArgs(
   agentBackend: AgentBackend,
@@ -430,12 +514,25 @@ export function claudeMcpArgs(
   if (!roleAgentCmd.includes('--mcp-config')) {
     out.push('--mcp-config', mcpConfigPath, '--strict-mcp-config');
   }
-  if (
-    !roleAgentCmd.includes('--permission-mode') &&
-    !roleAgentCmd.includes('--dangerously-skip-permissions') &&
-    !roleAgentCmd.includes('--allow-dangerously-skip-permissions')
-  ) {
-    out.push('--permission-mode', 'bypassPermissions');
+  // The permission posture is a unit (mode + allow-list + deny-list). If the
+  // user set ANY permission-related flag in AGENT_CMD, they're managing it
+  // themselves — don't half-apply ours on top (which could contradict
+  // theirs). Otherwise impose the closed whitelist.
+  const userManagesPermissions =
+    roleAgentCmd.includes('--permission-mode') ||
+    roleAgentCmd.includes('--allowed-tools') ||
+    roleAgentCmd.includes('--allowedTools') ||
+    roleAgentCmd.includes('--disallowed-tools') ||
+    roleAgentCmd.includes('--disallowedTools') ||
+    roleAgentCmd.includes('--dangerously-skip-permissions') ||
+    roleAgentCmd.includes('--allow-dangerously-skip-permissions');
+  if (!userManagesPermissions) {
+    out.push('--permission-mode', 'dontAsk');
+    // Allow-list as one space-joined value (claude splits it); deny patterns
+    // as separate argv elements so each pattern's internal spaces (e.g.
+    // `Bash(git push:*)`) survive. Both forms verified against claude 2.1.158.
+    out.push('--allowed-tools', FLEET_ALLOWED_TOOLS.join(' '));
+    out.push('--disallowed-tools', ...FLEET_DISALLOWED_TOOLS);
   }
   return out;
 }
