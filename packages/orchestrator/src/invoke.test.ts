@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -18,6 +18,8 @@ import {
   claudeMcpArgs,
   FLEET_ALLOWED_TOOLS,
   FLEET_DISALLOWED_TOOLS,
+  ensureFleetGitHooksDir,
+  gitConfigNoPushEnv,
 } from './invoke.js';
 
 interface Fixture {
@@ -612,6 +614,41 @@ test('claudeMcpArgs — user set --permission-mode → we do not impose ours (wh
 test('claudeMcpArgs — user set --allowed-tools → we defer the whole posture to them', () => {
   const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --allowed-tools Read', MCP_PATH, true);
   assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
+});
+
+// --- no-push enforcement: spawn-env-scoped pre-push hook ------------------
+
+test('ensureFleetGitHooksDir — writes an executable pre-push that exits non-zero', () => {
+  const dir = ensureFleetGitHooksDir();
+  const hook = join(dir, 'pre-push');
+  const body = readFileSync(hook, 'utf8');
+  assert.ok(body.startsWith('#!/bin/sh'), 'has a shebang');
+  assert.ok(/exit 1/.test(body), 'blocks (exit 1)');
+  // owner-executable bit set so git can run it.
+  assert.ok((statSync(hook).mode & 0o100) !== 0, 'pre-push is executable');
+});
+
+test('gitConfigNoPushEnv — points git at the hooks dir via GIT_CONFIG (fresh env → index 0)', () => {
+  const env = gitConfigNoPushEnv({}, '/tmp/hooks');
+  assert.equal(env.GIT_CONFIG_COUNT, '1');
+  assert.equal(env.GIT_CONFIG_KEY_0, 'core.hooksPath');
+  assert.equal(env.GIT_CONFIG_VALUE_0, '/tmp/hooks');
+});
+
+test('gitConfigNoPushEnv — composes with a pre-existing GIT_CONFIG_COUNT (no clobber)', () => {
+  // A caller already injected one config entry (index 0); ours must append at 1.
+  const env = gitConfigNoPushEnv({ GIT_CONFIG_COUNT: '1' }, '/tmp/hooks');
+  assert.equal(env.GIT_CONFIG_COUNT, '2');
+  assert.equal(env.GIT_CONFIG_KEY_1, 'core.hooksPath');
+  assert.equal(env.GIT_CONFIG_VALUE_1, '/tmp/hooks');
+  // does not overwrite the pre-existing index-0 slot
+  assert.equal(env.GIT_CONFIG_KEY_0, undefined);
+});
+
+test('gitConfigNoPushEnv — junk GIT_CONFIG_COUNT falls back to index 0', () => {
+  const env = gitConfigNoPushEnv({ GIT_CONFIG_COUNT: 'not-a-number' }, '/tmp/hooks');
+  assert.equal(env.GIT_CONFIG_COUNT, '1');
+  assert.equal(env.GIT_CONFIG_KEY_0, 'core.hooksPath');
 });
 
 // ── codex backend (Phase 2 / P-011) ──

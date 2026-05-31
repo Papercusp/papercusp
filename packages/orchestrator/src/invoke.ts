@@ -23,6 +23,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { configGet, readConfig } from './config';
 import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
@@ -535,6 +536,58 @@ export function claudeMcpArgs(
     out.push('--disallowed-tools', ...FLEET_DISALLOWED_TOOLS);
   }
   return out;
+}
+
+/**
+ * The fleet pre-push hook body. Installed per-spawn via a spawn-env-only
+ * `core.hooksPath` override (see `gitConfigNoPushEnv`), so it fires ONLY for
+ * orchestrator-spawned agents — the shared checkout's config and the
+ * user's / other agents' pushes are untouched. Unconditional block: the repo
+ * invariant is "agents don't push" (integration is the orchestrator's job).
+ * This is the real no-push enforcement; the `Bash(git push:*)` deny in
+ * FLEET_DISALLOWED_TOOLS is an evadable backstop (`git -C … push`, aliases,
+ * `&& git push` slip past command-string matching — this hook does not).
+ */
+const FLEET_PRE_PUSH_HOOK = `#!/bin/sh
+# papercusp fleet pre-push hook — installed per-spawn via GIT_CONFIG core.hooksPath.
+echo "papercusp: autonomous fleet spawns may not 'git push' (integration is the orchestrator's job; repo invariant: agents don't push). Blocked by the fleet pre-push hook." 1>&2
+exit 1
+`;
+
+/**
+ * (Idempotently) write a hooks directory holding only the fleet pre-push
+ * hook and return its absolute path. Static + shared (not per-spawn state),
+ * so it needs no cleanup; re-writing the tiny file on each spawn is cheap and
+ * race-safe (identical content). `core.hooksPath` pointing here means no
+ * OTHER hook type runs for the spawn — fine, fleet agents commit with
+ * `--no-verify` and the only hook we want is pre-push.
+ */
+export function ensureFleetGitHooksDir(): string {
+  const dir = join(tmpdir(), 'papercusp-fleet-githooks');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'pre-push'), FLEET_PRE_PUSH_HOOK, { mode: 0o755 });
+  return dir;
+}
+
+/**
+ * Spawn-env additions that point THIS spawn's git at the fleet hooks dir via
+ * `GIT_CONFIG_*`, blocking `git push` (see FLEET_PRE_PUSH_HOOK). Injected into
+ * the spawn env only — the shared repo config + the user's / other agents'
+ * git are untouched. Composes with any pre-existing `GIT_CONFIG_COUNT` in the
+ * env rather than clobbering it. Verified vs git: blocks push, commits still
+ * work (pre-push only fires on push).
+ */
+export function gitConfigNoPushEnv(
+  baseEnv: NodeJS.ProcessEnv,
+  hooksDir: string,
+): Record<string, string> {
+  const parsed = Number.parseInt(baseEnv.GIT_CONFIG_COUNT ?? '', 10);
+  const n = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  return {
+    GIT_CONFIG_COUNT: String(n + 1),
+    [`GIT_CONFIG_KEY_${n}`]: 'core.hooksPath',
+    [`GIT_CONFIG_VALUE_${n}`]: hooksDir,
+  };
 }
 
 /**
@@ -1206,6 +1259,13 @@ export async function invoke(
       PI_MEMORIES_ENABLED: 'false',
       PI_MEMORY_BACKEND: 'off',
     };
+
+    // No orchestrator-spawned agent may `git push` — integration is the
+    // orchestrator's job and the repo's invariant is "agents don't push".
+    // Inject a pre-push hook via GIT_CONFIG into THIS spawn's env only, so
+    // the shared checkout's config and the user's / other agents' pushes are
+    // untouched. Real enforcement; the Bash(git push:*) deny is the backstop.
+    Object.assign(spawnEnv, gitConfigNoPushEnv(spawnEnv, ensureFleetGitHooksDir()));
 
     // Per-spawn .mcp.json: write the seven-param URL config so OMP
     // discovers our agent-mcp endpoint with this spawn's harness/role/
