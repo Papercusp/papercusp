@@ -89,7 +89,19 @@ curl -s -X POST "http://localhost:3070/api/admin/plans/set-status" \
   }'
 ```
 
-If no single plan item covers this feature, add a new item to the plan in `## Phase N — <relevant phase>`:
+Then set its **importance** so it sorts correctly in the human's inbox — `high` for a decision that pauses this feature, or `urgent` if the feature is fully blocked / stuck after repeated failures:
+
+```bash
+curl -s -X POST "http://localhost:3070/api/admin/plans/set-importance" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug": "$SOURCE_PLAN_SLUG",
+    "itemId": "P-NNN",
+    "importance": "high"
+  }'
+```
+
+If no single plan item covers this feature, add a new item to the plan in `## Phase N — <relevant phase>` (`add-item` requires an `importance`):
 
 ```bash
 curl -s -X POST "http://localhost:3070/api/admin/plans/add-item" \
@@ -97,7 +109,8 @@ curl -s -X POST "http://localhost:3070/api/admin/plans/add-item" \
   -d '{
     "slug": "$SOURCE_PLAN_SLUG",
     "phase": "<phase heading without ##>",
-    "text": "[needs-human] F-004 spec-ambiguity: <one-line question> — recommended: <your lean>"
+    "text": "[needs-human] F-004 spec-ambiguity: <one-line question> — recommended: <your lean>",
+    "importance": "high"
   }'
 ```
 

@@ -236,7 +236,15 @@ curl -X PATCH "http://localhost:3055/api/admin/plans/set-status" \
   -d '{"slug":"<active-plan-slug>","itemId":"<P-NNN>","status":"needs-human","note":"<one-line reason>"}'
 ```
 
-If no plan item maps to this blockage, create one first via `plans:add-item`, then flip it. Then print:
+Then set its **importance** so the human sees the right urgency. Use `urgent` when the feature is genuinely stuck (≥ the debugger threshold of failed attempts, or fully blocked); otherwise `high`:
+
+```bash
+curl -sS -X POST "http://localhost:3070/api/admin/plans/set-importance" \
+  -H "content-type: application/json" \
+  -d '{"slug":"<active-plan-slug>","itemId":"<P-NNN>","importance":"urgent"}'
+```
+
+If no plan item maps to this blockage, create one first via `plans:add-item` (it requires an `importance` — use `urgent` for a stuck escalation), then flip it. Then print:
 ```
 ESCALATE <one-line reason>
 ```

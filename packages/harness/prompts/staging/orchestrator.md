@@ -139,6 +139,14 @@ curl -sS -X POST "http://localhost:3070/api/admin/plans/items/$PLAN_SLUG/$ITEM_I
   -d '{"status":"needs-human","note":"Escalated: <one-line reason>"}'
 ```
 
+Then set its **importance** to `urgent` — a stuck/blocked feature is the top of the scale — so it sorts to the top of the human's inbox:
+
+```bash
+curl -sS -X POST "http://localhost:3070/api/admin/plans/set-importance" \
+  -H "content-type: application/json" \
+  -d '{"slug":"'"$PLAN_SLUG"'","itemId":"'"$ITEM_ID"'","importance":"urgent"}'
+```
+
 Then print:
 ```
 ESCALATE <one-line reason>
