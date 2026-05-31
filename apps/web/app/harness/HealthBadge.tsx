@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Heart } from 'lucide-react';
-import { StatCard } from '@restart/ui-primitives';
+import { StatCard } from '@papercusp/ui-primitives';
 
 interface HealthCheck {
   name: string;

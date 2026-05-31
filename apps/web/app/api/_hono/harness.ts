@@ -27,7 +27,7 @@ import {
   consumeEvents,
   getFeatureLineage,
   formatLineageForPrompt,
-} from '@restart/db-org';
+} from '@papercusp/db-org';
 const getOrgDbClient = () => getLegacyClient();
 const dbcFor = (slug: string) => getLegacyClient(slug);
 

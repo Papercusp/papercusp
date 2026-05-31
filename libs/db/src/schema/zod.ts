@@ -6,12 +6,12 @@
  * schemas, MCP tool arguments, and react-hook-form forms.
  *
  * Usage:
- *   import { generated, createInsertSchema } from '@restart/db-org';
+ *   import { generated, createInsertSchema } from '@papercusp/db-org';
  *   const InsertGoal = createInsertSchema(generated.goalsInHarness_shared);
  *   const body = InsertGoal.parse(await req.json());
  *
  * Or import the curried helper:
- *   import { schemaOf } from '@restart/db-org/zod';
+ *   import { schemaOf } from '@papercusp/db-org/zod';
  *   const { insert, select, update } = schemaOf(generated.goalsInHarness_shared);
  *
  * Drizzle-zod auto-handles:

@@ -9,7 +9,7 @@
  *                         createPapercuspApi factory, fed real services
  *                         this module wires here)
  *
- * Real services are backed by `@restart/db-org` (Postgres) or filesystem.
+ * Real services are backed by `@papercusp/db-org` (Postgres) or filesystem.
  * Methods with no canonical backing today (cron-routine upsert that needs a
  * cron parser, comment streams beyond audit) throw `NotYetWiredError` so
  * plugins fail loudly rather than silently no-op.
@@ -53,7 +53,7 @@ import {
   fireRoutine,
   deleteRoutine,
   slugToSchemaName,
-} from '@restart/db-org';
+} from '@papercusp/db-org';
 
 const SECRETS_DIR = join(homedir(), '.papercusp', 'secrets');
 const PAPERCUSP_ROOT = join(homedir(), '.papercusp');

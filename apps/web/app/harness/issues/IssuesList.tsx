@@ -6,9 +6,9 @@ import {
   AlertOctagon, AlertTriangle, Info, FileCode, User, Bot,
   ArrowUpRight, CheckCircle, XCircle, Loader2, Hammer, Inbox, Circle,
 } from 'lucide-react';
-import { RichGrid, type ColumnDef } from '@restart/grid-core';
+import { RichGrid, type ColumnDef } from '@papercusp/grid-core';
 import { useQuery } from '@rocicorp/zero/react';
-import { queries, slugToIssuesKey, type IssueRow } from '@restart/zero-harness';
+import { queries, slugToIssuesKey, type IssueRow } from '@papercusp/zero-harness';
 import type { Issue, IssueSeverity, IssueSource, IssueStatus } from './types';
 import { IssueDetail } from './IssueDetail';
 import { Tooltip } from '../Tooltip';

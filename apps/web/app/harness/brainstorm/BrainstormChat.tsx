@@ -1,7 +1,7 @@
 'use client';
 
-import { HarnessChat, type ActionBlock } from '@restart/agent-chat';
-import { PromoteBlock } from '@restart/agent-chat';
+import { HarnessChat, type ActionBlock } from '@papercusp/agent-chat';
+import { PromoteBlock } from '@papercusp/agent-chat';
 
 interface Props { slug: string }
 

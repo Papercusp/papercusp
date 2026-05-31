@@ -34,7 +34,7 @@ libs/
 ```
 
 External dependencies are git submodules under `external/` (none yet at this
-extraction; the @restart/* shared libs come from sister repos).
+extraction; the @papercusp/* shared libs come from sister repos).
 
 ## Status
 

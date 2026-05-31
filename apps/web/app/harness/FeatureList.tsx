@@ -8,7 +8,7 @@ import { Checkbox } from './Checkbox';
 import { openFeatureChat } from './PiTerminalsDock';
 import { COLORS, FONTS, RADIUS, SIZES, STATUS, STATUS_ORDER, BOARD_COLUMN_ORDER, HarnessStatus, getStatusMeta } from './theme';
 import { StatusPill, IdPill, IconButton, KbdHint } from './primitives';
-import { RichGrid, type ColumnDef } from '@restart/grid-core';
+import { RichGrid, type ColumnDef } from '@papercusp/grid-core';
 
 const OperatorNoteForm = dynamic(() => import('./OperatorNoteForm'), { ssr: false });
 interface Feature {

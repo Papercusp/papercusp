@@ -6,7 +6,7 @@ import { Drawer } from 'vaul';
 import { X, ArrowUpRight, MessageSquarePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Issue } from './types';
-import { useSyncQuery } from '@restart/sync';
+import { useSyncQuery } from '@papercusp/sync';
 import { KbdHint, RolePill } from '../primitives';
 import { HarnessMarkdownView } from '../HarnessMarkdownView';
 

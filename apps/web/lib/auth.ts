@@ -7,7 +7,7 @@
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
-import { getLegacyClient } from '@restart/db-org';
+import { getLegacyClient } from '@papercusp/db-org';
 
 export const SESSION_COOKIE = 'papercusp_session';
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;       // 30 days

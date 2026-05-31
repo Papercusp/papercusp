@@ -2,7 +2,7 @@
  * Boot a real Postgres (PG 18 via embedded-postgres) configured for
  * logical replication so Zero / pgoutput consumers can subscribe.
  *
- * Mirrors @restart/pglite-server's handle shape so consumers can swap
+ * Mirrors @papercusp/pglite-server's handle shape so consumers can swap
  * the two via env var. Notable differences:
  *   - Listens on TCP localhost:<port> (real PG can't expose a unix
  *     socket trivially across platforms; TCP is the cross-platform

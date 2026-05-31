@@ -7,7 +7,7 @@
  *
  * Usage:
  *
- *   import { withWorkspace } from '@restart/papercusp-db/workspace-context';
+ *   import { withWorkspace } from '@papercusp/db-org/workspace-context';
  *   const result = await withWorkspace(workspaceId, async (tx) => {
  *     return await tx`SELECT * FROM harness_shared.projects`;
  *   });

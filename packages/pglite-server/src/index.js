@@ -89,7 +89,7 @@ export async function startPgliteServer(opts) {
 
       // Per-harness schema stubs.
       //
-      // @restart/zero-harness declares per-harness tables for a fixed list
+      // @papercusp/zero-harness declares per-harness tables for a fixed list
       // of HARNESS_SLUGS (sheets, org, org_business, …) and zeroPostgresJS's
       // strict schema validation requires every declared table to exist
       // before any query executes. The CLI's `papercusp scaffold-schema`

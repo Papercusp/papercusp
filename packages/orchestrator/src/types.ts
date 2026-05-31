@@ -101,7 +101,7 @@ export type FeaturesJson = { features: FeatureRecord[] } | FeatureRecord[];
  *
  * Canonical subprocess-spawn backend set. This is the SAME set as
  * `apps/operator/lib/agent-config.ts` `AGENT_BACKENDS`, and a subset of
- * `@restart/papercup-shared` chat-stream's (which additionally has
+ * `@papercusp/papercup-shared` chat-stream's (which additionally has
  * `meridian` — a stateless HTTP round-trip with no subprocess, so it is
  * NOT spawnable by the orchestrator and is intentionally excluded here).
  * A drift-guard test in `apps/operator/lib/__tests__/agent-backend-sync.test.ts`

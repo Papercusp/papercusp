@@ -18,7 +18,7 @@
  *
  * The Papercup-specific tables moved out of harness_shared in Stage 2 of the
  * Papercusp/Papercup split. Drizzle definitions for them live in
- * @restart/papercup-db. Connection clients in ./connection.ts include
+ * @papercusp/papercup-db. Connection clients in ./connection.ts include
  * papercup_shared in their search_path for compatibility.
  *
  * See libs/db-org/sql/001-shared.sql, 002-per-harness-template.sql, and
@@ -45,23 +45,23 @@ export const auditLog = harnessShared.table('audit_log', {
   subjectIdx: index('audit_subject_idx').on(t.subject),
 }));
 
-// ─── Re-exports from @restart/papercup-db (back-compat) ──────────────
+// ─── Re-exports from @papercusp/papercup-db (back-compat) ──────────────
 // Existing code that imports `messages`, `messageRecipients`, etc. from
-// @restart/db-org continues to work. New code should import directly from
-// @restart/papercup-db. This shim removes when we cut the v2 release.
+// @papercusp/db-org continues to work. New code should import directly from
+// @papercusp/papercup-db. This shim removes when we cut the v2 release.
 export {
   messages,
   messageRecipients,
   messageComments,
   directiveSummaries,
-} from '@restart/papercup-db';
+} from '@papercusp/papercup-db';
 export type {
   MessageRow,
   MessageInsert,
   MessageRecipientRow,
   MessageCommentRow,
   DirectiveSummaryRow,
-} from '@restart/papercup-db';
+} from '@papercusp/papercup-db';
 
 export const projects = harnessShared.table('projects', {
   id: text('id').primaryKey(),
@@ -231,7 +231,7 @@ export type RoutineInsert = typeof routines.$inferInsert;
 // projects, goals, pendingEvents, routines) duplicate 5 of these for
 // back-compat with the type aliases — new code should import from
 // `generated` directly:
-//   import { generated } from '@restart/db-org';
+//   import { generated } from '@papercusp/db-org';
 //   await db.select().from(generated.projectsInHarness_shared);
 //
 // `generatedRelations` exposes the FK graph for drizzle's `db.query.*`

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { COLORS, FONTS, RADIUS, SIZES, STATUS } from './theme';
-import { fetchGitLog as libFetchGitLog, getCachedGitLog as libGetCachedGitLog } from '@restart/git-graph';
+import { fetchGitLog as libFetchGitLog, getCachedGitLog as libGetCachedGitLog } from '@papercusp/git-graph';
 
 function harnessScope(slug: string) { return `harness:${slug}`; }
 function harnessLogUrl(slug: string, limit: number) { return `/api/harness/${slug}/git/log?limit=${limit}`; }

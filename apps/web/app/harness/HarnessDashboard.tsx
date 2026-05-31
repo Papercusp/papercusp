@@ -36,15 +36,15 @@ function openInVSCode(projectPath: string) {
 
 type MainPanel = 'brainstorm' | 'proposals' | 'git' | 'dashboard' | 'summary' | 'docs' | 'vscode' | 'insights' | 'config' | 'plugins';
 
-import { createResilientEventSource } from '@restart/sse';
-import { Panel } from '@restart/ui-primitives';
-import { StatCard } from '@restart/ui-primitives';
-import { StatusPill } from '@restart/ui-primitives';
-import { LogView } from '@restart/ui-primitives';
-import { MarkdownView } from '@restart/ui-primitives';
-import { JsonTree } from '@restart/ui-primitives';
+import { createResilientEventSource } from '@papercusp/sse';
+import { Panel } from '@papercusp/ui-primitives';
+import { StatCard } from '@papercusp/ui-primitives';
+import { StatusPill } from '@papercusp/ui-primitives';
+import { LogView } from '@papercusp/ui-primitives';
+import { MarkdownView } from '@papercusp/ui-primitives';
+import { JsonTree } from '@papercusp/ui-primitives';
 import { IssuesList } from './issues/IssuesList';
-import { preloadGitLog as libPreloadGitLog } from '@restart/git-graph';
+import { preloadGitLog as libPreloadGitLog } from '@papercusp/git-graph';
 import PluginTabs from '@/lib/PluginTabs';
 
 function preloadGitLog(slug: string, limit = 300) {
@@ -127,7 +127,7 @@ const SpecEditor = dynamicWithRetry(() => import('./SpecEditor'), 'SpecEditor');
 const EscalationBanner = dynamicWithRetry(() => import('./EscalationBanner'), 'EscalationBanner');
 const CheckpointBanner = dynamicWithRetry(() => import('./CheckpointBanner'), 'CheckpointBanner');
 const GitGraphPanelLib = dynamicWithRetry(
-  () => import('@restart/git-graph').then((m) => ({ default: m.GitGraphPanel })),
+  () => import('@papercusp/git-graph').then((m) => ({ default: m.GitGraphPanel })),
   'GitGraphPanel',
 );
 function GitGraphPanel({ slug }: { slug: string }) {
@@ -357,7 +357,7 @@ export default function HarnessDashboard() {
     setSelectedAgent(null);
     preloadGitLog(activeSlug, 300);
     // Warm the dynamic GitGraphPanel chunk so the first left-pane click doesn't pay Turbopack compile cost.
-    import('@restart/git-graph').catch(() => {});
+    import('@papercusp/git-graph').catch(() => {});
 
     const loadAll = async () => {
       try {

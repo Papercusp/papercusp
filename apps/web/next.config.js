@@ -21,11 +21,11 @@ module.exports = {
     turbopackFileSystemCacheForDev: false,
   },
   transpilePackages: [
-    '@restart/agent-chat',
-    '@restart/db-org',
-    '@restart/git-graph',
-    '@restart/papercup-shared',
-    '@restart/ui-primitives',
+    '@papercusp/agent-chat',
+    '@papercusp/db-org',
+    '@papercusp/git-graph',
+    '@papercusp/papercup-shared',
+    '@papercusp/ui-primitives',
   ],
   // /api/harness/* and /api/plugins/* are served LOCALLY by this app
   // (mounted in app/api/[[...route]]/route.ts).

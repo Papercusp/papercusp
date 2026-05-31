@@ -1,5 +1,6 @@
 {
-  "name": "@restart/zero-cache-server",
+  "name": "@papercusp/zero-cache-server",
+  "private": true,
   "version": "0.1.0",
   "description": "Boot @rocicorp/zero's zero-cache against a Papercusp-managed embedded-postgres. Sibling to embedded-postgres-server; spawned right after PG is ready.",
   "type": "module",
