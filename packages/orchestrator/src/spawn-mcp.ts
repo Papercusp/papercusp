@@ -166,6 +166,36 @@ export async function writeSignedSpawnMcp(
     renameSync(path, backupPath);
   }
   const base = input.operatorUrl ?? process.env.PAPERCUSP_OPERATOR_URL ?? DEFAULT_OPERATOR_URL;
+
+  // ── Superuser-spawn mode ──────────────────────────────────────────────
+  // An operator-initiated, loopback spawn (the /harness/:slug/invoke route)
+  // sets PAPERCUSP_SPAWN_SU_BEARER. Connect via the `?superuser=1` door
+  // (branch 1 in _mcp-handler.ts) instead of a signed spawn, so the spawned
+  // coord-role agent carries the `isSuperuser` identity that
+  // resolveAgentIdentity-gated tools (plans:promote, coord:*) require — a
+  // plain signed spawn's ctx has none. Auth here is loopback + the bearer
+  // (no URL `sig` needed; the superuser branch is checked before the sig one).
+  const suBearer = process.env.PAPERCUSP_SPAWN_SU_BEARER;
+  if (suBearer && suBearer.length > 0) {
+    const su = new URLSearchParams();
+    su.set('superuser', '1');
+    su.set('harness', input.harnessSlug);
+    su.set('workspace', input.workspaceId);
+    su.set('client', input.spawnId); // per-spawn coord/lock owner label
+    const config = {
+      mcpServers: {
+        papercusp: {
+          type: 'http' as const,
+          url: `${base}?${su.toString()}`,
+          headers: { Authorization: `Bearer ${suBearer}` },
+        },
+      },
+    };
+    writeFileSync(path, JSON.stringify(config, null, 2), 'utf8');
+    try { chmodSync(path, 0o600); } catch { /* best-effort */ }
+    return { path, prior, backupPath };
+  }
+
   const params = buildSpawnUrlParams(input);
   try {
     await signSpawnParams(params, opts.ttlSec ?? 24 * 60 * 60);
