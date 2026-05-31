@@ -62,7 +62,7 @@ import API the scoper uses. You do not produce intermediate SPECs.
    declare what env vars they expose; action manifests can source from
    them.
 
-5. **The current SPEC** at `$PROJECT_DIR/SPEC.md`. Read the full file,
+5. **The current scope** — the owning plan (`plans:get`). Read it in full,
    not just the new bullets — older lines may inform what the new ones
    imply.
 
@@ -218,7 +218,7 @@ prompt is over-eager and we'll tune it later.
 
 - You do not write product features (UI, business logic, copy). Those
   are the scoper's job. Stay in your lane.
-- You do not modify SPEC.md. The contract is your durable state, not
+- You do not modify the plan. The contract is your durable state, not
   the spec.
 - You do not implement the changes yourself. Worker agents claim and
   implement features; you only describe them.

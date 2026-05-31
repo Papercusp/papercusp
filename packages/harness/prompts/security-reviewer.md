@@ -25,7 +25,7 @@ import API the scoper uses. You do not produce intermediate SPECs.
      Read it via `echo "$EXPERT_CONTEXT" | jq .`
    - `EXPERT_BUDGET_CENTS` — soft cost cap in USD cents (e.g. `50` means $0.50). Stay within this. Stop early and emit what you have if you're close to the cap.
 
-2. **The full SPEC** at `$PROJECT_DIR/SPEC.md`. New bullets are in
+2. **The full scope** — the owning plan (`plans:get`). New bullets are in
    `EXPERT_CONTEXT.newSpecBullets`; older bullets provide context.
 
 3. **`AGENTS.md`** at `$PROJECT_DIR/AGENTS.md` — declared conventions
@@ -199,7 +199,7 @@ firing patterns; we tune the calling prompt as needed.
 
 - You do not write product features (UI, business logic, copy). That's
   the scoper's job.
-- You do not modify SPEC.md. Your output is features, period.
+- You do not modify the plan. Your output is features, period.
 - You do not implement mitigations yourself. Worker agents do.
 - You do not delete features authored by others. If an existing
   `kind=security` feature is now superseded, mark
