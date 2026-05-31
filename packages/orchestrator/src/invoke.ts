@@ -579,6 +579,40 @@ export interface InvokeOptions {
   idempotencyKey?: string;
 }
 
+/**
+ * Idempotency short-circuit (dbos-durable-jobs-2026-05-31 Phase 3, P-015): look
+ * up a prior COMPLETED run under `runId` (= the supplied idempotencyKey) and
+ * reconstruct its InvokeResult so the caller can skip re-spawning the agent.
+ * Returns null when no prior run exists (→ proceed to spawn). Exported for direct
+ * unit testing. Takes primitives (no ctx) so a fake `pg` is enough to exercise it.
+ */
+export async function findPriorRunForIdempotency(
+  pg: OrchestratorPg,
+  workspaceId: string,
+  harnessSlug: string,
+  runId: string,
+  role: string,
+  log: (m: string) => void,
+): Promise<InvokeResult | null> {
+  let prior;
+  try {
+    const { readRunOutputPg } = await import('./run-output-pg');
+    prior = await readRunOutputPg({ pg, workspaceId, harnessSlug }, runId);
+  } catch (err) {
+    log(`  idempotency lookup failed (non-fatal, proceeding to spawn): ${(err as Error).message}`);
+    return null;
+  }
+  if (!prior) return null;
+  log(`invoke ${role} idempotent hit (runId=${runId}, rc=${prior.exitCode}) — reusing prior run, no re-spawn`);
+  return {
+    output: prior.outBody.replace(/\n$/, ''),
+    jsonlPath: '',
+    outPath: '',
+    exitCode: prior.exitCode,
+    durationMs: prior.durationMs,
+  };
+}
+
 export async function invoke(
   ctx: InvokeContext,
   role: string,
@@ -614,36 +648,18 @@ export async function invoke(
   const nowSec = (ctx.nowSeconds ?? (() => Math.floor(Date.now() / 1000)))();
   const runId = options.idempotencyKey ?? makeRunId(role, featureId, nowSec);
 
-  // 2a. Idempotent short-circuit (P-015): if a completed run already exists
-  //     under this key, reuse it instead of re-spawning the agent. This is the
-  //     guard that lets invoke() be wrapped as a durable DBOS step — a crash
-  //     that re-runs a COMPLETED invoke returns the prior result, not a second
-  //     agent run. An *interrupted* run leaves no row (the row is written at run
-  //     end), so it still re-spawns on resume; the in-flight-run policy is
-  //     scoped in the Phase-3 sub-plan. Opt-in (only when a key is supplied).
+  // 2a. Idempotent short-circuit (P-015): reuse a prior completed run under this
+  //     key instead of re-spawning. The guard that lets invoke() be wrapped as a
+  //     durable DBOS step — a crash that re-runs a COMPLETED invoke returns the
+  //     prior result, not a second agent run. An *interrupted* run leaves no row
+  //     (written at run end), so it re-spawns on resume; re-spawn-fresh is the
+  //     policy (D-003: the agent re-reads git state, so git is the dedup). Opt-in.
   if (options.idempotencyKey && ctx.pg && ctx.workspaceId) {
-    try {
-      const { readRunOutputPg } = await import('./run-output-pg');
-      const { harnessSlug: getSlug } = await import('./state');
-      const prior = await readRunOutputPg(
-        { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: getSlug(ctx.projectDir) },
-        runId,
-      );
-      if (prior) {
-        ctx.log(
-          `invoke ${role} idempotent hit (runId=${runId}, rc=${prior.exitCode}) — reusing prior run, no re-spawn`,
-        );
-        return {
-          output: prior.outBody.replace(/\n$/, ''),
-          jsonlPath: '',
-          outPath: '',
-          exitCode: prior.exitCode,
-          durationMs: prior.durationMs,
-        };
-      }
-    } catch (err) {
-      ctx.log(`  idempotency lookup failed (non-fatal, proceeding to spawn): ${(err as Error).message}`);
-    }
+    const { harnessSlug: getSlug } = await import('./state');
+    const prior = await findPriorRunForIdempotency(
+      ctx.pg, ctx.workspaceId, getSlug(ctx.projectDir), runId, role, ctx.log,
+    );
+    if (prior) return prior;
   }
 
   // 3. Worktree cwd override. Caller's `options.cwd` wins; otherwise

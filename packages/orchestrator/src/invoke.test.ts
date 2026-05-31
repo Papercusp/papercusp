@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   invoke,
+  findPriorRunForIdempotency,
   extractResult,
   splitCommand,
   resolvePromptOverride,
@@ -44,6 +45,26 @@ test('splitCommand — whitespace-splits like bash unquoted', () => {
     'claude', '-p', '--model', 'sonnet',
   ]);
   assert.deepEqual(splitCommand('claude'), ['claude']);
+});
+
+// --- P-015: invoke() idempotency short-circuit (DBOS Phase 3) -------------
+test('findPriorRunForIdempotency — reconstructs InvokeResult from a prior run (no re-spawn)', async () => {
+  const fakePg = (() =>
+    Promise.resolve([{
+      run_id: 'k', role: 'worker', prompt_body: '', jsonl_body: '',
+      out_body: 'PRIOR OUTPUT\n', err_body: '', exit_code: 0, duration_ms: 42,
+      started_at: 1, ended_at: 2,
+    }])) as unknown as Parameters<typeof findPriorRunForIdempotency>[0];
+  const r = await findPriorRunForIdempotency(fakePg, 'ws', 'h', 'k', 'worker', () => {});
+  assert.equal(r?.output, 'PRIOR OUTPUT'); // trailing newline stripped
+  assert.equal(r?.exitCode, 0);
+  assert.equal(r?.durationMs, 42);
+});
+
+test('findPriorRunForIdempotency — returns null when no prior run (→ caller spawns)', async () => {
+  const fakePg = (() => Promise.resolve([])) as unknown as Parameters<typeof findPriorRunForIdempotency>[0];
+  const r = await findPriorRunForIdempotency(fakePg, 'ws', 'h', 'k', 'worker', () => {});
+  assert.equal(r, null);
 });
 
 test('extractResult — pulls "result" event from stream-json log', () => {
