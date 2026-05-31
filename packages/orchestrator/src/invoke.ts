@@ -649,6 +649,15 @@ export async function findPriorRunForIdempotency(
     return null;
   }
   if (!prior) return null;
+  // An empty-output prior run is not a meaningful completed run (the agent
+  // emitted nothing → did no work). Reusing it would poison a DBOS decide-step
+  // retry / a re-trigger with the empty result, so a transient empty (e.g. claude
+  // returning nothing under concurrent load) could never recover (P-010). Treat
+  // it as "no prior run" so the caller re-spawns.
+  if (!prior.outBody.trim()) {
+    log(`invoke ${role} prior run ${runId} had empty output — not reusing, will re-spawn`);
+    return null;
+  }
   log(`invoke ${role} idempotent hit (runId=${runId}, rc=${prior.exitCode}) — reusing prior run, no re-spawn`);
   return {
     output: prior.outBody.replace(/\n$/, ''),

@@ -68,6 +68,32 @@ test('findPriorRunForIdempotency — returns null when no prior run (→ caller 
   assert.equal(r, null);
 });
 
+test('findPriorRunForIdempotency — does NOT reuse an empty-output prior run (→ re-spawn so a transient empty recovers)', async () => {
+  // A rc=0 run that produced no output is not a meaningful completed run (an
+  // agent that emitted nothing did no work). Reusing it would poison the
+  // decide-step retries / a re-trigger with the empty result (P-010). Treat it
+  // as "no prior run" so the caller re-spawns.
+  const emptyPg = (() =>
+    Promise.resolve([{
+      run_id: 'k', role: 'director', prompt_body: 'p', jsonl_body: '',
+      out_body: '', err_body: '', exit_code: 0, duration_ms: 4500,
+      started_at: 1, ended_at: 2,
+    }])) as unknown as Parameters<typeof findPriorRunForIdempotency>[0];
+  const r = await findPriorRunForIdempotency(emptyPg, 'ws', 'h', 'k', 'director', () => {});
+  assert.equal(r, null);
+});
+
+test('findPriorRunForIdempotency — whitespace-only output is also treated as empty (re-spawn)', async () => {
+  const wsPg = (() =>
+    Promise.resolve([{
+      run_id: 'k', role: 'worker', prompt_body: 'p', jsonl_body: '',
+      out_body: '   \n  ', err_body: '', exit_code: 0, duration_ms: 100,
+      started_at: 1, ended_at: 2,
+    }])) as unknown as Parameters<typeof findPriorRunForIdempotency>[0];
+  const r = await findPriorRunForIdempotency(wsPg, 'ws', 'h', 'k', 'worker', () => {});
+  assert.equal(r, null);
+});
+
 test('extractResult — pulls "result" event from stream-json log', () => {
   const dir = mkdtempSync(join(tmpdir(), 'extract-'));
   const path = join(dir, 'log.jsonl');
