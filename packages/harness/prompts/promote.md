@@ -9,10 +9,13 @@ wave's runtime set.
 
 ## What you receive
 
-`EXTRAS` carries:
-- `plan_slug` — the plan to promote from.
-- `wave` — the wave id in the plan's `## Promote` policy to promote.
-- `needs_items` — true if that wave is **generative** (has a `for_each` rule).
+The **Runtime context** section of this prompt carries (as `KEY=value` lines):
+- `PLAN_SLUG` — the plan to promote from.
+- `WAVE` — the wave id in the plan's `## Promote` policy to promote.
+- `NEEDS_ITEMS` — `true` if that wave is **generative** (has a `for_each` rule).
+
+(These are passed by the wave-advance sweep — or a human invoking `invoke promote
+PLAN_SLUG=<slug> WAVE=<id> NEEDS_ITEMS=<bool>`. Read them from Runtime context.)
 
 ## What to do
 
