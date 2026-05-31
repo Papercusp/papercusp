@@ -23,13 +23,26 @@ describe('durableOwnedFeatureIdsPg — Phase 3 carve-out (D-012/D-013)', () => {
     else process.env[FLAG] = orig;
   });
 
-  test('flag OFF → empty set, never touches pg (zero-cost off-path)', async () => {
-    delete process.env[FLAG];
+  test('flag explicitly OFF (=0, the legacy revert) → empty set, never touches pg', async () => {
+    process.env[FLAG] = '0';
     const { pg, calls } = fakePg(() => [{ feature_id: 'F-001' }]);
     const ctx = { pg, workspaceId: 'w', harnessSlug: 's' } as unknown as Ctx;
     const owned = await durableOwnedFeatureIdsPg(ctx);
     assert.equal(owned.size, 0);
     assert.equal(calls.length, 0);
+  });
+
+  test('flag DEFAULT (unset) → carve-out ACTIVE (P-009: DBOS is the default orchestrator)', async () => {
+    delete process.env[FLAG];
+    const { pg, calls } = fakePg((q) =>
+      q.includes('to_regclass')
+        ? [{ t: 'dbos.workflow_status' }]
+        : [{ feature_id: 'F-001' }],
+    );
+    const ctx = { pg, workspaceId: 'w', harnessSlug: 's' } as unknown as Ctx;
+    const owned = await durableOwnedFeatureIdsPg(ctx);
+    assert.deepEqual([...owned], ['F-001']); // carve-out ran (was empty pre-P-009)
+    assert.ok(calls.length >= 1);
   });
 
   test('flag ON but no harnessSlug → empty, no query', async () => {

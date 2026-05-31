@@ -1,4 +1,12 @@
 /**
+ * ⚠️ RETIRED (P-009, dbos-retire-legacy-orchestrator-2026-05-31).
+ * This looping main loop is no longer in the live operator path — the operator
+ * orchestrates via the DBOS durable per-feature pipeline (the default since P-009;
+ * `apps/operator/lib/dbos/*`), and per-agent runs go through one-shot `invoke()`
+ * (`bin/invoke-once.ts`). `runMainLoop`'s only caller is the standalone `bin/run.ts`
+ * CLI, which the operator does not invoke. Kept for reference + instant revert
+ * (set PAPERCUSP_DBOS_ORCHESTRATOR=0 to re-enable the legacy path). Do not extend.
+ *
  * Main orchestrator loop. Mirrors bash run.sh's `while [ $iteration -lt
  * $MAX_ITERATIONS ]` block. Drives the harness one iteration at a time:
  *

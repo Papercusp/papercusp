@@ -117,7 +117,10 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
  * set → no carve-out → byte-identical legacy behavior.
  */
 export async function durableOwnedFeatureIdsPg(ctx: PgStateContext): Promise<Set<string>> {
-  if (process.env.PAPERCUSP_DBOS_ORCHESTRATOR !== '1') return new Set();
+  // P-009: DBOS is the default orchestrator (on unless explicitly =0). The carve-out
+  // runs by default; the to_regclass guard below makes it a safe no-op when the dbos
+  // schema is absent (DBOS not booted). Set =0 for the legacy-loop revert.
+  if (process.env.PAPERCUSP_DBOS_ORCHESTRATOR === '0') return new Set();
   const slug = ctx.harnessSlug;
   if (!slug) return new Set();
   try {
