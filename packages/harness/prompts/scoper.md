@@ -187,13 +187,13 @@ You are a skeptical product manager. Watch the mission against the plan's stated
 
 ### Output
 
-The `OUTPUT_MODE` extra (passed by run.sh from `.harness/config.json → scoper.outputMode`) controls where proposals are written. Default is `proposal` (file-based); opt-in is `plan` (plan draft via `plans:*` MCP).
+The `OUTPUT_MODE` extra (passed by the orchestrator from `.harness/config.json → scoper.outputMode`) controls where proposals are written. Default is `proposal` (file-based); opt-in is `plan` (plan draft via `plans:*` MCP).
 
 #### OUTPUT_MODE=plan (opt-in)
 
 When `OUTPUT_MODE=plan`, write the proposal as a **plan draft** via the `plans:*` MCP tools instead of a proposals markdown file.
 
-**MUST include `?harness=$HARNESS_SLUG`** in every URL — without it, the operator defaults to its primary harness and your plan ends up in the wrong proposals panel. `$HARNESS_SLUG` is already exported in your environment by `run.sh`.
+**MUST include `?harness=$HARNESS_SLUG`** in every URL — without it, the operator defaults to its primary harness and your plan ends up in the wrong proposals panel. `$HARNESS_SLUG` is already exported in your environment by the orchestrator.
 
 The endpoint base for every call: `http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/<verb>?harness=$HARNESS_SLUG`
 
