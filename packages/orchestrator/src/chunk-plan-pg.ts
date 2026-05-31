@@ -12,7 +12,7 @@
  * One row per chunk. Plan reconstructed by SELECT ordered by chunk_index.
  */
 
-import type { OrchestratorPg } from './invoke.js';
+import { pgJson, type OrchestratorPg } from './invoke.js';
 import type { Chunk, ChunkPlan } from './chunk-plan.js';
 
 export type ChunkStatus =
@@ -55,7 +55,7 @@ export async function persistPlan(
       VALUES
         (${ctx.workspaceId}, ${ctx.harnessSlug}, ${plan.featureId},
          ${c.id}, ${i + 1},
-         ${JSON.stringify(c.files)}::jsonb,
+         ${pgJson(ctx.pg, c.files)}::jsonb,
          ${c.description}, 'pending')
     `;
   }
@@ -100,7 +100,7 @@ export async function updateChunkPlan(
   const now = Date.now();
   await ctx.pg`
     UPDATE harness_shared.harness_chunk_plans
-    SET files        = ${JSON.stringify(chunk.files)}::jsonb,
+    SET files        = ${pgJson(ctx.pg, chunk.files)}::jsonb,
         description  = ${chunk.description},
         status       = 'pending',
         last_error   = NULL,

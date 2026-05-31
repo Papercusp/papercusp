@@ -124,8 +124,8 @@ test('updateChunkPlan rewrites files + description and resets status', async () 
   });
   assert.equal(m.calls.length, 1);
   assert.match(m.calls[0].sql, /^update harness_shared\.harness_chunk_plans/i);
-  // Files JSON serialized.
-  assert.equal(m.calls[0].params[0], JSON.stringify(['a.ts', 'b.ts', 'c.ts']));
+  // Files passed via sql.json — a mock observes the raw array.
+  assert.deepEqual(m.calls[0].params[0], ['a.ts', 'b.ts', 'c.ts']);
   assert.equal(m.calls[0].params[1], 'extract foo and update callers');
 });
 

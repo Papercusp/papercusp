@@ -125,17 +125,18 @@ describe('mission-state-pg', () => {
     assert.ok(writtenTs >= before && writtenTs <= after, `${writtenTs} should be in [${before}, ${after}]`);
   });
 
-  test('persistLanesPg — issues UPSERT with stringified JSON lanes array', async () => {
+  test('persistLanesPg — issues UPSERT with the lanes array (via sql.json, not stringified)', async () => {
     const mock = makeMockPg();
     await persistLanesPg(ctxOf(mock), [
       { id: 1, feature_id: 'F-001', started_at: 1000 },
       { id: 2, feature_id: 'F-002', started_at: 2000 },
     ]);
     assert.match(mock.queries[0], /lanes/);
-    const written = mock.values[0][2] as string;
-    const parsed = JSON.parse(written) as Array<{ id: number; feature_id: string }>;
-    assert.equal(parsed.length, 2);
-    assert.equal(parsed[0].feature_id, 'F-001');
+    // pgJson hands the raw array to a mock (no .json); a real client wraps it in
+    // sql.json so it lands as a jsonb array (not a double-encoded string scalar).
+    const written = mock.values[0][2] as Array<{ id: number; feature_id: string }>;
+    assert.equal(written.length, 2);
+    assert.equal(written[0].feature_id, 'F-001');
   });
 
   test('readMissionState — returns row data when present', async () => {

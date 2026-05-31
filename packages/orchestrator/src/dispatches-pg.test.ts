@@ -26,7 +26,7 @@ describe('dispatches-pg', () => {
     assert.equal(values[0][2], 'child');
     assert.equal(values[0][3], 'orchestrator');
     assert.equal(typeof values[0][4], 'number');
-    assert.equal(values[0][5], JSON.stringify({ ok: true, deploymentId: 'abc' }));
+    assert.deepEqual(values[0][5], { ok: true, deploymentId: 'abc' });
   });
 
   test('recordDispatchPg — accepts string body unchanged', async () => {

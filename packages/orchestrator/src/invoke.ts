@@ -56,6 +56,20 @@ export interface OrchestratorPg {
   (template: TemplateStringsArray, ...values: unknown[]): Promise<any[]>;
 }
 
+/**
+ * Serialize a JS value bound for a jsonb column. postgres-js JSON-encodes a
+ * value passed to a jsonb column, so `${JSON.stringify(x)}` DOUBLE-encodes it —
+ * the array/object lands as a jsonb STRING scalar and never round-trips (and a
+ * `::jsonb` cast does NOT fix it; verified). The correct form is the postgres-js
+ * `sql.json()` helper. This wrapper uses it when present (a real client) and
+ * falls back to the raw value for test doubles (makeMockPg) that don't implement
+ * `.json` — so unit mocks observe the raw value, production stores real jsonb.
+ */
+export function pgJson(pg: OrchestratorPg, value: unknown): unknown {
+  const j = (pg as { json?: (v: unknown) => unknown }).json;
+  return typeof j === 'function' ? j(value) : value;
+}
+
 export interface InvokeContext {
   /** HARNESS_DIR — root of the @papercusp/harness install. */
   harnessDir: string;

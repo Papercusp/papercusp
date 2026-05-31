@@ -15,7 +15,7 @@
  *     PRIMARY KEY (workspace_id, parent_slug, child_slug, dispatch_at)
  *   );
  */
-import type { OrchestratorPg } from './invoke';
+import { pgJson, type OrchestratorPg } from './invoke';
 
 export interface DispatchesPgContext {
   pg: OrchestratorPg;
@@ -45,17 +45,11 @@ export async function recordDispatchPg(
   resultBody: unknown,
 ): Promise<void> {
   const now = Date.now();
-  // postgres-js coerces a JS string into the jsonb column type via the
-  // server-side cast that comes with the column declaration; we just need
-  // to pass valid JSON or null. NULL passes through cleanly.
-  let bodyJson: string | null = null;
-  if (resultBody !== undefined && resultBody !== null) {
-    try {
-      bodyJson = typeof resultBody === 'string' ? resultBody : JSON.stringify(resultBody);
-    } catch {
-      bodyJson = null;
-    }
-  }
+  // jsonb goes through pgJson (sql.json), NOT JSON.stringify — postgres-js would
+  // double-encode a pre-stringified value into a jsonb string scalar. NULL stays
+  // NULL.
+  const bodyJson: unknown =
+    resultBody === undefined || resultBody === null ? null : pgJson(ctx.pg, resultBody);
   await ctx.pg`
     INSERT INTO harness_shared.harness_dispatches
       (workspace_id, parent_slug, child_slug, child_role, dispatch_at, result_body)

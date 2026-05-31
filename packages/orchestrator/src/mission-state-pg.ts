@@ -37,7 +37,7 @@
  *     PRIMARY KEY (workspace_id, harness_slug)
  *   );
  */
-import type { OrchestratorPg } from './invoke';
+import { pgJson, type OrchestratorPg } from './invoke';
 
 export interface MissionStatePgContext {
   pg: OrchestratorPg;
@@ -206,7 +206,7 @@ export async function persistLanesPg(
   await ctx.pg`
     INSERT INTO harness_shared.harness_mission_state
       (workspace_id, harness_slug, lanes, updated_at)
-    VALUES (${ctx.workspaceId}, ${ctx.harnessSlug}, ${JSON.stringify(lanes)}, ${now})
+    VALUES (${ctx.workspaceId}, ${ctx.harnessSlug}, ${pgJson(ctx.pg, lanes)}, ${now})
     ON CONFLICT (workspace_id, harness_slug) DO UPDATE
       SET lanes      = EXCLUDED.lanes,
           updated_at = EXCLUDED.updated_at
