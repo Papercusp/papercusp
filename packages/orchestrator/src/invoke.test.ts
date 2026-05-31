@@ -452,3 +452,42 @@ test('claudeMcpArgs — user passed --dangerously-skip-permissions → no --perm
   const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --dangerously-skip-permissions', MCP_PATH, true);
   assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
 });
+
+// ── codex backend (Phase 2 / P-011) ──
+
+test('selectStreamFormat — codex with `codex` → codex-json', () => {
+  assert.equal(selectStreamFormat('codex', 'codex'), 'codex-json');
+});
+
+test('selectStreamFormat — codex with explicit `exec` subcommand → none (user-driven)', () => {
+  assert.equal(selectStreamFormat('codex', 'codex exec --json'), 'none');
+});
+
+test('streamFormatFlags — codex-json carries exec + json + unconditional sandbox bypass', () => {
+  assert.deepEqual(
+    streamFormatFlags('codex-json'),
+    ['exec', '--json', '--skip-git-repo-check', '--ephemeral', '-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'],
+  );
+});
+
+test('extractResult — codex-json concatenates agent_message item.completed text', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'codex-extract-'));
+  const path = join(dir, 'r.jsonl');
+  writeFileSync(path, [
+    JSON.stringify({ type: 'item.started', item: { type: 'agent_message' } }),
+    JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'NEXT_WORKER ' } }),
+    JSON.stringify({ type: 'item.completed', item: { type: 'mcp_tool_call', tool: 'harness:list' } }),
+    JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'F-001' } }),
+    JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 10, output_tokens: 3 } }),
+  ].join('\n') + '\n', 'utf8');
+  assert.equal(extractResult(path, 'codex-json'), 'NEXT_WORKER F-001');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('extractResult — codex-json returns "" when no agent_message present', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'codex-extract-'));
+  const path = join(dir, 'r.jsonl');
+  writeFileSync(path, JSON.stringify({ type: 'turn.completed', usage: {} }) + '\n', 'utf8');
+  assert.equal(extractResult(path, 'codex-json'), '');
+  rmSync(dir, { recursive: true, force: true });
+});

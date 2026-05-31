@@ -34,7 +34,9 @@ import {
   extractChunkId,
   restoreSpawnMcp,
   writeSignedSpawnMcp,
+  writeSignedSpawnCodexHome,
   type SpawnMcpHandle,
+  type SpawnCodexHomeHandle,
 } from './spawn-mcp';
 import { randomUUID } from 'node:crypto';
 import type { AgentBackend, InvokeResult } from './types';
@@ -285,7 +287,7 @@ export function resolveAgentForRole(
  * plain-text / passthrough commands). Drives both the extra flag set we
  * append AND the result-extraction parser.
  */
-export type StreamFormat = 'claude-stream-json' | 'omp-json' | 'none';
+export type StreamFormat = 'claude-stream-json' | 'omp-json' | 'codex-json' | 'none';
 
 /**
  * Pick the structured-output flag set for a given backend, unless the
@@ -307,6 +309,14 @@ export function selectStreamFormat(
     return mentionsOmp ? 'omp-json' : 'none';
   }
 
+  if (agentBackend === 'codex') {
+    // codex CLI: `codex exec --json` emits JSONL events. If the command
+    // already names the `exec` subcommand the user is driving it manually.
+    if (/(?:^|\s)exec(?:\s|$)/.test(cmd)) return 'none';
+    const mentionsCodex = argv.some((a) => /(?:^|\/)codex$/.test(a));
+    return mentionsCodex ? 'codex-json' : 'none';
+  }
+
   // claude-code path (default).
   if (cmd.includes('stream-json')) return 'none';
   const mentionsClaude = argv.some((a) => a.includes('claude'));
@@ -323,6 +333,15 @@ export function streamFormatFlags(fmt: StreamFormat): string[] {
       return ['--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
     case 'omp-json':
       return ['--mode', 'json', '--no-session'];
+    case 'codex-json':
+      // `codex exec --json` → JSONL events. Orchestrator spawns are always
+      // autonomous and need MCP tool calls + shell to run un-gated, so the
+      // sandbox/approval bypass is unconditional here (under `-s read-only`
+      // codex CANCELS MCP tool calls — handoff §8). `--skip-git-repo-check`
+      // lets it run in non-repo cwds; `--ephemeral` keeps no rollout on disk.
+      // Model (`-m`), the prompt stdin `-`, and CODEX_HOME/MCP are wired in
+      // the spawn path (model flag is backend-aware; codex has no .mcp.json).
+      return ['exec', '--json', '--skip-git-repo-check', '--ephemeral', '-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'];
     case 'none':
       return [];
   }
@@ -419,6 +438,31 @@ export function extractResult(source: string, format: StreamFormat): string {
       } catch { /* claude can interleave non-JSON occasionally */ }
     }
     return '';
+  }
+
+  if (format === 'codex-json') {
+    // `codex exec --json` JSONL: the assistant's text arrives as one or
+    // more `{type:'item.completed', item:{type:'agent_message', text}}`
+    // events (codex emits no single terminal `result`). Concatenate them
+    // in order — the decision verb the orchestrator greps for is in this
+    // text just like the claude/omp paths.
+    const parts: string[] = [];
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      let obj: any;
+      try { obj = JSON.parse(line); } catch { continue; }
+      if (
+        obj && typeof obj === 'object'
+        && obj.type === 'item.completed'
+        && obj.item && typeof obj.item === 'object'
+        && obj.item.type === 'agent_message'
+        && typeof obj.item.text === 'string'
+      ) {
+        parts.push(obj.item.text);
+      }
+    }
+    return parts.join('').trim();
   }
 
   // omp-json: walk from the end, find the last message_end / done /
@@ -583,12 +627,14 @@ export async function invoke(
   const streamFormat = selectStreamFormat(agentBackend, roleAgentCmd);
   const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
 
-  // 5. Per-role model — only inject if user didn't already pass --model.
-  const cmdAlreadyHasModel = roleAgentCmd.includes('--model ');
+  // 5. Per-role model — only inject if user didn't already pass one.
+  //    codex's model flag is `-m` (bare id); claude/omp use `--model`.
+  const modelFlag = agentBackend === 'codex' ? '-m' : '--model';
+  const cmdAlreadyHasModel = roleAgentCmd.includes('--model ') || /(?:^|\s)-m\s/.test(roleAgentCmd);
   if (!cmdAlreadyHasModel) {
     const model = normalizeModelForBackend(resolveModel(cfg, role), agentBackend);
     if (model) {
-      extraFlags.push('--model', model);
+      extraFlags.push(modelFlag, model);
       ctx.log(`  role=${role} model=${model} (from config.json)`);
     }
   }
@@ -843,6 +889,12 @@ export async function invoke(
     finalArgv.push(`@${ompPromptPath}`);
   }
 
+  // codex `exec` reads the prompt from stdin via the trailing `-` positional
+  // (the stdin.write block below pipes `prompt` to every non-omp backend).
+  if (agentBackend === 'codex' && streamFormat !== 'none') {
+    finalArgv.push('-');
+  }
+
   // 10b. claude-code MCP wiring — make claude load + trust the per-spawn
   // signed .mcp.json that writeSignedSpawnMcp drops into cwd below (omp
   // path-discovers it; claude won't without these flags). See claudeMcpArgs.
@@ -942,23 +994,13 @@ export async function invoke(
     // feature/chunk/run/spawn baked in. Cleanup runs on close even if
     // spawn errors. Spec: apps/operator/docs/plugin-mcp-host-design.md (D4).
     let mcpHandle: SpawnMcpHandle | null = null;
+    let codexHomeHandle: SpawnCodexHomeHandle | null = null;
     if (ctx.workspaceId) {
       try {
         const spawnId = randomUUID();
         const slug = harnessSlugFromProjectDir(ctx.projectDir);
         const chunkId = extractChunkId(extras);
-        // writeSignedSpawnMcp signs the URL params. In strict mode
-        // (default since 2026-05-11) a signing failure throws — the
-        // outer try/catch below logs `spawn-mcp write failed` and
-        // proceeds with mcpHandle=null, so the agent runs but has no
-        // MCP endpoint. That is the intended failure mode: better to
-        // fail loudly than to emit an unsigned URL the operator will
-        // reject on every tool call. To restore the silent-fallback
-        // (soft-warn) behavior, pass `allowUnsigned: true` here AND
-        // unset PAPERCUSP_REQUIRE_SPAWN_SIG on the operator.
-        // No await-time risk: signing is a single PG round-trip against
-        // a 32-byte row + an HMAC; total < 50ms in normal operation.
-        mcpHandle = await writeSignedSpawnMcp(cwd, {
+        const signedInput = {
           harnessSlug: slug,
           workspaceId: ctx.workspaceId,
           role,
@@ -967,7 +1009,28 @@ export async function invoke(
           featureId: featureId || null,
           chunkId,
           parentSpawnId: options.parentSpawnId ?? null,
-        });
+        };
+        // codex: no `.mcp.json` discovery — its MCP servers live in
+        // $CODEX_HOME/config.toml. Mint a per-spawn CODEX_HOME with the
+        // same signed, role-scoped URL + the ChatGPT auth symlink, and
+        // point the child at it. omp/claude keep the `.mcp.json` path.
+        if (agentBackend === 'codex') {
+          codexHomeHandle = await writeSignedSpawnCodexHome(signedInput);
+          spawnEnv.CODEX_HOME = codexHomeHandle.codexHome;
+        } else {
+          // writeSignedSpawnMcp signs the URL params. In strict mode
+          // (default since 2026-05-11) a signing failure throws — the
+          // outer try/catch below logs `spawn-mcp write failed` and
+          // proceeds with mcpHandle=null, so the agent runs but has no
+          // MCP endpoint. That is the intended failure mode: better to
+          // fail loudly than to emit an unsigned URL the operator will
+          // reject on every tool call. To restore the silent-fallback
+          // (soft-warn) behavior, pass `allowUnsigned: true` here AND
+          // unset PAPERCUSP_REQUIRE_SPAWN_SIG on the operator.
+          // No await-time risk: signing is a single PG round-trip against
+          // a 32-byte row + an HMAC; total < 50ms in normal operation.
+          mcpHandle = await writeSignedSpawnMcp(cwd, signedInput);
+        }
       } catch (err) {
         ctx.log(`  spawn-mcp write failed: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -1127,6 +1190,7 @@ export async function invoke(
       ctx.log(`  spawn error: ${err.message}`);
       if (timer) clearTimeout(timer);
       if (mcpHandle) restoreSpawnMcp(mcpHandle);
+      if (codexHomeHandle) codexHomeHandle.cleanup();
       void clearLane();
       resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
     });
@@ -1134,6 +1198,7 @@ export async function invoke(
     child.on('close', (code) => {
       if (timer) clearTimeout(timer);
       if (mcpHandle) restoreSpawnMcp(mcpHandle);
+      if (codexHomeHandle) codexHomeHandle.cleanup();
       void clearLane();
       // bash uses exit 124 for timeout (matches `timeout` coreutil).
       const exitCode = timedOut ? 124 : (code ?? 0);

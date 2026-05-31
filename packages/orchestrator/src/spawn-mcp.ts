@@ -19,7 +19,8 @@
  */
 
 import { createHmac } from 'node:crypto';
-import { chmodSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import postgres from 'postgres';
 
@@ -205,6 +206,64 @@ export async function writeSignedSpawnMcp(
   writeFileSync(path, JSON.stringify(config, null, 2), 'utf8');
   try { chmodSync(path, 0o600); } catch { /* best-effort */ }
   return { path, prior, backupPath };
+}
+
+/** Handle for a per-spawn codex CODEX_HOME (cleaned up after the spawn). */
+export interface SpawnCodexHomeHandle {
+  /** Absolute path to set as the child's CODEX_HOME. */
+  codexHome: string;
+  /** The signed MCP URL written into config.toml (for logging). */
+  mcpUrl: string;
+  /** Remove the temp CODEX_HOME. Best-effort, idempotent. */
+  cleanup(): void;
+}
+
+/**
+ * codex equivalent of {@link writeSignedSpawnMcp}. codex has no
+ * `.mcp.json` discovery and no `--mcp-config` flag — its MCP servers are
+ * declared in `$CODEX_HOME/config.toml`. So we mint a per-spawn CODEX_HOME
+ * tmpdir holding:
+ *   - `config.toml` with `[mcp_servers.papercusp] url = "<signed URL>"` —
+ *     the SAME signed, role-scoped URL the .mcp.json path uses; auth is the
+ *     `sig` query param (verifySpawnParams), so NO bearer token is needed.
+ *   - `auth.json` symlinked to `~/.codex/auth.json` so the ChatGPT OAuth
+ *     login carries over (no API key).
+ * Set `CODEX_HOME=<this>` on the spawn env; call `cleanup()` after exit.
+ */
+export async function writeSignedSpawnCodexHome(
+  input: SpawnMcpConfigInput,
+  opts: { ttlSec?: number } = {},
+): Promise<SpawnCodexHomeHandle> {
+  const base = input.operatorUrl ?? process.env.PAPERCUSP_OPERATOR_URL ?? DEFAULT_OPERATOR_URL;
+  const params = buildSpawnUrlParams(input);
+  await signSpawnParams(params, opts.ttlSec ?? 24 * 60 * 60);
+  const mcpUrl = `${base}?${params.toString()}`;
+
+  const codexHome = mkdtempSync(join(tmpdir(), 'codex-spawn-'));
+  // Share the ChatGPT OAuth login (codex resolves auth from $CODEX_HOME/auth.json).
+  try {
+    const realAuth = join(homedir(), '.codex', 'auth.json');
+    if (existsSync(realAuth)) symlinkSync(realAuth, join(codexHome, 'auth.json'));
+  } catch { /* best-effort — codex surfaces an auth error if missing */ }
+  // codex does NOT env-expand inside config.toml; the URL is fully baked
+  // (incl. the sig), so no bearer_token_env_var is needed (unlike the
+  // superuser codex-su home, which uses ?superuser=1 + a bearer).
+  const toml = [
+    '# Per-spawn codex MCP config (managed by spawn-mcp.ts writeSignedSpawnCodexHome).',
+    '[mcp_servers.papercusp]',
+    `url = "${mcpUrl.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`,
+    '',
+  ].join('\n');
+  writeFileSync(join(codexHome, 'config.toml'), toml, 'utf8');
+  try { chmodSync(join(codexHome, 'config.toml'), 0o600); } catch { /* best-effort */ }
+
+  return {
+    codexHome,
+    mcpUrl,
+    cleanup() {
+      try { rmSync(codexHome, { recursive: true, force: true }); } catch { /* best-effort */ }
+    },
+  };
 }
 
 /* ─── Signing (HMAC-SHA256 over canonical params) ─────────────────────
