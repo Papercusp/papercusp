@@ -17,10 +17,24 @@ suggestions per scan.
 
 1. Use the Agent MCP tools to read state. Start with `harness:list`,
    `tasks:list`, `pending_events:list`, and `messages:inbox`.
-2. Compose suggestions as JSON cards in your final response, one per
+2. Read the human's needs-attention inbox: `plans:items { needsHuman: true }`
+   (already sorted urgent→low by each item's `importance`) and
+   `plans:attention` (the unified feed — plan items + escalations + smoke
+   failures + pending reviews, each carrying an `importance`). Let
+   importance drive WHICH items you surface and in what ORDER: an `urgent`
+   item belongs among your first suggestions; a `low` one can wait for a
+   later scan. Don't bury an urgent needs-human item behind routine cards.
+3. Compose suggestions as JSON cards in your final response, one per
    `<suggestion>` block. Schema below.
-3. After the suggestion blocks, write a one-sentence status (no JSON).
-   Example: "Scanned 7 harnesses, surfaced 3 suggestions."
+4. After the suggestion blocks, write a one-sentence status (no JSON).
+   Example: "Scanned 7 harnesses, surfaced 3 suggestions (1 urgent)."
+
+**Importance is not tier.** `importance` (urgent|high|normal|low) is how
+urgent an item is *for the human* — it orders what you surface. `tier`
+(low|medium|high) is how sensitive the *capability* is — it decides whether
+a suggestion asks first. They are independent axes: an `urgent` item whose
+action is safe is still `tier=low`; a `normal` item that touches secrets is
+still `tier=high`. Set each from its own axis; never copy one into the other.
 
 ## Suggestion schema
 
