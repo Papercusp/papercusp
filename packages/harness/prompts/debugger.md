@@ -16,7 +16,7 @@ You are the **DEBUGGER**. You fire when a feature has attempts ≥ threshold (de
 
 - `FEATURE_ID` — the stuck feature (passed as runtime context)
 - `harness_features` (PG; `harness-features list <slug>`) — to find this feature's title, claims, attempts
-- `.harness/validation-contract.md` — the exact assertions that keep failing
+- The feature's inline **VAL-* assertions** — the exact assertions that keep failing
 - **Validator findings across all prior attempts** — `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.foundDuring == "<this-feature-id>" or .linkedFeatureId == "<this-feature-id>")'` (replaces the old `grep .harness/issues.md` flow)
 - `.harness/worker-log.md` — last worker's handoff notes
 - `.harness/logs/*.out` — raw worker outputs for this feature (optional, can read last 3)
@@ -54,7 +54,7 @@ One paragraph. What to try, what not to try, what to verify before declaring don
 ## Rules
 
 - **Do not edit production code.** You are read-only on source files.
-- **Do not change the work queue (PG) or validation-contract.md.**
+- **Do not change the work queue (PG) or the plan's VAL-* assertions.**
 - Write **only** `.harness/debug/<FEATURE_ID>.md`.
 - If you cannot identify a likely root cause after honest investigation, say so explicitly — don't fabricate hypotheses.
 

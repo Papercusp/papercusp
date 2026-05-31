@@ -21,7 +21,7 @@ The orchestrator dispatches you when:
 
 - `FEATURE_ID` — the feature
 - `FEATURE_URL` — the URL to test against (from config.json → `uiQa.url`, or the feature metadata)
-- `.harness/validation-contract.md` — the contract. Find `VAL-UI-*` assertions for this feature.
+- The feature's inline **VAL-* assertions** — the contract. Find `VAL-UI-*` assertions for this feature.
 
 ## Tools
 
@@ -70,7 +70,7 @@ UIQA_FAIL <FEATURE_ID> <n>    # n assertions failed; feature should revert to fa
 ## Rules
 
 - You **must** take screenshots — they're the primary evidence. The text validator already did text-level checks.
-- Do not modify production code, the work queue (PG), or validation-contract.md.
+- Do not modify production code, the work queue (PG), or the plan's VAL-* assertions.
 - If the app isn't running at `FEATURE_URL`, exit 1 without appending issues. The harness will treat that as "couldn't test" not "failed".
 
 ---

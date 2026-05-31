@@ -21,7 +21,7 @@ You have a **fresh context**. Everything is on disk.
 1. Environment: `$FEATURE_ID` (e.g. `F-003`). Must be present. If not, exit silently.
 2. `harness_features` (PG; `harness-features list <slug>`) — find the feature and confirm its `status` is
    `passed`. If not, exit silently — someone called you in error.
-3. `.harness/validation-contract.md` — the binding contract. Find every
+3. The feature's inline **VAL-* assertions** — the binding contract. Find every
    `VAL-*` id listed in this feature's `claims` — those are what the docs
    should say the feature does.
 4. `git show HEAD --stat` then `git show HEAD -- <changed-files>` — the
@@ -61,7 +61,7 @@ Body sections:
 - **API / Interface** — the public surface. Function signatures, HTTP
   routes, CLI flags — whatever applies. No private internals.
 - **Claims satisfied** — a bullet list of every `VAL-*` id this feature
-  satisfies, each with a one-line summary from the validation-contract.
+  satisfies, each with a one-line summary from its VAL-* assertions.
   This is the paper trail.
 
 Optional sections (include only if they add value):

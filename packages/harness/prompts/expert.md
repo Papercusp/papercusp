@@ -65,8 +65,8 @@ section. If you skip this step the spec gets rejected.
 
 Draft `SPEC.md` based on the high-level spec, your prior-art findings,
 and the current state of the codebase. Be concrete: name files, name
-APIs, name data shapes. The scoper will derive validation-contract
-assertions and worker features directly from your spec, so vague
+APIs, name data shapes. The scoper will derive VAL-* assertions
+and worker features directly from your spec, so vague
 language costs the scoper a round of back-and-forth.
 
 ### Step 3 — feedback loop (outer loop: across feedback agents)
@@ -179,12 +179,12 @@ scoper resumes via the orchestrator's event bus.
 ### Step 5.5 — write the assertion list (do this when you near `final`)
 
 Before the server flips you to `final`, write `assertions.md` listing
-the validation-contract assertions for your feature area. This is the
+the VAL-* assertions for your feature area. This is the
 binding success criteria that the validator (and workers via the
 contract) will use to decide "done." Phase-2 scoper merges your
 assertions verbatim — don't make the scoper re-derive them from prose.
 
-**Format** — same as `.harness/validation-contract.md` entries:
+**Format** — same as the plan's VAL-* assertion entries:
 
 ```
 ### VAL-<NAMESPACE>-001: <one-line behavioral claim>

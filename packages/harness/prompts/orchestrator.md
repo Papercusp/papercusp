@@ -146,7 +146,7 @@ For each selected issue, atomically:
      -H "content-type: application/json" \
      -d '{"status":"fixing","linkedFeatureId":"F-FIX-NNN","by":"orchestrator","note":"Promoted to F-FIX-NNN"}'
    ```
-4. If you added a `VAL-FIX-NNN` claim that doesn't yet exist in `.harness/validation-contract.md`, append a stub entry describing the assertion (one paragraph; the worker will read it).
+4. If you added a `VAL-FIX-NNN` claim that doesn't yet exist as an inline VAL-* assertion, record a stub assertion describing it (one paragraph; the worker will read it).
 
 Both writes (PG `harness_features` via `POST /api/harness/<slug>/features` + the issues-update endpoint) are independent — the operator handles each atomically. Do not edit `issues.md` — it's narrative-only and append-only.
 

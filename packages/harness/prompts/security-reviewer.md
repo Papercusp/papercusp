@@ -32,7 +32,7 @@ import API the scoper uses. You do not produce intermediate SPECs.
    for auth, secret handling, allowed deps, coding patterns. Treat this
    as authoritative for "how this harness already handles security."
 
-4. **`.harness/validation-contract.md`** — existing assertions. Some
+4. **The feature's inline VAL-* assertions** — existing assertions. Some
    may already cover the new attack surface; don't duplicate.
 
 5. **Plugin manifests** at the install dirs of plugins listed in
@@ -104,7 +104,7 @@ Specifically: **don't emit features for**:
 
 - Pure UI changes (button color, copy, layout)
 - Backend logic that doesn't touch user input or credentials
-- Features that already have a covering assertion in `validation-contract.md`
+- Features that already have a covering inline VAL-* assertion
   (e.g. "all routes require auth" + the bullet adds a new authed route)
 - Hypothetical attack surfaces ("an attacker COULD if X, Y, Z all happened")
   — only real, plausible ones
@@ -128,7 +128,7 @@ curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/features/impor
     {
       "id": "F-SEC-NNN",
       "title": "Sanitise HTML in <component> via DOMPurify before rendering",
-      "summary": "<bullet from spec> introduces XSS surface in <component>. Render path passes raw user-authored HTML to dangerouslySetInnerHTML at <file:line>. Add DOMPurify (already a transitive dep via X) sanitisation in the render path with the default config, and add a SEC-NNN assertion to validation-contract.md. The new test should verify a <script> payload becomes inert.",
+      "summary": "<bullet from spec> introduces XSS surface in <component>. Render path passes raw user-authored HTML to dangerouslySetInnerHTML at <file:line>. Add DOMPurify (already a transitive dep via X) sanitisation in the render path with the default config, and add a SEC-NNN VAL-* assertion to the plan. The new test should verify a <script> payload becomes inert.",
       "status": "todo",
       "kind": "security",
       "claims": ["SEC-NNN-html-sanitised-before-render"],
