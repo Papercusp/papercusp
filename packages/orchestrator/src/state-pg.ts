@@ -94,7 +94,53 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
        )
      ORDER BY feature_id
   `;
-  return rows.map(rowToFeature);
+  const features = rows.map(rowToFeature);
+  // Phase 3 carve-out (dbos-durable-jobs D-012): exclude features a live durable
+  // pipeline already owns, so the GLOBAL orchestrator never decides for them (the
+  // per-feature pipeline's own director does) — otherwise the two double-dispatch.
+  // No-op when PAPERCUSP_DBOS_ORCHESTRATOR is off: empty set, zero extra queries.
+  const owned = await durableOwnedFeatureIdsPg(ctx);
+  return owned.size > 0 ? features.filter((f) => !owned.has(f.id)) : features;
+}
+
+/**
+ * Phase 3 of dbos-durable-jobs (D-011/D-012/D-013): the set of feature ids
+ * currently OWNED by a live durable pipeline — a PENDING/ENQUEUED DBOS workflow
+ * with id `pipeline:<slug>:<feature>:e<epoch>`. Read straight from DBOS's own
+ * system table via the orchestrator's existing pg: `runMainLoop` is a separate
+ * subprocess with no DBOS runtime, so it can't call `DBOS.retrieveWorkflow()`
+ * (D-013). Same database, different schema — a plain cross-schema read.
+ *
+ * Gated by `PAPERCUSP_DBOS_ORCHESTRATOR=1` (default off → empty, no query).
+ * Resilient by design (D-006 / D-013 off-path safety): no slug, an absent `dbos`
+ * schema (`to_regclass` → NULL, no throw), or ANY query error all yield an empty
+ * set → no carve-out → byte-identical legacy behavior.
+ */
+export async function durableOwnedFeatureIdsPg(ctx: PgStateContext): Promise<Set<string>> {
+  if (process.env.PAPERCUSP_DBOS_ORCHESTRATOR !== '1') return new Set();
+  const slug = ctx.harnessSlug;
+  if (!slug) return new Set();
+  try {
+    // to_regclass returns NULL (no throw) when the dbos schema/table is absent —
+    // the common case (DBOS idle / off), so don't let it raise.
+    const reg = await ctx.pg<{ t: string | null }[]>`
+      SELECT to_regclass('dbos.workflow_status') AS t
+    `;
+    if (!reg[0]?.t) return new Set();
+    // workflow_uuid = `pipeline:<slug>:<feature>:e<epoch>`; slug + feature carry no
+    // ':' (kebab slug, F-NNN feature), so split_part(...,3) is the feature id.
+    const prefix = `pipeline:${slug}:%`;
+    const rows = await ctx.pg<{ feature_id: string }[]>`
+      SELECT DISTINCT split_part(workflow_uuid, ':', 3) AS feature_id
+        FROM dbos.workflow_status
+       WHERE workflow_uuid LIKE ${prefix}
+         AND status IN ('PENDING', 'ENQUEUED')
+    `;
+    return new Set(rows.map((r) => r.feature_id).filter((id) => id.length > 0));
+  } catch {
+    // Any failure (schema absent, cross-db, permission) → no carve-out.
+    return new Set();
+  }
 }
 
 /** Return plan slugs that are currently 'started' for this harness. */
