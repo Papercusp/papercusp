@@ -54,6 +54,13 @@ export interface AssembleRolePromptOptions {
   /** Extra runtime-context bullets the caller wants in the prompt (e.g. "MODE=replan"). */
   extras?: readonly string[];
   /**
+   * Pre-resolved per-(workspace,harness,role) prompt override (D-7). The
+   * operator-layer caller (which has PG + the active workspace) reads it from
+   * the workspace store and supplies it; when set it takes precedence over the
+   * config.json `promptOverrides.<role>` fallback. Keeps this module PG-free.
+   */
+  promptOverrideText?: string;
+  /**
    * Plan context for a plan-derived feature: the origin plan's `## Now`
    * block + last 3 decisions. Fetched by the caller (operator or CLI
    * shim) so this module stays free of operator-layer PG imports.
@@ -152,18 +159,27 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
     throw new Error(`assembleRolePrompt: no prompt file found for role "${opts.role}" (phase=${phase}, dept=${dept || 'none'})`);
   }
 
-  // Per-role specialization (config.json → promptOverrides.<role>) — string OR
-  // markdown file path. Mirrors run.sh's logic.
+  // Per-role specialization. The workspace-owned PG override (D-7) is the
+  // source when the caller resolves + supplies it (`opts.promptOverrideText`) —
+  // the operator/role-launch/agent-chat callers have PG + workspace context and
+  // pass it, so this module stays free of operator-layer PG imports (same
+  // pattern as projectDir/planContext/projectSpec). When NOT supplied (CLI /
+  // autonomous callers without the override pre-resolved), fall back to the
+  // config.json → promptOverrides.<role> file/inline logic (mirrors run.sh).
   let promptOverride = '';
-  const ovRaw = configGet<string>(cfg, `promptOverrides.${opts.role}`, '');
-  if (ovRaw) {
-    if (ovRaw.startsWith('/')) {
-      if (existsSync(ovRaw)) promptOverride = readFileSync(ovRaw, 'utf8');
-    } else if (ovRaw.startsWith('./') || ovRaw.endsWith('.md') || ovRaw.endsWith('.txt')) {
-      const p = join(stateDir, ovRaw.replace(/^\.\//, ''));
-      if (existsSync(p)) promptOverride = readFileSync(p, 'utf8');
-    } else {
-      promptOverride = ovRaw;
+  if (typeof opts.promptOverrideText === 'string' && opts.promptOverrideText.length > 0) {
+    promptOverride = opts.promptOverrideText;
+  } else {
+    const ovRaw = configGet<string>(cfg, `promptOverrides.${opts.role}`, '');
+    if (ovRaw) {
+      if (ovRaw.startsWith('/')) {
+        if (existsSync(ovRaw)) promptOverride = readFileSync(ovRaw, 'utf8');
+      } else if (ovRaw.startsWith('./') || ovRaw.endsWith('.md') || ovRaw.endsWith('.txt')) {
+        const p = join(stateDir, ovRaw.replace(/^\.\//, ''));
+        if (existsSync(p)) promptOverride = readFileSync(p, 'utf8');
+      } else {
+        promptOverride = ovRaw;
+      }
     }
   }
 
