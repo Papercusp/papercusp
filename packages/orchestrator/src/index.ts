@@ -26,6 +26,8 @@ export {
 export { createLogger } from './log';
 export { resolvePaths, resolveEnv } from './env';
 export { AGENT_BACKENDS } from './types';
+export { readFeaturesPg, durableOwnedFeatureIdsPg } from './state-pg';
+export type { PgStateContext } from './state-pg';
 export type { AgentBackend } from './types';
 export { promptCandidates, resolvePromptFile } from './prompt-resolve';
 export type { PromptResolveContext } from './prompt-resolve';
