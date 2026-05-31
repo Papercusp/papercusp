@@ -96,9 +96,20 @@ export type FeaturesJson = { features: FeatureRecord[] } | FeatureRecord[];
  * default flag set. `claude-code` (Anthropic claude-cli) emits
  * `stream-json` events with `content_block_delta`; `omp`
  * (`@oh-my-pi/pi-coding-agent`) emits its own `--mode json` event
- * stream with `message_update`/`text_delta`/`tool_call`/`state_update`.
+ * stream with `message_update`/`text_delta`/`tool_call`/`state_update`;
+ * `codex` (OpenAI Codex CLI) emits `codex exec --json` JSONL events.
+ *
+ * Canonical subprocess-spawn backend set. This is the SAME set as
+ * `apps/operator/lib/agent-config.ts` `AGENT_BACKENDS`, and a subset of
+ * `@restart/papercup-shared` chat-stream's (which additionally has
+ * `meridian` — a stateless HTTP round-trip with no subprocess, so it is
+ * NOT spawnable by the orchestrator and is intentionally excluded here).
+ * A drift-guard test in `apps/operator/lib/__tests__/agent-backend-sync.test.ts`
+ * asserts these three stay consistent (the submodule boundary rules out a
+ * single literal import, so the tuple-as-source + guard is the unification).
  */
-export type AgentBackend = 'claude-code' | 'omp';
+export const AGENT_BACKENDS = ['claude-code', 'omp', 'codex'] as const;
+export type AgentBackend = (typeof AGENT_BACKENDS)[number];
 
 /** Args passed to the orchestrator entry point. */
 export interface OrchestratorEnv {

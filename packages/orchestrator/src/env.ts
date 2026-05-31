@@ -19,9 +19,11 @@ export function resolveAgentBackend(agentCmd: string): AgentBackend {
   const explicit = (process.env.AGENT_BACKEND ?? '').trim().toLowerCase();
   if (explicit === 'omp' || explicit === 'pi') return 'omp';
   if (explicit === 'claude-code' || explicit === 'claude') return 'claude-code';
+  if (explicit === 'codex') return 'codex';
   // Infer from the binary name in agentCmd.
   const first = agentCmd.split(/\s+/).filter(Boolean)[0] ?? '';
   if (/(^|\/)(omp|pi)$/.test(first)) return 'omp';
+  if (/(^|\/)codex$/.test(first)) return 'codex';
   return 'claude-code';
 }
 
@@ -35,11 +37,12 @@ export function resolveAgentBackend(agentCmd: string): AgentBackend {
  * (`claude-opus-4-7`) or an alias (`opus`/`sonnet`/`haiku`). So for the
  * claude-code backend we strip a single leading `provider/` segment;
  * for omp (and an already-bare id) we pass the value through untouched.
- * Empty in → empty out.
+ * codex's `-m` likewise wants a bare id (`gpt-5.5`), so it strips the
+ * provider prefix the same way claude-code does. Empty in → empty out.
  */
 export function normalizeModelForBackend(model: string, backend: AgentBackend): string {
   if (!model) return '';
-  if (backend !== 'claude-code') return model;
+  if (backend !== 'claude-code' && backend !== 'codex') return model;
   const slash = model.indexOf('/');
   return slash > 0 ? model.slice(slash + 1) : model;
 }
