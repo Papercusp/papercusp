@@ -69,14 +69,13 @@ on `action`. `id` is a stable hash you choose so re-scans dedup.
 table only knows about these):
 
 - `/harness/<slug>` — harness home
-- `/harness/<slug>?panel=config&specTab=<tab>` — config files (tabs: spec, agents, knowledge, supervisor, contract, mcp, claudeSettings, env)
+- `/harness/<slug>?panel=config&specTab=<tab>` — config files (tabs: agents, config, knowledge, supervisor, mcp, claudeSettings, skills, env)
 - `/harness/<slug>?panel=brainstorm` — brainstorm tab
 - `/harness/<slug>?panel=proposals` — proposals
 - `/harness/<slug>?panel=summary` — summary
 - `/harness/<slug>?panel=experts` — experts
 - `/harness/<slug>?panel=insights` — insights
 - `/harness/<slug>/projects` and `/harness/<slug>/projects/<id>` — projects
-- `/harness/<slug>/spec` — friendly alias that redirects to the SPEC.md tab
 - `/wiki?target=<filename>[&harness=<slug>]` — wiki-link resolver for cross-harness file references
 - `/settings/<oracle|operator|api-keys|profile>` — operator settings
 - `/marketplace`, `/marketplace/<slug>` — marketplace
