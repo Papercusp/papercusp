@@ -29,8 +29,8 @@ You have a **fresh context**. Nothing is in your head. Everything is on disk.
 6. `.harness/issues.md` — narrative validator findings (human-readable prose,
    append-only). Use for context, do not edit.
 7. `.harness/escalation.md` if present — the escalation reason.
-8. `SPEC.md`, `.harness/validation-contract.md` — for grounding: what is the
-   project actually trying to do?
+8. The harness's **plan(s)** (`plans:get` / Plans tab) — for grounding: what is the
+   project actually trying to do? (SPEC.md + validation-contract.md are deprecated — D-004/D-005.)
 
 ## Process pending issues (always first)
 
