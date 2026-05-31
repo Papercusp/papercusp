@@ -26,11 +26,23 @@ import { readConfig, resolvePhase, configGet } from './config';
 import { buildPrompt } from './prompt-build';
 import { resolvePromptFile } from './prompt-resolve';
 
-export type RolePromptMode = 'autonomous' | 'chat';
+export type RolePromptMode = 'autonomous' | 'chat' | 'discuss';
 
 export interface AssembleRolePromptOptions {
   /** Registered harness slug (must exist in ~/.restart-harness-projects.json). */
   slug: string;
+  /**
+   * Pre-resolved project dir. When supplied, it is used verbatim and the
+   * built-in `lookupProjectDir` (a workspace-BLIND HTTP-to-:3055-or-legacy
+   * fallback) is skipped entirely. The operator is the workspace authority
+   * and resolves this in-process per `workspaceId` — passing it here both
+   * makes role launches workspace-correct AND avoids the host
+   * synchronously curl-ing itself mid-request (which fails for harnesses
+   * absent from the legacy registry, e.g. an active non-`default`
+   * workspace). Omitted by the autonomous pipeline / CLI callers, which
+   * fall back to `lookupProjectDir`.
+   */
+  projectDir?: string;
   /** Role name — must have a corresponding prompts/<role>.md (or a phase/dept variant). */
   role: string;
   /** Optional feature scope. Becomes a runtime-context bullet and a worktree cwd hint. */
@@ -122,7 +134,9 @@ export function lookupProjectDir(slug: string): string | null {
  * resolved — both are programming errors at the caller, not user errors.
  */
 export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPrompt {
-  const projectDir = lookupProjectDir(opts.slug);
+  // Prefer a caller-supplied (workspace-aware, in-process) projectDir; only
+  // fall back to the workspace-blind lookupProjectDir when none is given.
+  const projectDir = opts.projectDir ?? lookupProjectDir(opts.slug);
   if (!projectDir) {
     throw new Error(`assembleRolePrompt: harness "${opts.slug}" not registered in any known registry (papercusp workspace registry.json or legacy ~/.restart-harness-projects.json)`);
   }
@@ -162,6 +176,10 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
   if (opts.featureId) extras.push(`FEATURE_ID=${opts.featureId}`);
   if (mode === 'chat') {
     extras.push('CHAT=true (you are responding to a user message in real time; do not commit code; write supervisor-notes or .harness/notes/<feature>.md if you want the autonomous worker to act on something)');
+  } else if (mode === 'discuss') {
+    extras.push(
+      'DISCUSS_MODE=true (your normal job is to IMPLEMENT this feature, but a human wants to talk it through FIRST — so do not implement or commit anything in this conversation. Help them think it through: read the feature + plan + relevant code, ask clarifying questions, lay out approach options and their tradeoffs, surface risks. When you align on a direction, write it as a supervisor-note / .harness/notes/<feature>.md so the autonomous worker can pick it up. You are advising, not executing.)',
+    );
   }
   for (const e of opts.extras ?? []) extras.push(e);
 
