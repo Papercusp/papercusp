@@ -566,6 +566,17 @@ export interface InvokeOptions {
    * primitive to implement `orchestrator.cancel`.
    */
   signal?: AbortSignal;
+  /**
+   * Idempotency key (dbos-durable-jobs-2026-05-31 Phase 3, P-015). When set, it
+   * is used as the run ID so the `harness_run_output` record is keyed
+   * deterministically across re-invocations (e.g. a DBOS workflow step re-running
+   * after a crash). Before spawning, invoke() checks for a completed run under
+   * this key and, if found, returns the prior result WITHOUT re-spawning the
+   * agent — so wrapping invoke() as a durable step can't double-run a completed
+   * agent. Opt-in: unset (every current caller) keeps the timestamped run-id and
+   * always spawns, so existing behaviour is unchanged.
+   */
+  idempotencyKey?: string;
 }
 
 export async function invoke(
@@ -595,11 +606,45 @@ export async function invoke(
     promptFile = resolved;
   }
 
-  // 2. Feature ID + run ID.
+  // 2. Feature ID + run ID. An idempotency key (P-015) is used as the run ID so
+  //    the record is keyed deterministically across re-invocations; without it
+  //    the run ID stays timestamped (every current caller).
   const featureId = extractFeatureId(extras);
   const featureTag = featureId ? `-${featureId}` : '';
   const nowSec = (ctx.nowSeconds ?? (() => Math.floor(Date.now() / 1000)))();
-  const runId = makeRunId(role, featureId, nowSec);
+  const runId = options.idempotencyKey ?? makeRunId(role, featureId, nowSec);
+
+  // 2a. Idempotent short-circuit (P-015): if a completed run already exists
+  //     under this key, reuse it instead of re-spawning the agent. This is the
+  //     guard that lets invoke() be wrapped as a durable DBOS step — a crash
+  //     that re-runs a COMPLETED invoke returns the prior result, not a second
+  //     agent run. An *interrupted* run leaves no row (the row is written at run
+  //     end), so it still re-spawns on resume; the in-flight-run policy is
+  //     scoped in the Phase-3 sub-plan. Opt-in (only when a key is supplied).
+  if (options.idempotencyKey && ctx.pg && ctx.workspaceId) {
+    try {
+      const { readRunOutputPg } = await import('./run-output-pg');
+      const { harnessSlug: getSlug } = await import('./state');
+      const prior = await readRunOutputPg(
+        { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: getSlug(ctx.projectDir) },
+        runId,
+      );
+      if (prior) {
+        ctx.log(
+          `invoke ${role} idempotent hit (runId=${runId}, rc=${prior.exitCode}) — reusing prior run, no re-spawn`,
+        );
+        return {
+          output: prior.outBody.replace(/\n$/, ''),
+          jsonlPath: '',
+          outPath: '',
+          exitCode: prior.exitCode,
+          durationMs: prior.durationMs,
+        };
+      }
+    } catch (err) {
+      ctx.log(`  idempotency lookup failed (non-fatal, proceeding to spawn): ${(err as Error).message}`);
+    }
+  }
 
   // 3. Worktree cwd override. Caller's `options.cwd` wins; otherwise
   //    we infer from the registered worktreePathFor + the FEATURE_ID
