@@ -15,12 +15,16 @@
  */
 import { spawn } from 'node:child_process';
 import {
+  closeSync,
+  constants as fsConstants,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   writeFileSync,
+  writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -554,18 +558,45 @@ echo "papercusp: autonomous fleet spawns may not 'git push' (integration is the 
 exit 1
 `;
 
+// Cached per orchestrator process — the hooks dir is created once with an
+// unguessable name (see ensureFleetGitHooksDir) and reused across spawns.
+let cachedFleetGitHooksDir: string | null = null;
+
 /**
- * (Idempotently) write a hooks directory holding only the fleet pre-push
- * hook and return its absolute path. Static + shared (not per-spawn state),
- * so it needs no cleanup; re-writing the tiny file on each spawn is cheap and
- * race-safe (identical content). `core.hooksPath` pointing here means no
- * OTHER hook type runs for the spawn — fine, fleet agents commit with
- * `--no-verify` and the only hook we want is pre-push.
+ * Create (once per process, then cached) a hooks directory holding only the
+ * fleet pre-push hook and return its absolute path.
+ *
+ * Security: a `core.hooksPath` directory is an RCE sink — git executes
+ * whatever hooks live there — so it must not sit at a predictable, shared
+ * tmp path another user could pre-create / symlink (plant a hook, or clobber
+ * a victim file through our write). So: `mkdtempSync` mints an unguessable
+ * name and creates the dir atomically with mode 0700 (owner-only); the hook
+ * is written through `O_NOFOLLOW | O_EXCL` so a pre-existing symlink/file at
+ * the path errors rather than being followed/overwritten. `core.hooksPath`
+ * pointing here means no OTHER hook type runs for the spawn — fine, fleet
+ * agents commit with `--no-verify` and the only hook we want is pre-push.
  */
 export function ensureFleetGitHooksDir(): string {
-  const dir = join(tmpdir(), 'papercusp-fleet-githooks');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'pre-push'), FLEET_PRE_PUSH_HOOK, { mode: 0o755 });
+  if (cachedFleetGitHooksDir && existsSync(join(cachedFleetGitHooksDir, 'pre-push'))) {
+    return cachedFleetGitHooksDir;
+  }
+  // mkdtemp → 0700, owner-only, unguessable name (can't be pre-created).
+  const dir = mkdtempSync(join(tmpdir(), 'papercusp-fleet-githooks-'));
+  const hookPath = join(dir, 'pre-push');
+  // O_EXCL: the freshly-minted dir is empty, so this also fails loudly if
+  // anything raced a file in; O_NOFOLLOW: never write through a symlink.
+  const fd = openSync(
+    hookPath,
+    // eslint-disable-next-line no-bitwise
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+    0o700,
+  );
+  try {
+    writeSync(fd, FLEET_PRE_PUSH_HOOK);
+  } finally {
+    closeSync(fd);
+  }
+  cachedFleetGitHooksDir = dir;
   return dir;
 }
 
