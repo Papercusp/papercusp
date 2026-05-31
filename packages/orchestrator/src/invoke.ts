@@ -172,6 +172,38 @@ export function resolvePromptOverride(
 }
 
 /**
+ * Store-aware per-role prompt override (Phase 1b read-side cutover, D-7).
+ * Prefers the workspace-owned PG store
+ * (`harness_shared.harness_prompt_overrides` keyed by workspace_id, harness_slug,
+ * role) when a `pg` client + workspace + slug are available; otherwise — and on
+ * ANY failure (no pg, missing table, query error, empty) — falls back to the
+ * file/config.json `resolvePromptOverride` above. So this is regression-safe:
+ * an empty/absent store, or a PG hiccup, yields exactly today's behavior. The
+ * try/catch makes a store problem inert, never a spawn-breaker.
+ */
+export async function resolvePromptOverrideWithStore(
+  cfg: ReturnType<typeof readConfig>,
+  stateDir: string,
+  role: string,
+  opts: { pg?: OrchestratorPg; workspaceId?: string; harnessSlug?: string },
+): Promise<string> {
+  const { pg, workspaceId, harnessSlug } = opts;
+  if (pg && workspaceId && harnessSlug) {
+    try {
+      const rows = await pg`
+        SELECT prompt_md FROM harness_shared.harness_prompt_overrides
+         WHERE workspace_id = ${workspaceId} AND harness_slug = ${harnessSlug} AND role = ${role}
+         LIMIT 1`;
+      const md = rows?.[0]?.prompt_md;
+      if (typeof md === 'string' && md.length > 0) return md;
+    } catch {
+      /* table absent / query error → fall through to the file-based resolver */
+    }
+  }
+  return resolvePromptOverride(cfg, stateDir, role);
+}
+
+/**
  * Resolve the operator app's prompts directory. Walks up from the
  * orchestrator's cwd looking for `apps/operator/prompts`; honors the
  * `PAPERCUSP_OPERATOR_PROMPTS_DIR` env override.
@@ -726,8 +758,13 @@ export async function invoke(
     ctx.log(`  role=${role} timeout=${timeoutSeconds}s`);
   }
 
-  // 7. Per-role prompt override.
-  const promptOverride = resolvePromptOverride(cfg, ctx.stateDir, role);
+  // 7. Per-role prompt override — workspace-owned PG store preferred, with a
+  //    file/config.json fallback (regression-safe; see resolvePromptOverrideWithStore).
+  const promptOverride = await resolvePromptOverrideWithStore(cfg, ctx.stateDir, role, {
+    pg: ctx.pg,
+    workspaceId: ctx.workspaceId,
+    harnessSlug: harnessSlugFromProjectDir(ctx.projectDir),
+  });
   if (promptOverride) {
     ctx.log(`  role=${role} prompt-override applied (${promptOverride.length} chars)`);
   }

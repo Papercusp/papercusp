@@ -9,6 +9,7 @@ import {
   extractResult,
   splitCommand,
   resolvePromptOverride,
+  resolvePromptOverrideWithStore,
   resolveTimeout,
   resolveModel,
   resolveAgentForRole,
@@ -142,6 +143,69 @@ test('resolvePromptOverride — inline string returned literally', () => {
       ),
       'Be terse.',
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- store-aware override (Phase 1b read-side cutover, D-7) ---
+// mock pg: a tagged-template fn returning canned rows (or throwing).
+const mkPg = (rows: unknown[]) => ((..._a: unknown[]) => Promise.resolve(rows)) as never;
+const throwPg = (() => Promise.reject(new Error('table absent'))) as never;
+
+test('resolvePromptOverrideWithStore — PG store value wins', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'override-'));
+  try {
+    const got = await resolvePromptOverrideWithStore(
+      { promptOverrides: { worker: 'file inline' } },
+      dir,
+      'worker',
+      { pg: mkPg([{ prompt_md: '# from store' }]), workspaceId: 'ws1', harnessSlug: 'sheets' },
+    );
+    assert.equal(got, '# from store');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolvePromptOverrideWithStore — falls back to file when store empty', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'override-'));
+  try {
+    const got = await resolvePromptOverrideWithStore(
+      { promptOverrides: { worker: 'file inline' } },
+      dir,
+      'worker',
+      { pg: mkPg([]), workspaceId: 'ws1', harnessSlug: 'sheets' },
+    );
+    assert.equal(got, 'file inline');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolvePromptOverrideWithStore — PG error degrades to file (no throw)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'override-'));
+  try {
+    const got = await resolvePromptOverrideWithStore(
+      { promptOverrides: { worker: 'file inline' } },
+      dir,
+      'worker',
+      { pg: throwPg, workspaceId: 'ws1', harnessSlug: 'sheets' },
+    );
+    assert.equal(got, 'file inline');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolvePromptOverrideWithStore — no pg/ws/slug uses file resolver (CLI mode)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'override-'));
+  try {
+    assert.equal(
+      await resolvePromptOverrideWithStore({ promptOverrides: { worker: 'file inline' } }, dir, 'worker', {}),
+      'file inline',
+    );
+    assert.equal(await resolvePromptOverrideWithStore({}, dir, 'worker', { pg: mkPg([{ prompt_md: 'x' }]) }), '');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

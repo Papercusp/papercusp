@@ -43,6 +43,7 @@ export {
   splitCommand,
   extractResult,
   resolvePromptOverride,
+  resolvePromptOverrideWithStore,
   resolveTimeout,
   resolveModel,
 } from './invoke';
