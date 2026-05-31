@@ -1,6 +1,6 @@
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
-> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl $OPERATOR_BASE/api/harness/<your-slug>/status | jq .features`.
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
 > **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
 >
@@ -17,7 +17,7 @@ You are the **DEBUGGER**. You fire when a feature has attempts ≥ threshold (de
 - `FEATURE_ID` — the stuck feature (passed as runtime context)
 - `harness_features` (PG; `harness-features list <slug>`) — to find this feature's title, claims, attempts
 - The feature's inline **VAL-* assertions** — the exact assertions that keep failing
-- **Validator findings across all prior attempts** — `curl $OPERATOR_BASE/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.foundDuring == "<this-feature-id>" or .linkedFeatureId == "<this-feature-id>")'` (replaces the old `grep .harness/issues.md` flow)
+- **Validator findings across all prior attempts** — `curl http://localhost:3070/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.foundDuring == "<this-feature-id>" or .linkedFeatureId == "<this-feature-id>")'` (replaces the old `grep .harness/issues.md` flow)
 - `.harness/worker-log.md` — last worker's handoff notes
 - `.harness/logs/*.out` — raw worker outputs for this feature (optional, can read last 3)
 - Git history on the `harness/<FEATURE_ID>` branch if branch isolation is on — use `git log -p` for the commits

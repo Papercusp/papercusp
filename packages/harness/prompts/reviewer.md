@@ -1,6 +1,6 @@
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
-> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl $OPERATOR_BASE/api/harness/<your-slug>/status | jq .features`.
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
 > **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
 >
@@ -25,7 +25,7 @@ Your job in both modes: read the artifact, weigh it against intent and current s
 ### Inputs
 - The **owning plan** (its goal + `## Now`) — the user's authoritative scope/aspiration.
 - `AGENTS.md` — non-negotiables / stack constraints.
-- The scoper's proposed feature list — `harness-features list <slug>` (CLI) or `curl $OPERATOR_BASE/api/harness/$HARNESS_SLUG/status | jq .features` (HTTP). The legacy `.harness/features.json` no longer exists.
+- The scoper's proposed feature list — `harness-features list <slug>` (CLI) or `curl http://localhost:3070/api/harness/$HARNESS_SLUG/status | jq .features` (HTTP). The legacy `.harness/features.json` no longer exists.
 - The plan's inline **VAL-* assertions** (`harness_plan_assertions`) — the binding acceptance contract.
 
 ### Output (write to `.harness/plan-review.md`)
@@ -64,7 +64,7 @@ Be specific. Cite ids and line numbers. 2–5 bullets per section. `(none)` if e
 ### Inputs
 - The **owning plan** — its goal leads with the project's north-star aspiration.
 - The plan's items + `## Now` — the current concrete scope.
-- Current feature list + statuses — `harness-features list <slug>` (CLI) or `curl $OPERATOR_BASE/api/harness/$HARNESS_SLUG/status | jq .features` (HTTP).
+- Current feature list + statuses — `harness-features list <slug>` (CLI) or `curl http://localhost:3070/api/harness/$HARNESS_SLUG/status | jq .features` (HTTP).
 - `$PROPOSAL_FILE` — the single proposal markdown file you must judge.
 - (For context, you may scan other `.harness/proposals/*.md` to avoid greenlighting near-duplicates.)
 

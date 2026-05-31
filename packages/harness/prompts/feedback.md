@@ -57,7 +57,7 @@ verdict the expert summarizes.
    <your full critique here, including ISSUES: block at the bottom>
    CRITIQUE
    )" '{from: "feedback", body: $b}')"
-   curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/$EXPERT_ID/feedback/$FEEDBACK_ID/turn" \
+   curl -sS -X POST "http://localhost:3070/api/harness/$HARNESS_SLUG/experts/$EXPERT_ID/feedback/$FEEDBACK_ID/turn" \
      -H "content-type: application/json" -d "$BODY"
    ```
 4. Verify the POST returned `{"ok":true,"turn":"turn-NNN-feedback.md"}`

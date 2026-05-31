@@ -144,7 +144,7 @@ If at least one is "yes", emit features.
 For each required infra change, POST one feature to:
 
 ```bash
-curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/features/import" \
+curl -sS -X POST "http://localhost:3070/api/harness/$HARNESS_SLUG/features/import" \
   -H "content-type: application/json" \
   -d "$(cat <<JSON
 {
@@ -168,9 +168,8 @@ JSON
 )"
 ```
 
-The port is **the operator's port**: 3055 in production, but if your
-process has `OPERATOR_URL` or `INTERNAL_API_BASE` set, use that.
-Default to `$OPERATOR_BASE` when unset.
+`http://localhost:3070` is the operator's hono API host (the desktop's
+content/API layer). Use it as the API base for every curl above.
 
 ID convention: pick the next free `F-INFRA-NNN` by listing existing
 features (`harness-features list "$HARNESS_SLUG" | jq '[.[] | select(.feature_id | startswith("F-INFRA-")) | .feature_id]'`)

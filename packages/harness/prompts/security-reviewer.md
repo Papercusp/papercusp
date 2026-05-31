@@ -120,7 +120,7 @@ For each concrete risk + mitigation, POST one feature to
 `/api/harness/$HARNESS_SLUG/features/import` with `kind: 'security'`:
 
 ```bash
-curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/features/import" \
+curl -sS -X POST "http://localhost:3070/api/harness/$HARNESS_SLUG/features/import" \
   -H "content-type: application/json" \
   -d "$(cat <<JSON
 {

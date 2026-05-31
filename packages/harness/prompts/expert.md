@@ -38,7 +38,7 @@ BODY="$(jq -nR --arg c "$(cat <<'SPEC'
 <your full SPEC.md content here>
 SPEC
 )" '{content: $c}')"
-curl -sS -X PUT "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/experts/$EXPERT_ID/spec" \
+curl -sS -X PUT "http://localhost:3070/api/harness/$HARNESS_SLUG/experts/$EXPERT_ID/spec" \
   -H "content-type: application/json" -d "$BODY"
 ```
 
@@ -111,12 +111,12 @@ For each feedback agent:
 
 1. **Open the conversation.** Run:
    ```bash
-   curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback" \
+   curl -sS -X POST "http://localhost:3070/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback" \
      -H "content-type: application/json" -d '{"persona":"security"}'
    ```
    Returns `{feedbackId: "FB-NNN", ...}`. Then write your opening prompt:
    ```bash
-   curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback/FB-NNN/turn" \
+   curl -sS -X POST "http://localhost:3070/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback/FB-NNN/turn" \
      -H "content-type: application/json" \
      -d '{"from":"expert","body":"<current SPEC.md plus your specific question for this persona>"}'
    ```
@@ -130,7 +130,7 @@ For each feedback agent:
 3. **Continue the back-and-forth.** If you have more to say, append
    another expert turn:
    ```bash
-   curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback/FB-NNN/turn" \
+   curl -sS -X POST "http://localhost:3070/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback/FB-NNN/turn" \
      -H "content-type: application/json" \
      -d '{"from":"expert","body":"<your follow-up>"}'
    ```
@@ -142,7 +142,7 @@ For each feedback agent:
    When ending, summarize the conversation's `newIssues` honestly (these
    feed the convergence gate; lying breaks termination):
    ```bash
-   curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback/FB-NNN/end" \
+   curl -sS -X POST "http://localhost:3070/api/harness/$HARNESS_SLUG/experts/<your-id>/feedback/FB-NNN/end" \
      -H "content-type: application/json" \
      -d '{"verdict":{"newIssues":[{"summary":"...","severity":"critical|major|minor|trivial","specLines":"L42-L58"}],"coversPriorIssues":["FB-001#issue-2"]}}'
    ```
@@ -217,7 +217,7 @@ BODY="$(jq -nR --arg c "$(cat <<'ASRT'
 ASRT
 )" '{content: $c}')"
 
-curl -sS -X PUT "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/experts/$EXPERT_ID/assertions" \
+curl -sS -X PUT "http://localhost:3070/api/harness/$HARNESS_SLUG/experts/$EXPERT_ID/assertions" \
   -H "content-type: application/json" \
   -d "$BODY"
 ```

@@ -1,6 +1,6 @@
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
-> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
 > **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
 >
@@ -27,7 +27,7 @@ You do **not** decide if the feature is complete. A separate validator does. You
 1. **Active plan** — the authoritative scope. The feature's `source_plan_slug` field tells you which plan owns this work. Fetch it: `curl "http://localhost:3070/api/admin/plans/get?slug=$SOURCE_PLAN_SLUG&harness=$HARNESS_SLUG" | jq '{now: .now, decisions: .decisions}'`. The `decisions` array (D-NNN blocks) are the architectural constraints. The `now.state` paragraph is the current working intent.
 2. **Assertions** — the binding contract. Read the feature's `claims` array, then for each claim id fetch the assertion:
    ```bash
-   curl -sS "http://localhost:3055/api/harness/$HARNESS_SLUG/assertion/$CLAIM_ID"
+   curl -sS "http://localhost:3070/api/harness/$HARNESS_SLUG/assertion/$CLAIM_ID"
    # returns: { val_id, verify_text, evidence_text, status }
    # 404 → assertion not yet promoted; treat verify_text as the acceptance criterion in the feature body
    ```
@@ -46,7 +46,7 @@ You do **not** decide if the feature is complete. A separate validator does. You
 - **Don't mark `passed`.** Only `validating`. The validator makes the `passed` call.
 - **If blocked**, set status to `blocked`, POST the reason to the operator's pending issues queue, exit non-zero:
   ```bash
-  curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending" \
+  curl -sS -X POST "http://localhost:3070/api/harness/$HARNESS_SLUG/issues/append-pending" \
     -H "content-type: application/json" \
     -d '{"title":"BLOCKED: <one-line summary>","severity":"major","foundDuring":"<your feature id>","evidence":"<what stopped you>","suggestedFix":"<best-guess unblock path>"}'
   ```

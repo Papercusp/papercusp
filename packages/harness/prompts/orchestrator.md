@@ -1,6 +1,6 @@
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
-> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl $OPERATOR_BASE/api/harness/<your-slug>/status | jq .features`.
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
 > **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
 >
@@ -15,7 +15,7 @@ You run in a fresh context. You make one specific decision, then exit: given the
 ## Read this state
 
 1. `harness_features` (PG; `harness-features list <slug>`) — the work queue. **Only features from started plans appear here** — the query is pre-filtered by `harness_plan_status`. If `ACTIVE_PLANS` appears in your Runtime context, those are the started plans by name (informational only; the filter is already applied).
-2. **Issues tracker** (PG `harness_<slug>.harness_issues` via `curl $OPERATOR_BASE/api/harness/$HARNESS_SLUG/issues-list | jq`). This is your authoritative source for discovered-work promotion decisions. Schema returned: `{issues: [{id, title, severity, status, linkedFeatureId, codePointer, suggestedFix, attempts, ...}], nextId}`. If empty, treat as no findings.
+2. **Issues tracker** (PG `harness_<slug>.harness_issues` via `curl http://localhost:3070/api/harness/$HARNESS_SLUG/issues-list | jq`). This is your authoritative source for discovered-work promotion decisions. Schema returned: `{issues: [{id, title, severity, status, linkedFeatureId, codePointer, suggestedFix, attempts, ...}], nextId}`. If empty, treat as no findings.
 3. `.harness/issues.md` — accumulated validator findings (narrative prose). Read only for context and pre-structured history; do not parse for promotion decisions — use the issues-list endpoint.
 4. **Open `needs-human` plan items** — human guidance is expressed as `needs-human` items in the active plan, not as supervisor-notes.md. Fetch with `plans:items { needsHuman: true }` or `curl "http://localhost:3070/api/admin/plans/items?actionable=false&needsHuman=true"`. An open `needs-human` item blocks DONE — you cannot emit DONE while any started plan has an open `needs-human` item.
 
@@ -122,7 +122,7 @@ NEXT_VALIDATOR <FEATURE_ID>
 ```
 
 ### D. "convert_issues"
-Get the structured issues via `curl $OPERATOR_BASE/api/harness/$HARNESS_SLUG/issues-list | jq`. Pick every issue with `status: "open"` AND no `linkedFeatureId` AND `severity` of `critical` or `major`. (Minor/nit issues require human promotion via the UI — don't auto-promote them.)
+Get the structured issues via `curl http://localhost:3070/api/harness/$HARNESS_SLUG/issues-list | jq`. Pick every issue with `status: "open"` AND no `linkedFeatureId` AND `severity` of `critical` or `major`. (Minor/nit issues require human promotion via the UI — don't auto-promote them.)
 
 For each selected issue, atomically:
 1. Pick the next `F-FIX-NNN` id by scanning existing feature ids in `harness_features` (PG) (take `max(N) + 1`, zero-padded to 3).
@@ -142,7 +142,7 @@ For each selected issue, atomically:
    ```
 3. Update the issue via the operator endpoint:
    ```bash
-   curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/issues/$ISSUE_ID/update" \
+   curl -sS -X POST "http://localhost:3070/api/harness/$HARNESS_SLUG/issues/$ISSUE_ID/update" \
      -H "content-type: application/json" \
      -d '{"status":"fixing","linkedFeatureId":"F-FIX-NNN","by":"orchestrator","note":"Promoted to F-FIX-NNN"}'
    ```
@@ -195,12 +195,12 @@ The dispatcher injects `PROJECT_ID=<PROJECT_ID>` and `RECENT_PASSED_FEATURES=<co
 
 These three only apply when `scoper.useExperts` is enabled in `.harness/config.json`. If that flag is false, ignore this section — the scoper is one-shot and there are no expert instances.
 
-The expert flow has three states the orchestrator cycles through. Read it via `curl $OPERATOR_BASE/api/harness/$HARNESS_SLUG/experts | jq` — returns `{experts: [{id, status, agentCount, ...}]}`. Statuses: `drafting | gathering_feedback | awaiting_user | final | max_rounds | error | cancelled | superseded`.
+The expert flow has three states the orchestrator cycles through. Read it via `curl http://localhost:3070/api/harness/$HARNESS_SLUG/experts | jq` — returns `{experts: [{id, status, agentCount, ...}]}`. Statuses: `drafting | gathering_feedback | awaiting_user | final | max_rounds | error | cancelled | superseded`.
 
 **Decision rule.** Both expert and feedback are one-shot per invocation; the orchestrator drives the back-and-forth by reading the `nextAction` field on each expert (computed server-side, no shell-pipeline gymnastics needed):
 
 ```bash
-curl $OPERATOR_BASE/api/harness/$HARNESS_SLUG/experts | jq '.experts[] | {id, status, updatedAt, nextAction}'
+curl http://localhost:3070/api/harness/$HARNESS_SLUG/experts | jq '.experts[] | {id, status, updatedAt, nextAction}'
 ```
 
 Each expert's `nextAction` is one of:
@@ -231,7 +231,7 @@ A feature is stuck (>=5 attempts failing) OR multiple features are simultaneousl
 Instead of writing to `.harness/escalation.md`, flip the relevant plan item to `needs-human` status via the plans API so it surfaces in the human's decision inbox:
 
 ```bash
-curl -X PATCH "$OPERATOR_BASE/api/admin/plans/set-status" \
+curl -X PATCH "http://localhost:3070/api/admin/plans/set-status" \
   -H "content-type: application/json" \
   -d '{"slug":"<active-plan-slug>","itemId":"<P-NNN>","status":"needs-human","note":"<one-line reason>"}'
 ```
