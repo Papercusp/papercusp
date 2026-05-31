@@ -1,6 +1,6 @@
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
-> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl $OPERATOR_BASE/api/harness/<your-slug>/status | jq .features`.
 >
 > **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
 >
@@ -25,7 +25,7 @@ You have a **fresh context**. Nothing is in your head. Everything is on disk.
 3. `.harness/memory/MEMORY.md` — the previously-curated durable store. If
    missing, treat as empty.
 4. `harness_features` (PG; `harness-features list <slug>`) — current feature queue (status, attempts).
-5. **Issues tracker** (PG `harness_<slug>.harness_issues` via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq`) — structured issue tracker (after you've triggered triage). Schema below in "Process pending issues".
+5. **Issues tracker** (PG `harness_<slug>.harness_issues` via `curl $OPERATOR_BASE/api/harness/$HARNESS_SLUG/issues-list | jq`) — structured issue tracker (after you've triggered triage). Schema below in "Process pending issues".
 6. `.harness/issues.md` — narrative validator findings (human-readable prose,
    append-only). Use for context, do not edit.
 7. `.harness/escalation.md` if present — the escalation reason.
@@ -39,7 +39,7 @@ pending queue between your runs. Trigger the merge into the durable issues
 tracker before anything else:
 
 ```bash
-curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/triage" | jq
+curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/triage" | jq
 # returns { ok: true, merged: <N>, deduped: <M> }
 ```
 
@@ -51,7 +51,7 @@ truncated post-merge.
 
 Use the merge counts in your output line. The structured tracker at this
 point reflects the latest state — read it via `curl
-http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq` for any
+$OPERATOR_BASE/api/harness/$HARNESS_SLUG/issues-list | jq` for any
 follow-up reasoning.
 
 ### Schema of the structured issues tracker
@@ -107,7 +107,7 @@ with `status: "passed"` AND no new pending entry mentions the same pointer),
 mark it closed:
 
 ```bash
-curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/issues/$ISSUE_ID/update" \
+curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/issues/$ISSUE_ID/update" \
   -H "content-type: application/json" \
   -d '{"status":"closed","by":"curator","note":"Code path verified green during <round>"}'
 ```
@@ -140,7 +140,7 @@ Rules for merging:
 - **Deduplicate.** If `raw.md` has three entries saying the same thing,
   promote to one Lesson with the three cases as evidence.
 - **Drop stale.** If a lesson references a file, feature, or pattern that
-  no longer exists, remove it. Check `features.json` and `git ls-files`.
+  no longer exists, remove it. Check the work queue (`harness-features list <slug>`) and `git ls-files`.
 - **Preserve the *why*.** Never write "We use X" without the rationale.
 - **Keep it bounded.** If MEMORY.md would exceed ~200 lines, drop the
   weakest items (least-evidenced, oldest, most narrow). Quality over volume.

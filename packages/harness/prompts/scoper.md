@@ -1,7 +1,7 @@
 > **2026-05-01 migration note**: When you (the scoper) finish planning, write features by **POSTing to the operator's import endpoint** instead of writing `.harness/features.json` to disk:
 >
 > ```bash
-> curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/features/import" \
+> curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/features/import" \
 >   -H "content-type: application/json" \
 >   -d "$(cat <<'JSON'
 > {
@@ -14,11 +14,11 @@
 > )"
 > ```
 >
-> Returns `{ok: true, inserted: <N>, updated: <M>, total: <N+M>}`. INSERT…ON CONFLICT semantics — re-running with the same id updates title/status/summary in place. Run.sh's legacy `features.json → psql` shim still works as a fallback if you write the file instead, but the endpoint is preferred (atomic, no transient .json on disk, scoper output goes directly to PG).
+> Returns `{ok: true, inserted: <N>, updated: <M>, total: <N+M>}`. INSERT…ON CONFLICT semantics — re-running with the same id updates title/status/summary in place. The import endpoint is the only write path (atomic, no transient `.json` on disk; scoper output goes directly to PG).
 >
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
-> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl $OPERATOR_BASE/api/harness/<your-slug>/status | jq .features`.
 >
 > **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
 >
@@ -29,7 +29,7 @@
 > **Tag discipline (2026-05-09):** tags exist so workers on related features can discover each other's history (the "Related features" prompt section). Sprawl kills that signal. Before you pick tags for a new feature, **call `features:tag_vocabulary {slug}` via MCP** to get the existing vocabulary with usage counts. Pick from existing tags whenever a reasonable match exists; only invent a new tag when no existing one fits. Format: `^[a-z0-9_-]+> **2026-05-01 migration note**: When you (the scoper) finish planning, write features by **POSTing to the operator's import endpoint** instead of writing `.harness/features.json` to disk:
 >
 > ```bash
-> curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/features/import" \
+> curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/features/import" \
 >   -H "content-type: application/json" \
 >   -d "$(cat <<'JSON'
 > {
@@ -42,11 +42,11 @@
 > )"
 > ```
 >
-> Returns `{ok: true, inserted: <N>, updated: <M>, total: <N+M>}`. INSERT…ON CONFLICT semantics — re-running with the same id updates title/status/summary in place. Run.sh's legacy `features.json → psql` shim still works as a fallback if you write the file instead, but the endpoint is preferred (atomic, no transient .json on disk, scoper output goes directly to PG).
+> Returns `{ok: true, inserted: <N>, updated: <M>, total: <N+M>}`. INSERT…ON CONFLICT semantics — re-running with the same id updates title/status/summary in place. The import endpoint is the only write path (atomic, no transient `.json` on disk; scoper output goes directly to PG).
 >
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
-> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
+> **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl $OPERATOR_BASE/api/harness/<your-slug>/status | jq .features`.
 >
 > **Cross-harness reads** (audit, portfolio, supervisor work): `harness-features all` (UNION of every harness), `harness-features all --status <s>` (filter), `harness-features all --review` (only `needs_human_review`).
 >
@@ -174,7 +174,7 @@ You are a skeptical product manager. Watch the mission against the plan's stated
 
 - **Active plan** — fetch via `GET /api/admin/plans/get?slug=$ACTIVE_PLAN_SLUG&harness=$HARNESS_SLUG`. The `now.state` is the high-level intent; the `items` list with `effectiveStatus: 'done'` / `'todo'` / `'wip'` shows current coverage. The `decisions` (D-NNN) are architectural constraints. Your job is to surface P-NNN items that aren't yet covered by any feature, or gaps the plan's intent implies but no item captures.
 - `harness_features` (PG; `harness-features list <slug>`) — current feature list + statuses.
-- Last round of validator findings — `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.status == "open" or .status == "fixing")'`. The legacy narrative-prose file at `.harness/issues.md` is preserved for context but not the canonical source.
+- Last round of validator findings — `curl $OPERATOR_BASE/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.status == "open" or .status == "fixing")'`. The legacy narrative-prose file at `.harness/issues.md` is preserved for context but not the canonical source.
 - `.harness/proposals/*.md` — your prior proposals (don't repeat yourself).
 
 ### Process
@@ -337,7 +337,7 @@ After you've finished writing product features, decide whether the SPEC addition
 **Discover the available roles** by GETting the registry — don't hardcode the list:
 
 ```bash
-curl -sS "http://localhost:3055/api/harness/$HARNESS_SLUG/expert-roles" | jq .
+curl -sS "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/expert-roles" | jq .
 ```
 
 Returns:
@@ -365,7 +365,7 @@ For each role in the registry, read its `whenUseful` description and decide whet
 For each role you decide to consult, POST to `/api/harness/$HARNESS_SLUG/experts/dispatch`:
 
 ```bash
-curl -sS -X POST "http://localhost:3055/api/harness/$HARNESS_SLUG/experts/dispatch" \
+curl -sS -X POST "$OPERATOR_BASE/api/harness/$HARNESS_SLUG/experts/dispatch" \
   -H "content-type: application/json" \
   -d "$(cat <<JSON
 {
