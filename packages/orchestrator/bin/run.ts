@@ -5,9 +5,10 @@
  * `PAPERCUSP_USE_TS_ORCHESTRATOR=0` bash-fallback was removed once
  * parity gaps G4/G5/G6 closed and operator spawn sites moved to TS.
  *
- * `bash run.sh` may still exist on disk for backward compat with
- * external callers (supervisor.sh, other harness scripts) but no
- * longer drives an iteration loop from this binary.
+ * `bash run.sh` has since been deleted entirely (2026-05-30) — its
+ * last function-library call sites were ported onto `invoke-once.ts`.
+ * The `=0` check below is kept only to warn anyone who still sets the
+ * old env var; there is no bash fallback left to honor.
  */
 import { configGet, readConfig } from '../src/config.js';
 import { resolvePaths, resolveAgentBackend, resolveAgentCmd } from '../src/env.js';
