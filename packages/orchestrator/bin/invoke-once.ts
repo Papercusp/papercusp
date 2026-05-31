@@ -115,6 +115,10 @@ async function main(): Promise<number> {
       },
       role,
       extras,
+      // dbos-durable-jobs Phase 3 P-015: when the durable pipeline spawns
+      // invoke-once with IDEMPOTENCY_KEY set, invoke() keys the run row by it
+      // and reuses a prior completed run instead of re-spawning the agent.
+      process.env.IDEMPOTENCY_KEY ? { idempotencyKey: process.env.IDEMPOTENCY_KEY } : {},
     );
     if (typeof result.output === 'string' && result.output.length > 0) {
       // Surface the agent's actual output to stdout so callers reading
