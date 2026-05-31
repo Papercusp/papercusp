@@ -21,6 +21,8 @@
  * per pre-alpha freedom; revisit before any commercial launch.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { delimiter as PATH_DELIMITER } from 'node:path';
+import { homedir } from 'node:os';
 import type {
   Plugin,
   PapercuspContext,
@@ -60,6 +62,31 @@ const IDLE_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 60 * 1000;
 
 /**
+ * The operator host runs under a frozen PATH (systemd unit / Tauri
+ * sidecar) that often omits the dir holding the `gitnexus` binary:
+ *   - dev box: Homebrew/linuxbrew bin, where `npm i -g gitnexus` lands it;
+ *   - packaged desktop: `sidecar/bin`, where the build vendors it (Tauri
+ *     prepends that dir to the sidecar PATH — so the bare name resolves
+ *     there without any change here).
+ * Spawning the bare name under the un-augmented PATH fails with
+ * `spawn gitnexus ENOENT` and getDynamicTools() surfaces zero tools.
+ * Augment PATH with the common global-bin locations so resolution (and
+ * gitnexus's own `#!/usr/bin/env node` shebang) succeeds regardless of how
+ * the host was launched. Idempotent — only appends dirs not already present.
+ */
+function gitnexusPath(): string {
+  const parts = (process.env.PATH ?? '').split(PATH_DELIMITER).filter(Boolean);
+  const fallbacks = [
+    '/home/linuxbrew/.linuxbrew/bin',
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    `${homedir()}/.local/bin`,
+  ];
+  for (const f of fallbacks) if (!parts.includes(f)) parts.push(f);
+  return parts.join(PATH_DELIMITER);
+}
+
+/**
  * Children are keyed by workspace ID. Even though gitnexus's catalog is
  * machine-global (it indexes per-repo and shows them all), keying by
  * workspace gives us clean idle-cleanup semantics and avoids leaking
@@ -76,7 +103,7 @@ function startChild(): ChildHandle {
   // error if the binary is missing.
   const proc = spawn('gitnexus', ['mcp'], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env },
+    env: { ...process.env, PATH: gitnexusPath() },
   });
   const handle: ChildHandle = {
     proc,

@@ -7,22 +7,51 @@
  */
 
 const { spawn } = require('node:child_process');
+const { delimiter: PATH_DELIMITER } = require('node:path');
+const { homedir } = require('node:os');
 
 const IDLE_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 60 * 1000;
 
+/**
+ * The operator host runs under a frozen PATH (systemd unit / Tauri
+ * sidecar) that often omits the dir holding the `gitnexus` binary:
+ *   - dev box: Homebrew/linuxbrew bin, where `npm i -g gitnexus` lands it;
+ *   - packaged desktop: `sidecar/bin`, where the build vendors it (Tauri
+ *     prepends that dir to the sidecar PATH — so the bare name resolves
+ *     there without any change here).
+ * Spawning the bare name under the un-augmented PATH fails with
+ * `spawn gitnexus ENOENT` and getDynamicTools() surfaces zero tools.
+ * Augment PATH with the common global-bin locations so resolution (and
+ * gitnexus's own `#!/usr/bin/env node` shebang) succeeds regardless of how
+ * the host was launched. Idempotent — only appends dirs not already present.
+ */
+function gitnexusPath() {
+  const parts = (process.env.PATH ?? '').split(PATH_DELIMITER).filter(Boolean);
+  const fallbacks = [
+    '/home/linuxbrew/.linuxbrew/bin',
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    `${homedir()}/.local/bin`,
+  ];
+  for (const f of fallbacks) if (!parts.includes(f)) parts.push(f);
+  return parts.join(PATH_DELIMITER);
+}
+
 const children = new Map();
 
 function startChild() {
-  // Call gitnexus directly. We tried `npx --yes gitnexus mcp` but npm-as-
-  // child-of-node hits an internal bug on Node 25 ("Cannot destructure
-  // property 'package' of 'node.target'") so the npx wrapper never reaches
-  // the gitnexus entry. Direct PATH lookup works fine — gitnexus must be
-  // globally installed (`npm i -g gitnexus`); plugin host surfaces a clean
-  // discovery error if it isn't.
+  // Spawn gitnexus by bare name against the augmented PATH (gitnexusPath).
+  // `npx --yes gitnexus mcp` would be more robust for users who haven't
+  // `npm i -g`'d, but npm-as-child-of-node hits an internal bug on Node 25
+  // ("Cannot destructure property 'package' of 'node.target'") so the npx
+  // wrapper never reaches the gitnexus entry. The plugin therefore requires
+  // gitnexus to be discoverable on PATH — a global/Homebrew install (dev) or
+  // the `sidecar/bin` vendor (packaged desktop); the host surfaces a clean
+  // `spawn gitnexus ENOENT` discovery error if it isn't.
   const proc = spawn('gitnexus', ['mcp'], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env },
+    env: { ...process.env, PATH: gitnexusPath() },
   });
   const handle = {
     proc,
@@ -170,7 +199,7 @@ const plugin = {
   description: 'Proxies GitNexus MCP tools (code-graph queries) into the Papercusp tool registry.',
   capabilities: [
     'compute:exec:gitnexus',
-    
+
     'tools:gitnexus:list_repos',
     'tools:gitnexus:query',
     'tools:gitnexus:cypher',
