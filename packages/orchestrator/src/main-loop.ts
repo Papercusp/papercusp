@@ -941,6 +941,32 @@ async function handleDone(
  * After workers commit, handleNextValidator runs the synthesizer pass
  * and then the validator against the synthesized branch.
  */
+/**
+ * P-019: count open `needs-human` plan items at importance `urgent` for
+ * this harness. An urgent human gate means "stop churning" — the worker
+ * loop halts (idles) rather than dispatching more work. Best-effort: any
+ * error returns 0 (fail-open — never stall the loop on an infra blip).
+ * Mirrors handleDone's needs-human gate fetch.
+ */
+async function countOpenUrgentNeedsHuman(ctx: InvokeContext): Promise<number> {
+  const slug = harnessSlug(ctx);
+  if (!slug) return 0;
+  try {
+    const substrateBase =
+      process.env.PAPERCUSP_SUBSTRATE_BASE ??
+      process.env.PAPERCUSP_HONO_BASE ??
+      'http://localhost:3070';
+    const url = `${substrateBase}/api/admin/plans/items?needsHuman=true&harness_slugs=${encodeURIComponent(slug)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return 0;
+    const body = (await res.json()) as { items?: Array<{ item?: { importance?: string } }> };
+    if (!Array.isArray(body.items)) return 0;
+    return body.items.filter((r) => r?.item?.importance === 'urgent').length;
+  } catch {
+    return 0;
+  }
+}
+
 async function handleNextWorker(
   parsed: ParsedDecision,
   ctx: InvokeContext,
@@ -953,6 +979,18 @@ async function handleNextWorker(
   if (!fid) {
     logger.log(`ERROR: NEXT_WORKER without feature id: ${parsed.raw}`);
     return { terminal: true, exitCode: 4, reason: 'unparsable-decision' };
+  }
+
+  // P-019: an open `urgent` needs-human gate halts the worker loop — don't
+  // keep churning a feature while a human must act now. Non-urgent
+  // needs-human items still only gate DONE (see handleDone). Fail-open.
+  const urgentGates = await countOpenUrgentNeedsHuman(ctx);
+  if (urgentGates > 0) {
+    logger.log(
+      `WORKER halt: ${urgentGates} open urgent needs-human item(s) for this harness — ` +
+        `resolve them in the Plans tab → Inbox to resume. (NEXT_WORKER ${fid} deferred.)`,
+    );
+    return { terminal: false, exitCode: 0, reason: 'idle' };
   }
 
   // P-037: pre-dispatch distributed claim. Best-effort; logs the outcome
