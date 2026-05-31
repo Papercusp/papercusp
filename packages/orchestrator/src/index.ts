@@ -83,6 +83,7 @@ export type {
 } from './actions-block';
 export { evaluateCostCap, sumJsonlCost } from './cost-cap';
 export type { CostCapResult } from './cost-cap';
+export { postCuratorOutputs, postArchiveEvent } from './bus-posts';
 export { pruneLogs } from './prune-logs';
 export type { PruneResult } from './prune-logs';
 export { snapshotState } from './snapshot-state';
