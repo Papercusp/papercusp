@@ -476,8 +476,43 @@ export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
 ];
 
 /**
+ * Roles whose prompts **explicitly forbid the `Write`/`Edit` tools** — they
+ * are API/MCP-only (their output goes through the operator, not the working
+ * tree). For these we drop `Edit`/`Write` from the allow-list, mechanically
+ * enforcing the instruction the prompt already gives (resists a model that
+ * ignores it, e.g. via prompt-injection).
+ *
+ *   - `expert.md`:  "API-only access — do NOT use the `Write` or `Edit` tools"
+ *   - `feedback.md`: "API-only writes — do NOT use the `Write` or `Edit` tools."
+ *
+ * This is the ONLY per-role built-in tightening that's verifiably safe from a
+ * prompt read: other review/gate roles (reviewer, validator, infra-reviewer,
+ * project_manager, …) DO write legitimate output via the `Write` tool (review
+ * files, infra-contract.json, the spec), so denying it would break them.
+ * NOTE it's a defense-in-depth nudge, not a hard boundary: `Bash` is still
+ * granted (these roles curl/run things), so a determined spawn could write via
+ * a shell redirect — closing that needs a sandbox, not an allow-list. Further
+ * per-role cuts should be gated on a real fleet-spawn run, not a prompt read.
+ */
+export const FLEET_NO_WRITE_ROLES: ReadonlySet<string> = new Set(['expert', 'feedback']);
+
+/**
+ * The allow-list for a given fleet role: the full safe kit
+ * (`FLEET_ALLOWED_TOOLS`), minus `Edit`/`Write` for the API-only roles in
+ * `FLEET_NO_WRITE_ROLES`. An unknown/empty role gets the full kit — never
+ * silently strip a tool from a role we don't recognise.
+ */
+export function fleetAllowedToolsForRole(role: string | undefined): string[] {
+  if (role && FLEET_NO_WRITE_ROLES.has(role)) {
+    return FLEET_ALLOWED_TOOLS.filter((t) => t !== 'Edit' && t !== 'Write');
+  }
+  return [...FLEET_ALLOWED_TOOLS];
+}
+
+/**
  * Extra CLI args that make claude-code load + trust the per-spawn signed
- * `.mcp.json` AND run under a closed whitelist instead of unrestricted.
+ * `.mcp.json` AND run under a closed, per-role whitelist instead of
+ * unrestricted.
  *
  * omp path-discovers `<cwd>/.mcp.json` and connects automatically.
  * claude-code does NOT: it treats a project `.mcp.json` as "pending
@@ -507,6 +542,7 @@ export function claudeMcpArgs(
   roleAgentCmd: string,
   mcpConfigPath: string,
   hasWorkspace: boolean,
+  role: string,
 ): string[] {
   if (
     agentBackend !== 'claude-code' ||
@@ -536,7 +572,7 @@ export function claudeMcpArgs(
     // Allow-list as one space-joined value (claude splits it); deny patterns
     // as separate argv elements so each pattern's internal spaces (e.g.
     // `Bash(git push:*)`) survive. Both forms verified against claude 2.1.158.
-    out.push('--allowed-tools', FLEET_ALLOWED_TOOLS.join(' '));
+    out.push('--allowed-tools', fleetAllowedToolsForRole(role).join(' '));
     out.push('--disallowed-tools', ...FLEET_DISALLOWED_TOOLS);
   }
   return out;
@@ -1207,6 +1243,7 @@ export async function invoke(
       roleAgentCmd,
       join(cwd, '.mcp.json'),
       Boolean(ctx.workspaceId),
+      role,
     ),
   );
 
