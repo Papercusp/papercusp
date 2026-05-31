@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS harness_shared.harness_plan_status (
 -- Row-level security: workspace isolation.
 ALTER TABLE harness_shared.harness_plan_status ENABLE ROW LEVEL SECURITY;
 
+-- DROP-then-CREATE so the policy is idempotent when the table pre-exists
+-- (CREATE POLICY has no IF NOT EXISTS; mirrors the trigger handling below).
+DROP POLICY IF EXISTS harness_plan_status_workspace_isolation
+  ON harness_shared.harness_plan_status;
 CREATE POLICY harness_plan_status_workspace_isolation
   ON harness_shared.harness_plan_status
   AS PERMISSIVE FOR ALL TO public

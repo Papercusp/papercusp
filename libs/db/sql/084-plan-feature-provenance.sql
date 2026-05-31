@@ -33,13 +33,16 @@ CREATE INDEX IF NOT EXISTS hfc_source_plan_slug_idx
   ON harness_shared.harness_features_consolidated (source_plan_slug)
   WHERE source_plan_slug IS NOT NULL;
 
--- Backfill from existing metadata_json where the old key is present.
+-- Backfill from existing metadata where the old key is present. (The column
+-- is `metadata` JSONB per 001-shared.sql — earlier drafts of this file said
+-- `metadata_json`, which is not a column on this table and made the backfill
+-- fail to parse; fixed 2026-05-31.)
 UPDATE harness_shared.harness_features_consolidated
 SET
-  source_plan_slug     = metadata_json->>'source_plan',
+  source_plan_slug     = metadata->>'source_plan',
   source_plan_item_ids = ARRAY(
-    SELECT jsonb_array_elements_text(metadata_json->'from_plan_items')
+    SELECT jsonb_array_elements_text(metadata->'from_plan_items')
   )
 WHERE
-  metadata_json ? 'source_plan'
+  metadata ? 'source_plan'
   AND source_plan_slug IS NULL;
