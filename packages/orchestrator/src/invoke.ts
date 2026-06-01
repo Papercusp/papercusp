@@ -27,7 +27,7 @@ import {
   writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { configGet, readConfig } from './config';
 import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
@@ -43,7 +43,7 @@ import {
   type SpawnMcpHandle,
   type SpawnCodexHomeHandle,
 } from './spawn-mcp';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { AgentBackend, InvokeResult } from './types';
 import { resolveAgentBackend, normalizeModelForBackend } from './env';
 import { workspaceHomeDir } from './workspace';
@@ -586,6 +586,43 @@ export function resolveFleetAllowedDomains(): string[] {
 }
 
 /**
+ * Root for the fleet sandbox's redirected package-manager caches. The sandbox
+ * makes everything outside cwd read-only (allowWrite is cwd + this dir), but
+ * npm/pip/cargo write their caches under $HOME (e.g. ~/.npm/_cacache) — so a
+ * real `npm install` under the sandbox fails EROFS (verified P-014/D-013: the
+ * registry was REACHED, the cache write was denied). Rather than weaken
+ * containment by leaving $HOME writable, we add THIS one dedicated dir to
+ * `allowWrite` and point each ecosystem's cache env at a per-project subdir of
+ * it (see fleetSandboxCacheEnv). NOT under `~/.papercusp` (which is denyRead).
+ * Computed from the operator process home so it matches the absolute cache-env
+ * paths even when the child gets a per-spawn HOME (resolveSpawnHome).
+ */
+export const FLEET_SANDBOX_CACHE_ROOT = join(homedir(), '.cache', 'papercusp-fleet-sandbox');
+
+/**
+ * Cache-redirect env for a sandboxed spawn whose project lives at `cwd`. Points
+ * npm/yarn/pip/cargo/go + the generic XDG cache at a per-project subdir of
+ * FLEET_SANDBOX_CACHE_ROOT (which is allow-listed for writes). Per-project
+ * keying (a short hash of cwd) keeps one project's build from poisoning
+ * another's cache. Absolute paths, so they're independent of the child's HOME.
+ * The caller mkdir -p's the dirs; only applied when the sandbox is enabled.
+ */
+export function fleetSandboxCacheEnv(cwd: string): Record<string, string> {
+  const key = createHash('sha256').update(cwd).digest('hex').slice(0, 16);
+  const base = join(FLEET_SANDBOX_CACHE_ROOT, key);
+  return {
+    npm_config_cache: join(base, 'npm'),
+    YARN_CACHE_FOLDER: join(base, 'yarn'),
+    PIP_CACHE_DIR: join(base, 'pip'),
+    CARGO_HOME: join(base, 'cargo'),
+    GOCACHE: join(base, 'go-build'),
+    GOMODCACHE: join(base, 'go-mod'),
+    // Catch-all: many tools honor XDG (~/.cache → here), incl. pip + Playwright.
+    XDG_CACHE_HOME: join(base, 'xdg'),
+  };
+}
+
+/**
  * `Read`/`Edit` permission DENY rules for the credential paths. Required
  * because claude's sandbox covers `Bash` + children only — the `Read`/`Edit`
  * TOOLS bypass it (they go through the permission system), and the default
@@ -644,7 +681,10 @@ export function fleetSandboxSettingsForRole(role: string | undefined): Record<st
       allowUnsandboxedCommands: false,
       // cwd is always writable in claude's sandbox; this allowWrite is the
       // explicit (no-extra-paths) form of that default.
-      filesystem: { allowWrite: ['.'], denyRead: [...FLEET_SANDBOX_DENY_READ] },
+      // cwd + the allow-listed package-manager cache root (FLEET_SANDBOX_CACHE_ROOT):
+      // without the latter a real `npm/pip/cargo install` fails EROFS, since those
+      // caches live under $HOME which the sandbox makes read-only (D-013/P-014).
+      filesystem: { allowWrite: ['.', FLEET_SANDBOX_CACHE_ROOT], denyRead: [...FLEET_SANDBOX_DENY_READ] },
       network: { allowedDomains: resolveFleetAllowedDomains() },
     },
     // Read/Edit tool deny rules — the sandbox does NOT cover these tools (D-004).
@@ -1625,6 +1665,18 @@ export async function invoke(
     // from a Bash subprocess). Complements the sandbox's denyRead + egress block.
     if (fleetSandboxEnabled()) {
       spawnEnv.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1';
+      // Redirect package-manager caches into the allow-listed cache root: the
+      // sandbox makes $HOME read-only, so npm/pip/cargo (which cache under
+      // ~/.npm/_cacache etc.) fail EROFS on a real install (D-013/P-014).
+      // Absolute, per-project paths — independent of the per-spawn HOME above.
+      // mkdir -p so bwrap can bind the dirs; harmless when no sandbox engages
+      // (codex/omp aren't sandboxed → their $HOME stays writable, cache just
+      // lands here instead).
+      const cacheEnv = fleetSandboxCacheEnv(cwd);
+      for (const dir of new Set(Object.values(cacheEnv))) {
+        try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort; a real install would surface the error */ }
+      }
+      Object.assign(spawnEnv, cacheEnv);
     }
 
     // Per-spawn .mcp.json: write the seven-param URL config so OMP

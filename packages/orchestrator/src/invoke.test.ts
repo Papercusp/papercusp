@@ -27,6 +27,8 @@ import {
   codexSandboxArgs,
   fleetSandboxSettingsForRole,
   resolveFleetAllowedDomains,
+  fleetSandboxCacheEnv,
+  FLEET_SANDBOX_CACHE_ROOT,
   FLEET_SANDBOX_ALLOWED_DOMAINS,
   FLEET_SANDBOX_DENY_READ,
   FLEET_SANDBOX_DENY_RULES,
@@ -754,7 +756,8 @@ test('fleetSandboxSettingsForRole — cwd-write is uniform (P-004: sandbox cwd i
   // (verified P-004); write-discipline per role lives at the allowed-tools layer.
   for (const r of [...FLEET_NO_WRITE_ROLES, 'worker', 'documenter', 'unknown-role', undefined]) {
     const s = fleetSandboxSettingsForRole(r as any) as any;
-    assert.deepEqual(s.sandbox.filesystem.allowWrite, ['.'], `${r} cwd write`);
+    // cwd + the allow-listed pkg-cache root (uniform across roles, D-013/P-014)
+    assert.deepEqual(s.sandbox.filesystem.allowWrite, ['.', FLEET_SANDBOX_CACHE_ROOT], `${r} cwd write`);
     // cred protection + the registry egress allowlist are uniform across roles
     assert.ok(s.sandbox.filesystem.denyRead.includes('~/.ssh'));
     assert.ok(s.sandbox.network.allowedDomains.includes('registry.npmjs.org'));
@@ -815,13 +818,43 @@ test('fleetSandboxSettingsForRole — emits the env-resolved allowlist (deployme
   }
 });
 
+test('fleetSandboxCacheEnv — redirects pkg-manager caches under the allow-listed cache root (D-013/P-014: $HOME is RO under the sandbox)', () => {
+  const env = fleetSandboxCacheEnv('/some/project');
+  // every cache path lives under the allow-listed root (so it is writable)
+  for (const [k, v] of Object.entries(env)) {
+    assert.ok(v.startsWith(FLEET_SANDBOX_CACHE_ROOT + '/'), `${k} (${v}) must be under the cache root`);
+  }
+  // the ecosystems a fleet toolchain actually hits
+  assert.ok(env.npm_config_cache && env.PIP_CACHE_DIR && env.CARGO_HOME && env.YARN_CACHE_FOLDER);
+  assert.ok(env.XDG_CACHE_HOME, 'XDG catch-all present (pip/playwright/etc.)');
+  // absolute paths (independent of the child HOME)
+  assert.ok(env.npm_config_cache.startsWith('/'));
+});
+
+test('fleetSandboxCacheEnv — per-project keying: different cwds get distinct cache dirs (no cross-project poisoning)', () => {
+  const a = fleetSandboxCacheEnv('/project/a');
+  const b = fleetSandboxCacheEnv('/project/b');
+  assert.notEqual(a.npm_config_cache, b.npm_config_cache);
+  // same cwd → stable (cache persists across spawns of one project)
+  assert.equal(fleetSandboxCacheEnv('/project/a').npm_config_cache, a.npm_config_cache);
+});
+
+test('fleetSandboxSettingsForRole — allowWrite includes cwd AND the cache root (so a real install can write its cache)', () => {
+  const s = fleetSandboxSettingsForRole('worker') as any;
+  assert.ok(s.sandbox.filesystem.allowWrite.includes('.'), 'cwd writable');
+  assert.ok(
+    s.sandbox.filesystem.allowWrite.includes(FLEET_SANDBOX_CACHE_ROOT),
+    'cache root writable (else npm/pip/cargo install → EROFS)',
+  );
+});
+
 test('claudeSandboxArgs — enabled + claude-code → --settings with the per-role sandbox block', () => {
   const args = claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', true, true, 'worker');
   assert.equal(args[0], '--settings');
   const parsed = JSON.parse(args[1]);
   assert.equal(parsed.sandbox.enabled, true);
   assert.ok(parsed.sandbox.filesystem.denyRead.includes('~/.ssh'));
-  assert.deepEqual(parsed.sandbox.filesystem.allowWrite, ['.']);
+  assert.deepEqual(parsed.sandbox.filesystem.allowWrite, ['.', FLEET_SANDBOX_CACHE_ROOT]);
 });
 
 test('claudeSandboxArgs — disabled flag → [] (off by default)', () => {
