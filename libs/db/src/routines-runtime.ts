@@ -9,6 +9,9 @@ import { insertPendingEvent } from './pending-events';
 
 export interface RoutineRow {
   id: string;
+  /** Workspace that owns this routine (per-window-workspace-context P-041) —
+   *  stamped onto the pending_events it fires so the queue is workspace-scoped. */
+  workspaceId: string;
   installSlug: string;
   name: string;
   triggerKind: 'cron' | 'webhook' | 'api';
@@ -73,6 +76,7 @@ export async function fireRoutine(
 
   // Insert the pending event.
   const event = await insertPendingEvent(sql, {
+    workspaceId: routine.workspaceId,
     installSlug: routine.installSlug,
     kind: 'routine',
     targetRole: routine.targetRole,
@@ -176,6 +180,7 @@ export async function deleteRoutine(sql: Sql, installSlug: string, name: string)
 function rowToRoutine(row: any): RoutineRow {
   return {
     id: row.id,
+    workspaceId: row.workspace_id,
     installSlug: row.install_slug,
     name: row.name,
     triggerKind: row.trigger_kind,
