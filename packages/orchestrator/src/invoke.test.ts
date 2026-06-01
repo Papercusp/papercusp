@@ -23,6 +23,7 @@ import {
   ensureFleetGitHooksDir,
   gitConfigNoPushEnv,
   claudeSandboxArgs,
+  codexSandboxArgs,
   fleetSandboxSettingsForRole,
   FLEET_SANDBOX_DENY_READ,
   FLEET_SANDBOX_DENY_RULES,
@@ -750,11 +751,33 @@ test('selectStreamFormat — codex with explicit `exec` subcommand → none (use
   assert.equal(selectStreamFormat('codex', 'codex exec --json'), 'none');
 });
 
-test('streamFormatFlags — codex-json carries exec + json + unconditional sandbox bypass', () => {
+test('streamFormatFlags — codex-json carries exec + json only (sandbox decided by codexSandboxArgs)', () => {
   assert.deepEqual(
     streamFormatFlags('codex-json'),
-    ['exec', '--json', '--skip-git-repo-check', '--ephemeral', '-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'],
+    ['exec', '--json', '--skip-git-repo-check', '--ephemeral'],
   );
+});
+
+test('codexSandboxArgs — flag ON → -s workspace-write (contained); flag OFF → danger-full-access default', () => {
+  assert.deepEqual(
+    codexSandboxArgs('codex', 'codex-json', 'codex', true),
+    ['-s', 'workspace-write'],
+  );
+  assert.deepEqual(
+    codexSandboxArgs('codex', 'codex-json', 'codex', false),
+    ['-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'],
+  );
+});
+
+test('codexSandboxArgs — non-codex → [] (no-op for claude/omp)', () => {
+  assert.deepEqual(codexSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', true), []);
+  assert.deepEqual(codexSandboxArgs('omp', 'omp-json', 'omp -p', true), []);
+});
+
+test('codexSandboxArgs — user set their own -s/--sandbox/bypass → defer to them', () => {
+  assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex -s read-only', true), []);
+  assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex --sandbox workspace-write', false), []);
+  assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex --dangerously-bypass-approvals-and-sandbox', true), []);
 });
 
 test('extractResult — codex-json concatenates agent_message item.completed text', () => {

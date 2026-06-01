@@ -385,14 +385,12 @@ export function streamFormatFlags(fmt: StreamFormat): string[] {
     case 'omp-json':
       return ['--mode', 'json', '--no-session'];
     case 'codex-json':
-      // `codex exec --json` → JSONL events. Orchestrator spawns are always
-      // autonomous and need MCP tool calls + shell to run un-gated, so the
-      // sandbox/approval bypass is unconditional here (under `-s read-only`
-      // codex CANCELS MCP tool calls — handoff §8). `--skip-git-repo-check`
-      // lets it run in non-repo cwds; `--ephemeral` keeps no rollout on disk.
-      // Model (`-m`), the prompt stdin `-`, and CODEX_HOME/MCP are wired in
-      // the spawn path (model flag is backend-aware; codex has no .mcp.json).
-      return ['exec', '--json', '--skip-git-repo-check', '--ephemeral', '-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'];
+      // `codex exec --json` → JSONL events. `--skip-git-repo-check` lets it run
+      // in non-repo cwds; `--ephemeral` keeps no rollout on disk. The sandbox
+      // policy (`-s …`) is decided separately by codexSandboxArgs (flag-gated),
+      // appended to extraFlags BEFORE the `-` stdin positional. Model (`-m`),
+      // the prompt stdin `-`, and CODEX_HOME/MCP are wired in the spawn path.
+      return ['exec', '--json', '--skip-git-repo-check', '--ephemeral'];
     case 'none':
       return [];
   }
@@ -626,6 +624,52 @@ export function claudeSandboxArgs(
     return [];
   }
   return ['--settings', JSON.stringify(fleetSandboxSettingsForRole(role))];
+}
+
+/**
+ * codex's sandbox policy flags (plan fleet-spawn-sandbox-2026-06-01, Phase 2).
+ * codex has its OWN native sandbox: Linux bubblewrap+seccomp, macOS Seatbelt.
+ *
+ *  - flag ON  → `-s workspace-write`: the contained mode. Verified vs codex on
+ *    this box — confines writes to the workspace (+ default writable roots like
+ *    /tmp), blocks out-of-workspace writes (e.g. `~/.bashrc` → "Read-only file
+ *    system"), and blocks command network egress (curl → exit 6). NOTE codex
+ *    `workspace-write` reads broadly (it CAN read `~/.ssh`) — codex has no
+ *    `denyRead` equivalent, so cred-read closure relies on the egress block +
+ *    the subprocess env-scrub, not the sandbox. Approval is non-interactive in
+ *    `exec` mode (no hang).
+ *  - flag OFF → the prior default: `-s danger-full-access
+ *    --dangerously-bypass-approvals-and-sandbox` (unchanged behavior).
+ *
+ * Appended to `extraFlags` (before the `-` stdin positional), NOT to the tail
+ * of finalArgv, because codex requires options before the positional prompt.
+ * Defers to a user-set `-s`/`--sandbox`/bypass in AGENT_CMD.
+ *
+ * OPEN RISK (gated to the real-spawn pass, plan P-007/P-012): whether codex's
+ * MCP tool calls work under `workspace-write`. The handoff note records that
+ * `-s read-only` CANCELS codex MCP tool calls; `workspace-write` is less
+ * restrictive but this is unverified against the live operator MCP. If it also
+ * cancels MCP, codex can't be both sandboxed AND tool-enabled, and this stays
+ * off. That's why flag-OFF keeps the working `danger-full-access` default.
+ */
+export function codexSandboxArgs(
+  agentBackend: AgentBackend,
+  streamFormat: StreamFormat,
+  roleAgentCmd: string,
+  enabled: boolean,
+): string[] {
+  if (agentBackend !== 'codex' || streamFormat !== 'codex-json') return [];
+  // Defer to a user-chosen sandbox/bypass posture in AGENT_CMD.
+  if (
+    /(?:^|\s)-s\s/.test(roleAgentCmd) ||
+    roleAgentCmd.includes('--sandbox') ||
+    roleAgentCmd.includes('--dangerously-bypass-approvals-and-sandbox')
+  ) {
+    return [];
+  }
+  return enabled
+    ? ['-s', 'workspace-write']
+    : ['-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'];
 }
 
 /**
@@ -1078,6 +1122,11 @@ export async function invoke(
   const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(roleAgentCmd);
   const streamFormat = selectStreamFormat(agentBackend, roleAgentCmd);
   const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
+
+  // codex sandbox policy (plan fleet-spawn-sandbox Phase 2) — flag-gated
+  // workspace-write vs the prior danger-full-access default. Goes in extraFlags
+  // (before the `-` stdin positional) because codex wants options before the prompt.
+  extraFlags.push(...codexSandboxArgs(agentBackend, streamFormat, roleAgentCmd, fleetSandboxEnabled()));
 
   // 5. Per-role model — only inject if user didn't already pass one.
   //    codex's model flag is `-m` (bare id); claude/omp use `--model`.
