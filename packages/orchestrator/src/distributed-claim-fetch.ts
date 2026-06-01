@@ -1,17 +1,18 @@
 /**
- * distributed-claim-fetch — Phase 6 P-037 (orchestrator side).
+ * distributed-claim-fetch — Model B Stage-5 (orchestrator side).
  *
  * The orchestrator runs as a subprocess of the operator; substrate
  * handles live in the operator's hono-host (port 3070 by default).
  * Before dispatching a worker, the orchestrator POSTs to
- * /api/harness/:slug/claim-feature so the substrate can arbitrate
- * a distributed claim per v5 §0.6.
+ * /api/harness/:slug/claim-feature to record an LWW ADVISORY claim
+ * (D-002 — no merge-order arbitration; appending always succeeds).
  *
  * Observability-first: this module ONLY fetches + returns the result.
- * The caller (main-loop.handleNextWorker) decides what to do with
- * `won: false` — currently it logs + proceeds (single-engineer dogfood
- * has no contention; the audit log fills with `won: true` rows). A
- * future flag flip enables drop-on-loss.
+ * The caller (main-loop.handleNextWorker) dispatches on `claimed`.
+ * `claimed: false` means a human flipped the feature to working
+ * (`reason: 'manually-active'`); contention with another peer's later
+ * claim is NOT reported here — it surfaces via the clobber toast + the
+ * orchestrator backoff downstream.
  *
  * Pure: fetchFn + envGet injected so this module is unit-testable.
  */
@@ -29,14 +30,17 @@ export interface FetchClaimOpts {
 }
 
 export interface ClaimFetchResult {
-  /** 'attempted' | 'single-writer-fallback' | 'substrate-not-booted' | 'pubkey-unresolved' | 'fetch-failed'. */
+  /** 'attempted' | 'single-writer-fallback' | 'substrate-not-booted' | 'pubkey-unresolved' | 'manually-active' | 'fetch-failed'. */
   reason: string;
-  /** Did the orchestrator win this claim attempt (or skip = single-writer fallback)? */
-  won: boolean;
+  /**
+   * Did the advisory claim get recorded (so the orchestrator should
+   * dispatch)? True on a recorded claim OR a single-writer/fetch fallback;
+   * false only when blocked (`manually-active`).
+   */
+  claimed: boolean;
   strategy?: 'distributed' | 'single-writer';
-  winner_pubkey?: string;
   my_pubkey?: string;
-  audit_outcome?: 'won' | 'lost';
+  audit_outcome?: 'won' | 'lost' | 'timeout' | 'error';
   /** Wall-clock ms the round-trip took. Logged for the P-037c latency budget. */
   latencyMs: number;
   /** Error message when reason === 'fetch-failed'. */
@@ -71,7 +75,7 @@ export async function fetchDistributedClaim(
     if (!res.ok) {
       return {
         reason: 'fetch-failed',
-        won: true, // proceed by default — operator route doesn't know us
+        claimed: true, // proceed by default — operator route doesn't know us
         latencyMs,
         error: `HTTP ${res.status}`,
       };
@@ -79,11 +83,10 @@ export async function fetchDistributedClaim(
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     return {
       reason: typeof body.reason === 'string' ? body.reason : 'attempted',
-      won: body.won !== false, // default to true on missing field — safer
+      claimed: body.claimed !== false, // default to true on missing field — safer
       strategy: body.strategy as 'distributed' | 'single-writer' | undefined,
-      winner_pubkey: body.winner_pubkey as string | undefined,
       my_pubkey: body.my_pubkey as string | undefined,
-      audit_outcome: body.audit_outcome as 'won' | 'lost' | undefined,
+      audit_outcome: body.audit_outcome as ClaimFetchResult['audit_outcome'],
       latencyMs,
     };
   } catch (e: unknown) {
@@ -91,7 +94,7 @@ export async function fetchDistributedClaim(
     const msg = e instanceof Error ? e.message : String(e);
     return {
       reason: 'fetch-failed',
-      won: true, // network failure = legacy single-writer path
+      claimed: true, // network failure = legacy single-writer path
       latencyMs,
       error: msg.slice(0, 200),
     };

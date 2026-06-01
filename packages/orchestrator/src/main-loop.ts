@@ -171,9 +171,9 @@ async function tryDistributedClaim(
     githubUserId: userId,
   });
   logger.log(
-    `[claim] ${featureId} ${r.won ? 'won' : 'LOST'} (${r.latencyMs}ms) ` +
+    `[claim] ${featureId} ${r.claimed ? 'claimed' : 'BLOCKED'} (${r.latencyMs}ms) ` +
       `reason=${r.reason}` +
-      (r.winner_pubkey ? ` winner=${r.winner_pubkey.slice(0, 12)}…` : '') +
+      (r.my_pubkey ? ` me=${r.my_pubkey.slice(0, 12)}…` : '') +
       (r.error ? ` error=${r.error}` : ''),
   );
 }

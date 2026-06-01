@@ -11,7 +11,7 @@ function jsonRes(body: unknown, status = 200): Response {
 describe('fetchDistributedClaim', () => {
   it('POSTs to the claim-feature endpoint with the right payload', async () => {
     const fetchFn = vi.fn(async () =>
-      jsonRes({ strategy: 'distributed', reason: 'attempted', won: true }),
+      jsonRes({ strategy: 'distributed', reason: 'attempted', claimed: true }),
     );
     await fetchDistributedClaim({
       operatorBase: 'http://localhost:3070',
@@ -29,9 +29,9 @@ describe('fetchDistributedClaim', () => {
     expect(init.body).toContain('"github_user_id":42');
   });
 
-  it('returns won:true when the endpoint returns 200 with won:true', async () => {
+  it('returns claimed:true when the endpoint returns 200 with claimed:true', async () => {
     const fetchFn = vi.fn(async () =>
-      jsonRes({ strategy: 'distributed', reason: 'attempted', won: true, my_pubkey: 'abc' }),
+      jsonRes({ strategy: 'distributed', reason: 'attempted', claimed: true, my_pubkey: 'abc' }),
     );
     const r = await fetchDistributedClaim({
       operatorBase: 'http://localhost:3070',
@@ -40,15 +40,15 @@ describe('fetchDistributedClaim', () => {
       githubUserId: 1,
       fetchFn: fetchFn as unknown as typeof fetch,
     });
-    expect(r.won).toBe(true);
+    expect(r.claimed).toBe(true);
     expect(r.reason).toBe('attempted');
     expect(r.my_pubkey).toBe('abc');
     expect(r.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
-  it('returns won:false on lost claim', async () => {
+  it('returns claimed:false when a human flipped the feature to working', async () => {
     const fetchFn = vi.fn(async () =>
-      jsonRes({ strategy: 'distributed', reason: 'attempted', won: false, winner_pubkey: 'xyz' }),
+      jsonRes({ strategy: 'distributed', reason: 'manually-active', claimed: false }),
     );
     const r = await fetchDistributedClaim({
       operatorBase: 'http://localhost:3070',
@@ -57,13 +57,13 @@ describe('fetchDistributedClaim', () => {
       githubUserId: 1,
       fetchFn: fetchFn as unknown as typeof fetch,
     });
-    expect(r.won).toBe(false);
-    expect(r.winner_pubkey).toBe('xyz');
+    expect(r.claimed).toBe(false);
+    expect(r.reason).toBe('manually-active');
   });
 
-  it('returns won:true with reason single-writer-fallback when substrate is off', async () => {
+  it('returns claimed:true with reason single-writer-fallback when substrate is off', async () => {
     const fetchFn = vi.fn(async () =>
-      jsonRes({ strategy: 'single-writer', won: true, reason: 'single-writer-fallback' }),
+      jsonRes({ strategy: 'single-writer', claimed: true, reason: 'single-writer-fallback' }),
     );
     const r = await fetchDistributedClaim({
       operatorBase: 'http://localhost:3070',
@@ -72,12 +72,12 @@ describe('fetchDistributedClaim', () => {
       githubUserId: 1,
       fetchFn: fetchFn as unknown as typeof fetch,
     });
-    expect(r.won).toBe(true);
+    expect(r.claimed).toBe(true);
     expect(r.reason).toBe('single-writer-fallback');
     expect(r.strategy).toBe('single-writer');
   });
 
-  it('returns reason=fetch-failed + won:true on non-2xx (legacy fallback)', async () => {
+  it('returns reason=fetch-failed + claimed:true on non-2xx (legacy fallback)', async () => {
     const fetchFn = vi.fn(async () => new Response('boom', { status: 500 }));
     const r = await fetchDistributedClaim({
       operatorBase: 'http://localhost:3070',
@@ -87,11 +87,11 @@ describe('fetchDistributedClaim', () => {
       fetchFn: fetchFn as unknown as typeof fetch,
     });
     expect(r.reason).toBe('fetch-failed');
-    expect(r.won).toBe(true);
+    expect(r.claimed).toBe(true);
     expect(r.error).toContain('HTTP 500');
   });
 
-  it('returns reason=fetch-failed + won:true on network throw', async () => {
+  it('returns reason=fetch-failed + claimed:true on network throw', async () => {
     const fetchFn = vi.fn(async () => {
       throw new Error('econnrefused');
     });
@@ -103,13 +103,13 @@ describe('fetchDistributedClaim', () => {
       fetchFn: fetchFn as unknown as typeof fetch,
     });
     expect(r.reason).toBe('fetch-failed');
-    expect(r.won).toBe(true);
+    expect(r.claimed).toBe(true);
     expect(r.error).toContain('econnrefused');
   });
 
   it('reports latencyMs', async () => {
     const fetchFn = vi.fn(
-      async () => new Promise<Response>((res) => setTimeout(() => res(jsonRes({ won: true })), 5)),
+      async () => new Promise<Response>((res) => setTimeout(() => res(jsonRes({ claimed: true })), 5)),
     );
     const r = await fetchDistributedClaim({
       operatorBase: 'http://localhost:3070',
@@ -121,7 +121,7 @@ describe('fetchDistributedClaim', () => {
     expect(r.latencyMs).toBeGreaterThanOrEqual(5);
   });
 
-  it('defaults won to true when the response body omits the field', async () => {
+  it('defaults claimed to true when the response body omits the field', async () => {
     const fetchFn = vi.fn(async () => jsonRes({ strategy: 'single-writer' }));
     const r = await fetchDistributedClaim({
       operatorBase: 'http://localhost:3070',
@@ -130,6 +130,6 @@ describe('fetchDistributedClaim', () => {
       githubUserId: 1,
       fetchFn: fetchFn as unknown as typeof fetch,
     });
-    expect(r.won).toBe(true);
+    expect(r.claimed).toBe(true);
   });
 });
