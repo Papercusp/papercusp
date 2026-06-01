@@ -536,9 +536,20 @@ export const FLEET_SANDBOX_DENY_READ: readonly string[] = [
  * unaffected; this list only governs what a sandboxed Bash *command* can fetch.
  *
  * Tradeoff (D-005): every domain here is reachable with TLS UNINSPECTED, so it
- * widens a potential exfil channel. Keep it to package registries. Tighten by
- * editing this list; a security-locked deployment can set it to `[]`. Per-role
+ * widens a potential exfil channel. Keep it to package registries. Per-role
  * narrowing (read-only roles need none) is a future refinement.
+ *
+ * DEPLOYMENT-EXTENSIBLE (the no-fork widening path — the enabler for default-on,
+ * D-012): the effective list is resolved at spawn time by
+ * `resolveFleetAllowedDomains()`, which layers two env knobs over this base so a
+ * deployment whose toolchain needs a non-registry host (a private registry, a
+ * Playwright/Cypress browser CDN, an internal mirror) can adjust WITHOUT editing
+ * code — exactly the breakage axis a per-project default-on must absorb:
+ *   • `PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS` — comma/space-separated extra
+ *     hosts APPENDED to this base (deduped).
+ *   • `PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS=1` — lockdown: ignore the base +
+ *     the append var and emit `[]` (a security-hardened deployment blocks ALL
+ *     sandboxed-Bash egress). Wins over the append var.
  */
 export const FLEET_SANDBOX_ALLOWED_DOMAINS: readonly string[] = [
   'registry.npmjs.org',
@@ -553,6 +564,25 @@ export const FLEET_SANDBOX_ALLOWED_DOMAINS: readonly string[] = [
   'objects.githubusercontent.com',
   'raw.githubusercontent.com',
 ];
+
+/**
+ * Resolve the effective sandboxed-Bash egress allowlist for this spawn: the
+ * `FLEET_SANDBOX_ALLOWED_DOMAINS` base plus any deployment additions, or `[]`
+ * under lockdown. See the const docstring for the two env knobs. This is the
+ * no-fork widening path that lets a default-on sandbox absorb a project whose
+ * build/test toolchain reaches a host outside the registry defaults, instead of
+ * that role's Bash step failing with an opaque egress block. Resolved from the
+ * trusted orchestrator env, never from agent-supplied tool input.
+ */
+export function resolveFleetAllowedDomains(): string[] {
+  const lockdown = process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS;
+  if (lockdown === '1' || lockdown === 'true') return [];
+  const extra = (process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS ?? '')
+    .split(/[\s,]+/)
+    .map((d) => d.trim())
+    .filter(Boolean);
+  return [...new Set([...FLEET_SANDBOX_ALLOWED_DOMAINS, ...extra])];
+}
 
 /**
  * `Read`/`Edit` permission DENY rules for the credential paths. Required
@@ -594,9 +624,11 @@ export function fleetSandboxEnabled(): boolean {
  *    stays at the allowed-tools layer (FLEET_NO_WRITE_ROLES already lose the
  *    Edit/Write tools); the residual Bash-escape is a known, documented limit.
  *  - Per-role EGRESS *is* the achievable axis (e.g. `expert`/`feedback` do web
- *    research and would need an allowlist, while a worker needs none). But the
- *    exact per-role domains require the real-spawn verification pass (P-012),
- *    so the floor is deny-all `[]` until then. That's where `role` will branch.
+ *    research and would need an allowlist, while a worker needs none) — that's
+ *    where `role` will branch. Today the egress floor is the registry allowlist
+ *    `resolveFleetAllowedDomains()` (base + the deployment env knobs, D-012),
+ *    uniform across roles; the exact per-role narrowing still wants the
+ *    real-spawn verification pass (P-012).
  */
 export function fleetSandboxSettingsForRole(role: string | undefined): Record<string, unknown> {
   // role: reserved for per-role egress policy (P-012). Uniform floor today; see docstring.
@@ -612,7 +644,7 @@ export function fleetSandboxSettingsForRole(role: string | undefined): Record<st
       // cwd is always writable in claude's sandbox; this allowWrite is the
       // explicit (no-extra-paths) form of that default.
       filesystem: { allowWrite: ['.'], denyRead: [...FLEET_SANDBOX_DENY_READ] },
-      network: { allowedDomains: [...FLEET_SANDBOX_ALLOWED_DOMAINS] },
+      network: { allowedDomains: resolveFleetAllowedDomains() },
     },
     // Read/Edit tool deny rules — the sandbox does NOT cover these tools (D-004).
     permissions: { deny: [...FLEET_SANDBOX_DENY_RULES] },

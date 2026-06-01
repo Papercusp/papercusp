@@ -25,6 +25,8 @@ import {
   claudeSandboxArgs,
   codexSandboxArgs,
   fleetSandboxSettingsForRole,
+  resolveFleetAllowedDomains,
+  FLEET_SANDBOX_ALLOWED_DOMAINS,
   FLEET_SANDBOX_DENY_READ,
   FLEET_SANDBOX_DENY_RULES,
 } from './invoke.js';
@@ -715,6 +717,60 @@ test('fleetSandboxSettingsForRole — cwd-write is uniform (P-004: sandbox cwd i
     // cred protection + the registry egress allowlist are uniform across roles
     assert.ok(s.sandbox.filesystem.denyRead.includes('~/.ssh'));
     assert.ok(s.sandbox.network.allowedDomains.includes('registry.npmjs.org'));
+  }
+});
+
+test('resolveFleetAllowedDomains — base registry list by default (no env)', () => {
+  delete process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS;
+  delete process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS;
+  const d = resolveFleetAllowedDomains();
+  assert.deepEqual(d, [...FLEET_SANDBOX_ALLOWED_DOMAINS]);
+  assert.ok(d.includes('registry.npmjs.org'));
+  assert.ok(!d.includes('example.com'));
+});
+
+test('resolveFleetAllowedDomains — APPEND var adds deployment hosts (comma/space-separated, trimmed, deduped, base kept)', () => {
+  delete process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS;
+  process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS =
+    ' cdn.playwright.dev, registry.npmjs.org\tregistry.internal.corp ';
+  try {
+    const d = resolveFleetAllowedDomains();
+    // base preserved
+    assert.ok(d.includes('registry.npmjs.org'));
+    assert.ok(d.includes('github.com'));
+    // extras appended
+    assert.ok(d.includes('cdn.playwright.dev'));
+    assert.ok(d.includes('registry.internal.corp'));
+    // deduped: the duplicate registry.npmjs.org appears exactly once
+    assert.equal(d.filter((h) => h === 'registry.npmjs.org').length, 1);
+  } finally {
+    delete process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS;
+  }
+});
+
+test('resolveFleetAllowedDomains — DENY_ALL_EGRESS lockdown → [] and wins over the append var', () => {
+  process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS = 'cdn.playwright.dev';
+  process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS = '1';
+  try {
+    assert.deepEqual(resolveFleetAllowedDomains(), []);
+    // and it flows through the settings builder
+    const s = fleetSandboxSettingsForRole('worker') as any;
+    assert.deepEqual(s.sandbox.network.allowedDomains, []);
+  } finally {
+    delete process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS;
+    delete process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS;
+  }
+});
+
+test('fleetSandboxSettingsForRole — emits the env-resolved allowlist (deployment extension flows through)', () => {
+  delete process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS;
+  process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS = 'cdn.playwright.dev';
+  try {
+    const s = fleetSandboxSettingsForRole('validator') as any;
+    assert.ok(s.sandbox.network.allowedDomains.includes('cdn.playwright.dev'));
+    assert.ok(s.sandbox.network.allowedDomains.includes('registry.npmjs.org'));
+  } finally {
+    delete process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS;
   }
 });
 
