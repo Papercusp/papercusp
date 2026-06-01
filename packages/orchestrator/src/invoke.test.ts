@@ -32,6 +32,7 @@ import {
   fleetSrtModelDomains,
   buildFleetSrtSettings,
   wrapSpawnWithSrt,
+  backendUsesSrt,
   FLEET_SANDBOX_CACHE_ROOT,
   FLEET_SANDBOX_ALLOWED_DOMAINS,
   FLEET_SANDBOX_DENY_READ,
@@ -876,12 +877,20 @@ test('fleetSandboxSettingsForRole — allowWrite includes cwd AND the cache root
   );
 });
 
-// --- codex containment via external srt-wrap (P-017/D-017) ----------------
+// --- codex + omp containment via external srt-wrap (P-017/D-017; D-018/D-019) ---
 
-test('fleetSrtModelDomains — codex gets the OpenAI hosts; omp/claude get none (not wrapped)', () => {
+test('backendUsesSrt — codex + omp wrapped; claude-code uses its own sandbox', () => {
+  assert.equal(backendUsesSrt('codex'), true);
+  assert.equal(backendUsesSrt('omp'), true);
+  assert.equal(backendUsesSrt('claude-code'), false);
+});
+
+test('fleetSrtModelDomains — codex gets the OpenAI hosts; omp relies on loopback (cloud via env)', () => {
   const codex = fleetSrtModelDomains('codex');
   assert.ok(codex.includes('api.openai.com'));
   assert.ok(codex.includes('chatgpt.com'));
+  // omp's model is loopback here (covered by localhost/127.0.0.1 in the settings);
+  // cloud-omp deployments add the host via PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS
   assert.deepEqual(fleetSrtModelDomains('omp'), []);
   assert.deepEqual(fleetSrtModelDomains('claude-code'), []);
 });
@@ -890,7 +899,7 @@ test('buildFleetSrtSettings — codex: egress allowlist covers operator + model 
   delete process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS;
   delete process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS;
   const codexHome = `${process.env.HOME ?? '/home/x'}/.papercusp/role-codex-homes/session-1`;
-  const s = buildFleetSrtSettings({ cwd: '/proj', backend: 'codex', agentHome: codexHome }) as any;
+  const s = buildFleetSrtSettings({ cwd: '/proj', backend: 'codex', agentHomes: [codexHome] }) as any;
   const dom = s.network.allowedDomains;
   // operator (loopback) + model + registry all reachable through srt's proxy
   assert.ok(dom.includes('127.0.0.1') && dom.includes('localhost'), 'operator loopback');
@@ -905,8 +914,23 @@ test('buildFleetSrtSettings — codex: egress allowlist covers operator + model 
     'CODEX_HOME re-allowed within the ~/.papercusp denyRead');
 });
 
-test('buildFleetSrtSettings — no allowRead when the agent home is not under a denied dir', () => {
-  const s = buildFleetSrtSettings({ cwd: '/proj', backend: 'codex', agentHome: '/tmp/codex-home' }) as any;
+test('buildFleetSrtSettings — omp: ~/.omp + PI_CODING_AGENT_DIR writable; loopback model reachable; no allowRead (dirs outside denyRead)', () => {
+  delete process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS;
+  const home = process.env.HOME ?? '/home/x';
+  const ompHome = `${home}/.omp`;
+  const piDir = '/proj/.harness/pi-sessions';
+  const s = buildFleetSrtSettings({ cwd: '/proj', backend: 'omp', agentHomes: [ompHome, piDir] }) as any;
+  // omp's agent/auth/models SQLite dirs are writable (else readonly-DB at startup)
+  assert.ok(s.filesystem.allowWrite.includes(ompHome));
+  assert.ok(s.filesystem.allowWrite.includes(piDir));
+  // loopback model + operator reachable through the proxy
+  assert.ok(s.network.allowedDomains.includes('127.0.0.1') && s.network.allowedDomains.includes('localhost'));
+  // ~/.omp + pi-sessions aren't under a denyRead dir → no allowRead needed
+  assert.ok(!s.filesystem.allowRead, 'omp dirs outside denyRead');
+});
+
+test('buildFleetSrtSettings — multiple agentHomes; no allowRead when none under a denied dir', () => {
+  const s = buildFleetSrtSettings({ cwd: '/proj', backend: 'codex', agentHomes: ['/tmp/codex-home'] }) as any;
   assert.ok(!s.filesystem.allowRead, 'no allowRead needed when home is outside denyRead');
   assert.ok(s.filesystem.allowWrite.includes('/tmp/codex-home'));
 });
@@ -923,15 +947,23 @@ test('wrapSpawnWithSrt — codex+enabled+srt → srt -s … -c with no_proxy cle
   assert.match(shell, /exec 'codex' 'exec' '-' '--model' 'gpt-5\.5'/);
 });
 
-test('wrapSpawnWithSrt — passthrough for non-codex / disabled / missing srt (claude+omp self-handle)', () => {
+test('wrapSpawnWithSrt — omp+enabled+srt → wrapped (no_proxy cleared + exec omp; @promptfile arg preserved)', () => {
+  const w = wrapSpawnWithSrt('omp', ['-p', '@/tmp/prompt.txt', '--model', 'qwen2.5-coder:14b'], {
+    enabled: true, backend: 'omp', srtBin: '/usr/bin/srt', settingsPath: '/tmp/s.json',
+  });
+  assert.equal(w.command, '/usr/bin/srt');
+  const shell = w.argv[3];
+  assert.match(shell, /no_proxy=''/);
+  assert.match(shell, /exec 'omp' '-p' '@\/tmp\/prompt\.txt' '--model' 'qwen2\.5-coder:14b'/);
+});
+
+test('wrapSpawnWithSrt — passthrough for claude / disabled / missing srt', () => {
   // disabled
   assert.equal(wrapSpawnWithSrt('codex', ['exec'], { enabled: false, backend: 'codex', srtBin: '/usr/bin/srt', settingsPath: '/tmp/s.json' }).command, 'codex');
-  // omp (not wrapped yet)
-  assert.equal(wrapSpawnWithSrt('omp', ['-p'], { enabled: true, backend: 'omp', srtBin: '/usr/bin/srt', settingsPath: '/tmp/s.json' }).command, 'omp');
-  // claude (uses its own --settings)
+  // claude (uses its own --settings, not srt)
   assert.equal(wrapSpawnWithSrt('claude', ['-p'], { enabled: true, backend: 'claude-code', srtBin: '/usr/bin/srt', settingsPath: '/tmp/s.json' }).command, 'claude');
-  // srt absent → fail open to unwrapped (the spawn site throws before this in practice)
-  assert.equal(wrapSpawnWithSrt('codex', ['exec'], { enabled: true, backend: 'codex', srtBin: null, settingsPath: '/tmp/s.json' }).command, 'codex');
+  // srt absent → unwrapped (the spawn site throws before this in practice)
+  assert.equal(wrapSpawnWithSrt('omp', ['-p'], { enabled: true, backend: 'omp', srtBin: null, settingsPath: '/tmp/s.json' }).command, 'omp');
 });
 
 test('claudeSandboxArgs — enabled + claude-code → --settings with the per-role sandbox block', () => {

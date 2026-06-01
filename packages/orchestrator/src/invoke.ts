@@ -804,11 +804,16 @@ export function codexSandboxArgs(
  * into the isolated netns (unreachable) — so the wrap clears `no_proxy` inside
  * the srt shell, sending operator + model traffic through srt's proxy instead.
  *
- * omp uses the SAME architecture but is NOT wrapped yet: its model-endpoint host
- * is provider-dependent (unknown, vs codex's stable OpenAI hosts) and omp can't
- * be run on this box to verify (mis-config), so wrapping it could sever omp's own
- * model reach. Reintroduce omp here once its model host is known + an omp-under-srt
- * spawn is verifiable (D-010/D-017). Until then omp runs unsandboxed.
+ * omp (no native sandbox at all) uses the SAME wrap (D-018/D-019): omp's model
+ * + MCP are loopback on this box (ollama / the meridian bridge) — the same
+ * loopback-through-srt's-proxy transport proven for codex — so its egress
+ * allowlist is the operator + localhost + registries (a cloud-model omp adds its
+ * host via PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS). Its writable agent dirs
+ * (`~/.omp` + PI_CODING_AGENT_DIR = `<project>/.harness/pi-sessions`, which holds
+ * omp's agent/auth/models SQLite DBs) are added to allowWrite. Verified under
+ * srt: omp starts cleanly + reaches its model (the residual omp↔ollama
+ * tool-schema 400 is an omp bug, present with or without srt — NOT a containment
+ * gap). claude uses its own `--settings` sandbox, not srt.
  * ──────────────────────────────────────────────────────────────────────── */
 
 /** `srt` binary path (the egress+fs sandbox wrapper) if on PATH, else null. */
@@ -822,8 +827,12 @@ export function srtBinOnPath(): string | null {
 
 /**
  * Model-endpoint hosts the wrapped agent process must reach THROUGH srt's proxy.
- * codex (ChatGPT auth) talks to the OpenAI API + auth hosts. omp returns `[]` —
- * it's not wrapped yet (provider-dependent host; see the section header).
+ * codex (ChatGPT auth) talks to the OpenAI API + auth hosts. omp returns `[]`:
+ * on this box its model is loopback (ollama :11434 / the meridian bridge :3456),
+ * already covered by the `localhost`/`127.0.0.1` entries in buildFleetSrtSettings;
+ * a deployment that points omp at a CLOUD model adds that host via
+ * `PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS` (omp's provider is deployment-set,
+ * so there's no single stable host to hardcode like codex's OpenAI).
  */
 export function fleetSrtModelDomains(backend: AgentBackend): string[] {
   if (backend === 'codex') {
@@ -834,26 +843,27 @@ export function fleetSrtModelDomains(backend: AgentBackend): string[] {
 
 /**
  * srt settings for an externally-wrapped agent spawn. Confines the WHOLE agent
- * process: writes → cwd + the pkg-cache root + (codex) its CODEX_HOME; egress →
- * the operator (localhost/127.0.0.1) + the model endpoints + the package
- * registries/CDNs (resolveFleetAllowedDomains); credential dirs hidden via
- * `denyRead`, with `allowRead` re-permitting the agent's own home when it sits
- * under a denied dir (codex's CODEX_HOME lives under `~/.papercusp`, verified
- * D-017). srt schema: filesystem {allowWrite, denyWrite, denyRead, allowRead}.
+ * process: writes → cwd + the pkg-cache root + the backend's own agent dirs
+ * (`agentHomes` — codex's CODEX_HOME; omp's `~/.omp` + PI_CODING_AGENT_DIR);
+ * egress → the operator (localhost/127.0.0.1) + the model endpoints + the
+ * package registries/CDNs (resolveFleetAllowedDomains); credential dirs hidden
+ * via `denyRead`, with `allowRead` re-permitting any agentHome that sits under a
+ * denied dir (codex's CODEX_HOME lives under `~/.papercusp`, verified D-017). srt
+ * schema: filesystem {allowWrite, denyWrite, denyRead, allowRead}.
  */
 export function buildFleetSrtSettings(opts: {
   cwd: string;
   backend: AgentBackend;
-  agentHome?: string | null;
+  agentHomes?: string[];
 }): Record<string, unknown> {
   const home = homedir();
   const abs = (p: string) => (p.startsWith('~/') ? join(home, p.slice(2)) : p);
   const denyRead = FLEET_SANDBOX_DENY_READ.map(abs);
-  const allowWrite = [opts.cwd, FLEET_SANDBOX_CACHE_ROOT, ...(opts.agentHome ? [opts.agentHome] : [])];
-  // Re-allow reading the agent's own home if it's under a denyRead dir (codex
-  // CODEX_HOME is under ~/.papercusp) so it can load its config.toml + auth.json.
-  const allowRead =
-    opts.agentHome && denyRead.some((d) => opts.agentHome!.startsWith(d)) ? [opts.agentHome] : [];
+  const homes = (opts.agentHomes ?? []).filter(Boolean).map(abs);
+  const allowWrite = [opts.cwd, FLEET_SANDBOX_CACHE_ROOT, ...homes];
+  // Re-allow reading any agent home that's under a denyRead dir (codex
+  // CODEX_HOME is under ~/.papercusp) so the agent can load its config + auth.
+  const allowRead = homes.filter((h) => denyRead.some((d) => h.startsWith(d)));
   return {
     network: {
       allowedDomains: [
@@ -877,7 +887,7 @@ export function buildFleetSrtSettings(opts: {
 export function writeFleetSrtSettings(opts: {
   cwd: string;
   backend: AgentBackend;
-  agentHome?: string | null;
+  agentHomes?: string[];
 }): string {
   const dir = mkdtempSync(join(tmpdir(), 'papercusp-fleet-srt-'));
   const path = join(dir, 'srt-settings.json');
@@ -890,21 +900,27 @@ function shQuote(parts: string[]): string {
   return parts.map((p) => `'${p.replace(/'/g, `'\\''`)}'`).join(' ');
 }
 
+/** Backends wrapped in srt (no usable/any native sandbox): codex + omp. */
+export function backendUsesSrt(backend: AgentBackend): boolean {
+  return backend === 'codex' || backend === 'omp';
+}
+
 /**
- * Wrap a codex spawn in `srt` (P-017/D-017). Returns the command unchanged for
- * non-codex backends (claude uses its own `--settings` sandbox; omp is not
- * wrapped yet) or when disabled / srt absent. The wrapped form runs codex via
- * `srt -s <settings> -c 'export no_proxy=… ; exec <codex …>'` so `no_proxy` is
+ * Wrap a codex/omp spawn in `srt` (P-017/D-017 codex, D-018/D-019 omp). Returns
+ * the command unchanged for claude-code (its own `--settings` sandbox) or when
+ * disabled / srt absent. The wrapped form runs the agent via
+ * `srt -s <settings> -c 'export no_proxy=… ; exec <agent …>'` so `no_proxy` is
  * cleared INSIDE the sandbox (srt injects its own otherwise) — letting the
- * operator MCP + model route through srt's proxy. The prompt still arrives on
- * stdin (codex's trailing `-`), inherited through the exec.
+ * operator MCP + model route through srt's proxy. The prompt arrives via the
+ * agent's own channel (codex's trailing stdin `-`; omp's `@promptfile` arg),
+ * inherited through the exec.
  */
 export function wrapSpawnWithSrt(
   command: string,
   argv: string[],
   opts: { enabled: boolean; backend: AgentBackend; srtBin: string | null; settingsPath: string | null },
 ): { command: string; argv: string[] } {
-  if (!opts.enabled || opts.backend !== 'codex' || !opts.srtBin || !opts.settingsPath) {
+  if (!opts.enabled || !backendUsesSrt(opts.backend) || !opts.srtBin || !opts.settingsPath) {
     return { command, argv };
   }
   const inner = `export no_proxy='' NO_PROXY=''; exec ${shQuote([command, ...argv])}`;
@@ -1870,29 +1886,35 @@ export async function invoke(
     // External OS-sandbox for backends that can't self-sandbox: codex (P-017/
     // D-017). codex's native sandbox cancels MCP (D-009), so it runs with its
     // sandbox bypassed (codexSandboxArgs) but wrapped in `srt`, which confines
-    // its shell commands (writes → cwd+cache, egress → allowlist, creds hidden)
-    // while codex's MCP+model are allow-listed through srt's proxy. The wrap
-    // clears `no_proxy` inside the srt shell so the operator (loopback/RFC1918,
-    // which srt's default no_proxy excludes) routes through that proxy instead
-    // of the isolated netns. omp is NOT wrapped (model host unknown +
-    // unverifiable — see the section header); claude uses its own --settings
-    // sandbox, not srt.
+    // its shell commands (writes → cwd+cache+agent-dirs, egress → allowlist,
+    // creds hidden) while its MCP+model are allow-listed through srt's proxy.
+    // The wrap clears `no_proxy` inside the srt shell so the operator
+    // (loopback/RFC1918, which srt's default no_proxy excludes) routes through
+    // that proxy instead of the isolated netns. omp gets the SAME wrap
+    // (D-018/D-019: no native sandbox; model+MCP are loopback here). claude uses
+    // its own --settings sandbox, not srt.
     let spawnCommand = command;
     let spawnArgv = finalArgv;
-    if (fleetSandboxEnabled() && agentBackend === 'codex') {
+    if (fleetSandboxEnabled() && backendUsesSrt(agentBackend)) {
       const srtBin = srtBinOnPath();
       if (!srtBin) {
         throw new Error(
-          'PAPERCUSP_FLEET_SANDBOX is set for a codex spawn but `srt` is not on PATH. ' +
+          `PAPERCUSP_FLEET_SANDBOX is set for a ${agentBackend} spawn but \`srt\` is not on PATH. ` +
             'Install @anthropic-ai/sandbox-runtime (npm i -g @anthropic-ai/sandbox-runtime) ' +
             'or set PAPERCUSP_FLEET_SANDBOX=0.',
         );
       }
-      const settingsPath = writeFleetSrtSettings({
-        cwd,
-        backend: agentBackend,
-        agentHome: codexHomeHandle?.codexHome ?? null,
-      });
+      // The backend's own writable agent/state dirs (its config/auth/session DBs):
+      // codex → the per-spawn CODEX_HOME; omp → ~/.omp + PI_CODING_AGENT_DIR
+      // (the agent/auth/models SQLite DBs; usually <project>/.harness/pi-sessions,
+      // already under cwd, but pinned here in case it's set to an absolute path).
+      const agentHomes =
+        agentBackend === 'codex'
+          ? [codexHomeHandle?.codexHome].filter((x): x is string => Boolean(x))
+          : [join(homedir(), '.omp'), spawnEnv.PI_CODING_AGENT_DIR].filter(
+              (x): x is string => Boolean(x),
+            );
+      const settingsPath = writeFleetSrtSettings({ cwd, backend: agentBackend, agentHomes });
       ({ command: spawnCommand, argv: spawnArgv } = wrapSpawnWithSrt(command, finalArgv, {
         enabled: true,
         backend: agentBackend,
