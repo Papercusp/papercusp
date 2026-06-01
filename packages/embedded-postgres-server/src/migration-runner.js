@@ -92,6 +92,10 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
       await client.unsafe(`BEGIN;\n${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`);
       appliedCount++;
     } catch (err) {
+      // The failed `BEGIN…COMMIT` left the connection in an aborted
+      // transaction; reset it so the next migration doesn't cascade-fail with
+      // "current transaction is aborted, commands ignored until end of block".
+      await client.unsafe('ROLLBACK').catch(() => {});
       // 42P01 = undefined_table. On the Tauri desktop this runner executes
       // during embedded-PG boot — BEFORE the operator sidecar's ensure-schema
       // runs — so an ALTER that targets a `harness_shared.*` table created by
