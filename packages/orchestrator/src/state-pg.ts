@@ -81,10 +81,15 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
      WHERE workspace_id = ${ctx.workspaceId}
        AND (
          -- Features not linked to any plan are always eligible (legacy/manual).
-         source_plan_slug IS NULL
+         -- NB: the plan slug lives in metadata->>'source_plan' on the per-schema
+         -- harness_features table. A dedicated source_plan_slug column exists ONLY
+         -- on harness_shared.harness_features_consolidated (migration 084, which
+         -- backfills it FROM metadata->>'source_plan'); querying that column here
+         -- threw "column source_plan_slug does not exist" on every harness.
+         (metadata->>'source_plan') IS NULL
          OR
          -- Features from plans must belong to a started plan.
-         source_plan_slug IN (
+         (metadata->>'source_plan') IN (
            SELECT plan_slug
              FROM harness_shared.harness_plan_status
             WHERE workspace_id = ${ctx.workspaceId}

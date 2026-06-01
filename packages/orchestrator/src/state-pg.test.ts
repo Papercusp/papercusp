@@ -1,6 +1,6 @@
 import { afterEach, describe, test } from 'vitest';
 import assert from 'node:assert/strict';
-import { durableOwnedFeatureIdsPg } from './state-pg';
+import { durableOwnedFeatureIdsPg, readFeaturesPg } from './state-pg';
 
 const FLAG = 'PAPERCUSP_DBOS_ORCHESTRATOR';
 type Ctx = Parameters<typeof durableOwnedFeatureIdsPg>[0];
@@ -15,6 +15,35 @@ function fakePg(handler: (q: string, vals: unknown[]) => unknown[]) {
   };
   return { pg, calls };
 }
+
+describe('readFeaturesPg — plan-provenance filter reads the per-schema column', () => {
+  const orig = process.env[FLAG];
+  afterEach(() => {
+    if (orig === undefined) delete process.env[FLAG];
+    else process.env[FLAG] = orig;
+  });
+
+  // Bug: commit 25308f6 filtered eligible features by `source_plan_slug`, but that
+  // column lives ONLY on harness_shared.harness_features_consolidated (migration
+  // 084). The per-schema `harness_features` tables store the plan slug in
+  // `metadata->>'source_plan'` (084 backfills the consolidated column FROM it), so
+  // the query threw `column "source_plan_slug" does not exist` on every harness —
+  // breaking the DBOS dispatcher + the chunk-loop worker (both call readFeaturesPg).
+  test("filters on metadata->>'source_plan', NOT a non-existent source_plan_slug column", async () => {
+    process.env[FLAG] = '0'; // disable the carve-out so only the feature SELECT runs
+    const { pg, calls } = fakePg((q) =>
+      /FROM harness_features\b/i.test(q) ? [{ feature_id: 'F-1', status: 'todo' }] : [],
+    );
+    const ctx = { pg, workspaceId: 'w', harnessSlug: 's' } as unknown as Ctx;
+    await readFeaturesPg(ctx as unknown as Parameters<typeof readFeaturesPg>[0]);
+    const featureQuery = calls.find((c) => /FROM harness_features\b/i.test(c.q));
+    assert.ok(featureQuery, 'readFeaturesPg issued a feature SELECT');
+    assert.match(featureQuery!.q, /metadata->>'source_plan'/);
+    // The column must not appear as a PREDICATE (the bug: `source_plan_slug IS NULL`
+    // / `source_plan_slug IN (…)`). A mention in an explanatory SQL comment is fine.
+    assert.doesNotMatch(featureQuery!.q, /source_plan_slug\s+(IS|IN)\b/i);
+  });
+});
 
 describe('durableOwnedFeatureIdsPg — Phase 3 carve-out (D-012/D-013)', () => {
   const orig = process.env[FLAG];

@@ -127,6 +127,30 @@ export interface PersistedChunk {
   commitSha: string | null;
 }
 
+/**
+ * Coerce a stored `files` value to a string[]. Current writes store a proper
+ * jsonb array (postgres-js returns it as a JS array). LEGACY rows (written before
+ * the pgJson fix) double-encoded it — a JSON-stringified array landed in the jsonb
+ * column as a STRING, which postgres-js returns as a JS string. Resuming such a
+ * plan would then crash the chunk loop at `paths.map is not a function`; parse it
+ * back to an array so resume tolerates legacy data. Junk → [].
+ */
+export function normalizeStoredFiles(value: unknown): readonly string[] {
+  const asArray = (v: unknown): string[] | null =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : null;
+  const direct = asArray(value);
+  if (direct) return direct;
+  if (typeof value === 'string' && value.length > 0) {
+    try {
+      const parsed = asArray(JSON.parse(value));
+      if (parsed) return parsed;
+    } catch {
+      /* not JSON — fall through */
+    }
+  }
+  return [];
+}
+
 export async function readPlan(
   ctx: ChunkPlanPgCtx,
   featureId: string,
@@ -143,7 +167,7 @@ export async function readPlan(
   return rows.map((r: Record<string, unknown>) => ({
     chunkId: r.chunk_id as string,
     index: r.chunk_index as number,
-    files: r.files as readonly string[],
+    files: normalizeStoredFiles(r.files),
     description: r.description as string,
     status: r.status as ChunkStatus,
     strikes: (r.strikes as number) ?? 0,

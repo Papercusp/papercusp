@@ -6,9 +6,22 @@ import {
   updateChunkPlan,
   readPlan,
   dropPlan,
+  normalizeStoredFiles,
   type ChunkPlanPgCtx,
 } from './chunk-plan-pg.js';
 import type { OrchestratorPg } from './invoke.js';
+
+// Legacy chunk_plans rows (pre-pgJson fix) stored `files` double-encoded: a
+// JSON-stringified array landed in the jsonb column as a STRING, not an array.
+// readPlan must tolerate those so resuming an old plan doesn't crash the chunk
+// loop with `paths.map is not a function`. Current writes store a proper array.
+test('normalizeStoredFiles: arrays pass through; legacy jsonb-string parses; junk → []', () => {
+  assert.deepEqual(normalizeStoredFiles(['a.ts', 'b.ts']), ['a.ts', 'b.ts']);
+  assert.deepEqual(normalizeStoredFiles('["a.ts","b.ts"]'), ['a.ts', 'b.ts']);
+  assert.deepEqual(normalizeStoredFiles(null), []);
+  assert.deepEqual(normalizeStoredFiles(undefined), []);
+  assert.deepEqual(normalizeStoredFiles(['a.ts', 5, null]), ['a.ts']);
+});
 
 /**
  * Mock postgres-js client. Records every call, plus stores rows for
