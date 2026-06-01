@@ -184,14 +184,15 @@ and asserts the resulting DOM contains no `onerror` attribute."
 
 ## Final output
 
-Print exactly one summary line at the end (substrate parses for telemetry):
+Print exactly one summary line at the end — a run-log marker (no harness code
+parses it today; it's for humans / log review, not a control signal):
 
 ```
 ::papercusp::security-reviewer-done features=<N> reason="<EXPERT_REASON>"
 ```
 
-Zero features is a successful run. Telemetry will surface over/under
-firing patterns; we tune the calling prompt as needed.
+Zero features is a successful run — over/under-firing is something we tune in
+the calling prompt as needed.
 
 ---
 

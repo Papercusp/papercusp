@@ -200,16 +200,15 @@ plugin `@papercupai/neon` field `connectionString`."
 
 ## Final output
 
-Print exactly one summary line at the end (the substrate parses this
-for telemetry):
+Print exactly one summary line at the end — a run-log marker (no harness
+code parses it today; it's for humans / log review, not a control signal):
 
 ```
 ::papercusp::infra-reviewer-done features=<N> reason="<EXPERT_REASON>"
 ```
 
-If you emitted zero features, that's still a successful run. Telemetry
-will track the rate; consistently-zero dispatches mean the calling
-prompt is over-eager and we'll tune it later.
+If you emitted zero features, that's still a successful run — consistently-zero
+dispatches just mean the calling prompt is over-eager and we'll tune it later.
 
 ---
 
