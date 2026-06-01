@@ -71,13 +71,16 @@ test('DECISION_VERBS — every verb is listed', () => {
   // NEXT_FEEDBACK, NEXT_SCOPER. Verbs intentionally removed (orphan
   // entries with no bash handler and no TS handler): NEXT_PROJECT_MANAGER,
   // NEXT_SUMMARIZER.
-  assert.equal(DECISION_VERBS.length, 20);
+  // 20 + the 2 opt-in quality gates wired by P-013/P-014 (NEXT_CROSSCHECK, NEXT_UI_QA).
+  assert.equal(DECISION_VERBS.length, 22);
   assert.ok(DECISION_VERBS.includes('DONE'));
   assert.ok(DECISION_VERBS.includes('NEXT_WORKER'));
   assert.ok(DECISION_VERBS.includes('NEXT_WORKER_CEO_MODE'));
   assert.ok(DECISION_VERBS.includes('NEXT_EXPERT'));
   assert.ok(DECISION_VERBS.includes('NEXT_FEEDBACK'));
   assert.ok(DECISION_VERBS.includes('NEXT_SCOPER'));
+  assert.ok(DECISION_VERBS.includes('NEXT_CROSSCHECK'));
+  assert.ok(DECISION_VERBS.includes('NEXT_UI_QA'));
   assert.ok(!DECISION_VERBS.includes('NEXT_PROJECT_MANAGER' as never));
   assert.ok(!DECISION_VERBS.includes('NEXT_SUMMARIZER' as never));
 });

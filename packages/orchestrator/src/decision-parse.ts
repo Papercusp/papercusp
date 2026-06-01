@@ -29,6 +29,13 @@ export const DECISION_VERBS = [
   'GENERATE_TESTS',
   'RUN_TESTS',
   'NEXT_MONITOR',
+  // Opt-in quality gates (P-013/P-014) — recognized + classified, but a harness's
+  // director only EMITS them when it opts in (config + the right claim), so they
+  // are dormant by default ("wiring ≠ forcing cost"):
+  //   NEXT_CROSSCHECK — a different-model second opinion after a validator PASS.
+  //   NEXT_UI_QA      — a verdict-tool visual/interaction check on a VAL-UI-* feature.
+  'NEXT_CROSSCHECK',
+  'NEXT_UI_QA',
   'READY_FOR_PROD',
   'FEATURE_FREEZE',
   'NEXT_HARNESS',
@@ -118,6 +125,10 @@ const SOLO_VERBS = new Set<DecisionVerb>([
   'GENERATE_TESTS',
   'RUN_TESTS',
   'NEXT_MONITOR',
+  // P-013/P-014: both imply a state change (crosscheck can revert passed→failing;
+  // ui-qa is a post-pass gate), so they run as the sole decision of their turn.
+  'NEXT_CROSSCHECK',
+  'NEXT_UI_QA',
   'READY_FOR_PROD',
   'FEATURE_FREEZE',
   'NEXT_HARNESS',
