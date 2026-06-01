@@ -744,8 +744,9 @@ export function claudeSandboxArgs(
 
 /**
  * codex's sandbox flags. **codex is NOT sandboxable for the fleet** — verified
- * vs codex on this box (P-012, D-009): under `-s workspace-write` (and
- * `read-only`) codex CANCELS MCP tool calls ("user cancelled MCP tool call"),
+ * vs codex on this box (P-012, D-009) and RE-VERIFIED on codex-cli 0.135 (D-016):
+ * under `-s workspace-write` (and `read-only`) codex CANCELS MCP tool calls
+ * ("user cancelled MCP tool call", client-side — never reaches the server),
  * while the same call REACHES the server under the bypass. A sandboxed codex
  * worker is therefore tool-less, which breaks the MCP-dependent fleet. So codex
  * always runs under `-s danger-full-access --dangerously-bypass-approvals-and-
@@ -753,9 +754,12 @@ export function claudeSandboxArgs(
  * not switch codex to workspace-write (that would silently disable its tools).
  *
  * (workspace-write *does* confine writes + block command egress — but the MCP
- * cancellation makes it unusable here; revisit if codex gains MCP-under-sandbox
- * support. claude is sandboxed because its sandbox covers only sub-commands,
- * leaving the agent's own MCP connection intact; codex sandboxes differently.)
+ * cancellation makes it unusable here. RULED OUT (D-016): `network_access=true`
+ * does NOT help — the cancel is a codex policy gating MCP under any sandbox, not
+ * an egress block; and codex 0.135 has no auto-approve/MCP-trust knob — the only
+ * approval-bypass is bundled with sandbox-bypass. Revisit if codex gains
+ * MCP-under-sandbox support. claude is sandboxed because its sandbox covers only
+ * sub-commands, leaving the agent's own MCP connection intact; codex differs.)
  *
  * Appended to `extraFlags` before the `-` stdin positional. Defers to a
  * user-set `-s`/`--sandbox`/bypass in AGENT_CMD. `enabled` is intentionally
