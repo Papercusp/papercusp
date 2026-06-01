@@ -53,6 +53,30 @@ function toNum(v: number | bigint | null | undefined): number {
   return typeof v === 'bigint' ? Number(v) : v;
 }
 
+// ─── G2 Auditor-admission pick-gate (P-008) ─────────────────────────────────
+//
+// A feature is auto-pickable by the orchestrator iff it was written by the
+// current user's own device ('local') OR the auditor has explicitly admitted it.
+// Remote features with a NULL / 'pending' / 'reject' verdict are excluded.
+//
+// D-006: the 'local' bypass keys on origin (derived from op.writerPubkey —
+// the Noise key that signed the op, cryptographically unforgeable), NOT on
+// created_by_github_user_id (payload-level, forgeable).
+//
+// Exported so it can be unit-tested independently of the PG client.
+export function isAutoPickable({
+  origin,
+  audit_verdict,
+}: {
+  origin?: string | null;
+  audit_verdict?: string | null;
+}): boolean {
+  // Local features always bypass the auditor — no verdict needed.
+  if (origin === 'local' || origin == null) return true;
+  // Remote features are pickable only when the auditor has admitted them.
+  return audit_verdict === 'admit';
+}
+
 function rowToFeature(r: FeatureRow): FeatureRecord {
   let claims: string[] | undefined;
   if (Array.isArray(r.claims)) claims = r.claims;
@@ -74,11 +98,25 @@ function rowToFeature(r: FeatureRow): FeatureRecord {
 /** Read every feature row for the active workspace. */
 export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord[]> {
   const rows = await ctx.pg<FeatureRow[]>`
-    SELECT feature_id, title, summary, status, attempts, claims, notes,
-           metadata, kind, project_id, expected_cost_cents, tags,
-           needs_human_review, ts, created_ts, updated_ts
-      FROM harness_features
-     WHERE workspace_id = ${ctx.workspaceId}
+    SELECT hf.feature_id, hf.title, hf.summary, hf.status, hf.attempts, hf.claims,
+           hf.notes, hf.metadata, hf.kind, hf.project_id, hf.expected_cost_cents,
+           hf.tags, hf.needs_human_review, hf.ts, hf.created_ts, hf.updated_ts
+      FROM harness_features hf
+      -- G2 Auditor-admission gate (P-008): LEFT JOIN against the consolidated
+      -- table to read origin + audit_verdict without touching the per-harness
+      -- schema. hfc may have no row yet (pre-sync) — treat that as local/pickable.
+      LEFT JOIN harness_shared.harness_features_consolidated hfc
+        ON hfc.harness_slug = ${ctx.harnessSlug ?? ''}
+       AND hfc.feature_id   = hf.feature_id
+     WHERE hf.workspace_id = ${ctx.workspaceId}
+       AND (
+         -- G2 pick-gate: local features always pass; remote features only pass
+         -- when the auditor has admitted them. NULL origin (pre-G1 row, no hfc
+         -- row yet) is treated as local for backward compat.
+         hfc.feature_id IS NULL
+         OR hfc.origin = 'local'
+         OR hfc.audit_verdict = 'admit'
+       )
        AND (
          -- Features not linked to any plan are always eligible (legacy/manual).
          -- NB: the plan slug lives in metadata->>'source_plan' on the per-schema
@@ -86,10 +124,10 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
          -- on harness_shared.harness_features_consolidated (migration 084, which
          -- backfills it FROM metadata->>'source_plan'); querying that column here
          -- threw "column source_plan_slug does not exist" on every harness.
-         (metadata->>'source_plan') IS NULL
+         (hf.metadata->>'source_plan') IS NULL
          OR
          -- Features from plans must belong to a started plan.
-         (metadata->>'source_plan') IN (
+         (hf.metadata->>'source_plan') IN (
            SELECT plan_slug
              FROM harness_shared.harness_plan_status
             WHERE workspace_id = ${ctx.workspaceId}
@@ -97,7 +135,7 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
               AND status        = 'started'
          )
        )
-     ORDER BY feature_id
+     ORDER BY hf.feature_id
   `;
   const features = rows.map(rowToFeature);
   // Phase 3 carve-out (dbos-durable-jobs D-012): exclude features a live durable
