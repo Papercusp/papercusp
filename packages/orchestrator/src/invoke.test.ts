@@ -25,6 +25,7 @@ import {
   resolveSpawnHome,
   claudeSandboxArgs,
   codexSandboxArgs,
+  fleetSandboxEnabled,
   fleetSandboxSettingsForRole,
   resolveFleetAllowedDomains,
   fleetSandboxCacheEnv,
@@ -764,26 +765,31 @@ test('fleetSandboxSettingsForRole — cwd-write is uniform (P-004: sandbox cwd i
   }
 });
 
-test('resolveFleetAllowedDomains — base registry list by default (no env)', () => {
+test('resolveFleetAllowedDomains — base list (registries + common toolchain CDNs) by default (no env)', () => {
   delete process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS;
   delete process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS;
   const d = resolveFleetAllowedDomains();
   assert.deepEqual(d, [...FLEET_SANDBOX_ALLOWED_DOMAINS]);
   assert.ok(d.includes('registry.npmjs.org'));
+  // P-013/D-015: default-on base covers the common toolchain CDNs out-of-box
+  assert.ok(d.includes('cdn.playwright.dev'), 'Playwright browser CDN in base');
+  assert.ok(d.includes('playwright.download.prss.microsoft.com'), 'Playwright fallback in base');
+  assert.ok(d.includes('nodejs.org'), 'node-gyp headers host in base');
   assert.ok(!d.includes('example.com'));
 });
 
 test('resolveFleetAllowedDomains — APPEND var adds deployment hosts (comma/space-separated, trimmed, deduped, base kept)', () => {
   delete process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS;
+  // use sentinel hosts NOT in the base, so this tests append (not membership)
   process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS =
-    ' cdn.playwright.dev, registry.npmjs.org\tregistry.internal.corp ';
+    ' mirror.corp.test, registry.npmjs.org\tregistry.internal.corp ';
   try {
     const d = resolveFleetAllowedDomains();
     // base preserved
     assert.ok(d.includes('registry.npmjs.org'));
     assert.ok(d.includes('github.com'));
     // extras appended
-    assert.ok(d.includes('cdn.playwright.dev'));
+    assert.ok(d.includes('mirror.corp.test'));
     assert.ok(d.includes('registry.internal.corp'));
     // deduped: the duplicate registry.npmjs.org appears exactly once
     assert.equal(d.filter((h) => h === 'registry.npmjs.org').length, 1);
@@ -793,7 +799,7 @@ test('resolveFleetAllowedDomains — APPEND var adds deployment hosts (comma/spa
 });
 
 test('resolveFleetAllowedDomains — DENY_ALL_EGRESS lockdown → [] and wins over the append var', () => {
-  process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS = 'cdn.playwright.dev';
+  process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS = 'mirror.corp.test';
   process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS = '1';
   try {
     assert.deepEqual(resolveFleetAllowedDomains(), []);
@@ -808,13 +814,32 @@ test('resolveFleetAllowedDomains — DENY_ALL_EGRESS lockdown → [] and wins ov
 
 test('fleetSandboxSettingsForRole — emits the env-resolved allowlist (deployment extension flows through)', () => {
   delete process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS;
-  process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS = 'cdn.playwright.dev';
+  process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS = 'mirror.corp.test';
   try {
     const s = fleetSandboxSettingsForRole('validator') as any;
-    assert.ok(s.sandbox.network.allowedDomains.includes('cdn.playwright.dev'));
+    assert.ok(s.sandbox.network.allowedDomains.includes('mirror.corp.test'));
     assert.ok(s.sandbox.network.allowedDomains.includes('registry.npmjs.org'));
   } finally {
     delete process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS;
+  }
+});
+
+test('fleetSandboxEnabled — DEFAULT-ON (P-013): on when unset, opt out only with 0/false/off', () => {
+  const saved = process.env.PAPERCUSP_FLEET_SANDBOX;
+  try {
+    delete process.env.PAPERCUSP_FLEET_SANDBOX;
+    assert.equal(fleetSandboxEnabled(), true, 'unset → on by default');
+    for (const v of ['1', 'true', 'TRUE', 'yes', '']) {
+      process.env.PAPERCUSP_FLEET_SANDBOX = v;
+      assert.equal(fleetSandboxEnabled(), true, `"${v}" → on`);
+    }
+    for (const v of ['0', 'false', 'off', 'OFF', 'False']) {
+      process.env.PAPERCUSP_FLEET_SANDBOX = v;
+      assert.equal(fleetSandboxEnabled(), false, `"${v}" → explicit opt-out`);
+    }
+  } finally {
+    if (saved === undefined) delete process.env.PAPERCUSP_FLEET_SANDBOX;
+    else process.env.PAPERCUSP_FLEET_SANDBOX = saved;
   }
 });
 

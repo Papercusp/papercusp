@@ -508,9 +508,10 @@ export function fleetAllowedToolsForRole(role: string | undefined): string[] {
   return [...FLEET_ALLOWED_TOOLS];
 }
 
-/* ─── Fleet OS sandbox (plan fleet-spawn-sandbox-2026-06-01, Phase 1) ────────
- * Opt-in via PAPERCUSP_FLEET_SANDBOX. Closes the gaps the tool whitelist
- * CANNOT: credential reads + network egress. Uses claude-code's OWN built-in
+/* ─── Fleet OS sandbox (plan fleet-spawn-sandbox-2026-06-01) ─────────────────
+ * DEFAULT-ON (P-013/D-015); opt out with PAPERCUSP_FLEET_SANDBOX=0. Closes the
+ * gaps the tool whitelist CANNOT: credential reads + network egress. Uses
+ * claude-code's OWN built-in
  * sandbox (Linux bubblewrap + socat proxy; macOS Seatbelt) injected via
  * `--settings`, NOT a hand-rolled wrapper. Verified vs claude 2.1.159: the
  * sandbox engages headlessly, composes with `--permission-mode dontAsk`, hides
@@ -532,13 +533,19 @@ export const FLEET_SANDBOX_DENY_READ: readonly string[] = [
  * test role legitimately needs. Verified (P-012/D-011): claude's sandbox egress
  * allowlist works (`curl registry.npmjs.org` → 200, `curl example.com` → 000).
  * Deny-all (`[]`) was the original floor but it breaks any role that runs
- * `npm/pip/cargo install` — so this is the functional default for the opt-in
- * sandbox. The agent's own model + MCP connections are OUTSIDE the sandbox and
+ * `npm/pip/cargo install` — so this is the functional default for the (now
+ * default-on) sandbox. The agent's own model + MCP connections are OUTSIDE the sandbox and
  * unaffected; this list only governs what a sandboxed Bash *command* can fetch.
  *
  * Tradeoff (D-005): every domain here is reachable with TLS UNINSPECTED, so it
- * widens a potential exfil channel. Keep it to package registries. Per-role
- * narrowing (read-only roles need none) is a future refinement.
+ * widens a potential exfil channel. Kept to package registries + the few common
+ * toolchain CDNs a default-on fleet hits out-of-box — Playwright browsers
+ * (`cdn.playwright.dev` + the `playwright.download.prss.microsoft.com` fallback)
+ * and node-gyp headers (`nodejs.org`), added for default-on (P-013/D-015) after
+ * the real fleet pass (D-013) showed `npx playwright install` / native-addon
+ * builds blocked. A security-hardened deployment strips ALL of these with
+ * `PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS=1`. Per-role narrowing (read-only
+ * roles need none) is a future refinement.
  *
  * DEPLOYMENT-EXTENSIBLE (the no-fork widening path — the enabler for default-on,
  * D-012): the effective list is resolved at spawn time by
@@ -564,6 +571,10 @@ export const FLEET_SANDBOX_ALLOWED_DOMAINS: readonly string[] = [
   'codeload.github.com',
   'objects.githubusercontent.com',
   'raw.githubusercontent.com',
+  // Common toolchain CDNs a default-on fleet needs out-of-box (P-013/D-015):
+  'cdn.playwright.dev', // Playwright browser binaries (primary)
+  'playwright.download.prss.microsoft.com', // Playwright browser binaries (fallback)
+  'nodejs.org', // node-gyp headers for native addons
 ];
 
 /**
@@ -640,10 +651,19 @@ export const FLEET_SANDBOX_DENY_RULES: readonly string[] = [
   'Edit(~/.papercusp/**)',
 ];
 
-/** True when the fleet OS-sandbox opt-in flag is set (off by default). */
+/**
+ * True when the fleet OS sandbox should engage. DEFAULT-ON (P-013/D-015): the
+ * real fleet pass (D-013) confirmed MCP survives the sandbox, the egress
+ * allowlist covers the common toolchains, and the `npm install` EROFS is fixed
+ * (P-014) — so claude-code fleet spawns are sandboxed by default. Opt OUT with
+ * `PAPERCUSP_FLEET_SANDBOX=0` (or `false`/`off`) — e.g. a deployment whose host
+ * lacks bubblewrap, since the sandbox is `failIfUnavailable:true` (claude-code
+ * only; codex/omp are unaffected — D-009/D-010). Read per-spawn, so the default
+ * takes effect on the next operator restart (the :3070 host has no hot-reload).
+ */
 export function fleetSandboxEnabled(): boolean {
-  const v = process.env.PAPERCUSP_FLEET_SANDBOX;
-  return v === '1' || v === 'true';
+  const v = (process.env.PAPERCUSP_FLEET_SANDBOX ?? '').trim().toLowerCase();
+  return v !== '0' && v !== 'false' && v !== 'off';
 }
 
 /**
@@ -674,8 +694,11 @@ export function fleetSandboxSettingsForRole(role: string | undefined): Record<st
   return {
     sandbox: {
       enabled: true,
-      // Flag is explicit opt-in → if deps (bubblewrap/socat) are missing, fail
-      // loudly rather than silently run unsandboxed when the operator asked for it.
+      // Default-on (P-013) → if deps (bubblewrap/socat) are missing, fail loudly
+      // rather than silently run unsandboxed. A host without bwrap opts out
+      // explicitly with PAPERCUSP_FLEET_SANDBOX=0 (don't weaken the guarantee by
+      // degrading to unsandboxed by default). claude-code only; codex/omp are
+      // unaffected (D-009/D-010).
       failIfUnavailable: true,
       // Strict: no `dangerouslyDisableSandbox` retry-outside-the-sandbox escape hatch.
       allowUnsandboxedCommands: false,
