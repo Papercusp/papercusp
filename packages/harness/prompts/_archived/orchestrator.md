@@ -1,3 +1,16 @@
+<!-- ARCHIVED — RETIRED PERSONA, NOT LOADED. dbos-system-completion-2026-06-01 P-021. -->
+
+> **RETIRED (P-021).** This is the legacy *global-orchestrator LLM* persona. It is
+> no longer dispatched: the global, cross-feature selection it did is now
+> **deterministic code** (the DBOS orchestrator + the P-042 frontier, renamed per
+> D-007), and the per-feature decisions (`NEXT_WORKER`/`NEXT_VALIDATOR`/…) are made
+> by **`director.md`**. Its still-true heuristics already live in live surfaces:
+> the CONVERT_ISSUES criteria (section D) is the deterministic **P-011** sweep
+> (`@/lib/promote-issue` — open `critical`/`major`, unlinked), and the escalation
+> judgment (section E) is the director's `ESCALATE`. Kept here only for the
+> `PAPERCUSP_DBOS_ORCHESTRATOR=0` legacy-loop revert; restore with `git mv` back to
+> `prompts/` if you genuinely re-enable the old `main-loop.ts` global loop.
+
 > **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
