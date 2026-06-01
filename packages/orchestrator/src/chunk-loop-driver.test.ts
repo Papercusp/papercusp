@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { driveChunkLoop } from './chunk-loop-driver.js';
 import { FileLockQueue } from './file-lock-queue.js';
+import { FileLockQueueCoordinator } from './file-lock-queue-coordinator.js';
 import type { OrchestratorPg } from './invoke.js';
 import type { HarnessConfig } from './config.js';
 
@@ -57,7 +58,7 @@ test('driveChunkLoop persists progress events when pg is wired', async () => {
     const out = await driveChunkLoop({
       feature: { id: 'F-X', title: 'Demo', description: 'Demo feature' },
       cfg,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       repoPath: repo,
       pg: mockPg.pg,
       workspaceId: 'ws-default',
@@ -106,7 +107,7 @@ test('driveChunkLoop is a no-op for persistence when pg is omitted', async () =>
     const out = await driveChunkLoop({
       feature: { id: 'F-X', title: 'Demo', description: 'Demo feature' },
       cfg,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       repoPath: repo,
       // pg/workspaceId/harnessSlug intentionally omitted
       llm: {
@@ -144,7 +145,7 @@ test('driveChunkLoop honors config replanStrikes from cfg', async () => {
     const out = await driveChunkLoop({
       feature: { id: 'F-X', title: 'Demo', description: 'Demo feature' },
       cfg,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       repoPath: repo,
       llm: {
         plan: async () =>
@@ -230,7 +231,7 @@ test('driveChunkLoop reads existing plan from pg and resumes (skips planning)', 
     const out = await driveChunkLoop({
       feature: { id: 'F-X', title: 'Demo', description: 'Demo' },
       cfg,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       repoPath: repo,
       pg,
       workspaceId: 'ws-default',
@@ -276,7 +277,7 @@ test('driveChunkLoop passes the configured escalate role to the llm.escalate cal
     await driveChunkLoop({
       feature: { id: 'F-X', title: 'Demo', description: 'Demo feature' },
       cfg,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       repoPath: repo,
       llm: {
         plan: async () =>

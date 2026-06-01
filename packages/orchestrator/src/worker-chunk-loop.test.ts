@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { FileLockQueue } from './file-lock-queue.js';
+import { FileLockQueueCoordinator } from './file-lock-queue-coordinator.js';
 import {
   runChunkLoop,
   type ChunkLoopDeps,
@@ -58,7 +59,7 @@ test('happy path: single chunk plan, succeeds first try', async () => {
 
     const deps: ChunkLoopDeps = {
       repoPath: repo,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       planChunks: async () =>
         makePlanResponse([{ id: 'F-X-1', files: ['a.ts'], description: 'add foo()' }]),
       implementChunk: async (_f, chunk, env) => {
@@ -105,7 +106,7 @@ test('typecheck failure triggers re-plan, succeeds on second try', async () => {
 
     const deps: ChunkLoopDeps = {
       repoPath: repo,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       planChunks: async () =>
         makePlanResponse([{ id: 'F-X-1', files: ['a.ts'], description: 'add foo()' }]),
       implementChunk: async (_f, chunk, env) => {
@@ -169,7 +170,7 @@ test('escalates after replanStrikes typecheck failures', async () => {
 
     const deps: ChunkLoopDeps = {
       repoPath: repo,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       planChunks: async () =>
         makePlanResponse([{ id: 'F-X-1', files: ['a.ts'], description: 'add foo()' }]),
       implementChunk: async (_f, chunk, env) => {
@@ -205,7 +206,7 @@ test('lock extension is automatic when worker touches additional file', async ()
 
     const deps: ChunkLoopDeps = {
       repoPath: repo,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       planChunks: async () =>
         makePlanResponse([{ id: 'F-X-1', files: ['a.ts'], description: 'add foo()' }]),
       implementChunk: async (_f, _chunk, env: ScratchEnv) => {
@@ -246,7 +247,7 @@ test('lock extension contention falls back to release-and-reacquire', async () =
 
     const deps: ChunkLoopDeps = {
       repoPath: repo,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       planChunks: async () =>
         makePlanResponse([{ id: 'F-X-1', files: ['a.ts'], description: 'add foo()' }]),
       implementChunk: async (_f, _chunk, env) => {
@@ -294,7 +295,7 @@ test('planning_failed when LLM response is unparseable', async () => {
     const lockQueue = new FileLockQueue();
     const deps: ChunkLoopDeps = {
       repoPath: repo,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       planChunks: async () => 'no fenced block here',
       implementChunk: async () => {
         throw new Error('should not be called');
@@ -318,7 +319,7 @@ test('multiple chunks commit in order', async () => {
     const lockQueue = new FileLockQueue();
     const deps: ChunkLoopDeps = {
       repoPath: repo,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       planChunks: async () =>
         makePlanResponse([
           { id: 'F-X-1', files: ['a.ts'], description: 'add foo()' },

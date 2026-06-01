@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { FileLockQueue } from './file-lock-queue.js';
+import { FileLockQueueCoordinator } from './file-lock-queue-coordinator.js';
 import {
   runChunkLoop,
   type ChunkLoopDeps,
@@ -76,7 +77,7 @@ function depsFor(
 ): ChunkLoopDeps {
   return {
     repoPath: ctx.repoPath,
-    lockQueue: ctx.lockQueue,
+    lockCoordinator: new FileLockQueueCoordinator(ctx.lockQueue),
     typecheckCommand: 'true',
     planChunks: async () =>
       planResponse(
@@ -322,7 +323,7 @@ test('lock-queue stays clean when a worker throws mid-implement', async () => {
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'true',
         replanStrikes: 1, // single attempt — escalate instead of replan-loop
         planChunks: async () =>

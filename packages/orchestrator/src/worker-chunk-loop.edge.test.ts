@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { FileLockQueue } from './file-lock-queue.js';
+import { FileLockQueueCoordinator } from './file-lock-queue-coordinator.js';
 import { runChunkLoop, type ChunkLoopDeps } from './worker-chunk-loop.js';
 
 function execSync(cmd: string, args: readonly string[], cwd: string): Promise<string> {
@@ -48,7 +49,7 @@ test('empty plan returns completed without doing any work', async () => {
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'true',
         planChunks: async () => planResp([]),
         implementChunk: async () => {
@@ -80,7 +81,7 @@ test('chunk that touches zero files commits successfully (description-only commi
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'true',
         planChunks: async () =>
           planResp([{ id: 'F-X-1', files: ['a.ts'], description: 'add foo' }]),
@@ -113,7 +114,7 @@ test('multiple chunks in same feature can lock + release the same file in sequen
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'true',
         planChunks: async () =>
           planResp([
@@ -161,7 +162,7 @@ test('typecheck timeout (slow check) escalates without hanging the run', async (
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'sleep 60', // 60s sleep
         typecheckTimeoutMs: 200, // kill at 200ms
         replanStrikes: 1, // escalate on first failure
@@ -200,7 +201,7 @@ test('worker writes nothing in scratch — no commit, no error, just empty chang
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'true',
         replanStrikes: 1,
         planChunks: async () =>
@@ -239,7 +240,7 @@ test('lock-extension success path commits ALL files (the bug we fixed)', async (
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'true',
         planChunks: async () =>
           planResp([{ id: 'F-X-1', files: ['a.ts'], description: 'add foo' }]),
@@ -282,7 +283,7 @@ test('replan response that swaps the chunk id is rejected', async () => {
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'false',
         replanStrikes: 5,
         planChunks: async () =>

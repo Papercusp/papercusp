@@ -12,7 +12,7 @@
 
 import type { OrchestratorPg } from './invoke.js';
 import type { HarnessConfig } from './config.js';
-import type { FileLockQueue } from './file-lock-queue.js';
+import type { FileClaimCoordinator } from '@papercusp/file-claim';
 import {
   type ChunkLoopDeps,
   type ChunkLoopFeature,
@@ -38,8 +38,8 @@ import { parseChunkPlanBlock } from './chunk-plan.js';
 export interface DriverInput {
   feature: ChunkLoopFeature;
   cfg: HarnessConfig;
-  /** Lock queue shared across all workers in this orchestrator. */
-  lockQueue: FileLockQueue;
+  /** File-claim coordinator (in-process default, or the PG backend under DBOS). */
+  lockCoordinator: FileClaimCoordinator;
   /** Repo path workers commit to. */
   repoPath: string;
   /** PG client + scoping for plan persistence. May be undefined when
@@ -155,7 +155,7 @@ export async function driveChunkLoop(input: DriverInput): Promise<ChunkLoopOutco
 
   const deps: ChunkLoopDeps = {
     repoPath: input.repoPath,
-    lockQueue: input.lockQueue,
+    lockCoordinator: input.lockCoordinator,
     typecheckCommand: workingStateCheckCommand(input.cfg),
     replanStrikes: replanStrikesFromCfg(input.cfg),
     resumeFromPlan,

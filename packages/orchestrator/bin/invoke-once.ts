@@ -24,7 +24,7 @@
  *                      elsewhere; ignored here since we run exactly one
  *                      invoke).
  */
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { harnessRoot } from '@papercusp/harness/paths';
 import { readConfig, resolvePhase } from '../src/config.js';
@@ -34,8 +34,30 @@ import { invoke } from '../src/invoke.js';
 import { bootstrapOrchestratorPg } from '../src/pg-bootstrap.js';
 import { activeWorkspaceId } from '../src/workspace.js';
 import { harnessSlug } from '../src/state.js';
-import { FileLockQueue } from '../src/file-lock-queue.js';
+import type { FileClaimCoordinator } from '@papercusp/file-claim';
+import { FileLockQueueCoordinator } from '../src/file-lock-queue-coordinator.js';
 import { shouldUseWorkerChunkLoop, runWorkerChunkLoop } from '../src/run-worker-chunk-loop.js';
+
+/**
+ * The file-claim coordinator for the worker chunk loop (P-040 / D-015).
+ *
+ * Default = the in-process `FileLockQueueCoordinator` — serializes this feature's
+ * own chunks; correct for the single-feature / manual / test path. Under DBOS
+ * cross-feature concurrency the operator sets `PAPERCUSP_CHUNK_LOCK_PG=1` (and the
+ * subprocess already has `DATABASE_URL`), so we use the PG-backed
+ * `SuLocksCoordinator` keyed by the canonical REPO ROOT (`realpath(repoPath)`) —
+ * the SAME coordination domain the operator's `locks:*` SU tools use — so
+ * concurrent feature workers AND SU agents serialize cross-process on the same
+ * physical files. `@papercusp/locks` is loaded lazily so the default path never
+ * opens a `papercusp_su` connection.
+ */
+async function buildChunkLockCoordinator(repoPath: string): Promise<FileClaimCoordinator> {
+  const usePg = process.env.PAPERCUSP_CHUNK_LOCK_PG === '1' && !!process.env.DATABASE_URL;
+  if (!usePg) return new FileLockQueueCoordinator();
+  const { SuLocksCoordinator, configureLocks } = await import('@papercusp/locks');
+  configureLocks({ getAdminBaseUrl: () => process.env.DATABASE_URL as string });
+  return new SuLocksCoordinator({ coordinationDomain: realpathSync(repoPath) });
+}
 
 async function main(): Promise<number> {
   const projectDir = process.env.PROJECT_DIR;
@@ -127,12 +149,13 @@ async function main(): Promise<number> {
       // L1 typecheck gate, replan-strikes, escalate-to-debugger) — instead of a
       // bare single-shot invoke('worker'). The loop persists its plan to PG, so
       // a crashed/retried DBOS step resumes mid-feature rather than restarting.
-      // The per-subprocess lock queue serializes this feature's own chunks;
-      // cross-feature file safety across concurrent pipelines is the operator's
-      // PG-backed lock layer's job (FileLockQueue is in-process by design).
+      // The lock coordinator serializes file access: the in-process default
+      // covers this feature's own chunks; under DBOS cross-feature concurrency it
+      // is the PG-backed SuLocksCoordinator so concurrent feature workers + SU
+      // agents serialize cross-process on the same physical files (P-040).
       wrappedLog(`invoke-once: role=worker + useChunkLoop → driving chunk loop for ${featureId}`);
-      const lockQueue = new FileLockQueue();
-      const outcome = await runWorkerChunkLoop(featureId, ctx, logger, cfg, lockQueue);
+      const lockCoordinator = await buildChunkLockCoordinator(projectDir);
+      const outcome = await runWorkerChunkLoop(featureId, ctx, logger, cfg, lockCoordinator);
       // The chunk loop sets the feature status (validating/failing); the worker
       // always reports a non-empty summary + exit 0 so the next director turn
       // reads the *status*, not an exit code (matches the legacy loop).

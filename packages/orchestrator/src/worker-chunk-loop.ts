@@ -26,7 +26,7 @@
  * wired into NEXT_WORKER dispatch.
  */
 
-import { FileLockQueue, type LockHandle } from './file-lock-queue.js';
+import type { FileClaimCoordinator } from '@papercusp/file-claim';
 import {
   type Chunk,
   type ChunkPlan,
@@ -44,6 +44,12 @@ import { runCheck, setup as setupScratch, teardown as teardownScratch, type Scra
  * LockAcquireTimeoutError instead of an unbounded block.
  */
 const CHUNK_LOCK_TIMEOUT_MS = 10 * 60_000;
+/**
+ * TTL on a chunk's file claim. Generous — longer than a chunk's
+ * implement+typecheck+commit time — so the claim never expires mid-work; a crashed
+ * worker's claim reaps via the PG backend's TTL (the in-process default has none).
+ */
+const CHUNK_LOCK_TTL_MS = 30 * 60_000;
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -84,8 +90,14 @@ export interface TypecheckResult {
 export interface ChunkLoopDeps {
   /** Repo where worker edits land (and where commits happen). */
   repoPath: string;
-  /** Lock queue — usually shared across all workers. */
-  lockQueue: FileLockQueue;
+  /**
+   * File-claim coordinator. The in-process `FileLockQueueCoordinator` (default)
+   * serializes this feature's own chunks; under DBOS cross-feature concurrency the
+   * operator injects the PG-backed `SuLocksCoordinator` so concurrent feature
+   * workers AND SU agents serialize cross-process on the same physical files
+   * (P-040). Acquire/release/extend are async + result-typed.
+   */
+  lockCoordinator: FileClaimCoordinator;
   /** Plan all chunks for this feature. Returns the LLM's raw response;
    *  the loop parses it and re-asks if invalid. */
   planChunks: (feature: ChunkLoopFeature) => Promise<string>;
@@ -218,12 +230,22 @@ export async function runChunkLoop(
 
     let strikes = 0;
     while (true) {
-      // Acquire locks. May block on the queue.
-      const handle = await deps.lockQueue.acquire(
-        `${feature.id}:${chunk.id}`,
+      // Acquire the chunk's file claim. Waits up to CHUNK_LOCK_TIMEOUT_MS for a
+      // cross-process holder to release (the in-process default never contends —
+      // chunks are processed sequentially within a subprocess). A busy result after
+      // the full wait means another worker/agent genuinely holds one of the files:
+      // abort this run; the dispatcher re-scans and the holder's TTL guarantees
+      // forward progress (P-040).
+      const acq = await deps.lockCoordinator.acquire(
+        `worker:${feature.id}:${chunk.id}`,
         chunk.files,
-        { timeoutMs: CHUNK_LOCK_TIMEOUT_MS },
+        { waitMs: CHUNK_LOCK_TIMEOUT_MS, ttlMs: CHUNK_LOCK_TTL_MS, intent: `chunk ${chunk.id}` },
       );
+      if (!acq.ok) {
+        const who = acq.busy[0]?.owner ?? 'another worker';
+        return { kind: 'aborted', reason: `lock busy for ${chunk.id} (held by ${who})` };
+      }
+      let claim = acq.claim;
       let env: ScratchEnv | null = null;
       try {
         env = await setupScratch({
@@ -232,7 +254,7 @@ export async function runChunkLoop(
           editedFiles: chunk.files,
         });
       } catch (err) {
-        deps.lockQueue.release(handle);
+        await deps.lockCoordinator.release(claim);
         return { kind: 'aborted', reason: `scratch setup: ${(err as Error).message}` };
       }
 
@@ -255,20 +277,21 @@ export async function runChunkLoop(
         // this attempt and re-do after re-acquiring the union.
         const extra = impl.touchedFiles.filter((f) => !chunk.files.includes(f));
         if (extra.length > 0) {
-          const extended = deps.lockQueue.tryExtend(handle, extra);
-          if (!extended) {
+          const ext = await deps.lockCoordinator.extend(claim, { addPaths: extra });
+          if (!ext.ok) {
             log(`chunk-loop: lock-extension contended for ${chunk.id}; release+reacquire`);
-            // Release everything + drop env. Outer while continues with
-            // the chunk's `files` field updated to include the extras
-            // so the next acquire takes them as a sorted union.
+            // Release everything (via the finally) + drop env. Outer while
+            // continues with the chunk's `files` field updated to include the
+            // extras so the next acquire takes them as a sorted union.
             chunk = { ...chunk, files: [...chunk.files, ...extra] };
             outcome = 'replan'; // not strictly a replan — same chunk, just re-acquire
             // Don't increment strikes — this isn't a typecheck failure.
             continue;
           }
-          // Extension succeeded: chunk.files must now reflect the
-          // expanded set so the commit step copies + stages every
-          // touched path.
+          // Extension succeeded: adopt the new claim (extend returns a fresh
+          // claim) and expand chunk.files so the commit step copies + stages
+          // every touched path.
+          claim = ext.claim;
           chunk = { ...chunk, files: [...chunk.files, ...extra] };
         }
 
@@ -299,7 +322,7 @@ export async function runChunkLoop(
         outcome = strikes >= replanStrikes ? 'escalate' : 'replan';
       } finally {
         if (env) await teardownScratch(env, deps.repoPath);
-        deps.lockQueue.release(handle);
+        await deps.lockCoordinator.release(claim);
       }
 
       if (outcome === 'committed') {

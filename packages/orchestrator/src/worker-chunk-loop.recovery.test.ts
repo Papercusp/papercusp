@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { FileLockQueue } from './file-lock-queue.js';
+import { FileLockQueueCoordinator } from './file-lock-queue-coordinator.js';
 import { runChunkLoop, type ChunkLoopDeps } from './worker-chunk-loop.js';
 
 function execSync(cmd: string, args: readonly string[], cwd: string): Promise<string> {
@@ -42,7 +43,7 @@ test('resumeFromPlan skips planning and already-committed chunks', async () => {
 
     const deps: ChunkLoopDeps = {
       repoPath: repo,
-      lockQueue,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
       typecheckCommand: 'true',
       planChunks: async () => {
         planChunksCalled++;
@@ -101,7 +102,7 @@ test('resumeFromPlan with all chunks committed is a no-op (returns completed)', 
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'true',
         planChunks: async () => {
           planCalled++;
@@ -142,7 +143,7 @@ test('resumeFromPlan does not emit plan_ready (avoid clobbering persisted state)
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'true',
         planChunks: async () => 'unused',
         implementChunk: async (_f, _c, env) => {
@@ -184,7 +185,7 @@ test('resumeFromPlan handles partial completion correctly (resumes mid-plan)', a
       { id: 'F-X', title: 'X', description: 'X' },
       {
         repoPath: repo,
-        lockQueue,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
         typecheckCommand: 'true',
         planChunks: async () => 'unused',
         implementChunk: async (_f, chunk, env) => {

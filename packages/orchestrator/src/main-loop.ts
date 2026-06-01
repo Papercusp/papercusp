@@ -61,6 +61,7 @@ import {
 } from './lanes';
 import type { LanePool } from './lanes';
 import { FileLockQueue } from './file-lock-queue';
+import { FileLockQueueCoordinator } from './file-lock-queue-coordinator';
 // The chunk-loop worker model lives in run-worker-chunk-loop.ts (the SHARED home
 // for both the durable DBOS pipeline and this retired loop). handleChunkLoopWorker
 // below delegates to it; when this file is deleted, that module is the sole home.
@@ -2202,7 +2203,9 @@ async function handleChunkLoopWorker(
   // with the durable DBOS pipeline). This retired loop delegates to it. The
   // worker always reports idle/exit-0: the feature *status* set by the loop
   // (validating/failing) drives the next orchestrator turn, not an exit code.
-  await runWorkerChunkLoop(fid, ctx, logger, cfg, lockQueue);
+  // P-040: runWorkerChunkLoop now takes a FileClaimCoordinator — wrap the retired
+  // loop's in-process FileLockQueue (it has no cross-process PG backend).
+  await runWorkerChunkLoop(fid, ctx, logger, cfg, new FileLockQueueCoordinator(lockQueue));
   return { terminal: false, exitCode: 0, reason: 'idle' };
 }
 

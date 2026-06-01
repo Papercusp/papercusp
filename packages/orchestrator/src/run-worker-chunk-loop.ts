@@ -18,7 +18,7 @@ import { spawnSync } from 'node:child_process';
 import type { InvokeContext } from './invoke.js';
 import type { Logger } from './log.js';
 import type { HarnessConfig } from './types';
-import type { FileLockQueue } from './file-lock-queue.js';
+import type { FileClaimCoordinator } from '@papercusp/file-claim';
 import { invoke } from './invoke.js';
 import { readFeatures, stateCtx, setFeatureStatus, harnessSlug } from './state.js';
 import { configGet } from './config.js';
@@ -156,7 +156,7 @@ export async function runWorkerChunkLoop(
   ctx: InvokeContext,
   logger: Logger,
   cfg: HarnessConfig,
-  lockQueue: FileLockQueue,
+  lockCoordinator: FileClaimCoordinator,
 ): Promise<ChunkLoopOutcome> {
   const features = await readFeatures(ctx.stateDir, stateCtx(ctx)).catch(() => []);
   const fRow = features.find((f: { id: string }) => f.id === fid);
@@ -203,7 +203,7 @@ export async function runWorkerChunkLoop(
   const outcome = await driveChunkLoop({
     feature,
     cfg,
-    lockQueue,
+    lockCoordinator,
     repoPath: ctx.projectDir,
     pg: ctx.pg,
     workspaceId: ctx.workspaceId,
