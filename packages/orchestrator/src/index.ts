@@ -28,6 +28,21 @@ export { resolvePaths, resolveEnv } from './env';
 export { AGENT_BACKENDS } from './types';
 export { readFeaturesPg, durableOwnedFeatureIdsPg } from './state-pg';
 export type { PgStateContext } from './state-pg';
+// G2 Auditor dispatch lane (P-007): screen remote-pending features through the
+// auditor role before the pick loop can consider them.
+export {
+  selectRemotePendingFeatures,
+  applyAuditVerdict,
+  parseAuditorOutput,
+  dispatchAuditorLane,
+} from './auditor-dispatch';
+export type {
+  RemotePendingFeature,
+  AuditVerdict,
+  AuditorSpawnFn,
+  CreateEscalationFn,
+  AuditorDispatchCtx,
+} from './auditor-dispatch';
 // Debug-note capture/materialize — the durable pipeline's debugger-before-worker
 // gate (operator P-012) reuses these instead of duplicating the PG SQL.
 export { captureDebuggerOutput, materializeFeatureDebugNote } from './feature-debug-notes';

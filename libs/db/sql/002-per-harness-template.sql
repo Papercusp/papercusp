@@ -50,6 +50,16 @@ CREATE INDEX IF NOT EXISTS hf_expires_idx
 -- Trigger that mirrors writes into harness_shared.harness_features_consolidated
 -- so the cross-harness /features page can subscribe via Zero. The trigger
 -- function is defined in libs/db/sql/001-shared.sql; this just attaches it.
+--
+-- G2 gate safety invariant (P-007): this trigger stamps `origin DEFAULT 'local'`
+-- (from the column default on harness_features_consolidated) on every INSERT
+-- flowing through the per-harness table. REMOTE features MUST NEVER be written
+-- directly into this per-harness `harness_features` table — they arrive ONLY via
+-- the Hyperbee projection path (`apps/operator/lib/sync/hyperbee/projection.ts`),
+-- which explicitly stamps `origin='remote'` on the consolidated row. A row
+-- written here without a projection is local by construction. Do not break this
+-- invariant: any direct INSERT into harness_features that bypasses the projection
+-- path would appear as `origin='local'` and skip the auditor gate entirely.
 DROP TRIGGER IF EXISTS sync_consolidated_trg ON {{SCHEMA}}.harness_features;
 CREATE TRIGGER sync_consolidated_trg
   AFTER INSERT OR UPDATE OR DELETE ON {{SCHEMA}}.harness_features
