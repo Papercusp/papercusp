@@ -27,7 +27,7 @@ import {
   writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { configGet, readConfig } from './config';
 import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
@@ -627,30 +627,23 @@ export function claudeSandboxArgs(
 }
 
 /**
- * codex's sandbox policy flags (plan fleet-spawn-sandbox-2026-06-01, Phase 2).
- * codex has its OWN native sandbox: Linux bubblewrap+seccomp, macOS Seatbelt.
+ * codex's sandbox flags. **codex is NOT sandboxable for the fleet** — verified
+ * vs codex on this box (P-012, D-009): under `-s workspace-write` (and
+ * `read-only`) codex CANCELS MCP tool calls ("user cancelled MCP tool call"),
+ * while the same call REACHES the server under the bypass. A sandboxed codex
+ * worker is therefore tool-less, which breaks the MCP-dependent fleet. So codex
+ * always runs under `-s danger-full-access --dangerously-bypass-approvals-and-
+ * sandbox` REGARDLESS of PAPERCUSP_FLEET_SANDBOX — the flag deliberately does
+ * not switch codex to workspace-write (that would silently disable its tools).
  *
- *  - flag ON  → `-s workspace-write`: the contained mode. Verified vs codex on
- *    this box — confines writes to the workspace (+ default writable roots like
- *    /tmp), blocks out-of-workspace writes (e.g. `~/.bashrc` → "Read-only file
- *    system"), and blocks command network egress (curl → exit 6). NOTE codex
- *    `workspace-write` reads broadly (it CAN read `~/.ssh`) — codex has no
- *    `denyRead` equivalent, so cred-read closure relies on the egress block +
- *    the subprocess env-scrub, not the sandbox. Approval is non-interactive in
- *    `exec` mode (no hang).
- *  - flag OFF → the prior default: `-s danger-full-access
- *    --dangerously-bypass-approvals-and-sandbox` (unchanged behavior).
+ * (workspace-write *does* confine writes + block command egress — but the MCP
+ * cancellation makes it unusable here; revisit if codex gains MCP-under-sandbox
+ * support. claude is sandboxed because its sandbox covers only sub-commands,
+ * leaving the agent's own MCP connection intact; codex sandboxes differently.)
  *
- * Appended to `extraFlags` (before the `-` stdin positional), NOT to the tail
- * of finalArgv, because codex requires options before the positional prompt.
- * Defers to a user-set `-s`/`--sandbox`/bypass in AGENT_CMD.
- *
- * OPEN RISK (gated to the real-spawn pass, plan P-007/P-012): whether codex's
- * MCP tool calls work under `workspace-write`. The handoff note records that
- * `-s read-only` CANCELS codex MCP tool calls; `workspace-write` is less
- * restrictive but this is unverified against the live operator MCP. If it also
- * cancels MCP, codex can't be both sandboxed AND tool-enabled, and this stays
- * off. That's why flag-OFF keeps the working `danger-full-access` default.
+ * Appended to `extraFlags` before the `-` stdin positional. Defers to a
+ * user-set `-s`/`--sandbox`/bypass in AGENT_CMD. `enabled` is intentionally
+ * unused: codex's posture does not depend on the fleet-sandbox flag.
  */
 export function codexSandboxArgs(
   agentBackend: AgentBackend,
@@ -658,6 +651,7 @@ export function codexSandboxArgs(
   roleAgentCmd: string,
   enabled: boolean,
 ): string[] {
+  void enabled; // codex can't be sandboxed (MCP cancellation) — see docstring.
   if (agentBackend !== 'codex' || streamFormat !== 'codex-json') return [];
   // Defer to a user-chosen sandbox/bypass posture in AGENT_CMD.
   if (
@@ -667,68 +661,21 @@ export function codexSandboxArgs(
   ) {
     return [];
   }
-  return enabled
-    ? ['-s', 'workspace-write']
-    : ['-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'];
+  return ['-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'];
 }
 
-/* ─── omp sandbox via srt (plan fleet-spawn-sandbox-2026-06-01, Phase 3) ─────
- * omp (oh-my-pi) has NO native fs/network sandbox, so we wrap its spawn in
- * Anthropic's standalone `srt` (@anthropic-ai/sandbox-runtime) — the SAME
- * bubblewrap+seccomp/Seatbelt+proxy mechanism claude/codex use natively. srt
- * settings differ from claude's: every key is REQUIRED (allowed+deniedDomains,
- * allow+denyWrite, denyRead) and Linux needs LITERAL paths (no `~`). Verified
- * on this box: `srt -s <settings> <cmd>` hides denyRead paths, confines writes,
- * blocks egress. (Deps: bwrap + socat + ripgrep — all present.)
+/* ─── omp sandbox via srt — DEFERRED (plan fleet-spawn-sandbox, P-012/D-010) ──
+ * Phase 3 wrapped omp in `srt` (@anthropic-ai/sandbox-runtime). P-012 found it
+ * non-viable as designed: `srt` wraps the WHOLE omp process, so its network
+ * filter gates omp's OWN model + MCP connections (a deny-all egress breaks omp
+ * outright) — unlike claude/codex, whose native sandboxes wrap only sub-commands
+ * and leave the agent's connections intact. omp was also un-runnable on this box
+ * (mis-configured local model), so no real verification was possible. The srt
+ * *mechanism* is verified (it sandboxes a bash command correctly — cred-hide,
+ * cwd-write, egress-block); what's missing is a per-omp egress allowlist
+ * (model + operator) + a real-spawn pass. Reintroduce the helpers when that's
+ * designed + verifiable. Until then omp runs unsandboxed (see the spawn site).
  * ──────────────────────────────────────────────────────────────────────── */
-
-/** The srt settings object for an omp spawn — the common policy in srt's schema. */
-export function buildOmpSrtSettings(cwd: string): Record<string, unknown> {
-  const home = homedir();
-  // srt needs absolute literal paths on Linux — expand the `~` cred dirs.
-  const denyRead = FLEET_SANDBOX_DENY_READ.map((p) =>
-    p.startsWith('~/') ? join(home, p.slice(2)) : p,
-  );
-  return {
-    network: { allowedDomains: [...FLEET_SANDBOX_ALLOWED_DOMAINS], deniedDomains: [] },
-    // Writes confined to the spawn cwd (worktree/projectDir); reads broad except creds.
-    filesystem: { allowWrite: [cwd], denyWrite: [], denyRead },
-  };
-}
-
-/** First `srt` executable on PATH, or null. */
-export function srtBinOnPath(): string | null {
-  const dirs = (process.env.PATH ?? '').split(':').filter(Boolean);
-  for (const d of dirs) {
-    const p = join(d, 'srt');
-    if (existsSync(p)) return p;
-  }
-  return null;
-}
-
-/** Write the per-spawn srt settings file (0600) and return its path. */
-export function writeOmpSrtSettings(cwd: string): string {
-  const dir = mkdtempSync(join(tmpdir(), 'papercusp-srt-'));
-  const path = join(dir, 'srt-settings.json');
-  writeFileSync(path, JSON.stringify(buildOmpSrtSettings(cwd)), { mode: 0o600 });
-  return path;
-}
-
-/**
- * Wrap an omp spawn command in `srt`. Pure — the caller resolves `srtBin`
- * (PATH) and `settingsPath` (written file). Returns the spawn unchanged unless
- * enabled + backend omp + both inputs present. Result: `srt -s <file> <cmd> …`.
- */
-export function wrapOmpWithSrt(
-  command: string,
-  argv: string[],
-  opts: { enabled: boolean; agentBackend: AgentBackend; srtBin: string | null; settingsPath: string | null },
-): { command: string; argv: string[] } {
-  if (!opts.enabled || opts.agentBackend !== 'omp' || !opts.srtBin || !opts.settingsPath) {
-    return { command, argv };
-  }
-  return { command: opts.srtBin, argv: ['-s', opts.settingsPath, command, ...argv] };
-}
 
 /**
  * Extra CLI args that make claude-code load + trust the per-spawn signed
@@ -1630,30 +1577,14 @@ export async function invoke(
       }
     }
 
-    // omp OS sandbox (plan fleet-spawn-sandbox Phase 3): omp has no native
-    // sandbox, so when the flag is on we wrap its spawn in `srt`. Fail loud if
-    // srt is missing rather than silently run omp unsandboxed after the operator
-    // opted in (mirrors claude's failIfUnavailable:true). No-op for other backends.
-    let spawnCommand = command;
-    let spawnArgv = finalArgv;
-    if (fleetSandboxEnabled() && agentBackend === 'omp') {
-      const srtBin = srtBinOnPath();
-      if (!srtBin) {
-        throw new Error(
-          'PAPERCUSP_FLEET_SANDBOX is set for an omp spawn but `srt` is not on PATH. ' +
-            'Install @anthropic-ai/sandbox-runtime (npm i -g) or unset the flag.',
-        );
-      }
-      const settingsPath = writeOmpSrtSettings(cwd);
-      ({ command: spawnCommand, argv: spawnArgv } = wrapOmpWithSrt(command, finalArgv, {
-        enabled: true,
-        agentBackend,
-        srtBin,
-        settingsPath,
-      }));
-    }
-
-    const child = spawn(spawnCommand, spawnArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    // NOTE (P-012, D-010): omp is NOT srt-wrapped. Unlike claude/codex — whose
+    // native sandboxes wrap only sub-commands and leave the agent's own MCP +
+    // model connections intact — `srt` would wrap the WHOLE omp process, so its
+    // network filter gates omp's own model + MCP traffic. A deny-all egress
+    // breaks omp outright; making it work needs a per-omp egress allowlist
+    // (model endpoint + operator) AND a real-spawn verification, which omp's
+    // current mis-config on this box blocked. Deferred — omp runs unsandboxed.
+    const child = spawn(command, finalArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
 
     // Write a row to harness_shared.harness_lanes so the operator UI's
     // "agents in flight" pill bar can subscribe to the live agent set.

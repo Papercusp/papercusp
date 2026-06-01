@@ -24,9 +24,6 @@ import {
   gitConfigNoPushEnv,
   claudeSandboxArgs,
   codexSandboxArgs,
-  buildOmpSrtSettings,
-  wrapOmpWithSrt,
-  srtBinOnPath,
   fleetSandboxSettingsForRole,
   FLEET_SANDBOX_DENY_READ,
   FLEET_SANDBOX_DENY_RULES,
@@ -761,15 +758,12 @@ test('streamFormatFlags — codex-json carries exec + json only (sandbox decided
   );
 });
 
-test('codexSandboxArgs — flag ON → -s workspace-write (contained); flag OFF → danger-full-access default', () => {
-  assert.deepEqual(
-    codexSandboxArgs('codex', 'codex-json', 'codex', true),
-    ['-s', 'workspace-write'],
-  );
-  assert.deepEqual(
-    codexSandboxArgs('codex', 'codex-json', 'codex', false),
-    ['-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'],
-  );
+test('codexSandboxArgs — always danger-full-access; the flag does NOT switch codex (workspace-write cancels MCP — P-012/D-009)', () => {
+  // codex is not sandboxable for the fleet: workspace-write cancels its MCP
+  // tool calls, so the flag must NOT switch it (that would make codex tool-less).
+  const bypass = ['-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'];
+  assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex', true), bypass);
+  assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex', false), bypass);
 });
 
 test('codexSandboxArgs — non-codex → [] (no-op for claude/omp)', () => {
@@ -783,38 +777,9 @@ test('codexSandboxArgs — user set their own -s/--sandbox/bypass → defer to t
   assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex --dangerously-bypass-approvals-and-sandbox', true), []);
 });
 
-// --- omp via srt (plan fleet-spawn-sandbox Phase 3) ---
-
-test('buildOmpSrtSettings — srt schema: cwd writable, cred dirs denyRead (absolute), egress deny', () => {
-  const s = buildOmpSrtSettings('/work/dir') as any;
-  // srt requires all keys present
-  assert.ok(Array.isArray(s.network.allowedDomains) && Array.isArray(s.network.deniedDomains));
-  assert.ok(Array.isArray(s.filesystem.allowWrite) && Array.isArray(s.filesystem.denyWrite));
-  assert.deepEqual(s.filesystem.allowWrite, ['/work/dir']);
-  assert.deepEqual(s.network.allowedDomains, []); // deny-all egress floor
-  // cred dirs expanded to ABSOLUTE literal paths (Linux srt needs no `~`)
-  const sshDeny = s.filesystem.denyRead.find((p: string) => p.endsWith('/.ssh'));
-  assert.ok(sshDeny && sshDeny.startsWith('/') && !sshDeny.includes('~'), 'denyRead ~/.ssh expanded to absolute');
-});
-
-test('wrapOmpWithSrt — enabled + omp → srt -s <settings> <cmd> <args>', () => {
-  const r = wrapOmpWithSrt('omp', ['-p', '--mode', 'json'], {
-    enabled: true, agentBackend: 'omp', srtBin: '/usr/bin/srt', settingsPath: '/tmp/s.json',
-  });
-  assert.deepEqual(r, { command: '/usr/bin/srt', argv: ['-s', '/tmp/s.json', 'omp', '-p', '--mode', 'json'] });
-});
-
-test('wrapOmpWithSrt — disabled / non-omp / missing srt → spawn unchanged', () => {
-  const base = { command: 'omp', argv: ['-p'] };
-  assert.deepEqual(wrapOmpWithSrt('omp', ['-p'], { enabled: false, agentBackend: 'omp', srtBin: '/s', settingsPath: '/x' }), base);
-  assert.deepEqual(wrapOmpWithSrt('omp', ['-p'], { enabled: true, agentBackend: 'claude-code', srtBin: '/s', settingsPath: '/x' }), base);
-  assert.deepEqual(wrapOmpWithSrt('omp', ['-p'], { enabled: true, agentBackend: 'omp', srtBin: null, settingsPath: '/x' }), base);
-});
-
-test('srtBinOnPath — returns an absolute /srt path or null (type contract)', () => {
-  const p = srtBinOnPath();
-  assert.ok(p === null || (typeof p === 'string' && p.endsWith('/srt')));
-});
+// omp via srt was removed after P-012 (D-010): srt wraps omp's whole process,
+// so its egress filter breaks omp's own model/MCP connections. Deferred until a
+// per-omp egress allowlist + real-spawn verification. omp runs unsandboxed.
 
 test('extractResult — codex-json concatenates agent_message item.completed text', () => {
   const dir = mkdtempSync(join(tmpdir(), 'codex-extract-'));
