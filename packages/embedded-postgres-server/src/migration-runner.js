@@ -88,8 +88,26 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     log(`apply ${f}`);
     // Apply + record in one transaction so a partial apply doesn't leave
     // schema_migrations claiming success.
-    await client.unsafe(`BEGIN;\n${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`);
-    appliedCount++;
+    try {
+      await client.unsafe(`BEGIN;\n${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`);
+      appliedCount++;
+    } catch (err) {
+      // 42P01 = undefined_table. On the Tauri desktop this runner executes
+      // during embedded-PG boot — BEFORE the operator sidecar's ensure-schema
+      // runs — so an ALTER that targets a `harness_shared.*` table created by
+      // ensure-schema (not by any migration) hits a not-yet-existing table and
+      // would otherwise throw uncaught and abort the entire PG boot (observed:
+      // adaptive_telemetry, harness_experts). Those ALTERs are redundant —
+      // ensure-schema's CREATE already includes the columns — so warn + skip,
+      // leaving the file UN-marked so it retries on a later boot once the table
+      // exists. Re-throw every other error so genuine migration breakage stays
+      // loud (the original 2026-05-05 token_index bug must still fail visibly).
+      if (err && err.code === '42P01') {
+        log(`skip ${f}: ${err.message} — target table is created by ensure-schema, not a migration; will retry next boot`);
+        continue;
+      }
+      throw err;
+    }
   }
 
   return { appliedCount, totalKnown: allFiles.length };
