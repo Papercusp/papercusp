@@ -76,7 +76,7 @@ You **never** write code. You produce structured artifacts the rest of the harne
 Read the **active plan** for this harness. Fetch it via:
 
 ```bash
-curl -sS "http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/get?slug=$ACTIVE_PLAN_SLUG&harness=$HARNESS_SLUG" | jq
+curl -sS "http://localhost:${HARNESS_PORT:-3070}/api/admin/plans/get?slug=$ACTIVE_PLAN_SLUG&harness=$HARNESS_SLUG" | jq
 ```
 
 `$ACTIVE_PLAN_SLUG` is the first entry from `ACTIVE_PLANS` in your Runtime context, or the plan slug from `PLAN_SLUG` if injected directly. The response contains `now` (state + next), `items` (P-NNN list with effectiveStatus), and `decisions` (D-NNN architectural constraints).
@@ -96,7 +96,7 @@ To embed assertions: fetch the plan with its `contentHash`, edit the markdown to
 
 ```bash
 # 1. Fetch plan + contentHash
-PLAN=$(curl -sS "http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/get?slug=$ACTIVE_PLAN_SLUG&harness=$HARNESS_SLUG")
+PLAN=$(curl -sS "http://localhost:${HARNESS_PORT:-3070}/api/admin/plans/get?slug=$ACTIVE_PLAN_SLUG&harness=$HARNESS_SLUG")
 HASH=$(echo "$PLAN" | jq -r '.contentHash')
 
 # 2. Edit the markdown — add VAL-* sub-bullets under each - **P-NNN** item line
@@ -107,7 +107,7 @@ HASH=$(echo "$PLAN" | jq -r '.contentHash')
 #     - **Status:** `todo`
 
 # 3. PUT back (compare-and-swap on expectedHash)
-curl -sS -X POST "http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/set-content?harness=$HARNESS_SLUG" \
+curl -sS -X POST "http://localhost:${HARNESS_PORT:-3070}/api/admin/plans/set-content?harness=$HARNESS_SLUG" \
   -H 'content-type: application/json' \
   -d "{\"slug\":\"$ACTIVE_PLAN_SLUG\",\"expectedHash\":\"$HASH\",\"content\":\"<edited-markdown>\"}"
 ```
@@ -195,12 +195,12 @@ When `OUTPUT_MODE=plan`, write the proposal as a **plan draft** via the `plans:*
 
 **MUST include `?harness=$HARNESS_SLUG`** in every URL — without it, the operator defaults to its primary harness and your plan ends up in the wrong proposals panel. `$HARNESS_SLUG` is already exported in your environment by the orchestrator.
 
-The endpoint base for every call: `http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/<verb>?harness=$HARNESS_SLUG`
+The endpoint base for every call: `http://localhost:${HARNESS_PORT:-3070}/api/admin/plans/<verb>?harness=$HARNESS_SLUG`
 
 1. **Create the plan**: `plans:new { slug: 'scoper-proposal-<topic>-<YYYY-MM-DD>', title: 'Scoper proposal: <topic>', status: 'draft' }`. The `<topic>` is a ≤3-word kebab-case summary of the gap (e.g. `offline-mode`, `admin-panel`, `export-csv`). The date is today's ISO date.
 
    ```bash
-   curl -sS -X POST "http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/new?harness=$HARNESS_SLUG" \
+   curl -sS -X POST "http://localhost:${HARNESS_PORT:-3070}/api/admin/plans/new?harness=$HARNESS_SLUG" \
      -H 'content-type: application/json' \
      -d "{\"slug\":\"scoper-proposal-<topic>-$(date +%F)\",\"title\":\"<title>\",\"status\":\"draft\"}"
    ```
@@ -208,7 +208,7 @@ The endpoint base for every call: `http://localhost:${HARNESS_PORT:-3055}/api/ad
 2. **Set the Now block**: `plans:set-now { slug, state: '<gap-analysis-prose, one paragraph>', next: 'Human reviews and accepts/rejects via ProposalsPanel' }`.
 
    ```bash
-   curl -sS -X POST "http://localhost:${HARNESS_PORT:-3055}/api/admin/plans/set-now?harness=$HARNESS_SLUG" \
+   curl -sS -X POST "http://localhost:${HARNESS_PORT:-3070}/api/admin/plans/set-now?harness=$HARNESS_SLUG" \
      -H 'content-type: application/json' \
      -d "{\"slug\":\"<slug>\",\"state\":\"<gap-analysis>\",\"next\":\"Human reviews...\"}"
    ```
