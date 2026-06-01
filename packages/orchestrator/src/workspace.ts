@@ -60,3 +60,20 @@ export function activeWorkspaceId(): string {
 export function _resetActiveWorkspaceCache(): void {
   cached = null;
 }
+
+/**
+ * Absolute path of a workspace's fake-HOME dir (Phase E, P-051).
+ *
+ * In the shared-operator model (D-008) one sidecar serves every workspace under
+ * a neutral process HOME, so each spawned child gets its OWN workspace's HOME
+ * for filesystem-credential isolation (`~/.claude`, `~/.gitconfig`). The dir is
+ * provisioned by the desktop shell (`workspaces.rs::link_workspace_credentials`).
+ * Honors `PAPERCUSP_WORKSPACES_ROOT` (set by the shell) and falls back to
+ * `~/.papercusp-workspaces`, mirroring `apps/operator/lib/workspace-registry.ts`.
+ */
+export function workspaceHomeDir(id: string, env: NodeJS.ProcessEnv = process.env): string {
+  const root =
+    env.PAPERCUSP_WORKSPACES_ROOT?.trim() ||
+    join(homedir(), '.papercusp-workspaces');
+  return join(root, id);
+}

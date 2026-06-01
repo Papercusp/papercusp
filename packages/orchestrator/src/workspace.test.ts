@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { activeWorkspaceId, _resetActiveWorkspaceCache } from './workspace';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { activeWorkspaceId, workspaceHomeDir, _resetActiveWorkspaceCache } from './workspace';
 
 const ORIGINAL_ENV = process.env.PAPERCUSP_WORKSPACE_ID;
 
@@ -42,5 +44,23 @@ describe('activeWorkspaceId', () => {
     const result = activeWorkspaceId();
     expect(typeof result).toBe('string');
     expect(result.length).toBeGreaterThan(0);
+  });
+});
+
+describe('workspaceHomeDir (Phase E P-051)', () => {
+  const ORIGINAL_ROOT = process.env.PAPERCUSP_WORKSPACES_ROOT;
+  afterEach(() => {
+    if (ORIGINAL_ROOT === undefined) delete process.env.PAPERCUSP_WORKSPACES_ROOT;
+    else process.env.PAPERCUSP_WORKSPACES_ROOT = ORIGINAL_ROOT;
+  });
+
+  it('honors PAPERCUSP_WORKSPACES_ROOT (set by the shell)', () => {
+    process.env.PAPERCUSP_WORKSPACES_ROOT = '/tmp/pc-ws-root';
+    expect(workspaceHomeDir('ws1')).toBe('/tmp/pc-ws-root/ws1');
+  });
+
+  it('falls back to ~/.papercusp-workspaces when the env is unset', () => {
+    delete process.env.PAPERCUSP_WORKSPACES_ROOT;
+    expect(workspaceHomeDir('ws1')).toBe(join(homedir(), '.papercusp-workspaces', 'ws1'));
   });
 });

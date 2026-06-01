@@ -46,6 +46,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import type { AgentBackend, InvokeResult } from './types';
 import { resolveAgentBackend, normalizeModelForBackend } from './env';
+import { workspaceHomeDir } from './workspace';
 
 /**
  * Postgres client interface the orchestrator uses for PG-canonical state.
@@ -878,6 +879,37 @@ export function gitConfigNoPushEnv(
 }
 
 /**
+ * Phase E (P-051 / D-008): resolve the per-spawn `HOME` for a child agent.
+ *
+ * In the shared-operator model — signaled by `PAPERCUSP_SHARED_OPERATOR=1`,
+ * which only the new desktop shell sets — ONE sidecar serves many workspaces
+ * under a neutral process HOME (the real user home). Each spawned child must
+ * therefore get its OWN workspace's HOME so filesystem credentials resolve
+ * per-workspace: `~/.claude` (Claude session) + `~/.gitconfig` (git identity),
+ * which the shell provisions into every workspace dir
+ * (`workspaces.rs::link_workspace_credentials`).
+ *
+ * Returns the workspace HOME dir, or `null` to leave the inherited process HOME
+ * untouched. `null` when: not the shared-operator model (dev / standalone / the
+ * legacy per-process-HOME packaged build — D-009: never flip piecemeal in dev);
+ * no workspace bound; the workspace dir isn't provisioned; or the caller
+ * already pinned a HOME. (`PAPERCUSP_HOME` — operator *state* — is set
+ * separately by the spawn envelope; this is the OS HOME for filesystem creds,
+ * which `PAPERCUSP_HOME` does not cover.)
+ */
+export function resolveSpawnHome(
+  workspaceId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+  callerHomeOverride?: string,
+): string | null {
+  if (callerHomeOverride) return null;
+  if (env.PAPERCUSP_SHARED_OPERATOR !== '1') return null;
+  if (!workspaceId) return null;
+  const wsHome = workspaceHomeDir(workspaceId, env);
+  return existsSync(wsHome) ? wsHome : null;
+}
+
+/**
  * Parse the final assistant text from a structured-stream log file.
  *
  * For `claude-stream-json`: the terminal event is
@@ -1567,6 +1599,19 @@ export async function invoke(
       PI_MEMORIES_ENABLED: 'false',
       PI_MEMORY_BACKEND: 'off',
     };
+
+    // Phase E (P-051 / D-008): per-spawn HOME for filesystem-credential
+    // isolation (~/.claude, ~/.gitconfig). See resolveSpawnHome — gated on the
+    // shared-operator model so dev / legacy builds inherit the process HOME.
+    const spawnHome = resolveSpawnHome(
+      ctx.workspaceId,
+      spawnEnv,
+      options.extraEnv?.HOME ?? ctx.extraSpawnEnv?.HOME,
+    );
+    if (spawnHome) {
+      spawnEnv.HOME = spawnHome;
+      spawnEnv.USERPROFILE = spawnHome; // Windows
+    }
 
     // No orchestrator-spawned agent may `git push` — integration is the
     // orchestrator's job and the repo's invariant is "agents don't push".

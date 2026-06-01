@@ -22,6 +22,7 @@ import {
   fleetAllowedToolsForRole,
   ensureFleetGitHooksDir,
   gitConfigNoPushEnv,
+  resolveSpawnHome,
   claudeSandboxArgs,
   codexSandboxArgs,
   fleetSandboxSettingsForRole,
@@ -59,6 +60,46 @@ test('splitCommand — whitespace-splits like bash unquoted', () => {
     'claude', '-p', '--model', 'sonnet',
   ]);
   assert.deepEqual(splitCommand('claude'), ['claude']);
+});
+
+// --- P-051: per-spawn HOME (Phase E / D-008) ------------------------------
+test('resolveSpawnHome — shared-operator model returns the workspace HOME dir', () => {
+  const root = mkdtempSync(join(tmpdir(), 'papercusp-spawnhome-'));
+  try {
+    const wsHome = join(root, 'ws1');
+    mkdirSync(wsHome, { recursive: true });
+    const env = { PAPERCUSP_SHARED_OPERATOR: '1', PAPERCUSP_WORKSPACES_ROOT: root };
+    assert.equal(resolveSpawnHome('ws1', env), wsHome);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('resolveSpawnHome — null unless the shared-operator flag is set (dev / legacy inherit process HOME)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'papercusp-spawnhome-'));
+  try {
+    mkdirSync(join(root, 'ws1'), { recursive: true });
+    // Flag absent → never flip (D-009: don't flip piecemeal in dev).
+    assert.equal(resolveSpawnHome('ws1', { PAPERCUSP_WORKSPACES_ROOT: root }), null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('resolveSpawnHome — null when no workspace, when the dir is absent, or when the caller pinned HOME', () => {
+  const root = mkdtempSync(join(tmpdir(), 'papercusp-spawnhome-'));
+  try {
+    const sharedEnv = { PAPERCUSP_SHARED_OPERATOR: '1', PAPERCUSP_WORKSPACES_ROOT: root };
+    // no workspace bound
+    assert.equal(resolveSpawnHome(undefined, sharedEnv), null);
+    // workspace dir not provisioned
+    assert.equal(resolveSpawnHome('never-made', sharedEnv), null);
+    // caller already pinned a HOME → leave it
+    mkdirSync(join(root, 'ws1'), { recursive: true });
+    assert.equal(resolveSpawnHome('ws1', sharedEnv, '/some/explicit/home'), null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 // --- P-015: invoke() idempotency short-circuit (DBOS Phase 3) -------------
