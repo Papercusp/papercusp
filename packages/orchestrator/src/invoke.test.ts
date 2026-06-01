@@ -24,6 +24,9 @@ import {
   gitConfigNoPushEnv,
   claudeSandboxArgs,
   codexSandboxArgs,
+  buildOmpSrtSettings,
+  wrapOmpWithSrt,
+  srtBinOnPath,
   fleetSandboxSettingsForRole,
   FLEET_SANDBOX_DENY_READ,
   FLEET_SANDBOX_DENY_RULES,
@@ -778,6 +781,39 @@ test('codexSandboxArgs — user set their own -s/--sandbox/bypass → defer to t
   assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex -s read-only', true), []);
   assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex --sandbox workspace-write', false), []);
   assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex --dangerously-bypass-approvals-and-sandbox', true), []);
+});
+
+// --- omp via srt (plan fleet-spawn-sandbox Phase 3) ---
+
+test('buildOmpSrtSettings — srt schema: cwd writable, cred dirs denyRead (absolute), egress deny', () => {
+  const s = buildOmpSrtSettings('/work/dir') as any;
+  // srt requires all keys present
+  assert.ok(Array.isArray(s.network.allowedDomains) && Array.isArray(s.network.deniedDomains));
+  assert.ok(Array.isArray(s.filesystem.allowWrite) && Array.isArray(s.filesystem.denyWrite));
+  assert.deepEqual(s.filesystem.allowWrite, ['/work/dir']);
+  assert.deepEqual(s.network.allowedDomains, []); // deny-all egress floor
+  // cred dirs expanded to ABSOLUTE literal paths (Linux srt needs no `~`)
+  const sshDeny = s.filesystem.denyRead.find((p: string) => p.endsWith('/.ssh'));
+  assert.ok(sshDeny && sshDeny.startsWith('/') && !sshDeny.includes('~'), 'denyRead ~/.ssh expanded to absolute');
+});
+
+test('wrapOmpWithSrt — enabled + omp → srt -s <settings> <cmd> <args>', () => {
+  const r = wrapOmpWithSrt('omp', ['-p', '--mode', 'json'], {
+    enabled: true, agentBackend: 'omp', srtBin: '/usr/bin/srt', settingsPath: '/tmp/s.json',
+  });
+  assert.deepEqual(r, { command: '/usr/bin/srt', argv: ['-s', '/tmp/s.json', 'omp', '-p', '--mode', 'json'] });
+});
+
+test('wrapOmpWithSrt — disabled / non-omp / missing srt → spawn unchanged', () => {
+  const base = { command: 'omp', argv: ['-p'] };
+  assert.deepEqual(wrapOmpWithSrt('omp', ['-p'], { enabled: false, agentBackend: 'omp', srtBin: '/s', settingsPath: '/x' }), base);
+  assert.deepEqual(wrapOmpWithSrt('omp', ['-p'], { enabled: true, agentBackend: 'claude-code', srtBin: '/s', settingsPath: '/x' }), base);
+  assert.deepEqual(wrapOmpWithSrt('omp', ['-p'], { enabled: true, agentBackend: 'omp', srtBin: null, settingsPath: '/x' }), base);
+});
+
+test('srtBinOnPath — returns an absolute /srt path or null (type contract)', () => {
+  const p = srtBinOnPath();
+  assert.ok(p === null || (typeof p === 'string' && p.endsWith('/srt')));
 });
 
 test('extractResult — codex-json concatenates agent_message item.completed text', () => {

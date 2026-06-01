@@ -27,7 +27,7 @@ import {
   writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { configGet, readConfig } from './config';
 import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
@@ -670,6 +670,64 @@ export function codexSandboxArgs(
   return enabled
     ? ['-s', 'workspace-write']
     : ['-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'];
+}
+
+/* ─── omp sandbox via srt (plan fleet-spawn-sandbox-2026-06-01, Phase 3) ─────
+ * omp (oh-my-pi) has NO native fs/network sandbox, so we wrap its spawn in
+ * Anthropic's standalone `srt` (@anthropic-ai/sandbox-runtime) — the SAME
+ * bubblewrap+seccomp/Seatbelt+proxy mechanism claude/codex use natively. srt
+ * settings differ from claude's: every key is REQUIRED (allowed+deniedDomains,
+ * allow+denyWrite, denyRead) and Linux needs LITERAL paths (no `~`). Verified
+ * on this box: `srt -s <settings> <cmd>` hides denyRead paths, confines writes,
+ * blocks egress. (Deps: bwrap + socat + ripgrep — all present.)
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** The srt settings object for an omp spawn — the common policy in srt's schema. */
+export function buildOmpSrtSettings(cwd: string): Record<string, unknown> {
+  const home = homedir();
+  // srt needs absolute literal paths on Linux — expand the `~` cred dirs.
+  const denyRead = FLEET_SANDBOX_DENY_READ.map((p) =>
+    p.startsWith('~/') ? join(home, p.slice(2)) : p,
+  );
+  return {
+    network: { allowedDomains: [...FLEET_SANDBOX_ALLOWED_DOMAINS], deniedDomains: [] },
+    // Writes confined to the spawn cwd (worktree/projectDir); reads broad except creds.
+    filesystem: { allowWrite: [cwd], denyWrite: [], denyRead },
+  };
+}
+
+/** First `srt` executable on PATH, or null. */
+export function srtBinOnPath(): string | null {
+  const dirs = (process.env.PATH ?? '').split(':').filter(Boolean);
+  for (const d of dirs) {
+    const p = join(d, 'srt');
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+/** Write the per-spawn srt settings file (0600) and return its path. */
+export function writeOmpSrtSettings(cwd: string): string {
+  const dir = mkdtempSync(join(tmpdir(), 'papercusp-srt-'));
+  const path = join(dir, 'srt-settings.json');
+  writeFileSync(path, JSON.stringify(buildOmpSrtSettings(cwd)), { mode: 0o600 });
+  return path;
+}
+
+/**
+ * Wrap an omp spawn command in `srt`. Pure — the caller resolves `srtBin`
+ * (PATH) and `settingsPath` (written file). Returns the spawn unchanged unless
+ * enabled + backend omp + both inputs present. Result: `srt -s <file> <cmd> …`.
+ */
+export function wrapOmpWithSrt(
+  command: string,
+  argv: string[],
+  opts: { enabled: boolean; agentBackend: AgentBackend; srtBin: string | null; settingsPath: string | null },
+): { command: string; argv: string[] } {
+  if (!opts.enabled || opts.agentBackend !== 'omp' || !opts.srtBin || !opts.settingsPath) {
+    return { command, argv };
+  }
+  return { command: opts.srtBin, argv: ['-s', opts.settingsPath, command, ...argv] };
 }
 
 /**
@@ -1572,7 +1630,30 @@ export async function invoke(
       }
     }
 
-    const child = spawn(command, finalArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    // omp OS sandbox (plan fleet-spawn-sandbox Phase 3): omp has no native
+    // sandbox, so when the flag is on we wrap its spawn in `srt`. Fail loud if
+    // srt is missing rather than silently run omp unsandboxed after the operator
+    // opted in (mirrors claude's failIfUnavailable:true). No-op for other backends.
+    let spawnCommand = command;
+    let spawnArgv = finalArgv;
+    if (fleetSandboxEnabled() && agentBackend === 'omp') {
+      const srtBin = srtBinOnPath();
+      if (!srtBin) {
+        throw new Error(
+          'PAPERCUSP_FLEET_SANDBOX is set for an omp spawn but `srt` is not on PATH. ' +
+            'Install @anthropic-ai/sandbox-runtime (npm i -g) or unset the flag.',
+        );
+      }
+      const settingsPath = writeOmpSrtSettings(cwd);
+      ({ command: spawnCommand, argv: spawnArgv } = wrapOmpWithSrt(command, finalArgv, {
+        enabled: true,
+        agentBackend,
+        srtBin,
+        settingsPath,
+      }));
+    }
+
+    const child = spawn(spawnCommand, spawnArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
 
     // Write a row to harness_shared.harness_lanes so the operator UI's
     // "agents in flight" pill bar can subscribe to the live agent set.
