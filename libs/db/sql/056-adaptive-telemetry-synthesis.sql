@@ -12,6 +12,18 @@
 -- - `synthesis_error` populated only when `synthesized=false`;
 --   short human-readable reason. NULL otherwise.
 
-ALTER TABLE "harness_shared"."adaptive_telemetry"
-  ADD COLUMN IF NOT EXISTS "synthesized" boolean,
-  ADD COLUMN IF NOT EXISTS "synthesis_error" text;
+-- Guard the ALTER: on a FRESH embedded PG the table's CREATE lives in
+-- ensure-schema.ts (ensureAdaptiveTelemetryTable), which runs in PARALLEL
+-- with this sql/ migration runner — so this migration can execute before the
+-- table exists and a bare ALTER aborts the boot with
+-- `relation "harness_shared.adaptive_telemetry" does not exist` (observed on
+-- the packaged release boot). No-op when the table is absent; ensure-schema's
+-- CREATE already includes both columns, so a fresh DB still gets them.
+DO $$
+BEGIN
+  IF to_regclass('harness_shared.adaptive_telemetry') IS NOT NULL THEN
+    ALTER TABLE "harness_shared"."adaptive_telemetry"
+      ADD COLUMN IF NOT EXISTS "synthesized" boolean,
+      ADD COLUMN IF NOT EXISTS "synthesis_error" text;
+  END IF;
+END $$;
