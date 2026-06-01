@@ -509,6 +509,100 @@ export function fleetAllowedToolsForRole(role: string | undefined): string[] {
   return [...FLEET_ALLOWED_TOOLS];
 }
 
+/* ─── Fleet OS sandbox (plan fleet-spawn-sandbox-2026-06-01, Phase 1) ────────
+ * Opt-in via PAPERCUSP_FLEET_SANDBOX. Closes the gaps the tool whitelist
+ * CANNOT: credential reads + network egress. Uses claude-code's OWN built-in
+ * sandbox (Linux bubblewrap + socat proxy; macOS Seatbelt) injected via
+ * `--settings`, NOT a hand-rolled wrapper. Verified vs claude 2.1.159: the
+ * sandbox engages headlessly, composes with `--permission-mode dontAsk`, hides
+ * denyRead paths, confines writes to cwd, and blocks egress to unlisted hosts.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** Credential dirs hidden from the sandboxed Bash subprocess (`denyRead`). */
+export const FLEET_SANDBOX_DENY_READ: readonly string[] = [
+  '~/.ssh',
+  '~/.aws',
+  '~/.gnupg',
+  '~/.config/gcloud',
+  '~/.papercusp',
+  '~/.npmrc',
+];
+
+/**
+ * Domains a sandboxed Bash command may reach. Empty = deny ALL command egress
+ * (the contained default; the agent's own model + MCP connections are outside
+ * the sandbox and unaffected). Per-role widening (e.g. a registry for installs)
+ * is the job of the real-spawn verification pass (plan P-012), not this floor.
+ */
+export const FLEET_SANDBOX_ALLOWED_DOMAINS: readonly string[] = [];
+
+/**
+ * `Read`/`Edit` permission DENY rules for the credential paths. Required
+ * because claude's sandbox covers `Bash` + children only — the `Read`/`Edit`
+ * TOOLS bypass it (they go through the permission system), and the default
+ * read policy still allows `~/.ssh` / `~/.aws/credentials`. Path syntax is the
+ * permission-rule form (`~/` for home), distinct from the sandbox `denyRead`.
+ */
+export const FLEET_SANDBOX_DENY_RULES: readonly string[] = [
+  'Read(~/.ssh/**)',
+  'Read(~/.aws/**)',
+  'Read(~/.gnupg/**)',
+  'Read(~/.config/gcloud/**)',
+  'Read(~/.papercusp/**)',
+  'Edit(~/.ssh/**)',
+  'Edit(~/.aws/**)',
+  'Edit(~/.papercusp/**)',
+];
+
+/** True when the fleet OS-sandbox opt-in flag is set (off by default). */
+export function fleetSandboxEnabled(): boolean {
+  const v = process.env.PAPERCUSP_FLEET_SANDBOX;
+  return v === '1' || v === 'true';
+}
+
+/** The settings object claude-code's built-in sandbox consumes (see above). */
+export function buildFleetSandboxSettings(): Record<string, unknown> {
+  return {
+    sandbox: {
+      enabled: true,
+      // Flag is explicit opt-in → if deps (bubblewrap/socat) are missing, fail
+      // loudly rather than silently run unsandboxed when the operator asked for it.
+      failIfUnavailable: true,
+      // Strict: no `dangerouslyDisableSandbox` retry-outside-the-sandbox escape hatch.
+      allowUnsandboxedCommands: false,
+      filesystem: { allowWrite: ['.'], denyRead: [...FLEET_SANDBOX_DENY_READ] },
+      network: { allowedDomains: [...FLEET_SANDBOX_ALLOWED_DOMAINS] },
+    },
+    // Read/Edit tool deny rules — the sandbox does NOT cover these tools (D-004).
+    permissions: { deny: [...FLEET_SANDBOX_DENY_RULES] },
+  };
+}
+
+/**
+ * `--settings <inline JSON>` carrying the fleet OS sandbox, appended to a
+ * claude-code spawn when PAPERCUSP_FLEET_SANDBOX is set. Returns `[]` unless
+ * enabled + claude-code + claude stream + a workspace, or when the user already
+ * passed their own `--settings` in AGENT_CMD (we defer to them).
+ */
+export function claudeSandboxArgs(
+  agentBackend: AgentBackend,
+  streamFormat: StreamFormat,
+  roleAgentCmd: string,
+  hasWorkspace: boolean,
+  enabled: boolean,
+): string[] {
+  if (
+    !enabled ||
+    agentBackend !== 'claude-code' ||
+    streamFormat !== 'claude-stream-json' ||
+    !hasWorkspace ||
+    roleAgentCmd.includes('--settings')
+  ) {
+    return [];
+  }
+  return ['--settings', JSON.stringify(buildFleetSandboxSettings())];
+}
+
 /**
  * Extra CLI args that make claude-code load + trust the per-spawn signed
  * `.mcp.json` AND run under a closed, per-role whitelist instead of
@@ -1247,6 +1341,20 @@ export async function invoke(
     ),
   );
 
+  // 10c. Optional OS sandbox (PAPERCUSP_FLEET_SANDBOX) — claude-code's built-in
+  // sandbox via --settings: hides credential dirs, confines writes to cwd, and
+  // allowlists command egress. Off by default; no-op for non-claude backends.
+  // See plan fleet-spawn-sandbox-2026-06-01.
+  finalArgv.push(
+    ...claudeSandboxArgs(
+      agentBackend,
+      streamFormat,
+      roleAgentCmd,
+      Boolean(ctx.workspaceId),
+      fleetSandboxEnabled(),
+    ),
+  );
+
   // Body accumulators (in-memory). Filesystem JSONL/ERR is only
   // touched in true-CLI fallback (no operator, no PG) — see writeBodyToDiskAtExit.
   const jsonlChunks: Buffer[] = [];
@@ -1334,6 +1442,13 @@ export async function invoke(
     // the shared checkout's config and the user's / other agents' pushes are
     // untouched. Real enforcement; the Bash(git push:*) deny is the backstop.
     Object.assign(spawnEnv, gitConfigNoPushEnv(spawnEnv, ensureFleetGitHooksDir()));
+
+    // When the OS sandbox is on, also strip provider/cloud creds from the
+    // sandboxed Bash subprocess env (verified: =1 strips e.g. AWS_SECRET_ACCESS_KEY
+    // from a Bash subprocess). Complements the sandbox's denyRead + egress block.
+    if (fleetSandboxEnabled()) {
+      spawnEnv.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1';
+    }
 
     // Per-spawn .mcp.json: write the seven-param URL config so OMP
     // discovers our agent-mcp endpoint with this spawn's harness/role/

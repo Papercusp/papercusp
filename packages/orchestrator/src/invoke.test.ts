@@ -22,6 +22,10 @@ import {
   fleetAllowedToolsForRole,
   ensureFleetGitHooksDir,
   gitConfigNoPushEnv,
+  claudeSandboxArgs,
+  buildFleetSandboxSettings,
+  FLEET_SANDBOX_DENY_READ,
+  FLEET_SANDBOX_DENY_RULES,
 } from './invoke.js';
 
 interface Fixture {
@@ -678,6 +682,50 @@ test('gitConfigNoPushEnv — junk GIT_CONFIG_COUNT falls back to index 0', () =>
   const env = gitConfigNoPushEnv({ GIT_CONFIG_COUNT: 'not-a-number' }, '/tmp/hooks');
   assert.equal(env.GIT_CONFIG_COUNT, '1');
   assert.equal(env.GIT_CONFIG_KEY_0, 'core.hooksPath');
+});
+
+// --- fleet OS sandbox (plan fleet-spawn-sandbox-2026-06-01, Phase 1) -------
+
+test('buildFleetSandboxSettings — sandbox closes cred reads + egress; Read/Edit deny rules present', () => {
+  const s = buildFleetSandboxSettings() as any;
+  assert.equal(s.sandbox.enabled, true);
+  assert.equal(s.sandbox.failIfUnavailable, true);
+  assert.equal(s.sandbox.allowUnsandboxedCommands, false);
+  assert.deepEqual(s.sandbox.filesystem.allowWrite, ['.']);
+  // credential dirs hidden from the sandboxed Bash subprocess
+  for (const p of ['~/.ssh', '~/.aws', '~/.papercusp']) {
+    assert.ok(s.sandbox.filesystem.denyRead.includes(p), `denyRead must include ${p}`);
+  }
+  // egress denied by default (empty allowlist)
+  assert.deepEqual(s.sandbox.network.allowedDomains, []);
+  // the Read/Edit TOOLS bypass the sandbox → must be denied via permission rules
+  assert.ok(s.permissions.deny.includes('Read(~/.ssh/**)'));
+  assert.ok(s.permissions.deny.includes('Edit(~/.ssh/**)'));
+  assert.ok(FLEET_SANDBOX_DENY_READ.includes('~/.ssh') && FLEET_SANDBOX_DENY_RULES.includes('Read(~/.aws/**)'));
+});
+
+test('claudeSandboxArgs — enabled + claude-code → --settings with the sandbox block', () => {
+  const args = claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', true, true);
+  assert.equal(args[0], '--settings');
+  const parsed = JSON.parse(args[1]);
+  assert.equal(parsed.sandbox.enabled, true);
+  assert.ok(parsed.sandbox.filesystem.denyRead.includes('~/.ssh'));
+});
+
+test('claudeSandboxArgs — disabled flag → [] (off by default)', () => {
+  assert.deepEqual(claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', true, false), []);
+});
+
+test('claudeSandboxArgs — non-claude backend → [] (no-op for omp/codex)', () => {
+  assert.deepEqual(claudeSandboxArgs('omp', 'omp-json', 'omp -p', true, true), []);
+});
+
+test('claudeSandboxArgs — no workspace → []', () => {
+  assert.deepEqual(claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', false, true), []);
+});
+
+test('claudeSandboxArgs — user already passed --settings → defer to them', () => {
+  assert.deepEqual(claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p --settings /x.json', true, true), []);
 });
 
 // ── codex backend (Phase 2 / P-011) ──
