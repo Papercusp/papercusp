@@ -696,8 +696,10 @@ test('fleetSandboxSettingsForRole — cred reads + egress closed uniformly; Read
   for (const p of ['~/.ssh', '~/.aws', '~/.papercusp']) {
     assert.ok(s.sandbox.filesystem.denyRead.includes(p), `denyRead must include ${p}`);
   }
-  // egress denied by default (empty allowlist)
-  assert.deepEqual(s.sandbox.network.allowedDomains, []);
+  // egress is allowlisted to package registries (so build/test roles work),
+  // everything else blocked — verified mechanism (D-011); NOT deny-all anymore.
+  assert.ok(s.sandbox.network.allowedDomains.includes('registry.npmjs.org'));
+  assert.ok(!s.sandbox.network.allowedDomains.includes('example.com'));
   // the Read/Edit TOOLS bypass the sandbox → must be denied via permission rules
   assert.ok(s.permissions.deny.includes('Read(~/.ssh/**)'));
   assert.ok(s.permissions.deny.includes('Edit(~/.ssh/**)'));
@@ -710,9 +712,9 @@ test('fleetSandboxSettingsForRole — cwd-write is uniform (P-004: sandbox cwd i
   for (const r of [...FLEET_NO_WRITE_ROLES, 'worker', 'documenter', 'unknown-role', undefined]) {
     const s = fleetSandboxSettingsForRole(r as any) as any;
     assert.deepEqual(s.sandbox.filesystem.allowWrite, ['.'], `${r} cwd write`);
-    // cred protection + deny-all egress are uniform across every role
+    // cred protection + the registry egress allowlist are uniform across roles
     assert.ok(s.sandbox.filesystem.denyRead.includes('~/.ssh'));
-    assert.deepEqual(s.sandbox.network.allowedDomains, []);
+    assert.ok(s.sandbox.network.allowedDomains.includes('registry.npmjs.org'));
   }
 });
 

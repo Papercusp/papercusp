@@ -527,12 +527,32 @@ export const FLEET_SANDBOX_DENY_READ: readonly string[] = [
 ];
 
 /**
- * Domains a sandboxed Bash command may reach. Empty = deny ALL command egress
- * (the contained default; the agent's own model + MCP connections are outside
- * the sandbox and unaffected). Per-role widening (e.g. a registry for installs)
- * is the job of the real-spawn verification pass (plan P-012), not this floor.
+ * Domains a sandboxed Bash command may reach — the package registries a build/
+ * test role legitimately needs. Verified (P-012/D-011): claude's sandbox egress
+ * allowlist works (`curl registry.npmjs.org` → 200, `curl example.com` → 000).
+ * Deny-all (`[]`) was the original floor but it breaks any role that runs
+ * `npm/pip/cargo install` — so this is the functional default for the opt-in
+ * sandbox. The agent's own model + MCP connections are OUTSIDE the sandbox and
+ * unaffected; this list only governs what a sandboxed Bash *command* can fetch.
+ *
+ * Tradeoff (D-005): every domain here is reachable with TLS UNINSPECTED, so it
+ * widens a potential exfil channel. Keep it to package registries. Tighten by
+ * editing this list; a security-locked deployment can set it to `[]`. Per-role
+ * narrowing (read-only roles need none) is a future refinement.
  */
-export const FLEET_SANDBOX_ALLOWED_DOMAINS: readonly string[] = [];
+export const FLEET_SANDBOX_ALLOWED_DOMAINS: readonly string[] = [
+  'registry.npmjs.org',
+  'registry.yarnpkg.com',
+  'pypi.org',
+  'files.pythonhosted.org',
+  'crates.io',
+  'static.crates.io',
+  'index.crates.io',
+  'github.com',
+  'codeload.github.com',
+  'objects.githubusercontent.com',
+  'raw.githubusercontent.com',
+];
 
 /**
  * `Read`/`Edit` permission DENY rules for the credential paths. Required
