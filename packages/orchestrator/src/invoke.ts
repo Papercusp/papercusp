@@ -1491,6 +1491,28 @@ export async function invoke(
   // wrap remote-authored content (featureHistory, planContext) in the
   // <untrusted-peer-content> delimiter. Best-effort; defaults to null
   // (treated as local/trusted) on any error or when PG is unavailable.
+  //
+  // G3 FAIL-OPEN DECISION (security trade-off, documented per G3 audit):
+  //
+  //   A PG query failure OR a missing row → featureOrigin stays null →
+  //   content is treated as LOCAL/TRUSTED → NOT wrapped by wrapUntrusted().
+  //
+  //   This is an accepted defence-in-depth tradeoff:
+  //   - G2 (the pick-gate) is the PRIMARY control — it rejects remote
+  //     features before they are dispatched to agents at all. featureOrigin
+  //     wrapping is a belt-and-suspenders layer, not the gate itself.
+  //   - Pre-G1 rows (features created before the origin column existed)
+  //     have null origin in the DB, and they are all local by construction
+  //     — they predate the remote-feature ingest path.
+  //   - Wrapping unknown-origin content as untrusted would add noise for
+  //     the common case (most features are local) while providing minimal
+  //     security gain (G2 already blocks remote dispatch).
+  //   - A fail-SAFE alternative (wrap unknown as remote) was considered and
+  //     rejected because it breaks the worker UX for every pre-G1 harness
+  //     at no meaningful security gain (G2 is the gate).
+  //
+  //   If G2 is ever removed or weakened, revisit this decision and change
+  //   the fallback to `'remote'` (fail-safe wrap).
   let featureOrigin: 'local' | 'remote' | null = null;
   if (featureId && ctx.pg) {
     try {
@@ -1504,7 +1526,7 @@ export async function invoke(
       `;
       const raw = rows[0]?.origin;
       featureOrigin = raw === 'remote' ? 'remote' : 'local';
-    } catch { /* best-effort; null → treated as local/trusted */ }
+    } catch { /* best-effort; null → treated as local/trusted (see fail-open comment above) */ }
   }
 
   // 8.7 Materialize per-feature operator notes from PG → FS.

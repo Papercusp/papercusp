@@ -6,7 +6,12 @@
  * Best-effort: any fetch failure → empty section. Tier 1 (preamble) and
  * Tier 3 (capabilities list) are static text; Tier 2 (neighbor view) and
  * the bounded inbox require live data.
+ *
+ * G3 security (P-009): inter-agent inbox messages are remote-peer-authored
+ * content and are wrapped with wrapUntrusted() before injection into the
+ * prompt so agents treat them as DATA rather than instructions.
  */
+import { wrapUntrusted } from './prompt-build.js';
 
 const TIER_1_PREAMBLE = `## About Papercusp
 
@@ -191,8 +196,13 @@ async function buildInboxSection(operatorBase: string, selfSlug: string, parentS
   const lines: string[] = [`## Recent supervisor messages (from parent: ${parentSlug})`];
   for (const m of fromParent.slice(0, 5)) {
     const ts = m.created_at?.slice(0, 19);
+    // G3 (P-009): inter-agent messages are remote-peer-authored content.
+    // Wrap subject+body together so the agent treats them as DATA.
+    // All messages from the parent/peer inbox qualify as remote — they
+    // cross the harness boundary and may carry attacker-controlled text.
     const body = m.body ? ` — ${m.body.slice(0, 200)}` : '';
-    lines.push(`- ${ts} [${m.kind}]: "${m.subject}"${body}`);
+    const rawContent = `- ${ts} [${m.kind}]: "${m.subject}"${body}`;
+    lines.push(wrapUntrusted(rawContent));
   }
   return lines.join('\n');
 }
