@@ -34,6 +34,8 @@ import { invoke } from '../src/invoke.js';
 import { bootstrapOrchestratorPg } from '../src/pg-bootstrap.js';
 import { activeWorkspaceId } from '../src/workspace.js';
 import { harnessSlug } from '../src/state.js';
+import { FileLockQueue } from '../src/file-lock-queue.js';
+import { shouldUseWorkerChunkLoop, runWorkerChunkLoop } from '../src/run-worker-chunk-loop.js';
 
 async function main(): Promise<number> {
   const projectDir = process.env.PROJECT_DIR;
@@ -99,34 +101,63 @@ async function main(): Promise<number> {
   const pgBoot = await bootstrapOrchestratorPg(wrappedLog, { harnessSlug: slug });
   const workspaceId = pgBoot.pg ? activeWorkspaceId() : undefined;
 
+  const ctx = {
+    harnessDir,
+    projectDir,
+    stateDir,
+    logDir,
+    phase,
+    claudeCmd,
+    agentBackend,
+    log: wrappedLog,
+    ...(pgBoot.pg ? { pg: pgBoot.pg, workspaceId } : {}),
+  };
+  // Feature id for the chunk-loop worker: the durable pipeline passes it as a
+  // FEATURE_ID=<id> extra (and/or env). Empty for non-feature invokes.
+  const featureId =
+    extras.find((e) => e.startsWith('FEATURE_ID='))?.slice('FEATURE_ID='.length) ||
+    process.env.FEATURE_ID ||
+    '';
+
   let exitCode = 0;
   try {
-    const result = await invoke(
-      {
-        harnessDir,
-        projectDir,
-        stateDir,
-        logDir,
-        phase,
-        claudeCmd,
-        agentBackend,
-        log: wrappedLog,
-        ...(pgBoot.pg ? { pg: pgBoot.pg, workspaceId } : {}),
-      },
-      role,
-      extras,
-      // dbos-durable-jobs Phase 3 P-015: when the durable pipeline spawns
-      // invoke-once with IDEMPOTENCY_KEY set, invoke() keys the run row by it
-      // and reuses a prior completed run instead of re-spawning the agent.
-      process.env.IDEMPOTENCY_KEY ? { idempotencyKey: process.env.IDEMPOTENCY_KEY } : {},
-    );
-    if (typeof result.output === 'string' && result.output.length > 0) {
-      // Surface the agent's actual output to stdout so callers reading
-      // the result file (or the spawn's stdout) see the decision line.
-      process.stdout.write(result.output);
-      teeAppend?.(result.output);
+    if (shouldUseWorkerChunkLoop(role, cfg) && featureId) {
+      // #2 (dbos-durable-jobs): the DBOS worker step now runs the CANONICAL
+      // worker model — the chunk loop (up-front planning, per-chunk file locks,
+      // L1 typecheck gate, replan-strikes, escalate-to-debugger) — instead of a
+      // bare single-shot invoke('worker'). The loop persists its plan to PG, so
+      // a crashed/retried DBOS step resumes mid-feature rather than restarting.
+      // The per-subprocess lock queue serializes this feature's own chunks;
+      // cross-feature file safety across concurrent pipelines is the operator's
+      // PG-backed lock layer's job (FileLockQueue is in-process by design).
+      wrappedLog(`invoke-once: role=worker + useChunkLoop → driving chunk loop for ${featureId}`);
+      const lockQueue = new FileLockQueue();
+      const outcome = await runWorkerChunkLoop(featureId, ctx, logger, cfg, lockQueue);
+      // The chunk loop sets the feature status (validating/failing); the worker
+      // always reports a non-empty summary + exit 0 so the next director turn
+      // reads the *status*, not an exit code (matches the legacy loop).
+      const summary = `CHUNK_LOOP ${featureId} → ${outcome.kind}`;
+      process.stdout.write(summary + '\n');
+      teeAppend?.(summary);
+      exitCode = 0;
+    } else {
+      const result = await invoke(
+        ctx,
+        role,
+        extras,
+        // dbos-durable-jobs Phase 3 P-015: when the durable pipeline spawns
+        // invoke-once with IDEMPOTENCY_KEY set, invoke() keys the run row by it
+        // and reuses a prior completed run instead of re-spawning the agent.
+        process.env.IDEMPOTENCY_KEY ? { idempotencyKey: process.env.IDEMPOTENCY_KEY } : {},
+      );
+      if (typeof result.output === 'string' && result.output.length > 0) {
+        // Surface the agent's actual output to stdout so callers reading
+        // the result file (or the spawn's stdout) see the decision line.
+        process.stdout.write(result.output);
+        teeAppend?.(result.output);
+      }
+      exitCode = result.exitCode ?? 0;
     }
-    exitCode = result.exitCode ?? 0;
   } catch (err) {
     process.stderr.write(
       `invoke-once: invoke threw: ${(err as Error).message}\n`,
