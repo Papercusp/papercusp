@@ -703,16 +703,15 @@ test('fleetSandboxSettingsForRole — cred reads + egress closed uniformly; Read
   assert.ok(FLEET_SANDBOX_DENY_READ.includes('~/.ssh') && FLEET_SANDBOX_DENY_RULES.includes('Read(~/.aws/**)'));
 });
 
-test('fleetSandboxSettingsForRole — per-role writes: API-only roles get allowWrite:[] (closes Bash-escape), others cwd', () => {
-  // FLEET_NO_WRITE_ROLES (expert/feedback) → no filesystem writes at all
-  for (const r of FLEET_NO_WRITE_ROLES) {
-    const s = fleetSandboxSettingsForRole(r) as any;
-    assert.deepEqual(s.sandbox.filesystem.allowWrite, [], `${r} must get allowWrite:[]`);
-  }
-  // writer + unknown roles → cwd write
-  for (const r of ['worker', 'documenter', 'unknown-role', undefined]) {
+test('fleetSandboxSettingsForRole — cwd-write is uniform (P-004: sandbox cwd is always writable, per-role write tightening not achievable here)', () => {
+  // Every role gets cwd write — claude's sandbox can't express "no cwd write"
+  // (verified P-004); write-discipline per role lives at the allowed-tools layer.
+  for (const r of [...FLEET_NO_WRITE_ROLES, 'worker', 'documenter', 'unknown-role', undefined]) {
     const s = fleetSandboxSettingsForRole(r as any) as any;
-    assert.deepEqual(s.sandbox.filesystem.allowWrite, ['.'], `${r} must get allowWrite:['.']`);
+    assert.deepEqual(s.sandbox.filesystem.allowWrite, ['.'], `${r} cwd write`);
+    // cred protection + deny-all egress are uniform across every role
+    assert.ok(s.sandbox.filesystem.denyRead.includes('~/.ssh'));
+    assert.deepEqual(s.sandbox.network.allowedDomains, []);
   }
 });
 
@@ -723,9 +722,6 @@ test('claudeSandboxArgs — enabled + claude-code → --settings with the per-ro
   assert.equal(parsed.sandbox.enabled, true);
   assert.ok(parsed.sandbox.filesystem.denyRead.includes('~/.ssh'));
   assert.deepEqual(parsed.sandbox.filesystem.allowWrite, ['.']);
-  // an API-only role's emitted settings carry the tighter allowWrite:[]
-  const expertArgs = claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', true, true, 'expert');
-  assert.deepEqual(JSON.parse(expertArgs[1]).sandbox.filesystem.allowWrite, []);
 });
 
 test('claudeSandboxArgs — disabled flag → [] (off by default)', () => {

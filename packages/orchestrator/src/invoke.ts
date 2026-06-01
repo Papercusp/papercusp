@@ -565,18 +565,24 @@ export function fleetSandboxEnabled(): boolean {
  * orchestrator code** (this runs inside `invoke()`, never from agent-supplied
  * tool input — an agent must not be able to choose/weaken its child's sandbox).
  *
- * Credential protection (`denyRead` + the Read/Edit deny rules) and egress
- * (deny-all) are UNIFORM — no role should read creds or exfiltrate. The one
- * per-role axis is filesystem WRITES: the API-only roles (FLEET_NO_WRITE_ROLES,
- * whose prompts forbid the Write/Edit tools) get `allowWrite: []` — closing the
- * Bash-escape the tool-level deny can't (a no-write role could otherwise
- * `echo > file` via the granted Bash). Other roles may write their cwd
- * (the worktree). Per-role egress widening (e.g. a registry for a builder)
- * is deferred to the real-spawn verification pass (plan P-012); the floor is
- * deny-all. An unknown/empty role gets the standard cwd-write policy.
+ * `role` is the per-role decision seat. The POLICY is uniform today —
+ * credential protection (`denyRead` + Read/Edit deny rules) and deny-all egress,
+ * which every role needs and none should escape. Two per-role facts verified
+ * against claude 2.1.159 (P-004) shape what varies and what can't:
+ *
+ *  - Per-role WRITE tightening is NOT achievable via the sandbox: the cwd is
+ *    ALWAYS writable (`allowWrite` only *adds* paths beyond cwd; `denyWrite`
+ *    of the cwd didn't reliably block either). So write-discipline per role
+ *    stays at the allowed-tools layer (FLEET_NO_WRITE_ROLES already lose the
+ *    Edit/Write tools); the residual Bash-escape is a known, documented limit.
+ *  - Per-role EGRESS *is* the achievable axis (e.g. `expert`/`feedback` do web
+ *    research and would need an allowlist, while a worker needs none). But the
+ *    exact per-role domains require the real-spawn verification pass (P-012),
+ *    so the floor is deny-all `[]` until then. That's where `role` will branch.
  */
 export function fleetSandboxSettingsForRole(role: string | undefined): Record<string, unknown> {
-  const allowWrite = role && FLEET_NO_WRITE_ROLES.has(role) ? [] : ['.'];
+  // role: reserved for per-role egress policy (P-012). Uniform floor today; see docstring.
+  void role;
   return {
     sandbox: {
       enabled: true,
@@ -585,7 +591,9 @@ export function fleetSandboxSettingsForRole(role: string | undefined): Record<st
       failIfUnavailable: true,
       // Strict: no `dangerouslyDisableSandbox` retry-outside-the-sandbox escape hatch.
       allowUnsandboxedCommands: false,
-      filesystem: { allowWrite, denyRead: [...FLEET_SANDBOX_DENY_READ] },
+      // cwd is always writable in claude's sandbox; this allowWrite is the
+      // explicit (no-extra-paths) form of that default.
+      filesystem: { allowWrite: ['.'], denyRead: [...FLEET_SANDBOX_DENY_READ] },
       network: { allowedDomains: [...FLEET_SANDBOX_ALLOWED_DOMAINS] },
     },
     // Read/Edit tool deny rules — the sandbox does NOT cover these tools (D-004).
