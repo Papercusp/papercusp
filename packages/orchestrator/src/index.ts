@@ -67,6 +67,8 @@ export {
   resolvePromptOverrideWithStore,
   resolveTimeout,
   resolveModel,
+  scopeSpawnEnvForRole,
+  SEARCH_PROVIDER_ENV_KEYS,
 } from './invoke';
 export type { InvokeContext } from './invoke';
 export { parseDecision, DECISION_VERBS } from './decision-parse';
