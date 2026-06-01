@@ -1486,6 +1486,27 @@ export async function invoke(
     } catch { /* best-effort; empty section is harmless */ }
   }
 
+  // 8.6b G3 — feature provenance (P-009): look up the feature's `origin`
+  // from harness_shared.harness_features_consolidated so buildPrompt can
+  // wrap remote-authored content (featureHistory, planContext) in the
+  // <untrusted-peer-content> delimiter. Best-effort; defaults to null
+  // (treated as local/trusted) on any error or when PG is unavailable.
+  let featureOrigin: 'local' | 'remote' | null = null;
+  if (featureId && ctx.pg) {
+    try {
+      const { harnessSlug: getSlug } = await import('./state.js');
+      const rows = await ctx.pg<{ origin: string | null }[]>`
+        SELECT origin
+          FROM harness_shared.harness_features_consolidated
+         WHERE harness_slug = ${getSlug(ctx.projectDir)}
+           AND feature_id   = ${featureId}
+         LIMIT 1
+      `;
+      const raw = rows[0]?.origin;
+      featureOrigin = raw === 'remote' ? 'remote' : 'local';
+    } catch { /* best-effort; null → treated as local/trusted */ }
+  }
+
   // 8.7 Materialize per-feature operator notes from PG → FS.
   //
   // PG is canonical for `harness_feature_notes`; the FS path
@@ -1618,6 +1639,9 @@ export async function invoke(
     featureHistory,
     toolsPlaybook,
     sharedGuides,
+    // G3 — pass provenance so buildPrompt can wrap remote-authored content
+    // (featureHistory, planContext) in <untrusted-peer-content> delimiters.
+    featureOrigin,
   });
 
   // Token-spend telemetry — emit once per invoke so we can see how the
