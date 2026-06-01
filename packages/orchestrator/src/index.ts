@@ -103,6 +103,7 @@ export {
   buildCompetitionManifest,
   competitionManifestPath,
   createLanePool,
+  maxFeaturesInFlight,
   parallelMaxWorkers,
   readCompetitionManifest,
   resolveWorkerCount,
