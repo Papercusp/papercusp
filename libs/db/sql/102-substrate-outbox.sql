@@ -109,14 +109,38 @@ END;
 $body$ LANGUAGE plpgsql;
 
 -- ── triggers ──────────────────────────────────────────────────────────────────
+-- INSERT/DELETE fire unconditionally. UPDATE fires ONLY when the row actually
+-- CHANGED (`OLD.* IS DISTINCT FROM NEW.*`). The guard is load-bearing for loop
+-- termination: the substrate's read-merge re-applies the OWN log's ops every
+-- pass (mergeAdmittedLogs reads each log from index 0), re-UPSERTing every local
+-- feature/issue with origin='local' and IDENTICAL values. Without the guard each
+-- such no-op re-upsert re-fires this AFTER-UPDATE trigger and re-enqueues the row
+-- → the drain re-appends it to the own log → unbounded intra-peer self-
+-- amplification of a peer's OWN already-federated rows (Stage-6 finding). With
+-- the guard, an identical re-upsert is not a "change", so nothing is enqueued; a
+-- genuine local edit (different values) still fires and federates. This is the
+-- intra-peer analogue of the origin='local' echo guard inside the function (which
+-- handles the cross-peer direction).
 DROP TRIGGER IF EXISTS capture_substrate_outbox_trg
   ON harness_shared.harness_features_consolidated;
 CREATE TRIGGER capture_substrate_outbox_trg
-  AFTER INSERT OR UPDATE OR DELETE ON harness_shared.harness_features_consolidated
+  AFTER INSERT OR DELETE ON harness_shared.harness_features_consolidated
   FOR EACH ROW EXECUTE FUNCTION harness_shared.capture_substrate_outbox('feature_id');
+DROP TRIGGER IF EXISTS capture_substrate_outbox_upd_trg
+  ON harness_shared.harness_features_consolidated;
+CREATE TRIGGER capture_substrate_outbox_upd_trg
+  AFTER UPDATE ON harness_shared.harness_features_consolidated
+  FOR EACH ROW WHEN (OLD.* IS DISTINCT FROM NEW.*)
+  EXECUTE FUNCTION harness_shared.capture_substrate_outbox('feature_id');
 
 DROP TRIGGER IF EXISTS capture_substrate_outbox_trg
   ON harness_shared.harness_issues_consolidated;
 CREATE TRIGGER capture_substrate_outbox_trg
-  AFTER INSERT OR UPDATE OR DELETE ON harness_shared.harness_issues_consolidated
+  AFTER INSERT OR DELETE ON harness_shared.harness_issues_consolidated
   FOR EACH ROW EXECUTE FUNCTION harness_shared.capture_substrate_outbox('issue_id');
+DROP TRIGGER IF EXISTS capture_substrate_outbox_upd_trg
+  ON harness_shared.harness_issues_consolidated;
+CREATE TRIGGER capture_substrate_outbox_upd_trg
+  AFTER UPDATE ON harness_shared.harness_issues_consolidated
+  FOR EACH ROW WHEN (OLD.* IS DISTINCT FROM NEW.*)
+  EXECUTE FUNCTION harness_shared.capture_substrate_outbox('issue_id');
