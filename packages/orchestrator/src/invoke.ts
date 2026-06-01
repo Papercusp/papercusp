@@ -560,8 +560,23 @@ export function fleetSandboxEnabled(): boolean {
   return v === '1' || v === 'true';
 }
 
-/** The settings object claude-code's built-in sandbox consumes (see above). */
-export function buildFleetSandboxSettings(): Record<string, unknown> {
+/**
+ * The sandbox settings claude-code consumes, **decided per role by trusted
+ * orchestrator code** (this runs inside `invoke()`, never from agent-supplied
+ * tool input — an agent must not be able to choose/weaken its child's sandbox).
+ *
+ * Credential protection (`denyRead` + the Read/Edit deny rules) and egress
+ * (deny-all) are UNIFORM — no role should read creds or exfiltrate. The one
+ * per-role axis is filesystem WRITES: the API-only roles (FLEET_NO_WRITE_ROLES,
+ * whose prompts forbid the Write/Edit tools) get `allowWrite: []` — closing the
+ * Bash-escape the tool-level deny can't (a no-write role could otherwise
+ * `echo > file` via the granted Bash). Other roles may write their cwd
+ * (the worktree). Per-role egress widening (e.g. a registry for a builder)
+ * is deferred to the real-spawn verification pass (plan P-012); the floor is
+ * deny-all. An unknown/empty role gets the standard cwd-write policy.
+ */
+export function fleetSandboxSettingsForRole(role: string | undefined): Record<string, unknown> {
+  const allowWrite = role && FLEET_NO_WRITE_ROLES.has(role) ? [] : ['.'];
   return {
     sandbox: {
       enabled: true,
@@ -570,7 +585,7 @@ export function buildFleetSandboxSettings(): Record<string, unknown> {
       failIfUnavailable: true,
       // Strict: no `dangerouslyDisableSandbox` retry-outside-the-sandbox escape hatch.
       allowUnsandboxedCommands: false,
-      filesystem: { allowWrite: ['.'], denyRead: [...FLEET_SANDBOX_DENY_READ] },
+      filesystem: { allowWrite, denyRead: [...FLEET_SANDBOX_DENY_READ] },
       network: { allowedDomains: [...FLEET_SANDBOX_ALLOWED_DOMAINS] },
     },
     // Read/Edit tool deny rules — the sandbox does NOT cover these tools (D-004).
@@ -579,10 +594,11 @@ export function buildFleetSandboxSettings(): Record<string, unknown> {
 }
 
 /**
- * `--settings <inline JSON>` carrying the fleet OS sandbox, appended to a
- * claude-code spawn when PAPERCUSP_FLEET_SANDBOX is set. Returns `[]` unless
- * enabled + claude-code + claude stream + a workspace, or when the user already
- * passed their own `--settings` in AGENT_CMD (we defer to them).
+ * `--settings <inline JSON>` carrying the per-role fleet OS sandbox, appended
+ * to a claude-code spawn when PAPERCUSP_FLEET_SANDBOX is set. The policy is
+ * resolved from the trusted `role` (see fleetSandboxSettingsForRole). Returns
+ * `[]` unless enabled + claude-code + claude stream + a workspace, or when the
+ * user already passed their own `--settings` in AGENT_CMD (we defer to them).
  */
 export function claudeSandboxArgs(
   agentBackend: AgentBackend,
@@ -590,6 +606,7 @@ export function claudeSandboxArgs(
   roleAgentCmd: string,
   hasWorkspace: boolean,
   enabled: boolean,
+  role: string,
 ): string[] {
   if (
     !enabled ||
@@ -600,7 +617,7 @@ export function claudeSandboxArgs(
   ) {
     return [];
   }
-  return ['--settings', JSON.stringify(buildFleetSandboxSettings())];
+  return ['--settings', JSON.stringify(fleetSandboxSettingsForRole(role))];
 }
 
 /**
@@ -1352,6 +1369,7 @@ export async function invoke(
       roleAgentCmd,
       Boolean(ctx.workspaceId),
       fleetSandboxEnabled(),
+      role,
     ),
   );
 

@@ -23,7 +23,7 @@ import {
   ensureFleetGitHooksDir,
   gitConfigNoPushEnv,
   claudeSandboxArgs,
-  buildFleetSandboxSettings,
+  fleetSandboxSettingsForRole,
   FLEET_SANDBOX_DENY_READ,
   FLEET_SANDBOX_DENY_RULES,
 } from './invoke.js';
@@ -686,12 +686,11 @@ test('gitConfigNoPushEnv — junk GIT_CONFIG_COUNT falls back to index 0', () =>
 
 // --- fleet OS sandbox (plan fleet-spawn-sandbox-2026-06-01, Phase 1) -------
 
-test('buildFleetSandboxSettings — sandbox closes cred reads + egress; Read/Edit deny rules present', () => {
-  const s = buildFleetSandboxSettings() as any;
+test('fleetSandboxSettingsForRole — cred reads + egress closed uniformly; Read/Edit deny rules present', () => {
+  const s = fleetSandboxSettingsForRole('worker') as any;
   assert.equal(s.sandbox.enabled, true);
   assert.equal(s.sandbox.failIfUnavailable, true);
   assert.equal(s.sandbox.allowUnsandboxedCommands, false);
-  assert.deepEqual(s.sandbox.filesystem.allowWrite, ['.']);
   // credential dirs hidden from the sandboxed Bash subprocess
   for (const p of ['~/.ssh', '~/.aws', '~/.papercusp']) {
     assert.ok(s.sandbox.filesystem.denyRead.includes(p), `denyRead must include ${p}`);
@@ -704,28 +703,45 @@ test('buildFleetSandboxSettings — sandbox closes cred reads + egress; Read/Edi
   assert.ok(FLEET_SANDBOX_DENY_READ.includes('~/.ssh') && FLEET_SANDBOX_DENY_RULES.includes('Read(~/.aws/**)'));
 });
 
-test('claudeSandboxArgs — enabled + claude-code → --settings with the sandbox block', () => {
-  const args = claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', true, true);
+test('fleetSandboxSettingsForRole — per-role writes: API-only roles get allowWrite:[] (closes Bash-escape), others cwd', () => {
+  // FLEET_NO_WRITE_ROLES (expert/feedback) → no filesystem writes at all
+  for (const r of FLEET_NO_WRITE_ROLES) {
+    const s = fleetSandboxSettingsForRole(r) as any;
+    assert.deepEqual(s.sandbox.filesystem.allowWrite, [], `${r} must get allowWrite:[]`);
+  }
+  // writer + unknown roles → cwd write
+  for (const r of ['worker', 'documenter', 'unknown-role', undefined]) {
+    const s = fleetSandboxSettingsForRole(r as any) as any;
+    assert.deepEqual(s.sandbox.filesystem.allowWrite, ['.'], `${r} must get allowWrite:['.']`);
+  }
+});
+
+test('claudeSandboxArgs — enabled + claude-code → --settings with the per-role sandbox block', () => {
+  const args = claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', true, true, 'worker');
   assert.equal(args[0], '--settings');
   const parsed = JSON.parse(args[1]);
   assert.equal(parsed.sandbox.enabled, true);
   assert.ok(parsed.sandbox.filesystem.denyRead.includes('~/.ssh'));
+  assert.deepEqual(parsed.sandbox.filesystem.allowWrite, ['.']);
+  // an API-only role's emitted settings carry the tighter allowWrite:[]
+  const expertArgs = claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', true, true, 'expert');
+  assert.deepEqual(JSON.parse(expertArgs[1]).sandbox.filesystem.allowWrite, []);
 });
 
 test('claudeSandboxArgs — disabled flag → [] (off by default)', () => {
-  assert.deepEqual(claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', true, false), []);
+  assert.deepEqual(claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', true, false, 'worker'), []);
 });
 
 test('claudeSandboxArgs — non-claude backend → [] (no-op for omp/codex)', () => {
-  assert.deepEqual(claudeSandboxArgs('omp', 'omp-json', 'omp -p', true, true), []);
+  assert.deepEqual(claudeSandboxArgs('omp', 'omp-json', 'omp -p', true, true, 'worker'), []);
 });
 
 test('claudeSandboxArgs — no workspace → []', () => {
-  assert.deepEqual(claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', false, true), []);
+  assert.deepEqual(claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p', false, true, 'worker'), []);
 });
 
 test('claudeSandboxArgs — user already passed --settings → defer to them', () => {
-  assert.deepEqual(claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p --settings /x.json', true, true), []);
+  assert.deepEqual(claudeSandboxArgs('claude-code', 'claude-stream-json', 'claude -p --settings /x.json', true, true, 'worker'), []);
 });
 
 // ── codex backend (Phase 2 / P-011) ──
