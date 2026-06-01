@@ -8,7 +8,7 @@ Prompts for agents in coding harnesses (the existing top-level files) and depart
 prompts/
 ├── (top-level *.md = coding harness, untouched)
 │   architect.md  curator.md  debugger.md  documenter.md
-│   orchestrator.md  scoper.md  reviewer.md     project_manager.md
+│   orchestrator.md  scoper.md  reviewer.md
 │   ui-qa.md  validator.md  worker.md  crosscheck.md
 │
 ├── staging/, testing/, production/  — coding phase variants (untouched)

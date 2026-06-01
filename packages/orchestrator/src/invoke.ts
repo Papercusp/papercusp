@@ -486,8 +486,8 @@ export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
  *
  * This is the ONLY per-role built-in tightening that's verifiably safe from a
  * prompt read: other review/gate roles (reviewer, validator, infra-reviewer,
- * project_manager, …) DO write legitimate output via the `Write` tool (review
- * files, infra-contract.json, the spec), so denying it would break them.
+ * …) DO write legitimate output via the `Write` tool (review files,
+ * infra-contract.json), so denying it would break them.
  * NOTE it's a defense-in-depth nudge, not a hard boundary: `Bash` is still
  * granted (these roles curl/run things), so a determined spawn could write via
  * a shell redirect — closing that needs a sandbox, not an allow-list. Further
