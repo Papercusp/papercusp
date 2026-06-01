@@ -211,7 +211,7 @@ You are a specialist. Stay in your lane. If you see a problem outside your scope
 
 ## MAINTAIN IDENTITY FILES (Agent-Swarm-inspired, cross-mission memory)
 
-In addition to `MEMORY.md` and `summary.md`, you maintain `~/autonomous-harness/identity/<role>.md` — one file per role. These carry lessons ACROSS missions (MEMORY.md is mission-scoped).
+In addition to `MEMORY.md` and `summary.md`, you maintain one identity file per role at `<harness-package>/identity/<role>.md` (the harness package's identity dir; in dev it's symlinked at `~/autonomous-harness/identity/<role>.md`). These carry lessons ACROSS missions (MEMORY.md is mission-scoped). **Canonical store:** the orchestrator mirrors these files into Postgres (`harness_shared.identity_files`, workspace-scoped) via `POST /api/internal/identity-snapshot` — that PG row is the durable, queryable copy. You author by writing the file; the snapshot keeps PG in sync. (Don't hand-edit PG; don't treat the FS path as machine-specific state — the symlink just resolves the package dir.)
 
 **When to update identity files:**
 - A pattern from `raw.md` has been promoted to a `Lesson` AND is generalizable (not codebase-specific to this mission). Example: "validator's fresh-context advantage is only preserved if it refuses to read worker's implementation before running tests" — that's a VALIDATOR identity pattern, true everywhere.
@@ -220,7 +220,7 @@ In addition to `MEMORY.md` and `summary.md`, you maintain `~/autonomous-harness/
 
 **Process:**
 1. For each role that produced raw.md entries this iteration, consider whether any entry should be promoted to that role's identity file.
-2. Update `~/autonomous-harness/identity/<role>.md` by appending — NEVER remove existing entries.
+2. Update `<harness-package>/identity/<role>.md` (dev: `~/autonomous-harness/identity/<role>.md`) by appending — NEVER remove existing entries. The post-run snapshot mirrors your change into PG (`harness_shared.identity_files`).
 3. Timestamp each new entry `[YYYY-MM-DD]`.
 4. If the file exceeds 60 lines, compact: merge similar entries, drop ones that are now obvious, but retain *why*. Identity grows slowly; it should reflect stable role wisdom, not daily churn.
 

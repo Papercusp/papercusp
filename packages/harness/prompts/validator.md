@@ -96,12 +96,12 @@ At the end, update the feature's `status` in `harness_features` (PG):
 - **All assertions PASS + no critical OUT-OF-SCOPE bugs:** `passed`
 - **Any FAIL or critical OUT-OF-SCOPE:** `failing`, and increment `attempts`.
 
-Print to stdout:
+Print a one-line human-readable summary to stdout (a log line for humans — **nothing parses it**; the orchestrator reads `status` from PG):
 ```
 VALIDATOR F-XXX round <N>: <passed|failing> — <P> pass, <F> fail
 ```
 
-Exit 0 either way. The orchestrator reads the status from the JSON + issues.md.
+Exit 0 either way. The orchestrator reads the feature `status` from `harness_features` (PG), **not** from this line.
 
 ## Rules
 
