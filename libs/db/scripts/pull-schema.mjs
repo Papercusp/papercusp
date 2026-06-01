@@ -16,7 +16,7 @@
  * Drizzle-kit v0.31.10 quirks the script silently patches so the
  * regenerated output is committable as-is (see PHASE0-AUDIT.md):
  *   Fix 1: empty-string defaults emit `.default(')` (invalid TS).
- *   Fix 2: timestamp mode 'string' → 'number' (Zero requires number).
+ *   Fix 2: drop invalid `mode: 'number'` on timestamptz → drizzle default 'date'.
  *   Fix 3: function-call defaults wrapped in sql`` (e.g. to_char(now(), …)).
  *   Fix 4: `unknown(...)` for tsvector/bytea rewritten to text().
  *   Fix 5: missing PKs (drizzle-kit drops ~half of them) injected via PG.
@@ -64,13 +64,18 @@ schema = schema
   .replace(/\.default\('\)$/gm, ".default('')");
 const fixedDefaults = (schema.match(/\.default\(''\)/g) ?? []).length;
 
-// Fix 2: timestamp mode 'string' → 'number' for Zero compatibility.
+// Fix 2: drop the `mode` on timestamptz columns → drizzle's default 'date'
+// (returns a JS Date). drizzle-orm 0.45 only accepts mode 'date'|'string' on
+// timestamp — the old `mode: 'number'` rewrite (a Zero-era hack) produces code
+// that no longer typechecks, and at runtime 0.45 ignores the bad mode and
+// returns a Date anyway, so this is behavior-preserving + honest. (Zero is on
+// the retirement path; epoch-ms columns are already `bigint({mode:'number'})`.)
 schema = schema.replace(
   /timestamp\(\{ withTimezone: true, mode: 'string' \}\)/g,
-  "timestamp({ withTimezone: true, mode: 'number' })",
+  "timestamp({ withTimezone: true })",
 );
 const fixedTimestamps = (
-  schema.match(/timestamp\(\{ withTimezone: true, mode: 'number' \}\)/g) ?? []
+  schema.match(/timestamp\(\{ withTimezone: true \}\)/g) ?? []
 ).length;
 
 // Fix 3: function-call defaults emit as raw JS with broken escapes
@@ -393,7 +398,7 @@ if (existsSync(relationsPath)) {
 
 writeFileSync(schemaPath, schema);
 console.log(`    fixed ${fixedDefaults} empty-string defaults`);
-console.log(`    fixed ${fixedTimestamps} timestamp modes (string→number)`);
+console.log(`    fixed ${fixedTimestamps} timestamptz columns (dropped invalid mode)`);
 console.log(`    fixed ${fixedFnDefaults} function-call defaults (wrapped in sql\`\`)`);
 console.log(`    rewrote ${fixedUnknownCols} unsupported-type columns (tsvector/bytea → text)`);
 console.log(`    injected ${fixedMissingPks} missing primary keys`);

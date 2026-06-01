@@ -80,7 +80,10 @@ export function startRoutineTicker(sql: Sql, opts: RoutineTickerOptions): Routin
       if (stopped) break;
       await new Promise((r) => setTimeout(r, interval));
     }
-    stopResolve?.();
+    // Re-assert the union type: under strict CFA the executor-closure
+    // assignment to `stopResolve` isn't modeled, so TS narrows it to `null`
+    // here (→ "never has no call signatures"). The cast restores callability.
+    (stopResolve as (() => void) | null)?.();
   })();
 
   return {

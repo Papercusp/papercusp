@@ -87,7 +87,7 @@ export const backupEventsInHarnessShared = harnessShared.table("backup_events", 
 	snapshotId: bigint("snapshot_id", { mode: "number" }),
 	kind: text().notNull(),
 	payloadJson: jsonb("payload_json"),
-	at: timestamp({ withTimezone: true, mode: 'number' }).defaultNow().notNull(),
+	at: timestamp({ withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
 	index("backup_events_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.at.desc().nullsFirst().op("text_ops")),
 	foreignKey({
@@ -586,7 +586,7 @@ export const operatorSecretsInHarnessShared = harnessShared.table("operator_secr
 
 export const spawnSigVerificationFailuresInHarnessShared = harnessShared.table("spawn_sig_verification_failures", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	ts: timestamp({ withTimezone: true, mode: 'number' }).defaultNow().notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
 	reason: text().notNull(),
 	claimedRole: text("claimed_role"),
 	claimedHarness: text("claimed_harness"),
@@ -749,7 +749,7 @@ export const delegatesInHarnessShared = harnessShared.table("delegates", {
 
 export const elConvCallsInHarnessShared = harnessShared.table("el_conv_calls", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	ts: timestamp({ withTimezone: true, mode: 'number' }).defaultNow().notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
 	conversationId: text("conversation_id").notNull(),
 	agentId: text("agent_id"),
 	workspace: text(),
@@ -762,7 +762,7 @@ export const elConvCallsInHarnessShared = harnessShared.table("el_conv_calls", {
 
 export const agentActionsInHarnessShared = harnessShared.table("agent_actions", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	ts: timestamp({ withTimezone: true, mode: 'number' }).defaultNow().notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
 	agent: text().notNull(),
 	commandId: text("command_id").notNull(),
 	args: jsonb().default({}).notNull(),
@@ -781,7 +781,7 @@ export const agentActionsInHarnessShared = harnessShared.table("agent_actions", 
 
 export const agentQueriesInHarnessShared = harnessShared.table("agent_queries", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	ts: timestamp({ withTimezone: true, mode: 'number' }).defaultNow().notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
 	agent: text().notNull(),
 	queryId: text("query_id").notNull(),
 	argsCompact: jsonb("args_compact"),
@@ -934,7 +934,7 @@ export const projectSpecRevisionsInHarnessShared = harnessShared.table("project_
 	summary: text(),
 	authorRole: text("author_role").notNull(),
 	author: text(),
-	ts: timestamp({ withTimezone: true, mode: 'number' }).defaultNow().notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
 	includeDecisions: jsonb("include_decisions"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	tokensIn: bigint("tokens_in", { mode: "number" }).default(0).notNull(),
@@ -1000,7 +1000,7 @@ export const projectsInHarnessShared = harnessShared.table("projects", {
 
 export const voiceUtterancesInHarnessShared = harnessShared.table("voice_utterances", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	ts: timestamp({ withTimezone: true, mode: 'number' }).defaultNow().notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
 	workspace: text(),
 	source: text().notNull(),
 	mode: text(),
@@ -1421,7 +1421,7 @@ export const provisionAuditLogInHarnessShared = harnessShared.table("provision_a
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
 	pluginSlug: text("plugin_slug").notNull(),
-	ts: timestamp({ withTimezone: true, mode: 'number' }).defaultNow().notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
 	kind: text().notNull(),
 	runId: text("run_id"),
 	data: jsonb(),
