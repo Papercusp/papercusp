@@ -761,9 +761,16 @@ export function claudeSandboxArgs(
  * MCP-under-sandbox support. claude is sandboxed because its sandbox covers only
  * sub-commands, leaving the agent's own MCP connection intact; codex differs.)
  *
+ * CONTAINMENT FOR codex now comes from an EXTERNAL wrap, NOT its native sandbox:
+ * under PAPERCUSP_FLEET_SANDBOX the codex spawn is wrapped in `srt`
+ * (wrapSpawnWithSrt at the spawn site, P-017/D-017) while keeping the bypass
+ * here — so MCP works AND shell commands are confined. This function's job is
+ * just to keep codex's OWN sandbox off (the bypass); srt does the confining.
+ *
  * Appended to `extraFlags` before the `-` stdin positional. Defers to a
  * user-set `-s`/`--sandbox`/bypass in AGENT_CMD. `enabled` is intentionally
- * unused: codex's posture does not depend on the fleet-sandbox flag.
+ * unused: codex's NATIVE posture does not depend on the fleet-sandbox flag
+ * (the flag drives the external srt-wrap instead).
  */
 export function codexSandboxArgs(
   agentBackend: AgentBackend,
@@ -784,18 +791,125 @@ export function codexSandboxArgs(
   return ['-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'];
 }
 
-/* ─── omp sandbox via srt — DEFERRED (plan fleet-spawn-sandbox, P-012/D-010) ──
- * Phase 3 wrapped omp in `srt` (@anthropic-ai/sandbox-runtime). P-012 found it
- * non-viable as designed: `srt` wraps the WHOLE omp process, so its network
- * filter gates omp's OWN model + MCP connections (a deny-all egress breaks omp
- * outright) — unlike claude/codex, whose native sandboxes wrap only sub-commands
- * and leave the agent's connections intact. omp was also un-runnable on this box
- * (mis-configured local model), so no real verification was possible. The srt
- * *mechanism* is verified (it sandboxes a bash command correctly — cred-hide,
- * cwd-write, egress-block); what's missing is a per-omp egress allowlist
- * (model + operator) + a real-spawn pass. Reintroduce the helpers when that's
- * designed + verifiable. Until then omp runs unsandboxed (see the spawn site).
+/* ─── External srt-wrap — codex containment (plan fleet-spawn-sandbox, P-017/D-017) ──
+ * codex's NATIVE sandbox cancels MCP (D-009/D-016), so codex can't self-sandbox.
+ * The way around (verified end-to-end, D-017): run codex with its native sandbox
+ * OFF (codexSandboxArgs keeps `--dangerously-bypass-approvals-and-sandbox`, so
+ * MCP is NOT cancelled) and wrap the WHOLE codex process in `srt`
+ * (@anthropic-ai/sandbox-runtime: bubblewrap `--unshare-net` + a host-side
+ * allowlisting proxy). srt then confines codex's shell commands (writes →
+ * cwd+cache, egress → allowlist, creds hidden) while codex's MCP + model traffic
+ * is allow-listed THROUGH srt's proxy. Crucial detail: srt injects a `no_proxy`
+ * that excludes loopback + RFC1918, which would route the operator MCP DIRECTLY
+ * into the isolated netns (unreachable) — so the wrap clears `no_proxy` inside
+ * the srt shell, sending operator + model traffic through srt's proxy instead.
+ *
+ * omp uses the SAME architecture but is NOT wrapped yet: its model-endpoint host
+ * is provider-dependent (unknown, vs codex's stable OpenAI hosts) and omp can't
+ * be run on this box to verify (mis-config), so wrapping it could sever omp's own
+ * model reach. Reintroduce omp here once its model host is known + an omp-under-srt
+ * spawn is verifiable (D-010/D-017). Until then omp runs unsandboxed.
  * ──────────────────────────────────────────────────────────────────────── */
+
+/** `srt` binary path (the egress+fs sandbox wrapper) if on PATH, else null. */
+export function srtBinOnPath(): string | null {
+  for (const d of (process.env.PATH ?? '').split(':').filter(Boolean)) {
+    const p = join(d, 'srt');
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+/**
+ * Model-endpoint hosts the wrapped agent process must reach THROUGH srt's proxy.
+ * codex (ChatGPT auth) talks to the OpenAI API + auth hosts. omp returns `[]` —
+ * it's not wrapped yet (provider-dependent host; see the section header).
+ */
+export function fleetSrtModelDomains(backend: AgentBackend): string[] {
+  if (backend === 'codex') {
+    return ['api.openai.com', 'chatgpt.com', 'auth.openai.com', '*.openai.com'];
+  }
+  return [];
+}
+
+/**
+ * srt settings for an externally-wrapped agent spawn. Confines the WHOLE agent
+ * process: writes → cwd + the pkg-cache root + (codex) its CODEX_HOME; egress →
+ * the operator (localhost/127.0.0.1) + the model endpoints + the package
+ * registries/CDNs (resolveFleetAllowedDomains); credential dirs hidden via
+ * `denyRead`, with `allowRead` re-permitting the agent's own home when it sits
+ * under a denied dir (codex's CODEX_HOME lives under `~/.papercusp`, verified
+ * D-017). srt schema: filesystem {allowWrite, denyWrite, denyRead, allowRead}.
+ */
+export function buildFleetSrtSettings(opts: {
+  cwd: string;
+  backend: AgentBackend;
+  agentHome?: string | null;
+}): Record<string, unknown> {
+  const home = homedir();
+  const abs = (p: string) => (p.startsWith('~/') ? join(home, p.slice(2)) : p);
+  const denyRead = FLEET_SANDBOX_DENY_READ.map(abs);
+  const allowWrite = [opts.cwd, FLEET_SANDBOX_CACHE_ROOT, ...(opts.agentHome ? [opts.agentHome] : [])];
+  // Re-allow reading the agent's own home if it's under a denyRead dir (codex
+  // CODEX_HOME is under ~/.papercusp) so it can load its config.toml + auth.json.
+  const allowRead =
+    opts.agentHome && denyRead.some((d) => opts.agentHome!.startsWith(d)) ? [opts.agentHome] : [];
+  return {
+    network: {
+      allowedDomains: [
+        ...resolveFleetAllowedDomains(),
+        ...fleetSrtModelDomains(opts.backend),
+        'localhost',
+        '127.0.0.1',
+      ],
+      deniedDomains: [],
+    },
+    filesystem: {
+      allowWrite,
+      denyWrite: [],
+      denyRead,
+      ...(allowRead.length ? { allowRead } : {}),
+    },
+  };
+}
+
+/** Write per-spawn srt settings to a 0600 temp file; returns its path. */
+export function writeFleetSrtSettings(opts: {
+  cwd: string;
+  backend: AgentBackend;
+  agentHome?: string | null;
+}): string {
+  const dir = mkdtempSync(join(tmpdir(), 'papercusp-fleet-srt-'));
+  const path = join(dir, 'srt-settings.json');
+  writeFileSync(path, JSON.stringify(buildFleetSrtSettings(opts)), { mode: 0o600 });
+  return path;
+}
+
+/** Single-quote shell-escape each arg into one `sh -c`-safe string. */
+function shQuote(parts: string[]): string {
+  return parts.map((p) => `'${p.replace(/'/g, `'\\''`)}'`).join(' ');
+}
+
+/**
+ * Wrap a codex spawn in `srt` (P-017/D-017). Returns the command unchanged for
+ * non-codex backends (claude uses its own `--settings` sandbox; omp is not
+ * wrapped yet) or when disabled / srt absent. The wrapped form runs codex via
+ * `srt -s <settings> -c 'export no_proxy=… ; exec <codex …>'` so `no_proxy` is
+ * cleared INSIDE the sandbox (srt injects its own otherwise) — letting the
+ * operator MCP + model route through srt's proxy. The prompt still arrives on
+ * stdin (codex's trailing `-`), inherited through the exec.
+ */
+export function wrapSpawnWithSrt(
+  command: string,
+  argv: string[],
+  opts: { enabled: boolean; backend: AgentBackend; srtBin: string | null; settingsPath: string | null },
+): { command: string; argv: string[] } {
+  if (!opts.enabled || opts.backend !== 'codex' || !opts.srtBin || !opts.settingsPath) {
+    return { command, argv };
+  }
+  const inner = `export no_proxy='' NO_PROXY=''; exec ${shQuote([command, ...argv])}`;
+  return { command: opts.srtBin, argv: ['-s', opts.settingsPath, '-c', inner] };
+}
 
 /**
  * Extra CLI args that make claude-code load + trust the per-spawn signed
@@ -1753,14 +1867,40 @@ export async function invoke(
       }
     }
 
-    // NOTE (P-012, D-010): omp is NOT srt-wrapped. Unlike claude/codex — whose
-    // native sandboxes wrap only sub-commands and leave the agent's own MCP +
-    // model connections intact — `srt` would wrap the WHOLE omp process, so its
-    // network filter gates omp's own model + MCP traffic. A deny-all egress
-    // breaks omp outright; making it work needs a per-omp egress allowlist
-    // (model endpoint + operator) AND a real-spawn verification, which omp's
-    // current mis-config on this box blocked. Deferred — omp runs unsandboxed.
-    const child = spawn(command, finalArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    // External OS-sandbox for backends that can't self-sandbox: codex (P-017/
+    // D-017). codex's native sandbox cancels MCP (D-009), so it runs with its
+    // sandbox bypassed (codexSandboxArgs) but wrapped in `srt`, which confines
+    // its shell commands (writes → cwd+cache, egress → allowlist, creds hidden)
+    // while codex's MCP+model are allow-listed through srt's proxy. The wrap
+    // clears `no_proxy` inside the srt shell so the operator (loopback/RFC1918,
+    // which srt's default no_proxy excludes) routes through that proxy instead
+    // of the isolated netns. omp is NOT wrapped (model host unknown +
+    // unverifiable — see the section header); claude uses its own --settings
+    // sandbox, not srt.
+    let spawnCommand = command;
+    let spawnArgv = finalArgv;
+    if (fleetSandboxEnabled() && agentBackend === 'codex') {
+      const srtBin = srtBinOnPath();
+      if (!srtBin) {
+        throw new Error(
+          'PAPERCUSP_FLEET_SANDBOX is set for a codex spawn but `srt` is not on PATH. ' +
+            'Install @anthropic-ai/sandbox-runtime (npm i -g @anthropic-ai/sandbox-runtime) ' +
+            'or set PAPERCUSP_FLEET_SANDBOX=0.',
+        );
+      }
+      const settingsPath = writeFleetSrtSettings({
+        cwd,
+        backend: agentBackend,
+        agentHome: codexHomeHandle?.codexHome ?? null,
+      });
+      ({ command: spawnCommand, argv: spawnArgv } = wrapSpawnWithSrt(command, finalArgv, {
+        enabled: true,
+        backend: agentBackend,
+        srtBin,
+        settingsPath,
+      }));
+    }
+    const child = spawn(spawnCommand, spawnArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
 
     // Write a row to harness_shared.harness_lanes so the operator UI's
     // "agents in flight" pill bar can subscribe to the live agent set.

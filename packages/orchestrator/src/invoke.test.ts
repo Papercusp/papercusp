@@ -29,6 +29,9 @@ import {
   fleetSandboxSettingsForRole,
   resolveFleetAllowedDomains,
   fleetSandboxCacheEnv,
+  fleetSrtModelDomains,
+  buildFleetSrtSettings,
+  wrapSpawnWithSrt,
   FLEET_SANDBOX_CACHE_ROOT,
   FLEET_SANDBOX_ALLOWED_DOMAINS,
   FLEET_SANDBOX_DENY_READ,
@@ -871,6 +874,64 @@ test('fleetSandboxSettingsForRole — allowWrite includes cwd AND the cache root
     s.sandbox.filesystem.allowWrite.includes(FLEET_SANDBOX_CACHE_ROOT),
     'cache root writable (else npm/pip/cargo install → EROFS)',
   );
+});
+
+// --- codex containment via external srt-wrap (P-017/D-017) ----------------
+
+test('fleetSrtModelDomains — codex gets the OpenAI hosts; omp/claude get none (not wrapped)', () => {
+  const codex = fleetSrtModelDomains('codex');
+  assert.ok(codex.includes('api.openai.com'));
+  assert.ok(codex.includes('chatgpt.com'));
+  assert.deepEqual(fleetSrtModelDomains('omp'), []);
+  assert.deepEqual(fleetSrtModelDomains('claude-code'), []);
+});
+
+test('buildFleetSrtSettings — codex: egress allowlist covers operator + model + registries; writes confined; creds hidden', () => {
+  delete process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS;
+  delete process.env.PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS;
+  const codexHome = `${process.env.HOME ?? '/home/x'}/.papercusp/role-codex-homes/session-1`;
+  const s = buildFleetSrtSettings({ cwd: '/proj', backend: 'codex', agentHome: codexHome }) as any;
+  const dom = s.network.allowedDomains;
+  // operator (loopback) + model + registry all reachable through srt's proxy
+  assert.ok(dom.includes('127.0.0.1') && dom.includes('localhost'), 'operator loopback');
+  assert.ok(dom.includes('api.openai.com'), 'model endpoint');
+  assert.ok(dom.includes('registry.npmjs.org'), 'package registry');
+  // writes confined to cwd + cache root + the codex home
+  assert.ok(s.filesystem.allowWrite.includes('/proj'));
+  assert.ok(s.filesystem.allowWrite.includes(codexHome));
+  // creds hidden, but the CODEX_HOME (under ~/.papercusp) re-allowed for read
+  assert.ok(s.filesystem.denyRead.some((d: string) => d.endsWith('/.papercusp')));
+  assert.ok(s.filesystem.allowRead && s.filesystem.allowRead.includes(codexHome),
+    'CODEX_HOME re-allowed within the ~/.papercusp denyRead');
+});
+
+test('buildFleetSrtSettings — no allowRead when the agent home is not under a denied dir', () => {
+  const s = buildFleetSrtSettings({ cwd: '/proj', backend: 'codex', agentHome: '/tmp/codex-home' }) as any;
+  assert.ok(!s.filesystem.allowRead, 'no allowRead needed when home is outside denyRead');
+  assert.ok(s.filesystem.allowWrite.includes('/tmp/codex-home'));
+});
+
+test('wrapSpawnWithSrt — codex+enabled+srt → srt -s … -c with no_proxy cleared + exec codex; prompt still on stdin', () => {
+  const w = wrapSpawnWithSrt('codex', ['exec', '-', '--model', 'gpt-5.5'], {
+    enabled: true, backend: 'codex', srtBin: '/usr/bin/srt', settingsPath: '/tmp/s.json',
+  });
+  assert.equal(w.command, '/usr/bin/srt');
+  assert.deepEqual(w.argv.slice(0, 3), ['-s', '/tmp/s.json', '-c']);
+  const shell = w.argv[3];
+  assert.match(shell, /no_proxy=''/);
+  assert.match(shell, /NO_PROXY=''/);
+  assert.match(shell, /exec 'codex' 'exec' '-' '--model' 'gpt-5\.5'/);
+});
+
+test('wrapSpawnWithSrt — passthrough for non-codex / disabled / missing srt (claude+omp self-handle)', () => {
+  // disabled
+  assert.equal(wrapSpawnWithSrt('codex', ['exec'], { enabled: false, backend: 'codex', srtBin: '/usr/bin/srt', settingsPath: '/tmp/s.json' }).command, 'codex');
+  // omp (not wrapped yet)
+  assert.equal(wrapSpawnWithSrt('omp', ['-p'], { enabled: true, backend: 'omp', srtBin: '/usr/bin/srt', settingsPath: '/tmp/s.json' }).command, 'omp');
+  // claude (uses its own --settings)
+  assert.equal(wrapSpawnWithSrt('claude', ['-p'], { enabled: true, backend: 'claude-code', srtBin: '/usr/bin/srt', settingsPath: '/tmp/s.json' }).command, 'claude');
+  // srt absent → fail open to unwrapped (the spawn site throws before this in practice)
+  assert.equal(wrapSpawnWithSrt('codex', ['exec'], { enabled: true, backend: 'codex', srtBin: null, settingsPath: '/tmp/s.json' }).command, 'codex');
 });
 
 test('claudeSandboxArgs — enabled + claude-code → --settings with the per-role sandbox block', () => {
