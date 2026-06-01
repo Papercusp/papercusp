@@ -37,6 +37,9 @@ import {
   FLEET_SANDBOX_ALLOWED_DOMAINS,
   FLEET_SANDBOX_DENY_READ,
   FLEET_SANDBOX_DENY_RULES,
+  scopeSpawnEnvForRole,
+  SPAWN_ENV_ALL_ROLES_STRIP,
+  SEARCH_PROVIDER_ENV_KEYS,
 } from './invoke.js';
 
 interface Fixture {
@@ -1051,4 +1054,104 @@ test('extractResult — codex-json returns "" when no agent_message present', ()
   writeFileSync(path, JSON.stringify({ type: 'turn.completed', usage: {} }) + '\n', 'utf8');
   assert.equal(extractResult(path, 'codex-json'), '');
   rmSync(dir, { recursive: true, force: true });
+});
+
+// ─── G4 / P-011: scopeSpawnEnvForRole — child agent-CLI env least-privilege ───
+// The spawned claude/omp/codex CLI reaches every privileged surface via the
+// SIGNED MCP HTTP endpoint (:3070), never via direct PG, so it does not need the
+// operator's admin PG creds or the operator_secrets decryption key. The auditor
+// is a read-only judge with no web_search → it additionally loses the decrypted
+// search-provider API keys. Backend auth is session/OAuth-file based (claude →
+// ~/.claude via resolveSpawnHome; codex → ~/.codex/auth.json symlinked into
+// CODEX_HOME; omp → Meridian bridge), so NO API-key env must survive for any
+// backend to run — stripping the API-key-named search keys is safe.
+
+test('scopeSpawnEnvForRole — all roles drop operator PG/DB secrets, keep PATH/HOME', () => {
+  const input = {
+    DATABASE_URL: 'postgres://harness_admin:pw@localhost:5432/papercusp',
+    PAPERCUSP_PG_DSN: 'postgres://x',
+    PAPERCUSP_DB_ENCRYPTION_KEY: 'k-secret',
+    PATH: '/usr/bin',
+    HOME: '/home/u',
+    TAVILY_API_KEY: 'tvly-xxx',
+  };
+  const out = scopeSpawnEnvForRole(input, 'worker');
+  assert.equal(out.DATABASE_URL, undefined, 'admin DATABASE_URL stripped');
+  assert.equal(out.PAPERCUSP_PG_DSN, undefined, 'PG DSN stripped');
+  assert.equal(out.PAPERCUSP_DB_ENCRYPTION_KEY, undefined, 'decryption key stripped');
+  // PATH/HOME survive (HOME is re-derived per-spawn but must not be stripped here).
+  assert.equal(out.PATH, '/usr/bin');
+  assert.equal(out.HOME, '/home/u');
+  // A worker uses web_search → keeps the search-provider key.
+  assert.equal(out.TAVILY_API_KEY, 'tvly-xxx', 'worker keeps search keys (uses web_search)');
+});
+
+test('scopeSpawnEnvForRole — auditor additionally strips ALL search-provider keys, keeps PATH/HOME', () => {
+  const input: NodeJS.ProcessEnv = {
+    DATABASE_URL: 'postgres://x',
+    PAPERCUSP_PG_DSN: 'postgres://x',
+    PAPERCUSP_DB_ENCRYPTION_KEY: 'k',
+    PATH: '/usr/bin',
+    HOME: '/home/u',
+  };
+  // Seed every canonical search-provider env key.
+  for (const k of SEARCH_PROVIDER_ENV_KEYS) input[k] = `val-${k}`;
+  const out = scopeSpawnEnvForRole(input, 'auditor');
+  // PG/DB secrets gone (all-roles rule).
+  for (const k of SPAWN_ENV_ALL_ROLES_STRIP) {
+    assert.equal(out[k], undefined, `${k} stripped for auditor`);
+  }
+  // Every search-provider key gone (auditor is read-only; no web_search).
+  for (const k of SEARCH_PROVIDER_ENV_KEYS) {
+    assert.equal(out[k], undefined, `auditor must not carry search key ${k}`);
+  }
+  // Backend-auth + non-secret env survives — no API-key env is needed for any
+  // backend (session/OAuth-file auth), so the auditor still produces a verdict.
+  assert.equal(out.PATH, '/usr/bin');
+  assert.equal(out.HOME, '/home/u');
+});
+
+test('scopeSpawnEnvForRole — returns a COPY; never mutates the input', () => {
+  const input = {
+    DATABASE_URL: 'postgres://x',
+    TAVILY_API_KEY: 'tvly-xxx',
+    PATH: '/usr/bin',
+  };
+  const snapshot = { ...input };
+  const out = scopeSpawnEnvForRole(input, 'auditor');
+  assert.deepEqual(input, snapshot, 'input env object is not mutated');
+  assert.notEqual(out, input, 'returns a distinct object');
+});
+
+test('scopeSpawnEnvForRole — non-auditor review roles behave like worker (keep search keys, strip PG/DB)', () => {
+  const input = {
+    DATABASE_URL: 'postgres://x',
+    PAPERCUSP_DB_ENCRYPTION_KEY: 'k',
+    TAVILY_API_KEY: 'tvly-xxx',
+    EXA_API_KEY: 'exa-xxx',
+    PATH: '/usr/bin',
+  };
+  for (const role of ['validator', 'scoper', 'documenter', 'unknown-role', '']) {
+    const out = scopeSpawnEnvForRole(input, role);
+    assert.equal(out.DATABASE_URL, undefined, `${role}: PG creds stripped`);
+    assert.equal(out.PAPERCUSP_DB_ENCRYPTION_KEY, undefined, `${role}: decryption key stripped`);
+    assert.equal(out.TAVILY_API_KEY, 'tvly-xxx', `${role}: keeps search keys (not the auditor)`);
+    assert.equal(out.EXA_API_KEY, 'exa-xxx', `${role}: keeps search keys`);
+    assert.equal(out.PATH, '/usr/bin');
+  }
+});
+
+test('SEARCH_PROVIDER_ENV_KEYS — mirrors the apps/operator SEARCH_PROVIDERS canonical names', () => {
+  // Cross-reference: apps/operator/lib/search-provider-credentials.ts SEARCH_PROVIDERS
+  // (primaries + alternates + the SearXNG fields). Kept in sync by hand; this test
+  // pins the names so a drift is caught here.
+  for (const k of [
+    'TAVILY_API_KEY', 'PERPLEXITY_API_KEY', 'PPLX_API_KEY', 'BRAVE_API_KEY',
+    'JINA_API_KEY', 'MOONSHOT_SEARCH_API_KEY', 'KIMI_SEARCH_API_KEY', 'MOONSHOT_API_KEY',
+    'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'CODEX_API_KEY', 'ZAI_API_KEY',
+    'EXA_API_KEY', 'PARALLEL_API_KEY', 'KAGI_API_KEY', 'SYNTHETIC_API_KEY',
+    'SEARXNG_ENDPOINT', 'SEARXNG_TOKEN', 'SEARXNG_BASIC_USERNAME', 'SEARXNG_BASIC_PASSWORD',
+  ]) {
+    assert.ok(SEARCH_PROVIDER_ENV_KEYS.includes(k), `${k} must be in SEARCH_PROVIDER_ENV_KEYS`);
+  }
 });

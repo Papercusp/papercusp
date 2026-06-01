@@ -715,6 +715,105 @@ export function fleetSandboxSettingsForRole(role: string | undefined): Record<st
   };
 }
 
+/* ─── G4 / P-011: spawn-env least-privilege (plan papercusp-user-protection-gate
+ * 2026-05-31) ────────────────────────────────────────────────────────────────
+ * The spawned agent CLI (claude/omp/codex) reaches EVERY privileged surface via
+ * the SIGNED MCP HTTP endpoint (:3070) — never via a direct PG connection — so
+ * it does not need the operator's admin PG creds or the key that decrypts
+ * `operator_secrets`. Yet the merged `spawnEnv` (`...process.env` +
+ * `ctx.extraSpawnEnv` + `options.extraEnv`) hands every child the full operator
+ * env. `scopeSpawnEnvForRole` removes the secrets the child can't use, so a
+ * fooled/compromised agent — or one executing a feature the auditor (G2)
+ * mis-admitted — can't read admin PG creds or the decryption key straight out of
+ * its environment (D-007: G4 is the damage-bound backstop to the auditor).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Operator-internal secrets removed from EVERY spawned agent-CLI child env: the
+ * admin Postgres DSNs and the key that decrypts `operator_secrets`. The agent
+ * CLI authenticates to all privileged surfaces through the signed MCP HTTP
+ * endpoint, so it never reads these directly — only the trusted orchestrator
+ * (`invoke()` / `invoke-once`) needs them, and they stay in ITS `process.env`
+ * because this helper scopes the CHILD `spawnEnv` only, not `process.env`.
+ *  - `DATABASE_URL` / `PAPERCUSP_PG_DSN` — admin PG connection strings.
+ *  - `PAPERCUSP_DB_ENCRYPTION_KEY` — decrypts the `operator_secrets` /
+ *    search-provider-credentials store (see spawn-env-from-pg.ts).
+ */
+export const SPAWN_ENV_ALL_ROLES_STRIP: readonly string[] = [
+  'DATABASE_URL',
+  'PAPERCUSP_PG_DSN',
+  'PAPERCUSP_DB_ENCRYPTION_KEY',
+];
+
+/**
+ * Decrypted search-provider API-key env names that OMP's `web_search` providers
+ * consume. SOURCE OF TRUTH: `apps/operator/lib/search-provider-credentials.ts`
+ * `SEARCH_PROVIDERS` (each provider's `primary` + `alternates` + the SearXNG
+ * `fields`). Mirrored here (a small, stable list) because the orchestrator
+ * package can't import from `apps/operator` — wrong dependency direction.
+ * **Keep in sync** with that file; the unit test
+ * `SEARCH_PROVIDER_ENV_KEYS — mirrors …` pins the names so a drift is caught.
+ *
+ * These are stripped for the AUDITOR only (a read-only judge with no
+ * `web_search` and no tools beyond read). NOTE several of these names
+ * (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `CODEX_API_KEY`) could in principle be
+ * a backend's API auth — but the fleet's agent backends authenticate via
+ * session/OAuth FILES, NOT an API-key env: claude → `~/.claude` (per-spawn HOME
+ * via `resolveSpawnHome`); codex → `~/.codex/auth.json` symlinked into the
+ * per-spawn `CODEX_HOME` (`writeSignedSpawnCodexHome`); omp → the Meridian
+ * Claude-Code-SDK bridge. So NO key here is load-bearing for backend auth, and
+ * stripping them all still lets the auditor run + emit a verdict.
+ */
+export const SEARCH_PROVIDER_ENV_KEYS: readonly string[] = [
+  'TAVILY_API_KEY',
+  'PERPLEXITY_API_KEY',
+  'PPLX_API_KEY',
+  'BRAVE_API_KEY',
+  'JINA_API_KEY',
+  'MOONSHOT_SEARCH_API_KEY',
+  'KIMI_SEARCH_API_KEY',
+  'MOONSHOT_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'GEMINI_API_KEY',
+  'CODEX_API_KEY',
+  'ZAI_API_KEY',
+  'EXA_API_KEY',
+  'PARALLEL_API_KEY',
+  'KAGI_API_KEY',
+  'SYNTHETIC_API_KEY',
+  'SEARXNG_ENDPOINT',
+  'SEARXNG_TOKEN',
+  'SEARXNG_BASIC_USERNAME',
+  'SEARXNG_BASIC_PASSWORD',
+];
+
+/**
+ * Return a COPY of `env` with the secrets a spawned agent-CLI child of `role`
+ * does not need removed (never mutates the input). Decided by trusted
+ * orchestrator code, never from agent-supplied input.
+ *
+ *  - ALL roles lose the operator-internal PG/DB secrets
+ *    (`SPAWN_ENV_ALL_ROLES_STRIP`) — the child uses the signed MCP endpoint.
+ *  - The `auditor` role ADDITIONALLY loses every decrypted search-provider API
+ *    key (`SEARCH_PROVIDER_ENV_KEYS`) — it is a read-only judge with no
+ *    `web_search`. Backend auth is session/OAuth-file based, so no key here is
+ *    needed for the auditor to run (see SEARCH_PROVIDER_ENV_KEYS).
+ *
+ * Applied to the merged `spawnEnv` BEFORE the post-merge env mutations
+ * (`OMP_*`/`PI_*` memory flags, `resolveSpawnHome` → HOME/USERPROFILE,
+ * `gitConfigNoPushEnv`, the per-spawn `CODEX_HOME`/`.mcp.json` and sandbox
+ * cache-redirect), so HOME, the git-no-push config, and the MCP/cache env added
+ * afterward survive — none of those are secrets this strips.
+ */
+export function scopeSpawnEnvForRole(env: NodeJS.ProcessEnv, role: string): NodeJS.ProcessEnv {
+  const scoped: NodeJS.ProcessEnv = { ...env };
+  for (const k of SPAWN_ENV_ALL_ROLES_STRIP) delete scoped[k];
+  if (role === 'auditor') {
+    for (const k of SEARCH_PROVIDER_ENV_KEYS) delete scoped[k];
+  }
+  return scoped;
+}
+
 /**
  * `--settings <inline JSON>` carrying the per-role fleet OS sandbox, appended
  * to a claude-code spawn when PAPERCUSP_FLEET_SANDBOX is set. The policy is
@@ -1833,15 +1932,24 @@ export async function invoke(
     // from Migration 047, resolved once at orchestrator boot). Spread
     // before the OMP_* memory-disable flags so we don't let the caller
     // accidentally override those.
-    const spawnEnv: NodeJS.ProcessEnv = {
-      ...process.env,
-      ...(ctx.extraSpawnEnv ?? {}),
-      ...(options.extraEnv ?? {}),
-      OMP_MEMORIES_ENABLED: 'false',
-      OMP_MEMORY_BACKEND: 'off',
-      PI_MEMORIES_ENABLED: 'false',
-      PI_MEMORY_BACKEND: 'off',
-    };
+    const spawnEnv: NodeJS.ProcessEnv = scopeSpawnEnvForRole(
+      {
+        ...process.env,
+        ...(ctx.extraSpawnEnv ?? {}),
+        ...(options.extraEnv ?? {}),
+        OMP_MEMORIES_ENABLED: 'false',
+        OMP_MEMORY_BACKEND: 'off',
+        PI_MEMORIES_ENABLED: 'false',
+        PI_MEMORY_BACKEND: 'off',
+      },
+      // G4 / P-011: strip operator-internal secrets the agent CLI never needs
+      // (it uses the signed MCP endpoint, not direct PG); the auditor role
+      // additionally loses the decrypted search-provider keys (read-only judge,
+      // no web_search). Applied to the MERGED env BEFORE the per-spawn HOME /
+      // git-no-push / MCP-config / sandbox-cache env is added below, so those
+      // (non-secret) additions survive. See scopeSpawnEnvForRole.
+      role,
+    );
 
     // Phase E (P-051 / D-008): per-spawn HOME for filesystem-credential
     // isolation (~/.claude, ~/.gitconfig). See resolveSpawnHome — gated on the
