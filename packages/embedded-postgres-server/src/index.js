@@ -181,6 +181,24 @@ export async function startEmbeddedPostgresServer(opts = {}) {
       END $pg$;
     `);
 
+    // Extensions the baseline schema depends on, created BEFORE migrations.
+    // The squashed 000-baseline.sql (self-contained-migration-baseline-2026-06-02)
+    // is a schema-only dump of harness_shared + papercup_shared: it references
+    // gen_random_uuid()/digest() (pgcrypto), trigram ops (pg_trgm), and vector(N)
+    // columns (vector) but does NOT itself CREATE EXTENSION. Previously these came
+    // from migrations 027/039/059/060, now archived. pgcrypto + pg_trgm are trusted
+    // and always succeed; vector needs the compiled .so — tolerated-if-missing
+    // (mirrors the old 060), in which case mem0 degrades to its in-memory fallback.
+    await sql.unsafe(`
+      CREATE EXTENSION IF NOT EXISTS pgcrypto;
+      CREATE EXTENSION IF NOT EXISTS pg_trgm;
+      DO LANGUAGE plpgsql $body$ BEGIN
+        CREATE EXTENSION IF NOT EXISTS vector;
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'pgvector not available on this server (%); embedding features degrade to in-memory.', SQLERRM;
+      END $body$;
+    `);
+
     // Optional seed-dump restore (Part 2 — build-time data sync to
     // Mac/Windows). When PAPERCUSP_PG_SEED_DUMP_PATH points at a
     // pg_dump custom-format file AND the DB has no schema_migrations
