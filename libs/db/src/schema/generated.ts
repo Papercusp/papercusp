@@ -2143,7 +2143,14 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.table("h
 	discardedDesignWork: boolean("discarded_design_work").default(false).notNull(),
 	sourcePlanSlug: text("source_plan_slug"),
 	sourcePlanItemIds: text("source_plan_item_ids").array(),
+	// P-015 / D-016: who is actively working this feature. The canonical
+	// "working_users projection" (v5 §0.5 / §7.1); current_worker is DERIVED
+	// as working_users[0], not stored. Maintained by the feature_working_set
+	// Hyperbee→PG projection (Phase 8 P-038 reconciliation). Added to the DB
+	// by migration 080 but was missing from the introspected schema (drift).
+	workingUsers: bigint("working_users", { mode: "number" }).array().default([]).notNull(),
 }, (table) => [
+	index("hfc_working_users_active_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(array_length(working_users, 1) IS NOT NULL)`),
 	index("hfc_source_plan_slug_idx").using("btree", table.sourcePlanSlug.asc().nullsLast().op("text_ops")).where(sql`(source_plan_slug IS NOT NULL)`),
 	index("hfc_design_status_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.designStatus.asc().nullsLast().op("text_ops")).where(sql`(design_status IS NOT NULL)`),
 	index("hfc_needs_design_idx").using("btree", table.harnessSlug.asc().nullsLast().op("bool_ops"), table.needsDesign.asc().nullsLast().op("bool_ops")).where(sql`(needs_design = true)`),
