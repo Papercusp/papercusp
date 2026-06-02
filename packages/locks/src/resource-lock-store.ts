@@ -110,6 +110,20 @@ export async function sweepResourceExpired(
 }
 
 /**
+ * Reactive nudge for the exclusive wait loop: sweep this workspace's
+ * expired resource holders, then run the drain cascade unconditionally.
+ * Mirrors pokeWorkspace for the file locks — a shared holder whose TTL
+ * lapsed without an explicit release fires no cascade on its own, so a
+ * waiting exclusive would sit idle until the background janitor. The poke
+ * sweeps the dead holder + completes the drain so the waiter wakes.
+ */
+export async function pokeResource(tx: Sql, coordinationDomain: string): Promise<void> {
+  await tx`SET LOCAL statement_timeout = '500ms'`;
+  await sweepResourceExpired(tx, coordinationDomain);
+  await tx`SELECT resource_grant_cascade(${coordinationDomain}, clock_timestamp())`;
+}
+
+/**
  * Acquire a named resource in `shared` or `exclusive` mode. Inside the
  * caller's inWorkspaceTxn.
  *
