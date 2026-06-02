@@ -13,6 +13,7 @@
  */
 export * from './config';
 export * from './su-lock-store';
+export * from './resource-lock-store';
 export * from './in-workspace-txn';
 export * from './workspace-listener';
 export * from './coordinator';
