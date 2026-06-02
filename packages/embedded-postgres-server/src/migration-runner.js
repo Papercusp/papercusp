@@ -93,23 +93,16 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
       appliedCount++;
     } catch (err) {
       // The failed `BEGIN…COMMIT` left the connection in an aborted
-      // transaction; reset it so the next migration doesn't cascade-fail with
+      // transaction; reset it so error reporting isn't masked by
       // "current transaction is aborted, commands ignored until end of block".
       await client.unsafe('ROLLBACK').catch(() => {});
-      // 42P01 = undefined_table. On the Tauri desktop this runner executes
-      // during embedded-PG boot — BEFORE the operator sidecar's ensure-schema
-      // runs — so an ALTER that targets a `harness_shared.*` table created by
-      // ensure-schema (not by any migration) hits a not-yet-existing table and
-      // would otherwise throw uncaught and abort the entire PG boot (observed:
-      // adaptive_telemetry, harness_experts). Those ALTERs are redundant —
-      // ensure-schema's CREATE already includes the columns — so warn + skip,
-      // leaving the file UN-marked so it retries on a later boot once the table
-      // exists. Re-throw every other error so genuine migration breakage stays
-      // loud (the original 2026-05-05 token_index bug must still fail visibly).
-      if (err && err.code === '42P01') {
-        log(`skip ${f}: ${err.message} — target table is created by ensure-schema, not a migration; will retry next boot`);
-        continue;
-      }
+      // No skip-on-42P01 anymore. That tolerance existed only because the OLD
+      // incremental migrations ALTERed `harness_shared.*` tables that ensure-schema
+      // (not a migration) created lazily at runtime — so an ALTER could hit a
+      // not-yet-existing table at boot. The schema is now a single self-contained
+      // 000-baseline.sql (self-contained-migration-baseline-2026-06-02): it creates
+      // every table before touching it, so empty→head applies with ZERO skips and
+      // any 42P01 (or any other error) is a genuine break that MUST fail loudly.
       throw err;
     }
   }
