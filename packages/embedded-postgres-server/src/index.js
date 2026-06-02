@@ -199,60 +199,10 @@ export async function startEmbeddedPostgresServer(opts = {}) {
       END $body$;
     `);
 
-    // Optional seed-dump restore (Part 2 — build-time data sync to
-    // Mac/Windows). When PAPERCUSP_PG_SEED_DUMP_PATH points at a
-    // pg_dump custom-format file AND the DB has no schema_migrations
-    // history yet (fresh initdb), pg_restore the dump BEFORE migrations
-    // apply. Migration runner then sees all rows in schema_migrations
-    // and treats them as already-applied — clean idempotent path.
-    let seedJustRestored = false;
-    const seedPath = opts.seedDumpPath ?? process.env.PAPERCUSP_PG_SEED_DUMP_PATH;
-    if (seedPath && existsSync(seedPath)) {
-      // Check freshness: does schema_migrations exist with any rows?
-      let isFreshInstall = true;
-      try {
-        const rows = await sql.unsafe(
-          `SELECT count(*)::int AS n FROM harness_shared.schema_migrations`,
-        );
-        if (rows?.[0]?.n > 0) isFreshInstall = false;
-      } catch {
-        // table doesn't exist yet — that's the fresh-install signal we want
-      }
-      if (isFreshInstall) {
-        const pgRestoreBin = opts.pgRestoreBin
-          ?? process.env.PAPERCUSP_PG_RESTORE_BIN
-          ?? 'pg_restore';
-        log(`seed restore: ${seedPath} (fresh install detected)`);
-        const { spawn } = await import('node:child_process');
-        await new Promise((resolve) => {
-          const child = spawn(pgRestoreBin, [
-            '--dbname', `postgresql://harness_admin:harness_admin_pwd@127.0.0.1:${port}/${dbName}`,
-            '--no-owner', '--no-acl',
-            '--no-publications', '--no-subscriptions',
-            seedPath,
-          ], { stdio: ['ignore', 'pipe', 'pipe'] });
-          let stderr = '';
-          child.stderr.on('data', (d) => { stderr += d.toString(); });
-          child.on('exit', (code) => {
-            // pg_restore returns 1 when it encounters non-fatal warnings or
-            // a small number of object-already-exists errors but otherwise
-            // restored the dump. Treat 0 AND 1 as "restored enough" — the
-            // alternative (running migrations on partially-restored data)
-            // is strictly worse because the dump's schema may diverge from
-            // the migration sequence.
-            if (code === 0 || code === 1) {
-              log(`seed restore: complete (exit=${code})${code === 1 ? `; non-fatal stderr: ${stderr.split('\n').slice(0, 3).join(' | ')}` : ''}`);
-              seedJustRestored = true;
-            } else {
-              log(`seed restore: pg_restore exit=${code}; first stderr lines: ${stderr.split('\n').slice(0, 5).join(' | ')}`);
-            }
-            resolve();
-          });
-        });
-      } else {
-        log(`seed restore: skipping (DB already has schema_migrations rows)`);
-      }
-    }
+    // Seed-restore RETIRED (self-contained-migration-baseline-2026-06-02, D-004): the
+    // single idempotent 000-baseline.sql (+ 107+) is now the fresh-boot path, so the
+    // PAPERCUSP_PG_SEED_DUMP_PATH pg_restore branch + its migration pre-marking are gone.
+    // A fresh initdb now builds the full schema by applying migrations directly (below).
 
     // Apply migrations FIRST. The publication-creation block below
     // references schemas (harness_shared, papercup_shared) that don't
@@ -260,102 +210,11 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     // migrations ahead of the publication step prevents the
     // "schema does not exist" failure on first boot.
     if (opts.dbSqlDir && existsSync(opts.dbSqlDir)) {
-      // Seed-installed databases keep a sentinel row in schema_migrations
-      // so on every subsequent boot we can pre-mark any new on-disk
-      // migration files as "covered by seed". Without this, rebuilding
-      // the sidecar with new migration files between desktop launches
-      // causes the runner to try applying them against an already-final
-      // schema (e.g. ALTER TABLE against a relation that's now a view).
-      const SEED_SENTINEL = '__seed_restored__.marker';
-      let seedSentinelExists = false;
-      try {
-        await sql.unsafe(`
-          CREATE SCHEMA IF NOT EXISTS harness_shared;
-          CREATE TABLE IF NOT EXISTS harness_shared.schema_migrations (
-            filename TEXT PRIMARY KEY,
-            sha256 TEXT NOT NULL,
-            applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-          );
-        `);
-        const rows = await sql.unsafe(
-          `SELECT 1 FROM harness_shared.schema_migrations WHERE filename = '${SEED_SENTINEL}' LIMIT 1`,
-        );
-        seedSentinelExists = (rows?.length ?? 0) > 0;
-      } catch {
-        // table didn't exist; will be created below
-      }
-
-      const shouldPreMark = seedJustRestored || seedSentinelExists;
-      console.log(`[embedded-pg-server] pre-mark check: seedJustRestored=${seedJustRestored} seedSentinelExists=${seedSentinelExists} → shouldPreMark=${shouldPreMark}`);
-      if (shouldPreMark) {
-        try {
-          // Seed-restored tables may be missing the PRIMARY KEY on filename
-          // (pg_dump --no-owner drops constraints in some configs). Add it
-          // if missing so ON CONFLICT works below.
-          try {
-            const constraints = await sql.unsafe(
-              `SELECT 1 FROM pg_constraint WHERE conrelid = 'harness_shared.schema_migrations'::regclass AND contype IN ('p','u') LIMIT 1`,
-            );
-            if (!constraints?.length) {
-              await sql.unsafe(
-                `ALTER TABLE harness_shared.schema_migrations ADD CONSTRAINT schema_migrations_filename_key UNIQUE (filename)`,
-              );
-              console.log(`[embedded-pg-server] pre-mark: added missing UNIQUE constraint on filename`);
-            }
-          } catch (e) {
-            console.log(`[embedded-pg-server] pre-mark: constraint check skipped (${e?.message ?? e})`);
-          }
-          const { readdirSync, readFileSync: rfs } = await import('node:fs');
-          const { createHash } = await import('node:crypto');
-          const { join: pjoin } = await import('node:path');
-          const files = readdirSync(opts.dbSqlDir).filter((f) => f.endsWith('.sql')).sort();
-          for (const f of files) {
-            const body = rfs(pjoin(opts.dbSqlDir, f), 'utf8');
-            const hash = createHash('sha256').update(body).digest('hex');
-            await sql.unsafe(
-              `INSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}') ON CONFLICT (filename) DO NOTHING`,
-            );
-          }
-          // Record the seed-applied sentinel so future boots also pre-mark.
-          await sql.unsafe(
-            `INSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${SEED_SENTINEL}', 'seed') ON CONFLICT (filename) DO NOTHING`,
-          );
-          console.log(`[embedded-pg-server] pre-mark: inserted ${files.length} migration markers + sentinel`);
-        } catch (e) {
-          console.log(`[embedded-pg-server] pre-mark FAILED: ${e?.message ?? e}`);
-        }
-
-        // pg_restore --no-owner reset object ownership to the restoring
-        // role (harness_admin). Re-grant the standard role permissions
-        // that the migrations would have established.
-        try {
-          await sql.unsafe(`
-            DO $perm$
-            DECLARE
-              s text;
-            BEGIN
-              FOR s IN
-                SELECT nspname FROM pg_namespace
-                WHERE nspname NOT LIKE 'pg_%'
-                  AND nspname NOT IN ('information_schema','public')
-              LOOP
-                EXECUTE format('GRANT USAGE ON SCHEMA %I TO harness_app, harness_zero', s);
-                EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO harness_app', s);
-                EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO harness_zero', s);
-                EXECUTE format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA %I TO harness_app', s);
-                EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO harness_app', s);
-                EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT ON TABLES TO harness_zero', s);
-                EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO harness_app', s);
-              END LOOP;
-            END;
-            $perm$;
-          `);
-          log(`seed restore: re-granted harness role permissions on all schemas`);
-        } catch (e) {
-          log(`seed restore: permission re-grant failed: ${e?.message ?? e}`);
-        }
-      }
-
+      // Migrations are the single source of truth (self-contained-migration-baseline-2026-06-02).
+      // The runner creates schema_migrations itself and applies 000-baseline.sql (+ 107+)
+      // idempotently — no seed pre-marking, and role grants now live in migration 109
+      // (not a boot-time re-grant), so a fresh initdb builds the complete, grant-correct
+      // schema by applying migrations directly.
       const result = await applyPendingMigrations({
         client: sql,
         sqlDir: opts.dbSqlDir,
@@ -396,20 +255,10 @@ export async function startEmbeddedPostgresServer(opts = {}) {
 
       // Per-harness template: render against each known slug, idempotent.
       // Not tracked in schema_migrations because there's no single filename.
-      //
-      // Skip when we just restored from a seed dump: the seed already
-      // has the post-migration state of every per-harness schema
-      // (including the view-replacement from migration 032). Re-running
-      // the template would try ALTER COLUMN against views and crash.
+      // (The old "skip when seed-restored" branch is gone with seed-restore —
+      // self-contained-migration-baseline-2026-06-02 D-004.)
       const tmplPath = join(opts.dbSqlDir, PER_HARNESS_TEMPLATE);
-      if (seedJustRestored || seedSentinelExists) {
-        // Skip on every boot of a seed-installed DB, not just the one
-        // that did the restore. Per-harness schemas already have the
-        // post-migration view-replacements baked in from the seed —
-        // re-running the template would attempt ALTER TABLE against
-        // relations that are now views.
-        console.log(`[embedded-pg-server] per-harness template: skipped (DB was seed-installed; schemas already match)`);
-      } else if (existsSync(tmplPath)) {
+      if (existsSync(tmplPath)) {
         const { readFile } = await import('node:fs/promises');
         const tmpl = await readFile(tmplPath, 'utf8');
         // Slug list comes from harness_shared.harness_registry by default
