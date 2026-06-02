@@ -1,6 +1,6 @@
 import { afterEach, describe, test } from 'vitest';
 import assert from 'node:assert/strict';
-import { durableOwnedFeatureIdsPg, readFeaturesPg } from './state-pg';
+import { durableOwnedFeatureIdsPg, isAutoPickable, readFeaturesPg } from './state-pg';
 
 const FLAG = 'PAPERCUSP_DBOS_ORCHESTRATOR';
 type Ctx = Parameters<typeof durableOwnedFeatureIdsPg>[0];
@@ -132,5 +132,38 @@ describe('durableOwnedFeatureIdsPg — Phase 3 carve-out (D-012/D-013)', () => {
     const ctx = { pg, workspaceId: 'w', harnessSlug: 's' } as unknown as Ctx;
     const owned = await durableOwnedFeatureIdsPg(ctx);
     assert.deepEqual([...owned], ['F-009']);
+  });
+});
+
+// The G2 auditor ADMISSION gate (papercusp-user-protection-gate, migrations
+// 097/098): a remote-authored feature must be auditor-admitted before the
+// orchestrator pick loop may auto-pick it; local features bypass it. This is a
+// SECURITY predicate — a wrong `true` lets an unscreened remote feature into the
+// loop. (The agent-e2e surfaced the live half of this: a missing `audit_verdict`
+// column crashed the JOIN; this pins the pure decision so the gate can't silently
+// flip.)
+describe('isAutoPickable — auditor admission gate (origin/audit_verdict)', () => {
+  test('LOCAL features always bypass the auditor (no verdict needed)', () => {
+    assert.equal(isAutoPickable({ origin: 'local' }), true);
+    assert.equal(isAutoPickable({ origin: 'local', audit_verdict: null }), true);
+    assert.equal(isAutoPickable({ origin: 'local', audit_verdict: 'reject' }), true);
+  });
+
+  test('null/undefined origin is treated as LOCAL (D-006 bypass)', () => {
+    assert.equal(isAutoPickable({ origin: null }), true);
+    assert.equal(isAutoPickable({}), true);
+  });
+
+  test('REMOTE + admitted → pickable', () => {
+    assert.equal(isAutoPickable({ origin: 'remote', audit_verdict: 'admit' }), true);
+  });
+
+  test('REMOTE + NOT admitted → NOT pickable (the security-critical cases)', () => {
+    // pending / null (pre-migration) / reject / unknown verdict all stay OUT.
+    assert.equal(isAutoPickable({ origin: 'remote', audit_verdict: 'pending' }), false);
+    assert.equal(isAutoPickable({ origin: 'remote', audit_verdict: null }), false);
+    assert.equal(isAutoPickable({ origin: 'remote', audit_verdict: 'reject' }), false);
+    assert.equal(isAutoPickable({ origin: 'remote' }), false);
+    assert.equal(isAutoPickable({ origin: 'remote', audit_verdict: 'Admit' }), false); // exact 'admit' only
   });
 });
