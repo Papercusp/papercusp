@@ -192,15 +192,9 @@ function evictHarnessPoolsIfFull(): void {
 
 function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: number): Sql {
   const sp = searchPath.map((s) => `"${s.replace(/"/g, '""')}"`).join(', ');
-  // Desktop pglite mode: PAPERCUSP_PGLITE_SOCKET_DIR points at a unix
-  // socket dir. We override `host` in the options so postgres-js connects
-  // through the socket regardless of what the URL says. The URL still
-  // needs a parseable host (use `localhost`) — postgres-js's URL parser
-  // doesn't decode percent-encoded socket paths, and the canonical
-  // empty-host form (`postgres://user@/db?host=/sock`) is rejected by
-  // Node's `new URL()` which is called on the connection string at
-  // module load time elsewhere in the operator chain.
-  const pgliteSocket = process.env.PAPERCUSP_PGLITE_SOCKET_DIR;
+  // The desktop ships embedded-postgres-server (real PG over TCP); the URL
+  // carries a normal host:port, so no host override is needed. The legacy
+  // pglite unix-socket path was removed 2026-06-01.
   return postgres(connectionUrl, {
     onnotice: () => {},
     connection: {
@@ -215,7 +209,6 @@ function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: 
     // Production is unaffected because connections in prod live long
     // enough that the one-time prepare cost amortizes anyway.
     prepare: false,
-    ...(pgliteSocket ? { host: pgliteSocket } : {}),
     // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 2 — operators
     // with ~20 registered harnesses each open a per-harness pool, so
     // 20 × 2 = 40 idle connections leaves 60+ slots for other clients
@@ -223,8 +216,9 @@ function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: 
     // Postgres's max_connections=100. Earlier defaults of 4 and 8 saturated
     // the slot table and produced "remaining connection slots are reserved
     // for roles with the SUPERUSER attribute" failures from the snapshot
-    // and marketplace endpoints. Desktop builds set it to 1 because
-    // pglite-socket serializes queries internally.
+    // and marketplace endpoints. Desktop's embedded-postgres-server is a
+    // real PG over TCP, so the normal pool default applies (override via
+    // PAPERCUSP_DB_POOL_MAX if needed).
     max: Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 2),
     // Auto-close connections that sit idle for >30s. Prevents per-harness
     // pools from accumulating idle conns indefinitely (Next.js dev mode

@@ -1,8 +1,9 @@
 /**
  * Tiny postgres-js wrapper used by the CLI in place of `spawnSync('psql', …)`.
  *
- * Why: `psql` isn't available on the desktop bundle (we ship pglite + node but
- * no postgres-client binary). Spawning `psql` worked on dev machines and silently
+ * Why: a postgres-client binary isn't guaranteed on the desktop bundle (we ship
+ * embedded-postgres-server's server binaries + node, but client tools like `psql`
+ * are sourced separately). Spawning `psql` worked on dev machines and silently
  * failed elsewhere — most visibly during plugin install when applying a plugin's
  * `schema.sql`. Going through postgres-js means the CLI can talk to Postgres
  * directly, no external program required, on any platform.
