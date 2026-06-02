@@ -8,9 +8,7 @@
 #   4. Round-trip publish → install → init from a synthetic harness
 #   5. Auth flow: login (gets dev magic URL) → verify → status returns user → logout
 #   6. Plugin loader contract tests
-#   7. pglite mode (boots transient pglite-server, runs init script,
-#      verifies schemas + concurrency under the forked socket server)
-#   8. apps/web vitest suite (the framework's regression net)
+#   7. apps/web vitest suite (the framework's regression net)
 
 set -uo pipefail
 
@@ -222,104 +220,7 @@ else
 fi
 rm -rf "$HOOK_TMP"
 
-section "7. pglite mode (desktop substrate)"
-# Spawns a transient pglite-server, applies framework DDL, verifies
-# schemas + concurrency. Catches regressions in:
-#   - packages/pglite-server/src/index.js (init / DDL bootstrap)
-#   - packages/pglite-server/src/socket-server.js (the per-handler
-#     batch-stickiness fork that fixes prepared-statement state)
-#   - bin/papercusp-init-db.sh's PAPERCUSP_USE_PGLITE=1 branch
-PGLITE_TMP=$(mktemp -d /tmp/papercusp-smoke-pglite-XXXXXX)
-PGLITE_SOCKET_DIR_T="$PGLITE_TMP/sock"
-PGLITE_DATA_DIR_T="$PGLITE_TMP/data"
-mkdir -p "$PGLITE_SOCKET_DIR_T" "$PGLITE_DATA_DIR_T"
-
-PGLITE_SOCKET_DIR="$PGLITE_SOCKET_DIR_T" PGLITE_DATA_DIR="$PGLITE_DATA_DIR_T" \
-  node "$ROOT/packages/pglite-server/bin/pglite-server.mjs" > /tmp/papercusp-smoke-pglite-server.log 2>&1 &
-PGLITE_SMOKE_PID=$!
-
-PGLITE_READY=0
-for i in $(seq 1 30); do
-  if [ -S "$PGLITE_SOCKET_DIR_T/.s.PGSQL.5432" ]; then
-    PGLITE_READY=1
-    break
-  fi
-  sleep 0.3
-done
-
-if [[ "$PGLITE_READY" == "0" ]]; then
-  fail "pglite-server failed to start (no socket after 9s)"
-  kill "$PGLITE_SMOKE_PID" 2>/dev/null
-else
-  ok "pglite-server boots (socket appeared)"
-
-  if PAPERCUSP_USE_PGLITE=1 PAPERCUSP_PGLITE_SOCKET_DIR="$PGLITE_SOCKET_DIR_T" \
-       PGLITE_SOCKET_DIR="$PGLITE_SOCKET_DIR_T" \
-       bash "$ROOT/bin/papercusp-init-db.sh" > /tmp/papercusp-smoke-pglite-init.log 2>&1; then
-    ok "init-db.sh applies framework DDL via pglite socket"
-  else
-    fail "init-db.sh failed in pglite mode: $(tail -3 /tmp/papercusp-smoke-pglite-init.log | head -1)"
-  fi
-
-  schema_count=$(PGPASSWORD= psql "host=$PGLITE_SOCKET_DIR_T dbname=papercusp user=harness_admin" -tAc \
-    "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('harness_shared','papercup_shared','papercusp_auth')" 2>/dev/null | tr -d ' ')
-  if [[ "$schema_count" == "3" ]]; then
-    ok "pglite has all 3 framework schemas"
-  else
-    fail "pglite missing framework schemas (found $schema_count/3)"
-  fi
-
-  # Script must live inside ROOT so 'import postgres' can resolve from
-  # the workspace's node_modules (Node resolves imports relative to the
-  # script's location, not cwd).
-  CONC_SCRIPT="$ROOT/.papercusp-smoke-conc-test.mjs"
-  cat > "$CONC_SCRIPT" <<MJS
-import postgres from 'postgres';
-const sql = postgres({
-  host: '$PGLITE_SOCKET_DIR_T',
-  user: 'harness_admin',
-  database: 'papercusp',
-  password: '',
-  max: 8,
-  prepare: false,
-});
-try {
-  await sql.unsafe('DROP TABLE IF EXISTS public.smoke_conc');
-  await sql.unsafe('CREATE TABLE public.smoke_conc (id int primary key, val text)');
-  for (let i = 0; i < 50; i++) {
-    await sql.unsafe('INSERT INTO public.smoke_conc (id, val) VALUES (\$1, \$2)', [i, 'v-' + i]);
-  }
-  const results = await Promise.allSettled(
-    Array.from({length: 30}, (_, i) =>
-      sql.unsafe('SELECT id, val FROM public.smoke_conc WHERE id = \$1', [i])
-    )
-  );
-  const ok = results.filter(r => r.status === 'fulfilled' && r.value[0]).length;
-  if (ok === 30) {
-    console.log('CONC_OK');
-  } else {
-    console.log('CONC_FAIL ' + ok + '/30');
-    const first = results.find(r => r.status === 'rejected');
-    if (first) console.log('error: ' + (first.reason?.message ?? first.reason));
-  }
-} finally {
-  await sql.end();
-}
-MJS
-  conc_out=$(cd "$ROOT" && node "$CONC_SCRIPT" 2>&1)
-  rm -f "$CONC_SCRIPT"
-  if echo "$conc_out" | grep -q '^CONC_OK$'; then
-    ok "30 concurrent parameterized queries through pool=8 — no failures (fork verified)"
-  else
-    fail "concurrency check failed: $(echo "$conc_out" | tail -2 | head -1)"
-  fi
-
-  kill "$PGLITE_SMOKE_PID" 2>/dev/null
-  wait "$PGLITE_SMOKE_PID" 2>/dev/null
-fi
-rm -rf "$PGLITE_TMP"
-
-section "8. Web vitest"
+section "7. Web vitest"
 if (cd "$ROOT/apps/web" && timeout 180 npx vitest run > /tmp/papercusp-smoke-vitest.log 2>&1); then
   pass_count=$(sed -r 's/\x1B\[[0-9;]*[mK]//g' /tmp/papercusp-smoke-vitest.log \
     | grep -oE 'Tests[[:space:]]+[0-9]+[[:space:]]+passed' | tail -1 | grep -oE '[0-9]+' | head -1)

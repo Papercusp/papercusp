@@ -2,7 +2,7 @@
   "name": "@papercusp/embedded-postgres-server",
   "private": true,
   "version": "0.1.0",
-  "description": "Boot a real Postgres (via embedded-postgres) with logical replication enabled. Sibling to @papercusp/pglite-server; same handle shape, real PG underneath.",
+  "description": "Boot a real Postgres (via embedded-postgres) with logical replication enabled. The desktop's DB substrate (real PG underneath).",
   "type": "module",
   "main": "src/index.js",
   "bin": {
