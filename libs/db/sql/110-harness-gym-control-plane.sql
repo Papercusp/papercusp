@@ -4,7 +4,7 @@
 -- generalized harness-gym UI (plan harness-gym-eval-optimizer-2026-06-02, the
 -- generalize-to-any-harness arc + gym-ui-handoff-2026-06-02).
 --
--- D-019 (refines D-018): the gym's heavy EXECUTION data — the real pipeline run,
+-- D-020 (refines D-018): the gym's heavy EXECUTION data — the real pipeline run,
 -- transcripts, DBOS, per-task score vectors — stays in the dedicated ephemeral gym
 -- PG (D-018 intact, isolated per run). But the *control plane* the UI reads and the
 -- user acts on — the proposer's suggested prompt changes awaiting review, and the
