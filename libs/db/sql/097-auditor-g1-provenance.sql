@@ -33,14 +33,23 @@ ALTER TABLE harness_shared.harness_issues_consolidated
 ALTER TABLE harness_shared.harness_issues_consolidated
   ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'local';
 
-ALTER TABLE harness_shared.feature_queue
+-- feature_queue + feature_working_set are created by ensure-schema (the operator
+-- sidecar), NOT by any migration — so on the embedded-PG boot path the migration
+-- runner executes 097 BEFORE those tables exist. A bare ALTER throws 42P01, and
+-- because the runner wraps each migration file in one BEGIN…COMMIT, that rolls
+-- back the WHOLE of 097 (including the origin add to the *_consolidated tables
+-- above) → the migration is skipped → 098's `WHERE origin='remote'` index then
+-- crashes the entire embedded-PG boot (42703 column "origin" does not exist).
+-- `IF EXISTS` makes these a graceful no-op at boot; ensure-schema's CREATE
+-- already defines author_pubkey + origin on both tables, so nothing is lost.
+ALTER TABLE IF EXISTS harness_shared.feature_queue
   ADD COLUMN IF NOT EXISTS author_pubkey TEXT;
-ALTER TABLE harness_shared.feature_queue
+ALTER TABLE IF EXISTS harness_shared.feature_queue
   ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'local';
 
-ALTER TABLE harness_shared.feature_working_set
+ALTER TABLE IF EXISTS harness_shared.feature_working_set
   ADD COLUMN IF NOT EXISTS author_pubkey TEXT;
-ALTER TABLE harness_shared.feature_working_set
+ALTER TABLE IF EXISTS harness_shared.feature_working_set
   ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'local';
 
 -- Index for the G2 auditor gate: readFeaturesPg and the orchestrator pick loop
