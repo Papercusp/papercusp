@@ -248,30 +248,35 @@ export interface ResourceReleaseParams {
 export async function tryReleaseResource(
   tx: Sql,
   params: ResourceReleaseParams,
-): Promise<{ released: number; releasedModes: ResourceMode[] }> {
+): Promise<{ released: number; releasedModes: ResourceMode[]; exclusiveResources: string[] }> {
   const { coordinationDomain: cd, owner, lockId, resource } = params;
   await tx`SET LOCAL statement_timeout = '5s'`;
   await sweepResourceExpired(tx, cd);
 
-  let deleted: Array<{ mode: ResourceMode }>;
+  let deleted: Array<{ mode: ResourceMode; resource: string }>;
   if (lockId) {
-    deleted = await tx<Array<{ mode: ResourceMode }>>`
+    deleted = await tx<Array<{ mode: ResourceMode; resource: string }>>`
       DELETE FROM agent_resource_locks
        WHERE coordination_domain = ${cd} AND lock_id = ${lockId}::uuid AND owner = ${owner}
-      RETURNING mode
+      RETURNING mode, resource
     `;
   } else if (resource) {
-    deleted = await tx<Array<{ mode: ResourceMode }>>`
+    deleted = await tx<Array<{ mode: ResourceMode; resource: string }>>`
       DELETE FROM agent_resource_locks
        WHERE coordination_domain = ${cd} AND resource = ${resource} AND owner = ${owner}
-      RETURNING mode
+      RETURNING mode, resource
     `;
   } else {
     throw new Error('tryReleaseResource requires lockId or resource');
   }
 
   await tx`SELECT resource_grant_cascade(${cd}, clock_timestamp())`;
-  return { released: deleted.length, releasedModes: deleted.map((d) => d.mode) };
+  // Resources whose EXCLUSIVE hold was just released — the back-up broadcast
+  // audience (P-010). Distinct; empty when only shared rows were released.
+  const exclusiveResources = [
+    ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
+  ];
+  return { released: deleted.length, releasedModes: deleted.map((d) => d.mode), exclusiveResources };
 }
 
 /**
