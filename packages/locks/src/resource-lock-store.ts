@@ -280,6 +280,31 @@ export async function tryReleaseResource(
 }
 
 /**
+ * Release EVERY named-resource lock this owner holds in the workspace —
+ * the session-end cleanup (P-019). Mirrors tryRelease's all_mine for file
+ * locks; the locks:release tool calls both on `all_mine: true` so one
+ * session-end call frees files AND resources (TTL is the backstop for a
+ * crashed session). Returns the exclusiveResources for the back-up broadcast.
+ */
+export async function releaseAllResourcesForOwner(
+  tx: Sql,
+  coordinationDomain: string,
+  owner: string,
+): Promise<{ released: number; exclusiveResources: string[] }> {
+  await tx`SET LOCAL statement_timeout = '5s'`;
+  const deleted = await tx<Array<{ mode: ResourceMode; resource: string }>>`
+    DELETE FROM agent_resource_locks
+     WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}
+    RETURNING mode, resource
+  `;
+  await tx`SELECT resource_grant_cascade(${coordinationDomain}, clock_timestamp())`;
+  const exclusiveResources = [
+    ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
+  ];
+  return { released: deleted.length, exclusiveResources };
+}
+
+/**
  * Extend a held resource lease's TTL. Owner-checked like tryHeartbeat.
  */
 export async function tryHeartbeatResource(
