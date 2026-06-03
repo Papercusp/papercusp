@@ -1,5 +1,16 @@
 import { relations } from "drizzle-orm/relations";
-import { backupSnapshotsInHarnessShared, backupEventsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, messagesInPapercupShared, messageCommentsInPapercupShared, messageRecipientsInPapercupShared, goalsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared } from "./generated";
+import { operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryAnchorsInHarnessShared, memoryVecLocalInHarnessShared, memoryVecOpenaiInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, usersInHarnessShared, userPreferencesInHarnessShared, userSessionsInHarnessShared, goalsInHarnessShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercupShared, messageCommentsInPapercupShared, messageRecipientsInPapercupShared } from "./generated";
+
+export const operatorTurnsInHarnessSharedRelations = relations(operatorTurnsInHarnessShared, ({one}) => ({
+	operatorConversationsInHarnessShared: one(operatorConversationsInHarnessShared, {
+		fields: [operatorTurnsInHarnessShared.conversationId],
+		references: [operatorConversationsInHarnessShared.id]
+	}),
+}));
+
+export const operatorConversationsInHarnessSharedRelations = relations(operatorConversationsInHarnessShared, ({many}) => ({
+	operatorTurnsInHarnessShareds: many(operatorTurnsInHarnessShared),
+}));
 
 export const backupEventsInHarnessSharedRelations = relations(backupEventsInHarnessShared, ({one}) => ({
 	backupSnapshotsInHarnessShared: one(backupSnapshotsInHarnessShared, {
@@ -12,15 +23,113 @@ export const backupSnapshotsInHarnessSharedRelations = relations(backupSnapshots
 	backupEventsInHarnessShareds: many(backupEventsInHarnessShared),
 }));
 
-export const operatorTurnsInHarnessSharedRelations = relations(operatorTurnsInHarnessShared, ({one}) => ({
-	operatorConversationsInHarnessShared: one(operatorConversationsInHarnessShared, {
-		fields: [operatorTurnsInHarnessShared.conversationId],
-		references: [operatorConversationsInHarnessShared.id]
+export const llmTestFindingsInHarnessSharedRelations = relations(llmTestFindingsInHarnessShared, ({one}) => ({
+	llmTestRunsInHarnessShared: one(llmTestRunsInHarnessShared, {
+		fields: [llmTestFindingsInHarnessShared.runId],
+		references: [llmTestRunsInHarnessShared.id]
 	}),
 }));
 
-export const operatorConversationsInHarnessSharedRelations = relations(operatorConversationsInHarnessShared, ({many}) => ({
-	operatorTurnsInHarnessShareds: many(operatorTurnsInHarnessShared),
+export const llmTestRunsInHarnessSharedRelations = relations(llmTestRunsInHarnessShared, ({many}) => ({
+	llmTestFindingsInHarnessShareds: many(llmTestFindingsInHarnessShared),
+	llmTestFixturesInHarnessShareds: many(llmTestFixturesInHarnessShared),
+}));
+
+export const llmTestFixturesInHarnessSharedRelations = relations(llmTestFixturesInHarnessShared, ({one}) => ({
+	llmTestRunsInHarnessShared: one(llmTestRunsInHarnessShared, {
+		fields: [llmTestFixturesInHarnessShared.recordedFromRunId],
+		references: [llmTestRunsInHarnessShared.id]
+	}),
+}));
+
+export const memoryAnchorsInHarnessSharedRelations = relations(memoryAnchorsInHarnessShared, ({one}) => ({
+	memoryCanonicalInHarnessShared: one(memoryCanonicalInHarnessShared, {
+		fields: [memoryAnchorsInHarnessShared.memoryId],
+		references: [memoryCanonicalInHarnessShared.id]
+	}),
+}));
+
+export const memoryCanonicalInHarnessSharedRelations = relations(memoryCanonicalInHarnessShared, ({many}) => ({
+	memoryAnchorsInHarnessShareds: many(memoryAnchorsInHarnessShared),
+	memoryVecLocalInHarnessShareds: many(memoryVecLocalInHarnessShared),
+	memoryVecOpenaiInHarnessShareds: many(memoryVecOpenaiInHarnessShared),
+}));
+
+export const memoryVecLocalInHarnessSharedRelations = relations(memoryVecLocalInHarnessShared, ({one}) => ({
+	memoryCanonicalInHarnessShared: one(memoryCanonicalInHarnessShared, {
+		fields: [memoryVecLocalInHarnessShared.memoryId],
+		references: [memoryCanonicalInHarnessShared.id]
+	}),
+}));
+
+export const memoryVecOpenaiInHarnessSharedRelations = relations(memoryVecOpenaiInHarnessShared, ({one}) => ({
+	memoryCanonicalInHarnessShared: one(memoryCanonicalInHarnessShared, {
+		fields: [memoryVecOpenaiInHarnessShared.memoryId],
+		references: [memoryCanonicalInHarnessShared.id]
+	}),
+}));
+
+export const planRunTurnsInHarnessSharedRelations = relations(planRunTurnsInHarnessShared, ({one}) => ({
+	planRunsInHarnessShared: one(planRunsInHarnessShared, {
+		fields: [planRunTurnsInHarnessShared.planRunId],
+		references: [planRunsInHarnessShared.id]
+	}),
+}));
+
+export const planRunsInHarnessSharedRelations = relations(planRunsInHarnessShared, ({many}) => ({
+	planRunTurnsInHarnessShareds: many(planRunTurnsInHarnessShared),
+}));
+
+export const userPreferencesInHarnessSharedRelations = relations(userPreferencesInHarnessShared, ({one}) => ({
+	usersInHarnessShared: one(usersInHarnessShared, {
+		fields: [userPreferencesInHarnessShared.userId],
+		references: [usersInHarnessShared.id]
+	}),
+}));
+
+export const usersInHarnessSharedRelations = relations(usersInHarnessShared, ({many}) => ({
+	userPreferencesInHarnessShareds: many(userPreferencesInHarnessShared),
+	userSessionsInHarnessShareds: many(userSessionsInHarnessShared),
+}));
+
+export const userSessionsInHarnessSharedRelations = relations(userSessionsInHarnessShared, ({one}) => ({
+	usersInHarnessShared: one(usersInHarnessShared, {
+		fields: [userSessionsInHarnessShared.userId],
+		references: [usersInHarnessShared.id]
+	}),
+}));
+
+export const goalsInHarnessSharedRelations = relations(goalsInHarnessShared, ({one, many}) => ({
+	goalsInHarnessShared: one(goalsInHarnessShared, {
+		fields: [goalsInHarnessShared.parentId],
+		references: [goalsInHarnessShared.id],
+		relationName: "goalsInHarnessShared_parentId_goalsInHarnessShared_id"
+	}),
+	goalsInHarnessShareds: many(goalsInHarnessShared, {
+		relationName: "goalsInHarnessShared_parentId_goalsInHarnessShared_id"
+	}),
+}));
+
+export const mobilePushTokensInHarnessSharedRelations = relations(mobilePushTokensInHarnessShared, ({one}) => ({
+	mobileDevicesInHarnessShared: one(mobileDevicesInHarnessShared, {
+		fields: [mobilePushTokensInHarnessShared.deviceId],
+		references: [mobileDevicesInHarnessShared.deviceId]
+	}),
+}));
+
+export const mobileDevicesInHarnessSharedRelations = relations(mobileDevicesInHarnessShared, ({many}) => ({
+	mobilePushTokensInHarnessShareds: many(mobilePushTokensInHarnessShared),
+}));
+
+export const projectSpecRevisionsInHarnessSharedRelations = relations(projectSpecRevisionsInHarnessShared, ({one}) => ({
+	projectsInHarnessShared: one(projectsInHarnessShared, {
+		fields: [projectSpecRevisionsInHarnessShared.projectId],
+		references: [projectsInHarnessShared.id]
+	}),
+}));
+
+export const projectsInHarnessSharedRelations = relations(projectsInHarnessShared, ({many}) => ({
+	projectSpecRevisionsInHarnessShareds: many(projectSpecRevisionsInHarnessShared),
 }));
 
 export const messageCommentsInPapercupSharedRelations = relations(messageCommentsInPapercupShared, ({one}) => ({
@@ -40,37 +149,4 @@ export const messageRecipientsInPapercupSharedRelations = relations(messageRecip
 		fields: [messageRecipientsInPapercupShared.messageId],
 		references: [messagesInPapercupShared.id]
 	}),
-}));
-
-export const goalsInHarnessSharedRelations = relations(goalsInHarnessShared, ({one, many}) => ({
-	goalsInHarnessShared: one(goalsInHarnessShared, {
-		fields: [goalsInHarnessShared.parentId],
-		references: [goalsInHarnessShared.id],
-		relationName: "goalsInHarnessShared_parentId_goalsInHarnessShared_id"
-	}),
-	goalsInHarnessShareds: many(goalsInHarnessShared, {
-		relationName: "goalsInHarnessShared_parentId_goalsInHarnessShared_id"
-	}),
-}));
-
-export const projectSpecRevisionsInHarnessSharedRelations = relations(projectSpecRevisionsInHarnessShared, ({one}) => ({
-	projectsInHarnessShared: one(projectsInHarnessShared, {
-		fields: [projectSpecRevisionsInHarnessShared.projectId],
-		references: [projectsInHarnessShared.id]
-	}),
-}));
-
-export const projectsInHarnessSharedRelations = relations(projectsInHarnessShared, ({many}) => ({
-	projectSpecRevisionsInHarnessShareds: many(projectSpecRevisionsInHarnessShared),
-}));
-
-export const mobilePushTokensInHarnessSharedRelations = relations(mobilePushTokensInHarnessShared, ({one}) => ({
-	mobileDevicesInHarnessShared: one(mobileDevicesInHarnessShared, {
-		fields: [mobilePushTokensInHarnessShared.deviceId],
-		references: [mobileDevicesInHarnessShared.deviceId]
-	}),
-}));
-
-export const mobileDevicesInHarnessSharedRelations = relations(mobileDevicesInHarnessShared, ({many}) => ({
-	mobilePushTokensInHarnessShareds: many(mobilePushTokensInHarnessShared),
 }));
