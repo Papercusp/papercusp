@@ -41,6 +41,11 @@
       "expose": {
         "mcp": { "name": "orchestrator.spawn" },
         "http": { "path": "/api/plugins/orchestrator/spawn" }
+      },
+      "guidance": {
+        "when": "Operator delegating work to another agent (worker for a chunk, validator for a plan check, scoper to break down a feature, reviewer to look at a diff). For OPERATOR specifically: prefer the `<spawn role=\"...\" />` tag in your turn output — it routes through the same dispatch and you don't need an MCP roundtrip. The tool form is for non-operator roles.",
+        "notWhen": "For asking the user a question, use `chat:ask_choice`. For tracking intent without execution, use `tasks:create`. spawn = execute, not plan.",
+        "chaining": "Returns a spawnId immediately. Use `orchestrator.poll` to check status; `orchestrator.cancel` to stop a running spawn."
       }
     },
     {
@@ -57,6 +62,10 @@
       "expose": {
         "mcp": { "name": "orchestrator.poll" },
         "http": { "path": "/api/plugins/orchestrator/poll" }
+      },
+      "guidance": {
+        "when": "Check the status of a spawn you launched. Returns running/done/failed/cancelled + exit code + duration.",
+        "notWhen": "For listing ALL active spawns you started, use `orchestrator.list_active`. Don't poll in a tight loop — spawns take seconds to minutes; once a turn is plenty."
       }
     },
     {
@@ -74,6 +83,10 @@
       "expose": {
         "mcp": { "name": "orchestrator.list_active" },
         "http": { "path": "/api/plugins/orchestrator/list_active" }
+      },
+      "guidance": {
+        "when": "User asks \"what agents are running?\", \"what did I spawn?\", or you need to enumerate in-flight delegates before deciding whether to spawn more (concurrency cap is 10).",
+        "notWhen": "For a single spawn's status, use `orchestrator.poll` with the spawnId."
       }
     },
     {
@@ -90,6 +103,10 @@
       "expose": {
         "mcp": { "name": "orchestrator.cancel" },
         "http": { "path": "/api/plugins/orchestrator/cancel" }
+      },
+      "guidance": {
+        "when": "User asks to stop a running spawn (\"kill the worker\", \"abort that scoper\"). Sends SIGTERM, then SIGKILL after 2s.",
+        "notWhen": "For done/failed spawns, this is a no-op — just call `orchestrator.poll` to confirm state."
       }
     }
   ]

@@ -21,16 +21,24 @@
         "properties": {
           "include": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Glob patterns to include. Default: everything not in .gitignore."
           },
           "ignore": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Glob patterns to ignore (in addition to .gitignore)."
           },
           "format": {
-            "enum": ["xml", "markdown", "plain"],
+            "enum": [
+              "xml",
+              "markdown",
+              "plain"
+            ],
             "default": "xml",
             "description": "Output format. XML is preferred for Claude; markdown for general LLMs; plain for raw concat."
           },
@@ -41,19 +49,52 @@
           }
         }
       },
-      "capabilities": ["tools:repomix:pack", "compute:exec:repomix", "compute:exec:npx"],
-      "roles": ["scoper", "architect", "operator", "reviewer", "debugger", "worker"],
+      "capabilities": [
+        "tools:repomix:pack",
+        "compute:exec:repomix",
+        "compute:exec:npx"
+      ],
+      "roles": [
+        "scoper",
+        "architect",
+        "operator",
+        "reviewer",
+        "debugger",
+        "worker"
+      ],
       "rolesQuota": {
-        "worker": { "perChunk": 1 },
-        "scoper": { "perRun": 3 },
-        "architect": { "perRun": 5 },
-        "reviewer": { "perRun": 2 },
-        "debugger": { "perRun": 5 }
+        "worker": {
+          "perChunk": 1
+        },
+        "scoper": {
+          "perRun": 3
+        },
+        "architect": {
+          "perRun": 5
+        },
+        "reviewer": {
+          "perRun": 2
+        },
+        "debugger": {
+          "perRun": 5
+        }
       },
       "timeoutSec": 120,
       "expose": {
-        "http": { "path": "/api/plugins/repomix/pack", "methods": ["POST"] },
-        "mcp": { "name": "repomix.pack", "largeOutput": true }
+        "http": {
+          "path": "/api/plugins/repomix/pack",
+          "methods": [
+            "POST"
+          ]
+        },
+        "mcp": {
+          "name": "repomix.pack",
+          "largeOutput": true
+        }
+      },
+      "guidance": {
+        "when": "You need to feed a project (or subset) into the LLM as one document — code reviews, refactor planning, \"summarize this repo\".",
+        "notWhen": "For a git DIFF specifically, use `code2prompt.diff`. For a single URL's content, use `fetch_plus.fetch_clean`."
       }
     }
   ],
@@ -62,7 +103,9 @@
     "properties": {
       "defaultIgnore": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "default": [
           "node_modules/**",
           "dist/**",

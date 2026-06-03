@@ -25,26 +25,63 @@
             "description": "Absolute URL to fetch. Must be http:// or https://."
           },
           "format": {
-            "enum": ["markdown", "text"],
+            "enum": [
+              "markdown",
+              "text"
+            ],
             "default": "markdown",
             "description": "Response shape. Markdown preserves headings/links/code blocks; text is plain."
           }
         },
-        "required": ["url"]
+        "required": [
+          "url"
+        ]
       },
-      "capabilities": ["tools:web:fetch_clean", "http:fetch:r.jina.ai"],
-      "roles": ["scoper", "architect", "operator", "reviewer", "debugger", "worker", "validator"],
+      "capabilities": [
+        "tools:web:fetch_clean",
+        "http:fetch:r.jina.ai"
+      ],
+      "roles": [
+        "scoper",
+        "architect",
+        "operator",
+        "reviewer",
+        "debugger",
+        "worker",
+        "validator"
+      ],
       "rolesQuota": {
-        "worker": { "perChunk": 5 },
-        "scoper": { "perRun": 20 },
-        "architect": { "perRun": 30 },
-        "reviewer": { "perRun": 10 },
-        "debugger": { "perRun": 20 }
+        "worker": {
+          "perChunk": 5
+        },
+        "scoper": {
+          "perRun": 20
+        },
+        "architect": {
+          "perRun": 30
+        },
+        "reviewer": {
+          "perRun": 10
+        },
+        "debugger": {
+          "perRun": 20
+        }
       },
       "timeoutSec": 30,
       "expose": {
-        "http": { "path": "/api/plugins/fetch-plus/fetch_clean", "methods": ["POST"] },
-        "mcp": { "name": "fetch_plus.fetch_clean" }
+        "http": {
+          "path": "/api/plugins/fetch-plus/fetch_clean",
+          "methods": [
+            "POST"
+          ]
+        },
+        "mcp": {
+          "name": "fetch_plus.fetch_clean"
+        }
+      },
+      "guidance": {
+        "when": "Read a single URL's content as clean markdown. Boilerplate-stripped, handles HTML/PDF/JS-rendered pages via Jina Reader.",
+        "notWhen": "For STRUCTURED extraction (JSON shape), use `firecrawl.extract`. For crawling many pages, use `firecrawl.map` then `firecrawl.scrape` per URL."
       }
     }
   ],

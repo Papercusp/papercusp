@@ -22,29 +22,79 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "url": { "type": "string", "format": "uri" },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
           "formats": {
             "type": "array",
-            "items": { "enum": ["markdown", "html", "rawHtml", "screenshot", "links"] },
-            "default": ["markdown"]
+            "items": {
+              "enum": [
+                "markdown",
+                "html",
+                "rawHtml",
+                "screenshot",
+                "links"
+              ]
+            },
+            "default": [
+              "markdown"
+            ]
           },
-          "onlyMainContent": { "type": "boolean", "default": true }
+          "onlyMainContent": {
+            "type": "boolean",
+            "default": true
+          }
         },
-        "required": ["url"]
+        "required": [
+          "url"
+        ]
       },
-      "capabilities": ["tools:firecrawl:scrape", "http:fetch:api.firecrawl.dev", "secrets:read:FIRECRAWL_API_KEY"],
-      "roles": ["scoper", "architect", "operator", "reviewer", "debugger", "worker"],
+      "capabilities": [
+        "tools:firecrawl:scrape",
+        "http:fetch:api.firecrawl.dev",
+        "secrets:read:FIRECRAWL_API_KEY"
+      ],
+      "roles": [
+        "scoper",
+        "architect",
+        "operator",
+        "reviewer",
+        "debugger",
+        "worker"
+      ],
       "rolesQuota": {
-        "worker": { "perChunk": 2 },
-        "scoper": { "perRun": 10 },
-        "architect": { "perRun": 15 },
-        "reviewer": { "perRun": 5 },
-        "debugger": { "perRun": 10 }
+        "worker": {
+          "perChunk": 2
+        },
+        "scoper": {
+          "perRun": 10
+        },
+        "architect": {
+          "perRun": 15
+        },
+        "reviewer": {
+          "perRun": 5
+        },
+        "debugger": {
+          "perRun": 10
+        }
       },
       "timeoutSec": 60,
       "expose": {
-        "http": { "path": "/api/plugins/firecrawl-bridge/scrape", "methods": ["POST"] },
-        "mcp": { "name": "firecrawl.scrape" }
+        "http": {
+          "path": "/api/plugins/firecrawl-bridge/scrape",
+          "methods": [
+            "POST"
+          ]
+        },
+        "mcp": {
+          "name": "firecrawl.scrape"
+        }
+      },
+      "guidance": {
+        "when": "Fetch one URL with the full Firecrawl extraction stack — better than fetch_plus for PDF or JS-heavy sites.",
+        "notWhen": "For SIMPLE markdown extraction, `fetch_plus.fetch_clean` is cheaper. For STRUCTURED extraction, use `firecrawl.extract`."
       }
     },
     {
@@ -53,22 +103,62 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "urls": { "type": "array", "items": { "type": "string", "format": "uri" } },
-          "schema": { "type": "object", "description": "JSON Schema describing the desired output shape." },
-          "prompt": { "type": "string", "description": "Optional natural-language hint to guide extraction." }
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "description": "JSON Schema describing the desired output shape."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Optional natural-language hint to guide extraction."
+          }
         },
-        "required": ["urls", "schema"]
+        "required": [
+          "urls",
+          "schema"
+        ]
       },
-      "capabilities": ["tools:firecrawl:extract", "http:fetch:api.firecrawl.dev", "secrets:read:FIRECRAWL_API_KEY"],
-      "roles": ["scoper", "architect", "operator", "reviewer"],
+      "capabilities": [
+        "tools:firecrawl:extract",
+        "http:fetch:api.firecrawl.dev",
+        "secrets:read:FIRECRAWL_API_KEY"
+      ],
+      "roles": [
+        "scoper",
+        "architect",
+        "operator",
+        "reviewer"
+      ],
       "rolesQuota": {
-        "scoper": { "perRun": 5 },
-        "architect": { "perRun": 10 }
+        "scoper": {
+          "perRun": 5
+        },
+        "architect": {
+          "perRun": 10
+        }
       },
       "timeoutSec": 120,
       "expose": {
-        "http": { "path": "/api/plugins/firecrawl-bridge/extract", "methods": ["POST"] },
-        "mcp": { "name": "firecrawl.extract", "largeOutput": true }
+        "http": {
+          "path": "/api/plugins/firecrawl-bridge/extract",
+          "methods": [
+            "POST"
+          ]
+        },
+        "mcp": {
+          "name": "firecrawl.extract",
+          "largeOutput": true
+        }
+      },
+      "guidance": {
+        "when": "Pull structured JSON from a URL given a schema describing the desired shape. Use when you need typed data, not free-text markdown.",
+        "notWhen": "For free-text content, use `firecrawl.scrape` or `fetch_plus.fetch_clean`. extract costs more (LLM-driven)."
       }
     },
     {
@@ -77,21 +167,54 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "url": { "type": "string", "format": "uri" },
-          "limit": { "type": "number", "default": 100, "description": "Max URLs to return." }
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "limit": {
+            "type": "number",
+            "default": 100,
+            "description": "Max URLs to return."
+          }
         },
-        "required": ["url"]
+        "required": [
+          "url"
+        ]
       },
-      "capabilities": ["tools:firecrawl:map", "http:fetch:api.firecrawl.dev", "secrets:read:FIRECRAWL_API_KEY"],
-      "roles": ["scoper", "architect", "operator"],
+      "capabilities": [
+        "tools:firecrawl:map",
+        "http:fetch:api.firecrawl.dev",
+        "secrets:read:FIRECRAWL_API_KEY"
+      ],
+      "roles": [
+        "scoper",
+        "architect",
+        "operator"
+      ],
       "rolesQuota": {
-        "scoper": { "perRun": 5 },
-        "architect": { "perRun": 5 }
+        "scoper": {
+          "perRun": 5
+        },
+        "architect": {
+          "perRun": 5
+        }
       },
       "timeoutSec": 60,
       "expose": {
-        "http": { "path": "/api/plugins/firecrawl-bridge/map", "methods": ["POST"] },
-        "mcp": { "name": "firecrawl.map" }
+        "http": {
+          "path": "/api/plugins/firecrawl-bridge/map",
+          "methods": [
+            "POST"
+          ]
+        },
+        "mcp": {
+          "name": "firecrawl.map"
+        }
+      },
+      "guidance": {
+        "when": "Enumerate every URL reachable from a starting URL — fast crawl, no content extraction. Use to plan a crawl.",
+        "notWhen": "For getting CONTENT, follow up with `firecrawl.scrape` or `fetch_plus.fetch_clean` per URL.",
+        "chaining": "Pair with `firecrawl.scrape` to actually fetch the URLs map returns."
       }
     }
   ],

@@ -25,37 +25,74 @@
           },
           "include": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Glob patterns to include in the diff. Default: all changed files."
           },
           "ignore": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Glob patterns to ignore."
           },
           "template": {
-            "enum": ["code-review", "security-audit", "refactor-prep", "none"],
+            "enum": [
+              "code-review",
+              "security-audit",
+              "refactor-prep",
+              "none"
+            ],
             "default": "code-review",
             "description": "Bundled prompt template applied to the diff. 'none' returns raw diff context."
           },
           "format": {
-            "enum": ["markdown", "xml"],
+            "enum": [
+              "markdown",
+              "xml"
+            ],
             "default": "markdown",
             "description": "Output format."
           }
         }
       },
-      "capabilities": ["tools:code2prompt:diff", "compute:exec:code2prompt"],
-      "roles": ["reviewer", "architect", "debugger"],
+      "capabilities": [
+        "tools:code2prompt:diff",
+        "compute:exec:code2prompt"
+      ],
+      "roles": [
+        "reviewer",
+        "architect",
+        "debugger"
+      ],
       "rolesQuota": {
-        "reviewer": { "perRun": 5 },
-        "architect": { "perRun": 3 },
-        "debugger": { "perRun": 5 }
+        "reviewer": {
+          "perRun": 5
+        },
+        "architect": {
+          "perRun": 3
+        },
+        "debugger": {
+          "perRun": 5
+        }
       },
       "timeoutSec": 60,
       "expose": {
-        "http": { "path": "/api/plugins/code2prompt/diff", "methods": ["POST"] },
-        "mcp": { "name": "code2prompt.diff", "largeOutput": true }
+        "http": {
+          "path": "/api/plugins/code2prompt/diff",
+          "methods": [
+            "POST"
+          ]
+        },
+        "mcp": {
+          "name": "code2prompt.diff",
+          "largeOutput": true
+        }
+      },
+      "guidance": {
+        "when": "Reviewer's primary tool — build a diff-aware prompt showing what changed (working tree or vs a base ref).",
+        "notWhen": "For non-diff project packing, use `code2prompt.pack` or `repomix.pack`. diff is review-specific."
       }
     },
     {
@@ -64,14 +101,32 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "include": { "type": "array", "items": { "type": "string" } },
-          "ignore": { "type": "array", "items": { "type": "string" } },
+          "include": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ignore": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "template": {
-            "enum": ["code-review", "security-audit", "refactor-prep", "none"],
+            "enum": [
+              "code-review",
+              "security-audit",
+              "refactor-prep",
+              "none"
+            ],
             "default": "none"
           },
           "format": {
-            "enum": ["markdown", "xml"],
+            "enum": [
+              "markdown",
+              "xml"
+            ],
             "default": "markdown"
           },
           "tokens": {
@@ -81,16 +136,38 @@
           }
         }
       },
-      "capabilities": ["tools:code2prompt:pack", "compute:exec:code2prompt"],
-      "roles": ["reviewer", "architect"],
+      "capabilities": [
+        "tools:code2prompt:pack",
+        "compute:exec:code2prompt"
+      ],
+      "roles": [
+        "reviewer",
+        "architect"
+      ],
       "rolesQuota": {
-        "reviewer": { "perRun": 3 },
-        "architect": { "perRun": 5 }
+        "reviewer": {
+          "perRun": 3
+        },
+        "architect": {
+          "perRun": 5
+        }
       },
       "timeoutSec": 60,
       "expose": {
-        "http": { "path": "/api/plugins/code2prompt/pack", "methods": ["POST"] },
-        "mcp": { "name": "code2prompt.pack", "largeOutput": true }
+        "http": {
+          "path": "/api/plugins/code2prompt/pack",
+          "methods": [
+            "POST"
+          ]
+        },
+        "mcp": {
+          "name": "code2prompt.pack",
+          "largeOutput": true
+        }
+      },
+      "guidance": {
+        "when": "Pack a project (or subset) using code2prompt's templating — same shape as repomix.pack but different template engine.",
+        "notWhen": "For a diff specifically, use `code2prompt.diff`. For most cases, either pack tool works; pick by template preference."
       }
     }
   ],
