@@ -30,6 +30,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = resolve(__dirname, '..');
@@ -37,11 +38,33 @@ const SCHEMA_DIR = join(DB_ROOT, 'src/schema');
 
 console.log('==> running drizzle-kit pull against live papercusp DB');
 
-const result = spawnSync(
-  'npx',
-  ['-y', 'drizzle-kit@^0.31.10', 'introspect', '--config=' + join(DB_ROOT, 'drizzle.config.ts')],
-  { cwd: DB_ROOT, stdio: 'inherit', env: { ...process.env } },
-);
+// Prefer the locally-installed drizzle-kit. `npx -y drizzle-kit@^0.31.10`
+// refetches a fresh, isolated copy into the npx cache, which then can't
+// resolve `drizzle-orm` under pnpm's symlinked node_modules layout
+// ("Error please install required packages: 'drizzle-orm'"). The local
+// install (same pinned version, same workspace tree) resolves it fine.
+// Fall back to npx only when drizzle-kit isn't installed locally.
+const localRequire = createRequire(import.meta.url);
+function resolveLocalDrizzleKitBin() {
+  try {
+    let d = dirname(localRequire.resolve('drizzle-kit'));
+    for (let i = 0; i < 5; i++) {
+      const bin = join(d, 'bin.cjs');
+      if (existsSync(bin)) return bin;
+      d = dirname(d);
+    }
+  } catch { /* not installed locally — fall back to npx */ }
+  return null;
+}
+const localKitBin = resolveLocalDrizzleKitBin();
+const introspectArgs = ['introspect', '--config=' + join(DB_ROOT, 'drizzle.config.ts')];
+const result = localKitBin
+  ? spawnSync(process.execPath, [localKitBin, ...introspectArgs], {
+      cwd: DB_ROOT, stdio: 'inherit', env: { ...process.env },
+    })
+  : spawnSync('npx', ['-y', 'drizzle-kit@^0.31.10', ...introspectArgs], {
+      cwd: DB_ROOT, stdio: 'inherit', env: { ...process.env },
+    });
 if (result.status !== 0) {
   console.error('drizzle-kit pull failed');
   process.exit(result.status ?? 1);
