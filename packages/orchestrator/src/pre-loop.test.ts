@@ -101,7 +101,7 @@ test('runPreLoop — fresh mission: invokes scoper, fails when no artifacts prod
     assert.equal(r.stop, 'scoper-failed');
     assert.equal(r.exitCode, 2);
     assert.ok(log.some((l) => l.includes('Invoking scoper')));
-    assert.ok(log.some((l) => l.includes('scoper did not produce required artifacts')));
+    assert.ok(log.some((l) => l.includes('scoper did not produce features')));
   } finally {
     fx.cleanup();
   }
@@ -169,11 +169,11 @@ test('runPreLoop — plan-review reject exits 7 + writes escalation', async () =
     );
     assert.equal(r.stop, 'plan-rejected');
     assert.equal(r.exitCode, 7);
-    assert.ok(existsSync(join(fx.stateDir, 'escalation.md')));
-    assert.match(
-      readFileSync(join(fx.stateDir, 'escalation.md'), 'utf8'),
-      /Plan-gate rejected/,
-    );
+    // Escalation now persists to PG (file→PG storage-policy migration); with no
+    // PG context in this fixture, pre-loop logs the body instead of writing
+    // escalation.md. Assert the rejection escalation surfaced with its content.
+    assert.ok(log.some((l) => l.includes('escalation not persisted')));
+    assert.ok(log.some((l) => /Plan-gate rejected/.test(l)));
     assert.ok(log.some((l) => l.startsWith('event:escalate')));
   } finally {
     fx.cleanup();
