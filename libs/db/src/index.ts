@@ -58,12 +58,6 @@ export {
 } from './routines-runtime';
 
 export {
-  startRoutineTicker,
-  type RoutineTickerOptions,
-  type RoutineTickerHandle,
-} from './routine-ticker';
-
-export {
   getFeatureLineage,
   formatLineageForPrompt,
   createGoal,
