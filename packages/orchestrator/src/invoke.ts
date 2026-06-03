@@ -40,8 +40,10 @@ import {
   restoreSpawnMcp,
   writeSignedSpawnMcp,
   writeSignedSpawnCodexHome,
+  writeSpawnClaudeConfig,
   type SpawnMcpHandle,
   type SpawnCodexHomeHandle,
+  type SpawnClaudeConfigHandle,
 } from './spawn-mcp';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AgentBackend, InvokeResult } from './types';
@@ -1177,19 +1179,29 @@ export function gitConfigNoPushEnv(
 /**
  * claude-code-only spawn-env hardening (fleet-coordination-painpoints P-012).
  *
- * Root-caused via live strace: claude-code's plugin-marketplace auto-update
- * runs a `git` checkout with its CWD = the spawned worker's cwd, so when a
- * marketplace refresh fires mid-spawn it materializes the plugin tree
- * (`package.json` / `bunfig.toml` / `.env.*` / `.gitmodules` …) into the
- * worker's working directory via `O_CREAT|O_EXCL` — the "full spawn writes
- * empty config stubs" bug. It is a claude-code defect, not ours; the fix on our
- * side is to disable the auto-updater for every fleet claude spawn so no
- * marketplace `git` refresh can run during the spawn. Returns `{}` for any
- * non-claude backend (codex/omp have no plugin marketplace).
+ * Belt-and-suspenders env hardening for claude-code spawns. The PRIMARY P-012
+ * fix is {@link writeSpawnClaudeConfig} (an isolated, plugin-free
+ * `CLAUDE_CONFIG_DIR`): with no enabled plugins / known marketplaces, claude
+ * never resolves an external marketplace source and so can't check a plugin
+ * tree out into the worker cwd (the "empty config stubs" bug — root-caused via
+ * live strace to claude-code's `git clone --no-checkout` + `git checkout <sha>`
+ * whose work-tree is the process cwd). These env vars are secondary defense:
+ *   - `CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1` — never
+ *     bootstrap/clone the official marketplace during a spawn (the only git
+ *     activity a plugin-free config could still trigger).
+ *   - `DISABLE_AUTOUPDATER=1` — stops the binary self-updater. NOTE: this does
+ *     NOT gate the marketplace refresh (verified against the 2.1.161 binary —
+ *     the refresh is gated by a per-marketplace `autoUpdate` flag, not this
+ *     var); it was the prior, ineffective sole fix and is kept only as cheap
+ *     hygiene. Do not rely on it to prevent the leak.
+ * Returns `{}` for any non-claude backend (codex/omp have no plugin marketplace).
  */
 export function claudeSpawnEnvHardening(agentBackend: AgentBackend): Record<string, string> {
   if (agentBackend !== 'claude-code') return {};
-  return { DISABLE_AUTOUPDATER: '1' };
+  return {
+    CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: '1',
+    DISABLE_AUTOUPDATER: '1',
+  };
 }
 
 /**
@@ -1982,10 +1994,21 @@ export async function invoke(
       spawnEnv.USERPROFILE = spawnHome; // Windows
     }
 
-    // claude-code only: disable the auto-updater so a plugin/marketplace `git`
-    // refresh can't fire mid-spawn and check its plugin tree out into the
-    // worker's cwd (the empty package.json/bunfig.toml/.env stub bug — P-012,
-    // root-caused to claude-code, not us). See claudeSpawnEnvHardening.
+    // claude-code only (P-012): point the spawn at an isolated, plugin-free
+    // CLAUDE_CONFIG_DIR so the worker has no enabled plugins / known
+    // marketplaces to resolve — and therefore can't run the
+    // `git clone --no-checkout` + `git checkout <sha>` whose work-tree is the
+    // process cwd, which leaks the plugin tree into the worker's cwd (the
+    // empty package.json/.mcp.json/.env stub bug). It is a claude-code defect,
+    // not ours (filed upstream); this denies it anything to resolve. The auth
+    // session is symlinked in, so the worker stays logged in. CLAUDE_CONFIG_DIR
+    // relocates only `.claude`; `.claude.json` stays at $HOME. See
+    // writeSpawnClaudeConfig + claudeSpawnEnvHardening (secondary env defense).
+    let claudeConfigHandle: SpawnClaudeConfigHandle | null = null;
+    if (agentBackend === 'claude-code') {
+      claudeConfigHandle = writeSpawnClaudeConfig(spawnEnv.HOME ?? homedir());
+      spawnEnv.CLAUDE_CONFIG_DIR = claudeConfigHandle.configDir;
+    }
     Object.assign(spawnEnv, claudeSpawnEnvHardening(agentBackend));
 
     // No orchestrator-spawned agent may `git push` — integration is the
@@ -2083,15 +2106,19 @@ export async function invoke(
         );
       }
       // The backend's own writable agent/state dirs (its config/auth/session DBs):
-      // codex → the per-spawn CODEX_HOME; omp → ~/.omp + PI_CODING_AGENT_DIR
+      // codex → the per-spawn CODEX_HOME; claude → the per-spawn isolated
+      // CLAUDE_CONFIG_DIR (claude writes session/project state under it, and the
+      // sandbox makes $HOME read-only); omp → ~/.omp + PI_CODING_AGENT_DIR
       // (the agent/auth/models SQLite DBs; usually <project>/.harness/pi-sessions,
       // already under cwd, but pinned here in case it's set to an absolute path).
       const agentHomes =
         agentBackend === 'codex'
           ? [codexHomeHandle?.codexHome].filter((x): x is string => Boolean(x))
-          : [join(homedir(), '.omp'), spawnEnv.PI_CODING_AGENT_DIR].filter(
-              (x): x is string => Boolean(x),
-            );
+          : agentBackend === 'claude-code'
+            ? [claudeConfigHandle?.configDir].filter((x): x is string => Boolean(x))
+            : [join(homedir(), '.omp'), spawnEnv.PI_CODING_AGENT_DIR].filter(
+                (x): x is string => Boolean(x),
+              );
       const settingsPath = writeFleetSrtSettings({ cwd, backend: agentBackend, agentHomes });
       ({ command: spawnCommand, argv: spawnArgv } = wrapSpawnWithSrt(command, finalArgv, {
         enabled: true,
@@ -2255,6 +2282,7 @@ export async function invoke(
       if (timer) clearTimeout(timer);
       if (mcpHandle) restoreSpawnMcp(mcpHandle);
       if (codexHomeHandle) codexHomeHandle.cleanup();
+      if (claudeConfigHandle) claudeConfigHandle.cleanup();
       void clearLane();
       resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
     });
@@ -2263,6 +2291,7 @@ export async function invoke(
       if (timer) clearTimeout(timer);
       if (mcpHandle) restoreSpawnMcp(mcpHandle);
       if (codexHomeHandle) codexHomeHandle.cleanup();
+      if (claudeConfigHandle) claudeConfigHandle.cleanup();
       void clearLane();
       // bash uses exit 124 for timeout (matches `timeout` coreutil).
       const exitCode = timedOut ? 124 : (code ?? 0);

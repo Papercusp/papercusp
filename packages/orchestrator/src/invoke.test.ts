@@ -42,6 +42,7 @@ import {
   SPAWN_ENV_ALL_ROLES_STRIP,
   SEARCH_PROVIDER_ENV_KEYS,
 } from './invoke.js';
+import { writeSpawnClaudeConfig } from './spawn-mcp.js';
 
 interface Fixture {
   harnessDir: string;
@@ -741,13 +742,71 @@ test('gitConfigNoPushEnv — junk GIT_CONFIG_COUNT falls back to index 0', () =>
 
 // --- claude-code spawn-env hardening (fleet-coordination-painpoints P-012) ---
 
-test('claudeSpawnEnvHardening — disables the auto-updater for claude-code (no mid-spawn marketplace git checkout into the worker cwd)', () => {
-  assert.deepEqual(claudeSpawnEnvHardening('claude-code'), { DISABLE_AUTOUPDATER: '1' });
+test('claudeSpawnEnvHardening — secondary env defense for claude-code (marketplace autoinstall off; autoupdater off)', () => {
+  // Secondary to the CLAUDE_CONFIG_DIR isolation (writeSpawnClaudeConfig). The
+  // autoinstall var is the meaningful one; DISABLE_AUTOUPDATER is kept only as
+  // cheap hygiene — it does NOT gate the marketplace refresh (P-012).
+  assert.deepEqual(claudeSpawnEnvHardening('claude-code'), {
+    CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: '1',
+    DISABLE_AUTOUPDATER: '1',
+  });
 });
 
 test('claudeSpawnEnvHardening — no-op for non-claude backends (no plugin marketplace)', () => {
   assert.deepEqual(claudeSpawnEnvHardening('codex'), {});
   assert.deepEqual(claudeSpawnEnvHardening('omp'), {});
+});
+
+test('writeSpawnClaudeConfig — isolated CLAUDE_CONFIG_DIR carries creds but NO plugins/marketplaces (P-012 leak fix)', () => {
+  // A "real" home with creds AND the plugin config that triggers the leak.
+  const fakeHome = mkdtempSync(join(tmpdir(), 'p012-home-'));
+  mkdirSync(join(fakeHome, '.claude', 'plugins'), { recursive: true });
+  writeFileSync(join(fakeHome, '.claude', '.credentials.json'), '{"claudeAiOauth":"tok"}');
+  writeFileSync(
+    join(fakeHome, '.claude', 'settings.json'),
+    JSON.stringify({ enabledPlugins: { 'superpowers@claude-plugins-official': true } }),
+  );
+  writeFileSync(
+    join(fakeHome, '.claude', 'plugins', 'known_marketplaces.json'),
+    JSON.stringify({ 'claude-plugins-official': {} }),
+  );
+
+  const h = writeSpawnClaudeConfig(fakeHome);
+  try {
+    // Auth IS preserved — the creds are symlinked and resolve to the real bytes
+    // (symlink, not copy → an OAuth refresh writes through; no token divergence).
+    assert.equal(
+      readFileSync(join(h.configDir, '.credentials.json'), 'utf8'),
+      '{"claudeAiOauth":"tok"}',
+      'creds readable through the symlink',
+    );
+    // …but the plugin config that drives the leaking external-source checkout is
+    // GONE: no settings.json (⇒ no enabledPlugins) and no plugins/ (⇒ no known
+    // marketplaces), so the worker resolves zero external marketplace sources.
+    assert.throws(
+      () => statSync(join(h.configDir, 'settings.json')),
+      'no settings.json in the isolated config → no enabledPlugins',
+    );
+    assert.throws(
+      () => statSync(join(h.configDir, 'plugins')),
+      'no plugins/ dir in the isolated config → no known marketplaces',
+    );
+  } finally {
+    h.cleanup();
+    assert.throws(() => statSync(h.configDir), 'cleanup removes the temp config dir');
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('writeSpawnClaudeConfig — no creds in source home → unauthenticated config, no crash', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'p012-home-nocreds-'));
+  const h = writeSpawnClaudeConfig(fakeHome);
+  try {
+    assert.throws(() => statSync(join(h.configDir, '.credentials.json')), 'no creds symlink when source has none');
+  } finally {
+    h.cleanup();
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
 });
 
 // --- fleet OS sandbox (plan fleet-spawn-sandbox-2026-06-01, Phase 1) -------

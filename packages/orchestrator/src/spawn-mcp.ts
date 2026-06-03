@@ -296,6 +296,71 @@ export async function writeSignedSpawnCodexHome(
   };
 }
 
+/** Handle for a per-spawn claude-code CLAUDE_CONFIG_DIR (cleaned up after the spawn). */
+export interface SpawnClaudeConfigHandle {
+  /**
+   * Absolute path to set as the child's `CLAUDE_CONFIG_DIR`. An isolated
+   * `.claude` carrying ONLY the credentials symlink — no `settings.json`
+   * (⇒ no `enabledPlugins`) and no `plugins/` dir (⇒ no known marketplaces).
+   */
+  configDir: string;
+  /** Remove the temp config dir. Best-effort, idempotent. */
+  cleanup(): void;
+}
+
+/**
+ * Mint a per-spawn, plugin-free `CLAUDE_CONFIG_DIR` for a claude-code spawn.
+ *
+ * Root cause (P-012, reproduced live on claude-code 2.1.161): claude-code
+ * resolves an enabled plugin whose marketplace source is an external git repo
+ * by `git clone --depth 1 --no-checkout <url> <tmp>` followed by
+ * `git checkout <sha>` — and that checkout's work-tree is the git process's
+ * **cwd**. When claude fails to pin that cwd to the temp clone, the cwd is the
+ * spawned worker's cwd (itself a git repo), so the plugin's file tree
+ * (`package.json` / `.mcp.json` / `README.md` / `.claude-plugin/…` / etc.) is
+ * materialized into the worker's working directory via `O_WRONLY|O_CREAT|O_EXCL`
+ * — the "full spawn writes empty config stubs" bug. It is a claude-code defect,
+ * not ours (filed upstream); `DISABLE_AUTOUPDATER` does NOT gate it (that var
+ * controls the binary self-updater; the marketplace refresh is gated by a
+ * per-marketplace `autoUpdate` flag, default-true for official marketplaces).
+ *
+ * The fix on our side is to deny the worker any plugins/marketplaces to
+ * resolve in the first place: point `CLAUDE_CONFIG_DIR` at a fresh dir that
+ * carries only the auth symlink. With no `settings.json`/`plugins/`, claude-code
+ * performs ZERO plugin/marketplace git activity during the spawn (verified: an
+ * isolated config does 0 git execs / 0 temp clones / 0 cwd writes), so it cannot
+ * check a plugin tree out into the worker cwd. This mirrors what the desktop
+ * shell already does per-workspace (`workspaces.rs::link_workspace_credentials`
+ * symlinks creds + gitconfig but NOT settings/plugins); here we extend the same
+ * isolation to the dev / non-shared-operator path, where the worker would
+ * otherwise inherit the engineer's full `~/.claude` (all enabled plugins).
+ *
+ * `realHome` is the spawn's effective HOME (post {@link resolveSpawnHome}); the
+ * auth file is read from `<realHome>/.claude/.credentials.json`. **Symlinked,
+ * not copied**, so an OAuth token refresh writes through to the real file — no
+ * credential divergence (cf. the codex auth-copy hazard). A spawn whose home has
+ * no credentials file simply runs unauthenticated, exactly as before.
+ *
+ * Set `CLAUDE_CONFIG_DIR=<this>` on the spawn env (and add it to the OS sandbox's
+ * writable set, since claude writes session state under its config dir); call
+ * `cleanup()` after exit.
+ */
+export function writeSpawnClaudeConfig(realHome: string): SpawnClaudeConfigHandle {
+  const configDir = mkdtempSync(join(tmpdir(), 'claude-cfg-spawn-'));
+  // Share the user's Claude OAuth session (claude resolves auth from
+  // $CLAUDE_CONFIG_DIR/.credentials.json) WITHOUT carrying its plugins.
+  try {
+    const realCreds = join(realHome, '.claude', '.credentials.json');
+    if (existsSync(realCreds)) symlinkSync(realCreds, join(configDir, '.credentials.json'));
+  } catch { /* best-effort — claude surfaces an auth error if missing */ }
+  return {
+    configDir,
+    cleanup() {
+      try { rmSync(configDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+    },
+  };
+}
+
 /* ─── Signing (HMAC-SHA256 over canonical params) ─────────────────────
  * Duplicated in apps/operator/lib/spawn-signing.ts because the
  * orchestrator runs as a separate process and can't import from the
