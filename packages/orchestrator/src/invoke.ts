@@ -1175,6 +1175,24 @@ export function gitConfigNoPushEnv(
 }
 
 /**
+ * claude-code-only spawn-env hardening (fleet-coordination-painpoints P-012).
+ *
+ * Root-caused via live strace: claude-code's plugin-marketplace auto-update
+ * runs a `git` checkout with its CWD = the spawned worker's cwd, so when a
+ * marketplace refresh fires mid-spawn it materializes the plugin tree
+ * (`package.json` / `bunfig.toml` / `.env.*` / `.gitmodules` …) into the
+ * worker's working directory via `O_CREAT|O_EXCL` — the "full spawn writes
+ * empty config stubs" bug. It is a claude-code defect, not ours; the fix on our
+ * side is to disable the auto-updater for every fleet claude spawn so no
+ * marketplace `git` refresh can run during the spawn. Returns `{}` for any
+ * non-claude backend (codex/omp have no plugin marketplace).
+ */
+export function claudeSpawnEnvHardening(agentBackend: AgentBackend): Record<string, string> {
+  if (agentBackend !== 'claude-code') return {};
+  return { DISABLE_AUTOUPDATER: '1' };
+}
+
+/**
  * Phase E (P-051 / D-008): resolve the per-spawn `HOME` for a child agent.
  *
  * In the shared-operator model — signaled by `PAPERCUSP_SHARED_OPERATOR=1`,
@@ -1963,6 +1981,12 @@ export async function invoke(
       spawnEnv.HOME = spawnHome;
       spawnEnv.USERPROFILE = spawnHome; // Windows
     }
+
+    // claude-code only: disable the auto-updater so a plugin/marketplace `git`
+    // refresh can't fire mid-spawn and check its plugin tree out into the
+    // worker's cwd (the empty package.json/bunfig.toml/.env stub bug — P-012,
+    // root-caused to claude-code, not us). See claudeSpawnEnvHardening.
+    Object.assign(spawnEnv, claudeSpawnEnvHardening(agentBackend));
 
     // No orchestrator-spawned agent may `git push` — integration is the
     // orchestrator's job and the repo's invariant is "agents don't push".

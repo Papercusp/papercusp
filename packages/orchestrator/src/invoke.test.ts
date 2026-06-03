@@ -22,6 +22,7 @@ import {
   fleetAllowedToolsForRole,
   ensureFleetGitHooksDir,
   gitConfigNoPushEnv,
+  claudeSpawnEnvHardening,
   resolveSpawnHome,
   claudeSandboxArgs,
   codexSandboxArgs,
@@ -736,6 +737,17 @@ test('gitConfigNoPushEnv — junk GIT_CONFIG_COUNT falls back to index 0', () =>
   const env = gitConfigNoPushEnv({ GIT_CONFIG_COUNT: 'not-a-number' }, '/tmp/hooks');
   assert.equal(env.GIT_CONFIG_COUNT, '1');
   assert.equal(env.GIT_CONFIG_KEY_0, 'core.hooksPath');
+});
+
+// --- claude-code spawn-env hardening (fleet-coordination-painpoints P-012) ---
+
+test('claudeSpawnEnvHardening — disables the auto-updater for claude-code (no mid-spawn marketplace git checkout into the worker cwd)', () => {
+  assert.deepEqual(claudeSpawnEnvHardening('claude-code'), { DISABLE_AUTOUPDATER: '1' });
+});
+
+test('claudeSpawnEnvHardening — no-op for non-claude backends (no plugin marketplace)', () => {
+  assert.deepEqual(claudeSpawnEnvHardening('codex'), {});
+  assert.deepEqual(claudeSpawnEnvHardening('omp'), {});
 });
 
 // --- fleet OS sandbox (plan fleet-spawn-sandbox-2026-06-01, Phase 1) -------
