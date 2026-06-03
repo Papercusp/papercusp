@@ -24,10 +24,11 @@ describe('Drizzle migration phase 1 — connection surface', () => {
   it('.db can resolve a generated table via select()', async () => {
     const { db } = getOrgPg();
     // audit_log is one of the 5 hand-written tables that also exists in generated.ts.
-    // Either alias should work — confirm the generated one resolves.
+    // Either alias should work — confirm the generated one resolves. (drizzle-kit
+    // regenerated the export name to the camelCase `auditLogInHarnessShared`.)
     const result = await db
-      .select({ count: generated.audit_logInHarness_shared.id })
-      .from(generated.audit_logInHarness_shared)
+      .select({ count: generated.auditLogInHarnessShared.id })
+      .from(generated.auditLogInHarnessShared)
       .limit(1);
     expect(Array.isArray(result)).toBe(true);
   });

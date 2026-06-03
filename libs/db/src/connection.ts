@@ -25,6 +25,18 @@ import * as sharedSchema from './schema';
 import * as generatedSchema from './schema/generated';
 import * as generatedRelations from './schema/generated-relations';
 
+// The `./schema` barrel re-exports `generated` + `generatedRelations` as nested
+// namespace objects (so callers can `import { generated } from '@papercusp/db-org'`).
+// Those nested namespaces are NOT Tables/Relations — handing them inside a
+// `drizzle({ schema })` map makes drizzle's relational-config extraction read
+// `.constructor` off a non-table object and crash with
+// "Cannot read properties of null (reading 'constructor')". Strip them so the
+// schema drizzle sees is table/relation-only; direct importers still get the
+// namespaces straight from the barrel.
+const { generated: _omitGeneratedNs, generatedRelations: _omitGeneratedRelationsNs, ...sharedTables } = sharedSchema;
+void _omitGeneratedNs;
+void _omitGeneratedRelationsNs;
+
 // Merged schema for the typed Drizzle instance (`.db`). Includes all
 // 125 introspected tables + their relation graph + the hand-written
 // per-harness factory helpers. Drizzle deduplicates identically-named
@@ -32,7 +44,7 @@ import * as generatedRelations from './schema/generated-relations';
 // shadow the same PG tables that `generated.audit_logInHarness_shared`
 // covers, which is fine — both accessors point at the same rows.
 const fullSchema = {
-  ...sharedSchema,
+  ...sharedTables,
   ...generatedSchema,
   ...generatedRelations,
 };
@@ -297,7 +309,7 @@ export function getOrgPg(): OrgPgHandle {
   const url = adminUrl();
   if (!_adminClient) {
     _adminClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public']);
-    _adminDrizzle = drizzle(_adminClient, { schema: sharedSchema });
+    _adminDrizzle = drizzle(_adminClient, { schema: sharedTables });
     _adminDb = drizzle(_adminClient, { schema: fullSchema });
   }
   return {
@@ -327,7 +339,7 @@ export function getOrgPgApp(): OrgPgHandle {
   const url = appUrl();
   if (!_appOrgClient) {
     _appOrgClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public']);
-    _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedSchema });
+    _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedTables });
     _appOrgDb = drizzle(_appOrgClient, { schema: fullSchema });
   }
   return {
@@ -357,7 +369,7 @@ export function getHarnessPg(slug: string) {
   const schemaName = sharedSchema.slugToSchemaName(slug);
   const perHarnessMax = Math.max(1, Number(process.env.PAPERCUSP_HARNESS_DB_POOL_MAX) || 1);
   const sql = buildClient(appUrl(), [schemaName, 'harness_shared', 'papercup_shared', 'public'], perHarnessMax);
-  const dz = drizzle(sql, { schema: sharedSchema });
+  const dz = drizzle(sql, { schema: sharedTables });
   const db = drizzle(sql, { schema: fullSchema });
   const handle: HarnessClient = { sql, drizzle: dz, db, lastUsed: Date.now() };
   _harnessClients.set(slug, handle);
