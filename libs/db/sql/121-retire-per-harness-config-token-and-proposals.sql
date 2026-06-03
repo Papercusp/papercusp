@@ -28,9 +28,9 @@ BEGIN
     SELECT schema_name FROM information_schema.schemata
      WHERE schema_name LIKE 'harness_%' AND schema_name <> 'harness_shared'
   LOOP
-    EXECUTE format('DROP VIEW  IF EXISTS %I.config_token CASCADE', s);
+    -- Both are physical tables (never views); DROP TABLE IF EXISTS is a no-op
+    -- if already gone, so this is idempotent.
     EXECUTE format('DROP TABLE IF EXISTS %I.config_token CASCADE', s);
-    EXECUTE format('DROP VIEW  IF EXISTS %I.harness_proposals CASCADE', s);
     EXECUTE format('DROP TABLE IF EXISTS %I.harness_proposals CASCADE', s);
   END LOOP;
 END $mig$;
