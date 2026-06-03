@@ -631,31 +631,13 @@ test('claudeMcpArgs — allow-list is the safe dev kit + mcp__papercusp wildcard
   }
 });
 
-test('fleetAllowedToolsForRole — API-only roles (expert/feedback) drop Edit/Write; others keep full kit', () => {
-  // expert + feedback prompts explicitly forbid the Write/Edit tools.
-  for (const role of FLEET_NO_WRITE_ROLES) {
-    const kit = fleetAllowedToolsForRole(role);
-    assert.ok(!kit.includes('Edit'), `${role} must not get Edit`);
-    assert.ok(!kit.includes('Write'), `${role} must not get Write`);
-    // still gets the read/exec base + MCP surface
-    assert.ok(kit.includes('Read') && kit.includes('Bash') && kit.includes('mcp__papercusp'));
-  }
-  // A writer role and an unknown role both get the full kit (never silently
-  // strip a tool from a role we don't recognise).
-  for (const role of ['worker', 'documenter', 'totally-unknown-role', '']) {
+test('fleetAllowedToolsForRole — no roles are write-restricted now; every role gets the full kit', () => {
+  // The former expert/feedback API-only roles were removed; FLEET_NO_WRITE_ROLES
+  // is currently empty, so every role (writer or unknown) gets the full kit.
+  assert.equal(FLEET_NO_WRITE_ROLES.size, 0);
+  for (const role of ['worker', 'documenter', 'reviewer', 'totally-unknown-role', '']) {
     assert.deepEqual(fleetAllowedToolsForRole(role), [...FLEET_ALLOWED_TOOLS]);
   }
-});
-
-test('claudeMcpArgs — expert role gets the no-write kit in its --allowed-tools', () => {
-  const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p', MCP_PATH, true, 'expert');
-  assert.deepEqual(args, [
-    '--mcp-config', MCP_PATH, '--strict-mcp-config',
-    ...permPosture('expert'),
-  ]);
-  // sanity: the emitted allow-list string has no Edit/Write
-  const allowIdx = args.indexOf('--allowed-tools');
-  assert.ok(!/\bEdit\b/.test(args[allowIdx + 1]) && !/\bWrite\b/.test(args[allowIdx + 1]));
 });
 
 test('claudeMcpArgs — deny-list hard-removes the dangerous EXEMPT tools (dontAsk gating is non-uniform) + dangerous Bash', () => {

@@ -483,8 +483,7 @@ export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
  * enforcing the instruction the prompt already gives (resists a model that
  * ignores it, e.g. via prompt-injection).
  *
- *   - `expert.md`:  "API-only access — do NOT use the `Write` or `Edit` tools"
- *   - `feedback.md`: "API-only writes — do NOT use the `Write` or `Edit` tools."
+ * (Currently empty — the former `expert`/`feedback` API-only roles were removed.)
  *
  * This is the ONLY per-role built-in tightening that's verifiably safe from a
  * prompt read: other review/gate roles (reviewer, validator, infra-reviewer,
@@ -495,7 +494,7 @@ export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
  * a shell redirect — closing that needs a sandbox, not an allow-list. Further
  * per-role cuts should be gated on a real fleet-spawn run, not a prompt read.
  */
-export const FLEET_NO_WRITE_ROLES: ReadonlySet<string> = new Set(['expert', 'feedback']);
+export const FLEET_NO_WRITE_ROLES: ReadonlySet<string> = new Set<string>([]);
 
 /**
  * The allow-list for a given fleet role: the full safe kit
@@ -681,10 +680,10 @@ export function fleetSandboxEnabled(): boolean {
  *  - Per-role WRITE tightening is NOT achievable via the sandbox: the cwd is
  *    ALWAYS writable (`allowWrite` only *adds* paths beyond cwd; `denyWrite`
  *    of the cwd didn't reliably block either). So write-discipline per role
- *    stays at the allowed-tools layer (FLEET_NO_WRITE_ROLES already lose the
- *    Edit/Write tools); the residual Bash-escape is a known, documented limit.
- *  - Per-role EGRESS *is* the achievable axis (e.g. `expert`/`feedback` do web
- *    research and would need an allowlist, while a worker needs none) — that's
+ *    stays at the allowed-tools layer (via FLEET_NO_WRITE_ROLES, currently
+ *    empty); the residual Bash-escape is a known, documented limit.
+ *  - Per-role EGRESS *is* the achievable axis (e.g. a read-only review role
+ *    does web research and would need an allowlist, while a worker needs none) — that's
  *    where `role` will branch. Today the egress floor is the registry allowlist
  *    `resolveFleetAllowedDomains()` (base + the deployment env knobs, D-012),
  *    uniform across roles; the exact per-role narrowing still wants the
