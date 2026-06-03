@@ -50,8 +50,6 @@ const DEFAULT_DB = 'papercusp';
 const DEFAULT_OWNER = 'postgres';
 const DEFAULT_OWNER_PWD = 'postgres';
 
-const PER_HARNESS_TEMPLATE = '002-per-harness-template.sql';
-
 /**
  * Read the slug list from harness_shared.harness_registry. Returns an
  * empty array on first boot (registry table doesn't exist or is empty)
@@ -253,32 +251,12 @@ export async function startEmbeddedPostgresServer(opts = {}) {
         }
       }
 
-      // Per-harness template: render against each known slug, idempotent.
-      // Not tracked in schema_migrations because there's no single filename.
-      // (The old "skip when seed-restored" branch is gone with seed-restore —
-      // self-contained-migration-baseline-2026-06-02 D-004.)
-      const tmplPath = join(opts.dbSqlDir, PER_HARNESS_TEMPLATE);
-      if (existsSync(tmplPath)) {
-        const { readFile } = await import('node:fs/promises');
-        const tmpl = await readFile(tmplPath, 'utf8');
-        // Slug list comes from harness_shared.harness_registry by default
-        // — what's actually registered, not a hardcoded list. Callers can
-        // override via opts.harnessSlugs for tests / first-boot fixtures.
-        const slugs = opts.harnessSlugs ?? await readRegisteredSlugs(sql, log);
-        for (const slug of slugs) {
-          const schemaName = `harness_${slug}`;
-          const ddl = tmpl.replaceAll('{{SCHEMA}}', schemaName);
-          await sql.unsafe(ddl);
-          if (/^harness_[a-z0-9_]+$/i.test(schemaName)) {
-            try {
-              await sql.unsafe(`ALTER PUBLICATION zero_harness ADD TABLES IN SCHEMA ${schemaName}`);
-            } catch {
-              // Already in publication.
-            }
-          }
-        }
-        log(`per-harness template applied across ${slugs.length} slugs (from registry)`);
-      }
+      // Per-harness template application RETIRED (harness-state-storage-
+      // unification-2026-06-01, D-007). Per-harness schemas now contain only
+      // auto-updatable views over slug-keyed harness_shared.*_consolidated
+      // tables — created by the migrations above (which loop over existing
+      // harness_* schemas) and by scaffoldHarnessSchema() for new harnesses.
+      // No boot-time per-harness DDL template is applied.
     } else if (opts.dbSqlDir) {
       log(`dbSqlDir=${opts.dbSqlDir} does not exist — skipping migrations`);
     }
