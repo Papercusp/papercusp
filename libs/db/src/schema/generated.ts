@@ -1,4 +1,4 @@
-import { pgTable, pgSchema, index, bigserial, text, timestamp, integer, jsonb, bigint, boolean, doublePrecision, uuid, uniqueIndex, numeric, vector, foreignKey, pgPolicy } from "drizzle-orm/pg-core"
+import { pgTable, pgSchema, index, bigserial, text, timestamp, integer, jsonb, bigint, boolean, doublePrecision, uuid, uniqueIndex, numeric, vector, foreignKey, pgPolicy, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 export const papercupShared = pgSchema("papercup_shared");
