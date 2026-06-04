@@ -55,7 +55,7 @@ export async function insertPendingEvent(sql: Sql, input: InsertEventInput): Pro
       ${input.installSlug},
       ${input.kind},
       ${input.targetRole},
-      ${payloadStr}::jsonb,
+      ${payloadStr}::text::jsonb,
       ${dueAtStr}::timestamptz,
       ${input.sourceId ?? null}
     )

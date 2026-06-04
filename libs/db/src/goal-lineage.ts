@@ -104,7 +104,7 @@ export async function createGoal(
       ${input.body ?? null},
       ${input.parentId ?? null},
       ${input.budgetCents ?? null},
-      ${metadataStr}::jsonb
+      ${metadataStr}::text::jsonb
     )
   `;
   return { id: input.id };
