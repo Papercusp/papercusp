@@ -103,6 +103,10 @@ export async function fireRoutine(
 export async function upsertRoutine(
   sql: Sql,
   input: {
+    /** Owning workspace — `harness_shared.routines.workspace_id` is NOT NULL with no
+     *  column default and no fill trigger, so the caller MUST supply it (resolve via
+     *  the active-workspace registry / the project's workspace_id). */
+    workspaceId: string;
     installSlug: string;
     name: string;
     triggerKind: 'cron' | 'webhook' | 'api';
@@ -126,7 +130,7 @@ export async function upsertRoutine(
   const rows = await sql<any[]>`
     INSERT INTO harness_shared.routines
       (id, install_slug, name, trigger_kind, trigger_config, target_role,
-       payload_template, concurrency, catchup, active, next_fire_at)
+       payload_template, concurrency, catchup, active, next_fire_at, workspace_id)
     VALUES (
       ${id},
       ${input.installSlug},
@@ -138,7 +142,8 @@ export async function upsertRoutine(
       ${input.concurrency ?? 'queue'},
       ${input.catchup ?? 'skip-old'},
       ${input.active ?? true},
-      ${nextFireAtStr}::timestamptz
+      ${nextFireAtStr}::timestamptz,
+      ${input.workspaceId}
     )
     ON CONFLICT (install_slug, name) DO UPDATE SET
       trigger_kind     = EXCLUDED.trigger_kind,
