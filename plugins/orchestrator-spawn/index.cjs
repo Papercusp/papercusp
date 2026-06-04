@@ -14,9 +14,9 @@
  */
 
 const { randomUUID } = require('node:crypto');
-const { join } = require('node:path');
+const { join, dirname } = require('node:path');
 const { homedir } = require('node:os');
-const { existsSync, readFileSync } = require('node:fs');
+const { existsSync, readFileSync, realpathSync } = require('node:fs');
 
 /* ─── PG persistence (Phase 9 v1.5) ───────────────────────────────────
  * Mirrors the in-memory Map into harness_shared.spawned_agents so
@@ -62,12 +62,14 @@ async function pgInsertSpawn(rec) {
     await tx`
       INSERT INTO harness_shared.spawned_agents
         (spawn_id, workspace_id, harness_slug, parent_spawn_id, parent_role,
-         child_role, feature_id, chunk_id, run_id, status, started_at)
+         child_role, feature_id, chunk_id, run_id, status, started_at,
+         session_owner, coordination_domain)
       VALUES (
         ${rec.spawnId}, ${rec.workspaceId}, ${rec.harnessSlug},
         ${rec.parentSpawnId}, ${rec.parentRole}, ${rec.childRole},
         ${rec.featureId}, ${rec.chunkId}, ${rec.runId},
-        ${rec.status}, to_timestamp(${rec.startedAtMs}::double precision / 1000.0)
+        ${rec.status}, to_timestamp(${rec.startedAtMs}::double precision / 1000.0),
+        ${rec.sessionOwner}, ${rec.coordinationDomain}
       )
       ON CONFLICT (spawn_id) DO NOTHING
     `;
@@ -132,15 +134,37 @@ async function pgListActive(workspaceId, parentSpawnId) {
   });
 }
 
-async function pgRequestCancel(workspaceId, spawnId) {
+/**
+ * Transitive cancel (fleet-as-supervised-blackboard D-003): flip cancel_requested +
+ * status='cancelled' on the named spawn AND every descendant, in one statement. The
+ * "cancellation flows DOWN the nursery" invariant at the durable-tree layer. Lock /
+ * work-item-claim release-NOW is the operator engine's job (fleet:cancel, which reads
+ * this same tree and uses session_owner); otherwise the leases reclaim them. Returns
+ * the rows it transitioned.
+ */
+async function pgCancelSubtree(workspaceId, spawnId) {
   return pgWithWs(workspaceId, async (tx) => {
-    await tx`
-      UPDATE harness_shared.spawned_agents
+    const rows = await tx`
+      WITH RECURSIVE tree AS (
+        SELECT spawn_id, 0 AS depth
+          FROM harness_shared.spawned_agents
+         WHERE workspace_id = ${workspaceId} AND spawn_id = ${spawnId}
+        UNION ALL
+        SELECT c.spawn_id, t.depth + 1
+          FROM harness_shared.spawned_agents c
+          JOIN tree t ON c.parent_spawn_id = t.spawn_id
+         WHERE c.workspace_id = ${workspaceId} AND t.depth < 32
+      )
+      UPDATE harness_shared.spawned_agents s
          SET cancel_requested = true,
-             status = CASE WHEN status = 'running' THEN 'cancelled' ELSE status END,
-             finished_at = COALESCE(finished_at, now())
-       WHERE spawn_id = ${spawnId}
+             status = CASE WHEN s.status IN ('running', 'restarting') THEN 'cancelled' ELSE s.status END,
+             finished_at = COALESCE(s.finished_at, now()),
+             cancelled_at = COALESCE(s.cancelled_at, now())
+       WHERE s.workspace_id = ${workspaceId}
+         AND s.spawn_id IN (SELECT spawn_id FROM tree)
+      RETURNING s.spawn_id, s.status
     `;
+    return rows;
   });
 }
 
@@ -317,6 +341,31 @@ async function loadOrchestrator() {
   return await import('@papercusp/orchestrator');
 }
 
+/** Walk up to the nearest `.git` ancestor (mirrors locks/coordination-domain.ts). */
+function findRepoRoot(start) {
+  let dir = start;
+  for (let i = 0; i < 16; i++) {
+    if (existsSync(join(dir, '.git'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return start;
+}
+
+/**
+ * The file-lock coordination domain a spawned child will use — the realpath repo
+ * root (workspace-INDEPENDENT, per locks/coordination-domain.ts), so transitive
+ * cancellation can release the child's file locks in papercusp_su. PAPERCUSP_LOCK_DOMAIN
+ * overrides (matches the operator's resolver).
+ */
+function lockDomainFor(projectDir) {
+  const override = process.env.PAPERCUSP_LOCK_DOMAIN;
+  if (override && override.trim()) return override.trim();
+  const base = projectDir || process.cwd();
+  try { return realpathSync(findRepoRoot(base)); } catch { return findRepoRoot(base); }
+}
+
 function makeSpawnRecord(input, toolCtx, childRole) {
   const spawnId = `s-${Date.now()}-${randomUUID().slice(0, 8)}`;
   return {
@@ -329,6 +378,11 @@ function makeSpawnRecord(input, toolCtx, childRole) {
     runId: toolCtx.runId,
     workspaceId: toolCtx.workspaceId,
     harnessSlug: toolCtx.harnessSlug,
+    // The child's ?client= is its spawnId (spawn-mcp.ts §signed-su-url), so its
+    // coordination/lock owner IS its spawnId — the link fleet:cancel uses to release
+    // its locks/claims (migration 146, D-003).
+    sessionOwner: spawnId,
+    coordinationDomain: lockDomainFor(toolCtx.projectDir),
     startedAtMs: Date.now(),
     finishedAtMs: null,
     status: 'running',
@@ -533,66 +587,80 @@ async function list_active(input, ctx) {
   };
 }
 
+/**
+ * Abort the named spawn + every in-process descendant NOW (the in-memory half of
+ * transitive cancellation, D-003). BFS over the spawns Map by parentSpawnId. Returns
+ * the spawnIds it aborted. Parent authority covers the whole subtree, so descendant
+ * role-permission is not re-checked (the caller already owns this lineage).
+ */
+function abortSubtreeInMemory(rootId) {
+  const aborted = [];
+  const queue = [rootId];
+  const seen = new Set();
+  while (queue.length > 0) {
+    const id = queue.shift();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const r = spawns.get(id);
+    if (r && r.status === 'running') {
+      try { r.abortController.abort(); } catch { /* ignore */ }
+      r.status = 'cancelled';
+      r.finishedAtMs = Date.now();
+      r.durationMs = r.finishedAtMs - r.startedAtMs;
+      aborted.push(id);
+      void pgFinalizeSpawn(r).catch(() => {});
+    }
+    for (const child of spawns.values()) {
+      if (child.parentSpawnId === id) queue.push(child.spawnId);
+    }
+  }
+  return aborted;
+}
+
 async function cancel(input, ctx) {
   const spawnId = String(input.spawnId || '').trim();
   const callerRole = ctx.role;
   const allowed = ALLOWED[callerRole] || [];
 
-  // Try in-memory first — that path can really kill the child via abort.
+  // Resolve the NAMED spawn's childRole for the auth check (memory first, then PG).
   const rec = spawns.get(spawnId);
-  if (rec) {
-    if (!allowed.includes(rec.childRole)) {
+  let namedChildRole = rec ? rec.childRole : null;
+  if (!namedChildRole) {
+    const row = await pgGetSpawn(ctx.workspaceId, spawnId).catch(() => null);
+    if (!row) {
       return {
         isError: true,
         content: [{ type: 'text', text: JSON.stringify({
-          code: 'spawn_role_not_allowed',
-          message: `Role "${callerRole}" cannot cancel a "${rec.childRole}" spawn.`,
+          code: 'spawn_not_found',
+          message: `No spawn with id "${spawnId}" in memory or PG.`,
         }, null, 2) }],
       };
     }
-    if (rec.status !== 'running') {
-      return { content: [{ type: 'text', text: JSON.stringify(recordToView(rec), null, 2) }] };
-    }
-    rec.abortController.abort();
-    rec.status = 'cancelled';
-    rec.finishedAtMs = Date.now();
-    rec.durationMs = rec.finishedAtMs - rec.startedAtMs;
-    await pgFinalizeSpawn(rec).catch(() => {});
-    return { content: [{ type: 'text', text: JSON.stringify(recordToView(rec), null, 2) }] };
+    namedChildRole = row.child_role;
   }
-
-  // Fall back to PG: spawn predates this operator process. We can't
-  // actually kill the child (the process holding its pid is gone) but
-  // we can mark it cancel_requested + status='cancelled' so the UI
-  // reflects user intent.
-  const row = await pgGetSpawn(ctx.workspaceId, spawnId).catch(() => null);
-  if (!row) {
-    return {
-      isError: true,
-      content: [{ type: 'text', text: JSON.stringify({
-        code: 'spawn_not_found',
-        message: `No spawn with id "${spawnId}" in memory or PG.`,
-      }, null, 2) }],
-    };
-  }
-  if (!allowed.includes(row.child_role)) {
+  if (!allowed.includes(namedChildRole)) {
     return {
       isError: true,
       content: [{ type: 'text', text: JSON.stringify({
         code: 'spawn_role_not_allowed',
-        message: `Role "${callerRole}" cannot cancel a "${row.child_role}" spawn.`,
+        message: `Role "${callerRole}" cannot cancel a "${namedChildRole}" spawn.`,
       }, null, 2) }],
     };
   }
-  if (row.status !== 'running') {
-    return { content: [{ type: 'text', text: JSON.stringify(pgRowToView(row), null, 2) }] };
-  }
-  await pgRequestCancel(ctx.workspaceId, spawnId).catch(() => {});
-  const updated = await pgGetSpawn(ctx.workspaceId, spawnId).catch(() => row);
+
+  // Transitive cancellation (D-003): abort live descendants in-process NOW, and flip
+  // cancel_requested + status across the whole durable subtree. The operator engine's
+  // fleet:cancel performs the locks/claims release-now (it reads this tree's
+  // session_owner); leases reclaim anything that path misses.
+  const abortedInMemory = abortSubtreeInMemory(spawnId);
+  const cancelledRows = await pgCancelSubtree(ctx.workspaceId, spawnId).catch(() => []);
+
   return {
     content: [{ type: 'text', text: JSON.stringify({
-      ...pgRowToView(updated),
-      note: 'cross-restart cancel: the operator process holding this spawn\'s pid is gone; status flipped to cancelled and cancel_requested set, but the child OS process (if still running) was not actually killed. v2: a watcher process can pick up cancel_requested and SIGTERM by stored pid.',
+      spawnId,
+      cancelled: (cancelledRows || []).map((r) => r.spawn_id),
+      abortedInMemory,
+      note: 'Transitive cancel: this spawn + all descendants flagged cancel_requested + status=cancelled in the durable tree, and aborted in-process where live. Lock/work-item-claim release-NOW is the operator fleet:cancel path (reads session_owner); otherwise leases reclaim them.',
     }, null, 2) }],
   };
 }

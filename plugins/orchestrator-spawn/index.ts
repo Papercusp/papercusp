@@ -8,9 +8,9 @@
  * Spec: apps/operator/docs/plugin-mcp-host-design.md (Phase 9).
  */
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import type { Plugin, PluginToolMap, ToolHandler, ToolResult, AgentRole } from '@papercusp/plugin-sdk';
 
 const ALLOWED: Record<string, AgentRole[]> = {
@@ -39,6 +39,9 @@ interface SpawnRecord {
   runId: string;
   workspaceId: string;
   harnessSlug: string;
+  /** The child's ?client= is its spawnId → its coord/lock owner (D-003). */
+  sessionOwner: string;
+  coordinationDomain: string;
   startedAtMs: number;
   finishedAtMs: number | null;
   status: 'running' | 'done' | 'failed' | 'cancelled';
@@ -82,6 +85,54 @@ function countConcurrent(): number {
 
 function harnessPackageDir(): string {
   return process.env.PAPERCUSP_HARNESS_DIR || join(homedir(), 'autonomous-harness');
+}
+
+/** Walk up to the nearest `.git` ancestor (mirrors locks/coordination-domain.ts). */
+function findRepoRoot(start: string): string {
+  let dir = start;
+  for (let i = 0; i < 16; i++) {
+    if (existsSync(join(dir, '.git'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return start;
+}
+
+/** The realpath repo root a spawned child uses as its file-lock coordination domain. */
+function lockDomainFor(projectDir: string | undefined): string {
+  const override = process.env.PAPERCUSP_LOCK_DOMAIN;
+  if (override && override.trim()) return override.trim();
+  const base = projectDir || process.cwd();
+  try { return realpathSync(findRepoRoot(base)); } catch { return findRepoRoot(base); }
+}
+
+/**
+ * Abort the named spawn + every in-process descendant NOW — the in-memory half of
+ * transitive cancellation (fleet-as-supervised-blackboard D-003). BFS over the spawns
+ * Map by parentSpawnId. Parent authority covers the whole subtree.
+ */
+function abortSubtreeInMemory(rootId: string): string[] {
+  const aborted: string[] = [];
+  const queue: string[] = [rootId];
+  const seen = new Set<string>();
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const r = spawns.get(id);
+    if (r && r.status === 'running') {
+      try { r.abortController.abort(); } catch { /* ignore */ }
+      r.status = 'cancelled';
+      r.finishedAtMs = Date.now();
+      r.durationMs = r.finishedAtMs - r.startedAtMs;
+      aborted.push(id);
+    }
+    for (const child of spawns.values()) {
+      if (child.parentSpawnId === id) queue.push(child.spawnId);
+    }
+  }
+  return aborted;
 }
 
 function readPhaseFromConfig(stateDir: string): string {
@@ -140,8 +191,9 @@ const spawn: ToolHandler = async (input: any, ctx: any): Promise<ToolResult> => 
     return errorResult('spawn_concurrent_exceeded',
       `${concurrent} spawns already running (cap ${MAX_CONCURRENT}).`);
   }
+  const spawnId = `s-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const record: SpawnRecord = {
-    spawnId: `s-${Date.now()}-${randomUUID().slice(0, 8)}`,
+    spawnId,
     parentSpawnId: ctx.spawnId || null,
     parentRole: callerRole,
     childRole,
@@ -150,6 +202,8 @@ const spawn: ToolHandler = async (input: any, ctx: any): Promise<ToolResult> => 
     runId: ctx.runId,
     workspaceId: ctx.workspaceId,
     harnessSlug: ctx.harnessSlug,
+    sessionOwner: spawnId,
+    coordinationDomain: lockDomainFor(ctx.projectDir),
     startedAtMs: Date.now(),
     finishedAtMs: null,
     status: 'running',
@@ -239,9 +293,9 @@ const cancel: ToolHandler = async (input: any, ctx: any) => {
   if (rec.status !== 'running') {
     return { content: [{ type: 'text', text: JSON.stringify(recordToView(rec), null, 2) }] };
   }
-  rec.abortController.abort();
-  rec.status = 'cancelled';
-  return { content: [{ type: 'text', text: JSON.stringify(recordToView(rec), null, 2) }] };
+  // Transitive cancellation (D-003): abort this spawn + all in-process descendants.
+  const aborted = abortSubtreeInMemory(spawnId);
+  return { content: [{ type: 'text', text: JSON.stringify({ ...recordToView(rec), aborted }, null, 2) }] };
 };
 
 function errorResult(code: string, message: string): ToolResult {
