@@ -94,7 +94,11 @@ export function deriveNext(
   parsed: ParsedDecisionLike | null,
   defaultFeature: string,
 ): PipelineAction {
+  // `edges` is optional on the schema (a program-mode spine omits it — D-002);
+  // deriveNext is the decider-model interpreter, so treat an absent map as "no
+  // edge for any verb" → the default.
+  const edges = spine.edges ?? {};
   if (!parsed) return actionFor(spine.default, null, defaultFeature);
-  const edge = spine.edges[parsed.verb] ?? spine.default;
+  const edge = edges[parsed.verb] ?? spine.default;
   return actionFor(edge, parsed, defaultFeature);
 }

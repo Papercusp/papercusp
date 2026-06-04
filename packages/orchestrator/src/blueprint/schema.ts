@@ -87,21 +87,75 @@ export const SpineActionSchema = z.discriminatedUnion('to', [
 ]);
 
 /**
- * The orchestration spine — a flat declared graph (D-024). The `decider` role
- * emits a verb each turn; `deriveNext` looks the verb up in `edges` and returns
- * the corresponding action, falling back to `default` for a null/unparseable
- * decision or a verb with no edge. A behavior-preserving lift of today's
- * director loop + `classifyDecision` switch. Behavior-tree composition is
- * deferred (D-024) — the flat verb→action map proves the engine first.
+ * A coord-op spine **step** — the first-class declarative composition unit of the
+ * coordination-ops layer (`coordination-ops-as-blueprint-primitives-2026-06-04`
+ * D-002/D-003/D-005). A step invokes a coord op (`coord:thread-open`,
+ * `coord:collect`, `vote:aggregate`, …) with `{{ path }}`-templated `args`, binds
+ * the op's result into the spine scope under `bind`, and may be guarded by a
+ * `when` boolean expression over the bound scope. The ops are the `what`; the
+ * spine `steps` are `how` (D-002 — the four-layer stack). Result-binding +
+ * conditions are the load-bearing new infra the executor (P-005) runs durably.
+ */
+export const CoordOpStepSchema = z.object({
+  /** Human/debug id, also the DBOS step name (`op-<id>`). Unique within a spine. */
+  id: z.string().min(1),
+  /** The coord-op to invoke — a name in the coord-op registry (D-001/D-004). */
+  op: z.string().min(1),
+  /** Op args, `{{ path }}`-interpolated against the bound scope before invoke. */
+  args: z.record(z.string(), z.unknown()).default({}),
+  /** Scope key to bind the op's result under (later steps + the gate read it). */
+  bind: z.string().optional(),
+  /** Optional boolean expression over the scope — skip the step when false. */
+  when: z.string().optional(),
+});
+
+/**
+ * A spine **gate** branch — the conditional decision after the steps run (the
+ * `resolve` / `escalate` fork of the vote worked example, D-006). The first
+ * branch whose `when` is true fires its `op` (with interpolated `args`); a branch
+ * with `else: true` (or no `when`) is the fallback. A well-formed program gate
+ * MUST have a fallback so it always resolves (validated — P-005).
+ */
+export const GateBranchSchema = z.object({
+  /** Boolean expression over the scope; omit (or set `else`) for the fallback. */
+  when: z.string().optional(),
+  /** Marks the fallback branch (sugar; an omitted `when` is equivalent). */
+  else: z.boolean().default(false),
+  /** The coord-op this branch fires (e.g. `resolve`, `coord:escalate`). */
+  op: z.string().min(1),
+  /** Op args, `{{ path }}`-interpolated against the bound scope. */
+  args: z.record(z.string(), z.unknown()).default({}),
+});
+
+/**
+ * The orchestration spine. Two coexisting, additive models (D-002):
+ *
+ *  - **decider model** (`edges` + `default`) — a flat declared graph (D-024): the
+ *    `decider` role emits a verb each turn; `deriveNext` looks it up in `edges`,
+ *    falling back to `default`. The behavior-preserving lift of the legacy
+ *    director loop + `classifyDecision` switch (coding/research/gym).
+ *  - **coord-op program** (`steps` + `gate`) — an ordered list of coord-op steps
+ *    with result-binding + conditions, then a decision gate (vote/deliberate,
+ *    D-006). No decider: the program IS the orchestration. Run by the durable
+ *    `coordProgramWorkflow` (P-005).
+ *
+ * A spine declares EXACTLY ONE model (validated — `spine-mode` in validate.ts). A
+ * blueprint may mix both across composition (a `deliberate` program step invokes
+ * a `coord:vote` op which runs the `vote` program) — recursion bounded by the
+ * depth cap (D-008). `edges` is optional so a program-mode spine omits it.
  */
 export const SpineSchema = z.object({
   decider: z.string().min(1).default('director'),
   /** Hard iteration cap (was `MAX_TURNS`; promoted to a blueprint field — P-004). */
   maxTurns: z.number().int().positive().default(200),
-  /** verb → action. Keys are the blueprint's verb vocabulary (per-blueprint). */
-  edges: z.record(z.string(), SpineActionSchema),
-  /** Action for a null/unparseable decision or an unmapped verb. */
+  /** verb → action (decider model). Keys are the blueprint's verb vocabulary. */
+  edges: z.record(z.string(), SpineActionSchema).optional(),
+  /** Action for a null/unparseable decision or an unmapped verb (decider model). */
   default: SpineActionSchema.default({ to: 'idle' }),
+  /** Ordered coord-op steps (program model — D-002). */
+  steps: z.array(CoordOpStepSchema).optional(),
+  /** The decision gate fired after the steps (program model — D-006). */
+  gate: z.array(GateBranchSchema).optional(),
 });
 
 /**
@@ -315,6 +369,8 @@ export const BlueprintHeaderSchema = z.looseObject({
 export type Blueprint = z.infer<typeof BlueprintSchema>;
 export type BlueprintSpine = z.infer<typeof SpineSchema>;
 export type SpineAction = z.infer<typeof SpineActionSchema>;
+export type CoordOpStep = z.infer<typeof CoordOpStepSchema>;
+export type GateBranch = z.infer<typeof GateBranchSchema>;
 export type BlueprintRole = z.infer<typeof BlueprintRoleSchema>;
 export type BlueprintWorkItem = z.infer<typeof WorkItemSchema>;
 export type BlueprintReactiveRule = z.infer<typeof ReactiveRuleSchema>;
