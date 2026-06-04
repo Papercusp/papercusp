@@ -20,6 +20,7 @@
  * tester/test-writer/monitor verbs kept for switch parity) that don't block.
  */
 import type { Blueprint } from './schema.js';
+import { isValidExpr } from './expr.js';
 
 export interface BlueprintIssue {
   level: 'error' | 'warning';
@@ -33,11 +34,23 @@ export interface BlueprintValidation {
   warnings: BlueprintIssue[];
 }
 
+export interface ValidateOptions {
+  /**
+   * The set of registered coord-op names (the coord-op registry's keys). When
+   * provided, a program step / gate branch that names an op NOT in the set is an
+   * error (`unknown-op`). The pure lib doesn't own the registry (it lives in
+   * operator-core — D-001/D-004), so the operator passes this on load/projection;
+   * omitted → the op-name check is skipped (author-time validation in the lib
+   * still catches every structural + expression problem).
+   */
+  knownOps?: Set<string>;
+}
+
 const TERMINAL = new Set(['done', 'escalate', 'idle']);
 /** Finalize-recipe entries that are pipeline STEPS, not dispatchable roles. */
 const FINALIZE_STEPS = new Set(['archive', 'postCuratorOutputs']);
 
-export function validateBlueprint(bp: Blueprint): BlueprintValidation {
+export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): BlueprintValidation {
   const errors: BlueprintIssue[] = [];
   const warnings: BlueprintIssue[] = [];
   const err = (code: string, message: string) => errors.push({ level: 'error', code, message });
@@ -52,41 +65,22 @@ export function validateBlueprint(bp: Blueprint): BlueprintValidation {
     seen.add(r.id);
   }
 
-  // ── spine: edges + termination + reachability ──────────────────────────────
-  const edgeKeys = Object.keys(bp.spine.edges);
-  if (edgeKeys.length === 0) {
-    err('empty-spine', 'spine.edges is empty — the decider has no action to take');
-  }
   if (!Number.isFinite(bp.spine.maxTurns) || bp.spine.maxTurns < 1) {
     err('bad-max-turns', `spine.maxTurns must be a finite positive integer (got ${bp.spine.maxTurns})`);
   }
 
-  // A terminal must be reachable — via some edge OR the default — else the loop
-  // can only ever spin until maxTurns.
-  const anyTerminalEdge = Object.values(bp.spine.edges).some((a) => TERMINAL.has(a.to));
-  const defaultTerminal = TERMINAL.has(bp.spine.default.to);
-  if (!anyTerminalEdge && !defaultTerminal) {
-    err('no-terminal', 'no terminal outcome is reachable (no terminal edge and a non-terminal default)');
-  }
-
-  // Decider should be a declared role (prompt-resolve has global fallbacks, so a
-  // warning rather than a hard error).
-  if (!roleIds.has(bp.spine.decider)) {
-    warn('decider-undeclared', `spine.decider "${bp.spine.decider}" is not in roles[]`);
-  }
-
-  // Dispatch targets that aren't declared roles → likely vestigial/dormant verbs.
+  // ── spine mode: a spine declares EXACTLY ONE model (D-002) ──────────────────
+  const hasEdges = bp.spine.edges != null && Object.keys(bp.spine.edges).length > 0;
+  const hasSteps = bp.spine.steps != null && bp.spine.steps.length > 0;
   const dispatched = new Set<string>();
-  for (const [verb, action] of Object.entries(bp.spine.edges)) {
-    if (action.to === 'role') {
-      dispatched.add(action.role);
-      if (!roleIds.has(action.role)) {
-        warn(
-          'dispatch-undeclared-role',
-          `spine edge ${verb} dispatches role "${action.role}" which is not declared in roles[]`,
-        );
-      }
-    }
+  if (hasEdges && hasSteps) {
+    err('spine-mode', 'spine declares BOTH edges (decider model) and steps (program model) — choose one');
+  } else if (!hasEdges && !hasSteps) {
+    err('empty-spine', 'spine declares neither edges (decider model) nor steps (program model)');
+  } else if (hasSteps) {
+    validateProgramSpine(bp, opts, err, warn);
+  } else {
+    validateDeciderSpine(bp, roleIds, dispatched, err, warn);
   }
 
   // ── reactive overlay: guards well-formed ───────────────────────────────────
@@ -128,16 +122,105 @@ export function validateBlueprint(bp: Blueprint): BlueprintValidation {
   }
 
   // ── reachability: declared-but-unused roles (dead roles) ───────────────────
-  for (const id of roleIds) {
-    const used =
-      id === bp.spine.decider ||
-      dispatched.has(id) ||
-      bp.reactive.some((r) => r.role === id) ||
-      (finalize ? [...finalize.onDone, ...finalize.onEscalate].includes(id) : false);
-    if (!used) {
-      warn('unused-role', `role "${id}" is declared but never dispatched, reactive, or in finalize`);
+  // Decider-mode only: program-mode roles (voter / advocate) are spawned by a
+  // `spawn-roles` op step, not by a spine edge, so `dispatched` is empty and the
+  // dead-role heuristic would wrongly flag every program role.
+  if (!hasSteps) {
+    for (const id of roleIds) {
+      const used =
+        id === bp.spine.decider ||
+        dispatched.has(id) ||
+        bp.reactive.some((r) => r.role === id) ||
+        (finalize ? [...finalize.onDone, ...finalize.onEscalate].includes(id) : false);
+      if (!used) {
+        warn('unused-role', `role "${id}" is declared but never dispatched, reactive, or in finalize`);
+      }
     }
   }
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+type Reporter = (code: string, message: string) => void;
+
+/** Decider-model spine checks (edges + termination + reachability). */
+function validateDeciderSpine(
+  bp: Blueprint,
+  roleIds: Set<string>,
+  dispatched: Set<string>,
+  err: Reporter,
+  warn: Reporter,
+): void {
+  const edges = bp.spine.edges ?? {};
+  // A terminal must be reachable — via some edge OR the default — else the loop
+  // can only ever spin until maxTurns.
+  const anyTerminalEdge = Object.values(edges).some((a) => TERMINAL.has(a.to));
+  const defaultTerminal = TERMINAL.has(bp.spine.default.to);
+  if (!anyTerminalEdge && !defaultTerminal) {
+    err('no-terminal', 'no terminal outcome is reachable (no terminal edge and a non-terminal default)');
+  }
+  // Decider should be a declared role (prompt-resolve has global fallbacks, so a
+  // warning rather than a hard error).
+  if (!roleIds.has(bp.spine.decider)) {
+    warn('decider-undeclared', `spine.decider "${bp.spine.decider}" is not in roles[]`);
+  }
+  // Dispatch targets that aren't declared roles → likely vestigial/dormant verbs.
+  for (const [verb, action] of Object.entries(edges)) {
+    if (action.to === 'role') {
+      dispatched.add(action.role);
+      if (!roleIds.has(action.role)) {
+        warn(
+          'dispatch-undeclared-role',
+          `spine edge ${verb} dispatches role "${action.role}" which is not declared in roles[]`,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Program-model spine checks (`coordination-ops-as-blueprint-primitives` P-005):
+ * unique step ids, parseable `when` expressions, a gate that always resolves (a
+ * fallback branch), and — when `knownOps` is supplied — that every op exists.
+ */
+function validateProgramSpine(
+  bp: Blueprint,
+  opts: ValidateOptions,
+  err: Reporter,
+  warn: Reporter,
+): void {
+  const steps = bp.spine.steps ?? [];
+  const gate = bp.spine.gate ?? [];
+  const known = opts.knownOps;
+
+  const seenIds = new Set<string>();
+  const boundNames = new Set<string>();
+  for (const s of steps) {
+    if (seenIds.has(s.id)) err('duplicate-step', `program step id "${s.id}" is declared more than once`);
+    seenIds.add(s.id);
+    if (known && !known.has(s.op)) {
+      err('unknown-op', `program step "${s.id}" invokes unknown op "${s.op}"`);
+    }
+    if (s.when != null && s.when.trim() !== '' && !isValidExpr(s.when)) {
+      err('bad-step-when', `program step "${s.id}" has an unparseable when "${s.when}"`);
+    }
+    if (s.bind) boundNames.add(s.bind);
+  }
+  void boundNames; // reserved for a future "gate reads an unbound name" lint
+
+  if (gate.length === 0) {
+    err('gate-missing', 'program-mode spine has steps but no gate — a program must resolve through a gate');
+    return;
+  }
+  const hasFallback = gate.some((b) => b.else === true || b.when == null || b.when.trim() === '');
+  if (!hasFallback) {
+    err('gate-no-fallback', 'gate has no fallback branch (else / no-when) — some scopes would never resolve');
+  }
+  for (let i = 0; i < gate.length; i++) {
+    const b = gate[i]!;
+    if (known && !known.has(b.op)) err('unknown-op', `gate branch ${i} fires unknown op "${b.op}"`);
+    if (b.when != null && b.when.trim() !== '' && !isValidExpr(b.when)) {
+      err('bad-gate-when', `gate branch ${i} has an unparseable when "${b.when}"`);
+    }
+  }
 }
