@@ -43,6 +43,8 @@ export interface ResourceRegistryRow {
   rule_text: string;
   enforcement: ResourceEnforcement;
   match_patterns: string[];
+  /** Counting-semaphore capacity for shared holders (D-008). null = unbounded. */
+  max_holders: number | null;
 }
 
 export interface ResourceAcquireParams {
@@ -78,7 +80,8 @@ export type ResourceAcquireResult =
         | 'unknown_resource' // not in the registry (D-010)
         | 'exclusive_pending' // shared blocked by a held/draining exclusive (writer-priority)
         | 'holds_shared' // exclusive blocked by the caller's own shared lease (no upgrade, D-004)
-        | 'held_exclusive'; // exclusive held by another owner (or caller already holds exclusive)
+        | 'held_exclusive' // exclusive held by another owner (or caller already holds exclusive)
+        | 'at_capacity'; // shared blocked: the resource's max_holders semaphore is full (D-008)
       holders: ResourceHolder[];
     };
 
@@ -209,13 +212,14 @@ export async function tryAcquireResource(
   const { coordinationDomain: cd, resource, mode, owner, ownerLabel, reason, ttlSec } = params;
   await tx`SET LOCAL statement_timeout = '500ms'`;
 
-  // D-010: registered names only.
-  const reg = await tx<Array<{ resource: string }>>`
-    SELECT resource FROM agent_resource_registry WHERE resource = ${resource} LIMIT 1
+  // D-010: registered names only. Also fetch the D-008 semaphore capacity.
+  const reg = await tx<Array<{ max_holders: number | null }>>`
+    SELECT max_holders FROM agent_resource_registry WHERE resource = ${resource} LIMIT 1
   `;
   if (reg.length === 0) {
     return { ok: false, reason: 'unknown_resource', holders: [] };
   }
+  const maxHolders = reg[0].max_holders;
 
   // Clean expired holders first so conflict + drain checks see live state.
   const swept = await sweepResourceExpired(tx, cd);
@@ -233,6 +237,16 @@ export async function tryAcquireResource(
       // back-up broadcast on release reaches us (not the whole fleet).
       await recordResourceWaiter(tx, { coordinationDomain: cd, resource, owner, ownerLabel });
       return { ok: false, reason: 'exclusive_pending', holders };
+    }
+    // D-008 counting semaphore: gate a NEW shared acquire on capacity. A caller
+    // already holding a shared lease (refresh) doesn't consume a fresh slot.
+    if (maxHolders != null) {
+      const callerHolds = holders.some((h) => h.owner === owner && h.mode === 'shared');
+      const otherSharedCount = holders.filter((h) => h.mode === 'shared' && h.owner !== owner).length;
+      if (!callerHolds && otherSharedCount >= maxHolders) {
+        await recordResourceWaiter(tx, { coordinationDomain: cd, resource, owner, ownerLabel });
+        return { ok: false, reason: 'at_capacity', holders };
+      }
     }
     const rows = await tx<Array<{ lock_id: string; expires_ts: Date }>>`
       INSERT INTO agent_resource_locks
@@ -629,6 +643,7 @@ function mapRegistry(r: {
   rule_text: string;
   enforcement: ResourceEnforcement;
   match_patterns: string[] | null;
+  max_holders: number | null;
 }): ResourceRegistryRow {
   return {
     resource: r.resource,
@@ -636,6 +651,7 @@ function mapRegistry(r: {
     rule_text: r.rule_text,
     enforcement: r.enforcement,
     match_patterns: r.match_patterns ?? [],
+    max_holders: r.max_holders ?? null,
   };
 }
 
@@ -647,9 +663,10 @@ export async function listResources(sql: Sql): Promise<ResourceRegistryRow[]> {
       rule_text: string;
       enforcement: ResourceEnforcement;
       match_patterns: string[] | null;
+      max_holders: number | null;
     }>
   >`
-    SELECT resource, description, rule_text, enforcement, match_patterns
+    SELECT resource, description, rule_text, enforcement, match_patterns, max_holders
       FROM agent_resource_registry
      ORDER BY resource ASC
   `;
@@ -667,9 +684,10 @@ export async function getResource(
       rule_text: string;
       enforcement: ResourceEnforcement;
       match_patterns: string[] | null;
+      max_holders: number | null;
     }>
   >`
-    SELECT resource, description, rule_text, enforcement, match_patterns
+    SELECT resource, description, rule_text, enforcement, match_patterns, max_holders
       FROM agent_resource_registry
      WHERE resource = ${resource}
      LIMIT 1
@@ -683,6 +701,8 @@ export interface UpsertResourceInput {
   rule_text?: string;
   enforcement?: ResourceEnforcement;
   match_patterns?: string[];
+  /** Counting-semaphore capacity (D-008). null/undefined = unbounded shared. */
+  max_holders?: number | null;
 }
 
 export async function upsertResource(
@@ -696,20 +716,22 @@ export async function upsertResource(
       rule_text: string;
       enforcement: ResourceEnforcement;
       match_patterns: string[] | null;
+      max_holders: number | null;
     }>
   >`
     INSERT INTO agent_resource_registry
-      (resource, description, rule_text, enforcement, match_patterns, updated_ts)
+      (resource, description, rule_text, enforcement, match_patterns, max_holders, updated_ts)
     VALUES
       (${row.resource}, ${row.description ?? ''}, ${row.rule_text ?? ''},
-       ${row.enforcement ?? 'advisory'}, ${row.match_patterns ?? []}, clock_timestamp())
+       ${row.enforcement ?? 'advisory'}, ${row.match_patterns ?? []}, ${row.max_holders ?? null}, clock_timestamp())
     ON CONFLICT (resource) DO UPDATE
       SET description    = EXCLUDED.description,
           rule_text      = EXCLUDED.rule_text,
           enforcement    = EXCLUDED.enforcement,
           match_patterns = EXCLUDED.match_patterns,
+          max_holders    = EXCLUDED.max_holders,
           updated_ts     = clock_timestamp()
-    RETURNING resource, description, rule_text, enforcement, match_patterns
+    RETURNING resource, description, rule_text, enforcement, match_patterns, max_holders
   `;
   return mapRegistry(rows[0]);
 }
