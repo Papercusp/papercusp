@@ -301,6 +301,13 @@ function compare(op: CmpOp, a: unknown, b: unknown): boolean {
       return l <= r;
     case '<':
       return l < r;
+    default: {
+      // Exhaustiveness guard: if CmpOp ever grows a member without a switch arm,
+      // fail closed (false) rather than return undefined into the truthiness path.
+      const _exhaustive: never = op;
+      void _exhaustive;
+      return false;
+    }
   }
 }
 

@@ -55,6 +55,20 @@ test('BlueprintSchema — role spine action fills extras/rejectWhenParallel defa
   }
 });
 
+test('BlueprintRoleSchema — role `isolation` is an optional worktree/none enum (BRIEF-demo-blueprints ②)', () => {
+  // a role can declare worktree isolation (migration's transformer); it survives.
+  const isolated = BlueprintSchema.parse({
+    ...minimal,
+    roles: [{ id: 'transformer', isolation: 'worktree' }],
+  });
+  assert.equal(isolated.roles[0]!.isolation, 'worktree');
+  // omitted → undefined (default shared-tree behavior, no field invented).
+  const bare = BlueprintSchema.parse({ ...minimal, roles: [{ id: 'discoverer' }] });
+  assert.equal(bare.roles[0]!.isolation, undefined);
+  // an invalid isolation value is rejected by the enum.
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, roles: [{ id: 'x', isolation: 'sandbox' }] }));
+});
+
 test('SpineActionSchema — discriminated union rejects an unknown action kind', () => {
   assert.throws(() => SpineActionSchema.parse({ to: 'teleport' }));
   // valid arms parse.

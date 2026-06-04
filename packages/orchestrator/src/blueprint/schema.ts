@@ -44,6 +44,16 @@ export const WorkItemSchema = z.object({
  * distribution plan's import-time dep-manifest (su-4b6ce E2, distribution
  * P-003/P-004) resolves against the catalog + Cupboard. `reactive: true` marks a
  * role that belongs to the condition-triggered overlay, not the spine.
+ *
+ * `isolation` declares the filesystem-isolation a dispatch of this role wants —
+ * `worktree` runs it in its own git worktree so parallel dispatches of the same
+ * role (e.g. `migration`'s per-site transformer) don't collide, mirroring the
+ * Agent/Workflow layer's `isolation: 'worktree'`. It is the role-level
+ * *declaration*; honoring it at dispatch time is the orchestrator's job, and
+ * parallel dispatch of an isolated role is gated on the same fan-out capability
+ * the decider spine doesn't yet have (today the engine dispatches sequentially —
+ * the declaration is correct + validated, the parallel honoring is a follow-up).
+ * `none` (the default on omit) keeps a role in the shared tree (existing behavior).
  */
 export const BlueprintRoleSchema = z.object({
   id: z.string().min(1),
@@ -52,6 +62,7 @@ export const BlueprintRoleSchema = z.object({
   tools: z.array(z.string()).optional(),
   capabilities: z.array(z.string()).optional(),
   reactive: z.boolean().default(false),
+  isolation: z.enum(['none', 'worktree']).optional(),
   description: z.string().optional(),
 });
 
