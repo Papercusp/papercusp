@@ -2,7 +2,7 @@
 
 This document captures the orchestrator's storage architecture after the
 8-phase migration from filesystem-canonical state to Postgres-canonical
-state. Anything you see in `<harness>/.harness/` that isn't in this
+state. Anything you see in `<harness>/.papercusp/` that isn't in this
 document's "stays on disk" list is either dormant FS-fallback (waiting
 for `ctx.pg` to be wired by the caller) or a stale leftover that
 `scripts/audit-harness-fs.mjs` will flag.

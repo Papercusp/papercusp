@@ -8,7 +8,7 @@
 #   /path/to/proj--testing       worktree on branch `testing`
 #   /path/to/proj--production    worktree on branch `production`
 #
-# Idempotent: re-running is a no-op. Initialises each worktree's `.harness/`
+# Idempotent: re-running is a no-op. Initialises each worktree's `.papercusp/`
 # directory from the staging worktree (features.json etc. NOT copied — each
 # phase has its own fresh queue).
 
@@ -53,11 +53,11 @@ for phase in ${PHASES//,/ }; do
     log "adding worktree $worktree_path on branch $branch"
     git -C "$PROJECT_PATH" worktree add "$worktree_path" "$branch"
 
-    # Create .harness/ in the new worktree with a phase-tagged config.json.
+    # Create .papercusp/ in the new worktree with a phase-tagged config.json.
     # Do NOT copy features.json / issues.* — each phase has its own fresh queue.
-    mkdir -p "$worktree_path/.harness/memory"
-    if [ ! -f "$worktree_path/.harness/config.json" ]; then
-        cat > "$worktree_path/.harness/config.json" <<EOF
+    mkdir -p "$worktree_path/.papercusp/memory"
+    if [ ! -f "$worktree_path/.papercusp/config.json" ]; then
+        cat > "$worktree_path/.papercusp/config.json" <<EOF
 {
   "phase": "$phase",
   "models": {
@@ -69,14 +69,14 @@ for phase in ${PHASES//,/ }; do
   }
 }
 EOF
-        log "seeded $worktree_path/.harness/config.json with phase=$phase"
+        log "seeded $worktree_path/.papercusp/config.json with phase=$phase"
     fi
 
     # Seed the staging worktree's config.json with a phase field if missing.
-    if [ -f "$PROJECT_PATH/.harness/config.json" ]; then
-        if ! grep -q '"phase"' "$PROJECT_PATH/.harness/config.json"; then
+    if [ -f "$PROJECT_PATH/.papercusp/config.json" ]; then
+        if ! grep -q '"phase"' "$PROJECT_PATH/.papercusp/config.json"; then
             log "patching staging config.json to add phase=staging"
-            python3 - "$PROJECT_PATH/.harness/config.json" <<'PY'
+            python3 - "$PROJECT_PATH/.papercusp/config.json" <<'PY'
 import json, sys
 p = sys.argv[1]
 d = json.load(open(p))

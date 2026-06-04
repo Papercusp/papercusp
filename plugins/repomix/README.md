@@ -66,7 +66,7 @@ Per-harness settings live in `<stateDir>/plugins/@papercupai_repomix/config.json
 
 ```json
 {
-  "defaultIgnore": ["node_modules/**", "dist/**", ".harness/**"],
+  "defaultIgnore": ["node_modules/**", "dist/**", ".papercusp/**"],
   "inlineThresholdChars": 50000
 }
 ```

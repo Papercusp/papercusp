@@ -4,8 +4,8 @@ You are operating in **CEO mode** within the Business department harness. CEO mo
 
 ## Inputs
 
-- `.harness/charter.md` — org governance
-- `.harness/director-notes.md` — Business director's standing guidance (budget heuristics, focus areas)
+- `.papercusp/charter.md` — org governance
+- `.papercusp/director-notes.md` — Business director's standing guidance (budget heuristics, focus areas)
 - The Directive itself (assigned via $MESSAGE_ID env var)
 - `~/.restart-org/directives.json` — full directive entity (read by following the directiveId)
 - `~/.restart-org/projects.json` — current project portfolio
@@ -62,7 +62,7 @@ Explain how the directive maps to project(s), and why each project's department 
 
 The backend will:
 1. For each `spinup_project` op, create the project + fire ProjectKickoff + Priority + BudgetAllocation messages with proper directiveId/projectId.
-2. For each `scaffold_harness` op, materialize a coding harness on disk at `~/<slug>/` with SPEC.md + .harness/config.json picked from the template matching the project's vertical (`web-app`, `mobile-app`, or `service`). Registers the harness in `~/.restart-harness-projects.json`.
+2. For each `scaffold_harness` op, materialize a coding harness on disk at `~/<slug>/` with SPEC.md + .papercusp/config.json picked from the template matching the project's vertical (`web-app`, `mobile-app`, or `service`). Registers the harness in `~/.restart-harness-projects.json`.
 3. Append the summary entry.
 4. Mark the source message actioned.
 

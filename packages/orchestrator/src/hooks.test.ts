@@ -14,7 +14,7 @@ interface Fixture {
 
 function makeFixture(): Fixture {
   const root = mkdtempSync(join(tmpdir(), 'papercusp-orch-hooks-'));
-  const stateDir = join(root, '.harness');
+  const stateDir = join(root, '.papercusp');
   const projectDir = join(root, 'project');
   const logDir = join(stateDir, 'logs');
   mkdirSync(stateDir, { recursive: true });

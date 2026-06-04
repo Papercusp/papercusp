@@ -11,7 +11,7 @@
 > `PAPERCUSP_DBOS_ORCHESTRATOR=0` legacy-loop revert; restore with `git mv` back to
 > `prompts/` if you genuinely re-enable the old `main-loop.ts` global loop.
 
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
@@ -29,7 +29,7 @@ You run in a fresh context. You make one specific decision, then exit: given the
 
 1. `harness_features` (PG; `harness-features list <slug>`) — the work queue. **Only features from started plans appear here** — the query is pre-filtered by `harness_plan_status`. If `ACTIVE_PLANS` appears in your Runtime context, those are the started plans by name (informational only; the filter is already applied).
 2. **Issues tracker** (PG `harness_<slug>.harness_issues` via `curl http://localhost:3070/api/harness/$HARNESS_SLUG/issues-list | jq`). This is your authoritative source for discovered-work promotion decisions. Schema returned: `{issues: [{id, title, severity, status, linkedFeatureId, codePointer, suggestedFix, attempts, ...}], nextId}`. If empty, treat as no findings.
-3. `.harness/issues.md` — accumulated validator findings (narrative prose). Read only for context and pre-structured history; do not parse for promotion decisions — use the issues-list endpoint.
+3. `.papercusp/issues.md` — accumulated validator findings (narrative prose). Read only for context and pre-structured history; do not parse for promotion decisions — use the issues-list endpoint.
 4. **Open `needs-human` plan items** — human guidance is expressed as `needs-human` items in the active plan, not as supervisor-notes.md. Fetch with `plans:items { needsHuman: true }` or `curl "http://localhost:3070/api/admin/plans/items?actionable=false&needsHuman=true"`. An open `needs-human` item blocks DONE — you cannot emit DONE while any started plan has an open `needs-human` item.
 
 ## Decide one of these outcomes
@@ -206,7 +206,7 @@ The dispatcher injects `PROJECT_ID=<PROJECT_ID>` and `RECENT_PASSED_FEATURES=<co
 
 ### D''''. "next_expert <EXP-NNN>" / "next_feedback <EXP-NNN.FB-NNN>" / "next_scoper [MODE=phase2]"
 
-These three only apply when `scoper.useExperts` is enabled in `.harness/config.json`. If that flag is false, ignore this section — the scoper is one-shot and there are no expert instances.
+These three only apply when `scoper.useExperts` is enabled in `.papercusp/config.json`. If that flag is false, ignore this section — the scoper is one-shot and there are no expert instances.
 
 The expert flow has three states the orchestrator cycles through. Read it via `curl http://localhost:3070/api/harness/$HARNESS_SLUG/experts | jq` — returns `{experts: [{id, status, agentCount, ...}]}`. Statuses: `drafting | gathering_feedback | awaiting_user | final | max_rounds | error | cancelled | superseded`.
 
@@ -241,7 +241,7 @@ These decisions interleave with the usual NEXT_WORKER/NEXT_VALIDATOR cycle. If f
 ### E. "escalate <reason>"
 A feature is stuck (>=5 attempts failing) OR multiple features are simultaneously blocked. Don't loop forever.
 
-Instead of writing to `.harness/escalation.md`, flip the relevant plan item to `needs-human` status via the plans API so it surfaces in the human's decision inbox:
+Instead of writing to `.papercusp/escalation.md`, flip the relevant plan item to `needs-human` status via the plans API so it surfaces in the human's decision inbox:
 
 ```bash
 curl -X PATCH "http://localhost:3070/api/admin/plans/set-status" \

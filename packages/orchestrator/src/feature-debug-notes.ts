@@ -32,7 +32,7 @@ export interface DebugNoteContext {
   workspaceId?: string;
   harnessSlug: string;
   featureId: string;
-  /** State directory (typically `<projectDir>/.harness`). */
+  /** State directory (typically `<projectDir>/.papercusp`). */
   stateDir: string;
 }
 
@@ -81,7 +81,7 @@ export async function captureDebuggerOutput(
  * Wraps a PG read; no file is written if the row is empty/absent.
  *
  * Called before worker/validator invocations so the role prompt's "read
- * .harness/debug/<fid>.md if present" instruction sees fresh content
+ * .papercusp/debug/<fid>.md if present" instruction sees fresh content
  * sourced from PG. Best-effort.
  */
 export async function materializeFeatureDebugNote(

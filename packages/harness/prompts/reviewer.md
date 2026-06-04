@@ -1,4 +1,4 @@
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
@@ -31,7 +31,7 @@ the human reviewing your reasoning.
 - The plan's items + `## Now` — the current concrete scope.
 - Current feature list + statuses — `harness-features list <slug>` (CLI) or `curl http://localhost:3070/api/harness/$HARNESS_SLUG/status | jq .features` (HTTP).
 - `$PROPOSAL_FILE` — the single proposal markdown file you must judge.
-- (For context, you may scan other `.harness/proposals/*.md` to avoid greenlighting near-duplicates.)
+- (For context, you may scan other `.papercusp/proposals/*.md` to avoid greenlighting near-duplicates.)
 
 ### What you decide
 
@@ -46,7 +46,7 @@ For **the entire proposal file** (which may contain multiple ranked proposals):
 - **REJECT** if the file as a whole fails the bar. Give a one-line reason — the human will read it.
 - **DEFER** if the proposal is reasonable but premature (e.g. depends on un-shipped features). Give a one-line reason and a trigger condition for re-review.
 
-### Output (write to `.harness/proposals/<basename>.review.md`)
+### Output (write to `.papercusp/proposals/<basename>.review.md`)
 
 ```
 ### Per-proposal calls

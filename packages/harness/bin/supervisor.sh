@@ -10,7 +10,7 @@
 set -u
 HARNESS_DIR="${HARNESS_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
 PROJECT_DIR="${PROJECT_DIR:-$PWD}"
-STATE_DIR="$PROJECT_DIR/.harness"
+STATE_DIR="$PROJECT_DIR/.papercusp"
 CLAUDE="${AGENT_CMD:-${CLAUDE:-claude -p}}"
 NOTIFY="${NOTIFY:-}" # override with a command like "pushnotify" or "slack-send"
 
@@ -26,11 +26,11 @@ running in this project. You run in a fresh context.
 
 Read:
 - `SPEC.md`
-- `.harness/validation-contract.md`
-- `.harness/features.json`
-- `.harness/issues.md` (if present, focus on last 2 rounds)
-- `.harness/escalation.md` (if present)
-- Recent entries in `.harness/logs/run.log`
+- `.papercusp/validation-contract.md`
+- `.papercusp/features.json`
+- `.papercusp/issues.md` (if present, focus on last 2 rounds)
+- `.papercusp/escalation.md` (if present)
+- Recent entries in `.papercusp/logs/run.log`
 
 Decide ONE outcome:
 
@@ -38,7 +38,7 @@ Decide ONE outcome:
 Print: `SUPERVISOR: progressing`
 
 ### B. "unblock" — A feature has been stuck (attempts >= 5) on a specific root cause.
-Write a clarification or revised spec to `.harness/supervisor-notes.md`,
+Write a clarification or revised spec to `.papercusp/supervisor-notes.md`,
 reset that feature's `attempts` counter in `features.json`, and mark its
 status back to `todo`.
 Print: `SUPERVISOR: unblocked <FEATURE_ID>`
@@ -46,11 +46,11 @@ Print: `SUPERVISOR: unblocked <FEATURE_ID>`
 ### C. "expand" — original spec is mostly done and new work should be considered.
 If >80% of features are `passed`, look at `SPEC.md` again. Are there
 opportunities for additional milestones? If so, write them to
-`.harness/supervisor-notes.md` for the next planner run.
+`.papercusp/supervisor-notes.md` for the next planner run.
 Print: `SUPERVISOR: expanded <N>`
 
 ### D. "human" — can't make progress without human input.
-Write a specific question to `.harness/escalation.md`. Keep it short.
+Write a specific question to `.papercusp/escalation.md`. Keep it short.
 Print: `SUPERVISOR: human-needed`
 
 ## Rules

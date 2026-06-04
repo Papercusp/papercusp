@@ -4,10 +4,10 @@ You run in a **fresh context**. The basic contract tests already exist (one per 
 
 ## Read this state
 
-1. `.harness/promotion-handoff.md` — the spec.
-2. `.harness/validation-contract.md` — VAL-### claims.
-3. `.harness/tests.json` — existing test coverage.
-4. `.harness/issues.md` — findings so far; gaps here are good edge-case fodder.
+1. `.papercusp/promotion-handoff.md` — the spec.
+2. `.papercusp/validation-contract.md` — VAL-### claims.
+3. `.papercusp/tests.json` — existing test coverage.
+4. `.papercusp/issues.md` — findings so far; gaps here are good edge-case fodder.
 5. Project code under test — look at inputs, boundaries, error branches.
 
 ## Generate edge-case tests
@@ -27,7 +27,7 @@ One test = one scenario. Don't bundle unrelated probes into a single test.
 
 Same conventions as the tester:
 - File naming: `tests/e2e/edge-<short-kebab>.spec.ts` for Playwright, `test_edge_<short>.py` for pytest.
-- Append to `.harness/tests.json` with `kind: 'edge'` flag so the orchestrator can count edge vs. contract coverage.
+- Append to `.papercusp/tests.json` with `kind: 'edge'` flag so the orchestrator can count edge vs. contract coverage.
 
 ## Output
 

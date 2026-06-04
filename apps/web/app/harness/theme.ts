@@ -100,7 +100,7 @@ export const RADIUS = {
 //
 // The legacy STATUS / STATUS_ORDER / BOARD_COLUMN_ORDER consts above hard-code
 // the coding-harness state machine. Parent harnesses (e.g. restart-org) and
-// future harness types declare their own itemStates in .harness/config.json.
+// future harness types declare their own itemStates in .papercusp/config.json.
 //
 // These helpers read from a HarnessConfig if provided, falling back to the
 // coding-harness defaults so legacy callers behave identically.

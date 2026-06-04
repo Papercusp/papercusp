@@ -49,12 +49,12 @@ export interface OrchTestContext {
   /** Tear down the temp directory. Call from `finally`. */
   cleanup: () => void;
   // ─── helpers tests use ─────────────────────────────────────────
-  /** Pre-create a feature worktree at .harness/worktrees/<fid> with files + a commit. */
+  /** Pre-create a feature worktree at .papercusp/worktrees/<fid> with files + a commit. */
   addFeatureWorktree(fid: string, files: Record<string, string>): {
     worktree: string;
     branch: string;
   };
-  /** Pre-create a lane worktree at .harness/worktrees/<fid>-lane-<N> with files + a commit. */
+  /** Pre-create a lane worktree at .papercusp/worktrees/<fid>-lane-<N> with files + a commit. */
   addLane(fid: string, laneNum: number, files: Record<string, string>): {
     worktree: string;
     branch: string;
@@ -100,7 +100,7 @@ export function buildOrchTestContext(
 ): OrchTestContext {
   const root = mkdtempSync(join(tmpdir(), 'orch-test-'));
   const projectDir = root;
-  const stateDir = join(projectDir, '.harness');
+  const stateDir = join(projectDir, '.papercusp');
   const logDir = join(stateDir, 'logs');
   mkdirSync(stateDir, { recursive: true });
   mkdirSync(logDir, { recursive: true });

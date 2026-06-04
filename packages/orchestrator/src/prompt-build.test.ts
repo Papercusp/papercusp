@@ -72,7 +72,7 @@ test('buildPrompt — promptOverride section appears with role name in heading',
     });
     assert.match(
       out,
-      /## Droid specialization \(from \.harness\/config\.json → promptOverrides\.worker\)/,
+      /## Droid specialization \(from \.papercusp\/config\.json → promptOverrides\.worker\)/,
     );
     assert.match(out, /Be especially terse\./);
   } finally {

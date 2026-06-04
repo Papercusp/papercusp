@@ -8,7 +8,7 @@
  *   - In-memory (tests, CLI standalone without PG): process-local Map
  *     keyed by stateDir. See `state-memory.ts`.
  *
- * Filesystem (`.harness/features.json`) is NO LONGER supported. PG is
+ * Filesystem (`.papercusp/features.json`) is NO LONGER supported. PG is
  * the single source of truth in production. Tests use the in-memory
  * backend via `seedMemoryStore`/`_resetMemoryStateForTests` (the
  * test-context-builder wires this automatically).

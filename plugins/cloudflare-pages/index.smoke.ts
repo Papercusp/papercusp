@@ -93,7 +93,7 @@ function expectedHash(content: Buffer, extWithDot: string): string {
 async function setupHarness() {
   const root = await mkdtemp(join(tmpdir(), 'cfp-smoke-'));
   const projectDir = join(root, 'project');
-  const stateDir = join(root, '.harness');
+  const stateDir = join(root, '.papercusp');
   const pluginDataDir = join(stateDir, 'plugins', '_papercupai_cloudflare-pages');
   const exportDir = join(projectDir, 'out');
   await mkdir(exportDir, { recursive: true });

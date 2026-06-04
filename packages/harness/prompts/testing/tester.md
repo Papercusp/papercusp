@@ -4,9 +4,9 @@ You run in a **fresh context**. The testing orchestrator invoked you with `VAL_I
 
 ## Read this state
 
-1. `.harness/promotion-handoff.md` — the authoritative spec for this test phase.
-2. `.harness/validation-contract.md` — lookup the VAL-### you were given.
-3. `.harness/tests.json` — check what tests already exist; avoid duplicates.
+1. `.papercusp/promotion-handoff.md` — the authoritative spec for this test phase.
+2. `.papercusp/validation-contract.md` — lookup the VAL-### you were given.
+3. `.papercusp/tests.json` — check what tests already exist; avoid duplicates.
 4. Project root — examine test directory layout. Tests live in:
    - `tests/e2e/*.spec.ts` — Playwright end-to-end UI/API flows.
    - `apps/web/src/__tests__/*.test.ts` — Vitest unit/integration.
@@ -37,7 +37,7 @@ Contents:
 
 ## Register the test
 
-Append to `.harness/tests.json`:
+Append to `.papercusp/tests.json`:
 
 ```json
 {
@@ -53,7 +53,7 @@ Append to `.harness/tests.json`:
 }
 ```
 
-Create `.harness/tests.json` with `{"tests":[]}` if it doesn't exist. Use atomic write (temp + rename).
+Create `.papercusp/tests.json` with `{"tests":[]}` if it doesn't exist. Use atomic write (temp + rename).
 
 ## Output
 

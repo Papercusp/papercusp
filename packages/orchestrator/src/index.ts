@@ -71,8 +71,12 @@ export {
   SEARCH_PROVIDER_ENV_KEYS,
 } from './invoke';
 export type { InvokeContext } from './invoke';
-export { parseDecision, DECISION_VERBS } from './decision-parse';
-export type { DecisionVerb, ParsedDecision } from './decision-parse';
+export { parseDecision, parseDecisionFor, DECISION_VERBS } from './decision-parse';
+export type { DecisionVerb, ParsedDecision, ParsedSpineDecision } from './decision-parse';
+// Harness Blueprint engine (harness-blueprint-orchestration-2026-06-03 Phase A).
+// Re-exported here for convenience; the subpath `@papercusp/orchestrator/blueprint`
+// is the canonical import for blueprint-only consumers (the init CLI, the loader).
+export * from './blueprint/index.js';
 export { checkpointGate } from './checkpoints';
 export type { CheckpointAction } from './checkpoints';
 export { runMainLoop } from './main-loop';

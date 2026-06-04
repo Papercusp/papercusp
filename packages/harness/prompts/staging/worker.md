@@ -1,4 +1,4 @@
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
 >
@@ -26,19 +26,19 @@ Read `harness_features` (PG; `harness-features list <slug>`), pick the feature w
 You do **not** decide if the feature is complete. A separate validator does. Your success criterion is:
 1. All tests you wrote pass locally.
 2. You updated `harness_features` (PG; via API `PATCH /api/harness/<slug>/features/<id>` or `POST .../features`) setting this feature's `status` to `validating`.
-3. You wrote `.harness/worker-log.md` with: what you did, what files changed, commands to run the new tests, any assumptions.
+3. You wrote `.papercusp/worker-log.md` with: what you did, what files changed, commands to run the new tests, any assumptions.
 
 ## Required reads (in order)
 
 1. `SPEC.md` — the user's overall requirements.
-2. `.harness/validation-contract.md` — the binding contract. Your job is to satisfy this feature's claimed assertions.
+2. `.papercusp/validation-contract.md` — the binding contract. Your job is to satisfy this feature's claimed assertions.
 3. `harness_features` (PG; `harness-features list <slug>`) — find your feature, read its `claims` list.
 4. `AGENTS.md` or `CLAUDE.md` if present — project-specific conventions.
-5. `.harness/knowledge.md` if it exists — accumulated learnings from prior features.
+5. `.papercusp/knowledge.md` if it exists — accumulated learnings from prior features.
 
 ## Rules
 
-- **Write tests first.** For each assertion you're claiming, write an executable test that fails before your code and passes after. The test lives in the project's test directory, not in `.harness/`.
+- **Write tests first.** For each assertion you're claiming, write an executable test that fails before your code and passes after. The test lives in the project's test directory, not in `.papercusp/`.
 - **Stay in scope.** Do not fix unrelated bugs, refactor tangentially, or touch files outside what this feature needs. Those are separate features.
 - **Commit atomically.** `git add -A && git commit -m "feat(F-XXX): <title>"` at the end. One commit per feature.
 - **Don't mark `passed`.** Only `validating`. The validator makes the `passed` call.

@@ -43,6 +43,12 @@ async function sha256(text) {
  * @param {string} args.sqlDir    Directory of *.sql files.
  * @param {(s: string) => void} [args.log]
  * @param {(file: string) => boolean} [args.skipFile]   Optional filter; defaults to skipping the per-harness template.
+ * @param {boolean} [args.continueOnError]   Default false (fail-loud — embedded-pg
+ *   boot + the fresh-migrate gate rely on a broken migration HALTING). Pass true
+ *   on the shared native-:5432 operator boot (handoff-coordination-dx-followups A1):
+ *   a migration that fails to apply is logged + collected in the returned `failed`
+ *   array and the boot CONTINUES (the bad file stays unrecorded → retried next
+ *   boot), so one peer's broken migration can't wedge the dev-api for the fleet.
  */
 // Files that the migration runner must NOT auto-apply on boot. These
 // are one-shot manual data backfills that depend on `psql -v` variable
@@ -53,8 +59,9 @@ const MANUAL_ONLY = new Set([
   '__seed_restored__.marker',         // sentinel inserted by seed-restore path; not a real migration file
 ]);
 
-export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile }) {
+export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, continueOnError = false }) {
   const skip = skipFile ?? ((f) => f.includes('per-harness-template') || MANUAL_ONLY.has(f));
+  const failed = [];
 
   // Ensure tracker exists.
   await client.unsafe(SCHEMA_MIGRATIONS_DDL);
@@ -102,10 +109,17 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
       // not-yet-existing table at boot. The schema is now a single self-contained
       // 000-baseline.sql (self-contained-migration-baseline-2026-06-02): it creates
       // every table before touching it, so empty→head applies with ZERO skips and
-      // any 42P01 (or any other error) is a genuine break that MUST fail loudly.
+      // any 42P01 (or any other error) is a genuine break that MUST fail loudly —
+      // UNLESS continueOnError (the shared native-box boot), where we log + skip
+      // the bad file (left unrecorded → retried next boot) instead of wedging boot.
+      if (continueOnError) {
+        log(`FAILED ${f}: ${err?.message ?? err}`);
+        failed.push({ file: f, error: String(err?.message ?? err) });
+        continue;
+      }
       throw err;
     }
   }
 
-  return { appliedCount, totalKnown: allFiles.length };
+  return { appliedCount, totalKnown: allFiles.length, failed };
 }

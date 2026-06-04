@@ -22,9 +22,9 @@ follow up on a `Completion` / `Status` reported by a child.
    - "## Your harness" — your slug, parent (if any)
    - "## Neighbor harnesses" — children/siblings with status
    - "## Recent supervisor messages" — pending inbox (Directives, Completions, Status)
-2. `.harness/validation-contract.md` — org mission + KPIs
-3. `.harness/mandate.md` — your role's authority + bounds
-4. `.harness/supervisor-notes.md` — recent operator/CEO summaries (if any)
+2. `.papercusp/validation-contract.md` — org mission + KPIs
+3. `.papercusp/mandate.md` — your role's authority + bounds
+4. `.papercusp/supervisor-notes.md` — recent operator/CEO summaries (if any)
 
 To inspect any other harness, use the curl URLs in "Available read capabilities".
 

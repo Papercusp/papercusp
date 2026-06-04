@@ -83,7 +83,7 @@ export interface InvokeContext {
   harnessDir: string;
   /** PROJECT_DIR — the user's project. */
   projectDir: string;
-  /** STATE_DIR — usually `<projectDir>/.harness`. */
+  /** STATE_DIR — usually `<projectDir>/.papercusp`. */
   stateDir: string;
   /** LOG_DIR — usually `<stateDir>/logs`. */
   logDir: string;
@@ -274,7 +274,7 @@ export function resolveTimeout(cfg: ReturnType<typeof readConfig>, role: string)
   return 0;
 }
 
-/** Per-role model resolution. Per-harness `.harness/config.json` wins
+/** Per-role model resolution. Per-harness `.papercusp/config.json` wins
     over the user-level `AGENT_MODELS` env var (which the operator's
     /settings/agent page writes). Empty string = use the agent CLI's
     default. */
@@ -909,7 +909,7 @@ export function codexSandboxArgs(
  * loopback-through-srt's-proxy transport proven for codex — so its egress
  * allowlist is the operator + localhost + registries (a cloud-model omp adds its
  * host via PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS). Its writable agent dirs
- * (`~/.omp` + PI_CODING_AGENT_DIR = `<project>/.harness/pi-sessions`, which holds
+ * (`~/.omp` + PI_CODING_AGENT_DIR = `<project>/.papercusp/pi-sessions`, which holds
  * omp's agent/auth/models SQLite DBs) are added to allowWrite. Verified under
  * srt: omp starts cleanly + reaches its model (the residual omp↔ollama
  * tool-schema 400 is an omp bug, present with or without srt — NOT a containment
@@ -2108,7 +2108,7 @@ export async function invoke(
       // codex → the per-spawn CODEX_HOME; claude → the per-spawn isolated
       // CLAUDE_CONFIG_DIR (claude writes session/project state under it, and the
       // sandbox makes $HOME read-only); omp → ~/.omp + PI_CODING_AGENT_DIR
-      // (the agent/auth/models SQLite DBs; usually <project>/.harness/pi-sessions,
+      // (the agent/auth/models SQLite DBs; usually <project>/.papercusp/pi-sessions,
       // already under cwd, but pinned here in case it's set to an absolute path).
       const agentHomes =
         agentBackend === 'codex'

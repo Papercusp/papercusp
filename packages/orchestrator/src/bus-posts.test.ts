@@ -28,7 +28,7 @@ function capturingServer(captured: Captured[]): Promise<Server> {
 
 function tempState(): { dir: string; cleanup: () => void } {
   const root = mkdtempSync(join(tmpdir(), 'bus-posts-test-'));
-  const stateDir = join(root, '.harness');
+  const stateDir = join(root, '.papercusp');
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(join(stateDir, 'config.json'), JSON.stringify({ harness_token: 'tok-xyz' }));
   return { dir: stateDir, cleanup: () => { try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ } } };
@@ -45,7 +45,7 @@ test('postArchiveEvent — no-op when archive missing', async () => {
 test('postArchiveEvent — no-op when token missing', async () => {
   const root = mkdtempSync(join(tmpdir(), 'bus-posts-test-'));
   try {
-    const stateDir = join(root, '.harness');
+    const stateDir = join(root, '.papercusp');
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, 'config.json'), '{}');
     const archive = join(root, 'a.tgz');
@@ -91,7 +91,7 @@ test('postCuratorOutputs — POSTs identity + skill snapshots', async () => {
 
   const root = mkdtempSync(join(tmpdir(), 'bus-posts-test-'));
   try {
-    const stateDir = join(root, '.harness');
+    const stateDir = join(root, '.papercusp');
     const harnessDir = join(root, 'harness');
     mkdirSync(join(harnessDir, 'identity'), { recursive: true });
     mkdirSync(join(stateDir, 'skills'), { recursive: true });
@@ -129,7 +129,7 @@ test('postCuratorOutputs — clears skills with empty list when dir missing', as
 
   const root = mkdtempSync(join(tmpdir(), 'bus-posts-test-'));
   try {
-    const stateDir = join(root, '.harness');
+    const stateDir = join(root, '.papercusp');
     const harnessDir = join(root, 'harness');
     mkdirSync(stateDir, { recursive: true });
     mkdirSync(harnessDir, { recursive: true });

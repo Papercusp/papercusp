@@ -129,10 +129,10 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
          -- Features from plans must belong to a started plan.
          (hf.metadata->>'source_plan') IN (
            SELECT plan_slug
-             FROM harness_shared.harness_plan_status
+             FROM harness_shared.harness_plans
             WHERE workspace_id = ${ctx.workspaceId}
               AND harness_slug  = ${ctx.harnessSlug ?? ''}
-              AND status        = 'started'
+              AND op_status     = 'started'
          )
        )
      ORDER BY hf.feature_id
@@ -194,10 +194,10 @@ export async function readStartedPlanSlugsPg(ctx: PgStateContext): Promise<strin
   if (!ctx.harnessSlug) return [];
   const rows = await ctx.pg<{ plan_slug: string }[]>`
     SELECT plan_slug
-      FROM harness_shared.harness_plan_status
+      FROM harness_shared.harness_plans
      WHERE workspace_id = ${ctx.workspaceId}
        AND harness_slug  = ${ctx.harnessSlug}
-       AND status        = 'started'
+       AND op_status     = 'started'
      ORDER BY plan_slug
   `;
   return rows.map((r) => r.plan_slug);

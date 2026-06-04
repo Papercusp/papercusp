@@ -407,7 +407,7 @@ test('e2e: merge-conflict reverts feature to failing, no false on-synthesis-won 
     assert.deepEqual(wts, ['F-MC-synthesis'], 'synth worktree preserved on revert; lanes cleaned');
 
     // Main is on a clean state (no mid-merge state lingering). Untracked
-    // .harness/ is runtime state and expected; only fail on conflict markers
+    // .papercusp/ is runtime state and expected; only fail on conflict markers
     // (UU / AA / DD) or .git/MERGE_HEAD.
     const status = spawnSync('git', ['status', '--porcelain'], { cwd: p.projectDir, encoding: 'utf8' });
     const conflictLines = status.stdout.split('\n').filter((l) => /^(UU|AA|DD|AU|UA|DU|UD) /.test(l));

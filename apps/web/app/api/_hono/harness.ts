@@ -1,13 +1,13 @@
 /**
  * Harness management API.
  *
- * Reads state from `.harness/` directories across registered project roots.
+ * Reads state from `.papercusp/` directories across registered project roots.
  * Inspired by Factory.ai's Mission Control, but driven by the shell-based
  * autonomous harness at `~/autonomous-harness/`.
  *
  * Projects are registered via ~/.restart-harness-projects.json:
  *   { "projects": [{"slug":"sheets", "path":"/home/x/sheets-clone"}] }
- * Falls back to auto-discovering any HOME/{sheets-clone,restart} with .harness/.
+ * Falls back to auto-discovering any HOME/{sheets-clone,restart} with .papercusp/.
  */
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
@@ -42,11 +42,11 @@ function loadRegistry(): RegistryFile {
   if (existsSync(REGISTRY_PATH)) {
     try { return JSON.parse(readFileSync(REGISTRY_PATH, 'utf8')); } catch {}
   }
-  // Auto-discover: any known default location with a .harness/ dir
+  // Auto-discover: any known default location with a .papercusp/ dir
   const autos: ProjectEntry[] = [];
   for (const name of ['sheets-clone', 'Restart']) {
     const p = join(homedir(), name);
-    if (existsSync(join(p, '.harness'))) {
+    if (existsSync(join(p, '.papercusp'))) {
       autos.push({ slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), path: p });
     }
   }
@@ -63,7 +63,7 @@ function resolveProject(slug: string): ProjectEntry | null {
 }
 
 function harnessDir(project: ProjectEntry): string {
-  return join(project.path, '.harness');
+  return join(project.path, '.papercusp');
 }
 
 function safeRead(path: string): string | null {
@@ -899,7 +899,7 @@ harness.post('/:slug/invoke', async (c) => {
     try {
       const { sql } = getOrgPg();
       const events = await listUnconsumedEvents(sql, project.slug, { onlyDue: true, limit: 25 });
-      const stateDir = join(project.path, '.harness');
+      const stateDir = join(project.path, '.papercusp');
       const eventsFile = join(stateDir, 'pending-events.jsonl');
       const { writeFileSync, mkdirSync, rmSync } = await import('node:fs');
       mkdirSync(stateDir, { recursive: true });
@@ -934,7 +934,7 @@ harness.post('/:slug/invoke', async (c) => {
   const wrapper = `
     set -e
     export PROJECT_DIR="${project.path}"
-    export STATE_DIR="${project.path}/.harness"
+    export STATE_DIR="${project.path}/.papercusp"
     export HARNESS_DIR="${harnessDirPath}"
     export LOG_DIR="$STATE_DIR/logs"
     mkdir -p "$STATE_DIR" "$LOG_DIR"
@@ -1137,7 +1137,7 @@ harness.post('/:slug/smoke-test/run', async (c) => {
   return new Promise<Response>((resolve) => {
     let stdout = '';
     const p = spawn('bash', [scriptPath], {
-      env: { ...process.env, PROJECT_DIR: project.path, STATE_DIR: join(project.path, '.harness') },
+      env: { ...process.env, PROJECT_DIR: project.path, STATE_DIR: join(project.path, '.papercusp') },
     });
     p.stdout.on('data', (d) => { stdout += d.toString(); });
     p.stderr.on('data', (d) => { stdout += d.toString(); });
@@ -1692,7 +1692,7 @@ harness.get('/:slug/features/:id/diff', async (c) => {
     const cfg = JSON.parse(readFileSync(join(harnessDir(project), 'config.json'), 'utf8'));
     if (cfg?.branchIsolation?.baseBranch) base = String(cfg.branchIsolation.baseBranch);
   } catch {}
-  // Run `git diff <base>...harness/<id>` in project dir via child_process
+  // Run `git diff <base>...papercusp/<id>` in project dir via child_process
   return new Promise<Response>((resolve) => {
     const { execFile } = require('node:child_process');
     execFile('git', ['diff', '--stat=200', `${base}...${branch}`], { cwd: project.path, maxBuffer: 4 * 1024 * 1024 }, (err: any, stat: string) => {
@@ -1880,7 +1880,7 @@ harness.post('/:slug/product-review', async (c) => {
     const wrapper = `
       set -e
       export PROJECT_DIR="${project.path}"
-      export STATE_DIR="${project.path}/.harness"
+      export STATE_DIR="${project.path}/.papercusp"
       export HARNESS_DIR="${harnessPackageDir()}"
       export LOG_DIR="$STATE_DIR/logs"
       mkdir -p "$STATE_DIR/proposals" "$LOG_DIR"
@@ -2034,7 +2034,7 @@ harness.post('/:slug/archives/:id/restore', async (c) => {
 
   const body = await c.req.json().catch(() => ({})) as { confirm?: boolean };
   if (!body.confirm) {
-    return c.json({ error: 'confirm: true required — this overwrites current .harness/ state' }, 400);
+    return c.json({ error: 'confirm: true required — this overwrites current .papercusp/ state' }, 400);
   }
 
   const dir = harnessDir(project);
@@ -2403,25 +2403,25 @@ harness.post('/:slug/bootstrap-from-template', async (c) => {
     await rename(tmp, dest);
     copied.push(f);
   }
-  // config.json goes into .harness/
+  // config.json goes into .papercusp/
   const configSrc = join(tdir, 'config.json');
   if (existsSync(configSrc)) {
     await mkdir(harnessDir(project), { recursive: true });
     const dest = join(harnessDir(project), 'config.json');
     if (existsSync(dest) && !overwrite) {
-      skipped.push('.harness/config.json');
+      skipped.push('.papercusp/config.json');
     } else {
       const tmp = `${dest}.tmp.${Date.now()}`;
       await copyFile(configSrc, tmp);
       await rename(tmp, dest);
-      copied.push('.harness/config.json');
+      copied.push('.papercusp/config.json');
     }
   }
 
   return c.json({ ok: true, copied, skipped });
 });
 
-// ─── screenshots (.harness/screenshots/*.{png,jpg,jpeg,gif,webp}) ─────
+// ─── screenshots (.papercusp/screenshots/*.{png,jpg,jpeg,gif,webp}) ─────
 
 const SCREENSHOT_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'] as const;
 
@@ -2504,7 +2504,7 @@ harness.delete('/:slug/screenshots/:id', async (c) => {
   }
 });
 
-// ─── snapshots (.harness/snapshots/<id>/) ─────────────────────────────
+// ─── snapshots (.papercusp/snapshots/<id>/) ─────────────────────────────
 
 const SNAPSHOT_FILES = ['features.json', 'validation-contract.md', 'supervisor-notes.md', 'config.json'] as const;
 
@@ -2623,7 +2623,7 @@ harness.post('/:slug/resume', async (c) => {
   return c.json({ ok: true, logPath: result.logPath });
 });
 
-// ─── hooks (.harness/hooks/<name>.sh) ─────────────────────────────────
+// ─── hooks (.papercusp/hooks/<name>.sh) ─────────────────────────────────
 
 const KNOWN_HOOKS = ['pre-worker', 'post-worker', 'pre-validator', 'post-validator', 'on-escalate', 'on-feature-passed', 'on-feature-failing'] as const;
 type HookName = (typeof KNOWN_HOOKS)[number];
@@ -2866,7 +2866,7 @@ harness.post('/:slug/stop', async (c) => {
 });
 
 // ─── Issues tracker (structured) ─────────────────────────────────────
-// `.harness/issues.json` is the structured companion to issues.md.
+// `.papercusp/issues.json` is the structured companion to issues.md.
 // If missing, we synthesize it on read by parsing issues.md (read-only
 // migration — the file isn't persisted until a mutation happens).
 
@@ -3333,7 +3333,7 @@ harness.post('/:slug/architect/chat', async (c) => {
 
   const systemPrompt = `You are the ARCHITECT in an autonomous coding harness, chatting with the human supervisor through the /harness Inbox.
 
-Your job is to help them clarify the spec: ask Socratic questions about any vagueness until the user's intent is precise and testable, then propose a concrete change to SPEC.md or .harness/validation-contract.md.
+Your job is to help them clarify the spec: ask Socratic questions about any vagueness until the user's intent is precise and testable, then propose a concrete change to SPEC.md or .papercusp/validation-contract.md.
 
 Current state:
 
@@ -3715,7 +3715,7 @@ harness.post('/:slug/brainstorm/promote', async (c) => {
 type MemoryTier = 'green' | 'yellow' | 'red';
 
 interface MemoryFileMeta {
-  path: string;           // relative to projectPath (e.g. 'SPEC.md' or '.harness/features.json')
+  path: string;           // relative to projectPath (e.g. 'SPEC.md' or '.papercusp/features.json')
   purpose: string;
   writtenBy: string[];
   readBy: string[];
@@ -3730,28 +3730,28 @@ const MEMORY_MAP: MemoryFileMeta[] = [
   { path: 'AGENTS.md',                            purpose: 'Project conventions',                      writtenBy: ['human'],                     readBy: ['scoper', 'worker', 'validator', 'architect'], tier: 'green',  language: 'markdown', optional: true },
 
   // Harness state
-  { path: '.harness/config.json',                 purpose: 'Models, timeouts, cost cap, memory map',   writtenBy: ['human'],                     readBy: ['run.sh'],                                       tier: 'green',  language: 'json' },
-  { path: '.harness/validation-contract.md',      purpose: 'Binding contract of claims',               writtenBy: ['scoper', 'architect'],       readBy: ['orchestrator', 'worker', 'validator', 'architect'], tier: 'yellow', language: 'markdown' },
-  { path: '.harness/features.json',               purpose: 'Work queue (id, status, attempts, ...)',   writtenBy: ['scoper', 'orchestrator', 'architect'], readBy: ['orchestrator', 'worker', 'validator', 'architect'], tier: 'red',    language: 'json' },
+  { path: '.papercusp/config.json',                 purpose: 'Models, timeouts, cost cap, memory map',   writtenBy: ['human'],                     readBy: ['run.sh'],                                       tier: 'green',  language: 'json' },
+  { path: '.papercusp/validation-contract.md',      purpose: 'Binding contract of claims',               writtenBy: ['scoper', 'architect'],       readBy: ['orchestrator', 'worker', 'validator', 'architect'], tier: 'yellow', language: 'markdown' },
+  { path: '.papercusp/features.json',               purpose: 'Work queue (id, status, attempts, ...)',   writtenBy: ['scoper', 'orchestrator', 'architect'], readBy: ['orchestrator', 'worker', 'validator', 'architect'], tier: 'red',    language: 'json' },
 
   // Validator outputs
-  { path: '.harness/issues.md',                   purpose: 'Validator prose findings (append-only)',   writtenBy: ['validator'],                 readBy: ['orchestrator', 'architect', 'curator'],        tier: 'yellow', language: 'markdown' },
-  { path: '.harness/issues.json',                 purpose: 'Structured issue tracker (curator-owned)', writtenBy: ['curator'],                   readBy: ['curator', 'UI'],                               tier: 'red',    language: 'json' },
-  { path: '.harness/pending-issues.jsonl',        purpose: 'Validator findings awaiting curation',     writtenBy: ['validator'],                 readBy: ['curator'],                                     tier: 'red',    language: 'jsonl' },
+  { path: '.papercusp/issues.md',                   purpose: 'Validator prose findings (append-only)',   writtenBy: ['validator'],                 readBy: ['orchestrator', 'architect', 'curator'],        tier: 'yellow', language: 'markdown' },
+  { path: '.papercusp/issues.json',                 purpose: 'Structured issue tracker (curator-owned)', writtenBy: ['curator'],                   readBy: ['curator', 'UI'],                               tier: 'red',    language: 'json' },
+  { path: '.papercusp/pending-issues.jsonl',        purpose: 'Validator findings awaiting curation',     writtenBy: ['validator'],                 readBy: ['curator'],                                     tier: 'red',    language: 'jsonl' },
 
   // Durable memory
-  { path: '.harness/memory/MEMORY.md',            purpose: 'Curated durable memory (seed)',            writtenBy: ['curator', 'human'],          readBy: ['scoper', 'worker', 'orchestrator', 'reviewer'], tier: 'green',  language: 'markdown' },
-  { path: '.harness/memory/raw.md',               purpose: 'Append-only observations from agents',     writtenBy: ['all'],                       readBy: ['curator'],                                     tier: 'yellow', language: 'markdown' },
-  { path: '.harness/memory/summary.md',           purpose: 'One-line run summaries',                   writtenBy: ['curator'],                   readBy: ['UI'],                                          tier: 'green',  language: 'markdown' },
+  { path: '.papercusp/memory/MEMORY.md',            purpose: 'Curated durable memory (seed)',            writtenBy: ['curator', 'human'],          readBy: ['scoper', 'worker', 'orchestrator', 'reviewer'], tier: 'green',  language: 'markdown' },
+  { path: '.papercusp/memory/raw.md',               purpose: 'Append-only observations from agents',     writtenBy: ['all'],                       readBy: ['curator'],                                     tier: 'yellow', language: 'markdown' },
+  { path: '.papercusp/memory/summary.md',           purpose: 'One-line run summaries',                   writtenBy: ['curator'],                   readBy: ['UI'],                                          tier: 'green',  language: 'markdown' },
 
   // Human loop
-  { path: '.harness/supervisor-notes.md',         purpose: 'Human/architect guidance to orchestrator', writtenBy: ['human', 'architect'],        readBy: ['orchestrator', 'architect'],                   tier: 'green',  language: 'markdown', optional: true },
-  { path: '.harness/escalation.md',               purpose: 'Escalation state — resolve via UI flow',   writtenBy: ['orchestrator'],              readBy: ['human', 'curator'],                            tier: 'red',    language: 'markdown', optional: true },
+  { path: '.papercusp/supervisor-notes.md',         purpose: 'Human/architect guidance to orchestrator', writtenBy: ['human', 'architect'],        readBy: ['orchestrator', 'architect'],                   tier: 'green',  language: 'markdown', optional: true },
+  { path: '.papercusp/escalation.md',               purpose: 'Escalation state — resolve via UI flow',   writtenBy: ['orchestrator'],              readBy: ['human', 'curator'],                            tier: 'red',    language: 'markdown', optional: true },
 
   // Scratch / user-authored
-  { path: '.harness/worker-log.md',               purpose: 'Worker scratchpad',                        writtenBy: ['worker'],                    readBy: ['worker'],                                      tier: 'yellow', language: 'markdown', optional: true },
-  { path: '.harness/knowledge.md',                purpose: 'Long-term domain notes for workers',       writtenBy: ['human'],                     readBy: ['worker'],                                      tier: 'green',  language: 'markdown', optional: true },
-  { path: '.harness/brainstorm.md',               purpose: 'Freeform user brainstorm',                 writtenBy: ['human'],                     readBy: [],                                              tier: 'green',  language: 'markdown', optional: true },
+  { path: '.papercusp/worker-log.md',               purpose: 'Worker scratchpad',                        writtenBy: ['worker'],                    readBy: ['worker'],                                      tier: 'yellow', language: 'markdown', optional: true },
+  { path: '.papercusp/knowledge.md',                purpose: 'Long-term domain notes for workers',       writtenBy: ['human'],                     readBy: ['worker'],                                      tier: 'green',  language: 'markdown', optional: true },
+  { path: '.papercusp/brainstorm.md',               purpose: 'Freeform user brainstorm',                 writtenBy: ['human'],                     readBy: [],                                              tier: 'green',  language: 'markdown', optional: true },
 ];
 
 function resolveMemoryPath(project: ProjectEntry, rel: string): { abs: string } | null {
@@ -3773,7 +3773,7 @@ function detectTier(rel: string): { tier: MemoryTier; meta: MemoryFileMeta | nul
   const exact = MEMORY_MAP.find((m) => m.path === norm);
   if (exact) return { tier: exact.tier, meta: exact };
   // Unknown files default to yellow (soft-warn) if under .harness, otherwise green
-  if (norm.startsWith('.harness/')) return { tier: 'yellow', meta: null };
+  if (norm.startsWith('.papercusp/')) return { tier: 'yellow', meta: null };
   return { tier: 'green', meta: null };
 }
 
@@ -4005,7 +4005,7 @@ harness.delete('/:slug/skills/:name', async (c) => {
   return c.json({ ok: true });
 });
 
-// ─── Supervisor notes (.harness/supervisor-notes.md) ─────────────────
+// ─── Supervisor notes (.papercusp/supervisor-notes.md) ─────────────────
 
 function supervisorPath(project: ProjectEntry): string {
   return join(harnessDir(project), 'supervisor-notes.md');
@@ -4038,7 +4038,7 @@ harness.post('/:slug/supervisor-notes/append', async (c) => {
   return c.json({ ok: true });
 });
 
-// ─── Per-project prompt overrides (.harness/prompts/<role>.md) ──────
+// ─── Per-project prompt overrides (.papercusp/prompts/<role>.md) ──────
 // Known roles (matches ~/autonomous-harness/prompts/ + the architect added
 // by Paperclip agents). The UI surfaces this set.
 
@@ -4105,7 +4105,7 @@ harness.put('/:slug/prompts/:role', async (c) => {
   const overridePath = join(dir, `${role}.md`);
   await writeFile(overridePath, body.content, 'utf8');
 
-  // Register the override in .harness/config.json so run.sh's invoke() picks
+  // Register the override in .papercusp/config.json so run.sh's invoke() picks
   // it up via promptOverrides[role] = "prompts/<role>.md"
   const configPath = join(harnessDir(project), 'config.json');
   let cfg: any = {};
@@ -4225,7 +4225,7 @@ function phasePath(project: ProjectEntry, phase: Phase): string {
   if (phase === 'staging') return project.path;
   // Honor config override if present
   try {
-    const raw = safeRead(join(project.path, '.harness', 'config.json'));
+    const raw = safeRead(join(project.path, '.papercusp', 'config.json'));
     if (raw) {
       const cfg = JSON.parse(raw);
       const override = cfg?.phases?.[phase]?.path;
@@ -4262,7 +4262,7 @@ async function computePhaseInfo(project: ProjectEntry, phase: Phase): Promise<Ph
   let port: number | null = null;
   let publicUrl: string | null = null;
   try {
-    const raw = safeRead(join(project.path, '.harness', 'config.json'));
+    const raw = safeRead(join(project.path, '.papercusp', 'config.json'));
     if (raw) {
       const cfg = JSON.parse(raw);
       const p = cfg?.phases?.[phase]?.port;
@@ -4285,7 +4285,7 @@ async function computePhaseInfo(project: ProjectEntry, phase: Phase): Promise<Ph
   // cost: sum total_cost_usd of each run's last 'result' line
   let cost = 0;
   try {
-    const logDir = join(path, '.harness', 'logs');
+    const logDir = join(path, '.papercusp', 'logs');
     if (existsSync(logDir)) {
       for (const f of readdirSync(logDir)) {
         if (!f.endsWith('.jsonl')) continue;
@@ -4309,7 +4309,7 @@ async function computePhaseInfo(project: ProjectEntry, phase: Phase): Promise<Ph
   // iteration from run.log
   let iteration = 0;
   try {
-    const runLog = tailFile(join(path, '.harness', 'logs', 'run.log'), 16 * 1024);
+    const runLog = tailFile(join(path, '.papercusp', 'logs', 'run.log'), 16 * 1024);
     const m = [...runLog.matchAll(/── iteration (\d+) ──/g)];
     if (m.length) iteration = Number(m[m.length - 1][1]);
   } catch {}
@@ -4332,7 +4332,7 @@ async function computePhaseInfo(project: ProjectEntry, phase: Phase): Promise<Ph
   // promotion in-flight = any unresolved Promotion item in pending-reviews
   let promotionInFlight: string | null = null;
   try {
-    const pr = join(path, '.harness', 'pending-reviews');
+    const pr = join(path, '.papercusp', 'pending-reviews');
     if (existsSync(pr)) {
       for (const f of readdirSync(pr)) {
         if (!f.endsWith('.json')) continue;
@@ -4386,7 +4386,7 @@ harness.post('/:slug/promote', async (c) => {
 
   const ts = Math.floor(Date.now() / 1000);
   const id = `promotion-${ts}-${from}-to-${to}`;
-  const reviewsDir = join(fromPath, '.harness', 'pending-reviews');
+  const reviewsDir = join(fromPath, '.papercusp', 'pending-reviews');
   await mkdir(reviewsDir, { recursive: true });
 
   // Read existing criteria default from config.json if present
@@ -4395,7 +4395,7 @@ harness.post('/:slug/promote', async (c) => {
     noOpenReviews: true,
   };
   try {
-    const cfgRaw = safeRead(join(project.path, '.harness', 'config.json'));
+    const cfgRaw = safeRead(join(project.path, '.papercusp', 'config.json'));
     if (cfgRaw) {
       const cfg = JSON.parse(cfgRaw);
       const key = `${from}_to_${to}`;
@@ -4420,7 +4420,7 @@ harness.post('/:slug/promote', async (c) => {
   await writeFile(join(reviewsDir, `${id}.json`), JSON.stringify(item, null, 2), 'utf8');
 
   // Signal the orchestrator via supervisor-notes.md
-  const notesPath = join(fromPath, '.harness', 'supervisor-notes.md');
+  const notesPath = join(fromPath, '.papercusp', 'supervisor-notes.md');
   const block = `\n## promotion ${new Date().toISOString()}\n\nFeature freeze initiated. Only process failing features. Emit promotion-handoff.md when all features passed.\nPromotion item: ${id}\n`;
   await appendFile(notesPath, block, 'utf8');
 
@@ -4436,7 +4436,7 @@ harness.post('/:slug/promote/:id/confirm', async (c) => {
   let found: { path: string; obj: any } | null = null;
   for (const phase of PHASE_ORDER) {
     const p = phasePath(project, phase);
-    const f = join(p, '.harness', 'pending-reviews', `${id}.json`);
+    const f = join(p, '.papercusp', 'pending-reviews', `${id}.json`);
     const raw = safeRead(f);
     if (raw) { found = { path: f, obj: JSON.parse(raw) }; break; }
   }
@@ -4467,7 +4467,7 @@ harness.post('/:slug/promote/:id/confirm', async (c) => {
   }
 
   // Record in promotion-log.json (in the dest worktree)
-  const logPath = join(toPath, '.harness', 'promotion-log.json');
+  const logPath = join(toPath, '.papercusp', 'promotion-log.json');
   let log: any = { promotions: [] };
   try { const raw = safeRead(logPath); if (raw) log = JSON.parse(raw); } catch {}
   let newSha = '';
@@ -4478,7 +4478,7 @@ harness.post('/:slug/promote/:id/confirm', async (c) => {
 
   // Seed promotion-handoff.md in the dest from the source's validation-contract.md + features.
   try {
-    const contract = safeRead(join(fromPath, '.harness', 'validation-contract.md')) ?? '';
+    const contract = safeRead(join(fromPath, '.papercusp', 'validation-contract.md')) ?? '';
     const feats = await parseFeatures({ ...project, path: fromPath });
     const passed = feats.filter((f: any) => f.status === 'passed');
     const handoff = [
@@ -4494,7 +4494,7 @@ harness.post('/:slug/promote/:id/confirm', async (c) => {
       ``,
       contract,
     ].join('\n');
-    await writeFile(join(toPath, '.harness', 'promotion-handoff.md'), handoff, 'utf8');
+    await writeFile(join(toPath, '.papercusp', 'promotion-handoff.md'), handoff, 'utf8');
   } catch {}
 
   // Mark the promotion item resolved (in-place where we found it)
@@ -4513,7 +4513,7 @@ harness.post('/:slug/rollback', async (c) => {
   const path = phasePath(project, phase);
   if (!existsSync(path)) return c.json({ error: `no worktree for ${phase}` }, 400);
 
-  const logPath = join(path, '.harness', 'promotion-log.json');
+  const logPath = join(path, '.papercusp', 'promotion-log.json');
   const raw = safeRead(logPath);
   if (!raw) return c.json({ error: 'no promotion-log.json' }, 400);
   const log = JSON.parse(raw) as { promotions: Array<{ id: string; sha: string; ts: number }> };
@@ -4550,7 +4550,7 @@ interface TestItem {
 
 function readTests(project: ProjectEntry, phase: Phase): TestItem[] {
   const p = phasePath(project, phase);
-  const f = join(p, '.harness', 'tests.json');
+  const f = join(p, '.papercusp', 'tests.json');
   const raw = safeRead(f);
   if (!raw) return [];
   try {
@@ -4561,7 +4561,7 @@ function readTests(project: ProjectEntry, phase: Phase): TestItem[] {
 
 async function writeTests(project: ProjectEntry, phase: Phase, tests: TestItem[]): Promise<void> {
   const p = phasePath(project, phase);
-  const dir = join(p, '.harness');
+  const dir = join(p, '.papercusp');
   await mkdir(dir, { recursive: true });
   const f = join(dir, 'tests.json');
   const tmp = `${f}.tmp.${Date.now()}`;

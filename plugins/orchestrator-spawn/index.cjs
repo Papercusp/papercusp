@@ -264,7 +264,7 @@ function readPhaseFromConfig(stateDir) {
 
 function buildInvokeContext(toolCtx) {
   const projectDir = toolCtx.projectDir;
-  const stateDir = toolCtx.stateDir || join(projectDir, '.harness');
+  const stateDir = toolCtx.stateDir || join(projectDir, '.papercusp');
   const logDir = join(stateDir, 'logs');
   return {
     harnessDir: harnessPackageDir(),

@@ -14,7 +14,7 @@
  *
  * "Mode" is a small flag the prompt assembler can use to add chat-specific
  * runtime context (e.g., "you are responding to a user message; do not
- * commit; write to .harness/notes/<feature> if you want the autonomous
+ * commit; write to .papercusp/notes/<feature> if you want the autonomous
  * worker to act on something"). It does NOT swap out the role file —
  * chat-worker is the same agent as autonomous-worker, just talking.
  */
@@ -147,7 +147,7 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
   if (!projectDir) {
     throw new Error(`assembleRolePrompt: harness "${opts.slug}" not registered in any known registry (papercusp workspace registry.json or legacy ~/.restart-harness-projects.json)`);
   }
-  const stateDir = join(projectDir, '.harness');
+  const stateDir = join(projectDir, '.papercusp');
   const harnessDir = harnessRoot();
 
   const cfg = readConfig(stateDir);
@@ -191,10 +191,10 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
   const extras: string[] = [`MODE=${mode}`];
   if (opts.featureId) extras.push(`FEATURE_ID=${opts.featureId}`);
   if (mode === 'chat') {
-    extras.push('CHAT=true (you are responding to a user message in real time; do not commit code; write supervisor-notes or .harness/notes/<feature>.md if you want the autonomous worker to act on something)');
+    extras.push('CHAT=true (you are responding to a user message in real time; do not commit code; write supervisor-notes or .papercusp/notes/<feature>.md if you want the autonomous worker to act on something)');
   } else if (mode === 'discuss') {
     extras.push(
-      'DISCUSS_MODE=true (your normal job is to IMPLEMENT this feature, but a human wants to talk it through FIRST — so do not implement or commit anything in this conversation. Help them think it through: read the feature + plan + relevant code, ask clarifying questions, lay out approach options and their tradeoffs, surface risks. When you align on a direction, write it as a supervisor-note / .harness/notes/<feature>.md so the autonomous worker can pick it up. You are advising, not executing.)',
+      'DISCUSS_MODE=true (your normal job is to IMPLEMENT this feature, but a human wants to talk it through FIRST — so do not implement or commit anything in this conversation. Help them think it through: read the feature + plan + relevant code, ask clarifying questions, lay out approach options and their tradeoffs, surface risks. When you align on a direction, write it as a supervisor-note / .papercusp/notes/<feature>.md so the autonomous worker can pick it up. You are advising, not executing.)',
     );
   }
   for (const e of opts.extras ?? []) extras.push(e);

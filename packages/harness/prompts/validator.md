@@ -1,4 +1,4 @@
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
@@ -22,7 +22,7 @@ For the feature specified by `$FEATURE_ID`, verify every assertion listed in its
 ## Protocol
 
 1. Read `harness_features` (PG; `harness-features list <slug>`), find the feature, get its `claims`.
-2. **If the feature was derived from an expert** (its `notes` field references `.harness/experts/<EXP-NNN>/SPEC.md`), read that SPEC.md by path before fetching assertions. The expert spec is the *source* the VAL-* assertions were derived from — it has the concrete details the assertions summarize. If an assertion seems thin or ambiguous, the expert spec is your canonical reference.
+2. **If the feature was derived from an expert** (its `notes` field references `.papercusp/experts/<EXP-NNN>/SPEC.md`), read that SPEC.md by path before fetching assertions. The expert spec is the *source* the VAL-* assertions were derived from — it has the concrete details the assertions summarize. If an assertion seems thin or ambiguous, the expert spec is your canonical reference.
 3. For each claim ID in `claims`, fetch the assertion via the API:
    ```bash
    curl -sS "http://localhost:3070/api/harness/$HARNESS_SLUG/assertion/$CLAIM_ID"
@@ -33,7 +33,7 @@ For the feature specified by `$FEATURE_ID`, verify every assertion listed in its
 4. **Execute the verification** described. Use `curl`, `psql`, `playwright` via MCP, whatever is prescribed.
 5. For each assertion: record result as `[PASS]` or `[FAIL]` with evidence.
 6. **Also probe for things that should be tested but aren't in the contract.** Think like a pentester: what edge case would embarrass me if a real user hit it? Empty strings, unicode, negative qty, concurrent requests, XSS, N+1 queries.
-7. Write results to `.harness/issues.md` (append mode — keep history). This is the human-readable narrative.
+7. Write results to `.papercusp/issues.md` (append mode — keep history). This is the human-readable narrative.
 8. **Also POST each structured OUT-OF-SCOPE finding (or BLOCKED condition) to the operator's pending-issues queue.** One POST per finding to `http://localhost:3070/api/harness/$HARNESS_SLUG/issues/append-pending` — see "Posting structured findings" below. The curator merges these into the `harness_issues` PG table on its next run; the orchestrator's `CONVERT_ISSUES` decision reads from there. Skip this step for findings that are already in-scope (i.e., things covered by an existing `VAL-###` claim on the feature you're validating — those become `[FAIL]` entries in the narrative, not posted issues).
 
 ## Format for issues.md
@@ -58,7 +58,7 @@ For the feature specified by `$FEATURE_ID`, verify every assertion listed in its
 
 ## Posting structured findings
 
-Each finding is one POST to the operator. Do **NOT** write directly to `.harness/pending-issues.jsonl` — the operator owns that file as a transient queue. The endpoint accepts the same shape you'd have written to the file:
+Each finding is one POST to the operator. Do **NOT** write directly to `.papercusp/pending-issues.jsonl` — the operator owns that file as a transient queue. The endpoint accepts the same shape you'd have written to the file:
 
 ```bash
 curl -sS -X POST "http://localhost:3070/api/harness/$HARNESS_SLUG/issues/append-pending" \

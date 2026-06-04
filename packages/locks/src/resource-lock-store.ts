@@ -106,7 +106,67 @@ export async function sweepResourceExpired(
        AND expires_ts <= clock_timestamp()
     RETURNING resource
   `;
+  // Also GC abandoned waiters (an agent that was refused and never retried).
+  await tx`
+    DELETE FROM agent_resource_waiters
+     WHERE coordination_domain = ${coordinationDomain}
+       AND expires_ts <= clock_timestamp()
+  `;
   return rows.length > 0;
+}
+
+// ───────── Waiter ledger (A4 — targeted "resource back up" broadcast) ─────────
+// A refused acquirer (blocked by another owner's exclusive) is recorded here so
+// the back-up broadcast on release can target just the waiters, not ['*'].
+
+/** How long a refused acquirer stays a "waiter" before it's GC'd as abandoned. */
+const WAITER_TTL_SEC = 30 * 60;
+
+/** Record `owner` as waiting on `resource` (refused while an exclusive was held). */
+export async function recordResourceWaiter(
+  tx: Sql,
+  params: { coordinationDomain: string; resource: string; owner: string; ownerLabel: string | null },
+): Promise<void> {
+  const { coordinationDomain: cd, resource, owner, ownerLabel } = params;
+  const ttlText = `${WAITER_TTL_SEC} seconds`;
+  await tx`
+    INSERT INTO agent_resource_waiters (coordination_domain, resource, owner, owner_label, expires_ts)
+    VALUES (${cd}, ${resource}, ${owner}, ${ownerLabel}, clock_timestamp() + ${ttlText}::interval)
+    ON CONFLICT (coordination_domain, resource, owner) DO UPDATE
+      SET owner_label = EXCLUDED.owner_label,
+          queued_ts   = clock_timestamp(),
+          expires_ts  = EXCLUDED.expires_ts
+  `;
+}
+
+/** Drop `owner`'s waiter row for `resource` — they just acquired it. */
+export async function clearResourceWaiter(
+  tx: Sql,
+  coordinationDomain: string,
+  resource: string,
+  owner: string,
+): Promise<void> {
+  await tx`
+    DELETE FROM agent_resource_waiters
+     WHERE coordination_domain = ${coordinationDomain} AND resource = ${resource} AND owner = ${owner}
+  `;
+}
+
+/** Read + delete every live waiter on `resource` — the back-up broadcast audience.
+ *  Atomic (single DELETE … RETURNING) so two concurrent releases don't double-notify. */
+export async function readAndClearResourceWaiters(
+  tx: Sql,
+  coordinationDomain: string,
+  resource: string,
+): Promise<string[]> {
+  const rows = await tx<Array<{ owner: string }>>`
+    DELETE FROM agent_resource_waiters
+     WHERE coordination_domain = ${coordinationDomain}
+       AND resource = ${resource}
+       AND expires_ts > clock_timestamp()
+    RETURNING owner
+  `;
+  return [...new Set(rows.map((r) => r.owner))];
 }
 
 /**
@@ -161,6 +221,9 @@ export async function tryAcquireResource(
     // new shared acquisitions (the "don't start new things" rule).
     const excl = holders.find((h) => h.mode === 'exclusive');
     if (excl && excl.owner !== owner) {
+      // Refused by another owner's exclusive — record as a waiter so the
+      // back-up broadcast on release reaches us (not the whole fleet).
+      await recordResourceWaiter(tx, { coordinationDomain: cd, resource, owner, ownerLabel });
       return { ok: false, reason: 'exclusive_pending', holders };
     }
     const rows = await tx<Array<{ lock_id: string; expires_ts: Date }>>`
@@ -185,6 +248,8 @@ export async function tryAcquireResource(
       // downgrade it. Resolve by releasing the exclusive first.
       return { ok: false, reason: 'held_exclusive', holders };
     }
+    // Granted — we're no longer waiting on this resource.
+    await clearResourceWaiter(tx, cd, resource, owner);
     return {
       ok: true,
       mode: 'shared',
@@ -202,6 +267,7 @@ export async function tryAcquireResource(
   }
   // Another owner's exclusive (held or draining) blocks.
   if (holders.some((h) => h.mode === 'exclusive' && h.owner !== owner)) {
+    await recordResourceWaiter(tx, { coordinationDomain: cd, resource, owner, ownerLabel });
     return { ok: false, reason: 'held_exclusive', holders };
   }
 
@@ -222,6 +288,8 @@ export async function tryAcquireResource(
           expires_ts  = EXCLUDED.expires_ts
     RETURNING lock_id::text AS lock_id, expires_ts, status
   `;
+  // Granted (or accepted as draining) — we're no longer waiting on this resource.
+  await clearResourceWaiter(tx, cd, resource, owner);
   return {
     ok: true,
     mode: 'exclusive',
@@ -248,7 +316,14 @@ export interface ResourceReleaseParams {
 export async function tryReleaseResource(
   tx: Sql,
   params: ResourceReleaseParams,
-): Promise<{ released: number; releasedModes: ResourceMode[]; exclusiveResources: string[] }> {
+): Promise<{
+  released: number;
+  releasedModes: ResourceMode[];
+  exclusiveResources: string[];
+  /** owner ids who were waiting on each freed exclusive resource — the
+   *  targeted back-up broadcast audience (A4). Cleared as part of this read. */
+  waiters: Record<string, string[]>;
+}> {
   const { coordinationDomain: cd, owner, lockId, resource } = params;
   await tx`SET LOCAL statement_timeout = '5s'`;
   await sweepResourceExpired(tx, cd);
@@ -276,7 +351,13 @@ export async function tryReleaseResource(
   const exclusiveResources = [
     ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
   ];
-  return { released: deleted.length, releasedModes: deleted.map((d) => d.mode), exclusiveResources };
+  // Read + clear the waiters on each freed exclusive — they're the targeted
+  // back-up audience (A4), replacing the old ['*'] broadcast.
+  const waiters: Record<string, string[]> = {};
+  for (const res of exclusiveResources) {
+    waiters[res] = await readAndClearResourceWaiters(tx, cd, res);
+  }
+  return { released: deleted.length, releasedModes: deleted.map((d) => d.mode), exclusiveResources, waiters };
 }
 
 /**
@@ -290,18 +371,24 @@ export async function releaseAllResourcesForOwner(
   tx: Sql,
   coordinationDomain: string,
   owner: string,
-): Promise<{ released: number; exclusiveResources: string[] }> {
+): Promise<{ released: number; exclusiveResources: string[]; waiters: Record<string, string[]> }> {
   await tx`SET LOCAL statement_timeout = '5s'`;
   const deleted = await tx<Array<{ mode: ResourceMode; resource: string }>>`
     DELETE FROM agent_resource_locks
      WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}
     RETURNING mode, resource
   `;
+  // The departing owner is no longer waiting on anything either.
+  await tx`DELETE FROM agent_resource_waiters WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}`;
   await tx`SELECT resource_grant_cascade(${coordinationDomain}, clock_timestamp())`;
   const exclusiveResources = [
     ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
   ];
-  return { released: deleted.length, exclusiveResources };
+  const waiters: Record<string, string[]> = {};
+  for (const res of exclusiveResources) {
+    waiters[res] = await readAndClearResourceWaiters(tx, coordinationDomain, res);
+  }
+  return { released: deleted.length, exclusiveResources, waiters };
 }
 
 /**

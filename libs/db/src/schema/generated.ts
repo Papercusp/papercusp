@@ -1,4 +1,4 @@
-import { pgTable, pgSchema, index, bigserial, text, timestamp, integer, jsonb, bigint, boolean, doublePrecision, uuid, uniqueIndex, numeric, vector, foreignKey, pgPolicy, primaryKey } from "drizzle-orm/pg-core"
+import { pgTable, pgSchema, index, bigserial, text, timestamp, integer, jsonb, bigint, boolean, doublePrecision, uuid, uniqueIndex, numeric, vector, foreignKey, pgPolicy, primaryKey, check } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 export const papercupShared = pgSchema("papercup_shared");
@@ -3207,6 +3207,48 @@ export const agentRateBudgetInHarnessShared = harnessShared.table("agent_rate_bu
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.bucketKey], name: "agent_rate_budget_pkey"}),
+]);
+
+export const harnessPlansInHarnessShared = harnessShared.table("harness_plans", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	planSlug: text("plan_slug").notNull(),
+	title: text(),
+	status: text(),
+	created: text(),
+	updated: text(),
+	owner: text(),
+	supersedes: text().array().default([""]).notNull(),
+	supersededBy: text("superseded_by"),
+	content: text().default('').notNull(),
+	contentHash: text("content_hash").default('').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	version: bigint({ mode: "number" }).default(0).notNull(),
+	opStatus: text("op_status"),
+	opStartedAt: timestamp("op_started_at", { withTimezone: true, mode: 'string' }),
+	opUpdatedAt: timestamp("op_updated_at", { withTimezone: true, mode: 'string' }),
+	currentWave: text("current_wave"),
+	opPriority: integer("op_priority"),
+	archived: boolean().default(false).notNull(),
+	isLegacy: boolean("is_legacy").default(false).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	authorPubkey: text("author_pubkey"),
+	origin: text().default('local').notNull(),
+	items: jsonb(),
+	decisions: jsonb(),
+	nowState: text("now_state"),
+	nowNext: text("now_next"),
+	// TODO: failed to parse database type 'tsvector'
+	search: text("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(content, ''::text)), 'B'::"char"))`),
+}, (table) => [
+	index("harness_plans_search_idx").using("gin", table.search.asc().nullsLast().op("tsvector_ops")),
+	index("harness_plans_started_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.opStatus.asc().nullsLast().op("text_ops")).where(sql`(op_status = 'started'::text)`),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.planSlug], name: "harness_plans_pkey"}),
+	pgPolicy("harness_plans_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("harness_plans_status_check", sql`(status IS NULL) OR (status = ANY (ARRAY['draft'::text, 'ready'::text, 'active'::text, 'shipped'::text, 'superseded'::text]))`),
+	check("harness_plans_op_status_check", sql`(op_status IS NULL) OR (op_status = ANY (ARRAY['started'::text, 'paused'::text, 'done'::text]))`),
+	check("harness_plans_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
 export const briefingsInPapercupShared = papercupShared.table("briefings", {

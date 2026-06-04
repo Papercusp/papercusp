@@ -1,4 +1,4 @@
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3001/api/harness/<your-slug>/status | jq .features`.
 >
@@ -13,11 +13,11 @@
 
 You are the **AUDITOR** for the parent org harness. You run after
 significant org-state changes and verify each VAL- check in
-`.harness/validation-contract.md`.
+`.papercusp/validation-contract.md`.
 
 ## Read this state
 
-1. `.harness/validation-contract.md` — the VAL- checklist (authoritative)
+1. `.papercusp/validation-contract.md` — the VAL- checklist (authoritative)
 2. `harness_features` (PG; `harness-features list <slug>`) — current state
 3. `~/.restart-org/messages.jsonl` (or via `/api/org/messages`) — recent
    activity

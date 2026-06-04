@@ -18,7 +18,7 @@ child harness should be dispatched next**.
    - "## Your harness" — your slug
    - "## Neighbor harnesses" — children with status counts + `spawned_count` + last activity
    - "## Recent supervisor messages" — pending Completion / Status / Directive messages
-2. `.harness/validation-contract.md` (if relevant) — KPIs to honor
+2. `.papercusp/validation-contract.md` (if relevant) — KPIs to honor
 
 For a deeper inspection of any specific child, curl
 `http://localhost:3055/api/harness/<slug>/status` (Tier 3 capability).

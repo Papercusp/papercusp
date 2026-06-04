@@ -57,7 +57,7 @@ interface Project {
 function setupProject(): Project {
   const root = mkdtempSync(join(tmpdir(), 'synth-int-'));
   const projectDir = root;
-  const stateDir = join(projectDir, '.harness');
+  const stateDir = join(projectDir, '.papercusp');
   const logDir = join(stateDir, 'logs');
   mkdirSync(stateDir, { recursive: true });
   mkdirSync(logDir, { recursive: true });
@@ -176,7 +176,7 @@ test('runSynthesizer N=1 (single lane) happy path — synthesizer polishes worke
   const p = setupProject();
   try {
     // For N=1, we simulate the worker having committed to harness/F-B
-    // in a feature worktree at .harness/worktrees/F-B.
+    // in a feature worktree at .papercusp/worktrees/F-B.
     const wt = join(p.stateDir, 'worktrees', 'F-B');
     const br = 'harness/F-B';
     mkdirSync(join(p.stateDir, 'worktrees'), { recursive: true });

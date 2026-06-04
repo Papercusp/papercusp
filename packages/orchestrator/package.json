@@ -32,6 +32,11 @@
       "import": "./src/decision-parse.ts",
       "default": "./src/decision-parse.ts"
     },
+    "./blueprint": {
+      "types": "./src/blueprint/index.ts",
+      "import": "./src/blueprint/index.ts",
+      "default": "./src/blueprint/index.ts"
+    },
     "./mission-state-pg": {
       "types": "./src/mission-state-pg.ts",
       "import": "./src/mission-state-pg.ts",
@@ -79,7 +84,9 @@
     "@papercusp/locks": "*",
     "@papercusp/harness": "*",
     "postgres": "^3.4.5",
-    "tsx": "^4.7.0"
+    "tsx": "^4.7.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.2"
   },
   "devDependencies": {
     "@papercusp/test-config": "*",

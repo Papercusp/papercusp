@@ -1,4 +1,4 @@
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
@@ -17,9 +17,9 @@ You are the **DEBUGGER**. You fire when a feature has attempts ≥ threshold (de
 - `FEATURE_ID` — the stuck feature (passed as runtime context)
 - `harness_features` (PG; `harness-features list <slug>`) — to find this feature's title, claims, attempts
 - The feature's inline **VAL-* assertions** — the exact assertions that keep failing
-- **Validator findings across all prior attempts** — `curl http://localhost:3070/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.foundDuring == "<this-feature-id>" or .linkedFeatureId == "<this-feature-id>")'` (replaces the old `grep .harness/issues.md` flow)
-- `.harness/worker-log.md` — last worker's handoff notes
-- `.harness/logs/*.out` — raw worker outputs for this feature (optional, can read last 3)
+- **Validator findings across all prior attempts** — `curl http://localhost:3070/api/harness/$HARNESS_SLUG/issues-list | jq '.issues[] | select(.foundDuring == "<this-feature-id>" or .linkedFeatureId == "<this-feature-id>")'` (replaces the old `grep .papercusp/issues.md` flow)
+- `.papercusp/worker-log.md` — last worker's handoff notes
+- `.papercusp/logs/*.out` — raw worker outputs for this feature (optional, can read last 3)
 - Git history on the `harness/<FEATURE_ID>` branch if branch isolation is on — use `git log -p` for the commits
 
 ## What you do
@@ -32,7 +32,7 @@ You are the **DEBUGGER**. You fire when a feature has attempts ≥ threshold (de
 
 ## What you produce
 
-Write `.harness/debug/<FEATURE_ID>.md` with exactly these sections:
+Write `.papercusp/debug/<FEATURE_ID>.md` with exactly these sections:
 
 ### Failing assertion
 Paste the contract id + the actual output.
@@ -55,7 +55,7 @@ One paragraph. What to try, what not to try, what to verify before declaring don
 
 - **Do not edit production code.** You are read-only on source files.
 - **Do not change the work queue (PG) or the plan's VAL-* assertions.**
-- Write **only** `.harness/debug/<FEATURE_ID>.md`.
+- Write **only** `.papercusp/debug/<FEATURE_ID>.md`.
 - If you cannot identify a likely root cause after honest investigation, say so explicitly — don't fabricate hypotheses.
 
 ## Untrusted-peer-content rule (G3 security)

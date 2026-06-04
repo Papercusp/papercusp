@@ -21,7 +21,7 @@
  *     registry.json                    Installed harnesses (also used by the legacy
  *                                      ~/.restart-harness-projects.json — kept in sync)
  *     harnesses/<slug>/                Templates downloaded from the marketplace
- *     projects/<slug>/                 Active project state (.harness/* lives here)
+ *     projects/<slug>/                 Active project state (.papercusp/* lives here)
  *     marketplace-storage/             Local marketplace tarball storage (dev)
  */
 import { spawn, spawnSync } from 'node:child_process';
@@ -32,11 +32,20 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
+import {
+  makeComposedResolveExtends,
+  makeChildBlueprint,
+  serializeBlueprint,
+  resolveAndValidateBlueprint,
+  validateBlueprintDependencies,
+} from '@papercusp/blueprint-distribution';
 import { papercuspPath, papercuspRoot } from './papercusp-root.ts';
 const PAPERCUSP_ROOT = papercuspRoot();
 const HARNESSES_DIR = join(PAPERCUSP_ROOT, 'harnesses');
 const GLOBAL_PLUGINS_DIR = join(PAPERCUSP_ROOT, 'global-plugins');
 const PROJECTS_DIR = join(PAPERCUSP_ROOT, 'projects');
+/** Installed/global blueprints (`~/.papercusp/blueprints/<id>/blueprint.yaml`) — the middle `extends` tier. */
+const INSTALLED_BLUEPRINTS_DIR = join(PAPERCUSP_ROOT, 'blueprints');
 const REGISTRY_PATH = join(PAPERCUSP_ROOT, 'registry.json');
 const LEGACY_REGISTRY_PATH = join(homedir(), '.restart-harness-projects.json');
 const CREDENTIALS_PATH = join(PAPERCUSP_ROOT, 'credentials.json');
@@ -172,7 +181,7 @@ ${bold('Commands:')}
   ${cyan('plugin <subcommand>')}              Per-harness plugin lifecycle. \`papercusp plugin help\` for details.
                                        Subcommands: list, enable, disable, config, invoke.
 
-  ${cyan('snapshot publish <slug>')}          Bundle a harness's frozen state (.harness/) and publish it
+  ${cyan('snapshot publish <slug>')}          Bundle a harness's frozen state (.papercusp/) and publish it
                                        to the marketplace as kind=snapshot. Others can browse + fork.
                                        \`papercusp snapshot help\` for details.
 
@@ -804,7 +813,7 @@ async function scaffoldSubproject(opts: {
   templateDir: string;
 }): Promise<void> {
   await fs.mkdir(opts.path, { recursive: true });
-  await fs.mkdir(join(opts.path, '.harness'), { recursive: true });
+  await fs.mkdir(join(opts.path, '.papercusp'), { recursive: true });
 
   // Copy template files (excluding tarball + top-level manifest)
   if (existsSync(opts.templateDir)) {
@@ -816,8 +825,8 @@ async function scaffoldSubproject(opts: {
     }
   }
 
-  // Default .harness/config.json if the template didn't bundle one.
-  const configPath = join(opts.path, '.harness', 'config.json');
+  // Default .papercusp/config.json if the template didn't bundle one.
+  const configPath = join(opts.path, '.papercusp', 'config.json');
   if (!existsSync(configPath)) {
     await fs.writeFile(
       configPath,
@@ -932,17 +941,15 @@ async function cmdInit(args: string[]): Promise<void> {
   if (targetArg) {
     projectPath = resolve(targetArg);
     if (!existsSync(projectPath)) die(`init: target path "${projectPath}" does not exist`);
-    if (existsSync(join(projectPath, '.harness'))) {
-      die(`init: target "${projectPath}" already has a .harness/ directory — already initialized?`);
+    if (existsSync(join(projectPath, '.papercusp'))) {
+      die(`init: target "${projectPath}" already has a .papercusp/ directory — already initialized?`);
     }
     isExistingRepo = true;
-    await fs.mkdir(join(projectPath, '.harness'), { recursive: true });
   } else {
     const projectsRoot = process.env.PAPERCUSP_PROJECTS_ROOT ?? PROJECTS_DIR;
     projectPath = join(projectsRoot, slug);
     if (existsSync(projectPath)) die(`init: ${projectPath} already exists`);
     await fs.mkdir(projectPath, { recursive: true });
-    await fs.mkdir(join(projectPath, '.harness'), { recursive: true });
   }
 
   const writeIfAbsent = async (relPath: string, contents: string) => {
@@ -951,13 +958,92 @@ async function cmdInit(args: string[]): Promise<void> {
       console.log(`  ${dim('keeping existing')} ${relPath}`);
       return;
     }
+    await fs.mkdir(dirname(full), { recursive: true });
     await fs.writeFile(full, contents, 'utf8');
   };
 
+  // ── Resolve `--from` as a BLUEPRINT first: local → installed → built-in. ──
+  // A blueprint id (a built-in like `coding`/`research`, an installed
+  // `~/.papercusp/blueprints/<id>`, or a project-local
+  // `<project>/.papercusp/blueprints/<id>`) → blueprint-instantiation, the path
+  // that MIRRORS `harness:create`: it writes the git-canonical thin-child
+  // `.papercusp/blueprint.yaml` (the loader resolves `extends` lazily —
+  // D-006/D-021), NOT a directory copy. Only when `--from` is NOT a blueprint do
+  // we fall back to the legacy installed-template-directory copy (sheets-clone,
+  // multi-topology), pending their migration to blueprints (D-002).
+  const resolveExtendsPath = makeComposedResolveExtends({
+    localDirs: [join(projectPath, '.papercusp', 'blueprints')],
+    installedDir: INSTALLED_BLUEPRINTS_DIR,
+  });
+  const blueprintFile = fromHarness ? resolveExtendsPath(fromHarness) : null;
+
+  if (fromHarness && blueprintFile) {
+    // ═══ Blueprint instantiation (init --from <blueprint>) ═══
+    const child = makeChildBlueprint(slug, fromHarness);
+    const res = resolveAndValidateBlueprint(child, resolveExtendsPath);
+    if (res.parseError) die(`init: blueprint "${fromHarness}" failed to resolve: ${res.parseError}`);
+    if (!res.ok) {
+      const errs = (res.validation?.errors ?? []).map((e) => `${e.code}: ${e.message}`).join('; ');
+      die(`init: blueprint "${fromHarness}" is invalid: ${errs}`);
+    }
+    const blueprint = res.blueprint!;
+    console.log(`instantiating blueprint ${cyan(fromHarness)} → ${dim(projectPath)}`);
+
+    // Import-time dependency validation (E2 — P-003/P-004). Declared plugin
+    // deps must resolve UPFRONT, not surface as a call-time `unknown_tool`. The
+    // CLI can't enumerate the live tool catalog (that's the operator's
+    // harness:create check, E2b-ii), so here we resolve the PLUGIN deps:
+    // already installed → ok; otherwise install them below and FAIL if an
+    // install fails ("needs plugin X").
+    const declaredPlugins = blueprint.dependencies?.plugins ?? [];
+    const pluginSpec = normalizeTemplatePlugins(declaredPlugins);
+    if (declaredPlugins.length > 0) {
+      const installed = await scanInstalledPlugins();
+      const depCheck = validateBlueprintDependencies(
+        { plugins: declaredPlugins },
+        { availableTools: new Set(), installedPlugins: installed },
+      );
+      // `missing` here = declared plugins not yet installed (no Cupboard
+      // enumeration in the CLI); init installs them next and a FAILED install
+      // is the upfront "needs plugin X".
+      if (depCheck.missing.plugins.length > 0) {
+        console.log(`  blueprint declares ${depCheck.missing.plugins.length} plugin(s) to install: ${depCheck.missing.plugins.join(', ')}`);
+      }
+    }
+
+    // Write the git-canonical thin child + an AGENTS.md conventions stub. SPEC.md
+    // is retired (D-002 — the blueprint, not a SPEC file, is the harness shape).
+    await writeIfAbsent(join('.papercusp', 'blueprint.yaml'), serializeBlueprint(child));
+    await writeIfAbsent('AGENTS.md', `# Conventions for ${slug}\n\n(write coding conventions, libraries to prefer, etc.)\n`);
+
+    const reg = await readRegistry();
+    if (!reg.projects.find((p) => p.slug === slug)) {
+      reg.projects.push({ slug, path: projectPath, addedAt: new Date().toISOString() } as any);
+      await writeRegistry(reg);
+    }
+
+    // Install + enable the blueprint's declared plugin deps. FATAL on failure: a
+    // declared dependency that can't be installed fails `init` upfront.
+    if (pluginSpec.length > 0) {
+      console.log('');
+      console.log(`resolving blueprint plugin dependencies (${pluginSpec.length})...`);
+      await installAndEnableHarnessPlugins(pluginSpec, slug, { fatalOnFailure: true });
+    }
+
+    console.log('');
+    console.log(green(`✓ ${slug} initialized from blueprint ${cyan(fromHarness)}`));
+    console.log(`next steps:`);
+    console.log(`  ${cyan(`papercusp scaffold-schema ${slug}`)}    (provision Postgres schema)`);
+    console.log(`  ${cyan(`papercusp run ${slug}`)}                (start the harness)`);
+    return;
+  }
+
+  // ═══ Legacy template-directory copy / blank scaffold ═══
+  await fs.mkdir(join(projectPath, '.papercusp'), { recursive: true });
   if (fromHarness) {
     const templateDir = join(HARNESSES_DIR, fromHarness);
     if (!existsSync(templateDir)) {
-      die(`init: harness "${fromHarness}" not installed (try \`papercusp install ${fromHarness}\` first)`);
+      die(`init: "${fromHarness}" is neither a blueprint (built-in/installed/local) nor an installed template — try \`papercusp install ${fromHarness}\` first, or pass a blueprint id like \`coding\``);
     }
     console.log(`seeding from ${cyan(fromHarness)} → ${dim(projectPath)}`);
     const entries = await fs.readdir(templateDir);
@@ -971,15 +1057,14 @@ async function cmdInit(args: string[]): Promise<void> {
       }
       await copyDir(join(templateDir, e), targetEntryPath);
     }
-    // Also copy the template manifest to .harness/papercusp.json so the
+    // Also copy the template manifest to .papercusp/papercusp.json so the
     // substrate's /api/harness/:slug/manifest endpoint can read this
     // harness instance's `configFiles` declaration without needing to
     // walk the installed-templates directory. Skip if absent (legacy
     // templates without a manifest can't expose configFiles anyway).
     const tmplManifest = join(templateDir, 'papercusp.json');
     if (existsSync(tmplManifest)) {
-      await fs.mkdir(join(projectPath, '.harness'), { recursive: true });
-      await fs.copyFile(tmplManifest, join(projectPath, '.harness', 'papercusp.json'));
+      await fs.copyFile(tmplManifest, join(projectPath, '.papercusp', 'papercusp.json'));
     }
   } else {
     console.log(
@@ -987,15 +1072,14 @@ async function cmdInit(args: string[]): Promise<void> {
         ? `attaching harness skeleton to ${dim(projectPath)}`
         : `creating blank project at ${dim(projectPath)}`,
     );
-    await writeIfAbsent('SPEC.md', `# ${slug}\n\n## Goals\n\n(write what this project should accomplish)\n`);
     await writeIfAbsent('AGENTS.md', `# Conventions for ${slug}\n\n(write coding conventions, libraries to prefer, etc.)\n`);
   }
 
-  // .harness/config.json comes from the template (every template that
+  // .papercusp/config.json comes from the template (every template that
   // declares its `configFiles` ships one). Templates without --from
   // (the blank-project path) get a minimal default written below as a
   // last-resort fallback only when no template was used.
-  const configPath = join(projectPath, '.harness', 'config.json');
+  const configPath = join(projectPath, '.papercusp', 'config.json');
   if (!fromHarness && !existsSync(configPath)) {
     await fs.writeFile(
       configPath,
@@ -1020,11 +1104,10 @@ async function cmdInit(args: string[]): Promise<void> {
   }
 
   // ── Template-declared plugins ─────────────────────────────────────────
-  // If the template manifest declares `plugins`, auto-install missing ones
-  // and auto-enable each in this new harness. Tolerates the legacy
-  // `string[]` form (treated as `{slug, version:"latest"}` with autoEnable)
-  // and the new structured form
-  // `Array<{slug, version?, autoEnable?, config?}>`.
+  // If the template manifest declares `plugins`, auto-install missing ones and
+  // auto-enable each in this new harness (non-fatal — a template plugin that
+  // fails to install is reported, not fatal, preserving legacy behavior). The
+  // blueprint path above installs declared deps the same way (fatalOnFailure).
   if (fromHarness) {
     const templateManifestPath = join(HARNESSES_DIR, fromHarness, 'papercusp.json');
     const templateManifest = (await readJson<{ plugins?: unknown }>(templateManifestPath)) ?? {};
@@ -1032,84 +1115,14 @@ async function cmdInit(args: string[]): Promise<void> {
     if (pluginSpec.length > 0) {
       console.log('');
       console.log(`installing template plugins (${pluginSpec.length})...`);
-      const successes: string[] = [];
-      const failures: Array<{ slug: string; reason: string }> = [];
-      for (const p of pluginSpec) {
-        const dirSlug = pluginDirBasename(p.slug);
-        const flatPluginDir = join(GLOBAL_PLUGINS_DIR, dirSlug);
-        const scopedPluginDir = join(GLOBAL_PLUGINS_DIR, p.slug);
-        const installedFlat = existsSync(join(flatPluginDir, 'papercusp.json'));
-        const installedScoped = existsSync(join(scopedPluginDir, 'papercusp.json'));
-        if (!installedFlat && !installedScoped) {
-          console.log(`  ${cyan('install')} ${p.slug}${p.version ? '@' + p.version : ''}`);
-          const installArgs = ['install', p.version ? `${p.slug}@${p.version}` : p.slug, '--accept-capabilities'];
-          const r = spawnSync(process.argv[0], [process.argv[1] ?? fileURLToPath(import.meta.url), ...installArgs], {
-            stdio: 'inherit',
-            env: { ...process.env, PAPERCUSP_ACCEPT_CAPABILITIES: '1' },
-          });
-          if (r.status !== 0) {
-            failures.push({ slug: p.slug, reason: `install exit code ${r.status}` });
-            continue;
-          }
-        } else {
-          console.log(`  ${dim('already installed')} ${p.slug}`);
-        }
-        // Bridge: scoped installs (`~/.papercusp/global-plugins/@scope/name/`)
-        // — symlink to the flat name so `cmdPluginEnable` (which keys by
-        // basename) finds it. Idempotent. Replace empty stub dirs and
-        // stale (broken-target) symlinks that would otherwise mask it.
-        if (existsSync(scopedPluginDir) && !existsSync(join(flatPluginDir, 'papercusp.json'))) {
-          const lst = await fs.lstat(flatPluginDir).catch(() => null);
-          if (lst) {
-            if (lst.isSymbolicLink()) {
-              await fs.unlink(flatPluginDir);
-            } else {
-              await fs.rm(flatPluginDir, { recursive: true, force: true });
-            }
-          }
-          await fs.symlink(scopedPluginDir, flatPluginDir).catch(() => { /* ignore EEXIST race */ });
-        }
-        if (p.autoEnable === false) {
-          console.log(`  ${dim('not auto-enabling')} ${p.slug} (autoEnable: false)`);
-          continue;
-        }
-        // Seed plugin-configs/<dir>.json with template defaults (with
-        // ${PROJECT_NAME} interpolation).
-        if (p.config && typeof p.config === 'object') {
-          const interpolated = interpolateTemplateConfig(p.config, { PROJECT_NAME: slug });
-          await fs.mkdir(join(HARNESSES_DIR, slug, 'plugin-configs'), { recursive: true });
-          await fs.writeFile(
-            join(HARNESSES_DIR, slug, 'plugin-configs', `${dirSlug}.json`),
-            JSON.stringify(interpolated, null, 2),
-            'utf8',
-          );
-        }
-        // Enable in this harness.
-        const enableArgs = ['plugin', 'enable', dirSlug, '--harness', slug, '--accept-defaults'];
-        const r = spawnSync(process.argv[0], [process.argv[1] ?? fileURLToPath(import.meta.url), ...enableArgs], {
-          stdio: 'inherit',
-          env: process.env,
-        });
-        if (r.status !== 0) {
-          failures.push({ slug: p.slug, reason: `enable exit code ${r.status}` });
-          continue;
-        }
-        successes.push(p.slug);
-      }
-      if (successes.length > 0) {
-        console.log(`  ${green('✓')} ${successes.length} plugin(s) enabled: ${successes.join(', ')}`);
-      }
-      if (failures.length > 0) {
-        console.log(`  ${red('✗')} ${failures.length} plugin(s) failed:`);
-        for (const f of failures) console.log(`    ${f.slug} — ${f.reason}`);
-      }
+      await installAndEnableHarnessPlugins(pluginSpec, slug, { fatalOnFailure: false });
     }
   }
 
   console.log('');
   console.log(green(`✓ ${slug} initialized`));
   console.log(`next steps:`);
-  console.log(`  edit ${cyan(projectPath + '/SPEC.md')}`);
+  console.log(`  edit ${cyan(join(projectPath, 'AGENTS.md'))}`);
   console.log(`  ${cyan(`papercusp scaffold-schema ${slug}`)}    (provision Postgres schema)`);
   console.log(`  ${cyan(`papercusp run ${slug}`)}                (start the harness)`);
 }
@@ -1172,6 +1185,123 @@ function interpolateTemplateConfig(
       out[k] = interpolateTemplateConfig(v as Record<string, unknown>, vars);
     } else {
       out[k] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * Install (if missing) + enable a set of plugins in a harness — shared by the
+ * blueprint-instantiation path (declared plugin deps; `fatalOnFailure: true`)
+ * and the legacy template path (manifest `plugins`; non-fatal). When
+ * `fatalOnFailure`, a failed install/enable is the upfront "needs plugin X"
+ * (`die`); otherwise failures are reported and tolerated.
+ */
+async function installAndEnableHarnessPlugins(
+  pluginSpec: TemplatePluginSpec[],
+  slug: string,
+  opts: { fatalOnFailure: boolean },
+): Promise<void> {
+  const successes: string[] = [];
+  const failures: Array<{ slug: string; reason: string }> = [];
+  for (const p of pluginSpec) {
+    const dirSlug = pluginDirBasename(p.slug);
+    const flatPluginDir = join(GLOBAL_PLUGINS_DIR, dirSlug);
+    const scopedPluginDir = join(GLOBAL_PLUGINS_DIR, p.slug);
+    const installedFlat = existsSync(join(flatPluginDir, 'papercusp.json'));
+    const installedScoped = existsSync(join(scopedPluginDir, 'papercusp.json'));
+    if (!installedFlat && !installedScoped) {
+      console.log(`  ${cyan('install')} ${p.slug}${p.version ? '@' + p.version : ''}`);
+      const installArgs = ['install', p.version ? `${p.slug}@${p.version}` : p.slug, '--accept-capabilities'];
+      const r = spawnSync(process.argv[0], [process.argv[1] ?? fileURLToPath(import.meta.url), ...installArgs], {
+        stdio: 'inherit',
+        env: { ...process.env, PAPERCUSP_ACCEPT_CAPABILITIES: '1' },
+      });
+      if (r.status !== 0) {
+        failures.push({ slug: p.slug, reason: `install exit code ${r.status}` });
+        continue;
+      }
+    } else {
+      console.log(`  ${dim('already installed')} ${p.slug}`);
+    }
+    // Bridge: scoped installs (`~/.papercusp/global-plugins/@scope/name/`)
+    // — symlink to the flat name so `cmdPluginEnable` (which keys by
+    // basename) finds it. Idempotent. Replace empty stub dirs and
+    // stale (broken-target) symlinks that would otherwise mask it.
+    if (existsSync(scopedPluginDir) && !existsSync(join(flatPluginDir, 'papercusp.json'))) {
+      const lst = await fs.lstat(flatPluginDir).catch(() => null);
+      if (lst) {
+        if (lst.isSymbolicLink()) {
+          await fs.unlink(flatPluginDir);
+        } else {
+          await fs.rm(flatPluginDir, { recursive: true, force: true });
+        }
+      }
+      await fs.symlink(scopedPluginDir, flatPluginDir).catch(() => { /* ignore EEXIST race */ });
+    }
+    if (p.autoEnable === false) {
+      console.log(`  ${dim('not auto-enabling')} ${p.slug} (autoEnable: false)`);
+      continue;
+    }
+    // Seed plugin-configs/<dir>.json with template defaults (with
+    // ${PROJECT_NAME} interpolation).
+    if (p.config && typeof p.config === 'object') {
+      const interpolated = interpolateTemplateConfig(p.config, { PROJECT_NAME: slug });
+      await fs.mkdir(join(HARNESSES_DIR, slug, 'plugin-configs'), { recursive: true });
+      await fs.writeFile(
+        join(HARNESSES_DIR, slug, 'plugin-configs', `${dirSlug}.json`),
+        JSON.stringify(interpolated, null, 2),
+        'utf8',
+      );
+    }
+    // Enable in this harness.
+    const enableArgs = ['plugin', 'enable', dirSlug, '--harness', slug, '--accept-defaults'];
+    const r = spawnSync(process.argv[0], [process.argv[1] ?? fileURLToPath(import.meta.url), ...enableArgs], {
+      stdio: 'inherit',
+      env: process.env,
+    });
+    if (r.status !== 0) {
+      failures.push({ slug: p.slug, reason: `enable exit code ${r.status}` });
+      continue;
+    }
+    successes.push(p.slug);
+  }
+  if (successes.length > 0) {
+    console.log(`  ${green('✓')} ${successes.length} plugin(s) enabled: ${successes.join(', ')}`);
+  }
+  if (failures.length > 0) {
+    console.log(`  ${red('✗')} ${failures.length} plugin(s) failed:`);
+    for (const f of failures) console.log(`    ${f.slug} — ${f.reason}`);
+    if (opts.fatalOnFailure) {
+      die(
+        `init: required plugin(s) could not be installed: ` +
+          failures.map((f) => `needs plugin ${f.slug} (${f.reason})`).join('; '),
+      );
+    }
+  }
+}
+
+/** Scan `~/.papercusp/global-plugins` for installed plugin names (flat + scoped). */
+async function scanInstalledPlugins(): Promise<Set<string>> {
+  const out = new Set<string>();
+  let entries;
+  try {
+    entries = await fs.readdir(GLOBAL_PLUGINS_DIR, { withFileTypes: true });
+  } catch {
+    return out; // no global-plugins dir yet
+  }
+  for (const e of entries) {
+    if (!e.isDirectory() && !e.isSymbolicLink()) continue;
+    const dir = join(GLOBAL_PLUGINS_DIR, e.name);
+    if (existsSync(join(dir, 'papercusp.json'))) {
+      out.add(e.name);
+      continue;
+    }
+    if (e.name.startsWith('@')) {
+      const sub = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+      for (const s of sub) {
+        if (existsSync(join(dir, s.name, 'papercusp.json'))) out.add(`${e.name}/${s.name}`);
+      }
     }
   }
   return out;
@@ -1489,8 +1619,8 @@ async function cmdRun(args: string[]): Promise<void> {
     if (found) harnessSlug = found.slug;
   }
 
-  if (!existsSync(join(projectPath, '.harness'))) {
-    die(`run: ${projectPath} is not a harness project (no .harness/ dir)`);
+  if (!existsSync(join(projectPath, '.papercusp'))) {
+    die(`run: ${projectPath} is not a harness project (no .papercusp/ dir)`);
   }
 
   // Retraction-aware lockfile load (spec §14.9.6).
@@ -1659,7 +1789,7 @@ async function cmdMigrateConfig(slug: string | undefined): Promise<void> {
   const project = reg.projects.find((p) => p.slug === slug);
   if (!project) die(`migrate-config: no registered project "${slug}"`);
 
-  const configPath = join(project.path, '.harness', 'config.json');
+  const configPath = join(project.path, '.papercusp', 'config.json');
   if (!existsSync(configPath)) die(`migrate-config: no config.json at ${configPath}`);
 
   const raw = await fs.readFile(configPath, 'utf8');

@@ -62,6 +62,6 @@ test('worktreeEnabled — requires chunk-loop off + branchIso enabled + useWorkt
 });
 
 test('worktreePath — composes <stateDir>/worktrees/<fid>', () => {
-  assert.equal(worktreePath('/a/.harness', 'F-001'), '/a/.harness/worktrees/F-001');
-  assert.equal(worktreePath('/a/.harness', 'F-LANE-2'), '/a/.harness/worktrees/F-LANE-2');
+  assert.equal(worktreePath('/a/.papercusp', 'F-001'), '/a/.papercusp/worktrees/F-001');
+  assert.equal(worktreePath('/a/.papercusp', 'F-LANE-2'), '/a/.papercusp/worktrees/F-LANE-2');
 });

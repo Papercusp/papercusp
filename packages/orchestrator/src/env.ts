@@ -3,7 +3,7 @@
  *
  * Mirrors the top of bash run.sh: HARNESS_DIR, PROJECT_DIR, STATE_DIR,
  * LOG_DIR, MAX_ITERATIONS, CLAUDE, plus phase-aware HARNESS_PHASE / PORT /
- * DB_PATH derived from .harness/config.json.
+ * DB_PATH derived from .papercusp/config.json.
  */
 import { harnessRoot } from '@papercusp/harness/paths';
 import { readConfig, resolvePhase } from './config';
@@ -68,7 +68,7 @@ export interface ResolvedPaths {
 export function resolvePaths(): ResolvedPaths {
   const harnessDir = harnessRoot();
   const projectDir = process.env.PROJECT_DIR ?? process.cwd();
-  const stateDir = `${projectDir}/.harness`;
+  const stateDir = `${projectDir}/.papercusp`;
   const logDir = `${stateDir}/logs`;
   return { harnessDir, projectDir, stateDir, logDir };
 }

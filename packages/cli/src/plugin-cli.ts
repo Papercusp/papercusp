@@ -113,9 +113,9 @@ function parseHarnessFlag(args: string[]): { harness: string | null; rest: strin
   return { harness, rest: out };
 }
 
-/** Detect harness slug from cwd's .harness/config.json or registry. */
+/** Detect harness slug from cwd's .papercusp/config.json or registry. */
 async function detectHarnessSlug(): Promise<string | null> {
-  const harnessConfig = join(process.cwd(), '.harness', 'config.json');
+  const harnessConfig = join(process.cwd(), '.papercusp', 'config.json');
   if (!existsSync(harnessConfig)) return null;
   const reg = await readJson<{ projects: Array<{ slug: string; path: string }> }>(
     join(PAPERCUSP_ROOT, 'registry.json'),

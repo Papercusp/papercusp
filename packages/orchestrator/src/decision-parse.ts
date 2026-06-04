@@ -66,24 +66,42 @@ export interface ParsedDecision {
   raw: string;
 }
 
-const DECISION_RE = new RegExp(
-  // Match: VERB [arg] [N=<int>]
-  // The N= token is optional and case-insensitive (LLMs sometimes emit n=2).
-  '(' + DECISION_VERBS.join('|') + ')(?:\\s+([A-Za-z0-9_.-]+))?(?:\\s+[Nn]=([0-9]+))?',
-  'g',
-);
+/**
+ * A parsed decision over an ARBITRARY verb vocabulary (a blueprint's spine verbs).
+ * Structurally identical to `ParsedDecision` but `verb` is a plain string — the
+ * vocabulary is per-blueprint, not the fixed built-in set.
+ */
+export interface ParsedSpineDecision {
+  verb: string;
+  arg: string | null;
+  n: number | null;
+  raw: string;
+}
 
 /**
- * Parse the agent's free-form output and extract the last decision verb
- * (with optional argument). Returns null if no recognized verb appears.
- *
- *   parseDecision('Some thinking…\n**NEXT_WORKER F-001**\n')
- *   // → { verb: 'NEXT_WORKER', arg: 'F-001', raw: 'NEXT_WORKER F-001' }
- *
- *   parseDecision('done')
- *   // → null  (case-sensitive: must be uppercase DONE)
+ * Build the VERB[ arg][ N=<int>] matcher for a vocabulary. Verbs are sorted
+ * LONGEST-FIRST so a prefix (NEXT_WORKER) can never shadow a longer verb
+ * (NEXT_WORKER_CEO_MODE), and each is regex-escaped (vocabularies are
+ * blueprint-authored, so don't assume they're `[A-Z_]`-only).
  */
-export function parseDecision(text: string): ParsedDecision | null {
+function buildDecisionRe(verbs: readonly string[]): RegExp {
+  const alt = [...verbs]
+    .sort((a, b) => b.length - a.length)
+    .map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  return new RegExp('(' + alt + ')(?:\\s+([A-Za-z0-9_.-]+))?(?:\\s+[Nn]=([0-9]+))?', 'g');
+}
+
+const DECISION_RE = buildDecisionRe(DECISION_VERBS);
+
+/**
+ * Parse a decision against an ARBITRARY verb vocabulary — the blueprint engine
+ * passes its spine's verbs (`Object.keys(spine.edges)`) so a non-coding harness
+ * (research, …) can define its own vocabulary (D-002, pipeline-as-data).
+ * `parseDecision` is this specialized to the built-in coding verbs.
+ */
+export function parseDecisionFor(verbs: readonly string[], text: string): ParsedSpineDecision | null {
+  const re = verbs === DECISION_VERBS ? DECISION_RE : buildDecisionRe(verbs);
   // Strip markdown emphasis + code fences, then trim each line.
   const cleaned = text
     .replace(/[*`]+/g, '')
@@ -91,19 +109,33 @@ export function parseDecision(text: string): ParsedDecision | null {
     .map((l) => l.trim())
     .join('\n');
 
-  let lastMatch: ParsedDecision | null = null;
-  // matchAll replays the regex across the full text.
-  for (const m of cleaned.matchAll(DECISION_RE)) {
+  let lastMatch: ParsedSpineDecision | null = null;
+  for (const m of cleaned.matchAll(re)) {
     const nStr = m[3];
     const n = nStr ? parseInt(nStr, 10) : null;
     lastMatch = {
-      verb: m[1] as DecisionVerb,
+      verb: m[1]!,
       arg: m[2] ?? null,
       n: Number.isFinite(n) && n !== null && n > 0 ? n : null,
       raw: (m[0] ?? '').trim(),
     };
   }
   return lastMatch;
+}
+
+/**
+ * Parse the agent's free-form output and extract the last built-in decision verb.
+ * Returns null if no recognized verb appears.
+ *
+ *   parseDecision('Some thinking…\n**NEXT_WORKER F-001**\n')
+ *   // → { verb: 'NEXT_WORKER', arg: 'F-001', n: null, raw: 'NEXT_WORKER F-001' }
+ *
+ *   parseDecision('done')
+ *   // → null  (case-sensitive: must be uppercase DONE)
+ */
+export function parseDecision(text: string): ParsedDecision | null {
+  const r = parseDecisionFor(DECISION_VERBS, text);
+  return r === null ? null : { ...r, verb: r.verb as DecisionVerb };
 }
 
 /**

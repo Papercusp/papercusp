@@ -67,7 +67,7 @@ test('firePluginHook — no CLI found logs warning + zero counts', () => {
     const r = firePluginHook({
       hookName: 'afterDone',
       projectDir: fx.projectDir,
-      stateDir: join(fx.projectDir, '.harness'),
+      stateDir: join(fx.projectDir, '.papercusp'),
       pluginsLogPath: fx.pluginsLog,
       fireHookCli: '/definitely/does/not/exist/hook-cli',
       log: (m) => log.push(m),
@@ -105,7 +105,7 @@ test('firePluginHook — explicit-null CLI path skips with warning', () => {
     const r = firePluginHook({
       hookName: 'afterDone',
       projectDir: fx.projectDir,
-      stateDir: join(fx.projectDir, '.harness'),
+      stateDir: join(fx.projectDir, '.papercusp'),
       pluginsLogPath: fx.pluginsLog,
       fireHookCli: '/bin/false',
       log: (m) => log.push(m),
@@ -130,7 +130,7 @@ test('firePluginHook — successful plugin run increments fired count', () => {
     const r = firePluginHook({
       hookName: 'afterDone',
       projectDir: fx.projectDir,
-      stateDir: join(fx.projectDir, '.harness'),
+      stateDir: join(fx.projectDir, '.papercusp'),
       pluginsLogPath: fx.pluginsLog,
       fireHookCli: '/bin/true',
       log: (m) => log.push(m),
@@ -155,7 +155,7 @@ test('firePluginHook — same plugin name across layers fires only ONCE', () => 
     const r = firePluginHook({
       hookName: 'afterDone',
       projectDir: fx.projectDir,
-      stateDir: join(fx.projectDir, '.harness'),
+      stateDir: join(fx.projectDir, '.papercusp'),
       pluginsLogPath: fx.pluginsLog,
       fireHookCli: '/bin/true',
       log: () => {},
@@ -176,7 +176,7 @@ test('firePluginHook — plugin without papercusp.json is silently ignored', () 
     const r = firePluginHook({
       hookName: 'afterDone',
       projectDir: fx.projectDir,
-      stateDir: join(fx.projectDir, '.harness'),
+      stateDir: join(fx.projectDir, '.papercusp'),
       pluginsLogPath: fx.pluginsLog,
       fireHookCli: '/bin/true',
       log: () => {},

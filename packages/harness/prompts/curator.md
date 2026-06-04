@@ -1,4 +1,4 @@
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
@@ -20,15 +20,15 @@ You have a **fresh context**. Nothing is in your head. Everything is on disk.
 
 1. **Pending issues queue** — fresh validator findings awaiting triage (see
    "Process pending issues" below; this is your FIRST step).
-2. `.harness/memory/raw.md` — the append-only log of one-liner observations
+2. `.papercusp/memory/raw.md` — the append-only log of one-liner observations
    written by planner/worker/validator/orchestrator during this run.
-3. `.harness/memory/MEMORY.md` — the previously-curated durable store. If
+3. `.papercusp/memory/MEMORY.md` — the previously-curated durable store. If
    missing, treat as empty.
 4. `harness_features` (PG; `harness-features list <slug>`) — current feature queue (status, attempts).
 5. **Issues tracker** (PG `harness_<slug>.harness_issues` via `curl http://localhost:3070/api/harness/$HARNESS_SLUG/issues-list | jq`) — structured issue tracker (after you've triggered triage). Schema below in "Process pending issues".
-6. `.harness/issues.md` — narrative validator findings (human-readable prose,
+6. `.papercusp/issues.md` — narrative validator findings (human-readable prose,
    append-only). Use for context, do not edit.
-7. `.harness/escalation.md` if present — the escalation reason.
+7. `.papercusp/escalation.md` if present — the escalation reason.
 8. The harness's **plan(s)** (`plans:get` / Plans tab) — for grounding: what is the
    project actually trying to do? (SPEC.md + validation-contract.md are deprecated — D-004/D-005.)
 
@@ -57,7 +57,7 @@ follow-up reasoning.
 ### Schema of the structured issues tracker
 
 This is the shape returned from `GET /api/harness/$HARNESS_SLUG/issues-list`
-(it mirrors the legacy `.harness/issues.json`):
+(it mirrors the legacy `.papercusp/issues.json`):
 
 ```
 {
@@ -119,7 +119,7 @@ line (see Output section).
 
 Overwrite two files atomically:
 
-### 1. `.harness/memory/MEMORY.md` (full curated store)
+### 1. `.papercusp/memory/MEMORY.md` (full curated store)
 
 Merge raw observations into `MEMORY.md`. Organize under exactly these headings:
 
@@ -145,7 +145,7 @@ Rules for merging:
 - **Keep it bounded.** If MEMORY.md would exceed ~200 lines, drop the
   weakest items (least-evidenced, oldest, most narrow). Quality over volume.
 
-### 2. `.harness/memory/summary.md` (auto-injected into every future role)
+### 2. `.papercusp/memory/summary.md` (auto-injected into every future role)
 
 This is the working set the next agent sees at the top of every prompt.
 **Hard cap: 40 lines, ~800 tokens.** Include only what the next planner /
@@ -172,7 +172,7 @@ Skip any section that's empty. Resist the urge to fluff.
 
 ### 3. Truncate `raw.md`
 
-After you've written the other two files, truncate `.harness/memory/raw.md`
+After you've written the other two files, truncate `.papercusp/memory/raw.md`
 to its last 10 entries. Those remain as recent-history ballast; the rest
 has been absorbed into the curated store.
 
@@ -183,9 +183,9 @@ has been absorbed into the curated store.
   in the logs, don't.
 - **Do not delete `MEMORY.md` content silently.** If you remove an entry,
   do it because it's stale or superseded by a clearer entry you're keeping.
-- **Stay in `.harness/memory/`.** Don't touch source code, tests, config,
+- **Stay in `.papercusp/memory/`.** Don't touch source code, tests, config,
   or anything else. You are purely a compaction pass.
-- **No git commit.** Your edits are to `.harness/` which is typically
+- **No git commit.** Your edits are to `.papercusp/` which is typically
   gitignored or committed by the supervisor, not by harness roles.
 
 ## Output

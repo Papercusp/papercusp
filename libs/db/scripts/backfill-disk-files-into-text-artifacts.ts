@@ -45,7 +45,7 @@ interface ProjectEntry {
 const FILES: FileSpec[] = [
   {
     relPath: 'knowledge.md',
-    diskPathFor: (p) => join(p.path, '.harness', 'knowledge.md'),
+    diskPathFor: (p) => join(p.path, '.papercusp', 'knowledge.md'),
   },
   {
     relPath: 'mcp.json',

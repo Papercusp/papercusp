@@ -10,6 +10,7 @@
     "test": "node --test src/**/*.test.ts"
   },
   "dependencies": {
+    "@papercusp/blueprint-distribution": "*",
     "@papercusp/export-state": "*",
     "postgres": "^3.4.9",
     "tsx": "^4.7.0"

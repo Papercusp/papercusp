@@ -202,7 +202,7 @@ fi
 
 # Verify the fire-hook CLI can invoke an afterDone hook end-to-end.
 HOOK_TMP=$(mktemp -d /tmp/papercusp-smoke-fire-XXXXXX)
-mkdir -p "$HOOK_TMP/plugins/probe" "$HOOK_TMP/.harness"
+mkdir -p "$HOOK_TMP/plugins/probe" "$HOOK_TMP/.papercusp"
 cat > "$HOOK_TMP/plugins/probe/papercusp.json" <<EOF
 {"name":"probe","version":"0.0.1","papercusp":"^0.1.0","capabilities":[]}
 EOF
@@ -212,7 +212,7 @@ export default { name:'probe', version:'0.0.1', papercusp:'^0.1.0',
   hooks:{ afterDone: async (ctx) => { ctx.log('SMOKE_OK'); } } };
 EOF
 HOOK_OUT=$("$ROOT/node_modules/.bin/papercusp-fire-hook" afterDone "$HOOK_TMP/plugins/probe" \
-  --project-slug=smoke --project-dir="$HOOK_TMP" --state-dir="$HOOK_TMP/.harness" 2>&1)
+  --project-slug=smoke --project-dir="$HOOK_TMP" --state-dir="$HOOK_TMP/.papercusp" 2>&1)
 if echo "$HOOK_OUT" | grep -q "SMOKE_OK"; then
   ok "fire-hook CLI invokes plugin afterDone"
 else

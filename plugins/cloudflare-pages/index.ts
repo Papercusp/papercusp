@@ -49,10 +49,9 @@ async function readConfig(ctx: PapercuspContext): Promise<Config> {
 }
 
 async function readToken(): Promise<string | null> {
-  // Mirrors realSecretsService in apps/web/lib/plugin-host.ts: prefer the
-  // secrets file (~/.papercusp/secrets/<NAME>) so operators can keep tokens
-  // out of process env; fall back to env. The capability check at the
-  // registry boundary already gated us on `secrets:read:CLOUDFLARE_API_TOKEN`.
+  // Prefer the secrets file (~/.papercusp/secrets/<NAME>) so operators can
+  // keep tokens out of process env; fall back to env. The capability check at
+  // the registry boundary already gated us on `secrets:read:CLOUDFLARE_API_TOKEN`.
   const { readFile } = await import('node:fs/promises');
   const { existsSync, readFileSync } = await import('node:fs');
   const { homedir } = await import('node:os');

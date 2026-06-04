@@ -1,4 +1,4 @@
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
 >
@@ -21,11 +21,11 @@ For the feature specified by `$FEATURE_ID`, verify every assertion listed in its
 ## Protocol
 
 1. Read `harness_features` (PG; `harness-features list <slug>`), find the feature, get its `claims`.
-2. For each claim, resolve its assertion via `curl -sS "http://localhost:3055/api/harness/$HARNESS_SLUG/assertion/$CLAIM_ID"` — assertions live in PG (`harness_plan_assertions`), **not** `.harness/validation-contract.md` (retired). `verify_text` is how to verify; `evidence_text` is what passing looks like. A `404` is a hard `[FAIL]`: "assertion not found — feature must be promoted from a plan with inline VAL-* assertions."
-3. **Run the VAL-covering tests — this is your primary gate.** The tester writes one black-box test per VAL into `.harness/tests.json` (its `coversVALs` ∋ the claim). For every test covering a claim VAL, run it in the staging worktree per its `framework`: `npx playwright test <file>` / `npx vitest run <file>` / `pytest <file>`. A test that fails or errors is a `[FAIL]` for the VAL(s) it covers. **A test-requiring claim VAL with no covering test is itself a `[FAIL]`** — never approve an untested claim. A VAL whose assertion has `requires_test: false` is **exempt** from the test gate (non-testable: copy, design-spec, judgement) — verify it by inspection in step 4 instead of requiring a test.
+2. For each claim, resolve its assertion via `curl -sS "http://localhost:3055/api/harness/$HARNESS_SLUG/assertion/$CLAIM_ID"` — assertions live in PG (`harness_plan_assertions`), **not** `.papercusp/validation-contract.md` (retired). `verify_text` is how to verify; `evidence_text` is what passing looks like. A `404` is a hard `[FAIL]`: "assertion not found — feature must be promoted from a plan with inline VAL-* assertions."
+3. **Run the VAL-covering tests — this is your primary gate.** The tester writes one black-box test per VAL into `.papercusp/tests.json` (its `coversVALs` ∋ the claim). For every test covering a claim VAL, run it in the staging worktree per its `framework`: `npx playwright test <file>` / `npx vitest run <file>` / `pytest <file>`. A test that fails or errors is a `[FAIL]` for the VAL(s) it covers. **A test-requiring claim VAL with no covering test is itself a `[FAIL]`** — never approve an untested claim. A VAL whose assertion has `requires_test: false` is **exempt** from the test gate (non-testable: copy, design-spec, judgement) — verify it by inspection in step 4 instead of requiring a test.
 4. **Don't stop at green.** A passing test can be weak. Independently spot-check each assertion's `verify_text` (`curl` / `psql` / `playwright`); if the real behavior is wrong even though the test passed, that's a `[FAIL]` plus a weak-test note. Record each assertion `[PASS]` / `[FAIL]` with evidence (test output + your spot-check).
 5. **Also probe for things that should be tested but aren't in the contract.** Think like a pentester: what edge case would embarrass me if a real user hit it? Empty strings, unicode, negative qty, concurrent requests, XSS, N+1 queries.
-6. Write results to `.harness/issues.md` (append mode — keep history). This is the human-readable narrative.
+6. Write results to `.papercusp/issues.md` (append mode — keep history). This is the human-readable narrative.
 7. **Also POST each structured OUT-OF-SCOPE finding (or BLOCKED condition) to the operator's pending-issues queue.** One POST per finding to `http://localhost:3055/api/harness/$HARNESS_SLUG/issues/append-pending`:
 
 ```bash
@@ -56,7 +56,7 @@ The curator merges these into `harness_issues` (PG) on its next run; the orchest
 - /login endpoint has no rate limit (tested 50 req/s succeeded). Noted.
 ```
 
-## Format for `.harness/pending-issues.jsonl`
+## Format for `.papercusp/pending-issues.jsonl`
 
 One JSON object per line. No array wrapper, no commas between lines. Append only — never rewrite. Example (two findings from the same round):
 

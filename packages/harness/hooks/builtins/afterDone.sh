@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Built-in: notify parent harness on mission completion.
 #
-# Fires only when this harness has parent_slug set in .harness/config.json.
-# User-supplied .harness/hooks/afterDone.sh overrides this entirely (the
+# Fires only when this harness has parent_slug set in .papercusp/config.json.
+# User-supplied .papercusp/hooks/afterDone.sh overrides this entirely (the
 # resolver in run.sh prefers per-harness scripts over builtins).
 #
-# Auth: reads harness_token from .harness/config.json and sends as
+# Auth: reads harness_token from .papercusp/config.json and sends as
 # Authorization: Bearer. Identity (from_slug) is server-derived from the
 # token, so we only specify `to`.
 

@@ -61,7 +61,7 @@ export default function PlanReviewBanner({ slug }: Props) {
           {open ? 'hide' : 'show details'}
         </button>
         <span style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace', color: tone.fg, fontSize: '0.7rem', opacity: 0.75 }}>
-          .harness/plan-review.md
+          .papercusp/plan-review.md
         </span>
         <button
           onClick={() => setDismissed(true)}

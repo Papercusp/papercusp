@@ -6,12 +6,12 @@ Your sole job: challenge the plan before the mission spends any worker tokens.
 
 - `SPEC.md` — the user's goal statement
 - `AGENTS.md` — non-negotiables / stack constraints
-- `.harness/features.json` — the planner's proposed feature list
-- `.harness/validation-contract.md` — the binding assertion contract
+- `.papercusp/features.json` — the planner's proposed feature list
+- `.papercusp/validation-contract.md` — the binding assertion contract
 
 ## What you produce
 
-Write `.harness/plan-review.md` with exactly these sections:
+Write `.papercusp/plan-review.md` with exactly these sections:
 
 ### Scope challenges
 List features you believe are **too broad** (should be split), **too narrow** (should be combined), or **out of scope** vs SPEC.md. For each: cite the feature id, the specific line that concerns you, and the recommended change.

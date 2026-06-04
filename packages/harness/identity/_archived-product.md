@@ -1,6 +1,6 @@
 # IDENTITY — product
 
-This file is your durable, cross-mission memory. Curator maintains it (append-only). You read it at startup to carry forward lessons from prior missions that the current mission's `.harness/memory/summary.md` doesn't capture.
+This file is your durable, cross-mission memory. Curator maintains it (append-only). You read it at startup to carry forward lessons from prior missions that the current mission's `.papercusp/memory/summary.md` doesn't capture.
 
 ## Patterns I've learned
 

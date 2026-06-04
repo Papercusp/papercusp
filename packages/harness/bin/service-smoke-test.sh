@@ -2,7 +2,7 @@
 # Service smoke-test gate (claudecode-orchestrator-inspired).
 #
 # Called by run.sh on DONE (or after each feature pass, if configured). Reads
-# smokeTest.urls from .harness/config.json and curls each one. If any URL
+# smokeTest.urls from .papercusp/config.json and curls each one. If any URL
 # returns a status other than expectStatus, exits non-zero AND reopens the
 # most recently-passed feature as failing so the orchestrator can retry.
 #
@@ -172,7 +172,7 @@ $failures of $total_urls smoke URLs failed.
 ## Failures
 $failures_md
 
-See .harness/smoke-results.json for machine-readable output.
+See .papercusp/smoke-results.json for machine-readable output.
 EOF_FAIL
 
 # Reopen the last-passed feature as failing with evidence.
@@ -191,7 +191,7 @@ try:
     target['attempts'] = target.get('attempts',0) + 1
     target.setdefault('notes',[]).append({
         'by':'smoke-test','ts':int(time.time()),
-        'text':'Smoke test failed after this feature passed. See .harness/smoke-failure.md'
+        'text':'Smoke test failed after this feature passed. See .papercusp/smoke-failure.md'
     })
     open(p,'w').write(json.dumps(d, indent=2))
     print(target['id'])

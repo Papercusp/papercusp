@@ -5,7 +5,7 @@
  * for `harness_feature_notes`. The FS path `<stateDir>/notes/<fid>.md`
  * is a transient projection materialized right before a worker /
  * validator / debugger spawn so the role prompt's "read
- * .harness/notes/<feature>.md if present" instruction sees fresh
+ * .papercusp/notes/<feature>.md if present" instruction sees fresh
  * content. No mirror; no two-way sync.
  *
  * Operator UI writes to PG; this module reads PG; the file lives on
@@ -20,7 +20,7 @@ export interface MaterializeNoteInput {
   workspaceId?: string;
   harnessSlug: string;
   featureId: string;
-  /** State directory (typically `<projectDir>/.harness`). */
+  /** State directory (typically `<projectDir>/.papercusp`). */
   stateDir: string;
 }
 

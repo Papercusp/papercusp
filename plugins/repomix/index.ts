@@ -25,7 +25,7 @@ interface PackConfig {
 const DEFAULT_IGNORE = [
   'node_modules/**',
   'dist/**',
-  '.harness/**',
+  '.papercusp/**',
   '.next/**',
   '*.lock',
   '*.lockb',

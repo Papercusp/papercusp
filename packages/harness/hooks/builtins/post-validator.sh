@@ -7,7 +7,7 @@
 #
 # Sends a `kind: 'Status'` message to parent_slug with the validator's outcome.
 # No-op if this harness has no parent_slug. User-supplied
-# .harness/hooks/post-validator.sh overrides this entirely (resolver in run.sh).
+# .papercusp/hooks/post-validator.sh overrides this entirely (resolver in run.sh).
 #
 # Caller env vars (from run.sh):
 #   ROLE=validator

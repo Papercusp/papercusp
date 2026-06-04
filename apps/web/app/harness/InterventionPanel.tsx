@@ -87,7 +87,7 @@ export default function InterventionPanel({ slug, alive, onClose }: Props) {
         {/* Header */}
         <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #1f2937', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <strong style={{ color: '#e5e7eb' }}>Intervention — {slug}</strong>
-          <span style={{ fontFamily: 'monospace', color: '#6b7280', fontSize: '0.75rem' }}>.harness/supervisor-notes.md</span>
+          <span style={{ fontFamily: 'monospace', color: '#6b7280', fontSize: '0.75rem' }}>.papercusp/supervisor-notes.md</span>
           {alive && (
             <span style={{ color: '#10b981', fontSize: '0.75rem', marginLeft: '0.5rem' }}>
               ● mission running — next orchestrator iteration will read your note

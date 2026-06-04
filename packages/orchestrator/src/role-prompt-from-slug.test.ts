@@ -19,7 +19,7 @@ function setupRegistry(): { home: string; projectDir: string; harnessDir: string
   process.env.PAPERCUSP_OPERATOR_BASE = 'http://127.0.0.1:1';
   const home = mkdtempSync(join(tmpdir(), 'role-prompt-'));
   const projectDir = join(home, 'project');
-  const stateDir = join(projectDir, '.harness');
+  const stateDir = join(projectDir, '.papercusp');
   const harnessDir = join(home, 'harness');
   mkdirSync(stateDir, { recursive: true });
   mkdirSync(join(harnessDir, 'prompts'), { recursive: true });

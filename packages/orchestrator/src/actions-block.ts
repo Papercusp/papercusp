@@ -5,7 +5,7 @@
  *
  * Auth: every request carries `Authorization: Bearer <token>` where the
  * token is the harness's own `harness_token` (read from
- * .harness/config.json). The executor derives `callingHarness` from the
+ * .papercusp/config.json). The executor derives `callingHarness` from the
  * token, so we don't include it in the body.
  *
  * Mirrors bash's process_actions_block. Used by department workers

@@ -228,7 +228,7 @@ export default function HooksPanel({ slug, alive, onClose }: Props) {
         <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #1f2937', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <strong style={{ color: '#e5e7eb' }}>Hooks — {slug}</strong>
           <span style={{ fontFamily: 'monospace', color: '#6b7280', fontSize: '0.75rem' }}>
-            .harness/hooks/{tab}.sh
+            .papercusp/hooks/{tab}.sh
           </span>
           {alive && (
             <span style={{ color: '#f59e0b', fontSize: '0.8rem', marginLeft: '1rem' }}>

@@ -7,7 +7,7 @@ import { evaluateCostCap, sumJsonlCost } from './cost-cap.js';
 
 function makeFixture(): { logDir: string; stateDir: string; cleanup: () => void } {
   const root = mkdtempSync(join(tmpdir(), 'papercusp-orch-cost-'));
-  const stateDir = join(root, '.harness');
+  const stateDir = join(root, '.papercusp');
   const logDir = join(stateDir, 'logs');
   mkdirSync(logDir, { recursive: true });
   return { logDir, stateDir, cleanup: () => rmSync(root, { recursive: true, force: true }) };

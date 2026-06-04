@@ -694,7 +694,7 @@ export default function HarnessDashboard() {
       cs.push({
         id: `diff:${f.id}`, section: 'Features',
         title: `${f.id} · view diff`,
-        subtitle: `git diff main...harness/${f.id}`,
+        subtitle: `git diff main...papercusp/${f.id}`,
         keywords: `diff ${f.id} ${f.status}`,
         icon: '⎇',
         perform: () => setDiffFeatureId(f.id),

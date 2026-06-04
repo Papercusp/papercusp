@@ -51,7 +51,7 @@ description: Auto-generated documentation from the autonomous harness.
 
 This documentation is written by the harness **documenter** role. Each row
 in the table below corresponds to a feature defined in
-\`.harness/features.json\`. When the validator marks a feature \`passed\`,
+\`.papercusp/features.json\`. When the validator marks a feature \`passed\`,
 the documenter adds or refreshes its page under \`features/\`.
 
 ## Feature status

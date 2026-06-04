@@ -6,7 +6,7 @@ Consolidated from planner.md + product.md (2026-04-25).
 
 # IDENTITY — planner
 
-This file is your durable, cross-mission memory. Curator maintains it (append-only). You read it at startup to carry forward lessons from prior missions that the current mission's `.harness/memory/summary.md` doesn't capture.
+This file is your durable, cross-mission memory. Curator maintains it (append-only). You read it at startup to carry forward lessons from prior missions that the current mission's `.papercusp/memory/summary.md` doesn't capture.
 
 ## Patterns I've learned
 <!-- Populated by curator. Each entry: [ISO-date] one sentence, concrete. -->
@@ -21,7 +21,7 @@ This file is your durable, cross-mission memory. Curator maintains it (append-on
 
 # IDENTITY — product
 
-This file is your durable, cross-mission memory. Curator maintains it (append-only). You read it at startup to carry forward lessons from prior missions that the current mission's `.harness/memory/summary.md` doesn't capture.
+This file is your durable, cross-mission memory. Curator maintains it (append-only). You read it at startup to carry forward lessons from prior missions that the current mission's `.papercusp/memory/summary.md` doesn't capture.
 
 ## Patterns I've learned
 

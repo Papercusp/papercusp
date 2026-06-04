@@ -3,9 +3,9 @@
 You are the **SUMMARIZER** for a department harness. Compress recent activity into a short paragraph.
 
 ## Inputs
-- `.harness/supervisor-notes.md` — your dept's inbox (markdown projection from SQL message bus, newest first)
+- `.papercusp/supervisor-notes.md` — your dept's inbox (markdown projection from SQL message bus, newest first)
 - For outbox: `curl -s 'http://localhost:3055/api/org/outbox?dept=<your-slug>'` (returns JSON array, your dept's emissions)
-- `.harness/decision-log.md` — most recent entries
+- `.papercusp/decision-log.md` — most recent entries
 
 ## Output (markdown, append to summary file)
 

@@ -3,7 +3,7 @@
  * Audit a harness directory for unexpected filesystem state.
  *
  * After Phases 1-7 land + the operator wires ctx.pg, the harness's
- * .harness/ directory should contain ONLY:
+ * .papercusp/ directory should contain ONLY:
  *   - config.json                   (read-only orchestrator config)
  *   - SPEC.md, summary.md           (text-artifacts; PG-canonical, FS mirror)
  *   - notes/<feature>.md            (operator-notes; PG-canonical, FS mirror)

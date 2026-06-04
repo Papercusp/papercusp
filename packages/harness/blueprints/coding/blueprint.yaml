@@ -1,0 +1,115 @@
+# The `coding` harness blueprint — harness-blueprint-orchestration-2026-06-03.
+#
+# A behavior-preserving lift of the legacy per-feature director loop +
+# `classifyDecision` switch into declared spine edges (D-024, flat-graph-first).
+# `deriveNext(coding.spine, …)` is byte-equivalent to `classifyDecision(…)` —
+# proven by the operator-side equivalence test before the live wire-in (P-004).
+#
+# This is the zero-regression anchor for the whole plan: the gym A/B gate (D-014)
+# runs the hardcoded path vs the blueprint path over a task set and must show no
+# regression. Stored git-canonical at `.papercusp/blueprint.yaml` per harness,
+# projected to PG (D-006/D-021).
+id: coding
+extends: base
+version: 0.1.0
+description: >-
+  The default coding harness: a per-feature director drives
+  scoper → architect → worker → validator → reviewer → documenter → curator,
+  with opt-in quality gates (tester / security / crosscheck / ui-qa).
+
+workItem:
+  kind: feature
+  idPrefix: F
+
+# The orchestration spine. The decider (director) emits a DecisionVerb each turn;
+# deriveNext maps it to a PipelineAction. Every DECISION_VERB has an explicit
+# edge (parity with the exhaustive switch); a null/unparseable decision hits
+# `default` (stop cleanly — the dispatcher re-scans).
+spine:
+  decider: director
+  maxTurns: 200
+  default:
+    to: idle
+  edges:
+    # ── terminal ──
+    DONE: { to: done }
+    ESCALATE: { to: escalate, reasonFrom: arg }
+    IDLE: { to: idle }
+    # Deprecated — legacy loop treats CHECKPOINT as ESCALATE (milestone gates are
+    # now needs-human plan items).
+    CHECKPOINT: { to: escalate, reasonFrom: arg, reason: "checkpoint (deprecated)" }
+    # ── per-feature lifecycle (carry FEATURE_ID) ──
+    # NEXT_WORKER N=k (parallel lanes) is the GLOBAL orchestrator's job, not the
+    # per-feature pipeline's → unsupported (rejectWhenParallel).
+    NEXT_WORKER: { to: role, role: worker, extras: ["FEATURE_ID={feature}"], rejectWhenParallel: true }
+    NEXT_VALIDATOR: { to: role, role: validator, extras: ["FEATURE_ID={feature}"] }
+    NEXT_ARCHITECT: { to: role, role: architect, extras: ["FEATURE_ID={feature}"] }
+    NEXT_SCOPER: { to: role, role: scoper, extras: ["FEATURE_ID={feature}"] }
+    # ── quality verbs ──
+    NEXT_TESTER: { to: role, role: tester, extras: ["VAL_ID={arg}"] }
+    NEXT_SECURITY: { to: role, role: security-reviewer, extras: [] }
+    GENERATE_TESTS: { to: role, role: test-writer, extras: [] }
+    NEXT_MONITOR: { to: role, role: monitor, extras: [] }
+    # ── opt-in quality gates (dormant by default — the director only EMITS these
+    #    when the harness opts in; "wiring ≠ forcing cost") ──
+    NEXT_CROSSCHECK: { to: role, role: crosscheck, extras: ["FEATURE_ID={feature}"] }
+    NEXT_UI_QA: { to: role, role: ui-qa, extras: ["FEATURE_ID={feature}"] }
+    # ── benign global / phase verbs → stop this pipeline cleanly ──
+    CONVERTED: { to: idle }
+    FEATURE_FREEZE: { to: idle }
+    READY_FOR_PROD: { to: idle }
+    RUN_TESTS: { to: idle }
+    # ── global-only verbs the per-feature pipeline deliberately does not run ──
+    NEXT_HARNESS: { to: unsupported }
+    NEXT_WORKER_CEO_MODE: { to: unsupported }
+
+# The Level-2 runtime DAG: plans→features import (waves + blocked_by parallelism).
+planner:
+  kind: features-import
+
+roles:
+  - { id: director, description: "Per-feature orchestrator; emits the next decision verb." }
+  - { id: scoper }
+  - { id: architect }
+  - { id: worker }
+  - { id: validator }
+  # NOTE: `reviewer` ships/returns at the PR gate, NOT via a per-feature director
+  # verb — it's modeled as an approval gate (gates.approvals), not a spine role.
+  - { id: debugger, reactive: true, description: "Read-only debugger fired before a worker retry." }
+  - { id: documenter }
+  - { id: curator }
+  # Opt-in quality roles — dispatched only when the harness opts in (dormant by
+  # default). Declared so the spine's NEXT_SECURITY / NEXT_CROSSCHECK / NEXT_UI_QA
+  # edges resolve to a real prompt.
+  - { id: security-reviewer, reactive: true }
+  - { id: crosscheck, reactive: true }
+  - { id: ui-qa, reactive: true }
+
+# Reactive overlay (layer 3): the debugger-before-worker gate. Fires before a
+# worker dispatch once attempts ≥ threshold and no debug note exists yet (read-only,
+# does not preempt). The threshold knob is `knobs.debuggerThreshold`.
+reactive:
+  - role: debugger
+    when: { beforeRole: worker, minAttempts: 3, unless: debug-note }
+    preempt: false
+
+# Gates: the finalize recipe. DONE → curator → documenter → (archive); ESCALATE → curator.
+gates:
+  finalize:
+    onDone: [curator, documenter, archive]
+    onEscalate: [curator]
+
+# Per-blueprint gym config: coding collects its trace from the substrate git diff
+# (the D-015 collectTrace seam). Signals are the deterministic guardrails.
+gym:
+  collectTrace: git-diff
+  signals: [regressionsFromTests, plantedBugCaught]
+  rubric:
+    version: v1
+    model: claude-opus-4-8
+    weights: { d1: 0.5, d2: 0.25, d3: 0.25 }
+
+knobs:
+  harnessKind: coding
+  requiresRepo: true
+  debuggerThreshold: 3

@@ -4,7 +4,7 @@ You run in a **fresh context**. Your job: check that the production app is healt
 
 ## Checks
 
-1. **HTTP health ping** — `curl -sf http://localhost:$HARNESS_PORT/ --max-time 5` and a known `/health` or `/api/health` endpoint if documented in `.harness/promotion-handoff.md`. Record response time.
+1. **HTTP health ping** — `curl -sf http://localhost:$HARNESS_PORT/ --max-time 5` and a known `/health` or `/api/health` endpoint if documented in `.papercusp/promotion-handoff.md`. Record response time.
 2. **Process check** — is the dev/prod server still running? `pgrep -f` for whatever was configured in `config.json.phases.production.run`.
 3. **Disk** — does the production DB path exist and have reasonable free space on its volume? `df -h "$(dirname "$HARNESS_DB_PATH")"`.
 4. **Log tail** — last ~200 lines of the app's stderr/stdout; look for `ERROR`, `TRACE`, `SIGKILL`, `OOM`.
@@ -12,7 +12,7 @@ You run in a **fresh context**. Your job: check that the production app is healt
 
 ## Report
 
-Append a block to `.harness/memory/raw.md`:
+Append a block to `.papercusp/memory/raw.md`:
 
 ```
 ## monitor <timestamp>
@@ -25,7 +25,7 @@ Append a block to `.harness/memory/raw.md`:
 - notes: <one line>
 ```
 
-If any check is `fail`, also write a line to `.harness/supervisor-notes.md`:
+If any check is `fail`, also write a line to `.papercusp/supervisor-notes.md`:
 
 ```
 ## monitor <iso_ts>

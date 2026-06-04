@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to .harness/config.json and customize. All fields optional.",
+  "_comment": "Copy to .papercusp/config.json and customize. All fields optional.",
 
   "models": {
     "_comment": "Per-role model override. Skipped if $CLAUDE env already contains --model.",
@@ -10,7 +10,7 @@
   },
 
   "promptOverrides": {
-    "_comment_": "Appended to role prompt as 'Droid specialization'. Inline string OR path (./file.md relative to .harness/, /absolute/path also supported).",
+    "_comment_": "Appended to role prompt as 'Droid specialization'. Inline string OR path (./file.md relative to .papercusp/, /absolute/path also supported).",
     "validator": "Be extra paranoid. Reject anything that isn't fully tested with explicit RUN evidence — you must SEE the test output, not infer it.",
     "worker": "./prompts/worker-override.md"
   },
@@ -31,7 +31,7 @@
     "planner": 300
   },
 
-  "_comment_branch_iso": "Isolate each feature on its own harness/<FEATURE_ID> branch off baseBranch. onPass=merge|pr|keep decides what happens when validator marks the feature passed. useWorktrees (Composio-inspired): when true, each parallel lane gets its own .harness/worktrees/lane-<N>/ dir instead of switching branches in the main working tree.",
+  "_comment_branch_iso": "Isolate each feature on its own harness/<FEATURE_ID> branch off baseBranch. onPass=merge|pr|keep decides what happens when validator marks the feature passed. useWorktrees (Composio-inspired): when true, each parallel lane gets its own .papercusp/worktrees/lane-<N>/ dir instead of switching branches in the main working tree.",
   "branchIsolation": {
     "enabled": false,
     "baseBranch": "main",
@@ -39,7 +39,7 @@
     "useWorktrees": false
   },
 
-  "_comment_screenshot": "Auto-capture a screenshot after each worker via `verdict`. Saves to .harness/screenshots/<FEATURE_ID>-<ts>.png.",
+  "_comment_screenshot": "Auto-capture a screenshot after each worker via `verdict`. Saves to .papercusp/screenshots/<FEATURE_ID>-<ts>.png.",
   "autoScreenshot": {
     "enabled": false,
     "url": "http://localhost:5173"

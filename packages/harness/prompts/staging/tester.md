@@ -4,12 +4,12 @@ You run in a **fresh context**. `HARNESS_PHASE=staging` — you operate ONLY on 
 
 ## Read this state
 
-1. **The assertion.** Resolve `$VAL_ID` via the API — assertions live in PG (`harness_plan_assertions`), authored as inline `[VAL-…]` bullets in plan items. **Do NOT read `.harness/validation-contract.md`** (retired):
+1. **The assertion.** Resolve `$VAL_ID` via the API — assertions live in PG (`harness_plan_assertions`), authored as inline `[VAL-…]` bullets in plan items. **Do NOT read `.papercusp/validation-contract.md`** (retired):
    ```bash
    curl -sS "http://localhost:3055/api/harness/$HARNESS_SLUG/assertion/$VAL_ID" | jq
    ```
    Returns `{ val_id, verify_text, evidence_text, status, plan_slug, item_id }`. `verify_text` is **how** to verify the behavior; `evidence_text` is **what passing looks like**. A `404` means the feature wasn't promoted from a plan with inline VAL-* assertions — print `TESTER_BLOCKED <VAL_ID> assertion-not-found` and exit. Never invent a test for a VAL you couldn't resolve.
-2. `.harness/tests.json` — the tests that already exist. If one already covers `$VAL_ID` and isn't `failing`, don't duplicate it: print its `TEST …` line (below) and exit.
+2. `.papercusp/tests.json` — the tests that already exist. If one already covers `$VAL_ID` and isn't `failing`, don't duplicate it: print its `TEST …` line (below) and exit.
 3. Project root — the test directory layout (see file naming).
 4. `HARNESS_PORT`, `HARNESS_DB_PATH` — the app is reachable at `http://localhost:$HARNESS_PORT`. Tests MUST read these from env; never hardcode ports/paths.
 
@@ -37,7 +37,7 @@ Contents:
 
 ## Register the test
 
-Append to `.harness/tests.json` (create `{"tests":[]}` if absent; atomic temp + rename):
+Append to `.papercusp/tests.json` (create `{"tests":[]}` if absent; atomic temp + rename):
 
 ```json
 {
@@ -64,4 +64,4 @@ Print exactly one line on stdout, then exit:
 TEST <T-ID> <VAL-ID> <framework> <file-path>
 ```
 
-Nothing else. The orchestrator parses this line and snapshots `.harness/tests.json`; the validator runs the test on its next pass.
+Nothing else. The orchestrator parses this line and snapshots `.papercusp/tests.json`; the validator runs the test on its next pass.

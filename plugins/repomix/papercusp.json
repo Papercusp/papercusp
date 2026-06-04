@@ -15,7 +15,7 @@
   "tools": [
     {
       "name": "pack",
-      "description": "Pack a project (or subset) into a single LLM-friendly document. Returns inline content for small outputs (<50k chars); writes to .harness/scratch/ and returns a path reference for larger outputs.",
+      "description": "Pack a project (or subset) into a single LLM-friendly document. Returns inline content for small outputs (<50k chars); writes to .papercusp/scratch/ and returns a path reference for larger outputs.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -109,7 +109,7 @@
         "default": [
           "node_modules/**",
           "dist/**",
-          ".harness/**",
+          ".papercusp/**",
           ".next/**",
           "*.lock",
           "*.lockb",
@@ -122,7 +122,7 @@
       "inlineThresholdChars": {
         "type": "number",
         "default": 50000,
-        "description": "Outputs smaller than this are returned inline; larger ones are written to .harness/scratch/ and returned as a path reference."
+        "description": "Outputs smaller than this are returned inline; larger ones are written to .papercusp/scratch/ and returned as a path reference."
       }
     }
   }

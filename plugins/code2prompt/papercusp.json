@@ -187,7 +187,7 @@
       "inlineThresholdChars": {
         "type": "number",
         "default": 50000,
-        "description": "Outputs smaller than this returned inline; larger ones written to .harness/scratch/ and returned as a path reference."
+        "description": "Outputs smaller than this returned inline; larger ones written to .papercusp/scratch/ and returned as a path reference."
       }
     }
   }

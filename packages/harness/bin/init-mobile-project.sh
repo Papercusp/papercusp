@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Initialize an Expo + TypeScript starter inside a freshly-scaffolded mobile-app
 # coding harness directory. Run AFTER scaffold_harness has created SPEC.md +
-# .harness/, so the planner has something concrete to iterate against.
+# .papercusp/, so the planner has something concrete to iterate against.
 #
 # Usage: cd ~/<your-mobile-project-slug> && ~/autonomous-harness/bin/init-mobile-project.sh
 #

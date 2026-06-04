@@ -1,5 +1,5 @@
 /**
- * Shared types for the orchestrator. `.harness/config.json` is still
+ * Shared types for the orchestrator. `.papercusp/config.json` is still
  * on-disk; feature records live in PG (`harness_features` table) or
  * the in-memory test store (`state-memory.ts`). FeaturesJson here
  * describes the wire shape used for snapshots and external imports.
@@ -11,7 +11,7 @@ export type HarnessPhase = 'staging' | 'department' | 'production' | string;
 /** Harness kind — coding harness vs parent (org / department). */
 export type HarnessKind = '' | 'coding' | 'org' | 'department';
 
-/** A phase entry in `.harness/config.json` `phases`. */
+/** A phase entry in `.papercusp/config.json` `phases`. */
 export interface PhaseConfig {
   port?: number | string;
   dbPath?: string;
@@ -19,7 +19,7 @@ export interface PhaseConfig {
   [k: string]: unknown;
 }
 
-/** Structure of `.harness/config.json`. */
+/** Structure of `.papercusp/config.json`. */
 export interface HarnessConfig {
   phase?: HarnessPhase;
   harness_kind?: HarnessKind;

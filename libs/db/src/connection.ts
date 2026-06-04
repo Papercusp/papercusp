@@ -19,9 +19,16 @@
  * Connection URL:
  *   $HARNESS_DATABASE_URL  (defaults to harness_app role on localhost)
  */
+import { createRequire } from 'node:module';
 import postgres, { Sql } from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as sharedSchema from './schema';
+
+// This package is `"type": "module"`, so ESM has no ambient `require`.
+// `createRequire` gives us a synchronous loader for the lazy node-builtin
+// reads below (kept lazy so the module can be imported without touching
+// the filesystem in a no-fs environment).
+const nodeRequire = createRequire(import.meta.url);
 import * as generatedSchema from './schema/generated';
 import * as generatedRelations from './schema/generated-relations';
 
@@ -78,10 +85,8 @@ function readDiscoveryFile(): { user?: string; password?: string; host?: string;
     // Lazy require so this module can be imported in environments
     // without `node:fs` (browser, edge runtime). The drizzle/postgres
     // path is server-only in practice but be defensive.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const fs = require('node:fs') as typeof import('node:fs');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const os = require('node:os') as typeof import('node:os');
+    const fs = nodeRequire('node:fs') as typeof import('node:fs');
+    const os = nodeRequire('node:os') as typeof import('node:os');
     const path = `${os.homedir()}/.papercusp/embedded-pg.json`;
     const raw = fs.readFileSync(path, 'utf8');
     const parsed = JSON.parse(raw) as { host?: string; port?: number; user?: string; password?: string };

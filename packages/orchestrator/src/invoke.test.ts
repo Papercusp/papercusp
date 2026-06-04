@@ -56,7 +56,7 @@ function makeFixture(setup: (fx: Omit<Fixture, 'cleanup'>) => void): Fixture {
   const root = mkdtempSync(join(tmpdir(), 'papercusp-orch-invoke-'));
   const harnessDir = join(root, 'harness');
   const projectDir = join(root, 'project');
-  const stateDir = join(projectDir, '.harness');
+  const stateDir = join(projectDir, '.papercusp');
   const logDir = join(stateDir, 'logs');
   mkdirSync(join(harnessDir, 'prompts'), { recursive: true });
   mkdirSync(join(harnessDir, 'identity'), { recursive: true });
@@ -598,7 +598,7 @@ test('resolveModel — legacy models.<role> still works when aiBackend absent', 
 
 // --- claudeMcpArgs: makes claude-code load the per-spawn signed .mcp.json ---
 
-const MCP_PATH = '/proj/.harness/../.mcp.json';
+const MCP_PATH = '/proj/.papercusp/../.mcp.json';
 
 // The permission posture appended after the MCP-load flags, for a given role:
 // a closed whitelist (dontAsk auto-denies anything not allow-listed in headless
@@ -974,7 +974,7 @@ test('buildFleetSrtSettings — omp: ~/.omp + PI_CODING_AGENT_DIR writable; loop
   delete process.env.PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS;
   const home = process.env.HOME ?? '/home/x';
   const ompHome = `${home}/.omp`;
-  const piDir = '/proj/.harness/pi-sessions';
+  const piDir = '/proj/.papercusp/pi-sessions';
   const s = buildFleetSrtSettings({ cwd: '/proj', backend: 'omp', agentHomes: [ompHome, piDir] }) as any;
   // omp's agent/auth/models SQLite dirs are writable (else readonly-DB at startup)
   assert.ok(s.filesystem.allowWrite.includes(ompHome));

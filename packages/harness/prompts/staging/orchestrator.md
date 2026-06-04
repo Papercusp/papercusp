@@ -1,4 +1,4 @@
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
 >
@@ -18,7 +18,7 @@ You run in a fresh context. You make one specific decision, then exit: given the
 
 1. `harness_features` (PG; `harness-features list <slug>`) — the work queue. **Only features from started plans appear here** — the query is pre-filtered by `harness_plan_status`. VAL-* assertion text is resolved via `GET /api/harness/$HARNESS_SLUG/assertion/$VAL_ID` (returns 404 if the feature was not promoted from a plan with inline VAL-* assertions).
 2. **Issues tracker** (PG `harness_<slug>.harness_issues` via `curl http://localhost:3055/api/harness/$HARNESS_SLUG/issues-list | jq`). This is your authoritative source for discovered-work promotion decisions. Schema returned: `{issues: [{id, title, severity, status, linkedFeatureId, codePointer, suggestedFix, attempts, ...}], nextId}`. If empty, treat as no findings.
-3. `.harness/issues.md` — accumulated validator findings (narrative prose). Read only for context and pre-structured history; do not parse for promotion decisions — use the issues-list endpoint.
+3. `.papercusp/issues.md` — accumulated validator findings (narrative prose). Read only for context and pre-structured history; do not parse for promotion decisions — use the issues-list endpoint.
 4. **Open `needs-human` plan items** — human guidance and decisions are expressed as `needs-human` items in the active plan, not supervisor-notes.md. Fetch with: `curl "http://localhost:3070/api/admin/plans/items?needsHuman=true&harness_slugs=$HARNESS_SLUG"`. These take precedence over any action you'd otherwise take.
 
 ## Decide one of these outcomes
@@ -54,7 +54,7 @@ NEXT_WORKER <FEATURE_ID> N=<k>
 `N=1` runs a single worker; `N>1` spawns that many workers on the same feature in sibling worktrees, and the synthesizer reads all their diffs after they commit and merges them into one shipping branch. Default to the smallest tier when in doubt.
 
 ### C0. "next_tester <FEATURE_ID> <VAL_ID>"
-A feature has status `validating` (a worker just committed) but **not every test-requiring VAL in its `claims` has a passing test covering it**. A VAL is *covered* when `GET /api/harness/$HARNESS_SLUG/tests` (the PG mirror of `.harness/tests.json`) has a test whose `coversVALs` includes that VAL with `status: "passing"`.
+A feature has status `validating` (a worker just committed) but **not every test-requiring VAL in its `claims` has a passing test covering it**. A VAL is *covered* when `GET /api/harness/$HARNESS_SLUG/tests` (the PG mirror of `.papercusp/tests.json`) has a test whose `coversVALs` includes that VAL with `status: "passing"`.
 
 A claim VAL is **exempt** from the test gate when its assertion has `requires_test: false` — resolve via `GET /api/harness/$HARNESS_SLUG/assertion/$VAL_ID` (non-testable claims: copy, a design-spec match, a judgement call). Skip exempt VALs here.
 
@@ -96,7 +96,7 @@ For each selected issue, atomically:
      -H "content-type: application/json" \
      -d '{"status":"fixing","linkedFeatureId":"F-FIX-NNN","by":"orchestrator","note":"Promoted to F-FIX-NNN"}'
    ```
-4. The F-FIX-* feature's `claims` array can reference a `VAL-FIX-NNN` assertion ID. If one is needed, it must already exist in `harness_plan_assertions` (written by the scoper when plan items have inline VAL-* bullets). Do not write to `.harness/validation-contract.md` — assertions are stored via `plans:set-content` inline in plan items, then extracted to PG by `plans:promote`.
+4. The F-FIX-* feature's `claims` array can reference a `VAL-FIX-NNN` assertion ID. If one is needed, it must already exist in `harness_plan_assertions` (written by the scoper when plan items have inline VAL-* bullets). Do not write to `.papercusp/validation-contract.md` — assertions are stored via `plans:set-content` inline in plan items, then extracted to PG by `plans:promote`.
 
 Both writes (PG `harness_features` via `POST /api/harness/<slug>/features` + the issues-update endpoint) are independent — the operator handles each atomically. Do not edit `issues.md` — it's narrative-only and append-only.
 
@@ -112,7 +112,7 @@ Where `<N>` is the number of issues promoted this round.
 ### D'. "next_architect <FEATURE_ID> <reason>"
 A feature has hit `attempts >= 3` and the validator keeps failing it. Before escalating to the human, ask the architect to diagnose the blocker — it may be a vague claim the architect can tighten, or a preference the human must make. Use a short reason that captures what's stuck (e.g. `attempts=4, VAL-FORM-002 failing`).
 
-Call this **at most once per feature per round**. If the architect already tried (see recent log entries for this feature and `.harness/pending-reviews/`) and couldn't resolve, escalate instead.
+Call this **at most once per feature per round**. If the architect already tried (see recent log entries for this feature and `.papercusp/pending-reviews/`) and couldn't resolve, escalate instead.
 
 Print:
 ```
@@ -121,11 +121,11 @@ NEXT_ARCHITECT <FEATURE_ID> <reason>
 
 ### D''. "feature_freeze" (during an active promotion to testing)
 
-If `.harness/pending-reviews/` contains an active Promotion item with `status: 'feature-freeze'` and `from: 'staging'`, you are in **feature-freeze mode**:
+If `.papercusp/pending-reviews/` contains an active Promotion item with `status: 'feature-freeze'` and `from: 'staging'`, you are in **feature-freeze mode**:
 
 - Do NOT pick `todo` features. Only process `failing` ones.
 - If no failing features remain AND no features are `validating`, the freeze is complete:
-  1. Write `.harness/promotion-handoff.md` containing a list of passed feature IDs + summaries, the active plan slug(s), and any known caveats from recent `issues.md`. VAL-* assertions are stored in PG (`harness_plan_assertions`) and accessible via the assertion API — do not copy them into the handoff file.
+  1. Write `.papercusp/promotion-handoff.md` containing a list of passed feature IDs + summaries, the active plan slug(s), and any known caveats from recent `issues.md`. VAL-* assertions are stored in PG (`harness_plan_assertions`) and accessible via the assertion API — do not copy them into the handoff file.
   2. Update the promotion item's `status` to `ready` and `readinessScore` to `1.0`.
   3. Print `FEATURE_FREEZE ready`.
 - Otherwise, update the promotion item's `readinessScore` (= passed / total) and `readinessSummary` on each loop, then proceed with `NEXT_WORKER F-xxx` or `NEXT_VALIDATOR F-xxx` as usual.
@@ -153,7 +153,7 @@ ESCALATE <one-line reason>
 ```
 
 ### F. "next_harness <child-slug> [--role=<role>]"  (harness-of-harnesses)
-Use this only when this harness is itself a **parent** harness (i.e. `.harness/config.json` has `harness_kind:'org'`). Coding harnesses ignore this option entirely.
+Use this only when this harness is itself a **parent** harness (i.e. `.papercusp/config.json` has `harness_kind:'org'`). Coding harnesses ignore this option entirely.
 
 When a strategic feature requires advancing a specific **child harness** (a registered department harness, coding harness, etc.), dispatch via the cross-harness verb. Examples:
 ```
@@ -161,7 +161,7 @@ NEXT_HARNESS org-business --role=director
 NEXT_HARNESS sheets --role=orchestrator
 ```
 
-The dispatcher (run.sh) tries `POST /api/harness/<child-slug>/invoke?role=<role>` first, falling back to direct shell exec into the child's run.sh if the API is unreachable. The child runs ONE iteration and returns; you'll see its result in your `.harness/runs/` log on the next loop.
+The dispatcher (run.sh) tries `POST /api/harness/<child-slug>/invoke?role=<role>` first, falling back to direct shell exec into the child's run.sh if the API is unreachable. The child runs ONE iteration and returns; you'll see its result in your `.papercusp/runs/` log on the next loop.
 
 Use this in preference to `NEXT_WORKER` when:
 - This harness's role is coordination/governance, not feature implementation.

@@ -1,4 +1,4 @@
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
@@ -44,7 +44,7 @@ For each `VAL-UI-*` assertion in this feature:
 2. Perform the user action (click, type, scroll, etc.).
 3. Observe: read the accessibility tree, extract text, or screenshot.
 4. Compare to the assertion.
-5. Save a screenshot to `.harness/screenshots/<FEATURE_ID>-ui-qa-<ts>.png` for each assertion, regardless of pass/fail.
+5. Save a screenshot to `.papercusp/screenshots/<FEATURE_ID>-ui-qa-<ts>.png` for each assertion, regardless of pass/fail.
 
 ## Output
 

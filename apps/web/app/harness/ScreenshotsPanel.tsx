@@ -89,7 +89,7 @@ export default function ScreenshotsPanel({ slug, onClose }: Props) {
         {/* Header */}
         <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #1f2937', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <strong>Screenshots — {slug}</strong>
-          <span style={{ fontFamily: 'monospace', color: '#6b7280', fontSize: '0.75rem' }}>.harness/screenshots/</span>
+          <span style={{ fontFamily: 'monospace', color: '#6b7280', fontSize: '0.75rem' }}>.papercusp/screenshots/</span>
           <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>{items.length} items</span>
           <input
             ref={fileInputRef}
@@ -125,7 +125,7 @@ export default function ScreenshotsPanel({ slug, onClose }: Props) {
           <div style={{ flex: '1 1 60%', overflow: 'auto', padding: '1rem', borderRight: '1px solid #1f2937' }}>
             {items.length === 0 ? (
               <div style={{ color: '#6b7280', textAlign: 'center', marginTop: '20%' }}>
-                No screenshots yet. Upload via the button above or drop files into <code>.harness/screenshots/</code>.
+                No screenshots yet. Upload via the button above or drop files into <code>.papercusp/screenshots/</code>.
                 <div style={{ marginTop: '1rem', fontSize: '0.75rem' }}>
                   A <code>post-worker.sh</code> hook can capture them automatically:<br/>
                   <pre style={{ background: '#111827', padding: '0.6rem', borderRadius: 4, marginTop: '0.5rem', textAlign: 'left', display: 'inline-block' }}>

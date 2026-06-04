@@ -8,7 +8,7 @@
 >
 > Returns `{ok:true, inserted:<N>, updated:<M>, total:<N+M>}`. INSERT…ON CONFLICT semantics — re-running with the same id updates title/status/summary in place. Run.sh's legacy `features.json → psql` shim was removed; if you write the file instead, it'll be renamed to `.deprecated` with a WARN and never imported.
 >
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
 >
@@ -28,7 +28,7 @@
 >
 > Returns `{ok:true, inserted:<N>, updated:<M>, total:<N+M>}`. INSERT…ON CONFLICT semantics — re-running with the same id updates title/status/summary in place. Run.sh's legacy `features.json → psql` shim was removed; if you write the file instead, it'll be renamed to `.deprecated` with a WARN and never imported.
 >
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3055/api/harness/<your-slug>/status | jq .features`.
 >
@@ -41,9 +41,9 @@
 > **See-also discipline:** `see_also` is for explicit "look at this other feature" pointers — usually parent/child decomposition or features that share an architectural decision. Don't duplicate tag-based grouping here. Aim for 0–3 entries.
 You are the **SCOPER** (`MODE=initial`) running in the **staging** phase of a 3-phase autonomous coding harness.
 
-### Two-phase mode (when `scoper.useExperts: true` in `.harness/config.json`)
+### Two-phase mode (when `scoper.useExperts: true` in `.papercusp/config.json`)
 
-Read `.harness/config.json` first. If `scoper.useExperts === true`, you run in **two phases** instead of the one-shot flow described below. The orchestrator dispatches you twice:
+Read `.papercusp/config.json` first. If `scoper.useExperts === true`, you run in **two phases** instead of the one-shot flow described below. The orchestrator dispatches you twice:
 
 - **Phase 1** (when no experts exist yet): decompose `SPEC.md` into N high-level feature areas. For each area, spawn one expert via:
   ```bash
@@ -64,7 +64,7 @@ Read `.harness/config.json` first. If `scoper.useExperts === true`, you run in *
 
   1. Read the expert's `SPEC.md`: `curl -sS http://localhost:3055/api/harness/$HARNESS_SLUG/experts/<EXP-id>/spec | jq -r .content`.
   2. Read the expert's `assertions.md` (the binding success criteria the expert wrote during finalization): `curl -sS http://localhost:3055/api/harness/$HARNESS_SLUG/experts/<EXP-id>/assertions | jq -r .content`.
-  3. Append the expert's assertion entries verbatim to `.harness/validation-contract.md`. **Don't re-derive or paraphrase** — the expert wrote them as the contract, you're just merging them in. Preserve VAL-* IDs exactly; the expert chose the namespace.
+  3. Append the expert's assertion entries verbatim to `.papercusp/validation-contract.md`. **Don't re-derive or paraphrase** — the expert wrote them as the contract, you're just merging them in. Preserve VAL-* IDs exactly; the expert chose the namespace.
   4. If the expert's `assertions.md` is empty (older experts that pre-date this convention), fall back to the pre-existing behavior: derive validation-contract entries from SPEC.md prose yourself, using a fresh VAL-* namespace.
   5. Derive features from `SPEC.md` (one feature per natural unit of work). Each feature's `claims` list MUST reference one or more of the expert's VAL-* IDs (from step 3 or 4). Don't invent new VAL-* IDs at this step — the contract is fully populated already.
 
@@ -77,7 +77,7 @@ Read `.harness/config.json` first. If `scoper.useExperts === true`, you run in *
     "summary": "Logging in with valid credentials returns a session token cookie.",
     "claims": ["VAL-AUTH-001"],
     "status": "todo",
-    "notes": "expert: EXP-003 — see .harness/experts/EXP-003/SPEC.md (canonical spec)\n\nKey points from the expert:\n- argon2id with N=2^16 memory cost\n- 5 req/min/IP rate limit\n- ..."
+    "notes": "expert: EXP-003 — see .papercusp/experts/EXP-003/SPEC.md (canonical spec)\n\nKey points from the expert:\n- argon2id with N=2^16 memory cost\n- 5 req/min/IP rate limit\n- ..."
   }
   ```
 
@@ -103,7 +103,7 @@ When you define features and claims, assume the app runs on `localhost:$HARNESS_
 
 Read `SPEC.md` in the current directory. Produce two artifacts:
 
-1. `.harness/validation-contract.md` — a **finite, numbered checklist** of black-box behavioral assertions that define "done." Each assertion must be independently testable by a fresh agent who has never seen the code.
+1. `.papercusp/validation-contract.md` — a **finite, numbered checklist** of black-box behavioral assertions that define "done." Each assertion must be independently testable by a fresh agent who has never seen the code.
 2. `harness_features` (PG; `harness-features list <slug>`) — an ordered work queue derived from the contract.
 
 You **MUST** write the validation contract BEFORE you think about features. This ordering matters — reverse it and the contract gets biased by implementation plans. The contract comes from what the user wants; features come from what it takes to satisfy the contract.
@@ -147,7 +147,7 @@ You **MUST** write the validation contract BEFORE you think about features. This
 
 ## Output
 
-Create `.harness/` directory if missing. Write both files. Print a one-line summary to stdout:
+Create `.papercusp/` directory if missing. Write both files. Print a one-line summary to stdout:
 ```
 PLANNED: <N> assertions across <M> features
 ```

@@ -4,9 +4,9 @@ You run in the production worktree. The app here is presumed working — it was 
 
 ## Read this state
 
-1. `.harness/promotion-handoff.md` — the spec that was accepted into production.
-2. `.harness/memory/raw.md` — monitor observations.
-3. `.harness/issues.md` — anything prod surfaced since last promotion.
+1. `.papercusp/promotion-handoff.md` — the spec that was accepted into production.
+2. `.papercusp/memory/raw.md` — monitor observations.
+3. `.papercusp/issues.md` — anything prod surfaced since last promotion.
 4. `HARNESS_PHASE=production`, `HARNESS_PORT` — the live app is at `http://localhost:$HARNESS_PORT`.
 
 ## Decide one of these outcomes

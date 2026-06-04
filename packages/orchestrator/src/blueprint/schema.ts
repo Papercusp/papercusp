@@ -1,0 +1,326 @@
+/**
+ * Harness Blueprint — the Zod schema (validator-of-record).
+ *
+ * `harness-blueprint-orchestration-2026-06-03` P-001 / D-001 / D-008.
+ *
+ * A Blueprint is the entire declarative shape of a harness: its work-item type,
+ * role set, orchestration spine, planner, reactive overlay, gates, recursion,
+ * gym rubric, and knobs. It is **agent-authorable** (validated `blueprint:*`
+ * tools), **inheritable** (`extends`), and **versioned** (git-canonical
+ * `.papercusp/blueprint.yaml`, projected to PG — D-006/D-021).
+ *
+ * This module defines the **resolved** schema — the shape a fully-merged
+ * blueprint must satisfy. Inheritance is resolved by deep-merging the raw
+ * on-disk objects (child over parent) BEFORE a single `BlueprintSchema.parse`,
+ * so `.default()`s apply exactly once on the merged result and an absent child
+ * field correctly inherits the parent's value (a default applied per-file would
+ * clobber inheritance). The loader (P-002) does the merge; this file is the
+ * contract both it and the authoring tools (P-007) validate against.
+ *
+ * Relationship to `HarnessConfig` (`types.ts`): the blueprint is a superset of
+ * HarnessConfig's **shape/knob** fields only (see `knobs` below). Per-install
+ * **instance** fields — `phase`, `phases` (port/dbPath), `dept` — stay in
+ * `.papercusp/config.json`; they describe *this* install, not the harness shape.
+ */
+import { z } from 'zod';
+
+/**
+ * The work unit the director schedules/executes. Maps onto the canonical
+ * `work_items(kind, payload)` table (D-013). `kind` is the discriminator
+ * (`feature` for coding, `research-task` for research); `idPrefix` shapes the
+ * human id (`F` → `F-001`). `payload` is a loose authoring/doc descriptor — the
+ * authoritative per-kind payload validation lives in code, not here.
+ */
+export const WorkItemSchema = z.object({
+  kind: z.string().min(1),
+  idPrefix: z.string().default('W'),
+  payload: z.record(z.string(), z.unknown()).optional(),
+});
+
+/**
+ * A role in the blueprint. `id` resolves a prompt via the tiered `prompt-resolve`
+ * lookup (`prompts/<id>.md` by default; `prompt` overrides with an explicit path
+ * relative to the blueprint dir). `tools`/`capabilities` are generous hints the
+ * distribution plan's import-time dep-manifest (su-4b6ce E2, distribution
+ * P-003/P-004) resolves against the catalog + Cupboard. `reactive: true` marks a
+ * role that belongs to the condition-triggered overlay, not the spine.
+ */
+export const BlueprintRoleSchema = z.object({
+  id: z.string().min(1),
+  prompt: z.string().optional(),
+  model: z.string().optional(),
+  tools: z.array(z.string()).optional(),
+  capabilities: z.array(z.string()).optional(),
+  reactive: z.boolean().default(false),
+  description: z.string().optional(),
+});
+
+/**
+ * A spine edge's action — what happens when the decider emits a given verb.
+ * This is the data form of `classifyDecision`'s switch arms (`PipelineAction`):
+ *
+ *   - `done` / `escalate` / `idle` → terminal (finalize / stop).
+ *   - `role` → dispatch a role and loop. `extras` are templated with `{feature}`
+ *     and `{arg}` (e.g. `FEATURE_ID={feature}`, `VAL_ID={arg}`). `rejectWhenParallel`
+ *     turns an `N=k` (parallel-lane) decision into `unsupported` for this verb —
+ *     parallel lanes are the global orchestrator's job, not the per-feature
+ *     pipeline's (D-001); today only `NEXT_WORKER` sets it.
+ *   - `unsupported` → warn + stop (a global-only verb the per-feature pipeline
+ *     deliberately does not run).
+ */
+export const SpineActionSchema = z.discriminatedUnion('to', [
+  z.object({ to: z.literal('done') }),
+  z.object({
+    to: z.literal('escalate'),
+    /** Static reason, or pull it from the decision arg with `reasonFrom: 'arg'`. */
+    reason: z.string().optional(),
+    reasonFrom: z.enum(['arg']).optional(),
+  }),
+  z.object({ to: z.literal('idle') }),
+  z.object({
+    to: z.literal('role'),
+    role: z.string().min(1),
+    extras: z.array(z.string()).default([]),
+    rejectWhenParallel: z.boolean().default(false),
+  }),
+  z.object({ to: z.literal('unsupported') }),
+]);
+
+/**
+ * The orchestration spine — a flat declared graph (D-024). The `decider` role
+ * emits a verb each turn; `deriveNext` looks the verb up in `edges` and returns
+ * the corresponding action, falling back to `default` for a null/unparseable
+ * decision or a verb with no edge. A behavior-preserving lift of today's
+ * director loop + `classifyDecision` switch. Behavior-tree composition is
+ * deferred (D-024) — the flat verb→action map proves the engine first.
+ */
+export const SpineSchema = z.object({
+  decider: z.string().min(1).default('director'),
+  /** Hard iteration cap (was `MAX_TURNS`; promoted to a blueprint field — P-004). */
+  maxTurns: z.number().int().positive().default(200),
+  /** verb → action. Keys are the blueprint's verb vocabulary (per-blueprint). */
+  edges: z.record(z.string(), SpineActionSchema),
+  /** Action for a null/unparseable decision or an unmapped verb. */
+  default: SpineActionSchema.default({ to: 'idle' }),
+});
+
+/**
+ * The planner that generates the Level-2 runtime task DAG (the per-goal plan).
+ * `features-import` = the existing plans→features import (coding's Level-2 DAG —
+ * waves + blocked_by parallelism). `inline` = the decider plans within its own
+ * loop (research default — D-016). `none` = no separate planner.
+ */
+export const PlannerSchema = z.object({
+  kind: z.enum(['features-import', 'inline', 'none']).default('none'),
+  config: z.record(z.string(), z.unknown()).optional(),
+});
+
+/**
+ * A reactive-overlay rule (layer 3 — 3T/blackboard): a condition-triggered role
+ * that can preempt the spine. v1 covers coding's debugger-before-worker gate
+ * (`beforeRole: 'worker'`, `minAttempts: <threshold>`, `unless: 'debug-note'`).
+ * `custom` is a named host-side predicate escape hatch for conditions the
+ * declarative form can't yet express.
+ */
+export const ReactiveRuleSchema = z.object({
+  role: z.string().min(1),
+  when: z.object({
+    beforeRole: z.string().optional(),
+    afterRole: z.string().optional(),
+    minAttempts: z.number().int().nonnegative().optional(),
+    unless: z.string().optional(),
+    custom: z.string().optional(),
+  }),
+  /** true → can interrupt the spine (3T reactive preemption); false → advisory. */
+  preempt: z.boolean().default(false),
+});
+
+/**
+ * Gates: the finalize-recipe (what runs on a terminal outcome — promoted from a
+ * hardcoded constant, P-004) plus named human-approval gates.
+ */
+export const GatesSchema = z.object({
+  finalize: z
+    .object({
+      /** Roles/steps run on `done` — e.g. `['curator','documenter','archive']`. */
+      onDone: z.array(z.string()).default([]),
+      /** Roles/steps run on `escalate` — e.g. `['curator']`. */
+      onEscalate: z.array(z.string()).default([]),
+    })
+    .optional(),
+  approvals: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        role: z.string().optional(),
+        blocking: z.boolean().default(true),
+      }),
+    )
+    .default([]),
+});
+
+/**
+ * Harness-boundary recursion (layer 4 — Erlang/OTP supervision): a role spawns a
+ * durable sub-harness with a declared restart/escalation strategy. Off for
+ * coding (per-feature pipelines don't recurse); on for research overflow (spawn
+ * a sub-research-harness) and monorepo sub-projects (D-016/D-023). Recursion is
+ * at the *harness* boundary — preserving durability, gates, and observability.
+ */
+export const RecursionSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Blueprint a spawned child uses; defaults to self when omitted. */
+  childBlueprint: z.string().optional(),
+  spawnOn: z
+    .object({
+      role: z.string().optional(),
+      verb: z.string().optional(),
+      custom: z.string().optional(),
+    })
+    .optional(),
+  strategy: z.enum(['one-for-one', 'rest-for-one', 'escalate']).default('escalate'),
+  maxDepth: z.number().int().nonnegative().default(1),
+});
+
+/**
+ * The judge rubric a gym run scores against. Structurally mirrors the gym's
+ * `GymJudgeRubric` (`apps/operator/lib/gym/judge-scoring.ts`) without importing
+ * it (that lives in the operator; this is a lib). The operator's gym maps this
+ * onto its concrete rubric type.
+ */
+export const GymRubricSchema = z.object({
+  version: z.string().default('v1'),
+  model: z.string().optional(),
+  temperature: z.number().optional(),
+  thinkingBudgetTokens: z.number().int().optional(),
+  weights: z.record(z.string(), z.number()).optional(),
+  dimensions: z.record(z.string(), z.string()).optional(),
+});
+
+/**
+ * Per-blueprint gym configuration (the self-improving layer). `collectTrace` is
+ * the fifth seam (D-015) that breaks the gym's repo-coupling: `git-diff` for
+ * coding (diff over the substrate clone), `work-item-output` for research
+ * (work-item output + transcript), or a named custom collector. `signals` are
+ * deterministic, un-gameable guardrails resolved by name host-side
+ * (`regressionsFromTests`, `plantedBugCaught`). The *target* blueprint declares
+ * this; the `gym` blueprint reads it (D-022).
+ */
+export const GymSchema = z.object({
+  collectTrace: z.union([z.enum(['git-diff', 'work-item-output']), z.string()]).default('work-item-output'),
+  signals: z.array(z.string()).default([]),
+  rubric: GymRubricSchema.optional(),
+});
+
+/**
+ * Knobs — the shape/knob subset of `HarnessConfig` that becomes part of the
+ * harness *shape* (vs the per-install instance fields that stay in config.json).
+ * `.catchall(unknown)` keeps forward-unknown knobs rather than stripping them.
+ */
+export const KnobsSchema = z
+  .object({
+    harnessKind: z.string().optional(),
+    maxCostUsd: z.number().optional(),
+    logRetention: z.number().int().optional(),
+    branchIsolation: z.object({ enabled: z.boolean().optional(), baseBranch: z.string().optional() }).optional(),
+    worktrees: z.object({ enabled: z.boolean().optional() }).optional(),
+    reviewer: z.object({ replanOnAccept: z.boolean().optional() }).optional(),
+    product: z
+      .object({
+        enabled: z.boolean().optional(),
+        triggerOnNearDone: z.boolean().optional(),
+        nearDoneThreshold: z.number().optional(),
+        mode: z.enum(['auto-apply', 'propose-only']).optional(),
+        replanOnAccept: z.boolean().optional(),
+      })
+      .optional(),
+    models: z.record(z.string(), z.string()).optional(),
+    /** debugger-before-worker gate threshold (attempts ≥ n fires the gate). */
+    debuggerThreshold: z.number().int().nonnegative().optional(),
+    /** The repo's verified test command (P-009 generate-from-repo detects + runs it once;
+     *  consumed by the worker/validator gate + the gym signals). */
+    testCommand: z.string().optional(),
+    /** UI-QA opt-in for frontend repos (P-009 sets this when a frontend is detected). */
+    uiQa: z.object({ enabled: z.boolean().optional() }).optional(),
+    /** Does instantiating this blueprint require a git repo? (P-008; coding=true, research=false.) */
+    requiresRepo: z.boolean().default(true),
+  })
+  .catchall(z.unknown());
+
+/**
+ * Scheduler defaults the blueprint declares; `harness:create` materializes them
+ * into `harness_shared.routines` (D-018). The routine's target is the
+ * `system:blueprint-run` action — NOT a `pending_events` consumer (that hop is
+ * retired). Runtime-editable after creation (pause/retime via upsert).
+ */
+export const TriggersSchema = z.object({
+  schedule: z
+    .array(
+      z.object({
+        cron: z.string().min(1),
+        action: z.string().default('system:blueprint-run'),
+      }),
+    )
+    .default([]),
+});
+
+/**
+ * Tool/plugin dependencies the blueprint's roles need. The distribution plan's
+ * import-time validation (su-4b6ce distribution P-003/P-004) resolves these
+ * against the catalog + Cupboard plugin listings and fails upfront with
+ * "needs plugin X", closing the call-time-only `unknown_tool` gap.
+ */
+export const DependenciesSchema = z.object({
+  tools: z.array(z.string()).default([]),
+  plugins: z.array(z.string()).default([]),
+});
+
+/**
+ * The resolved Blueprint — the validator-of-record. A fully-merged blueprint
+ * (after `extends` resolution) must satisfy this.
+ */
+export const BlueprintSchema = z.object({
+  id: z.string().min(1),
+  /** Parent blueprint id(s); resolved local → installed → built-in. */
+  extends: z.union([z.string(), z.array(z.string())]).optional(),
+  version: z.string().default('0.1.0'),
+  description: z.string().optional(),
+  workItem: WorkItemSchema,
+  roles: z.array(BlueprintRoleSchema).default([]),
+  spine: SpineSchema,
+  // `.prefault({})` (not `.default`) so an absent field is parsed THROUGH the
+  // sub-schema — filling its inner defaults fully and idempotently. A plain
+  // `.default({})` short-circuits and would leave inner defaults unfilled until
+  // a second parse (breaking validator-of-record round-tripping).
+  planner: PlannerSchema.prefault({}),
+  reactive: z.array(ReactiveRuleSchema).default([]),
+  gates: GatesSchema.prefault({}),
+  recursion: RecursionSchema.prefault({}),
+  gym: GymSchema.optional(),
+  knobs: KnobsSchema.prefault({}),
+  triggers: TriggersSchema.optional(),
+  dependencies: DependenciesSchema.optional(),
+});
+
+/**
+ * The on-disk header — just enough to read `id` + `extends` from a raw file
+ * before the inheritance merge (the merge happens on the raw plain objects; the
+ * merged result is then parsed through `BlueprintSchema`). `.loose()` keeps
+ * every other field so the loader can hand the whole object to the merge.
+ */
+export const BlueprintHeaderSchema = z.looseObject({
+  id: z.string().min(1),
+  extends: z.union([z.string(), z.array(z.string())]).optional(),
+});
+
+export type Blueprint = z.infer<typeof BlueprintSchema>;
+export type BlueprintSpine = z.infer<typeof SpineSchema>;
+export type SpineAction = z.infer<typeof SpineActionSchema>;
+export type BlueprintRole = z.infer<typeof BlueprintRoleSchema>;
+export type BlueprintWorkItem = z.infer<typeof WorkItemSchema>;
+export type BlueprintReactiveRule = z.infer<typeof ReactiveRuleSchema>;
+export type BlueprintGates = z.infer<typeof GatesSchema>;
+export type BlueprintRecursion = z.infer<typeof RecursionSchema>;
+export type BlueprintGym = z.infer<typeof GymSchema>;
+export type BlueprintKnobs = z.infer<typeof KnobsSchema>;
+export type BlueprintTriggers = z.infer<typeof TriggersSchema>;
+export type BlueprintHeader = z.infer<typeof BlueprintHeaderSchema>;

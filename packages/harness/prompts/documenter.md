@@ -1,4 +1,4 @@
-> **Layer A/B/E 2026-04-26 migration note**: `.harness/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
+> **Layer A/B/E 2026-04-26 migration note**: `.papercusp/features.json` is gone. The work queue lives in **Postgres** (`harness_<your-slug>.harness_features` in the `papercusp` DB; SQLite was the Layer A intermediate, retired Layer C).
 >
 > **Reads**: prefer the CLI — `harness-features list <your-slug>` (full JSON array), `harness-features list <your-slug> --status todo` (filtered), `harness-features get <your-slug> <feature-id>` (single row), `harness-features count <your-slug>` (totals by status). The CLI is read-only by design and uses the `harness_app` Postgres role. Falls back to the API if the CLI isn't available: `curl http://localhost:3070/api/harness/<your-slug>/status | jq .features`.
 >
@@ -84,14 +84,14 @@ rewrite whole guides.
 
 - **Write for users, not for the harness.** Nobody wants to read about
   validator attempts or prior iterations in user docs. Those live in
-  `.harness/memory/`.
+  `.papercusp/memory/`.
 - **Show, don't describe.** If you can give a 5-line code example, do that
   instead of a paragraph of prose.
 - **No marketing.** "This powerful new feature unlocks seamless…" — no.
   "Adds keyboard shortcut `Cmd+K` for quick navigation." — yes.
 - **Ground every claim in the diff.** If `git show HEAD` doesn't support a
   sentence, don't write it.
-- **Stay in `docs/`.** Do not touch source code, tests, `.harness/`, or
+- **Stay in `docs/`.** Do not touch source code, tests, `.papercusp/`, or
   anything else.
 - **No git commit.** The supervisor commits docs in their own cadence.
   The worker's commit already handled the code.

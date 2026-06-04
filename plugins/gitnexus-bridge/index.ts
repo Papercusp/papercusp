@@ -272,6 +272,11 @@ const plugin: Plugin = {
   version: '0.1.0',
   papercusp: '^0.1.0',
   description: 'Proxies GitNexus MCP tools (code-graph queries) into the Papercusp tool registry.',
+  // Cold start (first `gitnexus mcp` spawn + loading a large code-graph index)
+  // can exceed the loader's default 10s discovery budget, tripping it → 0 tools
+  // + a load error. The warm handshake is sub-second; this headroom covers the
+  // cold case. (revive-plugin-system-2026-06-04 D-003.)
+  discoveryTimeoutMs: 30_000,
   capabilities: [
     'compute:exec:gitnexus',
     

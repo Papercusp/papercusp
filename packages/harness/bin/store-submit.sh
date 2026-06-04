@@ -13,7 +13,7 @@ set -uo pipefail
 
 HARNESS_ROOT="${HARNESS_ROOT:-$PWD}"
 cd "$HARNESS_ROOT" || exit 1
-STATE_DIR="$HARNESS_ROOT/.harness"
+STATE_DIR="$HARNESS_ROOT/.papercusp"
 LOG_DIR="$STATE_DIR/logs/store-submit"
 mkdir -p "$LOG_DIR"
 TS="$(date -u +%Y-%m-%dT%H-%M-%SZ)"

@@ -24,7 +24,7 @@ export interface PromptResolveContext {
   harnessDir: string;
   /** Resolved phase, e.g. "staging" / "department". May be empty. */
   phase: string;
-  /** Department slug from .harness/config.json `dept`, or empty. */
+  /** Department slug from .papercusp/config.json `dept`, or empty. */
   dept: string;
 }
 

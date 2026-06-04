@@ -2,14 +2,14 @@
 # Mobile build smoke gate — runs from a coding harness root.
 # Triggers EAS Build for both iOS + Android in preview profile (cloud-signed).
 # Reads creds from ~/.restart-org/secrets/eas-token.txt (set via PUT /api/org/secrets/eas-token).
-# Writes .harness/build-mobile-pass.md or .harness/build-mobile-fail.md.
+# Writes .papercusp/build-mobile-pass.md or .papercusp/build-mobile-fail.md.
 #
 # Exits 0 on success, 1 on fail. Intended for use as smoke-test gate or pre-commit hook.
 
 set -uo pipefail
 
 HARNESS_ROOT="${HARNESS_ROOT:-$PWD}"
-STATE_DIR="$HARNESS_ROOT/.harness"
+STATE_DIR="$HARNESS_ROOT/.papercusp"
 TS="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 PASS_FILE="$STATE_DIR/build-mobile-pass.md"
 FAIL_FILE="$STATE_DIR/build-mobile-fail.md"

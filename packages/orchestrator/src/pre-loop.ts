@@ -84,7 +84,7 @@ export async function runPreLoop(
         logger.log('⛔ Plan-gate rejected — writing escalation and exiting 7.');
         const escalationBody =
           '# Plan-gate rejected the plan\n\n' +
-          'See .harness/plan-review.md for details.\n';
+          'See .papercusp/plan-review.md for details.\n';
         if (ctx.pg && ctx.workspaceId) {
           const { setEscalationPg } = await import('./mission-state-pg');
           await setEscalationPg(

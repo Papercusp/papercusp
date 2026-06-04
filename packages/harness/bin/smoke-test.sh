@@ -41,24 +41,24 @@ mkdir -p .harness
     echo "---"
     echo "## Runtime context"
     echo "- Working directory: $TEST_DIR"
-    echo "- State directory: $TEST_DIR/.harness"
+    echo "- State directory: $TEST_DIR/.papercusp"
 } | $CLAUDE $SMOKE_EXTRA > /tmp/planner-smoke.out 2>&1
 
 echo "--- stdout (last 5 lines) ---"
 tail -5 /tmp/planner-smoke.out
 
 echo "--- artifacts ---"
-if [ -f .harness/validation-contract.md ] && [ -f .harness/features.json ]; then
+if [ -f .papercusp/validation-contract.md ] && [ -f .papercusp/features.json ]; then
     echo "✅ planner produced both artifacts"
     echo
     echo "--- validation-contract.md (head 20) ---"
-    head -20 .harness/validation-contract.md
+    head -20 .papercusp/validation-contract.md
     echo
     echo "--- features.json ---"
-    cat .harness/features.json
+    cat .papercusp/features.json
     exit 0
 else
     echo "❌ planner FAILED to produce artifacts"
-    ls -la .harness/ 2>/dev/null || echo "(no .harness dir at all)"
+    ls -la .papercusp/ 2>/dev/null || echo "(no .harness dir at all)"
     exit 1
 fi

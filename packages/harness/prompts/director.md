@@ -17,7 +17,7 @@ decision, and exit.
    Statuses: `pending` (not started), `in_progress` (a worker has run), `failed`
    (validation rejected it), `passed` (accepted), `proposed` (not yet approved).
 2. The latest worker / validator output for this feature, if any — the pointer at
-   `.harness/last-validator-out/<FEATURE_ID>.path` and recent run logs.
+   `.papercusp/last-validator-out/<FEATURE_ID>.path` and recent run logs.
 3. Open `needs-human` plan items touching this feature — fetch via
    `plans:items { needsHuman: true }`. An open one **blocks DONE**.
 

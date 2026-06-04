@@ -69,7 +69,7 @@ async function main(): Promise<number> {
     return 2;
   }
 
-  const stateDir = process.env.STATE_DIR ?? `${projectDir}/.harness`;
+  const stateDir = process.env.STATE_DIR ?? `${projectDir}/.papercusp`;
   const harnessDir = process.env.HARNESS_DIR ?? harnessRoot();
   const logDir = `${stateDir}/logs`;
 

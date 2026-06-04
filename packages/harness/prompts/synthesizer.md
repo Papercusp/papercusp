@@ -6,7 +6,7 @@ You have a **fresh context**. Do not assume knowledge of previous sessions. All 
 
 ## What's already happened
 
-One or more worker agents implemented `$FEATURE_ID` independently. Each worker has its own git worktree and branch. You'll see them under `.harness/worktrees/<FEATURE_ID>-lane-<N>/` (or, when `SYNTHESIS_LANE_COUNT=1`, under `.harness/worktrees/<FEATURE_ID>/`).
+One or more worker agents implemented `$FEATURE_ID` independently. Each worker has its own git worktree and branch. You'll see them under `.papercusp/worktrees/<FEATURE_ID>-lane-<N>/` (or, when `SYNTHESIS_LANE_COUNT=1`, under `.papercusp/worktrees/<FEATURE_ID>/`).
 
 The harness has already created your working directory: `$SYNTHESIS_WORKTREE`.
 
@@ -28,7 +28,7 @@ The harness injects these env-shaped values:
 ## Required reads (in order)
 
 1. The feature's **plan item / acceptance** — what the feature is supposed to do. Ground truth. (SPEC.md is deprecated — D-004; intent lives in the owning plan.)
-2. The feature's inline **VAL-* assertions** — the binding acceptance contract for this feature (carried on the feature row, read in step 3). (`.harness/validation-contract.md` is deprecated — D-005.)
+2. The feature's inline **VAL-* assertions** — the binding acceptance contract for this feature (carried on the feature row, read in step 3). (`.papercusp/validation-contract.md` is deprecated — D-005.)
 3. `harness_features` (PG) — pull this feature's row with `harness-features get <slug> $FEATURE_ID` for its claims and current status.
 4. `AGENTS.md` / `CLAUDE.md` if present — project conventions.
 5. Each candidate's diff: `git diff <base>...<lane.branch>` for each lane. Or read files directly from each lane's worktree.

@@ -30,7 +30,7 @@ import API the scoper uses. You do not produce intermediate SPECs.
    - `EXPERT_BUDGET_CENTS` — soft cost cap in USD cents (e.g. `50` means $0.50). Stay within this. Stop early and emit what you have if you're close to the cap.
      ```
 
-2. **The harness's deploy contract** at `.harness/infra-contract.json`
+2. **The harness's deploy contract** at `.papercusp/infra-contract.json`
    (in `$STATE_DIR`). If the file exists, read it. It declares what
    the deployment pipeline depends on:
 
@@ -38,7 +38,7 @@ import API the scoper uses. You do not produce intermediate SPECs.
    {
      "buildInputs":   ["apps/web/**", "package.json", "package-lock.json"],
      "buildOutputs":  ["apps/web/dist"],
-     "buildScripts":  [".harness/actions/*/build.sh", ".harness/actions/_lib/*.sh"],
+     "buildScripts":  [".papercusp/actions/*/build.sh", ".papercusp/actions/_lib/*.sh"],
      "requiredEnv":   ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
      "smokeChecks":   [{ "type": "http", "url": "...", "expectStatus": 200 }],
      "deployTargets": ["cloudflare-pages"]
@@ -50,7 +50,7 @@ import API the scoper uses. You do not produce intermediate SPECs.
    changes.
 
 3. **The action scripts** at `$STATE_DIR/actions/` (or
-   `$PROJECT_DIR/.harness/actions/`):
+   `$PROJECT_DIR/.papercusp/actions/`):
    - `<branch>/<name>.sh` — per-branch action scripts (typically
      `staging/build.sh`, `testing/build.sh`, `production/build.sh`)
    - `<branch>/<name>.manifest.json` — declared env requirements
@@ -72,7 +72,7 @@ import API the scoper uses. You do not produce intermediate SPECs.
 
 ---
 
-## Bootstrap (when `.harness/infra-contract.json` is absent)
+## Bootstrap (when `.papercusp/infra-contract.json` is absent)
 
 Generate a draft contract from observable facts and write it to disk
 (use the Write tool). Do NOT skip this — it's required input for your
@@ -85,8 +85,8 @@ Sources to infer from:
   for `cd "$PROJECT_ROOT/apps/web"`, etc.)
 - **`buildOutputs`**: paths the action scripts deploy from (look for
   `wrangler pages deploy "$DIST_DIR"`, etc.)
-- **`buildScripts`**: glob `.harness/actions/*/build.sh` +
-  `.harness/actions/_lib/*.sh`
+- **`buildScripts`**: glob `.papercusp/actions/*/build.sh` +
+  `.papercusp/actions/_lib/*.sh`
 - **`requiredEnv`**: union of `env` keys across all
   `<branch>/<name>.manifest.json` files
 - **`deployTargets`**: from action script `wrangler` / `vercel` /
@@ -96,7 +96,7 @@ Sources to infer from:
 Write the file via the Write tool:
 
 ```
-Write tool call → path: ".harness/infra-contract.json"
+Write tool call → path: ".papercusp/infra-contract.json"
 ```
 
 After writing, log a single line:
@@ -187,11 +187,11 @@ The summary becomes the prompt the worker agent reads. Make it:
 - **Concrete**: name files and lines, not abstractions.
 - **Self-contained**: the worker shouldn't need to re-read the proposal.
 - **Actionable**: end with a verb. "Add `npm run db:migrate` immediately
-  before `npm run build` in `.harness/actions/<branch>/build.sh`."
+  before `npm run build` in `.papercusp/actions/<branch>/build.sh`."
 
 Bad: "Update the build pipeline to support the new database layer."
 Good: "Add `npm run db:migrate` between `npm install` and
-`npm run build` in `.harness/actions/staging/build.sh`,
+`npm run build` in `.papercusp/actions/staging/build.sh`,
 `testing/build.sh`, and `production/build.sh`. Add `DATABASE_URL` to
 each branch's `build.manifest.json` under `env`, sourced from
 plugin `@papercupai/neon` field `connectionString`."

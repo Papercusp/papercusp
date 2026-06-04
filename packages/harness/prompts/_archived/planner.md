@@ -4,8 +4,8 @@ You are the **PLANNER** in a 3-agent autonomous coding harness.
 
 Read `SPEC.md` in the current directory. Produce two artifacts:
 
-1. `.harness/validation-contract.md` — a **finite, numbered checklist** of black-box behavioral assertions that define "done." Each assertion must be independently testable by a fresh agent who has never seen the code.
-2. `.harness/features.json` — an ordered work queue derived from the contract.
+1. `.papercusp/validation-contract.md` — a **finite, numbered checklist** of black-box behavioral assertions that define "done." Each assertion must be independently testable by a fresh agent who has never seen the code.
+2. `.papercusp/features.json` — an ordered work queue derived from the contract.
 
 You **MUST** write the validation contract BEFORE you think about features. This ordering matters — reverse it and the contract gets biased by implementation plans. The contract comes from what the user wants; features come from what it takes to satisfy the contract.
 
@@ -48,7 +48,7 @@ You **MUST** write the validation contract BEFORE you think about features. This
 
 ## Output
 
-Create `.harness/` directory if missing. Write both files. Print a one-line summary to stdout:
+Create `.papercusp/` directory if missing. Write both files. Print a one-line summary to stdout:
 ```
 PLANNED: <N> assertions across <M> features
 ```

@@ -3,7 +3,7 @@
  * marketplace so others can browse / fork.
  *
  * Subcommands (current MVP):
- *   publish <harness-slug>            Bundle .harness/ + manifest, POST to
+ *   publish <harness-slug>            Bundle .papercusp/ + manifest, POST to
  *                                     marketplace as kind=snapshot.
  *
  * Storage: same flow as `papercusp publish` (plugins/harnesses), only the
@@ -51,7 +51,7 @@ function isValidSlug(s: string): boolean {
     || /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(s);
 }
 
-/** Best-effort: read iteration count and feature counts from .harness/. */
+/** Best-effort: read iteration count and feature counts from .papercusp/. */
 async function inspectHarnessState(harnessDir: string): Promise<{
   iteration: number;
   featureCounts: Record<string, number>;
@@ -129,7 +129,7 @@ function cmdSnapshotHelp(): void {
   console.log(`${cyan('papercusp snapshot')} — publish + fork frozen harness state from the marketplace
 
 ${cyan('publish <harness-slug>')} ${dim('[--name <slug>] [--note "<text>"] [--icon <Lucide>] [--include-project]')}
-                                 ${dim('Bundle the harness\'s .harness/ directory (features, decisions, audit history)')}
+                                 ${dim('Bundle the harness\'s .papercusp/ directory (features, decisions, audit history)')}
                                  ${dim('and push to the marketplace as kind=snapshot.')}
 
 ${cyan('fork <snapshot-slug>')} ${dim('[<new-harness-slug>] [--path <dir>]')}
@@ -138,7 +138,7 @@ ${cyan('fork <snapshot-slug>')} ${dim('[<new-harness-slug>] [--path <dir>]')}
 
 ${cyan('list')} ${dim('[--harness <slug>] [--json]')}
                                  ${dim('List local snapshots captured by the operator under each registered')}
-                                 ${dim('harness\'s .harness/snapshots/. Same data as the /snapshots UI.')}
+                                 ${dim('harness\'s .papercusp/snapshots/. Same data as the /snapshots UI.')}
 
 ${cyan('info <snap-id>')} ${dim('[--json]')}
                                  ${dim('Inspect a local snapshot\'s manifest: source harness, files, plugins,')}
@@ -161,7 +161,7 @@ ${cyan('Options')}
   --include-project  Also include the project source tree (off by default — snapshots are
                      state-only by default; the source code lives in the parent harness or
                      git remote).
-  --include-logs     Include .harness/logs/ + pi-sessions/ + screenshots/. Off by default
+  --include-logs     Include .papercusp/logs/ + pi-sessions/ + screenshots/. Off by default
                      because logs balloon the tarball (often 100x larger) and are derived
                      from agent_runs in Postgres anyway. Turn on for debug-reproduction snapshots.
 
@@ -336,7 +336,7 @@ async function cmdSnapshotPublish(args: string[]): Promise<void> {
   const project = reg.projects.find((p) => p.slug === harnessSlug);
   if (!project) die(`snapshot publish: no registered harness "${harnessSlug}". Run \`papercusp list\` to see registered harnesses.`);
 
-  const harnessDir = join(project.path, '.harness');
+  const harnessDir = join(project.path, '.papercusp');
   if (!existsSync(harnessDir)) die(`snapshot publish: ${harnessDir} does not exist (is the harness initialized?)`);
 
   console.log(`inspecting ${cyan(harnessSlug)} at ${dim(project.path)}...`);
@@ -376,15 +376,15 @@ async function cmdSnapshotPublish(args: string[]): Promise<void> {
 
   console.log(`publishing ${cyan(`${finalName}@${version}`)} to ${MARKETPLACE_URL}`);
 
-  // Pack tarball. Default = .harness/ only. With --include-project, the entire project root.
+  // Pack tarball. Default = .papercusp/ only. With --include-project, the entire project root.
   const safeName = finalName.replace(/[/@]/g, '_');
   const tarballPath = join('/tmp', `papercusp-snapshot-${safeName}-${Date.now()}.tar.gz`);
 
   const tarSourceDir = includeProject ? project.path : project.path;
   const includeArgs = includeProject
     ? ['.']
-    : ['.harness'];
-  // Exclude transient/derived data by default. `.harness/logs/` is the worst
+    : ['.papercusp'];
+  // Exclude transient/derived data by default. `.papercusp/logs/` is the worst
   // offender (often hundreds of MB; sheets snapshot was 32MB tarball, ~99%
   // logs). Logs are derived from agent_runs which are PG-canonical anyway,
   // so a fork doesn't lose anything by missing them. `--include-logs` is
@@ -392,10 +392,10 @@ async function cmdSnapshotPublish(args: string[]): Promise<void> {
   const transientExcludes = includeLogs
     ? []
     : [
-        '--exclude=.harness/logs',
-        '--exclude=.harness/pi-sessions',
-        '--exclude=.harness/screenshots',
-        '--exclude=.harness/pending-reviews',
+        '--exclude=.papercusp/logs',
+        '--exclude=.papercusp/pi-sessions',
+        '--exclude=.papercusp/screenshots',
+        '--exclude=.papercusp/pending-reviews',
       ];
   const tarArgs = [
     'czf',
@@ -409,7 +409,7 @@ async function cmdSnapshotPublish(args: string[]): Promise<void> {
     ...includeArgs,
   ];
   const contentLabel = [
-    includeProject ? 'project + .harness' : '.harness only',
+    includeProject ? 'project + .papercusp' : '.harness only',
     includeLogs ? 'with logs' : 'no logs',
   ].join(', ');
   console.log(`  packing tarball (${contentLabel})...`);
@@ -429,14 +429,14 @@ ${desc}
 - **Iteration:** ${state.iteration}
 - **Taken at:** ${state.takenAt}
 - **Feature counts:** ${Object.entries(state.featureCounts).map(([k, v]) => `${k}=${v}`).join(', ') || '(none recorded)'}
-- **Includes project source:** ${includeProject ? 'yes' : 'no — \`.harness/\` state only'}
+- **Includes project source:** ${includeProject ? 'yes' : 'no — \`.papercusp/\` state only'}
 
 ## Forking this snapshot
 
 \`\`\`bash
 papercusp install ${finalName}
 # Extracts to ~/.papercusp/marketplace-storage/${finalName.replace(/[/@]/g, '_')}/${version}/
-# Copy .harness/ into a new project directory to fork the run.
+# Copy .papercusp/ into a new project directory to fork the run.
 \`\`\`
 `;
 
@@ -512,7 +512,7 @@ async function cmdSnapshotList(args: string[]): Promise<void> {
   const rows: LocalSnapshotRow[] = [];
   for (const project of reg.projects) {
     if (filterSlug && project.slug !== filterSlug) continue;
-    const dir = join(project.path, '.harness', 'snapshots');
+    const dir = join(project.path, '.papercusp', 'snapshots');
     let entries: string[];
     try { entries = await fs.readdir(dir); } catch { continue; }
     for (const name of entries) {
@@ -563,7 +563,7 @@ async function cmdSnapshotList(args: string[]): Promise<void> {
 async function findLocalSnapshotById(id: string): Promise<{ harnessSlug: string; tarballPath: string; bytes: number; manifest: any } | null> {
   const reg = await readRegistry();
   for (const project of reg.projects) {
-    const tarballPath = join(project.path, '.harness', 'snapshots', `${id}.tar.gz`);
+    const tarballPath = join(project.path, '.papercusp', 'snapshots', `${id}.tar.gz`);
     if (!existsSync(tarballPath)) continue;
     const stat = await fs.stat(tarballPath);
     const m = await readManifestFromTarballSync(tarballPath, id);

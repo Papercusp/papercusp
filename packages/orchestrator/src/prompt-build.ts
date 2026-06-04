@@ -232,7 +232,7 @@ export function buildPrompt(input: BuildPromptInput): string {
   // 2. Per-role specialization override.
   if (input.promptOverride) {
     out.push('\n---');
-    out.push(`## Droid specialization (from .harness/config.json → promptOverrides.${input.role})\n`);
+    out.push(`## Droid specialization (from .papercusp/config.json → promptOverrides.${input.role})\n`);
     out.push(input.promptOverride);
   }
 
@@ -296,7 +296,7 @@ export function buildPrompt(input: BuildPromptInput): string {
     out.push('- **Memory discipline:** at the end of your work, if you learned something');
     out.push('  actionable for future iterations (a technique that works, a library that');
     out.push('  doesn\'t, an invariant that tripped you up), append ONE line to');
-    out.push('  `.harness/memory/raw.md` in the format:');
+    out.push('  `.papercusp/memory/raw.md` in the format:');
     out.push(`  \`[<ISO-8601-timestamp>] ${input.role} <feature_id-or-dash>: <one-line observation>\``);
     out.push('  Do not dump logs. Do not duplicate existing lines. Skip silently if you');
     out.push('  have nothing generalizable to add.');

@@ -45,7 +45,7 @@ export default function ArchivesPanel({ slug, onClose, onChanged }: Props) {
   }, [load]);
 
   const archive = useCallback(async () => {
-    if (resetOnArchive && !confirm('Archive current .harness/ AND reset it for a fresh mission? Transient files will be removed (config.json, hooks/, knowledge.md preserved).')) return;
+    if (resetOnArchive && !confirm('Archive current .papercusp/ AND reset it for a fresh mission? Transient files will be removed (config.json, hooks/, knowledge.md preserved).')) return;
     setBusy(true);
     try {
       const r = await fetch(`/api/harness/${slug}/archive`, {
@@ -67,7 +67,7 @@ export default function ArchivesPanel({ slug, onClose, onChanged }: Props) {
   }, [slug, resetOnArchive, load, onChanged]);
 
   const restore = useCallback(async (id: string) => {
-    if (!confirm(`Restore mission state from ${id}? Current .harness/ will be overwritten (a pre-restore snapshot will be created).`)) return;
+    if (!confirm(`Restore mission state from ${id}? Current .papercusp/ will be overwritten (a pre-restore snapshot will be created).`)) return;
     setBusy(true);
     try {
       const r = await fetch(`/api/harness/${slug}/archives/${id}/restore`, {
@@ -99,7 +99,7 @@ export default function ArchivesPanel({ slug, onClose, onChanged }: Props) {
       >
         <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #1f2937', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <strong>Archives — {slug}</strong>
-          <span style={{ fontFamily: 'monospace', color: '#6b7280', fontSize: '0.75rem' }}>.harness/archives/</span>
+          <span style={{ fontFamily: 'monospace', color: '#6b7280', fontSize: '0.75rem' }}>.papercusp/archives/</span>
           <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>{items.length} archive(s)</span>
           {toast && (
             <span style={{ color: /failed/i.test(toast) ? '#f87171' : '#10b981', fontSize: '0.75rem' }}>{toast}</span>

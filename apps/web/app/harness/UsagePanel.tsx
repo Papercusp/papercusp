@@ -99,7 +99,7 @@ export default function UsagePanel({ slug, onClose }: Props) {
         {/* Header */}
         <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #1f2937', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <strong>Usage — {slug}</strong>
-          <span style={{ fontFamily: 'monospace', color: '#6b7280', fontSize: '0.75rem' }}>aggregated from .harness/logs/*.jsonl</span>
+          <span style={{ fontFamily: 'monospace', color: '#6b7280', fontSize: '0.75rem' }}>aggregated from .papercusp/logs/*.jsonl</span>
           <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#6b7280' }}>auto-refresh 5s</span>
           <button
             onClick={onClose}

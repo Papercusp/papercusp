@@ -36,7 +36,7 @@ function makeFixture(setup: (fx: Omit<Fixture, 'cleanup'>) => void = () => {}): 
   const root = mkdtempSync(join(tmpdir(), 'papercusp-orch-preloop-'));
   const harnessDir = join(root, 'harness');
   const projectDir = join(root, 'project');
-  const stateDir = join(projectDir, '.harness');
+  const stateDir = join(projectDir, '.papercusp');
   const logDir = join(stateDir, 'logs');
   mkdirSync(join(harnessDir, 'prompts'), { recursive: true });
   mkdirSync(join(harnessDir, 'identity'), { recursive: true });

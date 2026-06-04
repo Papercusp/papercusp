@@ -73,9 +73,10 @@ type PgCtx = Parameters<typeof readFeaturesPg>[0];
  *     is inlined in the same template; we return feature rows for this call)
  *
  * Note: the main feature SELECT contains a nested sub-select referencing
- * harness_plan_status, so the entire outer query text contains both
- * "harness_features" AND "harness_plan_status". We check for harness_features
- * FIRST (more specific) to avoid the plan-status branch stealing the call.
+ * harness_plans (its op_status — folded from the retired harness_plan_status),
+ * so the entire outer query text contains both "harness_features" AND
+ * "harness_plans". We check for harness_features FIRST (more specific) to avoid
+ * the plan-status branch stealing the call.
  */
 function makeFakePg(featureRows: object[]) {
   const calls: { q: string; vals: unknown[] }[] = [];
@@ -85,7 +86,7 @@ function makeFakePg(featureRows: object[]) {
 
     // DBOS carve-out path
     if (/to_regclass/i.test(q)) return Promise.resolve([{ t: null }]);
-    // Main feature SELECT (contains harness_plan_status inline — match feature first)
+    // Main feature SELECT (contains harness_plans op_status inline — match feature first)
     if (/FROM harness_features\b/i.test(q)) return Promise.resolve(featureRows);
 
     return Promise.resolve([]);

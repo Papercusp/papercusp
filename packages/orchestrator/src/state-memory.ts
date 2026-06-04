@@ -1,11 +1,11 @@
 /**
  * In-memory feature store. Replaces the legacy filesystem fallback in
- * `state.ts` that used to read/write `.harness/features.json`.
+ * `state.ts` that used to read/write `.harness/features.json` (the per-project dir is now `.papercusp/`).
  *
  * Why this exists:
  *   - Postgres is the canonical store for `harness_features` at runtime.
  *   - Tests and standalone CLI mode often run without a PG connection.
- *     They used to fall through to `.harness/features.json` — that path
+ *     They used to fall through to `.papercusp/features.json` — that path
  *     is now gone (PG is the single source of truth for production).
  *   - This module gives those callers a process-local, deterministic
  *     store that satisfies the same API surface as the PG impl,
