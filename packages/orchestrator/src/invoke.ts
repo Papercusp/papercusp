@@ -1483,14 +1483,20 @@ export async function invoke(
   //    buildPrompt as-is.
   let promptFile = '';
   if (!options.inlinePrompt) {
+    // A program-blueprint spawn (coordination-ops-as-blueprint-primitives) passes
+    // BLUEPRINT_ID=<id> so a program role (voter/advocate) resolves its prompt from
+    // blueprints/<id>/prompts/<role>.md. Absent for the normal pipeline.
+    const blueprintId =
+      extras.find((e) => e.startsWith('BLUEPRINT_ID='))?.slice('BLUEPRINT_ID='.length) || undefined;
     const resolved = resolvePromptFile(
-      { harnessDir: ctx.harnessDir, phase: ctx.phase, dept },
+      { harnessDir: ctx.harnessDir, phase: ctx.phase, dept, blueprintId },
       role,
     );
     if (!resolved) {
-      throw new Error(
-        `invoke: no prompt file for role=${role} (looked under ${ctx.harnessDir}/prompts)`,
-      );
+      const where = blueprintId
+        ? `${ctx.harnessDir}/blueprints/${blueprintId}/prompts or ${ctx.harnessDir}/prompts`
+        : `${ctx.harnessDir}/prompts`;
+      throw new Error(`invoke: no prompt file for role=${role} (looked under ${where})`);
     }
     promptFile = resolved;
   }

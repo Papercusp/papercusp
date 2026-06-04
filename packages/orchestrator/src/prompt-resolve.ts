@@ -26,6 +26,16 @@ export interface PromptResolveContext {
   phase: string;
   /** Department slug from .papercusp/config.json `dept`, or empty. */
   dept: string;
+  /**
+   * The program blueprint a spawned role belongs to (e.g. 'vote'), when the
+   * invoke is a `coordination-ops-as-blueprint-primitives` program spawn. A
+   * program-blueprint role (`voter`/`advocate`) keeps its prompt in the OWNING
+   * blueprint's dir — `blueprints/<blueprintId>/prompts/<role>.md` — not the
+   * global `prompts/<role>.md`. When set, that path is tried FIRST so a blueprint
+   * owns (and a fork can override) its roles' prompts without code. Empty/absent
+   * for the normal pipeline (worker/scoper/…), leaving resolution unchanged.
+   */
+  blueprintId?: string;
 }
 
 /**
@@ -41,6 +51,13 @@ function candidatesFor(ctx: PromptResolveContext, role: string): string[] {
   const candidates: string[] = [];
   const promptsRoot = join(ctx.harnessDir, 'prompts');
 
+  // Program-blueprint roles live in the owning blueprint's prompts dir; try it
+  // first so a blueprint (or a user fork of it) owns its roles' prompts (D-006).
+  if (ctx.blueprintId) {
+    candidates.push(
+      join(ctx.harnessDir, 'blueprints', ctx.blueprintId, 'prompts', `${role}.md`),
+    );
+  }
   if (ctx.phase && ctx.dept) {
     candidates.push(
       join(promptsRoot, ctx.phase, 'departments', ctx.dept, `${role}.md`),
