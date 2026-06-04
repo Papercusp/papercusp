@@ -105,6 +105,72 @@ test('resolvePromptFile — dept override wins over phase override', () => {
   }
 });
 
+test('promptCandidates — blueprintId adds the blueprint-local prompt FIRST', () => {
+  const list = promptCandidates(
+    { harnessDir: '/h', phase: 'staging', dept: '', blueprintId: 'vote' },
+    'voter',
+  );
+  assert.deepEqual(list, [
+    '/h/blueprints/vote/prompts/voter.md',
+    '/h/prompts/staging/voter.md',
+    '/h/prompts/voter.md',
+  ]);
+});
+
+test('resolvePromptFile — program-blueprint role resolves to blueprints/<id>/prompts/<role>.md', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    // The voter prompt lives ONLY in the blueprint dir, not the global prompts/.
+    mkdirSync(join(root, 'blueprints', 'vote', 'prompts'), { recursive: true });
+    writeFileSync(join(root, 'blueprints', 'vote', 'prompts', 'voter.md'), '# voter');
+  });
+  try {
+    // Without blueprintId it is unresolvable (the live-spawn gap this fixes).
+    assert.equal(resolvePromptFile({ harnessDir, phase: 'staging', dept: '' }, 'voter'), null);
+    // With blueprintId it resolves the blueprint-local prompt.
+    const found = resolvePromptFile(
+      { harnessDir, phase: 'staging', dept: '', blueprintId: 'vote' },
+      'voter',
+    );
+    assert.equal(found, join(harnessDir, 'blueprints', 'vote', 'prompts', 'voter.md'));
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolvePromptFile — blueprint-local prompt wins over a global prompts/<role>.md', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    writeFileSync(join(root, 'prompts', 'advocate.md'), '# global');
+    mkdirSync(join(root, 'blueprints', 'vote', 'prompts'), { recursive: true });
+    writeFileSync(join(root, 'blueprints', 'vote', 'prompts', 'advocate.md'), '# blueprint');
+  });
+  try {
+    const found = resolvePromptFile(
+      { harnessDir, phase: '', dept: '', blueprintId: 'vote' },
+      'advocate',
+    );
+    assert.equal(found, join(harnessDir, 'blueprints', 'vote', 'prompts', 'advocate.md'));
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolvePromptFile — blueprintId falls through to the global prompt when the blueprint lacks one', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    writeFileSync(join(root, 'prompts', 'worker.md'), '# global worker');
+    mkdirSync(join(root, 'blueprints', 'vote', 'prompts'), { recursive: true });
+    // no worker.md in the blueprint dir
+  });
+  try {
+    const found = resolvePromptFile(
+      { harnessDir, phase: '', dept: '', blueprintId: 'vote' },
+      'worker',
+    );
+    assert.equal(found, join(harnessDir, 'prompts', 'worker.md'));
+  } finally {
+    cleanup();
+  }
+});
+
 test('resolvePromptFile — returns null when nothing exists', () => {
   const { harnessDir, cleanup } = withHarness(() => {
     /* empty prompts/ */

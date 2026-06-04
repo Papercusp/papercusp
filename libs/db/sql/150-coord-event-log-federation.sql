@@ -1,4 +1,6 @@
--- Migration 147 — federate harness-scoped coord_event_log content over the peer-log.
+-- Migration 150 — federate harness-scoped coord_event_log content over the peer-log.
+-- (Renumbered from 147 — su-d3187 hardcoded a colliding 147-fleet-governor.sql,
+--  which shadowed this one on the number-watermarked boot-apply; 150 is fresh.)
 --
 -- Plan: distributed-coordination-shared-harness-2026-06-04 (Track A — federate
 -- coordination CONTENT, surface #1: messages, plus handoffs/escalations). This
