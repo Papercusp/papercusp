@@ -130,3 +130,44 @@ test('e2e: a local blueprint can `extends` a built-in and merge through the load
   // `extends` consumed.
   assert.equal(blueprint.extends, undefined);
 });
+
+test('e2e: a user FORKS the built-in `vote` program blueprint without code (P4 / D-006)', () => {
+  // coordination-ops-as-blueprint-primitives P4: a user declares THEIR decision
+  // process by extending the built-in `vote` program blueprint and overriding the
+  // knobs (different lenses, smaller quorum) — no code. The inherited program
+  // spine (steps + gate) comes through unchanged.
+  const projectRoot = mkdtempSync(join(tmpdir(), 'bp-vote-fork-'));
+  tmpDirs.push(projectRoot);
+  const localBlueprints = join(projectRoot, '.papercusp', 'blueprints');
+  const myDir = join(localBlueprints, 'team-vote');
+  mkdirSync(myDir, { recursive: true });
+  const myPath = join(myDir, 'blueprint.yaml');
+  writeFileSync(
+    myPath,
+    [
+      'id: team-vote',
+      'extends: vote',
+      'description: our team decision process',
+      'knobs:',
+      '  lenses: [security, latency, dx]',
+      '  quorum: 2',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const resolve = makeComposedResolveExtends({ localDirs: [localBlueprints] });
+  const { blueprint, validation } = loadBlueprintFromFile(myPath, resolve);
+
+  assert.equal(blueprint.id, 'team-vote');
+  assert.equal(validation.ok, true, JSON.stringify(validation.errors));
+  // The program spine (steps + gate) is inherited from `vote` unchanged.
+  assert.equal(blueprint.spine.steps?.length, 4);
+  assert.ok(blueprint.spine.gate && blueprint.spine.gate.length >= 2);
+  assert.equal(blueprint.workItem.kind, 'decision');
+  // The user's overrides applied.
+  assert.deepEqual(blueprint.knobs.lenses, ['security', 'latency', 'dx']);
+  assert.equal(blueprint.knobs.quorum, 2);
+  // Inherited (not overridden) vote knobs survive.
+  assert.equal(blueprint.knobs.max_voters, 5);
+});

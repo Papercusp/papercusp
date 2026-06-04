@@ -117,6 +117,14 @@ export async function checkProjectBudget(
 
 /**
  * Convenience: check the budget AND throw if exceeded. Caller wraps in transaction.
+ *
+ * IMPORTANT (D-002): the `SELECT … FOR UPDATE` in checkProjectBudget only
+ * serializes concurrent accepts if the caller does the budget check AND the
+ * cost-creating INSERT inside the SAME transaction that holds the lock. Calling
+ * this in its own transaction and inserting the feature in a later one releases
+ * the lock in between and re-opens the write-skew window. Prefer
+ * {@link withProjectBudget}, which encapsulates the whole check-then-spend in
+ * one transaction so the lock can't be misused.
  */
 export async function assertProjectBudget(
   sql: Sql,
@@ -127,4 +135,41 @@ export async function assertProjectBudget(
   const result = await checkProjectBudget(sql, projectId, proposedCostCents, harnessSchemas);
   if (!result.ok) throw new BudgetExceededError(result);
   return result;
+}
+
+/**
+ * Atomic budget-gated spend (D-002 — the write-skew-safe entry point).
+ *
+ * Opens ONE transaction, locks the project row (`FOR UPDATE` inside
+ * checkProjectBudget), verifies the proposed cost fits, and — only if it does —
+ * runs `spend(tx)` to create the work, all under the same lock. Concurrent
+ * accepts for the same project therefore serialize on that one row: the second
+ * blocks until the first commits, then re-sums and sees the first's committed
+ * cost, so the two cannot together exceed the cap. This is the "materialize the
+ * invariant onto one row" fix — correct at READ COMMITTED, no SERIALIZABLE
+ * abort/retry needed for this hot path.
+ *
+ * `spend` MUST perform its writes through the passed `tx` (e.g. INSERT the new
+ * feature's `expected_cost_cents`); writing through any other handle escapes
+ * the lock. Throws {@link BudgetExceededError} BEFORE calling `spend` when the
+ * cost would exceed budget.
+ */
+export async function withProjectBudget<T>(
+  sql: Sql,
+  params: { projectId: string; proposedCostCents: number; harnessSchemas: string[] },
+  spend: (tx: Sql) => Promise<T>
+): Promise<{ budget: BudgetCheckResult; result: T }> {
+  const out = await sql.begin(async (txRaw) => {
+    const tx = txRaw as unknown as Sql;
+    const budget = await checkProjectBudget(
+      tx,
+      params.projectId,
+      params.proposedCostCents,
+      params.harnessSchemas
+    );
+    if (!budget.ok) throw new BudgetExceededError(budget);
+    const result = await spend(tx);
+    return { budget, result };
+  });
+  return out as { budget: BudgetCheckResult; result: T };
 }

@@ -315,6 +315,15 @@ export const TriggersSchema = z.object({
       }),
     )
     .default([]),
+  /**
+   * The event key that fires this blueprint as a coord-op program
+   * (`coordination-ops-as-blueprint-primitives-2026-06-04` D-007). An
+   * [[event-reaction-system-2026-06-04]] rule matching this key invokes the
+   * program (`startCoordProgram`); the blueprint is ALSO directly invocable as a
+   * tool (D-009, e.g. `coord:vote`). Declared here as the firing seam — the
+   * event-reaction system (a separate plan) is the matcher that consumes it.
+   */
+  event: z.string().optional(),
 });
 
 /**

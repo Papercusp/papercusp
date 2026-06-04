@@ -35,9 +35,16 @@ export {
 export {
   checkProjectBudget,
   assertProjectBudget,
+  withProjectBudget,
   BudgetExceededError,
   type BudgetCheckResult,
 } from './budget-enforcement';
+
+export {
+  withSerializableRetry,
+  SerializableRetryExhaustedError,
+  type SerializableRetryOptions,
+} from './with-serializable-retry';
 
 export {
   insertPendingEvent,
