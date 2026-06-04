@@ -42,6 +42,7 @@ import {
   SPAWN_ENV_ALL_ROLES_STRIP,
   SEARCH_PROVIDER_ENV_KEYS,
 } from './invoke.js';
+import { ROLE_MODEL_DEFAULTS } from './role-models.js';
 import { writeSpawnClaudeConfig } from './spawn-mcp.js';
 
 interface Fixture {
@@ -338,6 +339,34 @@ test('resolveModel — returns empty when missing', () => {
 
 test('resolveModel — returns named model', () => {
   assert.equal(resolveModel({ models: { worker: 'sonnet' } }, 'worker'), 'sonnet');
+});
+
+test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI-7)', () => {
+  const prev = process.env.AGENT_MODELS;
+  try {
+    delete process.env.AGENT_MODELS; // no env, no config
+    // release-manager has a committed default; worker does not.
+    assert.equal(resolveModel({}, 'release-manager'), ROLE_MODEL_DEFAULTS['release-manager']);
+    assert.equal(resolveModel({}, 'release-manager'), 'opus:xhigh');
+    assert.equal(resolveModel({}, 'worker'), '');
+  } finally {
+    if (prev === undefined) delete process.env.AGENT_MODELS;
+    else process.env.AGENT_MODELS = prev;
+  }
+});
+
+test('resolveModel — AGENT_MODELS / config OVERRIDE the committed default', () => {
+  const prev = process.env.AGENT_MODELS;
+  try {
+    // config wins
+    assert.equal(resolveModel({ models: { 'release-manager': 'sonnet' } }, 'release-manager'), 'sonnet');
+    // env wins over the committed default
+    process.env.AGENT_MODELS = JSON.stringify({ 'release-manager': 'claude-opus-4-8:max' });
+    assert.equal(resolveModel({}, 'release-manager'), 'claude-opus-4-8:max');
+  } finally {
+    if (prev === undefined) delete process.env.AGENT_MODELS;
+    else process.env.AGENT_MODELS = prev;
+  }
 });
 
 test('invoke — end-to-end logs invoke message, returns rc + paths', async () => {

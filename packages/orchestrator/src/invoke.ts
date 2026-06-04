@@ -48,6 +48,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import type { AgentBackend, InvokeResult } from './types';
 import { resolveAgentBackend, normalizeModelForBackend } from './env';
+import { ROLE_MODEL_DEFAULTS } from './role-models';
 import { workspaceHomeDir } from './workspace';
 
 /**
@@ -276,7 +277,8 @@ export function resolveTimeout(cfg: ReturnType<typeof readConfig>, role: string)
 
 /** Per-role model resolution. Per-harness `.papercusp/config.json` wins
     over the user-level `AGENT_MODELS` env var (which the operator's
-    /settings/agent page writes). Empty string = use the agent CLI's
+    /settings/agent page writes), which in turn wins over the committed
+    `ROLE_MODEL_DEFAULTS` floor. Empty string = use the agent CLI's
     default. */
 export function resolveModel(cfg: ReturnType<typeof readConfig>, role: string): string {
   // aiBackend role override wins, then aiBackend default, then legacy models.<role>.
@@ -287,15 +289,19 @@ export function resolveModel(cfg: ReturnType<typeof readConfig>, role: string): 
   const fromConfig = configGet<string>(cfg, `models.${role}`, '');
   if (fromConfig) return fromConfig;
   const envJson = process.env.AGENT_MODELS;
-  if (!envJson) return '';
-  try {
-    const map = JSON.parse(envJson);
-    if (map && typeof map === 'object' && !Array.isArray(map)) {
-      const v = (map as Record<string, unknown>)[role];
-      if (typeof v === 'string' && v.trim()) return v.trim();
-    }
-  } catch { /* malformed AGENT_MODELS — silently ignore */ }
-  return '';
+  if (envJson) {
+    try {
+      const map = JSON.parse(envJson);
+      if (map && typeof map === 'object' && !Array.isArray(map)) {
+        const v = (map as Record<string, unknown>)[role];
+        if (typeof v === 'string' && v.trim()) return v.trim();
+      }
+    } catch { /* malformed AGENT_MODELS — silently ignore */ }
+  }
+  // Committed default floor (EI-7) — applies only when nothing above set a
+  // model, so a load-bearing role (release-manager) can't silently downgrade
+  // to the CLI default on a host without AGENT_MODELS.
+  return ROLE_MODEL_DEFAULTS[role] ?? '';
 }
 
 /**

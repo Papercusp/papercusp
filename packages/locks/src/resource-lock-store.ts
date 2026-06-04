@@ -32,6 +32,9 @@ export interface ResourceHolder {
   reason: string;
   acquired_ts: Date;
   expires_ts: Date;
+  /** Monotonic fencing token stamped when this exclusive became effective
+   *  ('held'). 0 for shared rows and for an exclusive still 'draining'. (D-001) */
+  fence_seq: number;
 }
 
 export interface ResourceRegistryRow {
@@ -64,6 +67,10 @@ export type ResourceAcquireResult =
       /** Live shared holders at acquire time (the set an exclusive must
        *  wait to drain; empty for a granted exclusive / a shared acquire). */
       shared_holders: ResourceHolder[];
+      /** Monotonic fencing token (D-001). Non-zero only for an exclusive that
+       *  is effective NOW (status 'held'); 0 for shared and for a 'draining'
+       *  exclusive (its fence is minted by the cascade on the flip to 'held'). */
+      fence_seq: number;
     }
   | {
       ok: false;
@@ -81,7 +88,8 @@ async function readLiveHolders(
   resource: string,
 ): Promise<ResourceHolder[]> {
   return tx<ResourceHolder[]>`
-    SELECT owner, owner_label, mode, status, lock_id::text AS lock_id, reason, acquired_ts, expires_ts
+    SELECT owner, owner_label, mode, status, lock_id::text AS lock_id, reason,
+           acquired_ts, expires_ts, fence_seq::int AS fence_seq
       FROM agent_resource_locks
      WHERE coordination_domain = ${coordinationDomain}
        AND resource = ${resource}
@@ -257,6 +265,7 @@ export async function tryAcquireResource(
       lock_id: rows[0].lock_id,
       expires_ts: rows[0].expires_ts,
       shared_holders: holders.filter((h) => h.mode === 'shared'),
+      fence_seq: 0, // fencing is exclusive-only (correctness-class); shared is efficiency-class.
     };
   }
 
@@ -288,6 +297,21 @@ export async function tryAcquireResource(
           expires_ts  = EXCLUDED.expires_ts
     RETURNING lock_id::text AS lock_id, expires_ts, status
   `;
+  // D-001: an exclusive that is effective NOW ('held', no shared holders to
+  // drain) mints its fence here — the monotonic token the destructive action
+  // re-checks before running. A 'draining' exclusive gets its fence later, from
+  // resource_grant_cascade on the flip to 'held'.
+  let fenceSeq = 0;
+  if (rows[0].status === 'held') {
+    const fr = await tx<Array<{ fence_seq: number }>>`
+      UPDATE agent_resource_locks
+         SET fence_seq = resource_assign_fence(${cd}, ${resource})
+       WHERE coordination_domain = ${cd} AND resource = ${resource}
+         AND owner = ${owner} AND mode = 'exclusive'
+      RETURNING fence_seq::int AS fence_seq
+    `;
+    fenceSeq = fr[0]?.fence_seq ?? 0;
+  }
   // Granted (or accepted as draining) — we're no longer waiting on this resource.
   await clearResourceWaiter(tx, cd, resource, owner);
   return {
@@ -297,6 +321,7 @@ export async function tryAcquireResource(
     lock_id: rows[0].lock_id,
     expires_ts: rows[0].expires_ts,
     shared_holders: sharedHolders,
+    fence_seq: fenceSeq,
   };
 }
 
@@ -424,6 +449,8 @@ export interface ResourceLockStatusResult {
   mode?: ResourceMode;
   resource?: string;
   expires_ts?: Date;
+  /** Fencing token of this lock (D-001) — non-zero once an exclusive is 'held'. */
+  fence_seq?: number;
 }
 
 /**
@@ -435,9 +462,15 @@ export async function readResourceLockStatus(
   lockId: string,
 ): Promise<ResourceLockStatusResult> {
   const rows = await sql<
-    Array<{ status: ResourceLockStatus; mode: ResourceMode; resource: string; expires_ts: Date }>
+    Array<{
+      status: ResourceLockStatus;
+      mode: ResourceMode;
+      resource: string;
+      expires_ts: Date;
+      fence_seq: number;
+    }>
   >`
-    SELECT status, mode, resource, expires_ts
+    SELECT status, mode, resource, expires_ts, fence_seq::int AS fence_seq
       FROM agent_resource_locks
      WHERE lock_id = ${lockId}::uuid
        AND expires_ts > clock_timestamp()
@@ -449,6 +482,7 @@ export async function readResourceLockStatus(
     mode: rows[0].mode,
     resource: rows[0].resource,
     expires_ts: rows[0].expires_ts,
+    fence_seq: rows[0].fence_seq,
   };
 }
 
@@ -469,7 +503,8 @@ export async function readResourceQueue(
   const { coordinationDomain: cd, resource } = params;
   const holders = resource
     ? await sql<ResourceHolder[]>`
-        SELECT owner, owner_label, mode, status, lock_id::text AS lock_id, reason, acquired_ts, expires_ts
+        SELECT owner, owner_label, mode, status, lock_id::text AS lock_id, reason,
+               acquired_ts, expires_ts, fence_seq::int AS fence_seq
           FROM agent_resource_locks
          WHERE coordination_domain = ${cd}
            AND resource = ${resource}
@@ -477,7 +512,8 @@ export async function readResourceQueue(
          ORDER BY acquired_ts ASC
       `
     : await sql<ResourceHolder[]>`
-        SELECT owner, owner_label, mode, status, lock_id::text AS lock_id, reason, acquired_ts, expires_ts
+        SELECT owner, owner_label, mode, status, lock_id::text AS lock_id, reason,
+               acquired_ts, expires_ts, fence_seq::int AS fence_seq
           FROM agent_resource_locks
          WHERE coordination_domain = ${cd}
            AND expires_ts > clock_timestamp()
@@ -485,6 +521,104 @@ export async function readResourceQueue(
       `;
   const draining = holders.some((h) => h.mode === 'exclusive' && h.status === 'draining');
   return { holders, draining };
+}
+
+// ───────── Fencing (D-001) ─────────
+
+export type FenceCheck =
+  | { current: true; live_fence_seq: number }
+  | {
+      current: false;
+      /** 'expired_or_released' — no live exclusive holds this resource at all;
+       *  'superseded' — a DIFFERENT exclusive grant now holds it (our TTL lapsed
+       *  and it was re-granted — the classic paused/zombie holder). */
+      reason: 'expired_or_released' | 'superseded';
+      live_fence_seq?: number;
+    };
+
+/**
+ * Re-verify, against PG, that the caller still holds the EFFECTIVE exclusive on
+ * `resource` at fence `fenceSeq` (D-001). The destructive action calls this
+ * immediately before it mutates: a stale fence (TTL lapsed, re-granted to
+ * another owner) is rejected, so a paused/zombie holder cannot corrupt shared
+ * state. There is at most one live exclusive per (domain, resource) — the
+ * partial unique index — so "still mine" reduces to: the live held exclusive's
+ * lock_id is ours. The monotonic fence is the ordering token a downstream
+ * service / the action ledger keys on; we also assert it hasn't gone backwards.
+ *
+ * Read-only (a point lookup) — takes the pool, no advisory lock needed.
+ */
+export async function assertResourceFenceCurrent(
+  sql: Sql,
+  params: { coordinationDomain: string; resource: string; lockId: string; fenceSeq: number },
+): Promise<FenceCheck> {
+  const { coordinationDomain: cd, resource, lockId, fenceSeq } = params;
+  const rows = await sql<Array<{ lock_id: string; fence_seq: number }>>`
+    SELECT lock_id::text AS lock_id, fence_seq::int AS fence_seq
+      FROM agent_resource_locks
+     WHERE coordination_domain = ${cd}
+       AND resource = ${resource}
+       AND mode = 'exclusive'
+       AND status = 'held'
+       AND expires_ts > clock_timestamp()
+     LIMIT 1
+  `;
+  if (rows.length === 0) return { current: false, reason: 'expired_or_released' };
+  const live = rows[0];
+  // A different grant now holds the exclusive, or the fence advanced past ours
+  // under a different lock_id — either way we were superseded.
+  if (live.lock_id !== lockId || live.fence_seq < fenceSeq) {
+    return { current: false, reason: 'superseded', live_fence_seq: live.fence_seq };
+  }
+  return { current: true, live_fence_seq: live.fence_seq };
+}
+
+export interface ResourceActionRecord {
+  applied: boolean;
+  fence_seq?: number;
+  applied_ts?: Date;
+}
+
+/**
+ * Resource-side idempotency check (D-001): has `actionKey` already been applied
+ * in this domain? The explicit generalization of the su_meta migration-name
+ * check — a retried / zombie re-apply of the same action is a checked no-op.
+ * Read-only; takes the pool.
+ */
+export async function checkResourceAction(
+  sql: Sql,
+  coordinationDomain: string,
+  actionKey: string,
+): Promise<ResourceActionRecord> {
+  const rows = await sql<Array<{ fence_seq: number; applied_ts: Date }>>`
+    SELECT fence_seq::int AS fence_seq, applied_ts
+      FROM agent_resource_action_log
+     WHERE coordination_domain = ${coordinationDomain} AND action_key = ${actionKey}
+     LIMIT 1
+  `;
+  if (rows.length === 0) return { applied: false };
+  return { applied: true, fence_seq: rows[0].fence_seq, applied_ts: rows[0].applied_ts };
+}
+
+/**
+ * Record that `actionKey` was applied at fence `fenceSeq`. Inside the caller's
+ * txn. First writer wins (ON CONFLICT DO NOTHING) — a racing second apply finds
+ * the row already present and treats itself as the checked no-op. Returns true
+ * if THIS call recorded it (i.e. the action should run), false if already done.
+ */
+export async function recordResourceAction(
+  tx: Sql,
+  coordinationDomain: string,
+  actionKey: string,
+  fenceSeq: number,
+): Promise<boolean> {
+  const rows = await tx<Array<{ action_key: string }>>`
+    INSERT INTO agent_resource_action_log (coordination_domain, action_key, fence_seq)
+    VALUES (${coordinationDomain}, ${actionKey}, ${fenceSeq})
+    ON CONFLICT (coordination_domain, action_key) DO NOTHING
+    RETURNING action_key
+  `;
+  return rows.length > 0;
 }
 
 // ───────── Registry (D-010) ─────────

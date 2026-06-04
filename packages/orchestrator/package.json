@@ -27,6 +27,11 @@
       "import": "./src/role-prompt-from-slug.ts",
       "default": "./src/role-prompt-from-slug.ts"
     },
+    "./role-models": {
+      "types": "./src/role-models.ts",
+      "import": "./src/role-models.ts",
+      "default": "./src/role-models.ts"
+    },
     "./decision-parse": {
       "types": "./src/decision-parse.ts",
       "import": "./src/decision-parse.ts",
