@@ -116,13 +116,20 @@ export async function upsertRoutine(
     concurrency?: 'queue' | 'skip' | 'cancel-prev';
     catchup?: 'skip-old' | 'run-all-backlog';
     active?: boolean;
+    /** Explicit next fire time — a ONE-SHOT routine (cron-kind, no cron expr,
+     *  fires once at this instant and is deactivated on claim). Overrides the
+     *  cron-derived computation when present. */
+    nextFireAt?: Date | null;
   },
   computeNextFireAt: (cronExpr: string, from: Date) => Date | null
 ): Promise<RoutineRow> {
   const id = `rt_${input.installSlug}_${input.name}`.replace(/[^a-z0-9_]/gi, '_').toLowerCase();
-  const nextFireAt = input.triggerKind === 'cron' && input.triggerConfig.cron
-    ? computeNextFireAt(String(input.triggerConfig.cron), new Date())
-    : null;
+  const nextFireAt =
+    'nextFireAt' in input && input.nextFireAt !== undefined
+      ? input.nextFireAt
+      : input.triggerKind === 'cron' && input.triggerConfig.cron
+        ? computeNextFireAt(String(input.triggerConfig.cron), new Date())
+        : null;
 
   const triggerConfigStr = JSON.stringify(input.triggerConfig);
   const payloadTemplateStr = input.payloadTemplate ? JSON.stringify(input.payloadTemplate) : null;

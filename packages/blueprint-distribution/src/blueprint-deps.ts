@@ -1,25 +1,34 @@
 /**
  * E2a — import-time blueprint **dependency validation**.
  *
- * `harness-blueprint-distribution-2026-06-03` P-003 / P-004 / D-003 / D-004.
+ * `harness-blueprint-distribution-2026-06-03` P-003 / P-004 / D-003 / D-004;
+ * extended to the pack model by `tool-distribution-granularity-2026-06-05`
+ * (D-002/D-006: `dependencies.{tools,packs,plugins}` + provider-aware tools).
  *
- * A blueprint declares the tools + plugins its roles need
- * (`dependencies.{tools,plugins}` — the engine's schema field). Today an
+ * A blueprint declares the tools + packs + plugins its roles need
+ * (`dependencies.{tools,packs,plugins}` — the engine's schema field). Today an
  * unsatisfied tool is only discovered at CALL time, deep in a run, as a
  * `404 unknown_tool` (`apps/operator/lib/capabilities/invoke.ts:69`). This
  * validator resolves the declared deps UPFRONT — at `init --from` /
  * `harness:create` / blueprint-load — against the host's known tools + installed
- * plugins + Cupboard listings, and fails with an actionable "needs plugin X"
+ * units + Cupboard listings, and fails with an actionable "needs plugin X"
  * before any run starts.
  *
- * **Pure + borrowable.** The host capability sets are INJECTED
- * (`availableTools`, `installedPlugins`, `cupboardPlugins`) — the validator
- * touches no catalog, no PG, no filesystem. The operator wires `getCatalog()`
- * tool names + the installed-plugin registry + Cupboard listings into the sets;
+ * **Pure + borrowable.** The host capability sets are INJECTED — the validator
+ * touches no catalog, no PG, no filesystem. The operator wires the live tool
+ * registry + the installed-unit registries + Cupboard listings into the sets;
  * the CLI wires its own equivalents. Keeps the predicate trivial to cover.
  *
- * Resolution rules (per D-003 "resolve against the catalog + Cupboard"):
+ * Resolution rules (per D-003 "resolve against the catalog + Cupboard" and
+ * tool-distribution D-002 "deps are declared on tools, resolved to packs"):
  *   - a declared **tool** is satisfied iff its name is in `availableTools`;
+ *     a tool NOT available but provided by a known installable Cupboard unit
+ *     (`installableToolProviders`) is **installable** (advisory, non-blocking
+ *     — the installer fetches the providing unit). A tool with no known
+ *     provider is a hard failure.
+ *   - a declared **pack** resolves against ALL distribution units (a plugin IS
+ *     a runtime-bearing pack — D-001): installed packs/plugins satisfy it;
+ *     Cupboard packs/plugins make it installable; neither is a hard failure.
  *   - a declared **plugin** is satisfied iff it is `installedPlugins` (already
  *     present) OR `cupboardPlugins` (installable from the Cupboard — `init`'s
  *     plugin auto-install step, P-004, will fetch it). A plugin in NEITHER is a
@@ -35,30 +44,43 @@
 /** The dependency block a blueprint declares (mirrors the engine's `DependenciesSchema`). */
 export interface BlueprintDependencyInput {
   tools?: string[];
+  packs?: string[];
   plugins?: string[];
 }
 
 /** The host capability sets the validator resolves declared deps against. */
 export interface DependencyHostSets {
-  /** Tool names currently resolvable (e.g. operator `getCatalog()` names). */
+  /** Tool names currently resolvable (built-ins + tools registered by installed units). */
   availableTools: Set<string>;
   /** Plugins installed/enabled in this host. */
   installedPlugins: Set<string>;
   /** Plugins listed in the Cupboard (installable but not necessarily installed). */
   cupboardPlugins?: Set<string>;
+  /** Code-tool packs (runtime-less units, manifest kind='pack') installed in this host. */
+  installedPacks?: Set<string>;
+  /** Packs listed in the Cupboard (installable but not necessarily installed). */
+  cupboardPacks?: Set<string>;
+  /**
+   * tool name → the installable Cupboard unit that declares it in
+   * `provides_tools`. Powers provider-aware tool resolution (D-002): a tool
+   * absent from `availableTools` but present here is installable-advisory
+   * instead of a hard failure. Derive via `pack-model.ts` /
+   * `buildPackCatalogView().cupboardToolIndex`.
+   */
+  installableToolProviders?: Map<string, { kind: 'plugin' | 'pack'; name: string }>;
 }
 
 export interface BlueprintDependencyValidation {
-  /** True iff no declared tool/plugin is unresolvable (installable plugins do NOT block). */
+  /** True iff no declared tool/pack/plugin is unresolvable (installable deps do NOT block). */
   ok: boolean;
   /** Unresolvable declared deps — the dep strings as written (with any `@range`). */
-  missing: { tools: string[]; plugins: string[] };
+  missing: { tools: string[]; packs: string[]; plugins: string[] };
   /**
-   * Declared plugins not installed but resolvable from the Cupboard. Advisory:
-   * `init --from`'s plugin auto-install step (P-004) should fetch these. Does
-   * not affect `ok`.
+   * Declared deps not present but resolvable from the Cupboard. Advisory:
+   * `init --from`'s auto-install step should fetch these. Does not affect
+   * `ok`. `tools` lists tools whose *providing unit* is installable.
    */
-  installable: { plugins: string[] };
+  installable: { tools: string[]; packs: string[]; plugins: string[] };
   /** One human-readable line per unresolvable dep — surfaced to the user. */
   messages: string[];
 }
@@ -83,26 +105,49 @@ export function validateBlueprintDependencies(
   host: DependencyHostSets,
 ): BlueprintDependencyValidation {
   const missingTools: string[] = [];
+  const missingPacks: string[] = [];
   const missingPlugins: string[] = [];
+  const installableTools: string[] = [];
+  const installablePacks: string[] = [];
   const installablePlugins: string[] = [];
   const messages: string[] = [];
 
-  const cupboard = host.cupboardPlugins ?? new Set<string>();
+  const cupboardPlugins = host.cupboardPlugins ?? new Set<string>();
+  const installedPacks = host.installedPacks ?? new Set<string>();
+  const cupboardPacks = host.cupboardPacks ?? new Set<string>();
+  const toolProviders = host.installableToolProviders ?? new Map<string, { kind: 'plugin' | 'pack'; name: string }>();
 
   for (const raw of deps?.tools ?? []) {
     const { name } = parseDepSpec(raw);
-    if (!host.availableTools.has(name)) {
-      missingTools.push(raw);
-      messages.push(
-        `needs tool "${name}" — not in the tool catalog; declare/install the plugin that provides it`,
-      );
+    if (host.availableTools.has(name)) continue; // resolvable now → satisfied
+    const provider = toolProviders.get(name);
+    if (provider) {
+      installableTools.push(raw); // its providing unit is one install away
+      continue;
     }
+    missingTools.push(raw);
+    messages.push(
+      `needs tool "${name}" — not in the tool catalog and no Cupboard pack/plugin provides it`,
+    );
+  }
+
+  // A plugin IS a runtime-bearing pack (D-001), so a `packs` dep resolves
+  // against every distribution unit, not only kind='pack' manifests.
+  for (const raw of deps?.packs ?? []) {
+    const { name } = parseDepSpec(raw);
+    if (installedPacks.has(name) || host.installedPlugins.has(name)) continue;
+    if (cupboardPacks.has(name) || cupboardPlugins.has(name)) {
+      installablePacks.push(raw);
+      continue;
+    }
+    missingPacks.push(raw);
+    messages.push(`needs pack "${name}" — not installed and not available in the Cupboard`);
   }
 
   for (const raw of deps?.plugins ?? []) {
     const { name } = parseDepSpec(raw);
     if (host.installedPlugins.has(name)) continue; // already installed → satisfied
-    if (cupboard.has(name)) {
+    if (cupboardPlugins.has(name)) {
       installablePlugins.push(raw); // resolvable from the Cupboard → init installs it
       continue;
     }
@@ -111,9 +156,9 @@ export function validateBlueprintDependencies(
   }
 
   return {
-    ok: missingTools.length === 0 && missingPlugins.length === 0,
-    missing: { tools: missingTools, plugins: missingPlugins },
-    installable: { plugins: installablePlugins },
+    ok: missingTools.length === 0 && missingPacks.length === 0 && missingPlugins.length === 0,
+    missing: { tools: missingTools, packs: missingPacks, plugins: missingPlugins },
+    installable: { tools: installableTools, packs: installablePacks, plugins: installablePlugins },
     messages,
   };
 }

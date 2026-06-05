@@ -29,6 +29,15 @@ export {
   type BlueprintDependencyValidation,
 } from './blueprint-deps.js';
 export {
+  buildPackCatalogView,
+  resolveToolProvider,
+  availableToolNames,
+  type PackDescriptor,
+  type PackProviderKind,
+  type PackCatalogView,
+  type ToolProviderResolution,
+} from './pack-model.js';
+export {
   resolveAndValidateBlueprint,
   makeChildBlueprint,
   serializeBlueprint,

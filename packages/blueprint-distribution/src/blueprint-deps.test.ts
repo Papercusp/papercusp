@@ -114,3 +114,82 @@ test('mixed: missing tool + missing plugin → ok:false, both messages, both lis
   assert.deepEqual(r.installable.plugins, ['cupboard-one']);
   assert.equal(r.messages.length, 2);
 });
+
+// ── tool-distribution-granularity-2026-06-05: packs + provider-aware tools ──
+
+test('a declared pack satisfied by an installed pack → ok', () => {
+  const r = validateBlueprintDependencies(
+    { packs: ['git-tools'] },
+    host({ installedPacks: new Set(['git-tools']) }),
+  );
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.missing.packs, []);
+  assert.deepEqual(r.installable.packs, []);
+});
+
+test('a declared pack satisfied by an installed PLUGIN of that name (a plugin IS a pack) → ok', () => {
+  const r = validateBlueprintDependencies(
+    { packs: ['firecrawl'] },
+    host({ installedPlugins: new Set(['firecrawl']) }),
+  );
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.missing.packs, []);
+});
+
+test('a Cupboard-listed pack (kind pack OR plugin) → ok + installable, does not block', () => {
+  const viaPack = validateBlueprintDependencies(
+    { packs: ['audit-pack'] },
+    host({ cupboardPacks: new Set(['audit-pack']) }),
+  );
+  assert.equal(viaPack.ok, true);
+  assert.deepEqual(viaPack.installable.packs, ['audit-pack']);
+
+  const viaPlugin = validateBlueprintDependencies(
+    { packs: ['firecrawl@^2.0.0'] },
+    host({ cupboardPlugins: new Set(['firecrawl']) }),
+  );
+  assert.equal(viaPlugin.ok, true);
+  assert.deepEqual(viaPlugin.installable.packs, ['firecrawl@^2.0.0']);
+});
+
+test('a pack in NEITHER installed nor Cupboard → missing + "needs pack X"', () => {
+  const r = validateBlueprintDependencies({ packs: ['ghost-pack'] }, host());
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.missing.packs, ['ghost-pack']);
+  assert.match(r.messages[0], /needs pack "ghost-pack" — not installed and not available in the Cupboard/);
+});
+
+test('a tool absent locally but provided by an installable Cupboard unit → installable, non-blocking', () => {
+  const r = validateBlueprintDependencies(
+    { tools: ['firecrawl.scrape'] },
+    host({
+      installableToolProviders: new Map([['firecrawl.scrape', { kind: 'plugin' as const, name: 'firecrawl' }]]),
+    }),
+  );
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.installable.tools, ['firecrawl.scrape']);
+  assert.deepEqual(r.missing.tools, []);
+  assert.deepEqual(r.messages, []);
+});
+
+test('a tool with NO provider anywhere stays a hard failure', () => {
+  const r = validateBlueprintDependencies(
+    { tools: ['custom:frobnicate'] },
+    host({
+      installableToolProviders: new Map([['other.tool', { kind: 'pack' as const, name: 'other' }]]),
+    }),
+  );
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.missing.tools, ['custom:frobnicate']);
+  assert.match(r.messages[0], /no Cupboard pack\/plugin provides it/);
+});
+
+test('legacy {tools, plugins} input (no packs) keeps working unchanged', () => {
+  const r = validateBlueprintDependencies(
+    { tools: ['docs:get'], plugins: ['slack-notifier'] },
+    host({ availableTools: new Set(['docs:get']), installedPlugins: new Set(['slack-notifier']) }),
+  );
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.missing, { tools: [], packs: [], plugins: [] });
+  assert.deepEqual(r.installable, { tools: [], packs: [], plugins: [] });
+});

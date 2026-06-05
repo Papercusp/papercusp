@@ -347,13 +347,20 @@ export const TriggersSchema = z.object({
 });
 
 /**
- * Tool/plugin dependencies the blueprint's roles need. The distribution plan's
- * import-time validation (su-4b6ce distribution P-003/P-004) resolves these
- * against the catalog + Cupboard plugin listings and fails upfront with
+ * Tool/pack/plugin dependencies the blueprint's roles need. The distribution
+ * plan's import-time validation (su-4b6ce distribution P-003/P-004) resolves
+ * these against the catalog + Cupboard listings and fails upfront with
  * "needs plugin X", closing the call-time-only `unknown_tool` gap.
+ *
+ * Deps are declared on TOOLS (capabilities) and resolved to their providing
+ * pack/plugin/built-in; `packs` is a convenience for a whole curated
+ * capability set (a plugin is a runtime-bearing pack, so a `packs` entry
+ * resolves against plugins too). `tool-distribution-granularity-2026-06-05`
+ * D-001/D-002.
  */
 export const DependenciesSchema = z.object({
   tools: z.array(z.string()).default([]),
+  packs: z.array(z.string()).default([]),
   plugins: z.array(z.string()).default([]),
 });
 
