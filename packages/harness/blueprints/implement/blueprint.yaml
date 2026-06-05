@@ -46,8 +46,12 @@ roles:
   - id: worker
     description: >-
       Reproduce + fix one auto-eligible improvement (kind=bug) with a regression
-      test, self/inline-sized; escalate instead if it would touch operator-core
-      safety / the deploy machinery / a migration.
+      test, self/inline-sized; VERIFY (tests green) then close the loop via
+      improvements:resolve (outcome fixed | could-not-fix | needs-human — the
+      back-edge that takes a fixed bug out of the queue); escalate instead if it
+      would touch operator-core safety / the deploy machinery / a migration.
+      Prompt: blueprints/implement/prompts/worker.md (blueprint-owned, resolved
+      via BLUEPRINT_ID=implement — close-the-self-improvement-loop D-001).
 
 knobs:
   harnessKind: implement
