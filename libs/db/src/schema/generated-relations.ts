@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { usersInHarnessShared, userSessionsInHarnessShared, userPreferencesInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercupShared, messageCommentsInPapercupShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryCanonicalInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, messageRecipientsInPapercupShared, goalsInHarnessShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, memoryAnchorsInHarnessShared } from "./generated";
+import { usersInHarnessShared, userSessionsInHarnessShared, userPreferencesInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercupShared, messageCommentsInPapercupShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryCanonicalInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercupShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, memoryAnchorsInHarnessShared } from "./generated";
 
 export const userSessionsInHarnessSharedRelations = relations(userSessionsInHarnessShared, ({one}) => ({
 	usersInHarnessShared: one(usersInHarnessShared, {
@@ -115,13 +115,6 @@ export const operatorConversationsInHarnessSharedRelations = relations(operatorC
 	operatorTurnsInHarnessShareds: many(operatorTurnsInHarnessShared),
 }));
 
-export const messageRecipientsInPapercupSharedRelations = relations(messageRecipientsInPapercupShared, ({one}) => ({
-	messagesInPapercupShared: one(messagesInPapercupShared, {
-		fields: [messageRecipientsInPapercupShared.messageId],
-		references: [messagesInPapercupShared.id]
-	}),
-}));
-
 export const goalsInHarnessSharedRelations = relations(goalsInHarnessShared, ({one, many}) => ({
 	goalsInHarnessShared: one(goalsInHarnessShared, {
 		fields: [goalsInHarnessShared.parentId],
@@ -130,6 +123,13 @@ export const goalsInHarnessSharedRelations = relations(goalsInHarnessShared, ({o
 	}),
 	goalsInHarnessShareds: many(goalsInHarnessShared, {
 		relationName: "goalsInHarnessShared_parentId_goalsInHarnessShared_id"
+	}),
+}));
+
+export const messageRecipientsInPapercupSharedRelations = relations(messageRecipientsInPapercupShared, ({one}) => ({
+	messagesInPapercupShared: one(messagesInPapercupShared, {
+		fields: [messageRecipientsInPapercupShared.messageId],
+		references: [messagesInPapercupShared.id]
 	}),
 }));
 
