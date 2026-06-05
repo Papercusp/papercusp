@@ -2421,10 +2421,21 @@ export async function invoke(
   }
 
   // 11. Extract result text from the in-memory accumulator.
-  const jsonlBody = Buffer.concat(jsonlChunks).toString('utf8');
+  const rawJsonlBody = Buffer.concat(jsonlChunks).toString('utf8');
   const errBody = Buffer.concat(errChunks).toString('utf8');
-  const finalText = extractResult(jsonlBody, streamFormat);
+  const finalText = extractResult(rawJsonlBody, streamFormat);
   const outBody = streamFormat !== 'none' ? `${finalText}\n` : finalText;
+  // papercusp.run_meta (cross-backend-cost-capture D-005): stamp backend+model+role onto
+  // the persisted stream so post-hoc scanners (scanAgentRuns, sumJsonlCost) can attribute
+  // usage for EVERY backend without re-deriving spawn context — codex's stream names no
+  // model, and the filename carries no backend. Stream parsers ignore unknown event types;
+  // plain-text ('none') bodies are left untouched.
+  const jsonlBody =
+    streamFormat === 'none'
+      ? rawJsonlBody
+      : `${rawJsonlBody}${rawJsonlBody.length === 0 || rawJsonlBody.endsWith('\n') ? '' : '\n'}${JSON.stringify(
+          { type: 'papercusp.run_meta', backend: agentBackend, model: resolvedModel, role, runId },
+        )}\n`;
 
   // 11.5. Persistence: when ctx.pg is wired, the canonical record is
   // the harness_run_output row. The on-disk jsonl/out/err files are
@@ -2464,16 +2475,25 @@ export async function invoke(
     } catch (err) {
       ctx.log(`  PG ingest failed (non-fatal): ${(err as Error).message}`);
     }
-    // Usage telemetry (rate-limit-layer-v2 D-002 capture point 2): persist the run's token
-    // counts + $cost from the JSONL result event. Best-effort — never fails the run.
+    // Usage telemetry (rate-limit-layer-v2 D-002 capture point 2; backend-aware +
+    // run-attributed per cross-backend-cost-capture D-005): persist the run's token
+    // counts + $cost from the JSONL terminal events. Best-effort — never fails the run.
     try {
       const { extractRunUsage } = await import('./cost-cap');
       const usage = extractRunUsage(jsonlBody);
       if (usage) {
         const { recordUsageSamplePg } = await import('./usage-sample-pg');
+        const { harnessSlug: getSlug } = await import('./state');
         await recordUsageSamplePg(
           { pg: ctx.pg, workspaceId: ctx.workspaceId },
-          { backend: agentBackend, model: resolvedModel, usage },
+          {
+            backend: agentBackend,
+            model: resolvedModel,
+            usage,
+            harnessSlug: getSlug(ctx.projectDir),
+            runId,
+            role,
+          },
         );
       }
     } catch (err) {

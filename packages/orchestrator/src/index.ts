@@ -106,8 +106,8 @@ export type {
   ProcessActionsOptions,
   ProcessActionsResult,
 } from './actions-block';
-export { evaluateCostCap, sumJsonlCost } from './cost-cap';
-export type { CostCapResult } from './cost-cap';
+export { evaluateCostCap, extractRunUsage, sumJsonlCost } from './cost-cap';
+export type { CostCapResult, RunUsage } from './cost-cap';
 export { postCuratorOutputs, postArchiveEvent } from './bus-posts';
 export { ROLE_MODEL_DEFAULTS, roleModelDefault } from './role-models';
 export { pruneLogs } from './prune-logs';

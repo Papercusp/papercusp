@@ -169,7 +169,10 @@ test('extractRunUsage — Claude Code result event (snake_case usage + total_cos
     inputTokens: 1200,
     outputTokens: 340,
     cacheReadTokens: 9000,
+    cacheCreationTokens: undefined,
     costUsd: 0.042,
+    durationMs: undefined,
+    backend: 'claude-code',
   });
 });
 
@@ -200,4 +203,126 @@ test('extractRunUsage — null on no result event / malformed lines / usage-less
   assert.equal(extractRunUsage(''), null);
   assert.equal(extractRunUsage('not json\n{"type":"system"}'), null);
   assert.equal(extractRunUsage(JSON.stringify({ type: 'result', result: 'DONE' })), null);
+});
+
+// --- extractRunUsage cross-backend shapes (cross-backend-cost-capture D-005) -------------------
+
+test('extractRunUsage — codex turn.completed: sums turns, subtracts cached subset, backend codex', () => {
+  const jsonl = [
+    JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'working' } }),
+    JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1000, cached_input_tokens: 400, output_tokens: 50 } }),
+    JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 200, output_tokens: 30 } }),
+  ].join('\n');
+  const u = extractRunUsage(jsonl);
+  // turn 1: 1000 includes 400 cached → 600 uncached; turn 2: 200 uncached
+  assert.equal(u?.inputTokens, 800);
+  assert.equal(u?.outputTokens, 80);
+  assert.equal(u?.cacheReadTokens, 400);
+  assert.equal(u?.costUsd, undefined); // codex reports no cost
+  assert.equal(u?.backend, 'codex');
+});
+
+test('extractRunUsage — omp message_end: sums assistant turns, reads cost.total + model', () => {
+  const jsonl = [
+    JSON.stringify({
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        model: 'claude-opus-4-8',
+        usage: { input: 5000, output: 200, cacheRead: 1000, cacheWrite: 300, totalTokens: 6500, cost: { total: 0.031 } },
+      },
+    }),
+    JSON.stringify({
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        model: 'claude-opus-4-8',
+        usage: { input: 100, output: 40, cost: { total: 0.004 } },
+      },
+    }),
+    JSON.stringify({ type: 'agent_end', messages: [
+      { role: 'assistant', model: 'claude-opus-4-8', usage: { input: 5000, output: 200, cost: { total: 0.031 } } },
+      { role: 'assistant', model: 'claude-opus-4-8', usage: { input: 100, output: 40, cost: { total: 0.004 } } },
+    ] }),
+  ].join('\n');
+  const u = extractRunUsage(jsonl);
+  // message_end sums win; agent_end is a fallback only (no double count)
+  assert.equal(u?.inputTokens, 5100);
+  assert.equal(u?.outputTokens, 240);
+  assert.equal(u?.cacheReadTokens, 1000);
+  assert.equal(u?.cacheCreationTokens, 300);
+  assert.ok(Math.abs((u?.costUsd ?? 0) - 0.035) < 1e-9);
+  assert.equal(u?.model, 'claude-opus-4-8');
+  assert.equal(u?.backend, 'omp');
+});
+
+test('extractRunUsage — omp agent_end fallback when no message_end carried usage', () => {
+  const jsonl = JSON.stringify({ type: 'agent_end', messages: [
+    { role: 'user', content: [{ type: 'text', text: 'go' }] },
+    { role: 'assistant', model: 'qwen2.5-coder:14b', usage: { input: 900, output: 120, cost: { total: 0 } } },
+  ] });
+  const u = extractRunUsage(jsonl);
+  assert.equal(u?.inputTokens, 900);
+  assert.equal(u?.outputTokens, 120);
+  assert.equal(u?.model, 'qwen2.5-coder:14b');
+  assert.equal(u?.backend, 'omp');
+});
+
+test('extractRunUsage — stream-derived model (actual) wins over run_meta (requested alias)', () => {
+  const jsonl = [
+    JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-opus-4-8' }),
+    JSON.stringify({ type: 'result', total_cost_usd: 0.01, usage: { input_tokens: 10 } }),
+    JSON.stringify({ type: 'papercusp.run_meta', backend: 'claude-code', model: 'opus', role: 'worker' }),
+  ].join('\n');
+  const u = extractRunUsage(jsonl);
+  assert.equal(u?.model, 'claude-opus-4-8'); // actual id from the stream, not the 'opus' alias
+  assert.equal(u?.backend, 'claude-code');
+});
+
+test('extractRunUsage — run_meta model covers codex (stream names no model)', () => {
+  const jsonl = [
+    JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100, output_tokens: 10 } }),
+    JSON.stringify({ type: 'papercusp.run_meta', backend: 'codex', model: 'gpt-5.5', role: 'worker' }),
+  ].join('\n');
+  const u = extractRunUsage(jsonl);
+  assert.equal(u?.model, 'gpt-5.5');
+  assert.equal(u?.backend, 'codex');
+});
+
+test('extractRunUsage — claude model falls back to system:init when no run_meta', () => {
+  const jsonl = [
+    JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-opus-4-7' }),
+    JSON.stringify({ type: 'result', total_cost_usd: 0.02, usage: { input_tokens: 5 } }),
+  ].join('\n');
+  const u = extractRunUsage(jsonl);
+  assert.equal(u?.model, 'claude-opus-4-7');
+  assert.equal(u?.backend, 'claude-code');
+});
+
+test('sumJsonlCost — prices codex tokens from run_meta model; omp cost.total reported directly', () => {
+  const fx = makeFixture();
+  // claude: provider-reported cost
+  writeJsonl(join(fx.logDir, '1700000000-worker.jsonl'), [
+    { type: 'result', result: 'DONE', total_cost_usd: 0.012 },
+  ]);
+  // codex: tokens only + run_meta model → estimated at list price
+  // 1M uncached in × $2.50 + 100k out × $20 = 2.5 + 2 = 4.5 (gpt-5.5)
+  writeJsonl(join(fx.logDir, '1700000100-validator.jsonl'), [
+    { type: 'turn.completed', usage: { input_tokens: 1_000_000, output_tokens: 100_000 } },
+    { type: 'papercusp.run_meta', backend: 'codex', model: 'gpt-5.5', role: 'validator' },
+  ]);
+  // omp: provider-reported cost.total
+  writeJsonl(join(fx.logDir, '1700000200-scoper.jsonl'), [
+    { type: 'message_end', message: { role: 'assistant', model: 'claude-opus-4-8', usage: { input: 10, output: 5, cost: { total: 0.003 } } } },
+  ]);
+  // codex with NO model derivable → contributes 0 (never a fabricated estimate)
+  writeJsonl(join(fx.logDir, '1700000300-reviewer.jsonl'), [
+    { type: 'turn.completed', usage: { input_tokens: 999_999, output_tokens: 999 } },
+  ]);
+  try {
+    const total = sumJsonlCost(fx.logDir);
+    assert.ok(Math.abs(total - (0.012 + 4.5 + 0.003)) < 1e-9, `got ${total}`);
+  } finally {
+    fx.cleanup();
+  }
 });

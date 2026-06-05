@@ -18,6 +18,7 @@
  */
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { costFromTokens } from '@papercusp/model-pricing';
 import { configGet } from './config';
 import type { HarnessConfig } from './types';
 
@@ -63,7 +64,9 @@ export interface RunUsage {
   cacheCreationTokens?: number;
   /** Provider-reported cost (claude `total_cost_usd`, omp `usage.cost.total`). Undefined for codex. */
   costUsd?: number;
-  /** Model id when derivable (run_meta line > stream-derived). */
+  /** Wall-clock duration when the stream reports one (claude `result.duration_ms` only). */
+  durationMs?: number;
+  /** Model id when derivable (stream-derived actual > run_meta requested). */
   model?: string;
   /** Backend when derivable ('claude-code' | 'codex' | 'omp' | …) — run_meta line > shape inference. */
   backend?: string;
@@ -151,6 +154,7 @@ export function extractRunUsage(jsonlBody: string): RunUsage | null {
         cacheReadTokens: num(u.cache_read_input_tokens) ?? num(u.cached_tokens),
         cacheCreationTokens: num(u.cache_creation_input_tokens),
         costUsd: num(obj.total_cost_usd),
+        durationMs: num(obj.duration_ms),
       };
       if (
         usage.inputTokens !== undefined ||
@@ -205,7 +209,10 @@ export function extractRunUsage(jsonlBody: string): RunUsage | null {
   if (!usage) return null;
   const backend =
     metaBackend ?? (claude ? 'claude-code' : codex ? 'codex' : 'omp');
-  const model = metaModel ?? streamModel;
+  // Stream-derived model wins (the ACTUAL model the CLI reports — claude init /
+  // omp message.model); run_meta carries the *requested* model (may be an alias)
+  // and covers codex, whose stream names no model.
+  const model = streamModel ?? metaModel;
   return { ...usage, ...(model !== undefined ? { model } : {}), backend };
 }
 
