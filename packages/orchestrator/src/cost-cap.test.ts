@@ -152,3 +152,52 @@ test('evaluateCostCap — custom warn threshold honored', () => {
     fx.cleanup();
   }
 });
+
+// --- extractRunUsage (rate-limit-layer-v2 D-002, capture point 2) ------------------------------
+import { extractRunUsage } from './cost-cap.js';
+
+test('extractRunUsage — Claude Code result event (snake_case usage + total_cost_usd)', () => {
+  const jsonl = [
+    JSON.stringify({ type: 'system', message: 'start' }),
+    JSON.stringify({
+      type: 'result',
+      total_cost_usd: 0.042,
+      usage: { input_tokens: 1200, output_tokens: 340, cache_read_input_tokens: 9000 },
+    }),
+  ].join('\n');
+  assert.deepEqual(extractRunUsage(jsonl), {
+    inputTokens: 1200,
+    outputTokens: 340,
+    cacheReadTokens: 9000,
+    costUsd: 0.042,
+  });
+});
+
+test('extractRunUsage — OpenAI-style aliases (prompt/completion/cached tokens)', () => {
+  const jsonl = JSON.stringify({
+    type: 'result',
+    usage: { prompt_tokens: 500, completion_tokens: 80, cached_tokens: 100 },
+  });
+  const u = extractRunUsage(jsonl);
+  assert.equal(u?.inputTokens, 500);
+  assert.equal(u?.outputTokens, 80);
+  assert.equal(u?.cacheReadTokens, 100);
+  assert.equal(u?.costUsd, undefined);
+});
+
+test('extractRunUsage — last result event wins (matches sumJsonlCost)', () => {
+  const jsonl = [
+    JSON.stringify({ type: 'result', total_cost_usd: 0.01, usage: { input_tokens: 1 } }),
+    JSON.stringify({ type: 'assistant', message: 'mid-run' }),
+    JSON.stringify({ type: 'result', total_cost_usd: 0.05, usage: { input_tokens: 99 } }),
+  ].join('\n');
+  const u = extractRunUsage(jsonl);
+  assert.equal(u?.costUsd, 0.05);
+  assert.equal(u?.inputTokens, 99);
+});
+
+test('extractRunUsage — null on no result event / malformed lines / usage-less result', () => {
+  assert.equal(extractRunUsage(''), null);
+  assert.equal(extractRunUsage('not json\n{"type":"system"}'), null);
+  assert.equal(extractRunUsage(JSON.stringify({ type: 'result', result: 'DONE' })), null);
+});
