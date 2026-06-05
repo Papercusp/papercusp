@@ -40,6 +40,9 @@ test('gym blueprint has the expected meta-harness shape', () => {
   assert.equal(bp.recursion.enabled, true);
   assert.equal(bp.recursion.spawnOn?.role, 'variant-runner');
   assert.equal(bp.recursion.maxDepth, 1);
+  // D-008: the parameterized child is DECLARED (`$target`), no longer an
+  // undeclared runtime override of self (see resolve-child.test.ts for binding).
+  assert.equal(bp.recursion.childBlueprint, '$target');
   // inherited from base
   assert.equal(bp.knobs.logRetention, 500);
 });

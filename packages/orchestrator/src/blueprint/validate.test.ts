@@ -89,6 +89,21 @@ test('recursion enabled without a trigger → warning', () => {
   assert.ok(v.warnings.some((w) => w.code === 'recursion-no-trigger'));
 });
 
+test('recursion childBlueprint: well-formed $param passes; malformed placeholder errors (D-008)', () => {
+  const mk = (childBlueprint: string) =>
+    BlueprintSchema.parse({
+      id: 'x',
+      workItem: { kind: 'research-task' },
+      spine: { edges: { DONE: { to: 'done' } } },
+      recursion: { enabled: true, childBlueprint, spawnOn: { role: 'runner' } },
+      roles: [{ id: 'runner' }],
+    });
+  const ok = validateBlueprint(mk('$target'));
+  assert.equal(ok.errors.some((e) => e.code === 'recursion-bad-param'), false, JSON.stringify(ok.errors));
+  const bad = validateBlueprint(mk('$9bad'));
+  assert.ok(bad.errors.some((e) => e.code === 'recursion-bad-param'), JSON.stringify(bad.errors));
+});
+
 test('reactive rule guarded only by `cond` (DataCondition) is a valid guard; a stale custom-only guard errors (D-002)', () => {
   const base = {
     id: 'x',
