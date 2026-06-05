@@ -29,10 +29,11 @@ test('deliberate blueprint loads + validates (program mode, conditional step)', 
   assert.equal(blueprint.id, 'deliberate');
   assert.ok(isProgramSpine(blueprint.spine));
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
-  // the vote step is conditional on the owner not answering.
+  // the vote step is conditional on the owner not answering — the canonical
+  // @papercusp/rules MatchMap (adopt-event-rules-engines D-002).
   const voteStep = blueprint.spine.steps?.find((s) => s.id === 'vote');
   assert.equal(voteStep?.op, 'coord:vote');
-  assert.equal(voteStep?.when, 'NOT asked.answered');
+  assert.deepEqual(voteStep?.when, { 'asked.answered': { truthy: false } });
   // the gate has a fallback (escalate).
   assert.ok(blueprint.spine.gate?.some((b) => b.else === true));
   assert.equal(blueprint.triggers?.event, 'coordination-op:deliberate');

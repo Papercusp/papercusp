@@ -70,7 +70,9 @@ spine:
   # CURATED escalation (the split + the advocate's objection) — so a genuine
   # escalation arrives pre-deliberated and the needs-human pile shrinks.
   gate:
-    - when: "tally.margin >= 0.5 AND tally.mean_conf >= 0.6 AND NOT tally.advocate_veto"
+    # MatchMap (@papercusp/rules) — implicit-AND of the three leaf tests
+    # (adopt-event-rules-engines D-002): decisive margin + confident + no veto.
+    - when: { "tally.margin": { gte: 0.5 }, "tally.mean_conf": { gte: 0.6 }, "tally.advocate_veto": { truthy: false } }
       op: resolve
       args:
         decision: "{{ tally.winner }}"

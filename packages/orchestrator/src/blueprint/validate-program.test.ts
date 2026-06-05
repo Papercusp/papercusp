@@ -19,7 +19,7 @@ const programBp = (over: Record<string, unknown> = {}) =>
         { id: 'agg', op: 'vote:aggregate', args: {}, bind: 'tally' },
       ],
       gate: [
-        { when: 'tally.margin >= 0.5', op: 'resolve', args: {} },
+        { when: { 'tally.margin': { gte: 0.5 } }, op: 'resolve', args: {} },
         { else: true, op: 'coord:escalate', args: {} },
       ],
     },
@@ -55,7 +55,7 @@ test('gate with no fallback is rejected', () => {
     programBp({
       spine: {
         steps: [{ id: 'agg', op: 'vote:aggregate', bind: 'tally' }],
-        gate: [{ when: 'tally.margin >= 0.5', op: 'resolve' }],
+        gate: [{ when: { 'tally.margin': { gte: 0.5 } }, op: 'resolve' }],
       },
     }),
   );
@@ -71,15 +71,41 @@ test('steps without a gate is rejected', () => {
   assert.ok(v.errors.some((e) => e.code === 'gate-missing'));
 });
 
-test('unparseable when in a step or gate is rejected', () => {
-  const v = validateBlueprint(
-    programBp({
-      spine: {
-        steps: [{ id: 'agg', op: 'vote:aggregate', when: 'margin >=', bind: 'tally' }],
-        gate: [{ else: true, op: 'resolve' }],
-      },
-    }),
-  );
+test('an invalid when (not a DataCondition) is rejected at schema parse', () => {
+  // The canonical `when` is a @papercusp/rules MatchMap (adopt-event-rules-engines
+  // D-002); a bare string expression is no longer a valid when and the schema
+  // rejects it at parse — the primary enforcement.
+  const parsed = BlueprintSchema.safeParse({
+    id: 'vote-test',
+    workItem: { kind: 'decision', idPrefix: 'VOTE' },
+    roles: [{ id: 'voter' }],
+    spine: {
+      steps: [{ id: 'agg', op: 'vote:aggregate', when: 'margin >=', bind: 'tally' }],
+      gate: [{ else: true, op: 'resolve' }],
+    },
+  });
+  assert.equal(parsed.success, false);
+});
+
+test('validate.ts flags bad-step-when on a raw blueprint with an invalid when', () => {
+  // The secondary net: a raw (un-schema-parsed) blueprint whose when is not a
+  // DataCondition (here `{ all: <non-array> }`) is caught by validate.ts.
+  const raw = {
+    id: 'vote-test',
+    workItem: { kind: 'decision', idPrefix: 'VOTE' },
+    roles: [{ id: 'voter' }],
+    knobs: {},
+    spine: {
+      decider: 'director',
+      maxTurns: 200,
+      default: { to: 'idle' },
+      steps: [{ id: 'agg', op: 'vote:aggregate', when: { all: 'not-an-array' }, bind: 'tally' }],
+      gate: [{ else: true, op: 'resolve', args: {} }],
+    },
+    planner: { kind: 'none' },
+    reactive: [],
+  } as unknown as Parameters<typeof validateBlueprint>[0];
+  const v = validateBlueprint(raw);
   assert.equal(v.ok, false);
   assert.ok(v.errors.some((e) => e.code === 'bad-step-when'));
 });
