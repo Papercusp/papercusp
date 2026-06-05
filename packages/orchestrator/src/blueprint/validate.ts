@@ -107,7 +107,10 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
   }
 
   // ── gates: finalize-recipe roles ───────────────────────────────────────────
-  const finalize = bp.gates.finalize;
+  // `bp.gates` is schema-prefaulted ({}) for a parsed blueprint, but this fn is
+  // also the author-time "secondary net" over RAW (un-parsed) blueprints (see
+  // validate-program.test.ts), so guard the defaulted field.
+  const finalize = bp.gates?.finalize;
   if (finalize) {
     for (const step of [...finalize.onDone, ...finalize.onEscalate]) {
       if (!FINALIZE_STEPS.has(step) && !roleIds.has(step)) {
@@ -117,12 +120,14 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
   }
 
   // ── recursion: bounded ─────────────────────────────────────────────────────
-  if (bp.recursion.enabled) {
-    if (!bp.recursion.spawnOn) {
+  // Defaulted ({}) for a parsed blueprint; guard for the raw-blueprint path.
+  const recursion = bp.recursion;
+  if (recursion?.enabled) {
+    if (!recursion.spawnOn) {
       warn('recursion-no-trigger', 'recursion.enabled but no spawnOn trigger declared — it can never recurse');
     }
-    if (!Number.isFinite(bp.recursion.maxDepth) || bp.recursion.maxDepth < 0) {
-      err('recursion-unbounded', `recursion.maxDepth must be a finite non-negative integer (got ${bp.recursion.maxDepth})`);
+    if (!Number.isFinite(recursion.maxDepth) || recursion.maxDepth < 0) {
+      err('recursion-unbounded', `recursion.maxDepth must be a finite non-negative integer (got ${recursion.maxDepth})`);
     }
   }
 

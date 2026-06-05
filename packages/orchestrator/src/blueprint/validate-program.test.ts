@@ -89,7 +89,14 @@ test('an invalid when (not a DataCondition) is rejected at schema parse', () => 
 
 test('validate.ts flags bad-step-when on a raw blueprint with an invalid when', () => {
   // The secondary net: a raw (un-schema-parsed) blueprint whose when is not a
-  // DataCondition (here `{ all: <non-array> }`) is caught by validate.ts.
+  // DataCondition is caught by validate.ts. A leftover STRING-expr `when` (the
+  // pre-adopt-event-rules-engines form) is the realistic bad value: a string
+  // fails every dataConditionSchema branch (incl. the permissive match-map
+  // record, which requires an object). NB an object like `{ all: <non-array> }`
+  // is NOT a valid fixture here — it parses as the match-map `{ "all": <value> }`,
+  // since the `all`/`any`/`not` combinators only bind as the sole strict key.
+  // The blueprint is also raw (no `gates`/`recursion`) — validateBlueprint must
+  // tolerate that (it's run author-time over un-parsed blueprints too).
   const raw = {
     id: 'vote-test',
     workItem: { kind: 'decision', idPrefix: 'VOTE' },
@@ -99,7 +106,7 @@ test('validate.ts flags bad-step-when on a raw blueprint with an invalid when', 
       decider: 'director',
       maxTurns: 200,
       default: { to: 'idle' },
-      steps: [{ id: 'agg', op: 'vote:aggregate', when: { all: 'not-an-array' }, bind: 'tally' }],
+      steps: [{ id: 'agg', op: 'vote:aggregate', when: 'tally.margin >= 0.5', bind: 'tally' }],
       gate: [{ else: true, op: 'resolve', args: {} }],
     },
     planner: { kind: 'none' },
