@@ -23,9 +23,13 @@
 --     coord_links going forward; the import write-path dual-writes edges).
 --
 -- Idempotent (DROP ... IF EXISTS; DROP COLUMN IF EXISTS). Composes onto
--- 000-baseline.sql for fresh/embedded-pg boots: baseline creates the column + index,
--- migration 136 creates the work_items view, this drops the column + index and
--- recreates the view over the post-drop column set.
+-- 000-baseline.sql for fresh/embedded-pg boots. The squashed baseline was kept in
+-- sync in the SAME change: the `blocked_by text[]` column + `hfc_blocked_by_gin_idx`
+-- were removed from 000-baseline.sql so the baseline reflects head (the
+-- fresh-migrate "re-apply baseline RAW is a no-op" gate would otherwise fail on a
+-- CREATE INDEX over a now-dropped column). On a FRESH boot the baseline never
+-- creates the column, so this migration's DROPs are clean no-ops; on the live
+-- :5432 box (which still has the column) they do the real work.
 
 \set ON_ERROR_STOP on
 BEGIN;

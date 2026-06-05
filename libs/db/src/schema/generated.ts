@@ -1642,7 +1642,6 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.table("h
 	sourcePlanSlug: text("source_plan_slug"),
 	sourcePlanItemIds: text("source_plan_item_ids").array(),
 	wave: text(),
-	blockedBy: text("blocked_by").array(),
 	featureOrder: integer("feature_order"),
 	authorPubkey: text("author_pubkey"),
 	origin: text().default('local').notNull(),
@@ -1651,7 +1650,6 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.table("h
 	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("hfc_audit_pending_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((origin = 'remote'::text) AND ((audit_verdict IS NULL) OR (audit_verdict = 'pending'::text)))`),
-	index("hfc_blocked_by_gin_idx").using("gin", table.blockedBy.asc().nullsLast().op("array_ops")),
 	index("hfc_created_by_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.createdByGithubUserId.asc().nullsLast().op("int8_ops")).where(sql`(created_by_github_user_id IS NOT NULL)`),
 	index("hfc_design_status_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.designStatus.asc().nullsLast().op("text_ops")).where(sql`(design_status IS NOT NULL)`),
 	index("hfc_needs_design_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.needsDesign.asc().nullsLast().op("text_ops")).where(sql`(needs_design = true)`),

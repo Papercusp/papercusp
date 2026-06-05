@@ -1118,7 +1118,6 @@ CREATE TABLE IF NOT EXISTS harness_shared.harness_features_consolidated (
     source_plan_slug text,
     source_plan_item_ids text[],
     wave text,
-    blocked_by text[],
     feature_order integer,
     author_pubkey text,
     origin text DEFAULT 'local'::text NOT NULL,
@@ -5020,8 +5019,6 @@ CREATE INDEX IF NOT EXISTS hda_kind_idx ON harness_shared.harness_design_artifac
 CREATE INDEX IF NOT EXISTS he_recent_idx ON harness_shared.harness_experts USING btree (workspace_id, harness_slug, updated_at DESC);
 
 CREATE INDEX IF NOT EXISTS hfc_audit_pending_idx ON harness_shared.harness_features_consolidated USING btree (harness_slug) WHERE ((origin = 'remote'::text) AND ((audit_verdict IS NULL) OR (audit_verdict = 'pending'::text)));
-
-CREATE INDEX IF NOT EXISTS hfc_blocked_by_gin_idx ON harness_shared.harness_features_consolidated USING gin (blocked_by);
 
 CREATE INDEX IF NOT EXISTS hfc_created_by_idx ON harness_shared.harness_features_consolidated USING btree (harness_slug, created_by_github_user_id) WHERE (created_by_github_user_id IS NOT NULL);
 
