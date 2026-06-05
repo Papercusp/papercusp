@@ -1032,19 +1032,6 @@ export const voiceUtterancesInHarnessShared = harnessShared.table("voice_utteran
 	index("voice_utterances_ts_idx").using("btree", table.ts.desc().nullsFirst().op("timestamptz_ops")),
 ]);
 
-export const harnessHealthInHarnessShared = harnessShared.table("harness_health", {
-	harnessSlug: text("harness_slug").primaryKey().notNull(),
-	specPresent: boolean("spec_present").default(false).notNull(),
-	contractPresent: boolean("contract_present").default(false).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	lastCheckMs: bigint("last_check_ms", { mode: "number" }).default(0).notNull(),
-	workspaceId: text("workspace_id").default('').notNull(),
-}, (table) => [
-	pgPolicy("harness_health_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.harnessSlug], name: "harness_health_pkey"}),
-
-]);
-
 export const operatorScanLocksInHarnessShared = harnessShared.table("operator_scan_locks", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),

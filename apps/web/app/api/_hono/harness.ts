@@ -1293,9 +1293,13 @@ harness.get('/:slug/health', async (c) => {
 
   // Verdict
   const checks: Array<{ name: string; ok: boolean; detail?: string }> = [
-    { name: 'spec_present',        ok: existsSync(join(project.path, 'SPEC.md')) },
+    // spec_present (SPEC.md) and contract_present (validation-contract.md) were
+    // dropped: plans replaced both as the authoritative scope/acceptance surface
+    // (plans-central-harness-ux-2026-05-26 D-004/D-005). A plan-native harness
+    // has neither file, so gating health on them flags every current harness
+    // unhealthy. features_present already covers "has this harness got work".
+    // Matches the canonical operator-core reader (harness-readers.ts).
     { name: 'features_present',    ok: (await parseFeatures(project)).length > 0 },
-    { name: 'contract_present',    ok: existsSync(join(harnessDir(project), 'validation-contract.md')) },
     { name: 'not_escalated',       ok: !escalated, detail: escalated ? 'see escalation.md' : undefined },
     { name: 'no_pending_checkpoints', ok: pendingCheckpoints === 0, detail: pendingCheckpoints > 0 ? `${pendingCheckpoints} awaiting grant` : undefined },
     { name: 'smoke_test_clean',    ok: !smokeFail, detail: smokeFail ? 'last smoke test failed' : undefined },
