@@ -21,6 +21,18 @@ workItem:
   kind: feature
   idPrefix: F
 
+# The autoloop dispatch policy (autoloop-pot-operator-rebuild-2026-06-05 D-005):
+# the orchestrator runs up to 4 feature pipelines at once for a coding harness,
+# filling slots in strict plan-priority order. Per-install config
+# (`parallelWorkers.*` / `maxCostUsd` in .papercusp/config.json) overrides; the
+# orchestrator's imperative SAFETY_CEILING still clamps (D-007). Readiness is
+# inherited from the schema default (the legacy needs-work set) — declared
+# nowhere here on purpose, so the coding pipeline's selection is byte-identical
+# to the pre-lift hardcoded policy.
+dispatch:
+  concurrency: 4
+  priority: plan-order
+
 # The orchestration spine. The decider (director) emits a DecisionVerb each turn;
 # deriveNext maps it to a PipelineAction. Every DECISION_VERB has an explicit
 # edge (parity with the exhaustive switch); a null/unparseable decision hits

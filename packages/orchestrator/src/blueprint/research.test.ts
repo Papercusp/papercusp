@@ -27,6 +27,8 @@ test('research blueprint has the expected research shape', () => {
   assert.ok(!Object.prototype.hasOwnProperty.call(bp.spine.edges, 'NEXT_WORKER'));
   // gym collects the work-item output (not a git diff) for a repo-less harness
   assert.equal(bp.gym?.collectTrace, 'work-item-output');
+  // declared dispatch policy (D-005): one task pipeline at a time — depth over fan-out
+  assert.equal(bp.dispatch?.concurrency, 1);
   // inherited from base
   assert.equal(bp.knobs.logRetention, 500);
 });

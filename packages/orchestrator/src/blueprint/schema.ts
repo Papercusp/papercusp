@@ -347,6 +347,46 @@ export const TriggersSchema = z.object({
 });
 
 /**
+ * The autoloop **dispatch policy** — `autoloop-pot-operator-rebuild-2026-06-05`
+ * D-005 (P-005/P-006): the last "lift hardcoded → declarative" for the autoloop.
+ * Roles/spine/triggers/gates were already declared; the dispatch policy
+ * (readiness + priority + concurrency + cost cap + safety ceiling — the
+ * `computeFrontier` gates in `operator-core/lib/dbos/orchestrator-loop.ts`) was
+ * hardcoded. This section declares it per blueprint, so `coding` runs 4 feature
+ * pipelines at once while `research` runs 1 — per-harness-type autoloop
+ * behaviors, all declared.
+ *
+ * OPTIONAL on a blueprint: launch/program blueprints (pot, vote, deliberate, …)
+ * have no work-item autoloop and declare none — the orchestrator then keeps the
+ * legacy config-only resolution. Resolution order at dispatch time: the
+ * per-install `.papercusp/config.json` (`parallelWorkers.*`, `maxCostUsd`)
+ * overrides the blueprint's declared policy (instance refines shape); the
+ * blueprint fills where config is silent; and the orchestrator's imperative
+ * `SAFETY_CEILING` clamps everything (D-007: safety gates stay deterministic
+ * code — a blueprint can tighten the ceiling, never raise it).
+ */
+export const DispatchSchema = z.object({
+  /** Max concurrent pipelines (work items in flight) for harnesses of this
+   *  shape. Filled when the per-install `parallelWorkers` config is silent. */
+  concurrency: z.number().int().positive().optional(),
+  /** Candidate ordering. `plan-order` = strict plan priority (lower first,
+   *  no-plan last), within a plan by (feature_order ASC NULLS LAST, id) — the
+   *  greedy fill `computeFrontier` implements. The only mode today; a new mode
+   *  lands WITH its frontier implementation, never as a dangling enum value. */
+  priority: z.enum(['plan-order']).default('plan-order'),
+  /** Work-item statuses eligible for dispatch. Default = the legacy needs-work
+   *  set (`pending`/`failed` are FeatureRecord aliases kept for safety). */
+  readiness: z.array(z.string().min(1)).nonempty().default(['todo', 'failing', 'pending', 'failed']),
+  /** Autoloop spend ceiling (USD) — over it, no new pipelines start. The
+   *  per-install `maxCostUsd` config overrides when set. */
+  costCapUsd: z.number().positive().optional(),
+  /** Declared concurrency ceiling — clamps the resolved cap for this shape.
+   *  The orchestrator's hard imperative SAFETY_CEILING still applies on top
+   *  (D-007): tighten-only, never a raise. */
+  safetyCeiling: z.number().int().positive().optional(),
+});
+
+/**
  * Tool/pack/plugin dependencies the blueprint's roles need. The distribution
  * plan's import-time validation (su-4b6ce distribution P-003/P-004) resolves
  * these against the catalog + Cupboard listings and fails upfront with
@@ -388,6 +428,9 @@ export const BlueprintSchema = z.object({
   gym: GymSchema.optional(),
   knobs: KnobsSchema.prefault({}),
   triggers: TriggersSchema.optional(),
+  /** The autoloop dispatch policy (D-005). Optional: launch/program blueprints
+   *  declare none and the orchestrator keeps its legacy config-only resolution. */
+  dispatch: DispatchSchema.optional(),
   dependencies: DependenciesSchema.optional(),
 });
 
@@ -415,4 +458,5 @@ export type BlueprintRecursion = z.infer<typeof RecursionSchema>;
 export type BlueprintGym = z.infer<typeof GymSchema>;
 export type BlueprintKnobs = z.infer<typeof KnobsSchema>;
 export type BlueprintTriggers = z.infer<typeof TriggersSchema>;
+export type BlueprintDispatch = z.infer<typeof DispatchSchema>;
 export type BlueprintHeader = z.infer<typeof BlueprintHeaderSchema>;

@@ -49,6 +49,6 @@ Emit ONE line. No prose after it.
 site, iterating → (all sites green) → `NEXT_VERIFIER` (overall) → `DONE`.
 
 > Parallelism: the pipeline dispatches one transformer per turn (sequential today).
-> `knobs.maxParallel` and the transformer's worktree isolation are what make true
-> concurrent fan-out safe once the engine supports it; until then, transform sites
-> one at a time — correct, just serial.
+> The blueprint's `dispatch.concurrency` and the transformer's worktree isolation
+> are what make true concurrent fan-out safe once the engine supports it; until
+> then, transform sites one at a time — correct, just serial.

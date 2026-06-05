@@ -25,6 +25,12 @@ workItem:
   kind: research-task
   idPrefix: R
 
+# The autoloop dispatch policy (autoloop-pot-operator-rebuild-2026-06-05 D-005):
+# research runs ONE task pipeline at a time — depth over fan-out (consistent
+# with anti-over-decomposition D-010). Per-install config overrides.
+dispatch:
+  concurrency: 1
+
 spine:
   decider: research-director
   maxTurns: 30

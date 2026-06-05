@@ -39,7 +39,10 @@ test('migration blueprint has the expected migration shape', () => {
   assert.deepEqual(bp.gym?.signals, ['regressionsFromTests']);
   // worktree machinery is on at the blueprint level, consistent with the role declaration
   assert.deepEqual(bp.knobs.worktrees, { enabled: true });
-  assert.equal(bp.knobs.maxParallel, 4);
+  // max concurrent transforms — migrated from `knobs.maxParallel` into the
+  // declared dispatch policy (autoloop-pot-operator-rebuild-2026-06-05 D-005)
+  assert.equal(bp.knobs.maxParallel, undefined);
+  assert.equal(bp.dispatch?.concurrency, 4);
   // inherited from base
   assert.equal(bp.knobs.logRetention, 500);
 });

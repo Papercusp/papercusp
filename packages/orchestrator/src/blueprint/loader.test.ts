@@ -26,6 +26,15 @@ test('loadBuiltinBlueprint("coding") resolves, validates, and inherits base knob
   assert.equal(blueprint.knobs.harnessKind, 'coding');
   assert.equal(blueprint.knobs.requiresRepo, true);
   assert.equal(blueprint.knobs.debuggerThreshold, 3);
+  // The declared dispatch policy (autoloop-pot-operator-rebuild-2026-06-05
+  // D-005): 4 feature pipelines at once, strict plan-priority fill, the legacy
+  // needs-work readiness (schema default — kept undeclared in the yaml so the
+  // selection stays byte-identical to the pre-lift hardcoded NEEDS_WORK).
+  assert.deepEqual(blueprint.dispatch, {
+    concurrency: 4,
+    priority: 'plan-order',
+    readiness: ['todo', 'failing', 'pending', 'failed'],
+  });
   // Inherited from base:
   assert.equal(blueprint.knobs.logRetention, 500);
   assert.deepEqual(blueprint.knobs.branchIsolation, { enabled: false });

@@ -81,6 +81,68 @@ test('BlueprintSchema — rejects a blueprint missing required fields', () => {
   assert.throws(() => BlueprintSchema.parse({ id: 'x', workItem: { kind: 'feature' } })); // no spine
 });
 
+// ── dispatch: — the declared autoloop dispatch policy ───────────────────────
+// autoloop-pot-operator-rebuild-2026-06-05 D-005 (P-005): the last "lift
+// hardcoded → declarative" for the autoloop.
+
+test('DispatchSchema — optional: an undeclared dispatch stays undefined (pot / launch blueprints)', () => {
+  const bp = BlueprintSchema.parse(minimal);
+  assert.equal(bp.dispatch, undefined);
+});
+
+test('DispatchSchema — a bare dispatch section fills the legacy-equivalent defaults', () => {
+  const bp = BlueprintSchema.parse({ ...minimal, dispatch: {} });
+  assert.ok(bp.dispatch);
+  // priority defaults to the only implemented mode.
+  assert.equal(bp.dispatch.priority, 'plan-order');
+  // readiness defaults to the legacy needs-work set (todo/failing + the
+  // pending/failed FeatureRecord aliases) — byte-equivalent to the hardcoded
+  // NEEDS_WORK the orchestrator used pre-lift.
+  assert.deepEqual(bp.dispatch.readiness, ['todo', 'failing', 'pending', 'failed']);
+  // concurrency / costCapUsd / safetyCeiling stay undeclared (the orchestrator
+  // then falls back to per-install config + imperative defaults).
+  assert.equal(bp.dispatch.concurrency, undefined);
+  assert.equal(bp.dispatch.costCapUsd, undefined);
+  assert.equal(bp.dispatch.safetyCeiling, undefined);
+});
+
+test('DispatchSchema — a full coding-style policy parses + round-trips', () => {
+  const bp = BlueprintSchema.parse({
+    ...minimal,
+    dispatch: {
+      concurrency: 4,
+      priority: 'plan-order',
+      readiness: ['todo', 'failing'],
+      costCapUsd: 25,
+      safetyCeiling: 8,
+    },
+  });
+  assert.deepEqual(bp.dispatch, {
+    concurrency: 4,
+    priority: 'plan-order',
+    readiness: ['todo', 'failing'],
+    costCapUsd: 25,
+    safetyCeiling: 8,
+  });
+  // idempotent (validator-of-record round-trips, like the rest of the schema).
+  assert.deepEqual(BlueprintSchema.parse(bp), bp);
+});
+
+test('DispatchSchema — rejects degenerate values', () => {
+  // concurrency must be a positive integer.
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, dispatch: { concurrency: 0 } }));
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, dispatch: { concurrency: -1 } }));
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, dispatch: { concurrency: 2.5 } }));
+  // priority is a closed enum — an unimplemented mode is rejected, not stored.
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, dispatch: { priority: 'fifo' } }));
+  // readiness must be a non-empty list of non-empty statuses.
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, dispatch: { readiness: [] } }));
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, dispatch: { readiness: [''] } }));
+  // safetyCeiling / costCapUsd must be positive.
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, dispatch: { safetyCeiling: 0 } }));
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, dispatch: { costCapUsd: 0 } }));
+});
+
 test('BlueprintSchema — parse is idempotent (validator-of-record round-trips)', () => {
   const once = BlueprintSchema.parse(minimal);
   const twice = BlueprintSchema.parse(once);

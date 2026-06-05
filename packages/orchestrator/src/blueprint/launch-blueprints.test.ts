@@ -45,6 +45,25 @@ for (const [id, expect] of Object.entries(LAUNCHES)) {
   });
 }
 
+test('pot launch blueprint loads + validates — decider=operator, NO trigger (the wake is self-declared)', () => {
+  // autoloop-pot-operator-rebuild-2026-06-05 P0 (D-001/D-002): the Pot is the
+  // minimal single-role operator blueprint. It deliberately declares NO
+  // triggers.schedule and NO triggers.event — its loop is the operator deciding
+  // its own next wake (pot:declare-wake → the one-shot pot-wake routine /
+  // event-reaction subscriptions), not a cadence. A schedule appearing here
+  // would silently reintroduce the timer loop D-002 removes.
+  const { blueprint, validation } = loadBuiltinBlueprint('pot');
+  assert.equal(blueprint.id, 'pot');
+  assert.equal(validation.ok, true, JSON.stringify(validation.errors));
+  assert.ok(!isProgramSpine(blueprint.spine), 'pot is a decider-mode spine');
+  assert.equal(blueprint.spine.decider, 'operator', 'the pot decider IS the operator role (D-001)');
+  assert.ok(blueprint.roles.some((r) => r.id === 'operator'), 'pot declares its operator role');
+  assert.deepEqual(validation.warnings, [], 'pot has no validator warnings');
+  assert.equal(blueprint.triggers?.schedule?.length ?? 0, 0, 'pot declares NO schedule trigger');
+  assert.equal(blueprint.triggers?.event, undefined, 'pot declares NO event trigger');
+  assert.equal(blueprint.knobs.requiresRepo, false, 'pot needs no repo');
+});
+
 test('a user fork (extends: deploy) can swap the launched role without code', () => {
   // The forkability the unify plan buys: a fork declares a different role + model.
   const forked = resolveBlueprint({

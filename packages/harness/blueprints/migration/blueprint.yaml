@@ -19,7 +19,7 @@
 # director transforms sites SERIALLY — correct, just not yet concurrent. The
 # transformer's `isolation: worktree` declaration is what makes the eventual
 # fan-out safe; honoring it as TRUE parallel dispatch (N transformers at once, each
-# in its own worktree, capped by `knobs.maxParallel`) is the same global-orchestrator
+# in its own worktree, capped by `dispatch.concurrency`) is the same global-orchestrator
 # fan-out capability `review` wants and the decider spine doesn't yet have — a
 # flagged follow-up, not a hack to force here. `knobs.worktrees.enabled` is set so
 # the blueprint-level worktree machinery is on, consistent with the role declaration.
@@ -38,6 +38,13 @@ description: >-
 workItem:
   kind: migration-task
   idPrefix: M
+
+# The autoloop dispatch policy (autoloop-pot-operator-rebuild-2026-06-05 D-005).
+# `concurrency` migrated here from the old `knobs.maxParallel` — max concurrent
+# transforms once fan-out lands (today the engine runs serially; see the
+# parallelism note above).
+dispatch:
+  concurrency: 4
 
 spine:
   decider: migration-director
@@ -83,7 +90,5 @@ knobs:
   worktrees: { enabled: true }
   # What to find + transform (e.g. "rename @restart/* → @papercusp/*"). A fork sets this.
   pattern: ""
-  # Max concurrent transforms once fan-out lands (today the engine runs serially).
-  maxParallel: 4
   # The verify command run per site + overall (the verifier's gate; also the gym signal).
   verifyCmd: ""
