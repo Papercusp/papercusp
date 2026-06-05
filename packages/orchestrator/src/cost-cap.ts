@@ -80,6 +80,57 @@ export function sumJsonlCost(logDir: string): number {
   return total;
 }
 
+/**
+ * Token usage parsed from a run's JSONL `result` event (rate-limit-layer-v2 D-002, capture
+ * point 2 — the subprocess path, where token counts are visible even though the CLI hides
+ * the provider's rate-limit headers). Mirrors `sumJsonlCost`'s "last result event wins".
+ */
+export interface RunUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  costUsd?: number;
+}
+
+/**
+ * Extract token usage + cost from the LAST `{"type":"result", …}` event in a run's JSONL
+ * body. Field names are read defensively across backends: Claude Code's snake_case
+ * (`usage.input_tokens` / `cache_read_input_tokens`) plus the OpenAI-style aliases codex
+ * emits (`prompt_tokens`/`completion_tokens`/`cached_tokens`). Returns null when no result
+ * event carries usable usage or cost.
+ */
+export function extractRunUsage(jsonlBody: string): RunUsage | null {
+  const num = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+  let found: RunUsage | null = null;
+  for (const raw of jsonlBody.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue; // skip malformed lines
+    }
+    if (!obj || typeof obj !== 'object' || obj.type !== 'result') continue;
+    const u = (obj.usage ?? {}) as Record<string, unknown>;
+    const usage: RunUsage = {
+      inputTokens: num(u.input_tokens) ?? num(u.prompt_tokens),
+      outputTokens: num(u.output_tokens) ?? num(u.completion_tokens),
+      cacheReadTokens: num(u.cache_read_input_tokens) ?? num(u.cached_tokens),
+      costUsd: num(obj.total_cost_usd),
+    };
+    if (
+      usage.inputTokens !== undefined ||
+      usage.outputTokens !== undefined ||
+      usage.costUsd !== undefined
+    ) {
+      found = usage; // last result event wins (matches sumJsonlCost)
+    }
+  }
+  return found;
+}
+
 import type { MissionStatePgContext } from './mission-state-pg';
 import { readCostWarnFiredPg, setCostWarnFiredPg } from './mission-state-pg';
 

@@ -1558,12 +1558,17 @@ export async function invoke(
   //    codex's model flag is `-m` (bare id); claude/omp use `--model`.
   const modelFlag = agentBackend === 'codex' ? '-m' : '--model';
   const cmdAlreadyHasModel = roleAgentCmd.includes('--model ') || /(?:^|\s)-m\s/.test(roleAgentCmd);
+  // Kept for the usage-telemetry bucket key (step 11.5) — best-effort either way.
+  let resolvedModel = '';
   if (!cmdAlreadyHasModel) {
     const model = normalizeModelForBackend(resolveModel(cfg, role), agentBackend);
     if (model) {
+      resolvedModel = model;
       extraFlags.push(modelFlag, model);
       ctx.log(`  role=${role} model=${model} (from config.json)`);
     }
+  } else {
+    resolvedModel = /(?:--model|-m)\s+(\S+)/.exec(roleAgentCmd)?.[1] ?? '';
   }
 
   // 5b. Per-role extraArgs from aiBackend.{default,roles[role]}.extraArgs.
@@ -2401,6 +2406,21 @@ export async function invoke(
       );
     } catch (err) {
       ctx.log(`  PG ingest failed (non-fatal): ${(err as Error).message}`);
+    }
+    // Usage telemetry (rate-limit-layer-v2 D-002 capture point 2): persist the run's token
+    // counts + $cost from the JSONL result event. Best-effort — never fails the run.
+    try {
+      const { extractRunUsage } = await import('./cost-cap');
+      const usage = extractRunUsage(jsonlBody);
+      if (usage) {
+        const { recordUsageSamplePg } = await import('./usage-sample-pg');
+        await recordUsageSamplePg(
+          { pg: ctx.pg, workspaceId: ctx.workspaceId },
+          { backend: agentBackend, model: resolvedModel, usage },
+        );
+      }
+    } catch (err) {
+      ctx.log(`  usage-sample ingest failed (non-fatal): ${(err as Error).message}`);
     }
   }
 
