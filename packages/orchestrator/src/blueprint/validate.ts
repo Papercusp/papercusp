@@ -21,6 +21,7 @@
  */
 import type { Blueprint } from './schema.js';
 import { dataConditionSchema } from '@papercusp/rules';
+import { CHILD_BLUEPRINT_PARAM_RE, isChildBlueprintParam } from './resolve-child.js';
 
 /** A step/gate `when` is valid iff it's a serializable `@papercusp/rules` DataCondition. */
 function isValidWhen(when: unknown): boolean {
@@ -128,6 +129,16 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
     }
     if (!Number.isFinite(recursion.maxDepth) || recursion.maxDepth < 0) {
       err('recursion-unbounded', `recursion.maxDepth must be a finite non-negative integer (got ${recursion.maxDepth})`);
+    }
+    // A `$param` childBlueprint (D-008 — the gym's `$target`) must be a
+    // well-formed placeholder; the binding itself is a spawn-time concern
+    // (resolveChildBlueprint), not statically checkable here.
+    const child = recursion.childBlueprint;
+    if (isChildBlueprintParam(child) && !CHILD_BLUEPRINT_PARAM_RE.test(child as string)) {
+      err(
+        'recursion-bad-param',
+        `recursion.childBlueprint ${JSON.stringify(child)} is not a valid placeholder — expected \`$\` + identifier (e.g. \`$target\`)`,
+      );
     }
   }
 

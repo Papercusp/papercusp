@@ -246,7 +246,15 @@ export const GatesSchema = z.object({
  */
 export const RecursionSchema = z.object({
   enabled: z.boolean().default(false),
-  /** Blueprint a spawned child uses; defaults to self when omitted. */
+  /**
+   * Blueprint a spawned child uses. Three forms (D-008):
+   *   - omitted      → self;
+   *   - a literal id → that blueprint;
+   *   - `$param`     → a PARAMETERIZED child bound at spawn time via
+   *                    `resolveChildBlueprint(bp, { <param>: id })` — the gym
+   *                    declares `$target` and binds the blueprint-under-
+   *                    optimization (the former undeclared runtime override).
+   */
   childBlueprint: z.string().optional(),
   spawnOn: z
     .object({

@@ -15,6 +15,12 @@ export { deriveNext } from './derive-next.js';
 export type { ParsedDecisionLike } from './derive-next.js';
 export { validateBlueprint } from './validate.js';
 export type { BlueprintIssue, BlueprintValidation, ValidateOptions } from './validate.js';
+// Spawn-time childBlueprint binding (D-008 — the gym's `$target` lift).
+export {
+  resolveChildBlueprint,
+  isChildBlueprintParam,
+  CHILD_BLUEPRINT_PARAM_RE,
+} from './resolve-child.js';
 // Coord-op-program layer (coordination-ops-as-blueprint-primitives-2026-06-04):
 // `{{ path }}` interpolation and the pure program interpreter (planStep /
 // selectGateBranch — the program-mode `deriveNext`). These are the generic,
