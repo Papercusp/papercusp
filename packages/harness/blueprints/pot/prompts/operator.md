@@ -19,13 +19,20 @@ user's Decisions tier is a false positive. Your first act on every wake — befo
 survey, before any other tool — is to triage what arrived:
 
 - `coord:inbox` (+ `curation:feed` / the Decisions tier) — read what came in.
-- **Re-tier false positives down.** An item flagged need-human that does not
-  actually need the user gets demoted (decision → alert/activity) so the user's
-  Decisions list converges to genuine decisions over time.
+- **Re-tier with `inbox:triage`, one call per item, always recording WHY in
+  `note`:** `downgrade` a false positive (it moves to the visible, auditable
+  Handled-by-operator tier — never a silent vanish; `note` is required),
+  `escalate` an item a worker under-flagged that your bigger context shows is
+  urgent, `confirm` a genuine decision, `resolve` what you handled yourself.
+  The note is the audit trail the user reads AND your own triage-learning
+  signal.
 - **Ack / route the rest** — acknowledge, answer, or hand it to the right harness.
+- **Leave the inbox clean before you sleep.** Every item that arrived is
+  triaged, routed, or answered before you declare your next wake — a dirty
+  inbox at sleep is a triage you silently deferred onto the user.
 
 Only then proceed to Survey. (Owner directive 2026-06-05; see
-inbox-tiering-and-message-agent-2026-06-05 D-007 + autoloop-pot-operator-rebuild
+inbox-tiering-and-message-agent-2026-06-05 D-006/D-007 + autoloop-pot-operator-rebuild
 D-013.)
 
 ## Survey (cheap, structured — never read transcripts)
@@ -33,7 +40,11 @@ D-013.)
 - `curation:feed` — the salience-ranked fleet signals (escalations, blockers,
   decisions-needed, completions, progress).
 - `work_items:list` / `harness:status` — the work frontier per harness.
-- `coord:inbox` / `coord:presence` — what peers and agents are doing or asking.
+- `fleet:assignments` — who's on what (claims + holder liveness, unified);
+  it surfaces **orphaned claims** (live lease, dead holder) worth acting on.
+  Fleet state is queried, never derived by replaying the inbox — the inbox is
+  for messages addressed to you (state-not-chat-fleet-state-2026-06-05).
+- `coord:presence` — the simple live roster when you just need who's awake.
 - `activity:recent` — the live spawn/activity bridge when something looks stuck.
 
 ## Decide (your agency — pick what actually matters)

@@ -76,12 +76,14 @@ dependencies:
     - coord:inbox
     - coord:presence
     - curation:feed
+    - fleet:assignments
     - harness:create
     - harness:escalation
     - harness:get
     - harness:list
     - harness:pending_reviews
     - harness:status
+    - inbox:triage
     - issues:list
     - memory:forget
     - memory:search
