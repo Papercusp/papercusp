@@ -37,3 +37,15 @@ CREATE TABLE IF NOT EXISTS harness_shared.operator_curation_state (
 
 COMMENT ON TABLE harness_shared.operator_curation_state IS
     'Curator-operator per-workspace cadence/backoff state: when the loop last ran/digested and the adaptive interval (grows when quiet, resets when busy). The autoloop_state analog for the curation loop.';
+
+-- Runtime grants. The operator's withWorkspace tx connects as harness_app (the
+-- read/write app role); the sync role harness_zero may SELECT. Mirrors
+-- operator_dismissed_cards + migration 141. harness_app is assumed to exist;
+-- harness_zero is guarded — it may not exist on every cluster. (Repeatable.)
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.operator_curation_log TO harness_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.operator_curation_state TO harness_app;
+DO $z$ BEGIN
+  GRANT SELECT ON harness_shared.operator_curation_log TO harness_zero;
+  GRANT SELECT ON harness_shared.operator_curation_state TO harness_zero;
+EXCEPTION WHEN undefined_object THEN NULL;
+END $z$;
