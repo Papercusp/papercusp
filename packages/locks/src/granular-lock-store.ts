@@ -18,7 +18,7 @@ import {
   type HeldNodeLock,
   type NodeLock,
   type GranularConflict,
-} from './intention-locks';
+} from '@papercusp/locks-core';
 
 export interface GranularHolder extends HeldNodeLock {
   owner_label: string | null;

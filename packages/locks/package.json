@@ -18,7 +18,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@papercusp/file-claim": "*"
+    "@papercusp/file-claim": "*",
+    "@papercusp/locks-core": "*"
   },
   "devDependencies": {
     "postgres": "^3.4.5",
