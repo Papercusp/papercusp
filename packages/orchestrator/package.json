@@ -88,6 +88,7 @@
     "@papercusp/file-claim": "*",
     "@papercusp/locks": "*",
     "@papercusp/harness": "*",
+    "@papercusp/step-program": "*",
     "postgres": "^3.4.5",
     "tsx": "^4.7.0",
     "yaml": "^2.9.0",

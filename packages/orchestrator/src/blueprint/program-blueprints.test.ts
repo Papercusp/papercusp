@@ -6,7 +6,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { loadBuiltinBlueprint, resolveBlueprint } from './loader.js';
-import { isProgramSpine } from './program.js';
+import { isProgramSpine } from '@papercusp/step-program';
 
 test('vote blueprint loads + validates (program mode)', () => {
   const { blueprint, validation } = loadBuiltinBlueprint('vote');

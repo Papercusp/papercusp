@@ -17,12 +17,15 @@ export { validateBlueprint } from './validate.js';
 export type { BlueprintIssue, BlueprintValidation, ValidateOptions } from './validate.js';
 // Coord-op-program layer (coordination-ops-as-blueprint-primitives-2026-06-04):
 // the safe condition evaluator, `{{ path }}` interpolation, and the pure program
-// interpreter (planStep / selectGateBranch — the program-mode `deriveNext`).
-export { evalExpr, parseExpr, isValidExpr, readPath, truthy } from './expr.js';
-export type { Scope } from './expr.js';
-export { interpolate, interpolateArgs } from './interpolate.js';
-export { planStep, selectGateBranch, isProgramSpine } from './program.js';
-export type { StepPlan, GateDecision } from './program.js';
+// interpreter (planStep / selectGateBranch — the program-mode `deriveNext`). These
+// are the generic, domain-free step-program core — extracted to the borrowable
+// `@papercusp/step-program` lib (generalize-libs-to-generic-2026-06-05 #5) and
+// re-exported here so the `@papercusp/orchestrator/blueprint` public API is unchanged.
+export { evalExpr, parseExpr, isValidExpr, readPath, truthy } from '@papercusp/step-program';
+export type { Scope } from '@papercusp/step-program';
+export { interpolate, interpolateArgs } from '@papercusp/step-program';
+export { planStep, selectGateBranch, isProgramSpine } from '@papercusp/step-program';
+export type { StepPlan, GateDecision } from '@papercusp/step-program';
 export {
   loadBuiltinBlueprint,
   loadBlueprintFromFile,

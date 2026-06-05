@@ -20,7 +20,7 @@
  * tester/test-writer/monitor verbs kept for switch parity) that don't block.
  */
 import type { Blueprint } from './schema.js';
-import { isValidExpr } from './expr.js';
+import { isValidExpr } from '@papercusp/step-program';
 
 export interface BlueprintIssue {
   level: 'error' | 'warning';
