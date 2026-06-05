@@ -86,6 +86,7 @@
   },
   "dependencies": {
     "@papercusp/file-claim": "*",
+    "@papercusp/model-pricing": "*",
     "@papercusp/locks": "*",
     "@papercusp/harness": "*",
     "@papercusp/rules": "*",

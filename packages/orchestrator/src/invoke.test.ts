@@ -161,6 +161,20 @@ test('findPriorRunForIdempotency — whitespace-only output is also treated as e
   assert.equal(r, null);
 });
 
+// Brief 49: a crashed prior run is never reused, even when its out_body is non-empty
+// (salvaged partial output / codex item.completed fragments). A DBOS step retry needs
+// a FRESH attempt — reusing the crash would hand back the same failure forever.
+test('findPriorRunForIdempotency — non-zero-exit prior run with salvaged output re-spawns', async () => {
+  const wsPg = (() =>
+    Promise.resolve([{
+      run_id: 'k', role: 'worker', prompt_body: 'p', jsonl_body: '{"type":"assistant"}',
+      out_body: 'partial work salvaged before the crash', err_body: 'SIGKILL', exit_code: 137, duration_ms: 100,
+      started_at: 1, ended_at: 2,
+    }])) as unknown as Parameters<typeof findPriorRunForIdempotency>[0];
+  const r = await findPriorRunForIdempotency(wsPg, 'ws', 'h', 'k', 'worker', () => {});
+  assert.equal(r, null);
+});
+
 test('extractResult — pulls "result" event from stream-json log', () => {
   const dir = mkdtempSync(join(tmpdir(), 'extract-'));
   const path = join(dir, 'log.jsonl');
@@ -177,10 +191,69 @@ test('extractResult — pulls "result" event from stream-json log', () => {
   }
 });
 
-test('extractResult — returns "" if no result event found', () => {
+// Brief 49 partial-output salvage: a truncated stream (crash/timeout — no terminal
+// `result` event) salvages the assistant text instead of returning ''.
+test('extractResult — salvages last assistant message when no result event (truncated stream)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'extract-'));
   const path = join(dir, 'log.jsonl');
-  writeFileSync(path, '{"type":"assistant","message":"nothing terminal"}\n');
+  writeFileSync(path, [
+    '{"type":"system","message":"hi"}',
+    JSON.stringify({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'I fixed the parser; ' }, { type: 'text', text: 'running tests now.' }] },
+    }),
+    '', // stream died here — no result event
+  ].join('\n'));
+  try {
+    assert.equal(extractResult(path, 'claude-stream-json'), 'I fixed the parser; running tests now.');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('extractResult — salvage appends trailing in-flight text deltas after the last complete message', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'extract-'));
+  const path = join(dir, 'log.jsonl');
+  writeFileSync(path, [
+    JSON.stringify({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Step 1 done.' }] },
+    }),
+    // in-flight message streaming when the process died (--include-partial-messages)
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Step 2: editing inv' } } }),
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'oke.ts' } } }),
+    '',
+  ].join('\n'));
+  try {
+    assert.equal(extractResult(path, 'claude-stream-json'), 'Step 1 done.\nStep 2: editing invoke.ts');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('extractResult — deltas folded into a completed message are not double-counted', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'extract-'));
+  const path = join(dir, 'log.jsonl');
+  writeFileSync(path, [
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hel' } } }),
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'lo' } } }),
+    JSON.stringify({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Hello' }] },
+    }),
+    '',
+  ].join('\n'));
+  try {
+    assert.equal(extractResult(path, 'claude-stream-json'), 'Hello');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('extractResult — returns "" when the truncated stream carries no assistant text at all', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'extract-'));
+  const path = join(dir, 'log.jsonl');
+  writeFileSync(path, '{"type":"system","subtype":"init"}\n{"type":"tool_use","name":"Bash"}\n');
   try {
     assert.equal(extractResult(path, 'claude-stream-json'), '');
   } finally {
@@ -517,6 +590,23 @@ test('extractResult — omp returns "" on no terminal event', () => {
   writeFileSync(path, JSON.stringify({ type: 'turn_start' }) + '\n');
   try {
     assert.equal(extractResult(path, 'omp-json'), '');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Brief 49 partial-output salvage: an omp stream truncated mid-first-message (no
+// message_end / done / agent_end anywhere) reconstructs the partial from its deltas.
+test('extractResult — omp salvages text deltas when the stream died mid-message', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'orch-'));
+  const path = join(dir, 'log.jsonl');
+  writeFileSync(path, [
+    JSON.stringify({ type: 'turn_start' }),
+    JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Renaming the gover' } }),
+    JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'nor bucket key' } }),
+  ].join('\n'));
+  try {
+    assert.equal(extractResult(path, 'omp-json'), 'Renaming the governor bucket key');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -35,9 +35,186 @@ export interface CostCapResult {
 }
 
 /**
- * Sum total_cost_usd across all *.jsonl files. Each file's "result" event
- * carries the cumulative cost for that invocation; we take the LAST
- * "result" event per file (matches bash) and sum.
+ * Token usage parsed from a run's JSONL stream (rate-limit-layer-v2 D-002 capture point 2;
+ * made backend-aware by cross-backend-cost-capture D-005). All three backends' terminal
+ * shapes are understood:
+ *
+ *   claude  — last `{"type":"result", total_cost_usd, usage:{input_tokens,…}}` wins
+ *             (the result event is cumulative). `usage.input_tokens` EXCLUDES cache
+ *             reads/writes (separate fields) — the canonical semantics here.
+ *   codex   — `{"type":"turn.completed", usage:{input_tokens, cached_input_tokens?,
+ *             output_tokens}}` SUMMED across events (per-turn counts; tokens only, no
+ *             cost). OpenAI-style `input_tokens` INCLUDES the cached subset, so the
+ *             cached count is subtracted out of `inputTokens` to match claude semantics.
+ *   omp     — assistant `{"type":"message_end", message:{model, usage:{input, output,
+ *             cacheRead, cacheWrite, cost:{total}}}}` SUMMED per turn; falls back to the
+ *             terminal `agent_end.messages` list when no message_end carried usage
+ *             (never both — that would double-count).
+ *
+ * `model`/`backend` are attributed from the `{"type":"papercusp.run_meta"}` line invoke.ts
+ * appends at subprocess exit, with stream-derived fallbacks (claude `system:init.model`,
+ * omp `message.model`) for pre-existing files.
+ */
+export interface RunUsage {
+  /** UNCACHED input tokens (claude `usage.input_tokens` semantics). */
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  /** Provider-reported cost (claude `total_cost_usd`, omp `usage.cost.total`). Undefined for codex. */
+  costUsd?: number;
+  /** Model id when derivable (run_meta line > stream-derived). */
+  model?: string;
+  /** Backend when derivable ('claude-code' | 'codex' | 'omp' | …) — run_meta line > shape inference. */
+  backend?: string;
+}
+
+/** Extract usage from a run's JSONL body across all three backend stream formats. Null when nothing usable. */
+export function extractRunUsage(jsonlBody: string): RunUsage | null {
+  const num = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+  const add = (a: number | undefined, b: number | undefined): number | undefined =>
+    b === undefined ? a : (a ?? 0) + b;
+
+  let metaModel: string | undefined;
+  let metaBackend: string | undefined;
+  let streamModel: string | undefined;
+
+  // claude: last result event wins (cumulative)
+  let claude: RunUsage | null = null;
+  // codex: per-turn sums
+  let codex: RunUsage | null = null;
+  // omp: per-assistant-turn sums + agent_end fallback
+  let omp: RunUsage | null = null;
+  let ompFallback: RunUsage | null = null;
+
+  const readOmpMessage = (msg: Record<string, unknown>): RunUsage | null => {
+    if (!msg || typeof msg !== 'object' || msg.role !== 'assistant') return null;
+    if (typeof msg.model === 'string' && msg.model) streamModel = msg.model;
+    const u = msg.usage as Record<string, unknown> | undefined;
+    if (!u || typeof u !== 'object') return null;
+    const cost = u.cost as Record<string, unknown> | undefined;
+    const out: RunUsage = {
+      inputTokens: num(u.input),
+      outputTokens: num(u.output),
+      cacheReadTokens: num(u.cacheRead),
+      cacheCreationTokens: num(u.cacheWrite),
+      costUsd: cost && typeof cost === 'object' ? num(cost.total) : undefined,
+    };
+    if (
+      out.inputTokens === undefined &&
+      out.outputTokens === undefined &&
+      out.costUsd === undefined
+    ) {
+      return null;
+    }
+    return out;
+  };
+  const accumulate = (acc: RunUsage | null, turn: RunUsage): RunUsage => ({
+    inputTokens: add(acc?.inputTokens, turn.inputTokens),
+    outputTokens: add(acc?.outputTokens, turn.outputTokens),
+    cacheReadTokens: add(acc?.cacheReadTokens, turn.cacheReadTokens),
+    cacheCreationTokens: add(acc?.cacheCreationTokens, turn.cacheCreationTokens),
+    costUsd: add(acc?.costUsd, turn.costUsd),
+  });
+
+  for (const raw of jsonlBody.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue; // skip malformed lines
+    }
+    if (!obj || typeof obj !== 'object') continue;
+
+    // run_meta stamp (invoke.ts appends at subprocess exit) — authoritative attribution
+    if (obj.type === 'papercusp.run_meta') {
+      if (typeof obj.model === 'string' && obj.model) metaModel = obj.model;
+      if (typeof obj.backend === 'string' && obj.backend) metaBackend = obj.backend;
+      continue;
+    }
+
+    // claude model from the init event (fallback when no run_meta)
+    if (obj.type === 'system' && obj.subtype === 'init' && typeof obj.model === 'string') {
+      streamModel = obj.model;
+      continue;
+    }
+
+    // claude terminal: {"type":"result"} — last wins; OpenAI-style aliases kept defensively
+    if (obj.type === 'result') {
+      const u = (obj.usage ?? {}) as Record<string, unknown>;
+      const usage: RunUsage = {
+        inputTokens: num(u.input_tokens) ?? num(u.prompt_tokens),
+        outputTokens: num(u.output_tokens) ?? num(u.completion_tokens),
+        cacheReadTokens: num(u.cache_read_input_tokens) ?? num(u.cached_tokens),
+        cacheCreationTokens: num(u.cache_creation_input_tokens),
+        costUsd: num(obj.total_cost_usd),
+      };
+      if (
+        usage.inputTokens !== undefined ||
+        usage.outputTokens !== undefined ||
+        usage.costUsd !== undefined
+      ) {
+        claude = usage; // last result event wins
+      }
+      continue;
+    }
+
+    // codex terminal: {"type":"turn.completed", usage} — sum per turn
+    if (obj.type === 'turn.completed') {
+      const u = obj.usage as Record<string, unknown> | undefined;
+      if (!u || typeof u !== 'object') continue;
+      const rawInput = num(u.input_tokens);
+      const cached = num(u.cached_input_tokens) ?? num(u.cached_tokens);
+      // OpenAI input_tokens includes the cached subset — subtract to match claude semantics.
+      const uncached =
+        rawInput !== undefined && cached !== undefined && cached <= rawInput
+          ? rawInput - cached
+          : rawInput;
+      const turn: RunUsage = {
+        inputTokens: uncached,
+        outputTokens: num(u.output_tokens),
+        cacheReadTokens: cached,
+      };
+      if (turn.inputTokens !== undefined || turn.outputTokens !== undefined) {
+        codex = accumulate(codex, turn);
+      }
+      continue;
+    }
+
+    // omp: assistant message_end carries per-turn usage
+    if (obj.type === 'message_end') {
+      const turn = readOmpMessage(obj.message as Record<string, unknown>);
+      if (turn) omp = accumulate(omp, turn);
+      continue;
+    }
+    // omp terminal: agent_end carries the FULL messages list — fallback only
+    if (obj.type === 'agent_end' && Array.isArray(obj.messages)) {
+      for (const m of obj.messages) {
+        const turn = readOmpMessage(m as Record<string, unknown>);
+        if (turn) ompFallback = accumulate(ompFallback, turn);
+      }
+      continue;
+    }
+  }
+
+  // One format per file in practice; precedence mirrors terminal-shape specificity.
+  const usage = claude ?? codex ?? omp ?? ompFallback;
+  if (!usage) return null;
+  const backend =
+    metaBackend ?? (claude ? 'claude-code' : codex ? 'codex' : 'omp');
+  const model = metaModel ?? streamModel;
+  return { ...usage, ...(model !== undefined ? { model } : {}), backend };
+}
+
+/**
+ * Sum run cost across all *.jsonl files in a log dir — the per-harness `maxCostUsd`
+ * cap input. Backend-aware (cross-backend-cost-capture P-004): provider-reported cost
+ * wins per file (claude `total_cost_usd`, omp `cost.total`); a tokens-only file (codex)
+ * is priced from `@papercusp/model-pricing` when its model is derivable. Unpriceable
+ * files contribute 0 (never a fabricated estimate).
  */
 export function sumJsonlCost(logDir: string): number {
   if (!existsSync(logDir)) return 0;
@@ -56,79 +233,16 @@ export function sumJsonlCost(logDir: string): number {
     } catch {
       continue;
     }
-    const lines = body.split(/\r?\n/);
-    let lastResultCost = 0;
-    let foundResult = false;
-    for (const raw of lines) {
-      const line = raw.trim();
-      if (!line) continue;
-      try {
-        const obj = JSON.parse(line);
-        if (obj && typeof obj === 'object' && obj.type === 'result') {
-          const c = obj.total_cost_usd;
-          if (typeof c === 'number' && Number.isFinite(c)) {
-            lastResultCost = c;
-            foundResult = true;
-          }
-        }
-      } catch {
-        // skip malformed lines
-      }
+    const usage = extractRunUsage(body);
+    if (!usage) continue;
+    if (usage.costUsd !== undefined) {
+      total += usage.costUsd;
+    } else if (usage.model) {
+      const est = costFromTokens(usage.model, usage);
+      if (est.priced) total += est.usd;
     }
-    if (foundResult) total += lastResultCost;
   }
   return total;
-}
-
-/**
- * Token usage parsed from a run's JSONL `result` event (rate-limit-layer-v2 D-002, capture
- * point 2 — the subprocess path, where token counts are visible even though the CLI hides
- * the provider's rate-limit headers). Mirrors `sumJsonlCost`'s "last result event wins".
- */
-export interface RunUsage {
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheReadTokens?: number;
-  costUsd?: number;
-}
-
-/**
- * Extract token usage + cost from the LAST `{"type":"result", …}` event in a run's JSONL
- * body. Field names are read defensively across backends: Claude Code's snake_case
- * (`usage.input_tokens` / `cache_read_input_tokens`) plus the OpenAI-style aliases codex
- * emits (`prompt_tokens`/`completion_tokens`/`cached_tokens`). Returns null when no result
- * event carries usable usage or cost.
- */
-export function extractRunUsage(jsonlBody: string): RunUsage | null {
-  const num = (v: unknown): number | undefined =>
-    typeof v === 'number' && Number.isFinite(v) ? v : undefined;
-  let found: RunUsage | null = null;
-  for (const raw of jsonlBody.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    let obj: Record<string, unknown>;
-    try {
-      obj = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      continue; // skip malformed lines
-    }
-    if (!obj || typeof obj !== 'object' || obj.type !== 'result') continue;
-    const u = (obj.usage ?? {}) as Record<string, unknown>;
-    const usage: RunUsage = {
-      inputTokens: num(u.input_tokens) ?? num(u.prompt_tokens),
-      outputTokens: num(u.output_tokens) ?? num(u.completion_tokens),
-      cacheReadTokens: num(u.cache_read_input_tokens) ?? num(u.cached_tokens),
-      costUsd: num(obj.total_cost_usd),
-    };
-    if (
-      usage.inputTokens !== undefined ||
-      usage.outputTokens !== undefined ||
-      usage.costUsd !== undefined
-    ) {
-      found = usage; // last result event wins (matches sumJsonlCost)
-    }
-  }
-  return found;
 }
 
 import type { MissionStatePgContext } from './mission-state-pg';

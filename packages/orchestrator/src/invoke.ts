@@ -1283,7 +1283,39 @@ export function extractResult(source: string, format: StreamFormat): string {
         }
       } catch { /* claude can interleave non-JSON occasionally */ }
     }
-    return '';
+    // Partial-output salvage (agent-turn-robustness, Brief 49): no terminal `result`
+    // event means the stream was truncated mid-turn (crash / timeout / SIGKILL). The
+    // partial stream still carries the agent's work — complete assistant messages
+    // arrive as {"type":"assistant","message":{content:[{type:"text",text}]}} events,
+    // and the in-flight message (we spawn with --include-partial-messages) streams as
+    // {"type":"stream_event","event":{"type":"content_block_delta","delta":
+    // {"type":"text_delta","text"}}}. Reconstruct best-effort text so a crashed turn's
+    // out_body shows WHAT the agent was doing instead of '' — the UI run view, gym
+    // collectors, and the debugger all read out_body. The terminal-result path above is
+    // unchanged; salvage only fires when it found nothing. NOTE: a crashed run is never
+    // REUSED off this salvaged output — findPriorRunForIdempotency re-spawns on a
+    // non-zero exit.
+    let lastAssistant = '';
+    let trailingPartial = '';
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      let obj: any;
+      try { obj = JSON.parse(line); } catch { continue; }
+      if (!obj || typeof obj !== 'object') continue;
+      if (obj.type === 'assistant') {
+        const text = typeof obj.message === 'string' ? obj.message : collectAssistantText(obj.message);
+        // A completed message folds in the deltas that streamed before it — reset the
+        // partial accumulator so its text isn't double-counted.
+        if (text) { lastAssistant = text; trailingPartial = ''; }
+      } else if (obj.type === 'stream_event') {
+        const ev = obj.event;
+        if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && typeof ev.delta.text === 'string') {
+          trailingPartial += ev.delta.text;
+        }
+      }
+    }
+    return [lastAssistant, trailingPartial.trim()].filter(Boolean).join('\n');
   }
 
   if (format === 'codex-json') {
@@ -1346,7 +1378,23 @@ export function extractResult(source: string, format: StreamFormat): string {
       }
     }
   }
-  return '';
+  // Partial-output salvage (agent-turn-robustness, Brief 49): no complete assistant
+  // message anywhere (message_end / done / agent_end) — the omp stream was truncated
+  // mid-FIRST-message. Every text_delta in the log therefore belongs to that one
+  // in-flight message (a completed message would have hit the walk above), so
+  // concatenating them reconstructs the partial text.
+  let partial = '';
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    let obj: any;
+    try { obj = JSON.parse(line); } catch { continue; }
+    if (!obj || typeof obj !== 'object') continue;
+    if (obj.type === 'message_update' && obj.assistantMessageEvent?.type === 'text_delta' && typeof obj.assistantMessageEvent.delta === 'string') {
+      partial += obj.assistantMessageEvent.delta;
+    }
+  }
+  return partial.trim();
 }
 
 /** Concatenate text-typed content blocks from an omp/pi-ai assistant message. */
@@ -1456,6 +1504,15 @@ export async function findPriorRunForIdempotency(
   // it as "no prior run" so the caller re-spawns.
   if (!prior.outBody.trim()) {
     log(`invoke ${role} prior run ${runId} had empty output — not reusing, will re-spawn`);
+    return null;
+  }
+  // A crashed prior run (non-zero exit) is not a meaningful completed run either: its
+  // out_body may carry SALVAGED partial output (see extractResult's no-terminal-event
+  // fallback) — debugging signal, not a result. Reusing it would hand the same failure
+  // back to every DBOS step retry (the retry exists to get a FRESH attempt), so a
+  // transient crash could never recover. Re-spawn instead.
+  if (prior.exitCode !== 0) {
+    log(`invoke ${role} prior run ${runId} exited ${prior.exitCode} — not reusing, will re-spawn`);
     return null;
   }
   log(`invoke ${role} idempotent hit (runId=${runId}, rc=${prior.exitCode}) — reusing prior run, no re-spawn`);
