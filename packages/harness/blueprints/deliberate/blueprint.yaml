@@ -36,7 +36,8 @@ spine:
     #   step invokes the `vote` program (recursion, depth-capped — D-008).
     - id: vote
       op: coord:vote
-      when: "NOT asked.answered"
+      # MatchMap (@papercusp/rules) — owner did not answer (adopt-event-rules-engines D-002).
+      when: { "asked.answered": { truthy: false } }
       args:
         question: "{{ payload.question }}"
         options: "{{ payload.options }}"
@@ -47,13 +48,13 @@ spine:
   # The ladder gate, in priority order.
   gate:
     # Owner answered → use their answer.
-    - when: "asked.answered"
+    - when: { "asked.answered": { truthy: true } }
       op: resolve
       args:
         decision: "{{ asked.answer }}"
         summary: "Owner answered '{{ payload.question }}' → {{ asked.answer }}"
     # Owner silent but the vote resolved decisively → use the vote.
-    - when: "voted.resolved"
+    - when: { "voted.resolved": { truthy: true } }
       op: resolve
       args:
         decision: "{{ voted.decision }}"

@@ -20,7 +20,12 @@
  * tester/test-writer/monitor verbs kept for switch parity) that don't block.
  */
 import type { Blueprint } from './schema.js';
-import { isValidExpr } from '@papercusp/step-program';
+import { dataConditionSchema } from '@papercusp/rules';
+
+/** A step/gate `when` is valid iff it's a serializable `@papercusp/rules` DataCondition. */
+function isValidWhen(when: unknown): boolean {
+  return dataConditionSchema.safeParse(when).success;
+}
 
 export interface BlueprintIssue {
   level: 'error' | 'warning';
@@ -201,8 +206,8 @@ function validateProgramSpine(
     if (known && !known.has(s.op)) {
       err('unknown-op', `program step "${s.id}" invokes unknown op "${s.op}"`);
     }
-    if (s.when != null && s.when.trim() !== '' && !isValidExpr(s.when)) {
-      err('bad-step-when', `program step "${s.id}" has an unparseable when "${s.when}"`);
+    if (s.when != null && !isValidWhen(s.when)) {
+      err('bad-step-when', `program step "${s.id}" has an invalid when (not a DataCondition): ${JSON.stringify(s.when)}`);
     }
     if (s.bind) boundNames.add(s.bind);
   }
@@ -212,15 +217,15 @@ function validateProgramSpine(
     err('gate-missing', 'program-mode spine has steps but no gate — a program must resolve through a gate');
     return;
   }
-  const hasFallback = gate.some((b) => b.else === true || b.when == null || b.when.trim() === '');
+  const hasFallback = gate.some((b) => b.else === true || b.when == null);
   if (!hasFallback) {
     err('gate-no-fallback', 'gate has no fallback branch (else / no-when) — some scopes would never resolve');
   }
   for (let i = 0; i < gate.length; i++) {
     const b = gate[i]!;
     if (known && !known.has(b.op)) err('unknown-op', `gate branch ${i} fires unknown op "${b.op}"`);
-    if (b.when != null && b.when.trim() !== '' && !isValidExpr(b.when)) {
-      err('bad-gate-when', `gate branch ${i} has an unparseable when "${b.when}"`);
+    if (b.when != null && !isValidWhen(b.when)) {
+      err('bad-gate-when', `gate branch ${i} has an invalid when (not a DataCondition): ${JSON.stringify(b.when)}`);
     }
   }
 }

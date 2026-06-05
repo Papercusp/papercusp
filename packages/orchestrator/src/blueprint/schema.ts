@@ -23,6 +23,7 @@
  * `.papercusp/config.json`; they describe *this* install, not the harness shape.
  */
 import { z } from 'zod';
+import { dataConditionSchema } from '@papercusp/rules';
 
 /**
  * The work unit the director schedules/executes. Maps onto the canonical
@@ -116,8 +117,15 @@ export const CoordOpStepSchema = z.object({
   args: z.record(z.string(), z.unknown()).default({}),
   /** Scope key to bind the op's result under (later steps + the gate read it). */
   bind: z.string().optional(),
-  /** Optional boolean expression over the scope — skip the step when false. */
-  when: z.string().optional(),
+  /**
+   * Optional condition over the scope — skip the step when false. The canonical
+   * `@papercusp/rules` `MatchMap`/`DataCondition` (adopt-event-rules-engines
+   * D-002): dot-path → operator-test (`{ "asked.answered": { truthy: false } }`),
+   * with `all`/`any`/`not` combinators. Evaluated by `evaluateDataCondition`
+   * (injected as the spine's `WhenEval`) — one condition language across the
+   * event-reaction rules, the gate, and these steps.
+   */
+  when: dataConditionSchema.optional(),
 });
 
 /**
@@ -128,8 +136,9 @@ export const CoordOpStepSchema = z.object({
  * MUST have a fallback so it always resolves (validated — P-005).
  */
 export const GateBranchSchema = z.object({
-  /** Boolean expression over the scope; omit (or set `else`) for the fallback. */
-  when: z.string().optional(),
+  /** Condition over the scope (the canonical `@papercusp/rules` `DataCondition` —
+   *  see {@link CoordOpStepSchema} `when`); omit (or set `else`) for the fallback. */
+  when: dataConditionSchema.optional(),
   /** Marks the fallback branch (sugar; an omitted `when` is equivalent). */
   else: z.boolean().default(false),
   /** The coord-op this branch fires (e.g. `resolve`, `coord:escalate`). */

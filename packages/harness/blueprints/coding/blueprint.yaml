@@ -93,10 +93,13 @@ reactive:
     when: { beforeRole: worker, minAttempts: 3, unless: debug-note }
     preempt: false
 
-# Gates: the finalize recipe. DONE → curator → documenter → (archive); ESCALATE → curator.
+# Gates: the finalize recipe. DONE → curator → postCuratorOutputs → documenter →
+# (archive); ESCALATE → curator. unify-agent-launches-as-blueprints P-007: this
+# recipe is now the DECLARATIVE source planFinalization resolves (was a hardcoded
+# constant) — postCuratorOutputs is listed explicitly (it always ran after curator).
 gates:
   finalize:
-    onDone: [curator, documenter, archive]
+    onDone: [curator, postCuratorOutputs, documenter, archive]
     onEscalate: [curator]
 
 # Per-blueprint gym config: coding collects its trace from the substrate git diff
