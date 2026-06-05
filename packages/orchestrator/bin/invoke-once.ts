@@ -141,6 +141,24 @@ async function main(): Promise<number> {
     process.env.FEATURE_ID ||
     '';
 
+  // Bridge an EXTERNAL SIGTERM/SIGINT (the parent runChild kills us on
+  // fleet:cancel / INVOKE_TIMEOUT) into an AbortController we hand to invoke(),
+  // which propagates SIGTERM→SIGKILL to the agent child (invoke.ts onAbort). Without
+  // this bridge, killing this process orphaned the running agent (it kept editing).
+  // A second signal hard-exits; a grace-timer force-exits so the chunk-loop path
+  // (which doesn't yet observe the signal) still terminates rather than ignoring it.
+  const abort = new AbortController();
+  let signalled = false;
+  const onSignal = () => {
+    if (signalled) { process.exit(143); }
+    signalled = true;
+    try { abort.abort(); } catch { /* already aborted */ }
+    wrappedLog('invoke-once: received termination signal — aborting agent + unwinding');
+    setTimeout(() => process.exit(143), 6_000).unref();
+  };
+  process.on('SIGTERM', onSignal);
+  process.on('SIGINT', onSignal);
+
   let exitCode = 0;
   try {
     if (shouldUseWorkerChunkLoop(role, cfg) && featureId) {
@@ -171,7 +189,12 @@ async function main(): Promise<number> {
         // dbos-durable-jobs Phase 3 P-015: when the durable pipeline spawns
         // invoke-once with IDEMPOTENCY_KEY set, invoke() keys the run row by it
         // and reuses a prior completed run instead of re-spawning the agent.
-        process.env.IDEMPOTENCY_KEY ? { idempotencyKey: process.env.IDEMPOTENCY_KEY } : {},
+        // `signal` lets an external SIGTERM (fleet:cancel / timeout) kill the
+        // agent child instead of orphaning it (EI-40).
+        {
+          signal: abort.signal,
+          ...(process.env.IDEMPOTENCY_KEY ? { idempotencyKey: process.env.IDEMPOTENCY_KEY } : {}),
+        },
       );
       if (typeof result.output === 'string' && result.output.length > 0) {
         // Surface the agent's actual output to stdout so callers reading
