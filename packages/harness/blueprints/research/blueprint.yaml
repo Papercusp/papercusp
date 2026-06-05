@@ -75,3 +75,14 @@ gym:
 knobs:
   harnessKind: research
   requiresRepo: false
+
+# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
+# research role personas (scripts/derive-blueprint-deps.mjs). Research roles
+# gather via their client-native web/fetch tools; their agent-tool surface is
+# the work-item + plan readback (findings ride the work-item).
+dependencies:
+  tools:
+    - features:get
+    - plans:items
+    - work_items:list
+  plugins: []

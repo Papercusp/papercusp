@@ -193,8 +193,12 @@ export const PlannerSchema = z.object({
  * A reactive-overlay rule (layer 3 — 3T/blackboard): a condition-triggered role
  * that can preempt the spine. v1 covers coding's debugger-before-worker gate
  * (`beforeRole: 'worker'`, `minAttempts: <threshold>`, `unless: 'debug-note'`).
- * `custom` is a named host-side predicate escape hatch for conditions the
- * declarative form can't yet express.
+ * `cond` is the escape hatch for conditions the structured fields can't
+ * express — the canonical `@papercusp/rules` `DataCondition` (the same `when`
+ * language as the coord-op steps + gate branches; adopt-event-rules-engines
+ * D-002), evaluated over the dispatch scope by `evaluateDataCondition`. It
+ * replaces the retired `custom: string` named-host-predicate hatch (a second,
+ * non-serializable condition language with zero authors and zero consumers).
  */
 export const ReactiveRuleSchema = z.object({
   role: z.string().min(1),
@@ -203,7 +207,7 @@ export const ReactiveRuleSchema = z.object({
     afterRole: z.string().optional(),
     minAttempts: z.number().int().nonnegative().optional(),
     unless: z.string().optional(),
-    custom: z.string().optional(),
+    cond: dataConditionSchema.optional(),
   }),
   /** true → can interrupt the spine (3T reactive preemption); false → advisory. */
   preempt: z.boolean().default(false),

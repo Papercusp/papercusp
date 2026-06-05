@@ -128,3 +128,52 @@ knobs:
   harnessKind: coding
   requiresRepo: true
   debuggerThreshold: 3
+
+# Tool/plugin dependencies (official-blueprints-cupboard-publish-2026-06-05
+# D-002): what this blueprint's roles actually call, derived from the role
+# personas (scripts/derive-blueprint-deps.mjs) + validated against the live
+# catalog. The import-time dep-validator (harness:create / init --from /
+# cupboard install-blueprint) resolves these UPFRONT — a missing tool fails
+# with "needs tool X" instead of a mid-run unknown_tool. NOTE: extends-merge
+# REPLACES arrays, so a child declaring its own dependencies.tools replaces
+# this list wholesale (re-declare the full set).
+dependencies:
+  tools:
+    - agent_tools:list
+    - artifacts:append
+    - artifacts:load
+    - artifacts:save
+    - audit:list
+    - coord:ask
+    - docs:get
+    - docs:outline
+    - docs:search
+    - features:get
+    - features:history
+    - features:list_related
+    - features:tag_vocabulary
+    - goals:get
+    - harness:escalation
+    - harness:markdown_index
+    - harness:pending_reviews
+    - harness:phase_path
+    - issues:claim
+    - issues:create
+    - memory:search
+    - messages:inbox
+    - messages:send
+    - plans:add-decision
+    - plans:add-item
+    - plans:get
+    - plans:items
+    - plans:new
+    - plans:promote
+    - plans:set-content
+    - plans:set-importance
+    - plans:set-now
+    - topics:feed
+    - topics:list
+    - topics:subscribe
+    - topics:tag
+    - work_items:list
+  plugins: []

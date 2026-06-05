@@ -88,3 +88,15 @@ knobs:
   dimensions: [bugs, security, perf, style]
   # A verifier verdict below this confidence drops the finding (refute-by-default).
   confidenceThreshold: 0.5
+
+# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
+# review role personas (scripts/derive-blueprint-deps.mjs). Reviewers read the
+# substrate via their client-native tools; their agent-tool surface is the
+# work-item + plan readback (the dimension roster, findings, and verdicts all
+# ride the work-item).
+dependencies:
+  tools:
+    - features:get
+    - plans:items
+    - work_items:list
+  plugins: []

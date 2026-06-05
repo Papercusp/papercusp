@@ -62,3 +62,11 @@ knobs:
 # resolves the role from here and keeps its blocking verdict behavior.
 triggers:
   event: feature:reaches-auditor-lane
+
+# Dependencies (official-blueprints-cupboard-publish D-002): NONE by design —
+# the auditor is read-only adversarial judgment; it emits a JSON verdict the
+# lane parses and calls no agent tools (verified against the auditor persona,
+# scripts/derive-blueprint-deps.mjs).
+dependencies:
+  tools: []
+  plugins: []

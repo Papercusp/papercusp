@@ -60,3 +60,35 @@ knobs:
 # (pot:declare-wake writes the one-shot `pot-wake` routine / event-reaction
 # subscriptions; pot:wake is the manual fire). A cadence here would reintroduce
 # the timer loop D-002 removes.
+
+# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
+# blueprint-local operator persona (scripts/derive-blueprint-deps.mjs) — the
+# blackboard survey surface, the harness create/supervise verbs, and the
+# self-declared wake pair.
+dependencies:
+  tools:
+    - activity:recent
+    - agent_tools:list
+    - blueprint:catalog
+    - blueprint:extend
+    - blueprint:validate
+    - chat:ask_choice
+    - coord:inbox
+    - coord:presence
+    - curation:feed
+    - harness:create
+    - harness:escalation
+    - harness:get
+    - harness:list
+    - harness:pending_reviews
+    - harness:status
+    - issues:list
+    - memory:forget
+    - memory:search
+    - memory:update
+    - pot:declare-wake
+    - pot:wake
+    - search:fulltext
+    - search:semantic
+    - work_items:list
+  plugins: []

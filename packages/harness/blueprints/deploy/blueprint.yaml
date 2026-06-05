@@ -71,3 +71,13 @@ triggers:
   schedule:
     - cron: "0 */15 * * * *"
       action: system:blueprint-run
+
+# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
+# release-manager persona (scripts/derive-blueprint-deps.mjs). The deploy
+# mechanics are scripted (deploy-cli) — the agent-tool surface it needs is the
+# health/notification readback.
+dependencies:
+  tools:
+    - dev:service_health
+    - notifications:recent
+  plugins: []

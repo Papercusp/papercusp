@@ -84,3 +84,16 @@ recursion:
 
 triggers:
   event: coordination-op:deliberate
+
+# Dependencies (official-blueprints-cupboard-publish D-002): deliberate is a
+# program-mode blueprint with no roles of its own — its ladder invokes the
+# coord ops below, each of which is also a real catalog tool, so the deps
+# travel with the listing and the import-time validator confirms the host has
+# the coordination surface. (The recursed `vote` program's roles declare their
+# own deps on the vote blueprint.)
+dependencies:
+  tools:
+    - coord:ask
+    - coord:escalate
+    - coord:vote
+  plugins: []

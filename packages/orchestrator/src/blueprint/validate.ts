@@ -92,7 +92,7 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
   for (const rule of bp.reactive) {
     const w = rule.when;
     const hasCond =
-      w.beforeRole != null || w.afterRole != null || w.minAttempts != null || w.custom != null;
+      w.beforeRole != null || w.afterRole != null || w.minAttempts != null || w.cond != null;
     if (!hasCond) {
       err('empty-reactive-guard', `reactive rule for "${rule.role}" has no trigger condition`);
     }

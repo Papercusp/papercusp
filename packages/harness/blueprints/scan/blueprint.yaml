@@ -60,3 +60,23 @@ triggers:
   schedule:
     - cron: "0 0 */4 * * *"
       action: system:blueprint-run
+
+# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
+# blueprint-local scanner persona (scripts/derive-blueprint-deps.mjs) — the
+# read-side sweep surface plus the improvements intake its findings land in.
+dependencies:
+  tools:
+    - audit:list
+    - harness:list
+    - improvements:capture
+    - improvements:digest
+    - issues:list
+    - messages:inbox
+    - pending_events:list
+    - plans:attention
+    - plans:items
+    - search:fulltext
+    - search:query
+    - search:semantic
+    - tasks:list
+  plugins: []

@@ -64,3 +64,28 @@ triggers:
   schedule:
     - cron: "0 */30 * * * *"
       action: system:blueprint-run
+
+# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
+# blueprint-local worker persona (scripts/derive-blueprint-deps.mjs) —
+# the improvements intake/resolve pair plus the standard work/coord surface.
+dependencies:
+  tools:
+    - agent_tools:list
+    - artifacts:load
+    - artifacts:save
+    - coord:ask
+    - features:get
+    - features:list_related
+    - harness:phase_path
+    - improvements:capture
+    - improvements:resolve
+    - issues:claim
+    - issues:create
+    - issues:get
+    - messages:inbox
+    - messages:send
+    - topics:feed
+    - topics:list
+    - topics:subscribe
+    - work_items:list
+  plugins: []

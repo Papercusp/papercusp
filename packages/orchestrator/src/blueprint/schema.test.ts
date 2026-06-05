@@ -167,3 +167,29 @@ test('BlueprintHeaderSchema — extends can be a string or an array', () => {
     'coding',
   ]);
 });
+
+test('ReactiveRuleSchema — `cond` is the canonical @papercusp/rules DataCondition (D-002: the retired `custom` string hatch is gone)', () => {
+  // A reactive rule may guard with a serializable DataCondition.
+  const bp = BlueprintSchema.parse({
+    ...minimal,
+    reactive: [
+      {
+        role: 'debugger',
+        when: {
+          beforeRole: 'worker',
+          cond: { all: [{ 'attempts': { gte: 3 } }, { 'feature.status': { in: ['failing'] } }] },
+        },
+      },
+    ],
+  });
+  assert.deepEqual(bp.reactive[0].when.cond, {
+    all: [{ attempts: { gte: 3 } }, { 'feature.status': { in: ['failing'] } }],
+  });
+  // The retired `custom: string` host-predicate hatch is no longer a schema key —
+  // a stale blueprint carrying one parses (stripped), it does not resurrect.
+  const stale = BlueprintSchema.parse({
+    ...minimal,
+    reactive: [{ role: 'debugger', when: { beforeRole: 'worker', custom: 'named-host-predicate' } }],
+  });
+  assert.ok(!('custom' in stale.reactive[0].when), 'custom is stripped, not preserved');
+});

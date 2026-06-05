@@ -88,3 +88,27 @@ test('recursion enabled without a trigger → warning', () => {
   assert.equal(v.ok, true); // a warning, not an error
   assert.ok(v.warnings.some((w) => w.code === 'recursion-no-trigger'));
 });
+
+test('reactive rule guarded only by `cond` (DataCondition) is a valid guard; a stale custom-only guard errors (D-002)', () => {
+  const base = {
+    id: 'x',
+    workItem: { kind: 'feature' },
+    roles: [{ id: 'debugger' }],
+    spine: { edges: { DONE: { to: 'done' } } },
+  };
+  // `cond` alone is a real trigger condition.
+  const withCond = BlueprintSchema.parse({
+    ...base,
+    reactive: [{ role: 'debugger', when: { cond: { attempts: { gte: 3 } } } }],
+  });
+  const v1 = validateBlueprint(withCond);
+  assert.ok(!v1.errors.some((e) => e.code === 'empty-reactive-guard'), 'cond counts as a guard');
+  // A stale blueprint whose ONLY guard was the retired `custom` string now has
+  // no condition at all (the key is stripped at parse) → empty-reactive-guard.
+  const staleCustom = BlueprintSchema.parse({
+    ...base,
+    reactive: [{ role: 'debugger', when: { custom: 'named-host-predicate' } }],
+  });
+  const v2 = validateBlueprint(staleCustom);
+  assert.ok(v2.errors.some((e) => e.code === 'empty-reactive-guard'), 'custom no longer counts');
+});

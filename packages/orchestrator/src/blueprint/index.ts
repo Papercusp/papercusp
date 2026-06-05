@@ -16,12 +16,16 @@ export type { ParsedDecisionLike } from './derive-next.js';
 export { validateBlueprint } from './validate.js';
 export type { BlueprintIssue, BlueprintValidation, ValidateOptions } from './validate.js';
 // Coord-op-program layer (coordination-ops-as-blueprint-primitives-2026-06-04):
-// the safe condition evaluator, `{{ path }}` interpolation, and the pure program
-// interpreter (planStep / selectGateBranch — the program-mode `deriveNext`). These
-// are the generic, domain-free step-program core — extracted to the borrowable
+// `{{ path }}` interpolation and the pure program interpreter (planStep /
+// selectGateBranch — the program-mode `deriveNext`). These are the generic,
+// domain-free step-program core — extracted to the borrowable
 // `@papercusp/step-program` lib (generalize-libs-to-generic-2026-06-05 #5) and
-// re-exported here so the `@papercusp/orchestrator/blueprint` public API is unchanged.
-export { evalExpr, parseExpr, isValidExpr, readPath, truthy } from '@papercusp/step-program';
+// re-exported here. The string-expr DSL (`evalExpr`/`parseExpr`/`isValidExpr`)
+// is deliberately NOT re-exported: the canonical condition language on this
+// surface is the `@papercusp/rules` `DataCondition` (adopt-event-rules-engines
+// D-002) — the spine injects `evaluateDataCondition` as its `WhenEval`; the
+// string DSL remains only as step-program's standalone default.
+export { readPath, truthy } from '@papercusp/step-program';
 export type { Scope } from '@papercusp/step-program';
 export { interpolate, interpolateArgs } from '@papercusp/step-program';
 export { planStep, selectGateBranch, isProgramSpine } from '@papercusp/step-program';

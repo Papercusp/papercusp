@@ -55,3 +55,14 @@ knobs:
 # invoke route (single-role launch). Declared here as the firing seam.
 triggers:
   event: git-sync:conflict
+
+# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
+# merge-resolver persona (scripts/derive-blueprint-deps.mjs) — the resolver
+# escalates an unresolvable conflict and holds the shared-submodule resource
+# lock around the redo-merge.
+dependencies:
+  tools:
+    - coord:escalate
+    - locks:acquire_resource
+    - locks:release_resource
+  plugins: []

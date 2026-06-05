@@ -113,3 +113,14 @@ knobs:
   # The gym's own work needs no repo (only the target sub-harness may). This also
   # exercises the requiresRepo:false / work-item-output collectTrace path (P-014).
   requiresRepo: false
+
+# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
+# gym role personas (scripts/derive-blueprint-deps.mjs). gym:judge is the
+# frozen-judge scoring tool; the work-item pair is the task surface the roles
+# read/write through.
+dependencies:
+  tools:
+    - features:get
+    - gym:judge
+    - work_items:list
+  plugins: []

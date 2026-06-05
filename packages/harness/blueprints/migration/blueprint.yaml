@@ -92,3 +92,14 @@ knobs:
   pattern: ""
   # The verify command run per site + overall (the verifier's gate; also the gym signal).
   verifyCmd: ""
+
+# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
+# migration role personas (scripts/derive-blueprint-deps.mjs). The roles work
+# the substrate via shell/edit; their agent-tool surface is the work-item +
+# plan readback (the site list + per-site status ride the work-item).
+dependencies:
+  tools:
+    - features:get
+    - plans:items
+    - work_items:list
+  plugins: []

@@ -106,3 +106,12 @@ recursion:
 # event key; it is ALSO directly invocable as the `coord:vote` tool (D-009).
 triggers:
   event: coordination-op:vote
+
+# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
+# blueprint-local voter/advocate personas (scripts/derive-blueprint-deps.mjs) —
+# voters post structured votes into the thread; the gate escalates a split.
+dependencies:
+  tools:
+    - coord:escalate
+    - coord:thread-post
+  plugins: []
