@@ -1873,15 +1873,35 @@ export async function invoke(
     finalArgv.push('-');
   }
 
+  // Per-spawn MCP config location. claude loads its config from an EXPLICIT
+  // path (`--mcp-config … --strict-mcp-config`), so it can live in a UNIQUE
+  // per-spawn temp dir rather than the shared `<cwd>/.mcp.json`. That lets
+  // several claude spawns share ONE project dir without race-clobbering each
+  // other's config — the coord-op vote fan-out spawns N voters + an advocate in
+  // one harness dir, and a shared `.mcp.json` made two of them authenticate
+  // under a single role (coordination-ops-as-blueprint-primitives D-012/D-014).
+  // tmpdir() is sandbox-readable (not in FLEET_SANDBOX_DENY_READ). omp
+  // path-discovers `<cwd>/.mcp.json` and has no explicit-path override, so it
+  // keeps the shared file (its fan-out stays sequential); codex uses a per-spawn
+  // CODEX_HOME (already isolated). The temp dir is removed alongside mcpHandle
+  // when the spawn closes.
+  let mcpConfigDir = cwd;
+  let mcpTempDir: string | null = null;
+  if (agentBackend === 'claude-code' && ctx.workspaceId) {
+    mcpTempDir = mkdtempSync(join(tmpdir(), 'papercusp-mcp-'));
+    mcpConfigDir = mcpTempDir;
+  }
+  const mcpConfigPath = join(mcpConfigDir, '.mcp.json');
+
   // 10b. claude-code MCP wiring — make claude load + trust the per-spawn
-  // signed .mcp.json that writeSignedSpawnMcp drops into cwd below (omp
-  // path-discovers it; claude won't without these flags). See claudeMcpArgs.
+  // signed .mcp.json (omp path-discovers it; claude won't without these
+  // flags). See claudeMcpArgs.
   finalArgv.push(
     ...claudeMcpArgs(
       agentBackend,
       streamFormat,
       roleAgentCmd,
-      join(cwd, '.mcp.json'),
+      mcpConfigPath,
       Boolean(ctx.workspaceId),
       role,
     ),
@@ -2072,7 +2092,11 @@ export async function invoke(
         // codex: no `.mcp.json` discovery — its MCP servers live in
         // $CODEX_HOME/config.toml. Mint a per-spawn CODEX_HOME with the
         // same signed, role-scoped URL + the ChatGPT auth symlink, and
-        // point the child at it. omp/claude keep the `.mcp.json` path.
+        // point the child at it. omp writes the shared `<cwd>/.mcp.json`
+        // (path discovery); claude writes to its per-spawn `mcpConfigDir`
+        // (a unique temp dir — see the mcpConfigPath block above) and loads
+        // it via `--mcp-config`, so concurrent claude spawns in one cwd
+        // don't clobber a shared file.
         if (agentBackend === 'codex') {
           codexHomeHandle = await writeSignedSpawnCodexHome(signedInput);
           spawnEnv.CODEX_HOME = codexHomeHandle.codexHome;
@@ -2088,7 +2112,7 @@ export async function invoke(
           // unset PAPERCUSP_REQUIRE_SPAWN_SIG on the operator.
           // No await-time risk: signing is a single PG round-trip against
           // a 32-byte row + an HMAC; total < 50ms in normal operation.
-          mcpHandle = await writeSignedSpawnMcp(cwd, signedInput);
+          mcpHandle = await writeSignedSpawnMcp(mcpConfigDir, signedInput);
         }
       } catch (err) {
         ctx.log(`  spawn-mcp write failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -2292,6 +2316,7 @@ export async function invoke(
       ctx.log(`  spawn error: ${err.message}`);
       if (timer) clearTimeout(timer);
       if (mcpHandle) restoreSpawnMcp(mcpHandle);
+      if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       if (codexHomeHandle) codexHomeHandle.cleanup();
       if (claudeConfigHandle) claudeConfigHandle.cleanup();
       void clearLane();
@@ -2301,6 +2326,7 @@ export async function invoke(
     child.on('close', (code) => {
       if (timer) clearTimeout(timer);
       if (mcpHandle) restoreSpawnMcp(mcpHandle);
+      if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       if (codexHomeHandle) codexHomeHandle.cleanup();
       if (claudeConfigHandle) claudeConfigHandle.cleanup();
       void clearLane();
