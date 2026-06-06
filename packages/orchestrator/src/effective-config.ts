@@ -19,7 +19,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { HarnessConfig } from './types';
-import { readConfig } from './config';
 import { loadBlueprintFromFile, type Blueprint } from './blueprint';
 
 /**
@@ -88,27 +87,24 @@ export function loadHarnessKnobs(stateDir: string): Blueprint['knobs'] | null {
 }
 
 /**
- * The per-install INSTANCE config, env-transport first (`HARNESS_CONFIG_JSON`),
- * `.papercusp/config.json` file second (`cloud-deployment-layer-2026-06-06` P-008).
- *
- * Per D-007/D-011 the instance config (phase/phases/dept + per-instance knob
- * overrides) is canonical in workspace PG and federates; the operator delivers it
- * to a spawned process via env (PG canonical, env transport — "DB is not a
- * transport"), and a cloud frame — which has no local `config.json` — reads it
- * here. The file remains a back-compat fallback for un-migrated local harnesses.
- * A malformed env value falls through to the file (never strands a run).
+ * The per-install INSTANCE config, delivered SOLELY via the `HARNESS_CONFIG_JSON`
+ * env-transport (the operator assembles it from workspace PG and passes it on
+ * spawn; a cloud frame receives it the same way). `.papercusp/config.json` is no
+ * longer read (`deprecate-harness-config-json-2026-06-06` — the file is deprecated
+ * to ZERO for instance/shape config). Absent / malformed env ⇒ empty instance
+ * config (the blueprint supplies every default), never a file fall-back.
  */
-export function readInstanceConfig(stateDir: string): HarnessConfig {
+export function readInstanceConfig(): HarnessConfig {
   const raw = process.env.HARNESS_CONFIG_JSON;
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as HarnessConfig;
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
     } catch {
-      /* malformed env — fall through to the file */
+      /* malformed env — instance config is empty (blueprint defaults apply) */
     }
   }
-  return readConfig(stateDir);
+  return {};
 }
 
 /**
@@ -118,7 +114,7 @@ export function readInstanceConfig(stateDir: string): HarnessConfig {
  * resolves instance-then-blueprint without touching the read sites.
  */
 export function readEffectiveConfig(stateDir: string): HarnessConfig {
-  const cfg = readInstanceConfig(stateDir);
+  const cfg = readInstanceConfig();
   const overlay = blueprintKnobsToConfigOverlay(loadHarnessKnobs(stateDir));
   if (Object.keys(overlay).length === 0) return cfg;
   return deepMergeConfig(overlay as Record<string, unknown>, cfg as Record<string, unknown>) as HarnessConfig;
