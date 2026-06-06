@@ -22,7 +22,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { harnessRoot } from '@papercusp/harness/paths';
-import { readConfig, resolvePhase, configGet } from './config';
+import { resolvePhase, configGet } from './config';
+import { readEffectiveConfig } from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { resolvePromptFile } from './prompt-resolve';
 
@@ -150,7 +151,7 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
   const stateDir = join(projectDir, '.papercusp');
   const harnessDir = harnessRoot();
 
-  const cfg = readConfig(stateDir);
+  const cfg = readEffectiveConfig(stateDir);
   const { phase } = resolvePhase(cfg);
   const dept = configGet<string>(cfg, 'dept', '');
 

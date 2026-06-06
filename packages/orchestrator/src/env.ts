@@ -6,7 +6,8 @@
  * DB_PATH derived from .papercusp/config.json.
  */
 import { harnessRoot } from '@papercusp/harness/paths';
-import { readConfig, resolvePhase } from './config';
+import { resolvePhase } from './config';
+import { readEffectiveConfig } from './effective-config';
 import type { AgentBackend, OrchestratorEnv } from './types';
 
 /**
@@ -75,7 +76,7 @@ export function resolvePaths(): ResolvedPaths {
 
 export function resolveEnv(): OrchestratorEnv & ResolvedPaths {
   const paths = resolvePaths();
-  const cfg = readConfig(paths.stateDir);
+  const cfg = readEffectiveConfig(paths.stateDir);
   const { phase, port, dbPath } = resolvePhase(cfg);
   const claudeCmd = resolveAgentCmd();
 

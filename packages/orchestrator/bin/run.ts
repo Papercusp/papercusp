@@ -10,7 +10,8 @@
  * The `=0` check below is kept only to warn anyone who still sets the
  * old env var; there is no bash fallback left to honor.
  */
-import { configGet, readConfig } from '../src/config.js';
+import { configGet } from '../src/config.js';
+import { readEffectiveConfig } from '../src/effective-config.js';
 import { resolvePaths, resolveAgentBackend, resolveAgentCmd } from '../src/env.js';
 import { createLogger } from '../src/log.js';
 import { runMainLoop } from '../src/main-loop.js';
@@ -32,7 +33,7 @@ async function runTs(): Promise<never> {
   const logger = createLogger(stateDir);
   logger.log('TS orchestrator active (default).');
 
-  const cfg = readConfig(stateDir);
+  const cfg = readEffectiveConfig(stateDir);
   const phase = (cfg.phase as string) ?? 'staging';
   const claudeCmd = resolveAgentCmd();
   const agentBackend = resolveAgentBackend(claudeCmd);

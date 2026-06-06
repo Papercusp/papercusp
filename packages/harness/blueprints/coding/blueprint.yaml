@@ -129,6 +129,23 @@ knobs:
   requiresRepo: true
   debuggerThreshold: 3
 
+# The build/run environment spec — "what to stand up on a frame"
+# (cloud-deployment-layer-2026-06-06 P-007). First-class + placement-agnostic: the
+# SHAPE is identical local vs cloud. Empty here by design — a coding harness's
+# actual build/test/run commands are PER-REPO, detected by harness:generate-from-repo
+# (which already sets knobs.testCommand) or set per instance, NOT hardcoded across
+# every coding harness. The deployment driver's install() reads the resolved spec to
+# bootstrap a cloud frame; empty arrays ⇒ nothing to stand up (today's local behavior).
+environment:
+  setup: [] # one-time machine setup (toolchains) — e.g. ["nvm install 22"]
+  install: [] # dependency install — e.g. ["npm ci"]
+  build: [] # build — e.g. ["npm run build"]
+  test: [] # test command(s) — usually mirrors knobs.testCommand
+  run: [] # long-running app/dev-server start — e.g. ["npm run dev"]
+  services: [] # background services (DB/cache) — {name, command, port?, healthcheck?}
+  ports: [] # ports the frame must expose
+  env: {} # NON-SECRET env vars (secrets ride deployment.credentialRef)
+
 # Tool/plugin dependencies (official-blueprints-cupboard-publish-2026-06-05
 # D-002): what this blueprint's roles actually call, derived from the role
 # personas (scripts/derive-blueprint-deps.mjs) + validated against the live

@@ -27,7 +27,8 @@
 import { appendFileSync, existsSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { harnessRoot } from '@papercusp/harness/paths';
-import { readConfig, resolvePhase } from '../src/config.js';
+import { resolvePhase } from '../src/config.js';
+import { readEffectiveConfig } from '../src/effective-config.js';
 import { resolveAgentBackend, resolveAgentCmd } from '../src/env.js';
 import { createLogger } from '../src/log.js';
 import { invoke } from '../src/invoke.js';
@@ -94,7 +95,7 @@ async function main(): Promise<number> {
   // Ensure log dir exists so createLogger can write run.log.
   mkdirSync(logDir, { recursive: true });
 
-  const cfg = readConfig(stateDir);
+  const cfg = readEffectiveConfig(stateDir);
   const { phase } = resolvePhase(cfg);
   const claudeCmd = resolveAgentCmd();
   const agentBackend = resolveAgentBackend(claudeCmd);

@@ -24,6 +24,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { configGet, readConfig } from './config';
+import { readEffectiveConfig } from './effective-config';
 import { parseDecision, parseDecisions } from './decision-parse';
 import { invoke } from './invoke';
 import { featureAttempts, harnessSlug as harnessSlugFromDir, readFeatures, setFeatureStatus, stateCtx } from './state';
@@ -394,7 +395,7 @@ const defaultSleep = (ms: number): Promise<void> =>
 export async function runMainLoop(opts: MainLoopOptions): Promise<MainLoopExit> {
   const { ctx, logger, maxIterations } = opts;
   const sleep = opts.sleepFn ?? defaultSleep;
-  const cfg = readConfig(ctx.stateDir);
+  const cfg = readEffectiveConfig(ctx.stateDir);
   const primaryRole = configGet<string>(cfg, 'primaryRole', 'orchestrator');
 
   // Plugin lifecycle: onLoad fires once at orchestrator startup; onUnload

@@ -29,6 +29,7 @@ import {
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { configGet, readConfig } from './config';
+import { readEffectiveConfig } from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
 import { resolvePromptFile } from './prompt-resolve';
@@ -1531,7 +1532,7 @@ export async function invoke(
   extras: readonly string[] = [],
   options: InvokeOptions = {},
 ): Promise<InvokeResult> {
-  const cfg = readConfig(ctx.stateDir);
+  const cfg = readEffectiveConfig(ctx.stateDir);
   const dept = ctx.dept ?? configGet<string>(cfg, 'dept', '');
 
   // 1. Resolve prompt file (with phase + dept fallback chain), unless

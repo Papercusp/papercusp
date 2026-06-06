@@ -460,6 +460,50 @@ export const DependenciesSchema = z.object({
   plugins: z.array(z.string()).default([]),
 });
 
+/** A long-running background service the harness's environment needs (a dev
+ *  server, a DB, a cache). The deployment driver starts these on the frame and
+ *  (optionally) waits for `healthcheck` before marking the frame ready. */
+export const EnvServiceSchema = z.object({
+  /** Stable service name (for logs / health reporting). */
+  name: z.string().min(1),
+  /** The command that starts the service (run + supervised on the frame). */
+  command: z.string().min(1),
+  /** Port the service listens on, if any (also implies it in `ports`). */
+  port: z.number().int().positive().optional(),
+  /** A command or URL the driver probes to confirm the service is up. */
+  healthcheck: z.string().optional(),
+});
+
+/**
+ * The harness's build/run **environment spec** (`cloud-deployment-layer-2026-06-06`
+ * P-007) — the declarative "what to stand up on a frame". The deployment driver's
+ * `install()` (P-010) runs `setup`→`install`→`build`, the validator/gym run
+ * `test`, and `run` + `services` are the long-lived processes; `ports` are
+ * exposed and `env` (NON-SECRET vars only — secrets ride `credentialRef`) is set.
+ * First-class on the blueprint (alongside `dispatch`/`gates`) so the SHAPE is
+ * placement-agnostic and identical local vs cloud; per-repo commands can be
+ * detected (harness:generate-from-repo) and refined per instance. Empty arrays
+ * (the default) ⇒ nothing to stand up — today's local-only behavior.
+ */
+export const EnvironmentSpecSchema = z.object({
+  /** One-time machine setup (apt/toolchain installs) run once per frame. */
+  setup: z.array(z.string()).default([]),
+  /** Dependency install (e.g. `npm ci`). */
+  install: z.array(z.string()).default([]),
+  /** Build commands (e.g. `npm run build`). */
+  build: z.array(z.string()).default([]),
+  /** Test command(s) the validator/gym run. */
+  test: z.array(z.string()).default([]),
+  /** Long-running app/dev-server start commands. */
+  run: z.array(z.string()).default([]),
+  /** Background services (DB / cache / dev servers) supervised on the frame. */
+  services: z.array(EnvServiceSchema).default([]),
+  /** Ports the frame must expose. */
+  ports: z.array(z.number().int().positive()).default([]),
+  /** NON-SECRET env vars to set on the frame (secrets ride `credentialRef`). */
+  env: z.record(z.string(), z.string()).default({}),
+});
+
 /**
  * The resolved Blueprint — the validator-of-record. A fully-merged blueprint
  * (after `extends` resolution) must satisfy this.
@@ -488,6 +532,10 @@ export const BlueprintSchema = z.object({
    *  declare none and the orchestrator keeps its legacy config-only resolution. */
   dispatch: DispatchSchema.optional(),
   dependencies: DependenciesSchema.optional(),
+  /** The build/run environment spec — "what to stand up on a frame" (P-007). The
+   *  deployment driver reads it to bootstrap a cloud frame; absent ⇒ nothing to
+   *  stand up (today's local-only behavior). */
+  environment: EnvironmentSpecSchema.optional(),
 });
 
 /**
@@ -515,4 +563,6 @@ export type BlueprintGym = z.infer<typeof GymSchema>;
 export type BlueprintKnobs = z.infer<typeof KnobsSchema>;
 export type BlueprintTriggers = z.infer<typeof TriggersSchema>;
 export type BlueprintDispatch = z.infer<typeof DispatchSchema>;
+export type BlueprintEnvironment = z.infer<typeof EnvironmentSpecSchema>;
+export type BlueprintEnvService = z.infer<typeof EnvServiceSchema>;
 export type BlueprintHeader = z.infer<typeof BlueprintHeaderSchema>;
