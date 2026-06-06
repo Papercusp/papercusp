@@ -65,6 +65,37 @@ test('isChildBlueprintParam + the placeholder regex', () => {
   assert.equal(CHILD_BLUEPRINT_PARAM_RE.test('$'), false);
 });
 
+test('assertNotNestedHive — the no-nest guard (local-hive D-009 / swarm D-018)', () => {
+  // A kind:'hive' WITH a parent → rejected loud.
+  assert.throws(
+    () => assertNotNestedHive({ id: 'pot', kind: 'hive' }, true),
+    /cannot be nested|hives are peers/i,
+  );
+  // A kind:'hive' as a ROOT (no parent) → allowed (the bootstrap/deployment path).
+  assert.doesNotThrow(() => assertNotNestedHive({ id: 'pot', kind: 'hive' }, false));
+  // A kind:'harness' with a parent → allowed (general harnesses recurse freely).
+  assert.doesNotThrow(() => assertNotNestedHive({ id: 'coding', kind: 'harness' }, true));
+  // Default-kind (undefined → treated as harness) with a parent → allowed.
+  assert.doesNotThrow(() => assertNotNestedHive({ id: 'bee' }, true));
+});
+
+test('the pot built-in blueprint is kind:hive + cannot be nested (P-010)', () => {
+  const { blueprint: pot, validation } = loadBuiltinBlueprint('pot');
+  assert.equal(pot.kind, 'hive');
+  assert.equal(validation.ok, true, JSON.stringify(validation.errors));
+  assert.throws(() => assertNotNestedHive(pot, true), /cannot be nested|hives are peers/i);
+  assert.doesNotThrow(() => assertNotNestedHive(pot, false));
+});
+
+test('the bee built-in launch blueprint is kind:harness (NOT a hive) and validates (P-010/P-011)', () => {
+  const { blueprint: bee, validation } = loadBuiltinBlueprint('bee');
+  assert.equal(bee.kind, 'harness');
+  assert.equal(bee.spine.decider, 'bee');
+  assert.equal(validation.ok, true, JSON.stringify(validation.errors));
+  // A bee placed by the Queen (a parent) is allowed — only hives nest-guard.
+  assert.doesNotThrow(() => assertNotNestedHive(bee, true));
+});
+
 test('the gym blueprint declares $target and resolves a parameterized child (D-008 verify)', () => {
   const { blueprint: gym, validation } = loadBuiltinBlueprint('gym');
   // The former undeclared runtime override is now DECLARED…

@@ -76,6 +76,25 @@ test('SpineActionSchema — discriminated union rejects an unknown action kind',
   assert.equal(SpineActionSchema.parse({ to: 'escalate', reasonFrom: 'arg' }).to, 'escalate');
 });
 
+// ── kind: — the privileged-blueprint discriminator (local-hive D-009 / swarm D-018) ──
+
+test("BlueprintSchema — kind defaults to 'harness' (additive, optional-with-default)", () => {
+  // An existing blueprint with no `kind` parses unchanged as a general harness.
+  const bp = BlueprintSchema.parse(minimal);
+  assert.equal(bp.kind, 'harness');
+});
+
+test("BlueprintSchema — kind:'hive' parses (the privileged Queen blueprint)", () => {
+  const hive = BlueprintSchema.parse({ ...minimal, kind: 'hive' });
+  assert.equal(hive.kind, 'hive');
+  // round-trips (validator-of-record).
+  assert.deepEqual(BlueprintSchema.parse(hive), hive);
+});
+
+test('BlueprintSchema — kind is a closed enum (an unknown kind is rejected)', () => {
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, kind: 'swarm' }));
+});
+
 test('BlueprintSchema — rejects a blueprint missing required fields', () => {
   assert.throws(() => BlueprintSchema.parse({ id: 'x' })); // no workItem / spine
   assert.throws(() => BlueprintSchema.parse({ id: 'x', workItem: { kind: 'feature' } })); // no spine

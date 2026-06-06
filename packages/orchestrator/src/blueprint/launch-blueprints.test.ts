@@ -64,6 +64,24 @@ test('pot launch blueprint loads + validates — decider=operator, NO trigger (t
   assert.equal(blueprint.knobs.requiresRepo, false, 'pot needs no repo');
 });
 
+test('bee launch blueprint loads + validates — decider=bee, kind:harness, NO trigger (the Queen places it)', () => {
+  // local-hive-orchestration-2026-06-06 P-010/P-011: the bee is the Queen's
+  // "place a fresh generic worker" primitive. It is a single-role decider-mode
+  // blueprint (extends single-agent) whose decider IS the `bee` role; it is
+  // kind:'harness' (a bee is NOT a hive) and declares NO trigger — the Queen's
+  // placement loop fires it on demand, not a cadence/event.
+  const { blueprint, validation } = loadBuiltinBlueprint('bee');
+  assert.equal(blueprint.id, 'bee');
+  assert.equal(validation.ok, true, JSON.stringify(validation.errors));
+  assert.equal(blueprint.kind, 'harness', 'a bee is kind:harness, never a hive');
+  assert.ok(!isProgramSpine(blueprint.spine), 'bee is a decider-mode spine');
+  assert.equal(blueprint.spine.decider, 'bee', 'the bee decider IS the bee role');
+  assert.ok(blueprint.roles.some((r) => r.id === 'bee'), 'bee declares its role');
+  assert.deepEqual(validation.warnings, [], 'bee has no validator warnings');
+  assert.equal(blueprint.triggers?.schedule?.length ?? 0, 0, 'bee declares NO schedule trigger');
+  assert.equal(blueprint.triggers?.event, undefined, 'bee declares NO event trigger');
+});
+
 test('a user fork (extends: deploy) can swap the launched role without code', () => {
   // The forkability the unify plan buys: a fork declares a different role + model.
   const forked = resolveBlueprint({
