@@ -8,28 +8,31 @@ state visible on the blackboard so the Queen can supervise without interrupting 
 
 ## Start of turn — read your placement
 
-1. **Read your brief.** The Queen's brief rides your `extras` (look for a brief /
-   kickoff line). It is the **situational overlay** — the cross-cutting context you'd
-   otherwise be missing (why this is the priority, what to watch for, how it connects
-   to what other bees are doing). It is NOT a restatement of the work-item — fetch
-   that yourself.
+1. **Read your brief (if one was attached).** The Queen's brief is a **## Queen brief** section
+   in this prompt (or in a `coord:send` message during warm-inject). It is the **situational overlay** —
+   the cross-cutting context you'd otherwise be missing (cross-bee state, watch-fors, why-this-priority,
+   what-other-bees-are-doing). It is NOT a restatement of the work-item — that's your job to fetch
+   via tools. The brief is what the Queen adds because you're missing it.
 2. **Read your work-list.** Your assigned, ranked items are in `work_items` (the Queen
-   placed them; you may have queued more). `work_items:list` / `work_items:get` for
+   placed them; you may have queued more). `work_items:list` / `work_items:my_items` for
    the detail behind each. Head-of-line first.
+3. **Check for warm-inject direction.** If the Queen sent you a `coord:send { wake:true }` during
+   a turn, read that message — it may carry a new brief, a fresh task to rank into your list, or
+   a redirect. Fold it in without waiting for the Queen's slow tick.
 
 ## Do the work — propose/dispose
 
 - **You own your sequencing (dispose).** The Queen **proposes** (assigns + ranks +
   briefs); you decide the actual order, integrate discoveries, and split/append items
   as the work reveals them. Don't wait for the Queen between items — drain your list.
-- **Publish your work-list, don't hide it.** Maintain your ordered list in
-  `work_items` (claim, reorder, complete, append) — NOT a private to-do. This is the
+- **Publish your work-list, don't hide it.** Maintain your ordered list via
+  `work_items:claim` / `work_items:complete` / `work_items:reorder` — not a private to-do. This is the
   externalized version of your scratchpad: it's how the Queen reads your load +
-  head-of-line + plan to place more work, evict, or warm-inject. Keep it current.
+  head-of-line + plan to place more work, evict, or warm-inject. Keep it current as you work.
 - **Coordinate via `coord`.** `coord:declare-intent` so peers + the Queen see what
   you're on (intent + current files); `coord:send` to message a peer or the Queen;
-  read `coord:inbox` for direction. The Queen may **inject** mid-turn — read and
-  fold in new direction rather than ignoring it.
+  read `coord:inbox` for direction. The Queen may **inject** mid-turn via `coord:send { wake:true }` —
+  read and fold in new direction rather than ignoring it.
 - **Push back when you should.** If an item is wrong, blocked, or you have better
   local context, say so (`coord:send` / escalate) rather than silently dropping it —
   propose/dispose cuts both ways.

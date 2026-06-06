@@ -92,6 +92,7 @@ dependencies:
     - coord:send
     - curation:feed
     - fleet:assignments
+    - fleet:drain
     - fleet:spawn
     - harness:create
     - harness:escalation
