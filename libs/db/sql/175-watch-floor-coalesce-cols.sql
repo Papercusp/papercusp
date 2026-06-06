@@ -25,6 +25,12 @@ ALTER TABLE harness_shared.event_awaits
 ALTER TABLE harness_shared.event_awaits
   ADD COLUMN IF NOT EXISTS min_sleep_sec INTEGER;
 
+-- urgency: a watch whose wakes ALWAYS bypass the floor (e.g. a human-message / escalation
+--   watch). Propagated onto each delivery this watch produces (OR'd with the emit-time
+--   urgent flag). Default false — ordinary watches obey their floor.
+ALTER TABLE harness_shared.event_awaits
+  ADD COLUMN IF NOT EXISTS urgency BOOLEAN NOT NULL DEFAULT false;
+
 -- ── event_wake_deliveries → floor input + coalesce accounting ───────────────────
 -- urgent: bypass the per-subscriber floor for this delivery (a human message, an
 --   escalation, a hard deadline) — wake now regardless of min_sleep.
