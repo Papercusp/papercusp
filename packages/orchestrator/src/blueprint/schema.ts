@@ -327,6 +327,16 @@ export const KnobsSchema = z
         replanOnAccept: z.boolean().optional(),
       })
       .optional(),
+    /** Promotion-gate SHAPE knobs (`deprecate-harness-config-json-2026-06-06` —
+     *  the last config.json knob without a declared home). `<from>_to_<to>` edge
+     *  keys carry per-edge `criteria` overrides; `smokeBuild.enabled` opts into the
+     *  pre-handoff smoke build. `.loose` because the edge keys are dynamic. Per-install
+     *  overrides live in PG `configOverrides`, not the blueprint. */
+    promotion: z
+      .looseObject({
+        smokeBuild: z.looseObject({ enabled: z.boolean().optional() }).optional(),
+      })
+      .optional(),
     models: z.record(z.string(), z.string()).optional(),
     /** debugger-before-worker gate threshold (attempts ≥ n fires the gate). */
     debuggerThreshold: z.number().int().nonnegative().optional(),
