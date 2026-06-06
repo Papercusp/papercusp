@@ -16,6 +16,12 @@
  */
 export { readConfig, configGet, resolvePhase } from './config';
 export {
+  readEffectiveConfig,
+  loadHarnessKnobs,
+  blueprintKnobsToConfigOverlay,
+  deepMergeConfig,
+} from './effective-config';
+export {
   readFeatures,
   featuresExist,
   featureAttempts,

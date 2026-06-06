@@ -297,6 +297,14 @@ export const GymSchema = z.object({
   rubric: GymRubricSchema.optional(),
 });
 
+/** Per-role / default AI-backend invocation knob (mirrors HarnessConfig's
+ *  `AiBackendRoleConfig`). `.passthrough` so non-secret extras survive. */
+const AiBackendRoleKnobSchema = z.object({
+  agentCmd: z.string().optional(),
+  model: z.string().optional(),
+  extraArgs: z.array(z.string()).optional(),
+});
+
 /**
  * Knobs — the shape/knob subset of `HarnessConfig` that becomes part of the
  * harness *shape* (vs the per-install instance fields that stay in config.json).
@@ -329,6 +337,42 @@ export const KnobsSchema = z
     uiQa: z.object({ enabled: z.boolean().optional() }).optional(),
     /** Does instantiating this blueprint require a git repo? (P-008; coding=true, research=false.) */
     requiresRepo: z.boolean().default(true),
+    // ── Residual config.json → knobs migration (cloud-deployment-layer P-006) ──
+    // These five had no declared blueprint home; they now do. config.json keeps
+    // instance-override precedence (resolved by readEffectiveConfig's overlay).
+    /** Per-role prompt specialization (config `promptOverrides.<role>` = a full
+     *  replacement / specialization string for that role's prompt). */
+    promptOverrides: z.record(z.string(), z.string()).optional(),
+    /** Per-harness AI backend: a `default` invocation + per-role overrides
+     *  (agentCmd / model / extraArgs). Secrets never go here — see HarnessConfig. */
+    aiBackend: z
+      .object({
+        default: AiBackendRoleKnobSchema.optional(),
+        roles: z.record(z.string(), AiBackendRoleKnobSchema).optional(),
+      })
+      .optional(),
+    /** Worker-lane config WITHIN a feature (distinct from `dispatch.concurrency`,
+     *  which is cross-feature pipeline concurrency). `.loose` so adaptive/mode/
+     *  workersPerFeature/escalateToRole/replanStrikes/workingStateCheck survive. */
+    parallelWorkers: z
+      .looseObject({
+        max: z.number().int().positive().optional(),
+        maxFeaturesInFlight: z.number().int().positive().optional(),
+        synthesizeSingle: z.boolean().optional(),
+        useChunkLoop: z.boolean().optional(),
+        mode: z.string().optional(),
+      })
+      .optional(),
+    /** Scoper SHAPE knobs (`outputMode` proposal|plan, `backend`). `.loose` so any
+     *  transient scoper run-state keys still parse (those move to PG under P-008). */
+    scoper: z
+      .looseObject({
+        outputMode: z.enum(['proposal', 'plan']).optional(),
+        backend: z.string().optional(),
+      })
+      .optional(),
+    /** How many snapshot dirs to keep before pruning (read-site default 50). */
+    snapshotRetention: z.number().int().nonnegative().optional(),
   })
   .catchall(z.unknown());
 
