@@ -6,6 +6,7 @@ import {
   deepMergeConfig,
   blueprintKnobsToConfigOverlay,
   readEffectiveConfig,
+  readInstanceConfig,
 } from './effective-config';
 
 describe('deepMergeConfig', () => {
@@ -124,5 +125,50 @@ describe('readEffectiveConfig (file path)', () => {
       ].join('\n'),
     );
     expect(readEffectiveConfig(stateDir)).toEqual({ maxCostUsd: 12 });
+  });
+});
+
+describe('readInstanceConfig — env-transport first, file fallback (P-008)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'inst-cfg-'));
+    delete process.env.HARNESS_CONFIG_JSON;
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    delete process.env.HARNESS_CONFIG_JSON;
+  });
+
+  it('reads HARNESS_CONFIG_JSON env when set (a frame has no config.json file)', () => {
+    process.env.HARNESS_CONFIG_JSON = JSON.stringify({ phase: 'production', maxCostUsd: 5 });
+    expect(readInstanceConfig('/no/such/dir')).toEqual({ phase: 'production', maxCostUsd: 5 });
+  });
+
+  it('falls back to .papercusp/config.json when the env is absent', () => {
+    writeFileSync(join(dir, 'config.json'), JSON.stringify({ phase: 'staging' }), 'utf8');
+    expect(readInstanceConfig(dir)).toEqual({ phase: 'staging' });
+  });
+
+  it('a malformed env value falls through to the file (never strands a run)', () => {
+    process.env.HARNESS_CONFIG_JSON = '{ not valid json';
+    writeFileSync(join(dir, 'config.json'), JSON.stringify({ dept: 'eng' }), 'utf8');
+    expect(readInstanceConfig(dir)).toEqual({ dept: 'eng' });
+  });
+
+  it('readEffectiveConfig uses the env instance layer under blueprint knobs', () => {
+    process.env.HARNESS_CONFIG_JSON = JSON.stringify({ parallelWorkers: { max: 9 } });
+    writeFileSync(
+      join(dir, 'blueprint.yaml'),
+      [
+        'id: t',
+        'version: 0.1.0',
+        'workItem: { kind: feature, idPrefix: F }',
+        'spine: { decider: director, edges: { DONE: { to: done } }, default: { to: idle } }',
+        'knobs: { parallelWorkers: { max: 2, useChunkLoop: true } }',
+      ].join('\n'),
+      'utf8',
+    );
+    // env instance (max:9) wins over blueprint knob (max:2); blueprint useChunkLoop fills.
+    expect(readEffectiveConfig(dir).parallelWorkers).toEqual({ max: 9, useChunkLoop: true });
   });
 });
