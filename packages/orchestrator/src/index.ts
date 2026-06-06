@@ -83,20 +83,6 @@ export type { DecisionVerb, ParsedDecision, ParsedSpineDecision } from './decisi
 // Re-exported here for convenience; the subpath `@papercusp/orchestrator/blueprint`
 // is the canonical import for blueprint-only consumers (the init CLI, the loader).
 export * from './blueprint/index.js';
-export {
-  branchIsoEnabled,
-  worktreeEnabled,
-  worktreePath,
-  branchIsoBase,
-  branchIsoPreWorker,
-  branchIsoPostWorker,
-  branchIsoPreValidator,
-  branchIsoPostValidator,
-  worktreeReset,
-} from './branch-iso';
-export type { BranchIsoCtx } from './branch-iso';
-export { git, branchExists, hasStagedChanges } from './git';
-export type { GitResult, GitOptions } from './git';
 export { runHook } from './hooks';
 export type { RunHookOptions, RunHookResult } from './hooks';
 export { evaluateCostCap, extractRunUsage, sumJsonlCost } from './cost-cap';
