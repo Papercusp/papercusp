@@ -1449,6 +1449,23 @@ export const eventWakeDeliveriesInHarnessShared = harnessShared.table("event_wak
 	check("event_wake_deliveries_status_check", sql`status = ANY (ARRAY['pending'::text, 'parked'::text, 'delivering'::text, 'delivered'::text, 'dropped'::text, 'dead'::text])`),
 ]);
 
+export const pipelineEventsInHarnessShared = harnessShared.table("pipeline_events", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	installSlug: text("install_slug").notNull(),
+	kind: text().notNull(),
+	status: text().notNull(),
+	detail: jsonb().default({}).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("pipeline_events_slug_created_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("pipeline_events_slug_kind_created_idx").using("btree", table.installSlug.asc().nullsLast().op("timestamptz_ops"), table.kind.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("pipeline_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("pipeline_events_kind_check", sql`kind = ANY (ARRAY['git_sync'::text, 'merge_resolver'::text, 'green_checkpoint'::text, 'deploy'::text])`),
+	check("pipeline_events_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("pipeline_events_slug_nonempty", sql`install_slug <> ''::text`),
+]);
+
 export const tuiIntentsInHarnessShared = harnessShared.table("tui_intents", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	clientId: text("client_id").notNull(),
@@ -3922,9 +3939,13 @@ export const engineerIssuesInHarnessShared = harnessShared.table("engineer_issue
 	payload: jsonb(),
 	assignedBy: text("assigned_by"),
 	assignedAt: timestamp("assigned_at", { withTimezone: true, mode: 'string' }),
+	assigneeRank: integer("assignee_rank"),
+	rankWriter: text("rank_writer"),
+	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("engineer_issues_assigned_by_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.assignedBy.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")),
 	index("engineer_issues_assignee_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.assignee.asc().nullsLast().op("text_ops")).where(sql`(assignee IS NOT NULL)`),
+	index("engineer_issues_assignee_rank_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.assignee.asc().nullsLast().op("int4_ops"), table.assigneeRank.asc().nullsLast().op("text_ops")).where(sql`((assignee IS NOT NULL) AND (assignee_rank IS NOT NULL))`),
 	index("engineer_issues_feature_idx").using("btree", table.linkedFeatureId.asc().nullsLast().op("text_ops")).where(sql`(linked_feature_id IS NOT NULL)`),
 	index("engineer_issues_kind_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")),
 	index("engineer_issues_scope_state_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.state.asc().nullsLast().op("text_ops")),
@@ -3937,6 +3958,7 @@ export const engineerIssuesInHarnessShared = harnessShared.table("engineer_issue
 	check("engineer_issues_scope_nonempty", sql`scope <> ''::text`),
 	check("engineer_issues_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("engineer_issues_kind_chk", sql`kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`),
+	check("engineer_issues_rank_writer_chk", sql`(rank_writer IS NULL) OR (rank_writer = ANY (ARRAY['bee'::text, 'queen'::text]))`),
 ]);
 
 export const harnessPlansInHarnessShared = harnessShared.table("harness_plans", {
@@ -4038,12 +4060,16 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.table("h
 	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
 	itemKind: text("item_kind").default('feature').notNull(),
 	payload: jsonb(),
+	assigneeRank: integer("assignee_rank"),
+	rankWriter: text("rank_writer"),
+	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
+	index("hfc_assignee_rank_idx").using("btree", table.workspaceId.asc().nullsLast().op("int4_ops"), table.takenBy.asc().nullsLast().op("text_ops"), table.assigneeRank.asc().nullsLast().op("text_ops")).where(sql`((taken_by IS NOT NULL) AND (assignee_rank IS NOT NULL))`),
 	index("hfc_audit_pending_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((origin = 'remote'::text) AND ((audit_verdict IS NULL) OR (audit_verdict = 'pending'::text)))`),
-	index("hfc_created_by_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdByGithubUserId.asc().nullsLast().op("text_ops")).where(sql`(created_by_github_user_id IS NOT NULL)`),
+	index("hfc_created_by_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.createdByGithubUserId.asc().nullsLast().op("text_ops")).where(sql`(created_by_github_user_id IS NOT NULL)`),
 	index("hfc_design_status_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.designStatus.asc().nullsLast().op("text_ops")).where(sql`(design_status IS NOT NULL)`),
 	index("hfc_item_kind_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.itemKind.asc().nullsLast().op("text_ops")),
-	index("hfc_needs_design_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.needsDesign.asc().nullsLast().op("text_ops")).where(sql`(needs_design = true)`),
+	index("hfc_needs_design_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.needsDesign.asc().nullsLast().op("bool_ops")).where(sql`(needs_design = true)`),
 	index("hfc_origin_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.origin.asc().nullsLast().op("text_ops")).where(sql`(origin = 'remote'::text)`),
 	index("hfc_pending_done_idx").using("btree", table.status.asc().nullsLast().op("text_ops")).where(sql`((status = 'pending_done'::text) AND (completion_ref IS NOT NULL))`),
 	index("hfc_plan_wave_idx").using("btree", table.sourcePlanSlug.asc().nullsLast().op("text_ops"), table.wave.asc().nullsLast().op("text_ops")).where(sql`(source_plan_slug IS NOT NULL)`),
@@ -4056,11 +4082,12 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.table("h
 	index("hfc_taken_by_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.takenBy.asc().nullsLast().op("text_ops")).where(sql`(taken_by IS NOT NULL)`),
 	index("hfc_updated_idx").using("btree", table.updatedTs.desc().nullsFirst().op("int8_ops")),
 	index("hfc_verifier_divergence_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops")).where(sql`(verifier_last_error IS NOT NULL)`),
-	index("hfc_verifier_pending_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.verifierLastCheckedAt.asc().nullsFirst().op("text_ops")).where(sql`((completion_ref IS NOT NULL) AND (verified_done_at_remote_ts IS NULL))`),
+	index("hfc_verifier_pending_idx").using("btree", table.harnessSlug.asc().nullsLast().op("timestamptz_ops"), table.verifierLastCheckedAt.asc().nullsFirst().op("text_ops")).where(sql`((completion_ref IS NOT NULL) AND (verified_done_at_remote_ts IS NULL))`),
 	index("hfc_working_users_active_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(array_length(working_users, 1) IS NOT NULL)`),
 	index("hfc_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.harnessSlug, table.featureId], name: "harness_features_consolidated_pkey"}),
 	pgPolicy("harness_features_consolidated_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("hfc_rank_writer_chk", sql`(rank_writer IS NULL) OR (rank_writer = ANY (ARRAY['bee'::text, 'queen'::text]))`),
 	check("hfc_design_status_chk", sql`(design_status IS NULL) OR (design_status = ANY (ARRAY['pending'::text, 'accepted'::text, 'ignored'::text]))`),
 	check("hfc_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
@@ -4130,7 +4157,10 @@ export const workItemsInHarnessShared = harnessShared.view("work_items", {	harne
 	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
 	itemKind: text("item_kind"),
 	payload: jsonb(),
-}).as(sql`SELECT harness_features_consolidated.harness_slug, harness_features_consolidated.feature_id, harness_features_consolidated.title, harness_features_consolidated.summary, harness_features_consolidated.status, harness_features_consolidated.attempts, harness_features_consolidated.claims, harness_features_consolidated.notes, harness_features_consolidated.metadata, harness_features_consolidated.kind, harness_features_consolidated.project_id, harness_features_consolidated.expected_cost_cents, harness_features_consolidated.tags, harness_features_consolidated.needs_human_review, harness_features_consolidated.ts, harness_features_consolidated.created_ts, harness_features_consolidated.updated_ts, harness_features_consolidated.parent_id, harness_features_consolidated.goal_id, harness_features_consolidated.taken_by, harness_features_consolidated.taken_at, harness_features_consolidated.expires_at, harness_features_consolidated.workspace_id, harness_features_consolidated._search, harness_features_consolidated.deprecation_reason, harness_features_consolidated.see_also, harness_features_consolidated.needs_design, harness_features_consolidated.design_status, harness_features_consolidated.design_spec_id, harness_features_consolidated.discarded_design_work, harness_features_consolidated.completion_ref, harness_features_consolidated.created_by_github_user_id, harness_features_consolidated.working_users, harness_features_consolidated.worked_by_history, harness_features_consolidated.wave, harness_features_consolidated.verified_done_at_remote_ts, harness_features_consolidated.verifier_last_error, harness_features_consolidated.verifier_last_checked_at, harness_features_consolidated.source_plan_slug, harness_features_consolidated.source_plan_item_ids, harness_features_consolidated.feature_order, harness_features_consolidated.author_pubkey, harness_features_consolidated.origin, harness_features_consolidated.audit_verdict, harness_features_consolidated.audit_reasons, harness_features_consolidated.audited_at, harness_features_consolidated.item_kind, harness_features_consolidated.payload FROM harness_shared.harness_features_consolidated UNION ALL SELECT CASE WHEN ei.scope ~~ 'harness:%'::text THEN substr(ei.scope, 9) ELSE NULL::text END AS harness_slug, ei.issue_id AS feature_id, ei.title, ei.body AS summary, ei.state AS status, NULL::bigint AS attempts, NULL::text AS claims, NULL::text AS notes, NULL::jsonb AS metadata, NULL::text AS kind, NULL::text AS project_id, NULL::bigint AS expected_cost_cents, NULL::jsonb AS tags, false AS needs_human_review, (EXTRACT(epoch FROM ei.updated_at) * 1000::numeric)::bigint AS ts, (EXTRACT(epoch FROM ei.created_at) * 1000::numeric)::bigint AS created_ts, (EXTRACT(epoch FROM ei.updated_at) * 1000::numeric)::bigint AS updated_ts, NULL::text AS parent_id, NULL::text AS goal_id, ei.assignee AS taken_by, ei.assigned_at AS taken_at, NULL::timestamp with time zone AS expires_at, ei.workspace_id, ei._search, NULL::text AS deprecation_reason, NULL::text[] AS see_also, false AS needs_design, NULL::text AS design_status, NULL::text AS design_spec_id, false AS discarded_design_work, NULL::jsonb AS completion_ref, NULL::bigint AS created_by_github_user_id, NULL::bigint[] AS working_users, NULL::jsonb AS worked_by_history, NULL::text AS wave, NULL::timestamp with time zone AS verified_done_at_remote_ts, NULL::text AS verifier_last_error, NULL::timestamp with time zone AS verifier_last_checked_at, NULL::text AS source_plan_slug, NULL::text[] AS source_plan_item_ids, NULL::integer AS feature_order, ei.author_pubkey, ei.origin, NULL::text AS audit_verdict, NULL::text AS audit_reasons, NULL::timestamp with time zone AS audited_at, COALESCE(ei.kind, 'bug'::text) AS item_kind, ei.payload FROM harness_shared.engineer_issues ei`);
+	assigneeRank: integer("assignee_rank"),
+	rankWriter: text("rank_writer"),
+	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
+}).as(sql`SELECT harness_features_consolidated.harness_slug, harness_features_consolidated.feature_id, harness_features_consolidated.title, harness_features_consolidated.summary, harness_features_consolidated.status, harness_features_consolidated.attempts, harness_features_consolidated.claims, harness_features_consolidated.notes, harness_features_consolidated.metadata, harness_features_consolidated.kind, harness_features_consolidated.project_id, harness_features_consolidated.expected_cost_cents, harness_features_consolidated.tags, harness_features_consolidated.needs_human_review, harness_features_consolidated.ts, harness_features_consolidated.created_ts, harness_features_consolidated.updated_ts, harness_features_consolidated.parent_id, harness_features_consolidated.goal_id, harness_features_consolidated.taken_by, harness_features_consolidated.taken_at, harness_features_consolidated.expires_at, harness_features_consolidated.workspace_id, harness_features_consolidated._search, harness_features_consolidated.deprecation_reason, harness_features_consolidated.see_also, harness_features_consolidated.needs_design, harness_features_consolidated.design_status, harness_features_consolidated.design_spec_id, harness_features_consolidated.discarded_design_work, harness_features_consolidated.completion_ref, harness_features_consolidated.created_by_github_user_id, harness_features_consolidated.working_users, harness_features_consolidated.worked_by_history, harness_features_consolidated.wave, harness_features_consolidated.verified_done_at_remote_ts, harness_features_consolidated.verifier_last_error, harness_features_consolidated.verifier_last_checked_at, harness_features_consolidated.source_plan_slug, harness_features_consolidated.source_plan_item_ids, harness_features_consolidated.feature_order, harness_features_consolidated.author_pubkey, harness_features_consolidated.origin, harness_features_consolidated.audit_verdict, harness_features_consolidated.audit_reasons, harness_features_consolidated.audited_at, harness_features_consolidated.item_kind, harness_features_consolidated.payload, harness_features_consolidated.assignee_rank, harness_features_consolidated.rank_writer, harness_features_consolidated.rank_updated_at FROM harness_shared.harness_features_consolidated UNION ALL SELECT CASE WHEN ei.scope ~~ 'harness:%'::text THEN substr(ei.scope, 9) ELSE NULL::text END AS harness_slug, ei.issue_id AS feature_id, ei.title, ei.body AS summary, ei.state AS status, NULL::bigint AS attempts, NULL::text AS claims, NULL::text AS notes, NULL::jsonb AS metadata, NULL::text AS kind, NULL::text AS project_id, NULL::bigint AS expected_cost_cents, NULL::jsonb AS tags, false AS needs_human_review, (EXTRACT(epoch FROM ei.updated_at) * 1000::numeric)::bigint AS ts, (EXTRACT(epoch FROM ei.created_at) * 1000::numeric)::bigint AS created_ts, (EXTRACT(epoch FROM ei.updated_at) * 1000::numeric)::bigint AS updated_ts, NULL::text AS parent_id, NULL::text AS goal_id, ei.assignee AS taken_by, ei.assigned_at AS taken_at, NULL::timestamp with time zone AS expires_at, ei.workspace_id, ei._search, NULL::text AS deprecation_reason, NULL::text[] AS see_also, false AS needs_design, NULL::text AS design_status, NULL::text AS design_spec_id, false AS discarded_design_work, NULL::jsonb AS completion_ref, NULL::bigint AS created_by_github_user_id, NULL::bigint[] AS working_users, NULL::jsonb AS worked_by_history, NULL::text AS wave, NULL::timestamp with time zone AS verified_done_at_remote_ts, NULL::text AS verifier_last_error, NULL::timestamp with time zone AS verifier_last_checked_at, NULL::text AS source_plan_slug, NULL::text[] AS source_plan_item_ids, NULL::integer AS feature_order, ei.author_pubkey, ei.origin, NULL::text AS audit_verdict, NULL::text AS audit_reasons, NULL::timestamp with time zone AS audited_at, COALESCE(ei.kind, 'bug'::text) AS item_kind, ei.payload, ei.assignee_rank, ei.rank_writer, ei.rank_updated_at FROM harness_shared.engineer_issues ei`);
 
 export const fleetAssignmentInHarnessShared = harnessShared.view("fleet_assignment", {	source: text(),
 	workspaceId: text("workspace_id"),

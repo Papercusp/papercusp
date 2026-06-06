@@ -134,6 +134,61 @@ test('buildPrompt — non-curator gets memory + memory-discipline footer', () =>
   }
 });
 
+// ── self-learning-central P-001/A: friction trip-wire in the shared bee base ──
+
+test('buildPrompt — non-curator bee gets the friction trip-wire (self-learning P-001/A)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+    });
+    assert.match(out, /## Friction trip-wire \(self-learning loop\)/);
+    assert.match(out, /improvements:capture/);
+    // Trip-wire, not a per-turn reflection pass.
+    assert.match(out, /don't reflect every turn/i);
+    // The default (harness-free) base must NOT name harness-pipeline roles.
+    const idx = out.indexOf('## Friction trip-wire');
+    const section = out.slice(idx);
+    assert.doesNotMatch(section.split('\n---')[0], /validator|reviewer/i);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — curator does NOT get the friction trip-wire (no work output)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'curator.md'), '# CURATOR');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'curator',
+      promptFile: join(fx.harnessDir, 'curator.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+    });
+    assert.doesNotMatch(out, /Friction trip-wire/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 test('buildPrompt — identity file injected when present and non-empty', () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');

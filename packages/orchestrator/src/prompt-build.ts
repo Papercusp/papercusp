@@ -200,6 +200,34 @@ export interface BuildPromptInput {
   featureOrigin?: 'local' | 'remote' | string | null;
 }
 
+/**
+ * The friction TRIP-WIRE for the SHARED bee base (self-learning-central P-001/A,
+ * D-006). Emitted into `buildPrompt` for every spawned bee — the same shared
+ * base that already carries the "Memory discipline" clause — so every
+ * operator-launched agent inherits it regardless of role. Near-zero cost on a
+ * no-friction turn: the model reads it, sees nothing matching, moves on. It is a
+ * trip-wire, NOT a per-turn reflection pass (the reflection STEP fires once at the
+ * work-item-completion boundary, off `work_items:complete`).
+ *
+ * This is the SINGLE source of the one-liner: operator-core's
+ * `renderFrictionTripwire()` (the operator-brain base) re-exports THIS constant so
+ * the brain + the bee base can't desync. (operator-core depends on
+ * @papercusp/orchestrator, not the reverse, so the constant lives here to avoid a
+ * cycle.) Markers are summarised inline; the full universal-vs-pipeline split +
+ * the completion-boundary reflect step live in operator-core's friction-markers.ts.
+ */
+export const FRICTION_TRIPWIRE = [
+  '## Friction trip-wire (self-learning loop)',
+  '',
+  'If you just hit friction worth fixing — a workaround, a misleading doc, an',
+  'awkward tool, a retry / repeated tool-error, or a >3-attempt confusing',
+  'failure — file it once via `improvements:capture { kind, title }` and move on.',
+  'Bar: capture only a GENUINE, REPEATABLE improvement (one the next agent would',
+  "hit too), not a one-off or a self-inflicted slip. Don't reflect every turn;",
+  'just trip on real friction. (The watchdog already covers objective signals —',
+  'test/health/tool failures — so you only file what it cannot see: what you felt.)',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -300,6 +328,16 @@ export function buildPrompt(input: BuildPromptInput): string {
     out.push(`  \`[<ISO-8601-timestamp>] ${input.role} <feature_id-or-dash>: <one-line observation>\``);
     out.push('  Do not dump logs. Do not duplicate existing lines. Skip silently if you');
     out.push('  have nothing generalizable to add.');
+  }
+
+  // 5b. Friction trip-wire (self-learning-central P-001/A, D-006) — the SUBJECTIVE
+  //     sibling of the watchdog, in the SHARED bee base every role inherits. A
+  //     near-zero one-liner: trip on real friction, file it via improvements:capture,
+  //     do NOT reflect every turn. Curator (no work output) skips it, mirroring the
+  //     memory-discipline gate above.
+  if (input.role !== 'curator') {
+    out.push('\n---');
+    out.push(FRICTION_TRIPWIRE);
   }
 
   // G3: determine whether remote-peer content must be wrapped (P-009).

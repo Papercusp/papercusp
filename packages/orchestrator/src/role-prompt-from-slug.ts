@@ -27,6 +27,13 @@ import { readEffectiveConfig } from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { resolvePromptFile } from './prompt-resolve';
 
+// Re-export the friction trip-wire constant (self-learning-central P-001/A) so the
+// operator-brain prompt base (operator-core's renderFrictionTripwire) can reuse the
+// SAME string the spawned-bee base emits — the two bases can't desync. Owned by
+// prompt-build.ts (where it's injected into buildPrompt); surfaced on this
+// already-exported entry so operator-core can import it without a new subpath.
+export { FRICTION_TRIPWIRE } from './prompt-build';
+
 export type RolePromptMode = 'autonomous' | 'chat' | 'discuss';
 
 export interface AssembleRolePromptOptions {
