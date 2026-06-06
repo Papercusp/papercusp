@@ -258,9 +258,11 @@ export function useChunkLoop(cfg: HarnessConfig): boolean {
  * `parallelWorkers.workingStateCheck` — the L1 typecheck command the
  * worker chunk loop runs after each chunk's edits. Defaults to
  * `pnpm typecheck` because that's what the papercup-shaped repo
- * targets. Other repos (Python, Rust, Go) override this in their
- * harness's config.json. Empty string disables the gate (workers
- * commit without a check; not recommended).
+ * targets. Other repos (Python, Rust, Go) override this via the blueprint knob
+ * `parallelWorkers.workingStateCheck` or a per-install PG configOverride
+ * (delivered via the HARNESS_CONFIG_JSON env-transport —
+ * deprecate-harness-config-json-2026-06-06). Empty string disables the gate
+ * (workers commit without a check; not recommended).
  */
 export function workingStateCheckCommand(cfg: HarnessConfig): string {
   const v = configGet<string>(cfg, 'parallelWorkers.workingStateCheck', 'pnpm typecheck');
