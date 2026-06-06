@@ -83,10 +83,6 @@ export type { DecisionVerb, ParsedDecision, ParsedSpineDecision } from './decisi
 // Re-exported here for convenience; the subpath `@papercusp/orchestrator/blueprint`
 // is the canonical import for blueprint-only consumers (the init CLI, the loader).
 export * from './blueprint/index.js';
-export { checkpointGate } from './checkpoints';
-export type { CheckpointAction } from './checkpoints';
-export { runMainLoop } from './main-loop';
-export type { MainLoopOptions, MainLoopExit } from './main-loop';
 export {
   branchIsoEnabled,
   worktreeEnabled,
@@ -103,25 +99,10 @@ export { git, branchExists, hasStagedChanges } from './git';
 export type { GitResult, GitOptions } from './git';
 export { runHook } from './hooks';
 export type { RunHookOptions, RunHookResult } from './hooks';
-export {
-  extractActionsBlock,
-  parseActionsJson,
-  processActionsBlock,
-} from './actions-block';
-export type {
-  ProcessActionsOptions,
-  ProcessActionsResult,
-} from './actions-block';
 export { evaluateCostCap, extractRunUsage, sumJsonlCost } from './cost-cap';
 export type { CostCapResult, RunUsage } from './cost-cap';
 export { postCuratorOutputs, postArchiveEvent } from './bus-posts';
 export { ROLE_MODEL_DEFAULTS, roleModelDefault } from './role-models';
-export { pruneLogs } from './prune-logs';
-export type { PruneResult } from './prune-logs';
-export { snapshotState } from './snapshot-state';
-export type { SnapshotResult } from './snapshot-state';
-export { runPreLoop } from './pre-loop';
-export type { PreLoopResult } from './pre-loop';
 export {
   firePluginHook,
   findFireHookCli,

@@ -42,21 +42,6 @@
       "import": "./src/blueprint/index.ts",
       "default": "./src/blueprint/index.ts"
     },
-    "./mission-state-pg": {
-      "types": "./src/mission-state-pg.ts",
-      "import": "./src/mission-state-pg.ts",
-      "default": "./src/mission-state-pg.ts"
-    },
-    "./dispatches-pg": {
-      "types": "./src/dispatches-pg.ts",
-      "import": "./src/dispatches-pg.ts",
-      "default": "./src/dispatches-pg.ts"
-    },
-    "./checkpoints-pg": {
-      "types": "./src/checkpoints-pg.ts",
-      "import": "./src/checkpoints-pg.ts",
-      "default": "./src/checkpoints-pg.ts"
-    },
     "./run-output-pg": {
       "types": "./src/run-output-pg.ts",
       "import": "./src/run-output-pg.ts",
@@ -67,22 +52,13 @@
       "import": "./src/run-chunks-pg.ts",
       "default": "./src/run-chunks-pg.ts"
     },
-    "./snapshots-pg": {
-      "types": "./src/snapshots-pg.ts",
-      "import": "./src/snapshots-pg.ts",
-      "default": "./src/snapshots-pg.ts"
-    },
     "./package.json": "./package.json"
   },
-  "bin": {
-    "papercusp-orchestrate": "./bin/run.ts"
-  },
   "scripts": {
-    "test": "vitest run && vitest run --config vitest.dispatcher.config.ts",
+    "test": "vitest run",
     "test:unit": "vitest run",
     "test:legacy": "node --test --import tsx src/**/*.test.ts",
-    "test:slow": "vitest run --config vitest.slow.config.ts --testTimeout 600000",
-    "test:dispatcher": "vitest run --config vitest.dispatcher.config.ts"
+    "test:slow": "vitest run --config vitest.slow.config.ts --testTimeout 600000"
   },
   "dependencies": {
     "@papercusp/file-claim": "*",
