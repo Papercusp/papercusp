@@ -49,6 +49,17 @@ export interface SpawnMcpConfigInput {
   chunkId?: string | null;
   /** Parent spawn ID, set when this spawn was created by another agent's `orchestrator.spawn` call. */
   parentSpawnId?: string | null;
+  /**
+   * Stable coordination owner id for the spawn (THE UMBILICAL voice-gap fix).
+   * Baked as the signed URL's `client=` param so the operator's
+   * resolveAgentIdentity() attributes the child's coord:* / plans:* / improvements:*
+   * writes to a STABLE id (the operator's durable `s-…` spawnId) instead of throwing
+   * "no attributable identity". Distinct from `spawnId` (which the legacy path
+   * regenerated per boot); when set this is the operator-assigned spawned_agents
+   * owner, so a bee's messages, file locks, and fleet:cancel target all line up.
+   * Optional — pipeline roles (worker/scoper/…) that never coord can omit it.
+   */
+  clientId?: string | null;
 }
 
 // Default port flips on NODE_ENV: dev operator runs on :3055, prod on :3070.
@@ -73,6 +84,8 @@ export function buildSpawnMcpConfig(input: SpawnMcpConfigInput): {
   if (input.featureId) params.set('feature', input.featureId);
   if (input.chunkId) params.set('chunk', input.chunkId);
   if (input.parentSpawnId) params.set('parent_spawn', input.parentSpawnId);
+  // Stable coord owner id (operator's `s-…` spawnId). See buildSpawnUrlParams.
+  if (input.clientId) params.set('client', input.clientId);
   return {
     mcpServers: {
       papercusp: {
@@ -449,6 +462,11 @@ function buildSpawnUrlParams(input: SpawnMcpConfigInput): URLSearchParams {
   if (input.featureId) params.set('feature', input.featureId);
   if (input.chunkId) params.set('chunk', input.chunkId);
   if (input.parentSpawnId) params.set('parent_spawn', input.parentSpawnId);
+  // THE UMBILICAL: the stable coord owner id (operator's `s-…` spawnId). It's in the
+  // signed-param allowlist (`client`), so it's part of the HMAC — the operator
+  // verifies it before trusting it as the child's coord identity. parseRequestContext
+  // reads it into ctx.uiClientId, which resolveAgentIdentity attributes coord writes to.
+  if (input.clientId) params.set('client', input.clientId);
   return params;
 }
 

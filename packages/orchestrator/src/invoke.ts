@@ -2145,9 +2145,20 @@ export async function invoke(
     let codexHomeHandle: SpawnCodexHomeHandle | null = null;
     if (ctx.workspaceId) {
       try {
-        const spawnId = randomUUID();
+        // THE UMBILICAL (voice-gap fix): prefer the operator's durable `s-…` spawnId
+        // (threaded in via PAPERCUSP_SPAWN_ID by fleet/operator-spawn) over a fresh
+        // random UUID. It's the SAME id recorded as the spawned_agents row's
+        // sessionOwner, so baking it as the MCP URL's stable `client=` lets the
+        // operator attribute this child's coord:* / plans:* / improvements:* writes to
+        // a real coord owner instead of throwing "no attributable identity" (which
+        // made every fleet:spawn bee MUTE). The id stays fixed across the child's
+        // tool calls, so it's a valid coord/lock owner (unlike the per-call runId).
+        const stableSpawnId = (process.env.PAPERCUSP_SPAWN_ID ?? '').trim();
+        const spawnId = stableSpawnId || randomUUID();
         const slug = harnessSlugFromProjectDir(ctx.projectDir);
         const chunkId = extractChunkId(extras);
+        const parentSpawnId =
+          options.parentSpawnId ?? (process.env.PAPERCUSP_PARENT_SPAWN_ID || '').trim() || null;
         const signedInput = {
           harnessSlug: slug,
           workspaceId: ctx.workspaceId,
@@ -2156,7 +2167,11 @@ export async function invoke(
           spawnId,
           featureId: featureId || null,
           chunkId,
-          parentSpawnId: options.parentSpawnId ?? null,
+          parentSpawnId,
+          // The stable coord owner id baked as `client=`. Only when we actually have a
+          // durable operator-assigned spawnId — a bare random UUID would not be a real
+          // coord owner, so omit it there (the legacy pipeline-role path is unchanged).
+          clientId: stableSpawnId || null,
         };
         // codex: no `.mcp.json` discovery — its MCP servers live in
         // $CODEX_HOME/config.toml. Mint a per-spawn CODEX_HOME with the
