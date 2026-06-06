@@ -23,20 +23,21 @@ extends: base
 kind: hive
 version: 0.1.0
 description: >-
-  The Pot operator — the user's single judgment surface over the fleet. Wakes on
-  its own self-declared schedule (or an event it subscribed to), surveys the
-  blackboard, creates/supervises harnesses from blueprints, curates what the
-  user sees, and declares its next wake before sleeping.
+  The Pot/Hive operator — the Queen in charge of the bee fleet. Wakes on its
+  own self-declared schedule (or an event it subscribed to), surveys the work
+  frontier and bee slots, places ranked tasks onto bees (free slot / graceful-evict+fresh /
+  warm-inject), attaches situational briefs, and declares its next wake. Two roles:
+  the `operator` (legacy, for direct user invocation) and the `queen` (specialized
+  for placement and automation).
 
 workItem:
   kind: pot-wake
   idPrefix: POT
 
-# The decider is the OPERATOR role itself (D-001: the pot IS the operator) —
-# it passes the existing role gates (COORD_ROLES/ALL_ROLES) and carries the
-# provisioned operator principal's capabilities; the pot-scoped prompt at
-# blueprints/pot/prompts/operator.md overrides the chat persona for headless
-# wakes (BLUEPRINT_ID prompt scoping).
+# The decider can be EITHER the operator (for traditional decision-tree wakes) OR the
+# queen (for placement automation). Use spine.decider: 'queen' to specialize the pot
+# for bee placement (local-hive P-030). Both pass the existing role gates and carry
+# the provisioned operator principal's capabilities.
 spine:
   decider: operator
   maxTurns: 50
@@ -56,6 +57,13 @@ roles:
       The operator in charge: survey the fleet, decide what matters, create or
       supervise harnesses from blueprints, surface curated reports, and declare
       the next wake before ending the turn.
+  - id: queen
+    description: >-
+      The Queen — specialized placement decider for the hive. Surveys the work
+      frontier and bee load, ranks tasks, picks a placement for each (free slot /
+      graceful-evict+fresh / warm-inject), attaches situational briefs, and
+      declares the next wake. Proposes placement; bees dispose (own their actual
+      sequencing). (local-hive P-030/P-031/P-032)
 
 knobs:
   harnessKind: pot
@@ -66,10 +74,11 @@ knobs:
 # subscriptions; pot:wake is the manual fire). A cadence here would reintroduce
 # the timer loop D-002 removes.
 
-# Dependencies (official-blueprints-cupboard-publish D-002): derived from the
-# blueprint-local operator persona (scripts/derive-blueprint-deps.mjs) — the
-# blackboard survey surface, the harness create/supervise verbs, and the
-# self-declared wake pair.
+# Dependencies (official-blueprints-cupboard-publish D-002): the operator-level
+# blackboard survey surface, harness create/supervise, placement tools (Queen role),
+# and self-declared wake. Queen-specific tools: fleet:assignments (bee load/lists),
+# work_items:reorder (rank management), coord:send with wake (warm-inject),
+# fleet:spawn (free-slot placement).
 dependencies:
   tools:
     - activity:recent
@@ -80,8 +89,10 @@ dependencies:
     - chat:ask_choice
     - coord:inbox
     - coord:presence
+    - coord:send
     - curation:feed
     - fleet:assignments
+    - fleet:spawn
     - harness:create
     - harness:escalation
     - harness:get
@@ -98,4 +109,5 @@ dependencies:
     - search:fulltext
     - search:semantic
     - work_items:list
+    - work_items:reorder
   plugins: []

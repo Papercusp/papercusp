@@ -77,6 +77,14 @@ export interface AssembleRolePromptOptions {
    */
   planContext?: string;
   /**
+   * Queen-authored brief for a bee: the situational overlay the bee is
+   * MISSING (cross-bee context, watch-fors, why-this-priority, what-other-bees-are-doing),
+   * NOT a restatement of the work-item. Passed by the Queen at placement time
+   * (fresh spawn via prompt, or warm-inject via coord message).
+   * P-060/061: the brief is the Queen's value-add. Empty string / undefined disables.
+   */
+  brief?: string;
+  /**
    * Project context to inject. Provided by the caller (which has DB access).
    * If non-empty, gets appended as a `## Project context (curated by Project
    * Manager)` section after `buildPrompt`'s output. Caller decides whether
@@ -219,6 +227,7 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
     runId,
     extras,
     planContext: opts.planContext,
+    brief: opts.brief,
   });
 
   // Project-context injection. Curated by the Project Manager role; appended

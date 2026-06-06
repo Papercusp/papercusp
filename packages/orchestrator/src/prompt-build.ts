@@ -161,6 +161,17 @@ export interface BuildPromptInput {
    */
   planContext?: string;
   /**
+   * Queen-authored situational overlay for a bee: the context the bee is
+   * MISSING (cross-cutting state, watch-fors, why-this-priority,
+   * what-other-bees-are-doing), NOT a restatement of the work-item.
+   * Passed by the Queen at placement time (fresh spawn via prompt, or
+   * warm-inject via coord message). Placed as a distinct section
+   * after runtime context, before feature history.
+   *
+   * Empty string / undefined disables.
+   */
+  brief?: string;
+  /**
    * Cross-tool playbook for the role — content of
    * `apps/operator/prompts/<role>.tools.md` if it exists. Captures
    * named workflows + cross-tool patterns + chaining rules that span
@@ -343,6 +354,16 @@ export function buildPrompt(input: BuildPromptInput): string {
   // G3: determine whether remote-peer content must be wrapped (P-009).
   // feature-level origin is the available provenance signal from G1.
   const isRemote = input.featureOrigin === 'remote';
+
+  // 5c. Queen brief — the situational overlay the bee is missing.
+  //     Distinct section after runtime context, before feature history.
+  //     P-060: the Queen's value-add (cross-bee context, watch-fors,
+  //     why-this-priority), not a restatement of the work-item.
+  if (input.brief && input.brief.trim()) {
+    out.push('\n---');
+    out.push('## Queen brief\n');
+    out.push(input.brief);
+  }
 
   // 6. Plan context — origin plan's ## Now + last 3 decisions for
   //    plan-derived features. More static than featureHistory so placed
