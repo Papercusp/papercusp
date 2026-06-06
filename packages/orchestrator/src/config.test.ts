@@ -1,37 +1,10 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { readConfig, configGet, resolvePhase } from './config.js';
+import { configGet, resolvePhase } from './config.js';
 
-function withTempStateDir(cfg: object | null): string {
-  const dir = mkdtempSync(join(tmpdir(), 'papercusp-orch-config-'));
-  if (cfg !== null) {
-    writeFileSync(join(dir, 'config.json'), JSON.stringify(cfg));
-  }
-  return dir;
-}
-
-test('readConfig — missing file returns {}', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'papercusp-orch-config-empty-'));
-  try {
-    assert.deepEqual(readConfig(dir), {});
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('readConfig — malformed JSON returns {}', () => {
-  const dir = withTempStateDir(null);
-  writeFileSync(join(dir, 'config.json'), '{not json}');
-  try {
-    assert.deepEqual(readConfig(dir), {});
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+// readConfig() was removed (deprecate-harness-config-json-2026-06-06): .papercusp/
+// config.json is no longer a runtime config source. configGet/resolvePhase operate
+// on the in-memory effective config (blueprint ⊕ workspace-PG instance) instead.
 
 test('configGet — top-level path with default fallback', () => {
   const cfg = { phase: 'staging' };

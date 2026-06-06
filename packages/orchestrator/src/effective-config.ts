@@ -1,20 +1,17 @@
 /**
  * The EFFECTIVE harness config — blueprint knobs (shape defaults) overlaid UNDER
- * the per-install `.papercusp/config.json` (instance overrides win).
+ * the per-install INSTANCE config (instance overrides win). The instance layer is
+ * delivered SOLELY via the `HARNESS_CONFIG_JSON` env-transport (the operator
+ * assembles it from the workspace-PG store); `.papercusp/config.json` is NOT read
+ * (`deprecate-harness-config-json-2026-06-06` — the file is deprecated to zero).
  *
- * `cloud-deployment-layer-2026-06-06` P-006: completes the config.json →
- * blueprint-knobs migration for the residual fields (`promptOverrides`,
- * `aiBackend`, `parallelWorkers`, `scoper`, `snapshotRetention`). Those fields now
- * have a declared home in the blueprint (KnobsSchema), while config.json keeps its
- * instance-override precedence — the same precedence the already-migrated fields
- * (maxCostUsd, debuggerThreshold, dispatch.concurrency) use.
- *
- * IMPORTANT — zero behavior change for existing harnesses: the overlay carries
- * ONLY the residual-knob keys, and a blueprint that declares none of them
- * produces an EMPTY overlay, so `readEffectiveConfig(dir) === readConfig(dir)`.
- * The already-migrated knobs keep their own ad-hoc resolution (resolveDispatchPolicy
- * / the debuggerThreshold fallback) and are deliberately NOT in this overlay, so
- * this change can't double-apply or disturb them.
+ * The overlay carries ONLY the residual-knob keys (`promptOverrides`, `aiBackend`,
+ * `parallelWorkers`, `scoper`, `snapshotRetention`); a blueprint that declares none
+ * of them produces an EMPTY overlay (so the effective config equals the bare
+ * instance layer). The already-migrated knobs (maxCostUsd, debuggerThreshold,
+ * dispatch.concurrency) keep their own ad-hoc resolution (resolveDispatchPolicy /
+ * the debuggerThreshold fallback) and are deliberately NOT in this overlay, so this
+ * can't double-apply or disturb them.
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -108,10 +105,10 @@ export function readInstanceConfig(): HarnessConfig {
 }
 
 /**
- * The EFFECTIVE config: the instance layer (env-transport / config.json) over the
- * blueprint-knob overlay. Drop-in replacement for `readConfig` at the
- * orchestrator's run-config load boundary, so every `configGet(cfg, …)` read
- * resolves instance-then-blueprint without touching the read sites.
+ * The EFFECTIVE config: the instance layer (HARNESS_CONFIG_JSON env-transport) over
+ * the blueprint-knob overlay. The orchestrator's run-config load boundary, so every
+ * `configGet(cfg, …)` read resolves instance-then-blueprint without touching the
+ * read sites. (`.papercusp/config.json` is never consulted — deprecated to zero.)
  */
 export function readEffectiveConfig(stateDir: string): HarnessConfig {
   const cfg = readInstanceConfig();

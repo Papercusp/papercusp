@@ -1,29 +1,15 @@
 /**
- * `.papercusp/config.json` reader. Replaces bash's
+ * In-memory harness-config helpers (dotted lookup + phase resolution). Replaces
+ * bash's `config_get 'product.enabled' 'false'` with `configGet(cfg, 'product.enabled', false)`.
  *
- *     config_get 'product.enabled' 'false'
- *
- * with
- *
- *     configGet(cfg, 'product.enabled', false)
- *
- * Same dotted-path semantics, same default-on-missing behavior, same
- * coercion-light approach (caller decides string vs number vs bool).
+ * NOTE: `.papercusp/config.json` is DEPRECATED as a runtime config source
+ * (`deprecate-harness-config-json-2026-06-06`). The effective config is assembled
+ * from the `coding` blueprint + the workspace-PG instance store and delivered to
+ * the orchestrator via the `HARNESS_CONFIG_JSON` env-transport (see
+ * `effective-config.ts`). These helpers operate on that in-memory config object —
+ * nothing here reads a file.
  */
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { HarnessConfig } from './types';
-
-/** Read .papercusp/config.json from a project state dir. Returns {} if absent. */
-export function readConfig(stateDir: string): HarnessConfig {
-  const path = join(stateDir, 'config.json');
-  if (!existsSync(path)) return {};
-  try {
-    return JSON.parse(readFileSync(path, 'utf8')) as HarnessConfig;
-  } catch {
-    return {};
-  }
-}
 
 /**
  * Look up a dotted-path value in a config object, returning `defaultValue`

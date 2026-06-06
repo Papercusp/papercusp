@@ -28,7 +28,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
-import { configGet, readConfig } from './config';
+import { configGet } from './config';
 import { readEffectiveConfig } from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
@@ -47,7 +47,7 @@ import {
   type SpawnClaudeConfigHandle,
 } from './spawn-mcp';
 import { createHash, randomUUID } from 'node:crypto';
-import type { AgentBackend, InvokeResult } from './types';
+import type { AgentBackend, HarnessConfig, InvokeResult } from './types';
 import { resolveAgentBackend, normalizeModelForBackend } from './env';
 import { ROLE_MODEL_DEFAULTS } from './role-models';
 import { workspaceHomeDir } from './workspace';
@@ -152,7 +152,7 @@ export function splitCommand(cmd: string): string[] {
 
 /** Read promptOverrides.<role> from config.json. Mirrors the python helper. */
 export function resolvePromptOverride(
-  cfg: ReturnType<typeof readConfig>,
+  cfg: HarnessConfig,
   stateDir: string,
   role: string,
 ): string {
@@ -192,7 +192,7 @@ export function resolvePromptOverride(
  * try/catch makes a store problem inert, never a spawn-breaker.
  */
 export async function resolvePromptOverrideWithStore(
-  cfg: ReturnType<typeof readConfig>,
+  cfg: HarnessConfig,
   stateDir: string,
   role: string,
   opts: { pg?: OrchestratorPg; workspaceId?: string; harnessSlug?: string },
@@ -270,7 +270,7 @@ export function stripFrontmatter(raw: string): string {
 }
 
 /** Per-role timeout from config.json (in seconds). 0 = no timeout. */
-export function resolveTimeout(cfg: ReturnType<typeof readConfig>, role: string): number {
+export function resolveTimeout(cfg: HarnessConfig, role: string): number {
   const t = configGet<unknown>(cfg, `timeouts.${role}`, 0);
   if (typeof t === 'number' && t > 0 && Number.isFinite(t)) return Math.floor(t);
   return 0;
@@ -281,7 +281,7 @@ export function resolveTimeout(cfg: ReturnType<typeof readConfig>, role: string)
     /settings/agent page writes), which in turn wins over the committed
     `ROLE_MODEL_DEFAULTS` floor. Empty string = use the agent CLI's
     default. */
-export function resolveModel(cfg: ReturnType<typeof readConfig>, role: string): string {
+export function resolveModel(cfg: HarnessConfig, role: string): string {
   // aiBackend role override wins, then aiBackend default, then legacy models.<role>.
   const fromAiRole = configGet<string>(cfg, `aiBackend.roles.${role}.model`, '');
   if (fromAiRole) return fromAiRole;
@@ -320,7 +320,7 @@ export function resolveModel(cfg: ReturnType<typeof readConfig>, role: string): 
  * config.json. For secrets, use the encrypted-credentials store.
  */
 export function resolveAgentForRole(
-  cfg: ReturnType<typeof readConfig>,
+  cfg: HarnessConfig,
   role: string,
   fallbackCmd: string,
 ): { agentCmd: string; extraArgs: string[] } {

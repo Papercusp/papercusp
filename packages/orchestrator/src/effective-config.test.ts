@@ -68,25 +68,34 @@ describe('blueprintKnobsToConfigOverlay', () => {
   });
 });
 
-describe('readEffectiveConfig (file path)', () => {
+describe('readEffectiveConfig (blueprint ⊕ env instance — config.json deprecated to zero)', () => {
   let dir: string;
   let stateDir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'eff-cfg-'));
-    stateDir = dir; // stateDir IS the .papercusp dir; config.json + blueprint.yaml live here
+    stateDir = dir; // stateDir IS the .papercusp dir; blueprint.yaml lives here
+    delete process.env.HARNESS_CONFIG_JSON;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    delete process.env.HARNESS_CONFIG_JSON;
+  });
 
-  const writeConfig = (cfg: unknown) => writeFileSync(join(stateDir, 'config.json'), JSON.stringify(cfg), 'utf8');
   const writeBlueprint = (yaml: string) => writeFileSync(join(stateDir, 'blueprint.yaml'), yaml, 'utf8');
+  const setInstance = (cfg: unknown) => { process.env.HARNESS_CONFIG_JSON = JSON.stringify(cfg); };
 
-  it('no blueprint.yaml → identity (returns config.json verbatim)', () => {
-    writeConfig({ snapshotRetention: 10, parallelWorkers: { max: 3 } });
-    expect(readEffectiveConfig(stateDir)).toEqual({ snapshotRetention: 10, parallelWorkers: { max: 3 } });
+  it('no blueprint + no instance env → empty', () => {
+    expect(readEffectiveConfig(stateDir)).toEqual({});
   });
 
-  it('blueprint knobs fill where config is silent; config overrides on conflict', () => {
-    writeConfig({ parallelWorkers: { max: 8 } }); // instance override of max only
+  it('an on-disk config.json is IGNORED (deprecated to zero — never read)', () => {
+    writeFileSync(join(stateDir, 'config.json'), JSON.stringify({ maxCostUsd: 12, phase: 'production' }), 'utf8');
+    // No env, no blueprint → empty. The file is deliberately not consulted.
+    expect(readEffectiveConfig(stateDir)).toEqual({});
+  });
+
+  it('blueprint knobs fill where the instance is silent; instance overrides on conflict', () => {
+    setInstance({ parallelWorkers: { max: 8 } }); // instance override of max only
     writeBlueprint(
       [
         'id: test-eff',
@@ -103,16 +112,13 @@ describe('readEffectiveConfig (file path)', () => {
       ].join('\n'),
     );
     const eff = readEffectiveConfig(stateDir);
-    // snapshotRetention only in blueprint → filled:
-    expect(eff.snapshotRetention).toBe(99);
-    // parallelWorkers: config.max (8) wins, blueprint useChunkLoop fills:
-    expect(eff.parallelWorkers).toEqual({ max: 8, useChunkLoop: false });
-    // promptOverrides only in blueprint → filled:
+    expect(eff.snapshotRetention).toBe(99);                                // blueprint-only → filled
+    expect(eff.parallelWorkers).toEqual({ max: 8, useChunkLoop: false });  // instance max wins
     expect((eff as { promptOverrides?: Record<string, string> }).promptOverrides).toEqual({ worker: 'be careful' });
   });
 
-  it('an empty-knobs blueprint → identity (zero behavior change)', () => {
-    writeConfig({ maxCostUsd: 12 });
+  it('an empty-knobs blueprint → the instance verbatim', () => {
+    setInstance({ maxCostUsd: 12 });
     writeBlueprint(
       [
         'id: test-empty',
@@ -128,47 +134,43 @@ describe('readEffectiveConfig (file path)', () => {
   });
 });
 
-describe('readInstanceConfig — env-transport first, file fallback (P-008)', () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'inst-cfg-'));
-    delete process.env.HARNESS_CONFIG_JSON;
-  });
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-    delete process.env.HARNESS_CONFIG_JSON;
-  });
+describe('readInstanceConfig — env-transport ONLY (config.json deprecated to zero)', () => {
+  beforeEach(() => { delete process.env.HARNESS_CONFIG_JSON; });
+  afterEach(() => { delete process.env.HARNESS_CONFIG_JSON; });
 
-  it('reads HARNESS_CONFIG_JSON env when set (a frame has no config.json file)', () => {
+  it('reads HARNESS_CONFIG_JSON env when set', () => {
     process.env.HARNESS_CONFIG_JSON = JSON.stringify({ phase: 'production', maxCostUsd: 5 });
-    expect(readInstanceConfig('/no/such/dir')).toEqual({ phase: 'production', maxCostUsd: 5 });
+    expect(readInstanceConfig()).toEqual({ phase: 'production', maxCostUsd: 5 });
   });
 
-  it('falls back to .papercusp/config.json when the env is absent', () => {
-    writeFileSync(join(dir, 'config.json'), JSON.stringify({ phase: 'staging' }), 'utf8');
-    expect(readInstanceConfig(dir)).toEqual({ phase: 'staging' });
+  it('returns {} when the env is absent (config.json is NOT consulted)', () => {
+    expect(readInstanceConfig()).toEqual({});
   });
 
-  it('a malformed env value falls through to the file (never strands a run)', () => {
+  it('a malformed env value → {} (blueprint defaults apply; never strands a run)', () => {
     process.env.HARNESS_CONFIG_JSON = '{ not valid json';
-    writeFileSync(join(dir, 'config.json'), JSON.stringify({ dept: 'eng' }), 'utf8');
-    expect(readInstanceConfig(dir)).toEqual({ dept: 'eng' });
+    expect(readInstanceConfig()).toEqual({});
   });
 
   it('readEffectiveConfig uses the env instance layer under blueprint knobs', () => {
-    process.env.HARNESS_CONFIG_JSON = JSON.stringify({ parallelWorkers: { max: 9 } });
-    writeFileSync(
-      join(dir, 'blueprint.yaml'),
-      [
-        'id: t',
-        'version: 0.1.0',
-        'workItem: { kind: feature, idPrefix: F }',
-        'spine: { decider: director, edges: { DONE: { to: done } }, default: { to: idle } }',
-        'knobs: { parallelWorkers: { max: 2, useChunkLoop: true } }',
-      ].join('\n'),
-      'utf8',
-    );
-    // env instance (max:9) wins over blueprint knob (max:2); blueprint useChunkLoop fills.
-    expect(readEffectiveConfig(dir).parallelWorkers).toEqual({ max: 9, useChunkLoop: true });
+    const dir = mkdtempSync(join(tmpdir(), 'inst-cfg-'));
+    try {
+      process.env.HARNESS_CONFIG_JSON = JSON.stringify({ parallelWorkers: { max: 9 } });
+      writeFileSync(
+        join(dir, 'blueprint.yaml'),
+        [
+          'id: t',
+          'version: 0.1.0',
+          'workItem: { kind: feature, idPrefix: F }',
+          'spine: { decider: director, edges: { DONE: { to: done } }, default: { to: idle } }',
+          'knobs: { parallelWorkers: { max: 2, useChunkLoop: true } }',
+        ].join('\n'),
+        'utf8',
+      );
+      // env instance (max:9) wins over blueprint knob (max:2); blueprint useChunkLoop fills.
+      expect(readEffectiveConfig(dir).parallelWorkers).toEqual({ max: 9, useChunkLoop: true });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

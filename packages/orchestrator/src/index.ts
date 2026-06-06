@@ -14,7 +14,7 @@
  *
  * When unset / != 1, the bin/run.ts entry point exec's bash run.sh instead.
  */
-export { readConfig, configGet, resolvePhase } from './config';
+export { configGet, resolvePhase } from './config';
 export {
   readEffectiveConfig,
   readInstanceConfig,

@@ -1,8 +1,11 @@
 /**
- * Shared types for the orchestrator. `.papercusp/config.json` is still
- * on-disk; feature records live in PG (`harness_features` table) or
- * the in-memory test store (`state-memory.ts`). FeaturesJson here
- * describes the wire shape used for snapshots and external imports.
+ * Shared types for the orchestrator. `HarnessConfig` is the in-memory EFFECTIVE
+ * harness config (`deprecate-harness-config-json-2026-06-06`): it is assembled from
+ * the `coding` blueprint's knobs ⊕ the workspace-PG instance store and delivered to
+ * the orchestrator via the `HARNESS_CONFIG_JSON` env-transport — it is NO LONGER a
+ * model of an on-disk `.papercusp/config.json` (that file is deprecated to zero for
+ * config). Feature records live in PG (`harness_features`) or the in-memory test
+ * store; FeaturesJson describes the snapshot/import wire shape.
  */
 
 /** Harness phase — which prompt set the orchestrator pulls from. */
@@ -11,7 +14,7 @@ export type HarnessPhase = 'staging' | 'department' | 'production' | string;
 /** Harness kind — coding harness vs parent (org / department). */
 export type HarnessKind = '' | 'coding' | 'org' | 'department';
 
-/** A phase entry in `.papercusp/config.json` `phases`. */
+/** A per-phase entry in the instance config's `phases` map (port / dbPath / …). */
 export interface PhaseConfig {
   port?: number | string;
   dbPath?: string;
@@ -19,7 +22,9 @@ export interface PhaseConfig {
   [k: string]: unknown;
 }
 
-/** Structure of `.papercusp/config.json`. */
+/** The effective in-memory harness config (blueprint knobs ⊕ workspace-PG instance,
+ *  via the HARNESS_CONFIG_JSON env-transport). NOT an on-disk file shape — see the
+ *  module header (`deprecate-harness-config-json-2026-06-06`). */
 export interface HarnessConfig {
   phase?: HarnessPhase;
   harness_kind?: HarnessKind;
