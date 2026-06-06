@@ -836,3 +836,59 @@ test('wrapUntrusted — nonce differs across two calls (not constant)', () => {
   assert.ok(n1 && n2, 'both outputs must have a nonce');
   assert.notStrictEqual(n1, n2, 'nonces must differ across calls');
 });
+
+test('buildPrompt — Queen brief renders as its own section (P-060, the fleet:spawn path)', () => {
+  // THE FLEET:SPAWN PATH. A fleet:spawn bee does NOT go through assembleRolePrompt;
+  // its prompt is built here, in invoke-once → buildPrompt, from process.env.QUEEN_BRIEF
+  // (invoke.ts:8.11). This pins that the brief the Queen attached (extraEnv.QUEEN_BRIEF
+  // → child env → buildPrompt({ brief })) reaches the bee's actual assembled prompt.
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'bee.md'), '# BEE\nDo the placed work.');
+  });
+  try {
+    const brief =
+      'Two bees are fixing schema migrations — watch for collisions on libs/db/sql/. ' +
+      'This connects to bee-2 finishing migration 178. Priority: unblock the staging deploy.';
+    const out = buildPrompt({
+      role: 'bee',
+      promptFile: join(fx.harnessDir, 'bee.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'opspawn-1780-bee',
+      extras: [],
+      brief,
+    });
+    assert.match(out, /## Queen brief/, 'brief must appear as a section heading in the assembled prompt');
+    assert.ok(out.includes(brief), 'the full brief text must appear verbatim in the assembled prompt');
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — no Queen brief section when none supplied (best-effort, empty default)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'bee.md'), '# BEE');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'bee',
+      promptFile: join(fx.harnessDir, 'bee.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'opspawn-1780-bee',
+      extras: [],
+      // brief omitted
+    });
+    assert.doesNotMatch(out, /## Queen brief/, 'no brief section when none supplied');
+  } finally {
+    fx.cleanup();
+  }
+});

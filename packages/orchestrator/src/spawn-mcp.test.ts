@@ -75,6 +75,29 @@ describe('buildSpawnMcpConfig', () => {
     expect(url.searchParams.get('parent_spawn')).toBe('spw_1');
   });
 
+  it('bakes the stable coord owner as `client=` when clientId is set (THE UMBILICAL)', () => {
+    // The voice-gap fix: the operator's durable `s-…` spawnId rides as the signed
+    // URL's `client=` param so resolveAgentIdentity can attribute the bee's coord
+    // writes to it. `client` is in the signed-param allowlist, so it's part of the HMAC.
+    const cfg = buildSpawnMcpConfig({
+      harnessSlug: 'demo', workspaceId: 'ws-1', role: 'bee',
+      runId: 'opspawn-1780', spawnId: 's-1780-deadbeef',
+      clientId: 's-1780-deadbeef',
+    });
+    const url = new URL(cfg.mcpServers.papercusp!.url);
+    expect(url.searchParams.get('client')).toBe('s-1780-deadbeef');
+    expect(url.searchParams.get('role')).toBe('bee');
+  });
+
+  it('omits `client=` when clientId is not set (legacy pipeline-role path unchanged)', () => {
+    const cfg = buildSpawnMcpConfig({
+      harnessSlug: 'sheets', workspaceId: 'default', role: 'worker',
+      runId: 'r', spawnId: 's',
+    });
+    const url = new URL(cfg.mcpServers.papercusp!.url);
+    expect(url.searchParams.has('client')).toBe(false);
+  });
+
   it('honors operatorUrl override', () => {
     const cfg = buildSpawnMcpConfig({
       operatorUrl: 'http://op.example:9999/sse',

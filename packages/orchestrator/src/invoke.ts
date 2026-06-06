@@ -2158,7 +2158,7 @@ export async function invoke(
         const slug = harnessSlugFromProjectDir(ctx.projectDir);
         const chunkId = extractChunkId(extras);
         const parentSpawnId =
-          options.parentSpawnId ?? (process.env.PAPERCUSP_PARENT_SPAWN_ID || '').trim() || null;
+          options.parentSpawnId ?? ((process.env.PAPERCUSP_PARENT_SPAWN_ID || '').trim() || null);
         const signedInput = {
           harnessSlug: slug,
           workspaceId: ctx.workspaceId,
