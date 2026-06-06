@@ -23,6 +23,13 @@ colocated `*.test.ts`), plus the legacy-loop dispatcher tests
 `handle-next-validator.dispatcher.test.ts`.
 `bin/`: `run.ts` (the `papercusp-orchestrate` entry). Root: `vitest.dispatcher.config.ts`.
 
+`src/` (Phase-3 second sweep): `git.ts`, `branch-iso.ts` (+ `branch-iso.test.ts`) —
+they became 0-importer once the cluster above moved (only the cluster imported them).
+The live DBOS + chunk-loop worker does its own per-chunk file-lock isolation, not
+branch-iso worktrees (`dbos-retire-legacy-orchestrator` D-009/D-012), so branch-iso is
+dead under the live path. Their barrel re-exports (`branchIso*` / `worktree*` +
+`git` / `branchExists` / `hasStagedChanges`) were pruned from `src/index.ts` too.
+
 Four **superproject-side** integration tests that exercised the moved PG modules were
 retired in the same pass to the **superproject** tree at
 `_retired/orchestrator-run-loop/apps-operator-test/` (they could not move into the
