@@ -60,3 +60,37 @@ export function resolveChildBlueprint(
   }
   return bound;
 }
+
+/**
+ * The NO-NEST GUARD (local-hive D-009 / swarm-coordination D-018 enforcement A).
+ *
+ * A `kind:'hive'` blueprint (the Queen — `pot`) is launchable ONLY as a ROOT, by
+ * the deployment/machine bootstrap (for the pot: the parentless
+ * `system:blueprint-run` routine). It must NEVER be instantiated with a parent —
+ * a sub-hive is a sub-Queen, another expensive slow brain competing for the same
+ * rate-limit pool, and a nested hive breaks the flat-peer budget-federation
+ * invariant the model depends on (D-017). General harnesses (`kind:'harness'`)
+ * recurse freely; only `'hive'` is gated.
+ *
+ * Enforced in CODE, not convention (D-018: convention can't protect an
+ * architectural invariant) at every admission point that has a parent context —
+ * `fireLaunchBlueprint` (launch admission) and the `resolveChildBlueprint`
+ * recursion path. Fails LOUD: a stray child-hive launch must stop here, not
+ * silently corrupt the budget math.
+ *
+ * `hasParent` is true when a parent/initiator context exists (a spawning agent,
+ * a parent spawn id, a recursion parent). A root launch passes `false`.
+ */
+export function assertNotNestedHive(
+  bp: { id: string; kind?: 'hive' | 'harness' },
+  hasParent: boolean,
+): void {
+  if (hasParent && bp.kind === 'hive') {
+    throw new Error(
+      `blueprint "${bp.id}" is kind:'hive' and cannot be nested — hives are peers, ` +
+        `launchable only as a root (the deployment/bootstrap path). Launch pipelines ` +
+        `or harnesses as children instead (kind:'harness'), or — if a subproject ` +
+        `genuinely needs independent orchestration — a PEER hive via the federation.`,
+    );
+  }
+}

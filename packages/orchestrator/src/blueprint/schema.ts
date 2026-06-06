@@ -522,6 +522,18 @@ export const BlueprintSchema = z.object({
   id: z.string().min(1),
   /** Parent blueprint id(s); resolved local → installed → built-in. */
   extends: z.union([z.string(), z.array(z.string())]).optional(),
+  /**
+   * The privileged-blueprint discriminator (swarm-coordination D-018 / local-hive
+   * D-009). `'harness'` (the default — every existing blueprint, no field needed)
+   * is a general harness: a pipeline/research/gym/launch blueprint that recurses
+   * freely (a bee spins one up for structured work). `'hive'` is the privileged
+   * Queen blueprint (the `pot`): launchable ONLY as a ROOT, never with a parent —
+   * hives are flat PEERS, never nested (the no-nest guard, `assertNotNestedHive`,
+   * enforces this in code so a stray child-hive launch can't break the flat-peer
+   * budget-federation invariant). Additive + optional-with-default, so every
+   * pre-existing blueprint parses unchanged as a `'harness'`.
+   */
+  kind: z.enum(['hive', 'harness']).default('harness'),
   version: z.string().default('0.1.0'),
   description: z.string().optional(),
   workItem: WorkItemSchema,
@@ -560,6 +572,8 @@ export const BlueprintHeaderSchema = z.looseObject({
 });
 
 export type Blueprint = z.infer<typeof BlueprintSchema>;
+/** The privileged-blueprint kind (`'hive' | 'harness'`, default `'harness'`). */
+export type BlueprintKind = z.infer<typeof BlueprintSchema.shape.kind>;
 export type BlueprintSpine = z.infer<typeof SpineSchema>;
 export type SpineAction = z.infer<typeof SpineActionSchema>;
 export type CoordOpStep = z.infer<typeof CoordOpStepSchema>;

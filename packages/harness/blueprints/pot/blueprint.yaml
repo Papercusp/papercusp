@@ -16,6 +16,11 @@
 # own blueprint's `dispatch:`/`triggers:`, not a pot-side flag (D-009).
 id: pot
 extends: base
+# The Pot IS the hive's blueprint — the privileged kind:'hive' Queen (local-hive
+# D-001 / D-009, swarm D-018). Launchable ONLY as a ROOT (the parentless
+# system:blueprint-run / pot:wake path); the no-nest guard rejects any parented
+# instantiation. Every other built-in blueprint defaults to kind:'harness'.
+kind: hive
 version: 0.1.0
 description: >-
   The Pot operator — the user's single judgment surface over the fleet. Wakes on

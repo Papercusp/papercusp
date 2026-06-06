@@ -6,7 +6,12 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { resolveChildBlueprint, isChildBlueprintParam, CHILD_BLUEPRINT_PARAM_RE } from './resolve-child.js';
+import {
+  resolveChildBlueprint,
+  isChildBlueprintParam,
+  CHILD_BLUEPRINT_PARAM_RE,
+  assertNotNestedHive,
+} from './resolve-child.js';
 import { loadBuiltinBlueprint } from './loader.js';
 
 test('omitted childBlueprint resolves to self (the documented default)', () => {
