@@ -80,6 +80,29 @@ Touch the relevant `docs/guides/<topic>.md` or create one. Scope discipline:
 only update the section that describes the surface you changed. Do not
 rewrite whole guides.
 
+### 4. Record provenance (required — drift anchor)
+
+Immediately after writing each generated doc, call the MCP tool
+`harness_docs:record` so the doc is drift-tracked: it stamps the doc as
+generated from the current commit and remembers **what code it documents**, so
+the freshness sweep can flag it the moment that code moves again.
+
+Pass the doc's path (relative to the docs root) and what you read to write it —
+the feature id **and** the key files/symbols from the diff:
+
+```
+harness_docs:record {
+  docId: "features/F-<id>.md",
+  documents: ["F-<id>", "<changed-file-1>", "<changed-file-2>"]
+}
+```
+
+Include the feature id (it anchors to the feature's implementing commits) and
+the 1–4 most load-bearing files/symbols you actually read from `git show HEAD`
+(e.g. `src/auth/login.ts` or `src/auth/login.ts :: handleLogin`). Do this once
+per generated doc you wrote (the F-page, and any guide you touched). This is the
+provenance — capture it from what you read, do not guess.
+
 ## Rules
 
 - **Write for users, not for the harness.** Nobody wants to read about
@@ -98,11 +121,12 @@ rewrite whole guides.
 
 ## Output
 
-Print **one line** to stdout:
+After writing the file(s) **and** calling `harness_docs:record` for each,
+print **one line** to stdout:
 
 ```
 DOCUMENTED F-<id> → docs/features/F-<id>.md (<N> claims, <M> lines)
 ```
 
-Nothing else. The file contents are your output; the harness logs the
-stdout line for audit.
+Nothing else. The file contents are your output; the `harness_docs:record`
+call makes them drift-tracked; the harness logs the stdout line for audit.
