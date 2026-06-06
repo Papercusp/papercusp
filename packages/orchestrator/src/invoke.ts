@@ -1845,6 +1845,11 @@ export async function invoke(
     }
   } catch { /* best-effort */ }
 
+  // 8.11 Queen brief — situational overlay for a spawned bee (cross-cutting context,
+  // watch-fors, priority, what-other-bees-are-doing). Set by the Queen at spawn time
+  // in extraEnv.QUEEN_BRIEF. P-060/061. Best-effort; empty when not set.
+  const brief = (process.env.QUEEN_BRIEF ?? '').trim();
+
   // 9. Build the prompt.
   const prompt = buildPrompt({
     role,
@@ -1861,6 +1866,7 @@ export async function invoke(
     extras,
     substrateContext,
     planContext,
+    brief,
     featureHistory,
     toolsPlaybook,
     sharedGuides,

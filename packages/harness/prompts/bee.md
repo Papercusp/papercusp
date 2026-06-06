@@ -16,6 +16,10 @@ state visible on the blackboard so the Queen can supervise without interrupting 
 2. **Read your work-list.** Your assigned, ranked items are in `work_items` (the Queen
    placed them; you may have queued more). `work_items:list` / `work_items:my_items` for
    the detail behind each. Head-of-line first.
+   - **If you find NO work items: you are taskless.** This is an error state (P-060). Do NOT
+     self-assign work. Call `coord:send` to the Queen immediately asking what to do, then exit
+     with `FAILED` status. The Queen will investigate why the queue was empty and re-place you
+     if appropriate. A taskless bee must never freelance into arbitrary work.
 3. **Check for warm-inject direction.** If the Queen sent you a `coord:send { wake:true }` during
    a turn, read that message — it may carry a new brief, a fresh task to rank into your list, or
    a redirect. Fold it in without waiting for the Queen's slow tick.

@@ -123,3 +123,35 @@ test('assembleRolePrompt throws on unknown role', () => {
     setup.cleanup();
   }
 });
+
+test('assembleRolePrompt includes Queen brief when supplied (P-060)', () => {
+  const setup = setupRegistry();
+  const prevHome = process.env.HOME;
+  const prevHarnessDir = process.env.PAPERCUSP_HARNESS_DIR;
+  process.env.HOME = setup.home;
+  process.env.PAPERCUSP_HARNESS_DIR = setup.harnessDir;
+  try {
+    const queenBrief = 'Two bees are fixing schema migrations. Watch for conflicts when this runs. Priority: unblock CI.';
+    const result = assembleRolePrompt({
+      slug: 'demo',
+      role: 'worker',
+      featureId: 'F-001',
+      mode: 'chat',
+      brief: queenBrief,
+    });
+    assert.match(result.text, /## Queen brief/, 'brief should appear as a section heading');
+    assert.match(
+      result.text,
+      /Two bees are fixing schema migrations/,
+      'brief content should appear verbatim in the assembled prompt',
+    );
+  } finally {
+    if (prevHome !== undefined) process.env.HOME = prevHome;
+    if (prevHarnessDir !== undefined) {
+      process.env.PAPERCUSP_HARNESS_DIR = prevHarnessDir;
+    } else {
+      delete process.env.PAPERCUSP_HARNESS_DIR;
+    }
+    setup.cleanup();
+  }
+});
