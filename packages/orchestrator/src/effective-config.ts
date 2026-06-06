@@ -88,14 +88,37 @@ export function loadHarnessKnobs(stateDir: string): Blueprint['knobs'] | null {
 }
 
 /**
- * `readConfig` + the residual-knob overlay (config.json wins). Drop-in replacement
- * for `readConfig` at the orchestrator's run-config load boundary, so every
- * `configGet(cfg, 'parallelWorkers.*' | 'aiBackend.*' | 'promptOverrides.*' |
- * 'scoper.*' | 'snapshotRetention')` read resolves blueprint-then-config without
- * touching the read sites.
+ * The per-install INSTANCE config, env-transport first (`HARNESS_CONFIG_JSON`),
+ * `.papercusp/config.json` file second (`cloud-deployment-layer-2026-06-06` P-008).
+ *
+ * Per D-007/D-011 the instance config (phase/phases/dept + per-instance knob
+ * overrides) is canonical in workspace PG and federates; the operator delivers it
+ * to a spawned process via env (PG canonical, env transport — "DB is not a
+ * transport"), and a cloud frame — which has no local `config.json` — reads it
+ * here. The file remains a back-compat fallback for un-migrated local harnesses.
+ * A malformed env value falls through to the file (never strands a run).
+ */
+export function readInstanceConfig(stateDir: string): HarnessConfig {
+  const raw = process.env.HARNESS_CONFIG_JSON;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as HarnessConfig;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch {
+      /* malformed env — fall through to the file */
+    }
+  }
+  return readConfig(stateDir);
+}
+
+/**
+ * The EFFECTIVE config: the instance layer (env-transport / config.json) over the
+ * blueprint-knob overlay. Drop-in replacement for `readConfig` at the
+ * orchestrator's run-config load boundary, so every `configGet(cfg, …)` read
+ * resolves instance-then-blueprint without touching the read sites.
  */
 export function readEffectiveConfig(stateDir: string): HarnessConfig {
-  const cfg = readConfig(stateDir);
+  const cfg = readInstanceConfig(stateDir);
   const overlay = blueprintKnobsToConfigOverlay(loadHarnessKnobs(stateDir));
   if (Object.keys(overlay).length === 0) return cfg;
   return deepMergeConfig(overlay as Record<string, unknown>, cfg as Record<string, unknown>) as HarnessConfig;

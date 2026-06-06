@@ -17,6 +17,7 @@
 export { readConfig, configGet, resolvePhase } from './config';
 export {
   readEffectiveConfig,
+  readInstanceConfig,
   loadHarnessKnobs,
   blueprintKnobsToConfigOverlay,
   deepMergeConfig,
