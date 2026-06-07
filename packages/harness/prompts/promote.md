@@ -50,6 +50,12 @@ The **Runtime context** carries (as `KEY=value` lines):
    will expand on publish). A fan-out over the cap or a resolver error fails the
    whole promote loudly — surface it, don't retry blindly.
 
+   A `spawn_child` wave reports under `applied.spawned_children` instead: the
+   child harness slug, its auto-synthesized seed plan, the child feature ids,
+   and whether the seed plan started. **Check each entry's `warnings`** — a
+   partially-failed spawn (e.g. scaffolded-but-unseeded) is resumed by simply
+   re-promoting (idempotent); report the warnings rather than improvising a fix.
+
 4. **(Rare) single-wave escape hatch.** If you genuinely must promote one wave in
    isolation (a named generative wave, or a partial re-promote), use the legacy
    per-wave form — `plans:promote { …, wave: <id>, apply: true }` — but the default
