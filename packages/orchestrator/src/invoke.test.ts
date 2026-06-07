@@ -910,6 +910,39 @@ test('writeSpawnClaudeConfig — no creds in source home → unauthenticated con
   }
 });
 
+test('writeSpawnClaudeConfig — cleanup preserves session transcripts to the flight recorder (mute-bee evidence)', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'fr-home-'));
+  const recorderRoot = mkdtempSync(join(tmpdir(), 'fr-spool-'));
+  const prevSpawnId = process.env.PAPERCUSP_SPAWN_ID;
+  const prevRoot = process.env.PAPERCUSP_FLIGHT_RECORDER_DIR;
+  process.env.PAPERCUSP_SPAWN_ID = 's-test-flightrec';
+  process.env.PAPERCUSP_FLIGHT_RECORDER_DIR = recorderRoot;
+  const h = writeSpawnClaudeConfig(fakeHome);
+  try {
+    // Simulate claude writing a session transcript under the isolated config dir.
+    const projDir = join(h.configDir, 'projects', '-some-cwd-slug');
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(join(projDir, 'abc.jsonl'), '{"type":"system","content":"mcp mount failed"}\n');
+
+    h.cleanup();
+
+    // The temp config dir is gone, but the transcript survives, keyed by spawn id.
+    assert.throws(() => statSync(h.configDir), 'cleanup removes the temp config dir');
+    assert.equal(
+      readFileSync(join(recorderRoot, 's-test-flightrec', '-some-cwd-slug', 'abc.jsonl'), 'utf8'),
+      '{"type":"system","content":"mcp mount failed"}\n',
+      'transcript preserved to the flight recorder before deletion',
+    );
+  } finally {
+    if (prevSpawnId === undefined) delete process.env.PAPERCUSP_SPAWN_ID;
+    else process.env.PAPERCUSP_SPAWN_ID = prevSpawnId;
+    if (prevRoot === undefined) delete process.env.PAPERCUSP_FLIGHT_RECORDER_DIR;
+    else process.env.PAPERCUSP_FLIGHT_RECORDER_DIR = prevRoot;
+    rmSync(fakeHome, { recursive: true, force: true });
+    rmSync(recorderRoot, { recursive: true, force: true });
+  }
+});
+
 // --- fleet OS sandbox (plan fleet-spawn-sandbox-2026-06-01, Phase 1) -------
 
 test('fleetSandboxSettingsForRole — cred reads + egress closed uniformly; Read/Edit deny rules present', () => {

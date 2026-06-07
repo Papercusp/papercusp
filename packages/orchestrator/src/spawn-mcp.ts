@@ -19,9 +19,9 @@
  */
 
 import { createHmac } from 'node:crypto';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import postgres from 'postgres';
 
 /** Construction inputs — all seven per-spawn URL params plus the host URL. */
@@ -369,6 +369,24 @@ export function writeSpawnClaudeConfig(realHome: string): SpawnClaudeConfigHandl
   return {
     configDir,
     cleanup() {
+      // Flight recorder: claude writes this spawn's session transcripts under
+      // <configDir>/projects/** — the ONLY client-side record of MCP mount
+      // failures / tool errors. Deleting them with the dir made the all-mute
+      // 2026-06-06 re-fan batch undiagnosable post-mortem (zero coord writes,
+      // zero transcripts, output_tail only). Preserve them durably first,
+      // keyed by the durable spawn id, so a mute bee leaves evidence.
+      try {
+        const projectsDir = join(configDir, 'projects');
+        if (existsSync(projectsDir)) {
+          const spawnId = (process.env.PAPERCUSP_SPAWN_ID ?? '').trim();
+          const root =
+            process.env.PAPERCUSP_FLIGHT_RECORDER_DIR ||
+            join(homedir(), '.papercusp', 'flight-recorder');
+          const dest = join(root, spawnId || `unlabeled-${basename(configDir)}`);
+          mkdirSync(dest, { recursive: true });
+          cpSync(projectsDir, dest, { recursive: true });
+        }
+      } catch { /* best-effort — never block cleanup */ }
       try { rmSync(configDir, { recursive: true, force: true }); } catch { /* best-effort */ }
     },
   };
