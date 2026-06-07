@@ -38,6 +38,18 @@ try {
     log: (m) => console.log(`[apply-migrations] ${m}`),
   });
   console.log(`[apply-migrations] done: ${result.appliedCount} applied (${result.totalKnown} known)`);
+
+  // Pre-mint the spawn-signing key: it otherwise mints on first VERIFY, but a
+  // fresh install SIGNS first (the director's spawn-mcp write) — without the row
+  // the very first agent invoke fails (claude -p --strict-mcp-config aborts on a
+  // missing .mcp.json). Mirrors gym provisioning; found live 2026-06-07.
+  const { randomBytes } = await import('node:crypto');
+  await sql`
+    INSERT INTO harness_shared.operator_secrets (name, value_b64, rotated_at)
+    VALUES ('spawn-signing-key', ${randomBytes(32).toString('base64')}, now())
+    ON CONFLICT (name) DO NOTHING
+  `;
+  console.log('[apply-migrations] spawn-signing-key present');
 } finally {
   await sql.end();
 }
