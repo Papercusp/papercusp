@@ -2131,7 +2131,19 @@ export async function invoke(
     // writeSpawnClaudeConfig + claudeSpawnEnvHardening (secondary env defense).
     let claudeConfigHandle: SpawnClaudeConfigHandle | null = null;
     if (agentBackend === 'claude-code') {
-      claudeConfigHandle = writeSpawnClaudeConfig(spawnEnv.HOME ?? homedir());
+      // Tracked (resumable) launches get a PERSISTENT config dir — claude
+      // writes the session transcript under it, and `claude --resume` at wake
+      // time must find that transcript again (wake-executor sets
+      // CLAUDE_CONFIG_DIR to the same conventional path). A temp dir here ==
+      // an unresumable Queen (the Stage-A smoke failure, 2026-06-06).
+      const persistentDir = trackedSessionSpawnId
+        ? join(
+            process.env.PAPERCUSP_SESSION_CLAUDE_DIR ||
+              join(homedir(), '.papercusp', 'session-claude'),
+            trackedSessionSpawnId,
+          )
+        : undefined;
+      claudeConfigHandle = writeSpawnClaudeConfig(spawnEnv.HOME ?? homedir(), { persistentDir });
       spawnEnv.CLAUDE_CONFIG_DIR = claudeConfigHandle.configDir;
     }
     Object.assign(spawnEnv, claudeSpawnEnvHardening(agentBackend));

@@ -358,7 +358,37 @@ export interface SpawnClaudeConfigHandle {
  * writable set, since claude writes session state under its config dir); call
  * `cleanup()` after exit.
  */
-export function writeSpawnClaudeConfig(realHome: string): SpawnClaudeConfigHandle {
+export function writeSpawnClaudeConfig(
+  realHome: string,
+  opts: {
+    /**
+     * Persistent config dir for TRACKED (resumable) launches — D-010's third
+     * leg. claude writes the session transcript under
+     * `$CLAUDE_CONFIG_DIR/projects/**`; a temp dir takes it to the grave, so
+     * `claude --resume <sessionId>` at wake time finds nothing (the Stage-A
+     * smoke failure, 2026-06-06). A tracked launch passes the conventional
+     * `~/.papercusp/session-claude/<spawnId>` dir instead; cleanup() then
+     * leaves it in place for wake-executor, which sets CLAUDE_CONFIG_DIR to
+     * the same path on resume.
+     */
+    persistentDir?: string;
+  } = {},
+): SpawnClaudeConfigHandle {
+  if (opts.persistentDir) {
+    const configDir = opts.persistentDir;
+    mkdirSync(configDir, { recursive: true });
+    try {
+      const realCreds = join(realHome, '.claude', '.credentials.json');
+      const dest = join(configDir, '.credentials.json');
+      if (existsSync(realCreds) && !existsSync(dest)) symlinkSync(realCreds, dest);
+    } catch { /* best-effort — claude surfaces an auth error if missing */ }
+    return {
+      configDir,
+      cleanup() {
+        /* persistent on purpose — the resume leg reads it after this spawn dies */
+      },
+    };
+  }
   const configDir = mkdtempSync(join(tmpdir(), 'claude-cfg-spawn-'));
   // Share the user's Claude OAuth session (claude resolves auth from
   // $CLAUDE_CONFIG_DIR/.credentials.json) WITHOUT carrying its plugins.
