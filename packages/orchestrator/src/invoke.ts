@@ -1956,9 +1956,25 @@ export async function invoke(
   // when the spawn closes.
   let mcpConfigDir = cwd;
   let mcpTempDir: string | null = null;
+  // TRACKED (resumable) launches — the invoke route minted a native session id
+  // (bpkind=hive, D-010) — bake the config at a PERSISTENT conventional path
+  // keyed by the spawn id instead: wake-executor later resumes this session via
+  // `claude --resume --mcp-config <that path>`, which a deleted temp dir would
+  // break (the Queen would wake toolless). Skipping mcpTempDir also skips the
+  // close-time restore/rm below, so the config survives for the resume.
+  const trackedSessionSpawnId = (process.env.PAPERCUSP_NATIVE_SESSION_ID ?? '').trim()
+    ? (process.env.PAPERCUSP_SPAWN_ID ?? '').trim()
+    : '';
   if (agentBackend === 'claude-code' && ctx.workspaceId) {
-    mcpTempDir = mkdtempSync(join(tmpdir(), 'papercusp-mcp-'));
-    mcpConfigDir = mcpTempDir;
+    if (trackedSessionSpawnId) {
+      const sessionMcpRoot =
+        process.env.PAPERCUSP_SESSION_MCP_DIR || join(homedir(), '.papercusp', 'session-mcp');
+      mcpConfigDir = join(sessionMcpRoot, trackedSessionSpawnId);
+      mkdirSync(mcpConfigDir, { recursive: true });
+    } else {
+      mcpTempDir = mkdtempSync(join(tmpdir(), 'papercusp-mcp-'));
+      mcpConfigDir = mcpTempDir;
+    }
   }
   const mcpConfigPath = join(mcpConfigDir, '.mcp.json');
 
@@ -2408,7 +2424,8 @@ export async function invoke(
     child.on('error', (err) => {
       ctx.log(`  spawn error: ${err.message}`);
       if (timer) clearTimeout(timer);
-      if (mcpHandle) restoreSpawnMcp(mcpHandle);
+      // Tracked launches keep their persistent config — the resume leg needs it.
+      if (mcpHandle && !trackedSessionSpawnId) restoreSpawnMcp(mcpHandle);
       if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       if (codexHomeHandle) codexHomeHandle.cleanup();
       if (claudeConfigHandle) claudeConfigHandle.cleanup();
@@ -2418,7 +2435,8 @@ export async function invoke(
 
     child.on('close', (code) => {
       if (timer) clearTimeout(timer);
-      if (mcpHandle) restoreSpawnMcp(mcpHandle);
+      // Tracked launches keep their persistent config — the resume leg needs it.
+      if (mcpHandle && !trackedSessionSpawnId) restoreSpawnMcp(mcpHandle);
       if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       if (codexHomeHandle) codexHomeHandle.cleanup();
       if (claudeConfigHandle) claudeConfigHandle.cleanup();
