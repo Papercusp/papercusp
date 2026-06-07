@@ -1976,6 +1976,15 @@ export async function invoke(
     ),
   );
 
+  // 10b1. Session tracking for resumable launches (local-hive-orchestration P-010).
+  // The pot/hive blueprint launches record a native session UUID so wake-executor
+  // can resume them via `claude --resume <sessionId>`. Thread the session ID from
+  // the invoke route into the claude argv.
+  const nativeSessionId = process.env.PAPERCUSP_NATIVE_SESSION_ID;
+  if (agentBackend === 'claude-code' && nativeSessionId) {
+    finalArgv.push('--session-id', nativeSessionId);
+  }
+
   // 10c. Optional OS sandbox (PAPERCUSP_FLEET_SANDBOX) — claude-code's built-in
   // sandbox via --settings: hides credential dirs, confines writes to cwd, and
   // allowlists command egress. Off by default; no-op for non-claude backends.

@@ -74,6 +74,10 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     password: DEFAULT_OWNER_PWD,
     port,
     persistent: true,
+    // Postgres refuses to run as root; on root-only hosts (cloud frames) the
+    // lib can create + setuid a dedicated postgres OS user instead. Opt-in —
+    // found live 2026-06-06 bootstrapping a frame.
+    createPostgresUser: opts.createPostgresUser ?? false,
     onLog: (m) => log(`pg: ${typeof m === 'string' ? m : (m?.message ?? '')}`),
     onError: (m) => log(`pg-err: ${typeof m === 'string' ? m : (m?.message ?? m?.toString?.() ?? '')}`),
     // wal_level=logical is REQUIRED for Zero / any pgoutput consumer.

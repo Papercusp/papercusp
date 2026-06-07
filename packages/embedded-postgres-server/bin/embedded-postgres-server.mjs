@@ -11,6 +11,7 @@
  *   PAPERCUSP_PG_SQL_DIR         — Path to *.sql migration directory (optional)
  *   PAPERCUSP_PG_SEED_DUMP_PATH  — pg_dump custom-format file to restore on fresh installs
  *   PAPERCUSP_PG_RESTORE_BIN     — absolute path to pg_restore (default: 'pg_restore' on PATH)
+ *   PAPERCUSP_PG_CREATE_USER     — '1' to create/setuid a postgres OS user (root-only hosts, e.g. cloud frames)
  *   PAPERCUSP_PG_DEBUG           — '1' for verbose logging
  */
 
@@ -31,6 +32,7 @@ const handle = await startEmbeddedPostgresServer({
   dbSqlDir,
   seedDumpPath,
   pgRestoreBin,
+  createPostgresUser: process.env.PAPERCUSP_PG_CREATE_USER === '1',
   debug,
 });
 

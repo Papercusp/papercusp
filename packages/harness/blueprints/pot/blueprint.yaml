@@ -40,6 +40,9 @@ workItem:
 # the provisioned operator principal's capabilities.
 spine:
   decider: operator
+  # Declared alternative the validator treats as live (not a dead role): an
+  # install swaps this in via spine.decider for placement automation (P-030).
+  deciderAlternatives: [queen]
   maxTurns: 50
   default:
     to: idle

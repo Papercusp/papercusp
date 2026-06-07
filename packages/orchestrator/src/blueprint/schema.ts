@@ -166,6 +166,13 @@ export const GateBranchSchema = z.object({
  */
 export const SpineSchema = z.object({
   decider: z.string().min(1).default('director'),
+  /**
+   * Roles a deploy/install may swap in as the decider (e.g. the pot's `queen`
+   * persona for placement automation — local-hive P-030). Declarative: the
+   * validator treats these as live roles, not dead ones; the engine still
+   * reads `decider` for the active choice.
+   */
+  deciderAlternatives: z.array(z.string().min(1)).optional(),
   /** Hard iteration cap (was `MAX_TURNS`; promoted to a blueprint field — P-004). */
   maxTurns: z.number().int().positive().default(200),
   /** verb → action (decider model). Keys are the blueprint's verb vocabulary. */

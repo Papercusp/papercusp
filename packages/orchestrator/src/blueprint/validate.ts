@@ -150,6 +150,9 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
     for (const id of roleIds) {
       const used =
         id === bp.spine.decider ||
+        // A declared decider ALTERNATIVE (e.g. the pot's `queen`) is a live
+        // role an install may swap in — not a dead one (local-hive P-030).
+        (bp.spine.deciderAlternatives ?? []).includes(id) ||
         dispatched.has(id) ||
         bp.reactive.some((r) => r.role === id) ||
         (finalize ? [...finalize.onDone, ...finalize.onEscalate].includes(id) : false);
