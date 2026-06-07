@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { usersInHarnessShared, userSessionsInHarnessShared, userPreferencesInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercupShared, messageCommentsInPapercupShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryCanonicalInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercupShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, memoryAnchorsInHarnessShared } from "./generated";
+import { usersInHarnessShared, userSessionsInHarnessShared, userPreferencesInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, beekeeperInstancesInHarnessShared, beekeeperRunsInHarnessShared, beekeeperSessionsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercupShared, messageCommentsInPapercupShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryCanonicalInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercupShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, memoryAnchorsInHarnessShared, beekeeperScoresInHarnessShared } from "./generated";
 
 export const userSessionsInHarnessSharedRelations = relations(userSessionsInHarnessShared, ({one}) => ({
 	usersInHarnessShared: one(usersInHarnessShared, {
@@ -36,6 +36,26 @@ export const llmTestFixturesInHarnessSharedRelations = relations(llmTestFixtures
 	llmTestRunsInHarnessShared: one(llmTestRunsInHarnessShared, {
 		fields: [llmTestFixturesInHarnessShared.recordedFromRunId],
 		references: [llmTestRunsInHarnessShared.id]
+	}),
+}));
+
+export const beekeeperRunsInHarnessSharedRelations = relations(beekeeperRunsInHarnessShared, ({one, many}) => ({
+	beekeeperInstancesInHarnessShared: one(beekeeperInstancesInHarnessShared, {
+		fields: [beekeeperRunsInHarnessShared.instanceId],
+		references: [beekeeperInstancesInHarnessShared.instanceId]
+	}),
+	beekeeperScoresInHarnessShareds: many(beekeeperScoresInHarnessShared),
+}));
+
+export const beekeeperInstancesInHarnessSharedRelations = relations(beekeeperInstancesInHarnessShared, ({many}) => ({
+	beekeeperRunsInHarnessShareds: many(beekeeperRunsInHarnessShared),
+	beekeeperSessionsInHarnessShareds: many(beekeeperSessionsInHarnessShared),
+}));
+
+export const beekeeperSessionsInHarnessSharedRelations = relations(beekeeperSessionsInHarnessShared, ({one}) => ({
+	beekeeperInstancesInHarnessShared: one(beekeeperInstancesInHarnessShared, {
+		fields: [beekeeperSessionsInHarnessShared.instanceId],
+		references: [beekeeperInstancesInHarnessShared.instanceId]
 	}),
 }));
 
@@ -148,5 +168,12 @@ export const memoryAnchorsInHarnessSharedRelations = relations(memoryAnchorsInHa
 	memoryCanonicalInHarnessShared: one(memoryCanonicalInHarnessShared, {
 		fields: [memoryAnchorsInHarnessShared.memoryId],
 		references: [memoryCanonicalInHarnessShared.id]
+	}),
+}));
+
+export const beekeeperScoresInHarnessSharedRelations = relations(beekeeperScoresInHarnessShared, ({one}) => ({
+	beekeeperRunsInHarnessShared: one(beekeeperRunsInHarnessShared, {
+		fields: [beekeeperScoresInHarnessShared.runId],
+		references: [beekeeperRunsInHarnessShared.runId]
 	}),
 }));

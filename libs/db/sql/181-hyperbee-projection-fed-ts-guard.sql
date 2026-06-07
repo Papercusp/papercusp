@@ -43,3 +43,26 @@ ALTER TABLE harness_shared.coord_event_log               ADD COLUMN IF NOT EXIST
 ALTER TABLE harness_shared.coord_threads                 ADD COLUMN IF NOT EXISTS fed_ts BIGINT;
 ALTER TABLE harness_shared.coord_thread_posts            ADD COLUMN IF NOT EXISTS fed_ts BIGINT;
 ALTER TABLE harness_shared.plan_item_assignments         ADD COLUMN IF NOT EXISTS fed_ts BIGINT;
+
+-- ── fed_ts must NOT re-trigger CDC capture ─────────────────────────────────────
+-- The substrate-outbox UPDATE triggers (mig 102/108/114) on the two consolidated
+-- tables fire `WHEN (OLD.* IS DISTINCT FROM NEW.*)`. `fed_ts` is now part of the
+-- row AND is stamped from each op's WIRE ts (a capture-time wall clock), so it
+-- changes on every re-application of an own-log op — which would make a row
+-- "distinct" on every merge-back pass and re-enqueue it forever (unbounded
+-- intra-peer self-amplification, the exact failure feature-content-federation
+-- guards against). Bookkeeping columns must not drive CDC, just as `origin` /
+-- `author_pubkey` don't (the coord/plan triggers already use explicit federated
+-- column lists; only these two consolidated tables use the broad row compare).
+-- Recreate their UPDATE triggers to compare rows with `fed_ts` MASKED OUT.
+-- (contributor_usage_events rows are immutable/append-only — its broad trigger
+-- never fires on a real update, so it needs no change.)
+CREATE OR REPLACE TRIGGER capture_substrate_outbox_upd_trg
+  AFTER UPDATE ON harness_shared.harness_features_consolidated
+  FOR EACH ROW WHEN ((to_jsonb(OLD.*) - 'fed_ts') IS DISTINCT FROM (to_jsonb(NEW.*) - 'fed_ts'))
+  EXECUTE FUNCTION harness_shared.capture_substrate_outbox('feature_id');
+
+CREATE OR REPLACE TRIGGER capture_substrate_outbox_upd_trg
+  AFTER UPDATE ON harness_shared.harness_issues_consolidated
+  FOR EACH ROW WHEN ((to_jsonb(OLD.*) - 'fed_ts') IS DISTINCT FROM (to_jsonb(NEW.*) - 'fed_ts'))
+  EXECUTE FUNCTION harness_shared.capture_substrate_outbox('issue_id');
