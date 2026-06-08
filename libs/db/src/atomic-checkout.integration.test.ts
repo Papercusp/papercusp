@@ -111,11 +111,17 @@ describe('checkoutNextFeature', () => {
 describe('releaseLock', () => {
   it('clears the lock for the matching worker only, leaving status untouched', async () => {
     await seed([{ id: 'F-001', createdTs: 1 }]);
-    await checkoutNextFeature(sql, SCHEMA, HS, { workerId: 'w1' });
+    await checkoutNextFeature(sql, SCHEMA, HS, { workerId: 'w1' }); // todo → in_progress, locked
     expect(await releaseLock(sql, SCHEMA, HS, 'F-001', 'someone-else')).toBe(false);
     expect(await releaseLock(sql, SCHEMA, HS, 'F-001', 'w1')).toBe(true);
-    // Released → claimable again.
-    expect((await checkoutNextFeature(sql, SCHEMA, HS, { workerId: 'w2' }))!.featureId).toBe('F-001');
+    // Lock cleared but status stays in_progress (releaseLock is "drop lock, no status change").
+    const [row] = await sql`SELECT status, taken_by FROM ${sql(`${SCHEMA}.harness_features`)} WHERE feature_id = 'F-001'`;
+    expect(row.taken_by).toBeNull();
+    expect(row.status).toBe('in_progress');
+    // So it is NOT re-claimed by the default todo/failing sweep...
+    expect(await checkoutNextFeature(sql, SCHEMA, HS, { workerId: 'w2' })).toBeNull();
+    // ...but IS claimable when in_progress is an allowed status.
+    expect((await checkoutNextFeature(sql, SCHEMA, HS, { workerId: 'w2', statuses: ['in_progress'] }))!.featureId).toBe('F-001');
   });
 });
 
