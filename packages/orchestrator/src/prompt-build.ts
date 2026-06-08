@@ -239,6 +239,41 @@ export const FRICTION_TRIPWIRE = [
   'test/health/tool failures — so you only file what it cannot see: what you felt.)',
 ].join('\n');
 
+/**
+ * YIELD_POLICY — the cooperative-yield behavior every interruptible agent shares
+ * (turn-lifecycle-control-2026-06-08 Phase 4, P-017 / D-007 / D-009).
+ *
+ * The dual of always-arm wake: a peer or the operator can ask a RUNNING agent to
+ * end its turn early via `turn:interrupt` (operator-mediated, D-008). The
+ * cooperative tier arrives as a high-priority `yield` coord line in the agent's
+ * `[coord+N]` block; this clause tells the agent what to DO on one. A FORCED
+ * interrupt can give no such chance (D-007), so the "save only when it fits" +
+ * checkpoint-cheaply-and-often habit is the real protection — and finishing the
+ * in-flight atomic edit + releasing its lock first is what keeps a hard stop from
+ * orphaning a file lock / half-writing a file (D-009). Injected into the shared
+ * bee base (here, via buildPrompt) + the operator-launched-role base (operator-
+ * core renderYieldPolicy) + the su playbook, sourced once so they can't desync
+ * (the FRICTION_TRIPWIRE precedent above).
+ */
+export const YIELD_POLICY = [
+  '## Yielding on request (turn-lifecycle control)',
+  '',
+  'A peer or the operator may ask you to end your turn early — a `turn:interrupt`',
+  'delivered as a high-priority `yield` line in your `[coord+N]` block (see the',
+  'coord legend). When you receive one:',
+  '  1. Reach a safe checkpoint FIRST — finish the atomic edit you are mid-way',
+  '     through and release its lock; never leave a half-written file or an',
+  '     orphaned lock, and do not start new work.',
+  '  2. Persist partial state to the work_item (`work_items:comment` /',
+  '     `work_items:set_state`) so a successor can resume it.',
+  '  3. Heartbeat or release any locks you still hold.',
+  '  4. Write a one-line successor note (what is done, what is next).',
+  '  5. End your turn.',
+  'Save only when it fits: a FORCED interrupt can end your turn mid-thought with no',
+  'checkpoint at all, so checkpoint cheaply and often regardless — never sit on',
+  'uncommitted state across a long stretch you would not want to lose.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -350,6 +385,15 @@ export function buildPrompt(input: BuildPromptInput): string {
     out.push('\n---');
     out.push(FRICTION_TRIPWIRE);
   }
+
+  // 5c. Yield policy (turn-lifecycle-control P-017, D-007/D-009) — the dual of
+  //     always-arm wake, in the SHARED bee base every role inherits. Any agent
+  //     can be asked to end its turn early (cooperative yield / forced interrupt
+  //     via turn:interrupt); this tells it how to checkpoint + release locks +
+  //     hand off cleanly. Universal (no curator skip — a thinking agent of any
+  //     role can be interrupted). Sourced from the one YIELD_POLICY constant.
+  out.push('\n---');
+  out.push(YIELD_POLICY);
 
   // G3: determine whether remote-peer content must be wrapped (P-009).
   // feature-level origin is the available provenance signal from G1.
