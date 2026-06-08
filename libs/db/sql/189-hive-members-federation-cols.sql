@@ -20,9 +20,6 @@
 -- to the Hive topic via resolveHiveSwarmBinding. Echo-guard + key are identical to
 -- the generic. Idempotent.
 
-\set ON_ERROR_STOP on
-BEGIN;
-
 ALTER TABLE harness_shared.hive_members ADD COLUMN IF NOT EXISTS fed_ts bigint;
 ALTER TABLE harness_shared.hive_members ADD COLUMN IF NOT EXISTS origin text NOT NULL DEFAULT 'local';
 ALTER TABLE harness_shared.hive_members ADD COLUMN IF NOT EXISTS author_pubkey text;
@@ -85,5 +82,3 @@ CREATE OR REPLACE TRIGGER capture_hive_members_outbox_upd_trg
     OR OLD.binding_status IS DISTINCT FROM NEW.binding_status
   )
   EXECUTE FUNCTION harness_shared.capture_hive_members_outbox('github_user_id');
-
-COMMIT;
