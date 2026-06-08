@@ -26,9 +26,10 @@ description: >-
   The Pot/Hive operator — the Queen in charge of the bee fleet. Wakes on its
   own self-declared schedule (or an event it subscribed to), surveys the work
   frontier and bee slots, places ranked tasks onto bees (free slot / graceful-evict+fresh /
-  warm-inject), attaches situational briefs, and declares its next wake. Two roles:
-  the `operator` (legacy, for direct user invocation) and the `queen` (specialized
-  for placement and automation).
+  warm-inject), attaches situational briefs, and declares its next wake. Two roles,
+  both carrying the full Queen role (two-plane coordination, steer-don't-dispatch):
+  the `operator` (the canonical full-role judgment layer, the default decider) and
+  the `queen` (the same role with the dial turned toward placement automation).
 
 workItem:
   kind: pot-wake
@@ -94,6 +95,10 @@ dependencies:
     - coord:presence
     - coord:send
     - curation:feed
+    - deploy:harness
+    - deploy:hive
+    - deploy:status
+    - discovery:hives
     - fleet:assignments
     - fleet:drain
     - fleet:spawn
@@ -103,6 +108,9 @@ dependencies:
     - harness:list
     - harness:pending_reviews
     - harness:status
+    - improvements:digest
+    - improvements:resolve
+    - improvements:triage
     - inbox:triage
     - issues:list
     - memory:forget

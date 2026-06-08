@@ -1,0 +1,71 @@
+/**
+ * hive-coordination-model-2026-06-08 P-001 — the pot/Hive blueprint's BOTH
+ * decider "flag states" (the default `operator` + the swap-in `queen`
+ * alternative) must each RESOLVE a non-empty persona that ENCOMPASSES the full
+ * Queen role (D-007).
+ *
+ * Why this test: P-001 rewrote both pot personas to the two-plane coordination
+ * model. This guards that rewrite two ways:
+ *   1. both deciders are still declared live (the "both flag states" the plan
+ *      asks to verify still assemble), and
+ *   2. each decider's prompt file resolves via the REAL resolution path
+ *      (`resolvePromptFile` with `blueprintId: 'pot'` — the same call
+ *      `invoke.ts` makes) and carries every load-bearing role clause. A future
+ *      edit that drops a clause, or removes a decider's prompt file so the role
+ *      no longer assembles, fails here.
+ */
+import { test } from 'vitest';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { harnessRoot } from '@papercusp/harness/paths';
+import { loadBuiltinBlueprint } from './blueprint/loader.js';
+import { resolvePromptFile } from './prompt-resolve.js';
+
+/**
+ * The load-bearing role clauses every pot decider persona must carry (D-007).
+ * Case-insensitive substring needles — phrased to match BOTH operator.md and
+ * queen.md without pinning exact wording, so a reword is fine but a DROPPED
+ * facet is caught.
+ */
+const ROLE_CLAUSES: ReadonlyArray<readonly [label: string, needle: string]> = [
+  ['two-plane invariant (never on the peer path)', 'agent-to-agent path'],
+  ["steer, don't dispatch", "steer, don't dispatch"],
+  ['steer on summaries', 'summaries'],
+  ['co-location lever', 'co-locat'],
+  ['account pool + auto-scale', 'account pool'],
+  ['idea-queue triage', 'improvements:digest'],
+  ['cross-Hive sovereignty', 'cross-hive sovereignty'],
+  ['nested-Hive roll-up', 'roll-up'],
+  ['trust the claim layer', 'claim layer'],
+  ['declares its next wake', 'pot:declare-wake'],
+];
+
+test('pot blueprint declares operator + queen as the two live deciders (both flag states)', () => {
+  const { blueprint } = loadBuiltinBlueprint('pot');
+  const deciders = [
+    blueprint.spine.decider,
+    ...(blueprint.spine.deciderAlternatives ?? []),
+  ];
+  assert.deepEqual([...deciders].sort(), ['operator', 'queen']);
+});
+
+for (const role of ['operator', 'queen'] as const) {
+  test(`pot decider "${role}" assembles a complete Queen persona (D-007 full role)`, () => {
+    const file = resolvePromptFile(
+      { harnessDir: harnessRoot(), phase: '', dept: '', blueprintId: 'pot' },
+      role,
+    );
+    assert.ok(file, `no prompt file resolved for pot role "${role}"`);
+    const text = readFileSync(file, 'utf8').toLowerCase();
+    assert.ok(
+      text.trim().length > 500,
+      `persona for "${role}" is suspiciously short (${text.trim().length} chars)`,
+    );
+    for (const [label, needle] of ROLE_CLAUSES) {
+      assert.ok(
+        text.includes(needle.toLowerCase()),
+        `pot "${role}" persona is missing the "${label}" clause (needle: ${JSON.stringify(needle)})`,
+      );
+    }
+  });
+}
