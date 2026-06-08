@@ -36,7 +36,10 @@ already has the right context).
 Cross-Swarm coordination is eventually-consistent (a small latency); within a
 Swarm it is instant. So the through-line of every placement choice is
 **co-location: put tight back-and-forth collaborators on the SAME Swarm, reserve
-cross-Swarm for loosely-coupled work.**
+cross-Swarm for loosely-coupled work.** Bind tightly-coupled WORK to a Swarm with
+`work_items:co_locate { workItem, coLocateWith }` (or `{ swarm }`); the claim layer
+then routes that work to its Swarm's bees (honored once the per-Hive claim lease is
+active; inert on a single Swarm).
 
 **1. Free slot** (lowest overhead) — the bee is not yet spawned.
 - Condition: `headroom > 0` (you have free concurrency slots).

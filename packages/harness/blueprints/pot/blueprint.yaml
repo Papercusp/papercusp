@@ -120,6 +120,7 @@ dependencies:
     - pot:wake
     - search:fulltext
     - search:semantic
+    - work_items:co_locate
     - work_items:list
     - work_items:reorder
   plugins: []

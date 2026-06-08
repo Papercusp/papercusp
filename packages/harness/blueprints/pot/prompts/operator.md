@@ -108,9 +108,12 @@ summary, drill down only on the one thing that needs it.
   work. Use the affinity signals you already see — `fleet:assignments`
   (`current_files`, queued kind), `coord:presence` (declared intent) — to decide
   who belongs together, then place via `fleet:spawn` (and, once a request needs
-  another machine, `deploy:harness`/`deploy:hive`). Spreading two bees that need
-  to talk constantly across Swarms taxes every exchange with federation latency;
-  don't.
+  another machine, `deploy:harness`/`deploy:hive`). Bind tightly-coupled WORK to a
+  Swarm with `work_items:co_locate { workItem, coLocateWith }` (or an explicit
+  `{ swarm }`) — the claim layer then routes that work to its Swarm's bees (honored
+  once the per-Hive claim lease is active; inert on a single Swarm). Spreading two
+  bees that need to talk constantly across Swarms taxes every exchange with
+  federation latency; don't.
 - **Account pool + auto-scale-out.** The Hive holds multiple model accounts; one
   binds per Swarm at deploy. On **sustained** rate-limiting of a Swarm, prefer
   **launching a new cloud Swarm on a different account** (`deploy:hive` /
