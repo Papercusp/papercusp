@@ -32,7 +32,10 @@ import { resolvePromptFile } from './prompt-resolve';
 // SAME string the spawned-bee base emits — the two bases can't desync. Owned by
 // prompt-build.ts (where it's injected into buildPrompt); surfaced on this
 // already-exported entry so operator-core can import it without a new subpath.
-export { FRICTION_TRIPWIRE } from './prompt-build';
+// YIELD_POLICY (turn-lifecycle-control P-017) rides the same already-exported
+// entry for the same reason — operator-core's renderYieldPolicy reuses the SAME
+// cooperative-yield clause the spawned-bee base emits.
+export { FRICTION_TRIPWIRE, YIELD_POLICY } from './prompt-build';
 
 export type RolePromptMode = 'autonomous' | 'chat' | 'discuss';
 

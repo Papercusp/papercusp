@@ -189,6 +189,35 @@ test('buildPrompt — curator does NOT get the friction trip-wire (no work outpu
   }
 });
 
+// ── turn-lifecycle-control P-017: yield policy is UNIVERSAL (every role, incl.
+//    curator — unlike the friction trip-wire — since any agent can be interrupted) ──
+test('buildPrompt — every role (incl. curator) gets the yield policy (turn-lifecycle P-017)', () => {
+  for (const role of ['worker', 'curator'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'r1',
+        extras: [],
+      });
+      assert.match(out, /## Yielding on request \(turn-lifecycle control\)/);
+      assert.match(out, /turn:interrupt/);
+      assert.match(out, /Save only when it fits/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
 test('buildPrompt — identity file injected when present and non-empty', () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
