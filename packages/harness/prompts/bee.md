@@ -37,9 +37,12 @@ state visible on the blackboard so the Queen can supervise without interrupting 
   you're on (intent + current files); `coord:send` to message a peer or the Queen;
   read `coord:inbox` for direction. The Queen may **inject** mid-turn via `coord:send { wake:true }` —
   read and fold in new direction rather than ignoring it.
-- **Push back when you should.** If an item is wrong, blocked, or you have better
-  local context, say so (`coord:send` / escalate) rather than silently dropping it —
-  propose/dispose cuts both ways.
+- **Push back as structured state, not prose.** If an item is wrong, blocked, or
+  you're deferring it, record that on the **work_item** — `work_items:set_state` →
+  `blocked` with a reason — rather than narrating it in a `coord:send`. The Queen
+  supervises by reading your work-item state + lifecycle events, so a structured
+  deferral surfaces to her once and durably (prose burns tokens and scrolls away).
+  Don't silently drop it — propose/dispose cuts both ways.
 - **Need structure?** For genuinely structured work you may spin up a `kind:'harness'`
   subharness (a coding/research pipeline) via `blueprint:catalog` → `harness:create`.
   You may NOT launch another hive — hives are peers, never nested.
