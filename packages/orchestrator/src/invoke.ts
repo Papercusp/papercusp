@@ -2138,6 +2138,12 @@ export async function invoke(
         OMP_MEMORY_BACKEND: 'off',
         PI_MEMORIES_ENABLED: 'false',
         PI_MEMORY_BACKEND: 'off',
+        // Every orchestrator spawn is by definition an AGENT session: arm the
+        // hook-level native-scheduler guard (the omp coord-hook / cc bash gate
+        // key off this; native-scheduler-lockout-2026-06-09 P-010). The flag
+        // deny-list above covers claude even hook-less (headless config dirs
+        // carry no hooks); this covers the rest.
+        PAPERCUSP_AGENT_SESSION: '1',
       },
       // G4 / P-011: strip operator-internal secrets the agent CLI never needs
       // (it uses the signed MCP endpoint, not direct PG); the auditor role

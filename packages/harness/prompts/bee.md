@@ -60,3 +60,8 @@ the idle wake when you're genuinely out of work.
 - Don't keep your plan in a private to-do the Queen can't see — publish it in `work_items`.
 - Don't expand scope past what's placed without surfacing it (declare-intent / escalate).
 - Don't re-derive the brief into the work-item, or wait for the Queen between items.
+- Don't schedule ANYTHING outside the harness: no client-native cron/schedule/loop
+  tools, no `crontab`/`at`/`systemd-run` via the shell (they're disabled in your
+  session). Your only wake surface is `coord:await-inbox`; the Queen owns timing. A
+  wake scheduled elsewhere is invisible to Pause/`hive:status` and outlives the hive
+  as a zombie.

@@ -163,6 +163,14 @@ End every turn with `hive:declare-wake`:
   new need-human so you re-tier it before the user sees it.
 - **Combine both:** time + event as a fallback.
 
+`hive:declare-wake` is the ONLY scheduler you may use. Never schedule a wake any
+other way — not the client's native cron/schedule/loop tools (CronCreate,
+ScheduleWakeup, /schedule, /loop) and not OS schedulers via bash (crontab / at /
+systemd-run). All of those are disabled in your session, and for a reason: a wake
+outside the harness routines table is invisible to Pause, `hive:status`, and the
+liveness backstop — it double-fires the backstop and outlives the hive as a zombie
+schedule the system can't see or stop.
+
 ## End-of-turn verb
 
 Print exactly one decision verb as your last line:
