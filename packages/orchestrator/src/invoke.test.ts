@@ -1379,3 +1379,28 @@ test('SEARCH_PROVIDER_ENV_KEYS — mirrors the apps/operator SEARCH_PROVIDERS ca
     assert.ok(SEARCH_PROVIDER_ENV_KEYS.includes(k), `${k} must be in SEARCH_PROVIDER_ENV_KEYS`);
   }
 });
+
+test('healSandboxZeroByteManifest — repairs ONLY an existing 0-byte package.json (the sandbox mask artifact)', async () => {
+  const { healSandboxZeroByteManifest } = await import('./invoke.js');
+  const dir = mkdtempSync(join(tmpdir(), 'papercusp-heal-'));
+  try {
+    // No package.json → untouched (the heal never CREATES one).
+    healSandboxZeroByteManifest(dir);
+    assert.throws(() => statSync(join(dir, 'package.json')));
+
+    // 0-byte (what claude's sandbox leaves behind in a manifest-less cwd —
+    // ERR_INVALID_PACKAGE_CONFIG for every later spawn) → repaired to valid JSON.
+    writeFileSync(join(dir, 'package.json'), '');
+    const logs: string[] = [];
+    healSandboxZeroByteManifest(dir, (m) => logs.push(m));
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')), {});
+    assert.ok(logs.some((m) => m.includes('healed 0-byte package.json')), 'heal is logged');
+
+    // Non-empty content — even INVALID json — is the project's own; never touched.
+    writeFileSync(join(dir, 'package.json'), '{not json');
+    healSandboxZeroByteManifest(dir);
+    assert.equal(readFileSync(join(dir, 'package.json'), 'utf8'), '{not json');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

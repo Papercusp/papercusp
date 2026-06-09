@@ -354,3 +354,43 @@ test('multiple chunks commit in order', async () => {
     await fs.rm(repo, { recursive: true, force: true });
   }
 });
+
+test('UNRUNNABLE check (exit 127) fails OPEN: chunk commits, no strikes, no replan', async () => {
+  const repo = await makeRepo();
+  try {
+    const lockQueue = new FileLockQueue();
+    const logs: string[] = [];
+    const deps: ChunkLoopDeps = {
+      repoPath: repo,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
+      planChunks: async () =>
+        makePlanResponse([{ id: 'F-X-1', files: ['a.ts'], description: 'add bar()' }]),
+      implementChunk: async (_f, chunk, env) => {
+        await fs.writeFile(
+          path.join(env.dir, 'a.ts'),
+          'export const a = 1;\nexport const bar = () => 3;\n',
+        );
+        return { touchedFiles: chunk.files, attemptedChange: 'added bar()' };
+      },
+      replanChunk: async () => {
+        throw new Error('replan must NOT be called — an unrunnable gate cannot be fixed by replanning');
+      },
+      // The frame failure mode: the configured tool does not exist in this
+      // environment → shell exit 127 ("command not found").
+      typecheckCommand: 'definitely-not-a-real-command-papercusp',
+      log: (m) => logs.push(m),
+    };
+
+    const out = await runChunkLoop(FEATURE, deps);
+    assert.equal(out.kind, 'completed');
+    assert.ok(
+      logs.some((m) => m.includes('UNRUNNABLE') && m.includes('definitely-not-a-real-command-papercusp')),
+      `expected a loud unrunnable-gate log; got: ${logs.join(' | ')}`,
+    );
+    // The chunk actually committed to the repo.
+    const committed = await execSync('git', ['show', 'HEAD:a.ts'], repo);
+    assert.ok(committed.includes('bar'), 'chunk edit must be committed despite the unrunnable gate');
+  } finally {
+    await fs.rm(repo, { recursive: true, force: true });
+  }
+});

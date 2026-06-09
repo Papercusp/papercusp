@@ -167,6 +167,17 @@ export type ChunkProgressEvent =
   | { kind: 'chunk_replan'; chunk: Chunk; strikes: number; reason: string }
   | { kind: 'chunk_escalated'; chunk: Chunk; strikes: number };
 
+/**
+ * Exit codes meaning the working-state check COMMAND itself could not run in
+ * this environment (shell conventions: 127 = command not found, 126 = found
+ * but not executable) — as opposed to "the check ran and found problems".
+ * An unrunnable gate is a CONFIG error: replanning the chunk can never fix
+ * it, so the loop fails open (commits, loudly) instead of striking.
+ */
+export function isCheckUnrunnable(exitCode: number): boolean {
+  return exitCode === 127 || exitCode === 126;
+}
+
 // ─── The loop ────────────────────────────────────────────────────────
 
 export async function runChunkLoop(
@@ -299,6 +310,23 @@ export async function runChunkLoop(
         const tc = await runCheck(env, deps.typecheckCommand, { timeoutMs: typecheckTimeoutMs });
         typecheckOutput = tc.output;
         if (tc.exitCode === 0) {
+          await commitChunk(feature, chunk, env, { repoPath: deps.repoPath });
+          outcome = 'committed';
+        } else if (isCheckUnrunnable(tc.exitCode)) {
+          // The gate COMMAND itself cannot run in this environment (127 =
+          // command not found, 126 = not executable — e.g. the default
+          // `pnpm typecheck` on a cloud frame that only installs node/npm).
+          // Replanning can never fix a gate-config problem, and striking
+          // mis-attributes it to the chunk ("typecheck failed") — burning the
+          // full strike budget + a debugger escalation on a FALSE signal
+          // (observed live on Hetzner frame 138790170, 2026-06-09: 3 strikes ×
+          // 2 pipelines on `pnpm: command not found`). The gate is an opt-in
+          // safety net ('' disables it), so an unrunnable command fails OPEN,
+          // loudly; the validator downstream remains the real gate.
+          log(
+            `chunk-loop: ${chunk.id} working-state check UNRUNNABLE (exit ${tc.exitCode}: ${tc.output.trim().slice(0, 120) || 'no output'}) — ` +
+              `'${deps.typecheckCommand}' is misconfigured for this environment; committing WITHOUT the L1 gate (set parallelWorkers.workingStateCheck)`,
+          );
           await commitChunk(feature, chunk, env, { repoPath: deps.repoPath });
           outcome = 'committed';
         } else {
