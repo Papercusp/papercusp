@@ -88,7 +88,7 @@ CREATE VIEW harness_shared.work_items AS
     NULL::text,                                    -- goal_id
     ei.assignee,                                   -- taken_by
     ei.assigned_at,                                -- taken_at
-    NULL::timestamptz,                             -- expires_at
+    CASE WHEN ei.assigned_at IS NOT NULL THEN ei.assigned_at + INTERVAL '7 days' ELSE NULL END, -- expires_at
     ei.workspace_id,
     ei._search,
     NULL::text,                                    -- deprecation_reason
