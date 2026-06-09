@@ -23,6 +23,7 @@ import {
   openSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
   writeSync,
 } from 'node:fs';
@@ -603,6 +604,31 @@ export function resolveFleetAllowedDomains(): string[] {
     .map((d) => d.trim())
     .filter(Boolean);
   return [...new Set([...FLEET_SANDBOX_ALLOWED_DOMAINS, ...extra])];
+}
+
+/**
+ * Self-heal the fleet sandbox's zero-byte manifest artifact. When a spawn's cwd
+ * has no `package.json`, claude's sandbox leaves a 0-BYTE one behind (a
+ * mount-point artifact of its protected-file masking, alongside empty `.env*` /
+ * lockfiles — observed live on Hetzner frame 138790170, 2026-06-09). A 0-byte
+ * package.json is INVALID JSON, so every later Node/Bun-based agent start in
+ * that cwd aborts at boot with ERR_INVALID_PACKAGE_CONFIG — the FIRST sandboxed
+ * spawn bricks the harness dir for the rest of the pipeline (the director ran;
+ * every retry after it failed `exit=1, empty=true`). Repair is tightly scoped:
+ * only `package.json`, only when it exists AND is exactly 0 bytes (a state our
+ * own sandbox caused; the other empty artifacts are harmless). A non-empty
+ * file — valid or not — is the project's own and is never touched.
+ */
+export function healSandboxZeroByteManifest(cwd: string, log?: (msg: string) => void): void {
+  try {
+    const p = join(cwd, 'package.json');
+    if (existsSync(p) && statSync(p).size === 0) {
+      writeFileSync(p, '{}\n', 'utf8');
+      log?.(`  healed 0-byte package.json in ${cwd} (fleet-sandbox mask artifact; would brick later spawns with ERR_INVALID_PACKAGE_CONFIG)`);
+    }
+  } catch {
+    /* best-effort — a failed heal just surfaces as the original invoke error */
+  }
 }
 
 /**
@@ -1918,6 +1944,10 @@ export async function invoke(
   const finalArgv = [...argv.slice(1), ...extraFlags];
   const command = argv[0];
   const cwd = cwdOverride || ctx.projectDir;
+  // A PRIOR sandboxed spawn may have left a 0-byte package.json in this cwd —
+  // which aborts the agent binary at boot (ERR_INVALID_PACKAGE_CONFIG). Heal it
+  // before spawning so one spawn can't brick the dir for the whole pipeline.
+  healSandboxZeroByteManifest(cwd, ctx.log);
   const startedAt = Date.now();
 
   // omp's `-p` mode reads the message from a positional arg (or `@file`),
