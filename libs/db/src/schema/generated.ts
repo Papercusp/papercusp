@@ -1569,6 +1569,24 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	check("adv_sessions_mode_check", sql`mode = ANY (ARRAY['omp'::text, 'console'::text])`),
 ]);
 
+export const scoutTicksInHarnessShared = harnessShared.table("scout_ticks", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.scout_ticks_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	installSlug: text("install_slug"),
+	tickAt: timestamp("tick_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	status: text().default('ran').notNull(),
+	gate: text(),
+	ideasGenerated: integer("ideas_generated").default(0).notNull(),
+	ideasRouted: integer("ideas_routed").default(0).notNull(),
+	ideasDeduped: integer("ideas_deduped").default(0).notNull(),
+	budgetUsedUsd: numeric("budget_used_usd"),
+	detail: jsonb(),
+}, (table) => [
+	index("scout_ticks_ws_tick_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.tickAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("scout_ticks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocations", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -2543,6 +2561,18 @@ export const memoryAnchorsInHarnessShared = harnessShared.table("memory_anchors"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.memoryId, table.kind, table.value], name: "memory_anchors_pkey"}),
 	check("memory_anchors_kind_check", sql`kind = ANY (ARRAY['file'::text, 'feature'::text, 'plan'::text, 'migration'::text, 'symbol'::text])`),
+]);
+
+export const scoutLensWeightsInHarnessShared = harnessShared.table("scout_lens_weights", {
+	workspaceId: text("workspace_id").notNull(),
+	lens: text().notNull(),
+	wins: integer().default(0).notNull(),
+	decided: integer().default(0).notNull(),
+	weight: numeric().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.lens], name: "scout_lens_weights_pkey"}),
+	pgPolicy("scout_lens_weights_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const pluginConfigsInHarnessShared = harnessShared.table("plugin_configs", {
