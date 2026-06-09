@@ -45,6 +45,25 @@ import {
 import { ROLE_MODEL_DEFAULTS } from './role-models.js';
 import { writeSpawnClaudeConfig } from './spawn-mcp.js';
 
+// Hermetic env: `resolveModel` falls back to the host's `AGENT_MODELS` env var
+// (the operator sets e.g. `{"worker":"opus"}` in apps/operator/.env.local). When
+// that leaks into the suite — as it does under the green-checkpoint gate, which
+// strips `PAPERCUSP_*` but NOT `AGENT_MODELS` — `resolveModel({},'worker')`
+// returns "opus" instead of "" and the `invoke(cat)` end-to-end leaks a stray
+// `--model opus` arg, so two tests that assume committed defaults fail ONLY under
+// the gate (green 107/107 in a clean shell). Clear it per-test so the suite
+// measures the committed defaults, never the host's identity; tests that need it
+// set it themselves. (release-pipeline-resilience-2026-06-09 P-001.)
+let _agentModelsSnapshot: string | undefined;
+beforeEach(() => {
+  _agentModelsSnapshot = process.env.AGENT_MODELS;
+  delete process.env.AGENT_MODELS;
+});
+afterEach(() => {
+  if (_agentModelsSnapshot === undefined) delete process.env.AGENT_MODELS;
+  else process.env.AGENT_MODELS = _agentModelsSnapshot;
+});
+
 interface Fixture {
   harnessDir: string;
   projectDir: string;
