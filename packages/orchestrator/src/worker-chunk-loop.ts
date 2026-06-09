@@ -520,7 +520,23 @@ async function defaultCommitChunk(
       await fs.copyFile(srcAbs, dstAbs);
       await runGit(['add', '--', rel], deps.repoPath);
     }
-    await runGit(['commit', '-q', '-m', formatChunkCommitMessage(chunk)], deps.repoPath);
+    // A re-dispatched chunk whose net effect is ALREADY in HEAD stages nothing,
+    // and `git commit` then exits 1 ("nothing to commit") — which read as a
+    // false implement-strike (live on frame 138838461, 2026-06-09: the director
+    // re-sent an already-committed feature to the worker; the replay was a
+    // no-op but the empty commit failed the chunk). An idempotent replay IS
+    // success — skip the commit when nothing is staged.
+    const staged = await new Promise<boolean>((resolve) => {
+      const c = spawn('git', ['diff', '--cached', '--quiet'], {
+        cwd: deps.repoPath,
+        stdio: ['ignore', 'ignore', 'ignore'],
+      });
+      c.on('error', () => resolve(true)); // can't tell — attempt the commit
+      c.on('close', (code) => resolve(code !== 0)); // non-zero = staged changes exist
+    });
+    if (staged) {
+      await runGit(['commit', '-q', '-m', formatChunkCommitMessage(chunk)], deps.repoPath);
+    }
   });
 
   function runGit(args: readonly string[], cwd: string): Promise<void> {

@@ -32,6 +32,11 @@
       "import": "./src/role-models.ts",
       "default": "./src/role-models.ts"
     },
+    "./native-scheduler-deny": {
+      "types": "./src/native-scheduler-deny.ts",
+      "import": "./src/native-scheduler-deny.ts",
+      "default": "./src/native-scheduler-deny.ts"
+    },
     "./session-launch-dirs": {
       "types": "./src/session-launch-dirs.ts",
       "import": "./src/session-launch-dirs.ts",

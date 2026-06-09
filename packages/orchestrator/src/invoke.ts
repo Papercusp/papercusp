@@ -51,6 +51,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import type { AgentBackend, HarnessConfig, InvokeResult } from './types';
 import { resolveAgentBackend, normalizeModelForBackend } from './env';
+import { hasExplicitDisallowedTools, nativeSchedulerDenyFlag } from './native-scheduler-deny';
 import { ROLE_MODEL_DEFAULTS } from './role-models';
 import { workspaceHomeDir } from './workspace';
 
@@ -1638,6 +1639,15 @@ export async function invoke(
   // workspace-write vs the prior danger-full-access default. Goes in extraFlags
   // (before the `-` stdin positional) because codex wants options before the prompt.
   extraFlags.push(...codexSandboxArgs(agentBackend, streamFormat, roleAgentCmd, fleetSandboxEnabled()));
+
+  // Native-scheduler lockout (native-scheduler-lockout-2026-06-09 D-001/D-005):
+  // every headless claude agent spawn loses claude-code's own scheduling
+  // surfaces, so wakes can only live in the harness routines table. Applied at
+  // the exec boundary so per-role agentCmd swaps (resolveAgentForRole) are
+  // covered too; an explicit operator-supplied deny list wins (D-004).
+  if (agentBackend === 'claude-code' && !hasExplicitDisallowedTools(roleAgentCmd)) {
+    extraFlags.push(nativeSchedulerDenyFlag());
+  }
 
   // 5. Per-role model — only inject if user didn't already pass one.
   //    codex's model flag is `-m` (bare id); claude/omp use `--model`.

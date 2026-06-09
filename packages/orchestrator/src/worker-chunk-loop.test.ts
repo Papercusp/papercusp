@@ -434,3 +434,32 @@ test('a directory in chunk.files (sandbox node_modules leak) is SKIPPED by the c
     await fs.rm(repo, { recursive: true, force: true });
   }
 });
+
+test('a replayed chunk whose effect is already in HEAD commits as a no-op (no empty-commit strike)', async () => {
+  const repo = await makeRepo();
+  try {
+    const lockQueue = new FileLockQueue();
+    const deps: ChunkLoopDeps = {
+      repoPath: repo,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
+      planChunks: async () =>
+        makePlanResponse([{ id: 'F-X-1', files: ['a.ts'], description: 'add qux()' }]),
+      // The replay shape: the worker "re-implements" but produces EXACTLY what
+      // HEAD already has (the prior attempt committed it) — nothing to stage.
+      implementChunk: async (_f, chunk, env) => {
+        const current = await fs.readFile(path.join(env.dir, 'a.ts'), 'utf8');
+        await fs.writeFile(path.join(env.dir, 'a.ts'), current); // byte-identical
+        return { touchedFiles: chunk.files, attemptedChange: 'no-op replay' };
+      },
+      replanChunk: async () => {
+        throw new Error('replan must NOT be called — an idempotent replay is success');
+      },
+      typecheckCommand: 'true',
+    };
+
+    const out = await runChunkLoop(FEATURE, deps);
+    assert.equal(out.kind, 'completed');
+  } finally {
+    await fs.rm(repo, { recursive: true, force: true });
+  }
+});

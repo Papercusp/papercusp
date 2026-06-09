@@ -216,12 +216,13 @@ test('worker writes nothing in scratch — no commit, no error, just empty chang
       },
     );
 
-    // Committing a no-op should fail (git commit exits 1 with "nothing
-    // to commit"). The loop catches that as a strike. With
-    // replanStrikes=1 it escalates. This pins the current behavior;
-    // future improvements (e.g., treat empty diff as "no change
-    // intended" → success) would change this assertion.
-    assert.equal(out.kind, 'escalated');
+    // 2026-06-09 (work-on-frame E2E): an empty diff now commits as a NO-OP
+    // (the "future improvement" the old pin anticipated) — a re-dispatched
+    // chunk whose effect is already in HEAD was striking on git's
+    // "nothing to commit" exit 1 (live on frame 138838461). The chunk
+    // completes; the validator downstream judges whether the feature's
+    // actual acceptance is met.
+    assert.equal(out.kind, 'completed');
     assert.deepEqual(lockQueue.snapshot(), { held: {}, queueLength: 0 });
   } finally {
     await fs.rm(repo, { recursive: true, force: true });
