@@ -37,6 +37,11 @@
       "import": "./src/session-launch-dirs.ts",
       "default": "./src/session-launch-dirs.ts"
     },
+    "./spawn-signing-core": {
+      "types": "./src/spawn-signing-core.ts",
+      "import": "./src/spawn-signing-core.ts",
+      "default": "./src/spawn-signing-core.ts"
+    },
     "./decision-parse": {
       "types": "./src/decision-parse.ts",
       "import": "./src/decision-parse.ts",

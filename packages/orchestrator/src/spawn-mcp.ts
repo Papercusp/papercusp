@@ -18,7 +18,7 @@
  * for OMP — single mcpServers entry, seven URL query params).
  */
 
-import { createHmac } from 'node:crypto';
+import { canonicalizeSpawnParams, hmacSpawnBytes } from './spawn-signing-core';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -423,24 +423,12 @@ export function writeSpawnClaudeConfig(
 }
 
 /* ─── Signing (HMAC-SHA256 over canonical params) ─────────────────────
- * Duplicated in apps/operator/lib/spawn-signing.ts because the
- * orchestrator runs as a separate process and can't import from the
- * operator app directly. Keep the canonicalization rule in lockstep
- * with that file or signatures will mismatch.
+ * The allowlist + canonicalization + HMAC are NO LONGER duplicated: they live
+ * in the shared `./spawn-signing-core` (imported above), the SAME module
+ * operator-core's spawn-signing.ts imports — so the rule can't drift between the
+ * two processes (unify-launch-mechanics follow-on, signing dedup). Only the
+ * per-process KEY LOADING stays here (its own PG client + cache).
  * ──────────────────────────────────────────────────────────────────── */
-
-const SIGNED_PARAM_ALLOWLIST = new Set([
-  'harness',
-  'workspace',
-  'role',
-  'run',
-  'spawn',
-  'feature',
-  'chunk',
-  'parent_spawn',
-  'client',
-  'exp',
-]);
 
 interface KeyCache { buf: Buffer; rotatedAt: number; loadedAt: number; }
 let __keyCache: KeyCache | null = null;
@@ -477,26 +465,14 @@ async function loadSigningKey(): Promise<Buffer> {
   }
 }
 
-function canonicalizeForSign(params: URLSearchParams): string {
-  const pairs: Array<[string, string]> = [];
-  const seen = new Set<string>();
-  for (const [k, v] of params.entries()) {
-    if (k === 'sig') continue;
-    if (!SIGNED_PARAM_ALLOWLIST.has(k)) continue;
-    if (seen.has(k)) throw new Error(`duplicate param: ${k}`);
-    seen.add(k);
-    pairs.push([k, v]);
-  }
-  pairs.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return pairs.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-}
-
 async function signSpawnParams(params: URLSearchParams, ttlSec: number): Promise<void> {
   const exp = Math.floor(Date.now() / 1000) + ttlSec;
   params.set('exp', String(exp));
   params.delete('sig');
   const key = await loadSigningKey();
-  const sig = createHmac('sha256', key).update(canonicalizeForSign(params)).digest('base64url');
+  const c = canonicalizeSpawnParams(params);
+  if (!c.ok) throw new Error(c.reason);
+  const sig = hmacSpawnBytes(key, c.canonical).toString('base64url');
   params.set('sig', sig);
 }
 

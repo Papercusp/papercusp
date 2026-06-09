@@ -2129,8 +2129,15 @@ export async function invoke(
     // empty package.json/.mcp.json/.env stub bug). It is a claude-code defect,
     // not ours (filed upstream); this denies it anything to resolve. The auth
     // session is symlinked in, so the worker stays logged in. CLAUDE_CONFIG_DIR
-    // relocates only `.claude`; `.claude.json` stays at $HOME. See
-    // writeSpawnClaudeConfig + claudeSpawnEnvHardening (secondary env defense).
+    // relocates the whole `~/.claude` tree AND the sibling `~/.claude.json`
+    // (verified on claude-code 2.1.169 — an OLDER note here that `.claude.json`
+    // "stays at $HOME" is stale), so the worker inherits NONE of the engineer's
+    // personal MCP fleet / plugins / trust — which only reinforces this
+    // isolation, and is harmless headless (`-p` skips onboarding; the worker's
+    // MCP comes from its per-spawn `.mcp.json`, not `~/.claude.json`). The
+    // INTERACTIVE counterpart can't take this fresh dir — it must mirror the
+    // user's config (see operator-core `writeInteractiveClaudeConfig`, EI-155).
+    // See writeSpawnClaudeConfig + claudeSpawnEnvHardening (secondary env defense).
     let claudeConfigHandle: SpawnClaudeConfigHandle | null = null;
     if (agentBackend === 'claude-code') {
       // Tracked (resumable) launches get a PERSISTENT config dir — claude
