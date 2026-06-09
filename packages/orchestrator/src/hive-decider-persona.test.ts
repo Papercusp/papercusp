@@ -1,10 +1,10 @@
 /**
- * hive-coordination-model-2026-06-08 P-001 — the pot/Hive blueprint's BOTH
+ * hive-coordination-model-2026-06-08 P-001 — the Hive blueprint's BOTH
  * decider "flag states" (the default `operator` + the swap-in `queen`
  * alternative) must each RESOLVE a non-empty persona that ENCOMPASSES the full
  * Queen role (D-007).
  *
- * Why this test: P-001 rewrote both pot personas to the two-plane coordination
+ * Why this test: P-001 rewrote both hive personas to the two-plane coordination
  * model. This guards that rewrite two ways:
  *   1. both deciders are still declared live (the "both flag states" the plan
  *      asks to verify still assemble), and
@@ -22,7 +22,7 @@ import { loadBuiltinBlueprint } from './blueprint/loader.js';
 import { resolvePromptFile } from './prompt-resolve.js';
 
 /**
- * The load-bearing role clauses every pot decider persona must carry (D-007).
+ * The load-bearing role clauses every hive decider persona must carry (D-007).
  * Case-insensitive substring needles — phrased to match BOTH operator.md and
  * queen.md without pinning exact wording, so a reword is fine but a DROPPED
  * facet is caught.
@@ -40,7 +40,7 @@ const ROLE_CLAUSES: ReadonlyArray<readonly [label: string, needle: string]> = [
   ['declares its next wake', 'hive:declare-wake'],
 ];
 
-test('pot blueprint declares operator + queen as the two live deciders (both flag states)', () => {
+test('hive blueprint declares operator + queen as the two live deciders (both flag states)', () => {
   const { blueprint } = loadBuiltinBlueprint('hive');
   const deciders = [
     blueprint.spine.decider,
@@ -50,12 +50,12 @@ test('pot blueprint declares operator + queen as the two live deciders (both fla
 });
 
 for (const role of ['operator', 'queen'] as const) {
-  test(`pot decider "${role}" assembles a complete Queen persona (D-007 full role)`, () => {
+  test(`hive decider "${role}" assembles a complete Queen persona (D-007 full role)`, () => {
     const file = resolvePromptFile(
       { harnessDir: harnessRoot(), phase: '', dept: '', blueprintId: 'hive' },
       role,
     );
-    assert.ok(file, `no prompt file resolved for pot role "${role}"`);
+    assert.ok(file, `no prompt file resolved for hive role "${role}"`);
     const text = readFileSync(file, 'utf8').toLowerCase();
     assert.ok(
       text.trim().length > 500,
@@ -64,7 +64,7 @@ for (const role of ['operator', 'queen'] as const) {
     for (const [label, needle] of ROLE_CLAUSES) {
       assert.ok(
         text.includes(needle.toLowerCase()),
-        `pot "${role}" persona is missing the "${label}" clause (needle: ${JSON.stringify(needle)})`,
+        `hive "${role}" persona is missing the "${label}" clause (needle: ${JSON.stringify(needle)})`,
       );
     }
   });

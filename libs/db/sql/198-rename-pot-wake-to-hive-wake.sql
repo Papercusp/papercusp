@@ -49,6 +49,14 @@ UPDATE harness_shared.routines
  WHERE name = 'pot-wake';
 
 -- 3. Rename any work_items of the legacy kind (none expected; future-proof).
-UPDATE harness_shared.work_items
-   SET kind = 'hive-wake'
- WHERE kind = 'pot-wake';
+--    Guarded: focused test schemas may not have provisioned work_items yet.
+DO $wi$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+     WHERE table_schema = 'harness_shared' AND table_name = 'work_items'
+  ) THEN
+    UPDATE harness_shared.work_items SET kind = 'hive-wake' WHERE kind = 'pot-wake';
+  END IF;
+END
+$wi$;
