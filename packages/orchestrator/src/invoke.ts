@@ -1644,8 +1644,16 @@ export async function invoke(
   // every headless claude agent spawn loses claude-code's own scheduling
   // surfaces, so wakes can only live in the harness routines table. Applied at
   // the exec boundary so per-role agentCmd swaps (resolveAgentForRole) are
-  // covered too; an explicit operator-supplied deny list wins (D-004).
-  if (agentBackend === 'claude-code' && !hasExplicitDisallowedTools(roleAgentCmd)) {
+  // covered too; an explicit operator-supplied deny list wins (D-004). The
+  // command must actually NAME claude (same discriminator as
+  // selectStreamFormat) — 'claude-code' is the DEFAULT backend label even for
+  // arbitrary commands (e.g. the plain-text test stub `cat`), which must not
+  // receive a claude flag.
+  if (
+    agentBackend === 'claude-code' &&
+    splitCommand(roleAgentCmd).some((a) => a.includes('claude')) &&
+    !hasExplicitDisallowedTools(roleAgentCmd)
+  ) {
     extraFlags.push(nativeSchedulerDenyFlag());
   }
 
