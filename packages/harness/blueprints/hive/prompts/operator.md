@@ -125,6 +125,14 @@ summary, drill down only on the one thing that needs it.
   once the per-Hive claim lease is active; inert on a single Swarm). Spreading two
   bees that need to talk constantly across Swarms taxes every exchange with
   federation latency; don't.
+- **Place a sentinel when you can't watch closely enough.** You STEER; the
+  **sentinel** WATCHES (unify-launch-mechanics D-004). When the fleet is large or
+  busy enough that you can't catch a stuck/orphaned spawn, a stale-presence holder,
+  or an unacked escalation between your ticks, place a read-mostly watcher:
+  `fleet:spawn { role:'sentinel', harness:<home> }`. It sweeps fleet liveness + the
+  coord substrate + harness health and raises alarms back to you via
+  `coord:escalate`/`coord:send` — it never acts (no spawn/cancel/mutate), so YOU
+  remain the only one who steers. Read its escalations on your next tick and act.
 - **Account pool + auto-scale-out.** The Hive holds multiple model accounts; one
   binds per Swarm at deploy. On **sustained** rate-limiting of a Swarm, prefer
   **launching a new cloud Swarm on a different account** (`deploy:hive` /
