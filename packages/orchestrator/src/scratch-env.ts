@@ -32,7 +32,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 
-const CACHE_SYMLINKS = [
+/** Exported so listChangedFiles (run-worker-chunk-loop) can exclude the cache
+ *  symlinks setup() itself creates — in a repo that doesn't gitignore them they
+ *  show as untracked entries (`?? node_modules` — a symlink, NO trailing slash)
+ *  and get mistaken for worker edits, poisoning the chunk's files[] (live on
+ *  frame 138805161, 2026-06-09: the commit then EISDIR'd against the real
+ *  repo's node_modules directory). */
+export const CACHE_SYMLINKS = [
   'node_modules',
   '.next',
   '.turbo',

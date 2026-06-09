@@ -509,6 +509,13 @@ async function defaultCommitChunk(
         // every resume (live on frame 138805161, 2026-06-09). Skip it.
         continue;
       }
+      // copyFile EISDIRs when the DESTINATION is a directory too — the same
+      // poison class seen from the other side (scratch holds the cache
+      // SYMLINK, the real repo holds the sandbox's node_modules DIRECTORY).
+      const dstSt = await fs.stat(dstAbs).catch(() => null);
+      if (dstSt?.isDirectory()) {
+        continue;
+      }
       await fs.mkdir(path.dirname(dstAbs), { recursive: true });
       await fs.copyFile(srcAbs, dstAbs);
       await runGit(['add', '--', rel], deps.repoPath);

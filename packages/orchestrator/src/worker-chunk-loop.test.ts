@@ -409,7 +409,11 @@ test('a directory in chunk.files (sandbox node_modules leak) is SKIPPED by the c
           { id: 'F-X-1', files: ['a.ts', 'node_modules'], description: 'add baz()' },
         ]),
       implementChunk: async (_f, _chunk, env) => {
+        // BOTH poison sides: a real dir in scratch AND a real dir at the
+        // destination (the sandbox's node_modules in the main repo) — copyFile
+        // EISDIRs whichever side is the directory.
         await fs.mkdir(path.join(env.dir, 'node_modules'), { recursive: true });
+        await fs.mkdir(path.join(repo, 'node_modules'), { recursive: true });
         await fs.writeFile(
           path.join(env.dir, 'a.ts'),
           'export const a = 1;\nexport const baz = () => 4;\n',

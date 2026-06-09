@@ -23,6 +23,7 @@ import { invoke } from './invoke.js';
 import { readFeatures, stateCtx, setFeatureStatus, harnessSlug } from './state.js';
 import { configGet } from './config.js';
 import { useChunkLoop } from './lanes.js';
+import { CACHE_SYMLINKS } from './scratch-env.js';
 import { driveChunkLoop } from './chunk-loop-driver.js';
 import { planChunksUpfrontPrompt, replanChunkPrompt } from './chunk-plan.js';
 import type {
@@ -110,6 +111,7 @@ function isSandboxMaskArtifact(dir: string, rel: string): boolean {
 function listChangedFiles(dir: string): string[] {
   const r = spawnSync('git', ['status', '--porcelain', '-z'], { cwd: dir, encoding: 'utf8' });
   if (r.status !== 0) return [];
+  const cacheNames = new Set<string>(CACHE_SYMLINKS);
   const out: string[] = [];
   for (const entry of (r.stdout as string).split('\x00')) {
     const trimmed = entry.trim();
@@ -117,6 +119,10 @@ function listChangedFiles(dir: string): string[] {
     const path = trimmed.length >= 3 ? trimmed.slice(3) : trimmed;
     if (!path) continue;
     if (path.endsWith('/')) continue; // untracked directory — never a worker file edit
+    // setup()'s own cache SYMLINKS (node_modules, dist, …) show as untracked
+    // FILE entries (no trailing slash) in a repo that doesn't gitignore them —
+    // they are scratch infrastructure, never worker edits.
+    if (cacheNames.has(path)) continue;
     if (isSandboxMaskArtifact(dir, path)) continue;
     out.push(path);
   }
