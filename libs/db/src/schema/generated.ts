@@ -3439,28 +3439,6 @@ export const workItemClaimsInHarnessShared = harnessShared.table("work_item_clai
 	check("work_item_claims_owner_nonempty", sql`owner <> ''::text`),
 ]);
 
-export const snapshotIndexInHarnessShared = harnessShared.table("snapshot_index", {
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	snapshotId: text("snapshot_id").notNull(),
-	tarballPath: text("tarball_path").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	bytes: bigint({ mode: "number" }).default(0).notNull(),
-	contentHash: text("content_hash"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdAtMs: bigint("created_at_ms", { mode: "number" }).default(0).notNull(),
-	name: text(),
-	description: text(),
-	license: text(),
-	manifest: jsonb().default({}).notNull(),
-	published: jsonb().default([]).notNull(),
-	indexedAt: timestamp("indexed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("snapshot_index_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.createdAtMs.desc().nullsFirst().op("int8_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.snapshotId], name: "snapshot_index_pkey"}),
-	pgPolicy("snapshot_index_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const coordThreadsInHarnessShared = harnessShared.table("coord_threads", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	threadId: text("thread_id").notNull(),
