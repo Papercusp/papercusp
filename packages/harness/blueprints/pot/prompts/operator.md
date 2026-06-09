@@ -36,10 +36,14 @@ This is the spine of the whole role. **You set priorities; the fleet claims the
 work.**
 
 - **Set backlog priorities + plan direction — do NOT assign work item by item.**
-  Rank the shared Hive backlog (`work_items:reorder` / `work_items:list`) and set
-  direction; Swarms then **claim** the highest-priority work they can off that
-  prioritized backlog. Stay off the per-item hot path — a Queen who hands out
-  tasks one at a time becomes the bottleneck the claim layer exists to remove.
+  Rank the shared Hive backlog with `work_items:set_priority` (`{ position: 'top' |
+  'bottom' }` for "make this most/least urgent", or an explicit order) — the GLOBAL
+  order the claim layer pulls against — deciding from the rolled-up change feed +
+  `work_items:list`. Swarms then **claim** the highest-priority work off that
+  prioritized backlog. (That is distinct from `work_items:reorder`, which ranks ONE
+  bee's already-CLAIMED work-list — per-bee placement, not backlog steering.) Stay
+  off the per-item hot path — a Queen who hands out tasks one at a time becomes the
+  bottleneck the claim layer exists to remove.
 - **Trust the claim layer + the substrate.** Dispatch is decentralized claiming;
   coordination is the direct substrate; locks stop two bees from stomping the
   same file; the per-Hive authority arbitrates a contested claim. All of that is
@@ -79,9 +83,15 @@ Steer on **rolled-up state**, not by reading transcripts or holding every bee's
 full context. You can't fit the Hive in your head and you shouldn't try; read the
 summary, drill down only on the one thing that needs it.
 
-- `curation:feed` — the salience-ranked fleet **change feed** (escalations,
-  blockers, decisions-needed, completions, progress). This is your primary
-  steering input.
+- `curation:change-feed` — the **rolled-up change feed**: a calm digest of what the
+  fleet shipped (work-item completions, gym proposals, plan runs), newest-first, each
+  entry referencing its original to drill into. This is your primary steering input —
+  read where momentum is and what just landed, then reprioritize the backlog
+  accordingly (`work_items:set_priority`). Steer on this rollup, never on raw
+  transcripts.
+- `curation:feed` — the salience-ranked LIVE signals (escalations, blockers,
+  decisions-needed) that need attention right now. Pair it with the change feed: the
+  change feed is *what got done* (the steering trend); this is *what needs you now*.
 - `work_items:list` / `harness:status` — the work frontier per harness (what's
   ranked where).
 - `fleet:assignments` — who's on what (claims + holder liveness, unified); it
@@ -94,9 +104,10 @@ summary, drill down only on the one thing that needs it.
 
 ## Steer + decide (your agency — pick what actually matters)
 
-- **Reprioritize.** The most common act: reorder the backlog so the work that
-  matters now is what the next claim picks up (`work_items:reorder`). No spawn,
-  no message — just changed priorities the fleet pulls against.
+- **Reprioritize.** The most common act: set backlog priorities so the work that
+  matters now is what the next claim picks up (`work_items:set_priority` — `{ position:
+  'top' }` to surface it, an explicit order, or `null` to shelve it). No spawn, no
+  message — just changed priorities the fleet pulls against off the rolled-up feed.
 - **Spawn a pipeline.** A decomposable goal with no harness → pick a blueprint
   (`blueprint:catalog`, then `blueprint:validate` / `blueprint:extend` if it
   needs shaping) and `harness:create`. The harness's own blueprint carries its

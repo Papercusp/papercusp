@@ -80,9 +80,11 @@ knobs:
 
 # Dependencies (official-blueprints-cupboard-publish D-002): the operator-level
 # blackboard survey surface, harness create/supervise, placement tools (Queen role),
-# and self-declared wake. Queen-specific tools: fleet:assignments (bee load/lists),
-# work_items:reorder (rank management), coord:send with wake (warm-inject),
-# fleet:spawn (free-slot placement).
+# and self-declared wake. Queen-specific tools: curation:change-feed (the rolled-up
+# completion feed the steering loop reads — B7) + work_items:set_priority (set the
+# BACKLOG order the fleet claims against — the steer-don't-dispatch lever),
+# fleet:assignments (bee load/lists), work_items:reorder (per-bee work-list rank),
+# coord:send with wake (warm-inject), fleet:spawn (free-slot placement).
 dependencies:
   tools:
     - activity:recent
@@ -94,6 +96,7 @@ dependencies:
     - coord:inbox
     - coord:presence
     - coord:send
+    - curation:change-feed
     - curation:feed
     - deploy:harness
     - deploy:hive
@@ -123,4 +126,5 @@ dependencies:
     - work_items:co_locate
     - work_items:list
     - work_items:reorder
+    - work_items:set_priority
   plugins: []
