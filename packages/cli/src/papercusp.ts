@@ -286,23 +286,6 @@ async function cmdDoctor(): Promise<void> {
     ok = false;
   }
 
-  // ── Snapshot binaries ────────────────────────────────────────────────
-  console.log('');
-  console.log(bold('snapshot binaries'));
-  try {
-    const { probeAll } = await import('@papercusp/export-state');
-    for (const r of await probeAll()) {
-      if (r.found) {
-        console.log(`  ${green('✓')} ${r.name} ${dim(r.version ?? '')}`);
-      } else {
-        console.log(`  ${yellow('!')} ${r.name} not on PATH`);
-        if (r.hint) console.log(`    ${dim(r.hint)}`);
-      }
-    }
-  } catch (e: unknown) {
-    console.log(`  ${dim('snapshot binary probe failed: ' + (e instanceof Error ? e.message : String(e)))}`);
-  }
-
   // ── Plugin ecosystem health ──────────────────────────────────────────
   console.log('');
   console.log(bold('plugin ecosystem'));
