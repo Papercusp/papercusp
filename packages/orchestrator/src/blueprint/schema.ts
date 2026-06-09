@@ -522,6 +522,65 @@ export const EnvironmentSpecSchema = z.object({
 });
 
 /**
+ * A declared, UI-introspectable tunable —
+ * `psu-isolation-and-blueprint-aware-harness-ui-2026-06-09` P-006 / D-003 / D-007.
+ * The settings UI renders one control per ParamSpec; the value lives at the param's
+ * KEY (a dot-path into the resolved config — see {@link ParamsSchema}). This is a
+ * PRESENTATION/metadata projection over the existing validated `knobs` / `dispatch`
+ * / `triggers` — NOT a second source of truth: the Zod schema above stays the
+ * validator-of-record; a ParamSpec only declares HOW to surface + edit a value that
+ * already has a home.
+ */
+export const ParamOptionSchema = z.object({
+  value: z.union([z.string(), z.number(), z.boolean()]),
+  label: z.string().min(1),
+});
+export const ParamSpecSchema = z.object({
+  /** Human label for the control (rendered through `useLexicon` for cup-themed nouns). */
+  label: z.string().min(1),
+  /** Control type. `enum` requires `options`; `number` honors min/max/step. */
+  type: z.enum(['number', 'boolean', 'string', 'enum']),
+  /**
+   * Default shown when neither the instance config nor the blueprint sets a value.
+   * OMIT when the blueprint/Zod schema already supplies the default (e.g.
+   * `dispatch.concurrency`) — the UI then reads the effective value and this never
+   * drifts from the validator-of-record (D-007).
+   */
+  default: z.unknown().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  step: z.number().optional(),
+  /** `enum` options (value + display label). Ignored for non-enum types. */
+  options: z.array(ParamOptionSchema).optional(),
+  /** Help text shown under the control. */
+  description: z.string().default(''),
+  /** One line: which role / gate / dispatch field this tunes (a UI hint). */
+  affects: z.string().optional(),
+  /** UI section to group the control under (e.g. 'Dispatch', 'Worker lane'). */
+  group: z.string().optional(),
+  /**
+   * true → this value is a SECRET: the settings UI routes it through the credential
+   * store, never the instance config (the P-008 plaintext-secrets fix). The declared
+   * param then carries only the credential REF, never the secret itself.
+   */
+  secret: z.boolean().default(false),
+});
+
+/**
+ * The blueprint's declared tunables, KEYED BY DOT-PATH into the resolved config
+ * (`dispatch.concurrency`, `dispatch.costCapUsd`, `knobs.debuggerThreshold`,
+ * `knobs.parallelWorkers.max`, …). A RECORD, not an array, ON PURPOSE: the loader
+ * deep-merges raw blueprint objects child-over-parent and REPLACES arrays wholesale
+ * but UNIONS object keys — so `base` declares the universal params every harness
+ * shows and a concrete blueprint (`coding`/`research`/…) ADDS its own, and an
+ * `extends: base` child gets base ∪ its-own without re-declaring base's. The
+ * settings UI (P-008) introspects this to render the right controls per harness
+ * type — so any blueprint, including a Cupboard-installed third-party one, gets a
+ * working settings panel for free (D-003).
+ */
+export const ParamsSchema = z.record(z.string(), ParamSpecSchema);
+
+/**
  * The resolved Blueprint — the validator-of-record. A fully-merged blueprint
  * (after `extends` resolution) must satisfy this.
  */
@@ -565,6 +624,11 @@ export const BlueprintSchema = z.object({
    *  deployment driver reads it to bootstrap a cloud frame; absent ⇒ nothing to
    *  stand up (today's local-only behavior). */
   environment: EnvironmentSpecSchema.optional(),
+  /** Declared UI-introspectable tunables (P-006 / D-003). Keyed by dot-path into the
+   *  resolved config; `base` declares the universal params, a child ADDS its own (the
+   *  record unions across `extends`). Default {} ⇒ no declared params (the schema-driven
+   *  settings panel renders nothing extra for this blueprint). */
+  params: ParamsSchema.default({}),
 });
 
 /**
@@ -597,3 +661,8 @@ export type BlueprintDispatch = z.infer<typeof DispatchSchema>;
 export type BlueprintEnvironment = z.infer<typeof EnvironmentSpecSchema>;
 export type BlueprintEnvService = z.infer<typeof EnvServiceSchema>;
 export type BlueprintHeader = z.infer<typeof BlueprintHeaderSchema>;
+/** A single declared, UI-introspectable tunable (P-006 / D-003). */
+export type ParamSpec = z.infer<typeof ParamSpecSchema>;
+export type ParamOption = z.infer<typeof ParamOptionSchema>;
+/** The blueprint's declared params, keyed by dot-path into the resolved config. */
+export type BlueprintParams = z.infer<typeof ParamsSchema>;
