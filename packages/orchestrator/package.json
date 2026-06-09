@@ -52,6 +52,16 @@
       "import": "./src/blueprint/index.ts",
       "default": "./src/blueprint/index.ts"
     },
+    "./blueprint/params": {
+      "types": "./src/blueprint/params.ts",
+      "import": "./src/blueprint/params.ts",
+      "default": "./src/blueprint/params.ts"
+    },
+    "./blueprint/schema": {
+      "types": "./src/blueprint/schema.ts",
+      "import": "./src/blueprint/schema.ts",
+      "default": "./src/blueprint/schema.ts"
+    },
     "./run-output-pg": {
       "types": "./src/run-output-pg.ts",
       "import": "./src/run-output-pg.ts",
