@@ -49,11 +49,11 @@ test('pot launch blueprint loads + validates — decider=operator, NO trigger (t
   // autoloop-pot-operator-rebuild-2026-06-05 P0 (D-001/D-002): the Pot is the
   // minimal single-role operator blueprint. It deliberately declares NO
   // triggers.schedule and NO triggers.event — its loop is the operator deciding
-  // its own next wake (pot:declare-wake → the one-shot pot-wake routine /
+  // its own next wake (hive:declare-wake → the one-shot hive-wake routine /
   // event-reaction subscriptions), not a cadence. A schedule appearing here
   // would silently reintroduce the timer loop D-002 removes.
-  const { blueprint, validation } = loadBuiltinBlueprint('pot');
-  assert.equal(blueprint.id, 'pot');
+  const { blueprint, validation } = loadBuiltinBlueprint('hive');
+  assert.equal(blueprint.id, 'hive');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   assert.ok(!isProgramSpine(blueprint.spine), 'pot is a decider-mode spine');
   assert.equal(blueprint.spine.decider, 'operator', 'the pot decider IS the operator role (D-001)');

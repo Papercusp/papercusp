@@ -68,11 +68,11 @@ test('isChildBlueprintParam + the placeholder regex', () => {
 test('assertNotNestedHive — the no-nest guard (local-hive D-009 / swarm D-018)', () => {
   // A kind:'hive' WITH a parent → rejected loud.
   assert.throws(
-    () => assertNotNestedHive({ id: 'pot', kind: 'hive' }, true),
+    () => assertNotNestedHive({ id: 'hive', kind: 'hive' }, true),
     /cannot be nested|hives are peers/i,
   );
   // A kind:'hive' as a ROOT (no parent) → allowed (the bootstrap/deployment path).
-  assert.doesNotThrow(() => assertNotNestedHive({ id: 'pot', kind: 'hive' }, false));
+  assert.doesNotThrow(() => assertNotNestedHive({ id: 'hive', kind: 'hive' }, false));
   // A kind:'harness' with a parent → allowed (general harnesses recurse freely).
   assert.doesNotThrow(() => assertNotNestedHive({ id: 'coding', kind: 'harness' }, true));
   // Default-kind (undefined → treated as harness) with a parent → allowed.
@@ -80,7 +80,7 @@ test('assertNotNestedHive — the no-nest guard (local-hive D-009 / swarm D-018)
 });
 
 test('the pot built-in blueprint is kind:hive + cannot be nested (P-010)', () => {
-  const { blueprint: pot, validation } = loadBuiltinBlueprint('pot');
+  const { blueprint: pot, validation } = loadBuiltinBlueprint('hive');
   assert.equal(pot.kind, 'hive');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   assert.throws(() => assertNotNestedHive(pot, true), /cannot be nested|hives are peers/i);

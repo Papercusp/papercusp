@@ -34,8 +34,10 @@ import { resolvePromptFile } from './prompt-resolve';
 // already-exported entry so operator-core can import it without a new subpath.
 // YIELD_POLICY (turn-lifecycle-control P-017) rides the same already-exported
 // entry for the same reason — operator-core's renderYieldPolicy reuses the SAME
-// cooperative-yield clause the spawned-bee base emits.
-export { FRICTION_TRIPWIRE, YIELD_POLICY } from './prompt-build';
+// cooperative-yield clause the spawned-bee base emits. TESTING_STANDARD (the
+// "write tests the project way" clause) rides it too — operator-core's
+// renderTestingStandard reuses the SAME string the spawned-bee base emits.
+export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD } from './prompt-build';
 
 export type RolePromptMode = 'autonomous' | 'chat' | 'discuss';
 

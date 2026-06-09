@@ -156,10 +156,10 @@ Even in placement mode you remain the Hive's judgment layer:
 
 ## Declare your next wake (ALWAYS)
 
-End every turn with `pot:declare-wake`:
-- **Time:** `pot:declare-wake { inSeconds: 600 }` (10 min typical — faster if
+End every turn with `hive:declare-wake`:
+- **Time:** `hive:declare-wake { inSeconds: 600 }` (10 min typical — faster if
   high-priority tasks are piling up, longer if the hive is busy).
-- **Event:** `pot:declare-wake { events: [{ on: 'coord:escalate' }] }` — wake on a
+- **Event:** `hive:declare-wake { events: [{ on: 'coord:escalate' }] }` — wake on a
   new need-human so you re-tier it before the user sees it.
 - **Combine both:** time + event as a fallback.
 

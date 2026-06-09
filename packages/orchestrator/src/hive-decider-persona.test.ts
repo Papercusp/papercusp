@@ -9,7 +9,7 @@
  *   1. both deciders are still declared live (the "both flag states" the plan
  *      asks to verify still assemble), and
  *   2. each decider's prompt file resolves via the REAL resolution path
- *      (`resolvePromptFile` with `blueprintId: 'pot'` — the same call
+ *      (`resolvePromptFile` with `blueprintId: 'hive'` — the same call
  *      `invoke.ts` makes) and carries every load-bearing role clause. A future
  *      edit that drops a clause, or removes a decider's prompt file so the role
  *      no longer assembles, fails here.
@@ -37,11 +37,11 @@ const ROLE_CLAUSES: ReadonlyArray<readonly [label: string, needle: string]> = [
   ['cross-Hive sovereignty', 'cross-hive sovereignty'],
   ['nested-Hive roll-up', 'roll-up'],
   ['trust the claim layer', 'claim layer'],
-  ['declares its next wake', 'pot:declare-wake'],
+  ['declares its next wake', 'hive:declare-wake'],
 ];
 
 test('pot blueprint declares operator + queen as the two live deciders (both flag states)', () => {
-  const { blueprint } = loadBuiltinBlueprint('pot');
+  const { blueprint } = loadBuiltinBlueprint('hive');
   const deciders = [
     blueprint.spine.decider,
     ...(blueprint.spine.deciderAlternatives ?? []),
@@ -52,7 +52,7 @@ test('pot blueprint declares operator + queen as the two live deciders (both fla
 for (const role of ['operator', 'queen'] as const) {
   test(`pot decider "${role}" assembles a complete Queen persona (D-007 full role)`, () => {
     const file = resolvePromptFile(
-      { harnessDir: harnessRoot(), phase: '', dept: '', blueprintId: 'pot' },
+      { harnessDir: harnessRoot(), phase: '', dept: '', blueprintId: 'hive' },
       role,
     );
     assert.ok(file, `no prompt file resolved for pot role "${role}"`);

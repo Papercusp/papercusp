@@ -274,6 +274,37 @@ export const YIELD_POLICY = [
   'uncommitted state across a long stretch you would not want to lose.',
 ].join('\n');
 
+/**
+ * TESTING_STANDARD — the "write tests the project way" clause every agent shares.
+ *
+ * Tests an agent writes must follow THIS project's established testing standard
+ * (its canonical framework + conventional location) so the project's own test
+ * tooling discovers and runs them — exactly like the tests already in the
+ * project's test suite (in Papercusp, the `/admin/testing` "tests tab", which a
+ * registry glob-walk auto-discovers). The clause is deliberately PROJECT-AGNOSTIC:
+ * the shared bee base serves agents working in ANY managed harness, so the
+ * concrete per-project specifics (Papercusp's four canonical homes, another
+ * project's TESTING.md) come from that repo's own CLAUDE.md / testing docs — this
+ * just makes "match the existing tests, don't invent a throwaway harness" universal.
+ *
+ * Sourced once here (the FRICTION_TRIPWIRE / YIELD_POLICY precedent): injected into
+ * the spawned-bee base (buildPrompt below) + the operator-launched-role base
+ * (operator-core's renderTestingStandard, re-exported via role-prompt-from-slug),
+ * so the two bases + the su playbooks can't desync.
+ */
+export const TESTING_STANDARD = [
+  '## Tests follow the project standard',
+  '',
+  'When you write a test, follow THIS project\'s established testing standard —',
+  'mirror the existing tests, do not invent your own harness. Put each test in the',
+  'project\'s canonical test framework at its conventional path so the project\'s',
+  'test tooling (its tests tab / CI suite) discovers and runs it automatically —',
+  'never leave a throwaway one-off script (an ad-hoc `node x.mjs` / tsx smoke you',
+  'run once) standing in for a real test. Read the project\'s testing docs or an',
+  'existing sibling test first and match its framework, location, and conventions.',
+  'A green typecheck is not a test.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -394,6 +425,16 @@ export function buildPrompt(input: BuildPromptInput): string {
   //     role can be interrupted). Sourced from the one YIELD_POLICY constant.
   out.push('\n---');
   out.push(YIELD_POLICY);
+
+  // 5d. Testing standard — the "write tests the project way" clause in the SHARED
+  //     bee base every role inherits. Project-agnostic (the base serves bees in ANY
+  //     harness): match the project's existing tests + canonical framework so its
+  //     test tooling discovers them; no throwaway scripts. Per-project specifics come
+  //     from that repo's CLAUDE.md / testing docs. Sourced from the one
+  //     TESTING_STANDARD constant so the bee base + operator-launched-role base can't
+  //     desync. Universal (no curator skip — a thinking agent of any role may add a test).
+  out.push('\n---');
+  out.push(TESTING_STANDARD);
 
   // G3: determine whether remote-peer content must be wrapped (P-009).
   // feature-level origin is the available provenance signal from G1.

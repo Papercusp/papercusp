@@ -218,6 +218,42 @@ test('buildPrompt — every role (incl. curator) gets the yield policy (turn-lif
   }
 });
 
+// ── testing-standard: the "write tests the project way" clause is UNIVERSAL in the
+//    shared bee base (every role, incl. curator). Project-agnostic — it tells the
+//    agent to match the project's existing tests so its test tooling discovers them,
+//    NOT a Papercusp-specific framework list (that comes from the target repo). ──
+test('buildPrompt — every role gets the testing-standard clause (project-agnostic)', () => {
+  for (const role of ['worker', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'r1',
+        extras: [],
+      });
+      assert.match(out, /## Tests follow the project standard/);
+      assert.match(out, /canonical test framework/);
+      assert.match(out, /tests tab \/ CI suite/);
+      assert.match(out, /A green typecheck is not a test\./);
+      // Project-agnostic: the shared base must NOT hardcode one project's framework list.
+      const idx = out.indexOf('## Tests follow the project standard');
+      const section = out.slice(idx).split('\n---')[0];
+      assert.doesNotMatch(section, /Vitest|Playwright|Cargo|\/admin\/testing/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
 test('buildPrompt — identity file injected when present and non-empty', () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
