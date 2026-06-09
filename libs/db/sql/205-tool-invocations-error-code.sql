@@ -1,7 +1,9 @@
--- 203-tool-invocations-error-code.sql
+-- 205-tool-invocations-error-code.sql
 --
 -- watchdog-robustness-2026-06-09 (P-007 / D-009): persist the dispatcher's error
--- CLASS on each tool invocation.
+-- CLASS on each tool invocation. (Renumbered from 203 — collided with a peer's
+-- 203-spawned-agents-session-id via a git-sync timing race; two same-numbered files
+-- make one silently go dark on boot-apply — see db-boot-migrate.ts.)
 --
 -- recordTelemetry (libs/generic/tooldef/src/dispatch-stack.ts) already computes a
 -- rich error `code` — unauthorized / handler_error / harness_required /
