@@ -394,3 +394,39 @@ test('UNRUNNABLE check (exit 127) fails OPEN: chunk commits, no strikes, no repl
     await fs.rm(repo, { recursive: true, force: true });
   }
 });
+
+test('a directory in chunk.files (sandbox node_modules leak) is SKIPPED by the commit, not EISDIR-fatal', async () => {
+  const repo = await makeRepo();
+  try {
+    const lockQueue = new FileLockQueue();
+    const deps: ChunkLoopDeps = {
+      repoPath: repo,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
+      // The poisoned shape: a real file edit PLUS a directory entry (what the
+      // sandbox's node_modules/ artifact looked like after lock-extension).
+      planChunks: async () =>
+        makePlanResponse([
+          { id: 'F-X-1', files: ['a.ts', 'node_modules'], description: 'add baz()' },
+        ]),
+      implementChunk: async (_f, _chunk, env) => {
+        await fs.mkdir(path.join(env.dir, 'node_modules'), { recursive: true });
+        await fs.writeFile(
+          path.join(env.dir, 'a.ts'),
+          'export const a = 1;\nexport const baz = () => 4;\n',
+        );
+        return { touchedFiles: ['a.ts'], attemptedChange: 'added baz()' };
+      },
+      replanChunk: async () => {
+        throw new Error('replan must NOT be called — the dir entry is skipped, not fatal');
+      },
+      typecheckCommand: 'true',
+    };
+
+    const out = await runChunkLoop(FEATURE, deps);
+    assert.equal(out.kind, 'completed');
+    const committed = await execSync('git', ['show', 'HEAD:a.ts'], repo);
+    assert.ok(committed.includes('baz'), 'the real file edit committed; the dir entry was skipped');
+  } finally {
+    await fs.rm(repo, { recursive: true, force: true });
+  }
+});

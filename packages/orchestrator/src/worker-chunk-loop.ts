@@ -494,14 +494,19 @@ async function defaultCommitChunk(
     for (const rel of chunk.files) {
       const srcAbs = path.join(env.dir, rel);
       const dstAbs = path.join(deps.repoPath, rel);
-      const exists = await fs
-        .stat(srcAbs)
-        .then(() => true)
-        .catch(() => false);
-      if (!exists) {
+      const st = await fs.stat(srcAbs).catch(() => null);
+      if (!st) {
         // Worker deleted the file. Remove from working tree + index.
         await fs.rm(dstAbs, { force: true });
         await runGit(['rm', '-f', '--ignore-unmatch', '--', rel], deps.repoPath);
+        continue;
+      }
+      if (st.isDirectory()) {
+        // A directory in files[] is never a real edit (planner slip, or a
+        // sandbox artifact like `node_modules/` that leaked into the set via
+        // lock-extension). copyFile() would EISDIR-abort the WHOLE chunk —
+        // and a poisoned files[] persisted in the PG plan then re-aborts
+        // every resume (live on frame 138805161, 2026-06-09). Skip it.
         continue;
       }
       await fs.mkdir(path.dirname(dstAbs), { recursive: true });

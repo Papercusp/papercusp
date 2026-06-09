@@ -12,7 +12,7 @@
  * file is deleted this module is the sole home.
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { InvokeContext } from './invoke.js';
@@ -68,9 +68,44 @@ function priorValidatorLogPath(stateDir: string, fid: string): string | null {
 }
 
 /**
+ * Zero-byte files the fleet sandbox leaves behind in a spawn's cwd (mount-point
+ * artifacts of claude's protected-file masking — see healSandboxZeroByteManifest
+ * in invoke.ts). When the implement spawn runs INSIDE the scratch worktree these
+ * appear as untracked entries, get mistaken for worker-touched files, and poison
+ * the chunk's `files[]` → the commit copyFile()s them into the real repo (or
+ * EISDIR-aborts on the `node_modules/` dir — live on frame 138805161,
+ * 2026-06-09). Only a ZERO-BYTE file with one of these names is skipped; a
+ * worker-authored non-empty file keeps flowing through.
+ */
+const SANDBOX_MASK_ARTIFACTS = new Set([
+  'package.json',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bunfig.toml',
+  '.npmrc',
+  '.yarnrc',
+  '.yarnrc.yml',
+  '.gitmodules',
+]);
+function isSandboxMaskArtifact(dir: string, rel: string): boolean {
+  const base = rel.split('/').pop() ?? rel;
+  if (!SANDBOX_MASK_ARTIFACTS.has(base) && !base.startsWith('.env')) return false;
+  try {
+    const st = statSync(join(dir, rel));
+    return st.isFile() && st.size === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Walk `git status --porcelain` in the scratch dir to find every file the worker
  * wrote (modified, added, or deleted). Returns paths relative to the scratch dir
- * (= relative to the main repo).
+ * (= relative to the main repo). Untracked DIRECTORIES (porcelain `?? name/`,
+ * e.g. the sandbox's `node_modules/` / `.claude/` artifacts) and the sandbox's
+ * zero-byte mask files are excluded — they are not worker edits, and a directory
+ * in `files[]` EISDIR-aborts the chunk commit.
  */
 function listChangedFiles(dir: string): string[] {
   const r = spawnSync('git', ['status', '--porcelain', '-z'], { cwd: dir, encoding: 'utf8' });
@@ -80,7 +115,10 @@ function listChangedFiles(dir: string): string[] {
     const trimmed = entry.trim();
     if (!trimmed) continue;
     const path = trimmed.length >= 3 ? trimmed.slice(3) : trimmed;
-    if (path) out.push(path);
+    if (!path) continue;
+    if (path.endsWith('/')) continue; // untracked directory — never a worker file edit
+    if (isSandboxMaskArtifact(dir, path)) continue;
+    out.push(path);
   }
   return out;
 }
