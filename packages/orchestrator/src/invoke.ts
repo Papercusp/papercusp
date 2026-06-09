@@ -28,6 +28,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
+import { sessionClaudeConfigDir, sessionMcpDir } from './session-launch-dirs';
 import { configGet } from './config';
 import { readEffectiveConfig } from './effective-config';
 import { buildPrompt } from './prompt-build';
@@ -1967,9 +1968,10 @@ export async function invoke(
     : '';
   if (agentBackend === 'claude-code' && ctx.workspaceId) {
     if (trackedSessionSpawnId) {
-      const sessionMcpRoot =
-        process.env.PAPERCUSP_SESSION_MCP_DIR || join(homedir(), '.papercusp', 'session-mcp');
-      mcpConfigDir = join(sessionMcpRoot, trackedSessionSpawnId);
+      // Keyed by the tracked spawn id (== the adv_sessions coord_owner_id on the
+      // hive path) via the ONE shared helper, so the wake-executor resume leg
+      // remounts the IDENTICAL dir (unify-launch-mechanics P-004).
+      mcpConfigDir = sessionMcpDir(trackedSessionSpawnId);
       mkdirSync(mcpConfigDir, { recursive: true });
     } else {
       mcpTempDir = mkdtempSync(join(tmpdir(), 'papercusp-mcp-'));
@@ -2136,12 +2138,11 @@ export async function invoke(
       // time must find that transcript again (wake-executor sets
       // CLAUDE_CONFIG_DIR to the same conventional path). A temp dir here ==
       // an unresumable Queen (the Stage-A smoke failure, 2026-06-06).
+      // Keyed by the tracked spawn id via the ONE shared helper, so wake-executor
+      // sets CLAUDE_CONFIG_DIR to the IDENTICAL path on resume (unify-launch-mechanics
+      // P-004; the EI-153 launch↔resume key is computed in one place now).
       const persistentDir = trackedSessionSpawnId
-        ? join(
-            process.env.PAPERCUSP_SESSION_CLAUDE_DIR ||
-              join(homedir(), '.papercusp', 'session-claude'),
-            trackedSessionSpawnId,
-          )
+        ? sessionClaudeConfigDir(trackedSessionSpawnId)
         : undefined;
       claudeConfigHandle = writeSpawnClaudeConfig(spawnEnv.HOME ?? homedir(), { persistentDir });
       spawnEnv.CLAUDE_CONFIG_DIR = claudeConfigHandle.configDir;
