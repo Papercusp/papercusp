@@ -98,8 +98,11 @@ test('parseChunkPlanBlock rejects empty description', () => {
 });
 
 test('parseChunkPlanBlock rejects disallowed verb', () => {
+  // "ponder" is not an action verb; note "implement"/"create"/"write" ARE
+  // allowed since 2026-06-09 (a missing everyday synonym hard-failed live
+  // planning rounds — see ALLOWED_VERBS doc).
   const out = `\`\`\`chunk-plan
-{ "chunks": [{ "id": "F-X-1", "files": ["a.ts"], "description": "implement foo()" }] }
+{ "chunks": [{ "id": "F-X-1", "files": ["a.ts"], "description": "ponder foo()" }] }
 \`\`\``;
   const r = parseChunkPlanBlock(out, 'F-X');
   assert.equal(r.ok, false);

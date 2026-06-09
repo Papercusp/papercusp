@@ -211,7 +211,7 @@ export async function runWorkerChunkLoop(
     retryContext,
     log: (msg) => logger.log(msg),
     llm: {
-      plan: async (f, retry) => {
+      plan: async (f, retry, parseFeedback) => {
         const promptText = planChunksUpfrontPrompt({
           featureId: f.id,
           featureTitle: f.title,
@@ -219,6 +219,7 @@ export async function runWorkerChunkLoop(
           context: f.context,
           priorValidatorLog: retry?.priorValidatorLog,
           priorFiles: retry?.priorFiles,
+          parseFeedback,
         });
         const result = await invoke(ctx, 'worker', [`FEATURE_ID=${f.id}`, 'CHUNK_LOOP_STAGE=plan'], {
           inlinePrompt: promptText,

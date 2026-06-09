@@ -99,8 +99,10 @@ export interface ChunkLoopDeps {
    */
   lockCoordinator: FileClaimCoordinator;
   /** Plan all chunks for this feature. Returns the LLM's raw response;
-   *  the loop parses it and re-asks if invalid. */
-  planChunks: (feature: ChunkLoopFeature) => Promise<string>;
+   *  the loop parses it and re-asks ONCE if invalid — the retry call
+   *  receives the parser's error as `parseFeedback` so the model can
+   *  correct the format instead of guessing. */
+  planChunks: (feature: ChunkLoopFeature, parseFeedback?: string) => Promise<string>;
   /** Implement one chunk inside the scratch dir. Worker writes its
    *  edits to env.dir/<file>. Returns what was touched + a summary. */
   implementChunk: (
@@ -200,15 +202,26 @@ export async function runChunkLoop(
     );
     // Don't emit plan_ready: the persisted plan is already correct.
   } else {
-    let planRaw: string;
-    try {
-      planRaw = await deps.planChunks(feature);
-    } catch (err) {
-      return { kind: 'planning_failed', error: `planChunks threw: ${(err as Error).message}` };
+    let planParse: ReturnType<typeof parseChunkPlanBlock> | undefined;
+    let parseFeedback: string | undefined;
+    // One re-ask on a parse rejection, quoting the parser error — a format
+    // slip (wrong verb, stray prose in the JSON) otherwise burns the whole
+    // planning round as an opaque `planning_failed` (live on frame 138790170,
+    // 2026-06-09: 3 of 4 rounds died on a rejected verb with no feedback).
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let planRaw: string;
+      try {
+        planRaw = await deps.planChunks(feature, parseFeedback);
+      } catch (err) {
+        return { kind: 'planning_failed', error: `planChunks threw: ${(err as Error).message}` };
+      }
+      planParse = parseChunkPlanBlock(planRaw, feature.id);
+      if (planParse.ok) break;
+      parseFeedback = planParse.message;
+      log(`chunk-loop: plan parse rejected (${planParse.message})${attempt === 0 ? ' — re-asking with the parser error' : ''}`);
     }
-    const planParse = parseChunkPlanBlock(planRaw, feature.id);
-    if (!planParse.ok) {
-      return { kind: 'planning_failed', error: planParse.message };
+    if (!planParse?.ok) {
+      return { kind: 'planning_failed', error: planParse?.message ?? 'plan parse failed' };
     }
     plan = planParse.value;
     log(`chunk-loop: plan has ${plan.chunks.length} chunks for ${feature.id}`);

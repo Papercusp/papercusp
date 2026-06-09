@@ -34,11 +34,20 @@ export interface ChunkPlan {
 }
 
 /** Allowed first words in `description`. Constrains worker style and
- *  makes the integration log scannable. */
+ *  makes the integration log scannable. Keep this PERMISSIVE about
+ *  synonyms — a missing everyday verb hard-fails the whole planning
+ *  round (live on frame 138790170, 2026-06-09: haiku wrote "create
+ *  hello.txt" and the round died on "create" not being listed while
+ *  "add" was — a vocabulary exam, not a style gate). */
 export const ALLOWED_VERBS = [
   'add',
+  'create',
+  'write',
+  'implement',
   'remove',
+  'delete',
   'rewrite',
+  'update',
   'refactor',
   'move',
   'rename',
@@ -71,9 +80,25 @@ export interface PlanChunksUpfrontInput {
    */
   priorValidatorLog?: string;
   priorFiles?: string[];
+  /**
+   * Parse feedback: when set, the planner's PREVIOUS response was
+   * rejected by the chunk-plan parser (bad fence / JSON / id / verb /
+   * length) and this is the one re-ask — the exact parser error is
+   * quoted so the model can correct the format rather than guess.
+   */
+  parseFeedback?: string;
 }
 
 export function planChunksUpfrontPrompt(input: PlanChunksUpfrontInput): string {
+  const parseFeedbackSection = input.parseFeedback
+    ? `
+⚠️  FORMAT REJECTION — your previous chunk-plan was rejected by the parser:
+    ${input.parseFeedback}
+Re-emit the COMPLETE corrected \`\`\`chunk-plan block. Follow the Rules
+below exactly (especially the allowed verbs and the id format).
+
+`
+    : '';
   const retrySection = input.priorValidatorLog
     ? `
 
@@ -104,7 +129,7 @@ ${input.priorValidatorLog.slice(0, 8192)}${input.priorValidatorLog.length > 8192
 
 ${input.featureDescription}
 
-${input.context ? `Additional context:\n${input.context}\n\n` : ''}${retrySection}Your task: plan the smallest sequence of self-contained chunks that,
+${input.context ? `Additional context:\n${input.context}\n\n` : ''}${parseFeedbackSection}${retrySection}Your task: plan the smallest sequence of self-contained chunks that,
 when applied in order, complete this feature. Each chunk must leave
 the codebase in a working state — specifically, the project's
 typecheck command must pass after the chunk is committed.

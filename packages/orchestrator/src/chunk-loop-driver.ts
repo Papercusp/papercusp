@@ -67,6 +67,7 @@ export interface DriverInput {
     plan: (
       feature: ChunkLoopFeature,
       retryContext?: { priorValidatorLog: string; priorFiles: string[] },
+      parseFeedback?: string,
     ) => Promise<string>;
     implement: ChunkLoopDeps['implementChunk'];
     replan: (
@@ -161,7 +162,7 @@ export async function driveChunkLoop(input: DriverInput): Promise<ChunkLoopOutco
     resumeFromPlan,
     log,
 
-    planChunks: (feature) => input.llm.plan(feature, input.retryContext),
+    planChunks: (feature, parseFeedback) => input.llm.plan(feature, input.retryContext, parseFeedback),
     implementChunk: input.llm.implement,
     replanChunk: async (feature, failedChunk, typecheckError, attemptedChange) => {
       return input.llm.replan(
