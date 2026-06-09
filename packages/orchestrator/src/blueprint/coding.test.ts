@@ -159,3 +159,29 @@ test('the reactive debugger gate fires before a worker retry once attempts ≥ t
   // read-only — it does NOT preempt the worker dispatch
   assert.equal(rule!.preempt, false);
 });
+
+test('coding declares params = base universal ∪ coding-specific (P-006 / D-003)', () => {
+  const { blueprint: bp } = loadBuiltinBlueprint('coding');
+  const params = bp.params;
+  // keys are config.json INSTANCE paths (what the settings panel persists), NOT blueprint-knobs paths.
+  // base's UNIVERSAL params are inherited (the record unions across `extends: base`)
+  assert.ok(params['parallelWorkers.max'], 'inherits base concurrency param');
+  assert.ok(params['aiBackend.default.model'], 'inherits base backend-model param');
+  assert.ok(params['aiBackend.default.agentCmd'], 'inherits base backend-cmd param');
+  // coding-SPECIFIC params (the old hardcoded HarnessSettingsPanel knobs, now declared)
+  assert.ok(params['debugger.threshold'], 'coding declares debugger.threshold param');
+  assert.ok(params['parallelWorkers.useChunkLoop'], 'coding declares useChunkLoop param');
+  assert.ok(params['parallelWorkers.workingStateCheck'], 'coding declares workingStateCheck param');
+  assert.ok(params['parallelWorkers.replanStrikes'], 'coding declares replanStrikes param');
+  assert.ok(params['parallelWorkers.escalateToRole'], 'coding declares escalateToRole param');
+  // ParamSpec shape carried through (type / group / number range / default)
+  assert.equal(params['parallelWorkers.max'].type, 'number');
+  assert.equal(params['parallelWorkers.max'].group, 'Dispatch');
+  assert.equal(params['parallelWorkers.max'].min, 1);
+  assert.equal(params['parallelWorkers.max'].max, 64);
+  assert.equal(params['parallelWorkers.max'].default, 1);
+  assert.equal(params['debugger.threshold'].group, 'Workers');
+  assert.equal(params['debugger.threshold'].default, 3);
+  assert.equal(params['parallelWorkers.useChunkLoop'].type, 'boolean');
+  assert.equal(params['parallelWorkers.useChunkLoop'].default, true);
+});

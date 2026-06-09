@@ -20,32 +20,25 @@ knobs:
   worktrees: { enabled: false }
 
 # Declared UI-introspectable tunables (psu-isolation-and-blueprint-aware-harness-ui
-# P-006 / D-003 / D-007). The UNIVERSAL params every harness shows, keyed by dot-path
-# into the resolved config. A concrete blueprint ADDS its own params (the record
-# UNIONS across `extends` — base ∪ child). `default` is omitted where the blueprint
-# /schema already supplies it (the settings UI reads the effective value — no drift).
-# The schema-driven settings panel (P-008) introspects this, so ANY blueprint —
-# including a Cupboard-installed third-party one — gets a working panel for free.
+# P-006 / D-003 / D-007). The UNIVERSAL params every harness shows, KEYED BY DOT-PATH
+# into the per-harness INSTANCE config (the `config.json` namespace the settings panel
+# reads + writes — NOT the blueprint-`knobs` namespace). A concrete blueprint ADDS its
+# own params (the record UNIONS across `extends` — base ∪ child). The schema-driven
+# settings panel (P-008) introspects this, so ANY blueprint — including a Cupboard-
+# installed third-party one — gets a working panel for free.
 params:
-  "dispatch.concurrency":
+  "parallelWorkers.max":
     label: Max concurrent work items
     type: number
     min: 1
-    max: 16
+    max: 64
+    default: 1
     group: Dispatch
-    affects: autoloop — how many work-item pipelines run at once
+    affects: autoloop — total concurrent work-item slots (overrides dispatch.concurrency)
     description: >-
-      How many work items this harness runs in parallel. The orchestrator's
-      imperative safety ceiling still clamps this (tighten-only, never a raise).
-  "dispatch.costCapUsd":
-    label: Autoloop cost cap (USD)
-    type: number
-    min: 0
-    group: Dispatch
-    affects: autoloop — stops starting new pipelines past this spend
-    description: >-
-      Dollar ceiling for the autoloop. Over it, no new pipelines start. Blank = no cap.
-  "knobs.aiBackend.default.model":
+      How many work items this harness runs in parallel. The orchestrator's imperative
+      safety ceiling still clamps this (tighten-only, never a raise).
+  "aiBackend.default.model":
     label: Agent model
     type: string
     group: Backend
@@ -53,7 +46,7 @@ params:
     description: >-
       Default model id for this harness's agents (a role can override). e.g.
       claude-opus-4-8.
-  "knobs.aiBackend.default.agentCmd":
+  "aiBackend.default.agentCmd":
     label: Agent command
     type: string
     group: Backend

@@ -525,11 +525,15 @@ export const EnvironmentSpecSchema = z.object({
  * A declared, UI-introspectable tunable —
  * `psu-isolation-and-blueprint-aware-harness-ui-2026-06-09` P-006 / D-003 / D-007.
  * The settings UI renders one control per ParamSpec; the value lives at the param's
- * KEY (a dot-path into the resolved config — see {@link ParamsSchema}). This is a
- * PRESENTATION/metadata projection over the existing validated `knobs` / `dispatch`
- * / `triggers` — NOT a second source of truth: the Zod schema above stays the
- * validator-of-record; a ParamSpec only declares HOW to surface + edit a value that
- * already has a home.
+ * KEY — a dot-path into the PER-HARNESS INSTANCE CONFIG (the `config.json` /
+ * `HarnessConfig` namespace the settings panel reads + writes), e.g.
+ * `parallelWorkers.max`, `debugger.threshold`, `aiBackend.default.model`. (That
+ * namespace deliberately differs from the blueprint-`knobs` namespace — the
+ * knobs→config overlay drops the `knobs.` prefix and renames `debuggerThreshold`→
+ * `debugger.threshold` — so the param keys the path the UI actually persists, NOT
+ * the blueprint path.) This is a PRESENTATION/metadata projection that declares HOW
+ * to surface + edit a value that already has a home; the Zod schema above stays the
+ * validator-of-record for the blueprint shape.
  */
 export const ParamOptionSchema = z.object({
   value: z.union([z.string(), z.number(), z.boolean()]),
@@ -567,9 +571,10 @@ export const ParamSpecSchema = z.object({
 });
 
 /**
- * The blueprint's declared tunables, KEYED BY DOT-PATH into the resolved config
- * (`dispatch.concurrency`, `dispatch.costCapUsd`, `knobs.debuggerThreshold`,
- * `knobs.parallelWorkers.max`, …). A RECORD, not an array, ON PURPOSE: the loader
+ * The blueprint's declared tunables, KEYED BY DOT-PATH into the per-harness instance
+ * config (`parallelWorkers.max`, `debugger.threshold`, `aiBackend.default.model`,
+ * …) — the `config.json` namespace the settings panel reads + writes (see
+ * {@link ParamSpecSchema}). A RECORD, not an array, ON PURPOSE: the loader
  * deep-merges raw blueprint objects child-over-parent and REPLACES arrays wholesale
  * but UNIONS object keys — so `base` declares the universal params every harness
  * shows and a concrete blueprint (`coding`/`research`/…) ADDS its own, and an

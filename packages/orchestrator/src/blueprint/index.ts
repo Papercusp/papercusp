@@ -10,6 +10,17 @@
  * `papercusp init` CLI / distribution plan can import it.
  */
 export * from './schema.js';
+// Schema-driven per-harness config read/write/validate keyed by a blueprint's declared
+// `params` (psu-isolation-and-blueprint-aware-harness-ui-2026-06-09 P-007).
+export {
+  getParamPath,
+  setParamPath,
+  validateParamValue,
+  resolveParamViews,
+  validateParamPatch,
+  applyParamPatch,
+} from './params.js';
+export type { ParamValidationResult, ParamView, ParamPatchResult } from './params.js';
 export type { PipelineAction } from './action.js';
 export { deriveNext } from './derive-next.js';
 export type { ParsedDecisionLike } from './derive-next.js';

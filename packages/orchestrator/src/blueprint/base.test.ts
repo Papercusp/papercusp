@@ -50,3 +50,26 @@ test('a child overrides a base knob (deep-merge: child wins on the leaf, base ke
   assert.deepEqual(blueprint.knobs.branchIsolation, { enabled: false });
   assert.deepEqual(blueprint.knobs.worktrees, { enabled: false });
 });
+
+test('params is a RECORD that UNIONS across extends (base universal ∪ child-specific), not replaced — P-006/D-003/D-007', () => {
+  const { blueprint } = resolveBlueprint({
+    id: 'tmp-base-params-child',
+    extends: 'base',
+    workItem: { kind: 'feature' },
+    spine: { edges: { DONE: { to: 'done' } } },
+    params: {
+      'knobs.myKnob': { label: 'My knob', type: 'boolean', group: 'Custom' },
+    },
+  });
+  // base's UNIVERSAL params survive (object-key union — an ARRAY would be replaced
+  // wholesale by the child, which is exactly why params must be a keyed record).
+  // Keys are config.json instance paths (the namespace the settings panel persists).
+  assert.ok(blueprint.params['parallelWorkers.max'], 'base universal concurrency param inherited');
+  assert.ok(blueprint.params['aiBackend.default.model'], 'base universal backend param inherited');
+  // the child's own param is ADDED, not a replacement
+  assert.equal(blueprint.params['knobs.myKnob'].label, 'My knob');
+  assert.equal(blueprint.params['knobs.myKnob'].type, 'boolean');
+  // ParamSpec inner defaults applied (Zod): description '' + secret false
+  assert.equal(blueprint.params['knobs.myKnob'].description, '');
+  assert.equal(blueprint.params['knobs.myKnob'].secret, false);
+});
