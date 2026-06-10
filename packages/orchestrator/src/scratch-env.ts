@@ -153,9 +153,25 @@ export async function teardown(
 }
 
 /**
+ * Shell-metacharacter guard (audit P-030): check commands are config-
+ * sourced strings, but they run WITHOUT a shell — whitespace-split into
+ * a plain argv. A command that needs shell syntax is rejected (mapped to
+ * the unrunnable/fail-open lane) instead of being handed to /bin/sh.
+ * Exported for tests.
+ */
+const SHELL_META_RE = /[|&;<>$`\\!*?(){}[\]~#\n\r'"]/;
+export function splitCheckCommandArgv(command: string): string[] | null {
+  if (SHELL_META_RE.test(command)) return null;
+  const argv = command.trim().split(/\s+/).filter(Boolean);
+  return argv.length ? argv : null;
+}
+
+/**
  * Run a check command inside the scratch dir. Returns exit code +
- * combined stdout/stderr. Spawns the command with `shell: true` so the
- * caller can pass things like `pnpm typecheck` without parsing.
+ * combined stdout/stderr. The command is whitespace-split and spawned
+ * WITHOUT a shell (audit P-030); plain invocations like `pnpm typecheck`
+ * or `tsc --noEmit` work unchanged, shell syntax is rejected as exit 126
+ * (the caller's unrunnable/fail-open lane — same as a non-executable gate).
  *
  * Doesn't throw — non-zero exit codes are returned to the caller.
  */
@@ -165,18 +181,24 @@ export async function runCheck(
   options: { timeoutMs?: number } = {},
 ): Promise<{ exitCode: number; output: string }> {
   return new Promise((resolve) => {
+    const argv = splitCheckCommandArgv(command);
+    if (!argv) {
+      resolve({
+        exitCode: 126,
+        output: `check command rejected — shell metacharacters are not supported (commands run without a shell; audit P-030): ${command}`,
+      });
+      return;
+    }
     let output = '';
     let timedOut = false;
     // `detached: true` on POSIX puts the child in its own process
-    // group so `kill(-pid, ...)` reaches the entire group. Without
-    // this, killing a `shell: true` wrapper leaves child commands
-    // orphaned and holding stdio fds open — runCheck never resolves.
+    // group so `kill(-pid, ...)` reaches the entire group (the argv
+    // binary may itself spawn children, e.g. `pnpm typecheck` → tsc).
     // Windows ignores the flag (process groups work differently); a
     // straight child.kill is best-effort there.
     const isPosix = process.platform !== 'win32';
-    const child = spawn(command, {
+    const child = spawn(argv[0], argv.slice(1), {
       cwd: env.dir,
-      shell: true,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: isPosix,
@@ -214,7 +236,12 @@ export async function runCheck(
     });
     child.on('error', (err) => {
       if (timer) clearTimeout(timer);
-      resolve({ exitCode: -1, output: `${output}\n[spawn error] ${err.message}` });
+      // Without a shell, "command not found" arrives as ENOENT here (a
+      // shell would have exited 127). Map onto the conventional codes so
+      // isCheckUnrunnable() still routes these to the fail-open lane.
+      const code = (err as NodeJS.ErrnoException).code;
+      const exitCode = code === 'ENOENT' ? 127 : code === 'EACCES' ? 126 : -1;
+      resolve({ exitCode, output: `${output}\n[spawn error] ${err.message}` });
     });
   });
 }
