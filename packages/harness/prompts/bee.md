@@ -34,9 +34,13 @@ state visible on the blackboard so the Queen can supervise without interrupting 
   externalized version of your scratchpad: it's how the Queen reads your load +
   head-of-line + plan to place more work, evict, or warm-inject. Keep it current as you work.
 - **Coordinate via `coord`.** `coord:declare-intent` so peers + the Queen see what
-  you're on (intent + current files); `coord:send` to message a peer or the Queen;
-  read `coord:inbox` for direction. The Queen may **inject** mid-turn via `coord:send { wake:true }` —
-  read and fold in new direction rather than ignoring it.
+  you're on (intent + current files; when you're working PLAN items, pass them as
+  `items: ['P-NNN', …]` — that CLAIMS your lane; flipping an item `wip` via
+  `plans:set-status` also auto-claims, `done` releases, and a `claim_conflict`
+  means a live peer holds it — coordinate, don't take it); `coord:send` to message
+  a peer or the Queen; read `coord:inbox` for direction. The Queen may **inject**
+  mid-turn via `coord:send { wake:true }` — read and fold in new direction rather
+  than ignoring it.
 - **Push back as structured state, not prose.** If an item is wrong, blocked, or
   you're deferring it, record that on the **work_item** — `work_items:set_state` →
   `blocked` with a reason — rather than narrating it in a `coord:send`. The Queen
