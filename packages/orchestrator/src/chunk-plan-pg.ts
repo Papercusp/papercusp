@@ -29,35 +29,52 @@ export interface ChunkPlanPgCtx {
 }
 
 /**
- * Replace any existing plan for a feature with this one. Atomic via
- * a single transaction: delete-then-insert means a partially-applied
- * old plan can't linger.
+ * Replace any existing plan for a feature with this one, atomically: the
+ * DELETE and every chunk INSERT run in ONE transaction (audit P-020 — the
+ * loop previously ran unwrapped, so a crash mid-persist left the old plan
+ * deleted and the new one half-inserted, which resume-on-restart replayed
+ * as if it were the complete plan).
+ *
+ * Transaction support is duck-typed like `pgJson`: a real postgres-js client
+ * (every production caller) has `.begin`; test doubles (makeMockPg) don't and
+ * fall back to sequential statements — unit mocks observe the same call
+ * sequence, the real client gets atomicity.
  */
 export async function persistPlan(
   ctx: ChunkPlanPgCtx,
   plan: ChunkPlan,
 ): Promise<void> {
-  // Note: postgres-js tagged-template syntax — the template strings
-  // are joined and parameter substituted by the driver, so this is
-  // not SQL injection vulnerable despite looking like string concat.
-  await ctx.pg`
-    DELETE FROM harness_shared.harness_chunk_plans
-    WHERE workspace_id = ${ctx.workspaceId}
-      AND harness_slug = ${ctx.harnessSlug}
-      AND feature_id   = ${plan.featureId}
-  `;
-  for (let i = 0; i < plan.chunks.length; i++) {
-    const c = plan.chunks[i];
-    await ctx.pg`
-      INSERT INTO harness_shared.harness_chunk_plans
-        (workspace_id, harness_slug, feature_id, chunk_id, chunk_index,
-         files, description, status)
-      VALUES
-        (${ctx.workspaceId}, ${ctx.harnessSlug}, ${plan.featureId},
-         ${c.id}, ${i + 1},
-         ${pgJson(ctx.pg, c.files)}::jsonb,
-         ${c.description}, 'pending')
+  const write = async (pg: OrchestratorPg): Promise<void> => {
+    // Note: postgres-js tagged-template syntax — the template strings
+    // are joined and parameter substituted by the driver, so this is
+    // not SQL injection vulnerable despite looking like string concat.
+    await pg`
+      DELETE FROM harness_shared.harness_chunk_plans
+      WHERE workspace_id = ${ctx.workspaceId}
+        AND harness_slug = ${ctx.harnessSlug}
+        AND feature_id   = ${plan.featureId}
     `;
+    for (let i = 0; i < plan.chunks.length; i++) {
+      const c = plan.chunks[i];
+      await pg`
+        INSERT INTO harness_shared.harness_chunk_plans
+          (workspace_id, harness_slug, feature_id, chunk_id, chunk_index,
+           files, description, status)
+        VALUES
+          (${ctx.workspaceId}, ${ctx.harnessSlug}, ${plan.featureId},
+           ${c.id}, ${i + 1},
+           ${pgJson(pg, c.files)}::jsonb,
+           ${c.description}, 'pending')
+      `;
+    }
+  };
+  const begin = (
+    ctx.pg as { begin?: <T>(fn: (tx: OrchestratorPg) => Promise<T>) => Promise<T> }
+  ).begin;
+  if (typeof begin === 'function') {
+    await begin.call(ctx.pg, write);
+  } else {
+    await write(ctx.pg);
   }
 }
 

@@ -20,7 +20,7 @@ npm --workspace @papercusp/web run start
 
 ## papercuspai.com (our hosted infra only)
 
-- Web admin (apps/web): static export → Cloudflare Pages
+- Web admin: RETIRED 2026-06-10 — the legacy `apps/web` Next admin moved to `_retired/apps-web/` (superseded by the operator UI in the Tauri desktop shell)
 - Marketplace API (apps/marketplace-api): Hono node server behind Cloudflare Tunnel as `api.papercuspai.com`
 - R2 bucket for tarballs (planned)
 - Postgres on managed infra (TBD: Neon / self-hosted)

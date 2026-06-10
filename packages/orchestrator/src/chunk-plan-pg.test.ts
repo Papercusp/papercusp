@@ -95,6 +95,47 @@ test('persistPlan with empty chunks just deletes', async () => {
   assert.match(m.calls[0].sql, /^delete from/i);
 });
 
+// Audit P-020: when the client supports transactions (postgres-js `.begin` —
+// every production caller), the DELETE + INSERTs must all run inside it; the
+// non-begin path above is the test-double fallback only.
+test('persistPlan runs delete+inserts inside sql.begin when the client supports it', async () => {
+  const outerCalls: Array<{ sql: string }> = [];
+  const txCalls: Array<{ sql: string; params: unknown[] }> = [];
+  let began = false;
+  const tx = ((template: TemplateStringsArray, ...values: unknown[]) => {
+    txCalls.push({ sql: template.join('?').replace(/\s+/g, ' ').trim(), params: values });
+    return Promise.resolve([]);
+  }) as OrchestratorPg;
+  const pgWithBegin = Object.assign(
+    ((template: TemplateStringsArray) => {
+      outerCalls.push({ sql: template.join('?') });
+      return Promise.resolve([]);
+    }) as OrchestratorPg,
+    {
+      begin: async <T,>(fn: (t: OrchestratorPg) => Promise<T>): Promise<T> => {
+        began = true;
+        return fn(tx);
+      },
+    },
+  );
+  await persistPlan(
+    { pg: pgWithBegin, workspaceId: 'ws-default', harnessSlug: 'sheets' },
+    {
+      featureId: 'F-X',
+      chunks: [
+        { id: 'F-X-1', files: ['a.ts'], description: 'add foo()' },
+        { id: 'F-X-2', files: ['b.ts'], description: 'wire bar' },
+      ],
+    },
+  );
+  assert.equal(began, true);
+  assert.equal(outerCalls.length, 0); // nothing bypasses the transaction
+  assert.equal(txCalls.length, 3); // DELETE + one INSERT per chunk, all on the tx
+  assert.match(txCalls[0].sql, /^delete from harness_shared\.harness_chunk_plans/i);
+  assert.match(txCalls[1].sql, /^insert into harness_shared\.harness_chunk_plans/i);
+  assert.match(txCalls[2].sql, /^insert into harness_shared\.harness_chunk_plans/i);
+});
+
 test('setChunkStatus updates the row and bumps updated_ts', async () => {
   const m = makeMockPg();
   await setChunkStatus(ctx(m.pg), 'F-X', 'F-X-3', 'in_progress');

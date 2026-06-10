@@ -25,3 +25,7 @@ convention.
 - `orchestrator-spawn-plugin/` — the never-installed `@papercupai/orchestrator-spawn`
   plugin, superseded by `packages/operator-core/lib/fleet/operator-spawn.ts`. Retired
   2026-06-06. Restore: `orchestrator-spawn-plugin/RESTORE.md`.
+- `apps-web/` — the legacy standalone Next.js web admin (`apps/web`, `:3055`),
+  superseded by the operator UI in the Tauri desktop shell; was the last live
+  importer of the retired Zero stack. Retired 2026-06-10 (full-app audit P-079).
+  Restore: `apps-web/RESTORE.md`.
