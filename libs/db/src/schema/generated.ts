@@ -1252,17 +1252,6 @@ export const operatorTrustStoreInHarnessShared = harnessShared.table("operator_t
 
 ]);
 
-export const operatorRateLimitConfigInHarnessShared = harnessShared.table("operator_rate_limit_config", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().default({}).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_rate_limit_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_rate_limit_config_pkey"}),
-
-]);
-
 export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage_samples", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.agent_usage_samples_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -1295,11 +1284,24 @@ export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage
 	harnessSlug: text("harness_slug"),
 	runId: text("run_id"),
 	role: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	cacheCreationTokens: bigint("cache_creation_tokens", { mode: "number" }),
 }, (table) => [
 	index("agent_usage_samples_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	index("agent_usage_samples_ws_bucket_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.bucketKey.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("text_ops")),
 	index("agent_usage_samples_ws_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
 	pgPolicy("agent_usage_samples_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const operatorRateLimitConfigInHarnessShared = harnessShared.table("operator_rate_limit_config", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_rate_limit_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_rate_limit_config_pkey"}),
+
 ]);
 
 export const promptCompositionsInHarnessShared = harnessShared.table("prompt_compositions", {
@@ -2236,6 +2238,16 @@ export const coordWatermarksInHarnessShared = harnessShared.table("coord_waterma
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.ownerId], name: "coord_watermarks_pkey"}),
 	pgPolicy("coord_watermarks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const interactiveUsageFilesInHarnessShared = harnessShared.table("interactive_usage_files", {
+	workspaceId: text("workspace_id").notNull(),
+	filePath: text("file_path").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	byteOffset: bigint("byte_offset", { mode: "number" }).default(0).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.filePath], name: "interactive_usage_files_pkey"}),
 ]);
 
 export const agentNamesInHarnessShared = harnessShared.table("agent_names", {
