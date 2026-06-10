@@ -116,6 +116,12 @@ export interface BuildPromptInput {
    *  Empty string when `inlinePrompt` is supplied — the inline string
    *  replaces what would otherwise come from the file. */
   promptFile: string;
+  /** The full prompt-layer file list, least- to most-specific
+   *  (`resolvePromptFiles` — base/<role>.md first, the concrete prompt
+   *  last; audit P-019). When set and non-empty it supersedes `promptFile`;
+   *  contents are joined with `\n\n---\n\n` so later sections stay most
+   *  authoritative per the prompts README contract. */
+  promptFiles?: string[];
   /** Inline prompt body. When non-empty, used instead of `promptFile`'s
    *  contents — for ad-hoc invocations like the chunk-loop driver
    *  that build the prompt programmatically. */
@@ -346,12 +352,23 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   // ── CACHEABLE PREAMBLE — ordered by descending stability (P-009) ──────────
   const pre: string[] = [];
 
-  // 1. Role prompt file (always — caller asserts it exists), unless
+  // 1. Role prompt file(s) (always — caller asserts they exist), unless
   //    the caller supplied an inline prompt (chunk-loop driver, etc.).
+  //    promptFiles carries the layered list (base/<role>.md → concrete,
+  //    audit P-019); a bare promptFile is the legacy single-file path.
   if (input.inlinePrompt && input.inlinePrompt.length > 0) {
     pre.push(input.inlinePrompt);
   } else {
-    pre.push(fileContents(input.promptFile));
+    const files =
+      input.promptFiles && input.promptFiles.length > 0
+        ? input.promptFiles
+        : [input.promptFile];
+    pre.push(
+      files
+        .map(fileContents)
+        .filter((s) => s.length > 0)
+        .join('\n\n---\n\n'),
+    );
   }
 
   // 2. Per-role specialization override.

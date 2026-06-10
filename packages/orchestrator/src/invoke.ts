@@ -35,7 +35,7 @@ import { configGet } from './config';
 import { readEffectiveConfig } from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
-import { resolvePromptFile } from './prompt-resolve';
+import { resolvePromptFiles } from './prompt-resolve';
 import { extractFeatureId, makeRunId } from './run-id';
 import { harnessSlug as harnessSlugFromProjectDir } from './state';
 import {
@@ -1569,23 +1569,27 @@ export async function invoke(
   //    file resolution entirely and pass the inline string through to
   //    buildPrompt as-is.
   let promptFile = '';
+  let promptFiles: string[] = [];
   if (!options.inlinePrompt) {
     // A program-blueprint spawn (coordination-ops-as-blueprint-primitives) passes
     // BLUEPRINT_ID=<id> so a program role (voter/advocate) resolves its prompt from
     // blueprints/<id>/prompts/<role>.md. Absent for the normal pipeline.
     const blueprintId =
       extras.find((e) => e.startsWith('BLUEPRINT_ID='))?.slice('BLUEPRINT_ID='.length) || undefined;
-    const resolved = resolvePromptFile(
+    // Layered list (base/<role>.md first when present — audit P-019), the
+    // concrete most-specific prompt last.
+    promptFiles = resolvePromptFiles(
       { harnessDir: ctx.harnessDir, phase: ctx.phase, dept, blueprintId },
       role,
     );
-    if (!resolved) {
+    if (promptFiles.length === 0) {
       const where = blueprintId
         ? `${ctx.harnessDir}/blueprints/${blueprintId}/prompts or ${ctx.harnessDir}/prompts`
         : `${ctx.harnessDir}/prompts`;
       throw new Error(`invoke: no prompt file for role=${role} (looked under ${where})`);
     }
-    promptFile = resolved;
+    // The most-specific file stays the run-record's promptFile (stable reporting).
+    promptFile = promptFiles[promptFiles.length - 1];
   }
 
   // 2. Feature ID + run ID. An idempotency key (P-015) is used as the run ID so
@@ -1900,6 +1904,7 @@ export async function invoke(
   const prompt = buildPrompt({
     role,
     promptFile,
+    promptFiles,
     inlinePrompt: options.inlinePrompt,
     promptOverride,
     stateDir: ctx.stateDir,

@@ -1,5 +1,10 @@
-import { pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, check, uuid, timestamp, bigserial, boolean, integer, uniqueIndex, doublePrecision, foreignKey, unique, numeric, vector, primaryKey, real } from "drizzle-orm/pg-core"
+import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, check, uuid, timestamp, bigserial, boolean, integer, uniqueIndex, doublePrecision, foreignKey, unique, numeric, vector, primaryKey, real } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
+
+// Custom column types for PG types drizzle-kit can't introspect
+// (pull-schema.mjs Fix 4, audit P-075):
+const byteaCustom = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
+const tsvectorCustom = customType<{ data: string; driverData: string }>({ dataType: () => 'tsvector' });
 
 export const harnessShared = pgSchema("harness_shared");
 export const papercupShared = pgSchema("papercup_shared");
@@ -599,8 +604,7 @@ export const llmTestRunsInHarnessShared = harnessShared.table("llm_test_runs", {
 	capBreaches: text("cap_breaches").array().default([""]).notNull(),
 	scoresJson: jsonb("scores_json"),
 	findingsCount: jsonb("findings_count").default({}).notNull(),
-	// TODO: failed to parse database type 'bytea'
-	transcriptRawZstd: text("transcript_raw_zstd"),
+	transcriptRawZstd: byteaCustom("transcript_raw_zstd"),
 	transcriptNormJson: jsonb("transcript_norm_json").default({}).notNull(),
 	telemetryJson: jsonb("telemetry_json").default({}).notNull(),
 	assertsJson: jsonb("asserts_json").default({}).notNull(),
@@ -893,8 +897,7 @@ export const mobileDevicesInHarnessShared = harnessShared.table("mobile_devices"
 export const operatorSearchProviderCredentialsInHarnessShared = harnessShared.table("operator_search_provider_credentials", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
-	// TODO: failed to parse database type 'bytea'
-	payloadCt: text("payload_ct"),
+	payloadCt: byteaCustom("payload_ct"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
 }, (table) => [
@@ -933,8 +936,7 @@ export const auditLogInHarnessShared = harnessShared.table("audit_log", {
 	subject: text().notNull(),
 	details: jsonb(),
 	workspaceId: text("workspace_id").notNull(),
-	// TODO: failed to parse database type 'tsvector'
-	search: text("_search").generatedAlwaysAs(sql`((setweight(to_tsvector('simple'::regconfig, COALESCE(subject, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(action, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(actor, ''::text)), 'C'::"char"))`),
+	search: tsvectorCustom("_search").generatedAlwaysAs(sql`((setweight(to_tsvector('simple'::regconfig, COALESCE(subject, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(action, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(actor, ''::text)), 'C'::"char"))`),
 }, (table) => [
 	index("audit_action_idx").using("btree", table.action.asc().nullsLast().op("text_ops")),
 	index("audit_actor_action_ts_idx").using("btree", table.actor.asc().nullsLast().op("int8_ops"), table.action.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
@@ -1110,8 +1112,7 @@ export const projectsInHarnessShared = harnessShared.table("projects", {
 	earnedCents: bigint("earned_cents", { mode: "number" }).default(0).notNull(),
 	parentSlug: text("parent_slug"),
 	workspaceId: text("workspace_id").notNull(),
-	// TODO: failed to parse database type 'tsvector'
-	search: text("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(slug, ''::text)), 'B'::"char"))`),
+	search: tsvectorCustom("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(slug, ''::text)), 'B'::"char"))`),
 }, (table) => [
 	index("projects_parent_idx").using("btree", table.parentSlug.asc().nullsLast().op("text_ops")),
 	index("projects_search_idx").using("gin", table.search.asc().nullsLast().op("tsvector_ops")),
@@ -1254,8 +1255,7 @@ export const operatorTrustStoreInHarnessShared = harnessShared.table("operator_t
 	payload: jsonb().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	// TODO: failed to parse database type 'bytea'
-	payloadCt: text("payload_ct"),
+	payloadCt: byteaCustom("payload_ct"),
 }, (table) => [
 	pgPolicy("operator_trust_store_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_trust_store_pkey"}),
@@ -1704,8 +1704,7 @@ export const operatorTurnsInHarnessShared = harnessShared.table("operator_turns"
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	createdAt: bigint("created_at", { mode: "number" }).notNull(),
 	tools: jsonb(),
-	// TODO: failed to parse database type 'tsvector'
-	textTsv: text("text_tsv"),
+	textTsv: tsvectorCustom("text_tsv"),
 	textEmbedding: vector("text_embedding", { dimensions: 384 }),
 	report: jsonb(),
 }, (table) => [
@@ -2023,8 +2022,7 @@ export const goalsInHarnessShared = harnessShared.table("goals", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	metadata: jsonb(),
 	workspaceId: text("workspace_id").notNull(),
-	// TODO: failed to parse database type 'tsvector'
-	search: text("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(body, ''::text)), 'B'::"char"))`),
+	search: tsvectorCustom("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(body, ''::text)), 'B'::"char"))`),
 }, (table) => [
 	index("goals_install_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops")),
 	index("goals_parent_idx").using("btree", table.parentId.asc().nullsLast().op("text_ops")),
@@ -2056,8 +2054,7 @@ export const operatorCredentialsInHarnessShared = harnessShared.table("operator_
 	payload: jsonb().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	// TODO: failed to parse database type 'bytea'
-	payloadCt: text("payload_ct"),
+	payloadCt: byteaCustom("payload_ct"),
 }, (table) => [
 	pgPolicy("operator_credentials_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_credentials_pkey"}),
@@ -2069,8 +2066,7 @@ export const operatorPublishCredentialsInHarnessShared = harnessShared.table("op
 	payload: jsonb().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	// TODO: failed to parse database type 'bytea'
-	payloadCt: text("payload_ct"),
+	payloadCt: byteaCustom("payload_ct"),
 }, (table) => [
 	pgPolicy("operator_publish_credentials_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_publish_credentials_pkey"}),
@@ -2082,8 +2078,7 @@ export const operatorMarketplaceTokenInHarnessShared = harnessShared.table("oper
 	payload: jsonb().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	// TODO: failed to parse database type 'bytea'
-	payloadCt: text("payload_ct"),
+	payloadCt: byteaCustom("payload_ct"),
 }, (table) => [
 	pgPolicy("operator_marketplace_token_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_marketplace_token_pkey"}),
@@ -2095,8 +2090,7 @@ export const operatorVoiceCredentialsInHarnessShared = harnessShared.table("oper
 	payload: jsonb().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	// TODO: failed to parse database type 'bytea'
-	payloadCt: text("payload_ct"),
+	payloadCt: byteaCustom("payload_ct"),
 }, (table) => [
 	pgPolicy("operator_voice_credentials_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_voice_credentials_pkey"}),
@@ -2621,8 +2615,7 @@ export const pluginConfigsInHarnessShared = harnessShared.table("plugin_configs"
 	config: jsonb().default({}).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	workspaceId: text("workspace_id").notNull(),
-	// TODO: failed to parse database type 'bytea'
-	configCt: text("config_ct"),
+	configCt: byteaCustom("config_ct"),
 }, (table) => [
 	index("plugin_configs_plugin_idx").using("btree", table.pluginSlug.asc().nullsLast().op("text_ops")),
 	index("plugin_configs_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
@@ -2846,8 +2839,7 @@ export const harnessHookLogsInHarnessShared = harnessShared.table("harness_hook_
 export const hivesInHarnessShared = harnessShared.table("hives", {
 	workspaceId: text("workspace_id").notNull(),
 	homeSlug: text("home_slug").notNull(),
-	// TODO: failed to parse database type 'bytea'
-	publicKey: text("public_key").notNull(),
+	publicKey: byteaCustom("public_key").notNull(),
 	keychainId: text("keychain_id").notNull(),
 	title: text(),
 	description: text(),
@@ -3012,8 +3004,7 @@ export const harnessEscalationsInHarnessShared = harnessShared.table("harness_es
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
-	// TODO: failed to parse database type 'tsvector'
-	bodyTsv: text("body_tsv"),
+	bodyTsv: tsvectorCustom("body_tsv"),
 	bodyEmbedding: vector("body_embedding", { dimensions: 384 }),
 }, (table) => [
 	index("harness_escalations_body_embedding_hnsw").using("hnsw", table.bodyEmbedding.asc().nullsLast().op("vector_cosine_ops")),
@@ -3149,8 +3140,7 @@ export const harnessBrainstormInHarnessShared = harnessShared.table("harness_bra
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
-	// TODO: failed to parse database type 'tsvector'
-	contentTsv: text("content_tsv"),
+	contentTsv: tsvectorCustom("content_tsv"),
 	contentEmbedding: vector("content_embedding", { dimensions: 384 }),
 }, (table) => [
 	index("harness_brainstorm_content_embedding_hnsw").using("hnsw", table.contentEmbedding.asc().nullsLast().op("vector_cosine_ops")),
@@ -3366,8 +3356,7 @@ export const harnessDecisionsInHarnessShared = harnessShared.table("harness_deci
 	iteration: integer(),
 	isGhost: boolean("is_ghost").default(false).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
-	// TODO: failed to parse database type 'tsvector'
-	bodyTsv: text("body_tsv"),
+	bodyTsv: tsvectorCustom("body_tsv"),
 	bodyEmbedding: vector("body_embedding", { dimensions: 384 }),
 }, (table) => [
 	index("harness_decisions_body_embedding_hnsw").using("hnsw", table.bodyEmbedding.asc().nullsLast().op("vector_cosine_ops")),
@@ -4081,8 +4070,7 @@ export const engineerIssuesInHarnessShared = harnessShared.table("engineer_issue
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	authorPubkey: text("author_pubkey"),
 	origin: text().default('local').notNull(),
-	// TODO: failed to parse database type 'tsvector'
-	search: text("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(body, ''::text)), 'B'::"char"))`),
+	search: tsvectorCustom("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(body, ''::text)), 'B'::"char"))`),
 	kind: text().default('bug').notNull(),
 	payload: jsonb(),
 	assignedBy: text("assigned_by"),
@@ -4138,8 +4126,7 @@ export const harnessPlansInHarnessShared = harnessShared.table("harness_plans", 
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	authorPubkey: text("author_pubkey"),
 	origin: text().default('local').notNull(),
-	// TODO: failed to parse database type 'tsvector'
-	search: text("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(content, ''::text)), 'B'::"char"))`),
+	search: tsvectorCustom("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(content, ''::text)), 'B'::"char"))`),
 	items: jsonb(),
 	decisions: jsonb(),
 	nowState: text("now_state"),
@@ -4186,8 +4173,7 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.table("h
 	takenAt: timestamp("taken_at", { withTimezone: true, mode: 'string' }),
 	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
 	workspaceId: text("workspace_id").notNull(),
-	// TODO: failed to parse database type 'tsvector'
-	search: text("_search").generatedAlwaysAs(sql`((setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(summary, ''::text)), 'B'::"char")) || setweight(to_tsvector('english'::regconfig, COALESCE(notes, ''::text)), 'C'::"char"))`),
+	search: tsvectorCustom("_search").generatedAlwaysAs(sql`((setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(summary, ''::text)), 'B'::"char")) || setweight(to_tsvector('english'::regconfig, COALESCE(notes, ''::text)), 'C'::"char"))`),
 	deprecationReason: text("deprecation_reason"),
 	seeAlso: text("see_also").array().default([""]).notNull(),
 	needsDesign: boolean("needs_design").default(false).notNull(),
@@ -4287,8 +4273,7 @@ export const workItemsInHarnessShared = harnessShared.view("work_items", {	harne
 	takenAt: timestamp("taken_at", { withTimezone: true, mode: 'string' }),
 	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
 	workspaceId: text("workspace_id"),
-	// TODO: failed to parse database type 'tsvector'
-	search: text("_search"),
+	search: tsvectorCustom("_search"),
 	deprecationReason: text("deprecation_reason"),
 	seeAlso: text("see_also"),
 	needsDesign: boolean("needs_design"),

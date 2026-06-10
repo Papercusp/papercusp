@@ -25,7 +25,7 @@ import { harnessRoot } from '@papercusp/harness/paths';
 import { resolvePhase, configGet } from './config';
 import { readEffectiveConfig } from './effective-config';
 import { buildPrompt } from './prompt-build';
-import { resolvePromptFile } from './prompt-resolve';
+import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 
 // Re-export the friction trip-wire constant (self-learning-central P-001/A) so the
 // operator-brain prompt base (operator-core's renderFrictionTripwire) can reuse the
@@ -41,7 +41,9 @@ export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD } from './prompt-buil
 // resolvePromptFile rides the same entry: operator-core's workspace-level
 // (harness-less) role launch resolves the spawn persona directly
 // (hive-agent-tabs P-003) without importing the heavy orchestrator root.
-export { resolvePromptFile } from './prompt-resolve';
+// resolvePromptFiles is the layered variant (base/<role>.md + concrete —
+// audit P-019); prefer it wherever the CONTENT is being assembled.
+export { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 
 export type RolePromptMode = 'autonomous' | 'chat' | 'discuss';
 
@@ -179,7 +181,10 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
   const { phase } = resolvePhase(cfg);
   const dept = configGet<string>(cfg, 'dept', '');
 
-  const promptFile = resolvePromptFile({ harnessDir, phase, dept }, opts.role);
+  // Layered list (base/<role>.md first when present — audit P-019), the
+  // concrete most-specific prompt last (kept as `promptFile` for meta).
+  const promptFiles = resolvePromptFiles({ harnessDir, phase, dept }, opts.role);
+  const promptFile = promptFiles[promptFiles.length - 1];
   if (!promptFile) {
     throw new Error(`assembleRolePrompt: no prompt file found for role "${opts.role}" (phase=${phase}, dept=${dept || 'none'})`);
   }
@@ -227,6 +232,7 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
   let text = buildPrompt({
     role: opts.role,
     promptFile,
+    promptFiles,
     promptOverride,
     stateDir,
     harnessDir,

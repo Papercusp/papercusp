@@ -18,7 +18,10 @@
  *   Fix 1: empty-string defaults emit `.default(')` (invalid TS).
  *   Fix 2: drop invalid `mode: 'number'` on timestamptz → drizzle default 'date'.
  *   Fix 3: function-call defaults wrapped in sql`` (e.g. to_char(now(), …)).
- *   Fix 4: `unknown(...)` for tsvector/bytea rewritten to text().
+ *   Fix 4: `unknown(...)` for tsvector/bytea mapped to real customType
+ *          columns (bytea → Buffer, tsvector → string; audit P-075) —
+ *          unmapped unknown types still fall back to text() with the TODO
+ *          comment retained.
  *   Fix 5: missing PKs (drizzle-kit drops ~half of them) injected via PG.
  *   Fix 6: relations.ts import rewritten from "./schema" to "./generated".
  *   Fix 7: drizzle-kit truncates `((EXTRACT(epoch FROM now()) * (1000)::numeric))::bigint`
@@ -146,12 +149,62 @@ let fixedFnDefaults = 0;
   schema = out.join('');
 }
 
-// Fix 4: `unknown(...)` emitted for tsvector + bytea columns. Treat as text().
+// Fix 4: drizzle-kit emits `unknown(...)` + a `// TODO: failed to parse
+// database type 'X'` comment for PG types it can't introspect. Map bytea →
+// Buffer and tsvector → string via customType (audit P-075) instead of lying
+// with text(); the TODO line is dropped for mapped types. Anything else still
+// falls back to text() with its TODO retained so new unparsed types surface.
 let fixedUnknownCols = 0;
-schema = schema.replace(/\w+: unknown\(/g, (match) => {
-  fixedUnknownCols++;
-  return match.replace('unknown(', 'text(');
-});
+let fixedUnknownFallback = 0;
+{
+  const UNPARSED_TYPE_MAP = { bytea: 'byteaCustom', tsvector: 'tsvectorCustom' };
+  const used = new Set();
+  const lines = schema.split('\n');
+  const out = [];
+  for (let li = 0; li < lines.length; li++) {
+    const todo = /^\s*\/\/ TODO: failed to parse database type '([^']+)'\s*$/.exec(lines[li]);
+    const mapped = todo ? UNPARSED_TYPE_MAP[todo[1]] : undefined;
+    if (mapped && li + 1 < lines.length && /:\s*unknown\(/.test(lines[li + 1])) {
+      out.push(lines[li + 1].replace(/:\s*unknown\(/, `: ${mapped}(`));
+      used.add(mapped);
+      fixedUnknownCols++;
+      li++; // consume the column line; the TODO comment is resolved → dropped
+      continue;
+    }
+    out.push(lines[li]);
+  }
+  schema = out.join('\n');
+
+  // Any unknown() left (unmapped type, or no TODO marker) → old text() fallback.
+  schema = schema.replace(/\w+: unknown\(/g, (match) => {
+    fixedUnknownFallback++;
+    return match.replace('unknown(', 'text(');
+  });
+
+  if (used.size > 0) {
+    if (!/\bcustomType\b/.test(schema.split('\n')[0])) {
+      schema = schema.replace(
+        /^import \{ /,
+        'import { customType, ',
+      );
+    }
+    const prelude = [
+      '',
+      "// Custom column types for PG types drizzle-kit can't introspect",
+      '// (pull-schema.mjs Fix 4, audit P-075):',
+      ...(used.has('byteaCustom')
+        ? ["const byteaCustom = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });"]
+        : []),
+      ...(used.has('tsvectorCustom')
+        ? ["const tsvectorCustom = customType<{ data: string; driverData: string }>({ dataType: () => 'tsvector' });"]
+        : []),
+    ].join('\n');
+    schema = schema.replace(
+      /import \{ sql \} from "drizzle-orm"/,
+      `import { sql } from "drizzle-orm"\n${prelude}`,
+    );
+  }
+}
 
 // Fix 5: drizzle-kit drops primary keys. Re-query PG and inject any missing
 // `primaryKey({ columns: [...] })` into the table-config callback.
@@ -423,7 +476,8 @@ writeFileSync(schemaPath, schema);
 console.log(`    fixed ${fixedDefaults} empty-string defaults`);
 console.log(`    fixed ${fixedTimestamps} timestamptz columns (dropped invalid mode)`);
 console.log(`    fixed ${fixedFnDefaults} function-call defaults (wrapped in sql\`\`)`);
-console.log(`    rewrote ${fixedUnknownCols} unsupported-type columns (tsvector/bytea → text)`);
+console.log(`    typed ${fixedUnknownCols} unparsed columns via customType (bytea→Buffer, tsvector→string)`);
+console.log(`    rewrote ${fixedUnknownFallback} still-unmapped unknown-type columns to text()`);
 console.log(`    injected ${fixedMissingPks} missing primary keys`);
 console.log(`    repaired ${fixedExtractDefaults} truncated EXTRACT defaults`);
 

@@ -103,3 +103,29 @@ export function resolvePromptFile(
   }
   return null;
 }
+
+/**
+ * The prompt files that COMPOSE a role's prompt, least- to most-specific:
+ * `prompts/base/<role>.md` (the universal layer — e.g. the G3
+ * untrusted-peer-content rule) first, then the resolved concrete prompt
+ * (`resolvePromptFile` — authoritative, per the prompts README's "later
+ * sections override earlier ones").
+ *
+ * Audit P-019: the base layer was documented in the prompts README but DEAD —
+ * `resolvePromptFile` only ever returned the single most-specific file, so
+ * base/'s universal rules never reached a live prompt. Callers join the
+ * files' contents with `\n\n---\n\n` (prompt-build does this when handed
+ * `promptFiles`). Returns [] when the role has no prompt at all.
+ */
+export function resolvePromptFiles(
+  ctx: PromptResolveContext,
+  role: string,
+): string[] {
+  const main = resolvePromptFile(ctx, role);
+  const canonical = ROLE_ALIASES[role] ?? role;
+  const base = join(ctx.harnessDir, 'prompts', 'base', `${canonical}.md`);
+  const sections: string[] = [];
+  if (existsSync(base) && base !== main) sections.push(base);
+  if (main) sections.push(main);
+  return sections;
+}
