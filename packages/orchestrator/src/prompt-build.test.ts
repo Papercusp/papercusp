@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildPrompt, wrapUntrusted } from './prompt-build.js';
+import { buildPrompt, buildPromptParts, wrapUntrusted } from './prompt-build.js';
 
 interface Fixture {
   harnessDir: string;
@@ -977,7 +977,6 @@ test('buildPromptParts — preamble is byte-identical across all volatile inputs
       harnessDir: fx.harnessDir,
       projectDir: fx.projectDir,
     };
-    const { buildPromptParts } = require('./prompt-build.js') as typeof import('./prompt-build.js');
     const a = buildPromptParts({
       ...base,
       cwdOverride: '',
@@ -1013,7 +1012,6 @@ test('buildPrompt — assembled text starts with the preamble; volatile sections
     writeFileSync(join(stateDir, 'memory', 'summary.md'), 'A learned thing.');
   });
   try {
-    const { buildPromptParts } = require('./prompt-build.js') as typeof import('./prompt-build.js');
     const input = {
       role: 'worker',
       promptFile: join(fx.harnessDir, 'worker.md'),
