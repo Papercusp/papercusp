@@ -425,8 +425,8 @@ test('resolveTimeout — positive integer passes through', () => {
   assert.equal(resolveTimeout({ timeouts: { worker: 600.7 } }, 'worker'), 600);
 });
 
-test('resolveModel — returns empty when missing', () => {
-  assert.equal(resolveModel({}, 'worker'), '');
+test('resolveModel — returns empty when missing (role without a committed tier default)', () => {
+  assert.equal(resolveModel({}, 'merge-resolver'), '');
 });
 
 test('resolveModel — returns named model', () => {
@@ -469,8 +469,10 @@ test('resolveModel — AGENT_MODELS / config OVERRIDE the committed default', ()
 });
 
 test('invoke — end-to-end logs invoke message, returns rc + paths', async () => {
+  // Role deliberately has NO committed ROLE_MODEL_DEFAULTS tier (P-012) — a
+  // tiered role would get `--model <tier>` appended, which `cat` can't take.
   const fx = makeFixture(({ harnessDir }) => {
-    writeFileSync(join(harnessDir, 'prompts', 'worker.md'), '# WORKER');
+    writeFileSync(join(harnessDir, 'prompts', 'merge-resolver.md'), '# MERGE-RESOLVER');
   });
   try {
     const log: string[] = [];
@@ -487,12 +489,12 @@ test('invoke — end-to-end logs invoke message, returns rc + paths', async () =
         log: (m) => log.push(m),
         nowSeconds: () => 1700000000,
       },
-      'worker',
+      'merge-resolver',
       ['MODE=fresh'],
     );
     assert.equal(result.exitCode, 0);
-    assert.match(result.jsonlPath, /1700000000-worker\.jsonl$/);
-    assert.ok(log.some((l) => l.includes('invoke worker rc=0')));
+    assert.match(result.jsonlPath, /1700000000-merge-resolver\.jsonl$/);
+    assert.ok(log.some((l) => l.includes('invoke merge-resolver rc=0')));
     // cat echoes our prompt back; the .out (plain-text branch) is the
     // captured prompt itself.
     const outBody = readFileSync(result.outPath, 'utf8');
