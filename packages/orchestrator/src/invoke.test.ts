@@ -556,6 +556,48 @@ test('invoke — produces .jsonl, .out, .err artifacts', async () => {
   }
 });
 
+test('invoke — a claude agent spawn carries the native-scheduler lockout in its argv', async () => {
+  // native-scheduler-lockout-2026-06-09 P-002: the deny flag must reach the
+  // actual spawned argv (positive case — the `cat` e2e above is the negative:
+  // a non-claude command must NOT get a claude flag).
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'prompts', 'worker.md'), '# WORKER');
+  });
+  try {
+    // A stub whose path NAMES claude (both the backend resolution and the
+    // deny discriminator key on that) and which prints its argv to stdout.
+    const binDir = join(fx.projectDir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    const stub = join(binDir, 'claude');
+    writeFileSync(stub, '#!/bin/sh\nprintf "%s\\n" "$@"\ncat >/dev/null\n', { mode: 0o755 });
+    const result = await invoke(
+      {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: stub,
+        dept: '',
+        log: () => {},
+        nowSeconds: () => 1700000002,
+      },
+      'worker',
+      [],
+    );
+    assert.equal(result.exitCode, 0);
+    const argvDump = readFileSync(result.jsonlPath, 'utf8');
+    // ONE `=` token (D-002 — the variadic space form would eat positionals),
+    // carrying both layers: a T1 scheduler tool + a T2 Bash deny pattern.
+    const deny = argvDump.split('\n').find((l) => l.startsWith('--disallowedTools='));
+    assert.ok(deny, `deny flag missing from spawned argv:\n${argvDump}`);
+    assert.match(deny, /ScheduleWakeup/);
+    assert.match(deny, /Bash\(crontab:\*\)/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 test('extractResult — omp message_end with assistant text', () => {
   const dir = mkdtempSync(join(tmpdir(), 'orch-'));
   const path = join(dir, 'log.jsonl');

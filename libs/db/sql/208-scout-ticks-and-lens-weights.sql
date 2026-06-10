@@ -55,14 +55,27 @@ CREATE INDEX IF NOT EXISTS scout_ticks_ws_tick_at_idx
     ON harness_shared.scout_ticks (workspace_id, tick_at DESC);
 
 -- Workspace isolation, mirroring scout_routed_ideas (194) / watchdog_ticks (202).
-ALTER TABLE harness_shared.scout_ticks ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS scout_ticks_workspace_isolation ON harness_shared.scout_ticks;
-CREATE POLICY scout_ticks_workspace_isolation ON harness_shared.scout_ticks
-    USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
-    WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.scout_ticks TO harness_app;
-GRANT SELECT ON harness_shared.scout_ticks TO harness_zero;
+-- Existence-guarded so a RE-RUN on an already-applied DB takes ZERO table locks
+-- (the 2026-06-09 auto-deploy died on a lock timeout re-applying this file after
+-- a manual dev-box apply — ALTER/CREATE POLICY/GRANT all want ACCESS EXCLUSIVE).
+DO $$ BEGIN
+  IF NOT (SELECT relrowsecurity FROM pg_class
+           WHERE oid = 'harness_shared.scout_ticks'::regclass) THEN
+    ALTER TABLE harness_shared.scout_ticks ENABLE ROW LEVEL SECURITY;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'harness_shared'
+                  AND tablename = 'scout_ticks' AND policyname = 'scout_ticks_workspace_isolation') THEN
+    CREATE POLICY scout_ticks_workspace_isolation ON harness_shared.scout_ticks
+        USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
+        WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
+  END IF;
+  IF NOT has_table_privilege('harness_app', 'harness_shared.scout_ticks', 'INSERT') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.scout_ticks TO harness_app;
+  END IF;
+  IF NOT has_table_privilege('harness_zero', 'harness_shared.scout_ticks', 'SELECT') THEN
+    GRANT SELECT ON harness_shared.scout_ticks TO harness_zero;
+  END IF;
+END $$;
 
 -- ── P-033: persisted per-lens meta-learning weights ──────────────────────────
 
@@ -81,11 +94,21 @@ CREATE TABLE IF NOT EXISTS harness_shared.scout_lens_weights (
     PRIMARY KEY (workspace_id, lens)
 );
 
-ALTER TABLE harness_shared.scout_lens_weights ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS scout_lens_weights_workspace_isolation ON harness_shared.scout_lens_weights;
-CREATE POLICY scout_lens_weights_workspace_isolation ON harness_shared.scout_lens_weights
-    USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
-    WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.scout_lens_weights TO harness_app;
-GRANT SELECT ON harness_shared.scout_lens_weights TO harness_zero;
+DO $$ BEGIN
+  IF NOT (SELECT relrowsecurity FROM pg_class
+           WHERE oid = 'harness_shared.scout_lens_weights'::regclass) THEN
+    ALTER TABLE harness_shared.scout_lens_weights ENABLE ROW LEVEL SECURITY;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'harness_shared'
+                  AND tablename = 'scout_lens_weights' AND policyname = 'scout_lens_weights_workspace_isolation') THEN
+    CREATE POLICY scout_lens_weights_workspace_isolation ON harness_shared.scout_lens_weights
+        USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
+        WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
+  END IF;
+  IF NOT has_table_privilege('harness_app', 'harness_shared.scout_lens_weights', 'INSERT') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.scout_lens_weights TO harness_app;
+  END IF;
+  IF NOT has_table_privilege('harness_zero', 'harness_shared.scout_lens_weights', 'SELECT') THEN
+    GRANT SELECT ON harness_shared.scout_lens_weights TO harness_zero;
+  END IF;
+END $$;
