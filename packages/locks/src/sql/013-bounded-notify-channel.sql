@@ -28,6 +28,21 @@ LANGUAGE sql IMMUTABLE AS $$
   SELECT 'ch_coord_' || md5(p_coordination_domain)
 $$;
 
+-- Rolling-upgrade bridge: processes built BEFORE this migration LISTEN on
+-- the RAW `ch_coord_<domain>` name (which PG truncates to 63 bytes when
+-- longer). This migration lands in the shared papercusp_su DB out-of-band
+-- of those processes' code, so the cascades below notify BOTH the bounded
+-- md5 channel and the legacy (truncated) raw name; otherwise every
+-- already-running listener would silently degrade to its 30s poll ceiling
+-- until restarted on new code. left(…, 63) is byte-exact for ASCII paths
+-- (what coordination domains are) and never trips pg_notify's 63-byte cap.
+-- Safe to drop in a later migration once no pre-013 listener remains.
+CREATE OR REPLACE FUNCTION coord_notify_channel_legacy(p_coordination_domain text)
+RETURNS text
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT left('ch_coord_' || p_coordination_domain, 63)
+$$;
+
 -- ─────────────────────────────────────────────────────────────────────
 -- grant_cascade — verbatim from 004 except the pg_notify channel.
 -- ─────────────────────────────────────────────────────────────────────
@@ -90,6 +105,11 @@ BEGIN
         coord_notify_channel(p_coordination_domain),
         v_waiter.ticket_id::text
       );
+      -- Legacy raw-name channel for pre-013 listeners (see header).
+      PERFORM pg_notify(
+        coord_notify_channel_legacy(p_coordination_domain),
+        v_waiter.ticket_id::text
+      );
     EXCEPTION
       -- Waiter row vanished between SELECT and UPDATE (force-deleted,
       -- cancelled concurrently). Defense-in-depth — under the domain
@@ -144,6 +164,8 @@ BEGIN
          AND mode = 'exclusive';
 
       PERFORM pg_notify(coord_notify_channel(p_coordination_domain), v_excl.lock_id::text);
+      -- Legacy raw-name channel for pre-013 listeners (see header).
+      PERFORM pg_notify(coord_notify_channel_legacy(p_coordination_domain), v_excl.lock_id::text);
     END IF;
   END LOOP;
 END;
