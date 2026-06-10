@@ -5,7 +5,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
-import { setup, teardown, runCheck } from './scratch-env.js';
+import { setup, teardown, runCheck, splitCheckCommandArgv } from './scratch-env.js';
 
 function exec(cmd: string, args: readonly string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -181,11 +181,53 @@ test('runCheck returns nonzero on failure', async () => {
   const repo = await makeRepo();
   try {
     const env = await setup({ repoPath: repo, owner: 'test9', editedFiles: [] });
-    const r = await runCheck(env, 'exit 7');
+    // Commands run WITHOUT a shell (audit P-030), so use a real binary
+    // exiting nonzero — `exit` is a shell builtin that no longer applies.
+    await fs.writeFile(path.join(env.dir, 'exit7.cjs'), 'process.exit(7);\n');
+    const r = await runCheck(env, 'node exit7.cjs');
     assert.equal(r.exitCode, 7);
     await teardown(env, repo);
   } finally {
     await rimraf(repo);
+  }
+});
+
+test('runCheck rejects shell metacharacters as exit 126 (unrunnable lane, audit P-030)', async () => {
+  const repo = await makeRepo();
+  try {
+    const env = await setup({ repoPath: repo, owner: 'test9b', editedFiles: [] });
+    const r = await runCheck(env, 'echo hi && echo bye');
+    assert.equal(r.exitCode, 126);
+    assert.match(r.output, /shell metacharacters/);
+    await teardown(env, repo);
+  } finally {
+    await rimraf(repo);
+  }
+});
+
+test('runCheck maps a missing binary (ENOENT) to exit 127 so the gate fails OPEN', async () => {
+  // With shell:true a missing command exited 127 from the shell; without a
+  // shell it surfaces as a spawn ENOENT error. isCheckUnrunnable(127) is the
+  // chunk loop's fail-open lane (EI from Hetzner frame 138790170) — the
+  // mapping must hold or "pnpm: command not found" burns the strike budget.
+  const repo = await makeRepo();
+  try {
+    const env = await setup({ repoPath: repo, owner: 'test9c', editedFiles: [] });
+    const r = await runCheck(env, 'definitely-not-a-command-p030 --version');
+    assert.equal(r.exitCode, 127);
+    assert.match(r.output, /spawn error/);
+    await teardown(env, repo);
+  } finally {
+    await rimraf(repo);
+  }
+});
+
+test('splitCheckCommandArgv — plain argv splits, shell syntax rejects', () => {
+  assert.deepEqual(splitCheckCommandArgv('pnpm typecheck'), ['pnpm', 'typecheck']);
+  assert.deepEqual(splitCheckCommandArgv('  tsc   --noEmit '), ['tsc', '--noEmit']);
+  assert.equal(splitCheckCommandArgv(''), null);
+  for (const bad of ['a && b', 'a | b', 'a; b', 'a > out', 'echo $HOME', 'node -e "x()"', 'a `b`']) {
+    assert.equal(splitCheckCommandArgv(bad), null, `should reject: ${bad}`);
   }
 });
 
