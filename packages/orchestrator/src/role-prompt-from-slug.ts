@@ -38,6 +38,10 @@ import { resolvePromptFile } from './prompt-resolve';
 // "write tests the project way" clause) rides it too — operator-core's
 // renderTestingStandard reuses the SAME string the spawned-bee base emits.
 export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD } from './prompt-build';
+// resolvePromptFile rides the same entry: operator-core's workspace-level
+// (harness-less) role launch resolves the spawn persona directly
+// (hive-agent-tabs P-003) without importing the heavy orchestrator root.
+export { resolvePromptFile } from './prompt-resolve';
 
 export type RolePromptMode = 'autonomous' | 'chat' | 'discuss';
 
