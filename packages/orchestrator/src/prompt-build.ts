@@ -2,14 +2,28 @@
  * Prompt assembler. Builds the full text fed to the agent CLI (omp via
  * @file argument, claude via stdin).
  *
- * Bash equivalent: the big `{ cat $prompt_file; … }` block at the end of
- * invoke(). Sections (some conditional):
+ * Cache discipline (token-usage-reduction-audit-2026-06-09 P-009): the prompt
+ * is two halves —
  *
- *   1. The role's prompt file (always)
- *   2. Per-role override from config.json `promptOverrides.$role` (optional)
- *   3. Curated memory (`<stateDir>/memory/summary.md`) — except for curator
- *   4. Per-role identity (`<harnessDir>/identity/$role.md`) — cross-mission
- *   5. Runtime context — extras + cwd + state dir + run id + memory hint
+ *   CACHEABLE PREAMBLE (byte-stable across spawns of the same role, ordered by
+ *   descending stability so a change invalidates the smallest possible suffix):
+ *     1.  The role's prompt file (always)
+ *     2.  Per-role override from config.json `promptOverrides.$role` (optional)
+ *     2b. Tools playbook + 2c. shared guides
+ *     3.  Shared-base constants — memory discipline, friction trip-wire,
+ *         yield policy, testing standard
+ *     4.  Per-role identity (`<harnessDir>/identity/$role.md`) — cross-mission
+ *     5.  Curated memory (`<stateDir>/memory/summary.md`) — except for curator
+ *         (changes between iterations; last in the preamble on purpose)
+ *
+ *   VOLATILE TAIL (per-spawn / per-turn; appended after the preamble so it
+ *   never invalidates it):
+ *     6.  Substrate context (live neighbor view + bounded inbox)
+ *     7.  Runtime context — extras + cwd + state dir + run id
+ *     8.  Queen brief, 9. plan context, 10. feature history
+ *
+ * `buildPromptParts` exposes the two halves so tests can assert the preamble
+ * is byte-identical across volatile-input changes (the prefix-hash assertion).
  *
  * G3 — untrusted-data framing (P-009/P-010):
  *   When `featureOrigin === 'remote'`, content that originates from that peer
@@ -315,30 +329,36 @@ function fileContents(path: string): string {
   }
 }
 
-export function buildPrompt(input: BuildPromptInput): string {
-  const out: string[] = [];
+export interface PromptParts {
+  /** Byte-stable across spawns of the same role (same harness config): role
+   *  prompt + override + playbook + guides + shared-base constants + identity
+   *  + curated memory. The cacheable prefix — the prefix-hash test asserts it
+   *  never varies with per-spawn inputs (P-009). */
+  preamble: string;
+  /** Per-spawn / per-turn content: substrate context, runtime context (run
+   *  id, extras, cwd), Queen brief, plan context, feature history. Appended
+   *  after the preamble so it never invalidates it. Empty string when no
+   *  volatile content applies (runtime context always applies in practice). */
+  volatile: string;
+}
 
-  // 0. Substrate context (Tier 1 + Tier 2 + Tier 3 + bounded inbox).
-  // Goes BEFORE the role prompt so role-specific instructions can refer
-  // back to "the parent harness above" / "the available templates above".
-  if (input.substrateContext && input.substrateContext.trim()) {
-    out.push(input.substrateContext);
-    out.push('\n---\n');
-  }
+export function buildPromptParts(input: BuildPromptInput): PromptParts {
+  // ── CACHEABLE PREAMBLE — ordered by descending stability (P-009) ──────────
+  const pre: string[] = [];
 
   // 1. Role prompt file (always — caller asserts it exists), unless
   //    the caller supplied an inline prompt (chunk-loop driver, etc.).
   if (input.inlinePrompt && input.inlinePrompt.length > 0) {
-    out.push(input.inlinePrompt);
+    pre.push(input.inlinePrompt);
   } else {
-    out.push(fileContents(input.promptFile));
+    pre.push(fileContents(input.promptFile));
   }
 
   // 2. Per-role specialization override.
   if (input.promptOverride) {
-    out.push('\n---');
-    out.push(`## Droid specialization (from .papercusp/config.json → promptOverrides.${input.role})\n`);
-    out.push(input.promptOverride);
+    pre.push('\n---');
+    pre.push(`## Droid specialization (from .papercusp/config.json → promptOverrides.${input.role})\n`);
+    pre.push(input.promptOverride);
   }
 
   // 2b. Tools playbook (cross-tool patterns + named workflows).
@@ -346,8 +366,8 @@ export function buildPrompt(input: BuildPromptInput): string {
   //     Inserted after the role prompt + specialization so role-specific
   //     instructions can refer to the playbook patterns.
   if (input.toolsPlaybook && input.toolsPlaybook.trim()) {
-    out.push('\n---');
-    out.push(input.toolsPlaybook);
+    pre.push('\n---');
+    pre.push(input.toolsPlaybook);
   }
 
   // 2c. Shared cross-role guidance (finding-context.mdx, etc.).
@@ -356,123 +376,151 @@ export function buildPrompt(input: BuildPromptInput): string {
   //      caller so the doc page and the prompt content share one source.
   for (const guide of input.sharedGuides ?? []) {
     if (guide && guide.trim()) {
-      out.push('\n---');
-      out.push(guide);
+      pre.push('\n---');
+      pre.push(guide);
     }
   }
 
-  // 3. Curated memory — every role except curator.
+  // 3. Shared-base constants — all static text, so they live in the preamble
+  //    (they used to sit AFTER the per-spawn runtime context, which re-wrote
+  //    them into the cache on every spawn).
+  //
+  // 3a. Memory discipline — every role except curator. References only the
+  //     role name (stable per role-keyed cache prefix).
   if (input.role !== 'curator') {
-    const mem = fileContents(`${input.stateDir}/memory/summary.md`);
-    if (mem) {
-      out.push('\n---');
-      out.push('## Memory (curated from prior iterations of this run)\n');
-      out.push(mem);
-    }
+    pre.push('\n---');
+    pre.push('- **Memory discipline:** at the end of your work, if you learned something');
+    pre.push('  actionable for future iterations (a technique that works, a library that');
+    pre.push('  doesn\'t, an invariant that tripped you up), append ONE line to');
+    pre.push('  `.papercusp/memory/raw.md` in the format:');
+    pre.push(`  \`[<ISO-8601-timestamp>] ${input.role} <feature_id-or-dash>: <one-line observation>\``);
+    pre.push('  Do not dump logs. Do not duplicate existing lines. Skip silently if you');
+    pre.push('  have nothing generalizable to add.');
   }
 
-  // 4. Per-role identity (cross-mission). PG-canonical via Migration
-  // 041 when caller passed `input.identity`; otherwise fall back to
-  // the on-disk file (legacy / no-PG path).
-  const identity = (input.identity && input.identity.length > 0)
-    ? input.identity
-    : fileContents(`${input.harnessDir}/identity/${input.role}.md`);
-  if (identity) {
-    out.push('\n---');
-    out.push(`## Your identity (cross-mission memory for the ${input.role} role)\n`);
-    out.push(identity);
-  }
-
-  // 5. Runtime context.
-  out.push('\n---');
-  out.push('## Runtime context\n');
-  for (const e of input.extras) {
-    out.push(`- ${e}`);
-  }
-  if (input.cwdOverride) {
-    out.push(`- Working directory: ${input.cwdOverride} (worktree for ${input.featureId})`);
-    out.push(`- Project root: ${input.projectDir} (reference only — you edit the worktree)`);
-  } else {
-    out.push(`- Working directory: ${input.projectDir}`);
-  }
-  out.push(`- State directory: ${input.stateDir} (all coordination files live here; shared across worktrees if any)`);
-  out.push(`- Run ID: ${input.runId}`);
-  if (input.role !== 'curator') {
-    out.push('- **Memory discipline:** at the end of your work, if you learned something');
-    out.push('  actionable for future iterations (a technique that works, a library that');
-    out.push('  doesn\'t, an invariant that tripped you up), append ONE line to');
-    out.push('  `.papercusp/memory/raw.md` in the format:');
-    out.push(`  \`[<ISO-8601-timestamp>] ${input.role} <feature_id-or-dash>: <one-line observation>\``);
-    out.push('  Do not dump logs. Do not duplicate existing lines. Skip silently if you');
-    out.push('  have nothing generalizable to add.');
-  }
-
-  // 5b. Friction trip-wire (self-learning-central P-001/A, D-006) — the SUBJECTIVE
+  // 3b. Friction trip-wire (self-learning-central P-001/A, D-006) — the SUBJECTIVE
   //     sibling of the watchdog, in the SHARED bee base every role inherits. A
   //     near-zero one-liner: trip on real friction, file it via improvements:capture,
   //     do NOT reflect every turn. Curator (no work output) skips it, mirroring the
   //     memory-discipline gate above.
   if (input.role !== 'curator') {
-    out.push('\n---');
-    out.push(FRICTION_TRIPWIRE);
+    pre.push('\n---');
+    pre.push(FRICTION_TRIPWIRE);
   }
 
-  // 5c. Yield policy (turn-lifecycle-control P-017, D-007/D-009) — the dual of
+  // 3c. Yield policy (turn-lifecycle-control P-017, D-007/D-009) — the dual of
   //     always-arm wake, in the SHARED bee base every role inherits. Any agent
   //     can be asked to end its turn early (cooperative yield / forced interrupt
   //     via turn:interrupt); this tells it how to checkpoint + release locks +
   //     hand off cleanly. Universal (no curator skip — a thinking agent of any
   //     role can be interrupted). Sourced from the one YIELD_POLICY constant.
-  out.push('\n---');
-  out.push(YIELD_POLICY);
+  pre.push('\n---');
+  pre.push(YIELD_POLICY);
 
-  // 5d. Testing standard — the "write tests the project way" clause in the SHARED
+  // 3d. Testing standard — the "write tests the project way" clause in the SHARED
   //     bee base every role inherits. Project-agnostic (the base serves bees in ANY
   //     harness): match the project's existing tests + canonical framework so its
   //     test tooling discovers them; no throwaway scripts. Per-project specifics come
   //     from that repo's CLAUDE.md / testing docs. Sourced from the one
   //     TESTING_STANDARD constant so the bee base + operator-launched-role base can't
   //     desync. Universal (no curator skip — a thinking agent of any role may add a test).
-  out.push('\n---');
-  out.push(TESTING_STANDARD);
+  pre.push('\n---');
+  pre.push(TESTING_STANDARD);
+
+  // 4. Per-role identity (cross-mission). PG-canonical via Migration
+  // 041 when caller passed `input.identity`; otherwise fall back to
+  // the on-disk file (legacy / no-PG path). Changes rarely (cross-mission),
+  // so it sits before the per-run memory.
+  const identity = (input.identity && input.identity.length > 0)
+    ? input.identity
+    : fileContents(`${input.harnessDir}/identity/${input.role}.md`);
+  if (identity) {
+    pre.push('\n---');
+    pre.push(`## Your identity (cross-mission memory for the ${input.role} role)\n`);
+    pre.push(identity);
+  }
+
+  // 5. Curated memory — every role except curator. Changes between iterations
+  //    (curator updates it), so it is LAST in the preamble: an update
+  //    invalidates only itself, not the static text above.
+  if (input.role !== 'curator') {
+    const mem = fileContents(`${input.stateDir}/memory/summary.md`);
+    if (mem) {
+      pre.push('\n---');
+      pre.push('## Memory (curated from prior iterations of this run)\n');
+      pre.push(mem);
+    }
+  }
+
+  // ── VOLATILE TAIL — per-spawn / per-turn content (P-009) ──────────────────
+  const vol: string[] = [];
+
+  // 6. Substrate context (Tier 1 + Tier 2 + Tier 3 + bounded inbox). Live
+  //    neighbor view + pending inbox — volatile per spawn, so it leads the
+  //    tail (it used to sit at position 0, which zeroed the shareable prefix
+  //    across spawns).
+  if (input.substrateContext && input.substrateContext.trim()) {
+    vol.push('\n---');
+    vol.push(input.substrateContext);
+  }
+
+  // 7. Runtime context — extras, cwd, state dir, run id (volatile per spawn).
+  vol.push('\n---');
+  vol.push('## Runtime context\n');
+  for (const e of input.extras) {
+    vol.push(`- ${e}`);
+  }
+  if (input.cwdOverride) {
+    vol.push(`- Working directory: ${input.cwdOverride} (worktree for ${input.featureId})`);
+    vol.push(`- Project root: ${input.projectDir} (reference only — you edit the worktree)`);
+  } else {
+    vol.push(`- Working directory: ${input.projectDir}`);
+  }
+  vol.push(`- State directory: ${input.stateDir} (all coordination files live here; shared across worktrees if any)`);
+  vol.push(`- Run ID: ${input.runId}`);
 
   // G3: determine whether remote-peer content must be wrapped (P-009).
   // feature-level origin is the available provenance signal from G1.
   const isRemote = input.featureOrigin === 'remote';
 
-  // 5c. Queen brief — the situational overlay the bee is missing.
-  //     Distinct section after runtime context, before feature history.
-  //     P-060: the Queen's value-add (cross-bee context, watch-fors,
-  //     why-this-priority), not a restatement of the work-item.
+  // 8. Queen brief — the situational overlay the bee is missing.
+  //    Distinct section after runtime context, before feature history.
+  //    P-060: the Queen's value-add (cross-bee context, watch-fors,
+  //    why-this-priority), not a restatement of the work-item.
   if (input.brief && input.brief.trim()) {
-    out.push('\n---');
-    out.push('## Queen brief\n');
-    out.push(input.brief);
+    vol.push('\n---');
+    vol.push('## Queen brief\n');
+    vol.push(input.brief);
   }
 
-  // 6. Plan context — origin plan's ## Now + last 3 decisions for
+  // 9. Plan context — origin plan's ## Now + last 3 decisions for
   //    plan-derived features. More static than featureHistory so placed
   //    before it; still after the cacheable preamble.
   //
   //    G3: when the feature is remote-authored, planContext may carry
   //    attacker-controlled text; wrap it so agents treat it as data.
   if (input.planContext && input.planContext.trim()) {
-    out.push('\n---');
-    out.push(isRemote ? wrapUntrusted(input.planContext) : input.planContext);
+    vol.push('\n---');
+    vol.push(isRemote ? wrapUntrusted(input.planContext) : input.planContext);
   }
 
-  // 7. Feature history — APPENDED LAST so it never invalidates the
-  //    cacheable preamble. Per-feature, per-turn content; expected to
-  //    differ across calls. See feature-history.ts and the "cache
-  //    discipline" comment on `featureHistory` in BuildPromptInput.
+  // 10. Feature history — APPENDED LAST so it never invalidates anything.
+  //     Per-feature, per-turn content; expected to differ across calls. See
+  //     feature-history.ts and the "cache discipline" comment on
+  //     `featureHistory` in BuildPromptInput.
   //
-  //    G3: when the feature is remote-authored, featureHistory carries
-  //    attacker-controlled notes / debug findings / inter-agent messages;
-  //    wrap them so agents treat the content as inert data.
+  //     G3: when the feature is remote-authored, featureHistory carries
+  //     attacker-controlled notes / debug findings / inter-agent messages;
+  //     wrap them so agents treat the content as inert data.
   if (input.featureHistory && input.featureHistory.trim()) {
-    out.push('\n---');
-    out.push(isRemote ? wrapUntrusted(input.featureHistory) : input.featureHistory);
+    vol.push('\n---');
+    vol.push(isRemote ? wrapUntrusted(input.featureHistory) : input.featureHistory);
   }
 
-  return out.join('\n');
+  return { preamble: pre.join('\n'), volatile: vol.join('\n') };
+}
+
+export function buildPrompt(input: BuildPromptInput): string {
+  const { preamble, volatile } = buildPromptParts(input);
+  return volatile ? `${preamble}\n${volatile}` : preamble;
 }

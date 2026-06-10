@@ -957,3 +957,102 @@ test('buildPrompt — no Queen brief section when none supplied (best-effort, em
     fx.cleanup();
   }
 });
+
+// ── P-009 (token-usage-reduction-audit-2026-06-09): byte-stable preamble ──
+
+test('buildPromptParts — preamble is byte-identical across all volatile inputs (prefix-hash, P-009)', () => {
+  const fx = makeFixture(({ harnessDir, stateDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
+    writeFileSync(join(harnessDir, 'identity', 'worker.md'), 'I am steady.');
+    writeFileSync(join(stateDir, 'memory', 'summary.md'), 'A learned thing.');
+  });
+  try {
+    const base = {
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: 'Focus on speed.',
+      toolsPlaybook: '## Playbook\nUse tools wisely.',
+      sharedGuides: ['## Guide\nFind context.'],
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+    };
+    const { buildPromptParts } = require('./prompt-build.js') as typeof import('./prompt-build.js');
+    const a = buildPromptParts({
+      ...base,
+      cwdOverride: '',
+      featureId: null,
+      runId: '1700000000-worker',
+      extras: ['MODE=fresh'],
+      substrateContext: '## Substrate\nneighbors: alpha (running)',
+      brief: 'Watch for flaky tests.',
+      planContext: 'Plan now: ship it.',
+      featureHistory: 'turn 1: did stuff',
+    });
+    const b = buildPromptParts({
+      ...base,
+      cwdOverride: '/tmp/wt-F-002',
+      featureId: 'F-002',
+      runId: '1700009999-worker',
+      extras: ['MODE=resume', 'FEATURE_ID=F-002'],
+      substrateContext: '## Substrate\nneighbors: beta (idle), gamma (failed)',
+      brief: 'Different brief entirely.',
+      planContext: 'Plan now: different.',
+      featureHistory: 'turn 7: other stuff',
+    });
+    assert.equal(a.preamble, b.preamble, 'volatile inputs must not change the preamble');
+    assert.notEqual(a.volatile, b.volatile, 'volatile halves should differ');
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — assembled text starts with the preamble; volatile sections all follow it (P-009)', () => {
+  const fx = makeFixture(({ harnessDir, stateDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
+    writeFileSync(join(stateDir, 'memory', 'summary.md'), 'A learned thing.');
+  });
+  try {
+    const { buildPromptParts } = require('./prompt-build.js') as typeof import('./prompt-build.js');
+    const input = {
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r-77',
+      extras: [],
+      substrateContext: 'SUBSTRATE-MARKER',
+      brief: 'BRIEF-MARKER',
+      planContext: 'PLAN-MARKER',
+      featureHistory: 'HISTORY-MARKER',
+    };
+    const parts = buildPromptParts(input);
+    const out = buildPrompt(input);
+    assert.ok(out.startsWith(parts.preamble), 'buildPrompt output must start with the preamble');
+    // Stable sections live in the preamble…
+    assert.match(parts.preamble, /## Tests follow the project standard/);
+    assert.match(parts.preamble, /Memory discipline:/);
+    assert.match(parts.preamble, /A learned thing\./);
+    // …and every volatile bit comes after, in order.
+    const order = [
+      'SUBSTRATE-MARKER',
+      '## Runtime context',
+      'Run ID: r-77',
+      'BRIEF-MARKER',
+      'PLAN-MARKER',
+      'HISTORY-MARKER',
+    ];
+    let last = parts.preamble.length;
+    for (const marker of order) {
+      const idx = out.indexOf(marker);
+      assert.ok(idx >= last - 1, `${marker} must appear after the preamble and in order (idx=${idx}, last=${last})`);
+      last = idx;
+    }
+  } finally {
+    fx.cleanup();
+  }
+});

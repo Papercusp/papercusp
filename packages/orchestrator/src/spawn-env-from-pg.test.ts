@@ -64,7 +64,12 @@ function pgpSymEncrypt(plaintext: string, passphrase: string): Buffer {
 }
 
 function pgpSymDecrypt(ciphertext: Buffer, passphrase: string): string {
-  const decipher = createDecipheriv('aes-256-gcm', deriveKey(passphrase), ciphertext.subarray(0, 12));
+  // 12B iv + 16B tag minimum — a shorter (malformed) buffer would hand
+  // setAuthTag a clamped short tag, tripping DEP0182 instead of a clean throw.
+  if (ciphertext.length < 28) throw new Error('pgp_sym_decrypt: ciphertext too short');
+  const decipher = createDecipheriv('aes-256-gcm', deriveKey(passphrase), ciphertext.subarray(0, 12), {
+    authTagLength: 16,
+  });
   decipher.setAuthTag(ciphertext.subarray(12, 28));
   // Wrong key or corrupt data → authentication failure → throws, like pgcrypto.
   return Buffer.concat([decipher.update(ciphertext.subarray(28)), decipher.final()]).toString('utf8');
