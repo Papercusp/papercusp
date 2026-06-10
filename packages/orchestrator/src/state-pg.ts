@@ -163,7 +163,8 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
  * subprocess with no DBOS runtime, so it can't call `DBOS.retrieveWorkflow()`
  * (D-013). Same database, different schema — a plain cross-schema read.
  *
- * Gated by `PAPERCUSP_DBOS_ORCHESTRATOR=1` (default off → empty, no query).
+ * Gated by `PAPERCUSP_DBOS_ORCHESTRATOR` — ON by default (P-009: DBOS is the
+ * default orchestrator; set `=0` for the legacy-loop revert → empty, no query).
  * Resilient by design (D-006 / D-013 off-path safety): no slug, an absent `dbos`
  * schema (`to_regclass` → NULL, no throw), or ANY query error all yield an empty
  * set → no carve-out → byte-identical legacy behavior.

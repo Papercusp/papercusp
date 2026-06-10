@@ -37,6 +37,15 @@ export const memoryFeedbackInHarnessShared = harnessShared.table("memory_feedbac
 
 ]);
 
+export const operatorFlagOverridesInHarnessShared = harnessShared.table("operator_flag_overrides", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId], name: "operator_flag_overrides_pkey"}),
+]);
+
 export const uiIntentsInHarnessShared = harnessShared.table("ui_intents", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	clientId: text("client_id").notNull(),
@@ -1729,9 +1738,10 @@ export const planRevisionsInHarnessShared = harnessShared.table("plan_revisions"
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	createdAt: bigint("created_at", { mode: "number" }).notNull(),
 	harnessSlug: text("harness_slug").default('papercup').notNull(),
+	workspaceId: text("workspace_id").default('default').notNull(),
 }, (table) => [
-	unique("plan_revisions_harness_slug_plan_slug_seq_key").on(table.planSlug, table.seq, table.harnessSlug),
-	unique("plan_revisions_harness_plan_seq_key").on(table.planSlug, table.seq, table.harnessSlug),
+	unique("plan_revisions_ws_harness_plan_seq_key").on(table.planSlug, table.seq, table.harnessSlug, table.workspaceId),
+	pgPolicy("plan_revisions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const harnessProjectFilesInHarnessShared = harnessShared.table("harness_project_files", {
@@ -1782,10 +1792,12 @@ export const spawnedAgentsInHarnessShared = harnessShared.table("spawned_agents"
 	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
 	heartbeatAt: timestamp("heartbeat_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	sessionId: text("session_id"),
+	idempotencyKey: text("idempotency_key"),
 }, (table) => [
 	index("spawned_agents_active_heartbeat_idx").using("btree", table.heartbeatAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['running'::text, 'restarting'::text]))`),
+	uniqueIndex("spawned_agents_idempotency_key_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.idempotencyKey.asc().nullsLast().op("text_ops")).where(sql`(idempotency_key IS NOT NULL)`),
 	index("spawned_agents_parent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.parentSpawnId.asc().nullsLast().op("text_ops")),
-	index("spawned_agents_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("spawned_agents_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("text_ops")),
 	index("spawned_agents_running_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(status = 'running'::text)`),
 	index("spawned_agents_session_id_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
 	index("spawned_agents_session_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionOwner.asc().nullsLast().op("text_ops")).where(sql`(session_owner IS NOT NULL)`),

@@ -20,6 +20,37 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
+const os = require('node:os');
+
+// ─── PG URL resolution (audit P-076) ────────────────────────────────
+// env → embedded-pg discovery file → native-:5432 dev fallback — the same
+// order as operator-core's getHarnessAdminUrl and the sibling TS plugins
+// (jira-sync/linear-sync/postgres-manager readDiscoveryUrl). Without the
+// discovery tier, a desktop run (embedded PG on a random port) silently
+// pointed this plugin at a wrong/absent native :5432.
+function readDiscoveryAdminUrl() {
+  if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY === '1') return null;
+  try {
+    const raw = fs.readFileSync(`${os.homedir()}/.papercusp/embedded-pg.json`, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed?.host || !parsed?.port) return null;
+    if (parsed.user && parsed.password) {
+      return `postgresql://${parsed.user}:${parsed.password}@${parsed.host}:${parsed.port}/papercusp`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveAdminPgUrl() {
+  return (
+    process.env.HARNESS_ADMIN_DATABASE_URL
+    || process.env.HARNESS_DATABASE_URL
+    || readDiscoveryAdminUrl()
+    || 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp'
+  );
+}
 
 // ─── ajv ────────────────────────────────────────────────────────────
 let ajvInstance = null;
@@ -431,9 +462,7 @@ async function persistSpec(workspaceId, harnessSlug, featureId, ir, metadata) {
   // Lazy require so unit-test runs that mock fs don't pull postgres-js.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const postgres = require('postgres');
-  const url = process.env.HARNESS_ADMIN_DATABASE_URL
-    || process.env.HARNESS_DATABASE_URL
-    || 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+  const url = resolveAdminPgUrl();
   const sql = postgres(url, { max: 1, idle_timeout: 5 });
   try {
     const id = `spec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -654,9 +683,7 @@ async function get_accepted_spec(input, ctx) {
     return { isError: true, content: [{ type: 'text', text: 'get_accepted_spec: input.featureId (string) is required' }] };
   }
   const postgres = require('postgres');
-  const url = process.env.HARNESS_ADMIN_DATABASE_URL
-    || process.env.HARNESS_DATABASE_URL
-    || 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+  const url = resolveAdminPgUrl();
   const sql = postgres(url, { max: 1, idle_timeout: 5 });
   try {
     const rows = await sql.begin(async (tx) => {
@@ -703,9 +730,7 @@ async function record_review(input, ctx) {
     return { isError: true, content: [{ type: 'text', text: `record_review: input.verdict must be one of ${[...REVIEW_VERDICTS].join('|')}` }] };
   }
   const postgres = require('postgres');
-  const url = process.env.HARNESS_ADMIN_DATABASE_URL
-    || process.env.HARNESS_DATABASE_URL
-    || 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+  const url = resolveAdminPgUrl();
   const sql = postgres(url, { max: 1, idle_timeout: 5 });
   try {
     const id = `review-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -818,4 +843,4 @@ const plugin = {
 module.exports = plugin;
 module.exports.default = plugin;
 // expose internals for in-process tests
-module.exports._internal = { validateIr, lintIr, parseFrontmatter, resolveDesignSpec, listMemos, readMemo };
+module.exports._internal = { validateIr, lintIr, parseFrontmatter, resolveDesignSpec, listMemos, readMemo, resolveAdminPgUrl };

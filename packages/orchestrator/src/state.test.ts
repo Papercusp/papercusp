@@ -124,6 +124,50 @@ test('harnessSlug — basename of project dir', () => {
   assert.equal(harnessSlug('/tmp/abc/sheets-clone/'), 'sheets-clone');
 });
 
+describe('harnessSlug — non-blocking registry warm (audit P-038 / EI-113)', () => {
+  test('cold call answers basename immediately; the registry hit corrects later calls', async () => {
+    const origBase = process.env.PAPERCUSP_OPERATOR_BASE;
+    const origSlugEnv = process.env.HARNESS_SLUG;
+    const origSlugEnv2 = process.env.PAPERCUSP_HARNESS_SLUG;
+    const origFetch = globalThis.fetch;
+    delete process.env.PAPERCUSP_OPERATOR_BASE;
+    delete process.env.HARNESS_SLUG;
+    delete process.env.PAPERCUSP_HARNESS_SLUG;
+    const urls: string[] = [];
+    let resolveFetch!: (r: unknown) => void;
+    globalThis.fetch = ((url: unknown) => {
+      urls.push(String(url));
+      return new Promise((res) => {
+        resolveFetch = res;
+      });
+    }) as typeof fetch;
+    try {
+      const dir = '/tmp/p038/widgets-clone';
+      // Must answer NOW — the old execFileSync(curl) blocked the event loop
+      // here for up to 4s while the fetch was in flight.
+      assert.equal(harnessSlug(dir), 'widgets-clone');
+      assert.equal(urls.length, 1);
+      // EI-113: the operator API serves :3070 (:3055 is the Vite content port).
+      assert.match(urls[0], /localhost:3070\/api\/harness\/projects$/);
+      resolveFetch({
+        ok: true,
+        json: async () => ({ projects: [{ slug: 'widgets', path: dir }] }),
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      // The background warm corrected the cache for later calls.
+      assert.equal(harnessSlug(dir), 'widgets');
+    } finally {
+      globalThis.fetch = origFetch;
+      if (origBase === undefined) delete process.env.PAPERCUSP_OPERATOR_BASE;
+      else process.env.PAPERCUSP_OPERATOR_BASE = origBase;
+      if (origSlugEnv === undefined) delete process.env.HARNESS_SLUG;
+      else process.env.HARNESS_SLUG = origSlugEnv;
+      if (origSlugEnv2 === undefined) delete process.env.PAPERCUSP_HARNESS_SLUG;
+      else process.env.PAPERCUSP_HARNESS_SLUG = origSlugEnv2;
+    }
+  });
+});
+
 test('passedFraction — 0 when no features', () => {
   assert.equal(passedFraction([]), 0);
 });
@@ -205,7 +249,9 @@ describe('state — PG path (mocked)', () => {
       { feature_id: 'F-001', title: 'one', status: 'passed', attempts: 0 },
       { feature_id: 'F-002', title: 'two', status: 'todo', attempts: 1 },
     ]);
-    const ctx = stateCtx({ stateDir: '/x', pg, workspaceId: 'default' });
+    // projectDir supplies the harness slug — a slug-less ctx now fails empty
+    // by design (audit P-018) instead of joining on ''.
+    const ctx = stateCtx({ stateDir: '/x', pg, workspaceId: 'default', projectDir: '/x/sheets' });
     const out = await readFeatures('/x', ctx);
     assert.equal(out.length, 2);
     assert.equal(out[0].id, 'F-001');
@@ -228,7 +274,8 @@ describe('state — PG path (mocked)', () => {
 
   test('setFeatureStatus — issues UPDATE then re-reads', async () => {
     const mock = makeMockPg([{ feature_id: 'F-001', title: '', status: 'in_progress', attempts: 1 }]);
-    const ctx = stateCtx({ stateDir: '/x', pg: mock.pg, workspaceId: 'default' });
+    // projectDir supplies the harness slug (audit P-018 — see readFeatures above).
+    const ctx = stateCtx({ stateDir: '/x', pg: mock.pg, workspaceId: 'default', projectDir: '/x/sheets' });
     await setFeatureStatus('/x', 'F-001', 'passed', { ctx });
     // First query is the UPDATE, second is the readFeaturesPg SELECT.
     assert.match(mock.queries[0], /UPDATE/);

@@ -117,10 +117,12 @@ export async function setFeatureStatus(
 
 /**
  * Compute the harness slug. Resolution order:
- *   1. HARNESS_SLUG / PAPERCUSP_HARNESS_SLUG env (caller-set; fastest)
- *   2. Operator registry reverse lookup (canonical — handles
- *      basename(projectDir) ≠ registered slug, e.g. sheets-clone → sheets)
- *   3. basename(projectDir) — registry's default-derivation fallback
+ *   1. HARNESS_SLUG / PAPERCUSP_HARNESS_SLUG env (caller-set; fastest —
+ *      always present on pipeline spawns via buildPipelineExtraEnv)
+ *   2. cached operator-registry value (canonical — handles
+ *      basename(projectDir) ≠ registered slug, e.g. sheets-clone → sheets;
+ *      warmed in the BACKGROUND, never awaited — audit P-038)
+ *   3. basename(projectDir) — the immediate cold-call answer
  *
  * Memoized per projectDir; callers bear no perf cost across multiple
  * invocations.
@@ -134,30 +136,38 @@ export function harnessSlug(projectDir: string): string {
   if (fromEnv && fromEnv.length > 0) return fromEnv;
   const cached = _slugCache.get(projectDir);
   if (cached) return cached;
-  const fromRegistry = lookupSlugFromRegistry(projectDir);
-  if (fromRegistry) {
-    _slugCache.set(projectDir, fromRegistry);
-    return fromRegistry;
-  }
+  // Cold call: answer with the basename NOW and let the registry warm the
+  // cache in the background (P-038 — the old synchronous curl blocked the
+  // event loop up to 4s here).
+  void warmSlugFromRegistry(projectDir);
   const fromBasename = basename(projectDir);
   _slugCache.set(projectDir, fromBasename);
   return fromBasename;
 }
 
-function lookupSlugFromRegistry(projectDir: string): string | null {
-  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+// Audit P-038 (EI-113): the registry reverse-lookup used execFileSync(curl) — a
+// SYNCHRONOUS subprocess that blocked the event loop up to 4s per cold call —
+// and defaulted to :3055 (the Vite content port; the operator API is :3070).
+// It now warms the cache in the BACKGROUND: pipeline spawns always carry
+// HARNESS_SLUG via env (buildPipelineExtraEnv), so this fallback only serves
+// ad-hoc contexts, where a corrected value (sheets-clone → sheets) landing on
+// the next call beats stalling this one.
+const _registryWarmKicked = new Set<string>();
+async function warmSlugFromRegistry(projectDir: string): Promise<void> {
+  if (_registryWarmKicked.has(projectDir)) return;
+  _registryWarmKicked.add(projectDir);
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3070';
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
-    const out = execFileSync('curl', [
-      '-sf', '--max-time', '3', `${operatorBase}/api/harness/projects`,
-    ], { encoding: 'utf8', timeout: 4000 });
-    const data = JSON.parse(out) as { projects?: Array<{ slug?: string; path?: string }> };
+    const res = await fetch(`${operatorBase}/api/harness/projects`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { projects?: Array<{ slug?: string; path?: string }> };
     const norm = projectDir.replace(/\/+$/, '');
     const hit = data.projects?.find((p) => (p.path ?? '').replace(/\/+$/, '') === norm)?.slug;
-    return hit && hit.length > 0 ? hit : null;
+    if (hit && hit.length > 0) _slugCache.set(projectDir, hit);
   } catch {
-    return null;
+    /* registry unreachable — the basename derivation stands */
   }
 }
 

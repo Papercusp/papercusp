@@ -43,6 +43,23 @@ describe('readFeaturesPg — plan-provenance filter reads the per-schema column'
     // / `source_plan_slug IN (…)`). A mention in an explanatory SQL comment is fine.
     assert.doesNotMatch(featureQuery!.q, /source_plan_slug\s+(IS|IN)\b/i);
   });
+
+  // Audit P-018: with no harnessSlug the SQL used to join on '' — the
+  // started-plan subquery matched nothing, silently dropping every plan-linked
+  // feature from the pick gate. The guard fails empty WITHOUT querying.
+  test('no harnessSlug → [] and the SQL never runs (audit P-018)', async () => {
+    const { pg, calls } = fakePg(() => [{ feature_id: 'F-LEAK' }]);
+    const origWarn = console.warn;
+    console.warn = () => {};
+    try {
+      const ctx = { pg, workspaceId: 'w' } as unknown as Ctx;
+      const rows = await readFeaturesPg(ctx as unknown as Parameters<typeof readFeaturesPg>[0]);
+      assert.deepEqual(rows, []);
+      assert.equal(calls.length, 0);
+    } finally {
+      console.warn = origWarn;
+    }
+  });
 });
 
 describe('durableOwnedFeatureIdsPg — Phase 3 carve-out (D-012/D-013)', () => {

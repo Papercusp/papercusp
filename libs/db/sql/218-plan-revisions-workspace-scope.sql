@@ -19,16 +19,27 @@ ALTER TABLE harness_shared.plan_revisions
 
 -- seq uniqueness is per (workspace, harness, plan) — swap the old
 -- (harness_slug, plan_slug, seq) key for the workspace-scoped one.
+-- The old key's NAME varies by install vintage (the generated baseline
+-- says plan_revisions_harness_slug_plan_slug_seq_key; the live dev DB
+-- carries plan_revisions_harness_plan_seq_key) — drop whichever exists.
 DO $$
+DECLARE
+  v_old text;
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_constraint
-     WHERE conname = 'plan_revisions_harness_slug_plan_slug_seq_key'
-       AND conrelid = 'harness_shared.plan_revisions'::regclass
-  ) THEN
-    ALTER TABLE harness_shared.plan_revisions
-      DROP CONSTRAINT plan_revisions_harness_slug_plan_slug_seq_key;
-  END IF;
+  FOR v_old IN
+    SELECT conname FROM pg_constraint
+     WHERE conrelid = 'harness_shared.plan_revisions'::regclass
+       AND contype = 'u'
+       AND conname IN (
+         'plan_revisions_harness_slug_plan_slug_seq_key',
+         'plan_revisions_harness_plan_seq_key'
+       )
+  LOOP
+    EXECUTE format(
+      'ALTER TABLE harness_shared.plan_revisions DROP CONSTRAINT %I',
+      v_old
+    );
+  END LOOP;
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
      WHERE conname = 'plan_revisions_ws_harness_plan_seq_key'

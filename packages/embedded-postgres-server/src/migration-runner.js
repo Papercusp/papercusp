@@ -95,6 +95,14 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     log(`apply ${f}`);
     // Apply + record in one transaction so a partial apply doesn't leave
     // schema_migrations claiming success.
+    //
+    // CONTRACT — the runner provides the transaction: migration files MUST
+    // NOT contain their own top-level BEGIN;/COMMIT;. An inner COMMIT ends
+    // this wrapper transaction early, so the <ddl> + ledger-INSERT pair stops
+    // being atomic and a mid-file failure leaves schema_migrations lying
+    // (plpgsql `BEGIN…END` inside $$ bodies is fine). Enforced for new files
+    // by `npm run lint:migrations` (audit P-074, EI-170); files 116–200
+    // predate this contract and are grandfathered as applied history.
     try {
       await client.unsafe(`BEGIN;\n${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`);
       appliedCount++;

@@ -192,7 +192,9 @@ test('runHook — Phase 6: auto-injects HARNESS_SLUG, OPERATOR_BASE, optional WO
     const out = readFileSync(r.logfile!, 'utf8');
     assert.match(out, /HARNESS_SLUG=project/);
     assert.match(out, /WORKSPACE_ID=ws-test/);
-    assert.match(out, /OPERATOR_BASE=http:\/\/localhost:3055/);
+    // EI-113 (audit P-038): the operator API default is :3070 — :3055 is the
+    // Vite content port with no /api routes.
+    assert.match(out, /OPERATOR_BASE=http:\/\/localhost:3070/);
   } finally {
     fx.cleanup();
   }

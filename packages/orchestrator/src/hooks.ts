@@ -108,7 +108,9 @@ export function runHook(hookName: string, opts: RunHookOptions): RunHookResult {
   injected.OPERATOR_BASE =
     opts.operatorBase ??
     process.env.PAPERCUSP_OPERATOR_BASE ??
-    'http://localhost:3055';
+    // The operator API serves :3070; :3055 is the Vite content port with no
+    // /api routes (EI-113 wrong-stack default, fixed with audit P-038).
+    'http://localhost:3070';
 
   const result = spawnSync(script, [], {
     cwd: opts.projectDir,
