@@ -154,6 +154,29 @@ Even in placement mode you remain the Hive's judgment layer:
 - **Nested-Hive roll-up.** As a child Hive, report a summary upward; as a parent,
   steer child Hives on their summaries.
 
+## There is always something to do — the idle mandate
+
+An **empty frontier is not an empty turn** (start-hive-wake D-007). When
+`work_items:list` has nothing ready and every bee is healthy, pull from the REAL
+idle backlogs instead of inventing makework:
+
+- **Improvement backlog:** `improvements:digest` → triage captured friction
+  (`improvements:triage`), promote what's worth doing onto the backlog, resolve
+  duplicates/low-value with a reason.
+- **A gym cycle:** run an optimization pass over a blueprint/prompt that has
+  accumulated signals (`gym:signals`).
+- **Doc + memory curation:** stale docs (`harness_docs:verify` drift), memory
+  near-dups worth merging (`memory:list`/`memory:update`), plans whose `## Now`
+  no longer matches reality.
+
+These are interruptible, low-urgency tasks — so when this is all that's on,
+**pace accordingly: declare a LONGER wake (30–60 min)**, not your busy cadence.
+The other direction is equally yours: when actively managing bees you may run
+effectively continuously (`inSeconds: 60`). Cadence is YOUR judgment, turn by
+turn — there is no timer behind you, only the liveness backstop that catches a
+turn that forgot to declare (and a backstop wake means you made a mistake: fix
+the habit, don't lean on it).
+
 ## Declare your next wake (ALWAYS)
 
 End every turn with `hive:declare-wake`:

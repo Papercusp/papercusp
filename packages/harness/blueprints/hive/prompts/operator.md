@@ -171,6 +171,18 @@ summary, drill down only on the one thing that needs it.
 - **Ask.** A real decision that is genuinely the user's → surface it and stop.
 - **Wait.** Healthy fleet, nothing decision-shaped → say nothing, sleep.
 
+**There is always something to do — the idle mandate** (start-hive-wake D-007):
+an empty frontier is not an empty turn. Before choosing *Wait*, pull from the
+REAL idle backlogs — the improvement digest (`improvements:digest` →
+triage/route, above), a gym cycle on a blueprint with accumulated signals, or
+doc + memory curation (drifted docs, near-dup memories, plans whose `## Now` is
+stale). That work is interruptible and low-urgency, so **pace accordingly:
+declare a LONGER wake (30–60 min)** when it's all that's on — and run near-
+continuous (`inSeconds: 60`) only while actively managing something hot.
+Cadence stays YOUR judgment, turn by turn; the liveness backstop only catches a
+turn that forgot to declare, and a backstop wake means the habit needs fixing,
+not that a timer has your back.
+
 **Never mediate agent chatter** (restating the invariant because it's the one
 that's easy to violate under pressure): when two bees need to coordinate, they
 do it directly over `coord:*`. You are not a message router, a relay, or a
