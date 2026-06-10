@@ -25,9 +25,28 @@
  * arms the timer on the first mutating op.
  */
 
+import { createHash } from 'node:crypto';
 import { getListenerPool, runBackgroundJanitorOnce } from './su-lock-store';
 
 const MAX_ACTIVE_WORKSPACES = 20;
+
+/**
+ * The per-domain NOTIFY/LISTEN channel: `ch_coord_` + md5(domain) = 41
+ * bytes, always under PG's 63-byte channel-name cap.
+ *
+ * Why hashed: the coordination domain is a repo-root realpath, and PG's
+ * limit behaves asymmetrically — LISTEN (identifier syntax) silently
+ * TRUNCATES a >63-byte name while pg_notify() (text arg) RAISES
+ * "channel name too long". With a long checkout path (the live release
+ * checkout produced a 65-byte raw name) every grant cascade's NOTIFY
+ * aborted the surrounding release/poke transaction, so a held lock could
+ * not be released while a waiter was queued. The hash is applied
+ * UNCONDITIONALLY so this side and the SQL side (`coord_notify_channel()`
+ * in sql/013-bounded-notify-channel.sql) can never disagree.
+ */
+export function coordNotifyChannel(coordinationDomain: string): string {
+  return `ch_coord_${createHash('md5').update(coordinationDomain).digest('hex')}`;
+}
 
 type Listener = (ticketId: string, kind: string) => void;
 
@@ -62,7 +81,7 @@ export async function subscribeWorkspace(
       throw new TooManyActiveWorkspacesError();
     }
     const sql = getListenerPool();
-    const channel = `ch_coord_${coordinationDomain}`;
+    const channel = coordNotifyChannel(coordinationDomain);
     const listeners = new Set<Listener>();
 
     const req = sql.listen(channel, (payload) => {
