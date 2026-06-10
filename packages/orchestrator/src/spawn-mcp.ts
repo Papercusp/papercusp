@@ -195,6 +195,11 @@ export async function writeSignedSpawnMcp(
     su.set('harness', input.harnessSlug);
     su.set('workspace', input.workspaceId);
     su.set('client', input.spawnId); // per-spawn coord/lock owner label
+    // token-usage-reduction P-011: narrow tools/list to the spawned role's
+    // catalog (the SU door otherwise advertises the full operator-tier
+    // surface to every fleet spawn). Dispatch capability is unchanged —
+    // isSuperuser still bypasses role gates; only the advertised list narrows.
+    if (input.role) su.set('role', input.role);
     const config = {
       mcpServers: {
         papercusp: {

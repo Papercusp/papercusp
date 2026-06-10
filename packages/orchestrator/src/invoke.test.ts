@@ -437,10 +437,17 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
   const prev = process.env.AGENT_MODELS;
   try {
     delete process.env.AGENT_MODELS; // no env, no config
-    // release-manager has a committed default; worker does not.
+    // release-manager has a committed default; an unmapped role does not.
     assert.equal(resolveModel({}, 'release-manager'), ROLE_MODEL_DEFAULTS['release-manager']);
     assert.equal(resolveModel({}, 'release-manager'), 'opus:xhigh');
-    assert.equal(resolveModel({}, 'worker'), '');
+    assert.equal(resolveModel({}, 'merge-resolver'), '');
+    // P-012 model-tier policy: execution tier = sonnet, volume tier = haiku.
+    assert.equal(resolveModel({}, 'worker'), 'sonnet');
+    assert.equal(resolveModel({}, 'validator'), 'sonnet');
+    assert.equal(resolveModel({}, 'documenter'), 'sonnet');
+    assert.equal(resolveModel({}, 'bee'), 'haiku');
+    assert.equal(resolveModel({}, 'scanner'), 'haiku');
+    assert.equal(resolveModel({}, 'judge'), 'haiku');
   } finally {
     if (prev === undefined) delete process.env.AGENT_MODELS;
     else process.env.AGENT_MODELS = prev;

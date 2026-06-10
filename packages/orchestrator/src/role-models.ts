@@ -22,9 +22,21 @@
  */
 
 /**
- * Committed role→model-spec defaults. Keep this SMALL — only roles whose model
- * choice is load-bearing enough that an accidental downgrade is a real
- * regression belong here; everything else should keep using the CLI default.
+ * Committed role→model-spec defaults — the per-role MODEL-TIER POLICY
+ * (token-usage-reduction-audit-2026-06-09 P-012), enforced via the launch
+ * spec rather than convention:
+ *
+ *   - haiku  — high-volume, low-judgment loop roles (bees, scanners, judges):
+ *              the fleet's call-count tier; opus here is pure waste.
+ *   - sonnet — the pipeline's execution tier (worker / validator /
+ *              documenter): high-frequency roles whose work is bounded by a
+ *              spec + acceptance assertions, not open-ended judgment.
+ *   - opus   — ONLY on explicit escalation: an `AGENT_MODELS`/config override
+ *              per role, or a committed pin for a low-frequency,
+ *              fleet-blast-radius judgment call (release-manager).
+ *
+ * These are DEFAULTS, not overrides — `AGENT_MODELS`/config.json still win,
+ * so escalating one harness's worker to opus is a per-role config entry.
  */
 export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // The deploy gate's judgment half (D-011). Claude Opus 4.8 @ xhigh effort:
@@ -32,6 +44,16 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // high-stakes call is worth maximum reasoning. Committed so it can't silently
   // downgrade on a host without AGENT_MODELS["release-manager"] set.
   'release-manager': 'opus:xhigh',
+  // P-012 execution tier — spec-bounded, high-frequency pipeline roles.
+  worker: 'sonnet',
+  validator: 'sonnet',
+  documenter: 'sonnet',
+  // P-012 volume tier — already de facto haiku via env on the dev box;
+  // committed so a host without AGENT_MODELS can't silently run the fleet's
+  // call-count tier on the CLI default.
+  bee: 'haiku',
+  scanner: 'haiku',
+  judge: 'haiku',
 };
 
 /**
