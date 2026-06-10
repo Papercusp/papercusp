@@ -30,6 +30,7 @@ import {
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { sessionClaudeConfigDir, sessionMcpDir } from './session-launch-dirs';
+import { readFleetClaudeToken } from './fleet-claude-token';
 import { configGet } from './config';
 import { readEffectiveConfig } from './effective-config';
 import { buildPrompt } from './prompt-build';
@@ -2207,6 +2208,17 @@ export async function invoke(
         : undefined;
       claudeConfigHandle = writeSpawnClaudeConfig(spawnEnv.HOME ?? homedir(), { persistentDir });
       spawnEnv.CLAUDE_CONFIG_DIR = claudeConfigHandle.configDir;
+      // Fleet token (claude-credential-sync-2026-06-10 P-003): when the owner
+      // has minted a dedicated `claude setup-token` (~/.papercusp/claude-token),
+      // authenticate this autonomous spawn with it instead of the symlinked
+      // interactive OAuth bundle — a non-rotating token keeps fleet refreshes
+      // from invalidating the owner's terminals. The LOCAL leg of the same
+      // convention frame-bootstrap uses for remote frames. Absent token ⇒
+      // unchanged (config-dir credentials, exactly as before).
+      if (!spawnEnv.CLAUDE_CODE_OAUTH_TOKEN) {
+        const fleetToken = readFleetClaudeToken();
+        if (fleetToken) spawnEnv.CLAUDE_CODE_OAUTH_TOKEN = fleetToken;
+      }
     }
     Object.assign(spawnEnv, claudeSpawnEnvHardening(agentBackend));
 

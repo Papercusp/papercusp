@@ -42,6 +42,11 @@
       "import": "./src/session-launch-dirs.ts",
       "default": "./src/session-launch-dirs.ts"
     },
+    "./fleet-claude-token": {
+      "types": "./src/fleet-claude-token.ts",
+      "import": "./src/fleet-claude-token.ts",
+      "default": "./src/fleet-claude-token.ts"
+    },
     "./spawn-signing-core": {
       "types": "./src/spawn-signing-core.ts",
       "import": "./src/spawn-signing-core.ts",
