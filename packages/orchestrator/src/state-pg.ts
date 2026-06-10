@@ -97,6 +97,15 @@ function rowToFeature(r: FeatureRow): FeatureRecord {
 
 /** Read every feature row for the active workspace. */
 export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord[]> {
+  // Audit P-018: with no harness slug the two `${ctx.harnessSlug ?? ''}` legs below
+  // silently corrupt the result — the started-plan subquery matches nothing, so
+  // EVERY plan-linked feature vanishes, while the pick-gate join treats all rows as
+  // local. No slug = no harness context; fail empty and visibly rather than decide
+  // on corrupted data.
+  if (!ctx.harnessSlug) {
+    console.warn('[state-pg] readFeaturesPg called with no harnessSlug — returning no features');
+    return [];
+  }
   const rows = await ctx.pg<FeatureRow[]>`
     SELECT hf.feature_id, hf.title, hf.summary, hf.status, hf.attempts, hf.claims,
            hf.notes, hf.metadata, hf.kind, hf.project_id, hf.expected_cost_cents,

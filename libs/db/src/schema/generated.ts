@@ -831,6 +831,7 @@ export const beekeeperInstancesInHarnessShared = harnessShared.table("beekeeper_
 	batterySliceId: text("battery_slice_id"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
+	uniqueIndex("beekeeper_instances_gen0_unique").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.codeSha.asc().nullsLast().op("text_ops")).where(sql`(genome_id IS NULL)`),
 	unique("beekeeper_instances_workspace_id_code_sha_genome_id_key").on(table.workspaceId, table.codeSha, table.genomeId),
 	primaryKey({ columns: [table.instanceId], name: "beekeeper_instances_pkey"}),
 
@@ -851,13 +852,13 @@ export const beekeeperRunsInHarnessShared = harnessShared.table("beekeeper_runs"
 	traceRef: text("trace_ref"),
 }, (table) => [
 	index("beekeeper_runs_case_idx").using("btree", table.caseId.asc().nullsLast().op("text_ops")),
+	index("beekeeper_runs_instance_case_idx").using("btree", table.instanceId.asc().nullsLast().op("text_ops"), table.caseId.asc().nullsLast().op("text_ops")),
 	index("beekeeper_runs_instance_idx").using("btree", table.instanceId.asc().nullsLast().op("text_ops")),
 	foreignKey({
 			columns: [table.instanceId],
 			foreignColumns: [beekeeperInstancesInHarnessShared.instanceId],
 			name: "beekeeper_runs_instance_id_fkey"
 		}).onDelete("cascade"),
-	unique("beekeeper_runs_instance_id_case_id_key").on(table.instanceId, table.caseId),
 	primaryKey({ columns: [table.runId], name: "beekeeper_runs_pkey"}),
 
 ]);
@@ -1622,6 +1623,21 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	index("tool_invocations_quota_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.windowKey.asc().nullsLast().op("text_ops")).where(sql`(status = 'ok'::text)`),
 	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("timestamptz_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")),
 	pgPolicy("tool_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const hiveWatchdogFiresInHarnessShared = harnessShared.table("hive_watchdog_fires", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.hive_watchdog_fires_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	installSlug: text("install_slug").notNull(),
+	firedAt: timestamp("fired_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	source: text().notNull(),
+	reason: text().default('').notNull(),
+	wakeAt: timestamp("wake_at", { withTimezone: true, mode: 'string' }),
+	demand: jsonb().default({}).notNull(),
+}, (table) => [
+	index("hive_watchdog_fires_ws_install_fired_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.firedAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("hive_watchdog_fires_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const planRunTurnsInHarnessShared = harnessShared.table("plan_run_turns", {
