@@ -84,11 +84,11 @@ export async function recordUsageSamplePg(
   await ctx.pg`
     INSERT INTO harness_shared.agent_usage_samples
       (workspace_id, ts, bucket_key, provider, model_class, source,
-       input_tokens, output_tokens, cache_read_tokens, cost_usd,
+       input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd,
        model, cost_source, harness_slug, run_id, role)
     VALUES (
       ${ctx.workspaceId}, ${Date.now()}, ${`${provider}:${modelClass}`}, ${provider}, ${modelClass}, ${'jsonl'},
-      ${n(usage.inputTokens)}, ${n(usage.outputTokens)}, ${n(usage.cacheReadTokens)}, ${costUsd},
+      ${n(usage.inputTokens)}, ${n(usage.outputTokens)}, ${n(usage.cacheReadTokens)}, ${n(usage.cacheCreationTokens)}, ${costUsd},
       ${model || null}, ${costSource}, ${run.harnessSlug ?? null}, ${run.runId ?? null}, ${run.role ?? null}
     )
   `;
