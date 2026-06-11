@@ -123,18 +123,12 @@ test('typecheck failure triggers re-plan, succeeds on second try', async () => {
           files: ['a.ts', 'b.ts'],
           description: 'add foo() and wire it up',
         }),
-      typecheckCommand: process.platform === 'win32'
-        // First call exits 1, subsequent calls exit 0. We use a script
-        // file because portable.
-        ? 'cmd /c exit 0'
-        : 'true',
-      // Override typecheckCommand via shadowing — actually we'll use a
-      // counter approach below since we can't easily switch cmd between
-      // calls.
+      typecheckCommand: 'true', // overridden below with the tick script
       onProgress: () => {},
     };
-    // Replace typecheckCommand with a counter-based mock by overriding
-    // runCheck via a custom command. Simpler: use a script in tmpdir.
+    // First call exits 1, subsequent calls exit 0 — a tick script in tmpdir.
+    // runCheck spawns WITHOUT a shell (audit P-030), so the command must be
+    // plain argv: no quotes (tmpdir paths have no spaces or metacharacters).
     const tickFile = path.join(os.tmpdir(), `tc-tick-${Math.random().toString(36).slice(2, 8)}`);
     await fs.writeFile(tickFile, '0');
     const tcScript = path.join(os.tmpdir(), `tc-script-${Math.random().toString(36).slice(2, 8)}.sh`);
@@ -148,7 +142,7 @@ exit 0
 `,
       { mode: 0o755 },
     );
-    deps.typecheckCommand = `bash "${tcScript}"`;
+    deps.typecheckCommand = `bash ${tcScript}`;
 
     const out = await runChunkLoop(FEATURE, deps);
     assert.equal(out.kind, 'completed');
