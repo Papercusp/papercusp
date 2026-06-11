@@ -35,7 +35,7 @@ reasons. No big-bang rewrite scheduled.
   Drizzle bound to all 125 introspected tables + relation graph
 - Existing `.drizzle` retained for back-compat (marked deprecated)
 - `typedSql<R>()` helper for the "raw SQL, typed row" case
-- `connection-phase1.test.ts` — 5 smoke tests
+- `connection-phase1.integration.test.ts` — 5 smoke tests
 
 ### Phase 1.5 — PK injection (`d891fe4` + `9049eeeb`)
 - drizzle-kit v0.31.10 silently drops 60/125 primary keys during pull.

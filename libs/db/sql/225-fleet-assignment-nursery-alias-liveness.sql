@@ -24,8 +24,9 @@
 -- rank_writer — preserved verbatim); only the liveness join changes.
 -- Idempotent: CREATE OR REPLACE VIEW.
 
-\set ON_ERROR_STOP on
-BEGIN;
+-- (transaction control removed post-apply: the runner provides the
+--  transaction — lint:migrations P-074; file already applied + ledgered,
+--  so this edit only affects fresh installs, where nested BEGIN warned.)
 
 CREATE OR REPLACE VIEW harness_shared.fleet_assignment AS
 WITH presence AS (
@@ -193,4 +194,3 @@ DO $z$ BEGIN
 EXCEPTION WHEN undefined_object THEN NULL;
 END $z$;
 
-COMMIT;

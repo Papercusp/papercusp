@@ -14,7 +14,7 @@
  * This test verifies the source-level contract — getOrgPg() and
  * getOrgPgApp() unconditionally call their respective Url() helper.
  * The rebuild-on-change behavior is covered end-to-end by
- * connection-phase1.test.ts when run against a live embedded PG.
+ * connection-phase1.integration.test.ts when run against a live embedded PG.
  */
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
