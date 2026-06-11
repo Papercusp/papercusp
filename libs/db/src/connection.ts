@@ -212,10 +212,27 @@ function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: 
   // The desktop ships embedded-postgres-server (real PG over TCP); the URL
   // carries a normal host:port, so no host override is needed. The legacy
   // pglite unix-socket path was removed 2026-06-01.
+  // EI-49: bound how long a pooled connection may sit idle INSIDE an open
+  // transaction. A plans:* (or any) MCP WRITE whose transport drops mid-call
+  // returns its connection to the pool still BEGIN-open, holding a
+  // transaction-scoped advisory lock (pg_advisory_xact_lock; withPlanLock) that
+  // only releases on COMMIT/ROLLBACK — wedging the plans subsystem fleet-wide
+  // until that exact connection is reused or the process restarts (harness_admin
+  // can't pg_terminate_backend a harness_app session, so the only operator-side
+  // clear was a :3070 restart). Setting this GUC at connection startup makes
+  // Postgres auto-terminate the stuck idle-in-transaction backend, releasing its
+  // locks WITHOUT an operator restart. A healthy transaction is never idle
+  // (between statements) this long — afterWrite already runs outside the tx
+  // (EI-118), and statement execution is bounded by statement_timeout, not this.
+  // Seconds; override via PAPERCUSP_DB_IDLE_IN_TX_TIMEOUT. Sent as the GUC's
+  // default unit (ms). Falsy/0 → 60 (kept on; this is pure defense-in-depth).
+  const idleInTxMs =
+    Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_IN_TX_TIMEOUT) || 60) * 1000;
   return postgres(connectionUrl, {
     onnotice: () => {},
     connection: {
       search_path: sp,
+      idle_in_transaction_session_timeout: String(idleInTxMs),
     },
     // Skip postgres-js's prepared-statement plan caching. ~80% of the
     // ~1.1s cold-reconnect cost we measured was prepared-statement

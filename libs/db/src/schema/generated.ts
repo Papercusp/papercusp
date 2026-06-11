@@ -1833,6 +1833,17 @@ export const operatorConversationsInHarnessShared = harnessShared.table("operato
 
 ]);
 
+export const voiceRelayInHarnessShared = harnessShared.table("voice_relay", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("voice_relay_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "voice_relay_pkey"}),
+
+]);
+
 export const hiveWakeInHarnessShared = harnessShared.table("hive_wake", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
