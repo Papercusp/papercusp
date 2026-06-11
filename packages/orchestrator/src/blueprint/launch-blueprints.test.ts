@@ -56,7 +56,10 @@ test('pot launch blueprint loads + validates — decider=operator, NO trigger (t
   assert.equal(blueprint.id, 'hive');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   assert.ok(!isProgramSpine(blueprint.spine), 'pot is a decider-mode spine');
-  assert.equal(blueprint.spine.decider, 'operator', 'the pot decider IS the operator role (D-001)');
+  // Placement automation ON (owner mandate 2026-06-11; local-hive P-030): the
+  // hive decider is the QUEEN placement persona; `operator` remains the
+  // declared alternative for decision-tree-only wakes.
+  assert.equal(blueprint.spine.decider, 'queen', 'the hive decider is the queen placement persona (P-030 swap)');
   assert.ok(blueprint.roles.some((r) => r.id === 'operator'), 'pot declares its operator role');
   assert.deepEqual(validation.warnings, [], 'pot has no validator warnings');
   assert.equal(blueprint.triggers?.schedule?.length ?? 0, 0, 'pot declares NO schedule trigger');

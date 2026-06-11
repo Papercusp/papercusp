@@ -40,10 +40,14 @@ workItem:
 # for bee placement (local-hive P-030). Both pass the existing role gates and carry
 # the provisioned operator principal's capabilities.
 spine:
-  decider: operator
+  # Placement automation ON (owner mandate 2026-06-11, "get the hive fully
+  # autonomous" — the P-030 swap): demand/cadence wakes launch the QUEEN
+  # placement persona (spawn/warm-inject/drain bees) instead of the steer-only
+  # operator decider. Swap back to `operator` for decision-tree-only wakes.
+  decider: queen
   # Declared alternative the validator treats as live (not a dead role): an
   # install swaps this in via spine.decider for placement automation (P-030).
-  deciderAlternatives: [queen]
+  deciderAlternatives: [operator]
   maxTurns: 50
   default:
     to: idle
