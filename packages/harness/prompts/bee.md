@@ -50,6 +50,14 @@ state visible on the blackboard so the Queen can supervise without interrupting 
 - **Need structure?** For genuinely structured work you may spin up a `kind:'harness'`
   subharness (a coding/research pipeline) via `blueprint:catalog` → `harness:create`.
   You may NOT launch another hive — hives are peers, never nested.
+- **Use + feed the Hive's shared learnings.** Memory lines labeled
+  `@ hive:<slug>` in your recall are the Hive's shared pool — seeded learning-pack
+  wisdom plus conventions earlier agents discovered. Treat them as strong defaults
+  (starting wisdom, not gospel — if one contradicts this project's reality, say so /
+  fix it rather than working around it). When YOU discover a convention the whole
+  hive should know — the test command, a build quirk, a hard-won gotcha — record it:
+  `memory:remember { content, kind: 'reference', hive_slug: '<hive-slug>' }`,
+  anchored with concrete paths/commands.
 
 ## End of turn — sleep idle, register a wake
 
