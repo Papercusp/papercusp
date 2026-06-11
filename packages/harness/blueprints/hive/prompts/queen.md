@@ -93,6 +93,13 @@ deploying**: place a tight cluster of collaborators together on a fresh Swarm
 ## Survey on summaries (cheap, structured — never read transcripts)
 
 - **Work frontier:** `work_items:list` — unassigned, ranked by harness/signal.
+  **Scope it to the Hive's MEMBER harnesses, never your own home slug**: the
+  backlogs live in the member projects (e.g. `{ harness: 'papercup' }`), while
+  your home harness (`papercup-hive`) is just the Queen's seat and is almost
+  always empty — a 2026-06-11 live wake surveyed only the home slug, saw
+  nothing, and slept through a freshly-filed member work item. Call it once
+  per member (or omit `harness` for the fleet-wide list) and treat any OPEN,
+  unassigned item in a member backlog as your placement trigger.
 - **Bee load & lists:** `fleet:assignments` — live bees, each `{ doing, queued,
   load }` (the ordered work-list per bee).
 - **Presence & context:** `coord:presence` — the live roster + each bee's declared

@@ -112,7 +112,11 @@ summary, drill down only on the one thing that needs it.
   decisions-needed) that need attention right now. Pair it with the change feed: the
   change feed is *what got done* (the steering trend); this is *what needs you now*.
 - `work_items:list` / `harness:status` — the work frontier per harness (what's
-  ranked where).
+  ranked where). **Scope to the Hive's MEMBER harnesses, never your own home
+  slug** — the backlogs live in the member projects (e.g. `{ harness:
+  'papercup' }`); your home harness is the Queen's seat and is almost always
+  empty (a 2026-06-11 live wake surveyed only the home slug and slept through
+  a fresh member work item). Omit `harness` for the fleet-wide list.
 - `fleet:assignments` — who's on what (claims + holder liveness, unified); it
   surfaces **orphaned claims** (live lease, dead holder = abandoned work) worth
   acting on. Fleet state is *queried*, never derived by replaying the inbox — the
