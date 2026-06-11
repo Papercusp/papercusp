@@ -7,7 +7,7 @@
  *
  * Plan: apps/operator/content/internal-docs/design/design-phase-plan.mdx §2.
  */
-import { describe, test, beforeEach, afterEach, expect } from 'vitest';
+import { describe, test, beforeEach, afterEach, expect, vi } from 'vitest';
 import { DesignGateError, setFeatureStatusPg } from './state-pg.js';
 
 interface GateRow {
@@ -127,13 +127,25 @@ describe('design-phase gate (PAPERCUSP_DESIGN_GATE=1)', () => {
   test('on, but no harnessSlug in ctx — silently skips gate (compat path)', async () => {
     process.env.PAPERCUSP_DESIGN_GATE = '1';
     const mock = makeMockPg({ needs_design: true, design_status: 'pending' });
-    await expect(
-      setFeatureStatusPg(
-        { pg: mock.sql, workspaceId: WORKSPACE_ID }, // no harnessSlug
-        FEATURE_ID,
-        'in_progress',
-      ),
-    ).resolves.toBeDefined();
+    // The gate skips silently, but the trailing readFeaturesPg announces the
+    // no-slug degradation (audit P-018) — expected, asserted explicitly.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(
+        setFeatureStatusPg(
+          { pg: mock.sql, workspaceId: WORKSPACE_ID }, // no harnessSlug
+          FEATURE_ID,
+          'in_progress',
+        ),
+      ).resolves.toBeDefined();
+      // No gate SELECT happened — the gate itself stayed silent.
+      expect(mock.calls.some((c) => /needs_design/i.test(c.sql))).toBe(false);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('readFeaturesPg called with no harnessSlug'),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('on, transitioning to NON-in_progress status — passes (gate only fires on in_progress)', async () => {
