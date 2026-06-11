@@ -23,9 +23,12 @@ import { createHash } from 'node:crypto';
 import * as readline from 'node:readline';
 
 import { papercuspRoot } from './papercusp-root.ts';
-const PAPERCUSP_ROOT = papercuspRoot();
-const GLOBAL_PLUGINS_DIR = join(PAPERCUSP_ROOT, 'global-plugins');
-const HARNESSES_DIR = join(PAPERCUSP_ROOT, 'harnesses');
+// EI-214: resolve these LAZILY — module-init consts pinned the root before a
+// test (or any embedder) could point PAPERCUSP_HOME at an isolated dir, which
+// is how pcli test fixtures leaked into the user's REAL global-plugins and
+// errored every pipeline finalize. papercuspRoot() caches, so this is free.
+const globalPluginsDir = () => join(papercuspRoot(), 'global-plugins');
+const harnessesDir = () => join(papercuspRoot(), 'harnesses');
 
 function colorize(s: string, code: string): string {
   if (process.stdout.isTTY === false) return s;
@@ -80,7 +83,7 @@ interface PluginManifest {
  */
 async function harnessTemplateKind(harness: string): Promise<string> {
   const m = await readJson<Record<string, unknown>>(
-    join(HARNESSES_DIR, harness, 'papercusp.json'),
+    join(harnessesDir(), harness, 'papercusp.json'),
   );
   if (m) {
     if (typeof m.templateKind === 'string') return m.templateKind;
@@ -88,7 +91,7 @@ async function harnessTemplateKind(harness: string): Promise<string> {
   }
   const reg = await readJson<{
     projects?: Array<{ slug: string; harness_kind?: string }>;
-  }>(join(PAPERCUSP_ROOT, 'registry.json'));
+  }>(join(papercuspRoot(), 'registry.json'));
   const project = reg?.projects?.find((p) => p.slug === harness);
   if (project?.harness_kind) return project.harness_kind;
   return 'coding';
@@ -118,7 +121,7 @@ async function detectHarnessSlug(): Promise<string | null> {
   const harnessConfig = join(process.cwd(), '.papercusp', 'config.json');
   if (!existsSync(harnessConfig)) return null;
   const reg = await readJson<{ projects: Array<{ slug: string; path: string }> }>(
-    join(PAPERCUSP_ROOT, 'registry.json'),
+    join(papercuspRoot(), 'registry.json'),
   );
   if (!reg) return null;
   const cwd = process.cwd();
@@ -139,18 +142,18 @@ async function resolveHarness(args: string[]): Promise<{ harness: string; rest: 
 async function loadInstalledManifest(slug: string): Promise<PluginManifest | null> {
   // 1) Direct path — handles bare slugs (`fumadocs`) and `@scope/<name>` when
   //    the install layout matches. Fastest path; covers the common case.
-  const direct = await readJson<PluginManifest>(join(GLOBAL_PLUGINS_DIR, slug, 'papercusp.json'));
+  const direct = await readJson<PluginManifest>(join(globalPluginsDir(), slug, 'papercusp.json'));
   if (direct) return direct;
   // 2) Fallback — scan top-level plus one level into any `@scope/` dir and
   //    match by manifest `name`. Mirrors the runtime loader's behaviour
   //    (apps/operator/app/api/_hono/plugins.ts > listPluginsIn) so the CLI
   //    can find a plugin even when its dirname doesn't match the manifest
   //    name (e.g. `fumadocs/` shipping `@papercupai/fumadocs`).
-  if (!existsSync(GLOBAL_PLUGINS_DIR)) return null;
-  const entries = await fs.readdir(GLOBAL_PLUGINS_DIR, { withFileTypes: true }).catch(() => []);
+  if (!existsSync(globalPluginsDir())) return null;
+  const entries = await fs.readdir(globalPluginsDir(), { withFileTypes: true }).catch(() => []);
   for (const e of entries) {
     if (e.name.startsWith('.')) continue;
-    const top = join(GLOBAL_PLUGINS_DIR, e.name);
+    const top = join(globalPluginsDir(), e.name);
     const m = await readJson<PluginManifest>(join(top, 'papercusp.json'));
     if (m?.name === slug) return m;
     if (m?.name) continue; // top-level plugin with a different name; don't recurse
@@ -166,12 +169,12 @@ async function loadInstalledManifest(slug: string): Promise<PluginManifest | nul
 }
 
 async function loadEnabledFile(harnessSlug: string): Promise<EnabledPluginsFile> {
-  const path = join(HARNESSES_DIR, harnessSlug, 'enabled-plugins.json');
+  const path = join(harnessesDir(), harnessSlug, 'enabled-plugins.json');
   return (await readJson<EnabledPluginsFile>(path)) ?? { enabled: {} };
 }
 
 async function saveEnabledFile(harnessSlug: string, file: EnabledPluginsFile): Promise<void> {
-  await writeJson(join(HARNESSES_DIR, harnessSlug, 'enabled-plugins.json'), file);
+  await writeJson(join(harnessesDir(), harnessSlug, 'enabled-plugins.json'), file);
 }
 
 function configHash(config: Record<string, unknown>): string {
@@ -470,7 +473,7 @@ async function promptObject(
 
 async function listInstalledPlugins(): Promise<string[]> {
   try {
-    const entries = await fs.readdir(GLOBAL_PLUGINS_DIR, { withFileTypes: true });
+    const entries = await fs.readdir(globalPluginsDir(), { withFileTypes: true });
     return entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name);
   } catch {
     return [];
@@ -486,7 +489,7 @@ export async function cmdPluginList(args: string[]): Promise<void> {
     ? await loadEnabledFile(harnessSlug)
     : { enabled: {} };
 
-  console.log(bold('Installed plugins') + dim(` (${GLOBAL_PLUGINS_DIR})`));
+  console.log(bold('Installed plugins') + dim(` (${globalPluginsDir()})`));
   if (installed.length === 0) {
     console.log(`  ${dim('(none — use `papercusp install <slug>`)')}`);
   } else {
@@ -534,7 +537,7 @@ export async function cmdPluginEnable(args: string[]): Promise<void> {
   const manifest = await loadInstalledManifest(slug);
   if (!manifest) {
     die(
-      `plugin enable: ${slug} not installed in ${GLOBAL_PLUGINS_DIR}. ` +
+      `plugin enable: ${slug} not installed in ${globalPluginsDir()}. ` +
         `Run \`papercusp install ${slug}\` first.`,
     );
   }
@@ -562,10 +565,10 @@ export async function cmdPluginEnable(args: string[]): Promise<void> {
   const canonicalSlug = manifest.name ?? slug;
 
   // Ensure the harness dir exists.
-  await fs.mkdir(join(HARNESSES_DIR, harness), { recursive: true });
-  await fs.mkdir(join(HARNESSES_DIR, harness, 'plugin-configs'), { recursive: true });
-  const configPath = join(HARNESSES_DIR, harness, 'plugin-configs', `${canonicalSlug}.json`);
-  const legacyPath = join(HARNESSES_DIR, harness, 'plugin-configs', `${slug}.json`);
+  await fs.mkdir(join(harnessesDir(), harness), { recursive: true });
+  await fs.mkdir(join(harnessesDir(), harness, 'plugin-configs'), { recursive: true });
+  const configPath = join(harnessesDir(), harness, 'plugin-configs', `${canonicalSlug}.json`);
+  const legacyPath = join(harnessesDir(), harness, 'plugin-configs', `${slug}.json`);
   // Read existing config from canonical path; fall back to legacy for
   // back-compat with files written before canonicalisation. Apply schema
   // aliases so old field names get migrated forward before re-prompting.
@@ -661,23 +664,23 @@ export async function cmdPluginUninstall(args: string[]): Promise<void> {
   if (!slug) die('plugin uninstall: usage: papercusp plugin uninstall <slug> [--purge-grants]');
   const purgeGrants = args.includes('--purge-grants');
 
-  const pluginDir = join(GLOBAL_PLUGINS_DIR, slug);
+  const pluginDir = join(globalPluginsDir(), slug);
   const dirExists = existsSync(pluginDir);
 
   // Walk every harness and disable the plugin + delete its config.
   const disabledIn: string[] = [];
-  if (existsSync(HARNESSES_DIR)) {
-    const harnesses = await fs.readdir(HARNESSES_DIR, { withFileTypes: true });
+  if (existsSync(harnessesDir())) {
+    const harnesses = await fs.readdir(harnessesDir(), { withFileTypes: true });
     for (const h of harnesses) {
       if (!h.isDirectory()) continue;
-      const enabledFile = join(HARNESSES_DIR, h.name, 'enabled-plugins.json');
+      const enabledFile = join(harnessesDir(), h.name, 'enabled-plugins.json');
       const enabled = await readJson<EnabledPluginsFile>(enabledFile);
       if (enabled?.enabled[slug]) {
         delete enabled.enabled[slug];
         await writeJson(enabledFile, enabled);
         disabledIn.push(h.name);
       }
-      const configFile = join(HARNESSES_DIR, h.name, 'plugin-configs', `${slug}.json`);
+      const configFile = join(harnessesDir(), h.name, 'plugin-configs', `${slug}.json`);
       if (existsSync(configFile)) await fs.rm(configFile, { force: true });
     }
   }
@@ -697,8 +700,8 @@ export async function cmdPluginUninstall(args: string[]): Promise<void> {
   }
 
   if (purgeGrants) {
-    const grantedPath = join(PAPERCUSP_ROOT, 'granted-capabilities.json');
-    const extendedPath = join(PAPERCUSP_ROOT, 'extended-grants.json');
+    const grantedPath = join(papercuspRoot(), 'granted-capabilities.json');
+    const extendedPath = join(papercuspRoot(), 'extended-grants.json');
     let purged = 0;
     for (const path of [grantedPath, extendedPath]) {
       const file = await readJson<{ grants?: Record<string, unknown>; extended?: Record<string, unknown> }>(path);
@@ -749,8 +752,8 @@ export async function cmdPluginRename(args: string[]): Promise<void> {
   }
   if (oldSlug === newSlug) die(`plugin rename: <old-slug> and <new-slug> are the same`);
 
-  const oldDir = join(GLOBAL_PLUGINS_DIR, oldSlug);
-  const newDir = join(GLOBAL_PLUGINS_DIR, newSlug);
+  const oldDir = join(globalPluginsDir(), oldSlug);
+  const newDir = join(globalPluginsDir(), newSlug);
   // Detect symlinks via lstat so we don't follow into the target.
   let oldKind: 'dir' | 'symlink' | 'absent' = 'absent';
   try {
@@ -782,14 +785,14 @@ export async function cmdPluginRename(args: string[]): Promise<void> {
 
   // Walk every harness, migrate enable + config state.
   const migratedHarnesses: string[] = [];
-  if (existsSync(HARNESSES_DIR)) {
-    const harnesses = await fs.readdir(HARNESSES_DIR, { withFileTypes: true });
+  if (existsSync(harnessesDir())) {
+    const harnesses = await fs.readdir(harnessesDir(), { withFileTypes: true });
     for (const h of harnesses) {
       if (!h.isDirectory()) continue;
       let touched = false;
 
       // enabled-plugins.json — swap old key → new key (keep version/timestamp/hash)
-      const enabledFile = join(HARNESSES_DIR, h.name, 'enabled-plugins.json');
+      const enabledFile = join(harnessesDir(), h.name, 'enabled-plugins.json');
       const enabled = await readJson<EnabledPluginsFile>(enabledFile);
       if (enabled?.enabled[oldSlug]) {
         if (enabled.enabled[newSlug]) {
@@ -807,8 +810,8 @@ export async function cmdPluginRename(args: string[]): Promise<void> {
       }
 
       // plugin-configs/<slug>.json — rename file
-      const oldConfig = join(HARNESSES_DIR, h.name, 'plugin-configs', `${oldSlug}.json`);
-      const newConfig = join(HARNESSES_DIR, h.name, 'plugin-configs', `${newSlug}.json`);
+      const oldConfig = join(harnessesDir(), h.name, 'plugin-configs', `${oldSlug}.json`);
+      const newConfig = join(harnessesDir(), h.name, 'plugin-configs', `${newSlug}.json`);
       if (existsSync(oldConfig)) {
         if (existsSync(newConfig)) {
           // Don't clobber a hand-authored config under the new slug.
@@ -823,8 +826,8 @@ export async function cmdPluginRename(args: string[]): Promise<void> {
       }
 
       // plugin-data/<slug>/ — invoke-time mirror dir (cmdPluginInvoke writes config.json here)
-      const oldDataDir = join(HARNESSES_DIR, h.name, 'plugin-data', oldSlug);
-      const newDataDir = join(HARNESSES_DIR, h.name, 'plugin-data', newSlug);
+      const oldDataDir = join(harnessesDir(), h.name, 'plugin-data', oldSlug);
+      const newDataDir = join(harnessesDir(), h.name, 'plugin-data', newSlug);
       if (existsSync(oldDataDir) && !existsSync(newDataDir)) {
         await fs.rename(oldDataDir, newDataDir);
         touched = true;
@@ -839,7 +842,7 @@ export async function cmdPluginRename(args: string[]): Promise<void> {
   // segment matches the old slug (with or without an @version suffix).
   let grantsRenamed = 0;
   for (const file of ['granted-capabilities.json', 'extended-grants.json']) {
-    const path = join(PAPERCUSP_ROOT, file);
+    const path = join(papercuspRoot(), file);
     const data = await readJson<{ grants?: Record<string, unknown>; extended?: Record<string, unknown> }>(path);
     if (!data) continue;
     const target = data.grants ?? data.extended;
@@ -890,7 +893,7 @@ export async function cmdPluginConfig(args: string[]): Promise<void> {
     ? { harness: parsed.harness }
     : await resolveHarness(args);
 
-  const configPath = join(HARNESSES_DIR, harness, 'plugin-configs', `${slug}.json`);
+  const configPath = join(harnessesDir(), harness, 'plugin-configs', `${slug}.json`);
   if (!existsSync(configPath)) {
     die(`plugin config: ${slug} has no config in ${harness}. Run \`papercusp plugin enable ${slug}\` first.`);
   }
@@ -1001,7 +1004,7 @@ export async function cmdPluginInvoke(args: string[]): Promise<void> {
 
   // Resolve plugin entry path (mirrors plugin-loader/locateEntry).
   const candidates = ['index.ts', 'index.js', 'index.mjs', join('dist', 'index.js'), join('src', 'index.ts')];
-  const pluginDir = join(GLOBAL_PLUGINS_DIR, slug);
+  const pluginDir = join(globalPluginsDir(), slug);
   let entry: string | null = null;
   for (const c of candidates) {
     if (existsSync(join(pluginDir, c))) {
@@ -1014,7 +1017,7 @@ export async function cmdPluginInvoke(args: string[]): Promise<void> {
   // Mirror the per-harness config blob to <pluginDataDir>/config.json so plugins
   // that read from there (e.g. cloudflare-pages) see their config without us
   // having to redesign the config IPC.
-  const harnessDir = join(HARNESSES_DIR, harness);
+  const harnessDir = join(harnessesDir(), harness);
   const pluginDataDir = join(harnessDir, 'plugin-data', slug);
   await fs.mkdir(pluginDataDir, { recursive: true });
   const pluginConfigPath = join(harnessDir, 'plugin-configs', `${slug}.json`);
@@ -1104,7 +1107,7 @@ export async function cmdPluginVerify(args: string[]): Promise<void> {
 
   const targets: string[] = [];
   if (all) {
-    const dirs = await fs.readdir(HARNESSES_DIR, { withFileTypes: true }).catch(() => []);
+    const dirs = await fs.readdir(harnessesDir(), { withFileTypes: true }).catch(() => []);
     targets.push(...dirs.filter((d) => d.isDirectory()).map((d) => d.name));
   } else {
     const { harness } = parsed.harness ? { harness: parsed.harness } : await resolveHarness(args);
@@ -1125,7 +1128,7 @@ export async function cmdPluginVerify(args: string[]): Promise<void> {
       else if (e.isDirectory() && e.name.startsWith('@')) await walkPlugins(sub);
     }
   };
-  await walkPlugins(GLOBAL_PLUGINS_DIR);
+  await walkPlugins(globalPluginsDir());
 
   let totalDrifted = 0;
   let totalChecked = 0;
@@ -1141,7 +1144,7 @@ export async function cmdPluginVerify(args: string[]): Promise<void> {
     for (const slug of slugs) {
       totalChecked++;
       const entry = enabled.enabled[slug];
-      const configPath = join(HARNESSES_DIR, harness, 'plugin-configs', `${slug}.json`);
+      const configPath = join(harnessesDir(), harness, 'plugin-configs', `${slug}.json`);
       let cfg = await readJson<Record<string, unknown>>(configPath);
 
       // If config is missing at the legacy slug path, look for it at the
@@ -1150,7 +1153,7 @@ export async function cmdPluginVerify(args: string[]): Promise<void> {
       if (cfg === null) {
         const canon = canonByBase.get(slug);
         if (canon) {
-          const canonicalPath = join(HARNESSES_DIR, harness, 'plugin-configs', `${canon}.json`);
+          const canonicalPath = join(harnessesDir(), harness, 'plugin-configs', `${canon}.json`);
           const canonCfg = await readJson<Record<string, unknown>>(canonicalPath);
           if (canonCfg !== null) {
             cfg = canonCfg;
@@ -1238,7 +1241,7 @@ export async function cmdPluginWatch(args: string[]): Promise<void> {
   const srcIdx = parsed.rest.indexOf('--src');
   const targetDir = srcIdx >= 0 && parsed.rest[srcIdx + 1]
     ? parsed.rest[srcIdx + 1]
-    : join(GLOBAL_PLUGINS_DIR, slug);
+    : join(globalPluginsDir(), slug);
 
   if (!existsSync(targetDir)) {
     die(`plugin watch: ${targetDir} does not exist`);
@@ -1283,7 +1286,7 @@ export async function cmdUpgradePin(args: string[]): Promise<void> {
   if (!slug) die('upgrade-pin: usage: papercusp upgrade-pin <slug> [--harness <slug>]');
 
   const { harness } = parsed.harness ? { harness: parsed.harness } : await resolveHarness(args);
-  const lockPath = join(HARNESSES_DIR, harness, 'papercusp.lock');
+  const lockPath = join(harnessesDir(), harness, 'papercusp.lock');
   if (!existsSync(lockPath)) {
     die(`upgrade-pin: no papercusp.lock at ${lockPath}`);
   }

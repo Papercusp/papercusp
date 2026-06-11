@@ -64,6 +64,60 @@ test('resolvePromptFile — falls back to prompts/$role.md when nothing more spe
   }
 });
 
+// Audit P-019: base/<role>.md is the universal first section; the concrete
+// resolved prompt stays the authoritative last. The base layer was documented
+// in the prompts README but NEVER loaded before resolvePromptFiles existed.
+test('resolvePromptFiles — base layer composes BEFORE the concrete prompt', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    mkdirSync(join(root, 'prompts', 'base'), { recursive: true });
+    writeFileSync(join(root, 'prompts', 'base', 'worker.md'), '# base');
+    writeFileSync(join(root, 'prompts', 'worker.md'), '# worker');
+  });
+  try {
+    const files = resolvePromptFiles({ harnessDir, phase: 'staging', dept: '' }, 'worker');
+    assert.deepEqual(files, [
+      join(harnessDir, 'prompts', 'base', 'worker.md'),
+      join(harnessDir, 'prompts', 'worker.md'),
+    ]);
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolvePromptFiles — no base layer → just the concrete prompt', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    writeFileSync(join(root, 'prompts', 'worker.md'), '# worker');
+  });
+  try {
+    const files = resolvePromptFiles({ harnessDir, phase: '', dept: '' }, 'worker');
+    assert.deepEqual(files, [join(harnessDir, 'prompts', 'worker.md')]);
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolvePromptFiles — base-only role still resolves (the role HAS a prompt)', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    mkdirSync(join(root, 'prompts', 'base'), { recursive: true });
+    writeFileSync(join(root, 'prompts', 'base', 'summarizer.md'), '# base summarizer');
+  });
+  try {
+    const files = resolvePromptFiles({ harnessDir, phase: '', dept: '' }, 'summarizer');
+    assert.deepEqual(files, [join(harnessDir, 'prompts', 'base', 'summarizer.md')]);
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolvePromptFiles — unknown role → []', () => {
+  const { harnessDir, cleanup } = withHarness(() => {});
+  try {
+    assert.deepEqual(resolvePromptFiles({ harnessDir, phase: '', dept: '' }, 'nope'), []);
+  } finally {
+    cleanup();
+  }
+});
+
 test('resolvePromptFile — phase override wins over default', () => {
   const { harnessDir, cleanup } = withHarness((root) => {
     writeFileSync(join(root, 'prompts', 'worker.md'), '# default');

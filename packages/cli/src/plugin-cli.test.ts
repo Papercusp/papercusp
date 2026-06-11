@@ -6,12 +6,23 @@
  */
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { promises as fs, existsSync } from 'node:fs';
+import { promises as fs, existsSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { cmdPluginEnable, cmdPluginDisable, cmdPluginConfig, cmdPluginRename } from './plugin-cli.ts';
 
-import { papercuspRoot } from './papercusp-root.ts';
+import { papercuspRoot, _resetPapercuspRootForTests } from './papercusp-root.ts';
+
+// EI-214: run the WHOLE suite against an isolated PAPERCUSP_HOME. Fixtures
+// previously went into the user's real global-plugins and relied on after()
+// for cleanup — a killed run leaked them, and every pipeline finalize then
+// fired the broken fixtures' hooks. With a /tmp root, debris can never land
+// in the real dir no matter how the process dies. (plugin-cli.ts resolves its
+// dirs lazily for exactly this reason — keep it that way.)
+process.env.PAPERCUSP_HOME = mkdtempSync(join(tmpdir(), 'pcli-root-'));
+_resetPapercuspRootForTests();
+
 const HARNESS = `plugin-cli-test-${process.pid}`;
 const SLUG = `pcli-fixture-${process.pid}`;
 const ROOT = papercuspRoot();
@@ -48,8 +59,8 @@ before(async () => {
 });
 
 after(async () => {
-  await fs.rm(PLUGIN_DIR, { recursive: true, force: true });
-  await fs.rm(HARNESS_DIR, { recursive: true, force: true });
+  // Belt-and-braces: the whole isolated root is /tmp debris — remove it all.
+  await fs.rm(ROOT, { recursive: true, force: true });
 });
 
 beforeEach(async () => {
@@ -63,7 +74,12 @@ describe('cmdPluginEnable --accept-defaults', () => {
     assert.equal(enabled.enabled[SLUG].version, '0.1.0');
     assert.match(enabled.enabled[SLUG].configHash, /^sha256-/);
     const cfg = JSON.parse(await fs.readFile(CONFIG_PATH, 'utf8'));
-    assert.deepEqual(cfg, { accountId: 'acct-default', verbose: false, maxRetries: 3 });
+    // pruneSchemaDefaults (c31829b) strips values equal to the schema default
+    // before persisting — an all-defaults config serializes as {} and the
+    // runtime re-derives the defaults from the schema. (The old full-object
+    // expectation went stale unnoticed because this node:test file sits
+    // outside the Vitest gate.)
+    assert.deepEqual(cfg, {});
   });
 
   it('exits non-zero for an unknown plugin slug', async () => {

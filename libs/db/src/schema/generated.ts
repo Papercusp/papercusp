@@ -2758,6 +2758,19 @@ export const pluginCapabilityGrantsInHarnessShared = harnessShared.table("plugin
 	primaryKey({ columns: [table.pluginName, table.pluginVersion, table.harnessSlug, table.capability], name: "plugin_capability_grants_pkey"}),
 ]);
 
+export const mcpToolResultsInHarnessShared = harnessShared.table("mcp_tool_results", {
+	ownerKey: text("owner_key").notNull(),
+	idempotencyKey: text("idempotency_key").notNull(),
+	toolName: text("tool_name").notNull(),
+	workspaceId: text("workspace_id").default('*').notNull(),
+	result: jsonb().notNull(),
+	isError: boolean("is_error").default(false).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("mcp_tool_results_created_at_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.ownerKey, table.idempotencyKey], name: "mcp_tool_results_pkey"}),
+]);
+
 export const tuiLayoutsInHarnessShared = harnessShared.table("tui_layouts", {
 	workspaceId: text("workspace_id").notNull(),
 	ownerId: text("owner_id").notNull(),
