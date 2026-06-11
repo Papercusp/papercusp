@@ -309,19 +309,6 @@ export const schemaMigrationsInHarnessShared = harnessShared.table("schema_migra
 	sha256: text().notNull(),
 });
 
-export const pendingWakesInHarnessShared = harnessShared.table("pending_wakes", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.pending_wakes_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	ownerId: text("owner_id").notNull(),
-	summary: text(),
-	payload: jsonb(),
-	source: text(),
-	workspaceId: text("workspace_id"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("pending_wakes_owner_idx").using("btree", table.ownerId.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
-]);
-
 export const hiveDirectoryCacheInHarnessShared = harnessShared.table("hive_directory_cache", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().notNull(),
@@ -331,6 +318,22 @@ export const hiveDirectoryCacheInHarnessShared = harnessShared.table("hive_direc
 	pgPolicy("hive_directory_cache_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "hive_directory_cache_pkey"}),
 
+]);
+
+export const pendingWakesInHarnessShared = harnessShared.table("pending_wakes", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.pending_wakes_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	ownerId: text("owner_id").notNull(),
+	summary: text(),
+	payload: jsonb(),
+	source: text(),
+	workspaceId: text("workspace_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	count: integer().default(1).notNull(),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("pending_wakes_dedupe_idx").using("btree", sql`owner_id`, sql`COALESCE(source, ''::text)`, sql`COALESCE(summary, ''::text)`, sql`COALESCE(workspace_id, ''::text)`),
+	index("pending_wakes_owner_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("text_ops")),
 ]);
 
 export const migrationReservationsInHarnessShared = harnessShared.table("migration_reservations", {
