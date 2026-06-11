@@ -1914,6 +1914,10 @@ export async function invoke(
     cwdOverride,
     featureId,
     runId,
+    // EI-311: the durable `s-…` coord owner (the umbilical), so the agent
+    // names itself by its REAL identity — not the per-call Run ID — on any
+    // degraded path where it composes its own messages.
+    coordOwnerId: (process.env.PAPERCUSP_SPAWN_ID ?? '').trim() || null,
     extras,
     substrateContext,
     planContext,

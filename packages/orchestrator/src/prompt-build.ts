@@ -147,6 +147,17 @@ export interface BuildPromptInput {
   featureId: string | null;
   /** Run ID — printed in runtime context. */
   runId: string;
+  /**
+   * The agent's durable coord owner id — the operator-minted `s-…` spawnId
+   * (threaded in via PAPERCUSP_SPAWN_ID; same id as the spawned_agents row's
+   * session_owner and the signed MCP URL's client=). Printed in runtime
+   * context as THE identity the agent uses wherever it names itself. EI-311:
+   * a bee whose prompt only showed the per-call Run ID self-identified by it
+   * on degraded (non-MCP) paths, forking its claims off its presence/nursery
+   * identity so the colony panel read a live bee as orphaned. Null/empty →
+   * line omitted (legacy pipeline roles without an operator spawn id).
+   */
+  coordOwnerId?: string | null;
   /** Extra context lines (e.g. `["MODE=initial"]`, `["FEATURE_ID=F-001"]`). */
   extras: readonly string[];
   /**
@@ -494,7 +505,12 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
     vol.push(`- Working directory: ${input.projectDir}`);
   }
   vol.push(`- State directory: ${input.stateDir} (all coordination files live here; shared across worktrees if any)`);
-  vol.push(`- Run ID: ${input.runId}`);
+  vol.push(`- Run ID: ${input.runId} (per-invocation diagnostic — NOT your identity)`);
+  if (input.coordOwnerId && input.coordOwnerId.trim()) {
+    vol.push(
+      `- Spawn ID: ${input.coordOwnerId.trim()} — your coord identity. Use THIS id wherever you name yourself (hello broadcasts, claims, escalations); your MCP tools already carry it.`,
+    );
+  }
 
   // G3: determine whether remote-peer content must be wrapped (P-009).
   // feature-level origin is the available provenance signal from G1.
