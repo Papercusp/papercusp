@@ -454,6 +454,28 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
   }
 });
 
+test('resolveModel — per-spawn PAPERCUSP_SPAWN_MODEL outranks config AND env (queen-model-tier-selection P-001)', () => {
+  const prevSpawn = process.env.PAPERCUSP_SPAWN_MODEL;
+  const prevModels = process.env.AGENT_MODELS;
+  try {
+    process.env.PAPERCUSP_SPAWN_MODEL = 'opus:high';
+    process.env.AGENT_MODELS = JSON.stringify({ worker: 'haiku' });
+    // outranks the harness config (an explicit per-task pick is more specific
+    // than any standing per-role pin), the env map, and the committed default.
+    assert.equal(resolveModel({ models: { worker: 'sonnet' } }, 'worker'), 'opus:high');
+    assert.equal(resolveModel({ aiBackend: { roles: { worker: { model: 'sonnet' } } } }, 'worker'), 'opus:high');
+    assert.equal(resolveModel({}, 'release-manager'), 'opus:high');
+    // empty/whitespace value falls through to the normal chain.
+    process.env.PAPERCUSP_SPAWN_MODEL = '  ';
+    assert.equal(resolveModel({}, 'worker'), 'haiku');
+  } finally {
+    if (prevSpawn === undefined) delete process.env.PAPERCUSP_SPAWN_MODEL;
+    else process.env.PAPERCUSP_SPAWN_MODEL = prevSpawn;
+    if (prevModels === undefined) delete process.env.AGENT_MODELS;
+    else process.env.AGENT_MODELS = prevModels;
+  }
+});
+
 test('resolveModel — AGENT_MODELS / config OVERRIDE the committed default', () => {
   const prev = process.env.AGENT_MODELS;
   try {
