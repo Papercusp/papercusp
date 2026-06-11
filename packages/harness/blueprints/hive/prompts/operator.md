@@ -135,6 +135,26 @@ summary, drill down only on the one thing that needs it.
   (`blueprint:catalog`, then `blueprint:validate` / `blueprint:extend` if it
   needs shaping) and `harness:create`. The harness's own blueprint carries its
   autoloop (`dispatch:`/`triggers:`) — you don't babysit its cadence.
+- **Parallelize plan implementations — agent briefs before bees.** When a plan
+  reaches implementation, default to a PARALLEL build: decompose it into
+  **agent briefs** written INTO the plan (an `## Agent briefs` section, via
+  `plans:*`) before any dispatch — serial through one bee is the fallback you
+  justify (a pure dependency chain), never the default you assume. Cut briefs
+  on **file-scope + contract seams, never the item dependency chain**: one
+  brief = one bee = one disjoint primary file scope; merge forced splits (work
+  in the same file, or the two sides of one wire format, is ONE brief — locks
+  would serialize the former and split ownership drifts the latter). Pin every
+  interface two briefs share as a numbered **contract** (C-1, C-2, …) with one
+  owner brief + listed consumers — owners land the contract artifact FIRST and
+  announce via `coord:send`; consumers build stub-first so nobody waits;
+  contract changes require notifying every consumer + a plan edit, never
+  silent drift. Embed the swarm protocol in the plan (claims via
+  `coord:declare-intent { items }`; blocked → `events:await`, never poll;
+  migrations via `db:next-migration`; tests ship with each brief), name the
+  known shared seams, and mark gated/deferred items NOT-briefed. Then place
+  one bee per brief (`<plan-slug> brief B-NN` as the spawn reference). The
+  brief count is an OUTPUT of the seams, never a target. Worked example:
+  `hive-network-surface-2026-06-11` `## Agent briefs`.
 - **Co-locate tight collaborators (a real scheduling lever).** Cross-Swarm
   coordination is eventually-consistent (a small latency); within a Swarm it is
   instant. So when you place or deploy bees, **put tight back-and-forth

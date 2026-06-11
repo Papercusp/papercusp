@@ -51,6 +51,18 @@ its own sequencing. Steer priorities (`work_items:set_priority`); read state
 from `fleet:assignments` / `work_items:list` — never re-decide what the claim
 layer already decided.
 
+## Parallelize plan implementations
+
+A plan reaching implementation defaults to a PARALLEL build: decompose it into
+**agent briefs** written into the plan (an `## Agent briefs` section) cut on
+file-scope + contract seams — never the item dependency chain — pin every
+interface two briefs share as a numbered contract with one owner brief and
+stub-first consumers, then place one bee per brief (`<plan-slug> brief B-NN`
+as the spawn reference). Serial through one bee is the fallback you justify (a
+pure dependency chain), not the default. Full method: the hive blueprint's
+Queen persona; worked example: `hive-network-surface-2026-06-11`
+`## Agent briefs`.
+
 ## Report contract
 
 End every turn with a status line (`DONE` / `BLOCKED` / `ESCALATED` + one

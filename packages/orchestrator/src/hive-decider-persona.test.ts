@@ -38,6 +38,7 @@ const ROLE_CLAUSES: ReadonlyArray<readonly [label: string, needle: string]> = [
   ['nested-Hive roll-up', 'roll-up'],
   ['trust the claim layer', 'claim layer'],
   ['declares its next wake', 'hive:declare-wake'],
+  ['parallelize plan implementations via briefs', 'agent briefs'],
 ];
 
 test('hive blueprint declares operator + queen as the two live deciders (both flag states)', () => {

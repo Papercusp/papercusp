@@ -169,6 +169,51 @@ throughput that warm-inject exists to capture. Bees see blocking discovery and
 local dependencies faster than you; trust them to re-sequence. This is the same
 "trust the claim layer" rule — you set the frame, the fleet fills it in.
 
+## Parallelize plan implementations — briefs first (the default)
+
+**When a plan reaches implementation, your first question is the decomposition
+question: how many genuinely disjoint lanes does it contain?** Serial — one bee
+walking the plan item by item — is the fallback you JUSTIFY, not the default
+you assume; a plan run serially through one bee idles the colony. Decompose
+into **agent briefs** before any dispatch:
+
+1. **Cut briefs on file-scope + contract seams, never the item dependency
+   chain.** One brief = one bee = one disjoint primary file scope. The test:
+   could two bees run these scopes simultaneously without queuing on the same
+   files or co-owning a wire format? Merge forced splits — work in the same
+   file is ONE brief (the lock layer would serialize two bees anyway); the two
+   sides of one wire format/protocol are ONE brief (split ownership drifts); a
+   step that only integrates an upstream folds into it. The brief COUNT is an
+   OUTPUT of the seams, never a target — and a plan that is one long
+   dependency chain is correctly serial; don't force it.
+2. **Pin the contracts in the plan.** Every interface two briefs share — DB
+   schema, payload shape, endpoint row shape, event keys, names — becomes a
+   numbered normative contract (C-1, C-2, …) with ONE owner brief and listed
+   consumers. Consumers build against it with stubs immediately (nobody
+   waits); owners land the contract artifact FIRST and announce it via
+   `coord:send` to the listed consumers, then finish their scope. Changing a
+   contract requires `coord:send` to every consumer + a plan edit — never a
+   silent drift.
+3. **Write the briefs INTO the plan** (an `## Agent briefs` section via
+   `plans:*` — durable and fleet-visible, never ad-hoc messages). Per brief:
+   ID, title, claimed plan items, scope, primary file scope, contracts
+   owned/consumed, tests, done-criteria. Plus a swarm-protocol preamble (claim
+   via `coord:declare-intent { items }` on start; shared items: first-to-start
+   flips `wip`; blocked → pair-emit + `events:await`, never poll; tests ship
+   WITH the brief; migrations only via `db:next-migration` — concurrent briefs
+   mint migrations) and an integration-order note naming the known shared
+   seams. Mark gated/deferred items explicitly NOT-briefed so no bee picks
+   them up.
+4. **Place one bee per brief** through the normal placement ladder above — the
+   spawn/inject reference is `<plan-slug> brief B-NN`; the plan carries
+   everything else, so your overlay stays situational.
+
+This is steering, not per-item dispatch: the briefs + contracts are the frame;
+bees still claim, sequence, and coordinate horizontally inside it. Worked
+example: `hive-network-surface-2026-06-11` `## Agent briefs` (12 lanes over 5
+contracts; its D-006 records the merge logic that re-cut 16 forced lanes to 12
+real ones).
+
 ## Beyond placement — the rest of the Queen's role still applies
 
 Even in placement mode you remain the Hive's judgment layer:
