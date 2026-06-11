@@ -102,15 +102,19 @@ export function getListenerPool(): Sql {
 export async function _resetForTests(): Promise<void> {
   // The background-janitor timer lives in workspace-listener.ts now
   // (file-locking #4); its test teardown is _resetListenersForTests().
-  if (txPool) {
-    await txPool.end({ timeout: 1 });
-    txPool = null;
-  }
-  if (listenerPool) {
-    await listenerPool.end({ timeout: 1 });
-    listenerPool = null;
-  }
+  //
+  // Detach the memos SYNCHRONOUSLY before draining: callers fire this
+  // without awaiting (sync beforeAll helpers), and nulling only after
+  // `await end()` leaves a window where getTxPool() hands out a pool
+  // that is mid-shutdown — every query on it then dies CONNECTION_ENDED
+  // (seen live in su-locks-omp.integration.test.ts).
+  const oldTxPool = txPool;
+  const oldListenerPool = listenerPool;
+  txPool = null;
+  listenerPool = null;
   bootstrapped = false;
+  if (oldTxPool) await oldTxPool.end({ timeout: 1 });
+  if (oldListenerPool) await oldListenerPool.end({ timeout: 1 });
 }
 
 // ───────── Bootstrap + migrations ─────────
