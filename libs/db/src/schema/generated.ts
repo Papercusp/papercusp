@@ -1764,51 +1764,6 @@ export const harnessProjectFilesInHarnessShared = harnessShared.table("harness_p
 
 ]);
 
-export const spawnedAgentsInHarnessShared = harnessShared.table("spawned_agents", {
-	spawnId: text("spawn_id").primaryKey().notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	parentSpawnId: text("parent_spawn_id"),
-	parentRole: text("parent_role").notNull(),
-	childRole: text("child_role").notNull(),
-	featureId: text("feature_id"),
-	chunkId: text("chunk_id"),
-	runId: text("run_id").notNull(),
-	status: text().notNull(),
-	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	durationMs: bigint("duration_ms", { mode: "number" }),
-	exitCode: integer("exit_code"),
-	outputTail: text("output_tail"),
-	errorMessage: text("error_message"),
-	cancelRequested: boolean("cancel_requested").default(false).notNull(),
-	sessionOwner: text("session_owner"),
-	coordinationDomain: text("coordination_domain").default('default').notNull(),
-	planSlug: text("plan_slug"),
-	itemId: text("item_id"),
-	restartStrategy: text("restart_strategy").default('one_for_one').notNull(),
-	restartCount: integer("restart_count").default(0).notNull(),
-	restartWindowStart: timestamp("restart_window_start", { withTimezone: true, mode: 'string' }),
-	cancelReason: text("cancel_reason"),
-	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
-	heartbeatAt: timestamp("heartbeat_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	sessionId: text("session_id"),
-	idempotencyKey: text("idempotency_key"),
-}, (table) => [
-	index("spawned_agents_active_heartbeat_idx").using("btree", table.heartbeatAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['running'::text, 'restarting'::text]))`),
-	uniqueIndex("spawned_agents_idempotency_key_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.idempotencyKey.asc().nullsLast().op("text_ops")).where(sql`(idempotency_key IS NOT NULL)`),
-	index("spawned_agents_parent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.parentSpawnId.asc().nullsLast().op("text_ops")),
-	index("spawned_agents_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("text_ops")),
-	index("spawned_agents_running_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(status = 'running'::text)`),
-	index("spawned_agents_session_id_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
-	index("spawned_agents_session_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionOwner.asc().nullsLast().op("text_ops")).where(sql`(session_owner IS NOT NULL)`),
-	pgPolicy("spawned_agents_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("spawned_agents_restart_strategy_chk", sql`restart_strategy = ANY (ARRAY['one_for_one'::text, 'one_for_all'::text, 'rest_for_one'::text])`),
-	primaryKey({ columns: [table.spawnId], name: "spawned_agents_pkey"}),
-
-]);
-
 export const operatorConversationsInHarnessShared = harnessShared.table("operator_conversations", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
@@ -1844,6 +1799,53 @@ export const voiceRelayInHarnessShared = harnessShared.table("voice_relay", {
 }, (table) => [
 	pgPolicy("voice_relay_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "voice_relay_pkey"}),
+
+]);
+
+export const spawnedAgentsInHarnessShared = harnessShared.table("spawned_agents", {
+	spawnId: text("spawn_id").primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	parentSpawnId: text("parent_spawn_id"),
+	parentRole: text("parent_role").notNull(),
+	childRole: text("child_role").notNull(),
+	featureId: text("feature_id"),
+	chunkId: text("chunk_id"),
+	runId: text("run_id").notNull(),
+	status: text().notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	durationMs: bigint("duration_ms", { mode: "number" }),
+	exitCode: integer("exit_code"),
+	outputTail: text("output_tail"),
+	errorMessage: text("error_message"),
+	cancelRequested: boolean("cancel_requested").default(false).notNull(),
+	sessionOwner: text("session_owner"),
+	coordinationDomain: text("coordination_domain").default('default').notNull(),
+	planSlug: text("plan_slug"),
+	itemId: text("item_id"),
+	restartStrategy: text("restart_strategy").default('one_for_one').notNull(),
+	restartCount: integer("restart_count").default(0).notNull(),
+	restartWindowStart: timestamp("restart_window_start", { withTimezone: true, mode: 'string' }),
+	cancelReason: text("cancel_reason"),
+	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
+	heartbeatAt: timestamp("heartbeat_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	sessionId: text("session_id"),
+	idempotencyKey: text("idempotency_key"),
+	pid: integer(),
+	launcherHost: text("launcher_host"),
+}, (table) => [
+	index("spawned_agents_active_heartbeat_idx").using("btree", table.heartbeatAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['running'::text, 'restarting'::text]))`),
+	uniqueIndex("spawned_agents_idempotency_key_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.idempotencyKey.asc().nullsLast().op("text_ops")).where(sql`(idempotency_key IS NOT NULL)`),
+	index("spawned_agents_parent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.parentSpawnId.asc().nullsLast().op("text_ops")),
+	index("spawned_agents_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("text_ops")),
+	index("spawned_agents_running_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(status = 'running'::text)`),
+	index("spawned_agents_session_id_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
+	index("spawned_agents_session_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionOwner.asc().nullsLast().op("text_ops")).where(sql`(session_owner IS NOT NULL)`),
+	pgPolicy("spawned_agents_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("spawned_agents_restart_strategy_chk", sql`restart_strategy = ANY (ARRAY['one_for_one'::text, 'one_for_all'::text, 'rest_for_one'::text])`),
+	primaryKey({ columns: [table.spawnId], name: "spawned_agents_pkey"}),
 
 ]);
 
