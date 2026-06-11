@@ -280,12 +280,22 @@ export function resolveTimeout(cfg: HarnessConfig, role: string): number {
   return 0;
 }
 
-/** Per-role model resolution. Per-harness `.papercusp/config.json` wins
-    over the user-level `AGENT_MODELS` env var (which the operator's
-    /settings/agent page writes), which in turn wins over the committed
-    `ROLE_MODEL_DEFAULTS` floor. Empty string = use the agent CLI's
-    default. */
+/** Per-role model resolution. The per-spawn `PAPERCUSP_SPAWN_MODEL` env (an
+    explicit escalation for THIS one child) wins over everything; then
+    per-harness `.papercusp/config.json` wins over the user-level
+    `AGENT_MODELS` env var (which the operator's /settings/agent page writes),
+    which in turn wins over the committed `ROLE_MODEL_DEFAULTS` floor. Empty
+    string = use the agent CLI's default. */
 export function resolveModel(cfg: HarnessConfig, role: string): string {
+  // Per-spawn escalation (queen-model-tier-selection-2026-06-11 P-001): an
+  // explicit spec for THIS one child — fleet:spawn's model/tier arg, set only
+  // in the spawned child's env by spawnAgentInHarness (extraEnv), never
+  // globally. Outranks even the harness config: an explicit per-task pick is
+  // more specific than any standing per-role pin. Usually already applied as
+  // `--model` on AGENT_CMD by buildInvokeOnce; this consult covers the
+  // aiBackend agentCmd-swap path where that command-level append is replaced.
+  const perSpawn = process.env.PAPERCUSP_SPAWN_MODEL;
+  if (perSpawn && perSpawn.trim()) return perSpawn.trim();
   // aiBackend role override wins, then aiBackend default, then legacy models.<role>.
   const fromAiRole = configGet<string>(cfg, `aiBackend.roles.${role}.model`, '');
   if (fromAiRole) return fromAiRole;
