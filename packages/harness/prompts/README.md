@@ -26,26 +26,27 @@ prompts/
         └── marketing/   — orchestrator.md (override)
 ```
 
-## Resolution function (for the runtime to implement)
+## Resolution function (implemented — `prompt-resolve.ts`)
+
+The runtime implements a TWO-SECTION composition (audit P-019,
+`resolvePromptFiles` in `packages/orchestrator/src/prompt-resolve.ts`):
 
 ```
-resolve(role, harness_kind, department_slug?, mode?) =
-  sections = [read("base/" + role + ".md")]
-
-  if (harness_kind == "coding"):
-    sections.push(read(role + ".md"))                                   # top-level
-    if (HARNESS_PHASE):
-      sections.push_if_exists(read(HARNESS_PHASE + "/" + role + ".md")) # phase variant
-
-  if (harness_kind == "department"):
-    sections.push(read("department/" + role + ".md"))
-    if (department_slug):
-      sections.push_if_exists(read("department/departments/" + department_slug + "/" + role + ".md"))
-    if (mode == "ceo" and department_slug == "business" and role == "worker"):
-      sections.replace_last_with(read("department/departments/business/ceo.md"))
-
+resolve(role, ctx) =
+  sections = []
+  sections.push_if_exists("base/" + role + ".md")    # universal layer
+  sections.push_if_exists(most_specific(role, ctx))   # resolvePromptFile():
+    # blueprint > phase/departments/dept > phase > department(legacy) > top-level
   return sections.join("\n\n---\n\n")
 ```
+
+`most_specific` stays PICK-FIRST across the kind/phase/dept candidates (it does
+not concatenate intermediate layers) — the only concatenation is base + the
+winning concrete prompt, joined by `prompt-build.ts` when handed `promptFiles`.
+The original design sketched full multi-section concatenation for department
+harnesses (base + kind + dept + mode); if a department prompt ever needs the
+intermediate layers composed too, extend `resolvePromptFiles`, don't fork the
+join logic.
 
 ## Triggering CEO mode
 

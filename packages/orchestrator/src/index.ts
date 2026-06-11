@@ -55,7 +55,7 @@ export type {
 export { captureDebuggerOutput, materializeFeatureDebugNote } from './feature-debug-notes';
 export type { DebugNoteContext } from './feature-debug-notes';
 export type { AgentBackend } from './types';
-export { promptCandidates, resolvePromptFile } from './prompt-resolve';
+export { promptCandidates, resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 export type { PromptResolveContext } from './prompt-resolve';
 export { extractFeatureId, makeRunId } from './run-id';
 export { buildPrompt } from './prompt-build';

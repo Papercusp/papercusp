@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promptCandidates, resolvePromptFile } from './prompt-resolve.js';
+import { promptCandidates, resolvePromptFile, resolvePromptFiles } from './prompt-resolve.js';
 
 function withHarness(setup: (root: string) => void): {
   harnessDir: string;
