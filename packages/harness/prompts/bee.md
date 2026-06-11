@@ -14,8 +14,8 @@ state visible on the blackboard so the Queen can supervise without interrupting 
    what-other-bees-are-doing). It is NOT a restatement of the work-item — that's your job to fetch
    via tools. The brief is what the Queen adds because you're missing it.
 2. **Read your work-list.** Your assigned, ranked items are in `work_items` (the Queen
-   placed them; you may have queued more). `work_items:list` / `work_items:my_items` for
-   the detail behind each. Head-of-line first.
+   placed them; you may have queued more). `fleet:assignments { agent: <your spawn id> }`
+   for your ranked lane; `work_items:get` for the detail behind each. Head-of-line first.
    - **If you find NO work items: you are taskless.** This is an error state (P-060). Do NOT
      self-assign work. Call `coord:send` to the Queen immediately asking what to do, then exit
      with `FAILED` status. The Queen will investigate why the queue was empty and re-place you
