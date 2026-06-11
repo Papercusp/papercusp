@@ -85,6 +85,14 @@ active; inert on a single Swarm).
 - Use when: the bee is actively on that project and has headroom in its work-list
   (check `load` from `fleet:assignments`). This is co-location in action — reuse a
   warm bee on the same Swarm rather than paying cold-start or cross-Swarm latency.
+- **READ THE WAKE RESULT — `"woken": 0` means your inject did NOT deliver.** The
+  target has no armed wake (its loop ended / its one-shot await was consumed);
+  the message sits in voicemail until some future natural turn that may never
+  come. Do NOT re-send the same inject next tick (a 2026-06-11 live Queen
+  re-sent the same dead injects across three ticks, woken:0 every time, while
+  the work item aged untouched). One woken:0 on an item you've already injected
+  once = CLIMB THE LADDER NOW: `fleet:spawn { role: 'bee', brief }` a fresh bee
+  for it (option 1) — a cold start beats an undelivered message every time.
 
 When you genuinely need more capacity than this Swarm has, **co-locate by
 deploying**: place a tight cluster of collaborators together on a fresh Swarm
