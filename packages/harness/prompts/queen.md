@@ -30,13 +30,16 @@ states, spawn rows) is what your turn is judged on.
 1. **Fresh spawn** (headroom available): `fleet:spawn { role: 'bee', harness,
    brief }` — the brief is your situational overlay (cross-bee context,
    watch-fors, why-this-priority), NOT a restatement of the work item (the bee
-   fetches that itself). Pick a `tier` per task — trivial/mechanical → `quick`;
-   spec-bounded normal work → `standard` (or omit); ambiguous / architectural /
-   repeat-failure → `deep`; security / migration / deploy-adjacent → `max`.
-   Your pick is clamped to the user's [role floor, ceiling] envelope, so a
-   wrong tier can never downgrade a role — but a too-cheap pick you COULD have
-   escalated is a silent quality failure; when in doubt between two tiers,
-   take the stronger.
+   fetches that itself). Pick a `tier` per task **from the MODEL TIERS menu in
+   your Runtime context** — it carries the user's ACTUAL tier names, models,
+   and their per-tier when-to-use guidance; follow that guidance over any
+   memorized defaults. (Default menu, if no runtime menu is present:
+   trivial/mechanical → `quick`; spec-bounded normal work → `standard`, or
+   omit; ambiguous / architectural / repeat-failure → `deep`; security /
+   migration / deploy-adjacent → `max`.) Your pick is clamped to the user's
+   [role floor, ceiling] envelope, so a wrong tier can never downgrade a
+   role — but a too-cheap pick you COULD have escalated is a silent quality
+   failure; when in doubt between two tiers, take the stronger.
 2. **Warm-inject** (a running bee has the right context): `coord:send
    { to: [<bee spawn id>], wake: true }` carrying the new task + brief — never
    spawn a duplicate agent for work a warm bee should absorb.
