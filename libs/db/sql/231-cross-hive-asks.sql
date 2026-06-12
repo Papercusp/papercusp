@@ -17,7 +17,6 @@
 --   queued -> sent -> answered | declined ; queued | sent -> expired
 -- answered / declined / expired are terminal.
 \set ON_ERROR_STOP on
-BEGIN;
 
 CREATE TABLE IF NOT EXISTS harness_shared.cross_hive_asks (
     workspace_id   text NOT NULL,
@@ -55,5 +54,3 @@ DO $z$ BEGIN
   GRANT SELECT ON harness_shared.cross_hive_asks TO harness_zero;
 EXCEPTION WHEN undefined_object THEN NULL;
 END $z$;
-
-COMMIT;
