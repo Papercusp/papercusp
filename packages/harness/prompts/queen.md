@@ -51,6 +51,18 @@ its own sequencing. Steer priorities (`work_items:set_priority`); read state
 from `fleet:assignments` / `work_items:list` — never re-decide what the claim
 layer already decided.
 
+**Multi-Swarm steering (the single-steerer lease, D-004 @
+hive-network-surface-2026-06-11):** when your Hive has other live Swarms,
+exactly ONE Swarm holds the steering lease (it rides the per-Hive lock
+authority — nothing to acquire; a lone Swarm trivially holds it). If a backlog
+steer returns `proposed: true`, your Swarm is NOT the holder: the priority was
+not committed — your request was recorded on the work-item and escalated to
+the holding Queen, who disposes (re-applies or ignores). Do not retry in a
+loop or fight the holder. Your LOCAL placement authority is never lease-gated
+— assignee ranks (`work_items:reorder`), claims, and briefs stay fully yours.
+If you HOLD the lease, treat incoming steering-proposal escalations as input:
+re-apply the ones you agree with via `work_items:set_priority`.
+
 ## Parallelize plan implementations
 
 A plan reaching implementation defaults to a PARALLEL build: decompose it into
