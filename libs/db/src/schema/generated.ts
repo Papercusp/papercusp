@@ -34,8 +34,9 @@ export const memoryFeedbackInHarnessShared = harnessShared.table("memory_feedbac
 	newText: text("new_text"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
+	index("memory_feedback_action_created_idx").using("btree", table.action.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("memory_feedback_mem_idx").using("btree", table.memId.asc().nullsLast().op("text_ops")),
-	index("memory_feedback_user_idx").using("btree", table.userId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("memory_feedback_user_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
 	pgPolicy("memory_feedback_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("memory_feedback_action_check", sql`action = ANY (ARRAY['edit'::text, 'delete'::text, 'forget_all'::text])`),
 	primaryKey({ columns: [table.id], name: "memory_feedback_pkey"}),
@@ -1720,6 +1721,21 @@ export const planRunTurnsInHarnessShared = harnessShared.table("plan_run_turns",
 			name: "plan_run_turns_plan_run_id_fkey"
 		}),
 	unique("plan_run_turns_plan_run_id_seq_key").on(table.planRunId, table.seq),
+]);
+
+export const memoryRecallStatsInHarnessShared = harnessShared.table("memory_recall_stats", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.memory_recall_stats_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	surface: text().notNull(),
+	hitCount: integer("hit_count").notNull(),
+	topScore: doublePrecision("top_score"),
+	scores: jsonb().default([]).notNull(),
+	fragmentCount: integer("fragment_count").default(0).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("memory_recall_stats_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	check("memory_recall_stats_surface_check", sql`surface = ANY (ARRAY['search'::text, 'injection'::text])`),
+	check("memory_recall_stats_hit_count_check", sql`hit_count >= 0`),
 ]);
 
 export const planRunsInHarnessShared = harnessShared.table("plan_runs", {
