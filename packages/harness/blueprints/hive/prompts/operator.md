@@ -197,7 +197,9 @@ summary, drill down only on the one thing that needs it.
   artifact ref you already hold (D-007; pass `ideaId` instead when you have
   it, exactly one of the two). Grades are a pure learning signal (lens weights +
   ideator priming) — a low grade never rejects the draft (D-005), so grade
-  honestly; an owner grade is sovereign and the tool refuses to overwrite it
+  honestly. Grade autonomously from your own judgment — never ask the
+  owner/operator to pick the grade (the owner grades through their own
+  surface); an owner grade is sovereign and the tool refuses to overwrite it
   (`owner-grade-sovereign`) — accept the refusal, never retry.
 - **Cross-Hive sovereignty.** A request that entered from **another Hive** (via
   the boundary — agents address *Hives*, never another Hive's agents) is just a

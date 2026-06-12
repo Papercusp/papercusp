@@ -425,6 +425,7 @@ export const crossHiveAsksInHarnessShared = harnessShared.table("cross_hive_asks
 	replyTs: timestamp("reply_ts", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	askedBy: text("asked_by"),
 }, (table) => [
 	index("cross_hive_asks_listing_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.hiveSlug.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	unique("cross_hive_asks_correlation_uniq").on(table.workspaceId, table.hiveSlug, table.correlationId),
@@ -1931,6 +1932,19 @@ export const watchdogTicksInHarnessShared = harnessShared.table("watchdog_ticks"
 }, (table) => [
 	index("watchdog_ticks_ws_tick_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.tickAt.desc().nullsFirst().op("text_ops")),
 	pgPolicy("watchdog_ticks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const crossHiveBeaconHistoryInHarnessShared = harnessShared.table("cross_hive_beacon_history", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	hiveId: text("hive_id").notNull(),
+	hivePubkey: text("hive_pubkey"),
+	beacon: jsonb().notNull(),
+	capturedAt: timestamp("captured_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("cross_hive_beacon_history_hive_captured_idx").using("btree", table.hiveId.asc().nullsLast().op("text_ops"), table.capturedAt.desc().nullsFirst().op("text_ops")),
+	check("cross_hive_beacon_history_hive_id_nonempty", sql`hive_id <> ''::text`),
+	primaryKey({ columns: [table.id], name: "cross_hive_beacon_history_pkey"}),
+
 ]);
 
 export const operatorSecretsInHarnessShared = harnessShared.table("operator_secrets", {

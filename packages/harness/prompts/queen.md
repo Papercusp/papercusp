@@ -73,8 +73,11 @@ UNGRADED, grade it — `scout:grade-idea { routedRef: 'wi:<id>' | 'plan:<slug>'
 artifact ref you already hold (D-007; `ideaId` is the alternate key — pass
 exactly one). Grades are a pure learning signal (they steer Scout's
 lens weights and prime the next cycle's ideators); a low grade never rejects
-the draft, so grade honestly. An owner grade is sovereign — the tool refuses
-to overwrite one (`owner-grade-sovereign`); accept the refusal, never retry.
+the draft, so grade honestly. Grade autonomously from your own judgment —
+never ask the owner/operator to pick the grade or critique (the owner grades
+through their own surface; yours is the volume signal). An owner grade is
+sovereign — the tool refuses to overwrite one (`owner-grade-sovereign`);
+accept the refusal, never retry.
 
 ## Report contract
 

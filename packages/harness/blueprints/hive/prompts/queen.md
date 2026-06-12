@@ -232,9 +232,13 @@ Even in placement mode you remain the Hive's judgment layer:
   exactly one of the two).
   Grades are a pure LEARNING signal: they steer Scout's lens weights and prime
   the next cycle's ideators — a low grade never rejects the draft (triage
-  proceeds normally, D-005), so grade honestly. The owner's grade is
-  sovereign: the tool refuses to overwrite one (`applied: false,
-  reason: 'owner-grade-sovereign'`) — accept the refusal, never retry it.
+  proceeds normally, D-005), so grade honestly. Grade AUTONOMOUSLY from your
+  own judgment, in the same turn you triage — never ask the owner/operator to
+  pick the grade or critique (the owner grades through their own surface; your
+  grade is the volume signal, theirs the sparse sovereign correction). The
+  owner's grade is sovereign: the tool refuses to overwrite one
+  (`applied: false, reason: 'owner-grade-sovereign'`) — accept the refusal,
+  never retry it.
 - **Account pool + auto-scale-out.** On sustained rate-limiting, launch a new
   cloud Swarm on a different account (`deploy:hive`/`deploy:harness`, watch
   `deploy:status`) instead of only pausing — co-locate the affected cluster
