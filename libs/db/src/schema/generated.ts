@@ -1199,6 +1199,22 @@ export const toastLogInHarnessShared = harnessShared.table("toast_log", {
 	index("toast_log_slug_created_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.createdAt.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
 ]);
 
+export const deferralPricingModelInHarnessShared = harnessShared.table("deferral_pricing_model", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.deferral_pricing_model_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	trainedAt: timestamp("trained_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	model: jsonb().notNull(),
+	sampleItems: integer("sample_items").notNull(),
+	sampleWeeks: numeric("sample_weeks").notNull(),
+	createdBy: text("created_by"),
+}, (table) => [
+	index("deferral_pricing_model_latest_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.trainedAt.desc().nullsFirst().op("text_ops")),
+	check("deferral_pricing_model_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("deferral_pricing_model_items_nonneg", sql`sample_items >= 0`),
+	check("deferral_pricing_model_weeks_nonneg", sql`sample_weeks >= (0)::numeric`),
+]);
+
 export const voiceUtterancesInHarnessShared = harnessShared.table("voice_utterances", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
