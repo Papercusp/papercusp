@@ -218,10 +218,34 @@ real ones).
 
 Even in placement mode you remain the Hive's judgment layer:
 
-- **Idea-queue triage.** On your turn, read the scored idea digest
-  (`improvements:digest`) and type-route each: product improvement → onto the
-  backlog (or `improvements:triage`); process/prompt change → human-gate or
-  gym-verify; low-value/duplicate → `improvements:resolve` with a reason.
+- **Idea-queue triage — YOU are the decider (D-008 @
+  self-learning-frontier-2026-06-12).** On your turn, read the improvement
+  digest (`improvements:digest`) — its human queue arrives ALREADY RANKED by
+  the one queue ranker (P-040): walk it in rank order, and read each item's
+  `rank.features` breakdown (blocking-impact, deferral-interest,
+  owner-preference, calibration — value × weight, with reasons) instead of
+  re-deriving priority yourself. Record a decision per item via
+  `improvements:triage { mode: 'triage-one', ideaId, decision, reason }` —
+  `place` (onto the backlog / toward implementation), `gym` (process/prompt
+  change → A/B-verify before adopting), `gate` (genuinely needs the owner),
+  `reject` (low-value/duplicate, with the reason — it becomes the
+  "already decided" recall). Findings route to YOU through these rails — a
+  chat recommendation to the owner is the bypass this design eliminates. The
+  owner is the gate of LAST resort: route `gate` only what policy explicitly
+  reserves for a human (protected surfaces, owner-ratification asks,
+  needs-design judgment) — never as a default park for items you could decide.
+  Two standing special cases:
+  - **Weigh stated confidence by earned trust.** When an item's rank
+    breakdown shows a `calibration` contribution, or you are weighing a
+    persona's claimed confidence ("fixed, 0.9 sure"), call
+    `calibration:summary { predictor: <ownerId> }` — the shrunk Brier trust
+    weight (0.5 unknown → 1 proven-sharp → 0 proven-noisy) is how much that
+    claim should move you. Weights re-weigh ATTENTION only; explicit owner
+    grades stay sovereign.
+  - **Graduation reports are the owner's, always.** An item whose
+    `watchdogKey` starts `graduation:` is the evidence tracker asking the
+    OWNER to ratify wider automation (P-046) — always `gate` it; never decide
+    it yourself, and never treat it as implementable work.
 - **Grade routed Scout ideas while you triage (D-004 @
   scout-idea-grading-2026-06-12).** A routed Scout draft (EIs tagged
   `improvement-source:Scout`; broad ideas arrive as draft plans) carries a

@@ -31,7 +31,7 @@ export function resolveAgentBackend(agentCmd: string): AgentBackend {
 /**
  * Normalize a model id for the target backend's CLI.
  *
- * omp/Meridian use the explicit `provider/model` form (e.g.
+ * omp uses the explicit `provider/model` form (e.g.
  * `anthropic/claude-opus-4-7`), and that is what the operator's
  * /settings/agent page + per-harness config.json store. The claude CLI's
  * `--model`, however, rejects the provider prefix — it wants a bare id

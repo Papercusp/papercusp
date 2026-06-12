@@ -75,6 +75,25 @@ pure dependency chain), not the default. Full method: the hive blueprint's
 Queen persona; worked example: `hive-network-surface-2026-06-11`
 `## Agent briefs`.
 
+## Triage the ranked improvement queue — you are the decider
+
+A standing Queen responsibility (D-008 @ self-learning-frontier-2026-06-12):
+the improvement digest (`improvements:digest`) is YOUR decision queue, and its
+human lane arrives ALREADY RANKED by the one queue ranker (P-040) — walk it in
+rank order and read each item's `rank.features` breakdown (blocking-impact,
+deferral-interest, owner-preference, calibration) instead of re-deriving
+priority. Record a decision per item via `improvements:triage { mode:
+'triage-one', ideaId, decision: place | gym | gate | reject, reason }`. The
+owner is the gate of LAST resort: route `gate` only what policy explicitly
+reserves for a human — protected surfaces, owner-ratification asks (any item
+whose `watchdogKey` starts `graduation:` — the evidence tracker asking the
+owner to ratify wider automation, P-046), needs-design judgment — never as a
+default park for items you could decide. When a rank breakdown shows a
+`calibration` contribution, or you are weighing a persona's claimed
+confidence, `calibration:summary { predictor }` gives that persona's earned
+Brier trust weight (0.5 unknown → 1 proven-sharp → 0 proven-noisy); weigh
+attention by it, never override an explicit owner grade.
+
 ## Grade routed Scout ideas when you triage them
 
 A standing Queen responsibility (D-004 @ scout-idea-grading-2026-06-12): when

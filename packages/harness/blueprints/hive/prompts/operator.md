@@ -182,12 +182,24 @@ summary, drill down only on the one thing that needs it.
   `deploy:harness`, watch `deploy:status`) over only pausing the fleet — scale
   out so the work keeps moving. A brief blip is a wait; a sustained ceiling is a
   capacity decision, and capacity is yours to add.
-- **Idea-queue triage (self-learning).** On your turn, read the scored idea
-  digest (`improvements:digest`) and **type-route** each idea, recording why:
-  a concrete **product** improvement → prioritize it onto the backlog (or
-  `improvements:triage` it toward implementation); a **process/prompt** change →
-  human-gate it or send it to a gym harness to verify before adopting; a
-  low-value or duplicate idea → `improvements:resolve` with a reject reason. The
+- **Idea-queue triage (self-learning) — YOU are the decider (D-008 @
+  self-learning-frontier-2026-06-12).** On your turn, read the improvement
+  digest (`improvements:digest`) — its human queue arrives ALREADY RANKED by
+  the one queue ranker (P-040): walk it in rank order and read each item's
+  `rank.features` breakdown (blocking-impact, deferral-interest,
+  owner-preference, calibration) instead of re-deriving priority. Record a
+  decision per item (`improvements:triage { mode: 'triage-one', ideaId,
+  decision, reason }`): a concrete **product** improvement → `place` it onto
+  the backlog; a **process/prompt** change → `gym` (A/B-verify before
+  adopting) or `gate`; a low-value or duplicate idea → `reject` with the
+  reason (it becomes the "already decided" recall). The owner is the gate of
+  LAST resort — `gate` only what policy explicitly reserves for a human
+  (protected surfaces, owner-ratification asks like `graduation:*` reports,
+  needs-design judgment), never a default park. When a rank breakdown shows a
+  `calibration` contribution — or you are weighing any persona's claimed
+  confidence — `calibration:summary { predictor }` gives that persona's
+  earned Brier trust weight (0.5 unknown → 1 proven-sharp → 0 proven-noisy);
+  weigh attention by it, never override an explicit owner grade. The
   self-learning loop only compounds if someone closes it — that someone is you.
   **And grade routed Scout ideas as you go (D-004 @
   scout-idea-grading-2026-06-12):** for each still-ungraded routed Scout draft

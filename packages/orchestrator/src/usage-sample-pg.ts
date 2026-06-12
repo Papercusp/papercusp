@@ -6,7 +6,7 @@
  * (migration 161 + 170): the token counts + $cost parsed from the run's JSONL terminal
  * events (`extractRunUsage` — claude `result`, codex `turn.completed`, omp `message_end`).
  * The subprocess path exposes NO provider rate-limit headers (the subscription CLI hides
- * them), so the `rl_*` columns stay NULL here — the in-process meridian capture point
+ * them), so the `rl_*` columns stay NULL here — the in-process stateless-call capture point
  * (operator-core `agent-usage-telemetry.ts`) fills those where they exist.
  *
  * Cost honesty (D-005): provider-reported cost wins (`cost_source='provider'` — claude
@@ -33,7 +33,7 @@ export interface UsageSamplePgContext {
 
 /** Backend → provider, mirroring papercup-shared's BACKEND_PROFILES. */
 export function providerForBackend(backend: string): string {
-  if (backend === 'claude-code' || backend === 'meridian') return 'anthropic';
+  if (backend === 'claude-code' || backend === 'anthropic-direct') return 'anthropic';
   if (backend === 'codex') return 'openai';
   return 'unknown'; // omp is model-agnostic / multi-provider
 }

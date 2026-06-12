@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest';
 import { providerForBackend, modelClassForRun } from './usage-sample-pg';
 
 describe('providerForBackend', () => {
-  it('maps claude-code and meridian to anthropic', () => {
+  it('maps claude-code and anthropic-direct to anthropic', () => {
     expect(providerForBackend('claude-code')).toBe('anthropic');
-    expect(providerForBackend('meridian')).toBe('anthropic');
+    expect(providerForBackend('anthropic-direct')).toBe('anthropic');
   });
 
   it('maps codex to openai', () => {
