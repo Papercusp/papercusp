@@ -125,6 +125,9 @@ dependencies:
     - memory:update
     - hive:declare-wake
     - hive:wake
+    # Queen auto-grading of routed Scout ideas (scout-idea-grading-2026-06-12
+    # P-010 / D-004): grade ungraded routed drafts 1–5 while triaging.
+    - scout:grade-idea
     - search:fulltext
     - search:semantic
     - work_items:co_locate
