@@ -2002,6 +2002,56 @@ export const directiveSummariesInPapercupShared = papercupShared.table("directiv
 	index("summaries_ts_idx").using("btree", table.ts.asc().nullsLast().op("int8_ops")),
 ]);
 
+export const improvementDispatchesInHarnessShared = harnessShared.table("improvement_dispatches", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	itemId: text("item_id").notNull(),
+	attempt: integer().default(1).notNull(),
+	runnerHarness: text("runner_harness"),
+	firedAt: timestamp("fired_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	fireResult: text("fire_result").default('pending').notNull(),
+	fireError: text("fire_error"),
+	spawnedRunId: text("spawned_run_id"),
+	outcome: text(),
+	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
+	resolvedBy: text("resolved_by"),
+}, (table) => [
+	index("improvement_dispatches_open_item_idx").using("btree", table.itemId.asc().nullsLast().op("text_ops")).where(sql`(outcome IS NULL)`),
+	index("improvement_dispatches_ws_fired_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.firedAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("improvement_dispatches_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.id], name: "improvement_dispatches_pkey"}),
+
+]);
+
+export const learningPackCandidatesInHarnessShared = harnessShared.table("learning_pack_candidates", {
+	workspaceId: text("workspace_id").notNull(),
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	signature: text().notNull(),
+	title: text().notNull(),
+	draftText: text("draft_text").notNull(),
+	kind: text().default('feedback').notNull(),
+	appliesTo: jsonb("applies_to").default(["any"]).notNull(),
+	scopes: jsonb().default([]).notNull(),
+	recurrenceCount: integer("recurrence_count").default(0).notNull(),
+	sourceItemIds: jsonb("source_item_ids").default([]).notNull(),
+	status: text().default('pending').notNull(),
+	createdBy: text("created_by").default('recurrence-escalation').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
+	decidedBy: text("decided_by"),
+	decisionNote: text("decision_note"),
+	packId: text("pack_id"),
+	packItemId: text("pack_item_id"),
+}, (table) => [
+	index("learning_pack_candidates_listing_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	unique("learning_pack_candidates_signature_uniq").on(table.workspaceId, table.signature),
+	check("learning_pack_candidates_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("learning_pack_candidates_kind_check", sql`kind = ANY (ARRAY['user'::text, 'feedback'::text, 'project'::text, 'reference'::text])`),
+	check("learning_pack_candidates_status_check", sql`status = ANY (ARRAY['pending'::text, 'adopted'::text, 'dismissed'::text])`),
+	primaryKey({ columns: [table.id], name: "learning_pack_candidates_pkey"}),
+
+]);
+
 export const directivesInPapercupShared = papercupShared.table("directives", {
 	id: text().primaryKey().notNull(),
 	title: text().notNull(),
