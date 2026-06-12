@@ -97,6 +97,10 @@ dependencies:
     - blueprint:extend
     - blueprint:validate
     - chat:ask_choice
+    # Queen-weighting read (self-learning-frontier P-045 / FB-19, D-005):
+    # per-persona Brier trust weights for weighing claimed confidence while
+    # triaging the ranked improvement queue.
+    - calibration:summary
     - coord:inbox
     - coord:presence
     - coord:send

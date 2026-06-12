@@ -45,6 +45,16 @@ roles:
       Prompt: blueprints/implement/prompts/worker.md (blueprint-owned, resolved
       via BLUEPRINT_ID=implement — close-the-self-improvement-loop D-001).
 
+# Per-blueprint gym config (self-learning-frontier P-048 / FB-23): the implement
+# worker is a registered learning-system gym target, judged on DRILL ground truth —
+# red-queen's planted frictions (drillResolveRate / drillMttsh read the drill
+# corpus's known answers; lib/gym/drill-signals.ts) plus the standard regression
+# guardrail. Trace = the fix diff (it is a coding role). Dark until P-001 arming:
+# the autoloop row registerLearningGymTargets creates is disabled + unbudgeted.
+gym:
+  collectTrace: git-diff
+  signals: [regressionsFromTests, drillResolveRate, drillMttsh]
+
 knobs:
   harnessKind: implement
   requiresRepo: true

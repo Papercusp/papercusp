@@ -85,6 +85,21 @@ test('bee launch blueprint loads + validates — decider=bee, kind:harness, NO t
   assert.equal(blueprint.triggers?.event, undefined, 'bee declares NO event trigger');
 });
 
+test('implement declares its learning-system gym block (FB-23 / P-048): drill-ground-truth signals over the fix diff', () => {
+  // self-learning-frontier P-048: the implement worker is a registered gym target
+  // judged on red-queen drill ground truth. The signal names must stay in lockstep
+  // with GYM_SIGNAL_REGISTRY (operator-core lib/gym/primitives.ts) — the registry
+  // side is pinned by learning-targets.test.ts; this pins the blueprint side.
+  const { blueprint, validation } = loadBuiltinBlueprint('implement');
+  assert.equal(validation.ok, true, JSON.stringify(validation.errors));
+  assert.equal(blueprint.gym?.collectTrace, 'git-diff', 'the implement trace is the fix diff');
+  assert.deepEqual(
+    blueprint.gym?.signals,
+    ['regressionsFromTests', 'drillResolveRate', 'drillMttsh'],
+    'implement is judged on the regression guardrail + the drill resolve/MTTSH ground truth',
+  );
+});
+
 test('a user fork (extends: deploy) can swap the launched role without code', () => {
   // The forkability the unify plan buys: a fork declares a different role + model.
   const forked = resolveBlueprint({
