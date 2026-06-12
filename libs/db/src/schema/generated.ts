@@ -1576,6 +1576,21 @@ export const featureAuditConsolidatedInHarnessShared = harnessShared.table("feat
 	pgPolicy("feature_audit_consolidated_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const ownerInteractionsInHarnessShared = harnessShared.table("owner_interactions", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	kind: text().notNull(),
+	subjectKind: text("subject_kind").notNull(),
+	subjectId: text("subject_id").default('').notNull(),
+	payload: jsonb().default({}).notNull(),
+}, (table) => [
+	index("owner_interactions_ws_kind_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
+	index("owner_interactions_ws_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
+	primaryKey({ columns: [table.id], name: "owner_interactions_pkey"}),
+
+]);
+
 export const memoryCanonicalInHarnessShared = harnessShared.table("memory_canonical", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -1740,6 +1755,36 @@ export const scoutTicksInHarnessShared = harnessShared.table("scout_ticks", {
 }, (table) => [
 	index("scout_ticks_ws_tick_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.tickAt.desc().nullsFirst().op("text_ops")),
 	pgPolicy("scout_ticks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const calibrationPredictionsInHarnessShared = harnessShared.table("calibration_predictions", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.calibration_predictions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	predictor: text().notNull(),
+	domain: text().notNull(),
+	subjectKind: text("subject_kind").notNull(),
+	subjectId: text("subject_id").notNull(),
+	claim: text().notNull(),
+	probability: doublePrecision().notNull(),
+	stated: boolean().default(false).notNull(),
+	signalOrigin: text("signal_origin").default('organic').notNull(),
+	watchdogKey: text("watchdog_key"),
+	horizonTs: timestamp("horizon_ts", { withTimezone: true, mode: 'string' }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
+	outcome: boolean(),
+	resolutionNote: text("resolution_note"),
+}, (table) => [
+	index("calibration_predictions_matured_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.horizonTs.asc().nullsLast().op("timestamptz_ops")).where(sql`(resolved_at IS NULL)`),
+	uniqueIndex("calibration_predictions_open_bet_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.predictor.asc().nullsLast().op("text_ops"), table.domain.asc().nullsLast().op("text_ops"), table.subjectKind.asc().nullsLast().op("text_ops"), table.subjectId.asc().nullsLast().op("text_ops")).where(sql`(resolved_at IS NULL)`),
+	index("calibration_predictions_scores_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.predictor.asc().nullsLast().op("text_ops"), table.domain.asc().nullsLast().op("text_ops")),
+	index("calibration_predictions_subject_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subjectKind.asc().nullsLast().op("text_ops"), table.subjectId.asc().nullsLast().op("text_ops")),
+	check("calibration_predictions_ws_nonempty", sql`workspace_id <> ''::text`),
+	check("calibration_predictions_predictor_nonempty", sql`predictor <> ''::text`),
+	check("calibration_predictions_probability_range", sql`(probability >= (0)::double precision) AND (probability <= (1)::double precision)`),
+	check("calibration_predictions_origin_vocab", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
+	check("calibration_predictions_outcome_resolved", sql`(outcome IS NULL) OR (resolved_at IS NOT NULL)`),
 ]);
 
 export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocations", {
