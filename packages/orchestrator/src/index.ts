@@ -92,15 +92,10 @@ export { evaluateCostCap, extractRunUsage, sumJsonlCost } from './cost-cap';
 export type { CostCapResult, RunUsage } from './cost-cap';
 export { postCuratorOutputs, postArchiveEvent } from './bus-posts';
 export { ROLE_MODEL_DEFAULTS, roleModelDefault } from './role-models';
-export {
-  firePluginHook,
-  findFireHookCli,
-  pluginSearchPaths,
-} from './plugin-hooks';
-export type {
-  FirePluginHookOptions,
-  FirePluginHookResult,
-} from './plugin-hooks';
+// (plugin-hooks.ts — the per-plugin shell-out via the papercusp-fire-hook CLI —
+// was RETIRED by plugin-system-hive-port-2026-06-11 P-006: its one caller, the
+// DBOS finalizer's afterDone, now fires the in-process typed hook plus the
+// `pipeline:done` event emission. See that plan's D-003.)
 export {
   buildCompetitionManifest,
   competitionManifestPath,
