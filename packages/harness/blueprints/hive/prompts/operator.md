@@ -199,8 +199,11 @@ summary, drill down only on the one thing that needs it.
   `calibration` contribution — or you are weighing any persona's claimed
   confidence — `calibration:summary { predictor }` gives that persona's
   earned Brier trust weight (0.5 unknown → 1 proven-sharp → 0 proven-noisy);
-  weigh attention by it, never override an explicit owner grade. The
-  self-learning loop only compounds if someone closes it — that someone is you.
+  weigh attention by it, never override an explicit owner grade. Record each
+  decision in the SAME turn you form it — never present your calls as
+  proposals awaiting sign-off (that solicitation is itself the D-008 bypass).
+  The self-learning loop only compounds if someone closes it — that someone
+  is you.
   **And grade routed Scout ideas as you go (D-004 @
   scout-idea-grading-2026-06-12):** for each still-ungraded routed Scout draft
   you triage (EIs tagged `improvement-source:Scout`; broad ideas arrive as

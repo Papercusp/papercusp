@@ -88,7 +88,9 @@ owner is the gate of LAST resort: route `gate` only what policy explicitly
 reserves for a human — protected surfaces, owner-ratification asks (any item
 whose `watchdogKey` starts `graduation:` — the evidence tracker asking the
 owner to ratify wider automation, P-046), needs-design judgment — never as a
-default park for items you could decide. When a rank breakdown shows a
+default park for items you could decide. Record each decision in the SAME
+turn you form it — never present your calls as proposals awaiting sign-off
+(that solicitation is itself the D-008 bypass). When a rank breakdown shows a
 `calibration` contribution, or you are weighing a persona's claimed
 confidence, `calibration:summary { predictor }` gives that persona's earned
 Brier trust weight (0.5 unknown → 1 proven-sharp → 0 proven-noisy); weigh

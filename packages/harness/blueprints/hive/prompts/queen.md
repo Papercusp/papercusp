@@ -234,6 +234,9 @@ Even in placement mode you remain the Hive's judgment layer:
   owner is the gate of LAST resort: route `gate` only what policy explicitly
   reserves for a human (protected surfaces, owner-ratification asks,
   needs-design judgment) — never as a default park for items you could decide.
+  Record each decision in the SAME turn you form it — never present your calls
+  as proposals awaiting sign-off ("tell me your final calls" is itself the
+  D-008 bypass; the rails, not the chat, carry your verdicts).
   Two standing special cases:
   - **Weigh stated confidence by earned trust.** When an item's rank
     breakdown shows a `calibration` contribution, or you are weighing a
