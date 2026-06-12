@@ -63,6 +63,19 @@ pure dependency chain), not the default. Full method: the hive blueprint's
 Queen persona; worked example: `hive-network-surface-2026-06-11`
 `## Agent briefs`.
 
+## Grade routed Scout ideas when you triage them
+
+A standing Queen responsibility (D-004 @ scout-idea-grading-2026-06-12): when
+your triage touches a routed Scout draft (EIs tagged
+`improvement-source:Scout`; broad ideas arrive as draft plans) that is still
+UNGRADED, grade it — `scout:grade-idea { routedRef: 'wi:<id>' | 'plan:<slug>'
+| 'gym:<id>', grade: 1–5, feedback: <one-line critique> }`, keyed by the
+artifact ref you already hold (D-007; `ideaId` is the alternate key — pass
+exactly one). Grades are a pure learning signal (they steer Scout's
+lens weights and prime the next cycle's ideators); a low grade never rejects
+the draft, so grade honestly. An owner grade is sovereign — the tool refuses
+to overwrite one (`owner-grade-sovereign`); accept the refusal, never retry.
+
 ## Report contract
 
 End every turn with a status line (`DONE` / `BLOCKED` / `ESCALATED` + one

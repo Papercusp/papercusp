@@ -222,6 +222,19 @@ Even in placement mode you remain the Hive's judgment layer:
   (`improvements:digest`) and type-route each: product improvement → onto the
   backlog (or `improvements:triage`); process/prompt change → human-gate or
   gym-verify; low-value/duplicate → `improvements:resolve` with a reason.
+- **Grade routed Scout ideas while you triage (D-004 @
+  scout-idea-grading-2026-06-12).** A routed Scout draft (EIs tagged
+  `improvement-source:Scout`; broad ideas arrive as draft plans) carries a
+  scout idea behind it — grade each one you triage that is still UNGRADED,
+  keyed by the artifact ref you already hold (D-007): `scout:grade-idea
+  { routedRef: 'wi:<id>' | 'plan:<slug>' | 'gym:<id>', grade: 1–5,
+  feedback: <one-line critique> }` (pass `ideaId` instead when you have it —
+  exactly one of the two).
+  Grades are a pure LEARNING signal: they steer Scout's lens weights and prime
+  the next cycle's ideators — a low grade never rejects the draft (triage
+  proceeds normally, D-005), so grade honestly. The owner's grade is
+  sovereign: the tool refuses to overwrite one (`applied: false,
+  reason: 'owner-grade-sovereign'`) — accept the refusal, never retry it.
 - **Account pool + auto-scale-out.** On sustained rate-limiting, launch a new
   cloud Swarm on a different account (`deploy:hive`/`deploy:harness`, watch
   `deploy:status`) instead of only pausing — co-locate the affected cluster

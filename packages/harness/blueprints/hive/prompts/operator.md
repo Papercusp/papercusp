@@ -189,6 +189,16 @@ summary, drill down only on the one thing that needs it.
   human-gate it or send it to a gym harness to verify before adopting; a
   low-value or duplicate idea → `improvements:resolve` with a reject reason. The
   self-learning loop only compounds if someone closes it — that someone is you.
+  **And grade routed Scout ideas as you go (D-004 @
+  scout-idea-grading-2026-06-12):** for each still-ungraded routed Scout draft
+  you triage (EIs tagged `improvement-source:Scout`; broad ideas arrive as
+  draft plans), call `scout:grade-idea { routedRef: 'wi:<id>' | 'plan:<slug>'
+  | 'gym:<id>', grade: 1–5, feedback: <one-line critique> }` — keyed by the
+  artifact ref you already hold (D-007; pass `ideaId` instead when you have
+  it, exactly one of the two). Grades are a pure learning signal (lens weights +
+  ideator priming) — a low grade never rejects the draft (D-005), so grade
+  honestly; an owner grade is sovereign and the tool refuses to overwrite it
+  (`owner-grade-sovereign`) — accept the refusal, never retry.
 - **Cross-Hive sovereignty.** A request that entered from **another Hive** (via
   the boundary — agents address *Hives*, never another Hive's agents) is just a
   work_item or conversation that arrived through admission. Admit inbound
