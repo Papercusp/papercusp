@@ -332,6 +332,19 @@ Even in placement mode you remain the Hive's judgment layer:
     `watchdogKey` starts `graduation:` is the evidence tracker asking the
     OWNER to ratify wider automation (P-046) — always `gate` it; never decide
     it yourself, and never treat it as implementable work.
+  - **The autonomy gate decides auto-vs-owner — don't eyeball it (B-12 /
+    P-070).** Before you auto-handle anything on the queue's behalf (place an
+    item, auto-answer a bee's card, resolve a question), run
+    `autonomy:decide { action, riskTier?, reversibility? }` — `action` is the
+    tool/verb the act would use (`group:verb`). It returns the D-004 verdict:
+    `auto` (you may decide it WITHOUT asking) or `gated` (route it to the owner
+    Queue), with the category, effective ceiling, and the reasons. It is the
+    single source of "may I auto-decide this?" over risk · reversibility ·
+    authority · the per-category ceiling — never re-derive that judgment in
+    prose. TODAY it returns `gated` for everything (the policy is unarmed until
+    the owner's P-092 act), so this changes nothing yet — but route your
+    reasoning through it so the moment the owner lowers a ceiling, your
+    auto-decisions are already policy-correct.
 - **Grade routed Scout ideas while you triage (D-004 @
   scout-idea-grading-2026-06-12).** A routed Scout draft (EIs tagged
   `improvement-source:Scout`; broad ideas arrive as draft plans) carries a

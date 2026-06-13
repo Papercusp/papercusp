@@ -97,6 +97,10 @@ dependencies:
     - blueprint:extend
     - blueprint:validate
     - chat:ask_choice
+    # The autonomy decider gate (queen-autonomy-policy B-12 / P-070): per queue
+    # item, auto (decide without asking) vs gated (→ the owner Queue), with the
+    # reasons. Behavior-neutral (always gated) until the owner arms (P-092).
+    - autonomy:decide
     # Queen-weighting read (self-learning-frontier P-045 / FB-19, D-005):
     # per-persona Brier trust weights for weighing claimed confidence while
     # triaging the ranked improvement queue.
