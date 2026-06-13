@@ -2125,13 +2125,17 @@ export const decisionLedgerInHarnessShared = harnessShared.table("decision_ledge
 	durationMs: integer("duration_ms"),
 	argsDigest: text("args_digest"),
 	metadata: jsonb(),
+	disposition: text(),
+	revisitAt: timestamp("revisit_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
-	index("decision_ledger_ws_category_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.category.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("text_ops")),
-	index("decision_ledger_ws_posture_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.posture.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
+	index("decision_ledger_ws_category_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.category.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
+	index("decision_ledger_ws_layer_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.layer.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
+	index("decision_ledger_ws_posture_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.posture.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
 	index("decision_ledger_ws_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
 	check("decision_ledger_layer_check", sql`layer = ANY (ARRAY['action'::text, 'disposition'::text])`),
 	check("decision_ledger_posture_check", sql`posture = ANY (ARRAY['auto'::text, 'proposed'::text, 'gated'::text, 'rejected'::text])`),
 	check("decision_ledger_outcome_check", sql`outcome = ANY (ARRAY['ok'::text, 'error'::text])`),
+	check("decision_ledger_disposition_check", sql`(disposition IS NULL) OR (disposition = ANY (ARRAY['act'::text, 'defer'::text, 'reject'::text, 'route-to-research'::text, 'no-op'::text]))`),
 ]);
 
 export const hiveThroughputTicksInHarnessShared = harnessShared.table("hive_throughput_ticks", {

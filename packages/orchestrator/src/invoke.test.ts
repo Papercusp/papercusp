@@ -1006,6 +1006,26 @@ test('claudeMcpArgs — cutover OFF (env unset) is byte-identical to today (no n
   ]);
 });
 
+test('claudeMcpArgs — cutover is CLAUDE-ONLY (P-032): omp/codex backends ignore it (their confinement is the server-side gate + their own sandbox)', () => {
+  withCutoverEnv('1', () => {
+    // The --allowed-tools mechanism is a claude-CLI flag; the cutover never leaks
+    // to other backends. (The capability:* tools + the dispatch envelope DO gate
+    // every backend uniformly — that's MCP-layer, client-agnostic.)
+    assert.deepEqual(claudeMcpArgs('omp', 'omp-json', 'omp -p', MCP_PATH, true, 'worker'), []);
+    assert.deepEqual(claudeMcpArgs('codex', 'none', 'codex exec', MCP_PATH, true, 'worker'), []);
+  });
+});
+
+test('claudeMcpArgs — SU carve-out (P-023/D-002): a self-managed-permission session is untouched by the cutover', () => {
+  // SU human-driven sessions run with their own permission posture (bypassPermissions);
+  // even with the cutover env set, a session managing its own permissions gets none of
+  // our posture imposed — so the cutover can never confine a supervised SU session.
+  const args = withCutoverEnv('1', () =>
+    claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --dangerously-skip-permissions', MCP_PATH, true, 'worker'),
+  );
+  assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
+});
+
 // --- no-push enforcement: spawn-env-scoped pre-push hook ------------------
 
 test('ensureFleetGitHooksDir — writes an executable pre-push that exits non-zero', () => {

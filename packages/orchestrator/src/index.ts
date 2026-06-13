@@ -84,6 +84,9 @@ export {
   fleetCapabilityOnlyEnabled,
   FLEET_CAPABILITY_REPLACED_TOOLS,
   FLEET_CAPABILITY_ROLES,
+  // The fleet-sandbox credential deny-read list — the canonical credential dirs;
+  // the capability-exec sandbox (P-022) masks the same set (parity-tested).
+  FLEET_SANDBOX_DENY_READ,
 } from './invoke';
 export type { InvokeContext } from './invoke';
 export { parseDecision, parseDecisionFor, DECISION_VERBS } from './decision-parse';
