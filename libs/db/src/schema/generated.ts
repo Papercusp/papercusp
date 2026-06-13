@@ -2098,6 +2098,63 @@ export const spawnedAgentsInHarnessShared = harnessShared.table("spawned_agents"
 
 ]);
 
+export const decisionLedgerInHarnessShared = harnessShared.table("decision_ledger", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.decision_ledger_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug"),
+	layer: text().default('action').notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	action: text().notNull(),
+	capability: text(),
+	tier: text(),
+	category: text(),
+	riskTier: text("risk_tier"),
+	reversibility: text(),
+	authority: text(),
+	posture: text().notNull(),
+	outcome: text().notNull(),
+	outcomeCode: text("outcome_code"),
+	revertHandle: text("revert_handle"),
+	why: text(),
+	links: jsonb(),
+	actorRole: text("actor_role"),
+	actorSpawnId: text("actor_spawn_id"),
+	actorPrincipal: text("actor_principal"),
+	transport: text(),
+	durationMs: integer("duration_ms"),
+	argsDigest: text("args_digest"),
+	metadata: jsonb(),
+}, (table) => [
+	index("decision_ledger_ws_category_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.category.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("text_ops")),
+	index("decision_ledger_ws_posture_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.posture.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
+	index("decision_ledger_ws_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
+	check("decision_ledger_layer_check", sql`layer = ANY (ARRAY['action'::text, 'disposition'::text])`),
+	check("decision_ledger_posture_check", sql`posture = ANY (ARRAY['auto'::text, 'proposed'::text, 'gated'::text, 'rejected'::text])`),
+	check("decision_ledger_outcome_check", sql`outcome = ANY (ARRAY['ok'::text, 'error'::text])`),
+]);
+
+export const hiveThroughputTicksInHarnessShared = harnessShared.table("hive_throughput_ticks", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.hive_throughput_ticks_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	hiveSlug: text("hive_slug").notNull(),
+	tickAt: timestamp("tick_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	frontierDepth: integer("frontier_depth").default(0).notNull(),
+	placements: integer().default(0).notNull(),
+	beesBusy: integer("bees_busy").default(0).notNull(),
+	beesCap: integer("bees_cap").default(0).notNull(),
+	stuckCount: integer("stuck_count").default(0).notNull(),
+	completed: integer().default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	mttcMs: bigint("mttc_ms", { mode: "number" }),
+	questionRungs: jsonb("question_rungs").default({}).notNull(),
+	detail: jsonb(),
+}, (table) => [
+	index("hive_throughput_ticks_ws_hive_tick_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.hiveSlug.asc().nullsLast().op("text_ops"), table.tickAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("hive_throughput_ticks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const hiveWakeInHarnessShared = harnessShared.table("hive_wake", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -3527,6 +3584,22 @@ export const harnessBrainstormInHarnessShared = harnessShared.table("harness_bra
 	pgPolicy("harness_brainstorm_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const autonomyPolicyInHarnessShared = harnessShared.table("autonomy_policy", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	category: text().notNull(),
+	ceiling: text().default('none').notNull(),
+	locked: boolean().default(false).notNull(),
+	graduatedLevel: text("graduated_level").default('none').notNull(),
+	thresholdOverrides: jsonb("threshold_overrides").default({}).notNull(),
+	ownerOverride: jsonb("owner_override"),
+	updatedBy: text("updated_by").default('system').notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.category], name: "autonomy_policy_pkey"}),
+	check("autonomy_policy_ceiling_check", sql`ceiling = ANY (ARRAY['none'::text, 'trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
+	check("autonomy_policy_graduated_level_check", sql`graduated_level = ANY (ARRAY['none'::text, 'trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
+]);
+
 export const executedActionsConsolidatedInHarnessShared = harnessShared.table("executed_actions_consolidated", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -4122,6 +4195,28 @@ export const fleetGovernorInHarnessShared = harnessShared.table("fleet_governor"
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.kind, table.scopeKey], name: "fleet_governor_pkey"}),
 	check("fleet_governor_kind_chk", sql`kind = ANY (ARRAY['bucket'::text, 'circuit'::text, 'credit'::text])`),
+]);
+
+export const hivePlacementsInHarnessShared = harnessShared.table("hive_placements", {
+	workspaceId: text("workspace_id").notNull(),
+	installSlug: text("install_slug").notNull(),
+	workItemId: text("work_item_id").notNull(),
+	harnessSlug: text("harness_slug"),
+	queenOwnerId: text("queen_owner_id"),
+	beeSpawnId: text("bee_spawn_id"),
+	beeOwnerId: text("bee_owner_id"),
+	status: text().default('working').notNull(),
+	failCount: integer("fail_count").default(0).notNull(),
+	lastDisposition: text("last_disposition"),
+	escalationMsgId: text("escalation_msg_id"),
+	placedAt: timestamp("placed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastRecoveryAt: timestamp("last_recovery_at", { withTimezone: true, mode: 'string' }),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("hive_placements_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.installSlug, table.workItemId], name: "hive_placements_pkey"}),
+	check("hive_placements_status_check", sql`status = ANY (ARRAY['working'::text, 'recovering'::text, 'cursed'::text, 'stranded'::text, 'completed'::text, 'abandoned'::text])`),
 ]);
 
 export const regretFindingsInHarnessShared = harnessShared.table("regret_findings", {

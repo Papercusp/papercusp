@@ -1,4 +1,4 @@
--- 264-retire-plan-review.sql
+-- 267-retire-plan-review.sql
 --
 -- queen-autonomy-policy-2026-06-13 (B-14 / P-101 · D-011): retire the vestigial
 -- Reviews source. `harness_shared.harness_plan_review` had NO live writer — its
