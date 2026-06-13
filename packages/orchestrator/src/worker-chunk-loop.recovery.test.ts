@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { FileLockQueue } from './file-lock-queue.js';
 import { FileLockQueueCoordinator } from './file-lock-queue-coordinator.js';
-import { runChunkLoop, type ChunkLoopDeps } from './worker-chunk-loop.js';
+import { runChunkLoop, runChunkLoopCore, type ChunkLoopDeps } from './worker-chunk-loop.js';
 
 function execSync(cmd: string, args: readonly string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -212,6 +212,48 @@ test('resumeFromPlan handles partial completion correctly (resumes mid-plan)', a
 
     assert.equal(out.kind, 'completed');
     assert.deepEqual(implementOrder, ['F-X-4', 'F-X-5']);
+  } finally {
+    await fs.rm(repo, { recursive: true, force: true });
+  }
+});
+
+test('runChunkLoopCore runs a PRE-RESOLVED plan directly, skipping committed chunks (the extracted seam — D-015 stage-a)', async () => {
+  // The reusable seam a future deterministic `worker:chunk-loop` blueprint step
+  // calls: given an already-resolved plan + the committed-chunk set, iterate the
+  // remaining chunks — NO plan phase (planChunks must never be called).
+  const repo = await makeRepo();
+  try {
+    const lockQueue = new FileLockQueue();
+    const implementOrder: string[] = [];
+    const deps: ChunkLoopDeps = {
+      repoPath: repo,
+      lockCoordinator: new FileLockQueueCoordinator(lockQueue),
+      typecheckCommand: 'true',
+      planChunks: async () => {
+        throw new Error('planChunks must NOT be called — runChunkLoopCore takes a resolved plan');
+      },
+      implementChunk: async (_f, chunk, env) => {
+        implementOrder.push(chunk.id);
+        await fs.writeFile(path.join(env.dir, chunk.files[0]), `// ${chunk.id}\n`);
+        return { touchedFiles: chunk.files, attemptedChange: 'x' };
+      },
+      replanChunk: async () => 'unused',
+    };
+    const out = await runChunkLoopCore(
+      { id: 'F-X', title: 'X', description: 'X' },
+      {
+        featureId: 'F-X',
+        chunks: [
+          { id: 'F-X-1', files: ['a.ts'], description: 'add a' },
+          { id: 'F-X-2', files: ['b.ts'], description: 'add b' },
+        ],
+      },
+      deps,
+      new Set(['F-X-1']),
+    );
+    assert.equal(out.kind, 'completed');
+    if (out.kind === 'completed') assert.equal(out.chunksCommitted, 2); // 1 skipped (counted) + 1 implemented
+    assert.deepEqual(implementOrder, ['F-X-2']); // only the uncommitted chunk implemented
   } finally {
     await fs.rm(repo, { recursive: true, force: true });
   }

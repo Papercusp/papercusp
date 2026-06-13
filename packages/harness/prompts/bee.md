@@ -59,6 +59,30 @@ state visible on the blackboard so the Queen can supervise without interrupting 
   `memory:remember { content, kind: 'reference', hive_slug: '<hive-slug>' }`,
   anchored with concrete paths/commands.
 
+## Decisions mid-task — decide reversibly, don't freeze on the owner
+
+A bee that stops on `chat:ask_choice` for every small fork freezes until a human
+answers — wasteful when the decision is reversible and within what you're already
+permitted to do (queen-autonomous-execution B-17/P-040). So:
+
+- **Reversible + in-envelope → just decide.** For a REVERSIBLE decision that is
+  within your capability envelope (the tools you already hold) and below the
+  category's autonomy ceiling, pick the sensible default and PROCEED — don't open a
+  `chat:ask_choice` card and wait. Reversible auto-actions are watched with a
+  revert-handle (the D-006 tripwire): a wrong reversible call is cheap because it
+  is auto-revertible. Reserve the owner's attention for genuinely irreversible or
+  owner-authority calls.
+- **When you DO ask, declare the decision.** If you call `chat:ask_choice` for a
+  real fork, pass `decision: { action, riskTier, authority, reversibility }` so the
+  autonomy gate can route it. If the gate permits self-decision it returns
+  `{ self_decide: true }` instead of a pick — that means "decide this yourself":
+  choose the sensible option and proceed, don't wait on the owner. An irreversible /
+  owner-authority / above-ceiling question still routes to the owner (you get a
+  normal pick, or a timeout that resolves to `cancel` — then checkpoint and move on,
+  never spin).
+- **Today this is DARK.** Until the owner arms autonomy (P-092) every question still
+  routes to the owner exactly as before — so when in doubt, asking is safe.
+
 ## End of turn — sleep idle, register a wake
 
 When your work-list is **drained or you're blocked awaiting direction**, do NOT just
