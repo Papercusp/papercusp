@@ -1050,7 +1050,7 @@ export const coordEventLogInHarnessShared = harnessShared.table("coord_event_log
 	uniqueIndex("coord_event_log_event_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`(surface = ANY (ARRAY['handoffs'::text, 'escalations'::text]))`),
 	uniqueIndex("coord_event_log_fanout_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'notify_kind'::text) IS NOT NULL))`),
 	uniqueIndex("coord_event_log_fed_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((harness_slug IS NOT NULL) AND ((body ->> 'notify_kind'::text) IS NULL))`),
-	index("coord_event_log_surface_id").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("coord_event_log_surface_id").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
 	pgPolicy("coord_event_log_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -1402,6 +1402,51 @@ export const operatorTrustStoreInHarnessShared = harnessShared.table("operator_t
 }, (table) => [
 	pgPolicy("operator_trust_store_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_trust_store_pkey"}),
+
+]);
+
+export const redQueenDrillsInHarnessShared = harnessShared.table("red_queen_drills", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	drillClass: text("drill_class").notNull(),
+	collectorFamily: text("collector_family").notNull(),
+	status: text().default('planted').notNull(),
+	plantedAt: timestamp("planted_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	detectedAt: timestamp("detected_at", { withTimezone: true, mode: 'string' }),
+	triagedAt: timestamp("triaged_at", { withTimezone: true, mode: 'string' }),
+	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
+	expectedWatchdogKey: text("expected_watchdog_key").notNull(),
+	expectedKind: text("expected_kind").notNull(),
+	expectedSeverity: text("expected_severity").notNull(),
+	expectedDecision: text("expected_decision"),
+	detectedWatchdogKey: text("detected_watchdog_key"),
+	detectedKind: text("detected_kind"),
+	triagedDecision: text("triaged_decision"),
+	triagedIdeaType: text("triaged_idea_type"),
+	resolvedWithEvidence: boolean("resolved_with_evidence").default(false).notNull(),
+	issueId: text("issue_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	mttshDetectMs: bigint("mttsh_detect_ms", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	mttshTriageMs: bigint("mttsh_triage_ms", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	mttshFixMs: bigint("mttsh_fix_ms", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	mttshTotalMs: bigint("mttsh_total_ms", { mode: "number" }),
+	leakCheckPassed: boolean("leak_check_passed"),
+	leakCheck: jsonb("leak_check"),
+	plantedArtifacts: jsonb("planted_artifacts"),
+	payload: jsonb(),
+	error: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("red_queen_drills_class_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.drillClass.asc().nullsLast().op("timestamptz_ops"), table.plantedAt.desc().nullsFirst().op("text_ops")),
+	uniqueIndex("red_queen_drills_open_class_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.drillClass.asc().nullsLast().op("text_ops")).where(sql`(status = ANY (ARRAY['planted'::text, 'detected'::text, 'triaged'::text]))`),
+	index("red_queen_drills_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.plantedAt.desc().nullsFirst().op("timestamptz_ops")),
+	check("red_queen_drills_status_check", sql`status = ANY (ARRAY['planted'::text, 'detected'::text, 'triaged'::text, 'resolved'::text, 'failed'::text, 'expired'::text])`),
+	check("red_queen_drills_expected_kind_check", sql`expected_kind = ANY (ARRAY['bug'::text, 'change'::text])`),
+	primaryKey({ columns: [table.id], name: "red_queen_drills_pkey"}),
 
 ]);
 
