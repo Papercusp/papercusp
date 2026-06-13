@@ -112,6 +112,10 @@ dependencies:
     - discovery:hives
     - fleet:assignments
     - fleet:drain
+    # One-wake BATCH placement (queen-autonomous-execution B-07): ranks the ready
+    # frontier task↔bee by affinity, then fans spawn + warm-inject across the fleet
+    # in a single call — the serial placement loop collapsed.
+    - fleet:place_batch
     - fleet:spawn
     - harness:create
     - harness:escalation
