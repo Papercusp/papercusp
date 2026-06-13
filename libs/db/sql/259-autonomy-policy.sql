@@ -38,14 +38,15 @@ CREATE TABLE IF NOT EXISTS harness_shared.autonomy_policy (
     workspace_id        text NOT NULL DEFAULT 'default',
     -- One of the 13 canonical category ids (categories.ts AUTONOMY_CATEGORY_IDS).
     category            text NOT NULL,
-    -- Owner-set risk ceiling (D-003). `none` = never-auto (the shipped default).
-    ceiling             text NOT NULL DEFAULT 'none'
-        CHECK (ceiling IN ('none', 'trivial', 'low', 'moderate', 'high', 'critical')),
+    -- Owner-set risk ceiling (D-003). `never-auto` = nothing auto-runs (shipped
+    -- default). Vocabulary = @papercusp/plan-parser AUTONOMY_CEILINGS (B-01 seam).
+    ceiling             text NOT NULL DEFAULT 'never-auto'
+        CHECK (ceiling IN ('never-auto', 'trivial', 'low', 'moderate', 'high', 'critical')),
     -- Never-auto regardless of ceiling/graduation (D-005). Protected → true.
     locked              boolean NOT NULL DEFAULT false,
     -- Graduation engine's earned level (B-16); clamped ≤ ceiling at write time.
-    graduated_level     text NOT NULL DEFAULT 'none'
-        CHECK (graduated_level IN ('none', 'trivial', 'low', 'moderate', 'high', 'critical')),
+    graduated_level     text NOT NULL DEFAULT 'never-auto'
+        CHECK (graduated_level IN ('never-auto', 'trivial', 'low', 'moderate', 'high', 'critical')),
     -- Per-class threshold overrides (forward slot for B-16's graduation thresholds).
     threshold_overrides jsonb NOT NULL DEFAULT '{}'::jsonb,
     -- Owner's explicit override directive (e.g. { pinned: true } pins graduation);
@@ -70,17 +71,17 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON harness_shared.autonomy_policy FROM h
 INSERT INTO harness_shared.autonomy_policy
     (workspace_id, category, ceiling, locked, graduated_level, updated_by)
 VALUES
-    ('default', 'inbox-triage',        'none', false, 'none', 'migration:259'),
-    ('default', 'escalations',         'none', false, 'none', 'migration:259'),
-    ('default', 'plan-governance',     'none', false, 'none', 'migration:259'),
-    ('default', 'work-prioritization', 'none', false, 'none', 'migration:259'),
-    ('default', 'ideation-intake',     'none', false, 'none', 'migration:259'),
-    ('default', 'implementation',      'none', false, 'none', 'migration:259'),
-    ('default', 'review-merge',        'none', false, 'none', 'migration:259'),
-    ('default', 'release-deploy',      'none', true,  'none', 'migration:259'),
-    ('default', 'spend-budget',        'none', true,  'none', 'migration:259'),
-    ('default', 'agent-lifecycle',     'none', false, 'none', 'migration:259'),
-    ('default', 'credentials-auth',    'none', true,  'none', 'migration:259'),
-    ('default', 'knowledge-curation',  'none', false, 'none', 'migration:259'),
-    ('default', 'system-control',      'none', true,  'none', 'migration:259')
+    ('default', 'inbox-triage',        'never-auto', false, 'never-auto', 'migration:259'),
+    ('default', 'escalations',         'never-auto', false, 'never-auto', 'migration:259'),
+    ('default', 'plan-governance',     'never-auto', false, 'never-auto', 'migration:259'),
+    ('default', 'work-prioritization', 'never-auto', false, 'never-auto', 'migration:259'),
+    ('default', 'ideation-intake',     'never-auto', false, 'never-auto', 'migration:259'),
+    ('default', 'implementation',      'never-auto', false, 'never-auto', 'migration:259'),
+    ('default', 'review-merge',        'never-auto', false, 'never-auto', 'migration:259'),
+    ('default', 'release-deploy',      'never-auto', true,  'never-auto', 'migration:259'),
+    ('default', 'spend-budget',        'never-auto', true,  'never-auto', 'migration:259'),
+    ('default', 'agent-lifecycle',     'never-auto', false, 'never-auto', 'migration:259'),
+    ('default', 'credentials-auth',    'never-auto', true,  'never-auto', 'migration:259'),
+    ('default', 'knowledge-curation',  'never-auto', false, 'never-auto', 'migration:259'),
+    ('default', 'system-control',      'never-auto', true,  'never-auto', 'migration:259')
 ON CONFLICT (workspace_id, category) DO NOTHING;

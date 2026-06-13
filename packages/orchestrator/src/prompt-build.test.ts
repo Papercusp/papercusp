@@ -254,6 +254,50 @@ test('buildPrompt — every role gets the testing-standard clause (project-agnos
   }
 });
 
+// ── EI-75 / EI-317: the deferred-tools recipe (the un-muting fix) ────────────
+//    A fleet:spawn bee's platform MCP tools are DEFERRED behind ToolSearch; a
+//    small backend that doesn't know the contract concludes "I can't call MCP
+//    tools" and improvises raw curl with a WRONG identity (EI-311) — so its coord
+//    writes never land under its real session_owner and the Queen↔bee reporting
+//    half goes silently mute (EI-75: 0 coord rows across ~15 bees). The fix is a
+//    static recipe (prompt-build §2d) in EVERY spawned role's prompt. This test
+//    guards it so the recipe can't silently regress and re-mute the fleet. It
+//    lives in the cacheable PREAMBLE (static text, no per-spawn volatile input).
+test('buildPrompt — every spawned role gets the deferred-tools recipe in the preamble (EI-75/EI-317)', () => {
+  for (const role of ['worker', 'bee', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const parts = buildPromptParts({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'opspawn-1780-bee',
+        extras: [],
+      });
+      // The recipe must be present…
+      assert.match(parts.preamble, /Platform tool access:/);
+      assert.match(parts.preamble, /mcp__papercusp__<group>_<verb>/);
+      assert.match(parts.preamble, /DEFERRED/);
+      assert.match(parts.preamble, /ToolSearch/);
+      // …and it MUST forbid the raw-curl degradation that forks identity (EI-311),
+      //   the exact mechanism that made bees mute under their real id (EI-75).
+      assert.match(parts.preamble, /NEVER[\s\S]*?raw HTTP\/curl/);
+      assert.match(parts.preamble, /not attributed to your agent identity/);
+      // It is static, so it belongs in the cacheable preamble — never the volatile half.
+      assert.doesNotMatch(parts.volatile, /Platform tool access:/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
 test('buildPrompt — identity file injected when present and non-empty', () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
