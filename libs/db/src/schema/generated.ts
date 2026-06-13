@@ -494,6 +494,21 @@ export const crossHiveAsksInHarnessShared = harnessShared.table("cross_hive_asks
 
 ]);
 
+export const hiveEvalScenariosInHarnessShared = harnessShared.table("hive_eval_scenarios", {
+	scenarioId: text("scenario_id").primaryKey().notNull(),
+	title: text().notNull(),
+	shape: text().notNull(),
+	idealWallClockUnits: numeric("ideal_wall_clock_units").notNull(),
+	idealBeeCount: integer("ideal_bee_count").notNull(),
+	totalUnits: numeric("total_units").notNull(),
+	criticalPath: jsonb("critical_path").notNull(),
+	workItemCount: integer("work_item_count").notNull(),
+	plantedBugLocation: text("planted_bug_location"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.scenarioId], name: "hive_eval_scenarios_pkey"}),
+]);
+
 export const steeringChurnEventsInHarnessShared = harnessShared.table("steering_churn_events", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.steering_churn_events_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -547,6 +562,53 @@ export const learningSpendEventsInHarnessShared = harnessShared.table("learning_
 	pgPolicy("learning_spend_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("learning_spend_events_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
 	primaryKey({ columns: [table.id], name: "learning_spend_events_pkey"}),
+
+]);
+
+export const hiveEvalInstancesInHarnessShared = harnessShared.table("hive_eval_instances", {
+	instanceId: text("instance_id").primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	codeSha: text("code_sha").notNull(),
+	genomeId: text("genome_id"),
+	batterySliceId: text("battery_slice_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	unique("hive_eval_instances_workspace_id_code_sha_genome_id_key").on(table.workspaceId, table.codeSha, table.genomeId),
+	primaryKey({ columns: [table.instanceId], name: "hive_eval_instances_pkey"}),
+
+]);
+
+export const hiveEvalRunsInHarnessShared = harnessShared.table("hive_eval_runs", {
+	runId: text("run_id").primaryKey().notNull(),
+	instanceId: text("instance_id").notNull(),
+	scenarioId: text("scenario_id").notNull(),
+	shape: text().notNull(),
+	repeat: integer().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	seed: bigint({ mode: "number" }).notNull(),
+	budgetUsdCap: numeric("budget_usd_cap"),
+	beeCap: integer("bee_cap"),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
+	terminalState: text("terminal_state"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	wallClockMs: bigint("wall_clock_ms", { mode: "number" }),
+	frontierDrained: boolean("frontier_drained"),
+	workItemsTotal: integer("work_items_total"),
+	workItemsCompleted: integer("work_items_completed"),
+	costUsd: numeric("cost_usd"),
+	observations: jsonb(),
+	traceRef: text("trace_ref"),
+}, (table) => [
+	index("hive_eval_runs_instance_idx").using("btree", table.instanceId.asc().nullsLast().op("text_ops")),
+	index("hive_eval_runs_scenario_idx").using("btree", table.scenarioId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.instanceId],
+			foreignColumns: [hiveEvalInstancesInHarnessShared.instanceId],
+			name: "hive_eval_runs_instance_id_fkey"
+		}).onDelete("cascade"),
+	unique("hive_eval_runs_instance_id_scenario_id_repeat_key").on(table.instanceId, table.scenarioId, table.repeat),
+	primaryKey({ columns: [table.runId], name: "hive_eval_runs_pkey"}),
 
 ]);
 
@@ -2245,9 +2307,11 @@ export const autonomyTripwiresInHarnessShared = harnessShared.table("autonomy_tr
 	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
 	revertedAt: timestamp("reverted_at", { withTimezone: true, mode: 'string' }),
 	resolvedBy: text("resolved_by"),
+	decisionId: text("decision_id"),
 }, (table) => [
-	index("autonomy_tripwires_class_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.category.asc().nullsLast().op("timestamptz_ops"), table.findingClass.asc().nullsLast().op("timestamptz_ops"), table.armedAt.asc().nullsLast().op("timestamptz_ops")),
-	index("autonomy_tripwires_sweep_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("timestamptz_ops"), table.windowUntil.asc().nullsLast().op("text_ops")),
+	index("autonomy_tripwires_class_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.category.asc().nullsLast().op("text_ops"), table.findingClass.asc().nullsLast().op("timestamptz_ops"), table.armedAt.asc().nullsLast().op("timestamptz_ops")),
+	index("autonomy_tripwires_decision_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.decisionId.asc().nullsLast().op("text_ops")).where(sql`(decision_id IS NOT NULL)`),
+	index("autonomy_tripwires_sweep_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops"), table.windowUntil.asc().nullsLast().op("timestamptz_ops")),
 	check("autonomy_tripwires_risk_tier_check", sql`risk_tier = ANY (ARRAY['trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
 	check("autonomy_tripwires_reversibility_check", sql`reversibility = 'reversible'::text`),
 	check("autonomy_tripwires_status_check", sql`status = ANY (ARRAY['armed'::text, 'cleared'::text, 'tripped'::text, 'reverted'::text])`),
@@ -2637,18 +2701,6 @@ export const harnessSmokeTestInHarnessShared = harnessShared.table("harness_smok
 }, (table) => [
 	pgPolicy("harness_smoke_test_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.harnessSlug], name: "harness_smoke_test_pkey"}),
-
-]);
-
-export const harnessPlanReviewInHarnessShared = harnessShared.table("harness_plan_review", {
-	harnessSlug: text("harness_slug").primaryKey().notNull(),
-	content: text().default('').notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
-	workspaceId: text("workspace_id").default('').notNull(),
-}, (table) => [
-	pgPolicy("harness_plan_review_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.harnessSlug], name: "harness_plan_review_pkey"}),
 
 ]);
 
@@ -4225,6 +4277,33 @@ export const fleetGovernorInHarnessShared = harnessShared.table("fleet_governor"
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.kind, table.scopeKey], name: "fleet_governor_pkey"}),
 	check("fleet_governor_kind_chk", sql`kind = ANY (ARRAY['bucket'::text, 'circuit'::text, 'credit'::text])`),
+]);
+
+export const hiveEvalScoresInHarnessShared = harnessShared.table("hive_eval_scores", {
+	runId: text("run_id").notNull(),
+	rubricHash: text("rubric_hash").notNull(),
+	rubricVersion: text("rubric_version").notNull(),
+	outcomeGatePassed: boolean("outcome_gate_passed").notNull(),
+	efficiencyScore: numeric("efficiency_score").notNull(),
+	speedScore: numeric("speed_score").notNull(),
+	composite: numeric().notNull(),
+	judgeComposite: numeric("judge_composite"),
+	regressions: boolean().notNull(),
+	plantedBugCaught: boolean("planted_bug_caught").notNull(),
+	fabricationDetected: boolean("fabrication_detected").notNull(),
+	criticalPathRatio: numeric("critical_path_ratio").notNull(),
+	floorCeiling: numeric("floor_ceiling").notNull(),
+	detail: jsonb().notNull(),
+	scoredAt: timestamp("scored_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("hive_eval_scores_composite_idx").using("btree", table.composite.asc().nullsLast().op("numeric_ops")),
+	index("hive_eval_scores_run_idx").using("btree", table.runId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.runId],
+			foreignColumns: [hiveEvalRunsInHarnessShared.runId],
+			name: "hive_eval_scores_run_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.runId, table.rubricHash], name: "hive_eval_scores_pkey"}),
 ]);
 
 export const hivePlacementsInHarnessShared = harnessShared.table("hive_placements", {

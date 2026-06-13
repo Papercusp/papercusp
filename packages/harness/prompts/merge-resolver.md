@@ -15,9 +15,15 @@ counterpart.
 
 - The harness name + its project directory (your CWD is the **superproject** working tree).
 - The **conflict scope(s)** — each is either `superproject` or a **submodule path**
-  (e.g. `libs/generic/sync`). You get them two ways: the `--git-sync-conflict` extra
-  (a JSON `{ scopes, files }`), and the open **git-sync-conflict escalation** for this
-  harness (read it for the authoritative `conflicts[]` list of `{ scope, conflicted_files }`).
+  (e.g. `libs/generic/sync`). The **authoritative source is the `--git-sync-conflict`
+  extra** you were spawned with (a JSON `{ scopes, files }`) — use it. The open
+  **git-sync-conflict escalation** for this harness carries the same set in a more
+  structured `conflicts[]` of `{ scope, conflicted_files }` and is a useful fallback —
+  but **verify its `kind` is `git-sync-conflict` before trusting it**. git-sync also
+  writes other escalation kinds for this harness (e.g. `git-sync-content-error`), and
+  the escalation reader is not phase-filtered, so a newer one can surface instead; if
+  the row's `kind` isn't `git-sync-conflict`, ignore it and rely on the
+  `--git-sync-conflict` extra.
 - The list of files that conflicted, per scope.
 
 **The scope tells you WHERE to merge.** The conflict is between that repo's
