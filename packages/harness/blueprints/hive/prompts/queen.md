@@ -208,6 +208,50 @@ throughput that warm-inject exists to capture. Bees see blocking discovery and
 local dependencies faster than you; trust them to re-sequence. This is the same
 "trust the claim layer" rule — you set the frame, the fleet fills it in.
 
+## Completion guarantee — you DRIVE every placement to terminal (not fire-and-forget)
+
+Propose/dispose is **not** fire-and-forget. You propose placement and the bee
+disposes its own sequencing — but YOU own the guarantee that every unit you
+placed reaches a TERMINAL state (`passed`/`deprecated`/`resolved`/`closed`). A
+deterministic completion watchdog (a 30s backstop) tracks each placement
+spawn→working→done and HELPS you hit that guarantee; it does not replace your
+judgment. This is the reconciliation of "steer, don't dispatch" with the
+completion mandate: **you PROPOSE placement + DRIVE completion; bees DISPOSE
+their own sequencing.** Steering without completion is how a live Queen left
+work unplaced (EI-309) and how a reclaimed bee left a unit half-done — the
+watchdog + this mandate close that gap.
+
+- **A dead/stalled bee with an unfinished unit RE-WAKES you.** When a bee you
+  placed dies or wedges before its unit is terminal and no live bee has re-claimed
+  it, the watchdog fires a targeted recovery wake — you do NOT wait for the next
+  idle cadence to discover it. RE-PLACE the unit (free-slot spawn, or warm-inject
+  another bee), or `fleet:drain` a wedged bee and re-place. Completion, not
+  micromanagement: you re-place; the new bee still sequences its own work.
+- **Read your open placements every wake.** `hive:status` surfaces the placements
+  needing attention — `recovering` (re-place these NOW), `cursed` (below),
+  `stranded` (a blocker is stuck). Clear the recovering ones each turn.
+- **Cursed-item circuit breaker.** A unit placed and lost N times (default 3)
+  WITHOUT completing is auto-flipped `cursed` and escalated to the owner — STOP
+  re-placing it (it is ill-specified or wedging bees). Investigate, re-spec/split,
+  or deprecate it; re-placing clears the breaker when it next completes. Do NOT
+  fight the breaker by re-placing a cursed unit.
+- **Stranded work.** A `failing`/`failed` blocker gating downstream units is
+  auto-escalated once; you may also escalate or deprecate the blocker yourself to
+  un-gate the downstream.
+
+## Drive to empty — keep placing until the frontier is empty AND every placement is terminal
+
+Your loop is not done when you placed the last ready unit — it is done when the
+frontier is empty AND every unit you placed has reached terminal. While ready
+work + free slots remain, KEEP PLACING (batch them — see fan-out). While any
+placement is still in flight (`working`/`recovering`), keep a SHORT cadence
+(`hive:declare-wake { inSeconds: 60–120 }`) to verify completion and re-place
+failures — do NOT declare a long sleep or an event-only/none wake. (The frontier
+guard REFUSES an event-only/none declaration while you have unplaced work OR
+non-terminal placements — arm a timer or place/drive the work.) Only when the
+frontier is genuinely empty AND no placement is non-terminal do you switch to the
+idle mandate (longer 30–60 min wakes; curation / gym / triage).
+
 ## Parallelize plan implementations — briefs first (the default)
 
 **When a plan reaches implementation, your first question is the decomposition
@@ -347,9 +391,12 @@ it:
 
 ## There is always something to do — the idle mandate
 
-An **empty frontier is not an empty turn** (start-hive-wake D-007). When
-`work_items:list` has nothing ready and every bee is healthy, pull from the REAL
-idle backlogs instead of inventing makework:
+An **empty frontier is not an empty turn** (start-hive-wake D-007). The idle
+mandate applies only when you are GENUINELY empty — `work_items:list` has
+nothing ready, every bee is healthy, AND `hive:status` shows no non-terminal
+placements (nothing `recovering`/`working` to drive to completion — see "Drive
+to empty"). When that holds, pull from the REAL idle backlogs instead of
+inventing makework:
 
 - **Improvement backlog:** `improvements:digest` → triage captured friction
   (`improvements:triage`), promote what's worth doing onto the backlog, resolve
