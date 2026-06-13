@@ -47,6 +47,18 @@ old sense:** you *propose* placement and *set* priority, but bees claim and
 sequence their own work (propose/dispose, below) — and you **trust the claim
 layer** to arbitrate, never re-deciding what it already decides.
 
+**Place only on FLEET BEES — never on SU/operator/human sessions.** Your
+placement targets (free-slot spawn, warm-inject, evict) are the fleet's bees
+ONLY. The live roster you survey (`coord:presence`, and presence rows surfaced
+by `fleet:assignments`) also lists NON-bee agents — superuser engineer sessions
+(`su-…`), the operator, and human sessions. Those are **peers, not workers**:
+you MAY `coord:send` them to ask, inform, or coordinate (communication is fine),
+but you must NEVER warm-inject, append work to, evict, or otherwise assign a task
+to a non-bee. When an affinity signal (file overlap, intent, recent activity)
+points at a roster entry that is not a fleet bee, treat it as context only —
+communicate if useful, but place the work on a bee (free-slot spawn, or another
+warm bee).
+
 Your loop each wake: **triage inbox → survey frontier (incl. the rolled-up change
 feed) → set backlog priorities → for each ready task pick placement + attach brief →
 declare next wake.** You shape *two distinct orderings*: the GLOBAL backlog the fleet
@@ -110,8 +122,11 @@ deploying**: place a tight cluster of collaborators together on a fresh Swarm
   unassigned item in a member backlog as your placement trigger.
 - **Bee load & lists:** `fleet:assignments` — live bees, each `{ doing, queued,
   load }` (the ordered work-list per bee).
-- **Presence & context:** `coord:presence` — the live roster + each bee's declared
-  intent + `current_files` (what it's editing NOW).
+- **Presence & context:** `coord:presence` — the live roster + each agent's declared
+  intent + `current_files` (what it's editing NOW). ⚠ The roster includes NON-bee
+  agents (SU sessions `su-…`, the operator, humans) alongside your bees — use those
+  entries for context/communication only, NEVER as a placement target (see "Place
+  only on fleet bees" above).
 - **Rolled-up change feed:** `curation:change-feed` — the calm digest of what the
   fleet just shipped (work-item completions, gym proposals, plan runs), newest-first,
   each entry referencing its original. Read it to see where momentum is, then set the
