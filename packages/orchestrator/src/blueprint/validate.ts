@@ -203,9 +203,20 @@ function validateDeciderSpine(
 }
 
 /**
- * Program-model spine checks (`coordination-ops-as-blueprint-primitives` P-005):
- * unique step ids, parseable `when` expressions, a gate that always resolves (a
- * fallback branch), and — when `knownOps` is supplied — that every op exists.
+ * Program-model spine checks (`coordination-ops-as-blueprint-primitives` P-005;
+ * extended by `deterministic-blueprints-migration-2026-06-13` P-010): unique step
+ * ids, parseable `when` expressions, a gate that always resolves (a fallback
+ * branch) WHEN one is declared, and — when `knownOps` is supplied — that every op
+ * exists.
+ *
+ * Two program shapes, discriminated by the gate's presence (no schema field — the
+ * blueprint stays a declarative shape, D-002):
+ *   - **decision program** (steps + gate — vote/deliberate): the gate forks the
+ *     outcome (resolve / escalate) and MUST always resolve (a fallback branch).
+ *   - **deterministic pipeline** (steps, NO gate — a migrated learning loop, P-010):
+ *     runs its steps to completion; "resolving" means "ran every step", there is no
+ *     decision fork. A gateless program is therefore valid — it is the deterministic
+ *     step kind the migration promotes to first-class.
  */
 function validateProgramSpine(
   bp: Blueprint,
@@ -232,10 +243,9 @@ function validateProgramSpine(
   }
   void boundNames; // reserved for a future "gate reads an unbound name" lint
 
-  if (gate.length === 0) {
-    err('gate-missing', 'program-mode spine has steps but no gate — a program must resolve through a gate');
-    return;
-  }
+  // No gate ⇒ a deterministic pipeline (P-010): the steps ARE the program; it
+  // resolves by running every one. Nothing further to validate on the gate.
+  if (gate.length === 0) return;
   const hasFallback = gate.some((b) => b.else === true || b.when == null);
   if (!hasFallback) {
     err('gate-no-fallback', 'gate has no fallback branch (else / no-when) — some scopes would never resolve');
