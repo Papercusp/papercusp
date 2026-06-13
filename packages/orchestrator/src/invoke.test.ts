@@ -1050,11 +1050,14 @@ test('claudeMcpArgs — AGENT_CMD manages perms + cutover ON but NON-capability 
   assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
 });
 
-test('claudeMcpArgs — SU carve-out (P-023/D-002): a self-managed-permission session is untouched by the cutover', () => {
-  // SU human-driven sessions run with their own permission posture (bypassPermissions);
-  // even with the cutover env set, a session managing its own permissions gets none of
-  // our posture imposed — so the cutover can never confine a supervised SU session.
-  const args = withCutoverEnv('1', () =>
+test('claudeMcpArgs — SU carve-out (P-023/D-002): the cutover env is the gate, and ONLY spawnInvokeOnce (the fleet chokepoint) sets it — an SU session (no env) keeps native tools', () => {
+  // SU/human sessions launch via psu, NOT spawnInvokeOnce, so they never carry
+  // PAPERCUSP_FLEET_CAPABILITY_ONLY → fleetCapabilityOnlyEnabled() is false → the
+  // cutover never strips their native tools, even for a capability role running with
+  // bypassPermissions. (If the env WERE set, the spawn is by definition a confined
+  // fleet spawn — not an SU session — and the hard-deny SHOULD apply, per the
+  // security-invariant test above.)
+  const args = withCutoverEnv(null, () =>
     claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --dangerously-skip-permissions', MCP_PATH, true, 'worker'),
   );
   assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
