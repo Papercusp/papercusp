@@ -76,6 +76,14 @@ export {
   resolveModel,
   scopeSpawnEnvForRole,
   SEARCH_PROVIDER_ENV_KEYS,
+  // B-18 fleet cutover (agent-capability-confinement P-020): the capability-only
+  // allow/deny derivation + the role set that must stay in lockstep with the
+  // capability tools' agentRoles (pinned by capability/cutover-role-parity.test.ts).
+  fleetAllowedToolsForRole,
+  fleetDisallowedToolsForRole,
+  fleetCapabilityOnlyEnabled,
+  FLEET_CAPABILITY_REPLACED_TOOLS,
+  FLEET_CAPABILITY_ROLES,
 } from './invoke';
 export type { InvokeContext } from './invoke';
 export { parseDecision, parseDecisionFor, DECISION_VERBS } from './decision-parse';

@@ -20,6 +20,10 @@ import {
   FLEET_DISALLOWED_TOOLS,
   FLEET_NO_WRITE_ROLES,
   fleetAllowedToolsForRole,
+  fleetDisallowedToolsForRole,
+  fleetCapabilityOnlyEnabled,
+  FLEET_CAPABILITY_REPLACED_TOOLS,
+  FLEET_CAPABILITY_ROLES,
   ensureFleetGitHooksDir,
   gitConfigNoPushEnv,
   claudeSpawnEnvHardening,
@@ -896,6 +900,110 @@ test('claudeMcpArgs — user set --permission-mode → we do not impose ours (wh
 test('claudeMcpArgs — user set --allowed-tools → we defer the whole posture to them', () => {
   const args = claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --allowed-tools Read', MCP_PATH, true, 'worker');
   assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
+});
+
+// --- B-18 fleet cutover (agent-capability-confinement P-020/P-021) ---------
+// Under papercusp-fleet-capability-only (surfaced as PAPERCUSP_FLEET_CAPABILITY_ONLY),
+// a confined role drops the native write/exec/fetch tools (routed to the gated
+// capability:* tools) from --allowed-tools AND hard-denies them. DEFAULT-OFF.
+
+/** Run `fn` with PAPERCUSP_FLEET_CAPABILITY_ONLY=`val` (or unset when null), restoring after. */
+function withCutoverEnv<T>(val: string | null, fn: () => T): T {
+  const prev = process.env.PAPERCUSP_FLEET_CAPABILITY_ONLY;
+  if (val === null) delete process.env.PAPERCUSP_FLEET_CAPABILITY_ONLY;
+  else process.env.PAPERCUSP_FLEET_CAPABILITY_ONLY = val;
+  try {
+    return fn();
+  } finally {
+    if (prev === undefined) delete process.env.PAPERCUSP_FLEET_CAPABILITY_ONLY;
+    else process.env.PAPERCUSP_FLEET_CAPABILITY_ONLY = prev;
+  }
+}
+
+test('fleetCapabilityOnlyEnabled — DEFAULT-OFF: only 1/true/on enable it', () => {
+  for (const off of [null, '', '0', 'false', 'off', 'no']) {
+    assert.equal(withCutoverEnv(off, fleetCapabilityOnlyEnabled), false, `${off} → off`);
+  }
+  for (const on of ['1', 'true', 'on', 'TRUE', 'On']) {
+    assert.equal(withCutoverEnv(on, fleetCapabilityOnlyEnabled), true, `${on} → on`);
+  }
+});
+
+test('FLEET_CAPABILITY_REPLACED_TOOLS — exactly the native write/exec/fetch tools that have a capability:* replacement', () => {
+  assert.deepEqual([...FLEET_CAPABILITY_REPLACED_TOOLS].sort(), ['Bash', 'Edit', 'WebFetch', 'Write']);
+  // The read-only natives + WebSearch (no capability replacement) are NOT replaced.
+  for (const kept of ['Read', 'Glob', 'Grep', 'WebSearch', 'mcp__papercusp']) {
+    assert.ok(!FLEET_CAPABILITY_REPLACED_TOOLS.includes(kept), `${kept} must be kept`);
+  }
+});
+
+test('fleetAllowedToolsForRole — cutover OFF (default) leaves the full kit for a capability role', () => {
+  assert.deepEqual(fleetAllowedToolsForRole('worker', false), [...FLEET_ALLOWED_TOOLS]);
+  assert.deepEqual(fleetAllowedToolsForRole('worker'), [...FLEET_ALLOWED_TOOLS]);
+});
+
+test('fleetAllowedToolsForRole — cutover ON drops native write/exec/fetch for a capability role, keeps reads + wildcard', () => {
+  const allowed = fleetAllowedToolsForRole('worker', true);
+  for (const dropped of FLEET_CAPABILITY_REPLACED_TOOLS) {
+    assert.ok(!allowed.includes(dropped), `${dropped} must be dropped under the cutover`);
+  }
+  for (const kept of ['mcp__papercusp', 'Read', 'Glob', 'Grep', 'WebSearch']) {
+    assert.ok(allowed.includes(kept), `${kept} must remain under the cutover`);
+  }
+});
+
+test('fleetAllowedToolsForRole — cutover ON does NOT strand a role without capability:* (keeps native tools)', () => {
+  // An auxiliary role outside FLEET_CAPABILITY_ROLES has no capability replacement,
+  // so the cutover must NOT remove its native tools (else it loses shell entirely).
+  const aux = 'sentinel';
+  assert.ok(!FLEET_CAPABILITY_ROLES.has(aux));
+  assert.deepEqual(fleetAllowedToolsForRole(aux, true), [...FLEET_ALLOWED_TOOLS]);
+});
+
+test('fleetDisallowedToolsForRole — cutover ON hard-denies the native write/exec/fetch tools (airtight, beyond the allow-list omission)', () => {
+  const denied = fleetDisallowedToolsForRole('worker', true);
+  for (const base of FLEET_DISALLOWED_TOOLS) assert.ok(denied.includes(base), `${base} still denied`);
+  for (const native of FLEET_CAPABILITY_REPLACED_TOOLS) {
+    assert.ok(denied.includes(native), `${native} must be hard-denied under the cutover`);
+  }
+  // OFF (default) → unchanged.
+  assert.deepEqual(fleetDisallowedToolsForRole('worker', false), [...FLEET_DISALLOWED_TOOLS]);
+  // Aux role under cutover → unchanged (not stranded, not hard-denied).
+  assert.deepEqual(fleetDisallowedToolsForRole('sentinel', true), [...FLEET_DISALLOWED_TOOLS]);
+});
+
+test('claudeMcpArgs — under the cutover env, a confined role gets dontAsk + no native write/exec in allow-list + hard-deny (P-021 binding proof)', () => {
+  const args = withCutoverEnv('1', () =>
+    claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p', MCP_PATH, true, 'worker'),
+  );
+  // dontAsk is the binding mode (allow-list restricts the surface under dontAsk,
+  // NOT under bypassPermissions — that's the whole point of the cutover, P-021).
+  assert.ok(args.includes('--permission-mode'));
+  assert.equal(args[args.indexOf('--permission-mode') + 1], 'dontAsk');
+  // The allow-list value (one space-joined arg after --allowed-tools) excludes natives.
+  const allowVal = args[args.indexOf('--allowed-tools') + 1] as string;
+  const allowSet = new Set(allowVal.split(' '));
+  for (const native of FLEET_CAPABILITY_REPLACED_TOOLS) {
+    assert.ok(!allowSet.has(native), `${native} must NOT be allow-listed under the cutover`);
+  }
+  assert.ok(allowSet.has('mcp__papercusp') && allowSet.has('Read'));
+  // The deny-list (separate argv after --disallowed-tools) hard-removes the natives.
+  const deny = args.slice(args.indexOf('--disallowed-tools') + 1);
+  for (const native of FLEET_CAPABILITY_REPLACED_TOOLS) {
+    assert.ok(deny.includes(native), `${native} must be hard-denied under the cutover`);
+  }
+});
+
+test('claudeMcpArgs — cutover OFF (env unset) is byte-identical to today (no native tool removed)', () => {
+  const args = withCutoverEnv(null, () =>
+    claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p', MCP_PATH, true, 'worker'),
+  );
+  assert.deepEqual(args, [
+    '--mcp-config', MCP_PATH, '--strict-mcp-config',
+    '--permission-mode', 'dontAsk',
+    '--allowed-tools', [...FLEET_ALLOWED_TOOLS].join(' '),
+    '--disallowed-tools', ...FLEET_DISALLOWED_TOOLS,
+  ]);
 });
 
 // --- no-push enforcement: spawn-env-scoped pre-push hook ------------------

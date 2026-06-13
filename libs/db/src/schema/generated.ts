@@ -2224,6 +2224,32 @@ export const spawnSigVerificationFailuresInHarnessShared = harnessShared.table("
 	index("spawn_sig_failures_ts_idx").using("btree", table.ts.desc().nullsFirst().op("timestamptz_ops")),
 ]);
 
+export const autonomyTripwiresInHarnessShared = harnessShared.table("autonomy_tripwires", {
+	id: text().primaryKey().notNull(),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	category: text().notNull(),
+	findingClass: text("finding_class").default('unclassified').notNull(),
+	action: text(),
+	riskTier: text("risk_tier").default('critical').notNull(),
+	reversibility: text().default('reversible').notNull(),
+	revertHandle: jsonb("revert_handle").notNull(),
+	decision: jsonb(),
+	status: text().default('armed').notNull(),
+	tripReason: text("trip_reason"),
+	armedAt: timestamp("armed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	windowUntil: timestamp("window_until", { withTimezone: true, mode: 'string' }).notNull(),
+	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
+	revertedAt: timestamp("reverted_at", { withTimezone: true, mode: 'string' }),
+	resolvedBy: text("resolved_by"),
+}, (table) => [
+	index("autonomy_tripwires_class_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.category.asc().nullsLast().op("timestamptz_ops"), table.findingClass.asc().nullsLast().op("timestamptz_ops"), table.armedAt.asc().nullsLast().op("timestamptz_ops")),
+	index("autonomy_tripwires_sweep_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("timestamptz_ops"), table.windowUntil.asc().nullsLast().op("text_ops")),
+	check("autonomy_tripwires_risk_tier_check", sql`risk_tier = ANY (ARRAY['trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
+	check("autonomy_tripwires_reversibility_check", sql`reversibility = 'reversible'::text`),
+	check("autonomy_tripwires_status_check", sql`status = ANY (ARRAY['armed'::text, 'cleared'::text, 'tripped'::text, 'reverted'::text])`),
+	check("autonomy_tripwires_trip_reason_check", sql`(trip_reason IS NULL) OR (trip_reason = ANY (ARRAY['ekg-drift'::text, 'validator-bounce'::text, 'gym-regression'::text, 'owner-thumbs-down'::text]))`),
+]);
+
 export const briefingsInPapercupShared = papercupShared.table("briefings", {
 	id: text().primaryKey().notNull(),
 	title: text().notNull(),

@@ -517,17 +517,78 @@ export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
  */
 export const FLEET_NO_WRITE_ROLES: ReadonlySet<string> = new Set<string>([]);
 
+/* ─── B-18 fleet cutover (agent-capability-confinement-2026-06-13 P-020/D-001) ──
+ * When the cutover is ARMED (papercusp-fleet-capability-only, surfaced per-spawn
+ * as PAPERCUSP_FLEET_CAPABILITY_ONLY by the operator), a confined fleet agent
+ * holds NO native write/exec/fetch tools — every such capability is a
+ * policy-gated `capability:*` defineTool (B-05) routed through the shared dispatch
+ * (capability envelope + decision ledger). The native equivalents are dropped from
+ * the allow-list AND hard-denied; the gated tools are already in the role-scoped
+ * `mcp__papercusp` wildcard. DEFAULT-OFF: the owner arms it (P-023 is an owner
+ * item) after capability:* ergonomics are validated on a live bee. */
+
+/** Native tools the `capability:*` defineTools replace under the cutover — dropped
+ *  from the allow-list and hard-denied for a confined role. `Bash`→capability:bash,
+ *  `Edit`/`Write`→capability:edit/write, `WebFetch`→capability:fetch. Read-only
+ *  natives (`Read`/`Glob`/`Grep`) + `WebSearch` (no capability replacement) stay. */
+export const FLEET_CAPABILITY_REPLACED_TOOLS: readonly string[] = ['Bash', 'Edit', 'Write', 'WebFetch'];
+
+/** Roles that HAVE the `capability:*` defineTools — their `agentRoles` is
+ *  `[...SU_ROLES, 'bee']` (B-05). The cutover strips native tools ONLY for these
+ *  roles, so a role without a capability replacement is never stranded
+ *  (extending confinement to the auxiliary roles needs the capability tools'
+ *  `agentRoles` widened first — tracked follow-up). MUST stay in lockstep with the
+ *  capability tools' `agentRoles`; pinned by the drift guard
+ *  `agent-tools/capability/cutover-role-parity.test.ts` in operator-core. */
+export const FLEET_CAPABILITY_ROLES: ReadonlySet<string> = new Set<string>([
+  // SU_ROLES (packages/agent-mcp/src/role-config.ts) — kept literal because the
+  // orchestrator does not depend on @papercusp/agent-mcp; the parity test guards it.
+  'scoper', 'architect', 'worker', 'validator', 'reviewer', 'debugger', 'operator', 'queen', 'documenter', 'curator',
+  'bee',
+]);
+
+/** True when the B-18 fleet cutover is armed for this spawn. The operator resolves
+ *  the `papercusp-fleet-capability-only` flag per-spawn and threads it as this env
+ *  var into the invoke-once child (mirrors `fleetSandboxEnabled()`). DEFAULT-OFF:
+ *  unset / `0` / `false` / `off` ⇒ today's allow-list (native tools granted). */
+export function fleetCapabilityOnlyEnabled(): boolean {
+  const v = (process.env.PAPERCUSP_FLEET_CAPABILITY_ONLY ?? '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'on';
+}
+
+/** Whether the cutover applies to `role` for this spawn (armed AND the role has the
+ *  capability:* replacements). */
+function fleetCutoverApplies(role: string | undefined, capabilityOnly: boolean): boolean {
+  return capabilityOnly && !!role && FLEET_CAPABILITY_ROLES.has(role);
+}
+
 /**
  * The allow-list for a given fleet role: the full safe kit
  * (`FLEET_ALLOWED_TOOLS`), minus `Edit`/`Write` for the API-only roles in
- * `FLEET_NO_WRITE_ROLES`. An unknown/empty role gets the full kit — never
- * silently strip a tool from a role we don't recognise.
+ * `FLEET_NO_WRITE_ROLES`, and minus the native write/exec/fetch tools under the
+ * B-18 cutover (`capabilityOnly`, role-gated). An unknown/empty role gets the full
+ * kit — never silently strip a tool from a role we don't recognise.
  */
-export function fleetAllowedToolsForRole(role: string | undefined): string[] {
-  if (role && FLEET_NO_WRITE_ROLES.has(role)) {
-    return FLEET_ALLOWED_TOOLS.filter((t) => t !== 'Edit' && t !== 'Write');
+export function fleetAllowedToolsForRole(role: string | undefined, capabilityOnly = false): string[] {
+  let tools = [...FLEET_ALLOWED_TOOLS];
+  if (fleetCutoverApplies(role, capabilityOnly)) {
+    tools = tools.filter((t) => !FLEET_CAPABILITY_REPLACED_TOOLS.includes(t));
   }
-  return [...FLEET_ALLOWED_TOOLS];
+  if (role && FLEET_NO_WRITE_ROLES.has(role)) {
+    tools = tools.filter((t) => t !== 'Edit' && t !== 'Write');
+  }
+  return tools;
+}
+
+/** The hard-deny list for a given fleet role: the standing `FLEET_DISALLOWED_TOOLS`
+ *  plus, under the cutover, the native write/exec/fetch tools — `--disallowed-tools`
+ *  removes a tool ENTIRELY and wins even over the dontAsk allow-list exemption
+ *  (verified vs claude 2.1.158), so the removal is airtight, not just an omission. */
+export function fleetDisallowedToolsForRole(role: string | undefined, capabilityOnly = false): string[] {
+  if (fleetCutoverApplies(role, capabilityOnly)) {
+    return [...FLEET_DISALLOWED_TOOLS, ...FLEET_CAPABILITY_REPLACED_TOOLS];
+  }
+  return [...FLEET_DISALLOWED_TOOLS];
 }
 
 /* ─── Fleet OS sandbox (plan fleet-spawn-sandbox-2026-06-01) ─────────────────
@@ -1133,11 +1194,15 @@ export function claudeMcpArgs(
     roleAgentCmd.includes('--allow-dangerously-skip-permissions');
   if (!userManagesPermissions) {
     out.push('--permission-mode', 'dontAsk');
+    // B-18 cutover (default-off): under papercusp-fleet-capability-only the
+    // confined role's allow-list drops native write/exec/fetch (routed to the
+    // gated capability:* tools) and the deny-list hard-removes them.
+    const capabilityOnly = fleetCapabilityOnlyEnabled();
     // Allow-list as one space-joined value (claude splits it); deny patterns
     // as separate argv elements so each pattern's internal spaces (e.g.
     // `Bash(git push:*)`) survive. Both forms verified against claude 2.1.158.
-    out.push('--allowed-tools', fleetAllowedToolsForRole(role).join(' '));
-    out.push('--disallowed-tools', ...FLEET_DISALLOWED_TOOLS);
+    out.push('--allowed-tools', fleetAllowedToolsForRole(role, capabilityOnly).join(' '));
+    out.push('--disallowed-tools', ...fleetDisallowedToolsForRole(role, capabilityOnly));
   }
   return out;
 }
