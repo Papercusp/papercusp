@@ -63,12 +63,17 @@ test('gate with no fallback is rejected', () => {
   assert.ok(v.errors.some((e) => e.code === 'gate-no-fallback'));
 });
 
-test('steps without a gate is rejected', () => {
+test('steps without a gate is valid — a deterministic pipeline (P-010)', () => {
+  // deterministic-blueprints-migration-2026-06-13 P-010: a gateless steps
+  // program is the deterministic-pipeline shape — it resolves by running every
+  // step, with no decision fork. The old `gate-missing` rejection was removed
+  // (see validate.ts §"Two program shapes"); a well-formed gateless program is
+  // therefore valid.
   const v = validateBlueprint(
     programBp({ spine: { steps: [{ id: 'agg', op: 'vote:aggregate' }] } }),
   );
-  assert.equal(v.ok, false);
-  assert.ok(v.errors.some((e) => e.code === 'gate-missing'));
+  assert.equal(v.ok, true);
+  assert.ok(!v.errors.some((e) => e.code === 'gate-missing'));
 });
 
 test('an invalid when (not a DataCondition) is rejected at schema parse', () => {
