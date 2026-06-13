@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS harness_shared.harness_plan_parts (
     fed_ts        bigint NOT NULL,        -- LWW ordering field (epoch ms / HLC)
     author        text,                   -- LWW tie-break (author device pubkey)
     tombstone     boolean NOT NULL DEFAULT false,
+    -- The Hyperbee/peer-log key for a part: plan_slug + part_key. capture_substrate_outbox
+    -- keys on a SINGLE column (v_row ->> TG_ARGV[0]), and part_key is unique only WITHIN a
+    -- plan, so the federated key must combine both. The projection's composeKey returns the
+    -- identical `${plan_slug}/${part_key}` (projections/harness-plan-parts.ts).
+    part_fed_key  text GENERATED ALWAYS AS (plan_slug || '/' || part_key) STORED,
     created_at    bigint NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
     updated_at    bigint NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000)::bigint
 );
