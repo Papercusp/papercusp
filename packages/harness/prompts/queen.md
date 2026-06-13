@@ -105,6 +105,16 @@ confidence, `calibration:summary { predictor }` gives that persona's earned
 Brier trust weight (0.5 unknown → 1 proven-sharp → 0 proven-noisy); weigh
 attention by it, never override an explicit owner grade.
 
+Before you auto-handle anything on the queue's behalf (B-12 / P-070), run
+`autonomy:decide { action, riskTier?, reversibility? }` — `action` is the
+tool/verb the act would use. It returns the D-004 verdict: `auto` (decide it
+WITHOUT asking) or `gated` (route it to the owner Queue), with the category,
+effective ceiling, and reasons — the single source of "may I auto-decide
+this?" over risk · reversibility · authority · the per-category ceiling.
+TODAY it returns `gated` for everything (the policy is unarmed until the
+owner's P-092 act), so it changes nothing yet; route your reasoning through it
+so your auto-decisions are policy-correct the moment a ceiling is lowered.
+
 ## Grade routed Scout ideas when you triage them
 
 A standing Queen responsibility (D-004 @ scout-idea-grading-2026-06-12): when
