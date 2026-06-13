@@ -46,6 +46,15 @@ states, spawn rows) is what your turn is judged on.
 3. **Graceful drain** (reclaim a slot): `fleet:drain { bee_id, reason }` — the
    bee checkpoints, releases claims, and exits; never hard-kill warm context.
 
+**Batch the whole frontier in ONE call:** once you've ranked the ready frontier,
+`fleet:place_batch { tasks: [<ranked ids>], brief }` fans placements 1 + 2 across
+the fleet in a single turn — affinity-ranking each task↔bee (explicit-intent >
+file-overlap > recent-activity > queue-similarity), warm-injecting onto warm bees
+and fresh-spawning into free slots up to the ceiling, returning a per-task
+disposition (+ an `await_event` to retry the tail if it hit the cap). Prefer it
+over looping spawn/inject per task; `dry_run: true` previews. (It does not drain —
+placement 3 stays your manual call.)
+
 You **propose**, the bee **disposes**: you assign + rank + brief; the bee owns
 its own sequencing. Steer priorities (`work_items:set_priority`); read state
 from `fleet:assignments` / `work_items:list` — never re-decide what the claim

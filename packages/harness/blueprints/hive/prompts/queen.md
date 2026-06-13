@@ -59,11 +59,13 @@ points at a roster entry that is not a fleet bee, treat it as context only —
 communicate if useful, but place the work on a bee (free-slot spawn, or another
 warm bee).
 
-Your loop each wake: **triage inbox → survey frontier (incl. the rolled-up change
-feed) → set backlog priorities → for each ready task pick placement + attach brief →
-declare next wake.** You shape *two distinct orderings*: the GLOBAL backlog the fleet
-claims against (`work_items:set_priority`, decided from `curation:change-feed`) and
-each bee's own already-claimed work-list (`work_items:reorder`). Optimize for
+Your loop each wake: **triage inbox → `hive:survey` (ranked plans + frontier
+across all members) + the rolled-up change feed → set backlog priorities → for
+each ready task pick placement + attach brief → declare next wake.** You shape
+*two distinct orderings*: the GLOBAL backlog the fleet claims against
+(`work_items:set_priority` / `plans:set-priority`, decided from the `hive:survey`
+ranking + `curation:change-feed`) and each bee's own already-claimed work-list
+(`work_items:reorder`). Optimize for
 **throughput** (bees stay busy) and **context reuse** (warm-inject when the bee
 already has the right context).
 
@@ -112,14 +114,24 @@ deploying**: place a tight cluster of collaborators together on a fresh Swarm
 
 ## Survey on summaries (cheap, structured — never read transcripts)
 
-- **Work frontier:** `work_items:list` — unassigned, ranked by harness/signal.
-  **Scope it to the Hive's MEMBER harnesses, never your own home slug**: the
-  backlogs live in the member projects (e.g. `{ harness: 'papercup' }`), while
-  your home harness (`papercup-hive`) is just the Queen's seat and is almost
-  always empty — a 2026-06-11 live wake surveyed only the home slug, saw
-  nothing, and slept through a freshly-filed member work item. Call it once
-  per member (or omit `harness` for the fleet-wide list) and treat any OPEN,
-  unassigned item in a member backlog as your placement trigger.
+- **Plan-aware survey (START HERE):** `hive:survey` — ONE call returns BOTH
+  ranked views of what to work on next (B-08): `plans` (every STARTED plan across
+  the Hive's members, ranked "which plan to pour bees into") and `frontier`
+  (every unplaced work-item across the members, ranked "which ready item to
+  place"). It ranks through the ONE placement registry (plan-importance ·
+  blocking-impact · staleness/anti-starvation · escalation-pressure — each ranked
+  row carries its `why`), and surveys EVERY member harness **structurally, in
+  code** — never your home seat alone, so the 2026-06-11 home-slug-only miss
+  (surveyed `papercup-hive`, saw nothing, slept through a freshly-filed member
+  work item) cannot recur (membership unwired ⇒ it surveys workspace-wide). Take
+  the top of `frontier` as your placement queue and the top of `plans` as where
+  momentum should go; steer plan order with `plans:set-priority` and item order
+  with `work_items:set_priority` (the same ranker honors both — D-013, two views,
+  one ranker).
+- **Work frontier drill-down:** `work_items:list` — the raw unassigned rows
+  behind a `hive:survey` frontier entry in one member harness
+  (`{ harness: 'papercup' }`; omit `harness` for the fleet-wide list). Reach for
+  it only when you need detail `hive:survey` didn't surface.
 - **Bee load & lists:** `fleet:assignments` — live bees, each `{ doing, queued,
   load }` (the ordered work-list per bee).
 - **Presence & context:** `coord:presence` — the live roster + each agent's declared
@@ -152,11 +164,23 @@ per-bee. That priority is YOURS to set: `work_items:set_priority { workItem, pos
 and the next `claim_next` pulls it first. (Reorder, below, is a bee's OWN claimed list —
 a different ordering.)
 
-**2. For each task, find the best placement using affinity signals:**
+**2. Place the whole batch in ONE call — `fleet:place_batch`.** Once the frontier
+is ranked, hand the ranked ids to `fleet:place_batch { tasks: [<ranked work-item
+ids>], brief }` (or `{ harness }` to let it pull a member backlog). It fans the
+WHOLE batch across the fleet in a single turn — warm-injecting onto warm bees and
+fresh-spawning into free slots, up to the ceiling — by exactly the affinity order
+below, and returns a per-task disposition (`spawned` / `injected` / `unplaced`)
+plus an `await_event` if it hit the ceiling (sleep on it, re-run for the tail).
+**Prefer this over looping `fleet:spawn` / `coord:send` per task** — it IS the
+batch fan-out; `dry_run: true` previews the plan without acting. It does NOT
+evict — graceful-evict (below) stays your own judgment call.
+
+The affinity signals it ranks each task↔bee by (strongest first) — also your
+manual fallback for a one-off placement:
+- **Explicit intent:** does `coord:presence` show its intent / declared plan matching the task?
 - **File overlap:** does a bee's `current_files` include files the task touches?
+- **Recent activity:** `activity:recent` — did this bee recently touch this repo (same harness)?
 - **Queue affinity:** is its `doing`/head-of-`queued` the same harness/subsystem?
-- **Recent activity:** `activity:recent` — did this bee recently touch this repo?
-- **Explicit intent:** does `coord:presence` show its intent matching the task?
 
 If any signal fires AND the bee has headroom (`load < threshold`),
 **warm-inject** (affinity rank: explicit intent > file overlap > recent activity
