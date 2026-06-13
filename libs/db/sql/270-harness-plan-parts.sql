@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS harness_shared.harness_plan_parts (
     fed_ts        bigint NOT NULL,        -- LWW ordering field (epoch ms / HLC)
     author        text,                   -- LWW tie-break (author device pubkey)
     tombstone     boolean NOT NULL DEFAULT false,
+    -- Echo-loop guard (mirrors hive_settings/harness_plans): the capture trigger
+    -- (mig 271) skips a write whose origin <> 'local', so the projection's OWN
+    -- writes (applied remote ops, stamped origin='remote') are NOT re-federated.
+    -- Local writes (the flag-gated reconcile) default 'local' and DO federate.
+    origin        text NOT NULL DEFAULT 'local',
     -- The Hyperbee/peer-log key for a part: plan_slug + part_key. capture_substrate_outbox
     -- keys on a SINGLE column (v_row ->> TG_ARGV[0]), and part_key is unique only WITHIN a
     -- plan, so the federated key must combine both. The projection's composeKey returns the
