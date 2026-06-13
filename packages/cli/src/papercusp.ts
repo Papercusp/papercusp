@@ -190,7 +190,7 @@ ${bold('Commands:')}
   ${cyan('lock check')} [--harness <slug>]   Inspect papercusp.lock entries against the registry; flag retracted/missing.
   ${cyan('lock upgrade-all')} [--harness …]  Run upgrade-pin on every entry that's withdrawn or quarantined.
 
-  ${cyan('migrate-tabs')} [--harness <slug>]  Install + enable the 3 default tab plugins (vscode-server / pi-coding / fumadocs)
+  ${cyan('migrate-tabs')} [--harness <slug>]  Install + enable the 3 default tab plugins (vscode-server / pi-coding / starlight)
                                        and remind you to set PAPERCUSP_TABS_FROM_PLUGINS=1 (P7 cutover).
 
   ${cyan('operator audit-prefs')}             List operator preferences.md entries (workspace-scoped). Pass
@@ -1149,7 +1149,7 @@ function normalizeTemplatePlugins(raw: unknown): TemplatePluginSpec[] {
   return out;
 }
 
-/** `@papercupai/fumadocs` → `fumadocs`. The CLI keys enabled state by dir basename. */
+/** `@papercupai/starlight` → `starlight`. The CLI keys enabled state by dir basename. */
 function pluginDirBasename(slug: string): string {
   const idx = slug.indexOf('/');
   return idx === -1 ? slug : slug.slice(idx + 1);

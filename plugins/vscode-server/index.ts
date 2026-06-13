@@ -9,7 +9,7 @@
 import type { Plugin } from '@papercusp/plugin-sdk';
 
 // Tab rendering is driven by the manifest's `dashboardTabs[].iframeUrlConfigKey`
-// (papercusp.json). See sibling notes in fumadocs/index.ts.
+// (papercusp.json). See sibling notes in starlight/index.ts.
 const plugin: Plugin = {
   kind: 'plugin',
   name: '@papercupai/vscode-server',

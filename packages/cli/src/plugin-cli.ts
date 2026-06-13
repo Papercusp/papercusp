@@ -140,7 +140,7 @@ async function resolveHarness(args: string[]): Promise<{ harness: string; rest: 
 }
 
 async function loadInstalledManifest(slug: string): Promise<PluginManifest | null> {
-  // 1) Direct path — handles bare slugs (`fumadocs`) and `@scope/<name>` when
+  // 1) Direct path — handles bare slugs (`starlight`) and `@scope/<name>` when
   //    the install layout matches. Fastest path; covers the common case.
   const direct = await readJson<PluginManifest>(join(globalPluginsDir(), slug, 'papercusp.json'));
   if (direct) return direct;
@@ -148,7 +148,7 @@ async function loadInstalledManifest(slug: string): Promise<PluginManifest | nul
   //    match by manifest `name`. Mirrors the runtime loader's behaviour
   //    (apps/operator/app/api/_hono/plugins.ts > listPluginsIn) so the CLI
   //    can find a plugin even when its dirname doesn't match the manifest
-  //    name (e.g. `fumadocs/` shipping `@papercupai/fumadocs`).
+  //    name (e.g. `starlight/` shipping `@papercupai/starlight`).
   if (!existsSync(globalPluginsDir())) return null;
   const entries = await fs.readdir(globalPluginsDir(), { withFileTypes: true }).catch(() => []);
   for (const e of entries) {
@@ -560,8 +560,8 @@ export async function cmdPluginEnable(args: string[]): Promise<void> {
 
   // Canonicalise the on-disk config path on the manifest's `name` field so
   // the resolver (which reads `<manifest-name>.json`) and writes agree
-  // regardless of which slug form the user typed (`fumadocs` vs
-  // `@papercupai/fumadocs`).
+  // regardless of which slug form the user typed (`starlight` vs
+  // `@papercupai/starlight`).
   const canonicalSlug = manifest.name ?? slug;
 
   // Ensure the harness dir exists.
@@ -1336,7 +1336,7 @@ export async function cmdUpgradePin(args: string[]): Promise<void> {
 const DEFAULT_TAB_PLUGINS = [
   '@papercupai/vscode-server',
   '@papercupai/pi-coding',
-  '@papercupai/fumadocs',
+  '@papercupai/starlight',
 ];
 
 export async function cmdMigrateTabs(args: string[]): Promise<void> {
