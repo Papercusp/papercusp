@@ -87,6 +87,11 @@ export {
   // The fleet-sandbox credential deny-read list — the canonical credential dirs;
   // the capability-exec sandbox (P-022) masks the same set (parity-tested).
   FLEET_SANDBOX_DENY_READ,
+  // srt (@anthropic-ai/sandbox-runtime) — the egress-capable sandbox wrapper the
+  // capability-exec sandbox reuses for domain-allowlist egress parity (P-033).
+  srtBinOnPath,
+  buildFleetSrtSettings,
+  wrapSpawnWithSrt,
 } from './invoke';
 export type { InvokeContext } from './invoke';
 export { parseDecision, parseDecisionFor, DECISION_VERBS } from './decision-parse';
