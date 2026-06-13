@@ -83,7 +83,7 @@ SELECT
   p.heartbeat_at                                   AS holder_heartbeat_at,
   p.intent                                         AS holder_intent,
   p.current_plan_slug                              AS holder_plan_slug,
-  (c.expires_ts > now() AND NOT COALESCE(p.alive, false) AND c.owner NOT IN ('improvement-runner')) AS orphaned,
+  (c.expires_ts > now() AND NOT COALESCE(p.alive, false)) AS orphaned,
   (p.current_plan_slug IS NOT DISTINCT FROM c.plan_slug)  AS declared_plan_matches,
   NULL::integer                                    AS assignee_rank,
   NULL::text                                       AS rank_writer
@@ -145,7 +145,7 @@ SELECT
   p.heartbeat_at,
   p.intent,
   p.current_plan_slug,
-  (NOT COALESCE(p.alive, false) AND w.taken_by NOT IN ('improvement-runner')),
+  (NOT COALESCE(p.alive, false)),
   CASE WHEN w.source_plan_slug IS NULL THEN NULL::boolean
        ELSE (p.current_plan_slug IS NOT DISTINCT FROM w.source_plan_slug) END,
   w.assignee_rank,                                 -- the per-assignee rank (P-021)
