@@ -1016,6 +1016,40 @@ test('claudeMcpArgs — cutover is CLAUDE-ONLY (P-032): omp/codex backends ignor
   });
 });
 
+test('claudeMcpArgs — cutover hard-deny is a SECURITY INVARIANT: applied even when AGENT_CMD already manages the permission posture (review fix)', () => {
+  // A hardened deployment can set --permission-mode in AGENT_CMD; that makes us
+  // defer the mode + allow-list to them — but a CONFINED fleet spawn (env armed,
+  // role has capability:*) must STILL lose native Bash/Edit/Write/WebFetch, or the
+  // cutover silently no-ops. The cutover env is set only by spawnInvokeOnce, so
+  // this can never fire for an SU session.
+  const args = withCutoverEnv('1', () =>
+    claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --permission-mode dontAsk', MCP_PATH, true, 'worker'),
+  );
+  // mode + allow-list deferred to the user…
+  assert.ok(!args.includes('--permission-mode'));
+  assert.ok(!args.includes('--allowed-tools'));
+  // …but the native write/exec/fetch tools are hard-denied regardless.
+  assert.ok(args.includes('--disallowed-tools'));
+  const deny = args.slice(args.indexOf('--disallowed-tools') + 1);
+  for (const native of FLEET_CAPABILITY_REPLACED_TOOLS) {
+    assert.ok(deny.includes(native), `${native} must be hard-denied even when AGENT_CMD manages perms`);
+  }
+});
+
+test('claudeMcpArgs — AGENT_CMD manages perms + cutover OFF → we add nothing (no spurious deny)', () => {
+  const args = withCutoverEnv(null, () =>
+    claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --permission-mode dontAsk', MCP_PATH, true, 'worker'),
+  );
+  assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
+});
+
+test('claudeMcpArgs — AGENT_CMD manages perms + cutover ON but NON-capability role → no deny (not stranded, not confined)', () => {
+  const args = withCutoverEnv('1', () =>
+    claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --permission-mode dontAsk', MCP_PATH, true, 'sentinel'),
+  );
+  assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
+});
+
 test('claudeMcpArgs — SU carve-out (P-023/D-002): a self-managed-permission session is untouched by the cutover', () => {
   // SU human-driven sessions run with their own permission posture (bypassPermissions);
   // even with the cutover env set, a session managing its own permissions gets none of

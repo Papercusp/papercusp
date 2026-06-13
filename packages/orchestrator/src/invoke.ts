@@ -1192,17 +1192,27 @@ export function claudeMcpArgs(
     roleAgentCmd.includes('--disallowedTools') ||
     roleAgentCmd.includes('--dangerously-skip-permissions') ||
     roleAgentCmd.includes('--allow-dangerously-skip-permissions');
+  // B-18 cutover (default-off): resolve once. The env that arms it is set ONLY by
+  // spawnInvokeOnce (the fleet chokepoint), so fleetCutoverApplies is never true
+  // for an SU/human session — the D-002 carve-out holds by construction.
+  const capabilityOnly = fleetCapabilityOnlyEnabled();
   if (!userManagesPermissions) {
     out.push('--permission-mode', 'dontAsk');
-    // B-18 cutover (default-off): under papercusp-fleet-capability-only the
-    // confined role's allow-list drops native write/exec/fetch (routed to the
-    // gated capability:* tools) and the deny-list hard-removes them.
-    const capabilityOnly = fleetCapabilityOnlyEnabled();
     // Allow-list as one space-joined value (claude splits it); deny patterns
     // as separate argv elements so each pattern's internal spaces (e.g.
     // `Bash(git push:*)`) survive. Both forms verified against claude 2.1.158.
     out.push('--allowed-tools', fleetAllowedToolsForRole(role, capabilityOnly).join(' '));
     out.push('--disallowed-tools', ...fleetDisallowedToolsForRole(role, capabilityOnly));
+  } else if (fleetCutoverApplies(role, capabilityOnly)) {
+    // The cutover's native-tool hard-deny is a security INVARIANT, not a
+    // user-defeatable preference. When the deployment manages the rest of the
+    // posture (AGENT_CMD already carries a permission flag, so the block above is
+    // skipped), we defer mode + allow-list to them but STILL hard-remove native
+    // Bash/Edit/Write/WebFetch from a confined fleet spawn — `--disallowed-tools`
+    // wins even under bypassPermissions (verified vs claude 2.1.158). Without this,
+    // a hardened AGENT_CMD (e.g. `--permission-mode dontAsk`) would silently no-op
+    // the cutover and leave native exec on a confined bee.
+    out.push('--disallowed-tools', ...FLEET_CAPABILITY_REPLACED_TOOLS);
   }
   return out;
 }

@@ -187,9 +187,6 @@ export async function runChunkLoop(
   deps: ChunkLoopDeps,
 ): Promise<ChunkLoopOutcome> {
   const log = deps.log ?? (() => {});
-  const replanStrikes = deps.replanStrikes ?? 3;
-  const typecheckTimeoutMs = deps.typecheckTimeoutMs ?? 5 * 60_000;
-  const commitChunk = deps.commitChunk ?? defaultCommitChunk;
 
   // ─── 1. Plan ────────────────────────────────────────────────────
   let plan: ChunkPlan;
@@ -234,13 +231,41 @@ export async function runChunkLoop(
   }
 
   // ─── 2. Iterate chunks ──────────────────────────────────────────
+  // Extracted to runChunkLoopCore (deterministic-blueprints-migration-2026-06-13
+  // D-015 stage-a): a verbatim move so the chunk-iteration is a reusable seam a
+  // future `worker:chunk-loop` program-step op can call (the staged rollout). The
+  // plan phase above stays in runChunkLoop; behavior is byte-identical.
+  return runChunkLoopCore(feature, plan, deps, committedFromResume);
+}
+
+/**
+ * The chunk-iteration core — given an already-resolved plan, implement each chunk
+ * (acquire → implement → lock-extend → L1 typecheck-gate → commit / replan /
+ * escalate), skipping any id in `committedChunkIds` (crash-recovery resume). A pure
+ * extraction from runChunkLoop (D-015 stage-a) — byte-identical behavior to the
+ * in-line loop it replaced; the reusable seam a future deterministic
+ * `worker:chunk-loop` blueprint step calls (the staged rollout in D-015). Exported
+ * + independently testable; NOT yet wired to any blueprint (the cutover is the
+ * owner-gated, monitoring-dependent later stage).
+ */
+export async function runChunkLoopCore(
+  feature: ChunkLoopFeature,
+  plan: ChunkPlan,
+  deps: ChunkLoopDeps,
+  committedChunkIds: ReadonlySet<string>,
+): Promise<ChunkLoopOutcome> {
+  const log = deps.log ?? (() => {});
+  const replanStrikes = deps.replanStrikes ?? 3;
+  const typecheckTimeoutMs = deps.typecheckTimeoutMs ?? 5 * 60_000;
+  const commitChunk = deps.commitChunk ?? defaultCommitChunk;
+
   let committed = 0;
   for (let i = 0; i < plan.chunks.length; i++) {
     let chunk = plan.chunks[i];
 
     // Skip chunks already committed in a previous orchestrator run
     // (crash-recovery path).
-    if (committedFromResume.has(chunk.id)) {
+    if (committedChunkIds.has(chunk.id)) {
       log(`chunk-loop: ${chunk.id} already committed (resume), skipping`);
       committed++;
       continue;
