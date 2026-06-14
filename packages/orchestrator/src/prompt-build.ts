@@ -203,6 +203,25 @@ export interface BuildPromptInput {
    */
   brief?: string;
   /**
+   * The QUEEN's per-wake brief — the deterministic FLOOR (objective world-state
+   * the watchdog computes: frontier digest, bee load + liveness, inbox delta,
+   * change-feed digest, what-woke-me, open escalations) PLUS her self-authored
+   * CARRY-NOTE (subjective in-flight intention from the prior wake). Distinct
+   * from `brief` (which is the Queen→BEE situational overlay): `queenBrief` is
+   * the survey snapshot the Queen would otherwise gather via ~5 tool round-trips
+   * each wake (queen-brief-cache-assembly B-03; D-001/D-004/D-009).
+   *
+   * Cache discipline: this changes every wake, so it rides the VOLATILE TAIL —
+   * never the cacheable preamble (D-001). It is delivered as a
+   * `<system-reminder>` block (the fresh-spawn delivery of D-006's
+   * mid-conversation system message: the watchdog acts as operator, but a
+   * `claude` CLI fresh spawn carries it in the stdin user turn, so the
+   * system-reminder framing carries the authority). Caller assembles the text
+   * via operator-core's `renderQueenBrief()`. Empty/undefined disables — the
+   * Queen falls back to calling the survey tools herself (graceful degradation).
+   */
+  queenBrief?: string;
+  /**
    * Cross-tool playbook for the role — content of
    * `apps/operator/prompts/<role>.tools.md` if it exists. Captures
    * named workflows + cross-tool patterns + chaining rules that span
@@ -527,6 +546,20 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
     vol.push(
       `- Spawn ID: ${input.coordOwnerId.trim()} — your coord identity. Use THIS id wherever you name yourself (hello broadcasts, claims, escalations); your MCP tools already carry it.`,
     );
+  }
+
+  // 7b. Queen wake-brief — the precomputed survey snapshot (FLOOR) + her
+  //     self-authored CARRY-NOTE (queen-brief-cache-assembly B-03). Rides the
+  //     volatile tail (changes every wake, D-001) and is framed as a
+  //     <system-reminder> so the Queen treats it as authoritative
+  //     watchdog/operator-computed state (D-006's fresh-spawn delivery). It
+  //     replaces ~5 deterministic survey round-trips she'd otherwise make.
+  //     Placed right after runtime context so it leads her substantive context.
+  if (input.queenBrief && input.queenBrief.trim()) {
+    vol.push('\n---');
+    vol.push('<system-reminder>');
+    vol.push(input.queenBrief.trim());
+    vol.push('</system-reminder>');
   }
 
   // G3: determine whether remote-peer content must be wrapped (P-009).

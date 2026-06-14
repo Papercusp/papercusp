@@ -1050,6 +1050,124 @@ test('buildPromptParts — preamble is byte-identical across all volatile inputs
   }
 });
 
+// ── queen-brief-cache-assembly B-02 (P-001/P-002): the QUEEN's cacheable prefix ──
+//    The Queen is a `claude` CLI subprocess; her prompt is buildPrompt({role:'queen'})
+//    piped to stdin as the first user turn (no --system-prompt). Caching is delegated
+//    to the CLI, so our only lever is byte-stability of the preamble across wakes —
+//    that is what lets two fresh-per-wake invocations (post-B-01) share the CLI-managed
+//    prefix cache. This pins that the Queen's preamble never varies with the per-wake
+//    volatile inputs (the survey snapshot / brief / runtime), so the cache can't be
+//    silently busted by a per-wake interpolation leaking into the prefix.
+test('buildPromptParts — QUEEN preamble is byte-identical across per-wake volatile inputs (B-02 P-001/P-002)', () => {
+  const fx = makeFixture(({ harnessDir, stateDir }) => {
+    // A representative (static) Queen persona + cross-mission identity + curated memory.
+    writeFileSync(
+      join(harnessDir, 'queen.md'),
+      '# The Queen\nYou steer placement. Survey, rank, place, declare your next wake.',
+    );
+    writeFileSync(join(harnessDir, 'identity', 'queen.md'), 'Across missions I have learned to co-locate tight collaborators.');
+    writeFileSync(join(stateDir, 'memory', 'summary.md'), 'Prior wake: placed 3 bees on the staging deploy.');
+  });
+  try {
+    const base = {
+      role: 'queen',
+      promptFile: join(fx.harnessDir, 'queen.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+    };
+    // Two consecutive wakes: EVERY per-wake input differs (a fresh runId/spawn id,
+    // a fresh survey-snapshot brief, a fresh substrate view, fresh runtime extras).
+    const wake1 = buildPromptParts({
+      ...base,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'opspawn-1700000000-queen',
+      coordOwnerId: 's-1700000000-aaaa1111',
+      extras: ['MODE=wake', 'WOKE_BY=coord:escalate'],
+      substrateContext: '## Substrate\nneighbors: bee-alpha (running), bee-beta (idle)',
+      queenBrief: 'FLOOR: frontier=[wi-101 (urgent), wi-102]; bees: alpha load 2, beta load 0; inbox: 1 escalation.',
+    });
+    const wake2 = buildPromptParts({
+      ...base,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'opspawn-1700009999-queen',
+      coordOwnerId: 's-1700009999-bbbb2222',
+      extras: ['MODE=wake', 'WOKE_BY=timer'],
+      substrateContext: '## Substrate\nneighbors: bee-gamma (failed), bee-delta (running)',
+      queenBrief: 'FLOOR: frontier=[wi-201]; bees: gamma DEAD re-place wi-050, delta load 1; inbox: clean.',
+    });
+    // The cache-shareable prefix must be byte-identical across the two wakes…
+    assert.equal(wake1.preamble, wake2.preamble, 'the Queen preamble must not vary with per-wake volatile inputs');
+    // …and it must be a SUBSTANTIVE prefix (persona + shared constants + identity + memory),
+    //   not an accidentally-empty one that is trivially "stable".
+    assert.match(wake1.preamble, /# The Queen/);
+    assert.match(wake1.preamble, /## Yielding on request \(turn-lifecycle control\)/);
+    assert.match(wake1.preamble, /## Tests follow the project standard/);
+    assert.match(wake1.preamble, /Memory discipline:/);
+    assert.match(wake1.preamble, /## Your identity \(cross-mission memory for the queen role\)/);
+    assert.match(wake1.preamble, /Prior wake: placed 3 bees/);
+    // The per-wake survey snapshot / runtime MUST be in the volatile tail, never the prefix.
+    assert.doesNotMatch(wake1.preamble, /FLOOR:/);
+    assert.doesNotMatch(wake1.preamble, /## Runtime context/);
+    assert.doesNotMatch(wake1.preamble, /<system-reminder>/);
+    // The queen brief rides the tail, framed as an authoritative system-reminder (D-006).
+    assert.match(wake1.volatile, /<system-reminder>[\s\S]*FLOOR: frontier=\[wi-101[\s\S]*<\/system-reminder>/);
+    assert.notEqual(wake1.volatile, wake2.volatile, 'the volatile tail SHOULD differ across wakes');
+  } finally {
+    fx.cleanup();
+  }
+});
+
+// queen-brief-cache-assembly B-03 (P-006): the Queen brief is delivered as a
+//   <system-reminder> tail block (fresh-spawn delivery of the mid-conversation
+//   system message, D-006) — present when supplied, absent + no stray divider when not.
+test('buildPrompt — queenBrief renders as a system-reminder tail block (B-03 P-006)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'queen.md'), '# The Queen\nSteer placement.');
+  });
+  try {
+    const withBrief = buildPrompt({
+      role: 'queen',
+      promptFile: join(fx.harnessDir, 'queen.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      queenBrief: '## Wake brief\n\nFLOOR: frontier empty; all bees healthy.\n\nCARRY-NOTE: revisit the staging deploy at next wake.',
+    });
+    assert.match(withBrief, /<system-reminder>/);
+    assert.match(withBrief, /<\/system-reminder>/);
+    assert.match(withBrief, /FLOOR: frontier empty/);
+    assert.match(withBrief, /CARRY-NOTE: revisit the staging deploy/);
+    // The brief sits AFTER runtime context (it's volatile tail, not prefix).
+    assert.ok(withBrief.indexOf('## Runtime context') < withBrief.indexOf('<system-reminder>'));
+
+    const noBrief = buildPrompt({
+      role: 'queen',
+      promptFile: join(fx.harnessDir, 'queen.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+      // queenBrief omitted
+    });
+    assert.doesNotMatch(noBrief, /<system-reminder>/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 test('buildPrompt — assembled text starts with the preamble; volatile sections all follow it (P-009)', () => {
   const fx = makeFixture(({ harnessDir, stateDir }) => {
     writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
