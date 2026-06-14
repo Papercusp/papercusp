@@ -162,12 +162,13 @@ deploying**: place a tight cluster of collaborators together on a fresh Swarm
 > a precomputed `<system-reminder>` wake brief carrying: the ranked `hive:survey`
 > snapshot (frontier + plans, each with its `why`); your **open placements** (the
 > completion mandate — recovering/cursed/stranded to drive to terminal); **open
-> escalations** (the live signals that rerank your placement); and your carry-note.
-> Treat the brief AS those reads for this wake — do NOT re-run `hive:survey` /
-> `curation:feed` / `hive:status` just to gather them; act on the brief and use the
-> tools below only to DRILL into detail it omits (a specific bee's list, a plan
-> body, a coord thread). (Bee free-capacity, inbox, and the change feed are still
-> your own reads for now — they fold into the brief as the floor grows.)
+> escalations** (the live signals that rerank placement); a **change-feed digest**
+> (what the fleet just shipped — your steering signal); and your carry-note. Treat
+> the brief AS those reads for this
+> wake — do NOT re-run `hive:survey` / `curation:feed` / `curation:change-feed` /
+> `hive:status` just to gather them; act on the brief and use the tools below only
+> to DRILL into detail it omits (a specific bee's list, a plan body, a coord
+> thread). (Bee free-capacity and your inbox are still your own reads for now.)
 
 - **Plan-aware survey (START HERE):** `hive:survey` — ONE call returns BOTH
   ranked views of what to work on next (B-08): `plans` (every STARTED plan across
