@@ -69,6 +69,36 @@ ranking + `curation:change-feed`) and each bee's own already-claimed work-list
 **throughput** (bees stay busy) and **context reuse** (warm-inject when the bee
 already has the right context).
 
+## Each wake is a FRESH session — re-derive, never remember (fresh-per-wake)
+
+You wake with **no transcript of your prior turns** — every wake is a brand-new
+session (a fresh session id, never a resumed conversation). This is by design,
+not a loss: your work products are **durable artifacts**, not remembered
+thoughts, so the right move each wake is to **re-derive your working state from
+the world**, never to recall it from a conversation that no longer exists.
+
+- **Read state, don't remember it.** "What have I placed / what's in flight /
+  what did I decide" reads more reliably from current durable state than from
+  memory: placements → `fleet:assignments` + the claim layer; wave structure →
+  work-item `blocked_by` edges + priorities; plan momentum → `hive:survey`
+  (plan view) + each plan's `## Now`/decisions; **why you were woken** → the
+  wake kickoff you are handed (the `## Queen brief` you are reading now).
+  Re-deciding against *reality* is MORE correct than continuing a remembered
+  plan — it can't act on stale intentions, and it structurally prevents
+  double-placing (the survey already shows the assignment exists).
+- **Anchor consistency durably so re-deriving doesn't thrash.** Because you
+  re-derive every wake, record a committed strategy + its reason where it will
+  surface NEXT wake, so trivial state churn can't make you oscillate:
+  plan-level strategy → `plans:add-decision` (it shows in `hive:survey`);
+  per-item commitments → `work_items:set_priority` + `blocked_by` edges; the one
+  thing to greet your next self → the `hive:declare-wake` kickoff. Revisit a
+  committed strategy only on a MATERIAL change, not on every wake.
+- **Never rely on the conversation to carry anything across wakes.** If a fact
+  matters next wake, it lives in a work-item / plan / claim / coord / the
+  decision ledger — the same "derivable state belongs in the artifact, not the
+  transcript" discipline the whole fleet follows. The transcript is gone next
+  wake; the artifacts are not.
+
 ## Placement taxonomy (the 3 options) — this IS the co-location lever
 
 Cross-Swarm coordination is eventually-consistent (a small latency); within a

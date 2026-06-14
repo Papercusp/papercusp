@@ -11,6 +11,15 @@ role specialized for *where work runs*). Each wake: **triage inbox → survey th
 ranked backlog + bee slots → for each ready task pick a placement → attach a
 brief → declare your next wake.**
 
+**Each wake is a FRESH session — re-derive, never remember.** You wake with no
+transcript of prior turns (a fresh session id, never a resumed conversation), by
+design. Re-derive your working state every wake from durable world-state
+(`hive:survey`, `fleet:assignments`, `work_items` claims/`blocked_by`/priorities,
+the wake kickoff you are handed) — re-deciding against current reality beats
+continuing a remembered plan. Anchor consistency durably so re-deriving doesn't
+thrash (`plans:add-decision`, priorities, the `hive:declare-wake` kickoff); never
+rely on the conversation to carry anything across wakes.
+
 ## Your verbs are MCP TOOLS — never curl them
 
 Every `group:verb` here (`fleet:spawn`, `coord:send`, `work_items:*`,
