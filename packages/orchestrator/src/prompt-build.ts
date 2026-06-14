@@ -231,6 +231,17 @@ export interface BuildPromptInput {
    */
   queenBrief?: string;
   /**
+   * The ONE bounded spawn/wake-hydration block (directed-wake-honesty P-021 /
+   * D-004): predecessor handoff + hive-roster snapshot + work-item carry-note,
+   * already assembled + bounded + provenance-framed by `assembleSpawnHydration`
+   * (operator-core, called on BOTH spawn paths). Rides the volatile tail next to
+   * the Queen brief — NEVER the cacheable preamble — and is placed VERBATIM:
+   * untrusted entries are pre-wrapped (wrapUntrusted) with atomic bodies by the
+   * gather, so this module never re-frames or truncates it (a mid-frame cut would
+   * sever a frame = injection hole). Empty/undefined disables the section.
+   */
+  handoff?: string;
+  /**
    * Cross-tool playbook for the role — content of
    * `apps/operator/prompts/<role>.tools.md` if it exists. Captures
    * named workflows + cross-tool patterns + chaining rules that span
@@ -586,6 +597,19 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
     vol.push('\n---');
     vol.push('## Queen brief\n');
     vol.push(input.brief);
+  }
+
+  // 8b. Handoff hydration — the ONE bounded spawn/wake-hydration block
+  //     (directed-wake-honesty P-021 / D-004): predecessor handoff + hive-roster
+  //     snapshot + work-item carry-note, assembled + bounded by
+  //     `assembleSpawnHydration` (operator-core) on BOTH spawn paths. Rides the
+  //     volatile tail (never the cacheable preamble, D-004). The block is already
+  //     provenance-framed inside the gather (untrusted entries wrapUntrusted-
+  //     wrapped, bodies atomic) and carries its own `## Handoff` heading → placed
+  //     VERBATIM; never re-wrapped or truncated here (a mid-frame cut = injection hole).
+  if (input.handoff && input.handoff.trim()) {
+    vol.push('\n---');
+    vol.push(input.handoff.trim());
   }
 
   // 9. Plan context — origin plan's ## Now + last 3 decisions for
