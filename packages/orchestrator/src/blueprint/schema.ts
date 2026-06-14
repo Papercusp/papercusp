@@ -405,6 +405,19 @@ export const TriggersSchema = z.object({
       z.object({
         cron: z.string().min(1),
         action: z.string().default('system:blueprint-run'),
+        /**
+         * Workspace-SINGLETON trigger (deterministic-blueprints-migration-2026-06-13
+         * D-018). When true, `materializeBlueprintTriggers` upserts EXACTLY ONE
+         * routine per workspace (idempotent across every install of this blueprint),
+         * seeded INACTIVE/dark, under a reserved synthetic host-slug rather than the
+         * real install slug — so a workspace-global learning loop (regret-mine,
+         * gym-cycle, …) can declare its own cadence WITHOUT N-duplicating into N
+         * redundant ACTIVE pulses on N harness installs (the D-010/D-012 objection).
+         * The routine name carries the blueprint id (blueprint-unique under the
+         * shared reserved slug). Omitted/false → per-install trigger, keyed on the
+         * install slug and seeded ACTIVE (the existing behavior).
+         */
+        singleton: z.boolean().default(false),
       }),
     )
     .default([]),
