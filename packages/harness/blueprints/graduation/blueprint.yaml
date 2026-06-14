@@ -60,10 +60,18 @@ knobs:
 # `system:graduation-scan` routine (daily at 04:05, offset from the deploy rhythm).
 # The routine fires `system:blueprint-run` with `{ blueprintId: graduation }`;
 # the handler detects program-mode and runs the steps inline. SEEDED INACTIVE.
+#
+# singleton: true (deterministic-blueprints-migration D-018 step 2 / P-144 pilot) — this is a
+# workspace-GLOBAL learning loop, not a per-install harness. `materializeBlueprintTriggers`
+# upserts EXACTLY ONE routine per workspace under the reserved `@singleton` host-slug, seeded
+# INACTIVE/dark, stamped `payload_template.blueprintId: graduation` so the harness-less row
+# fires this program. Replaces the bespoke seed-graduation-routine.ts; the governor loop
+# `graduation-tracker` still self-registers at first armed contact (graduationGovernorGate).
 triggers:
   schedule:
     - cron: "0 5 4 * * *"
       action: system:blueprint-run
+      singleton: true
 
 # No agent roles (pure-deterministic) and no agent-tool deps — the step calls a
 # registered function, not an agent.
