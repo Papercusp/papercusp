@@ -44,6 +44,27 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // high-stakes call is worth maximum reasoning. Committed so it can't silently
   // downgrade on a host without AGENT_MODELS["release-manager"] set.
   'release-manager': 'opus:xhigh',
+  // The launch-fixer family — opus:xhigh for the two fleet-blast-radius members, the
+  // committed floor matching git-pipeline-stats' resolverModel() (git-sync-content-guard
+  // D-008 follow-up). Each fires rarely (only on a conflict / red gate) and unblocks a
+  // path the whole fleet depends on, so the same "low-frequency, fleet-blast-radius
+  // judgment call" rubric that pins release-manager applies:
+  //   - merge-resolver redoes a conflicted merge on `main` — a wrong resolution corrupts
+  //     the shared history. resolverModel() already declares opus:xhigh as its floor for
+  //     stats, but the LAUNCH path (applyRoleModel→roleModelDefault) had no entry, so on a
+  //     host without AGENT_MODELS["merge-resolver"] it silently downgraded (the EI-7 class
+  //     of bug release-manager fixed). Pinned here reconciles the two sources of truth.
+  //   - release-fixer is the release-manager's execution twin: it reproduces a red-gate
+  //     failure and classifies regression-vs-flake — subtle judgment where a wrong call
+  //     either ships a regression or churns on a flake, on the path that gates ALL deploys.
+  'merge-resolver': 'opus:xhigh',
+  'release-fixer': 'opus:xhigh',
+  // The content-guard's syntax repairer — the execution tier (sonnet), not opus: its work
+  // is bounded syntax repair against a deterministic success check (the content detector
+  // re-passes), it fires more often than the gate fixers (any quarantined .mdx/.ts), and a
+  // wrong fix is self-correcting (re-quarantined, low blast radius). Not haiku: a file-
+  // editing role needs reliable tool-calling (EI-286: haiku drifts into bash).
+  'content-fixer': 'sonnet',
   // P-012 execution tier — spec-bounded, high-frequency pipeline roles.
   worker: 'sonnet',
   validator: 'sonnet',

@@ -432,7 +432,9 @@ test('resolveTimeout — positive integer passes through', () => {
 });
 
 test('resolveModel — returns empty when missing (role without a committed tier default)', () => {
-  assert.equal(resolveModel({}, 'merge-resolver'), '');
+  // `reviewer` is unmapped in ROLE_MODEL_DEFAULTS (merge-resolver served here until the
+  // launch-fixer family pinned opus:xhigh — git-sync-content-guard D-008 follow-up).
+  assert.equal(resolveModel({}, 'reviewer'), '');
 });
 
 test('resolveModel — returns named model', () => {
@@ -443,10 +445,10 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
   const prev = process.env.AGENT_MODELS;
   try {
     delete process.env.AGENT_MODELS; // no env, no config
-    // release-manager has a committed default; an unmapped role does not.
+    // release-manager has a committed default; an unmapped role (reviewer) does not.
     assert.equal(resolveModel({}, 'release-manager'), ROLE_MODEL_DEFAULTS['release-manager']);
     assert.equal(resolveModel({}, 'release-manager'), 'opus:xhigh');
-    assert.equal(resolveModel({}, 'merge-resolver'), '');
+    assert.equal(resolveModel({}, 'reviewer'), '');
     // P-012 model-tier policy: execution tier = sonnet, volume tier = haiku.
     assert.equal(resolveModel({}, 'worker'), 'sonnet');
     assert.equal(resolveModel({}, 'validator'), 'sonnet');
@@ -454,6 +456,11 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
     assert.equal(resolveModel({}, 'bee'), 'haiku');
     assert.equal(resolveModel({}, 'scanner'), 'haiku');
     assert.equal(resolveModel({}, 'judge'), 'haiku');
+    // The launch-fixer family's committed floors (D-008 follow-up): the two
+    // fleet-blast-radius fixers pin opus:xhigh, the bounded content repairer pins sonnet.
+    assert.equal(resolveModel({}, 'merge-resolver'), 'opus:xhigh');
+    assert.equal(resolveModel({}, 'release-fixer'), 'opus:xhigh');
+    assert.equal(resolveModel({}, 'content-fixer'), 'sonnet');
   } finally {
     if (prev === undefined) delete process.env.AGENT_MODELS;
     else process.env.AGENT_MODELS = prev;
@@ -499,8 +506,10 @@ test('resolveModel — AGENT_MODELS / config OVERRIDE the committed default', ()
 test('invoke — end-to-end logs invoke message, returns rc + paths', async () => {
   // Role deliberately has NO committed ROLE_MODEL_DEFAULTS tier (P-012) — a
   // tiered role would get `--model <tier>` appended, which `cat` can't take.
+  // (`merge-resolver` served here until the launch-fixer family pinned opus:xhigh
+  // — D-008 follow-up; `reviewer` is the remaining floorless judgment role.)
   const fx = makeFixture(({ harnessDir }) => {
-    writeFileSync(join(harnessDir, 'prompts', 'merge-resolver.md'), '# MERGE-RESOLVER');
+    writeFileSync(join(harnessDir, 'prompts', 'reviewer.md'), '# REVIEWER');
   });
   try {
     const log: string[] = [];
@@ -517,12 +526,12 @@ test('invoke — end-to-end logs invoke message, returns rc + paths', async () =
         log: (m) => log.push(m),
         nowSeconds: () => 1700000000,
       },
-      'merge-resolver',
+      'reviewer',
       ['MODE=fresh'],
     );
     assert.equal(result.exitCode, 0);
-    assert.match(result.jsonlPath, /1700000000-merge-resolver\.jsonl$/);
-    assert.ok(log.some((l) => l.includes('invoke merge-resolver rc=0')));
+    assert.match(result.jsonlPath, /1700000000-reviewer\.jsonl$/);
+    assert.ok(log.some((l) => l.includes('invoke reviewer rc=0')));
     // cat echoes our prompt back; the .out (plain-text branch) is the
     // captured prompt itself.
     const outBody = readFileSync(result.outPath, 'utf8');
