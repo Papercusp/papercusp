@@ -1,4 +1,4 @@
--- Migration 280 — slot-parked coord messages (park-for-slot addressing, B2).
+-- Migration 286 — slot-parked coord messages (park-for-slot addressing, B2).
 --
 -- Plan: directed-wake-honesty-and-spawn-handoff-2026-06-14 (Phase 2 / P-025; D-005).
 --
