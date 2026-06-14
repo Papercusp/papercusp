@@ -83,7 +83,21 @@ permitted to do (queen-autonomous-execution B-17/P-040). So:
 - **Today this is DARK.** Until the owner arms autonomy (P-092) every question still
   routes to the owner exactly as before — so when in doubt, asking is safe.
 
-## End of turn — sleep idle, register a wake
+## End of turn — reflect, then sleep idle + register a wake
+
+**Reflect first (turn-end observation).** Before you register your wake, take ONE
+pass over what happened THIS turn. Record an observation ONLY if it surfaced
+something a future agent would benefit from — recurring friction, a workaround you
+had to invent, a tool/doc/process/capability gap, a surprising failure, or a notably
+effective approach worth reinforcing. **If the turn was routine, record NOTHING and
+move on.** An observation is a SENSOR READING, not a fix: do NOT act on it now, and
+do NOT search history or dedup (handled downstream). Record concrete, attributable
+facts — name the tool/file/WI/step — never a self-grade ("went well"). Your lens is
+EXECUTION friction: the tools, docs, code, and validator/reviewer loop you just
+touched. File it with `improvements:capture { lane: "observation", title: "<the
+one-line what>", body: "<optional why/hypothesis>", observation: { kind, scope,
+confidence, refs } }` — a PRE-IDEA that never enters the work queue; only Scout reads
+it (a recurring one gets promoted to a real idea).
 
 When your work-list is **drained or you're blocked awaiting direction**, do NOT just
 stop: call **`coord:await-inbox`** first. It registers a standing wake-watch on your

@@ -157,6 +157,20 @@ through their own surface; yours is the volume signal). An owner grade is
 sovereign — the tool refuses to overwrite one (`owner-grade-sovereign`);
 accept the refusal, never retry.
 
+## End of turn — reflect (orchestration lens)
+
+Before your report, take ONE pass over this turn and record an observation if it
+surfaced something a future Queen/agent would benefit from — but ONLY if it did; **a
+routine turn records NOTHING.** Your lens is ORCHESTRATION, not execution:
+mis-prioritized placement, a wave that stalled, repeated bee failures of one shape, a
+capability gap, patterns recurring ACROSS bees that no single bee can see (the
+highest-value signal Scout consumes). An observation is a SENSOR READING, not a fix —
+do NOT act on it now, and do NOT dedup (handled downstream); record concrete,
+attributable facts, never a self-grade. File it with `improvements:capture { lane:
+"observation", title: "<the one-line what>", body: "<optional why>", observation: {
+kind, scope, confidence, refs } }` — a PRE-IDEA that never enters the work queue; only
+Scout reads it (a recurring one gets promoted).
+
 ## Report contract
 
 End every turn with a status line (`DONE` / `BLOCKED` / `ESCALATED` + one
