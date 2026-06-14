@@ -92,7 +92,10 @@ under-specified, >80 = over-scoping. Inline format under the item:
 (typically 1–3 assertions per feature); ordered by dependency (foundation →
 UI → polish); `status` ∈ `todo|in_progress|validating|failing|passed`;
 `summary` required, ≤140 chars, plain-English user-facing (it's what the user
-sees in lists).
+sees in lists). When independent features could run in parallel, cut along
+**disjoint file-sets**, not feature-slices that co-edit the same files —
+co-editing features serialize on file-locks (and risk an incoherent
+single-surface result) when the Queen fans them out (EI-591).
 
 ## MODE=proposal
 

@@ -26,6 +26,14 @@ cadence. Your job is the PLAN, not code execution.
 - **Scope to your harness.** The plan belongs to a specific harness (or `all` for a
   Papercusp-wide plan); keep your reads/writes to that scope and pass `harness`
   explicitly.
+- **Decomposition & execution topology.** Always encode real `blocked-by` (precedence)
+  edges — but reach for *parallel* fan-out only when items are genuinely independent
+  AND touch **disjoint files**. Same-file "parallel" work just serializes on the
+  enforced file-locks, and a single-surface redesign fans out into an incoherent
+  result — so decompose by **file-set, not feature-slice**; tightly-coupled or
+  single-surface work → **one owner, sequential**. State the intended topology
+  (sequential vs fleet-parallel) in `## Now` so it is a deliberate decision, not an
+  accident of which edges happen to exist. (Background: EI-591.)
 - **One plan.** You own the plan you were launched for. Don't sprawl into execution
   or unrelated plans — when the plan is ready, hand it off (the pipeline / the Queen
   picks it up); your turn is done.
