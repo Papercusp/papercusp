@@ -4336,27 +4336,9 @@ export const regretFindingsInHarnessShared = harnessShared.table("regret_finding
 	check("regret_findings_divergence_kind_check", sql`(divergence_kind IS NULL) OR (divergence_kind = ANY (ARRAY['error-loop'::text, 'repeat-loop'::text, 'burn-inflection'::text, 'rescue-marker'::text]))`),
 ]);
 
-export const harnessPhasesInHarnessShared = harnessShared.table("harness_phases", {
-	harnessSlug: text("harness_slug").notNull(),
-	phase: text().notNull(),
-	phasePath: text("phase_path").default('').notNull(),
-	branch: text(),
-	port: integer(),
-	publicUrl: text("public_url"),
-	existsOnDisk: boolean("exists_on_disk").default(false).notNull(),
-	alive: boolean().default(false).notNull(),
-	passedCount: integer("passed_count").default(0).notNull(),
-	totalCount: integer("total_count").default(0).notNull(),
-	costUsd: doublePrecision("cost_usd").default(0).notNull(),
-	iteration: integer().default(0).notNull(),
-	promotionInFlight: boolean("promotion_in_flight").default(false).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
-	workspaceId: text("workspace_id").default('').notNull(),
-}, (table) => [
-	primaryKey({ columns: [table.harnessSlug, table.phase], name: "harness_phases_pkey"}),
-	pgPolicy("harness_phases_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
+// harness_phases — REMOVED (fs-watcher-retirement step 5, migration 285): a
+// local fs-watcher mirror (config.json + worktree) with hardcoded alive=false;
+// HealthBadge repointed to harness_lanes, the /phases REST route recomputes.
 
 export const planItemAssignmentsInHarnessShared = harnessShared.table("plan_item_assignments", {
 	workspaceId: text("workspace_id").notNull(),
