@@ -30,6 +30,8 @@ import {
   resolveSpawnHome,
   claudeSandboxArgs,
   codexSandboxArgs,
+  fleetOmpToolsArgs,
+  FLEET_OMP_CAPABILITY_ALLOWED_TOOLS,
   fleetSandboxEnabled,
   fleetSandboxSettingsForRole,
   resolveFleetAllowedDomains,
@@ -1490,6 +1492,42 @@ test('codexSandboxArgs — user set their own -s/--sandbox/bypass → defer to t
   assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex -s read-only', true), []);
   assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex --sandbox workspace-write', false), []);
   assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex --dangerously-bypass-approvals-and-sandbox', true), []);
+});
+
+// ── omp leg of the B-18 cutover (P-034) — the omp analog of claudeMcpArgs' native-tool cut ──
+test('fleetOmpToolsArgs — cutover ON for a capability role → --tools restricts omp to read-only natives', () => {
+  const out = fleetOmpToolsArgs('omp', 'omp -p', 'worker', true);
+  assert.deepEqual(out, ['--tools', FLEET_OMP_CAPABILITY_ALLOWED_TOOLS.join(',')]);
+  // The dangerous natives are GONE from the allowlist; the gated capability:* MCP tools replace them.
+  for (const dropped of ['bash', 'python', 'ssh', 'edit', 'write', 'ast_edit', 'fetch', 'browser', 'task', 'ask', 'lsp']) {
+    assert.ok(!FLEET_OMP_CAPABILITY_ALLOWED_TOOLS.includes(dropped), `${dropped} must be dropped under the cutover`);
+  }
+  // Read-only natives are kept (the omp analog of claude's kept Read/Glob/Grep/WebSearch).
+  for (const kept of ['read', 'grep', 'find', 'web_search']) {
+    assert.ok(FLEET_OMP_CAPABILITY_ALLOWED_TOOLS.includes(kept), `${kept} must be kept`);
+  }
+});
+
+test('fleetOmpToolsArgs — cutover OFF (default) → [] (omp keeps all native tools)', () => {
+  assert.deepEqual(fleetOmpToolsArgs('omp', 'omp -p', 'worker', false), []);
+});
+
+test('fleetOmpToolsArgs — non-omp backend → [] (claude/codex unaffected)', () => {
+  assert.deepEqual(fleetOmpToolsArgs('claude-code', 'claude -p', 'worker', true), []);
+  assert.deepEqual(fleetOmpToolsArgs('codex', 'codex', 'worker', true), []);
+});
+
+test('fleetOmpToolsArgs — cutover ON but role has no capability:* → [] (never strand an auxiliary role)', () => {
+  const aux = [...FLEET_ALLOWED_TOOLS] && 'merge-resolver'; // a role NOT in FLEET_CAPABILITY_ROLES
+  assert.ok(!FLEET_CAPABILITY_ROLES.has(aux));
+  assert.deepEqual(fleetOmpToolsArgs('omp', 'omp -p', aux, true), []);
+  assert.deepEqual(fleetOmpToolsArgs('omp', 'omp -p', undefined, true), []);
+});
+
+test('fleetOmpToolsArgs — user set --tools / --no-tools in AGENT_CMD → defer to them', () => {
+  assert.deepEqual(fleetOmpToolsArgs('omp', 'omp -p --tools read,grep', 'worker', true), []);
+  assert.deepEqual(fleetOmpToolsArgs('omp', 'omp -p --tools=read,grep', 'worker', true), []);
+  assert.deepEqual(fleetOmpToolsArgs('omp', 'omp -p --no-tools', 'worker', true), []);
 });
 
 // omp via srt was removed after P-012 (D-010): srt wraps omp's whole process,

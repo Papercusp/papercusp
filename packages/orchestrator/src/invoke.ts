@@ -591,6 +591,60 @@ export function fleetDisallowedToolsForRole(role: string | undefined, capability
   return [...FLEET_DISALLOWED_TOOLS];
 }
 
+/* ─── B-18 cutover, omp leg (agent-capability-confinement P-034) ──────────────
+ * The omp analog of the claude `--allowed-tools` cut above. claude removes native
+ * Bash/Edit/Write/WebFetch via --allowed-tools/--disallowed-tools; omp's native
+ * built-ins are removed via its `--tools <allowlist>` flag (an ALLOWLIST of which
+ * built-ins to ENABLE; MCP tools — the capability:* surface — connect via .mcp.json
+ * discovery and are unaffected). So under the cutover we enable ONLY omp's read-only
+ * built-ins, dropping native execution / file mutation / network egress / sub-spawn
+ * so those route through the gated capability:* MCP tools (or, where there's no
+ * replacement, are removed and left to srt containment).
+ *
+ * codex has NO equivalent: its core `local_shell`/`apply_patch` are intrinsic with
+ * no per-tool removal knob, and the PreToolUse hook that could block them is broken
+ * upstream (openai/codex #20204 / #16732). codex confinement is therefore the srt
+ * wrap (containment) + the client-uniform server-side capability envelope
+ * (governance), NOT client-side tool removal. See plan D-013. */
+
+/**
+ * omp native built-ins KEPT under the cutover — the read-only / non-mutating set,
+ * the omp analog of claude's kept Read/Glob/Grep/WebSearch. Everything NOT listed is
+ * dropped:
+ *   - bash · python · ssh        → native EXECUTION        → capability:bash
+ *   - edit · write · ast_edit · notebook · generate_image → file MUTATION → capability:edit/write
+ *   - fetch                      → network egress          → capability:fetch
+ *   - browser                    → puppeteer ACTIONS       → (no replacement; srt-contained)
+ *   - task                       → uncontrolled sub-spawn  → the Queen owns fan-out
+ *   - ask                        → a NATIVE blocking question bypasses the server-side
+ *                                  agent-question gate (B-10) → force chat:ask_choice (gated MCP)
+ *   - lsp                        → rename/code_actions/request can MUTATE outside the
+ *                                  capability gate (read ops recoverable via grep/ast_grep + MCP)
+ * Owner-tunable: re-add a built-in here if a confined bee genuinely needs it.
+ */
+export const FLEET_OMP_CAPABILITY_ALLOWED_TOOLS: readonly string[] = [
+  'read', 'find', 'grep', 'ast_grep', 'calc', 'todo_write', 'poll', 'web_search',
+];
+
+/**
+ * `--tools <allowlist>` for an omp fleet spawn under the B-18 capability-only cutover
+ * (P-034). Returns [] for any non-omp backend, when the cutover is disarmed or the
+ * role has no capability:* replacements (`fleetCutoverApplies`), or when AGENT_CMD
+ * already sets `--tools`/`--no-tools` (defer to the operator, mirroring
+ * `codexSandboxArgs`). Pushed into `extraFlags` before the `@promptfile` positional.
+ */
+export function fleetOmpToolsArgs(
+  agentBackend: AgentBackend,
+  roleAgentCmd: string,
+  role: string | undefined,
+  capabilityOnly: boolean,
+): string[] {
+  if (agentBackend !== 'omp') return [];
+  if (!fleetCutoverApplies(role, capabilityOnly)) return [];
+  if (/(?:^|\s)--tools(?:\s|=)/.test(roleAgentCmd) || roleAgentCmd.includes('--no-tools')) return [];
+  return ['--tools', FLEET_OMP_CAPABILITY_ALLOWED_TOOLS.join(',')];
+}
+
 /* ─── Fleet OS sandbox (plan fleet-spawn-sandbox-2026-06-01) ─────────────────
  * DEFAULT-ON (P-013/D-015); opt out with PAPERCUSP_FLEET_SANDBOX=0. Closes the
  * gaps the tool whitelist CANNOT: credential reads + network egress. Uses
@@ -1730,6 +1784,13 @@ export async function invoke(
   // (before the `-` stdin positional) because codex wants options before the prompt.
   extraFlags.push(...codexSandboxArgs(agentBackend, streamFormat, roleAgentCmd, fleetSandboxEnabled()));
 
+  // omp leg of the B-18 capability-only cutover (P-034): under the cutover, restrict
+  // omp to its read-only native built-ins via `--tools`, so native execution /
+  // mutation / egress route through the gated capability:* MCP tools instead — the
+  // omp analog of claude's --allowed-tools cut. No-op for non-omp / disarmed / a role
+  // without capability:* / when AGENT_CMD sets --tools. Before the `@promptfile`.
+  extraFlags.push(...fleetOmpToolsArgs(agentBackend, roleAgentCmd, role, fleetCapabilityOnlyEnabled()));
+
   // Native-scheduler lockout (native-scheduler-lockout-2026-06-09 D-001/D-005):
   // every headless claude agent spawn loses claude-code's own scheduling
   // surfaces, so wakes can only live in the harness routines table. Applied at
@@ -1985,6 +2046,14 @@ export async function invoke(
   // in extraEnv.QUEEN_BRIEF. P-060/061. Best-effort; empty when not set.
   const brief = (process.env.QUEEN_BRIEF ?? '').trim();
 
+  // 8.12 Queen wake-brief — the Queen's OWN precomputed survey snapshot (ranked
+  // frontier/plans floor + her carry-note), assembled by the hive launch blueprint
+  // (queen-brief-cache-assembly B-03/B-04) and threaded via QUEEN_WAKE_BRIEF.
+  // buildPrompt renders it as a <system-reminder> in the volatile tail (D-006), so
+  // it never touches the cacheable preamble. Empty ⇒ she falls back to the survey
+  // tools (graceful degradation). Distinct from `brief` (the Queen→bee overlay).
+  const queenBrief = (process.env.QUEEN_WAKE_BRIEF ?? '').trim();
+
   // 9. Build the prompt.
   const prompt = buildPrompt({
     role,
@@ -2007,6 +2076,7 @@ export async function invoke(
     substrateContext,
     planContext,
     brief,
+    queenBrief,
     featureHistory,
     toolsPlaybook,
     sharedGuides,
