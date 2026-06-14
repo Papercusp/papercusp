@@ -98,6 +98,20 @@ the world**, never to recall it from a conversation that no longer exists.
   decision ledger — the same "derivable state belongs in the artifact, not the
   transcript" discipline the whole fleet follows. The transcript is gone next
   wake; the artifacts are not.
+- **Your wake brief is PRECOMPUTED for you — read it, don't re-gather it.** Each
+  wake opens with a `<system-reminder>` **wake brief** the watchdog assembled: the
+  deterministic FLOOR (the ranked `hive:survey` snapshot — frontier + plans — and
+  what woke you) PLUS your own carry-note from last wake. It is the survey you
+  would otherwise run, already done. Act on it; reach for a tool only to DRILL
+  into detail it omits. If it is absent (best-effort failed), survey yourself.
+- **Leave your next self a carry-note: `hive:declare-wake { remember: '<note>' }`.**
+  This is your trigger-independent self-greeting — it rides EVERY next wake's
+  brief no matter what fires it (unlike the `kickoff`, which greets you only if
+  your declared *time* wake is what wakes you). Put your in-flight intention / a
+  tentative conclusion / a revisit-trigger here — NOT a restatement of the floor
+  (it is recomputed every wake) and NOT a transcript dump. Replace-semantics: set
+  it fresh each wake, omit to carry nothing; any length, but longer notes cost
+  uncached tail tokens every wake, so carry only what future-you genuinely needs.
 
 ## Placement taxonomy (the 3 options) — this IS the co-location lever
 
@@ -143,6 +157,15 @@ deploying**: place a tight cluster of collaborators together on a fresh Swarm
 (`deploy:harness`/`deploy:hive`) rather than scattering them across machines.
 
 ## Survey on summaries (cheap, structured — never read transcripts)
+
+> **Your wake brief already contains the `hive:survey` snapshot.** Each wake opens
+> with a precomputed `<system-reminder>` wake brief carrying the ranked survey
+> (frontier + plans, with each row's `why`) + your carry-note. When it is present,
+> treat the brief AS your `hive:survey` for this wake — do NOT re-run `hive:survey`
+> just to get the ranking; act on it and use the tools below only to DRILL into
+> detail it omits (a specific bee's list, a plan body, a coord thread). (Bee load,
+> inbox, and the change feed are still your own reads for now — the watchdog folds
+> them into the brief as the floor grows.)
 
 - **Plan-aware survey (START HERE):** `hive:survey` — ONE call returns BOTH
   ranked views of what to work on next (B-08): `plans` (every STARTED plan across
@@ -476,6 +499,12 @@ End every turn with `hive:declare-wake`:
 - **Event:** `hive:declare-wake { events: [{ on: 'coord:escalate' }] }` — wake on a
   new need-human so you re-tier it before the user sees it.
 - **Combine both:** time + event as a fallback.
+- **Carry a note to your next self:** `hive:declare-wake { inSeconds: 600, remember:
+  '<your in-flight intention / tentative conclusion / revisit-trigger>' }`. The
+  carry-note rides your NEXT wake's brief regardless of what triggers it (see
+  fresh-per-wake above). Replace-semantics, no cap, omit to carry nothing; keep it
+  short — it costs uncached tail tokens every wake. Do NOT restate the floor or
+  dump the transcript; capture only what re-deriving from the world won't give you.
 
 `hive:declare-wake` is the ONLY scheduler you may use. Never schedule a wake any
 other way — not the client's native cron/schedule/loop tools (CronCreate,

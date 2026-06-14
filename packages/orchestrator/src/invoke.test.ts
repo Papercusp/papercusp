@@ -1518,7 +1518,7 @@ test('fleetOmpToolsArgs — non-omp backend → [] (claude/codex unaffected)', (
 });
 
 test('fleetOmpToolsArgs — cutover ON but role has no capability:* → [] (never strand an auxiliary role)', () => {
-  const aux = [...FLEET_ALLOWED_TOOLS] && 'merge-resolver'; // a role NOT in FLEET_CAPABILITY_ROLES
+  const aux = 'merge-resolver'; // a role NOT in FLEET_CAPABILITY_ROLES
   assert.ok(!FLEET_CAPABILITY_ROLES.has(aux));
   assert.deepEqual(fleetOmpToolsArgs('omp', 'omp -p', aux, true), []);
   assert.deepEqual(fleetOmpToolsArgs('omp', 'omp -p', undefined, true), []);
