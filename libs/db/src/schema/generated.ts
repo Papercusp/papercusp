@@ -3164,20 +3164,9 @@ export const pluginConfigsInHarnessShared = harnessShared.table("plugin_configs"
 	check("plugin_configs_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
-export const harnessSummariesInHarnessShared = harnessShared.table("harness_summaries", {
-	harnessSlug: text("harness_slug").notNull(),
-	content: text().default('').notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	workspaceId: text("workspace_id").default('').notNull(),
-	phase: text().default('staging').notNull(),
-}, (table) => [
-	index("harness_summaries_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.harnessSlug, table.phase], name: "harness_summaries_pkey"}),
-	pgPolicy("harness_summaries_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
+// harness_summaries — REMOVED (fs-watcher-retirement step 2, migration 280): a
+// dead legacy mirror of the top-level .papercusp/summary.md (no producer, no
+// consumer; live summary UI reads harness_text_artifacts, migration 035).
 
 export const harnessArchivesInHarnessShared = harnessShared.table("harness_archives", {
 	harnessSlug: text("harness_slug").notNull(),
