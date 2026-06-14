@@ -23,8 +23,11 @@
 --
 -- The bridge entry  harness_shared.coord_event_log -> ['dev.coordFeed']  lives
 -- in packages/operator-core/lib/sync-resolver/table-to-query-names.ts.
-
-BEGIN;
+--
+-- The migration runner wraps each file in its own transaction, so this file
+-- carries NO top-level BEGIN;/COMMIT; — an inner COMMIT would end the runner's
+-- wrapper txn early and break apply+ledger atomicity (migration-runner.js
+-- contract; lint:migrations).
 
 DROP TRIGGER IF EXISTS emit_change_notify_trg ON harness_shared.coord_event_log;
 CREATE TRIGGER emit_change_notify_trg
@@ -32,5 +35,3 @@ CREATE TRIGGER emit_change_notify_trg
   FOR EACH ROW
   WHEN ((NEW.body->>'notify_kind') IS NULL)
   EXECUTE FUNCTION harness_shared.emit_change_notify();
-
-COMMIT;

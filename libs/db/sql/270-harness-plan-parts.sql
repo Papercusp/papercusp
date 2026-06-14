@@ -20,9 +20,11 @@
 -- op for a removed key is still LWW-ordered (the LWW guard lives in the store's
 -- ON CONFLICT … WHERE — plan-parts/store.ts PgPlanPartsStore). Idempotent; RLS
 -- workspace isolation mirrors hive_settings (mig 186).
-
-\set ON_ERROR_STOP on
-BEGIN;
+--
+-- The migration runner wraps each file in its own transaction (and strips psql
+-- metacommands), so this file carries NO top-level BEGIN;/COMMIT;/\set — an inner
+-- COMMIT would end the runner's wrapper txn early and break apply+ledger atomicity
+-- (migration-runner.js contract; lint:migrations).
 
 CREATE TABLE IF NOT EXISTS harness_shared.harness_plan_parts (
     workspace_id  text NOT NULL,
@@ -70,5 +72,3 @@ CREATE POLICY harness_plan_parts_workspace_isolation ON harness_shared.harness_p
 -- NO capture trigger here (deliberately): federation capture + the 'plan-parts'
 -- projection are the flag-gated cutover, so nothing writes/reads this table on the
 -- live path until papercusp-plan-part-federation is flipped on.
-
-COMMIT;

@@ -14,9 +14,11 @@
 -- never fires in practice until the cutover. The op-key map + register-all +
 -- table-registry already classify harness_plan_parts as peer-log; this is its
 -- producer (the P-011 capture-coverage guard's CDC producer). Idempotent.
-
-\set ON_ERROR_STOP on
-BEGIN;
+--
+-- The migration runner wraps each file in its own transaction (and strips psql
+-- metacommands), so this file carries NO top-level BEGIN;/COMMIT;/\set — an inner
+-- COMMIT would end the runner's wrapper txn early and break apply+ledger atomicity
+-- (migration-runner.js contract; lint:migrations).
 
 CREATE OR REPLACE TRIGGER capture_harness_plan_parts_outbox_trg
   AFTER INSERT ON harness_shared.harness_plan_parts
@@ -32,5 +34,3 @@ CREATE OR REPLACE TRIGGER capture_harness_plan_parts_outbox_upd_trg
     OR OLD.fed_ts IS DISTINCT FROM NEW.fed_ts
   )
   EXECUTE FUNCTION harness_shared.capture_substrate_outbox('part_fed_key');
-
-COMMIT;
