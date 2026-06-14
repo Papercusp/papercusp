@@ -2792,6 +2792,11 @@ export async function invoke(
             harnessSlug: getSlug(ctx.projectDir),
             runId,
             role,
+            // Native session id (claude `--session-id`) so a bee's successive
+            // warm-inject/resume samples group by the session they share — the
+            // carry-cost read (bee-context-efficiency P-001). Undefined → NULL
+            // for omp/codex (no forced native id), matching --session-id.
+            sessionId: process.env.PAPERCUSP_NATIVE_SESSION_ID,
           },
         );
       }

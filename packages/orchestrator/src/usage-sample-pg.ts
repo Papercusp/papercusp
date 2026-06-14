@@ -56,6 +56,11 @@ export interface UsageSampleRun {
   harnessSlug?: string;
   runId?: string;
   role?: string;
+  /** Native session id (claude `--session-id`/`--resume`). Lets a bee's
+   *  successive warm-inject/resume samples be grouped by the session they
+   *  share, so the carry-cost (cache_read growth across tasks) is queryable
+   *  (bee-context-efficiency P-001). NULL for omp/codex (no forced native id). */
+  sessionId?: string;
 }
 
 /** INSERT one usage sample. Caller passes the parsed `RunUsage`; no-ops on an empty one. */
@@ -85,11 +90,11 @@ export async function recordUsageSamplePg(
     INSERT INTO harness_shared.agent_usage_samples
       (workspace_id, ts, bucket_key, provider, model_class, source,
        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd,
-       model, cost_source, harness_slug, run_id, role, turn_count)
+       model, cost_source, harness_slug, run_id, role, turn_count, session_id)
     VALUES (
       ${ctx.workspaceId}, ${Date.now()}, ${`${provider}:${modelClass}`}, ${provider}, ${modelClass}, ${'jsonl'},
       ${n(usage.inputTokens)}, ${n(usage.outputTokens)}, ${n(usage.cacheReadTokens)}, ${n(usage.cacheCreationTokens)}, ${costUsd},
-      ${model || null}, ${costSource}, ${run.harnessSlug ?? null}, ${run.runId ?? null}, ${run.role ?? null}, ${n(usage.turns)}
+      ${model || null}, ${costSource}, ${run.harnessSlug ?? null}, ${run.runId ?? null}, ${run.role ?? null}, ${n(usage.turns)}, ${run.sessionId ?? null}
     )
   `;
 }
