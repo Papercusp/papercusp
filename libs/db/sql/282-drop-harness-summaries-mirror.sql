@@ -1,4 +1,4 @@
--- Migration 280 — drop the harness_summaries mirror table.
+-- Migration 282 — drop the harness_summaries mirror table.
 -- Part of fs-watcher-retirement-2026-05-10 step 2.
 --
 -- harness_shared.harness_summaries mirrored the top-level

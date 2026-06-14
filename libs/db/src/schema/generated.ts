@@ -2947,7 +2947,7 @@ export const harnessFeatureNotesInHarnessShared = harnessShared.table("harness_f
 	pgPolicy("harness_feature_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-// harness_branch_actions — REMOVED (fs-watcher-retirement step 4, migration 281):
+// harness_branch_actions — REMOVED (fs-watcher-retirement step 4, migration 283):
 // an unconsumed fs-watcher mirror; the /branch/:branch/actions REST route
 // recomputes on demand and nothing read the table.
 
@@ -3156,7 +3156,7 @@ export const pluginConfigsInHarnessShared = harnessShared.table("plugin_configs"
 	check("plugin_configs_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
-// harness_summaries — REMOVED (fs-watcher-retirement step 2, migration 280): a
+// harness_summaries — REMOVED (fs-watcher-retirement step 2, migration 282): a
 // dead legacy mirror of the top-level .papercusp/summary.md (no producer, no
 // consumer; live summary UI reads harness_text_artifacts, migration 035).
 

@@ -82,6 +82,11 @@
       "import": "./src/run-chunks-pg.ts",
       "default": "./src/run-chunks-pg.ts"
     },
+    "./prompt-build": {
+      "types": "./src/prompt-build.ts",
+      "import": "./src/prompt-build.ts",
+      "default": "./src/prompt-build.ts"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {

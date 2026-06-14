@@ -1,4 +1,4 @@
--- Migration 281 — drop the harness_branch_actions mirror table.
+-- Migration 283 — drop the harness_branch_actions mirror table.
 -- Part of fs-watcher-retirement-2026-05-10 step 4.
 --
 -- harness_shared.harness_branch_actions was an fs-watcher mirror (Mirror 7k):

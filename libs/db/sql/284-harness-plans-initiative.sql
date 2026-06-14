@@ -1,4 +1,4 @@
--- 281-harness-plans-initiative.sql
+-- 284-harness-plans-initiative.sql
 --
 -- shared-hive-collaboration-2026-06-14 P-015 (initiative grouping field, D-002):
 -- a single free-text `initiative` label on a plan that groups related plans,
