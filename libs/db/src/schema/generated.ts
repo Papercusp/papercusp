@@ -3669,17 +3669,17 @@ export const harnessBrainstormInHarnessShared = harnessShared.table("harness_bra
 export const autonomyPolicyInHarnessShared = harnessShared.table("autonomy_policy", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	category: text().notNull(),
-	ceiling: text().default('none').notNull(),
+	ceiling: text().default('never-auto').notNull(),
 	locked: boolean().default(false).notNull(),
-	graduatedLevel: text("graduated_level").default('none').notNull(),
+	graduatedLevel: text("graduated_level").default('never-auto').notNull(),
 	thresholdOverrides: jsonb("threshold_overrides").default({}).notNull(),
 	ownerOverride: jsonb("owner_override"),
 	updatedBy: text("updated_by").default('system').notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.category], name: "autonomy_policy_pkey"}),
-	check("autonomy_policy_ceiling_check", sql`ceiling = ANY (ARRAY['none'::text, 'trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
-	check("autonomy_policy_graduated_level_check", sql`graduated_level = ANY (ARRAY['none'::text, 'trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
+	check("autonomy_policy_ceiling_check", sql`ceiling = ANY (ARRAY['never-auto'::text, 'trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
+	check("autonomy_policy_graduated_level_check", sql`graduated_level = ANY (ARRAY['never-auto'::text, 'trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
 ]);
 
 export const executedActionsConsolidatedInHarnessShared = harnessShared.table("executed_actions_consolidated", {
