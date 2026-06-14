@@ -68,6 +68,15 @@ import { randomBytes } from 'node:crypto';
 //     variant with extra attributes, internal whitespace, or mixed case.
 const DELIMITER_RE = /<\/?\s*untrusted-peer-content\b[^>]*>/gi;
 
+// The Queen wake-brief is wrapped in <system-reminder>…</system-reminder> (the
+// fresh-spawn delivery of D-006's mid-conversation system message). The brief
+// embeds agent/user-authored strings — the Queen's carry-note, work-item titles
+// in the ranked frontier, change-feed + escalation summaries — any of which could
+// contain a literal `</system-reminder>` that would break out of the block and
+// have following text read as un-framed operator content. Strip the framing tag
+// from the content before wrapping (mirrors DELIMITER_RE's role for peer content).
+const SYSTEM_REMINDER_RE = /<\/?\s*system-reminder\b[^>]*>/gi;
+
 /** Return a random 8-character hex string for use as a per-wrap nonce. */
 function randomNonce(): string {
   return randomBytes(4).toString('hex');
@@ -558,7 +567,10 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   if (input.queenBrief && input.queenBrief.trim()) {
     vol.push('\n---');
     vol.push('<system-reminder>');
-    vol.push(input.queenBrief.trim());
+    // Neutralize any literal system-reminder delimiters in the brief content
+    // (embedded carry-note / work-item titles / change-feed text) so they can't
+    // close the block early or inject framing — the primary breakout defense.
+    vol.push(input.queenBrief.trim().replace(SYSTEM_REMINDER_RE, '[stripped-delimiter]'));
     vol.push('</system-reminder>');
   }
 

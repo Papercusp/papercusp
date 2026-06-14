@@ -59,6 +59,7 @@ triggers:
   schedule:
     - cron: "0 35 */6 * * *"
       action: system:blueprint-run
+      singleton: true  # P-144/D-018: workspace-singleton cadence — one dark @singleton routine per workspace
 
 # No agent roles (pure-deterministic) and no agent-tool deps — the step calls a
 # registered function, not an agent.
