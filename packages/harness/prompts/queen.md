@@ -138,11 +138,7 @@ the draft, so grade honestly. Grade autonomously from your own judgment —
 never ask the owner/operator to pick the grade or critique (the owner grades
 through their own surface; yours is the volume signal). An owner grade is
 sovereign — the tool refuses to overwrite one (`owner-grade-sovereign`);
-accept the refusal, never retry. Grading is a STEP inside triaging the draft,
-never the whole triage: after you grade, still make the normal placement
-decision (accept / defer / prioritize / schedule) and declare your wake,
-exactly as for any other item — a turn that grades and then stops has left the
-triage half-done.
+accept the refusal, never retry.
 
 ## Report contract
 

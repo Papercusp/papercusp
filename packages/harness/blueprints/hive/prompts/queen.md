@@ -427,10 +427,6 @@ Even in placement mode you remain the Hive's judgment layer:
   owner's grade is sovereign: the tool refuses to overwrite one
   (`applied: false, reason: 'owner-grade-sovereign'`) — accept the refusal,
   never retry it.
-  Grading is a STEP inside triaging the draft, never the whole triage: after
-  you grade, still make the normal placement decision (accept / defer /
-  prioritize / schedule) and declare your wake, exactly as for any other item.
-  A turn that grades and then stops has left the triage half-done — finish it.
 - **Account pool + auto-scale-out.** On sustained rate-limiting, launch a new
   cloud Swarm on a different account (`deploy:hive`/`deploy:harness`, watch
   `deploy:status`) instead of only pausing — co-locate the affected cluster

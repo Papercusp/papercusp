@@ -172,8 +172,21 @@ test('extractRunUsage — Claude Code result event (snake_case usage + total_cos
     cacheCreationTokens: undefined,
     costUsd: 0.042,
     durationMs: undefined,
+    turns: undefined,
     backend: 'claude-code',
   });
+});
+
+test('extractRunUsage — Claude result num_turns → turns (queen-brief-cache P-010 Win-2)', () => {
+  const jsonl = JSON.stringify({
+    type: 'result',
+    num_turns: 7,
+    total_cost_usd: 0.05,
+    usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 8000 },
+  });
+  const u = extractRunUsage(jsonl);
+  assert.equal(u?.turns, 7);
+  assert.equal(u?.cacheReadTokens, 8000);
 });
 
 test('extractRunUsage — OpenAI-style aliases (prompt/completion/cached tokens)', () => {

@@ -70,6 +70,12 @@ export interface RunUsage {
   model?: string;
   /** Backend when derivable ('claude-code' | 'codex' | 'omp' | …) — run_meta line > shape inference. */
   backend?: string;
+  /**
+   * Assistant turns in the run — the round-trip metric (queen-brief-cache B-06 /
+   * P-010, Win-2: a precomputed brief should cut the Queen's turns/wake). From
+   * claude `result.num_turns`; undefined for codex/omp (not yet counted).
+   */
+  turns?: number;
 }
 
 /** Extract usage from a run's JSONL body across all three backend stream formats. Null when nothing usable. */
@@ -155,6 +161,7 @@ export function extractRunUsage(jsonlBody: string): RunUsage | null {
         cacheCreationTokens: num(u.cache_creation_input_tokens),
         costUsd: num(obj.total_cost_usd),
         durationMs: num(obj.duration_ms),
+        turns: num(obj.num_turns),
       };
       if (
         usage.inputTokens !== undefined ||
