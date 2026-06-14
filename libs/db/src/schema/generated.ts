@@ -2947,17 +2947,9 @@ export const harnessFeatureNotesInHarnessShared = harnessShared.table("harness_f
 	pgPolicy("harness_feature_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const harnessBranchActionsInHarnessShared = harnessShared.table("harness_branch_actions", {
-	harnessSlug: text("harness_slug").notNull(),
-	branch: text().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	lastCheckMs: bigint("last_check_ms", { mode: "number" }).default(0).notNull(),
-	workspaceId: text("workspace_id").default('').notNull(),
-}, (table) => [
-	primaryKey({ columns: [table.harnessSlug, table.branch], name: "harness_branch_actions_pkey"}),
-	pgPolicy("harness_branch_actions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
+// harness_branch_actions — REMOVED (fs-watcher-retirement step 4, migration 281):
+// an unconsumed fs-watcher mirror; the /branch/:branch/actions REST route
+// recomputes on demand and nothing read the table.
 
 export const hiddenPluginsInHarnessShared = harnessShared.table("hidden_plugins", {
 	basename: text().notNull(),
