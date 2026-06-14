@@ -49,6 +49,8 @@ triggers:
   schedule:
     - cron: "0 20 6 1 * *"
       action: system:blueprint-run
+      singleton: true        # P-144/D-018: workspace-singleton cadence
+      singletonActive: true  # D-024: monthly benchmark — seeds ACTIVE (self-gates on owner budgetUsd in payload)
 
 dependencies:
   tools: []

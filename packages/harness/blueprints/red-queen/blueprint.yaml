@@ -41,6 +41,7 @@ triggers:
   schedule:
     - cron: "0 5 */6 * * *"
       action: system:blueprint-run
+      singleton: true  # P-144/D-018: workspace-singleton cadence (vaccination drill — dark until armed)
 
 dependencies:
   tools: []

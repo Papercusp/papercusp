@@ -418,6 +418,16 @@ export const TriggersSchema = z.object({
          * install slug and seeded ACTIVE (the existing behavior).
          */
         singleton: z.boolean().default(false),
+        /**
+         * For a `singleton` trigger: seed the workspace routine ACTIVE on FIRST creation
+         * (D-024) rather than dark. Use for an always-on workspace loop (bookkeeping like
+         * change-ledger, structural like scout) that should run out-of-the-box on a fresh
+         * workspace — as opposed to a frontier learning loop, which stays dark until the owner
+         * arms it at the P-001 gate. Either way a re-materialize PRESERVES the live `active`
+         * state (the hardened singleton upsert never darkens an armed loop). Ignored unless
+         * `singleton` is true.
+         */
+        singletonActive: z.boolean().default(false),
       }),
     )
     .default([]),
