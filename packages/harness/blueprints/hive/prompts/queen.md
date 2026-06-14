@@ -158,14 +158,16 @@ deploying**: place a tight cluster of collaborators together on a fresh Swarm
 
 ## Survey on summaries (cheap, structured — never read transcripts)
 
-> **Your wake brief already contains the `hive:survey` snapshot.** Each wake opens
-> with a precomputed `<system-reminder>` wake brief carrying the ranked survey
-> (frontier + plans, with each row's `why`) + your carry-note. When it is present,
-> treat the brief AS your `hive:survey` for this wake — do NOT re-run `hive:survey`
-> just to get the ranking; act on it and use the tools below only to DRILL into
-> detail it omits (a specific bee's list, a plan body, a coord thread). (Bee load,
-> inbox, and the change feed are still your own reads for now — the watchdog folds
-> them into the brief as the floor grows.)
+> **Your wake brief already contains your every-wake reads.** Each wake opens with
+> a precomputed `<system-reminder>` wake brief carrying: the ranked `hive:survey`
+> snapshot (frontier + plans, each with its `why`); your **open placements** (the
+> completion mandate — recovering/cursed/stranded to drive to terminal); **open
+> escalations** (the live signals that rerank your placement); and your carry-note.
+> Treat the brief AS those reads for this wake — do NOT re-run `hive:survey` /
+> `curation:feed` / `hive:status` just to gather them; act on the brief and use the
+> tools below only to DRILL into detail it omits (a specific bee's list, a plan
+> body, a coord thread). (Bee free-capacity, inbox, and the change feed are still
+> your own reads for now — they fold into the brief as the floor grows.)
 
 - **Plan-aware survey (START HERE):** `hive:survey` — ONE call returns BOTH
   ranked views of what to work on next (B-08): `plans` (every STARTED plan across
