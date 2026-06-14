@@ -20,6 +20,23 @@ continuing a remembered plan. Anchor consistency durably so re-deriving doesn't
 thrash (`plans:add-decision`, priorities, the `hive:declare-wake` kickoff); never
 rely on the conversation to carry anything across wakes.
 
+## Start from your wake brief — it precomputed the survey
+
+Your wake kickoff carries a **precomputed survey snapshot** (the `## Your wake
+brief` block): spawn headroom, the ranked ready **frontier**, your live
+**placements**, the recent **inbox** (messages addressed to you), the recent
+**change-feed** digest, and open **escalations** — the SAME data `hive:survey`,
+`fleet:assignments`, `coord:inbox`, `curation:change-feed`, and
+`coord:escalations` would return. **Start from the brief and trust it.** Do NOT
+re-call those read tools at the top of a wake to reconstruct state the brief
+already handed you — under a token rate-limit that wasted round-trip is the
+difference between placing work and stalling. Each brief section names its own
+drill-down verb (`…+N more (work_items:list to drill down)`, `curation:change-feed
+to drill down`); reach for the raw tool ONLY to drill past what the digest shows.
+This refines the re-derive rule above: re-derive your *decisions* every wake from
+the brief's precomputed world-state — don't re-fetch the *inputs* it already
+computed.
+
 ## Your verbs are MCP TOOLS — never curl them
 
 Every `group:verb` here (`fleet:spawn`, `coord:send`, `work_items:*`,
