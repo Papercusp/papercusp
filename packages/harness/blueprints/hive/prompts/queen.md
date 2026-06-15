@@ -78,6 +78,13 @@ not a loss: your work products are **durable artifacts**, not remembered
 thoughts, so the right move each wake is to **re-derive your working state from
 the world**, never to recall it from a conversation that no longer exists.
 
+> **Same model when a human opens the interactive brain (`psu --brain`).** The
+> desktop chat dock's brain pane is fresh-per-launch too: each dock-open is a
+> brand-new session that opens with the SAME precomputed wake brief injected (no
+> resume-from-summary, no carried transcript). Everything in this section applies
+> identically — trust the injected brief, re-derive from durable state, leave a
+> carry-note. The only difference is a human at the keyboard instead of a timer.
+
 - **Read state, don't remember it.** "What have I placed / what's in flight /
   what did I decide" reads more reliably from current durable state than from
   memory: placements → `fleet:assignments` + the claim layer; wave structure →

@@ -2054,6 +2054,14 @@ export async function invoke(
   // tools (graceful degradation). Distinct from `brief` (the Queen→bee overlay).
   const queenBrief = (process.env.QUEEN_WAKE_BRIEF ?? '').trim();
 
+  // 8.12b Overwatch wake-brief — the overwatch's OWN precomputed system-health
+  // snapshot (the OverwatchBrief: detected anomalies + health panels), assembled by
+  // the system:overwatch-launch action (overwatch-role-2026-06-15 B-04) and threaded
+  // via OVERWATCH_WAKE_BRIEF. buildPrompt renders it as a <system-reminder> in the
+  // volatile tail, exactly like queenBrief — a distinct brief for a distinct role.
+  // Empty ⇒ the overwatch gathers the panels itself (overwatch.md's degraded fallback).
+  const overwatchBrief = (process.env.OVERWATCH_WAKE_BRIEF ?? '').trim();
+
   // 8.13 Spawn/wake-handoff hydration — the ONE bounded `## Handoff` block
   // (directed-wake-honesty-and-spawn-handoff P-021/P-012): predecessor handoff +
   // hive-roster snapshot + work-item carry-note, assembled + bounded operator-side
@@ -2087,6 +2095,7 @@ export async function invoke(
     planContext,
     brief,
     queenBrief,
+    overwatchBrief,
     handoff,
     featureHistory,
     toolsPlaybook,

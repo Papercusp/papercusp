@@ -231,6 +231,18 @@ export interface BuildPromptInput {
    */
   queenBrief?: string;
   /**
+   * The OVERWATCH's per-wake brief — the precomputed OverwatchBrief (detected
+   * anomalies + the system-health panels), the sibling of `queenBrief` for the
+   * autonomous system-health supervisor (overwatch-role-2026-06-15 B-04). Same
+   * cache discipline + delivery: it changes every wake, so it rides the VOLATILE
+   * TAIL as a `<system-reminder>` block (never the cacheable preamble). Caller
+   * assembles the text via operator-core's `renderOverwatchBrief()`. Empty/undefined
+   * disables — the overwatch gathers the panels itself (graceful degradation).
+   * A launch is EITHER a queen wake OR an overwatch wake, never both, so at most
+   * one of `queenBrief`/`overwatchBrief` is ever set.
+   */
+  overwatchBrief?: string;
+  /**
    * The ONE bounded spawn/wake-hydration block (directed-wake-honesty P-021 /
    * D-004): predecessor handoff + hive-roster snapshot + work-item carry-note,
    * already assembled + bounded + provenance-framed by `assembleSpawnHydration`
@@ -582,6 +594,18 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
     // (embedded carry-note / work-item titles / change-feed text) so they can't
     // close the block early or inject framing — the primary breakout defense.
     vol.push(input.queenBrief.trim().replace(SYSTEM_REMINDER_RE, '[stripped-delimiter]'));
+    vol.push('</system-reminder>');
+  }
+
+  // 7c. Overwatch wake-brief — the precomputed OverwatchBrief (anomalies + health
+  //     panels), the sibling of the Queen brief for the autonomous system-health
+  //     supervisor (overwatch-role-2026-06-15 B-04). Same volatile-tail +
+  //     <system-reminder> framing + delimiter-neutralization as queenBrief above.
+  //     A launch is queen XOR overwatch, so both blocks never render together.
+  if (input.overwatchBrief && input.overwatchBrief.trim()) {
+    vol.push('\n---');
+    vol.push('<system-reminder>');
+    vol.push(input.overwatchBrief.trim().replace(SYSTEM_REMINDER_RE, '[stripped-delimiter]'));
     vol.push('</system-reminder>');
   }
 
