@@ -96,6 +96,15 @@ export interface AssembleRolePromptOptions {
    */
   brief?: string;
   /**
+   * The ONE bounded spawn/wake-hydration block (directed-wake-honesty P-021/P-012):
+   * predecessor handoff + hive-roster snapshot + work-item carry-note, already
+   * assembled + bounded + provenance-framed by assembleSpawnHydration (operator-core)
+   * and carrying its own `## Handoff` heading. The interactive-launch counterpart of
+   * the autonomous path's extraEnv.SPAWN_HANDOFF. Placed VERBATIM in the volatile
+   * tail by buildPrompt. Empty / undefined disables (flag off or every source empty).
+   */
+  handoff?: string;
+  /**
    * Project context to inject. Provided by the caller (which has DB access).
    * If non-empty, gets appended as a `## Project context (curated by Project
    * Manager)` section after `buildPrompt`'s output. Caller decides whether
@@ -243,6 +252,7 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
     extras,
     planContext: opts.planContext,
     brief: opts.brief,
+    handoff: opts.handoff,
   });
 
   // Project-context injection. Curated by the Project Manager role; appended

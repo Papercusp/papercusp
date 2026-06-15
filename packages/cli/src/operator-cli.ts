@@ -115,15 +115,15 @@ async function loadPrefs(workspaceId: string): Promise<string> {
 }
 
 async function savePrefs(workspaceId: string, content: string): Promise<void> {
-  // postgres-js requires `sql.json(obj)` to bind a JS object as a jsonb
-  // value. The plain `${JSON.stringify(obj)}::jsonb` form ends up
-  // storing the JSON text as a jsonb STRING (jsonb_typeof = 'string'),
-  // not an object — silently destroying the row's structure.
+  // Bind jsonb as `${JSON.stringify(x)}::jsonb`: the ::jsonb cast runs server-side, so it
+  // yields a real jsonb OBJECT (jsonb_typeof='object', VERIFIED) — NOT a jsonb string — and
+  // it is portable to the getOrgPg client where sql.json() throws (EI-607). NOT sql.json(),
+  // NOT a bare `${obj}`.
   const sql = postgres(adminUrl(), { max: 1, idle_timeout: 1, prepare: false, onnotice: () => {} });
   try {
     await sql`
       INSERT INTO harness_shared.operator_preferences (workspace_id, payload, updated_at)
-      VALUES (${workspaceId}, ${sql.json({ content })}, ${Date.now()})
+      VALUES (${workspaceId}, ${JSON.stringify({ content })}::jsonb, ${Date.now()})
       ON CONFLICT (workspace_id) DO UPDATE
         SET payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at
     `;
