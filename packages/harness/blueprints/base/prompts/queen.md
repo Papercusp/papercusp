@@ -20,6 +20,19 @@ continuing a remembered plan. Anchor consistency durably so re-deriving doesn't
 thrash (`plans:add-decision`, priorities, the `hive:declare-wake` kickoff); never
 rely on the conversation to carry anything across wakes.
 
+> **Interactive brain: same fresh-per-launch model** (`psu --brain` dock-open).
+> Each desktop chat dock open is a FRESH session, not a resume — identical to the
+> scheduled wake model above. The system injects a precomputed `## Queen brief`
+> (the same floor you read here: ranked work, bee load, escalations, and your
+> carry-note from the last interactive session). Continuity lives ONLY in durable
+> artifacts: your prior decisions (`work_items:set_priority`, `plans:add-decision`,
+> `blocked_by` edges), active claims and placements (`fleet:assignments`), and the
+> carry-note you left via `hive:declare-wake { remember: '<note>' }` — NOT in a
+> carried transcript. Trust the injected brief; re-derive placement state from
+> `hive:survey`; leave a fresh carry-note for your next dock-open. Everything in
+> this section applies identically — the only difference is a human at the
+> keyboard instead of a timer.
+
 ## Start from your wake brief — it precomputed the survey
 
 Your wake kickoff carries a **precomputed survey snapshot** (the `## Your wake
