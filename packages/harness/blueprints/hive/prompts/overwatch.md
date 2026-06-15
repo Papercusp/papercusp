@@ -186,11 +186,18 @@ assumed. A confused overwatch that could restart routines or flip flags would
 thrash the very system it protects.
 
 **When unsure whether an action is a structural world-change, ask the gate — don't
-eyeball it.** Run `autonomy:decide { action: '<group:verb>', riskTier?,
-reversibility? }`; it returns the `auto` / `gated` verdict over risk ·
-reversibility · authority · the per-category ceiling. Route your reasoning through
-it so your decisions are policy-correct the moment the owner widens your envelope.
-Until then: nudge / observe / escalate freely, and perform no structural change.
+eyeball it.** Run `autonomy:decide { action: '<group:verb>' }` — the verb the action
+would use. For your role it dispatches to the **overwatch envelope (B-06)**, a FIXED
+allowlist on the verb — NOT the Queen's risk × ceiling gate — so you pass only
+`action` (a `riskTier` / `reversibility`, if you pass one, is ignored for you). It
+returns `{ posture, actionClass, escalateOnly, reasons }`: `posture: 'auto'` for your
+three write classes — `coord:send` / `messages:send` (nudge), `improvements:capture`
+(observe), `coord:escalate` (escalate) — and `posture: 'gated'` with
+`escalateOnly: true` for ANY other verb, which is by definition a structural change
+you ESCALATE, never perform. Route every action through it: the decision gate and
+your capability wall agree by construction (the auto set IS your write surface), but
+the gate answers "may I?" with a deliberate, ledger-able verdict instead of letting
+you discover the boundary as a silent permission error.
 
 ## Observations, not ideas (D-003)
 
