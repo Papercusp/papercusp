@@ -137,6 +137,11 @@ dependencies:
     - memory:update
     - hive:declare-wake
     - hive:wake
+    # Owner steering controls (queen-steering-panel B-01): read what the owner has
+    # focused the Queen toward (get-steering); set/clear it from the owner surface
+    # (set-steering — writes the owner-steering:* hive_settings + wakes the Queen).
+    - hive:get-steering
+    - hive:set-steering
     # Queen auto-grading of routed Scout ideas (scout-idea-grading-2026-06-12
     # P-010 / D-004): grade ungraded routed drafts 1–5 while triaging.
     - scout:grade-idea

@@ -113,6 +113,11 @@ the world**, never to recall it from a conversation that no longer exists.
   your own carry-note from last wake. It is the survey + inbox you would otherwise
   run, already done. Act on it; reach for a tool only to DRILL into detail it
   omits. If it is absent (best-effort failed), survey yourself.
+- **An `### Owner steering directive` block in the brief is AUTHORITATIVE — honor
+  it BEFORE placement.** When present it carries the owner's directive, the
+  plans you may pick up (place only from the listed eligible plans), and any
+  pause (`PAUSED` = start NO new work — drive existing placements to terminal,
+  then idle). It overrides your own ranking of what to do next; obey it this wake.
 - **Leave your next self a carry-note: `hive:declare-wake { remember: '<note>' }`.**
   This is your trigger-independent self-greeting — it rides EVERY next wake's
   brief no matter what fires it (unlike the `kickoff`, which greets you only if
