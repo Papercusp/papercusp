@@ -170,6 +170,15 @@ export interface BuildPromptInput {
   /** Extra context lines (e.g. `["MODE=initial"]`, `["FEATURE_ID=F-001"]`). */
   extras: readonly string[];
   /**
+   * The harness/hive blueprint's `acceptance.kind` (hive-blueprint-generalization P-008).
+   * Drives the verification clause in the shared base: `tests` / undefined (the coding
+   * default) → TESTING_STANDARD; `judge` / `human-gate` / `none` (a non-test-verified hive)
+   * → the domain-agnostic VERIFICATION_STANDARD, so a generic bee isn't told to write tests
+   * for a deliverable that has none. Absent ⇒ TESTING_STANDARD, so the coding fleet's cached
+   * prompt prefix is byte-identical.
+   */
+  acceptanceKind?: 'tests' | 'judge' | 'human-gate' | 'none';
+  /**
    * Pre-fetched substrate-context block (Tier 1 preamble + Tier 2 neighbor
    * view + Tier 3 capabilities + bounded supervisor-inbox). Computed by
    * the caller (invoke.ts) via fetchSubstrateContext() and passed in.
@@ -387,6 +396,25 @@ export const TESTING_STANDARD = [
   'A green typecheck is not a test.',
 ].join('\n');
 
+/**
+ * VERIFICATION_STANDARD — the domain-agnostic sibling of TESTING_STANDARD for a hive
+ * whose `acceptance.kind` is NOT `tests` (judge / human-gate / none). A coding bee gets
+ * TESTING_STANDARD; a generic bee producing a deliverable with no test suite (a report, a
+ * decision, a document) gets this instead — verify against the acceptance criteria, don't
+ * fake-claim done. (hive-blueprint-generalization P-008.)
+ */
+export const VERIFICATION_STANDARD = [
+  '## Verify your work before calling it done',
+  '',
+  'Before you mark a unit of work complete, VERIFY it against its acceptance criteria —',
+  'do not claim done on a hope. If this project has a test/check command, run it and',
+  'mirror its existing checks (never leave a throwaway one-off script standing in for a',
+  'real check). If the work is a deliverable with no test suite (a report, a decision, a',
+  'document), confirm it actually meets the stated criteria — re-read the brief, check',
+  'each requirement is addressed, and cite your evidence. A plausible-looking artifact you',
+  'did not verify is not done.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -521,7 +549,11 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     TESTING_STANDARD constant so the bee base + operator-launched-role base can't
   //     desync. Universal (no curator skip — a thinking agent of any role may add a test).
   pre.push('\n---');
-  pre.push(TESTING_STANDARD);
+  // tests / undefined (the coding default) → test-the-project's-way; judge / human-gate /
+  // none (a non-test-verified hive) → the domain-agnostic verification clause, so a generic
+  // bee isn't told to write tests for a deliverable that has none. The default keeps the
+  // coding fleet's cached prefix byte-identical (hive-blueprint-generalization P-008).
+  pre.push(input.acceptanceKind && input.acceptanceKind !== 'tests' ? VERIFICATION_STANDARD : TESTING_STANDARD);
 
   // 4. Per-role identity (cross-mission). PG-canonical via Migration
   // 041 when caller passed `input.identity`; otherwise fall back to

@@ -254,6 +254,40 @@ test('buildPrompt — every role gets the testing-standard clause (project-agnos
   }
 });
 
+test('buildPrompt — acceptanceKind judge/none swaps TESTING_STANDARD for VERIFICATION_STANDARD (P-008)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
+  });
+  try {
+    const base = {
+      role: 'worker' as const,
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+    };
+    // tests (the coding default) → TESTING_STANDARD, no verification clause.
+    const coding = buildPrompt({ ...base, acceptanceKind: 'tests' });
+    assert.match(coding, /## Tests follow the project standard/);
+    assert.doesNotMatch(coding, /## Verify your work before calling it done/);
+    // judge / human-gate / none (a non-test-verified hive) → the domain-agnostic clause.
+    for (const kind of ['judge', 'human-gate', 'none'] as const) {
+      const generic = buildPrompt({ ...base, acceptanceKind: kind });
+      assert.match(generic, /## Verify your work before calling it done/);
+      assert.doesNotMatch(generic, /## Tests follow the project standard/);
+    }
+    // undefined ⇒ TESTING_STANDARD (coding default — byte-identical cached prefix).
+    assert.match(buildPrompt(base), /## Tests follow the project standard/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 // ── EI-75 / EI-317: the deferred-tools recipe (the un-muting fix) ────────────
 //    A fleet:spawn bee's platform MCP tools are DEFERRED behind ToolSearch; a
 //    small backend that doesn't know the contract concludes "I can't call MCP
