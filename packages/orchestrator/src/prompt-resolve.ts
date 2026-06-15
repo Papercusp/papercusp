@@ -203,18 +203,20 @@ export function resolvePromptFile(
 }
 
 /**
- * The prompt files that COMPOSE a role's prompt, least- to most-specific:
- * the universal `prompts/base/<role>.md` prefix layer first (the generic role
- * layer — e.g. the G3 untrusted-peer-content rule), then the resolved concrete
- * prompt (`resolvePromptFile` — authoritative, per the prompts README's "later
- * sections override earlier ones"). Callers join the files' contents with
- * `\n\n---\n\n`. The prefix is only prepended when it is DISTINCT from the
- * resolved main file (a base-only role resolves to a single file).
+ * The prompt files that COMPOSE a role's prompt, least- to most-specific: the
+ * universal generic-role prefix layer first (the "Base Worker/Validator/…"
+ * persona — universal rules + the G3 untrusted-peer-content rule), then the
+ * resolved concrete prompt (`resolvePromptFile` — authoritative, per the prompts
+ * README's "later sections override earlier ones"). Callers join the files'
+ * contents with `\n\n---\n\n`. The prefix is prepended to whatever concrete
+ * resolves (the base default OR a blueprint/phase override), and only when it is
+ * DISTINCT from that concrete (a base-only role resolves to a single file).
  *
- * NOTE the `prompts/base/` prefix is the legacy global generic layer; Phase 2
- * relocates it into the base blueprint and Phase 5 deletes the global dir. Phase
- * 1 leaves this byte-for-byte unchanged — only `resolvePromptFile`'s MAIN
- * resolution now walks the blueprint extends-chain.
+ * The generic prefix is consulted in two places, FIRST that exists wins:
+ *   1. blueprints/base/prompts/<role>.base.md   (the base blueprint — Phase 2 home)
+ *   2. prompts/base/<role>.md                    (legacy global — deleted in Phase 5)
+ * Only ~5 roles (worker/validator/documenter/orchestrator/summarizer) HAVE a
+ * generic prefix; the rest resolve to a single self-contained file.
  *
  * Returns [] when the role has no prompt at all.
  */
@@ -224,9 +226,12 @@ export function resolvePromptFiles(
 ): string[] {
   const main = resolvePromptFile(ctx, role);
   const canonical = ROLE_ALIASES[role] ?? role;
-  const base = join(ctx.harnessDir, 'prompts', 'base', `${canonical}.md`);
+  const prefix = [
+    join(ctx.harnessDir, 'blueprints', BASE_BLUEPRINT_ID, 'prompts', `${canonical}.base.md`),
+    join(ctx.harnessDir, 'prompts', 'base', `${canonical}.md`),
+  ].find((p) => existsSync(p));
   const sections: string[] = [];
-  if (existsSync(base) && base !== main) sections.push(base);
+  if (prefix && prefix !== main) sections.push(prefix);
   if (main) sections.push(main);
   return sections;
 }
