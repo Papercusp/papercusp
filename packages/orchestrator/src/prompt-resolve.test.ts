@@ -33,88 +33,39 @@ function withHarness(setup: (root: string) => void): {
   return { harnessDir, cleanup: () => rmSync(harnessDir, { recursive: true, force: true }) };
 }
 
-test('promptCandidates — bare phase + role (phase override wins, base is the default below it)', () => {
-  // K-1: base is ALWAYS a candidate, even with no blueprintId — it is the
-  // universal role library. It sits AFTER the (live) phase tiers and just above
-  // the legacy global default it replaces.
-  const list = promptCandidates(
-    { harnessDir: '/h', phase: 'staging', dept: '' },
-    'worker',
-  );
-  assert.deepEqual(list, [
-    '/h/prompts/staging/worker.md',
-    '/h/blueprints/base/prompts/worker.md',
-    '/h/prompts/worker.md',
-  ]);
-});
-
-test('promptCandidates — phase + dept generates dept-specific path first', () => {
-  const list = promptCandidates(
-    { harnessDir: '/h', phase: 'staging', dept: 'business' },
-    'worker',
-  );
-  assert.deepEqual(list, [
-    '/h/prompts/staging/departments/business/worker.md',
-    '/h/prompts/staging/worker.md',
-    '/h/blueprints/base/prompts/worker.md',
-    '/h/prompts/worker.md',
-  ]);
-});
-
-test('promptCandidates — phase=department adds legacy prompts/department/ path', () => {
-  const list = promptCandidates(
-    { harnessDir: '/h', phase: 'department', dept: '' },
-    'worker',
-  );
-  assert.deepEqual(list, [
-    '/h/prompts/department/worker.md',
-    '/h/blueprints/base/prompts/worker.md',
-    '/h/prompts/worker.md',
-  ]);
-});
-
-test('resolvePromptFile — falls back to prompts/$role.md when nothing more specific exists', () => {
-  const { harnessDir, cleanup } = withHarness((root) => {
-    writeFileSync(join(root, 'prompts', 'worker.md'), '# worker');
-  });
-  try {
-    const found = resolvePromptFile(
-      { harnessDir, phase: 'staging', dept: 'sales' },
-      'worker',
-    );
-    assert.equal(found, join(harnessDir, 'prompts', 'worker.md'));
-  } finally {
-    cleanup();
-  }
+test('promptCandidates — bare role resolves to base only (the universal library; no global tiers)', () => {
+  // K-1 + Phase 5 (D-012): with no blueprintId, base is the ONLY candidate — the global
+  // phase/dept tiers + the bare global default were deleted; `phase` is no longer consulted.
+  const list = promptCandidates({ harnessDir: '/h', phase: 'staging', dept: '' }, 'worker');
+  assert.deepEqual(list, ['/h/blueprints/base/prompts/worker.md']);
 });
 
 // Audit P-019: base/<role>.md is the universal first section; the concrete
 // resolved prompt stays the authoritative last. The base layer was documented
 // in the prompts README but NEVER loaded before resolvePromptFiles existed.
-test('resolvePromptFiles — base layer composes BEFORE the concrete prompt', () => {
+test('resolvePromptFiles — base prefix layer composes BEFORE the concrete prompt', () => {
   const { harnessDir, cleanup } = withHarness((root) => {
-    mkdirSync(join(root, 'prompts', 'base'), { recursive: true });
-    writeFileSync(join(root, 'prompts', 'base', 'worker.md'), '# base');
-    writeFileSync(join(root, 'prompts', 'worker.md'), '# worker');
+    writeBlueprintRole(root, 'base', 'worker.base', '# base');
+    writeBlueprintRole(root, 'base', 'worker', '# worker');
   });
   try {
     const files = resolvePromptFiles({ harnessDir, phase: 'staging', dept: '' }, 'worker');
     assert.deepEqual(files, [
-      join(harnessDir, 'prompts', 'base', 'worker.md'),
-      join(harnessDir, 'prompts', 'worker.md'),
+      join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.base.md'),
+      join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'),
     ]);
   } finally {
     cleanup();
   }
 });
 
-test('resolvePromptFiles — no base layer → just the concrete prompt', () => {
+test('resolvePromptFiles — no prefix layer → just the concrete prompt', () => {
   const { harnessDir, cleanup } = withHarness((root) => {
-    writeFileSync(join(root, 'prompts', 'worker.md'), '# worker');
+    writeBlueprintRole(root, 'base', 'worker', '# worker');
   });
   try {
     const files = resolvePromptFiles({ harnessDir, phase: '', dept: '' }, 'worker');
-    assert.deepEqual(files, [join(harnessDir, 'prompts', 'worker.md')]);
+    assert.deepEqual(files, [join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md')]);
   } finally {
     cleanup();
   }
@@ -122,12 +73,11 @@ test('resolvePromptFiles — no base layer → just the concrete prompt', () => 
 
 test('resolvePromptFiles — base-only role still resolves (the role HAS a prompt)', () => {
   const { harnessDir, cleanup } = withHarness((root) => {
-    mkdirSync(join(root, 'prompts', 'base'), { recursive: true });
-    writeFileSync(join(root, 'prompts', 'base', 'summarizer.md'), '# base summarizer');
+    writeBlueprintRole(root, 'base', 'summarizer', '# base summarizer');
   });
   try {
     const files = resolvePromptFiles({ harnessDir, phase: '', dept: '' }, 'summarizer');
-    assert.deepEqual(files, [join(harnessDir, 'prompts', 'base', 'summarizer.md')]);
+    assert.deepEqual(files, [join(harnessDir, 'blueprints', 'base', 'prompts', 'summarizer.md')]);
   } finally {
     cleanup();
   }
@@ -142,46 +92,8 @@ test('resolvePromptFiles — unknown role → []', () => {
   }
 });
 
-test('resolvePromptFile — phase override wins over default', () => {
-  const { harnessDir, cleanup } = withHarness((root) => {
-    writeFileSync(join(root, 'prompts', 'worker.md'), '# default');
-    mkdirSync(join(root, 'prompts', 'staging'), { recursive: true });
-    writeFileSync(join(root, 'prompts', 'staging', 'worker.md'), '# staging');
-  });
-  try {
-    const found = resolvePromptFile(
-      { harnessDir, phase: 'staging', dept: '' },
-      'worker',
-    );
-    assert.equal(found, join(harnessDir, 'prompts', 'staging', 'worker.md'));
-  } finally {
-    cleanup();
-  }
-});
-
-test('resolvePromptFile — dept override wins over phase override', () => {
-  const { harnessDir, cleanup } = withHarness((root) => {
-    writeFileSync(join(root, 'prompts', 'worker.md'), '# default');
-    mkdirSync(join(root, 'prompts', 'staging', 'departments', 'sales'), { recursive: true });
-    writeFileSync(join(root, 'prompts', 'staging', 'worker.md'), '# staging');
-    writeFileSync(
-      join(root, 'prompts', 'staging', 'departments', 'sales', 'worker.md'),
-      '# sales',
-    );
-  });
-  try {
-    const found = resolvePromptFile(
-      { harnessDir, phase: 'staging', dept: 'sales' },
-      'worker',
-    );
-    assert.equal(
-      found,
-      join(harnessDir, 'prompts', 'staging', 'departments', 'sales', 'worker.md'),
-    );
-  } finally {
-    cleanup();
-  }
-});
+// (phase-override + dept-override tests removed — Phase 5 D-012: the global phase/dept
+//  override tiers were deleted; `staging` was collapsed into base as canonical.)
 
 test('promptCandidates — blueprintId adds the blueprint-local prompt FIRST, then base', () => {
   const list = promptCandidates(
@@ -190,9 +102,7 @@ test('promptCandidates — blueprintId adds the blueprint-local prompt FIRST, th
   );
   assert.deepEqual(list, [
     '/h/blueprints/vote/prompts/voter.md',
-    '/h/prompts/staging/voter.md',
     '/h/blueprints/base/prompts/voter.md',
-    '/h/prompts/voter.md',
   ]);
 });
 
@@ -208,7 +118,6 @@ test('promptCandidates — explicit extendsChain walks each ancestor before base
     '/h/blueprints/implement/prompts/worker.md',
     '/h/blueprints/single-agent/prompts/worker.md',
     '/h/blueprints/base/prompts/worker.md',
-    '/h/prompts/worker.md',
   ]);
 });
 
@@ -249,18 +158,18 @@ test('resolvePromptFile — blueprint-local prompt wins over a global prompts/<r
   }
 });
 
-test('resolvePromptFile — blueprintId falls through to the global prompt when the blueprint lacks one', () => {
+test('resolvePromptFile — blueprintId falls through to base when the blueprint lacks the role', () => {
   const { harnessDir, cleanup } = withHarness((root) => {
-    writeFileSync(join(root, 'prompts', 'worker.md'), '# global worker');
+    writeBlueprintRole(root, 'base', 'worker', '# base worker');
     mkdirSync(join(root, 'blueprints', 'vote', 'prompts'), { recursive: true });
-    // no worker.md in the blueprint dir
+    // no worker.md in the vote blueprint dir → falls through to base (no global tier).
   });
   try {
     const found = resolvePromptFile(
       { harnessDir, phase: '', dept: '', blueprintId: 'vote' },
       'worker',
     );
-    assert.equal(found, join(harnessDir, 'prompts', 'worker.md'));
+    assert.equal(found, join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'));
   } finally {
     cleanup();
   }

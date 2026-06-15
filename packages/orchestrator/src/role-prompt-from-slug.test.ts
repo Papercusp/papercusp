@@ -22,11 +22,11 @@ function setupRegistry(): { home: string; projectDir: string; harnessDir: string
   const stateDir = join(projectDir, '.papercusp');
   const harnessDir = join(home, 'harness');
   mkdirSync(stateDir, { recursive: true });
-  mkdirSync(join(harnessDir, 'prompts'), { recursive: true });
-
-  // Minimal worker prompt.
+  // Minimal worker prompt in the base role library (Phase 5: the resolver reads base,
+  // not the deleted global prompts/ tier).
+  mkdirSync(join(harnessDir, 'blueprints', 'base', 'prompts'), { recursive: true });
   writeFileSync(
-    join(harnessDir, 'prompts', 'worker.md'),
+    join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'),
     '# WORKER\n\nDo your job.\n',
   );
 
