@@ -2054,6 +2054,16 @@ export async function invoke(
   // tools (graceful degradation). Distinct from `brief` (the Queen→bee overlay).
   const queenBrief = (process.env.QUEEN_WAKE_BRIEF ?? '').trim();
 
+  // 8.13 Spawn/wake-handoff hydration — the ONE bounded `## Handoff` block
+  // (directed-wake-honesty-and-spawn-handoff P-021/P-012): predecessor handoff +
+  // hive-roster snapshot + work-item carry-note, assembled + bounded operator-side
+  // by assembleSpawnHydration (gated on FLAGS.SPAWN_HANDOFF_HYDRATION) and threaded
+  // via extraEnv.SPAWN_HANDOFF. The block is ALREADY provenance-framed (untrusted
+  // entries wrapUntrusted-wrapped, bodies atomic) and carries its own `## Handoff`
+  // heading → buildPrompt places it VERBATIM in the volatile tail. Empty when the
+  // flag is off or every source degraded. Distinct from `brief`/`queenBrief`.
+  const handoff = (process.env.SPAWN_HANDOFF ?? '').trim();
+
   // 9. Build the prompt.
   const prompt = buildPrompt({
     role,
@@ -2077,6 +2087,7 @@ export async function invoke(
     planContext,
     brief,
     queenBrief,
+    handoff,
     featureHistory,
     toolsPlaybook,
     sharedGuides,

@@ -1002,6 +1002,103 @@ test('buildPrompt — no Queen brief section when none supplied (best-effort, em
   }
 });
 
+// ── P-021 / P-011 (directed-wake-honesty-and-spawn-handoff): handoff hydration ──
+//    The ONE bounded spawn/wake-hydration block (predecessor handoff + roster +
+//    carry-note) is assembled operator-side by assembleSpawnHydration, already
+//    provenance-framed + carrying its own `## Handoff` heading, and threaded to
+//    buildPrompt as a pre-framed `handoff` string. buildPrompt MUST place it in
+//    the VOLATILE tail (next to `## Queen brief`) — never the cacheable preamble,
+//    or every spawn busts the prompt cache (D-004) — and VERBATIM (a mid-block
+//    rewrite/truncation could sever an untrusted frame = injection hole, P-013).
+
+test('buildPromptParts — handoff hydration rides the volatile tail, never the cacheable preamble (P-021/P-011)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'bee.md'), '# BEE\nDo the placed work.');
+  });
+  try {
+    // A realistic pre-framed block: it already carries its own `## Handoff` heading
+    // (assembleSpawnHydration owns that), so buildPrompt places it verbatim.
+    const handoff =
+      '## Handoff\n\n### Upstream completions\n- (F-204) F-204 [passed] migrate the fetchers — done, schema is under marketplace/v3 now.\n\n### Hive peers\n- bee-2 on F-205 (validator)';
+    const parts = buildPromptParts({
+      role: 'bee',
+      promptFile: join(fx.harnessDir, 'bee.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'opspawn-1780-bee',
+      extras: [],
+      handoff,
+    });
+    // It must land in the volatile half, verbatim…
+    assert.ok(parts.volatile.includes(handoff), 'the full handoff block must appear verbatim in the volatile tail');
+    assert.match(parts.volatile, /## Handoff/);
+    // …and NEVER in the cacheable preamble (a per-spawn input would bust the cache).
+    assert.doesNotMatch(parts.preamble, /## Handoff/);
+    assert.ok(!parts.preamble.includes('### Upstream completions'), 'no handoff content may leak into the preamble');
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — handoff is placed after the Queen brief in the volatile tail (P-021)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'bee.md'), '# BEE');
+  });
+  try {
+    const brief = 'QUEEN-BRIEF-SENTINEL: unblock the staging deploy.';
+    const handoff = '## Handoff\n\nHANDOFF-SENTINEL: upstream finished migration 178.';
+    const out = buildPrompt({
+      role: 'bee',
+      promptFile: join(fx.harnessDir, 'bee.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'opspawn-1780-bee',
+      extras: [],
+      brief,
+      handoff,
+    });
+    assert.ok(out.includes('HANDOFF-SENTINEL'), 'handoff must appear in the assembled prompt');
+    assert.ok(
+      out.indexOf('HANDOFF-SENTINEL') > out.indexOf('QUEEN-BRIEF-SENTINEL'),
+      'handoff section must follow the Queen brief in the volatile tail',
+    );
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — no Handoff section when none supplied (best-effort, empty default)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'bee.md'), '# BEE');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'bee',
+      promptFile: join(fx.harnessDir, 'bee.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'opspawn-1780-bee',
+      extras: [],
+      // handoff omitted
+    });
+    assert.doesNotMatch(out, /## Handoff/, 'no handoff section when none supplied');
+  } finally {
+    fx.cleanup();
+  }
+});
+
 // ── P-009 (token-usage-reduction-audit-2026-06-09): byte-stable preamble ──
 
 test('buildPromptParts — preamble is byte-identical across all volatile inputs (prefix-hash, P-009)', () => {
