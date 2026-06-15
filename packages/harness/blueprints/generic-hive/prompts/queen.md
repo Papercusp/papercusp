@@ -33,6 +33,20 @@ You wake with no transcript. Re-survey the world every time: the work frontier
 completions (`curation:change-feed`), and any owner steering (`hive:get-steering`). Trust the
 live blackboard, not a memory of last wake.
 
+## How work reaches you (the operating model)
+
+Work flows the SAME way as in any Hive — no new mechanics:
+- Deliverable work lives as **feature-family items** (`research-task` / `review-task` /
+  `decision`) inside your hive's **member harnesses** — the `research` / `review` / `vote`
+  pipelines this hive declares (`dependencies.blueprints`). Their own pipelines execute the
+  work; you survey the standard cross-member frontier and STEER (priority + placement),
+  exactly as a coding Queen does over coding members.
+- For a structured deliverable, spin up the right member (`blueprint:catalog` →
+  `harness:create { hive }`, e.g. a `research` harness) and let its pipeline run; the
+  **judge-acceptance + artifacts-output** apply when its work finalizes.
+- Do NOT expect bare workspace `task` items in your frontier — the frontier is feature-family
+  by design (unchanged). Shape deliverable work as research/review/vote member items.
+
 ## Placement taxonomy (the 3 options) — this IS the co-location lever
 
 For each ready item, pick the cheapest viable rung:

@@ -119,42 +119,28 @@ function chainForCtx(ctx: PromptResolveContext): string[] {
 
 function candidatesFor(ctx: PromptResolveContext, role: string): string[] {
   const candidates: string[] = [];
-  const promptsRoot = join(ctx.harnessDir, 'prompts');
   const chain = chainForCtx(ctx);
 
   // ── 1. The blueprint's OWN override, then its non-base `extends` ancestors
-  //    (e.g. implement → single-agent). Most specific; precedes the phase tiers
-  //    because an explicitly-extended blueprint's override is intentional. `base`
-  //    is held back to step 3 (it is the universal DEFAULT, not a specialization).
+  //    (e.g. implement → single-agent). Most specific. `base` is held back to
+  //    step 2 (it is the universal DEFAULT, not a specialization).
   for (const id of chain) {
     if (id === BASE_BLUEPRINT_ID) continue;
     candidates.push(join(ctx.harnessDir, 'blueprints', id, 'prompts', `${role}.md`));
   }
 
-  // ── 2. Global phase/dept tiers — the legacy multi-phase (staging/testing/…)
-  //    override axis. A phase override must keep winning over `base` (phase
-  //    defaults to "staging", so these are LIVE default personas today), so they
-  //    precede base. BACKSTOP — deleted in Phase 5 (with the phase personas
-  //    relocated first). ──
-  if (ctx.phase && ctx.dept) {
-    candidates.push(join(promptsRoot, ctx.phase, 'departments', ctx.dept, `${role}.md`));
-  }
-  if (ctx.phase) {
-    candidates.push(join(promptsRoot, ctx.phase, `${role}.md`));
-  }
-  if (ctx.phase === 'department') {
-    candidates.push(join(promptsRoot, 'department', `${role}.md`));
-  }
-
-  // ── 3. `base` — the universal role library (every chain terminates here).
-  //    The end-state DEFAULT, replacing the legacy global `prompts/<role>.md`
-  //    (step 4) it sits just above. ALWAYS consulted, even with no blueprintId.
+  // ── 2. `base` — the universal role library (every chain terminates here).
+  //    ALWAYS consulted, even with no blueprintId. The legacy global `prompts/`
+  //    tiers (the phase/dept override axis + the bare default) were DELETED in
+  //    Phase 5 (blueprint-role-bundling D-012, option A): the `staging`
+  //    phase-variant — which `resolvePhase` defaults to, i.e. what the fleet ran —
+  //    was collapsed into `base` as canonical, so resolution at the live default
+  //    is unchanged; the rarely-used testing/production variants collapse to it.
+  //    `ctx.phase`/`ctx.dept` are no longer consulted (no phase-axis personas).
   if (chain.includes(BASE_BLUEPRINT_ID)) {
     candidates.push(join(ctx.harnessDir, 'blueprints', BASE_BLUEPRINT_ID, 'prompts', `${role}.md`));
   }
 
-  // ── 4. Global default — legacy backstop, deleted in Phase 5. ──
-  candidates.push(join(promptsRoot, `${role}.md`));
   return candidates;
 }
 
@@ -228,7 +214,6 @@ export function resolvePromptFiles(
   const canonical = ROLE_ALIASES[role] ?? role;
   const prefix = [
     join(ctx.harnessDir, 'blueprints', BASE_BLUEPRINT_ID, 'prompts', `${canonical}.base.md`),
-    join(ctx.harnessDir, 'prompts', 'base', `${canonical}.md`),
   ].find((p) => existsSync(p));
   const sections: string[] = [];
   if (prefix && prefix !== main) sections.push(prefix);
