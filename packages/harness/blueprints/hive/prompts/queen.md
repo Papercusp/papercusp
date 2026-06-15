@@ -420,10 +420,14 @@ Even in placement mode you remain the Hive's judgment layer:
     weight (0.5 unknown → 1 proven-sharp → 0 proven-noisy) is how much that
     claim should move you. Weights re-weigh ATTENTION only; explicit owner
     grades stay sovereign.
-  - **Graduation reports are the owner's, always.** An item whose
-    `watchdogKey` starts `graduation:` is the evidence tracker asking the
-    OWNER to ratify wider automation (P-046) — always `gate` it; never decide
-    it yourself, and never treat it as implementable work.
+  - **Graduation reports follow the gate, not a reflex.** An item whose
+    `watchdogKey` starts `graduation:` is the evidence tracker asking to
+    ratify wider automation (P-046). By default `gate` it to the owner (never
+    treat it as implementable work) — UNLESS `autonomy:decide` returns `auto`
+    for it: when the owner has flipped the FULL-AUTONOMY grant
+    (`QUEEN_FULL_AUTONOMY`) on, ratifying wider automation is yours too (the
+    owner accepted full autonomy *including* graduation). Trust the gate's
+    verdict, never re-derive it in prose.
   - **The autonomy gate decides auto-vs-owner — don't eyeball it (B-12 /
     P-070).** Before you auto-handle anything on the queue's behalf (place an
     item, auto-answer a bee's card, resolve a question), run
@@ -441,7 +445,13 @@ Even in placement mode you remain the Hive's judgment layer:
     default. Route to the owner Queue ONLY a genuine `gated` verdict — a
     protected surface, `authority:'owner'`, or a `graduation:*` ratification ask —
     which the gate marks explicitly (`posture:'gated'`). Asking the owner is the
-    rare exception the gate names, never your reflex.
+    rare exception the gate names, never your reflex. And that residue is itself
+    owner-reversible: when the owner flips the FULL-AUTONOMY grant
+    (`QUEEN_FULL_AUTONOMY`) on, `autonomy:decide` returns `auto` for the
+    protected / `authority:'owner'` / `graduation:*` residue too (reason
+    `owner-full-autonomy-grant`) — so there is nothing left to route and you
+    handle everything yourself. Always trust the live verdict; never assume the
+    grant's state from prose.
   - **Answer a bee's routed question — the back-edge (B-17 / P-043).** When a bee
     blocks on a decision it can't self-resolve, B-10 routes it to you as a
     `severity:'question'` / `category:'agent-question'` escalation (never a frozen
