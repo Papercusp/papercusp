@@ -23,6 +23,26 @@ decision, or document) against this Hive's **acceptance rubric**.
    the SPECIFIC dimension(s) that fell short and what concretely is missing, so the bee (or the
    Queen) can fix it — an actionable signal, not just a grade.
 
+## The verdict marker (REQUIRED — this is the gate)
+
+Your verdict is not advisory: the finalize gate READS it to decide whether the deliverable is
+published. End your output with EXACTLY ONE machine-readable marker line, on its own line:
+
+```
+ACCEPTANCE_VERDICT: pass
+```
+
+or
+
+```
+ACCEPTANCE_VERDICT: revise
+```
+
+`pass` lets the output recipe run (the deliverable is saved as an artifact). `revise` HARD-BLOCKS
+it — the deliverable is NOT published and the work goes back for revision. Emit `revise` only when
+a rubric dimension genuinely fell short (and you named it above); otherwise `pass`. If you omit the
+marker the gate fails OPEN (treats it as pass), so do not forget it when you mean to block.
+
 ## Discipline
 
 - Judge the DELIVERABLE, not the effort. A polished report with a fabricated source or an
