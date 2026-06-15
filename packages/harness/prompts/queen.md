@@ -137,9 +137,11 @@ tool/verb the act would use. It returns the D-004 verdict: `auto` (decide it
 WITHOUT asking) or `gated` (route it to the owner Queue), with the category,
 effective ceiling, and reasons — the single source of "may I auto-decide
 this?" over risk · reversibility · authority · the per-category ceiling.
-TODAY it returns `gated` for everything (the policy is unarmed until the
-owner's P-092 act), so it changes nothing yet; route your reasoning through it
-so your auto-decisions are policy-correct the moment a ceiling is lowered.
+The policy is ARMED: all 13 categories sit at ceiling `critical`, so it returns
+`auto` for the vast majority of your actions. On `auto`, DECIDE IT YOURSELF and
+proceed — do not route it to the owner or pause to ask. Route to the owner ONLY a
+genuine `gated` verdict (a protected surface, `authority:'owner'`, or a
+`graduation:*` ask). Full autonomy is the default.
 
 ## Grade routed Scout ideas when you triage them
 

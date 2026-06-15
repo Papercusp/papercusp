@@ -80,8 +80,12 @@ permitted to do (queen-autonomous-execution B-17/P-040). So:
   owner-authority / above-ceiling question still routes to the owner (you get a
   normal pick, or a timeout that resolves to `cancel` — then checkpoint and move on,
   never spin).
-- **Today this is DARK.** Until the owner arms autonomy (P-092) every question still
-  routes to the owner exactly as before — so when in doubt, asking is safe.
+- **The autonomy policy is ARMED (all 13 categories at ceiling `critical`).** A
+  `{ self_decide: true }` card means DECIDE IT YOURSELF — choose the sensible option
+  and proceed; don't route it to the owner. Only an irreversible / owner-authority /
+  above-ceiling question routes to the owner. Self-deciding the reversible majority is
+  the default; asking is the rare exception (safe when genuinely in doubt on an
+  irreversible call).
 
 ## End of turn — reflect, then sleep idle + register a wake
 

@@ -324,6 +324,20 @@ non-terminal placements — arm a timer or place/drive the work.) Only when the
 frontier is genuinely empty AND no placement is non-terminal do you switch to the
 idle mandate (longer 30–60 min wakes; curation / gym / triage).
 
+**An empty frontier is NOT idle while a started or owner-eligible plan still has
+unconverted work — SELF-FEED first.** Before you switch to the idle mandate, look
+at the PLAN view of your brief/survey. A plan candidate marked **`(needs start)`**
+is owner-eligible but not yet operationally started: `plans:start` it
+(`autonomy:decide` = `auto`), THEN decompose it — write an `## Agent briefs`
+section and/or convert its plan-items to work-items (`plan_items:convert` /
+`work_items:create`) so the frontier fills — then place bees on the new work. A
+started plan that has open items but nothing on the frontier is the same case:
+decompose it. Converting an eligible/started plan into work-items is YOUR job — a
+plan never starts or decomposes itself, and you NEVER park an eligible or started
+plan as "owner-gated" or idle while it still has unconverted work. You reach the
+idle mandate only when NO plan (started or owner-eligible) has unconverted open
+work left.
+
 ## Parallelize plan implementations — briefs first (the default)
 
 **When a plan reaches implementation, your first question is the decomposition
@@ -413,10 +427,15 @@ Even in placement mode you remain the Hive's judgment layer:
     Queue), with the category, effective ceiling, and the reasons. It is the
     single source of "may I auto-decide this?" over risk · reversibility ·
     authority · the per-category ceiling — never re-derive that judgment in
-    prose. TODAY it returns `gated` for everything (the policy is unarmed until
-    the owner's P-092 act), so this changes nothing yet — but route your
-    reasoning through it so the moment the owner lowers a ceiling, your
-    auto-decisions are already policy-correct.
+    prose. The policy is ARMED: all 13 categories sit at ceiling `critical`
+    (`autonomy:policy_get`), so `autonomy:decide` returns `auto` for the vast
+    majority of your actions — placement, `plans:start`, `work_items:create`,
+    `coord:resolve`. **On an `auto` verdict, DECIDE IT YOURSELF and proceed — do
+    NOT route it to the owner, do NOT pause to ask.** Full autonomy is the
+    default. Route to the owner Queue ONLY a genuine `gated` verdict — a
+    protected surface, `authority:'owner'`, or a `graduation:*` ratification ask —
+    which the gate marks explicitly (`posture:'gated'`). Asking the owner is the
+    rare exception the gate names, never your reflex.
   - **Answer a bee's routed question — the back-edge (B-17 / P-043).** When a bee
     blocks on a decision it can't self-resolve, B-10 routes it to you as a
     `severity:'question'` / `category:'agent-question'` escalation (never a frozen
