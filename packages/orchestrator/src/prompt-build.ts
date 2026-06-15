@@ -179,6 +179,14 @@ export interface BuildPromptInput {
    */
   acceptanceKind?: 'tests' | 'judge' | 'human-gate' | 'none';
   /**
+   * The hive's noun overrides (hive-blueprint-generalization P-016) — e.g.
+   * `{ workUnit: 'deliverable', reviewGate: 'review' }`. When present, a small "Hive
+   * vocabulary" reminder is emitted so an agent reading the SHARED base personas (which
+   * use the coding nouns) maps them to this hive's words. Absent/empty ⇒ no block, so
+   * the coding fleet's cached prefix is byte-identical.
+   */
+  lexicon?: Record<string, string>;
+  /**
    * Pre-fetched substrate-context block (Tier 1 preamble + Tier 2 neighbor
    * view + Tier 3 capabilities + bounded supervisor-inbox). Computed by
    * the caller (invoke.ts) via fetchSubstrateContext() and passed in.
@@ -554,6 +562,19 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   // bee isn't told to write tests for a deliverable that has none. The default keeps the
   // coding fleet's cached prefix byte-identical (hive-blueprint-generalization P-008).
   pre.push(input.acceptanceKind && input.acceptanceKind !== 'tests' ? VERIFICATION_STANDARD : TESTING_STANDARD);
+
+  // Hive vocabulary (hive-blueprint-generalization P-016): when the hive blueprint
+  // renames nouns, tell the agent to read the shared personas' generic terms as this
+  // hive's words. Absent ⇒ nothing emitted (coding prefix unchanged).
+  if (input.lexicon && Object.keys(input.lexicon).length > 0) {
+    const pairs = Object.entries(input.lexicon)
+      .map(([concept, word]) => `a "${concept}" is called a "${word}"`)
+      .join('; ');
+    pre.push(
+      `\n---\n## This hive's vocabulary\n\nThis hive renames some nouns from the generic playbook — ${pairs}. ` +
+        `When a shared instruction uses the generic term, read it as this hive's word, and use the hive's nouns in what you produce.`,
+    );
+  }
 
   // 4. Per-role identity (cross-mission). PG-canonical via Migration
   // 041 when caller passed `input.identity`; otherwise fall back to

@@ -107,6 +107,27 @@ export function loadHarnessAcceptanceKind(
 }
 
 /**
+ * The effective blueprint's `lexicon` — the hive's noun overrides
+ * (hive-blueprint-generalization P-016), e.g. `{ workUnit: 'deliverable', reviewGate:
+ * 'review' }`. `undefined`/empty for a hive that declares none (the coding hive), so
+ * `buildPrompt` emits no vocabulary block and the agent keeps the built-in nouns. A
+ * generic hive's lexicon is injected as a small "Hive vocabulary" reminder so a bee
+ * reading the SHARED base personas (which say "feature"/"PR") maps them to the hive's
+ * own nouns. (Persona side only — the UI-resolver side of P-016 is hive-scoping the
+ * global lexicon pack, a separate refactor.)
+ */
+export function loadHarnessLexicon(stateDir: string): Record<string, string> | undefined {
+  try {
+    const f = join(stateDir, 'blueprint.yaml');
+    if (!existsSync(f)) return undefined;
+    const lex = loadBlueprintFromFile(f).blueprint.lexicon;
+    return lex && Object.keys(lex).length > 0 ? lex : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The per-install INSTANCE config, delivered SOLELY via the `HARNESS_CONFIG_JSON`
  * env-transport (the operator assembles it from workspace PG and passes it on
  * spawn; a cloud frame receives it the same way). `.papercusp/config.json` is no

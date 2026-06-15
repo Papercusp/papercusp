@@ -288,6 +288,36 @@ test('buildPrompt — acceptanceKind judge/none swaps TESTING_STANDARD for VERIF
   }
 });
 
+test('buildPrompt — a hive lexicon emits a vocabulary block; absent ⇒ none (P-016)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
+  });
+  try {
+    const base = {
+      role: 'worker' as const,
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+    };
+    // A hive with noun overrides → the vocabulary reminder, naming each mapping.
+    const generic = buildPrompt({ ...base, lexicon: { workUnit: 'deliverable', reviewGate: 'review' } });
+    assert.match(generic, /## This hive's vocabulary/);
+    assert.match(generic, /a "workUnit" is called a "deliverable"/);
+    assert.match(generic, /a "reviewGate" is called a "review"/);
+    // No lexicon (the coding hive) ⇒ no block (byte-identical cached prefix).
+    assert.doesNotMatch(buildPrompt(base), /## This hive's vocabulary/);
+    assert.doesNotMatch(buildPrompt({ ...base, lexicon: {} }), /## This hive's vocabulary/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 // ── EI-75 / EI-317: the deferred-tools recipe (the un-muting fix) ────────────
 //    A fleet:spawn bee's platform MCP tools are DEFERRED behind ToolSearch; a
 //    small backend that doesn't know the contract concludes "I can't call MCP
