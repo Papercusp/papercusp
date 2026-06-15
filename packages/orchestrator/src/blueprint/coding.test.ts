@@ -13,7 +13,7 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { resolvePromptFile } from '../prompt-resolve.js';
 import { harnessPath } from '@papercusp/harness/paths';
 import { loadBuiltinBlueprint } from './loader.js';
 import { deriveNext, type ParsedDecisionLike } from './derive-next.js';
@@ -144,8 +144,11 @@ test('every declared coding role has a resolvable prompt file', () => {
   const { blueprint: bp } = loadBuiltinBlueprint('coding');
   assert.ok(bp.roles.length >= 8, 'coding declares its pipeline + quality roles');
   for (const role of bp.roles) {
-    const p = harnessPath('prompts', `${role.id}.md`);
-    assert.ok(existsSync(p), `missing prompt for coding role "${role.id}" at ${p}`);
+    const found = resolvePromptFile(
+      { harnessDir: harnessPath(), phase: '', dept: '', blueprintId: 'coding' },
+      role.id,
+    );
+    assert.ok(found, `missing prompt for coding role "${role.id}" (blueprints/coding/prompts or base)`);
   }
 });
 

@@ -7,7 +7,7 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { resolvePromptFile } from '../prompt-resolve.js';
 import { harnessPath } from '@papercusp/harness/paths';
 import { loadBuiltinBlueprint } from './loader.js';
 import { deriveNext, type ParsedDecisionLike } from './derive-next.js';
@@ -48,8 +48,11 @@ test('review blueprint has the expected review shape', () => {
 test('every review role has a resolvable prompt file', () => {
   const { blueprint: bp } = loadBuiltinBlueprint('review');
   for (const role of bp.roles) {
-    const p = harnessPath('prompts', `${role.id}.md`);
-    assert.ok(existsSync(p), `missing prompt for review role "${role.id}" at ${p}`);
+    const found = resolvePromptFile(
+      { harnessDir: harnessPath(), phase: '', dept: '', blueprintId: 'review' },
+      role.id,
+    );
+    assert.ok(found, `missing prompt for review role "${role.id}" (blueprints/review/prompts or base)`);
   }
 });
 

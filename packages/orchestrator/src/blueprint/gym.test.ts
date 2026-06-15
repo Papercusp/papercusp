@@ -7,7 +7,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { loadBuiltinBlueprint } from './loader.js';
-import { existsSync } from 'node:fs';
+import { resolvePromptFile } from '../prompt-resolve.js';
 import { harnessPath } from '@papercusp/harness/paths';
 
 test('gym blueprint loads + validates with no errors AND no warnings', () => {
@@ -50,7 +50,10 @@ test('gym blueprint has the expected meta-harness shape', () => {
 test('every gym role has a resolvable prompt file', () => {
   const { blueprint: bp } = loadBuiltinBlueprint('gym');
   for (const role of bp.roles) {
-    const p = harnessPath('prompts', `${role.id}.md`);
-    assert.ok(existsSync(p), `missing prompt for gym role "${role.id}" at ${p}`);
+    const found = resolvePromptFile(
+      { harnessDir: harnessPath(), phase: '', dept: '', blueprintId: 'gym' },
+      role.id,
+    );
+    assert.ok(found, `missing prompt for gym role "${role.id}" (blueprints/gym/prompts or base)`);
   }
 });

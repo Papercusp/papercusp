@@ -84,7 +84,7 @@ function makeFixture(setup: (fx: Omit<Fixture, 'cleanup'>) => void): Fixture {
   const projectDir = join(root, 'project');
   const stateDir = join(projectDir, '.papercusp');
   const logDir = join(stateDir, 'logs');
-  mkdirSync(join(harnessDir, 'prompts'), { recursive: true });
+  mkdirSync(join(harnessDir, 'blueprints', 'base', 'prompts'), { recursive: true });
   mkdirSync(join(harnessDir, 'identity'), { recursive: true });
   mkdirSync(logDir, { recursive: true });
   const fx = { harnessDir, projectDir, stateDir, logDir };
@@ -509,7 +509,7 @@ test('invoke — end-to-end logs invoke message, returns rc + paths', async () =
   // (`merge-resolver` served here until the launch-fixer family pinned opus:xhigh
   // — D-008 follow-up; `reviewer` is the remaining floorless judgment role.)
   const fx = makeFixture(({ harnessDir }) => {
-    writeFileSync(join(harnessDir, 'prompts', 'reviewer.md'), '# REVIEWER');
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'reviewer.md'), '# REVIEWER');
   });
   try {
     const log: string[] = [];
@@ -572,7 +572,7 @@ test('invoke — throws when no prompt file exists for role', async () => {
 
 test('invoke — produces .jsonl, .out, .err artifacts', async () => {
   const fx = makeFixture(({ harnessDir }) => {
-    writeFileSync(join(harnessDir, 'prompts', 'worker.md'), '# WORKER');
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
   });
   try {
     const result = await invoke(
@@ -607,7 +607,7 @@ test('invoke — a claude agent spawn carries the native-scheduler lockout in it
   // actual spawned argv (positive case — the `cat` e2e above is the negative:
   // a non-claude command must NOT get a claude flag).
   const fx = makeFixture(({ harnessDir }) => {
-    writeFileSync(join(harnessDir, 'prompts', 'worker.md'), '# WORKER');
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
   });
   try {
     // A stub whose path NAMES claude (both the backend resolution and the

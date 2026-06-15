@@ -1723,8 +1723,8 @@ export async function invoke(
     );
     if (promptFiles.length === 0) {
       const where = blueprintId
-        ? `${ctx.harnessDir}/blueprints/${blueprintId}/prompts or ${ctx.harnessDir}/prompts`
-        : `${ctx.harnessDir}/prompts`;
+        ? `${ctx.harnessDir}/blueprints/${blueprintId}/prompts or ${ctx.harnessDir}/blueprints/base/prompts`
+        : `${ctx.harnessDir}/blueprints/base/prompts`;
       throw new Error(`invoke: no prompt file for role=${role} (looked under ${where})`);
     }
     // The most-specific file stays the run-record's promptFile (stable reporting).
