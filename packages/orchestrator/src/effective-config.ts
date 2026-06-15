@@ -84,6 +84,29 @@ export function loadHarnessKnobs(stateDir: string): Blueprint['knobs'] | null {
 }
 
 /**
+ * The effective blueprint's `acceptance.kind` from `<stateDir>/blueprint.yaml`
+ * (hive-blueprint-generalization P-008) — `undefined` for a non-blueprint / coding
+ * harness (which declares no `acceptance`), so the spawned-agent preamble keeps its
+ * tests-based `TESTING_STANDARD` there. A generic hive (`acceptance.kind: judge` etc.)
+ * makes `buildPrompt` emit the domain-agnostic `VERIFICATION_STANDARD` instead, so a
+ * deliverable-producing bee is NOT told to write tests. Mirrors operator-core's
+ * finalize-gate `harnessAcceptanceKind` so the spawn preamble + the DONE gate read the
+ * SAME source (the two-base sync the de-code rests on). Fail-safe: a bad/absent
+ * blueprint ⇒ undefined ⇒ unchanged coding behavior.
+ */
+export function loadHarnessAcceptanceKind(
+  stateDir: string,
+): 'tests' | 'judge' | 'human-gate' | 'none' | undefined {
+  try {
+    const f = join(stateDir, 'blueprint.yaml');
+    if (!existsSync(f)) return undefined;
+    return loadBlueprintFromFile(f).blueprint.acceptance?.kind;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The per-install INSTANCE config, delivered SOLELY via the `HARNESS_CONFIG_JSON`
  * env-transport (the operator assembles it from workspace PG and passes it on
  * spawn; a cloud frame receives it the same way). `.papercusp/config.json` is no

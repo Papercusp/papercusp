@@ -32,7 +32,7 @@ import { homedir, tmpdir } from 'node:os';
 import { sessionClaudeConfigDir, sessionMcpDir } from './session-launch-dirs';
 import { readFleetClaudeToken } from './fleet-claude-token';
 import { configGet } from './config';
-import { readEffectiveConfig } from './effective-config';
+import { readEffectiveConfig, loadHarnessAcceptanceKind } from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
 import { resolvePromptFiles } from './prompt-resolve';
@@ -2086,6 +2086,12 @@ export async function invoke(
     cwdOverride,
     featureId,
     runId,
+    // hive-blueprint-generalization P-008: a generic hive's blueprint
+    // (acceptance.kind: judge / human-gate / none) swaps the tests-based
+    // TESTING_STANDARD for the domain-agnostic VERIFICATION_STANDARD, so a
+    // deliverable-producing bee isn't told to write tests. undefined for a coding
+    // harness ⇒ TESTING_STANDARD (unchanged). Same source as the finalize gate.
+    acceptanceKind: loadHarnessAcceptanceKind(ctx.stateDir),
     // EI-311: the durable `s-…` coord owner (the umbilical), so the agent
     // names itself by its REAL identity — not the per-call Run ID — on any
     // degraded path where it composes its own messages.

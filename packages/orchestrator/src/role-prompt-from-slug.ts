@@ -23,7 +23,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { harnessRoot } from '@papercusp/harness/paths';
 import { resolvePhase, configGet } from './config';
-import { readEffectiveConfig } from './effective-config';
+import { readEffectiveConfig, loadHarnessAcceptanceKind } from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 
@@ -249,6 +249,10 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
     cwdOverride: '',         // chat doesn't run inside a worktree; no cwd hint
     featureId: opts.featureId ?? null,
     runId,
+    // hive-blueprint-generalization P-008: same acceptance-driven preamble swap as
+    // the autonomous spawn path (invoke.ts) — a generic-hive role launched here gets
+    // VERIFICATION_STANDARD, a coding role keeps TESTING_STANDARD (undefined).
+    acceptanceKind: loadHarnessAcceptanceKind(stateDir),
     extras,
     planContext: opts.planContext,
     brief: opts.brief,
