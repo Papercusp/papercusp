@@ -1,0 +1,74 @@
+# The `external-bench` blueprint — impartial-benchmark-suite-2026-06-15 (P-019 / BRIEF 2).
+#
+# The IMPARTIAL third-party benchmark runner. The sibling of `iq-battery` / `hive-eval`
+# (the internal benchmark pulses), but inverted on the two axes a sophisticated third
+# party discounts (D-005): the tasks are PUBLIC third-party instances (we don't author
+# them) and the grade comes from the benchmark's OWN external harness (we don't grade).
+#
+# Modeled on `iq-battery` as a PROGRAM-MODE (deterministic) blueprint: one gateless step,
+# `external-bench:run`. Per the plan's "Mapping onto Papercusp machinery" + the BRIEF 1
+# feasibility spike (apps/operator/docs/external-bench-grader-feasibility-2026-06-15.md),
+# the per-task generation+grading loop stays INTERNAL to the op (exactly iq-battery's
+# "spawn internal to the op"):
+#
+#   for each benchmark task →
+#     clone the task repo @ base_commit
+#       → spin a THROWAWAY `coding` harness (one `feature` work_item = the issue)
+#       → run to DONE under the iso-budget cap (BRIEF 7 / P-011)
+#       → extract the final unified diff (M1) / finished sandbox (M2)
+#       → hand to the benchmark's OFFICIAL grader (BRIEF 1 §1 OfficialGrader)
+#       → write a per-task run-result row (the BRIEF 7/8 shared schema).
+#
+# That loop is the adapter — BRIEF 3 / P-005, implemented in
+# `packages/operator-core/lib/external-bench/run-loop.ts` (`runExternalBench`). This
+# blueprint owns only the declarative shell + the op's typed I/O contract.
+#
+# NOT a flag/governor loop and NOT scheduled (unlike the monthly iq-battery/hive-eval):
+# the suite is run ON DEMAND for a pilot / a publication (P-009 fires one
+# `system:blueprint-run { blueprintId: external-bench, payload }` per arm × seed). The
+# gate is the owner-set `budgetUsd` (absent ⇒ the run is refused — the iso-budget /
+# unattended-spend guard, the gym's precedent).
+id: external-bench
+extends: base
+version: 0.1.0
+description: >-
+  Impartial third-party benchmark runner: each public benchmark task = one `coding`
+  work_item in a throwaway harness, run to DONE under an iso-budget cap and graded by
+  the benchmark's OWN external harness (we neither author nor grade). The arm of the
+  controlled comparison that holds the model constant and varies only the harness.
+
+workItem:
+  kind: external-bench-run
+  idPrefix: XB
+
+# Program-mode spine: one step, NO gate ⇒ a gateless deterministic pipeline (the op's
+# internal budget/dedupe gate decides refuse/skip/run). `payload.*` are the run config
+# the firing `system:blueprint-run { payload }` carries — type-preserved by the program
+# runner's whole-placeholder interpolation (taskIds stays an array, seed a number).
+spine:
+  steps:
+    - id: run
+      op: external-bench:run
+      args:
+        benchmark: "{{ payload.benchmark }}"
+        taskIds: "{{ payload.taskIds }}"
+        arm: "{{ payload.arm }}"
+        seed: "{{ payload.seed }}"
+        budgetUsd: "{{ payload.budgetUsd }}"
+        dryRun: "{{ payload.dryRun }}"
+      bind: run
+
+knobs:
+  # An EVALUATION harness — distinct from `coding` / `learning`. The Evaluation dock-tab
+  # (D-007, P-020) is its reader. `harnessKind` is a free label (no closed-set consumer);
+  # the per-task repos are cloned by the op, so the orchestrator harness owns no repo.
+  harnessKind: eval
+  requiresRepo: false
+
+# No `triggers:` — this is an ON-DEMAND runner, not a cadence pulse. A pilot/publication
+# fires `system:blueprint-run { blueprintId: external-bench, payload: { benchmark, taskIds,
+# arm, seed, budgetUsd } }`; the handler detects program-mode and runs the step inline.
+
+dependencies:
+  tools: []
+  plugins: []
