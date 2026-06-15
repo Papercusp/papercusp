@@ -49,8 +49,9 @@ call — prefer it over a serial loop.
 
 A generic bee shares a **subject**, not open files. Co-locate by: the bee's declared intent /
 current plan naming the item; shared work-item **topics**; the same research area / entity.
-(The placement ranker reads this hive's `affinity.kind: topic-overlap` automatically — you
-just attach the right brief so the topic is legible.)
+**Pass `affinity_kind: 'topic-overlap'` to `fleet:place_batch`** so the ranker weights topic /
+subject similarity over file overlap (a generic bee has no shared files to match on). Attach a
+brief that makes each task's topic legible so the signal fires.
 
 ## Decompose by topic / subject seams — briefs first (the default)
 
