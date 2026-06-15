@@ -202,6 +202,49 @@ test('Dependencies — blueprints (spawned-blueprint closure) defaults to [] and
   assert.deepEqual(withDeps.dependencies?.blueprints, ['coding', 'research']);
 });
 
+test('Hive domain-profile (lexicon/fleet/wake/learning/placement) — optional, default to undefined', () => {
+  const bp = BlueprintSchema.parse(minimal);
+  assert.equal(bp.lexicon, undefined);
+  assert.equal(bp.fleet, undefined);
+  assert.equal(bp.wake, undefined);
+  assert.equal(bp.learning, undefined);
+  assert.equal(bp.placement, undefined);
+});
+
+test('FleetSchema — worker roles carry an enforced capability envelope; watcher is one or many', () => {
+  const bp = BlueprintSchema.parse({
+    ...minimal,
+    fleet: { workerRoles: [{ id: 'bee', capabilities: ['coord:send', 'artifacts:save'] }], watcher: 'sentinel' },
+  });
+  assert.equal(bp.fleet?.workerRoles[0]?.id, 'bee');
+  assert.deepEqual(bp.fleet?.workerRoles[0]?.capabilities, ['coord:send', 'artifacts:save']);
+  assert.equal(bp.fleet?.watcher, 'sentinel');
+  // capabilities default to [] when omitted; watcher accepts a list.
+  const multi = BlueprintSchema.parse({
+    ...minimal,
+    fleet: { workerRoles: [{ id: 'bee' }], watcher: ['sentinel', 'overwatch'] },
+  });
+  assert.deepEqual(multi.fleet?.workerRoles[0]?.capabilities, []);
+  assert.deepEqual(multi.fleet?.watcher, ['sentinel', 'overwatch']);
+});
+
+test('Wake/Learning/Placement/Lexicon — parse their declared shapes; placement enums are closed', () => {
+  const bp = BlueprintSchema.parse({
+    ...minimal,
+    lexicon: { workUnit: 'deliverable', reviewGate: 'review' },
+    wake: { subscriptions: [{ on: 'work_items:create', note: 'new work' }], kickoffTemplate: 'survey the frontier' },
+    learning: { pack: 'papercusp-default', loops: ['scout'] },
+    placement: { injectLoadThreshold: 3, maxInjectPerBee: 2, strategy: 'balanced' },
+  });
+  assert.equal(bp.lexicon?.workUnit, 'deliverable');
+  assert.equal(bp.wake?.subscriptions[0]?.on, 'work_items:create');
+  assert.deepEqual(bp.learning?.loops, ['scout']);
+  assert.equal(bp.placement?.strategy, 'balanced');
+  // placement strategy is a closed enum; injectLoadThreshold a positive int.
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, placement: { strategy: 'random' } }));
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, placement: { injectLoadThreshold: 0 } }));
+});
+
 test('BlueprintSchema — parse is idempotent (validator-of-record round-trips)', () => {
   const once = BlueprintSchema.parse(minimal);
   const twice = BlueprintSchema.parse(once);

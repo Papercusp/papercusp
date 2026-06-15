@@ -341,6 +341,57 @@ export const AffinitySchema = z.object({
   kind: z.enum(['file-overlap', 'topic-overlap', 'entity-overlap']).default('file-overlap'),
 });
 
+/**
+ * Lexicon — per-hive domain noun overrides (hive-blueprint-generalization Phase 4 /
+ * P-016). Promotes the presentation-only `papercusp-the-hive` strings into the
+ * blueprint so personas + UI read in the hive's own domain ("feature"/"PR" for a coding
+ * hive, "deliverable"/"report" for a generic one). A loose string→string map; consumers
+ * fall back to the built-in noun when a key is absent.
+ */
+export const LexiconSchema = z.record(z.string(), z.string());
+
+/**
+ * Fleet — the placeable worker roster a Queen dispatches onto, lifted from the global
+ * role-config / role-envelopes into the blueprint (hive-blueprint-generalization Phase 4
+ * / P-012). Each worker role names its ENFORCED capability envelope; `watcher` is the
+ * read-only observer role(s) (sentinel; overwatch for an ops/coding hive — D-006).
+ */
+export const FleetSchema = z.object({
+  workerRoles: z.array(z.object({ id: z.string().min(1), capabilities: z.array(z.string()).default([]) })).default([]),
+  watcher: z.union([z.string(), z.array(z.string())]).optional(),
+});
+
+/**
+ * Wake — the Queen's event-subscription policy, lifted from the hardcoded
+ * `wake-defaults.ts` (hive-blueprint-generalization Phase 4 / P-013). The hive
+ * deliberately has NO cron; it self-declares its next wake. `subscriptions` are the
+ * default event keys that wake the Queen; `kickoffTemplate` seeds the first wake.
+ */
+export const WakeSchema = z.object({
+  subscriptions: z.array(z.object({ on: z.string().min(1), note: z.string().optional() })).default([]),
+  kickoffTemplate: z.string().optional(),
+});
+
+/**
+ * Learning — which shared-memory pack seeds the hive and which learning loops it
+ * provisions, lifted from the hardcoded hive-create path (hive-blueprint-generalization
+ * Phase 4 / P-014). `pack` omitted ⇒ the default pack; 'none' ⇒ seed nothing.
+ */
+export const LearningSchema = z.object({
+  pack: z.string().optional(),
+  loops: z.array(z.string()).default([]),
+});
+
+/**
+ * Placement — the Queen's placement-policy knobs, lifted from the hardcoded
+ * `fleet:place_batch` defaults (hive-blueprint-generalization Phase 4 / P-015).
+ */
+export const PlacementSchema = z.object({
+  injectLoadThreshold: z.number().int().positive().optional(),
+  maxInjectPerBee: z.number().int().positive().optional(),
+  strategy: z.enum(['free-slot-first', 'warm-inject-first', 'balanced']).optional(),
+});
+
 /** Per-role / default AI-backend invocation knob (mirrors HarnessConfig's
  *  `AiBackendRoleConfig`). `.passthrough` so non-secret extras survive. */
 const AiBackendRoleKnobSchema = z.object({
@@ -693,6 +744,14 @@ export const BlueprintSchema = z.object({
   acceptance: AcceptanceSchema.optional(),
   output: OutputSchema.optional(),
   affinity: AffinitySchema.optional(),
+  /** Hive fleet/policy sections — the rest of the domain profile (Phase 4). All
+   *  optional + additive: a non-hive blueprint declares none. Lifted from the
+   *  hardcoded create/runtime path so a hive blueprint is self-describing. */
+  lexicon: LexiconSchema.optional(),
+  fleet: FleetSchema.optional(),
+  wake: WakeSchema.optional(),
+  learning: LearningSchema.optional(),
+  placement: PlacementSchema.optional(),
   knobs: KnobsSchema.prefault({}),
   triggers: TriggersSchema.optional(),
   /** The autoloop dispatch policy (D-005). Optional: launch/program blueprints
