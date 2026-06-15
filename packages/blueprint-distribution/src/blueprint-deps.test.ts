@@ -190,6 +190,30 @@ test('legacy {tools, plugins} input (no packs) keeps working unchanged', () => {
     host({ availableTools: new Set(['docs:get']), installedPlugins: new Set(['slack-notifier']) }),
   );
   assert.equal(r.ok, true);
-  assert.deepEqual(r.missing, { tools: [], packs: [], plugins: [] });
-  assert.deepEqual(r.installable, { tools: [], packs: [], plugins: [] });
+  assert.deepEqual(r.missing, { tools: [], packs: [], plugins: [], blueprints: [] });
+  assert.deepEqual(r.installable, { tools: [], packs: [], plugins: [], blueprints: [] });
+});
+
+test('a spawned-blueprint dep resolves: built-in/installed → ok, Cupboard → installable, neither → missing', () => {
+  // built-in / installed blueprint → satisfied.
+  const ok = validateBlueprintDependencies(
+    { blueprints: ['coding', 'research'] },
+    host({ availableBlueprints: new Set(['coding', 'research']) }),
+  );
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.missing.blueprints, []);
+
+  // not installed but Cupboard-listed → installable, non-blocking (the install pulls it).
+  const inst = validateBlueprintDependencies(
+    { blueprints: ['vote'] },
+    host({ availableBlueprints: new Set(), cupboardBlueprints: new Set(['vote']) }),
+  );
+  assert.equal(inst.ok, true);
+  assert.deepEqual(inst.installable.blueprints, ['vote']);
+
+  // nowhere → hard failure with an actionable message.
+  const miss = validateBlueprintDependencies({ blueprints: ['ghost-bp'] }, host());
+  assert.equal(miss.ok, false);
+  assert.deepEqual(miss.missing.blueprints, ['ghost-bp']);
+  assert.match(miss.messages[0], /needs blueprint "ghost-bp"/);
 });

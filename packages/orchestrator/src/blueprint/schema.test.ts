@@ -162,6 +162,46 @@ test('DispatchSchema — rejects degenerate values', () => {
   assert.throws(() => BlueprintSchema.parse({ ...minimal, dispatch: { costCapUsd: 0 } }));
 });
 
+test('Acceptance/Output/Affinity — optional domain-profile sections default to undefined', () => {
+  const bp = BlueprintSchema.parse(minimal);
+  // Additive + optional: a blueprint that declares none parses unchanged (no keys appear).
+  assert.equal(bp.acceptance, undefined);
+  assert.equal(bp.output, undefined);
+  assert.equal(bp.affinity, undefined);
+});
+
+test('AcceptanceSchema — bare section defaults to none; judge reuses the gym rubric shape', () => {
+  assert.equal(BlueprintSchema.parse({ ...minimal, acceptance: {} }).acceptance?.kind, 'none');
+  const judged = BlueprintSchema.parse({
+    ...minimal,
+    acceptance: { kind: 'judge', rubric: { dimensions: { accuracy: 'is it right' }, weights: { accuracy: 1 } } },
+  });
+  assert.equal(judged.acceptance?.kind, 'judge');
+  assert.equal(judged.acceptance?.rubric?.version, 'v1'); // GymRubricSchema default fills through
+  assert.deepEqual(judged.acceptance?.rubric?.dimensions, { accuracy: 'is it right' });
+  // closed enum — an unknown acceptance mode is rejected, not stored.
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, acceptance: { kind: 'vibes' } }));
+});
+
+test('OutputSchema — bare section defaults to repo-commit; kind is a closed enum', () => {
+  assert.equal(BlueprintSchema.parse({ ...minimal, output: {} }).output?.kind, 'repo-commit');
+  assert.equal(BlueprintSchema.parse({ ...minimal, output: { kind: 'artifacts' } }).output?.kind, 'artifacts');
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, output: { kind: 'stdout' } }));
+});
+
+test('AffinitySchema — bare section defaults to file-overlap; kind is a closed enum', () => {
+  assert.equal(BlueprintSchema.parse({ ...minimal, affinity: {} }).affinity?.kind, 'file-overlap');
+  assert.equal(BlueprintSchema.parse({ ...minimal, affinity: { kind: 'topic-overlap' } }).affinity?.kind, 'topic-overlap');
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, affinity: { kind: 'random' } }));
+});
+
+test('Dependencies — blueprints (spawned-blueprint closure) defaults to [] and accepts a list', () => {
+  assert.equal(BlueprintSchema.parse(minimal).dependencies, undefined); // optional, unchanged when absent
+  assert.deepEqual(BlueprintSchema.parse({ ...minimal, dependencies: {} }).dependencies?.blueprints, []);
+  const withDeps = BlueprintSchema.parse({ ...minimal, dependencies: { blueprints: ['coding', 'research'] } });
+  assert.deepEqual(withDeps.dependencies?.blueprints, ['coding', 'research']);
+});
+
 test('BlueprintSchema — parse is idempotent (validator-of-record round-trips)', () => {
   const once = BlueprintSchema.parse(minimal);
   const twice = BlueprintSchema.parse(once);

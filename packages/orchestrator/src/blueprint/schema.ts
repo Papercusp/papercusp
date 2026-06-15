@@ -304,6 +304,43 @@ export const GymSchema = z.object({
   rubric: GymRubricSchema.optional(),
 });
 
+/**
+ * Acceptance — how a hive/harness decides a unit of work is DONE, decoupled from
+ * "tests pass" (hive-blueprint-generalization Phase 3, consumed by P-009). `tests`
+ * runs the blueprint's verified test command (the coding default → green-checkpoint);
+ * `judge` scores the run's output against `rubric` via the shared gym judge
+ * (`gym:judge`); `human-gate` blocks finalization on an explicit human approval;
+ * `none` (default) keeps today's behavior (finalize straight through `gates.finalize`).
+ * `rubric` (only meaningful for `judge`) reuses the gym's rubric shape.
+ */
+export const AcceptanceSchema = z.object({
+  kind: z.enum(['tests', 'judge', 'human-gate', 'none']).default('none'),
+  rubric: GymRubricSchema.optional(),
+});
+
+/**
+ * Output sink — where a finished unit of work LANDS (hive-blueprint-generalization
+ * Phase 3, consumed by P-010). `repo-commit` (the coding default) leaves the change in
+ * the tree for git-sync → checkpoint → deploy; `artifacts` persists a document/report
+ * via the artifacts store; `external-action` performs an outward action (post/send/file)
+ * via a tool; `work-item-payload` serializes the result onto the work item.
+ */
+export const OutputSchema = z.object({
+  kind: z.enum(['repo-commit', 'artifacts', 'external-action', 'work-item-payload']).default('repo-commit'),
+});
+
+/**
+ * Affinity — the seam the Queen uses to co-locate/decompose work onto bees
+ * (hive-blueprint-generalization Phase 3, consumed by P-011). `file-overlap` (the
+ * coding default) ranks by shared files (a bee's `current_files` vs the task's files);
+ * `topic-overlap` by shared work-item topics; `entity-overlap` by shared entity scope.
+ * The single knob that de-codes the Queen's "cut briefs on file-scope" into "cut on
+ * <scope-seam>".
+ */
+export const AffinitySchema = z.object({
+  kind: z.enum(['file-overlap', 'topic-overlap', 'entity-overlap']).default('file-overlap'),
+});
+
 /** Per-role / default AI-backend invocation knob (mirrors HarnessConfig's
  *  `AiBackendRoleConfig`). `.passthrough` so non-secret extras survive. */
 const AiBackendRoleKnobSchema = z.object({
@@ -498,6 +535,12 @@ export const DependenciesSchema = z.object({
   tools: z.array(z.string()).default([]),
   packs: z.array(z.string()).default([]),
   plugins: z.array(z.string()).default([]),
+  /** Work-blueprints this blueprint's roles SPAWN as sub-harnesses (e.g. a hive
+   *  whose bees spin up `coding` / `research`). Resolved like packs/plugins:
+   *  installed → satisfied, Cupboard-listed → installable, neither → hard failure;
+   *  the install path pulls the closure (blueprint-role-bundling P-007 — this is the
+   *  `memberBlueprints` mechanism of hive-blueprint-generalization D-004). */
+  blueprints: z.array(z.string()).default([]),
 });
 
 /** A long-running background service the harness's environment needs (a dev
@@ -642,6 +685,14 @@ export const BlueprintSchema = z.object({
   gates: GatesSchema.prefault({}),
   recursion: RecursionSchema.prefault({}),
   gym: GymSchema.optional(),
+  /** Hive/harness DOMAIN-PROFILE sections (hive-blueprint-generalization Phase 3).
+   *  Optional + additive: an absent section ⇒ undefined and the consumer applies the
+   *  default kind, so every pre-existing blueprint parses unchanged. The concrete
+   *  hives override (generic-hive: judge / artifacts / topic-overlap; coding-hive:
+   *  tests / repo-commit / file-overlap). */
+  acceptance: AcceptanceSchema.optional(),
+  output: OutputSchema.optional(),
+  affinity: AffinitySchema.optional(),
   knobs: KnobsSchema.prefault({}),
   triggers: TriggersSchema.optional(),
   /** The autoloop dispatch policy (D-005). Optional: launch/program blueprints

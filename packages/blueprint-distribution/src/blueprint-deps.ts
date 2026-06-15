@@ -46,6 +46,10 @@ export interface BlueprintDependencyInput {
   tools?: string[];
   packs?: string[];
   plugins?: string[];
+  /** Work-blueprints this blueprint's roles SPAWN as sub-harnesses (a hive declares
+   *  the work-blueprints its bees spin up). Resolved like plugins: built-in/installed →
+   *  satisfied, Cupboard-listed → installable, neither → hard failure. */
+  blueprints?: string[];
 }
 
 /** The host capability sets the validator resolves declared deps against. */
@@ -68,19 +72,23 @@ export interface DependencyHostSets {
    * `buildPackCatalogView().cupboardToolIndex`.
    */
   installableToolProviders?: Map<string, { kind: 'plugin' | 'pack'; name: string }>;
+  /** Blueprint ids resolvable now — built-ins + installed under ~/.papercusp/blueprints. */
+  availableBlueprints?: Set<string>;
+  /** Blueprints listed in the Cupboard (installable but not necessarily installed). */
+  cupboardBlueprints?: Set<string>;
 }
 
 export interface BlueprintDependencyValidation {
   /** True iff no declared tool/pack/plugin is unresolvable (installable deps do NOT block). */
   ok: boolean;
   /** Unresolvable declared deps — the dep strings as written (with any `@range`). */
-  missing: { tools: string[]; packs: string[]; plugins: string[] };
+  missing: { tools: string[]; packs: string[]; plugins: string[]; blueprints: string[] };
   /**
    * Declared deps not present but resolvable from the Cupboard. Advisory:
    * `init --from`'s auto-install step should fetch these. Does not affect
    * `ok`. `tools` lists tools whose *providing unit* is installable.
    */
-  installable: { tools: string[]; packs: string[]; plugins: string[] };
+  installable: { tools: string[]; packs: string[]; plugins: string[]; blueprints: string[] };
   /** One human-readable line per unresolvable dep — surfaced to the user. */
   messages: string[];
 }
@@ -110,12 +118,16 @@ export function validateBlueprintDependencies(
   const installableTools: string[] = [];
   const installablePacks: string[] = [];
   const installablePlugins: string[] = [];
+  const missingBlueprints: string[] = [];
+  const installableBlueprints: string[] = [];
   const messages: string[] = [];
 
   const cupboardPlugins = host.cupboardPlugins ?? new Set<string>();
   const installedPacks = host.installedPacks ?? new Set<string>();
   const cupboardPacks = host.cupboardPacks ?? new Set<string>();
   const toolProviders = host.installableToolProviders ?? new Map<string, { kind: 'plugin' | 'pack'; name: string }>();
+  const availableBlueprints = host.availableBlueprints ?? new Set<string>();
+  const cupboardBlueprints = host.cupboardBlueprints ?? new Set<string>();
 
   for (const raw of deps?.tools ?? []) {
     const { name } = parseDepSpec(raw);
@@ -155,10 +167,36 @@ export function validateBlueprintDependencies(
     messages.push(`needs plugin "${name}" — not installed and not available in the Cupboard`);
   }
 
+  // A `blueprints` dep is a work-blueprint this blueprint's roles spawn (e.g. a hive
+  // spinning up `coding`). Resolved like plugins: a built-in/installed blueprint
+  // satisfies it; a Cupboard-listed one is installable (the install path pulls the
+  // closure); neither is a hard failure. (blueprint-role-bundling P-007.)
+  for (const raw of deps?.blueprints ?? []) {
+    const { name } = parseDepSpec(raw);
+    if (availableBlueprints.has(name)) continue; // built-in or installed → satisfied
+    if (cupboardBlueprints.has(name)) {
+      installableBlueprints.push(raw); // resolvable from the Cupboard → install pulls it
+      continue;
+    }
+    missingBlueprints.push(raw);
+    messages.push(
+      `needs blueprint "${name}" — not a built-in/installed blueprint and not available in the Cupboard`,
+    );
+  }
+
   return {
-    ok: missingTools.length === 0 && missingPacks.length === 0 && missingPlugins.length === 0,
-    missing: { tools: missingTools, packs: missingPacks, plugins: missingPlugins },
-    installable: { tools: installableTools, packs: installablePacks, plugins: installablePlugins },
+    ok:
+      missingTools.length === 0 &&
+      missingPacks.length === 0 &&
+      missingPlugins.length === 0 &&
+      missingBlueprints.length === 0,
+    missing: { tools: missingTools, packs: missingPacks, plugins: missingPlugins, blueprints: missingBlueprints },
+    installable: {
+      tools: installableTools,
+      packs: installablePacks,
+      plugins: installablePlugins,
+      blueprints: installableBlueprints,
+    },
     messages,
   };
 }
