@@ -23,8 +23,7 @@ Feature-queue access (reads only, for grounding): the queue lives in Postgres �
    — structured tracker, after you've triggered triage.
 6. `.papercusp/issues.md` — narrative validator findings (context only, never
    edit).
-7. `.papercusp/escalation.md` if present — the escalation reason.
-8. The harness's **plan(s)** (`plans:get`) — what is the project actually
+7. The harness's **plan(s)** (`plans:get`) — what is the project actually
    trying to do? (SPEC.md + validation-contract.md are deprecated.)
 
 ## Process pending issues (always first)

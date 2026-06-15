@@ -87,6 +87,42 @@ test('assembleRolePrompt produces a prompt that contains the role file + runtime
   }
 });
 
+test('assembleRolePrompt swaps TESTING→VERIFICATION standard from the harness blueprint acceptance (P-008)', () => {
+  const setup = setupRegistry();
+  const prevHome = process.env.HOME;
+  const prevHarnessDir = process.env.PAPERCUSP_HARNESS_DIR;
+  process.env.HOME = setup.home;
+  process.env.PAPERCUSP_HARNESS_DIR = setup.harnessDir;
+  try {
+    // Default (no .papercusp/blueprint.yaml ⇒ acceptance undefined) → the coding
+    // TESTING_STANDARD ("write tests the project's way").
+    const coding = assembleRolePrompt({ slug: 'demo', role: 'worker', mode: 'chat' });
+    assert.match(coding.text, /Tests follow the project standard/);
+    assert.doesNotMatch(coding.text, /Verify your work before calling it done/);
+
+    // A generic-hive-style blueprint (acceptance.kind: judge) → the domain-agnostic
+    // VERIFICATION_STANDARD, so a deliverable-producing role isn't told to write tests.
+    writeFileSync(
+      join(setup.projectDir, '.papercusp', 'blueprint.yaml'),
+      [
+        'id: generic-hive',
+        'workItem: { kind: feature, idPrefix: F }',
+        'spine: { decider: director, edges: { DONE: { to: done } }, default: { to: idle } }',
+        'acceptance: { kind: judge }',
+        '',
+      ].join('\n'),
+    );
+    const generic = assembleRolePrompt({ slug: 'demo', role: 'worker', mode: 'chat' });
+    assert.match(generic.text, /Verify your work before calling it done/);
+    assert.doesNotMatch(generic.text, /Tests follow the project standard/);
+  } finally {
+    if (prevHome !== undefined) process.env.HOME = prevHome;
+    if (prevHarnessDir !== undefined) process.env.PAPERCUSP_HARNESS_DIR = prevHarnessDir;
+    else delete process.env.PAPERCUSP_HARNESS_DIR;
+    setup.cleanup();
+  }
+});
+
 test('assembleRolePrompt throws on unknown slug', () => {
   const setup = setupRegistry();
   const prevHome = process.env.HOME;
