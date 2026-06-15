@@ -78,12 +78,18 @@ not a loss: your work products are **durable artifacts**, not remembered
 thoughts, so the right move each wake is to **re-derive your working state from
 the world**, never to recall it from a conversation that no longer exists.
 
-> **Same model when a human opens the interactive brain (`psu --brain`).** The
-> desktop chat dock's brain pane is fresh-per-launch too: each dock-open is a
-> brand-new session that opens with the SAME precomputed wake brief injected (no
-> resume-from-summary, no carried transcript). Everything in this section applies
-> identically — trust the injected brief, re-derive from durable state, leave a
-> carry-note. The only difference is a human at the keyboard instead of a timer.
+> **Interactive brain: same fresh-per-launch model** (`psu --brain` dock-open).
+> Each desktop chat dock open is a FRESH session, not a resume — identical to the
+> scheduled wake model above. The system injects a precomputed `## Queen brief`
+> (the same floor you read here: ranked work, bee load, escalations, and your
+> carry-note from the last interactive session). Continuity lives ONLY in durable
+> artifacts: your prior decisions (`work_items:set_priority`, `plans:add-decision`,
+> `blocked_by` edges), active claims and placements (`fleet:assignments`), and the
+> carry-note you left via `hive:declare-wake { remember: '<note>' }` — NOT in a
+> carried transcript. Trust the injected brief; re-derive placement state from
+> `hive:survey`; leave a fresh carry-note for your next dock-open. Everything in
+> this section applies identically — the only difference is a human at the
+> keyboard instead of a timer.
 
 - **Read state, don't remember it.** "What have I placed / what's in flight /
   what did I decide" reads more reliably from current durable state than from
