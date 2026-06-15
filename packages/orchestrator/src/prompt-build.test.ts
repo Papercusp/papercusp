@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildPrompt, buildPromptParts, wrapUntrusted } from './prompt-build.js';
+import { buildPrompt, buildPromptParts, wrapUntrusted, findBriefPlaceholder } from './prompt-build.js';
 
 interface Fixture {
   harnessDir: string;
@@ -997,6 +997,113 @@ test('buildPrompt — no Queen brief section when none supplied (best-effort, em
       // brief omitted
     });
     assert.doesNotMatch(out, /## Queen brief/, 'no brief section when none supplied');
+  } finally {
+    fx.cleanup();
+  }
+});
+
+// ── EI-248: un-substituted brief placeholder guard at the UNIVERSAL chokepoint ──
+//    The 2026-06-10 plan-closeout dispatch launched psu sessions whose brief still
+//    held the literal `brief-NN` placeholder, so ≥7 surplus sessions raced to
+//    self-select lanes off coord presence — a fleet-wide claim-collision storm.
+//    EI-249 guarded the BEE spawn path (spawnAgentInHarness); but psu/closeout
+//    sessions boot via invoke.ts → buildPrompt and bypass it. buildPrompt is the
+//    ONE prompt-assembly chokepoint every launch funnels through, so it must
+//    fail-fast on an un-substituted placeholder regardless of caller.
+
+test('findBriefPlaceholder — flags `brief-NN` and the `{item}` token, passes a real brief', () => {
+  // The exact incident text: the INDEX.md template literal that was never substituted.
+  assert.strictEqual(
+    findBriefPlaceholder('Read 00-COMMON.md then brief-NN and execute it'),
+    'brief-NN',
+  );
+  assert.strictEqual(findBriefPlaceholder('You are Brief-NN'), 'Brief-NN'); // case-insensitive
+  assert.strictEqual(findBriefPlaceholder('Universal schema {item}: single handler'), '{item}');
+  // A fully-substituted brief / empty / incidental text must NOT trip it.
+  assert.strictEqual(findBriefPlaceholder('Read 00-COMMON.md then brief-06 and execute it'), null);
+  assert.strictEqual(findBriefPlaceholder('unblock the staging deploy; watch bee-2'), null);
+  assert.strictEqual(findBriefPlaceholder(''), null);
+  assert.strictEqual(findBriefPlaceholder(undefined), null);
+  // Tight by design — no false positive on words merely containing the marker letters.
+  assert.strictEqual(findBriefPlaceholder('debrief the inn-keeper about ANN'), null);
+});
+
+test('buildPrompt — REFUSES to assemble a prompt whose brief still holds `brief-NN` (EI-248)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'bee.md'), '# BEE\nDo the placed work.');
+  });
+  try {
+    assert.throws(
+      () =>
+        buildPrompt({
+          role: 'bee',
+          promptFile: join(fx.harnessDir, 'bee.md'),
+          promptOverride: '',
+          stateDir: fx.stateDir,
+          harnessDir: fx.harnessDir,
+          projectDir: fx.projectDir,
+          cwdOverride: '',
+          featureId: null,
+          runId: 'opspawn-1780-bee',
+          extras: [],
+          // The un-substituted closeout-pack instruction that caused the storm.
+          brief: 'Read 00-COMMON.md then brief-NN and execute it',
+        }),
+      /un-substituted placeholder "brief-NN"[\s\S]*EI-248/,
+    );
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — also refuses the `{item}` token (a caller that bypassed buildWaveFeatures) (EI-248)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'bee.md'), '# BEE');
+  });
+  try {
+    assert.throws(
+      () =>
+        buildPrompt({
+          role: 'bee',
+          promptFile: join(fx.harnessDir, 'bee.md'),
+          promptOverride: '',
+          stateDir: fx.stateDir,
+          harnessDir: fx.harnessDir,
+          projectDir: fx.projectDir,
+          cwdOverride: '',
+          featureId: null,
+          runId: 'opspawn-1780-bee',
+          extras: [],
+          brief: 'Implement the {item} handler',
+        }),
+      /un-substituted placeholder "\{item\}"/,
+    );
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — a fully-substituted brief assembles normally (the guard never false-positives) (EI-248)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'bee.md'), '# BEE');
+  });
+  try {
+    const brief = 'Read 00-COMMON.md then brief-06 and execute it';
+    const out = buildPrompt({
+      role: 'bee',
+      promptFile: join(fx.harnessDir, 'bee.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'opspawn-1780-bee',
+      extras: [],
+      brief,
+    });
+    assert.match(out, /## Queen brief/);
+    assert.ok(out.includes(brief), 'a substituted brief must appear verbatim');
   } finally {
     fx.cleanup();
   }

@@ -639,7 +639,59 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   return { preamble: pre.join('\n'), volatile: vol.join('\n') };
 }
 
+/**
+ * EI-248: a brief must reach the agent FULLY SUBSTITUTED. The 2026-06-10
+ * plan-closeout dispatch launched psu sessions whose brief still held the
+ * literal `brief-NN` template placeholder (no number filled in), so ≥7 surplus
+ * sessions each had to self-select a lane off coord presence — a fleet-wide
+ * claim-collision storm (briefs 06/07/08 each declared 2–4×; lanes 10/11/12/15
+ * left unstaffed).
+ *
+ * EI-249 added a fail-fast guard at `spawnAgentInHarness` (operator-core), but
+ * that chokepoint only covers the BEE launch paths (chat `<spawn>`,
+ * `fleet:spawn`, `place_batch`). The psu/closeout dispatch path boots via
+ * `invoke.ts` → `buildPrompt` and never touches `spawnAgentInHarness`, so the
+ * exact incident path stayed unguarded. `buildPrompt` is the ONE prompt-assembly
+ * chokepoint EVERY launch funnels through (bee spawns, psu/closeout sessions,
+ * chat/discuss previews), so the universal backstop belongs here — option (a) of
+ * the issue ("refuse to launch when the prompt still matches /brief-NN/").
+ *
+ * Detects the repo's `{item}` template token (substituted up front by the
+ * queen-wave compiler's `buildWaveFeatures`) and the historical `brief-NN`
+ * dispatch-pack placeholder. Tight by design — a real brief never contains
+ * either — so false positives are nil. Returns the offending placeholder text
+ * (for the error message), or null.
+ *
+ * NOTE: operator-core's `findBriefPlaceholder` (fleet/operator-spawn.ts) is a
+ * deliberate mirror of this — the orchestrator is the LOWER layer and cannot
+ * import from operator-core, and the two guards fail-fast at two distinct layers
+ * (this one before prompt assembly; that one with a recorded nursery row). Keep
+ * the two regexes in sync.
+ */
+const BRIEF_PLACEHOLDER_RE = /\{item\}|\bbrief-NN\b/i;
+export function findBriefPlaceholder(brief: string | null | undefined): string | null {
+  if (!brief) return null;
+  const m = BRIEF_PLACEHOLDER_RE.exec(brief);
+  return m ? m[0] : null;
+}
+
 export function buildPrompt(input: BuildPromptInput): string {
+  // EI-248: refuse to assemble a prompt whose Queen brief still holds an
+  // un-substituted template placeholder. A literal `{item}` / `brief-NN` means
+  // an upstream substitution step was skipped — the 2026-06-10 closeout-dispatch
+  // stampede. Failing here (the universal prompt-assembly chokepoint) backstops
+  // every launch path that bypasses the bee-spawn guard (EI-249), including the
+  // psu/closeout dispatch that caused the incident.
+  const briefPlaceholder = findBriefPlaceholder(input.brief);
+  if (briefPlaceholder) {
+    throw new Error(
+      `buildPrompt refused: brief contains an un-substituted placeholder ` +
+        `"${briefPlaceholder}" — the brief must be fully substituted before launch ` +
+        `(EI-248). Resolve the template (the queen-wave compiler substitutes {item}; ` +
+        `a dispatch pack must fill in brief-NN per session) before building the prompt.`,
+    );
+  }
+
   const { preamble, volatile } = buildPromptParts(input);
   return volatile ? `${preamble}\n${volatile}` : preamble;
 }
