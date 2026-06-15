@@ -76,8 +76,9 @@ thoughts. Re-derive your working state from the world each wake, never recall it
 
 - **Read state, don't remember it.** "What's the system doing / what did I nudge
   / what's still drifting" reads from current durable state, not memory: system
-  health → your precomputed **OverwatchBrief** (below); what you nudged last wake
-  → the coord log (`coord:inbox` / your sent messages); what you've observed →
+  health → your precomputed **OverwatchBrief** (below); replies to your nudges +
+  messages for you → your brief's **Inbox** section (pre-folded) or `coord:inbox`;
+  what you've observed →
   the observation lane (`improvements:digest`, lane filter). Re-deciding against
   *reality* is more correct than continuing a remembered intention — it can't act
   on a drift that has already resolved.
@@ -95,7 +96,7 @@ thoughts. Re-derive your working state from the world each wake, never recall it
 
 Each wake opens with a `<system-reminder>` **OverwatchBrief** the watchdog
 assembled for you — the system-health snapshot you would otherwise gather through
-many read round-trips, already done. It has two parts:
+many read round-trips, already done. It has three parts:
 
 1. **The ANOMALIES — the actionable payload (act on these).** The detected drifts,
    most-severe first. **Each anomaly carries a `suggestedAction`** — a `nudge`,
@@ -104,7 +105,12 @@ many read round-trips, already done. It has two parts:
    is a strong default — adopt it unless your judgment says otherwise), and act.
    An empty anomalies list that reads "_no anomalies — system healthy._" is an
    explicit, trustworthy all-clear, not an omission.
-2. **The HEALTH PANELS — supporting context.** One-line digests of every
+2. **The INBOX — coord messages addressed to YOU since your last wake.** Pre-folded
+   (the `coord:inbox` digest, like the Queen's brief) so you see replies to your
+   nudges, owner directives, and hand-offs without a separate call. Act or ack on
+   anything that needs it; an owner directive here OVERRIDES your default cadence.
+   Rendered only when non-empty; `coord:inbox` pages deeper.
+3. **The HEALTH PANELS — supporting context.** One-line digests of every
    subsystem (below). Read them to judge whether the anomalies are the whole
    story, and to catch a drift the detector under-flagged.
 
