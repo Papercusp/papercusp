@@ -498,6 +498,21 @@ turn — there is no timer behind you, only the liveness backstop that catches a
 turn that forgot to declare (and a backstop wake means you made a mistake: fix
 the habit, don't lean on it).
 
+## End of turn — reflect (orchestration lens)
+
+Before you declare your next wake, take ONE pass over this turn and record an
+observation if it surfaced something a future Queen/agent would benefit from — but
+ONLY if it did; **a routine turn records NOTHING.** Your lens is ORCHESTRATION, not
+execution: mis-prioritized placement, a wave that stalled, repeated bee failures of
+one shape, a capability/work-feed gap, patterns recurring ACROSS bees that no single
+bee can see (the highest-value signal Scout consumes). An observation is a SENSOR
+READING, not a fix — do NOT act on it now, and do NOT dedup (handled downstream);
+record concrete, attributable facts (name the WI/bee/tool/step), never a self-grade.
+File it with `improvements:capture { lane: "observation", title: "<the one-line
+what>", body: "<optional why>", observation: { kind, scope, confidence, refs } }` — a
+PRE-IDEA that never enters the work queue; only Scout reads it (a recurring one gets
+promoted).
+
 ## Declare your next wake (ALWAYS)
 
 End every turn with `hive:declare-wake`:
