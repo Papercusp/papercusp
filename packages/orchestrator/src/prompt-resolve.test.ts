@@ -1,8 +1,9 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   promptCandidates,
   resolveBlueprintChain,
@@ -273,5 +274,43 @@ test('resolvePromptFile — blueprint own override wins over its ancestors + bas
     assert.equal(found, join(harnessDir, 'blueprints', 'implement', 'prompts', 'worker.md'));
   } finally {
     cleanup();
+  }
+});
+
+// ── Phase 5/6 structural invariant (blueprint-role-bundling D-012, option A) ──────
+// The legacy global prompts/ dir was DELETED and `staging` collapsed into the base
+// role library as canonical. These guard against a regression that resurrects the
+// global dir (or the phase/dept override tiers) — the failure modes the resolver
+// rewrite + the persona migration were designed to make impossible.
+
+/** The real shipped harness package dir (…/orchestrator/src → …/harness). */
+const HARNESS_PKG = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'harness');
+
+test('Phase 5 invariant — the legacy global prompts/ dir stays DELETED', () => {
+  assert.equal(
+    existsSync(join(HARNESS_PKG, 'prompts')),
+    false,
+    'libs/papercusp/packages/harness/prompts/ was deleted in blueprint-role-bundling Phase 5 ' +
+      '(option A — staging collapsed into the base role library). Do NOT recreate it: role ' +
+      'personas live in blueprints/base/prompts/ (universal) or blueprints/<id>/prompts/ (per-blueprint).',
+  );
+});
+
+test('Phase 6 invariant — the base role library is the canonical home for the core roles', () => {
+  const baseDir = join(HARNESS_PKG, 'blueprints', 'base', 'prompts');
+  assert.equal(existsSync(baseDir), true, 'blueprints/base/prompts/ is the canonical role library');
+  // The core pipeline roles + the migrated specialists must resolve from base with NO
+  // blueprintId (the universal-library guarantee `assembleRolePrompt` relies on).
+  for (const role of ['worker', 'validator', 'scoper', 'orchestrator', 'reviewer', 'documenter', 'tester', 'monitor']) {
+    const found = resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '' }, role);
+    assert.equal(
+      found,
+      join(baseDir, `${role}.md`),
+      `core role "${role}" must resolve from the base library (blueprints/base/prompts/${role}.md)`,
+    );
+  }
+  // The 2 built-in role MANIFESTS moved global→base in Phase 5 (role-registry scans base).
+  for (const manifest of ['security-reviewer.role.json', 'infra-reviewer.role.json']) {
+    assert.equal(existsSync(join(baseDir, manifest)), true, `${manifest} must live in the base library`);
   }
 });

@@ -1,13 +1,12 @@
-# Overwatch (system-health supervisor — global fallback STUB)
+# Overwatch (system-health supervisor — base-library fallback STUB)
 
 > ⚠️ **This is a deliberate THIN STUB — do NOT add persona instructions here.**
 >
 > The canonical Overwatch persona ships with the hive blueprint
 > (`blueprints/hive/prompts/overwatch.md`) and is what a launched `overwatch`
-> role actually loads. This global fallback exists ONLY so the role registry's
-> "every spawnable role has a prompt on disk" invariant holds
-> (`getKnownRoles()` walks this `prompts/` dir) and so an `overwatch` spawn
-> outside the hive blueprint still resolves to *a* prompt.
+> role actually loads. This base-library fallback exists ONLY so an `overwatch`
+> spawn made *outside* the hive blueprint (no `blueprintId`) still resolves to
+> *a* prompt via the universal base role library.
 >
 > Keeping this a stub is intentional (overwatch-role-2026-06-15 **D-007**, the
 > **EI-611** lesson): the Queen has TWO full personas — a global fallback and

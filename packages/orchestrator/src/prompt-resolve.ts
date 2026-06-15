@@ -2,26 +2,25 @@
  * Prompt-file resolution for `invoke <role>`.
  *
  * blueprint-role-bundling-2026-06-15 — K-1 (the keystone): a role's prompt
- * resolves by walking the blueprint **extends-chain**, then the (temporary)
- * global `prompts/` tiers:
+ * resolves by walking the blueprint **extends-chain**, then the base role library:
  *
  *   1. blueprints/<blueprintId>/prompts/<role>.md        (the blueprint's own override)
  *   2. blueprints/<ancestor>/prompts/<role>.md           (each extends parent, …)
  *   3. blueprints/base/prompts/<role>.md                 (the shared role library — ALWAYS consulted)
- *   4. prompts/$phase/departments/$dept/$role.md         (global — backstop, deleted in Phase 5)
- *   5. prompts/$phase/$role.md                           (global)
- *   6. prompts/department/$role.md                       (global, when phase=department)
- *   7. prompts/$role.md                                  (global default)
  *
  * Returns the first path that exists, or null if none do.
  *
  * `base` is ALWAYS a candidate (step 3) — even when no `blueprintId` is supplied —
  * because the main shared assembler (`assembleRolePrompt`) passes none, yet every
- * concrete blueprint `extends: base`, so base is the universal role library. This
- * is what lets the global `prompts/` dir (steps 4-7) be deleted in Phase 5: once a
- * role's persona lives in `blueprints/base/prompts/<role>.md`, it resolves via step
- * 3 and the global backstop is no longer needed. During the migration the global
- * tiers stay LAST so resolution is unchanged until base is populated (D-005).
+ * concrete blueprint `extends: base`, so base is the universal role library.
+ *
+ * Phase 5 (D-012, option A): the legacy global `prompts/` tiers — the phase/dept
+ * override axis (`prompts/$phase/...`, `prompts/department/...`) and the bare global
+ * default (`prompts/$role.md`) — were DELETED. The `staging` phase-variant (what
+ * `resolvePhase` defaults to, i.e. what the fleet actually ran) was collapsed into
+ * `base` as canonical, so resolution at the live default is unchanged; the
+ * rarely-used testing/production/department variants collapsed to it. `ctx.phase` /
+ * `ctx.dept` are no longer consulted (there is no phase-axis prompt layer anymore).
  *
  * Role aliasing: a map of legacy role names → canonical role names. When code
  * references the legacy name we walk the canonical name's candidates FIRST, then
@@ -198,11 +197,10 @@ export function resolvePromptFile(
  * resolves (the base default OR a blueprint/phase override), and only when it is
  * DISTINCT from that concrete (a base-only role resolves to a single file).
  *
- * The generic prefix is consulted in two places, FIRST that exists wins:
- *   1. blueprints/base/prompts/<role>.base.md   (the base blueprint — Phase 2 home)
- *   2. prompts/base/<role>.md                    (legacy global — deleted in Phase 5)
- * Only ~5 roles (worker/validator/documenter/orchestrator/summarizer) HAVE a
- * generic prefix; the rest resolve to a single self-contained file.
+ * The generic prefix lives at blueprints/base/prompts/<role>.base.md (the base
+ * blueprint — Phase 2 home; the legacy global prompts/base/<role>.md was deleted in
+ * Phase 5). Only ~5 roles (worker/validator/documenter/orchestrator/summarizer) HAVE
+ * a generic prefix; the rest resolve to a single self-contained file.
  *
  * Returns [] when the role has no prompt at all.
  */
