@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { hiveEvalInstancesInHarnessShared, hiveEvalRunsInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, userPreferencesInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, beekeeperInstancesInHarnessShared, beekeeperRunsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercupShared, messageCommentsInPapercupShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryCanonicalInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercupShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, memoryAnchorsInHarnessShared, hiveEvalScoresInHarnessShared, beekeeperScoresInHarnessShared, hivesInHarnessShared, hiveMembersInHarnessShared } from "./generated";
+import { hiveEvalInstancesInHarnessShared, hiveEvalRunsInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, userPreferencesInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, beekeeperInstancesInHarnessShared, beekeeperRunsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercupShared, messageCommentsInPapercupShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryCanonicalInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercupShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, memoryAnchorsInHarnessShared, hiveEvalScoresInHarnessShared, beekeeperScoresInHarnessShared, benchRunTasksInHarnessShared, hivesInHarnessShared, hiveMembersInHarnessShared } from "./generated";
 
 export const hiveEvalRunsInHarnessSharedRelations = relations(hiveEvalRunsInHarnessShared, ({one, many}) => ({
 	hiveEvalInstancesInHarnessShared: one(hiveEvalInstancesInHarnessShared, {
@@ -150,6 +150,18 @@ export const benchmarkRolloutInHarnessSharedRelations = relations(benchmarkRollo
 	benchmarkRunResultInHarnessShareds: many(benchmarkRunResultInHarnessShared),
 }));
 
+export const benchRunEventsInHarnessSharedRelations = relations(benchRunEventsInHarnessShared, ({one}) => ({
+	benchRunsInHarnessShared: one(benchRunsInHarnessShared, {
+		fields: [benchRunEventsInHarnessShared.runId],
+		references: [benchRunsInHarnessShared.id]
+	}),
+}));
+
+export const benchRunsInHarnessSharedRelations = relations(benchRunsInHarnessShared, ({many}) => ({
+	benchRunEventsInHarnessShareds: many(benchRunEventsInHarnessShared),
+	benchRunTasksInHarnessShareds: many(benchRunTasksInHarnessShared),
+}));
+
 export const goalsInHarnessSharedRelations = relations(goalsInHarnessShared, ({one, many}) => ({
 	goalsInHarnessShared: one(goalsInHarnessShared, {
 		fields: [goalsInHarnessShared.parentId],
@@ -197,6 +209,13 @@ export const beekeeperScoresInHarnessSharedRelations = relations(beekeeperScores
 	beekeeperRunsInHarnessShared: one(beekeeperRunsInHarnessShared, {
 		fields: [beekeeperScoresInHarnessShared.runId],
 		references: [beekeeperRunsInHarnessShared.runId]
+	}),
+}));
+
+export const benchRunTasksInHarnessSharedRelations = relations(benchRunTasksInHarnessShared, ({one}) => ({
+	benchRunsInHarnessShared: one(benchRunsInHarnessShared, {
+		fields: [benchRunTasksInHarnessShared.runId],
+		references: [benchRunsInHarnessShared.id]
 	}),
 }));
 

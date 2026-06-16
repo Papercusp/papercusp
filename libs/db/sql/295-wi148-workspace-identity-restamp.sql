@@ -41,7 +41,11 @@ ALTER TABLE harness_shared.harness_issues_consolidated   DISABLE TRIGGER capture
 ALTER TABLE harness_shared.harness_issues_consolidated   DISABLE TRIGGER capture_substrate_outbox_upd_trg;
 
 -- ── 1. harness slug → its UNIQUE non-default workspace (collision-safe map) ────
-CREATE TEMP TABLE _wi148_ws_map ON COMMIT DROP AS
+-- Session-scoped temp (NOT ON COMMIT DROP) + explicit DROP at the end, so the
+-- file is correct under BOTH the migration runner's single-txn wrap AND a plain
+-- psql -f (autocommit) — the table must outlive each statement's implicit commit.
+DROP TABLE IF EXISTS _wi148_ws_map;
+CREATE TEMP TABLE _wi148_ws_map AS
 SELECT slug, real_ws FROM (
   SELECT slug, max(workspace_id) AS real_ws, count(*) AS n FROM (
     SELECT DISTINCT r.workspace_id, p->>'slug' AS slug
@@ -86,3 +90,5 @@ ALTER TABLE harness_shared.harness_features_consolidated ENABLE TRIGGER capture_
 ALTER TABLE harness_shared.harness_features_consolidated ENABLE TRIGGER capture_substrate_outbox_upd_trg;
 ALTER TABLE harness_shared.harness_issues_consolidated   ENABLE TRIGGER capture_substrate_outbox_trg;
 ALTER TABLE harness_shared.harness_issues_consolidated   ENABLE TRIGGER capture_substrate_outbox_upd_trg;
+
+DROP TABLE _wi148_ws_map;

@@ -9,8 +9,8 @@ const tsvectorCustom = customType<{ data: string; driverData: string }>({ dataTy
 export const harnessShared = pgSchema("harness_shared");
 export const papercupShared = pgSchema("papercup_shared");
 
-export const planRunsIdSeqInHarnessShared = harnessShared.sequence("plan_runs_id_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "9223372036854775807", cache: "1", cycle: false })
 export const workItemSeqInHarnessShared = harnessShared.sequence("work_item_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "9223372036854775807", cache: "1", cycle: false })
+export const planRunsIdSeqInHarnessShared = harnessShared.sequence("plan_runs_id_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "9223372036854775807", cache: "1", cycle: false })
 
 export const operatorPausedInHarnessShared = harnessShared.table("operator_paused", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
@@ -2348,6 +2348,17 @@ export const autonomyTripwiresInHarnessShared = harnessShared.table("autonomy_tr
 	check("autonomy_tripwires_trip_reason_check", sql`(trip_reason IS NULL) OR (trip_reason = ANY (ARRAY['ekg-drift'::text, 'validator-bounce'::text, 'gym-regression'::text, 'owner-thumbs-down'::text]))`),
 ]);
 
+export const hiveDirectoryTombstonesInHarnessShared = harnessShared.table("hive_directory_tombstones", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("hive_directory_tombstones_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "hive_directory_tombstones_pkey"}),
+
+]);
+
 export const briefingsInPapercupShared = papercupShared.table("briefings", {
 	id: text().primaryKey().notNull(),
 	title: text().notNull(),
@@ -2657,6 +2668,72 @@ export const benchmarkCoordEventInHarnessShared = harnessShared.table("benchmark
 	index("benchmark_coord_event_run_seq_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.fleetRunId.asc().nullsLast().op("int8_ops"), table.seq.asc().nullsLast().op("int8_ops")),
 	pgPolicy("benchmark_coord_event_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.eventId], name: "benchmark_coord_event_pkey"}),
+
+]);
+
+export const benchRunsInHarnessShared = harnessShared.table("bench_runs", {
+	id: text().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	arm: text().notNull(),
+	taskSetId: text("task_set_id").notNull(),
+	suite: text().default('swe-bench-pro').notNull(),
+	model: text().notNull(),
+	status: text().default('pending').notNull(),
+	source: text().default('ui').notNull(),
+	summary: jsonb(),
+	taskCount: integer("task_count"),
+	gradedCount: integer("graded_count"),
+	resolvedCount: integer("resolved_count"),
+	nonEmptyDiffs: integer("non_empty_diffs"),
+	costUsd: doublePrecision("cost_usd"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	tokensIn: bigint("tokens_in", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	tokensOut: bigint("tokens_out", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	wallMs: bigint("wall_ms", { mode: "number" }),
+	peakConcurrentBees: integer("peak_concurrent_bees"),
+	recovered: boolean().default(false).notNull(),
+	runError: text("run_error"),
+	config: jsonb(),
+	fleetRunId: text("fleet_run_id"),
+	hiveSlug: text("hive_slug"),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }),
+	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("bench_runs_ws_arm_taskset_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.arm.asc().nullsLast().op("text_ops"), table.taskSetId.asc().nullsLast().op("text_ops")),
+	index("bench_runs_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("bench_runs_ws_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	pgPolicy("bench_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("bench_runs_status_check", sql`status = ANY (ARRAY['pending'::text, 'running'::text, 'grading'::text, 'done'::text, 'error'::text, 'cancelled'::text])`),
+	check("bench_runs_source_check", sql`source = ANY (ARRAY['ui'::text, 'cli'::text, 'import'::text])`),
+]);
+
+export const benchRunEventsInHarnessShared = harnessShared.table("bench_run_events", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	eventId: bigint("event_id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.bench_run_events_event_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	runId: text("run_id").notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	seq: bigint({ mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	kind: text().notNull(),
+	agent: text(),
+	taskId: text("task_id"),
+	payload: jsonb(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("bench_run_events_ws_run_seq_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.runId.asc().nullsLast().op("int8_ops"), table.seq.asc().nullsLast().op("int8_ops")),
+	foreignKey({
+			columns: [table.runId],
+			foreignColumns: [benchRunsInHarnessShared.id],
+			name: "bench_run_events_run_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("bench_run_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.eventId], name: "bench_run_events_pkey"}),
 
 ]);
 
@@ -4739,6 +4816,40 @@ export const beekeeperScoresInHarnessShared = harnessShared.table("beekeeper_sco
 			name: "beekeeper_scores_run_id_fkey"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.runId, table.rubricHash], name: "beekeeper_scores_pkey"}),
+]);
+
+export const benchRunTasksInHarnessShared = harnessShared.table("bench_run_tasks", {
+	runId: text("run_id").notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	instanceId: text("instance_id").notNull(),
+	taskStatus: text("task_status").default('todo').notNull(),
+	resolved: boolean(),
+	beeId: text("bee_id"),
+	disposition: text(),
+	stopReason: text("stop_reason"),
+	generationError: text("generation_error"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	tokensIn: bigint("tokens_in", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	tokensOut: bigint("tokens_out", { mode: "number" }),
+	costUsd: doublePrecision("cost_usd"),
+	turns: integer(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	wallClockMs: bigint("wall_clock_ms", { mode: "number" }),
+	diffBytes: integer("diff_bytes"),
+	armMeta: jsonb("arm_meta"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("bench_run_tasks_ws_run_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.runId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.runId],
+			foreignColumns: [benchRunsInHarnessShared.id],
+			name: "bench_run_tasks_run_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.runId, table.instanceId], name: "bench_run_tasks_pkey"}),
+	pgPolicy("bench_run_tasks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("bench_run_tasks_task_status_check", sql`task_status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'collected'::text, 'graded'::text, 'error'::text])`),
 ]);
 
 export const coordConversationsInHarnessShared = harnessShared.table("coord_conversations", {
