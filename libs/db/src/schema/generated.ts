@@ -2359,6 +2359,17 @@ export const hiveDirectoryTombstonesInHarnessShared = harnessShared.table("hive_
 
 ]);
 
+export const operatorAccountOverrideInHarnessShared = harnessShared.table("operator_account_override", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_account_override_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_account_override_pkey"}),
+
+]);
+
 export const briefingsInPapercupShared = papercupShared.table("briefings", {
 	id: text().primaryKey().notNull(),
 	title: text().notNull(),
