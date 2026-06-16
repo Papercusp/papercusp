@@ -2713,6 +2713,7 @@ export const benchRunsInHarnessShared = harnessShared.table("bench_runs", {
 	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	infraExcluded: integer("infra_excluded"),
 }, (table) => [
 	index("bench_runs_ws_arm_taskset_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.arm.asc().nullsLast().op("text_ops"), table.taskSetId.asc().nullsLast().op("text_ops")),
 	index("bench_runs_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
