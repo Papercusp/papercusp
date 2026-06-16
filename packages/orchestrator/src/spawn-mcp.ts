@@ -438,11 +438,15 @@ export function writeSpawnClaudeConfig(
 interface KeyCache { buf: Buffer; rotatedAt: number; loadedAt: number; }
 let __keyCache: KeyCache | null = null;
 
-// Honor PG's authoritative rotated_at so a rotate on the operator
-// invalidates this process's cache on its next read. Spawning is
-// already a heavy op; one indexed PG read is in the noise. The
-// 5-minute TTL is a safety net for when rotated_at can't be read.
+// Within the 5-minute TTL we serve the cached key WITHOUT opening a PG pool —
+// the cache check runs FIRST (F-B3: don't pay a pool-open + SELECT on the hot
+// path). Only on a cache miss/expiry do we open the pool and re-read; PG's
+// authoritative rotated_at still wins there, so a rotate on the operator
+// invalidates this process's cache on its next read after the TTL lapses.
 async function loadSigningKey(): Promise<Buffer> {
+  if (__keyCache && Date.now() - __keyCache.loadedAt < 5 * 60 * 1000) {
+    return __keyCache.buf;
+  }
   const dsn = process.env.DATABASE_URL ?? process.env.PAPERCUSP_PG_DSN;
   if (!dsn) throw new Error('no PG DSN in env (DATABASE_URL/PAPERCUSP_PG_DSN)');
   const sql = postgres(dsn);
@@ -455,11 +459,11 @@ async function loadSigningKey(): Promise<Buffer> {
       throw new Error('spawn-signing-key row missing — operator boots mint it on first verify call');
     }
     const rotatedAt = new Date(rows[0].rotated_at).getTime();
-    if (
-      __keyCache &&
-      __keyCache.rotatedAt === rotatedAt &&
-      Date.now() - __keyCache.loadedAt < 5 * 60 * 1000
-    ) {
+    // PG's rotated_at is authoritative on a re-read: if the key hasn't rotated,
+    // refresh the cache's loadedAt window and reuse the buffer; otherwise adopt
+    // the rotated key.
+    if (__keyCache && __keyCache.rotatedAt === rotatedAt) {
+      __keyCache = { ...__keyCache, loadedAt: Date.now() };
       return __keyCache.buf;
     }
     const buf = Buffer.from(rows[0].value_b64, 'base64');
