@@ -1,4 +1,4 @@
--- 297-operator-account-override.sql — accounts-pool-tab-2026-06-15 P-004 (D-017).
+-- 297-operator-account-override.sql — accounts-pool-tab-2026-06-15 P-004 (D-015).
 --
 -- operator_account_override — the owner's session-now steer over WHICH pool accounts
 -- the fleet may spawn/deploy on: { forcedAccounts[], excludeAccounts[] }. forced is an
