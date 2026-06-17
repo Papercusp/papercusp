@@ -23,7 +23,7 @@ import { createRequire } from 'node:module';
 import postgres, { Sql } from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as sharedSchema from './schema';
-import { getResourceProfile } from '../../../../packages/operator-core/lib/resource-profile';
+import { getResourceProfile } from '../../../../../packages/operator-core/lib/resource-profile';
 
 // This package is `"type": "module"`, so ESM has no ambient `require`.
 // `createRequire` gives us a synchronous loader for the lazy node-builtin
@@ -250,7 +250,7 @@ function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: 
     // pool (~52–64). Env override for backward compatibility; explicit maxOverride is
     // used if provided by the caller (currently unused, reserved for future direct-pool
     // configuration). P4-3 of operator-scalability-event-loop-2026-06-16.
-    max: Math.max(1, maxOverride ?? Number(process.env.PAPERCUSP_DB_POOL_MAX) || getResourceProfile().pgPoolMax),
+    max: Math.max(1, maxOverride ?? (Number(process.env.PAPERCUSP_DB_POOL_MAX) || getResourceProfile().pgPoolMax)),
     // Auto-close connections that sit idle for >30s. Prevents per-harness
     // pools from accumulating idle conns indefinitely (Next.js dev mode
     // module re-instantiation otherwise leaks the prior pool's sockets).
