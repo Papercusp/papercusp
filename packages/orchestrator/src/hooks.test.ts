@@ -6,19 +6,31 @@ import { join } from 'node:path';
 import { runHook } from './hooks.js';
 
 // Hermetic env: `runHook` resolves OPERATOR_BASE from `PAPERCUSP_OPERATOR_BASE`
-// when no `operatorBase` is passed. On the shared dev box that session var leaks
-// in and breaks the Phase-6 default-:3070 assertion (green in a clean shell, red
-// under a live session). Snapshot + clear it per-test so the suite measures the
-// committed default; the one test that needs it sets it itself.
-// (EI-941 env isolation.)
+// when no `operatorBase` is passed, and injects HARNESS_SLUG from the `harnessSlug`
+// param or the project dirname. On the shared dev box these session vars leak in
+// and break the Phase-6 defaults (green in a clean shell, red under a live session).
+// Snapshot + clear them per-test so the suite measures the committed defaults;
+// tests that need specific values set their own.
+// (EI-941 env isolation / EI-964 env isolation.)
 let _operatorBaseSnapshot: string | undefined;
+const HARNESS_SLUG_ENV_KEYS = ['HARNESS_SLUG', 'PAPERCUSP_HARNESS_SLUG'] as const;
+const _harnessSlugEnvSnapshot: Partial<Record<(typeof HARNESS_SLUG_ENV_KEYS)[number], string | undefined>> = {};
 beforeEach(() => {
   _operatorBaseSnapshot = process.env.PAPERCUSP_OPERATOR_BASE;
   delete process.env.PAPERCUSP_OPERATOR_BASE;
+  for (const k of HARNESS_SLUG_ENV_KEYS) {
+    _harnessSlugEnvSnapshot[k] = process.env[k];
+    delete process.env[k];
+  }
 });
 afterEach(() => {
   if (_operatorBaseSnapshot === undefined) delete process.env.PAPERCUSP_OPERATOR_BASE;
   else process.env.PAPERCUSP_OPERATOR_BASE = _operatorBaseSnapshot;
+  for (const k of HARNESS_SLUG_ENV_KEYS) {
+    const prev = _harnessSlugEnvSnapshot[k];
+    if (prev === undefined) delete process.env[k];
+    else process.env[k] = prev;
+  }
 });
 
 interface Fixture {

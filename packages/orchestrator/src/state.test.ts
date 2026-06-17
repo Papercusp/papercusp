@@ -1,4 +1,4 @@
-import { test, describe, beforeEach } from 'vitest';
+import { test, describe, beforeEach, afterEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,8 +14,28 @@ import {
 } from './state.js';
 import { seedMemoryStore, _resetMemoryStateForTests } from './state-memory.js';
 
+// Hermetic env: harnessSlug falls back to process.env.HARNESS_SLUG /
+// process.env.PAPERCUSP_HARNESS_SLUG when not found in the registry. On the
+// shared dev box, these env vars are set by the live operator session, causing
+// the test to see live values instead of the expected basename. Snapshot +
+// clear them per-test so the suite measures the committed defaults; tests that
+// need them set their own values.
+// (EI-964 env isolation.)
+const SLUG_ENV_KEYS = ['HARNESS_SLUG', 'PAPERCUSP_HARNESS_SLUG'] as const;
+const _slugEnvSnapshot: Partial<Record<(typeof SLUG_ENV_KEYS)[number], string | undefined>> = {};
 beforeEach(() => {
   _resetMemoryStateForTests();
+  for (const k of SLUG_ENV_KEYS) {
+    _slugEnvSnapshot[k] = process.env[k];
+    delete process.env[k];
+  }
+});
+afterEach(() => {
+  for (const k of SLUG_ENV_KEYS) {
+    const prev = _slugEnvSnapshot[k];
+    if (prev === undefined) delete process.env[k];
+    else process.env[k] = prev;
+  }
 });
 
 // ── In-memory backend (no PG context) ────────────────────────────────
