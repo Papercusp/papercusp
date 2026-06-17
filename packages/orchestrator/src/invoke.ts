@@ -15,6 +15,7 @@
  */
 import { spawn } from 'node:child_process';
 import {
+  appendFileSync,
   closeSync,
   constants as fsConstants,
   existsSync,
@@ -28,6 +29,16 @@ import {
   writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
+
+// TEMP DEBUG (su-37e53 fault-#4 dig): checkpoint invoke()'s spawn-prep to locate the member-harness
+// bench-bee startup deadlock (no-I/O futex hang after `pre-invoke`). Remove after diagnosis.
+const __idbg = (s: string): void => {
+  try {
+    appendFileSync('/tmp/io-debug.log', `[${Date.now()}] [${process.env.PAPERCUSP_SPAWN_ID ?? '?'}/${process.env.HARNESS_SLUG ?? '?'}] invoke:${s}\n`);
+  } catch {
+    /* noop */
+  }
+};
 import { homedir, tmpdir } from 'node:os';
 import { sessionClaudeConfigDir, sessionMcpDir } from './session-launch-dirs';
 import { readFleetClaudeToken } from './fleet-claude-token';
@@ -2113,6 +2124,7 @@ export async function invoke(
     // (featureHistory, planContext) in <untrusted-peer-content> delimiters.
     featureOrigin,
   });
+  __idbg('post-buildprompt');
 
   // Token-spend telemetry — emit once per invoke so we can see how the
   // prompt budget breaks down across sections in production logs.
@@ -2500,7 +2512,9 @@ export async function invoke(
           // unset PAPERCUSP_REQUIRE_SPAWN_SIG on the operator.
           // No await-time risk: signing is a single PG round-trip against
           // a 32-byte row + an HMAC; total < 50ms in normal operation.
+          __idbg('pre-mcp-sign');
           mcpHandle = await writeSignedSpawnMcp(mcpConfigDir, signedInput);
+          __idbg('post-mcp-sign');
         }
       } catch (err) {
         ctx.log(`  spawn-mcp write failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -2550,7 +2564,9 @@ export async function invoke(
         settingsPath,
       }));
     }
+    __idbg('pre-spawn');
     const child = spawn(spawnCommand, spawnArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    __idbg('post-spawn-child-created');
 
     // Write a row to harness_shared.harness_lanes so the operator UI's
     // "agents in flight" pill bar can subscribe to the live agent set.
