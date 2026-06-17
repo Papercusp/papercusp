@@ -83,5 +83,6 @@ VALUES
     ('default', 'agent-lifecycle',     'never-auto', false, 'never-auto', 'migration:259'),
     ('default', 'credentials-auth',    'never-auto', true,  'never-auto', 'migration:259'),
     ('default', 'knowledge-curation',  'never-auto', false, 'never-auto', 'migration:259'),
+    ('default', 'schedule-arm',        'never-auto', false, 'never-auto', 'migration:259'),
     ('default', 'system-control',      'never-auto', true,  'never-auto', 'migration:259')
 ON CONFLICT (workspace_id, category) DO NOTHING;
