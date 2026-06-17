@@ -27,10 +27,10 @@ import postgres from 'postgres';
 /** Construction inputs — all seven per-spawn URL params plus the host URL. */
 export interface SpawnMcpConfigInput {
   /**
-   * Base URL of the operator's MCP HTTP/SSE endpoint.
-   * Default `http://localhost:3070/api/sse`. Override via the
-   * `PAPERCUSP_OPERATOR_URL` env var if the operator runs on a
-   * different host:port.
+   * Explicit per-spawn override of the operator MCP base URL. When set it
+   * wins over every env-derived default (see {@link resolveSpawnOperatorBase}).
+   * Leave unset to target the SPAWNING host automatically — a spawned agent
+   * should always handshake the operator that spawned it, never a fixed host.
    */
   operatorUrl?: string;
   /** Harness slug. Required. */
@@ -70,11 +70,41 @@ const DEFAULT_OPERATOR_URL =
     ? 'http://localhost:3055/api/sse'
     : 'http://localhost:3070/api/sse';
 
+/**
+ * Resolve the operator MCP base URL a spawned agent connects to, in priority
+ * order:
+ *
+ *   1. `operatorUrl` — an explicit per-spawn pin from the caller. Always wins.
+ *   2. `PAPERCUSP_HONO_PORT` — the SPAWNING host's own serving port, set at
+ *      boot. A spawned agent must handshake the operator that spawned it
+ *      (its code version + role catalog), so the host's own port takes
+ *      precedence over an inherited env default. (EI-51.)
+ *   3. `PAPERCUSP_OPERATOR_URL` — an env override used only when the host
+ *      port is unknown. `apps/operator/.env.local` pins this to green :3070,
+ *      which is why it must NOT win over the host's own port: a non-green host
+ *      (staging :3170, a per-harness embedded host) inherits that value and
+ *      would otherwise point every child it spawns back at green.
+ *   4. The hardcoded dev/prod default.
+ *
+ * This mirrors the design the orchestrator-runner already applies at the
+ * child-env layer (EI-286 leg b: "when this host knows its serving port it
+ * OVERRIDES the inherited value so children always talk to their spawner");
+ * making it authoritative here covers every caller, not just that one path.
+ * `/api/mcp` is the streamable-HTTP MCP route (`type: 'http'`), matching
+ * `.env.local` and the host's own serving path.
+ */
+export function resolveSpawnOperatorBase(operatorUrl?: string | null): string {
+  if (operatorUrl) return operatorUrl;
+  const selfPort = process.env.PAPERCUSP_HONO_PORT;
+  if (selfPort) return `http://127.0.0.1:${selfPort}/api/mcp`;
+  return process.env.PAPERCUSP_OPERATOR_URL ?? DEFAULT_OPERATOR_URL;
+}
+
 /** Build the JSON-serializable mcp.json contents for a spawn. */
 export function buildSpawnMcpConfig(input: SpawnMcpConfigInput): {
   mcpServers: Record<string, { type: 'http'; url: string }>;
 } {
-  const base = input.operatorUrl ?? process.env.PAPERCUSP_OPERATOR_URL ?? DEFAULT_OPERATOR_URL;
+  const base = resolveSpawnOperatorBase(input.operatorUrl);
   const params = new URLSearchParams();
   params.set('harness', input.harnessSlug);
   params.set('workspace', input.workspaceId);
@@ -178,7 +208,7 @@ export async function writeSignedSpawnMcp(
     backupPath = `${path}${BACKUP_SUFFIX}`;
     renameSync(path, backupPath);
   }
-  const base = input.operatorUrl ?? process.env.PAPERCUSP_OPERATOR_URL ?? DEFAULT_OPERATOR_URL;
+  const base = resolveSpawnOperatorBase(input.operatorUrl);
 
   // ── Superuser-spawn mode ──────────────────────────────────────────────
   // An operator-initiated, loopback spawn (the /harness/:slug/invoke route)
@@ -282,7 +312,7 @@ export async function writeSignedSpawnCodexHome(
   input: SpawnMcpConfigInput,
   opts: { ttlSec?: number } = {},
 ): Promise<SpawnCodexHomeHandle> {
-  const base = input.operatorUrl ?? process.env.PAPERCUSP_OPERATOR_URL ?? DEFAULT_OPERATOR_URL;
+  const base = resolveSpawnOperatorBase(input.operatorUrl);
   const params = buildSpawnUrlParams(input);
   await signSpawnParams(params, opts.ttlSec ?? 24 * 60 * 60);
   const mcpUrl = `${base}?${params.toString()}`;

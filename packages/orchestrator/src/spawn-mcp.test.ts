@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   buildSpawnMcpConfig,
+  resolveSpawnOperatorBase,
   writeSpawnMcp,
   restoreSpawnMcp,
   extractChunkId,
@@ -24,6 +25,25 @@ afterEach(() => {
 });
 
 describe('buildSpawnMcpConfig', () => {
+  // The default/env-override host assertions below must be deterministic
+  // regardless of the dev box's exported env: PAPERCUSP_HONO_PORT now feeds
+  // resolveSpawnOperatorBase (EI-51), so a host with it exported would
+  // otherwise change the resolved base out from under these cases.
+  const savedHost = {
+    port: process.env.PAPERCUSP_HONO_PORT,
+    url: process.env.PAPERCUSP_OPERATOR_URL,
+  };
+  beforeEach(() => {
+    delete process.env.PAPERCUSP_HONO_PORT;
+    delete process.env.PAPERCUSP_OPERATOR_URL;
+  });
+  afterEach(() => {
+    if (savedHost.port === undefined) delete process.env.PAPERCUSP_HONO_PORT;
+    else process.env.PAPERCUSP_HONO_PORT = savedHost.port;
+    if (savedHost.url === undefined) delete process.env.PAPERCUSP_OPERATOR_URL;
+    else process.env.PAPERCUSP_OPERATOR_URL = savedHost.url;
+  });
+
   it('produces a single mcpServers.papercusp entry with the seven URL params', () => {
     const cfg = buildSpawnMcpConfig({
       harnessSlug: 'sheets',
@@ -132,6 +152,70 @@ describe('buildSpawnMcpConfig', () => {
     const url = new URL(cfg.mcpServers.papercusp!.url);
     expect(url.searchParams.has('feature')).toBe(false);
     expect(url.searchParams.has('chunk')).toBe(false);
+  });
+
+  it('targets the spawning host via PAPERCUSP_HONO_PORT, overriding an inherited PAPERCUSP_OPERATOR_URL (EI-51)', () => {
+    // The bug: .env.local pins PAPERCUSP_OPERATOR_URL=green :3070, so a non-green
+    // host (staging :3170) spawned agents that handshook green's MCP. The host's
+    // own serving port must win so a child talks to its spawner.
+    process.env.PAPERCUSP_OPERATOR_URL = 'http://localhost:3070/api/mcp';
+    process.env.PAPERCUSP_HONO_PORT = '3170';
+    const cfg = buildSpawnMcpConfig({
+      harnessSlug: 'x', workspaceId: 'y', role: 'z', runId: 'r', spawnId: 's',
+    });
+    expect(cfg.mcpServers.papercusp!.url.startsWith('http://127.0.0.1:3170/api/mcp?')).toBe(true);
+  });
+});
+
+describe('resolveSpawnOperatorBase', () => {
+  const saved = {
+    port: process.env.PAPERCUSP_HONO_PORT,
+    url: process.env.PAPERCUSP_OPERATOR_URL,
+  };
+  beforeEach(() => {
+    delete process.env.PAPERCUSP_HONO_PORT;
+    delete process.env.PAPERCUSP_OPERATOR_URL;
+  });
+  afterEach(() => {
+    if (saved.port === undefined) delete process.env.PAPERCUSP_HONO_PORT;
+    else process.env.PAPERCUSP_HONO_PORT = saved.port;
+    if (saved.url === undefined) delete process.env.PAPERCUSP_OPERATOR_URL;
+    else process.env.PAPERCUSP_OPERATOR_URL = saved.url;
+  });
+
+  it('an explicit per-spawn operatorUrl wins over every env source', () => {
+    process.env.PAPERCUSP_HONO_PORT = '3170';
+    process.env.PAPERCUSP_OPERATOR_URL = 'http://env.example/api/mcp';
+    expect(resolveSpawnOperatorBase('http://pin.example:9/sse')).toBe('http://pin.example:9/sse');
+  });
+
+  it('derives the spawning host base from PAPERCUSP_HONO_PORT (EI-51 core fix)', () => {
+    process.env.PAPERCUSP_HONO_PORT = '3170';
+    expect(resolveSpawnOperatorBase()).toBe('http://127.0.0.1:3170/api/mcp');
+  });
+
+  it('PAPERCUSP_HONO_PORT wins over an inherited PAPERCUSP_OPERATOR_URL', () => {
+    process.env.PAPERCUSP_HONO_PORT = '3170';
+    process.env.PAPERCUSP_OPERATOR_URL = 'http://localhost:3070/api/mcp';
+    expect(resolveSpawnOperatorBase()).toBe('http://127.0.0.1:3170/api/mcp');
+  });
+
+  it('falls back to PAPERCUSP_OPERATOR_URL when the host port is unknown', () => {
+    process.env.PAPERCUSP_OPERATOR_URL = 'http://env.example/api/mcp';
+    expect(resolveSpawnOperatorBase()).toBe('http://env.example/api/mcp');
+  });
+
+  it('falls back to the hardcoded localhost default when neither env is set', () => {
+    // The module-level default is frozen at import from NODE_ENV (:3055 dev /
+    // :3070 otherwise) — assert the shape, not a port, to stay env-agnostic.
+    const base = resolveSpawnOperatorBase();
+    expect(base).toMatch(/^http:\/\/localhost:30(55|70)\/api\/sse$/);
+  });
+
+  it('treats null/empty operatorUrl as unset (env resolution applies)', () => {
+    process.env.PAPERCUSP_HONO_PORT = '3170';
+    expect(resolveSpawnOperatorBase(null)).toBe('http://127.0.0.1:3170/api/mcp');
+    expect(resolveSpawnOperatorBase('')).toBe('http://127.0.0.1:3170/api/mcp');
   });
 });
 
