@@ -51,23 +51,44 @@ import {
 import { ROLE_MODEL_DEFAULTS } from './role-models.js';
 import { writeSpawnClaudeConfig } from './spawn-mcp.js';
 
-// Hermetic env: `resolveModel` falls back to the host's `AGENT_MODELS` env var
-// (the operator sets e.g. `{"worker":"opus"}` in apps/operator/.env.local). When
-// that leaks into the suite — as it does under the green-checkpoint gate, which
-// strips `PAPERCUSP_*` but NOT `AGENT_MODELS` — `resolveModel({},'worker')`
-// returns "opus" instead of "" and the `invoke(cat)` end-to-end leaks a stray
-// `--model opus` arg, so two tests that assume committed defaults fail ONLY under
-// the gate (green 107/107 in a clean shell). Clear it per-test so the suite
-// measures the committed defaults, never the host's identity; tests that need it
-// set it themselves. (release-pipeline-resilience-2026-06-09 P-001.)
-let _agentModelsSnapshot: string | undefined;
+// Hermetic env: several resolvers fall back to host session env vars, so on the
+// shared dev box they leak into the suite — green in a clean shell, red under a
+// live session / the green-checkpoint gate (which strips `PAPERCUSP_*` but NOT
+// `AGENT_MODELS`). The leak vectors:
+//   - `AGENT_MODELS`                     → `resolveModel({},'worker')` returns the
+//                                          host pick (e.g. "opus") instead of the
+//                                          committed default, and the `invoke(cat)`
+//                                          end-to-end leaks a stray `--model` arg.
+//   - `PAPERCUSP_SPAWN_MODEL`            → outranks the whole `resolveModel` chain
+//                                          (same `--model` leak, even harder).
+//   - `PAPERCUSP_FLEET_CAPABILITY_ONLY`  → flips the capability cutover, shifting
+//                                          `claudeMcpArgs`'s allow-list off-default.
+//   - `PAPERCUSP_FLEET_SANDBOX*`         → shift the sandbox enable/egress
+//                                          (`resolveFleetAllowedDomains`) assertions.
+// Snapshot + clear them per-test so the suite measures the committed defaults,
+// never the host's identity; tests that need one set it themselves.
+// (release-pipeline-resilience-2026-06-09 P-001; EI-942 env isolation.)
+const SESSION_ENV_KEYS = [
+  'AGENT_MODELS',
+  'PAPERCUSP_SPAWN_MODEL',
+  'PAPERCUSP_FLEET_CAPABILITY_ONLY',
+  'PAPERCUSP_FLEET_SANDBOX',
+  'PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS',
+  'PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS',
+] as const;
+const _sessionEnvSnapshot: Partial<Record<(typeof SESSION_ENV_KEYS)[number], string | undefined>> = {};
 beforeEach(() => {
-  _agentModelsSnapshot = process.env.AGENT_MODELS;
-  delete process.env.AGENT_MODELS;
+  for (const k of SESSION_ENV_KEYS) {
+    _sessionEnvSnapshot[k] = process.env[k];
+    delete process.env[k];
+  }
 });
 afterEach(() => {
-  if (_agentModelsSnapshot === undefined) delete process.env.AGENT_MODELS;
-  else process.env.AGENT_MODELS = _agentModelsSnapshot;
+  for (const k of SESSION_ENV_KEYS) {
+    const prev = _sessionEnvSnapshot[k];
+    if (prev === undefined) delete process.env[k];
+    else process.env[k] = prev;
+  }
 });
 
 interface Fixture {

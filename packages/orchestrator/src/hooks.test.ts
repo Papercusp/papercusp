@@ -1,9 +1,25 @@
-import { test } from 'vitest';
+import { test, beforeEach, afterEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runHook } from './hooks.js';
+
+// Hermetic env: `runHook` resolves OPERATOR_BASE from `PAPERCUSP_OPERATOR_BASE`
+// when no `operatorBase` is passed. On the shared dev box that session var leaks
+// in and breaks the Phase-6 default-:3070 assertion (green in a clean shell, red
+// under a live session). Snapshot + clear it per-test so the suite measures the
+// committed default; the one test that needs it sets it itself.
+// (EI-941 env isolation.)
+let _operatorBaseSnapshot: string | undefined;
+beforeEach(() => {
+  _operatorBaseSnapshot = process.env.PAPERCUSP_OPERATOR_BASE;
+  delete process.env.PAPERCUSP_OPERATOR_BASE;
+});
+afterEach(() => {
+  if (_operatorBaseSnapshot === undefined) delete process.env.PAPERCUSP_OPERATOR_BASE;
+  else process.env.PAPERCUSP_OPERATOR_BASE = _operatorBaseSnapshot;
+});
 
 interface Fixture {
   stateDir: string;
