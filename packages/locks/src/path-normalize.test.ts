@@ -91,4 +91,47 @@ describe('normalizePaths', () => {
   it('throws when a path canonicalizes to empty', () => {
     expect(() => normalizePaths(['.'])).toThrow(/empty after canonicalization/);
   });
+
+  it('rejects an absolute path even when it is not the first element', () => {
+    // The raw-validate loop runs over EVERY path before any canonicalization,
+    // so a malformed entry anywhere in the set fails the whole call.
+    expect(() => normalizePaths(['ok/path.ts', '/etc/passwd'])).toThrow(/absolute/);
+  });
+});
+
+// ── Security invariants the validate→canonicalize ordering depends on ────────
+// These pin the two properties the module header + source comments rely on for
+// traversal safety. They are correct today; the point is to fail loudly if a
+// future "optimization" (e.g. swapping in path.normalize, or reordering the
+// validate/canonicalize steps) silently re-opens an escape.
+describe('canonicalizePath — traversal-safety invariants', () => {
+  it('PRESERVES .. segments (never resolves or drops them)', () => {
+    // If canon resolved '..' the way path.normalize does, 'a/../b' would become
+    // 'b' and a raw 'a/../../etc' could collapse to an escaping key. canon must
+    // leave '..' intact so the raw-path validatePath check is what rejects it.
+    expect(canonicalizePath('a/../b')).toBe('a/../b');
+    expect(canonicalizePath('../etc/passwd')).toBe('../etc/passwd');
+    expect(canonicalizePath('a/../../etc')).toBe('a/../../etc');
+  });
+
+  it('would strip a leading slash on its OWN — proving validate must run first', () => {
+    // canonicalizePath drops the empty leading segment, turning an absolute path
+    // into a relative-looking one. This is exactly why normalizePaths validates
+    // the RAW path before canonicalizing (source comment): canon alone is unsafe.
+    expect(canonicalizePath('/etc/passwd')).toBe('etc/passwd');
+    // …but the full pipeline rejects it, because validatePath sees the raw '/'.
+    expect(() => normalizePaths(['/etc/passwd'])).toThrow(/absolute/);
+  });
+});
+
+describe('validatePath — adversarial edges', () => {
+  it('rejects a backslash-based traversal (caught as backslash, never accepted)', () => {
+    // A Windows-style '..\\..\\etc' doesn't match the POSIX '/../' traversal
+    // pattern, so the backslash rule is what stops it. Pin that it is rejected.
+    expect(() => validatePath('..\\..\\etc\\passwd')).toThrow(InvalidPathError);
+  });
+
+  it('rejects a bare ".." regardless of canonicalization', () => {
+    expect(() => validatePath('..')).toThrow(/traversal/);
+  });
 });
