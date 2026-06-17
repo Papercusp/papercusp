@@ -61,6 +61,7 @@ export {
   upsertRoutine,
   setRoutineActive,
   deleteRoutine,
+  setRoutinesPerWorkspaceConflict,
   type RoutineRow,
 } from './routines-runtime';
 

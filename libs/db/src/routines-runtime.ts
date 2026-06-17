@@ -7,6 +7,17 @@
 import type { Sql } from 'postgres';
 import { insertPendingEvent } from './pending-events';
 
+// workspace-data-isolation-leaks-2026-06-17 F-E1 (phase 1): when ON, upsertRoutine conflicts
+// on (workspace_id, install_slug, name) so a same-slug routine in another workspace is NOT
+// clobbered (routines already carry workspace_id). OFF (default) = today's ON CONFLICT
+// (install_slug, name), byte-identical. This lib can't read feature flags (layer boundary), so
+// operator-core pushes the papercusp-routines-per-workspace flag value via the setter below
+// (configure seam) at boot + on flag change. Requires migration 305's composite unique index.
+let routinesPerWorkspaceConflict = false;
+export function setRoutinesPerWorkspaceConflict(on: boolean): void {
+  routinesPerWorkspaceConflict = on;
+}
+
 export interface RoutineRow {
   id: string;
   /** Workspace that owns this routine (per-window-workspace-context P-041) —
@@ -147,6 +158,12 @@ export async function upsertRoutine(
   const triggerConfigStr = JSON.stringify(input.triggerConfig);
   const payloadTemplateStr = input.payloadTemplate ? JSON.stringify(input.payloadTemplate) : null;
   const nextFireAtStr = nextFireAt ? nextFireAt.toISOString() : null;
+  // F-E1 (phase 1): conflict on (workspace_id, install_slug, name) when per-workspace
+  // routines are enabled — otherwise the legacy global (install_slug, name). Both unique
+  // targets exist (migration 305 keeps the old one), so this is a clean flag-gated switch.
+  const conflictTarget = routinesPerWorkspaceConflict
+    ? sql`(workspace_id, install_slug, name)`
+    : sql`(install_slug, name)`;
   const rows = await sql<any[]>`
     INSERT INTO harness_shared.routines
       (id, install_slug, name, trigger_kind, trigger_config, target_role,
@@ -165,7 +182,7 @@ export async function upsertRoutine(
       ${nextFireAtStr}::timestamptz,
       ${input.workspaceId}
     )
-    ON CONFLICT (install_slug, name) DO UPDATE SET
+    ON CONFLICT ${conflictTarget} DO UPDATE SET
       trigger_kind     = EXCLUDED.trigger_kind,
       trigger_config   = EXCLUDED.trigger_config,
       target_role      = EXCLUDED.target_role,

@@ -15,6 +15,7 @@ import {
   upsertRoutine,
   setRoutineActive,
   deleteRoutine,
+  setRoutinesPerWorkspaceConflict,
   type RoutineRow,
 } from './routines-runtime';
 import { listUnconsumedEvents } from './pending-events';
@@ -50,7 +51,9 @@ beforeAll(async () => {
             last_fired_at timestamptz,
             created_at timestamptz NOT NULL DEFAULT now(),
             updated_at timestamptz NOT NULL DEFAULT now(),
-            UNIQUE (install_slug, name)
+            UNIQUE (install_slug, name),
+            -- F-E1 migration 305: the composite unique the per-workspace ON CONFLICT targets.
+            UNIQUE (workspace_id, install_slug, name)
           )`);
         await s.unsafe(`
           CREATE TABLE harness_shared.pending_events (
@@ -110,6 +113,34 @@ describe('upsertRoutine', () => {
     const at = new Date(Date.now() + 5_000);
     const r = await upsertRoutine(sql, baseInput({ name: 'oneshot', nextFireAt: at }), nextFn);
     expect(r.nextFireAt?.getTime()).toBe(at.getTime());
+  });
+
+  it('F-E1: per-workspace conflict protects a same-slug routine in another workspace from clobber', async () => {
+    setRoutinesPerWorkspaceConflict(true);
+    try {
+      await upsertRoutine(sql, baseInput({ workspaceId: 'ws-a' }), nextFn);
+      // ws-b upserting the SAME (install_slug, name) must NOT silently overwrite ws-a's row
+      // (the leak today: ON CONFLICT (install_slug,name) would flip workspace_id to ws-b).
+      // Phase 1 keeps the legacy UNIQUE(install_slug,name), so the 2nd insert is rejected —
+      // the point being ws-a is PROTECTED, not clobbered.
+      await expect(upsertRoutine(sql, baseInput({ workspaceId: 'ws-b' }), nextFn)).rejects.toThrow();
+      const rows = await sql<{ workspace_id: string }[]>`
+        SELECT workspace_id FROM harness_shared.routines
+         WHERE install_slug = 'papercup' AND name = 'nightly'`;
+      expect(rows.map((r) => r.workspace_id)).toEqual(['ws-a']); // intact, not flipped to ws-b
+    } finally {
+      setRoutinesPerWorkspaceConflict(false);
+    }
+  });
+
+  it('F-E1 (flag OFF, default): upsert still conflicts on (install_slug, name) — byte-identical', async () => {
+    // Belt-and-suspenders: with the flag OFF, a 2nd upsert of the same (slug,name) UPDATES in
+    // place exactly as before (no per-workspace behavior leaks in when the flag is off).
+    await upsertRoutine(sql, baseInput({ workspaceId: 'ws-a' }), nextFn);
+    const updated = await upsertRoutine(sql, baseInput({ workspaceId: 'ws-a', targetRole: 'reviewer' }), nextFn);
+    expect(updated.targetRole).toBe('reviewer');
+    const all = await sql`SELECT count(*)::int AS n FROM harness_shared.routines`;
+    expect(all[0].n).toBe(1);
   });
 });
 
