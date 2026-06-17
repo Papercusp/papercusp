@@ -21,6 +21,7 @@ import {
   FLEET_NO_WRITE_ROLES,
   fleetAllowedToolsForRole,
   fleetDisallowedToolsForRole,
+  resolveRoleToolScope,
   fleetCapabilityOnlyEnabled,
   FLEET_CAPABILITY_REPLACED_TOOLS,
   FLEET_CAPABILITY_ROLES,
@@ -885,6 +886,36 @@ test('fleetAllowedToolsForRole — no roles are write-restricted now; every role
   for (const role of ['worker', 'documenter', 'reviewer', 'totally-unknown-role', '']) {
     assert.deepEqual(fleetAllowedToolsForRole(role), [...FLEET_ALLOWED_TOOLS]);
   }
+});
+
+test('P-005 — RoleToolScope narrows a role kit (allow replaces base, deny adds, composes w/ cutover)', () => {
+  // No scope → full default kit (behavior unchanged).
+  assert.deepEqual(fleetAllowedToolsForRole('business', false, undefined), [...FLEET_ALLOWED_TOOLS]);
+
+  // scope.allow REPLACES the base kit — a non-coding role drops Edit/Write/Bash.
+  const biz = { allow: ['mcp__papercusp', 'Read', 'Glob', 'Grep', 'WebSearch'] };
+  assert.deepEqual(fleetAllowedToolsForRole('business', false, biz), [...biz.allow]);
+  for (const dropped of ['Edit', 'Write', 'Bash']) {
+    assert.ok(!fleetAllowedToolsForRole('business', false, biz).includes(dropped), `${dropped} dropped by scope.allow`);
+  }
+
+  // scope.deny adds to the standing hard-deny list.
+  const denied = fleetDisallowedToolsForRole('business', false, { deny: ['WebFetch', 'Bash(curl:*)'] });
+  assert.ok(denied.includes('WebFetch') && denied.includes('Bash(curl:*)'));
+  for (const std of FLEET_DISALLOWED_TOOLS) assert.ok(denied.includes(std), `keeps standard deny ${std}`);
+
+  // Composes with the B-18 cutover: the cutover strip still applies on top of scope.allow.
+  const underCutover = fleetAllowedToolsForRole('worker', true, { allow: ['mcp__papercusp', 'Read', 'Bash', 'Edit'] });
+  for (const stripped of ['Bash', 'Edit']) {
+    assert.ok(!underCutover.includes(stripped), `cutover strips ${stripped} even from scope.allow`);
+  }
+  assert.ok(underCutover.includes('Read'), 'read-only native survives');
+
+  // resolveRoleToolScope reads toolScope.<role>.{allow,deny} from the effective config.
+  const cfg = { toolScope: { business: { allow: ['Read', 'Glob'], deny: ['Bash(rm:*)'] } } } as unknown as Parameters<typeof resolveRoleToolScope>[0];
+  assert.deepEqual(resolveRoleToolScope(cfg, 'business'), { allow: ['Read', 'Glob'], deny: ['Bash(rm:*)'] });
+  assert.equal(resolveRoleToolScope(cfg, 'worker'), undefined); // no toolScope.worker → undefined
+  assert.equal(resolveRoleToolScope(cfg, undefined), undefined);
 });
 
 test('claudeMcpArgs — deny-list hard-removes the dangerous EXEMPT tools (dontAsk gating is non-uniform) + dangerous Bash', () => {

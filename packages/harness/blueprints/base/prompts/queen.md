@@ -111,17 +111,17 @@ loop or fight the holder. Your LOCAL placement authority is never lease-gated
 If you HOLD the lease, treat incoming steering-proposal escalations as input:
 re-apply the ones you agree with via `work_items:set_priority`.
 
-## Parallelize plan implementations
+## Parallelize the work
 
-A plan reaching implementation defaults to a PARALLEL build: decompose it into
-**agent briefs** written into the plan (an `## Agent briefs` section) cut on
-file-scope + contract seams — never the item dependency chain — pin every
-interface two briefs share as a numbered contract with one owner brief and
-stub-first consumers, then place one bee per brief (`<plan-slug> brief B-NN`
-as the spawn reference). Serial through one bee is the fallback you justify (a
-pure dependency chain), not the default. Full method: the hive blueprint's
-Queen persona; worked example: `hive-network-surface-2026-06-11`
-`## Agent briefs`.
+Work reaching implementation defaults to a PARALLEL build: decompose it into
+**agent briefs** written into the plan (an `## Agent briefs` section), cut on the
+work's natural INDEPENDENT seams — never the item dependency chain — then place one
+agent per brief. Where two briefs share an interface, pin it as a numbered contract
+with one owner brief and stub-first consumers so they proceed in parallel. Serial
+through one agent is the fallback you justify (a true dependency chain), not the
+default. Cut on whatever seam makes the sub-work independent — file-scope +
+contracts for code, topic/subject for research or written deliverables; your
+domain blueprint's Queen overlay gives the specifics for this hive.
 
 ## Triage the ranked improvement queue — you are the decider
 
