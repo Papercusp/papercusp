@@ -423,6 +423,50 @@ export const VERIFICATION_STANDARD = [
   'did not verify is not done.',
 ].join('\n');
 
+/**
+ * ACCOUNT_ROUTING_NOTE — the "LLM inference is multi-account; a 'limit' is usually a
+ * routing bug, not real" clause every agent shares.
+ *
+ * Agents repeatedly mis-diagnose a routing/config fault as a true capacity/usage wall
+ * ("we hit the account limit", "session limit", "exceeded max wait", a 429) and then
+ * give up, throttle, or wait for a "reset" — when in fact Papercusp routes inference
+ * through an inference gateway over a POOL of many accounts with a per-account rate
+ * governor, so genuine exhaustion is rare and the real cause is almost always a flag
+ * off / the gateway pooling only some accounts / one account tapped while others idle /
+ * a spawn pinned to the wrong account. This primes every agent to (a) treat "we hit the
+ * limit" as a hypothesis to verify before concluding it, and (b) build anything that
+ * calls the LLM ON the account-routing system so it never trips a true limit.
+ *
+ * Sourced once here (the YIELD_POLICY / TESTING_STANDARD precedent): injected into the
+ * spawned-bee base (buildPrompt below) + the operator-launched-role base (operator-core's
+ * renderAccountRoutingNote, re-exported via role-prompt-from-slug) + the su playbooks, so
+ * all three can't desync. Deliberately infra-specific (it is about the inference system
+ * every agent runs ON, regardless of which project it works IN); the tool names are `e.g.`
+ * hints since not every role holds them.
+ */
+export const ACCOUNT_ROUTING_NOTE = [
+  '## LLM inference is MULTI-ACCOUNT — a "limit" is usually a routing bug, not real',
+  '',
+  'Papercusp routes model calls through an inference gateway backed by a POOL of many',
+  'Anthropic accounts (several Max subscriptions + a funded API key), with a rate governor',
+  'that paces and tracks EACH account separately. Aggregate capacity far exceeds any single',
+  "account's limit, so a TRUE usage/quota wall is rare.",
+  '',
+  'So when you see "rate limit", "usage/session limit", "exceeded max wait", a 429, or you',
+  'are about to conclude "we are capacity-gated / out of quota" — you are PROBABLY MISTAKEN.',
+  'The real cause is almost always ROUTING/CONFIG, not real exhaustion: a feature flag off,',
+  'the gateway pooling only some accounts, ONE account tapped out while others sit idle, or a',
+  'spawn pinned to the wrong account. Treat "we hit the limit" as a hypothesis to VERIFY,',
+  'never a conclusion — check the account pool + governor (e.g. `accounts:status`,',
+  '`dev:rate_governor_status`), confirm whether OTHER accounts still have headroom, and see',
+  'which account/gateway the failing call actually used, BEFORE you give up, throttle, wait',
+  'for a "reset", or report a limit.',
+  '',
+  'If you BUILD anything that calls the LLM, build it ON this account-routing system — go',
+  'through the inference gateway / account pool (never hardcode a single credential or assume',
+  'one account) so load spreads across accounts and you avoid true rate/usage limits.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -548,6 +592,15 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     role can be interrupted). Sourced from the one YIELD_POLICY constant.
   pre.push('\n---');
   pre.push(YIELD_POLICY);
+
+  // 3c-bis. Multi-account inference note — the SHARED bee base every role inherits.
+  //     Kills the recurring mis-diagnosis of a routing/config fault as a true capacity
+  //     limit ("we hit the account limit" → give up), and steers any LLM-calling work
+  //     onto the account-routing system. Universal (no role skip). Sourced from the one
+  //     ACCOUNT_ROUTING_NOTE constant so the bee base, operator-role base, and su
+  //     playbooks can't desync.
+  pre.push('\n---');
+  pre.push(ACCOUNT_ROUTING_NOTE);
 
   // 3d. Testing standard — the "write tests the project way" clause in the SHARED
   //     bee base every role inherits. Project-agnostic (the base serves bees in ANY
