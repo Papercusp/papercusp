@@ -569,8 +569,22 @@ function fleetCutoverApplies(role: string | undefined, capabilityOnly: boolean):
  * B-18 cutover (`capabilityOnly`, role-gated). An unknown/empty role gets the full
  * kit — never silently strip a tool from a role we don't recognise.
  */
-export function fleetAllowedToolsForRole(role: string | undefined, capabilityOnly = false): string[] {
-  let tools = [...FLEET_ALLOWED_TOOLS];
+/** Per-role tool scope from a blueprint (domain-generic-agent-personas-2026-06-17 P-005):
+ *  a blueprint's `roles[].tools` narrows a role's kit so a NON-CODING role (e.g. a
+ *  business/research role) can drop Edit/Write/Bash. `allow` (when non-empty) REPLACES
+ *  the default allow-list as the base; `deny` is added to the hard-deny. Composes with
+ *  the B-18 capability cutover — its native-tool strip runs ON TOP of the scoped base. */
+export interface RoleToolScope {
+  allow?: readonly string[];
+  deny?: readonly string[];
+}
+
+export function fleetAllowedToolsForRole(
+  role: string | undefined,
+  capabilityOnly = false,
+  scope?: RoleToolScope,
+): string[] {
+  let tools = scope?.allow && scope.allow.length > 0 ? [...scope.allow] : [...FLEET_ALLOWED_TOOLS];
   if (fleetCutoverApplies(role, capabilityOnly)) {
     tools = tools.filter((t) => !FLEET_CAPABILITY_REPLACED_TOOLS.includes(t));
   }
@@ -584,11 +598,29 @@ export function fleetAllowedToolsForRole(role: string | undefined, capabilityOnl
  *  plus, under the cutover, the native write/exec/fetch tools — `--disallowed-tools`
  *  removes a tool ENTIRELY and wins even over the dontAsk allow-list exemption
  *  (verified vs claude 2.1.158), so the removal is airtight, not just an omission. */
-export function fleetDisallowedToolsForRole(role: string | undefined, capabilityOnly = false): string[] {
+export function fleetDisallowedToolsForRole(
+  role: string | undefined,
+  capabilityOnly = false,
+  scope?: RoleToolScope,
+): string[] {
+  const base = [...FLEET_DISALLOWED_TOOLS, ...(scope?.deny ?? [])];
   if (fleetCutoverApplies(role, capabilityOnly)) {
-    return [...FLEET_DISALLOWED_TOOLS, ...FLEET_CAPABILITY_REPLACED_TOOLS];
+    return [...base, ...FLEET_CAPABILITY_REPLACED_TOOLS];
   }
-  return [...FLEET_DISALLOWED_TOOLS];
+  return base;
+}
+
+/** Resolve a role's blueprint/config-declared tool scope (domain-generic-agent-personas
+ *  P-005). A blueprint narrows a role's kit by declaring `toolScope.<role>.{allow,deny}`
+ *  (projected into the effective config like other blueprint knobs). Empty/absent →
+ *  undefined (the role keeps the full default kit — never silently strip). */
+export function resolveRoleToolScope(cfg: HarnessConfig, role: string | undefined): RoleToolScope | undefined {
+  if (!role) return undefined;
+  const allow = configGet<string[]>(cfg, `toolScope.${role}.allow`, []);
+  const deny = configGet<string[]>(cfg, `toolScope.${role}.deny`, []);
+  const a = Array.isArray(allow) && allow.length > 0 ? allow : undefined;
+  const d = Array.isArray(deny) && deny.length > 0 ? deny : undefined;
+  return a || d ? { allow: a, deny: d } : undefined;
 }
 
 /* ─── B-18 cutover, omp leg (agent-capability-confinement P-034) ──────────────
@@ -1222,6 +1254,7 @@ export function claudeMcpArgs(
   mcpConfigPath: string,
   hasWorkspace: boolean,
   role: string,
+  toolScope?: RoleToolScope,
 ): string[] {
   if (
     agentBackend !== 'claude-code' ||
@@ -1255,8 +1288,8 @@ export function claudeMcpArgs(
     // Allow-list as one space-joined value (claude splits it); deny patterns
     // as separate argv elements so each pattern's internal spaces (e.g.
     // `Bash(git push:*)`) survive. Both forms verified against claude 2.1.158.
-    out.push('--allowed-tools', fleetAllowedToolsForRole(role, capabilityOnly).join(' '));
-    out.push('--disallowed-tools', ...fleetDisallowedToolsForRole(role, capabilityOnly));
+    out.push('--allowed-tools', fleetAllowedToolsForRole(role, capabilityOnly, toolScope).join(' '));
+    out.push('--disallowed-tools', ...fleetDisallowedToolsForRole(role, capabilityOnly, toolScope));
   } else if (fleetCutoverApplies(role, capabilityOnly)) {
     // The cutover's native-tool hard-deny is a security INVARIANT, not a
     // user-defeatable preference. When the deployment manages the rest of the
@@ -2233,6 +2266,7 @@ export async function invoke(
       mcpConfigPath,
       Boolean(ctx.workspaceId),
       role,
+      resolveRoleToolScope(readEffectiveConfig(ctx.stateDir), role),
     ),
   );
 
