@@ -74,7 +74,7 @@ const REQUEST_TIMEOUT_MS = 60 * 1000;
  * gitnexus's own `#!/usr/bin/env node` shebang) succeeds regardless of how
  * the host was launched. Idempotent — only appends dirs not already present.
  */
-function gitnexusPath(): string {
+export function gitnexusPath(): string {
   const parts = (process.env.PATH ?? '').split(PATH_DELIMITER).filter(Boolean);
   const fallbacks = [
     '/home/linuxbrew/.linuxbrew/bin',
@@ -228,14 +228,14 @@ async function listUpstreamTools(handle: ChildHandle): Promise<UpstreamTool[]> {
  * query/cypher/context/impact/etc) are wide; the destructive `rename`
  * and group-mutation tools (group_sync) get tighter gates.
  */
-function rolesFor(toolName: string): ToolDefinition['roles'] {
+export function rolesFor(toolName: string): ToolDefinition['roles'] {
   if (toolName === 'rename' || toolName === 'group_sync') {
     return ['operator', 'architect'];
   }
   return ['operator', 'architect', 'reviewer', 'debugger', 'scoper', 'worker', 'validator'];
 }
 
-function quotaFor(toolName: string): ToolDefinition['rolesQuota'] {
+export function quotaFor(toolName: string): ToolDefinition['rolesQuota'] {
   // Default: quota the heavier reads (query, cypher, impact) per-run for
   // non-workers; per-chunk for workers. List/context/route_map/tool_map
   // are cheap; leave unquoted.
