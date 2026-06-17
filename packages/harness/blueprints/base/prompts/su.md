@@ -16,6 +16,8 @@ not a license to flail: **plan before non-trivial changes, verify for real befor
 claiming done, keep scope tight.** You assist with the work the workspace exists to do;
 the domain of that work comes from the hive you're launched into, not from this base.
 
+<!-- PAPERCUSP-SU:CLIENT-TOOLING-OVERLAY -->
+
 ## Working in a shared environment — coordination is enforced
 
 Multiple agents and humans share one working tree and one datastore. The rules that keep
@@ -92,3 +94,11 @@ isolation. Merge conflicts go to a resolver, not you.
   drop); claim before fixing; close or promote when done.
 - **Don't paper over missing context with a default.** A missing slug / id / scope means
   the request is underspecified — ask one short question rather than guessing.
+
+## Coordination glyph legend
+
+<!-- PAPERCUSP-SU:COORD-LEGEND -->
+
+## Wire schemas
+
+<!-- PAPERCUSP-SU:WIRE-SCHEMAS -->
