@@ -4,11 +4,19 @@
 -- NO workspace_id column and were read/written via withWorkspace(DEFAULT_WORKSPACE_ID)
 -- (runs.ts) — so a scheduled-plan run + its full transcript created in workspace A
 -- were globally visible (plans:runs / plans:run-transcript) in workspace B. Both
--- tables are EMPTY at migration time (verified 0 rows 2026-06-17), so no backfill is
--- needed: add workspace_id + RLS and let the GUC (runs.ts now sets it to the active
--- workspace) isolate them exactly like every other harness_shared.* table.
+-- tables are EMPTY at migration time (verified 0 rows 2026-06-17).
 --
--- Idempotent (ADD COLUMN IF NOT EXISTS / DROP POLICY IF EXISTS); additive; fresh-migrate-safe.
+-- PHASE 1 (this migration): add workspace_id (additive, DEFAULT '') + index + grants.
+-- runs.ts is updated in the SAME change to stamp workspace_id = the active workspace
+-- on every write AND filter every read by it, so isolation is enforced immediately by
+-- the explicit predicate. RLS is INTENTIONALLY NOT enabled here: enabling it before the
+-- new code is universally live would make the old code's INSERT (which omits workspace_id
+-- ⇒ '') fail the WITH CHECK during the deploy window. The RLS ENABLE + policy is a Phase-2
+-- follow-up (a one-line migration) once this code has shipped everywhere — defense-in-depth
+-- on top of the explicit filters. (Mirrors the spec/workspace-scoping two-step: column +
+-- backfill first, RLS after.)
+--
+-- Idempotent (ADD COLUMN IF NOT EXISTS); additive; fresh-migrate-safe.
 
 ALTER TABLE harness_shared.plan_runs
   ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT '';
@@ -30,15 +38,3 @@ EXCEPTION
   WHEN undefined_object THEN NULL;
 END
 $grant$;
-
-ALTER TABLE harness_shared.plan_runs ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS plan_runs_workspace_isolation ON harness_shared.plan_runs;
-CREATE POLICY plan_runs_workspace_isolation ON harness_shared.plan_runs
-  USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
-  WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
-
-ALTER TABLE harness_shared.plan_run_turns ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS plan_run_turns_workspace_isolation ON harness_shared.plan_run_turns;
-CREATE POLICY plan_run_turns_workspace_isolation ON harness_shared.plan_run_turns
-  USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
-  WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
