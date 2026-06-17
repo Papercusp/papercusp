@@ -23,6 +23,7 @@ import { createRequire } from 'node:module';
 import postgres, { Sql } from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as sharedSchema from './schema';
+import { getResourceProfile } from '../../../../packages/operator-core/lib/resource-profile';
 
 // This package is `"type": "module"`, so ESM has no ambient `require`.
 // `createRequire` gives us a synchronous loader for the lazy node-builtin
@@ -243,17 +244,13 @@ function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: 
     // Production is unaffected because connections in prod live long
     // enough that the one-time prepare cost amortizes anyway.
     prepare: false,
-    // Pool size honors PAPERCUSP_DB_POOL_MAX env. Default 2 — operators
-    // with ~20 registered harnesses each open a per-harness pool, so
-    // 20 × 2 = 40 idle connections leaves 60+ slots for other clients
-    // (snapshot pg_dump, marketplace-api, zero-cache, etc.) under
-    // Postgres's max_connections=100. Earlier defaults of 4 and 8 saturated
-    // the slot table and produced "remaining connection slots are reserved
-    // for roles with the SUPERUSER attribute" failures from the snapshot
-    // and marketplace endpoints. Desktop's embedded-postgres-server is a
-    // real PG over TCP, so the normal pool default applies (override via
-    // PAPERCUSP_DB_POOL_MAX if needed).
-    max: Math.max(1, Number(process.env.PAPERCUSP_DB_POOL_MAX) || 2),
+    // Pool size: explicit override > env var > adaptive default from resource-profile.
+    // Adaptive sizing derives from host resources (cores/memory/PG-type): laptop with
+    // embedded PG gets a small pool (~4–7 conns), server with native PG gets a larger
+    // pool (~52–64). Env override for backward compatibility; explicit maxOverride is
+    // used if provided by the caller (currently unused, reserved for future direct-pool
+    // configuration). P4-3 of operator-scalability-event-loop-2026-06-16.
+    max: Math.max(1, maxOverride ?? Number(process.env.PAPERCUSP_DB_POOL_MAX) || getResourceProfile().pgPoolMax),
     // Auto-close connections that sit idle for >30s. Prevents per-harness
     // pools from accumulating idle conns indefinitely (Next.js dev mode
     // module re-instantiation otherwise leaks the prior pool's sockets).
