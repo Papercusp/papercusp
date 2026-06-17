@@ -39,18 +39,6 @@ import type { FileClaimCoordinator } from '@papercusp/file-claim';
 import { FileLockQueueCoordinator } from '../src/file-lock-queue-coordinator.js';
 import { shouldUseWorkerChunkLoop, runWorkerChunkLoop } from '../src/run-worker-chunk-loop.js';
 
-// TEMP DEBUG (su-37e53 fault-#4 dig): checkpoint invoke-once startup to /tmp/io-debug.log so the
-// member-harness bench-bee startup deadlock (no-I/O futex hang) can be located while the bee is live.
-// Remove after diagnosis.
-const __dbg = (s: string): void => {
-  try {
-    appendFileSync('/tmp/io-debug.log', `[${Date.now()}] [${process.env.PAPERCUSP_SPAWN_ID ?? '?'}/${process.env.HARNESS_SLUG ?? '?'}] ${s}\n`);
-  } catch {
-    /* noop */
-  }
-};
-__dbg('module-loaded');
-
 /**
  * The file-claim coordinator for the worker chunk loop (P-040 / D-015).
  *
@@ -73,7 +61,6 @@ async function buildChunkLockCoordinator(repoPath: string): Promise<FileClaimCoo
 }
 
 async function main(): Promise<number> {
-  __dbg('main-start');
   const projectDir = process.env.PROJECT_DIR;
   const role = process.env.ROLE;
   if (!projectDir || !role) {
@@ -133,10 +120,8 @@ async function main(): Promise<number> {
   };
 
   // Optional PG bootstrap (same as bin/run.ts).
-  __dbg('pre-pg-bootstrap');
   const slug = harnessSlug(projectDir);
   const pgBoot = await bootstrapOrchestratorPg(wrappedLog, { harnessSlug: slug });
-  __dbg('post-pg-bootstrap');
   const workspaceId = pgBoot.pg ? activeWorkspaceId() : undefined;
 
   const ctx = {
@@ -198,7 +183,6 @@ async function main(): Promise<number> {
       teeAppend?.(summary);
       exitCode = 0;
     } else {
-      __dbg('pre-invoke');
       const result = await invoke(
         ctx,
         role,
