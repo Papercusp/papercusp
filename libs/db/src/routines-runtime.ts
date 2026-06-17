@@ -15,7 +15,20 @@ export interface RoutineRow {
   installSlug: string;
   name: string;
   triggerKind: 'cron' | 'webhook' | 'api';
-  triggerConfig: { cron?: string; webhook_token?: string; method?: string };
+  // Recurrence dialects: cron (5/6-field) OR the RRULE recurrence SET
+  // (scheduled-recurring-plans-2026-06-16 D-004). The engine computes next_fire_at
+  // from whichever is present (see operator-core schedule-next.ts) — RRULE is never
+  // converted to cron. webhook_token/method are for webhook/api trigger kinds.
+  triggerConfig: {
+    cron?: string;
+    rrule?: string;
+    dtstart?: string;
+    tzid?: string;
+    rdate?: string[];
+    exdate?: string[];
+    webhook_token?: string;
+    method?: string;
+  };
   targetRole: string;
   payloadTemplate: Record<string, unknown> | null;
   concurrency: 'queue' | 'skip' | 'cancel-prev';
