@@ -56,6 +56,21 @@ export interface PromptResolveContext {
    * `base` alone is the chain.
    */
   extendsChain?: string[];
+  /**
+   * Tier-aware resolution (domain-generic-hive-architecture-2026-06-18 P-014/D-006):
+   * ADDITIONAL blueprint roots searched BEFORE `harnessDir`, most-specific tier first —
+   * the per-hive LOCAL tier (`<hive>/.papercusp/blueprints`) then the INSTALLED/Comb tier
+   * (`~/.papercusp/blueprints`). `harnessDir` is always the final (built-in) tier. Each
+   * root holds a `blueprints/<id>/` subtree exactly like `harnessDir`, so a local/installed
+   * blueprint contributes both its `blueprint.yaml` (`extends`) AND its prompt files.
+   *
+   * Resolution keeps blueprint SPECIFICITY as the primary axis (leaf-first across the
+   * extends-chain — unchanged), with TIER as the tiebreaker WITHIN one blueprint id: a
+   * leaf's prompt in ANY tier still beats an ancestor's, and within one id the local tier
+   * wins over installed wins over built-in. Absent/empty ⇒ only `harnessDir` is consulted,
+   * byte-identical to before this seam existed.
+   */
+  blueprintRoots?: string[];
 }
 
 /**
@@ -67,18 +82,36 @@ export const ROLE_ALIASES: Record<string, string> = {};
 /** The universal role library — every `extends` chain terminates here. */
 const BASE_BLUEPRINT_ID = 'base';
 
-/** Read a blueprint.yaml's `extends` header → parent id(s). [] when absent/unreadable. */
-function blueprintExtends(harnessDir: string, id: string): string[] {
-  const p = join(harnessDir, 'blueprints', id, 'blueprint.yaml');
-  if (!existsSync(p)) return [];
-  try {
-    const parsed = parseYaml(readFileSync(p, 'utf8')) as { extends?: unknown } | null;
-    const ext = parsed && typeof parsed === 'object' ? parsed.extends : undefined;
-    if (ext == null) return [];
-    return Array.isArray(ext) ? ext.map(String) : [String(ext)];
-  } catch {
-    return [];
+/**
+ * The ordered blueprint roots a context resolves against: the tier-aware
+ * `blueprintRoots` (local → installed) first, then `harnessDir` (built-in) last.
+ * Empty/absent `blueprintRoots` ⇒ just `[harnessDir]` (the pre-tier behavior).
+ */
+function rootsFor(ctx: PromptResolveContext): string[] {
+  return ctx.blueprintRoots && ctx.blueprintRoots.length > 0
+    ? [...ctx.blueprintRoots, ctx.harnessDir]
+    : [ctx.harnessDir];
+}
+
+/**
+ * Read a blueprint's `extends` header → parent id(s), searching `roots` in order and
+ * taking the FIRST that has a `blueprints/<id>/blueprint.yaml` (so a local/installed
+ * blueprint's own `extends` is honored). [] when no root has it / it's unreadable.
+ */
+function blueprintExtends(roots: readonly string[], id: string): string[] {
+  for (const root of roots) {
+    const p = join(root, 'blueprints', id, 'blueprint.yaml');
+    if (!existsSync(p)) continue;
+    try {
+      const parsed = parseYaml(readFileSync(p, 'utf8')) as { extends?: unknown } | null;
+      const ext = parsed && typeof parsed === 'object' ? parsed.extends : undefined;
+      if (ext == null) return [];
+      return Array.isArray(ext) ? ext.map(String) : [String(ext)];
+    } catch {
+      return [];
+    }
   }
+  return [];
 }
 
 /**
@@ -94,13 +127,23 @@ function blueprintExtends(harnessDir: string, id: string): string[] {
  *      resolveBlueprintChain(h, 'base')      → ['base'].
  */
 export function resolveBlueprintChain(harnessDir: string, blueprintId: string): string[] {
+  return resolveBlueprintChainRoots([harnessDir], blueprintId);
+}
+
+/**
+ * Tier-aware variant: resolve the `extends`-chain reading each blueprint's
+ * `blueprint.yaml` from the first root (local → installed → built-in) that has it, so a
+ * local/installed blueprint that `extends` a built-in one chains correctly across tiers.
+ * `resolveBlueprintChain` is the single-root (built-in only) special case.
+ */
+export function resolveBlueprintChainRoots(roots: readonly string[], blueprintId: string): string[] {
   const chain: string[] = [];
   const seen = new Set<string>();
   const walk = (id: string): void => {
     if (seen.has(id)) return;
     seen.add(id);
     chain.push(id);
-    for (const parent of blueprintExtends(harnessDir, id)) walk(parent);
+    for (const parent of blueprintExtends(roots, id)) walk(parent);
   };
   walk(blueprintId);
   if (!chain.includes(BASE_BLUEPRINT_ID)) chain.push(BASE_BLUEPRINT_ID);
@@ -119,13 +162,20 @@ function chainForCtx(ctx: PromptResolveContext): string[] {
 function candidatesFor(ctx: PromptResolveContext, role: string): string[] {
   const candidates: string[] = [];
   const chain = chainForCtx(ctx);
+  const roots = rootsFor(ctx);
 
   // ── 1. The blueprint's OWN override, then its non-base `extends` ancestors
   //    (e.g. implement → single-agent). Most specific. `base` is held back to
-  //    step 2 (it is the universal DEFAULT, not a specialization).
+  //    step 2 (it is the universal DEFAULT, not a specialization). Blueprint
+  //    SPECIFICITY is the primary axis (leaf-first); TIER (local → installed →
+  //    built-in) is the tiebreaker WITHIN one id — so a leaf's built-in prompt
+  //    still beats an ancestor's local prompt, and a local override of one id
+  //    beats its built-in (P-014). Single-root ctx ⇒ identical to before.
   for (const id of chain) {
     if (id === BASE_BLUEPRINT_ID) continue;
-    candidates.push(join(ctx.harnessDir, 'blueprints', id, 'prompts', `${role}.md`));
+    for (const root of roots) {
+      candidates.push(join(root, 'blueprints', id, 'prompts', `${role}.md`));
+    }
   }
 
   // ── 2. `base` — the universal role library (every chain terminates here).
@@ -136,8 +186,11 @@ function candidatesFor(ctx: PromptResolveContext, role: string): string[] {
   //    was collapsed into `base` as canonical, so resolution at the live default
   //    is unchanged; the rarely-used testing/production variants collapse to it.
   //    `ctx.phase`/`ctx.dept` are no longer consulted (no phase-axis personas).
+  //    Tier-aware: a local/installed `base` override is consulted before built-in.
   if (chain.includes(BASE_BLUEPRINT_ID)) {
-    candidates.push(join(ctx.harnessDir, 'blueprints', BASE_BLUEPRINT_ID, 'prompts', `${role}.md`));
+    for (const root of roots) {
+      candidates.push(join(root, 'blueprints', BASE_BLUEPRINT_ID, 'prompts', `${role}.md`));
+    }
   }
 
   return candidates;
@@ -170,7 +223,7 @@ export function promptCandidates(
  */
 function withResolvedChain(ctx: PromptResolveContext): PromptResolveContext {
   if (ctx.extendsChain || !ctx.blueprintId) return ctx;
-  return { ...ctx, extendsChain: resolveBlueprintChain(ctx.harnessDir, ctx.blueprintId) };
+  return { ...ctx, extendsChain: resolveBlueprintChainRoots(rootsFor(ctx), ctx.blueprintId) };
 }
 
 /**
@@ -210,9 +263,10 @@ export function resolvePromptFiles(
 ): string[] {
   const main = resolvePromptFile(ctx, role);
   const canonical = ROLE_ALIASES[role] ?? role;
-  const prefix = [
-    join(ctx.harnessDir, 'blueprints', BASE_BLUEPRINT_ID, 'prompts', `${canonical}.base.md`),
-  ].find((p) => existsSync(p));
+  // Tier-aware: a local/installed `base` may supply the generic prefix; built-in last.
+  const prefix = rootsFor(ctx)
+    .map((root) => join(root, 'blueprints', BASE_BLUEPRINT_ID, 'prompts', `${canonical}.base.md`))
+    .find((p) => existsSync(p));
   const sections: string[] = [];
   if (prefix && prefix !== main) sections.push(prefix);
   if (main) sections.push(main);
@@ -233,21 +287,24 @@ export function resolvePromptFiles(
  * default in place" (a byte-identical no-op). PURE / read-only (testable).
  */
 export function resolveReplacementSystemPrompt(ctx: PromptResolveContext): string | null {
-  const basePreamble = join(
-    ctx.harnessDir,
-    'blueprints',
-    BASE_BLUEPRINT_ID,
-    'prompts',
-    'agent-base-preamble.md',
-  );
-  if (!existsSync(basePreamble)) return null;
+  const roots = rootsFor(ctx);
+  // The neutral base preamble — tier-aware (a local/installed `base` may override it),
+  // built-in last. Absent in every tier ⇒ null (leave the Claude default in place).
+  const basePreamble = roots
+    .map((root) => join(root, 'blueprints', BASE_BLUEPRINT_ID, 'prompts', 'agent-base-preamble.md'))
+    .find((p) => existsSync(p));
+  if (!basePreamble) return null;
   let text = readFileSync(basePreamble, 'utf8').trim();
-  for (const id of chainForCtx(withResolvedChain(ctx))) {
+  // The MOST-SPECIFIC blueprint overlay, leaf-first; within one id, local → installed →
+  // built-in. The first overlay found across the chain wins (single, not cumulative).
+  outer: for (const id of chainForCtx(withResolvedChain(ctx))) {
     if (id === BASE_BLUEPRINT_ID) continue;
-    const overlay = join(ctx.harnessDir, 'blueprints', id, 'prompts', 'agent-base-overlay.md');
-    if (existsSync(overlay)) {
-      text = `${text}\n\n${readFileSync(overlay, 'utf8').trim()}`;
-      break;
+    for (const root of roots) {
+      const overlay = join(root, 'blueprints', id, 'prompts', 'agent-base-overlay.md');
+      if (existsSync(overlay)) {
+        text = `${text}\n\n${readFileSync(overlay, 'utf8').trim()}`;
+        break outer;
+      }
     }
   }
   return text ? `${text}\n` : null;

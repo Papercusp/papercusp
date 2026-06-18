@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   promptCandidates,
   resolveBlueprintChain,
+  resolveBlueprintChainRoots,
   resolvePromptFile,
   resolvePromptFiles,
   resolveReplacementSystemPrompt,
@@ -414,5 +415,148 @@ test('Phase 6 invariant — the base role library is the canonical home for the 
   // The 2 built-in role MANIFESTS moved global→base in Phase 5 (role-registry scans base).
   for (const manifest of ['security-reviewer.role.json', 'infra-reviewer.role.json']) {
     assert.equal(existsSync(join(baseDir, manifest)), true, `${manifest} must live in the base library`);
+  }
+});
+
+// ── domain-generic-hive-architecture-2026-06-18 P-014/D-006 — tier-aware resolution ──
+// blueprintRoots (local → installed) are searched BEFORE harnessDir (built-in). Blueprint
+// SPECIFICITY stays primary (leaf-first); TIER is the tiebreaker within one id. An empty
+// blueprintRoots is byte-identical to the pre-tier behavior.
+
+/** A second temp root (the per-hive LOCAL tier) alongside a harnessDir. */
+function withTiers(setup: (local: string, builtin: string) => void): {
+  local: string;
+  builtin: string;
+  cleanup: () => void;
+} {
+  const local = mkdtempSync(join(tmpdir(), 'papercusp-orch-local-'));
+  const builtin = mkdtempSync(join(tmpdir(), 'papercusp-orch-builtin-'));
+  setup(local, builtin);
+  return {
+    local,
+    builtin,
+    cleanup: () => {
+      rmSync(local, { recursive: true, force: true });
+      rmSync(builtin, { recursive: true, force: true });
+    },
+  };
+}
+
+test('tier-aware — a local-tier override of a blueprint role beats the built-in copy', () => {
+  const { local, builtin, cleanup } = withTiers((loc, bi) => {
+    writeBlueprintYaml(bi, 'coding', 'base');
+    writeBlueprintRole(bi, 'coding', 'bee', '# builtin bee');
+    // local tier overrides ONLY the coding bee
+    writeBlueprintRole(loc, 'coding', 'bee', '# local bee');
+  });
+  try {
+    const found = resolvePromptFile(
+      { harnessDir: builtin, phase: '', dept: '', blueprintId: 'coding', blueprintRoots: [local] },
+      'bee',
+    );
+    assert.equal(found, join(local, 'blueprints', 'coding', 'prompts', 'bee.md'));
+  } finally {
+    cleanup();
+  }
+});
+
+test('tier-aware — blueprint specificity dominates tier: a LEAF built-in beats an ANCESTOR local', () => {
+  const { local, builtin, cleanup } = withTiers((loc, bi) => {
+    writeBlueprintYaml(bi, 'base');
+    writeBlueprintYaml(bi, 'coding', 'base');
+    writeBlueprintRole(bi, 'coding', 'queen', '# builtin coding queen (leaf)');
+    // local tier supplies only an ANCESTOR (base) queen — must NOT win over the leaf
+    writeBlueprintRole(loc, 'base', 'queen', '# local base queen (ancestor)');
+  });
+  try {
+    const found = resolvePromptFile(
+      { harnessDir: builtin, phase: '', dept: '', blueprintId: 'coding', blueprintRoots: [local] },
+      'queen',
+    );
+    assert.equal(found, join(builtin, 'blueprints', 'coding', 'prompts', 'queen.md'));
+  } finally {
+    cleanup();
+  }
+});
+
+test('tier-aware — extends-chain reads a LOCAL blueprint.yaml (local delta blueprint extends a built-in)', () => {
+  const { local, builtin, cleanup } = withTiers((loc, bi) => {
+    writeBlueprintYaml(bi, 'base');
+    writeBlueprintYaml(bi, 'coding', 'base');
+    writeBlueprintRole(bi, 'coding', 'bee', '# builtin coding bee');
+    // a per-hive LOCAL delta blueprint that extends the built-in coding blueprint,
+    // overriding the bee — its blueprint.yaml lives only in the local tier.
+    writeBlueprintYaml(loc, 'acme-local', 'coding');
+    writeBlueprintRole(loc, 'acme-local', 'bee', '# acme-local bee');
+  });
+  try {
+    const chain = resolveBlueprintChainRoots([local, builtin], 'acme-local');
+    assert.deepEqual(chain, ['acme-local', 'coding', 'base']);
+    const found = resolvePromptFile(
+      { harnessDir: builtin, phase: '', dept: '', blueprintId: 'acme-local', blueprintRoots: [local] },
+      'bee',
+    );
+    assert.equal(found, join(local, 'blueprints', 'acme-local', 'prompts', 'bee.md'));
+  } finally {
+    cleanup();
+  }
+});
+
+test('tier-aware — falls through the local tier to the built-in when the local lacks the role', () => {
+  const { local, builtin, cleanup } = withTiers((loc, bi) => {
+    writeBlueprintYaml(bi, 'coding', 'base');
+    writeBlueprintRole(bi, 'coding', 'scoper', '# builtin scoper');
+    // local delta exists but only overrides the bee — scoper must fall through to built-in
+    writeBlueprintYaml(loc, 'acme-local', 'coding');
+    writeBlueprintRole(loc, 'acme-local', 'bee', '# acme-local bee');
+  });
+  try {
+    const found = resolvePromptFile(
+      { harnessDir: builtin, phase: '', dept: '', blueprintId: 'acme-local', blueprintRoots: [local] },
+      'scoper',
+    );
+    assert.equal(found, join(builtin, 'blueprints', 'coding', 'prompts', 'scoper.md'));
+  } finally {
+    cleanup();
+  }
+});
+
+test('tier-aware — resolveReplacementSystemPrompt prefers a local overlay over the built-in', () => {
+  const { local, builtin, cleanup } = withTiers((loc, bi) => {
+    writeBlueprintYaml(bi, 'base');
+    writeBlueprintYaml(bi, 'coding', 'base');
+    writeBlueprintPrompt(bi, 'base', 'agent-base-preamble.md', 'NEUTRAL BASE');
+    writeBlueprintPrompt(bi, 'coding', 'agent-base-overlay.md', 'BUILTIN SWE OVERLAY');
+    writeBlueprintPrompt(loc, 'coding', 'agent-base-overlay.md', 'LOCAL SWE OVERLAY');
+  });
+  try {
+    const out = resolveReplacementSystemPrompt({
+      harnessDir: builtin,
+      phase: '',
+      dept: '',
+      blueprintId: 'coding',
+      blueprintRoots: [local],
+    });
+    assert.equal(out, 'NEUTRAL BASE\n\nLOCAL SWE OVERLAY\n');
+  } finally {
+    cleanup();
+  }
+});
+
+test('tier-aware — empty blueprintRoots is byte-identical to a single-root ctx', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    writeBlueprintYaml(root, 'coding', 'base');
+    writeBlueprintRole(root, 'coding', 'bee', '# builtin bee');
+  });
+  try {
+    const withEmpty = resolvePromptFile(
+      { harnessDir, phase: '', dept: '', blueprintId: 'coding', blueprintRoots: [] },
+      'bee',
+    );
+    const without = resolvePromptFile({ harnessDir, phase: '', dept: '', blueprintId: 'coding' }, 'bee');
+    assert.equal(withEmpty, without);
+    assert.equal(without, join(harnessDir, 'blueprints', 'coding', 'prompts', 'bee.md'));
+  } finally {
+    cleanup();
   }
 });
