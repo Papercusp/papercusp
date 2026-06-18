@@ -107,6 +107,25 @@ export function loadHarnessAcceptanceKind(
 }
 
 /**
+ * The effective blueprint's `id` from `<stateDir>/blueprint.yaml`
+ * (domain-generic-agent-personas-2026-06-17 P-013) — the coding-vs-generic signal for a
+ * NORMAL pipeline spawn, which (unlike a program-blueprint spawn) carries no `BLUEPRINT_ID`
+ * extra. `undefined` for a non-blueprint harness or an unreadable file. The replace-base path
+ * resolves the coding overlay (`agent-base-overlay.md`) by walking this blueprint's
+ * extends-chain, so a `coding` harness keeps its SWE framing once the Claude default is
+ * replaced. Fail-safe: a bad/absent blueprint ⇒ undefined ⇒ neutral preamble only.
+ */
+export function loadHarnessBlueprintId(stateDir: string): string | undefined {
+  try {
+    const f = join(stateDir, 'blueprint.yaml');
+    if (!existsSync(f)) return undefined;
+    return loadBlueprintFromFile(f).blueprint.id || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The effective blueprint's `lexicon` — the hive's noun overrides
  * (hive-blueprint-generalization P-016), e.g. `{ workUnit: 'deliverable', reviewGate:
  * 'review' }`. `undefined`/empty for a hive that declares none (the coding hive), so

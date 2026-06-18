@@ -32,10 +32,10 @@ import { homedir, tmpdir } from 'node:os';
 import { sessionClaudeConfigDir, sessionMcpDir } from './session-launch-dirs';
 import { readFleetClaudeToken } from './fleet-claude-token';
 import { configGet } from './config';
-import { readEffectiveConfig, loadHarnessAcceptanceKind, loadHarnessLexicon } from './effective-config';
+import { readEffectiveConfig, loadHarnessAcceptanceKind, loadHarnessLexicon, loadHarnessBlueprintId } from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
-import { resolvePromptFiles } from './prompt-resolve';
+import { resolvePromptFiles, resolveReplacementSystemPrompt } from './prompt-resolve';
 import { extractFeatureId, makeRunId } from './run-id';
 import { harnessSlug as harnessSlugFromProjectDir } from './state';
 import {
@@ -553,6 +553,16 @@ export const FLEET_CAPABILITY_ROLES: ReadonlySet<string> = new Set<string>([
  *  unset / `0` / `false` / `off` ⇒ today's allow-list (native tools granted). */
 export function fleetCapabilityOnlyEnabled(): boolean {
   const v = (process.env.PAPERCUSP_FLEET_CAPABILITY_ONLY ?? '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'on';
+}
+
+/** True when REPLACE_CLAUDE_BASE is armed for this spawn (domain-generic-agent-personas
+ *  -2026-06-17 P-013). The operator resolves the `papercusp-replace-claude-base` flag
+ *  per-spawn and threads it as this env var into the invoke-once child (mirrors
+ *  `fleetCapabilityOnlyEnabled`). DEFAULT-OFF: unset / `0` / `false` / `off` ⇒ the Claude
+ *  Code coding base stands and the prompt is delivered via stdin exactly as today. */
+export function replaceClaudeBaseEnabled(): boolean {
+  const v = (process.env.PAPERCUSP_REPLACE_CLAUDE_BASE ?? '').trim().toLowerCase();
   return v === '1' || v === 'true' || v === 'on';
 }
 
@@ -2218,6 +2228,40 @@ export async function invoke(
     finalArgv.push('-');
   }
 
+  // domain-generic-agent-personas-2026-06-17 P-013 (REPLACE_CLAUDE_BASE, default-off): when
+  // armed, REPLACE the Claude Code coding base with OUR neutral preamble (+ the blueprint's
+  // coding overlay) via `--system-prompt-file`, instead of letting Claude's default coding
+  // system prompt stand. The assembled prompt stays the stdin USER message (the stdin.write
+  // block below is UNCHANGED), so the agent is still driven by it — only the SYSTEM prompt
+  // changes. claude-code only (the replace mechanism is claude-specific; omp/codex carry
+  // their own base). Flag-OFF ⇒ no arg, no temp file — byte-identical to today.
+  let sysPromptDir: string | undefined;
+  if (
+    agentBackend === 'claude-code' &&
+    streamFormat === 'claude-stream-json' &&
+    replaceClaudeBaseEnabled()
+  ) {
+    // Effective blueprint: a program-blueprint spawn's BLUEPRINT_ID extra, else the harness's
+    // own blueprint id (so a normal coding-pipeline spawn — which carries no BLUEPRINT_ID —
+    // still resolves the coding overlay). Absent/non-blueprint ⇒ neutral preamble only.
+    const replaceBaseBlueprintId =
+      extras.find((e) => e.startsWith('BLUEPRINT_ID='))?.slice('BLUEPRINT_ID='.length) ||
+      loadHarnessBlueprintId(ctx.stateDir);
+    const sysText = resolveReplacementSystemPrompt({
+      harnessDir: ctx.harnessDir,
+      phase: '',
+      dept: '',
+      blueprintId: replaceBaseBlueprintId,
+    });
+    if (sysText) {
+      const { ramTmpRoot } = await import('./tmpfs');
+      sysPromptDir = mkdtempSync(join(ramTmpRoot(), 'papercusp-sys-'));
+      const sysPromptPath = join(sysPromptDir, 'system-prompt.md');
+      writeFileSync(sysPromptPath, sysText, 'utf8');
+      finalArgv.push('--system-prompt-file', sysPromptPath);
+    }
+  }
+
   // Per-spawn MCP config location. claude loads its config from an EXPLICIT
   // path (`--mcp-config … --strict-mcp-config`), so it can live in a UNIQUE
   // per-spawn temp dir rather than the shared `<cwd>/.mcp.json`. That lets
@@ -2888,6 +2932,11 @@ export async function invoke(
   // (systemd-tmpfiles on Linux, launchd on macOS) reaps them.
   if (ompPromptDir) {
     try { rmSync(ompPromptDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  }
+  // P-013: clean up the ephemeral REPLACE_CLAUDE_BASE system-prompt tmpdir (same lifecycle
+  // as the omp prompt dir — always runs, OS sweeper reaps a SIGKILL leak).
+  if (sysPromptDir) {
+    try { rmSync(sysPromptDir, { recursive: true, force: true }); } catch { /* best-effort */ }
   }
 
   return {

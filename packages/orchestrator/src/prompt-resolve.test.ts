@@ -9,6 +9,7 @@ import {
   resolveBlueprintChain,
   resolvePromptFile,
   resolvePromptFiles,
+  resolveReplacementSystemPrompt,
 } from './prompt-resolve.js';
 
 /** Write a blueprints/<id>/blueprint.yaml with an optional `extends`. */
@@ -33,6 +34,107 @@ function withHarness(setup: (root: string) => void): {
   setup(harnessDir);
   return { harnessDir, cleanup: () => rmSync(harnessDir, { recursive: true, force: true }) };
 }
+
+/** Write blueprints/<id>/prompts/<file>. */
+function writeBlueprintPrompt(root: string, id: string, file: string, body: string): void {
+  mkdirSync(join(root, 'blueprints', id, 'prompts'), { recursive: true });
+  writeFileSync(join(root, 'blueprints', id, 'prompts', file), body);
+}
+
+// ── domain-generic-agent-personas-2026-06-17 P-009/P-010/P-013 ───────────────
+// resolveReplacementSystemPrompt composes the REPLACE_CLAUDE_BASE system prompt:
+// the neutral base preamble + the most-specific blueprint overlay (coding's SWE framing).
+
+test('resolveReplacementSystemPrompt — null when the base preamble is absent (no-op → Claude default stands)', () => {
+  const { harnessDir, cleanup } = withHarness(() => {
+    /* no agent-base-preamble.md */
+  });
+  try {
+    assert.equal(
+      resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '', blueprintId: 'coding' }),
+      null,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolveReplacementSystemPrompt — neutral preamble only when the blueprint has no coding overlay', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    writeBlueprintPrompt(root, 'base', 'agent-base-preamble.md', '# NEUTRAL BASE');
+    // a generic/research blueprint provides NO agent-base-overlay.md
+    writeBlueprintYaml(root, 'research', 'base');
+    writeBlueprintYaml(root, 'base');
+  });
+  try {
+    const out = resolveReplacementSystemPrompt({
+      harnessDir,
+      phase: '',
+      dept: '',
+      blueprintId: 'research',
+    });
+    assert.equal(out, '# NEUTRAL BASE\n');
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolveReplacementSystemPrompt — coding blueprint appends its overlay AFTER the neutral base', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    writeBlueprintPrompt(root, 'base', 'agent-base-preamble.md', '# NEUTRAL BASE');
+    writeBlueprintPrompt(root, 'coding', 'agent-base-overlay.md', '# CODING OVERLAY');
+    writeBlueprintYaml(root, 'coding', 'base');
+    writeBlueprintYaml(root, 'base');
+  });
+  try {
+    const out = resolveReplacementSystemPrompt({
+      harnessDir,
+      phase: '',
+      dept: '',
+      blueprintId: 'coding',
+    });
+    assert.equal(out, '# NEUTRAL BASE\n\n# CODING OVERLAY\n');
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolveReplacementSystemPrompt — no blueprintId → neutral preamble only (base chain, no overlay)', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    writeBlueprintPrompt(root, 'base', 'agent-base-preamble.md', '# NEUTRAL BASE');
+    // even though a coding overlay exists in the tree, no blueprintId ⇒ base-only chain.
+    writeBlueprintPrompt(root, 'coding', 'agent-base-overlay.md', '# CODING OVERLAY');
+  });
+  try {
+    const out = resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '' });
+    assert.equal(out, '# NEUTRAL BASE\n');
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolveReplacementSystemPrompt — picks the MOST-SPECIFIC overlay walking the extends-chain', () => {
+  const { harnessDir, cleanup } = withHarness((root) => {
+    writeBlueprintPrompt(root, 'base', 'agent-base-preamble.md', '# NEUTRAL BASE');
+    // implement → coding → base; both coding and implement carry an overlay → leaf (implement) wins.
+    writeBlueprintYaml(root, 'implement', 'coding');
+    writeBlueprintYaml(root, 'coding', 'base');
+    writeBlueprintYaml(root, 'base');
+    writeBlueprintPrompt(root, 'coding', 'agent-base-overlay.md', '# CODING OVERLAY');
+    writeBlueprintPrompt(root, 'implement', 'agent-base-overlay.md', '# IMPLEMENT OVERLAY');
+  });
+  try {
+    const out = resolveReplacementSystemPrompt({
+      harnessDir,
+      phase: '',
+      dept: '',
+      blueprintId: 'implement',
+    });
+    assert.equal(out, '# NEUTRAL BASE\n\n# IMPLEMENT OVERLAY\n');
+  } finally {
+    cleanup();
+  }
+});
 
 test('promptCandidates — bare role resolves to base only (the universal library; no global tiers)', () => {
   // K-1 + Phase 5 (D-012): with no blueprintId, base is the ONLY candidate — the global

@@ -23,6 +23,7 @@ import {
   fleetDisallowedToolsForRole,
   resolveRoleToolScope,
   fleetCapabilityOnlyEnabled,
+  replaceClaudeBaseEnabled,
   FLEET_CAPABILITY_REPLACED_TOOLS,
   FLEET_CAPABILITY_ROLES,
   ensureFleetGitHooksDir,

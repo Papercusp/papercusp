@@ -218,3 +218,37 @@ export function resolvePromptFiles(
   if (main) sections.push(main);
   return sections;
 }
+
+/**
+ * domain-generic-agent-personas-2026-06-17 P-009/P-010/P-013 — compose the REPLACEMENT
+ * SYSTEM prompt for a spawn when `REPLACE_CLAUDE_BASE` is armed: the neutral base preamble
+ * (`blueprints/base/prompts/agent-base-preamble.md`, P-009) + the MOST-SPECIFIC blueprint
+ * overlay (`blueprints/<id>/prompts/agent-base-overlay.md`, walking the extends-chain
+ * leaf-first; `base` excluded — P-010 authors the `coding` overlay), so a coding hive keeps
+ * its SWE framing while a generic hive gets only the neutral base.
+ *
+ * The agent's ROLE persona + task ride the spawn's stdin/user message UNCHANGED (resolved by
+ * `resolvePromptFiles` → `buildPrompt`); this replaces only the SYSTEM prompt. Returns `null`
+ * when the base preamble file is absent — the caller treats `null` as "leave the Claude
+ * default in place" (a byte-identical no-op). PURE / read-only (testable).
+ */
+export function resolveReplacementSystemPrompt(ctx: PromptResolveContext): string | null {
+  const basePreamble = join(
+    ctx.harnessDir,
+    'blueprints',
+    BASE_BLUEPRINT_ID,
+    'prompts',
+    'agent-base-preamble.md',
+  );
+  if (!existsSync(basePreamble)) return null;
+  let text = readFileSync(basePreamble, 'utf8').trim();
+  for (const id of chainForCtx(withResolvedChain(ctx))) {
+    if (id === BASE_BLUEPRINT_ID) continue;
+    const overlay = join(ctx.harnessDir, 'blueprints', id, 'prompts', 'agent-base-overlay.md');
+    if (existsSync(overlay)) {
+      text = `${text}\n\n${readFileSync(overlay, 'utf8').trim()}`;
+      break;
+    }
+  }
+  return text ? `${text}\n` : null;
+}
