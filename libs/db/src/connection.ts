@@ -208,7 +208,24 @@ function evictHarnessPoolsIfFull(): void {
   }
 }
 
-function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: number): Sql {
+/**
+ * A short, stable `application_name` so every pooled connection is attributable
+ * in `pg_stat_activity` (the connection-exhaustion incident on 2026-06-17 was
+ * hard to diagnose precisely because the org/harness pools were anonymous — only
+ * su-lock + migrations tagged themselves). Format `pcusp:<label>:p<pid>`, capped
+ * at PG's 63-byte NAMEDATALEN-1 limit. C0-2 of backend-connection-scaling-2026-06-17.
+ */
+function pgAppName(label: string): string {
+  const s = `pcusp:${label}:p${process.pid}`;
+  return s.length > 63 ? s.slice(0, 63) : s;
+}
+
+function buildClient(
+  connectionUrl: string,
+  searchPath: string[],
+  maxOverride?: number,
+  label = 'pool',
+): Sql {
   const sp = searchPath.map((s) => `"${s.replace(/"/g, '""')}"`).join(', ');
   // The desktop ships embedded-postgres-server (real PG over TCP); the URL
   // carries a normal host:port, so no host override is needed. The legacy
@@ -234,6 +251,7 @@ function buildClient(connectionUrl: string, searchPath: string[], maxOverride?: 
     connection: {
       search_path: sp,
       idle_in_transaction_session_timeout: String(idleInTxMs),
+      application_name: pgAppName(label),
     },
     // Skip postgres-js's prepared-statement plan caching. ~80% of the
     // ~1.1s cold-reconnect cost we measured was prepared-statement
@@ -327,7 +345,7 @@ export function getOrgPg(): OrgPgHandle {
   // the old port forever (E2E round-13 bug #33).
   const url = adminUrl();
   if (!_adminClient) {
-    _adminClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public']);
+    _adminClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public'], undefined, 'org-admin');
     _adminDrizzle = drizzle(_adminClient, { schema: sharedTables });
     _adminDb = drizzle(_adminClient, { schema: fullSchema });
   }
@@ -357,7 +375,7 @@ export function getOrgPgApp(): OrgPgHandle {
   // Call appUrl() on every invocation — see comment in getOrgPg().
   const url = appUrl();
   if (!_appOrgClient) {
-    _appOrgClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public']);
+    _appOrgClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public'], undefined, 'org-app');
     _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedTables });
     _appOrgDb = drizzle(_appOrgClient, { schema: fullSchema });
   }
@@ -387,7 +405,7 @@ export function getHarnessPg(slug: string) {
   evictHarnessPoolsIfFull();
   const schemaName = sharedSchema.slugToSchemaName(slug);
   const perHarnessMax = Math.max(1, Number(process.env.PAPERCUSP_HARNESS_DB_POOL_MAX) || 1);
-  const sql = buildClient(appUrl(), [schemaName, 'harness_shared', 'papercup_shared', 'public'], perHarnessMax);
+  const sql = buildClient(appUrl(), [schemaName, 'harness_shared', 'papercup_shared', 'public'], perHarnessMax, `harness:${slug}`);
   const dz = drizzle(sql, { schema: sharedTables });
   const db = drizzle(sql, { schema: fullSchema });
   const handle: HarnessClient = { sql, drizzle: dz, db, lastUsed: Date.now() };

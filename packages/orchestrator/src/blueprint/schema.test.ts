@@ -42,6 +42,39 @@ test('BlueprintSchema — minimal blueprint parses and fills defaults', () => {
   assert.equal(bp.knobs.requiresRepo, true);
 });
 
+test('BlueprintSchema — coordination-topology layer: claimModel + coordination defaults (additive)', () => {
+  // Absent ⇒ today's behavior: decider-dispatch, no coordination section.
+  const bp = BlueprintSchema.parse(minimal);
+  assert.equal(bp.spine.claimModel, 'decider-dispatch', 'claimModel defaults to decider-dispatch (backward-compatible)');
+  assert.equal(bp.coordination, undefined, 'no coordination section by default');
+});
+
+test('BlueprintSchema — a flat-DISTRIBUTED (self-claim, broadcast, no Queen) topology parses', () => {
+  const dist = {
+    id: 'dist-broadcast',
+    workItem: { kind: 'feature' },
+    spine: {
+      claimModel: 'self-claim-fifo',
+      edges: { DONE: { to: 'done' }, NEXT_WORKER: { to: 'role', role: 'worker' } },
+    },
+    coordination: { broadcast: 'topic', review: 'none', sharedState: 'both', team: 'per-backlog' },
+  };
+  const bp = BlueprintSchema.parse(dist);
+  assert.equal(bp.spine.claimModel, 'self-claim-fifo');
+  assert.equal(bp.coordination?.broadcast, 'topic');
+  assert.equal(bp.coordination?.sharedState, 'both');
+  assert.equal(bp.coordination?.team, 'per-backlog');
+  // coordination inner defaults fill when the section is present but partial.
+  const partial = BlueprintSchema.parse({ ...dist, coordination: { broadcast: 'topic' } });
+  assert.equal(partial.coordination?.review, 'none');
+  assert.equal(partial.coordination?.sharedState, 'both');
+});
+
+test('BlueprintSchema — coordination enums reject unknown values', () => {
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, coordination: { team: 'per-galaxy' } }));
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, spine: { ...minimal.spine, claimModel: 'telepathy' } }));
+});
+
 test('BlueprintSchema — role spine action fills extras/rejectWhenParallel defaults', () => {
   const bp = BlueprintSchema.parse({
     ...minimal,

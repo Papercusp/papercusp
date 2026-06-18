@@ -173,6 +173,16 @@ export const SpineSchema = z.object({
    * reads `decider` for the active choice.
    */
   deciderAlternatives: z.array(z.string().min(1)).optional(),
+  /**
+   * How agents ACQUIRE work (coordination-topology lift — benchmark-coordination-topologies).
+   * `decider-dispatch` (default = today's behavior): the `decider` role dispatches each step.
+   * `self-claim-fifo` / `self-claim-priority`: NO central decider — peer agents pull the next ready
+   * work-item themselves (FIFO arrival order, or plan-priority order) from the shared queue. Self-claim
+   * is how the flat-DISTRIBUTED (no-Queen) topologies are expressed; under it the `decider` field is
+   * unused for dispatch (validate.ts relaxes the decider/edges requirement for self-claim spines).
+   * Additive + defaulted, so every pre-existing blueprint parses unchanged as `decider-dispatch`.
+   */
+  claimModel: z.enum(['decider-dispatch', 'self-claim-fifo', 'self-claim-priority']).default('decider-dispatch'),
   /** Hard iteration cap (was `MAX_TURNS`; promoted to a blueprint field — P-004). */
   maxTurns: z.number().int().positive().default(200),
   /** verb → action (decider model). Keys are the blueprint's verb vocabulary. */
@@ -706,6 +716,35 @@ export const ParamsSchema = z.record(z.string(), ParamSpecSchema);
  * The resolved Blueprint — the validator-of-record. A fully-merged blueprint
  * (after `extends` resolution) must satisfy this.
  */
+/**
+ * The declarative COORDINATION PROTOCOL (benchmark-coordination-topologies). A blueprint already
+ * declares the CHOREOGRAPHY (the spine: who acts when); this declares HOW peers coordinate — the
+ * layer that was previously runtime/tool-driven + Queen-only, which is why the flat-distributed,
+ * peer-review, blackboard, and pair topologies could not be expressed (the expressiveness gaps).
+ * All fields optional + defaulted to today's behavior, so every pre-existing blueprint parses
+ * unchanged. The runtime honors these in concert with `spine.claimModel`.
+ */
+export const CoordinationSchema = z.object({
+  /** How an agent publishes progress/findings to peers. 'none' = isolated (no peer comms); 'topic' =
+   *  broadcast to a shared topic peers subscribe to (the flat-distributed self-correction channel). */
+  broadcast: z.enum(['none', 'topic']).default('none'),
+  /** Peer review before a result is finalized. 'none'; 'peer' = a nominated peer reviews/critiques the
+   *  output pre-submit (distributed peer-review; the pair navigator). */
+  review: z.enum(['none', 'peer']).default('none'),
+  /** The medium peers coordinate THROUGH. 'messages' = direct coord:send; 'blackboard' = ONLY shared
+   *  work-item / scratchpad state, no direct messaging (stigmergic); 'both'. */
+  sharedState: z.enum(['messages', 'blackboard', 'both']).default('both'),
+  /** Coordination GROUPING granularity. 'per-backlog' (one shared queue for the whole team);
+   *  'per-repo' (same-repo agents form a huddle); 'per-task' (multiple agents collaborate on ONE
+   *  task — pair / ensemble). */
+  team: z.enum(['per-backlog', 'per-repo', 'per-task']).default('per-backlog'),
+  /** Enforce a coordination DISCIPLINE by gating which coord/* tools roles may use (e.g. a
+   *  blackboard-only topology forbids `coord:send`). `allow` = allow-list; `forbid` = deny-list. */
+  discipline: z
+    .object({ allow: z.array(z.string()).optional(), forbid: z.array(z.string()).optional() })
+    .optional(),
+});
+
 export const BlueprintSchema = z.object({
   id: z.string().min(1),
   /** Parent blueprint id(s); resolved local → installed → built-in. */
@@ -752,6 +791,10 @@ export const BlueprintSchema = z.object({
   wake: WakeSchema.optional(),
   learning: LearningSchema.optional(),
   placement: PlacementSchema.optional(),
+  /** Declarative coordination protocol — HOW peers acquire work + communicate (CoordinationSchema).
+   *  Optional + defaulted; absent ⇒ today's behavior (decider-dispatch + direct messages). Pairs with
+   *  `spine.claimModel` to express central / flat-distributed / blackboard / pair / ensemble topologies. */
+  coordination: CoordinationSchema.optional(),
   knobs: KnobsSchema.prefault({}),
   triggers: TriggersSchema.optional(),
   /** The autoloop dispatch policy (D-005). Optional: launch/program blueprints
