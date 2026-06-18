@@ -7,6 +7,7 @@ import {
   blueprintKnobsToConfigOverlay,
   readEffectiveConfig,
   readInstanceConfig,
+  loadHarnessBlueprintId,
 } from './effective-config';
 
 describe('deepMergeConfig', () => {
@@ -131,6 +132,35 @@ describe('readEffectiveConfig (blueprint ⊕ env instance — config.json deprec
       ].join('\n'),
     );
     expect(readEffectiveConfig(stateDir)).toEqual({ maxCostUsd: 12 });
+  });
+});
+
+describe('loadHarnessBlueprintId (domain-generic-agent-personas P-013 — coding-vs-generic signal)', () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'bp-id-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('reads the blueprint id from <stateDir>/blueprint.yaml', () => {
+    writeFileSync(
+      join(dir, 'blueprint.yaml'),
+      [
+        'id: coding',
+        'version: 0.1.0',
+        'workItem: { kind: feature, idPrefix: F }',
+        'spine: { decider: director, edges: { DONE: { to: done } }, default: { to: idle } }',
+      ].join('\n'),
+      'utf8',
+    );
+    expect(loadHarnessBlueprintId(dir)).toBe('coding');
+  });
+
+  it('undefined when no blueprint.yaml (non-blueprint harness ⇒ neutral preamble only)', () => {
+    expect(loadHarnessBlueprintId(dir)).toBeUndefined();
+  });
+
+  it('undefined on an unreadable/invalid blueprint.yaml (fail-safe)', () => {
+    writeFileSync(join(dir, 'blueprint.yaml'), 'id: : : not valid yaml {[', 'utf8');
+    expect(loadHarnessBlueprintId(dir)).toBeUndefined();
   });
 });
 
