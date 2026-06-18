@@ -40,7 +40,10 @@ import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 // ACCOUNT_ROUTING_NOTE (the "inference is multi-account; a 'limit' is usually a
 // routing bug" clause) rides it too — operator-core's renderAccountRoutingNote
 // reuses the SAME string the spawned-bee base emits.
-export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE } from './prompt-build';
+// DEPLOY_PIPELINE_NOTE (the "deploy pipeline is async + self-healing; don't babysit it /
+// self-diagnose a stall" clause) rides it too — operator-core's renderDeployPipelineNote
+// reuses the SAME string the spawned-bee base emits.
+export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, DEPLOY_PIPELINE_NOTE } from './prompt-build';
 // resolvePromptFile rides the same entry: operator-core's workspace-level
 // (harness-less) role launch resolves the spawn persona directly
 // (hive-agent-tabs P-003) without importing the heavy orchestrator root.

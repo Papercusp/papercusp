@@ -283,6 +283,37 @@ test('buildPrompt — every role gets the multi-account inference note (a "limit
   }
 });
 
+test('buildPrompt — every role gets the deploy-pipeline note (async + self-healing; do not babysit a stall)', () => {
+  for (const role of ['worker', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'r1',
+        extras: [],
+      });
+      assert.match(out, /## The deploy pipeline is ASYNC \+ SELF-HEALING/);
+      // the two-port mental model + the pipeline_position reflex (not a browser)
+      assert.match(out, /:3070 serves GREEN `main`/);
+      assert.match(out, /dev:pipeline_position/);
+      // self-healing + don't-self-diagnose
+      assert.match(out, /release-fixer/);
+      assert.match(out, /do NOT block\s+waiting/i);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
 test('buildPrompt — acceptanceKind judge/none swaps TESTING_STANDARD for VERIFICATION_STANDARD (P-008)', () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
@@ -604,9 +635,10 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     });
     assert.match(out, /# WORKER/);
     // No extraneous dividers. Base shared-section dividers: friction-tripwire,
-    // yield-policy, account-routing-note, testing-standard (+ deferred-tools recipe etc.).
+    // yield-policy, account-routing-note, deploy-pipeline-note, testing-standard
+    // (+ deferred-tools recipe etc.).
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 7, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 8, `unexpected divider count: ${dividerCount}`);
   } finally {
     fx.cleanup();
   }
