@@ -467,6 +467,49 @@ export const ACCOUNT_ROUTING_NOTE = [
   'one account) so load spreads across accounts and you avoid true rate/usage limits.',
 ].join('\n');
 
+/**
+ * DEPLOY_PIPELINE_NOTE — the "your change reaches :3070 through an ASYNC, SELF-HEALING
+ * pipeline; don't babysit it or self-diagnose a stall" clause every agent shares.
+ *
+ * Agents repeatedly get confused getting changes live: they edit, re-check :3070 (which serves
+ * GREEN main, not their staging edit), conclude "my change didn't ship", and then either thrash
+ * trying to "submit" it (git-sync owns commit/push) or self-diagnose a red gate and grind the
+ * WRONG target (e.g. a tsc ratchet that doesn't gate deploys). The pipeline already self-heals
+ * (a red gate auto-dispatches a release-fixer; git-sync conflicts → merge-resolver/content-fixer)
+ * and `dev:pipeline_position` answers "where is my change + is the gate stalled" in one read. This
+ * primes every agent to (a) understand the async stages + the two ports, (b) reach for
+ * pipeline_position instead of a browser, and (c) NOT block on / self-diagnose a shared-fate stall.
+ *
+ * Sourced once here (the ACCOUNT_ROUTING_NOTE / YIELD_POLICY / TESTING_STANDARD precedent):
+ * injected into the spawned-bee base (buildPromptParts below) + the operator-launched-role base
+ * (operator-core's renderDeployPipelineNote, re-exported via role-prompt-from-slug) so the two
+ * bases can't desync. Tool names (`dev:pipeline_position`, `coord:escalate`) are `e.g.` hints.
+ */
+export const DEPLOY_PIPELINE_NOTE = [
+  "## The deploy pipeline is ASYNC + SELF-HEALING — don't babysit it or self-diagnose a stall",
+  '',
+  'Your code reaches the live operator (:3070) through an AUTOMATIC pipeline, not anything you do',
+  'to "submit" it. You leave an edit in the tree; a background git-sync routine commits + pushes it',
+  'to origin/staging (you do NOT run git add/commit/push); the green-checkpoint gate runs the test',
+  'suite (`npm run test:affected`) and fast-forwards `main` when green; a scripted release-trigger',
+  'then deploys `main` to :3070 with auto-rollback. The whole trip takes MINUTES, not instantly.',
+  '',
+  '- :3070 serves GREEN `main`, NOT your staging edit (:3170 serves staging). Editing a file and',
+  '  re-checking :3070 will NOT show it until the pipeline carries it — do NOT poll/open :3070 or',
+  '  conclude "my change didn\'t ship". Never edit the release/ or checkpoint/ trees (clobbered).',
+  '- To SEE where your change is (committed → staging → main → deployed) and whether the gate is',
+  '  stalled, call `dev:pipeline_position { path }`. That is the answer to "did my edit go live?",',
+  '  not a browser.',
+  '- The pipeline SELF-HEALS: a red gate auto-dispatches a release-fixer agent (it classifies',
+  '  regression-vs-flake then fixes or quarantines); git-sync conflicts go to a merge-resolver /',
+  '  content-fixer. You do NOT own diagnosing or fixing a deploy stall.',
+  '- A stalled gate is rarely about YOUR change — it is shared-fate (a peer\'s failing test, or a',
+  '  flake under load). Do NOT grind unrelated errors to "unblock deploys", and do NOT block',
+  '  waiting. Your committed change is SAFE on staging and ships automatically when the gate',
+  '  clears. If `dev:pipeline_position` shows a genuine stall, `coord:escalate` (advisory,',
+  '  non-blocking) and move on to other work.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -601,6 +644,14 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     playbooks can't desync.
   pre.push('\n---');
   pre.push(ACCOUNT_ROUTING_NOTE);
+
+  // 3c-ter. Deploy-pipeline note — the SHARED bee base every role inherits. Kills the recurring
+  //     "can't get my change live" confusion (edit → re-check :3070 which serves GREEN main →
+  //     conclude it didn't ship → thrash / self-diagnose the wrong target) by teaching the async
+  //     self-healing stages + the dev:pipeline_position reflex. Universal (no role skip). Sourced
+  //     from the one DEPLOY_PIPELINE_NOTE constant so the bee base + operator-role base can't desync.
+  pre.push('\n---');
+  pre.push(DEPLOY_PIPELINE_NOTE);
 
   // 3d. Testing standard — the "write tests the project way" clause in the SHARED
   //     bee base every role inherits. Project-agnostic (the base serves bees in ANY
