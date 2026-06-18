@@ -7,12 +7,14 @@
   "types": "src/index.ts",
   "dependencies": {
     "@papercusp/papercup-db": "*",
+    "@papercusp/resource-profile": "*",
     "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.7.1",
     "postgres": "^3.4.9"
   },
   "scripts": {
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests"
   },
   "devDependencies": {
     "@papercusp/test-config": "*",
