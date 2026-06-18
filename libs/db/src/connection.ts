@@ -24,6 +24,9 @@ import postgres, { Sql } from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as sharedSchema from './schema';
 import { getResourceProfile } from '../../../../../packages/operator-core/lib/resource-profile';
+// Pure helper (no host config needed — takes explicit args), so the generic lib
+// directly. The configured binding above is used for the memoized profile.
+import { boundedOrgPoolMax } from '@papercusp/resource-profile';
 
 // This package is `"type": "module"`, so ESM has no ambient `require`.
 // `createRequire` gives us a synchronous loader for the lazy node-builtin
@@ -220,6 +223,33 @@ function pgAppName(label: string): string {
   return s.length > 63 ? s.slice(0, 63) : s;
 }
 
+/**
+ * Size of each org pool (getOrgPg admin + getOrgPgApp app). C1-1 of
+ * backend-connection-scaling-2026-06-17. An explicit `PAPERCUSP_DB_POOL_MAX`
+ * wins; otherwise the resource-profile size, but BOUNDED so that
+ * (2 org pools × expected operator processes) + fixed overhead cannot exceed the
+ * host-tuned ceiling — the guard the P4-3 regression lacked (it sized each pool to
+ * 52 with no awareness of the 2-pool × N-process multiplication or the DB ceiling).
+ * Behind a transaction pooler (PAPERCUSP_PGBOUNCER=1) the app pool maps to local
+ * pooler *client* slots, not PG backends, so it keeps the full resource-profile
+ * size — that decoupling is the whole point of C2.
+ */
+function resolveOrgPoolMax(): number {
+  const envOverride = Number(process.env.PAPERCUSP_DB_POOL_MAX);
+  const profile = getResourceProfile();
+  const desired =
+    Number.isFinite(envOverride) && envOverride > 0
+      ? Math.max(1, Math.floor(envOverride))
+      : profile.pgPoolMax;
+  return boundedOrgPoolMax({
+    desired,
+    maxConnections: profile.database.maxConnections,
+    superuserReserved: profile.database.superuserReservedConnections,
+    expectedProcesses: Math.max(1, Number(process.env.PAPERCUSP_EXPECTED_OPERATOR_PROCS) || 2),
+    behindPooler: process.env.PAPERCUSP_PGBOUNCER === '1',
+  });
+}
+
 function buildClient(
   connectionUrl: string,
   searchPath: string[],
@@ -268,7 +298,7 @@ function buildClient(
     // pool (~52–64). Env override for backward compatibility; explicit maxOverride is
     // used if provided by the caller (currently unused, reserved for future direct-pool
     // configuration). P4-3 of operator-scalability-event-loop-2026-06-16.
-    max: Math.max(1, maxOverride ?? (Number(process.env.PAPERCUSP_DB_POOL_MAX) || getResourceProfile().pgPoolMax)),
+    max: Math.max(1, maxOverride ?? resolveOrgPoolMax()),
     // Auto-close connections that sit idle for >30s. Prevents per-harness
     // pools from accumulating idle conns indefinitely (Next.js dev mode
     // module re-instantiation otherwise leaks the prior pool's sockets).
@@ -432,10 +462,7 @@ export function processConnectionCeiling(): {
   fixedOverhead: number;
   total: number;
 } {
-  const poolMax = Math.max(
-    1,
-    Number(process.env.PAPERCUSP_DB_POOL_MAX) || getResourceProfile().pgPoolMax,
-  );
+  const poolMax = resolveOrgPoolMax();
   const orgPools = poolMax * 2; // getOrgPg (admin) + getOrgPgApp (app/RLS)
   const perHarnessMax = Math.max(1, Number(process.env.PAPERCUSP_HARNESS_DB_POOL_MAX) || 1);
   const harnessPools = HARNESS_POOL_CAP * perHarnessMax;
