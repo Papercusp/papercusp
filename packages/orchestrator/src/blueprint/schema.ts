@@ -742,6 +742,12 @@ export const CoordinationSchema = z.object({
    *  = N agents solve the same task independently, then a judge role picks/merges the best solution.
    *  Only meaningful with team:'per-task' (the agents don't coordinate DURING — they aggregate AFTER). */
   aggregate: z.enum(['none', 'judge-best']).default('none'),
+  /** Intra-team COORDINATOR (the hierarchical pole — benchmark-coordination-topologies). 'none' = flat
+   *  (peers self-organize, no lead); 'elected-lead' = ONE lead agent runs a coordination pass over the
+   *  team's backlog (plan/assign/strategize, charged as coordination overhead against the iso-budget),
+   *  then the workers execute under it. Distinct from `kind:'hive'` central placement: the lead is a PEER
+   *  WITHIN the team, not the system Queen. Tests whether an in-team coordinator beats flat self-claim. */
+  coordinator: z.enum(['none', 'elected-lead']).default('none'),
   /** Enforce a coordination DISCIPLINE by gating which coord/* tools roles may use (e.g. a
    *  blackboard-only topology forbids `coord:send`). `allow` = allow-list; `forbid` = deny-list. */
   discipline: z
