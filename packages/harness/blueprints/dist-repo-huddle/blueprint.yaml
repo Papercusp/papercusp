@@ -24,6 +24,12 @@ spine:
   claimModel: self-claim-priority
   maxTurns: 200
 
+dependencies:
+  tools: []
+  packs: []
+  plugins: []
+  blueprints: []
+
 coordination:
   broadcast: topic     # per-repo topic (the huddle channel); team:per-repo scopes it
   review: peer         # peer-review WITHIN the repo huddle

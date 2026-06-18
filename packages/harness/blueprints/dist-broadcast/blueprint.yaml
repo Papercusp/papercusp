@@ -27,6 +27,12 @@ spine:
   claimModel: self-claim-fifo
   maxTurns: 200
 
+dependencies:
+  tools: []
+  packs: []
+  plugins: []
+  blueprints: []
+
 # The distributed coordination protocol.
 coordination:
   broadcast: topic     # publish findings/blockers to a peer topic for self-correction

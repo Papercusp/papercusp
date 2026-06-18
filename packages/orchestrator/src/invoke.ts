@@ -65,9 +65,13 @@ import { workspaceHomeDir } from './workspace';
  * Production always wires a real PG client.
  */
 export interface OrchestratorPg {
-  // postgres-js tagged-template signature: pg`SELECT ...`
+  // postgres-js tagged-template signature: pg`SELECT ...` or pg<Row[]>`SELECT ...`.
+  // The optional row generic mirrors postgres-js's own `sql<T>\`\`` so call sites can type
+  // their result set inline; it DEFAULTS to any[], so existing untyped `pg\`\`` callers are
+  // unchanged. (Restores the typing the call sites assumed — the prior signature took no type
+  // arg, so every `pg<Row[]>\`\`` errored TS2558 "Expected 0 type arguments, but got 1".)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (template: TemplateStringsArray, ...values: unknown[]): Promise<any[]>;
+  <T = any[]>(template: TemplateStringsArray, ...values: unknown[]): Promise<T>;
 }
 
 /**

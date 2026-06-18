@@ -22,6 +22,12 @@ spine:
   claimModel: self-claim-fifo
   maxTurns: 200
 
+dependencies:
+  tools: []
+  packs: []
+  plugins: []
+  blueprints: []
+
 coordination:
   broadcast: topic
   review: peer          # a nominated peer reviews/critiques each result BEFORE it is finalized
