@@ -414,6 +414,71 @@ export function getHarnessPg(slug: string) {
 }
 
 /**
+ * The worst-case number of PG connections THIS process can open across all its
+ * pools. C0-4 of backend-connection-scaling-2026-06-17: the 2026-06-17 outage
+ * was a pool-sizing change (each org pool sized to pgPoolMax=52 on a 100-slot DB)
+ * shipping without the DB ceiling being raised to match. This makes that math
+ * explicit so a boot-time guard can catch the next such regression loudly.
+ *
+ * `fixedOverhead` covers the admin-pg-cache (ADMIN_PG_CACHE_MAX=8, in
+ * packages/operator-core) + the 5 long-lived LISTEN connections (sync-sse,
+ * coord-inbox, pending-events, fleet-assignment, agent-activity) — both live in
+ * other packages, so they're a documented constant here.
+ */
+export function processConnectionCeiling(): {
+  poolMax: number;
+  orgPools: number;
+  harnessPools: number;
+  fixedOverhead: number;
+  total: number;
+} {
+  const poolMax = Math.max(
+    1,
+    Number(process.env.PAPERCUSP_DB_POOL_MAX) || getResourceProfile().pgPoolMax,
+  );
+  const orgPools = poolMax * 2; // getOrgPg (admin) + getOrgPgApp (app/RLS)
+  const perHarnessMax = Math.max(1, Number(process.env.PAPERCUSP_HARNESS_DB_POOL_MAX) || 1);
+  const harnessPools = HARNESS_POOL_CAP * perHarnessMax;
+  const fixedOverhead = 8 /* admin-pg-cache */ + 5 /* LISTEN buses */;
+  return { poolMax, orgPools, harnessPools, fixedOverhead, total: orgPools + harnessPools + fixedOverhead };
+}
+
+/**
+ * Log this process's connection ceiling vs the LIVE `max_connections`, warning
+ * loudly when the fleet-wide worst case would approach the ceiling. Best-effort
+ * (queries PG; silent if unreachable). `expectedProcesses` defaults from
+ * PAPERCUSP_EXPECTED_OPERATOR_PROCS (the dev box runs :3070 + :3170 → 2). C0-4.
+ */
+export async function logConnectionBudget(
+  log: (m: string) => void = (m) => console.warn(m),
+): Promise<void> {
+  const { total, orgPools, harnessPools, fixedOverhead, poolMax } = processConnectionCeiling();
+  let liveMax = 0;
+  try {
+    const rows = (await getOrgPg().sql`SELECT current_setting('max_connections')::int AS m`) as {
+      m: number;
+    }[];
+    liveMax = rows[0]?.m ?? 0;
+  } catch {
+    // PG unreachable at boot — skip (the diagnostic is non-fatal).
+  }
+  const expectedProcs = Math.max(1, Number(process.env.PAPERCUSP_EXPECTED_OPERATOR_PROCS) || 2);
+  const fleetWorst = total * expectedProcs;
+  const head =
+    `[pg-budget] pid ${process.pid}: <=${total} conns/process ` +
+    `(org ${orgPools} @ poolMax ${poolMax} + harness ${harnessPools} + cache/listeners ${fixedOverhead}); ` +
+    `~${fleetWorst} across ${expectedProcs} proc(s)`;
+  if (liveMax > 0 && fleetWorst > liveMax * 0.9) {
+    log(
+      `${head} — DANGER vs live max_connections=${liveMax}. Run \`npx tsx scripts/pg-autotune.ts --apply\` ` +
+        `(raise the ceiling to the host), lower PAPERCUSP_DB_POOL_MAX, or front PG with PgBouncer.`,
+    );
+  } else {
+    log(`${head} vs live max_connections=${liveMax || '?'} — ok`);
+  }
+}
+
+/**
  * Test-only: close all open pools so a different DATABASE_URL can be used.
  */
 export async function _resetForTests() {

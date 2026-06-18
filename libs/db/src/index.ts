@@ -10,6 +10,8 @@ export {
   getOrgPgApp,
   getHarnessPg,
   typedSql,
+  processConnectionCeiling,
+  logConnectionBudget,
   _resetForTests,
   type OrgPgHandle,
 } from './connection';
