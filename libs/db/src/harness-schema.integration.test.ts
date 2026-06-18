@@ -1,0 +1,108 @@
+/**
+ * harness-schema — proves `harnessQuery(slug, fn)` / `withHarnessSchema` resolve
+ * the per-harness `search_path` correctly in BOTH connection modes. C1-2 of
+ * backend-connection-scaling-2026-06-17.
+ *
+ *   - Direct (default): harnessQuery uses getHarnessPg()'s per-harness pool, whose
+ *     search_path is set at CONNECT time.
+ *   - PgBouncer (PAPERCUSP_PGBOUNCER=1): harnessQuery uses withHarnessSchema — a
+ *     transaction with a PER-TRANSACTION `SET LOCAL search_path`, because
+ *     transaction pooling does not preserve the connect-time one.
+ *
+ * To make resolution unambiguous we create the SAME table name in two schemas —
+ * `harness_<slug>.thing` (value 'harness') and `public.thing` (value 'public') —
+ * and assert the UNQUALIFIED `SELECT … FROM thing` resolves to the harness schema
+ * in both modes. A multi-statement callback proves the search_path is shared
+ * across statements in one transaction (the saveIssues / syncAgentRuns shape).
+ *
+ * Real Postgres (testcontainer; Docker required). Run:
+ *   npx vitest run --config vitest.integration.config.ts src/harness-schema.integration.test.ts
+ */
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import postgres, { type Sql } from 'postgres';
+import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config';
+import { slugToSchemaName } from './schema';
+import { _resetForTests, _resetUrlCacheForTests } from './connection';
+import { harnessQuery } from './workspace-context';
+
+const SLUG = 'c1test';
+const SCHEMA = slugToSchemaName(SLUG); // harness_c1test
+
+let db: MigratedTestDb;
+let obs: Sql;
+
+const savedEnv = {
+  url: process.env.HARNESS_DATABASE_URL,
+  pgbouncer: process.env.PAPERCUSP_PGBOUNCER,
+};
+
+beforeAll(async () => {
+  db = await createFreshTestDb({ prefix: 'harnsch' });
+  process.env.HARNESS_DATABASE_URL = db.url;
+  delete process.env.PAPERCUSP_PGBOUNCER;
+  _resetUrlCacheForTests();
+  await _resetForTests();
+
+  obs = postgres(db.url, { max: 1, onnotice: () => {} });
+  // Two same-named tables in different schemas; only search_path distinguishes them.
+  await obs.unsafe(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`);
+  await obs.unsafe(`CREATE TABLE ${SCHEMA}.thing (val text)`);
+  await obs.unsafe(`INSERT INTO ${SCHEMA}.thing (val) VALUES ('harness')`);
+  await obs.unsafe(`CREATE TABLE IF NOT EXISTS public.thing (val text)`);
+  await obs.unsafe(`INSERT INTO public.thing (val) VALUES ('public')`);
+}, 120_000);
+
+afterAll(async () => {
+  await _resetForTests().catch(() => {});
+  await obs?.end({ timeout: 5 }).catch(() => {});
+  await db?.drop().catch(() => {});
+  if (savedEnv.url === undefined) delete process.env.HARNESS_DATABASE_URL;
+  else process.env.HARNESS_DATABASE_URL = savedEnv.url;
+  if (savedEnv.pgbouncer === undefined) delete process.env.PAPERCUSP_PGBOUNCER;
+  else process.env.PAPERCUSP_PGBOUNCER = savedEnv.pgbouncer;
+  _resetUrlCacheForTests();
+});
+
+describe('harnessQuery search_path resolution (C1-2)', () => {
+  it('DIRECT mode resolves unqualified table to the harness schema', async () => {
+    delete process.env.PAPERCUSP_PGBOUNCER;
+    await _resetForTests();
+    const rows = (await harnessQuery(SLUG, (q) => q`SELECT val FROM thing`)) as { val: string }[];
+    expect(rows[0]?.val).toBe('harness');
+  });
+
+  it('PGBOUNCER mode (withHarnessSchema, per-tx search_path) resolves to the harness schema', async () => {
+    process.env.PAPERCUSP_PGBOUNCER = '1';
+    await _resetForTests();
+    try {
+      const rows = (await harnessQuery(SLUG, (q) => q`SELECT val FROM thing`)) as { val: string }[];
+      expect(rows[0]?.val).toBe('harness');
+    } finally {
+      delete process.env.PAPERCUSP_PGBOUNCER;
+      await _resetForTests();
+    }
+  });
+
+  it('PGBOUNCER mode shares the search_path across multiple statements in one callback', async () => {
+    // The saveIssues / syncAgentRuns shape: an upsert + a reconcile read must both
+    // see the harness schema within ONE harnessQuery() transaction.
+    process.env.PAPERCUSP_PGBOUNCER = '1';
+    await _resetForTests();
+    try {
+      const result = await harnessQuery(SLUG, async (q) => {
+        await q`INSERT INTO thing (val) VALUES ('second')`;
+        const rows = (await q`SELECT count(*)::int AS n FROM thing`) as { n: number }[];
+        return rows[0].n;
+      });
+      // harness schema had 1 row ('harness') + the inserted 'second' = 2; the
+      // public.thing 'public' row is NOT visible (proves both statements hit the
+      // harness schema, not public).
+      expect(result).toBe(2);
+    } finally {
+      // Clean the extra row so reruns (testcontainer .withReuse) stay deterministic.
+      await obs.unsafe(`DELETE FROM ${SCHEMA}.thing WHERE val = 'second'`).catch(() => {});
+      delete process.env.PAPERCUSP_PGBOUNCER;
+      await _resetForTests();
+    }
+  });
+});
