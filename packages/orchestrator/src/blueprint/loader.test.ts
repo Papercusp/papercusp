@@ -84,6 +84,16 @@ test('per-task topology blueprints load + validate (ensemble + pair)', () => {
   assert.equal(pair.coordination?.aggregate, 'none');
 });
 
+test('hierarchical topology blueprint loads + validates (hier-lead-worker, elected-lead)', () => {
+  const { blueprint, validation } = loadBuiltinBlueprint('hier-lead-worker');
+  assert.equal(blueprint.id, 'hier-lead-worker');
+  assert.equal(validation.ok, true, `hier-lead-worker validation errors: ${JSON.stringify(validation.errors)}`);
+  assert.equal(blueprint.kind, 'harness', 'the lead is a PEER coordinator, NOT the system Queen (not kind:hive)');
+  assert.equal(blueprint.coordination?.coordinator, 'elected-lead');
+  assert.equal(blueprint.spine.claimModel, 'self-claim-fifo', 'workers self-claim under the lead plan');
+  assert.deepEqual(blueprint.roles.map((r) => r.id).sort(), ['lead', 'worker']);
+});
+
 test('the merged coding spine equals the standalone coding spine (base adds no spine)', () => {
   const standalone = BlueprintSchema.parse(
     parseYaml(readFileSync(harnessPath('blueprints', 'coding', 'blueprint.yaml'), 'utf8')),
