@@ -57,6 +57,12 @@ const DEFAULT_OWNER_PWD = 'postgres';
  * @param {string} [opts.dbName]       Database to create + connect to. Default: papercusp.
  * @param {boolean} [opts.debug]
  * @param {string} [opts.dbSqlDir]     Directory of *.sql migration files. If set, migrations apply on every boot.
+ * @param {Record<string,string>} [opts.extraPostgresSettings] Host-scaled server knobs
+ *        (max_connections, shared_buffers, parallelism, …) the caller derived from
+ *        resource-profile (`databaseTuningToSettings(getResourceProfile().database)`).
+ *        Empty by default → stock PG defaults (backward compatible). Passing them is
+ *        how the desktop's embedded PG autoadjusts to the machine instead of running
+ *        on the laptop-sized stock `max_connections=100` / `shared_buffers=128MB`.
  * @param {(m: string) => void} [opts.onLog]
  */
 export async function startEmbeddedPostgresServer(opts = {}) {
@@ -84,10 +90,19 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     // The two replication-slot/sender knobs are sized generously enough
     // for one zero-cache + a few diagnostic slots without bumping into
     // the postmaster start-up failure that happens at slots=0/senders=0.
+    //
+    // Host-scaled tuning (max_connections / shared_buffers / parallelism /
+    // work_mem …) is appended from opts.extraPostgresSettings — these come last
+    // so a caller's explicit value wins (PG honors the last `-c` for a key).
+    // Replication knobs above are intentionally NOT in the tuning set, so there
+    // is never a conflict.
     postgresFlags: [
       '-c', 'wal_level=logical',
       '-c', 'max_wal_senders=10',
       '-c', 'max_replication_slots=10',
+      ...Object.entries(opts.extraPostgresSettings ?? {}).flatMap(
+        ([k, v]) => ['-c', `${k}=${v}`],
+      ),
     ],
   });
 
