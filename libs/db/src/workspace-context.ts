@@ -19,7 +19,8 @@
  */
 
 import type { Sql } from 'postgres';
-import { getOrgPg, getOrgPgApp } from './connection';
+import { getOrgPg, getOrgPgApp, getHarnessPg } from './connection';
+import { slugToSchemaName } from './schema';
 
 export interface WorkspaceTxOptions {
   /**
@@ -99,4 +100,51 @@ export async function withWorkspaceQuery<T>(
   query: (tx: Sql) => Promise<T>,
 ): Promise<T> {
   return withWorkspace(workspaceId, query);
+}
+
+/**
+ * Run a callback against a harness's per-schema tables/views using a transaction
+ * with a per-transaction `SET LOCAL search_path` — the PgBouncer-transaction-safe
+ * equivalent of the connect-time search_path that {@link getHarnessPg} sets on its
+ * pooled connection. C1-2 of backend-connection-scaling-2026-06-17.
+ *
+ * Same app role and same search_path order as getHarnessPg. It does NOT set
+ * `app.workspace_id`: the per-harness views scope by their baked-in slug and run
+ * in the view owner's RLS context (and `harness_issues_consolidated` has no RLS),
+ * which is exactly how the getHarnessPg path resolves rows today — verified by the
+ * harness-schema integration test. Identifier-quoted the same way connection.ts
+ * builds its search_path.
+ */
+export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promise<T>): Promise<T> {
+  const searchPath = [slugToSchemaName(slug), 'harness_shared', 'papercup_shared', 'public']
+    .map((s) => `"${s.replace(/"/g, '""')}"`)
+    .join(', ');
+  const { sql } = getOrgPgApp();
+  return (sql.begin(async (tx) => {
+    const txSql = tx as unknown as Sql;
+    // Mirror withWorkspace's options-pointer fix so drizzle(tx) (if ever used) works.
+    const txOpts = txSql as unknown as { options?: unknown };
+    txOpts.options ??= (sql as unknown as { options?: unknown }).options;
+    await txSql`SELECT set_config('search_path', ${searchPath}, true)`;
+    return await fn(txSql);
+  }) as unknown) as Promise<T>;
+}
+
+/**
+ * Per-harness-schema query, correct in BOTH connection modes. This is the
+ * drop-in replacement for `const { sql } = getHarnessPg(slug); … sql\`…\``.
+ *
+ *   - Default (direct connection): uses the existing getHarnessPg() pool whose
+ *     search_path is set at connect time — byte-identical to today.
+ *   - Under PgBouncer (PAPERCUSP_PGBOUNCER=1): wraps in a transaction with a
+ *     per-transaction search_path, because transaction pooling does not preserve
+ *     the connect-time one.
+ *
+ * Multiple statements that must share the harness search_path (e.g. an upsert loop
+ * + a reconcile DELETE) MUST go in ONE harnessQuery() callback so they run in the
+ * same transaction.
+ */
+export function harnessQuery<T>(slug: string, fn: (q: Sql) => Promise<T>): Promise<T> {
+  if (process.env.PAPERCUSP_PGBOUNCER === '1') return withHarnessSchema(slug, fn);
+  return fn(getHarnessPg(slug).sql);
 }

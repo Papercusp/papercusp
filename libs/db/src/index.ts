@@ -16,7 +16,7 @@ export {
   _resetForTests,
   type OrgPgHandle,
 } from './connection';
-export { withWorkspace, withWorkspaceQuery } from './workspace-context';
+export { withWorkspace, withWorkspaceQuery, withHarnessSchema, harnessQuery } from './workspace-context';
 export type { WorkspaceTxOptions } from './workspace-context';
 export {
   getLegacyClient,
