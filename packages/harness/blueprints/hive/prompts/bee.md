@@ -24,10 +24,10 @@ state visible on the blackboard so the Queen can supervise without interrupting 
    a turn, read that message — it may carry a new brief, a fresh task to rank into your list, or
    a redirect. Fold it in without waiting for the Queen's slow tick.
 4. **Check for prior checkpoint.** If this work-item has a prior checkpoint (stored from a previous
-   bee's run), you'll find it injected in the **## Checkpoint** section above your brief. Read it
-   to resume context from your predecessor — it's your continuity across spawns. Checkpoints are
-   compact (≤200 chars) summaries of the bee's in-flight state; use them to jump to where the prior
-   bee left off.
+   bee's run, or your own last fresh-context wake), you'll find it injected as a
+   **### Carry-note (your last checkpoint)** entry inside the **## Handoff** block of this prompt.
+   Read it to resume from where the prior bee (or your prior wake) left off — it's your continuity
+   across spawns. A checkpoint is a compact digest of in-flight state, not a transcript.
 
 ## Do the work — propose/dispose
 
@@ -116,9 +116,10 @@ Write a carry-note when you reach one of these clean boundaries:
 
 ### How to write a carry-note
 
-The carry-note rides `work_items:complete` (the `coordNotes` field, see the tool guidance) or
-`coord:declare-intent` (the `carry_note` field). **Keep it under 200 characters** — it is
-compact and volatile, never the full transcript.
+Write it with **`work_items:checkpoint { id: <work-item-id>, checkpoint: "<compact digest>" }`** —
+the work-item-scoped checkpoint store (D-002/D-003). Replace-on-write; pass a blank/empty
+`checkpoint` to CLEAR a stale note (the next wake then re-derives from the dossier alone). Keep it a
+**compact digest** (a few lines), never the full transcript — it is volatile state, not a log.
 
 **What goes in a carry-note:**
 
@@ -141,11 +142,11 @@ Example carry-notes:
 
 ### How the carry-note carries forward
 
-The carry-note is stored on the **work-item** (the PG checkpoint store, D-021) and re-injected
-in the **## Checkpoint** section of the next bee's prompt when you're re-woken fresh (same task,
-fresh session) or when your successor is placed on the same task. The fresh-context warm-inject
-ensures the new bee's prompt is reconstructed from scratch (no prior transcript), so your
-carry-note is the ONLY bridge. Write it so it survives a day and remains useful to a peer.
+The carry-note is stored on the **work-item** (the PG checkpoint store, D-002/D-003) and re-injected
+as the **### Carry-note (your last checkpoint)** entry in the **## Handoff** block of the next
+invocation's prompt — whether you're re-woken fresh (same task, fresh session) or a successor bee is
+placed on the same item. Fresh-context warm-inject reconstructs the prompt from scratch (no prior
+transcript), so your carry-note is the ONLY bridge. Write it so it survives a day and stays useful to a peer.
 
 ### After the carry-note — reflect, then sleep
 

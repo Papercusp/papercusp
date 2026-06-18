@@ -23,7 +23,17 @@ import { createHash } from 'node:crypto';
 import { parse as parseYaml } from 'yaml';
 import { harnessPath } from '@papercusp/harness/paths';
 import { BlueprintSchema, BlueprintHeaderSchema, type Blueprint } from './schema.js';
-import { validateBlueprint, type BlueprintValidation } from './validate.js';
+import { validateBlueprint, type BlueprintValidation, type ValidateOptions } from './validate.js';
+
+/**
+ * The registry sets the operator passes so the load path enforces the op/role
+ * liveness contract (`deterministic-blueprints-migration-2026-06-13` P-001) —
+ * an unknown op is an error; an undeclared-but-live role is not flagged. The
+ * pure lib doesn't own either registry (D-001/D-004), so the operator injects
+ * them at the admission chokepoints (projection / install / authoring); omitted
+ * → the load stays lenient (every pre-P-001 caller is byte-unchanged).
+ */
+export type BlueprintValidateRegistry = Pick<ValidateOptions, 'knownOps' | 'knownRoles'>;
 
 /** A raw, pre-merge blueprint object straight off disk. */
 type RawBlueprint = Record<string, unknown>;
@@ -130,11 +140,16 @@ function stableStringify(v: unknown): string {
  */
 export function resolveBlueprint(
   raw: RawBlueprint,
-  opts: { resolve?: ResolveExtendsPath; sourcePath?: string | null } = {},
+  opts: {
+    resolve?: ResolveExtendsPath;
+    sourcePath?: string | null;
+    /** Operator-injected registries → op/role liveness enforcement (P-001). */
+    registry?: BlueprintValidateRegistry;
+  } = {},
 ): LoadedBlueprint {
   const merged = resolveExtends(raw, opts.resolve ?? resolveBuiltinExtends);
   const blueprint = BlueprintSchema.parse(merged);
-  const validation = validateBlueprint(blueprint);
+  const validation = validateBlueprint(blueprint, opts.registry ?? {});
   if (!validation.ok) {
     const msg = validation.errors.map((e) => `${e.code}: ${e.message}`).join('; ');
     throw new Error(`invalid blueprint "${blueprint.id}": ${msg}`);
@@ -143,13 +158,21 @@ export function resolveBlueprint(
 }
 
 /** Load + resolve a blueprint from a YAML file path (e.g. `.papercusp/blueprint.yaml`). */
-export function loadBlueprintFromFile(path: string, resolve?: ResolveExtendsPath): LoadedBlueprint {
-  return resolveBlueprint(readRaw(path), { resolve, sourcePath: path });
+export function loadBlueprintFromFile(
+  path: string,
+  resolve?: ResolveExtendsPath,
+  registry?: BlueprintValidateRegistry,
+): LoadedBlueprint {
+  return resolveBlueprint(readRaw(path), { resolve, sourcePath: path, registry });
 }
 
 /** Load + resolve a built-in blueprint by id (e.g. 'coding', 'research'). */
-export function loadBuiltinBlueprint(id: string, resolve?: ResolveExtendsPath): LoadedBlueprint {
+export function loadBuiltinBlueprint(
+  id: string,
+  resolve?: ResolveExtendsPath,
+  registry?: BlueprintValidateRegistry,
+): LoadedBlueprint {
   const path = builtinBlueprintPath(id);
   if (!existsSync(path)) throw new Error(`no built-in blueprint "${id}" at ${path}`);
-  return loadBlueprintFromFile(path, resolve);
+  return loadBlueprintFromFile(path, resolve, registry);
 }

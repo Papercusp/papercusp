@@ -60,4 +60,4 @@ export {
   builtinBlueprintPath,
   resolveBuiltinExtends,
 } from './loader.js';
-export type { LoadedBlueprint, ResolveExtendsPath } from './loader.js';
+export type { LoadedBlueprint, ResolveExtendsPath, BlueprintValidateRegistry } from './loader.js';

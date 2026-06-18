@@ -26,6 +26,7 @@ import {
   type Blueprint,
   type BlueprintValidation,
   type ResolveExtendsPath,
+  type BlueprintValidateRegistry,
 } from '@papercusp/orchestrator/blueprint';
 
 export interface ResolveResult {
@@ -60,6 +61,13 @@ export function serializeBlueprint(obj: Record<string, unknown>): string {
 export function resolveAndValidateBlueprint(
   raw: Record<string, unknown>,
   resolve?: ResolveExtendsPath,
+  /**
+   * Operator-injected op/role registries → liveness enforcement (P-001). An
+   * installed marketplace blueprint that names an op the host hasn't registered
+   * fails the import with a clear `unknown-op`, not a runtime throw. Omitted →
+   * lenient (the CLI `papercusp init` path, where the op registry isn't loaded).
+   */
+  registry?: BlueprintValidateRegistry,
 ): ResolveResult {
   let merged: Record<string, unknown>;
   try {
@@ -73,6 +81,6 @@ export function resolveAndValidateBlueprint(
   } catch (e) {
     return { ok: false, parseError: `schema validation failed: ${e instanceof Error ? e.message : String(e)}` };
   }
-  const validation = validateBlueprint(blueprint);
+  const validation = validateBlueprint(blueprint, registry ?? {});
   return { ok: validation.ok, blueprint, validation };
 }

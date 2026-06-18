@@ -320,3 +320,168 @@ test('multiple crashed workers reaped in one call unblock the right waiters', as
   await cP;
   assert.equal(cDone, true);
 });
+
+// ─── Crash-during-X resume (worker-chunk-loop-operator-hosted-2026-06-14 P-005) ──
+// The existing resume tests above cover the skip-list (already-committed chunks are
+// skipped). These ADD the three crash WINDOWS: a chunk that crashed mid-implement /
+// mid-commit / mid-replan is NOT in committedChunkIds, so on resume it re-runs from a
+// FRESH scratch + a FRESH strike budget, with the idempotent commit absorbing any
+// partial work the crash left in HEAD. The op-hosted runner resumes off the SAME PG
+// plan store the subprocess path does (D-004), so these guard its crash-recovery.
+
+/** A replan response in the chunk-plan block format `replanChunk` returns. */
+function replanBlock(chunk: { id: string; files: string[]; description: string }): string {
+  return `Revised:\n\n\`\`\`chunk-plan\n${JSON.stringify({ chunks: [chunk] })}\n\`\`\`\n`;
+}
+
+test('crash-during-implement: the in-flight (uncommitted) chunk re-implements from a FRESH scratch on resume', async () => {
+  // Chunks 1-2 committed before the crash; chunk 3 was mid-implement (NOT committed)
+  // → resume re-implements ONLY chunk 3, and a partial edit the crashed attempt may
+  // have written to its scratch never leaks (each attempt gets a fresh worktree).
+  const repo = await makeRepo();
+  try {
+    const lockQueue = new FileLockQueue();
+    const implementOrder: string[] = [];
+    const out = await runChunkLoopCore(
+      { id: 'F-X', title: 'X', description: 'X' },
+      {
+        featureId: 'F-X',
+        chunks: [
+          { id: 'F-X-1', files: ['a.ts'], description: 'a' },
+          { id: 'F-X-2', files: ['b.ts'], description: 'b' },
+          { id: 'F-X-3', files: ['c.ts'], description: 'c' },
+        ],
+      },
+      {
+        repoPath: repo,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
+        typecheckCommand: 'true',
+        planChunks: async () => {
+          throw new Error('planChunks must NOT run on resume');
+        },
+        implementChunk: async (_f, chunk, env) => {
+          implementOrder.push(chunk.id);
+          // The scratch is fresh: c.ts holds only the initial repo content, never a
+          // partial edit from the "crashed" attempt.
+          const cur = await fs.readFile(path.join(env.dir, 'c.ts'), 'utf8');
+          assert.equal(cur, 'export const c = 0;\n', 'resume implement must see a fresh scratch, not partial edits');
+          await fs.writeFile(path.join(env.dir, 'c.ts'), 'export const c = 3;\n');
+          return { touchedFiles: chunk.files, attemptedChange: 'wrote c' };
+        },
+        replanChunk: async () => 'unused',
+      },
+      new Set(['F-X-1', 'F-X-2']),
+    );
+    assert.equal(out.kind, 'completed');
+    if (out.kind === 'completed') assert.equal(out.chunksCommitted, 3); // 2 skipped (counted) + 1 implemented
+    assert.deepEqual(implementOrder, ['F-X-3']);
+    // The resume's content is what landed.
+    assert.equal(await fs.readFile(path.join(repo, 'c.ts'), 'utf8'), 'export const c = 3;\n');
+    const log = await execSync('git', ['log', '--format=%s'], repo);
+    assert.match(log, /chunk\[F-X-3\]/);
+  } finally {
+    await fs.rm(repo, { recursive: true, force: true });
+  }
+});
+
+test('crash-during-commit: a chunk committed to HEAD but NOT recorded re-runs as an idempotent no-op (no false strike/escalate)', async () => {
+  // The crash window between `git commit` landing and the chunk id being persisted to
+  // the PG plan: on resume the chunk is still "uncommitted", so it re-implements +
+  // re-commits. Its effect is already in HEAD → the commit is an empty no-op, which
+  // must NOT strike or escalate (it is a clean replay, not a typecheck failure).
+  const repo = await makeRepo();
+  try {
+    // Simulate chunk F-X-2's commit having ALREADY landed in HEAD pre-crash.
+    await fs.writeFile(path.join(repo, 'b.ts'), 'export const b = 2;\n');
+    await execSync('git', ['commit', '-q', '-am', 'chunk[F-X-2]: b (pre-crash, not yet recorded)'], repo);
+
+    const lockQueue = new FileLockQueue();
+    let escalated = false;
+    const out = await runChunkLoopCore(
+      { id: 'F-X', title: 'X', description: 'X' },
+      {
+        featureId: 'F-X',
+        chunks: [
+          { id: 'F-X-1', files: ['a.ts'], description: 'a' },
+          { id: 'F-X-2', files: ['b.ts'], description: 'b' },
+        ],
+      },
+      {
+        repoPath: repo,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
+        typecheckCommand: 'true',
+        planChunks: async () => 'unused',
+        implementChunk: async (_f, chunk, env) => {
+          // Re-implement writes the SAME content the pre-crash attempt did.
+          await fs.writeFile(path.join(env.dir, chunk.files[0]), 'export const b = 2;\n');
+          return { touchedFiles: chunk.files, attemptedChange: 'rewrote b (replay)' };
+        },
+        replanChunk: async () => 'unused',
+        onEscalate: () => {
+          escalated = true;
+        },
+      },
+      new Set(['F-X-1']), // F-X-2 NOT recorded (the crash window) → it re-runs
+    );
+    assert.equal(out.kind, 'completed');
+    assert.equal(escalated, false, 'an idempotent replay commit must not escalate');
+  } finally {
+    await fs.rm(repo, { recursive: true, force: true });
+  }
+});
+
+test('crash-during-replan: strikes do NOT persist across resume — a chunk re-running gets a FRESH strike budget', async () => {
+  // The crash happened mid-replan of chunk 2 (after burning a strike). The strike
+  // counter is in-memory, not persisted, so on resume chunk 2 starts fresh: one
+  // typecheck failure → replan → pass, well within the (default 3) budget → completed,
+  // NOT escalated. Proves a crash during replan can't compound strikes into a false
+  // escalation.
+  const repo = await makeRepo();
+  try {
+    const lockQueue = new FileLockQueue();
+    // A tick script that fails the FIRST typecheck then passes — persists across the
+    // fresh-scratch attempts because it lives in tmpdir, not the worktree.
+    const tickFile = path.join(os.tmpdir(), `rc-tc-tick-${Math.random().toString(36).slice(2, 8)}`);
+    await fs.writeFile(tickFile, '0');
+    const tcScript = path.join(os.tmpdir(), `rc-tc-${Math.random().toString(36).slice(2, 8)}.sh`);
+    await fs.writeFile(
+      tcScript,
+      `#!/usr/bin/env bash\nn=$(cat "${tickFile}")\necho $((n+1)) > "${tickFile}"\nif [ "$n" = "0" ]; then echo "TC ERROR"; exit 1; fi\nexit 0\n`,
+      { mode: 0o755 },
+    );
+    let escalated = false;
+    let implementCount = 0;
+    const out = await runChunkLoopCore(
+      { id: 'F-X', title: 'X', description: 'X' },
+      {
+        featureId: 'F-X',
+        chunks: [
+          { id: 'F-X-1', files: ['a.ts'], description: 'a' },
+          { id: 'F-X-2', files: ['b.ts'], description: 'b' },
+        ],
+      },
+      {
+        repoPath: repo,
+        lockCoordinator: new FileLockQueueCoordinator(lockQueue),
+        typecheckCommand: `bash ${tcScript}`,
+        planChunks: async () => 'unused',
+        implementChunk: async (_f, chunk, env) => {
+          implementCount++;
+          await fs.writeFile(path.join(env.dir, chunk.files[0]), `export const b = ${implementCount};\n`);
+          return { touchedFiles: chunk.files, attemptedChange: `attempt ${implementCount}` };
+        },
+        replanChunk: async (_f, failed) => replanBlock({ id: failed.id, files: failed.files, description: 'retry b' }),
+        replanStrikes: 3,
+        onEscalate: () => {
+          escalated = true;
+        },
+      },
+      new Set(['F-X-1']), // chunk 2 resumes uncommitted with a FRESH strike budget
+    );
+    assert.equal(out.kind, 'completed');
+    assert.equal(escalated, false);
+    assert.equal(implementCount, 2, 'one failed attempt + one replan attempt — a fresh budget, not pre-loaded strikes');
+  } finally {
+    await fs.rm(repo, { recursive: true, force: true });
+  }
+});

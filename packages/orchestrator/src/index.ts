@@ -31,8 +31,14 @@ export {
   passedFraction,
 } from './state';
 export { createLogger } from './log';
-export { resolvePaths, resolveEnv } from './env';
+export { resolvePaths, resolveEnv, resolveAgentCmd, resolveAgentBackend } from './env';
 export { AGENT_BACKENDS } from './types';
+// worker-chunk-loop-operator-hosted-2026-06-14 (D-005): additive exports so the
+// operator-hosted `worker:chunk-loop` op (a near-PORT) reuses the SHIPPED worker
+// loop + its chunk file-claim coordinator instead of re-porting them.
+export { runWorkerChunkLoop, shouldUseWorkerChunkLoop } from './run-worker-chunk-loop';
+export { FileLockQueueCoordinator } from './file-lock-queue-coordinator';
+export type { ChunkLoopOutcome, ChunkLoopFeature, ChunkLoopDeps } from './worker-chunk-loop';
 export { readFeaturesPg, durableOwnedFeatureIdsPg } from './state-pg';
 export type { PgStateContext } from './state-pg';
 // G2 Auditor dispatch lane (P-007): screen remote-pending features through the

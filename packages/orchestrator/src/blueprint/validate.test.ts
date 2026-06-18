@@ -116,6 +116,46 @@ test('recursion childBlueprint: well-formed $param passes; malformed placeholder
   assert.ok(bad.errors.some((e) => e.code === 'recursion-bad-param'), JSON.stringify(bad.errors));
 });
 
+test('knownRoles: a dispatched role that is a live agent role is not flagged; a ghost still is (P-001)', () => {
+  const bp = BlueprintSchema.parse({
+    id: 'x',
+    workItem: { kind: 'feature' },
+    spine: {
+      decider: 'director',
+      // `worker` is a live built-in role dispatched WITHOUT re-declaring it in
+      // roles[]; `ghost` is a genuine typo/dead role.
+      edges: { DONE: { to: 'done' }, NEXT_WORKER: { to: 'role', role: 'worker' }, GHOST: { to: 'role', role: 'ghost' } },
+    },
+    roles: [{ id: 'director' }],
+  });
+  // Pre-P-001 (no knownRoles → declared-only): BOTH worker and ghost are flagged.
+  const lenient = validateBlueprint(bp);
+  const lenientUndeclared = lenient.warnings.filter((w) => w.code === 'dispatch-undeclared-role').map((w) => w.message);
+  assert.ok(lenientUndeclared.some((m) => m.includes('"worker"')), JSON.stringify(lenientUndeclared));
+  assert.ok(lenientUndeclared.some((m) => m.includes('"ghost"')), JSON.stringify(lenientUndeclared));
+
+  // With knownRoles: `worker` resolves via the global persona fallback → not a
+  // ghost → suppressed; `ghost` (neither declared nor live) still warns.
+  const aware = validateBlueprint(bp, { knownRoles: new Set(['director', 'worker']) });
+  const awareUndeclared = aware.warnings.filter((w) => w.code === 'dispatch-undeclared-role').map((w) => w.message);
+  assert.equal(awareUndeclared.some((m) => m.includes('"worker"')), false, JSON.stringify(awareUndeclared));
+  assert.ok(awareUndeclared.some((m) => m.includes('"ghost"')), JSON.stringify(awareUndeclared));
+});
+
+test('knownRoles: a live agent role as decider is not flagged decider-undeclared (P-001)', () => {
+  const bp = BlueprintSchema.parse({
+    id: 'x',
+    workItem: { kind: 'feature' },
+    spine: { decider: 'queen', edges: { DONE: { to: 'done' } } },
+    roles: [{ id: 'worker' }],
+  });
+  // Declared-only: `queen` (not in roles[]) → decider-undeclared.
+  assert.ok(validateBlueprint(bp).warnings.some((w) => w.code === 'decider-undeclared'));
+  // With knownRoles incl. `queen`: not flagged.
+  const aware = validateBlueprint(bp, { knownRoles: new Set(['queen', 'worker']) });
+  assert.equal(aware.warnings.some((w) => w.code === 'decider-undeclared'), false, JSON.stringify(aware.warnings));
+});
+
 test('reactive rule guarded only by `cond` (DataCondition) is a valid guard; a stale custom-only guard errors (D-002)', () => {
   const base = {
     id: 'x',

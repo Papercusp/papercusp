@@ -50,6 +50,22 @@ export interface ValidateOptions {
    * still catches every structural + expression problem).
    */
   knownOps?: Set<string>;
+  /**
+   * The set of LIVE agent-role ids — the `AGENT_ROLES` registry's keys
+   * (`deterministic-blueprints-migration-2026-06-13` P-001). When provided, the
+   * "undeclared role" warning family (`decider-undeclared`,
+   * `dispatch-undeclared-role`, `reactive-undeclared-role`,
+   * `reactive-unknown-anchor`, `finalize-unknown-role`) is SUPPRESSED for a role
+   * that is a live agent role: a spine may reference a built-in role (e.g.
+   * `worker`) without re-declaring it in `roles[]` — prompt-resolve resolves it
+   * via the global persona fallback, so it is NOT a ghost. A role that is neither
+   * declared NOR live still warns (a genuine typo / dead role). Same layering as
+   * `knownOps` — the pure lib doesn't own the role registry (it lives in
+   * `@papercusp/agent-mcp` / operator-core), so the operator passes it on
+   * load/projection/authoring; omitted → the checks fall back to declared-only
+   * (the pre-P-001 behavior, so every existing caller is byte-unchanged).
+   */
+  knownRoles?: Set<string>;
 }
 
 const TERMINAL = new Set(['done', 'escalate', 'idle']);
@@ -63,6 +79,11 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
   const warn = (code: string, message: string) => warnings.push({ level: 'warning', code, message });
 
   const roleIds = new Set(bp.roles.map((r) => r.id));
+  // A role REFERENCE is "live" if the blueprint declares it OR it is a live agent
+  // role the operator passed in `knownRoles` (P-001 — the global-persona-fallback
+  // case). Without `knownRoles` this is just `roleIds.has`, so the no-opts default
+  // is byte-identical to the pre-P-001 behavior.
+  const isLiveRole = (id: string): boolean => roleIds.has(id) || (opts.knownRoles?.has(id) ?? false);
 
   // ── role declarations ──────────────────────────────────────────────────────
   const seen = new Set<string>();
@@ -93,7 +114,7 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
   } else if (hasSteps) {
     validateProgramSpine(bp, opts, err, warn);
   } else {
-    validateDeciderSpine(bp, roleIds, dispatched, err, warn);
+    validateDeciderSpine(bp, isLiveRole, dispatched, err, warn);
   }
 
   // ── reactive overlay: guards well-formed ───────────────────────────────────
@@ -104,11 +125,11 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
     if (!hasCond) {
       err('empty-reactive-guard', `reactive rule for "${rule.role}" has no trigger condition`);
     }
-    if (!roleIds.has(rule.role)) {
+    if (!isLiveRole(rule.role)) {
       warn('reactive-undeclared-role', `reactive rule targets role "${rule.role}" not in roles[]`);
     }
     for (const ref of [w.beforeRole, w.afterRole]) {
-      if (ref && !roleIds.has(ref) && !dispatched.has(ref)) {
+      if (ref && !isLiveRole(ref) && !dispatched.has(ref)) {
         warn('reactive-unknown-anchor', `reactive rule references unknown role "${ref}"`);
       }
     }
@@ -121,7 +142,7 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
   const finalize = bp.gates?.finalize;
   if (finalize) {
     for (const step of [...finalize.onDone, ...finalize.onEscalate]) {
-      if (!FINALIZE_STEPS.has(step) && !roleIds.has(step)) {
+      if (!FINALIZE_STEPS.has(step) && !isLiveRole(step)) {
         warn('finalize-unknown-role', `gates.finalize references "${step}" which is neither a step nor a declared role`);
       }
     }
@@ -177,7 +198,7 @@ type Reporter = (code: string, message: string) => void;
 /** Decider-model spine checks (edges + termination + reachability). */
 function validateDeciderSpine(
   bp: Blueprint,
-  roleIds: Set<string>,
+  isLiveRole: (id: string) => boolean,
   dispatched: Set<string>,
   err: Reporter,
   warn: Reporter,
@@ -190,16 +211,17 @@ function validateDeciderSpine(
   if (!anyTerminalEdge && !defaultTerminal) {
     err('no-terminal', 'no terminal outcome is reachable (no terminal edge and a non-terminal default)');
   }
-  // Decider should be a declared role (prompt-resolve has global fallbacks, so a
-  // warning rather than a hard error).
-  if (!roleIds.has(bp.spine.decider)) {
+  // Decider should resolve to a declared OR live agent role (prompt-resolve has
+  // global fallbacks, so a warning rather than a hard error — P-001).
+  if (!isLiveRole(bp.spine.decider)) {
     warn('decider-undeclared', `spine.decider "${bp.spine.decider}" is not in roles[]`);
   }
-  // Dispatch targets that aren't declared roles → likely vestigial/dormant verbs.
+  // Dispatch targets that resolve to neither a declared nor a live agent role →
+  // likely vestigial/dormant verbs (typo / dead role).
   for (const [verb, action] of Object.entries(edges)) {
     if (action.to === 'role') {
       dispatched.add(action.role);
-      if (!roleIds.has(action.role)) {
+      if (!isLiveRole(action.role)) {
         warn(
           'dispatch-undeclared-role',
           `spine edge ${verb} dispatches role "${action.role}" which is not declared in roles[]`,
