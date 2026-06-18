@@ -560,3 +560,29 @@ test('tier-aware — empty blueprintRoots is byte-identical to a single-root ctx
     cleanup();
   }
 });
+
+// ── domain-generic-hive-architecture-2026-06-18 P-005 — per-blueprint bees over a shared base bee ──
+// The generic bee persona is the shared `base/prompts/bee.base.md` PREFIX; each hive blueprint
+// supplies a thin domain `bee.md` MAIN (coding ships code+tests; work produces a judged
+// deliverable). Asserts the REAL built-in blueprints compose as [base prefix, domain main],
+// and that the work hive (generic-hive) no longer inherits the coding bee (audit Finding B).
+test('P-005 — coding-hive bee composes [base/bee.base.md, hive/bee.md] (real blueprints)', () => {
+  const files = resolvePromptFiles({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'bee');
+  assert.deepEqual(files, [
+    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'bee.base.md'),
+    join(HARNESS_PKG, 'blueprints', 'hive', 'prompts', 'bee.md'),
+  ]);
+});
+
+test('P-005 — work-hive (generic-hive) bee composes [base/bee.base.md, generic-hive/bee.md] — NOT the coding bee', () => {
+  const files = resolvePromptFiles(
+    { harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'generic-hive' },
+    'bee',
+  );
+  assert.deepEqual(files, [
+    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'bee.base.md'),
+    join(HARNESS_PKG, 'blueprints', 'generic-hive', 'prompts', 'bee.md'),
+  ]);
+  // Finding B closed: the work bee main is the generic-hive one, never hive/bee.md (coding).
+  assert.notEqual(files[files.length - 1], join(HARNESS_PKG, 'blueprints', 'hive', 'prompts', 'bee.md'));
+});

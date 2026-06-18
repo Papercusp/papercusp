@@ -158,6 +158,29 @@ export function splitCommand(cmd: string): string[] {
   return cmd.split(/\s+/).filter(Boolean);
 }
 
+/**
+ * Per-hive local-tier blueprint roots from the spawn extras
+ * (domain-generic-hive-architecture-2026-06-18 P-012/P-014/D-012). The SPAWNER
+ * (operator-core, which has the hive + PG context) materializes the hive's federated
+ * `promptOverride.*` into a local-tier blueprint tree and passes its root via a
+ * `BLUEPRINT_LOCAL_ROOT=<path>` extra (':'-separated for multiple tiers, most-specific
+ * first). The tier-aware prompt resolver (prompt-resolve P-014) then picks a hive's
+ * customized role prompt / overlay over the built-in. Absent ⇒ [] ⇒ built-in-only
+ * resolution, byte-identical to before. invoke.ts only CONSUMES this (it cannot import
+ * operator-core's materializer — the dependency runs the other way).
+ */
+export function parseBlueprintLocalRoots(extras: string[]): string[] {
+  const out: string[] = [];
+  for (const e of extras) {
+    if (!e.startsWith('BLUEPRINT_LOCAL_ROOT=')) continue;
+    for (const p of e.slice('BLUEPRINT_LOCAL_ROOT='.length).split(':')) {
+      const t = p.trim();
+      if (t) out.push(t);
+    }
+  }
+  return out;
+}
+
 /** Read promptOverrides.<role> from config.json. Mirrors the python helper. */
 export function resolvePromptOverride(
   cfg: HarnessConfig,
@@ -1762,10 +1785,13 @@ export async function invoke(
     // blueprints/<id>/prompts/<role>.md. Absent for the normal pipeline.
     const blueprintId =
       extras.find((e) => e.startsWith('BLUEPRINT_ID='))?.slice('BLUEPRINT_ID='.length) || undefined;
+    // Per-hive local-tier roots (P-012/P-014): a hive's materialized override prompts
+    // win over the built-in blueprint. Absent ⇒ [] ⇒ built-in-only (unchanged).
+    const blueprintRoots = parseBlueprintLocalRoots(extras);
     // Layered list (base/<role>.md first when present — audit P-019), the
     // concrete most-specific prompt last.
     promptFiles = resolvePromptFiles(
-      { harnessDir: ctx.harnessDir, phase: ctx.phase, dept, blueprintId },
+      { harnessDir: ctx.harnessDir, phase: ctx.phase, dept, blueprintId, blueprintRoots },
       role,
     );
     if (promptFiles.length === 0) {
@@ -2256,6 +2282,9 @@ export async function invoke(
       phase: '',
       dept: '',
       blueprintId: replaceBaseBlueprintId,
+      // Per-hive local-tier overlay override (P-012/P-014): a hive may ship its own
+      // agent-base-overlay in the materialized local tier. Absent ⇒ built-in.
+      blueprintRoots: parseBlueprintLocalRoots(extras),
     });
     if (sysText) {
       const { ramTmpRoot } = await import('./tmpfs');
