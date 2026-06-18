@@ -72,6 +72,17 @@ export async function withWorkspace<T>(
     // parent's options were already drizzle-mutated by getOrgPgApp()).
     const txOpts = txSql as unknown as { options?: unknown };
     txOpts.options ??= (sql as unknown as { options?: unknown }).options;
+    // C1-2 of backend-connection-scaling-2026-06-17: under PgBouncer transaction
+    // pooling the connect-time search_path is NOT preserved (server connections are
+    // shared across clients), so set it per-transaction — mirrors getOrgPg/getOrgPgApp's
+    // connect-time value. GATED behind PAPERCUSP_PGBOUNCER so the direct-connection
+    // default (which already carries the connect-time search_path) is byte-for-byte
+    // unchanged. This makes the HOT path (every agent tool call) pooler-correct;
+    // the peripheral getHarnessPg per-harness-schema readers still need migrating
+    // before PgBouncer is enabled (see the plan's C1-2 note).
+    if (process.env.PAPERCUSP_PGBOUNCER === '1') {
+      await txSql`SELECT set_config('search_path', 'harness_shared, papercup_shared, public', true)`;
+    }
     if (!opts.bypassRlsForAdmin) {
       await txSql`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
     }

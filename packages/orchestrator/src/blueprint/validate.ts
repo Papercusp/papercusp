@@ -79,10 +79,17 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
   const hasEdges = bp.spine.edges != null && Object.keys(bp.spine.edges).length > 0;
   const hasSteps = bp.spine.steps != null && bp.spine.steps.length > 0;
   const dispatched = new Set<string>();
+  // A SELF-CLAIM spine (claimModel: self-claim-* — the flat-distributed topologies) has NO central
+  // decider and NO program: peer agents pull the next ready work-item themselves and run their worker
+  // role end-to-end. So "neither edges nor steps" is VALID under self-claim (the claim loop IS the
+  // orchestration). decider-dispatch still requires exactly one model (edges XOR steps).
+  const selfClaim = bp.spine.claimModel != null && bp.spine.claimModel !== 'decider-dispatch';
   if (hasEdges && hasSteps) {
     err('spine-mode', 'spine declares BOTH edges (decider model) and steps (program model) — choose one');
   } else if (!hasEdges && !hasSteps) {
-    err('empty-spine', 'spine declares neither edges (decider model) nor steps (program model)');
+    if (!selfClaim) {
+      err('empty-spine', 'spine declares neither edges (decider model) nor steps (program model)');
+    }
   } else if (hasSteps) {
     validateProgramSpine(bp, opts, err, warn);
   } else {

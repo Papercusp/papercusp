@@ -12,6 +12,7 @@ export {
   typedSql,
   processConnectionCeiling,
   logConnectionBudget,
+  maybePgbouncer,
   _resetForTests,
   type OrgPgHandle,
 } from './connection';

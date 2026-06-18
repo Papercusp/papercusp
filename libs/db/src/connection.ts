@@ -173,6 +173,31 @@ export function _resetUrlCacheForTests(): void {
   _resolvedAdminUrl = null;
 }
 
+/**
+ * When `PAPERCUSP_PGBOUNCER=1`, route an org/harness pool URL through the local
+ * PgBouncer (transaction pooling) on `PAPERCUSP_PGBOUNCER_PORT` (default 6432) —
+ * C2 of backend-connection-scaling-2026-06-17. This is what lets thousands of
+ * concurrent agent tool-calls multiplex onto a bounded set of PG backends.
+ *
+ * GATED default-off, and deliberately so: transaction pooling does NOT preserve a
+ * connection's connect-time `search_path`, so enabling this is only correct once
+ * C1-2 (per-transaction `SET LOCAL search_path`) lands. Until then the default
+ * (direct) path is used. Listeners (sync-sse, *-bus) use `getHarnessAdminUrl()`
+ * and are intentionally NOT rerouted — LISTEN is session-bound and must bypass a
+ * transaction pooler (C2-2).
+ */
+export function maybePgbouncer(url: string): string {
+  if (process.env.PAPERCUSP_PGBOUNCER !== '1') return url;
+  const port = Number(process.env.PAPERCUSP_PGBOUNCER_PORT) || 6432;
+  try {
+    const u = new URL(url);
+    u.host = `127.0.0.1:${port}`;
+    return u.toString();
+  } catch {
+    return url; // unparseable — leave the direct URL untouched
+  }
+}
+
 let _adminClient: Sql | null = null;
 let _adminDrizzle: ReturnType<typeof drizzle> | null = null;
 let _adminDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
@@ -373,7 +398,7 @@ export function getOrgPg(): OrgPgHandle {
   // called once at first-client-build, so background workers that
   // booted before the desktop wrote a new embedded-pg.json caught
   // the old port forever (E2E round-13 bug #33).
-  const url = adminUrl();
+  const url = maybePgbouncer(adminUrl());
   if (!_adminClient) {
     _adminClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public'], undefined, 'org-admin');
     _adminDrizzle = drizzle(_adminClient, { schema: sharedTables });
@@ -403,7 +428,7 @@ let _appOrgDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
  */
 export function getOrgPgApp(): OrgPgHandle {
   // Call appUrl() on every invocation — see comment in getOrgPg().
-  const url = appUrl();
+  const url = maybePgbouncer(appUrl());
   if (!_appOrgClient) {
     _appOrgClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public'], undefined, 'org-app');
     _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedTables });
@@ -435,7 +460,7 @@ export function getHarnessPg(slug: string) {
   evictHarnessPoolsIfFull();
   const schemaName = sharedSchema.slugToSchemaName(slug);
   const perHarnessMax = Math.max(1, Number(process.env.PAPERCUSP_HARNESS_DB_POOL_MAX) || 1);
-  const sql = buildClient(appUrl(), [schemaName, 'harness_shared', 'papercup_shared', 'public'], perHarnessMax, `harness:${slug}`);
+  const sql = buildClient(maybePgbouncer(appUrl()), [schemaName, 'harness_shared', 'papercup_shared', 'public'], perHarnessMax, `harness:${slug}`);
   const dz = drizzle(sql, { schema: sharedTables });
   const db = drizzle(sql, { schema: fullSchema });
   const handle: HarnessClient = { sql, drizzle: dz, db, lastUsed: Date.now() };

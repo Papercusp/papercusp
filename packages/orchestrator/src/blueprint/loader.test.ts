@@ -45,6 +45,28 @@ test('loadBuiltinBlueprint("coding") resolves, validates, and inherits base knob
   assert.equal(contentHash.length, 64);
 });
 
+test('coordination-topology blueprints load + validate (self-claim distributed arms)', () => {
+  const cases: Array<[string, string, string]> = [
+    // id, claimModel, coordination.broadcast
+    ['dist-broadcast', 'self-claim-fifo', 'topic'],
+    ['dist-peer-review', 'self-claim-fifo', 'topic'],
+    ['dist-blackboard', 'self-claim-fifo', 'none'],
+    ['dist-repo-huddle', 'self-claim-priority', 'topic'],
+  ];
+  for (const [id, claimModel, broadcast] of cases) {
+    const { blueprint, validation } = loadBuiltinBlueprint(id);
+    assert.equal(blueprint.id, id);
+    assert.equal(validation.ok, true, `${id} validation errors: ${JSON.stringify(validation.errors)}`);
+    assert.equal(blueprint.spine.claimModel, claimModel, `${id} claimModel`);
+    assert.equal(blueprint.coordination?.broadcast, broadcast, `${id} coordination.broadcast`);
+    assert.equal(blueprint.kind, 'harness', `${id} is a harness (no central Queen)`);
+  }
+  // The blackboard arm ENFORCES stigmergy: coord:send is forbidden.
+  const bb = loadBuiltinBlueprint('dist-blackboard').blueprint;
+  assert.equal(bb.coordination?.sharedState, 'blackboard');
+  assert.deepEqual(bb.coordination?.discipline?.forbid, ['coord:send']);
+});
+
 test('the merged coding spine equals the standalone coding spine (base adds no spine)', () => {
   const standalone = BlueprintSchema.parse(
     parseYaml(readFileSync(harnessPath('blueprints', 'coding', 'blueprint.yaml'), 'utf8')),

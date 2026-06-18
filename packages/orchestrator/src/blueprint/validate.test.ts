@@ -51,6 +51,18 @@ test('empty spine → error', () => {
   assert.ok(v.errors.some((e) => e.code === 'empty-spine'));
 });
 
+test('self-claim spine (no edges/steps) is VALID — flat-distributed topology has no central decider', () => {
+  const bp = BlueprintSchema.parse({
+    id: 'dist-broadcast',
+    workItem: { kind: 'feature' },
+    spine: { claimModel: 'self-claim-fifo' }, // no edges, no steps — peers self-claim + run their role
+    roles: [{ id: 'worker' }],
+    coordination: { broadcast: 'topic' },
+  });
+  const v = validateBlueprint(bp);
+  assert.ok(!v.errors.some((e) => e.code === 'empty-spine'), `self-claim must not be empty-spine: ${JSON.stringify(v.errors)}`);
+});
+
 test('no reachable terminal → error', () => {
   const bp = BlueprintSchema.parse({
     id: 'x',
