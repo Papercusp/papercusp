@@ -67,6 +67,23 @@ test('coordination-topology blueprints load + validate (self-claim distributed a
   assert.deepEqual(bb.coordination?.discipline?.forbid, ['coord:send']);
 });
 
+test('per-task topology blueprints load + validate (ensemble + pair)', () => {
+  const ens = loadBuiltinBlueprint('ensemble-solve').blueprint;
+  assert.equal(ens.id, 'ensemble-solve');
+  assert.equal(loadBuiltinBlueprint('ensemble-solve').validation.ok, true);
+  assert.equal(ens.coordination?.team, 'per-task');
+  assert.equal(ens.coordination?.aggregate, 'judge-best', 'ensemble aggregates N independent solutions');
+  assert.ok(ens.roles.some((r) => r.id === 'judge'), 'ensemble has a judge role');
+
+  const pair = loadBuiltinBlueprint('pair').blueprint;
+  assert.equal(loadBuiltinBlueprint('pair').validation.ok, true);
+  assert.equal(pair.coordination?.team, 'per-task');
+  assert.equal(pair.coordination?.review, 'peer', 'pair = continuous navigator review');
+  assert.deepEqual(pair.roles.map((r) => r.id).sort(), ['driver', 'navigator']);
+  // aggregate defaults to 'none' when unset (pair coordinates DURING, doesn't aggregate after).
+  assert.equal(pair.coordination?.aggregate, 'none');
+});
+
 test('the merged coding spine equals the standalone coding spine (base adds no spine)', () => {
   const standalone = BlueprintSchema.parse(
     parseYaml(readFileSync(harnessPath('blueprints', 'coding', 'blueprint.yaml'), 'utf8')),

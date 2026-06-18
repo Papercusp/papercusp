@@ -738,6 +738,10 @@ export const CoordinationSchema = z.object({
    *  'per-repo' (same-repo agents form a huddle); 'per-task' (multiple agents collaborate on ONE
    *  task — pair / ensemble). */
   team: z.enum(['per-backlog', 'per-repo', 'per-task']).default('per-backlog'),
+  /** Post-hoc AGGREGATION across a per-task team's INDEPENDENT attempts (ensemble). 'none'; 'judge-best'
+   *  = N agents solve the same task independently, then a judge role picks/merges the best solution.
+   *  Only meaningful with team:'per-task' (the agents don't coordinate DURING — they aggregate AFTER). */
+  aggregate: z.enum(['none', 'judge-best']).default('none'),
   /** Enforce a coordination DISCIPLINE by gating which coord/* tools roles may use (e.g. a
    *  blackboard-only topology forbids `coord:send`). `allow` = allow-list; `forbid` = deny-list. */
   discipline: z
