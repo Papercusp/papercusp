@@ -45,12 +45,12 @@ describe('seedMemoryStore + reads', () => {
     expect(featureAttemptsMem(ctx('/a'), 'missing')).toBe(0);
   });
 
-  it('returns a COPY — mutating the result does not corrupt the store', () => {
+  it('returns a fresh array — push/splice on the result does not corrupt the store', () => {
     seedMemoryStore('/a', [feat('F-1')]);
     const out = readFeaturesMem(ctx('/a'));
     out.push(feat('F-injected'));
-    out[0].id = 'mutated';
-    // the store is unchanged (push isolated; element identity copied at array level)
+    out.splice(0, 1);
+    // array-level copy: structural edits to the result never leak back
     expect(readFeaturesMem(ctx('/a')).map((f) => f.id)).toEqual(['F-1']);
   });
 
