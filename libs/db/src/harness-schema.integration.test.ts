@@ -23,7 +23,7 @@ import postgres, { type Sql } from 'postgres';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config';
 import { slugToSchemaName } from './schema';
 import { _resetForTests, _resetUrlCacheForTests } from './connection';
-import { harnessQuery } from './workspace-context';
+import { harnessQuery, withHarnessSchema } from './workspace-context';
 
 const SLUG = 'c1test';
 const SCHEMA = slugToSchemaName(SLUG); // harness_c1test
@@ -71,25 +71,22 @@ describe('harnessQuery search_path resolution (C1-2)', () => {
     expect(rows[0]?.val).toBe('harness');
   });
 
-  it('PGBOUNCER mode (withHarnessSchema, per-tx search_path) resolves to the harness schema', async () => {
-    process.env.PAPERCUSP_PGBOUNCER = '1';
-    await _resetForTests();
-    try {
-      const rows = (await harnessQuery(SLUG, (q) => q`SELECT val FROM thing`)) as { val: string }[];
-      expect(rows[0]?.val).toBe('harness');
-    } finally {
-      delete process.env.PAPERCUSP_PGBOUNCER;
-      await _resetForTests();
-    }
+  it('withHarnessSchema (per-tx search_path — the PgBouncer path) resolves to the harness schema', async () => {
+    // withHarnessSchema is exactly what harnessQuery runs under PgBouncer. We test
+    // it DIRECTLY against the testcontainer: we can't route the test through the
+    // real local :6432 pooler (it targets the live PG, not this container). The
+    // actual end-to-end pooler routing is covered by a live check (see the plan).
+    const rows = (await withHarnessSchema(SLUG, (q) => q`SELECT val FROM thing`)) as {
+      val: string;
+    }[];
+    expect(rows[0]?.val).toBe('harness');
   });
 
-  it('PGBOUNCER mode shares the search_path across multiple statements in one callback', async () => {
+  it('withHarnessSchema shares the search_path across multiple statements in one transaction', async () => {
     // The saveIssues / syncAgentRuns shape: an upsert + a reconcile read must both
-    // see the harness schema within ONE harnessQuery() transaction.
-    process.env.PAPERCUSP_PGBOUNCER = '1';
-    await _resetForTests();
+    // see the harness schema within ONE transaction.
     try {
-      const result = await harnessQuery(SLUG, async (q) => {
+      const result = await withHarnessSchema(SLUG, async (q) => {
         await q`INSERT INTO thing (val) VALUES ('second')`;
         const rows = (await q`SELECT count(*)::int AS n FROM thing`) as { n: number }[];
         return rows[0].n;
@@ -101,8 +98,6 @@ describe('harnessQuery search_path resolution (C1-2)', () => {
     } finally {
       // Clean the extra row so reruns (testcontainer .withReuse) stay deterministic.
       await obs.unsafe(`DELETE FROM ${SCHEMA}.thing WHERE val = 'second'`).catch(() => {});
-      delete process.env.PAPERCUSP_PGBOUNCER;
-      await _resetForTests();
     }
   });
 });
