@@ -11,7 +11,7 @@
  */
 
 import type { OrchestratorPg } from './invoke.js';
-import type { HarnessConfig } from './config.js';
+import type { HarnessConfig } from './types.js';
 import type { FileClaimCoordinator } from '@papercusp/file-claim';
 import {
   type ChunkLoopDeps,
