@@ -508,6 +508,11 @@ export const DEPLOY_PIPELINE_NOTE = [
   '  waiting. Your committed change is SAFE on staging and ships automatically when the gate',
   '  clears. If `dev:pipeline_position` shows a genuine stall, `coord:escalate` (advisory,',
   '  non-blocking) and move on to other work.',
+  '- NEVER sit in a wait/poll loop for git-sync to "push your change" before you proceed. If your',
+  '  NEXT STEP genuinely requires the change LIVE on :3070 (you must exercise it through the running',
+  '  operator before continuing), do NOT idle waiting for the scheduled commit→checkpoint→deploy —',
+  '  FORCE it now: `npx tsx apps/operator/lib/release/deploy-cli.ts --execute` (deploys the current',
+  '  tree to :3070). Blocking on git-sync / the green gate before proceeding is the anti-pattern.',
 ].join('\n');
 
 function fileContents(path: string): string {
