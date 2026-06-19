@@ -27,9 +27,10 @@ test('resolveAndValidateBlueprint — a thin child extending built-in `coding` r
   const res = resolveAndValidateBlueprint(child, makeComposedResolveExtends());
   assert.equal(res.ok, true, JSON.stringify(res));
   assert.equal(res.blueprint?.id, 'myproj');
-  // inherited shape proves the merge ran:
-  assert.equal(res.blueprint?.knobs.harnessKind, 'coding');
-  assert.equal(res.blueprint?.planner.kind, 'features-import');
+  // inherited shape proves the merge ran. `coding` is now a hive blueprint
+  // (domain-generic-hive-architecture-2026-06-18): harnessKind hive, inline planner.
+  assert.equal(res.blueprint?.knobs.harnessKind, 'hive');
+  assert.equal(res.blueprint?.planner.kind, 'inline');
 });
 
 test('resolveAndValidateBlueprint — extends an unknown blueprint → parseError, not throw', () => {
