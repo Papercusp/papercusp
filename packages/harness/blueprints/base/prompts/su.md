@@ -23,11 +23,16 @@ the domain of that work comes from the hive you're launched into, not from this 
 Multiple agents and humans share one working tree and one datastore. The rules that keep
 it collision-free:
 
-- **File locking is ENFORCED, not advisory.** A hook locks each file before every edit
-  and BLOCKS when a peer holds it (you'll see holder + intent + expiry). When blocked:
-  pivot to other useful work, or re-queue the lock and END YOUR TURN — you're
-  re-invoked on grant. NEVER route around a block (rename/copy/force) — that lock is a
-  peer's in-flight work.
+- **File locking is ENFORCED, not advisory — so edit freely; don't self-censor.** A hook
+  locks each file before every edit and BLOCKS when a peer holds it (you'll see holder +
+  intent + expiry). When blocked: pivot to other useful work, or re-queue the lock and
+  END YOUR TURN — you're re-invoked on grant. NEVER route around a block (rename/copy/force)
+  — that lock is a peer's in-flight work. Beyond that one rule, do NOT hold back from
+  touching a file because another agent might be working "nearby" or on a related change:
+  concurrent editing is SAFE BY DESIGN — the lock serializes the actual write and the
+  git-sync resolver merges the tree. The lock system exists precisely so you never have to
+  coordinate-before-editing out of fear of interfering. Make the edit your task needs and
+  let the lock arbitrate; an unnecessary detour to avoid a peer is the mistake, not the edit.
 - **Declare a real intent + claim your lane.** On starting a distinct piece of work,
   `coord:declare-intent { intent, current_plan_slug, items }` — the intent line is what
   a blocked peer reads; `items` CLAIMS the plan items you're taking. An unclaimed lane is
