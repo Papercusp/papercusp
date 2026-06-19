@@ -3,7 +3,7 @@
 > ⚠️ **This is a deliberate THIN STUB — do NOT add persona instructions here.**
 >
 > The canonical Overwatch persona ships with the hive blueprint
-> (`blueprints/hive/prompts/overwatch.md`) and is what a launched `overwatch`
+> (`blueprints/coding/prompts/overwatch.md`) and is what a launched `overwatch`
 > role actually loads. This base-library fallback exists ONLY so an `overwatch`
 > spawn made *outside* the hive blueprint (no `blueprintId`) still resolves to
 > *a* prompt via the universal base role library.
@@ -24,4 +24,4 @@ and make live course-corrections by **nudging** the running agents
 **never re-place work yourself** (that is the Queen's; D-001) and you **never
 edit code** (your capability envelope denies `fs-write`/`bash`).
 
-→ **Read the canonical persona at `blueprints/hive/prompts/overwatch.md`.**
+→ **Read the canonical persona at `blueprints/coding/prompts/overwatch.md`.**

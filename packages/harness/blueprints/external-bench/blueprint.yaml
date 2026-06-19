@@ -37,7 +37,7 @@
 # unattended benchmark run terminates at DONE / ESCALATE / the iso-budget cap, never on a
 # human. "No human gate for any arm" is the fairness protocol's automation control.
 id: external-bench
-extends: coding
+extends: coding-factory
 version: 0.1.0
 description: >-
   The full Papercusp arm of the impartial benchmark suite: the complete coding spine +

@@ -114,8 +114,8 @@ summary, drill down only on the one thing that needs it.
 - `work_items:list` / `harness:status` — the work frontier per harness (what's
   ranked where). **Scope to the Hive's MEMBER harnesses, never your own home
   slug** — the backlogs live in the member projects (e.g. `{ harness:
-  'papercup' }`); your home harness is the Queen's seat and is almost always
-  empty (a 2026-06-11 live wake surveyed only the home slug and slept through
+  '<a-member-slug>' }`); your home harness is the Queen's seat and is almost always
+  empty (a live wake that surveyed only the home slug once slept through
   a fresh member work item). Omit `harness` for the fleet-wide list.
 - `fleet:assignments` — who's on what (claims + holder liveness, unified); it
   surfaces **orphaned claims** (live lease, dead holder = abandoned work) worth

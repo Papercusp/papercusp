@@ -10,8 +10,8 @@
 # Repo-less (inherited requiresRepo:false). Proves the schema generalization end-to-end:
 # acceptance / output / affinity / lexicon / learning / dependencies.blueprints are all
 # honored by the engine. The non-coding counterpart of the coding `hive`.
-id: generic-hive
-extends: hive
+id: work
+extends: coding
 # Inherited from `hive`, restated for clarity: the privileged Queen blueprint, launchable
 # only as a ROOT (hives are flat peers, never nested).
 kind: hive
@@ -54,8 +54,13 @@ lexicon:
   workUnit: deliverable
   reviewGate: review
 
-# Learning: seed the scout ideation loop (no coding gym).
+# Learning: a fresh work hive seeds the generic `work` learning pack
+# (domain-generic-hive-architecture-2026-06-18 P-017, D-010) — generic work
+# wisdom, NOT project-specific — and runs the scout ideation loop (no coding
+# gym). `pack: work` overrides the inherited `pack: coding` from `hive` (the
+# extends deep-merge replaces the scalar); `loops: [scout]` is work-only.
 learning:
+  pack: work
   loops:
     - scout
 
