@@ -27,14 +27,14 @@ const decision = (verb: string, arg: string | null = null, n: number | null = nu
 const F = 'F-042';
 
 test('coding blueprint loads + validates with no errors', () => {
-  const { blueprint, validation } = loadBuiltinBlueprint('coding');
-  assert.equal(blueprint.id, 'coding');
+  const { blueprint, validation } = loadBuiltinBlueprint('coding-factory');
+  assert.equal(blueprint.id, 'coding-factory');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   assert.equal(validation.errors.length, 0);
 });
 
 test('coding blueprint has the expected feature-pipeline shape', () => {
-  const { blueprint: bp } = loadBuiltinBlueprint('coding');
+  const { blueprint: bp } = loadBuiltinBlueprint('coding-factory');
   assert.equal(bp.workItem.kind, 'feature');
   assert.equal(bp.workItem.idPrefix, 'F');
   assert.equal(bp.spine.decider, 'director');
@@ -52,7 +52,7 @@ test('coding blueprint has the expected feature-pipeline shape', () => {
 });
 
 test('deriveNext drives the per-feature lifecycle verbs to the right roles', () => {
-  const { blueprint: bp } = loadBuiltinBlueprint('coding');
+  const { blueprint: bp } = loadBuiltinBlueprint('coding-factory');
   const s = bp.spine;
   assert.deepEqual(deriveNext(s, decision('NEXT_SCOPER', F), F), {
     kind: 'dispatch',
@@ -81,7 +81,7 @@ test('deriveNext drives the per-feature lifecycle verbs to the right roles', () 
 });
 
 test('NEXT_WORKER N=k is rejected — parallel lanes are the global orchestrator job (D-001)', () => {
-  const { blueprint: bp } = loadBuiltinBlueprint('coding');
+  const { blueprint: bp } = loadBuiltinBlueprint('coding-factory');
   // NEXT_WORKER sets rejectWhenParallel; an N=k decision → unsupported.
   assert.deepEqual(deriveNext(bp.spine, decision('NEXT_WORKER', F, 4), F), {
     kind: 'unsupported',
@@ -96,7 +96,7 @@ test('NEXT_WORKER N=k is rejected — parallel lanes are the global orchestrator
 });
 
 test('quality verbs carry their own extras templating', () => {
-  const { blueprint: bp } = loadBuiltinBlueprint('coding');
+  const { blueprint: bp } = loadBuiltinBlueprint('coding-factory');
   const s = bp.spine;
   // NEXT_TESTER templates VAL_ID from the raw arg (not the feature)
   assert.deepEqual(deriveNext(s, decision('NEXT_TESTER', 'V-9'), F), {
@@ -115,7 +115,7 @@ test('quality verbs carry their own extras templating', () => {
 });
 
 test('terminal + benign-global verbs map correctly', () => {
-  const { blueprint: bp } = loadBuiltinBlueprint('coding');
+  const { blueprint: bp } = loadBuiltinBlueprint('coding-factory');
   const s = bp.spine;
   assert.deepEqual(deriveNext(s, decision('DONE'), F), { kind: 'terminal', outcome: 'done' });
   assert.deepEqual(deriveNext(s, decision('IDLE'), F), { kind: 'terminal', outcome: 'idle' });
@@ -141,19 +141,19 @@ test('terminal + benign-global verbs map correctly', () => {
 });
 
 test('every declared coding role has a resolvable prompt file', () => {
-  const { blueprint: bp } = loadBuiltinBlueprint('coding');
+  const { blueprint: bp } = loadBuiltinBlueprint('coding-factory');
   assert.ok(bp.roles.length >= 8, 'coding declares its pipeline + quality roles');
   for (const role of bp.roles) {
     const found = resolvePromptFile(
-      { harnessDir: harnessPath(), phase: '', dept: '', blueprintId: 'coding' },
+      { harnessDir: harnessPath(), phase: '', dept: '', blueprintId: 'coding-factory' },
       role.id,
     );
-    assert.ok(found, `missing prompt for coding role "${role.id}" (blueprints/coding/prompts or base)`);
+    assert.ok(found, `missing prompt for coding role "${role.id}" (blueprints/coding-factory/prompts or base)`);
   }
 });
 
 test('the reactive debugger gate fires before a worker retry once attempts ≥ threshold', () => {
-  const { blueprint: bp } = loadBuiltinBlueprint('coding');
+  const { blueprint: bp } = loadBuiltinBlueprint('coding-factory');
   const rule = bp.reactive.find((r) => r.role === 'debugger');
   assert.ok(rule, 'debugger reactive rule declared');
   assert.equal(rule!.when.beforeRole, 'worker');
@@ -164,7 +164,7 @@ test('the reactive debugger gate fires before a worker retry once attempts ≥ t
 });
 
 test('coding declares params = base universal ∪ coding-specific (P-006 / D-003)', () => {
-  const { blueprint: bp } = loadBuiltinBlueprint('coding');
+  const { blueprint: bp } = loadBuiltinBlueprint('coding-factory');
   const params = bp.params;
   // keys are config.json INSTANCE paths (what the settings panel persists), NOT blueprint-knobs paths.
   // base's UNIVERSAL params are inherited (the record unions across `extends: base`)

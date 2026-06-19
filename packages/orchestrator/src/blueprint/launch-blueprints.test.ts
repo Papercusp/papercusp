@@ -52,8 +52,8 @@ test('pot launch blueprint loads + validates — decider=operator, NO trigger (t
   // its own next wake (hive:declare-wake → the one-shot hive-wake routine /
   // event-reaction subscriptions), not a cadence. A schedule appearing here
   // would silently reintroduce the timer loop D-002 removes.
-  const { blueprint, validation } = loadBuiltinBlueprint('hive');
-  assert.equal(blueprint.id, 'hive');
+  const { blueprint, validation } = loadBuiltinBlueprint('coding');
+  assert.equal(blueprint.id, 'coding');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   assert.ok(!isProgramSpine(blueprint.spine), 'pot is a decider-mode spine');
   // Placement automation ON (owner mandate 2026-06-11; local-hive P-030): the

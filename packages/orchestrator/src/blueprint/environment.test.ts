@@ -77,7 +77,7 @@ describe('BlueprintSchema with environment', () => {
 
 describe('coding blueprint', () => {
   it('carries a first-class (empty-by-default) environment spec', () => {
-    const { blueprint, validation } = loadBuiltinBlueprint('coding');
+    const { blueprint, validation } = loadBuiltinBlueprint('coding-factory');
     expect(validation.errors).toEqual([]);
     expect(blueprint.environment).toBeDefined();
     expect(blueprint.environment).toEqual({

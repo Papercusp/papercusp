@@ -120,7 +120,7 @@ test('applyParamPatch: writes overrides; a value equal to the default is dropped
 });
 
 test('integration: the real coding blueprint params resolve over a config.json (P-006 ⨯ P-007)', () => {
-  const { blueprint: bp } = loadBuiltinBlueprint('coding');
+  const { blueprint: bp } = loadBuiltinBlueprint('coding-factory');
   // a realistic per-harness config.json the settings panel would have written
   const cfg = { parallelWorkers: { max: 4, useChunkLoop: true }, debugger: { threshold: 5 } };
   const views = resolveParamViews(bp.params, cfg);

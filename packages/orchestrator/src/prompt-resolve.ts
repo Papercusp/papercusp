@@ -30,6 +30,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { canonicalBlueprintId } from './blueprint-aliases.js';
 
 export interface PromptResolveContext {
   /** Absolute path to the harness install (containing prompts/ + blueprints/). */
@@ -100,7 +101,7 @@ function rootsFor(ctx: PromptResolveContext): string[] {
  */
 function blueprintExtends(roots: readonly string[], id: string): string[] {
   for (const root of roots) {
-    const p = join(root, 'blueprints', id, 'blueprint.yaml');
+    const p = join(root, 'blueprints', canonicalBlueprintId(id), 'blueprint.yaml');
     if (!existsSync(p)) continue;
     try {
       const parsed = parseYaml(readFileSync(p, 'utf8')) as { extends?: unknown } | null;
@@ -174,7 +175,7 @@ function candidatesFor(ctx: PromptResolveContext, role: string): string[] {
   for (const id of chain) {
     if (id === BASE_BLUEPRINT_ID) continue;
     for (const root of roots) {
-      candidates.push(join(root, 'blueprints', id, 'prompts', `${role}.md`));
+      candidates.push(join(root, 'blueprints', canonicalBlueprintId(id), 'prompts', `${role}.md`));
     }
   }
 
@@ -300,7 +301,7 @@ export function resolveReplacementSystemPrompt(ctx: PromptResolveContext): strin
   outer: for (const id of chainForCtx(withResolvedChain(ctx))) {
     if (id === BASE_BLUEPRINT_ID) continue;
     for (const root of roots) {
-      const overlay = join(root, 'blueprints', id, 'prompts', 'agent-base-overlay.md');
+      const overlay = join(root, 'blueprints', canonicalBlueprintId(id), 'prompts', 'agent-base-overlay.md');
       if (existsSync(overlay)) {
         text = `${text}\n\n${readFileSync(overlay, 'utf8').trim()}`;
         break outer;

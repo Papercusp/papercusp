@@ -12,7 +12,7 @@ import { BlueprintSchema } from './schema.js';
 import { validateBlueprint } from './validate.js';
 
 const coding = BlueprintSchema.parse(
-  parseYaml(readFileSync(harnessPath('blueprints', 'coding', 'blueprint.yaml'), 'utf8')),
+  parseYaml(readFileSync(harnessPath('blueprints', 'coding-factory', 'blueprint.yaml'), 'utf8')),
 );
 
 test('coding blueprint validates with no errors', () => {

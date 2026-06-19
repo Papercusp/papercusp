@@ -18,9 +18,9 @@ import {
   blueprintHash,
 } from './loader.js';
 
-test('loadBuiltinBlueprint("coding") resolves, validates, and inherits base knobs', () => {
-  const { blueprint, validation, contentHash } = loadBuiltinBlueprint('coding');
-  assert.equal(blueprint.id, 'coding');
+test('loadBuiltinBlueprint("coding-factory") resolves, validates, and inherits base knobs', () => {
+  const { blueprint, validation, contentHash } = loadBuiltinBlueprint('coding-factory');
+  assert.equal(blueprint.id, 'coding-factory');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   // From coding itself:
   assert.equal(blueprint.knobs.harnessKind, 'coding');
@@ -96,9 +96,9 @@ test('hierarchical topology blueprint loads + validates (hier-lead-worker, elect
 
 test('the merged coding spine equals the standalone coding spine (base adds no spine)', () => {
   const standalone = BlueprintSchema.parse(
-    parseYaml(readFileSync(harnessPath('blueprints', 'coding', 'blueprint.yaml'), 'utf8')),
+    parseYaml(readFileSync(harnessPath('blueprints', 'coding-factory', 'blueprint.yaml'), 'utf8')),
   ).spine;
-  const merged = loadBuiltinBlueprint('coding').blueprint.spine;
+  const merged = loadBuiltinBlueprint('coding-factory').blueprint.spine;
   assert.deepEqual(merged, standalone);
 });
 
@@ -124,4 +124,11 @@ test('blueprintHash is stable + key-order independent', () => {
   const a = BlueprintSchema.parse({ id: 'h', workItem: { kind: 'feature' }, spine: { edges: { DONE: { to: 'done' } } } });
   const b = BlueprintSchema.parse({ spine: { edges: { DONE: { to: 'done' } } }, workItem: { kind: 'feature' }, id: 'h' });
   assert.equal(blueprintHash(a), blueprintHash(b));
+});
+
+test('Brief 6 blueprint-id alias — loadBuiltinBlueprint resolves legacy ids to the renamed blueprints', () => {
+  // hive→coding, generic-hive→work (blueprint-aliases.ts): a stale `extends:` or a
+  // loadBuiltinBlueprint(<old id>) call still resolves during the rename transition.
+  assert.equal(loadBuiltinBlueprint('hive').blueprint.id, 'coding');
+  assert.equal(loadBuiltinBlueprint('generic-hive').blueprint.id, 'work');
 });

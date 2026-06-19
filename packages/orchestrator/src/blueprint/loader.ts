@@ -24,6 +24,7 @@ import { parse as parseYaml } from 'yaml';
 import { harnessPath } from '@papercusp/harness/paths';
 import { BlueprintSchema, BlueprintHeaderSchema, type Blueprint } from './schema.js';
 import { validateBlueprint, type BlueprintValidation, type ValidateOptions } from './validate.js';
+import { canonicalBlueprintId } from '../blueprint-aliases.js';
 
 /**
  * The registry sets the operator passes so the load path enforces the op/role
@@ -41,9 +42,11 @@ type RawBlueprint = Record<string, unknown>;
 /** Resolve a blueprint `extends` id → an absolute file path, or null if absent. */
 export type ResolveExtendsPath = (id: string) => string | null;
 
-/** Built-in blueprints ship under `@papercusp/harness/blueprints/<id>/blueprint.yaml`. */
+/** Built-in blueprints ship under `@papercusp/harness/blueprints/<id>/blueprint.yaml`.
+ *  Legacy ids are aliased (hive→coding, generic-hive→work) so a stale `extends:`
+ *  or `loadBuiltinBlueprint(<old id>)` still resolves during the 2026-06-18 rename. */
 export function builtinBlueprintPath(id: string): string {
-  return harnessPath('blueprints', id, 'blueprint.yaml');
+  return harnessPath('blueprints', canonicalBlueprintId(id), 'blueprint.yaml');
 }
 
 /** Default resolver — built-ins only. The distribution plan composes local/installed in front. */
