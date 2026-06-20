@@ -82,7 +82,7 @@ export async function withWorkspace<T>(
     // the peripheral getHarnessPg per-harness-schema readers still need migrating
     // before PgBouncer is enabled (see the plan's C1-2 note).
     if (process.env.PAPERCUSP_PGBOUNCER === '1') {
-      await txSql`SELECT set_config('search_path', 'harness_shared, papercup_shared, public', true)`;
+      await txSql`SELECT set_config('search_path', 'harness_shared, papercusp_shared, public', true)`;
     }
     if (!opts.bypassRlsForAdmin) {
       await txSql`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
@@ -116,7 +116,7 @@ export async function withWorkspaceQuery<T>(
  * builds its search_path.
  */
 export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promise<T>): Promise<T> {
-  const searchPath = [slugToSchemaName(slug), 'harness_shared', 'papercup_shared', 'public']
+  const searchPath = [slugToSchemaName(slug), 'harness_shared', 'papercusp_shared', 'public']
     .map((s) => `"${s.replace(/"/g, '""')}"`)
     .join(', ');
   const { sql } = getOrgPgApp();

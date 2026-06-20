@@ -386,7 +386,7 @@ export function typedSql<R = Record<string, unknown>>(
 /**
  * Admin (cross-harness) client. Use for views/aggregations/projects/messages.
  *
- * search_path includes `papercup_shared` so the Papercup-specific tables
+ * search_path includes `papercusp_shared` so the Papercup-specific tables
  * (messages, message_recipients, message_comments, directive_summaries) that
  * were extracted into their own schema in Stage 2 of the framework split
  * remain reachable from unqualified queries (e.g. legacy `INSERT INTO messages`).
@@ -400,7 +400,7 @@ export function getOrgPg(): OrgPgHandle {
   // the old port forever (E2E round-13 bug #33).
   const url = maybePgbouncer(adminUrl());
   if (!_adminClient) {
-    _adminClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public'], undefined, 'org-admin');
+    _adminClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-admin');
     _adminDrizzle = drizzle(_adminClient, { schema: sharedTables });
     _adminDb = drizzle(_adminClient, { schema: fullSchema });
   }
@@ -430,7 +430,7 @@ export function getOrgPgApp(): OrgPgHandle {
   // Call appUrl() on every invocation — see comment in getOrgPg().
   const url = maybePgbouncer(appUrl());
   if (!_appOrgClient) {
-    _appOrgClient = buildClient(url, ['harness_shared', 'papercup_shared', 'public'], undefined, 'org-app');
+    _appOrgClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-app');
     _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedTables });
     _appOrgDb = drizzle(_appOrgClient, { schema: fullSchema });
   }
@@ -447,7 +447,7 @@ export function getOrgPgApp(): OrgPgHandle {
  * Unqualified `harness_features` resolves to harness_<slug>.harness_features.
  * Shared tables remain reachable as `projects`, `messages`, etc.
  *
- * `papercup_shared` is included so org.ts message-bus queries running with a
+ * `papercusp_shared` is included so org.ts message-bus queries running with a
  * per-harness client (e.g. department harnesses) still resolve unqualified
  * `messages`, `message_recipients`, etc.
  */
@@ -460,7 +460,7 @@ export function getHarnessPg(slug: string) {
   evictHarnessPoolsIfFull();
   const schemaName = sharedSchema.slugToSchemaName(slug);
   const perHarnessMax = Math.max(1, Number(process.env.PAPERCUSP_HARNESS_DB_POOL_MAX) || 1);
-  const sql = buildClient(maybePgbouncer(appUrl()), [schemaName, 'harness_shared', 'papercup_shared', 'public'], perHarnessMax, `harness:${slug}`);
+  const sql = buildClient(maybePgbouncer(appUrl()), [schemaName, 'harness_shared', 'papercusp_shared', 'public'], perHarnessMax, `harness:${slug}`);
   const dz = drizzle(sql, { schema: sharedTables });
   const db = drizzle(sql, { schema: fullSchema });
   const handle: HarnessClient = { sql, drizzle: dz, db, lastUsed: Date.now() };

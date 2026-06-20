@@ -7,7 +7,7 @@ const byteaCustom = customType<{ data: Buffer; driverData: Buffer }>({ dataType:
 const tsvectorCustom = customType<{ data: string; driverData: string }>({ dataType: () => 'tsvector' });
 
 export const harnessShared = pgSchema("harness_shared");
-export const papercupShared = pgSchema("papercup_shared");
+export const papercupShared = pgSchema("papercusp_shared");
 
 export const workItemSeqInHarnessShared = harnessShared.sequence("work_item_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "9223372036854775807", cache: "1", cycle: false })
 export const planRunsIdSeqInHarnessShared = harnessShared.sequence("plan_runs_id_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "9223372036854775807", cache: "1", cycle: false })

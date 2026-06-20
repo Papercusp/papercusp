@@ -10,7 +10,7 @@
  *   harness_<slug>           ← one schema per harness (`-` → `_` in slug)
  *     ├── harness_features
  *     └── feature_audit
- *   papercup_shared          ← Papercup-demo-specific (cross-dept message bus)
+ *   papercusp_shared          ← Papercup-demo-specific (cross-dept message bus)
  *     ├── messages
  *     ├── message_recipients
  *     ├── message_comments
@@ -19,7 +19,7 @@
  * The Papercup-specific tables moved out of harness_shared in Stage 2 of the
  * Papercusp/Papercup split. Drizzle definitions for them live in
  * @papercusp/papercusp-db. Connection clients in ./connection.ts include
- * papercup_shared in their search_path for compatibility.
+ * papercusp_shared in their search_path for compatibility.
  *
  * See libs/db-org/sql/001-shared.sql, 002-per-harness-template.sql, and
  * 003-papercusp-shared.sql for DDL.
@@ -230,7 +230,7 @@ export type RoutineInsert = typeof routines.$inferInsert;
 
 // ─── Introspected schema (Phase 0/1 of Drizzle migration) ───────────
 // `generated` is the canonical Drizzle definition of all 125 tables
-// in `harness_shared` + `papercup_shared`, derived from the live DB
+// in `harness_shared` + `papercusp_shared`, derived from the live DB
 // via `drizzle-kit pull`. Re-run via `scripts/pull-schema.mjs` after
 // any new `.sql` migration. The hand-written tables above (auditLog,
 // projects, goals, pendingEvents, routines) duplicate 5 of these for

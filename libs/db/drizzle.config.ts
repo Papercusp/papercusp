@@ -36,7 +36,7 @@ function resolveDbUrl(): string {
  */
 export default defineConfig({
   dialect: 'postgresql',
-  schemaFilter: ['harness_shared', 'papercup_shared'],
+  schemaFilter: ['harness_shared', 'papercusp_shared'],
   out: './src/schema',
   dbCredentials: {
     url: resolveDbUrl(),
