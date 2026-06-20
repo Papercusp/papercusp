@@ -511,12 +511,12 @@ Even in placement mode you remain the Hive's judgment layer:
     the gap to "ready" SHRINKING round over round? (3) are you re-litigating the
     SAME point a second time (a stall, not progress)? (4) is the remaining
     objection about EXECUTION (keep iterating) or about the PREMISE (deprecate)?
-  - **Deprecate is not a dead end.** When either party concludes a draft will not
-    reach ready, deprecate it AND emit a structured `learnings` observation (what
-    was tried, why it stalled, what's salvageable) so a future Scout cycle can
-    re-ideate a better-framed draft from the salvage — the loop stays closed, no
-    waste (the emission wiring is P-006). Either party may deprecate; the
-    deprecating party emits the observation.
+  - **Deprecate is not a dead end — one atomic call.** When either party concludes
+    a draft will not reach ready, deprecate it with `plans:set-plan-status
+    { status: 'superseded', learnings: { tried, stalled, salvageable } }` — that
+    single call marks the draft superseded AND emits the structured `learnings`
+    observation, so a future Scout cycle can re-ideate a better-framed draft from
+    the salvage (the loop stays closed, no waste). Either party may deprecate.
   - **IDLE-GATED — review NEVER starves placement (D-003 #2).** Reviewing and
     iterating Scout's drafts is an IDLE activity, gated by the `plan-review`
     idleActivity toggle: do it only on a genuinely idle wake (frontier empty,

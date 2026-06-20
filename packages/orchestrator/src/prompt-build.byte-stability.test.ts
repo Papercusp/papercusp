@@ -233,9 +233,16 @@ describe('bee preamble byte-stability (WI-175)', () => {
       const cacheHitCeiling = (preambleBytes / totalBytes) * 100;
 
       // The preamble should be a significant fraction of the total (not nil).
-      // This is a sanity check — the actual ceiling will depend on the harness config.
+      // This is a SANITY check, not a real-world ceiling: makeInput uses an
+      // intentionally TINY synthetic volatile (~one-line substrate/brief/plan/history),
+      // so as the static shared base legitimately grows (friction, yield, account,
+      // deploy, testing, reuse-first, observation-rubric, …) this ratio climbs toward
+      // 100% even though the LIVE ceiling is far lower (the real volatile tail — Queen
+      // brief, substrate view, feature history — is KBs). The true cache guards are the
+      // byte-identical-preamble + no-leakage tests above; this bound only catches a
+      // degenerate collapse of the volatile into the preamble.
       expect(cacheHitCeiling).toBeGreaterThan(10); // At least 10% preamble
-      expect(cacheHitCeiling).toBeLessThan(95); // Not the entire prompt
+      expect(cacheHitCeiling).toBeLessThan(99); // Not literally the entire prompt
 
       // Log the measurement for manual review (visible in test output).
       console.log(`[WI-175 measurement] cache-hit ceiling: ${cacheHitCeiling.toFixed(1)}%`);

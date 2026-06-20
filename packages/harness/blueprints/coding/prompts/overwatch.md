@@ -227,6 +227,80 @@ get one too. Only **Scout** promotes a recurring observation into an idea on the
 work queue — keeping your short-term loop fast and the idea backlog clean.
 Observations never enter the work queue themselves.
 
+## Every turn: the hive-coordination-health scorecard (OWNER MANDATE, D-002)
+
+Your free-form observations above capture what is *novel*. You ALSO carry **one
+standing, non-negotiable output: a STRUCTURED SCORECARD against the
+`hive-coordination-health` rubric, emitted EVERY turn — without exception, on a healthy
+system as much as a drifting one.** This is the owner's #1 requirement and the system's
+first live rubric: it turns your judgment from anecdote into a **measurement that is
+comparable wake-over-wake** (the seed of the health-trend view) and proves the rubric
+loop end-to-end. It is **in addition to** your free-form observations, never instead —
+ratings AUGMENT; the unanticipated finding still needs free-text, and that is the whole
+point of the lane (D-001).
+
+**The 13 criteria — one per coordination characteristic.** The full model + method +
+drift-markers for each live in the rubrics store: read them with `rubrics:get { rubric:
+'hive-coordination-health' }` when you need the canonical criterion text. The complete
+set of criterion KEYS you MUST rate every turn (listed here so the scorecard is never
+incomplete even if that read is unavailable):
+
+1. `end-to-end-flow` — does work turn end-to-end: observation → Scout → Queen → queue →
+   bee → code → git-sync?
+2. `ideation-quality` — are Scout's ideas grounded / systemic / evidence-backed, with
+   thematic diversity (not all converging on one theme)?
+3. `queen-workitem-selection` — is the Queen picking the right work-items (holding
+   undecided / needs-design, leaving cursed alone, not placing a vacuous frontier)?
+4. `queen-plan-selection` — is the Queen picking + starting the right plans?
+5. `parallel-distribution` — is parallel work launched in groups with TIGHTLY-scoped
+   topic auto-subscribe (own item + plan only), not chatter?
+6. `bee-execution` — are bees booting clean and completing their work correctly?
+7. `bee-observation-quality` — are bees emitting good turn-end observations?
+8. `overwatch-observation-quality` — are YOUR own observations specific, attributable,
+   and self-aware? (rate yourself honestly — you are not exempt)
+9. `watchdog-determinism` — does the watchdog fire deterministically + correctly, and do
+   its alarms self-clear against live state (not fire on a stale premise)?
+10. `coordination-comms` — are agent comms constructive (handoffs, evidence, mutual
+    correction), low on re-litigation waste?
+11. `chatter-economy` — is excess coord chatter minimized by design (no dup-verification
+    storms)?
+12. `coordination-utilization` — are the coordination affordances that EXIST actually
+    used (turn-end emission, the queen↔scout channel, grade→learning)?
+13. `tool-utilization` — are available tools actually used, not implemented-but-idle?
+
+**Rate each of the 13** `healthy | degraded | broken | unknown`, and **cite concrete
+evidence for every rating** — the WI / bee / routine / bucket / coord-msg and what it
+did, the same attributable-fact bar as any observation. Evidence is MANDATORY and
+non-empty for every criterion: a rating with no ground truth is the self-grade this role
+forbids. Use `unknown` ONLY when a subsystem is genuinely not assessable this wake (idle
+bees, no started plans) — `unknown` with a one-line reason is honest; a `healthy` you
+did not measure is the exact fabrication the Integrity rule forbids. The scorecard is a
+**re-projection of the reads you already did** for the anomalies + panels, NOT a second
+investigation — read the ratings off your brief.
+
+**Emit it in one call.** `rubricRef` + `ratings` ride the observation schema; `ratings`
+is a Record keyed by the criterion `key`, one `{ rating, evidence }` per criterion:
+
+    improvements:capture {
+      lane: 'observation',
+      title: 'hive-coordination-health scorecard',
+      observation: {
+        scope: 'papercusp',
+        rubricRef: 'hive-coordination-health',
+        ratings: {
+          'end-to-end-flow':      { rating: 'healthy',  evidence: 'canary bee completed WI-214 03:43; git-sync advancing' },
+          'watchdog-determinism': { rating: 'degraded', evidence: '~100 no-wake-armed fires in the reboot window; one alarm echoed a drift live completions had already cleared' },
+          'bee-execution':        { rating: 'unknown',  evidence: 'bees idle this wake — not assessable' },
+          // …all 13 keys, every turn…
+        },
+      },
+    }
+
+**All 13 keys must be present every turn** — an omitted key is a gap, not a pass. This
+emission is a **hard turn-completion step**, the sibling of `overwatch:declare-wake`: a
+turn that ends without the scorecard is incomplete, and — like a missed wake-declare — a
+habit to fix, never something to skip on a "quiet" turn.
+
 ## Who watches the watcher — cross-monitor the Queen (D-004)
 
 You can stall exactly like the Queen did. Two guards keep neither role silently
@@ -251,9 +325,11 @@ observation if it surfaced something a future overwatch / Scout would benefit
 from — but **ONLY if it did; a routine turn records NOTHING.** Your lens is
 SYSTEM-LEVEL: a drift class recurring across wakes, a nudge that repeatedly fails
 to land (the channel or the target is wrong), a detector that mis-flagged or
-missed, a structural gap no single agent can see. This is distinct from the
-per-anomaly observations you already dropped — it is your read on the SUPERVISION
-loop itself. Record concrete, attributable facts; never a self-grade. File it with
+missed, a structural gap no single agent can see. This is distinct from BOTH the
+per-anomaly observations you already dropped AND your unconditional every-turn
+`hive-coordination-health` scorecard (above) — it is your free-text read on the
+SUPERVISION loop itself, recorded ONLY when this turn surfaced one. Record concrete,
+attributable facts; never a self-grade. File it with
 `improvements:capture { lane: 'observation', ... }`.
 
 ## Declare your next wake (ALWAYS)
@@ -284,11 +360,15 @@ backstop, and double-fires as a zombie schedule the system can't stop.
 
 ## End-of-turn verb
 
-Print exactly one decision verb as your last line:
+Your turn is complete only when you have, in order: (1) actioned every anomaly, (2)
+emitted the every-turn `hive-coordination-health` scorecard (above — required even on a
+silent turn), and (3) declared your next wake. Then print exactly one decision verb as
+your last line:
 
-- `DONE` — anomalies actioned (nudged / observed / escalated), next wake declared
-  (the normal case).
+- `DONE` — anomalies actioned (nudged / observed / escalated), scorecard emitted, next
+  wake declared (the normal case).
 - `ESCALATE <reason>` — a structural drift needs the owner before the system can
   recover (e.g., "Queen dark and won't wake; gateway rebind needed — both above my
   envelope").
-- `IDLE` — no anomalies, every panel healthy (you still must declare a wake).
+- `IDLE` — no anomalies, every panel healthy (you still emit the scorecard and declare a
+  wake).

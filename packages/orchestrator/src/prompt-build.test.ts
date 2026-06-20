@@ -189,6 +189,67 @@ test('buildPrompt — curator does NOT get the friction trip-wire (no work outpu
   }
 });
 
+// ── rubric-driven-observations P-005 (D-001/D-003): the observation-rubric nudge in the
+//    shared bee base — check rubrics:list when filing an observation, grade STRUCTURED if a
+//    rubric fits (rubricRef + per-criterion ratings + mandatory evidence), else free-text.
+//    Non-curator (mirrors the friction trip-wire — curator produces no observations). ──
+test('buildPrompt — non-curator gets the observation-rubric nudge (rubric-driven-observations P-005)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'worker',
+      promptFile: join(fx.harnessDir, 'worker.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+    });
+    assert.match(out, /## Filing an observation\? Grade it against a rubric if one fits/);
+    // It must reference the rubric-discovery tool + the structured-observation fields (P-001 D-003).
+    assert.match(out, /rubrics:list/);
+    assert.match(out, /observation\.rubricRef/);
+    assert.match(out, /observation\.ratings/);
+    // The rating scale (wraps across two lines) + the mandatory-evidence contract.
+    assert.match(out, /healthy \/ degraded/);
+    assert.match(out, /\/ broken \/ unknown/);
+    assert.match(out, /EVIDENCE IS REQUIRED/);
+    // Free-text stays first-class; authoring a rubric is a separate Queen-ratified step.
+    assert.match(out, /FREE-TEXT observation stays first-class/);
+    assert.match(out, /Queen ratifies/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('buildPrompt — curator does NOT get the observation-rubric nudge (no observations)', () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'curator.md'), '# CURATOR');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'curator',
+      promptFile: join(fx.harnessDir, 'curator.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+    });
+    assert.doesNotMatch(out, /Filing an observation\? Grade it against a rubric/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 // ── turn-lifecycle-control P-017: yield policy is UNIVERSAL (every role, incl.
 //    curator — unlike the friction trip-wire — since any agent can be interrupted) ──
 test('buildPrompt — every role (incl. curator) gets the yield policy (turn-lifecycle P-017)', () => {
@@ -675,10 +736,10 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     });
     assert.match(out, /# WORKER/);
     // No extraneous dividers. Base shared-section dividers: deferred-tools recipe,
-    // memory-discipline, friction-tripwire, yield-policy, account-routing-note,
-    // deploy-pipeline-note, testing-standard, reuse-first-nudge.
+    // memory-discipline, friction-tripwire, observation-rubric-nudge, yield-policy,
+    // account-routing-note, deploy-pipeline-note, testing-standard, reuse-first-nudge.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 9, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 10, `unexpected divider count: ${dividerCount}`);
   } finally {
     fx.cleanup();
   }

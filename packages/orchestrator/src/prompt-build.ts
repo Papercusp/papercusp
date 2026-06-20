@@ -339,6 +339,48 @@ export const FRICTION_TRIPWIRE = [
 ].join('\n');
 
 /**
+ * OBSERVATION_RUBRIC_NUDGE — the "check for a rubric before filing an observation" clause every
+ * agent shares (rubric-driven-observations-2026-06-20 P-005 / D-001 / D-003).
+ *
+ * The HOW-to-grade sibling of FRICTION_TRIPWIRE (both prime `improvements:capture`): when an agent
+ * files a turn-end observation, it should FIRST check `rubrics:list` for an ACTIVE rubric covering
+ * the characteristic it observed and — if one fits — file a STRUCTURED observation graded against
+ * it (rubricRef + per-criterion ratings + mandatory evidence), turning an anecdote into a
+ * measurement Scout + the Queen can compare over time. FREE-TEXT stays FIRST-CLASS: a novel finding
+ * with no rubric yet is exactly what free-text observations are for, so the nudge augments, never
+ * forces. Grading uses an EXISTING active rubric; AUTHORING one is a separate step the Queen
+ * ratifies (D-001) — never invented inline here.
+ *
+ * Field contract (P-001 / D-003, owned by the observation schema): the capture's `observation`
+ * object takes `rubricRef: '<rubric_id>'` + `ratings: Record<criterionKey, { rating, evidence }>`
+ * — ONE rating per rubric criterion key (a scorecard), rating ∈ healthy|degraded|broken|unknown,
+ * evidence non-empty + MANDATORY on every entry (capture rejects an empty-evidence rating).
+ * sourceHive auto-derives from ctx, so agents need not pass it. The criterion keys + the per-rubric
+ * rating scale come from the rubric itself (`rubrics:get`).
+ *
+ * Sourced once here (the FRICTION_TRIPWIRE / REUSE_FIRST_NUDGE precedent): injected into the
+ * spawned-bee base (buildPromptParts below) + the operator-launched-role base (operator-core's
+ * renderObservationRubricNudge) so the two bases can't desync. Non-curator in the spawned base
+ * (mirrors the friction trip-wire — curator produces no observations).
+ */
+export const OBSERVATION_RUBRIC_NUDGE = [
+  '## Filing an observation? Grade it against a rubric if one fits',
+  '',
+  'When you file a turn-end observation (`improvements:capture { lane: "observation" }`), FIRST',
+  'check `rubrics:list` for an ACTIVE rubric covering the characteristic you observed',
+  '(placement-health, watchdog-determinism, observation-coverage, …). If one fits, file a',
+  'STRUCTURED observation graded against it instead of free-text: set `observation.rubricRef` to',
+  "that rubric's id and `observation.ratings` to a Record keyed by the rubric's criterion keys —",
+  'one `{ rating, evidence }` per criterion you assess, where rating is one of healthy / degraded',
+  '/ broken / unknown and EVIDENCE IS REQUIRED on every rating (name the tool / file / WI / query',
+  '— capture rejects an empty-evidence rating). A structured observation gives Scout and the Queen',
+  'a measurement to compare over time, not an anecdote. If NO active rubric fits what you saw, a',
+  'FREE-TEXT observation stays first-class — rubrics augment, they never replace the novel finding',
+  'that has no standard yet. (Grading uses an EXISTING rubric; proposing a new one is a separate',
+  'step the Queen ratifies, not something you author inline.)',
+].join('\n');
+
+/**
  * YIELD_POLICY — the cooperative-yield behavior every interruptible agent shares
  * (turn-lifecycle-control-2026-06-08 Phase 4, P-017 / D-007 / D-009).
  *
@@ -673,6 +715,19 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   if (input.role !== 'curator') {
     pre.push('\n---');
     pre.push(FRICTION_TRIPWIRE);
+  }
+
+  // 3b-bis. Observation-rubric nudge (rubric-driven-observations P-005, D-001/D-003) — the
+  //     HOW-to-grade sibling of the friction trip-wire, in the SHARED bee base every role
+  //     inherits. When the agent files a turn-end observation, check rubrics:list first and
+  //     file a STRUCTURED observation (rubricRef + per-criterion ratings + evidence) if an
+  //     active rubric fits; free-text stays first-class otherwise. Non-curator (mirrors the
+  //     friction gate — curator produces no observations). Sourced from the one
+  //     OBSERVATION_RUBRIC_NUDGE constant so the bee base + operator-launched-role base
+  //     (operator-core renderObservationRubricNudge) can't desync.
+  if (input.role !== 'curator') {
+    pre.push('\n---');
+    pre.push(OBSERVATION_RUBRIC_NUDGE);
   }
 
   // 3c. Yield policy (turn-lifecycle-control P-017, D-007/D-009) — the dual of
