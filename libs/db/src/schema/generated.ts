@@ -1178,14 +1178,19 @@ export const routinesInHarnessShared = harnessShared.table("routines", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	metadata: jsonb(),
 	workspaceId: text("workspace_id").notNull(),
+	// loop-routines-interval-recurrence-2026-06-20 P-001 (migration 323).
+	rescheduleIntervalSec: integer("reschedule_interval_sec"),
+	targetOwnerId: text("target_owner_id"),
 }, (table) => [
 	index("routines_active_due_idx").using("btree", table.active.asc().nullsLast().op("bool_ops"), table.nextFireAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(active = true)`),
 	index("routines_install_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops")),
+	index("routines_loop_interval_idx").using("btree", table.rescheduleIntervalSec.asc().nullsLast().op("int4_ops")).where(sql`(reschedule_interval_sec IS NOT NULL)`),
 	index("routines_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	uniqueIndex("routines_workspace_install_slug_name_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.name.asc().nullsLast().op("text_ops")),
 	unique("routines_install_slug_name_key").on(table.installSlug, table.name),
 	pgPolicy("routines_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("routines_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("routines_reschedule_interval_positive", sql`reschedule_interval_sec IS NULL OR reschedule_interval_sec > 0`),
 ]);
 
 export const tokenIndexInHarnessShared = harnessShared.table("token_index", {

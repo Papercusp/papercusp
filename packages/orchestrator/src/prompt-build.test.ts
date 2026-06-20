@@ -314,6 +314,40 @@ test('buildPrompt — every role gets the deploy-pipeline note (async + self-hea
   }
 });
 
+// ── agents-reuse-first-default P-001/D-001: the soft "extend, don't fork" nudge is
+//    UNIVERSAL in the shared bee base (every role, incl. curator — any role can
+//    introduce a new surface). Soft, not a hard cite-on-every-change requirement. ──
+test("buildPrompt — every role gets the reuse-first nudge (extend, don't fork; P-001/D-001)", () => {
+  for (const role of ['worker', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'r1',
+        extras: [],
+      });
+      assert.match(out, /## Reuse-first \(extend, don't fork\)/);
+      // names the concrete trigger (a new durable surface) + prefers the smallest extension
+      assert.match(out, /new durable surface/);
+      assert.match(out, /smallest extension/);
+      // the soft ask — note what you reused ONLY when adding a new surface — + the review smell
+      assert.match(out, /briefly note what you reused/);
+      assert.match(out, /top review smell/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
 test('buildPrompt — acceptanceKind judge/none swaps TESTING_STANDARD for VERIFICATION_STANDARD (P-008)', () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
@@ -640,11 +674,11 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
       sharedGuides: [],
     });
     assert.match(out, /# WORKER/);
-    // No extraneous dividers. Base shared-section dividers: friction-tripwire,
-    // yield-policy, account-routing-note, deploy-pipeline-note, testing-standard
-    // (+ deferred-tools recipe etc.).
+    // No extraneous dividers. Base shared-section dividers: deferred-tools recipe,
+    // memory-discipline, friction-tripwire, yield-policy, account-routing-note,
+    // deploy-pipeline-note, testing-standard, reuse-first-nudge.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 8, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 9, `unexpected divider count: ${dividerCount}`);
   } finally {
     fx.cleanup();
   }

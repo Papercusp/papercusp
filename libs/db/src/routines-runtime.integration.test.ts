@@ -51,6 +51,9 @@ beforeAll(async () => {
             last_fired_at timestamptz,
             created_at timestamptz NOT NULL DEFAULT now(),
             updated_at timestamptz NOT NULL DEFAULT now(),
+            -- migration 323 (B-LOOP-1): the loop recurrence kind.
+            reschedule_interval_sec integer,
+            target_owner_id text,
             UNIQUE (install_slug, name),
             -- F-E1 migration 305: the composite unique the per-workspace ON CONFLICT targets.
             UNIQUE (workspace_id, install_slug, name)
@@ -113,6 +116,37 @@ describe('upsertRoutine', () => {
     const at = new Date(Date.now() + 5_000);
     const r = await upsertRoutine(sql, baseInput({ name: 'oneshot', nextFireAt: at }), nextFn);
     expect(r.nextFireAt?.getTime()).toBe(at.getTime());
+  });
+
+  it('B-LOOP-1: round-trips the loop fields (reschedule_interval_sec + target_owner_id), incl. ON CONFLICT update', async () => {
+    // A pure loop: no cron, an interval, a bound owner. Insert.
+    const r = await upsertRoutine(
+      sql,
+      baseInput({ name: 'loopy', triggerConfig: {}, rescheduleIntervalSec: 90, targetOwnerId: 'su-abc' }),
+      nextFn,
+    );
+    expect(r.rescheduleIntervalSec).toBe(90);
+    expect(r.targetOwnerId).toBe('su-abc');
+    // ON CONFLICT updates both.
+    const updated = await upsertRoutine(
+      sql,
+      baseInput({ name: 'loopy', triggerConfig: {}, rescheduleIntervalSec: 120, targetOwnerId: 'su-def' }),
+      nextFn,
+    );
+    expect(updated.rescheduleIntervalSec).toBe(120);
+    expect(updated.targetOwnerId).toBe('su-def');
+    // A non-loop routine reads both as null (default).
+    const plain = await upsertRoutine(sql, baseInput({ name: 'plain' }), nextFn);
+    expect(plain.rescheduleIntervalSec).toBeNull();
+    expect(plain.targetOwnerId).toBeNull();
+  });
+
+  it('B-LOOP-1: a parked loop (next_fire_at=infinity) is NOT returned by listDueCronRoutines (skip-if-in-flight)', async () => {
+    await upsertRoutine(sql, baseInput({ name: 'parked', triggerConfig: {}, rescheduleIntervalSec: 60 }), nextFn);
+    // Simulate the claim parking it in-flight.
+    await sql`UPDATE harness_shared.routines SET next_fire_at = 'infinity'::timestamptz WHERE name = 'parked'`;
+    const due = await listDueCronRoutines(sql);
+    expect(due.map((r) => r.name)).not.toContain('parked'); // infinity <= now() is false → not due
   });
 
   it('F-E1: per-workspace conflict protects a same-slug routine in another workspace from clobber', async () => {

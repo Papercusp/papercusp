@@ -515,6 +515,40 @@ export const DEPLOY_PIPELINE_NOTE = [
   '  tree to :3070). Blocking on git-sync / the green gate before proceeding is the anti-pattern.',
 ].join('\n');
 
+/**
+ * REUSE_FIRST_NUDGE — the soft "extend, don't fork" clause every agent shares
+ * (agents-reuse-first-default-2026-06-20 P-001/D-001).
+ *
+ * Models reach for greenfield because building a parallel surface is LOCALLY simpler
+ * than understanding + extending existing code, and a bare principle ("prefer reuse")
+ * is too weak to change that. This names the concrete trigger (about to add a new
+ * durable surface — a table, tool/verb, service, cron/routine, config key, abstraction,
+ * or parallel "system") + the discovery tools (search the codebase + docs first), asks
+ * for the SMALLEST extension over a new parallel one, and asks for a brief note ONLY
+ * when a new durable surface IS added. Owner decision (D-001): a SOFT nudge, NOT a hard
+ * cite-on-every-change requirement (that taxes trivial edits + bloats output) — the lever
+ * is "search + the smell," not enforcement. The clause itself is an example of the
+ * principle (one shared-base edit, reused across every role, rather than a per-role fork).
+ *
+ * Sourced once here (the YIELD_POLICY / TESTING_STANDARD / DEPLOY_PIPELINE_NOTE precedent):
+ * injected into the spawned-bee base (buildPromptParts below) + the operator-launched-role
+ * base (operator-core's renderReuseFirstNudge, re-exported via role-prompt-from-slug) +
+ * mirrored in the su persona base, so all bases can't desync. Universal (no role skip — a
+ * thinking agent of any role can introduce a new surface; architect/reviewer/worker most of
+ * all). Tool names are `e.g.` hints since not every role holds them.
+ */
+export const REUSE_FIRST_NUDGE = [
+  "## Reuse-first (extend, don't fork)",
+  '',
+  'Before introducing a new durable surface — a table, tool/verb, service, cron/routine,',
+  'config key, abstraction, or parallel "system" — first look for an existing one to extend',
+  '(search the codebase + docs first, e.g. `search:semantic`, the docs, gitnexus, repomix),',
+  'and prefer the smallest extension over a new parallel one. Most "I need a new X" is really',
+  '"one more field / case / option on an existing X." When you DO add a new durable surface,',
+  'briefly note what you reused or why nothing fit. A new system that duplicates an existing',
+  'surface is a top review smell.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -680,6 +714,16 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   // bee isn't told to write tests for a deliverable that has none. The default keeps the
   // coding fleet's cached prefix byte-identical (hive-blueprint-generalization P-008).
   pre.push(input.acceptanceKind && input.acceptanceKind !== 'tests' ? VERIFICATION_STANDARD : TESTING_STANDARD);
+
+  // 3e. Reuse-first nudge (agents-reuse-first-default-2026-06-20 P-001/D-001) — the SHARED
+  //     bee base every role inherits. The soft "extend, don't fork" clause: before adding a
+  //     new durable surface (table/tool/service/cron/config/abstraction/parallel system),
+  //     search for an existing one to extend + prefer the smallest extension. Universal (no
+  //     role skip — any role can introduce a surface; architect/reviewer/worker most of all).
+  //     Sourced from the one REUSE_FIRST_NUDGE constant so the bee base, the operator-launched-
+  //     role base (operator-core renderReuseFirstNudge), and the su persona base can't desync.
+  pre.push('\n---');
+  pre.push(REUSE_FIRST_NUDGE);
 
   // Hive vocabulary (hive-blueprint-generalization P-016): when the hive blueprint
   // renames nouns, tell the agent to read the shared personas' generic terms as this

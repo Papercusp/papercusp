@@ -65,6 +65,9 @@ export {
   setRoutineActive,
   deleteRoutine,
   setRoutinesPerWorkspaceConflict,
+  NEXT_FIRE_PARKED,
+  isParkedNextFire,
+  normalizeNextFireAt,
   type RoutineRow,
 } from './routines-runtime';
 

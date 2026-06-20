@@ -28,7 +28,7 @@
  * Drizzle's pgSchema only accepts a literal-known schema name, so we call
  * pgSchema(...) at runtime with the harness's bound name.
  */
-import { pgSchema, text, bigint, boolean, jsonb, primaryKey, index, timestamp } from 'drizzle-orm/pg-core';
+import { pgSchema, text, bigint, boolean, jsonb, primaryKey, index, timestamp, integer } from 'drizzle-orm/pg-core';
 
 export const harnessShared = pgSchema('harness_shared');
 
@@ -139,9 +139,14 @@ export const routines = harnessShared.table('routines', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   metadata: jsonb('metadata'),
+  // loop-routines-interval-recurrence-2026-06-20 P-001 (migration 323): the LOOP
+  // recurrence kind — re-fire N sec after the turn completes, waking a pinned coord owner.
+  rescheduleIntervalSec: integer('reschedule_interval_sec'),
+  targetOwnerId: text('target_owner_id'),
 }, (t) => ({
   activeDueIdx: index('routines_active_due_idx').on(t.active, t.nextFireAt),
   installIdx: index('routines_install_idx').on(t.installSlug),
+  loopIntervalIdx: index('routines_loop_interval_idx').on(t.rescheduleIntervalSec),
 }));
 
 /**

@@ -47,6 +47,40 @@ export interface RoutineRow {
   active: boolean;
   lastFiredAt: Date | null;
   nextFireAt: Date | null;
+  /**
+   * The LOOP interval (loop-routines-interval-recurrence-2026-06-20 P-001). A loop is
+   * the THIRD recurrence kind: NULL = schedule-only (cron/rrule or one-shot — today's
+   * behavior); N = re-fire N sec AFTER the previous turn COMPLETES (claim.ts parks it
+   * at next_fire_at='infinity' in-flight, the completion-rebase re-arms it). Dedicated
+   * column (D-003), not a trigger_config key.
+   */
+  rescheduleIntervalSec: number | null;
+  /**
+   * The coord ownerId of the WARM session a loop wakes (P-004 `coord:send {wake}`
+   * recipient). NULL for non-loop routines. The ownerId is the stable coord identity
+   * (survives `claude --resume`), so the loop keeps waking the SAME logical agent
+   * across iterations; the wake-executor resolves owner→session for inject/resume.
+   */
+  targetOwnerId: string | null;
+}
+
+/**
+ * next_fire_at='infinity'::timestamptz is the loop in-flight / parked sentinel
+ * (claim.ts P-003): the SQL due-guard `next_fire_at <= now()` is FALSE for it, so a
+ * parked loop is never re-claimed mid-turn (skip-if-in-flight, for free). But
+ * postgres-js parses an `infinity` timestamptz to an INVALID Date (getTime()===NaN),
+ * which would throw on `.toISOString()` and mis-sort. rowToRoutine maps it to this
+ * max-valid-Date sentinel so every JS reader stays correct AND consistent with the
+ * SQL semantics: `.getTime() <= now()` is false (not due), `Boolean(nextFireAt)` is
+ * true (a parked loop IS armed, it will fire after its turn settles), `.toISOString()`
+ * works, and it sorts LAST (far future). B-LOOP-2's completion-rebase identifies parked
+ * loops in SQL (next_fire_at = 'infinity'), never via this JS field.
+ */
+export const NEXT_FIRE_PARKED = new Date(8_640_000_000_000_000);
+
+/** True when a routine's nextFireAt is the parked-loop sentinel (NEXT_FIRE_PARKED). */
+export function isParkedNextFire(nextFireAt: Date | null): boolean {
+  return nextFireAt instanceof Date && nextFireAt.getTime() === NEXT_FIRE_PARKED.getTime();
 }
 
 export async function listDueCronRoutines(sql: Sql): Promise<RoutineRow[]> {
@@ -144,6 +178,12 @@ export async function upsertRoutine(
      *  fires once at this instant and is deactivated on claim). Overrides the
      *  cron-derived computation when present. */
     nextFireAt?: Date | null;
+    /** LOOP interval in seconds (P-001) — re-fire N sec after the turn completes.
+     *  Omit/NULL for a non-loop (cron/rrule/one-shot) routine. */
+    rescheduleIntervalSec?: number | null;
+    /** The coord ownerId a loop's warm wake is delivered to (P-004). Omit/NULL for
+     *  a non-loop routine. */
+    targetOwnerId?: string | null;
   },
   computeNextFireAt: (cronExpr: string, from: Date) => Date | null
 ): Promise<RoutineRow> {
@@ -164,10 +204,14 @@ export async function upsertRoutine(
   const conflictTarget = routinesPerWorkspaceConflict
     ? sql`(workspace_id, install_slug, name)`
     : sql`(install_slug, name)`;
+  const rescheduleIntervalSec =
+    input.rescheduleIntervalSec === undefined ? null : input.rescheduleIntervalSec;
+  const targetOwnerId = input.targetOwnerId === undefined ? null : input.targetOwnerId;
   const rows = await sql<any[]>`
     INSERT INTO harness_shared.routines
       (id, install_slug, name, trigger_kind, trigger_config, target_role,
-       payload_template, concurrency, catchup, active, next_fire_at, workspace_id)
+       payload_template, concurrency, catchup, active, next_fire_at, workspace_id,
+       reschedule_interval_sec, target_owner_id)
     VALUES (
       ${id},
       ${input.installSlug},
@@ -180,18 +224,22 @@ export async function upsertRoutine(
       ${input.catchup ?? 'skip-old'},
       ${input.active ?? true},
       ${nextFireAtStr}::timestamptz,
-      ${input.workspaceId}
+      ${input.workspaceId},
+      ${rescheduleIntervalSec},
+      ${targetOwnerId}
     )
     ON CONFLICT ${conflictTarget} DO UPDATE SET
-      trigger_kind     = EXCLUDED.trigger_kind,
-      trigger_config   = EXCLUDED.trigger_config,
-      target_role      = EXCLUDED.target_role,
-      payload_template = EXCLUDED.payload_template,
-      concurrency      = EXCLUDED.concurrency,
-      catchup          = EXCLUDED.catchup,
-      active           = EXCLUDED.active,
-      next_fire_at     = EXCLUDED.next_fire_at,
-      updated_at       = now()
+      trigger_kind            = EXCLUDED.trigger_kind,
+      trigger_config          = EXCLUDED.trigger_config,
+      target_role             = EXCLUDED.target_role,
+      payload_template        = EXCLUDED.payload_template,
+      concurrency             = EXCLUDED.concurrency,
+      catchup                 = EXCLUDED.catchup,
+      active                  = EXCLUDED.active,
+      next_fire_at            = EXCLUDED.next_fire_at,
+      reschedule_interval_sec = EXCLUDED.reschedule_interval_sec,
+      target_owner_id         = EXCLUDED.target_owner_id,
+      updated_at              = now()
     RETURNING *
   `;
   return rowToRoutine(rows[0]);
@@ -219,6 +267,23 @@ export async function deleteRoutine(sql: Sql, installSlug: string, name: string)
   return Number((result as { count: number }).count ?? 0) > 0;
 }
 
+/**
+ * Normalize a raw next_fire_at into the RoutineRow JS shape. postgres-js parses
+ * `infinity`::timestamptz (the loop parked sentinel) to an INVALID Date
+ * (getTime()===NaN); map that to NEXT_FIRE_PARKED (a valid far-future Date) so JS
+ * readers stay correct (.toISOString(), .getTime() <= now() === false, sorts last)
+ * and consistent with the SQL not-due semantics. A real finite Date passes through;
+ * NULL stays NULL.
+ */
+export function normalizeNextFireAt(raw: unknown): Date | null {
+  if (raw == null) return null;
+  if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? NEXT_FIRE_PARKED : raw;
+  // postgres-js gives a Date for timestamptz; a non-Date here is unexpected, but be
+  // robust — try to parse, and treat an unparseable value as the parked sentinel.
+  const d = new Date(raw as any);
+  return Number.isNaN(d.getTime()) ? NEXT_FIRE_PARKED : d;
+}
+
 function rowToRoutine(row: any): RoutineRow {
   return {
     id: row.id,
@@ -233,6 +298,9 @@ function rowToRoutine(row: any): RoutineRow {
     catchup: row.catchup,
     active: row.active,
     lastFiredAt: row.last_fired_at,
-    nextFireAt: row.next_fire_at,
+    nextFireAt: normalizeNextFireAt(row.next_fire_at),
+    rescheduleIntervalSec:
+      row.reschedule_interval_sec == null ? null : Number(row.reschedule_interval_sec),
+    targetOwnerId: row.target_owner_id ?? null,
   };
 }
