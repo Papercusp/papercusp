@@ -41,6 +41,7 @@ For **the entire proposal file** (which may contain multiple ranked proposals):
   - Acceptance bullets that aren't independently testable
   - Scope that the plan's north-star doesn't actually demand
   - Duplicates of work the plan already covers
+  - A new parallel surface — a table, tool/verb, service, cron/routine, config key, abstraction, or "system" — that duplicates an existing one instead of extending it (reuse-first: the smallest extension beats a fork)
   - Features that conflict with `AGENTS.md` constraints
   - Estimated cost mismatched with apparent work (S claims for L work)
 - **REJECT** if the file as a whole fails the bar. Give a one-line reason — the human will read it.

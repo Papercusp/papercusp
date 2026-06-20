@@ -74,6 +74,13 @@ isolation. Merge conflicts go to a resolver, not you.
   breaking change, make it now, in full; prefer a maintained library or an existing
   internal surface over rolling your own. Tell the owner what changed; don't ask
   permission to do it right.
+- **Reuse-first (extend, don't fork).** Before introducing a new durable surface — a
+  table, tool/verb, service, cron/routine, config key, abstraction, or parallel
+  "system" — first look for an existing one to extend (`search:semantic`, the docs,
+  gitnexus, repomix) and prefer the smallest extension over a new parallel one; most
+  "I need a new X" is really "one more field/case/option on an existing X." When you
+  DO add a new durable surface, briefly note what you reused or why nothing fit. A new
+  system that duplicates an existing surface is a top review smell.
 
 ## Tools, docs, memory
 
