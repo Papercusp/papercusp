@@ -16,8 +16,9 @@
 --
 -- SCOPE: workspace_id='default' (DEFAULT_COORD_WORKSPACE) — the single coordination
 -- workspace the store reads/writes, so the rubric is visible to Overwatch/Scout wherever
--- they run. The criterion `key`s are the locked interface: an observation's
--- ratings[].criterion references criteria[].key; they map 1:1 to the owner's Q1-Q13 and
+-- they run. The criterion `key`s are the locked interface: a structured observation's
+-- ratings are KEYED by criterion key (ratings[criteria[].key] = {rating, evidence} — the
+-- Record shape per the reconciled D-003); they map 1:1 to the owner's Q1-Q13 and
 -- match the Overwatch scorecard (P-004) + Scout grouping (P-006). The per-criterion
 -- model/method/driftMarkers here are the TIGHT structured form; the long-form METHOD
 -- lives in the method_ref runbook (agent-insights/hive-coordination-health).
@@ -26,9 +27,14 @@
 -- metacommands, so this file carries NO top-level BEGIN;/COMMIT;/\set. ADDITIVE +
 -- idempotent (ON CONFLICT re-seeds the founding rubric's content + active status).
 
+-- NOTE: created_at/updated_at are omitted from this column list — both carry
+-- `DEFAULT now()` (326-rubrics-store.sql), so the 12 VALUES below match the 12
+-- columns. (Listing them without supplying values is the malformed-INSERT bug that
+-- broke every testcontainer migrate + the live apply; ON CONFLICT below still bumps
+-- updated_at = now() on a re-seed.)
 INSERT INTO harness_shared.rubrics
   (workspace_id, rubric_id, characteristic, title, description, criteria, rating_scale,
-   method_ref, status, created_by, proposed_by, ratified_by, created_at, updated_at)
+   method_ref, status, created_by, proposed_by, ratified_by)
 VALUES (
   'default',
   'hive-coordination-health',
@@ -133,8 +139,7 @@ VALUES (
   'active',
   'su-5695e3da-622d-4cd2-ae65-75c70a2e71c1',
   'su-5695e3da-622d-4cd2-ae65-75c70a2e71c1',
-  'aviynw@gmail.com',
-  now(), now()
+  'aviynw@gmail.com'
 )
 ON CONFLICT (workspace_id, rubric_id) DO UPDATE SET
   characteristic = EXCLUDED.characteristic,
