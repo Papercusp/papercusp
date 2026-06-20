@@ -387,7 +387,7 @@ test('buildPrompt — a hive lexicon emits a vocabulary block; absent ⇒ none (
 //    static recipe (prompt-build §2d) in EVERY spawned role's prompt. This test
 //    guards it so the recipe can't silently regress and re-mute the fleet. It
 //    lives in the cacheable PREAMBLE (static text, no per-spawn volatile input).
-test('buildPrompt — every spawned role gets the deferred-tools recipe in the preamble (EI-75/EI-317)', () => {
+test('buildPrompt — every spawned role gets the deferred-tools recipe + sanctioned curl-fallback in the preamble (EI-75/EI-317/EI-1758)', () => {
   for (const role of ['worker', 'bee', 'curator', 'reviewer'] as const) {
     const fx = makeFixture(({ harnessDir }) => {
       writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
@@ -413,7 +413,13 @@ test('buildPrompt — every spawned role gets the deferred-tools recipe in the p
       // …and it MUST forbid the raw-curl degradation that forks identity (EI-311),
       //   the exact mechanism that made bees mute under their real id (EI-75).
       assert.match(parts.preamble, /NEVER[\s\S]*?raw HTTP\/curl/);
-      assert.match(parts.preamble, /not attributed to your agent identity/);
+      assert.match(parts.preamble, /corrupt fleet state/);
+      // EI-1758: the SANCTIONED curl-fallback must be present so a bee whose MCP
+      //   tools stay absent uses mcp-call.mjs (correct identity) instead of zombie-ing.
+      assert.match(parts.preamble, /mcp-call\.mjs/);
+      assert.match(parts.preamble, /\$PAPERCUSP_SID/);
+      assert.match(parts.preamble, /EI-1758/);
+      assert.match(parts.preamble, /zombie/);
       // It is static, so it belongs in the cacheable preamble — never the volatile half.
       assert.doesNotMatch(parts.volatile, /Platform tool access:/);
     } finally {
