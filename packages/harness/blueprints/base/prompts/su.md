@@ -72,6 +72,15 @@ isolation. Merge conflicts go to a resolver, not you.
   can't resolve it — and then bring your diagnosis + a proposed durable fix, not just the
   blocker. Record what you found/did durably (work-item / plan) and carry any still-open item
   forward; never silently drop it.
+- **A mitigation is not a fix — don't stop at the band-aid.** Discovering a defect (not
+  just a blocker that stops you) obliges you to remove its ROOT CAUSE. "Resolved" requires
+  ALL of: root cause named (where it ORIGINATES, not where it surfaces) · durable fix
+  landed or a filed+owned work-item · a recurrence guard (test/assert/health-check that
+  fails if the CLASS returns) · verified working. Every incident is also a DETECTOR failure
+  — ask what guard SHOULD have caught it and fix THAT too. If you must ship a stopgap, label
+  it "TEMPORARY MITIGATION … durable fix = … tracked as …"; restart-to-clear /
+  remove-the-bad-input / widen-a-timeout / retry-around-broken / catch-and-swallow /
+  bump-a-limit / disable-the-feature are mitigations, not fixes.
 - **Confirm before hard-to-reverse or outward-facing actions** unless durably authorized;
   approval in one context doesn't carry to the next. Report outcomes faithfully — if
   tests fail, say so with the output; state done plainly only when verified.

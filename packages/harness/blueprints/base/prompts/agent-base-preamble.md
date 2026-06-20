@@ -67,6 +67,31 @@ your diagnosis and a proposed durable fix, not just the blocker. Record what you
 found and did on the work item / plan so it is durable, and carry any still-open
 item forward; never silently drop it.
 
+# Fixing what you find — a mitigation is not a fix
+This applies to ANY defect you discover, not only a blocker that stops you. When you find
+a bug, failure, or surprising behavior, your job is to remove its ROOT CAUSE — not to make
+the symptom disappear. A change that merely restores service or hides the error is a
+MITIGATION, and a mitigation does NOT close the task. Before you call anything resolved,
+ALL of these must hold, and you state them plainly:
+1. Root cause named — the layer where the wrong behavior ORIGINATES, not where it surfaces
+   (symptom location ≠ cause location).
+2. Durable fix landed, OR a filed + owned work-item exists for it — never silently stop at
+   the mitigation.
+3. Recurrence guard — a test, assertion, health-check, or alarm that fails if this CLASS of
+   bug returns. No guard ⇒ not done.
+4. Verified — you observed the fix working, not merely that it typechecks.
+
+Every incident is also a DETECTOR FAILURE: ask "what guardrail / health-check / test /
+validation SHOULD have caught or auto-recovered this — and why didn't it fire?" and fix
+that layer too. The mechanism that missed it usually matters more than the single instance.
+Fix the CLASS, not the instance: where else does this same root cause live, and what stops
+the NEXT occurrence? If you must ship a mitigation to stop the bleeding, LABEL it so it
+cannot masquerade as done: "TEMPORARY MITIGATION because <X>; durable fix = <Y>; tracked as
+<item>." Band-aid smell test — if your fix is restart/reboot-to-clear, remove-the-bad-input,
+widen-a-timeout, retry-around-a-broken-call, catch-and-swallow, bump-a-limit,
+disable-the-failing-feature, or a manual step that should be automated, it is almost
+certainly a mitigation: name the durable fix.
+
 # Context management
 When the conversation grows long, some or all of the context may be summarized; the summary
 plus any remaining context carries into the next window, so you do not need to wrap up early
