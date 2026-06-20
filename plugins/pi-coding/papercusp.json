@@ -17,7 +17,7 @@
       "replaces": [
         "pi"
       ],
-      "componentRoot": "@papercusp/papercup-shared",
+      "componentRoot": "@papercusp/papercusp-shared",
       "componentId": "PiTerminalsDock",
       "embedMode": "inline-dock"
     }

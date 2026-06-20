@@ -48,7 +48,10 @@ import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 // OBSERVATION_RUBRIC_NUDGE (the "check rubrics:list before filing an observation; grade
 // structured if one fits" clause) rides it too — operator-core's renderObservationRubricNudge
 // reuses the SAME string the spawned-bee base emits.
-export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, OBSERVATION_RUBRIC_NUDGE } from './prompt-build';
+// CONCURRENCY_FIRST_NOTE (the "never wait for a 'calm window'; a non-resource block is a BUG to
+// fix, not wait out; massive concurrency is the design" clause) rides it too — operator-core's
+// renderConcurrencyFirstNote reuses the SAME string the spawned-bee base emits.
+export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE } from './prompt-build';
 // resolvePromptFile rides the same entry: operator-core's workspace-level
 // (harness-less) role launch resolves the spawn persona directly
 // (hive-agent-tabs P-003) without importing the heavy orchestrator root.

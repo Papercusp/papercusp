@@ -2,7 +2,7 @@
 -- Lives in `harness_shared`. Idempotent — safe to re-run.
 --
 -- A fresh Papercusp install only needs this. Demo installs (e.g. Papercup-org)
--- additionally run 003-papercup-shared.sql to create their cross-dept message
+-- additionally run 003-papercusp-shared.sql to create their cross-dept message
 -- bus tables in the separate `papercup_shared` schema.
 
 CREATE SCHEMA IF NOT EXISTS harness_shared;

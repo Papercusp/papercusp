@@ -510,6 +510,52 @@ export const ACCOUNT_ROUTING_NOTE = [
 ].join('\n');
 
 /**
+ * CONCURRENCY_FIRST_NOTE — the "never wait for a 'calm window'; effectively-unbounded concurrency
+ * is the design, so a non-resource block is a BUG to FIX, not a reason to back off" clause every
+ * agent shares (owner directive 2026-06-20).
+ *
+ * The behavioral dual of ACCOUNT_ROUTING_NOTE. That note kills the FALSE limit (a routing/config
+ * fault mis-read as capacity). This one governs what to do when something genuinely makes you want
+ * to pause: the ONLY legitimate reason to stop is TRUE, verified resource exhaustion (tokens /
+ * accounts / rate). Everything else an agent reaches for to justify backing off — "the box is too
+ * contended", "wait for a calmer window", "too many agents running", "infra is flaky right now" —
+ * is NOT valid. The system is DESIGNED for hundreds-to-thousands of simultaneous agents on a beefy
+ * machine; we have never reached that, and the inability is itself a defect to fix. So the agent's
+ * job on hitting contention is to INVESTIGATE the root cause and FIX it robustly (or file it and
+ * route it), never to silently wait/sleep/defer — which hides the defect and strands work.
+ *
+ * Sourced once here (the ACCOUNT_ROUTING_NOTE / DEPLOY_PIPELINE_NOTE / YIELD_POLICY precedent):
+ * injected into the spawned-bee base (buildPromptParts below) + the operator-launched-role base
+ * (operator-core's renderConcurrencyFirstNote, re-exported via role-prompt-from-slug) + mirrored in
+ * the su playbooks + the papercup-hive su instance override, so all bases can't desync. Universal
+ * (no role skip — any agent can talk itself into waiting). Tool names are `e.g.` hints.
+ */
+export const CONCURRENCY_FIRST_NOTE = [
+  '## Never wait for a "calm window" — massive concurrency is the design; a non-resource block is a BUG to FIX',
+  '',
+  'The ONLY legitimate reason you cannot make progress is TRUE, VERIFIED exhaustion of a real',
+  'shared resource — tokens / accounts / rate limits — and per the multi-account note above that is',
+  'rare and must be CONFIRMED (`accounts:status`, `dev:rate_governor_status`), never assumed. Every',
+  'OTHER reason you might reach for to pause — "the box is too contended", "let me wait for a calmer',
+  'window", "too many agents are running", "infra is busy/flaky right now", "I\'ll back off and retry',
+  'later" — is NOT a valid reason to stop. This system is DESIGNED for effectively unbounded',
+  'concurrency: hundreds to thousands of agents working at once on a machine this size. We have never',
+  'reached that level, and that we cannot yet is itself a BUG to be fixed, not a limit to respect or',
+  'wait out.',
+  '',
+  'So when you catch yourself wanting to wait, throttle, sleep, or "let things settle":',
+  '- STOP — treat that impulse as evidence the system is not working as designed, not as a cue to back off.',
+  '- Do NOT silently wait, sleep, or defer the work to "a calmer window" — that hides the defect and strands the task.',
+  '- INVESTIGATE the real root cause of the contention/block — e.g. a broken spawn/fire-path, a serial',
+  '  loop that should be parallel, a per-agent resource opened N times instead of pooled, a lock held',
+  '  too broadly, an unbounded retry/poll storm, a missing cap or backpressure — and FIX it robustly so',
+  '  it cannot recur. If it is genuinely outside your reach, file it (`issues:create` /',
+  '  `improvements:capture`) and route it to someone who can.',
+  '- THEN proceed. The target is a fleet where adding more agents never forces anyone to wait — only',
+  '  real, verified resource exhaustion does.',
+].join('\n');
+
+/**
  * DEPLOY_PIPELINE_NOTE — the "your change reaches :3070 through an ASYNC, SELF-HEALING
  * pipeline; don't babysit it or self-diagnose a stall" clause every agent shares.
  *
@@ -747,6 +793,16 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     playbooks can't desync.
   pre.push('\n---');
   pre.push(ACCOUNT_ROUTING_NOTE);
+
+  // 3c-bis-2. Concurrency-first note — the SHARED bee base every role inherits, the behavioral dual
+  //     of the account-routing note above. Kills the recurring "the box is too contended, let me wait
+  //     for a calmer window" back-off: the ONLY legit reason to stop is TRUE verified resource
+  //     exhaustion; every other block is a BUG to investigate + fix (or file), never to wait out. The
+  //     design target is hundreds-to-thousands of concurrent agents. Universal (no role skip). Sourced
+  //     from the one CONCURRENCY_FIRST_NOTE constant so the bee base, operator-role base, su playbooks,
+  //     and the su instance override can't desync.
+  pre.push('\n---');
+  pre.push(CONCURRENCY_FIRST_NOTE);
 
   // 3c-ter. Deploy-pipeline note — the SHARED bee base every role inherits. Kills the recurring
   //     "can't get my change live" confusion (edit → re-check :3070 which serves GREEN main →

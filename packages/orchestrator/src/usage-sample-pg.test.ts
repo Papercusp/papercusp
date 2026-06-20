@@ -72,11 +72,44 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
       },
     );
     const v = values();
-    // session_id is the LAST interpolated value in the INSERT.
-    expect(v[v.length - 1]).toBe('sess-abc');
+    // INSERT tail order is …session_id, plan_id, tool_name (B-TOK-2 appended the last two).
+    expect(v[v.length - 3]).toBe('sess-abc'); // session_id
     expect(v).toContain('opspawn-1'); // run_id still flows
     expect(v).toContain('bee'); // role still flows
     expect(v).toContain(5000); // cache_read_tokens (the carry signal)
+  });
+
+  it('persists plan_id + tool_name (B-TOK-2 per-plan/tool attribution) as the last two values', async () => {
+    const { pg, values } = capturingPg();
+    await recordUsageSamplePg(
+      { pg, workspaceId: 'ws-1' },
+      {
+        backend: 'claude-code',
+        model: 'claude-opus-4-8',
+        usage: { inputTokens: 100, outputTokens: 20 },
+        runId: 'opspawn-2',
+        role: 'bee',
+        sessionId: 'sess-xyz',
+        planId: 'my-plan-2026-06-20',
+        toolName: 'accounts:set-egress',
+      },
+    );
+    const v = values();
+    // …session_id, plan_id, tool_name — the last three interpolated values.
+    expect(v[v.length - 3]).toBe('sess-xyz');
+    expect(v[v.length - 2]).toBe('my-plan-2026-06-20'); // plan_id
+    expect(v[v.length - 1]).toBe('accounts:set-egress'); // tool_name
+  });
+
+  it('null-safes plan_id + tool_name when a run supplies neither', async () => {
+    const { pg, values } = capturingPg();
+    await recordUsageSamplePg(
+      { pg, workspaceId: 'ws-1' },
+      { backend: 'claude-code', model: 'm', usage: { inputTokens: 1 }, runId: 'r', role: 'bee', sessionId: 's' },
+    );
+    const v = values();
+    expect(v[v.length - 2]).toBeNull(); // plan_id → NULL
+    expect(v[v.length - 1]).toBeNull(); // tool_name → NULL
   });
 
   it('null-safes session_id for backends with no native session id (omp/codex)', async () => {
@@ -86,7 +119,7 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
       { backend: 'codex', model: 'gpt-5', usage: { inputTokens: 50 }, runId: 'r', role: 'bee' },
     );
     const v = values();
-    expect(v[v.length - 1]).toBeNull(); // sessionId undefined -> NULL, never a fabricated value
+    expect(v[v.length - 3]).toBeNull(); // session_id undefined -> NULL, never a fabricated value
   });
 
   it('no-ops (no INSERT) on an empty usage so an unparseable run never fabricates a row', async () => {

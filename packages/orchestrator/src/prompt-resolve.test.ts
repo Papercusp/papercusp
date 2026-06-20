@@ -137,6 +137,26 @@ test('resolveReplacementSystemPrompt — picks the MOST-SPECIFIC overlay walking
   }
 });
 
+// EI-1758 mode-1 (bee fire-path zombie): under REPLACE_CLAUDE_BASE the base preamble IS the
+// system prompt fed to a claude bee (invoke.ts:2280-2294 → --system-prompt-file). If it drops
+// Claude Code's MCP-startup grounding, the model reverts to its Claude-Code prior, opens with the
+// `WaitForMcpServers` startup-probe reflex, concludes tools are unavailable → 0 tool calls →
+// zombie (the whole bee-placement lane deadlocks). This guards that the REAL built-in preamble
+// carries the restored grounding, resolved through the SAME resolver the fire-path uses.
+test('resolveReplacementSystemPrompt — the REAL base preamble carries the MCP-startup grounding (EI-1758 mode-1 anti-zombie)', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const harnessDir = join(here, '..', '..', 'harness'); // libs/papercusp/packages/harness
+  const out = resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '' });
+  assert.ok(out, 'the built-in base preamble must resolve (REPLACE_CLAUDE_BASE feeds this to claude bees)');
+  // The anti-reflex grounding: tools are connected + ready, and do NOT open with a startup probe.
+  assert.match(out!, /Tools and MCP startup/);
+  assert.match(out!, /WaitForMcpServers/);
+  assert.match(out!, /do NOT conclude that you have no tools and stop/i);
+  // The genuine-deferral recovery path (ToolSearch → the sanctioned mcp-call.mjs fallback).
+  assert.match(out!, /ToolSearch/);
+  assert.match(out!, /mcp-call\.mjs/);
+});
+
 test('promptCandidates — bare role resolves to base only (the universal library; no global tiers)', () => {
   // K-1 + Phase 5 (D-012): with no blueprintId, base is the ONLY candidate — the global
   // phase/dept tiers + the bare global default were deleted; `phase` is no longer consulted.

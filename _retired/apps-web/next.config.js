@@ -24,7 +24,7 @@ module.exports = {
     '@papercusp/agent-chat',
     '@papercusp/db-org',
     '@papercusp/git-graph',
-    '@papercusp/papercup-shared',
+    '@papercusp/papercusp-shared',
     '@papercusp/ui-primitives',
   ],
   // /api/harness/* and /api/plugins/* are served LOCALLY by this app

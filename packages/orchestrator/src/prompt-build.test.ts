@@ -344,6 +344,36 @@ test('buildPrompt — every role gets the multi-account inference note (a "limit
   }
 });
 
+test('buildPrompt — every role gets the concurrency-first note (never wait for a calm window; a non-resource block is a BUG to fix)', () => {
+  for (const role of ['worker', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'r1',
+        extras: [],
+      });
+      assert.match(out, /## Never wait for a "calm window"/);
+      // the only legit block is true verified exhaustion; everything else is a bug to fix
+      assert.match(out, /TRUE, VERIFIED exhaustion/);
+      assert.match(out, /hundreds to thousands of agents/);
+      // investigate + fix the root cause instead of backing off
+      assert.match(out, /INVESTIGATE the real root cause/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
 test('buildPrompt — every role gets the deploy-pipeline note (async + self-healing; do not babysit a stall)', () => {
   for (const role of ['worker', 'curator', 'reviewer'] as const) {
     const fx = makeFixture(({ harnessDir }) => {
@@ -737,9 +767,10 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     assert.match(out, /# WORKER/);
     // No extraneous dividers. Base shared-section dividers: deferred-tools recipe,
     // memory-discipline, friction-tripwire, observation-rubric-nudge, yield-policy,
-    // account-routing-note, deploy-pipeline-note, testing-standard, reuse-first-nudge.
+    // account-routing-note, concurrency-first-note, deploy-pipeline-note, testing-standard,
+    // reuse-first-nudge.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 10, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 11, `unexpected divider count: ${dividerCount}`);
   } finally {
     fx.cleanup();
   }

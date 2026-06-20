@@ -18,11 +18,11 @@
  *
  * The Papercup-specific tables moved out of harness_shared in Stage 2 of the
  * Papercusp/Papercup split. Drizzle definitions for them live in
- * @papercusp/papercup-db. Connection clients in ./connection.ts include
+ * @papercusp/papercusp-db. Connection clients in ./connection.ts include
  * papercup_shared in their search_path for compatibility.
  *
  * See libs/db-org/sql/001-shared.sql, 002-per-harness-template.sql, and
- * 003-papercup-shared.sql for DDL.
+ * 003-papercusp-shared.sql for DDL.
  *
  * For per-harness tables, use the schema factory `harnessTables(slug)` —
  * Drizzle's pgSchema only accepts a literal-known schema name, so we call
@@ -45,23 +45,23 @@ export const auditLog = harnessShared.table('audit_log', {
   subjectIdx: index('audit_subject_idx').on(t.subject),
 }));
 
-// ─── Re-exports from @papercusp/papercup-db (back-compat) ──────────────
+// ─── Re-exports from @papercusp/papercusp-db (back-compat) ──────────────
 // Existing code that imports `messages`, `messageRecipients`, etc. from
 // @papercusp/db-org continues to work. New code should import directly from
-// @papercusp/papercup-db. This shim removes when we cut the v2 release.
+// @papercusp/papercusp-db. This shim removes when we cut the v2 release.
 export {
   messages,
   messageRecipients,
   messageComments,
   directiveSummaries,
-} from '@papercusp/papercup-db';
+} from '@papercusp/papercusp-db';
 export type {
   MessageRow,
   MessageInsert,
   MessageRecipientRow,
   MessageCommentRow,
   DirectiveSummaryRow,
-} from '@papercusp/papercup-db';
+} from '@papercusp/papercusp-db';
 
 export const projects = harnessShared.table('projects', {
   id: text('id').primaryKey(),

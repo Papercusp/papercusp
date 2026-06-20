@@ -70,7 +70,7 @@ Or all at once via Overmind: `bin/overmind-all start`.
 - `packages/papercusp-harness/` — the harness substrate (`run.sh`, prompts, identity, templates).
 - `packages/papercusp-plugin-sdk/` — TypeScript types for plugin authors.
 - `libs/db-org/` — Postgres connection + Drizzle schema (framework tables).
-- `libs/papercup-db/` — Drizzle schema for Papercup-specific tables (`papercup_shared`).
+- `libs/papercusp-db/` — Drizzle schema for Papercup-specific tables (`papercup_shared`).
 
 See `PLAN.md` at the repo root for the staged migration roadmap.
 
