@@ -588,11 +588,15 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
     }
   }
 
-  // 2d. MCP tool access — the deferred-tools recipe (EI-317). A spawned
-  //     claude backend may DEFER the platform MCP tools behind ToolSearch;
-  //     a small model that doesn't know the contract concludes "I can't call
-  //     MCP tools" and improvises raw curl against the operator with a wrong
-  //     identity (the EI-311 incident). Static text → preamble (cacheable).
+  // 2d. MCP tool access — the deferred-tools recipe (EI-317) + the sanctioned
+  //     curl-fallback (EI-1758). A spawned claude backend may DEFER the platform
+  //     MCP tools behind ToolSearch, or drop the MCP client at session start; a
+  //     model that doesn't know the contract either improvises raw curl with a
+  //     wrong identity (EI-311) OR concludes "no tools" and goes silent, stranding
+  //     its claimed work as a zombie (EI-1758). The recipe handles both: reload via
+  //     ToolSearch, and if tools are STILL absent, fall back to the SANCTIONED
+  //     helper (correct bearer + your identity) rather than give up. Static text →
+  //     preamble (cacheable).
   pre.push('\n---');
   pre.push(
     '- **Platform tool access:** your `<group>:<verb>` platform tools are MCP tools named\n' +
@@ -600,9 +604,14 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
       '  platform tools are not yet in your tool list), load them FIRST — one ToolSearch call\n' +
       '  selecting every tool your task names — and then CALL them directly like any other tool;\n' +
       '  the references in the result expand into real, callable definitions automatically. NEVER\n' +
-      '  fall back to raw HTTP/curl against the operator when a tool seems missing: HTTP writes are\n' +
-      '  not attributed to your agent identity and corrupt fleet state. If your tools are genuinely\n' +
-      '  unusable after one retry, say so plainly in your final output and stop.',
+      '  hand-roll raw HTTP/curl against the operator with an arbitrary identity — unattributed HTTP\n' +
+      '  writes corrupt fleet state (EI-311). BUT if your platform tools are STILL unusable after a\n' +
+      '  ToolSearch reload + one retry, do NOT silently give up (that strands your claimed work as a\n' +
+      '  zombie — EI-1758): fall back to the SANCTIONED helper\n' +
+      '  `node scripts/mcp-call.mjs <group>:<verb> <jsonArgs> --client "$PAPERCUSP_SID" [--harness <h>]`\n' +
+      '  (it carries the correct superuser bearer AND attributes the call to YOU) and use it to claim /\n' +
+      '  comment / complete your item. Only if even mcp-call.mjs fails, say so plainly in your final\n' +
+      '  output and stop.',
   );
 
   // 3. Shared-base constants — all static text, so they live in the preamble
