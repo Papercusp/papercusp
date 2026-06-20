@@ -11,13 +11,18 @@
 -- -YYYY-MM-DD slug suffix, so this founding fixture is seeded as a PLAN row the
 -- same way 327 seeded the v1 TABLE row.
 --
--- WORKSPACE = papercusp-workspace (NOT 'default'): harness_plans only ever holds
--- plans in real harness workspaces (papercusp-workspace / lane7), never the
--- coordination workspace 'default'. So the plan lives in papercusp-workspace, and
--- the paired code change re-points rubricsScopeWorkspace() off DEFAULT_COORD_WORKSPACE
--- to the operator home workspace so the plans leg finds it (plan D-006/D-007). This
--- migration is ADDITIVE + safe: nothing reads the plan leg here until that code ships;
--- the v1 table + table leg stay as the fallback until the Stage-2 DROP migration.
+-- WORKSPACE = 'default' (DEFAULT_COORD_WORKSPACE), matching the v1 table seed (327)
+-- AND P-006's plans-leg query (rubrics.ts listRubricPlans: WHERE workspace_id =
+-- rubricsScopeWorkspace() = 'default'). So the re-pointed store finds this plan with
+-- NO code change — sidestepping the D-006 trap (which only arises if the plan lives in
+-- a non-'default' workspace while rubricsScopeWorkspace stays 'default', making the
+-- plans leg miss it). A harness_plans row in 'default' is valid: no FK on workspace_id,
+-- the v1 rubrics row already lives there, and the rubrics store's plans leg filters only
+-- workspace_id+template (harness_slug is NOT read — 'papercusp' here just names the hive
+-- the rubric measures). EFFECT IS IMMEDIATE: the deployed :3070 already runs P-006's
+-- union querying 'default', so on apply it serves the rubric from THIS plan (plans win
+-- over the table row, mergeRubricLegs). ADDITIVE + idempotent; the v1 table stays as the
+-- fallback leg until the Stage-2 DROP migration.
 --
 -- template_data is BUILT FROM the v1 row (no hand-copy of the 13 criteria): the
 -- criteria jsonb is field-for-field rubricCriterionSchema (verified), and
@@ -33,7 +38,7 @@ INSERT INTO harness_shared.harness_plans
   (workspace_id, harness_slug, plan_slug, title, status, created, updated, owner,
    items, decisions, now_state, template, template_data, is_legacy, archived)
 SELECT
-  'papercusp-workspace',
+  'default',
   'papercusp',
   'hive-coordination-health',
   r.title,
