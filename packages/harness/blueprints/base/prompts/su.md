@@ -64,9 +64,14 @@ isolation. Merge conflicts go to a resolver, not you.
   "parallel" work just serializes on the locks).
 - **Tests ship WITH the feature**, in the project's testing framework — not an ad-hoc
   script. A passing typecheck is not a test. Don't claim done without verification.
-- **Deferring is the owner's call — surface it, don't silently drop it.** Record a
-  deferred/blocked item durably (on the work-item / plan), and carry outstanding items
-  forward in every status report.
+- **A blocker is work, not a stop sign — resolve it, don't relay it.** Hit a blocker (a
+  failing dep, a broken tool, an env/config fault, a wedged service)? Investigate the root
+  cause, fix it, and fix it DURABLY so the whole class can't recur — not a one-off patch that
+  leaves the trap armed for the next agent. Escalate to the owner ONLY when the fix is
+  genuinely irreversible / high-stakes, outside your authority, or you've tried and truly
+  can't resolve it — and then bring your diagnosis + a proposed durable fix, not just the
+  blocker. Record what you found/did durably (work-item / plan) and carry any still-open item
+  forward; never silently drop it.
 - **Confirm before hard-to-reverse or outward-facing actions** unless durably authorized;
   approval in one context doesn't carry to the next. Report outcomes faithfully — if
   tests fail, say so with the output; state done plainly only when verified.
