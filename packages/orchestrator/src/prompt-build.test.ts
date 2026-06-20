@@ -768,9 +768,11 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     // No extraneous dividers. Base shared-section dividers: deferred-tools recipe,
     // memory-discipline, friction-tripwire, observation-rubric-nudge, yield-policy,
     // account-routing-note, concurrency-first-note, deploy-pipeline-note, testing-standard,
-    // reuse-first-nudge.
+    // reuse-first-nudge, code-run-note.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 11, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 12, `unexpected divider count: ${dividerCount}`);
+    // code-run nudge (B-CX-3) rides the shared bee base.
+    assert.match(out, /Collapse a multi-step tool flow into ONE/);
   } finally {
     fx.cleanup();
   }

@@ -2941,6 +2941,10 @@ export async function invoke(
             // when the run serves a plan (operator-spawn). Undefined → NULL for a
             // run not spawned for a plan, exactly like sessionId for non-claude.
             planId: process.env.PAPERCUSP_PLAN_SLUG,
+            // Per-turn trigger (B-TOK-4): the spawn/wake stamps PAPERCUSP_TURN_TRIGGER
+            // ('coord-wake' | 'cron' | 'autoloop' | 'user') so coordination-driven
+            // spend is summable. Undefined → NULL ('unattributed') for an unstamped path.
+            turnTrigger: process.env.PAPERCUSP_TURN_TRIGGER,
           },
         );
       }

@@ -637,6 +637,46 @@ export const REUSE_FIRST_NUDGE = [
   'surface is a top review smell.',
 ].join('\n');
 
+/**
+ * CODE_RUN_NUDGE — the "collapse a multi-step tool flow into ONE `code:run` instead of paying a
+ * round-trip per call" clause (code-execution-tool-orchestration B-CX-3 rollout).
+ *
+ * `code:run` executes a JS/TS script that calls the agent's allowed tools (`tools.ns.verb(args)` +
+ * real control flow) in the runtime and returns ONLY its final value — so N tool round-trips (each
+ * its own inference call re-reading the whole context) collapse into one. The runtime, the typed
+ * on-demand signatures (`code:tools`), and the dry-run write gate already exist (B-CX-1A/2A/API);
+ * this nudge makes agents REACH for it. Two easy-to-miss points it carries: (1) it is NOT for a
+ * single call or a step that needs the agent's judgment mid-flow; (2) only the RETURNED value
+ * re-enters context, so summarize CONSERVATIVELY — over-filtering backfires (you re-pay the
+ * round-trips re-fetching a field you dropped; the plan §8 consensus).
+ *
+ * Self-gated ("if `code:run` is in your toolset") since the tool is SU_ROLES-scoped — a role
+ * without it simply ignores the clause. Sourced once here (the CONCURRENCY_FIRST_NOTE /
+ * REUSE_FIRST_NUDGE precedent): injected into the spawned-bee base (buildPromptParts below) + the
+ * operator-launched-role base (operator-core's renderCodeRunNudge, re-exported via
+ * role-prompt-from-slug) + mirrored in the su playbooks + the papercup-hive su instance override,
+ * so all bases can't desync. Universal (no role skip — the self-gate handles roles without it).
+ */
+export const CODE_RUN_NUDGE = [
+  "## Collapse a multi-step tool flow into ONE `code:run` — don't pay a round-trip per call",
+  '',
+  'When `code:run` is in your toolset and a task needs MANY tool calls with control flow — loop /',
+  'branch / filter over results, fan-out reads, retry-until, "do X for each of N" — orchestrate them',
+  'in a SINGLE `code:run` script rather than issuing the calls one at a time. Each separate tool call',
+  'is its own inference round-trip that re-reads your whole context; a script runs all of them in the',
+  'runtime and returns ONLY its final value, so N round-trips become one. The round-trip count scales',
+  'with N — that is exactly the shape to script.',
+  '',
+  '- NOT WHEN: a single tool call, or a step that needs YOUR judgment mid-flow (read a result, THEN',
+  '  decide) — call those directly; a script cannot pause for you to think.',
+  '- HOW: `code:tools {}` → pick namespaces → `code:tools { namespaces }` for the exact typed',
+  "  `tools.ns.verb(args)` signatures → write the script → `code:run { dryRun:true }` to preview",
+  "  `effect:'write'` mutations (returned in plannedMutations) → inspect → `code:run` to commit.",
+  "- SUMMARIZE CONSERVATIVELY — over-filtering backfires. Only the script's RETURNED value re-enters",
+  "  your context, so return what you'll actually need next; if you drop a field and must re-fetch it,",
+  '  you pay back the round-trips you saved. When unsure, return more.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -835,6 +875,14 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     role base (operator-core renderReuseFirstNudge), and the su persona base can't desync.
   pre.push('\n---');
   pre.push(REUSE_FIRST_NUDGE);
+
+  // 3f. Code-run nudge (code-execution-tool-orchestration B-CX-3) — the SHARED bee base every role
+  //     inherits. Reach for code:run to collapse a multi-step tool flow (loop/branch/filter/fan-out/
+  //     retry over N) into ONE call instead of N inference round-trips; self-gated ("if code:run is
+  //     in your toolset") since the tool is SU_ROLES-scoped, so roles without it ignore it. Sourced
+  //     from the one CODE_RUN_NUDGE constant so the bee base + operator-launched-role base can't desync.
+  pre.push('\n---');
+  pre.push(CODE_RUN_NUDGE);
 
   // Hive vocabulary (hive-blueprint-generalization P-016): when the hive blueprint
   // renames nouns, tell the agent to read the shared personas' generic terms as this

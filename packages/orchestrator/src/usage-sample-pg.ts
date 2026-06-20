@@ -69,6 +69,11 @@ export interface UsageSampleRun {
    *  call, when a clean source supplies it. NULL on the subprocess agent-run path
    *  (a full session has no single tool). */
   toolName?: string;
+  /** Per-turn TRIGGER (B-TOK-4, migration 335): WHY this turn ran —
+   *  'coord-wake' | 'cron' | 'autoloop' | 'user' — threaded from the spawn via
+   *  `PAPERCUSP_TURN_TRIGGER`. Lets coordination-driven spend ("tokens consumed by
+   *  coord-triggered turns") be summed directly. NULL where a path can't supply it. */
+  turnTrigger?: string;
 }
 
 /** INSERT one usage sample. Caller passes the parsed `RunUsage`; no-ops on an empty one. */
@@ -98,11 +103,11 @@ export async function recordUsageSamplePg(
     INSERT INTO harness_shared.agent_usage_samples
       (workspace_id, ts, bucket_key, provider, model_class, source,
        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd,
-       model, cost_source, harness_slug, run_id, role, turn_count, session_id, plan_id, tool_name)
+       model, cost_source, harness_slug, run_id, role, turn_count, session_id, plan_id, tool_name, turn_trigger)
     VALUES (
       ${ctx.workspaceId}, ${Date.now()}, ${`${provider}:${modelClass}`}, ${provider}, ${modelClass}, ${'jsonl'},
       ${n(usage.inputTokens)}, ${n(usage.outputTokens)}, ${n(usage.cacheReadTokens)}, ${n(usage.cacheCreationTokens)}, ${costUsd},
-      ${model || null}, ${costSource}, ${run.harnessSlug ?? null}, ${run.runId ?? null}, ${run.role ?? null}, ${n(usage.turns)}, ${run.sessionId ?? null}, ${run.planId ?? null}, ${run.toolName ?? null}
+      ${model || null}, ${costSource}, ${run.harnessSlug ?? null}, ${run.runId ?? null}, ${run.role ?? null}, ${n(usage.turns)}, ${run.sessionId ?? null}, ${run.planId ?? null}, ${run.toolName ?? null}, ${run.turnTrigger ?? null}
     )
   `;
 }
