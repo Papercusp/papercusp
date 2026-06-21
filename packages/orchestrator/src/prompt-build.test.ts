@@ -402,6 +402,9 @@ test('buildPrompt — every role gets the deploy-pipeline note (async + self-hea
       // blocked case: don't idle — green the tree so your commit ships, even out of your lane
       assert.match(out, /GET THE TREE GREEN/);
       assert.match(out, /out of your lane/i);
+      // deploying a committed ref to a separate checkout does NOT clobber peers; force is UN-GATED, not clobbering
+      assert.match(out, /DOES NOT CLOBBER PEERS/);
+      assert.match(out, /UN-GATED/);
     } finally {
       fx.cleanup();
     }

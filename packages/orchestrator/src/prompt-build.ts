@@ -609,6 +609,19 @@ export const DEPLOY_PIPELINE_NOTE = [
   '  an un-green commit, bypassing the gate — prefer greening the gate over forcing past it. (Plain',
   '  `deploy-cli.ts --execute` only deploys the already-green `main`, so it will NOT carry a change',
   '  that has not promoted yet — green the gate first.)',
+  '- A DEPLOY DOES NOT CLOBBER PEERS. A deploy (even --force) checks out a COMMITTED ref into a',
+  '  SEPARATE release checkout + restarts the service — it never touches the shared working tree',
+  '  peers edit, nor rewrites their commits. git-sync is safe-by-design too: it commits the whole',
+  '  tree BEFORE it merges, ABORTS to a clean tree on conflict (→ merge-resolver, never overwrites a',
+  '  side), and holds a per-slug lock across commit→push. So "I might clobber a peer\'s in-flight work"',
+  '  is NOT a reason to avoid deploying or to hand-sync around the pipeline — the substrate preserves',
+  '  peer work. (Concurrent EDITS to the SAME file are a different layer — the file-lock PreToolUse',
+  '  hook serializes those; you never resolve an edit race by reaching for git.)',
+  '- The real trade-off for a FORCE deploy is that it is UN-GATED — it skips the green gate\'s',
+  '  full-suite verification. Fine for a small, locally-verified change you need live now; RISKY for a',
+  '  large accumulated batch (1000s of files / coordination·lock·routines substrate) — there, prefer',
+  '  greening the gate over forcing the batch past it. PREVIEW FIRST: `deploy-cli.ts --deploy-commit',
+  '  <sha>` with NO --execute prints the commit + file count + risk tier, side-effect-free.',
 ].join('\n');
 
 /**
