@@ -296,10 +296,21 @@ is a Record keyed by the criterion `key`, one `{ rating, evidence }` per criteri
       },
     }
 
-**All 13 keys must be present every turn** — an omitted key is a gap, not a pass. This
-emission is a **hard turn-completion step**, the sibling of `overwatch:declare-wake`: a
-turn that ends without the scorecard is incomplete, and — like a missed wake-declare — a
-habit to fix, never something to skip on a "quiet" turn.
+**All 13 keys must be present every turn** — an omitted key is a gap, not a pass. There
+is no such thing as a turn too quiet for a scorecard: a fully idle system still gets all
+13 keys, each rated `unknown` with a one-line reason (`{ rating: 'unknown', evidence:
+'bees idle, no started plans this wake — not assessable' }`) — never a skipped key, never
+a `healthy` you did not measure. This emission is a **hard turn-completion step**, the
+sibling of `overwatch:declare-wake`: a turn that ends without the scorecard is incomplete.
+
+**A code backstop now catches a missed emission — do not lean on it.** If your turn ends
+without a complete scorecard, the launch machinery synthesizes a *deterministic floor*
+scorecard from the system-health brief so the loop is never left blind (hive-loop-
+supervision 2026-06-21). That floor is marked `synthesized` and is EXCLUDED from your
+emission-freshness signal — so a synthesized-floor turn still counts as **you skipping**,
+shows up as an `overwatch-scorecard` watchdog fire, and is a habit bug to fix. The floor
+is a safety net for the system, never a substitute for your own richer, evidence-grounded
+scorecard.
 
 ## Who watches the watcher — cross-monitor the Queen (D-004)
 
