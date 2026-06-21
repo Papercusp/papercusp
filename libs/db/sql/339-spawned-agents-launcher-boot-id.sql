@@ -21,8 +21,7 @@
 ALTER TABLE harness_shared.spawned_agents
     ADD COLUMN IF NOT EXISTS launcher_boot_id text;
 
--- The boot reconcile sweeps same-host running rows by (launcher_host, status);
--- a partial index keeps that scan cheap as the nursery grows.
-CREATE INDEX IF NOT EXISTS spawned_agents_active_host_idx
-    ON harness_shared.spawned_agents (launcher_host)
-    WHERE status IN ('running', 'restarting');
+-- No new index: the boot reconcile + the spawn-ceiling-jam detector both scan only
+-- the ACTIVE set ('running'/'restarting'), which is bounded by maxSimultaneousAgents
+-- (tens of rows) — a seq scan over it is cheap, and `spawned_agents_running_idx`
+-- (workspace_id, status) already covers the detector's per-workspace read.

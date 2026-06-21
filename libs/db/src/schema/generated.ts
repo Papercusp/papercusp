@@ -2118,6 +2118,7 @@ export const spawnedAgentsInHarnessShared = harnessShared.table("spawned_agents"
 	modelTier: text("model_tier"),
 	brief: text(),
 	lastOutputAt: timestamp("last_output_at", { withTimezone: true, mode: 'string' }),
+	launcherBootId: text("launcher_boot_id"),
 }, (table) => [
 	index("spawned_agents_active_heartbeat_idx").using("btree", table.heartbeatAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['running'::text, 'restarting'::text]))`),
 	uniqueIndex("spawned_agents_idempotency_key_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.idempotencyKey.asc().nullsLast().op("text_ops")).where(sql`(idempotency_key IS NOT NULL)`),
