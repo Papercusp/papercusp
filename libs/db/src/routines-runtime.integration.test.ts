@@ -149,21 +149,54 @@ describe('upsertRoutine', () => {
     expect(due.map((r) => r.name)).not.toContain('parked'); // infinity <= now() is false → not due
   });
 
-  it('F-E1: per-workspace conflict protects a same-slug routine in another workspace from clobber', async () => {
+  it('EI-2019 cluster: per-workspace ON — a cross-workspace re-arm UPDATEs in place (idempotent), never flips workspace_id, never throws routines_pkey', async () => {
     setRoutinesPerWorkspaceConflict(true);
     try {
       await upsertRoutine(sql, baseInput({ workspaceId: 'ws-a' }), nextFn);
-      // ws-b upserting the SAME (install_slug, name) must NOT silently overwrite ws-a's row
-      // (the leak today: ON CONFLICT (install_slug,name) would flip workspace_id to ws-b).
-      // Phase 1 keeps the legacy UNIQUE(install_slug,name), so the 2nd insert is rejected —
-      // the point being ws-a is PROTECTED, not clobbered.
-      await expect(upsertRoutine(sql, baseInput({ workspaceId: 'ws-b' }), nextFn)).rejects.toThrow();
+      // A re-arm of the SAME singleton (install_slug, name) resolved under a DIFFERENT
+      // workspace_id — exactly how the live hive/overwatch declare-wake + watchdog fallback-arm
+      // drift — must NOT collide on routines_pkey. It conflicts on the id PK and UPDATEs the
+      // existing row in place. (Pre-fix this rejected with a duplicate-key throw, wedging every
+      // later time wake — see EI-2019/EI-2082/EI-2123/EI-2000.)
+      const updated = await upsertRoutine(sql, baseInput({ workspaceId: 'ws-b', targetRole: 'reviewer' }), nextFn);
+      expect(updated.targetRole).toBe('reviewer'); // the re-arm landed (no throw)
       const rows = await sql<{ workspace_id: string }[]>`
         SELECT workspace_id FROM harness_shared.routines
          WHERE install_slug = 'papercup' AND name = 'nightly'`;
-      expect(rows.map((r) => r.workspace_id)).toEqual(['ws-a']); // intact, not flipped to ws-b
+      // Exactly one row, workspace_id PRESERVED (not flipped to ws-b) — the anti-clobber intent
+      // F-E1 wanted, now achieved by UPDATE-in-place instead of a fleet-wedging throw.
+      expect(rows.map((r) => r.workspace_id)).toEqual(['ws-a']);
     } finally {
       setRoutinesPerWorkspaceConflict(false);
+    }
+  });
+
+  it('EI-2019/EI-2082/EI-2123/EI-2000: re-arming a routine is idempotent (no routines_pkey duplicate-key) — flag ON or OFF, same- or cross-workspace', async () => {
+    // The recurrence guard for the whole cluster: re-arming a singleton wake routine (the
+    // hive/overwatch declare-wake + watchdog fallback-arm paths all funnel through here) must
+    // converge to ONE row and never throw a duplicate-key, regardless of the per-workspace flag
+    // or which workspace the re-arm resolves under (incl. a dropped-response partial commit
+    // that already created the row).
+    for (const flag of [false, true]) {
+      setRoutinesPerWorkspaceConflict(flag);
+      try {
+        const name = `wake_${flag}`;
+        // First arm (the singleton hive/overwatch wake row).
+        await upsertRoutine(sql, baseInput({ name, workspaceId: 'ws-a', nextFireAt: new Date(Date.now() + 5_000) }), nextFn);
+        // Re-arm, same workspace (a normal declare-wake) — UPDATE, never throw.
+        await expect(
+          upsertRoutine(sql, baseInput({ name, workspaceId: 'ws-a', nextFireAt: new Date(Date.now() + 10_000) }), nextFn),
+        ).resolves.toBeDefined();
+        // Re-arm under a DRIFTED workspace (the live failure mode) — UPDATE, never throw.
+        await expect(
+          upsertRoutine(sql, baseInput({ name, workspaceId: 'ws-b', nextFireAt: new Date(Date.now() + 15_000) }), nextFn),
+        ).resolves.toBeDefined();
+        const n = await sql<{ n: number }[]>`
+          SELECT count(*)::int AS n FROM harness_shared.routines WHERE name = ${name}`;
+        expect(n[0].n).toBe(1); // idempotent — single row, never duplicated
+      } finally {
+        setRoutinesPerWorkspaceConflict(false);
+      }
     }
   });
 
