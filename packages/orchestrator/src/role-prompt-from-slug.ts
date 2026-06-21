@@ -54,7 +54,10 @@ import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 // CODE_RUN_NUDGE (the "collapse a multi-step tool flow into ONE code:run instead of a round-trip
 // per call" clause) rides it too — operator-core's renderCodeRunNudge reuses the SAME string the
 // spawned-bee base emits.
-export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE } from './prompt-build';
+// FINISH_THE_ROLLOUT_NOTE (the "a capability built then left gated OFF is INCOMPLETE, not done; turn
+// the gate on" clause) rides it too — operator-core's renderFinishTheRolloutNote reuses the SAME
+// string the spawned-bee base emits.
+export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE } from './prompt-build';
 // resolvePromptFile rides the same entry: operator-core's workspace-level
 // (harness-less) role launch resolves the spawn persona directly
 // (hive-agent-tabs P-003) without importing the heavy orchestrator root.

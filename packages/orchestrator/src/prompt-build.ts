@@ -711,6 +711,48 @@ export const CODE_RUN_NUDGE = [
   '  you pay back the round-trips you saved. When unsure, return more.',
 ].join('\n');
 
+/**
+ * FINISH_THE_ROLLOUT_NOTE — the "a capability built then left gated OFF is INCOMPLETE, not done"
+ * clause every agent shares (flags-default-on-reach-2026-06-21).
+ *
+ * The single most common way good work dies here: an agent builds a feature, gates it behind a flag
+ * (or, worse, a `process.env.PAPERCUSP_*` boolean), verifies it in isolation, and then STOPS —
+ * declaring the task "complete" with the gate still OFF (the live PgBouncer incident: built + proven
+ * + left dark + the plan marked COMPLETE). A bare "new flags default to enabled" rule was too weak +
+ * lived only in the su playbooks, so the FLEET builders (worker/architect/reviewer/bee) never saw it
+ * and env-gated capabilities dodged it entirely. This reframes it BEHAVIORALLY (turning the gate on
+ * is the LAST STEP of the task), covers env gates too, and — as a SHARED base note — reaches every
+ * role so a reviewer/validator can also catch a dark-ship.
+ *
+ * Sourced once here (the CONCURRENCY_FIRST_NOTE / REUSE_FIRST_NUDGE / CODE_RUN_NUDGE precedent):
+ * injected into the spawned-bee base (buildPromptParts below) + the operator-launched-role base
+ * (operator-core's renderFinishTheRolloutNote, re-exported via role-prompt-from-slug) + mirrored in
+ * the su playbooks + CLAUDE.md's flags section, so all bases can't desync. Universal (no role skip —
+ * any role can build behind a gate; reviewers/validators should flag a dark-ship).
+ */
+export const FINISH_THE_ROLLOUT_NOTE = [
+  '## Finish the rollout — a capability built then left gated OFF is INCOMPLETE, not done',
+  '',
+  'The most common way good work dies here: you build a feature, gate it behind a flag (or, worse, a',
+  '`process.env.PAPERCUSP_*` boolean), verify it in isolation, then STOP — calling the task "complete"',
+  'with the gate still OFF. It is NOT complete. A capability that ships DARK helps no one; "built +',
+  'proven + left off" is an unfinished rollout, not a finished feature. Turning it ON is the LAST STEP',
+  'of the task, not a someday.',
+  '',
+  '- New feature flags DEFAULT TO ENABLED (the alpha rule — finished work never ships dark). A flag is',
+  '  for CUTTING a feature, not for hiding a finished one.',
+  '- A feature toggle is a `FLAGS` entry, NEVER an ad-hoc env boolean — an env gate dodges the',
+  "  default-on guard + the dark-flag expiry and can't be flipped at runtime, which is exactly how a",
+  '  finished capability gets left off and forgotten. Env is for launch-time/test/dev config only.',
+  '- Default-OFF only for genuinely incomplete/unsafe work or an explicit owner ask — and THEN register',
+  '  it (KNOWN_DARK_FLAGS + justification + review-by) AND surface the pending flip LOUDLY in the plan',
+  '  `## Now` + your completion report, owned, with the exact steps to flip it. "Ready but gated" is a',
+  '  tracked TODO, never a silent default.',
+  '',
+  'If you can turn it on now, turn it on now. If you genuinely cannot, say so loudly and name who/what',
+  'unblocks the flip — never quietly leave it off.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -917,6 +959,15 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     from the one CODE_RUN_NUDGE constant so the bee base + operator-launched-role base can't desync.
   pre.push('\n---');
   pre.push(CODE_RUN_NUDGE);
+
+  // 3g. Finish-the-rollout note (flags-default-on-reach-2026-06-21) — the SHARED bee base every role
+  //     inherits. A capability built then left gated OFF (flag or env boolean) is INCOMPLETE, not done:
+  //     turning the gate ON is the last step of the task. Reframes the su-only "new flags default
+  //     enabled" rule behaviorally, covers env gates, and reaches the fleet builders + reviewers.
+  //     Universal (no role skip). Sourced from the one FINISH_THE_ROLLOUT_NOTE constant so the bee
+  //     base, the operator-launched-role base, the su playbooks, and CLAUDE.md can't desync.
+  pre.push('\n---');
+  pre.push(FINISH_THE_ROLLOUT_NOTE);
 
   // Hive vocabulary (hive-blueprint-generalization P-016): when the hive blueprint
   // renames nouns, tell the agent to read the shared personas' generic terms as this
