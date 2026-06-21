@@ -44,11 +44,10 @@ CREATE TABLE IF NOT EXISTS harness_shared.coord_open_escalations (
 CREATE INDEX IF NOT EXISTS coord_open_escalations_ws_ts
   ON harness_shared.coord_open_escalations (workspace_id, ts, msg_id);
 
--- ── 2. the incremental maintainer (AFTER INSERT on coord_event_log) ───────────
--- Guarded by a WHEN (NEW.surface = 'escalations') clause on the trigger, so it
--- does ZERO work for the messages/plan-events/handoffs surfaces (the hot write
--- path is untouched). An open event upserts; any resolve event deletes its
--- target. RETURN NULL: AFTER-trigger return value is ignored.
+-- ── 2. the incremental maintainer FUNCTION (the trigger is created last, §4) ──
+-- An open event upserts; any resolve event deletes its target. RETURN NULL:
+-- AFTER-trigger return value is ignored. (The trigger's WHEN(surface=
+-- 'escalations') guard keeps this off the messages/plan-events hot write path.)
 CREATE OR REPLACE FUNCTION harness_shared.coord_open_escalations_maintain()
 RETURNS trigger AS $body$
 BEGIN
@@ -99,3 +98,13 @@ SELECT e.workspace_id, e.msg_id, e.ts, e.body
         AND r.body->>'related_msg_id' = e.msg_id
    )
 ON CONFLICT (workspace_id, msg_id) DO NOTHING;
+
+-- ── 4. the incremental maintainer trigger — created LAST (lock-minimization) ──
+-- Guarded by WHEN (NEW.surface = 'escalations'), so it does ZERO work for the
+-- messages/plan-events/handoffs surfaces (the hot write path is untouched).
+DROP TRIGGER IF EXISTS coord_open_escalations_trg
+  ON harness_shared.coord_event_log;
+CREATE TRIGGER coord_open_escalations_trg
+  AFTER INSERT ON harness_shared.coord_event_log
+  FOR EACH ROW WHEN (NEW.surface = 'escalations')
+  EXECUTE FUNCTION harness_shared.coord_open_escalations_maintain();
