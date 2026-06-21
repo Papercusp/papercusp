@@ -7,12 +7,20 @@
 import type { Sql } from 'postgres';
 import { insertPendingEvent } from './pending-events';
 
-// workspace-data-isolation-leaks-2026-06-17 F-E1 (phase 1): when ON, upsertRoutine conflicts
-// on (workspace_id, install_slug, name) so a same-slug routine in another workspace is NOT
-// clobbered (routines already carry workspace_id). OFF (default) = today's ON CONFLICT
-// (install_slug, name), byte-identical. This lib can't read feature flags (layer boundary), so
-// operator-core pushes the papercusp-routines-per-workspace flag value via the setter below
-// (configure seam) at boot + on flag change. Requires migration 305's composite unique index.
+// workspace-data-isolation-leaks-2026-06-17 F-E1: per-workspace routine isolation seam.
+// operator-core (configure-per-workspace.ts) pushes the papercusp-routines-per-workspace flag
+// into this lib via the setter below (this lib can't read flags — layer boundary), at boot +
+// on every flag change.
+//
+// EI-2019/EI-2082/EI-2123/EI-2000 (routines_pkey duplicate-key cluster): the flag NO LONGER
+// switches the upsert's conflict ARBITER. The arbiter is now ALWAYS the `id` PRIMARY KEY (see
+// upsertRoutine) — the only collision-free choice while the global UNIQUE(install_slug, name)
+// still stands (phase 1; migration 305 is additive). Conflicting on the broken composite
+// (workspace_id, install_slug, name) let a cross-workspace re-arm MISS the existing row and
+// then collide on routines_pkey, wedging every later hive/overwatch declare-wake + the
+// watchdog fallback-arm. The flag is retained for the configure seam and for phase-2 (folding
+// workspace_id into the id, after the global unique is dropped — at which point ON CONFLICT (id)
+// becomes per-workspace automatically). Full rationale at upsertRoutine's conflict target.
 let routinesPerWorkspaceConflict = false;
 export function setRoutinesPerWorkspaceConflict(on: boolean): void {
   routinesPerWorkspaceConflict = on;
@@ -198,11 +206,23 @@ export async function upsertRoutine(
   const triggerConfigStr = JSON.stringify(input.triggerConfig);
   const payloadTemplateStr = input.payloadTemplate ? JSON.stringify(input.payloadTemplate) : null;
   const nextFireAtStr = nextFireAt ? nextFireAt.toISOString() : null;
-  // F-E1 (phase 1): conflict on (workspace_id, install_slug, name) when per-workspace
-  // routines are enabled — otherwise the legacy global (install_slug, name). Both unique
-  // targets exist (migration 305 keeps the old one), so this is a clean flag-gated switch.
+  // EI-2019 / EI-2082 / EI-2123 / EI-2000 — the routines_pkey duplicate-key cluster.
+  // `id` (the PRIMARY KEY) is derived deterministically from (install_slug, name) above, so it
+  // IS the routine's canonical identity. The upsert must arbitrate on the id PK — NOT the
+  // composite (workspace_id, install_slug, name) — even when per-workspace routines are on:
+  // in phase 1 the global UNIQUE(install_slug, name) is still present (migration 305 is
+  // ADDITIVE), so a re-arm under a workspace_id that differs from the existing row's (how the
+  // live hive/overwatch declare-wake + watchdog fallback-arm drift) MISSES the composite target
+  // and the fallthrough INSERT then collides on routines_pkey — wedging every later time wake.
+  // Conflicting on the id PK is idempotent in BOTH flag states (a re-arm always matches-and-
+  // UPDATEs in place — incl. after a dropped-response partial commit), and since the SET below
+  // never touches workspace_id the existing row's workspace is PRESERVED (the anti-clobber
+  // intent F-E1 wanted) — no flip, no throw, no wedge. The legacy OFF path conflicts on
+  // (install_slug, name), which is equivalent to (id) since id↔(install_slug, name); kept
+  // byte-identical. Phase-2 per-workspace coexistence = drop the global unique + fold
+  // workspace_id into the id, after which ON CONFLICT (id) is per-workspace automatically.
   const conflictTarget = routinesPerWorkspaceConflict
-    ? sql`(workspace_id, install_slug, name)`
+    ? sql`(id)`
     : sql`(install_slug, name)`;
   const rescheduleIntervalSec =
     input.rescheduleIntervalSec === undefined ? null : input.rescheduleIntervalSec;
