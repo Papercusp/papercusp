@@ -66,14 +66,12 @@ BEGIN
 END;
 $body$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS coord_open_escalations_trg
-  ON harness_shared.coord_event_log;
-CREATE TRIGGER coord_open_escalations_trg
-  AFTER INSERT ON harness_shared.coord_event_log
-  FOR EACH ROW WHEN (NEW.surface = 'escalations')
-  EXECUTE FUNCTION harness_shared.coord_open_escalations_maintain();
-
 -- ── 3. backfill / reconcile the current open set ──────────────────────────────
+-- Done BEFORE creating the trigger so the trigger's SHARE ROW EXCLUSIVE lock on
+-- coord_event_log (which blocks concurrent coord INSERTs until this migration's
+-- txn commits) is held for the SHORTEST possible time — the trigger is the very
+-- last statement. The backfill computes the open set directly, so it does not
+-- need the trigger active; the trigger only maintains it going forward.
 -- (a) PRUNE projection rows that are actually resolved (no-op on first apply when
 --     the table is empty; makes a re-run a full reconcile + closes the tiny
 --     create-trigger→backfill window).

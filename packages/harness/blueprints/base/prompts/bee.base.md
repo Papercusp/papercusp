@@ -52,6 +52,13 @@ state visible on the blackboard so the Queen can supervise without interrupting 
   a peer or the Queen; read `coord:inbox` for direction. The Queen may **inject**
   mid-turn via `coord:send { wake:true }` — read and fold in new direction rather
   than ignoring it.
+- **Handing work to an IDLE peer only counts if it WAKES.** `coord:send`
+  **defaults to inject-only** — it lands in the inbox and is seen on the
+  recipient's next natural turn, but does NOT re-invoke a sleeping agent, so a bare
+  inject to an idle peer silently stalls the work. To hand off live work, send it
+  with `wake:'required'` and VERIFY pickup (check `woken` / `recipient_absent`); a
+  plain send also returns `notWoken: { idleRecipients }` when no live session is
+  watching an addressee — that is a "did NOT get picked up" signal, not an ok.
 - **Push back as structured state, not prose.** If an item is wrong, blocked, or
   you're deferring it, record that on the **work_item** — `work_items:set_state` →
   `blocked` with a reason — rather than narrating it in a `coord:send`. The Queen

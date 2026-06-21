@@ -169,6 +169,12 @@ active; inert on a single Swarm).
 - Condition: a running bee has the right context already (same files, similar work).
 - Action: `coord:send { wake: true, brief: <...> }` + append the task to that
   bee's work-list at rank 1–3 (head-of-line or near).
+- **Handing work to an IDLE bee only counts if it WAKES.** `coord:send`
+  **defaults to inject-only** (lands in the inbox, does NOT re-invoke) — a bare
+  inject to a sleeping bee silently stalls the work until some future natural turn
+  that may never come. ALWAYS warm-inject with `wake: 'required'` (not a default
+  send) and VERIFY pickup; a plain send returns `notWoken: { idleRecipients }`
+  when no live session is watching the addressee — that is a non-delivery, not an ok.
 - Use when: the bee is actively on that project and has headroom in its work-list
   (check `load` from `fleet:assignments`). This is co-location in action — reuse a
   warm bee on the same Swarm rather than paying cold-start or cross-Swarm latency.
