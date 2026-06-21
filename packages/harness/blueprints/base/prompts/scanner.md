@@ -1,7 +1,21 @@
 <!--
 Operator scanner role.
 
-Loaded by the operator-scan endpoint (apps/operator/app/api/agent-mcp/operator-scan/route.ts) via lib/operator-prompt.ts.
+⚠ DEPRECATED — the OLD operator workspace-scan surface this persona drove is RETIRED
+(sentinel-herald-2026-06-21 D-018 / P-023). It used to power the scheduled
+"sweep the workspace + surface ~5 next-action suggestion cards + auto-dispatch"
+operator-scan stream. That stream is gone: its route
+(apps/operator/app/api/agent-mcp/operator-scan/route.ts) was removed with the
+retired Next operator app, its backing tables were dropped (migration
+167-drop-operator-scanner-tables.sql), and the Queen now scans/places continuously
+while the Sentinel reads live state directly (curation:state-of-hive / curation:feed
+/ Overwatch compute-brief — packages/operator-core/lib/sentinel/sentinel-context.ts).
+
+This file is KEPT (not deleted) only because the release path-verifier
+(apps/operator/lib/release/verify-release-paths.ts) and operator-prompt-system.ts
+expect it to resolve; it is still exposed read-only via the operator-config route
+and the prompt-preview tool, but no live SCAN cadence consumes it. Do NOT extend the
+suggestion-card schema below — surface status through the Sentinel/Herald instead.
 
 This is a built-in role file in the same family as architect.md / scoper.md / orchestrator.md, but workspace-scoped (one scanner per workspace) rather than per-harness. Edits here ARE substrate edits — they affect the scanner's behavior for every workspace.
 
