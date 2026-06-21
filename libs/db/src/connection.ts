@@ -460,7 +460,19 @@ export function getHarnessPg(slug: string) {
   evictHarnessPoolsIfFull();
   const schemaName = sharedSchema.slugToSchemaName(slug);
   const perHarnessMax = Math.max(1, Number(process.env.PAPERCUSP_HARNESS_DB_POOL_MAX) || 1);
-  const sql = buildClient(maybePgbouncer(appUrl()), [schemaName, 'harness_shared', 'papercusp_shared', 'public'], perHarnessMax, `harness:${slug}`);
+  // PgBouncer-safety (backend-connection-scaling-2026-06-17 C2): the per-harness
+  // pools rely on a CONNECT-TIME search_path (`harness_<slug>` first) so unqualified
+  // `harness_features` etc. resolve to this harness's schema. Transaction pooling does
+  // NOT preserve a connect-time search_path, and the ~18 legacy `getLegacyClient(slug)`
+  // / direct `getHarnessPg(slug).sql` call sites issue multi-statement AUTOCOMMIT
+  // queries that can't be transparently wrapped. So these pools INTENTIONALLY stay
+  // DIRECT (bypass maybePgbouncer) even under PAPERCUSP_PGBOUNCER=1. This is cheap: the
+  // harness pools are LRU-capped at HARNESS_POOL_CAP (8) × perHarnessMax (1) per process
+  // — NOT the connection bloat (that's the org pools, ~48 each, which DO get pooled).
+  // The pooler-safe alternative for new code is `harnessQuery(slug, fn)` (per-tx
+  // SET LOCAL search_path on the pooled org-app pool); migrating the legacy sites onto
+  // it is the follow-up that lets even these pools route through the pooler.
+  const sql = buildClient(appUrl(), [schemaName, 'harness_shared', 'papercusp_shared', 'public'], perHarnessMax, `harness:${slug}`);
   const dz = drizzle(sql, { schema: sharedTables });
   const db = drizzle(sql, { schema: fullSchema });
   const handle: HarnessClient = { sql, drizzle: dz, db, lastUsed: Date.now() };

@@ -10,7 +10,7 @@
  * Run: cd libs/papercusp/packages/locks && npx vitest run src/config.test.ts
  */
 import { describe, expect, it } from 'vitest';
-import { configureLocks, locksHost, type LocksHost } from './config';
+import { configureLocks, locksHost, txnTimeouts, DEFAULT_TXN_TIMEOUTS, type LocksHost } from './config';
 
 describe('@papercusp/locks host seam', () => {
   it('throws a clear error when locksHost() is read before configuration', () => {
@@ -30,5 +30,42 @@ describe('@papercusp/locks host seam', () => {
     configureLocks(host2);
     expect(locksHost()).toBe(host2);
     expect(locksHost().getAdminBaseUrl()).toBe('postgres://other');
+  });
+});
+
+describe('@papercusp/locks txnTimeouts() — P-020 db:txn-timeouts seam', () => {
+  it('the baked default is 5s/5s', () => {
+    expect(DEFAULT_TXN_TIMEOUTS).toEqual({ lockTimeoutMs: 5000, statementTimeoutMs: 5000 });
+  });
+
+  it('falls back to DEFAULT_TXN_TIMEOUTS when the host wires no getTxnTimeouts', () => {
+    configureLocks({ getAdminBaseUrl: () => 'postgres://main' });
+    expect(txnTimeouts()).toEqual(DEFAULT_TXN_TIMEOUTS);
+  });
+
+  it('returns the host getTxnTimeouts() value when wired', () => {
+    configureLocks({
+      getAdminBaseUrl: () => 'postgres://main',
+      getTxnTimeouts: () => ({ lockTimeoutMs: 15000, statementTimeoutMs: 30000 }),
+    });
+    expect(txnTimeouts()).toEqual({ lockTimeoutMs: 15000, statementTimeoutMs: 30000 });
+  });
+
+  it('fail-safes to defaults when getTxnTimeouts throws', () => {
+    configureLocks({
+      getAdminBaseUrl: () => 'postgres://main',
+      getTxnTimeouts: () => {
+        throw new Error('boom');
+      },
+    });
+    expect(txnTimeouts()).toEqual(DEFAULT_TXN_TIMEOUTS);
+  });
+
+  it('replaces a non-finite field with its default, keeping the valid field', () => {
+    configureLocks({
+      getAdminBaseUrl: () => 'postgres://main',
+      getTxnTimeouts: () => ({ lockTimeoutMs: Number.NaN, statementTimeoutMs: 30000 }),
+    });
+    expect(txnTimeouts()).toEqual({ lockTimeoutMs: 5000, statementTimeoutMs: 30000 });
   });
 });

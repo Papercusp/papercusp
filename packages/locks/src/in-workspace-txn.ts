@@ -14,6 +14,7 @@
 import type { Sql } from 'postgres';
 import { ensureBootstrap, getTxPool, SU_LOCKS_FEATURE_KEY } from './su-lock-store';
 import { startBackgroundJanitor } from './workspace-listener';
+import { txnTimeouts } from './config';
 
 /**
  * Thrown when a per-workspace transaction can't proceed in time under
@@ -64,9 +65,15 @@ export async function inWorkspaceTxn<T>(
     result = await sql.begin(async (tx) => {
     // Diagnostic name visible in pg_stat_activity.
     await tx`SELECT set_config('application_name', ${'papercusp-su:' + ownerId}, true)`;
-    // Safe defaults — per-op overrides come from the tool handler.
-    await tx`SET LOCAL lock_timeout = '5s'`;
-    await tx`SET LOCAL statement_timeout = '5s'`;
+    // Per-workspace lock_timeout + statement_timeout. Baked 5s/5s, but runtime-settable via the
+    // LocksHost getTxnTimeouts seam (db:txn-timeouts, live-configurability-audit-2026-06-20 P-020),
+    // so the window can be widened mid-incident without a deploy through this very txn path.
+    // set_config(name, value, is_local=true) == SET LOCAL, but takes the value as a BOUND PARAMETER
+    // (a bare `SET` does not) — same form as the application_name line above. Per-op overrides still
+    // come from the tool handler. txnTimeouts() is fail-safe to 5s/5s on any host/read error.
+    const { lockTimeoutMs, statementTimeoutMs } = txnTimeouts();
+    await tx`SELECT set_config('lock_timeout', ${`${Math.trunc(lockTimeoutMs)}ms`}, true)`;
+    await tx`SELECT set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`;
     // Workspace-scoped advisory lock. Two-arg form prevents collisions
     // with future features that pick a different feature_key.
     await tx`SELECT pg_advisory_xact_lock(
