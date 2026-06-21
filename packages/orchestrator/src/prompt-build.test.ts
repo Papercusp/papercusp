@@ -396,9 +396,12 @@ test('buildPrompt — every role gets the deploy-pipeline note (async + self-hea
       // the two-port mental model + the pipeline_position reflex (not a browser)
       assert.match(out, /:3070 serves GREEN `main`/);
       assert.match(out, /dev:pipeline_position/);
-      // self-healing + don't-self-diagnose
+      // self-healing + don't-babysit (the NOT-blocked case)
       assert.match(out, /release-fixer/);
-      assert.match(out, /do NOT block\s+waiting/i);
+      assert.match(out, /don't babysit it/i);
+      // blocked case: don't idle — green the tree so your commit ships, even out of your lane
+      assert.match(out, /GET THE TREE GREEN/);
+      assert.match(out, /out of your lane/i);
     } finally {
       fx.cleanup();
     }
