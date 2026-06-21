@@ -19,7 +19,7 @@
  */
 
 import type { Sql } from 'postgres';
-import { getOrgPg, getOrgPgApp, getHarnessPg } from './connection';
+import { getOrgPg, getOrgPgApp, getHarnessPg, pgbouncerEnabled } from './connection';
 import { slugToSchemaName } from './schema';
 
 export interface WorkspaceTxOptions {
@@ -76,12 +76,12 @@ export async function withWorkspace<T>(
     // C1-2 of backend-connection-scaling-2026-06-17: under PgBouncer transaction
     // pooling the connect-time search_path is NOT preserved (server connections are
     // shared across clients), so set it per-transaction — mirrors getOrgPg/getOrgPgApp's
-    // connect-time value. GATED behind PAPERCUSP_PGBOUNCER so the direct-connection
-    // default (which already carries the connect-time search_path) is byte-for-byte
-    // unchanged. This makes the HOT path (every agent tool call) pooler-correct;
-    // the peripheral getHarnessPg per-harness-schema readers still need migrating
-    // before PgBouncer is enabled (see the plan's C1-2 note).
-    if (process.env.PAPERCUSP_PGBOUNCER === '1') {
+    // connect-time value. Gated on pgbouncerEnabled() (the SAME predicate as
+    // maybePgbouncer) so the direct-connection default (which already carries the
+    // connect-time search_path) is byte-for-byte unchanged, and the pooled path
+    // always re-applies the search_path in lockstep with the URL rerouting. This
+    // makes the HOT path (every agent tool call) pooler-correct.
+    if (pgbouncerEnabled()) {
       await txSql`SELECT set_config('search_path', 'harness_shared, papercusp_shared, public', true)`;
     }
     if (!opts.bypassRlsForAdmin) {
@@ -136,7 +136,7 @@ export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promis
  *
  *   - Default (direct connection): uses the existing getHarnessPg() pool whose
  *     search_path is set at connect time — byte-identical to today.
- *   - Under PgBouncer (PAPERCUSP_PGBOUNCER=1): wraps in a transaction with a
+ *   - Under PgBouncer (pgbouncerEnabled()): wraps in a transaction with a
  *     per-transaction search_path, because transaction pooling does not preserve
  *     the connect-time one.
  *
@@ -145,6 +145,6 @@ export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promis
  * same transaction.
  */
 export function harnessQuery<T>(slug: string, fn: (q: Sql) => Promise<T>): Promise<T> {
-  if (process.env.PAPERCUSP_PGBOUNCER === '1') return withHarnessSchema(slug, fn);
+  if (pgbouncerEnabled()) return withHarnessSchema(slug, fn);
   return fn(getHarnessPg(slug).sql);
 }

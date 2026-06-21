@@ -174,20 +174,55 @@ export function _resetUrlCacheForTests(): void {
 }
 
 /**
- * When `PAPERCUSP_PGBOUNCER=1`, route an org/harness pool URL through the local
- * PgBouncer (transaction pooling) on `PAPERCUSP_PGBOUNCER_PORT` (default 6432) —
- * C2 of backend-connection-scaling-2026-06-17. This is what lets thousands of
- * concurrent agent tool-calls multiplex onto a bounded set of PG backends.
+ * The SINGLE predicate that decides whether org pools route through PgBouncer
+ * (transaction pooling). EVERY PgBouncer-conditional site must consult this —
+ * `maybePgbouncer` + `resolveOrgPoolMax` here, and `withWorkspace` + `harnessQuery`
+ * in workspace-context.ts — so they can NEVER disagree. A split (URL routes through
+ * the pooler but the per-tx `SET LOCAL search_path` doesn't fire) would silently
+ * break search_path resolution under pooling.
  *
- * GATED default-off, and deliberately so: transaction pooling does NOT preserve a
- * connection's connect-time `search_path`, so enabling this is only correct once
- * C1-2 (per-transaction `SET LOCAL search_path`) lands. Until then the default
- * (direct) path is used. Listeners (sync-sse, *-bus) use `getHarnessAdminUrl()`
- * and are intentionally NOT rerouted — LISTEN is session-bound and must bypass a
- * transaction pooler (C2-2).
+ * P-004 of backend-connection-scaling-2026-06-17 — DEFAULT-ON, not a dark flag
+ * ("finished work must not ship dark"):
+ *   - `PAPERCUSP_PGBOUNCER=1` → force ON  (explicit override)
+ *   - `PAPERCUSP_PGBOUNCER=0` → force OFF (kill-switch — instant, fleet-wide revert)
+ *   - unset → derive: ON for a SERVER-class host (the dev box + any dedicated /
+ *     native-PG production server), OFF for laptop/workstation — which is every
+ *     Tauri DESKTOP (embedded PG: no pooler runs there, so routing to :6432 would
+ *     break it). hostClass is the robust discriminator: a real embedded desktop is
+ *     laptop/workstation-class, never `server`.
+ *
+ * NB: we deliberately gate on `hostClass`, NOT resource-profile `embeddedPg` —
+ * `detectEmbeddedPg()` reports `embeddedPg=true` for ANY host that sets an explicit
+ * DATABASE_URL, so it misfires on the dev box / a dedicated server pointing at
+ * native PG via env (verified live: dev box reports embeddedPg=true). That
+ * detection flaw is tracked separately; hostClass sidesteps it here.
+ */
+export function pgbouncerEnabled(): boolean {
+  const flag = process.env.PAPERCUSP_PGBOUNCER;
+  if (flag === '1') return true;
+  if (flag === '0') return false;
+  try {
+    return getResourceProfile().hostClass === 'server';
+  } catch {
+    return false; // resource-profile unreadable → safe default (direct)
+  }
+}
+
+/**
+ * When {@link pgbouncerEnabled}, route an org pool URL through the local PgBouncer
+ * (transaction pooling) on `PAPERCUSP_PGBOUNCER_PORT` (default 6432) — C2 of
+ * backend-connection-scaling-2026-06-17. This is what lets thousands of concurrent
+ * agent tool-calls multiplex onto a bounded set of PG backends.
+ *
+ * Correct under pooling because the connect-time `search_path` (NOT preserved by
+ * transaction pooling) is re-applied per-transaction by withWorkspace/harnessQuery
+ * (C1-2, landed). Listeners (sync-sse, *-bus) + the watchdog tick lock use
+ * `getHarnessAdminUrl()` and are intentionally NOT rerouted — LISTEN and
+ * session-level advisory locks are session-bound and MUST bypass a transaction
+ * pooler (C2-2 / P-001). Per-harness `getHarnessPg` pools also stay DIRECT (D-005).
  */
 export function maybePgbouncer(url: string): string {
-  if (process.env.PAPERCUSP_PGBOUNCER !== '1') return url;
+  if (!pgbouncerEnabled()) return url;
   const port = Number(process.env.PAPERCUSP_PGBOUNCER_PORT) || 6432;
   try {
     const u = new URL(url);
@@ -271,7 +306,7 @@ function resolveOrgPoolMax(): number {
     maxConnections: profile.database.maxConnections,
     superuserReserved: profile.database.superuserReservedConnections,
     expectedProcesses: Math.max(1, Number(process.env.PAPERCUSP_EXPECTED_OPERATOR_PROCS) || 2),
-    behindPooler: process.env.PAPERCUSP_PGBOUNCER === '1',
+    behindPooler: pgbouncerEnabled(),
   });
 }
 
