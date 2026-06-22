@@ -155,6 +155,11 @@ dependencies:
     # Queen auto-grading of routed Scout ideas (scout-idea-grading-2026-06-12
     # P-010 / D-004): grade ungraded routed drafts 1–5 while triaging.
     - scout:grade-idea
+    # Hybrid bee-scheduler (hybrid-bee-scheduler-work-stealing-2026-06-22): steer
+    # each bee's claim via a versioned claim-spec + read the live-execution view —
+    # wired so queen.md's scheduler guidance is actually callable.
+    - scheduler:running
+    - scheduler:set_claim_spec
     - search:fulltext
     - search:semantic
     - work_items:co_locate
