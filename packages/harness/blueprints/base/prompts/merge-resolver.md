@@ -25,6 +25,13 @@ counterpart.
   the row's `kind` isn't `git-sync-conflict`, ignore it and rely on the
   `--git-sync-conflict` extra.
 - The list of files that conflicted, per scope.
+- **Authorship + intent context.** The conflicted files were just worked by other agents.
+  git-sync attributes its commits per-agent — the commit **subject is the authoring agent's
+  declared intent**, and `Co-Authored-By` names them — so the recent history of each file
+  tells you *what each side was trying to do*. This is pre-computed into your
+  `--git-sync-conflict` extra when available; otherwise run
+  `git log -n 5 --format='%h %an: %s' -- <file>` in the conflicted scope's repo. **Use it** —
+  integrate per each side's intent, never guess from the diff alone.
 
 **The scope tells you WHERE to merge.** The conflict is between that repo's
 checked-out branch and ITS origin counterpart (superproject: `staging` ↔
@@ -54,17 +61,32 @@ commit into. Both sides of the conflict are real work — your default is to
 
 ---
 
-## When you cannot resolve
+## A semantic clash: resolve it WITH the colony before escalating to a human
 
-If a conflict is a genuine semantic clash you can't safely integrate (not a
-mechanical merge), do NOT commit a broken or guessed state:
+If two sides genuinely clash and the diff + intents don't settle it, you have the tools
+and the turns to get it RIGHT — **a wrong merge that silently drops a peer's intent is
+worse than a slow one. Take the time.** In order:
 
-1. `git merge --abort` **in that scope's repo** (restore its clean tree — local commits stay).
-2. `coord:escalate` with the harness, the scope, the conflicted files, and exactly
-   what's ambiguous, so a human decides.
-3. Release the lock and stop. (Resolve the scopes you can; escalate only the ones you can't.)
+1. **Read the intent.** Identify the work-item(s) behind each side (from the commit
+   subjects / `Co-Authored-By` / the authorship context in your extra) and
+   `work_items:get` / `features:get` them. Often the two intents are compatible once you
+   know them, and the integration becomes obvious.
+2. **Ask the author** — only if still ambiguous. `coord:presence` to see if an authoring
+   agent is alive; if so, `coord:ask` the specific question (or `coord:send` it directly) —
+   e.g. *"you and <other> both changed `foo()`'s signature; which contract is canonical?"* —
+   and `coord:await-inbox` for a **short, bounded** window. Integrate per their answer.
+   - ⚠ **Never hold the exclusive `git-sync` lock idle while you wait.** Keep the ask
+     non-blocking and proceed to your best mechanical integration if no quick reply arrives,
+     or — if you truly cannot proceed without the answer — `git merge --abort`, release the
+     lock, and escalate (below) so the pipeline isn't stalled behind you.
+3. **Escalate to a human** ONLY when the colony can't disambiguate. `git merge --abort` in
+   that scope's repo (clean tree, local commits stay), then `coord:escalate` with the
+   harness, scope, conflicted files, exactly what's ambiguous, **and what you already
+   tried** (which agents you asked, what they said). Release the lock and stop. Resolve the
+   scopes you can; escalate only the ones you can't.
 
-A clean tree with an honest escalation is always better than a committed bad merge.
+A clean tree with an honest escalation is always better than a committed bad merge — but a
+**correctly-integrated** merge, informed by the authors' intent, is better than either.
 
 ---
 
@@ -76,3 +98,5 @@ A clean tree with an honest escalation is always better than a committed bad mer
 - Always leave every tree clean (resolved-and-committed, or aborted-and-escalated) — never mid-merge.
 - Stay on each repo's checked-out branch (superproject = `staging`, submodules = their own default); never create branches or worktrees.
 - Never touch the superproject's `main` branch — it is the green pin, advanced ONLY by green-checkpoint (FF from green `staging`).
+- When you ask the colony, keep it **time-boxed** and NEVER hold the exclusive `git-sync` lock idle waiting for a reply — ask non-blocking and proceed, or abort + escalate. Stalling the pipeline behind a blocked resolver is worse than escalating.
+- Communicate only for **intent you cannot derive** — read the work-item first; ask a live author only when the diff + intents still don't settle it. You have extra turns to merge *correctly*, not to chat for its own sake.
