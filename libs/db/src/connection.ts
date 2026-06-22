@@ -32,7 +32,18 @@ import { boundedOrgPoolMax } from '@papercusp/resource-profile';
 // `createRequire` gives us a synchronous loader for the lazy node-builtin
 // reads below (kept lazy so the module can be imported without touching
 // the filesystem in a no-fs environment).
-const nodeRequire = createRequire(import.meta.url);
+//
+// LAZY CREATION (not just lazy USE): calling `createRequire(import.meta.url)` at
+// MODULE SCOPE crashes any non-node consumer of this module. The operator SPA
+// pulls connection.ts in via the route tree and externalizes `node:module` for the
+// browser (→ `createRequire` is undefined), so an EAGER top-level call threw at
+// module eval — "createRequire is not a function" — and blanked the ENTIRE desktop
+// app on load. Defer the createRequire to first use so importing this module is
+// browser-safe; the node-builtin reads below only ever run server-side. (Mirrors
+// the same lazy pattern in resource-profile/src/index.ts.)
+let _nodeRequire: ReturnType<typeof createRequire> | undefined;
+const nodeRequire = (id: string): unknown =>
+  (_nodeRequire ??= createRequire(import.meta.url))(id);
 import * as generatedSchema from './schema/generated';
 import * as generatedRelations from './schema/generated-relations';
 
