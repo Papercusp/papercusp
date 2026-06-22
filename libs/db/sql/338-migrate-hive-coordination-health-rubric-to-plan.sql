@@ -24,7 +24,8 @@
 -- over the table row, mergeRubricLegs). ADDITIVE + idempotent; the v1 table stays as the
 -- fallback leg until the Stage-2 DROP migration.
 --
--- template_data is BUILT FROM the v1 row (no hand-copy of the 13 criteria): the
+-- template_data is BUILT FROM the v1 row (no hand-copy of the criteria — 13 at seed,
+-- plus the 14th `scheduler-usage` criterion added to the 327 seed by mig 371): the
 -- criteria jsonb is field-for-field rubricCriterionSchema (verified), and
 -- jsonb_strip_nulls drops a null methodRef/description so the .strict()
 -- rubricTemplateDataSchema safeParse in planRowToRubric passes. The plan-level title
@@ -48,7 +49,7 @@ SELECT
   COALESCE(r.ratified_by, r.created_by, 'aviynw@gmail.com'),
   '[]'::jsonb,
   '[]'::jsonb,
-  'Rubric-template plan (template:rubric) migrated from the v1 rubrics table (P-007). The 13-criteria hive-coordination-health scorecard the Overwatch grades every turn; structured fields live in template_data, queried via rubrics:list/get/search. Long-form per-criterion METHOD: the agent-insights runbook named by template_data.methodRef.',
+  'Rubric-template plan (template:rubric) migrated from the v1 rubrics table (P-007). The hive-coordination-health scorecard the Overwatch grades every turn (14 criteria — the founding 13 plus scheduler-usage, mig 371); structured fields live in template_data, queried via rubrics:list/get/search. Long-form per-criterion METHOD: the agent-insights runbook named by template_data.methodRef.',
   'rubric',
   jsonb_strip_nulls(jsonb_build_object(
     'characteristic', r.characteristic,

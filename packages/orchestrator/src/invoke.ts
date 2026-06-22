@@ -2945,6 +2945,8 @@ export async function invoke(
             // ('coord-wake' | 'cron' | 'autoloop' | 'user') so coordination-driven
             // spend is summable. Undefined → NULL ('unattributed') for an unstamped path.
             turnTrigger: process.env.PAPERCUSP_TURN_TRIGGER,
+            // Provider account attribution for account-routed Claude/Codex spawns.
+            accountId: process.env.PAPERCUSP_ACCOUNT_ID,
           },
         );
       }

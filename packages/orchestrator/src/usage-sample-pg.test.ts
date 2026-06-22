@@ -72,14 +72,14 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
       },
     );
     const v = values();
-    // INSERT tail order is …session_id, plan_id, tool_name, turn_trigger (B-TOK-2 + B-TOK-4).
-    expect(v[v.length - 4]).toBe('sess-abc'); // session_id
+    // INSERT tail order is …session_id, plan_id, tool_name, turn_trigger, account_id.
+    expect(v[v.length - 5]).toBe('sess-abc'); // session_id
     expect(v).toContain('opspawn-1'); // run_id still flows
     expect(v).toContain('bee'); // role still flows
     expect(v).toContain(5000); // cache_read_tokens (the carry signal)
   });
 
-  it('persists plan_id + tool_name + turn_trigger (B-TOK-2/B-TOK-4 attribution) as the last three values', async () => {
+  it('persists plan_id + tool_name + turn_trigger + account_id attribution as the tail values', async () => {
     const { pg, values } = capturingPg();
     await recordUsageSamplePg(
       { pg, workspaceId: 'ws-1' },
@@ -93,26 +93,29 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
         planId: 'my-plan-2026-06-20',
         toolName: 'accounts:set-egress',
         turnTrigger: 'coord-wake',
+        accountId: 'acct-claude-a',
       },
     );
     const v = values();
-    // …session_id, plan_id, tool_name, turn_trigger — the last four interpolated values.
-    expect(v[v.length - 4]).toBe('sess-xyz'); // session_id
-    expect(v[v.length - 3]).toBe('my-plan-2026-06-20'); // plan_id
-    expect(v[v.length - 2]).toBe('accounts:set-egress'); // tool_name
-    expect(v[v.length - 1]).toBe('coord-wake'); // turn_trigger (B-TOK-4)
+    // …session_id, plan_id, tool_name, turn_trigger, account_id — the last five values.
+    expect(v[v.length - 5]).toBe('sess-xyz'); // session_id
+    expect(v[v.length - 4]).toBe('my-plan-2026-06-20'); // plan_id
+    expect(v[v.length - 3]).toBe('accounts:set-egress'); // tool_name
+    expect(v[v.length - 2]).toBe('coord-wake'); // turn_trigger (B-TOK-4)
+    expect(v[v.length - 1]).toBe('acct-claude-a'); // account_id (P-015)
   });
 
-  it('null-safes plan_id + tool_name + turn_trigger when a run supplies none', async () => {
+  it('null-safes plan_id + tool_name + turn_trigger + account_id when a run supplies none', async () => {
     const { pg, values } = capturingPg();
     await recordUsageSamplePg(
       { pg, workspaceId: 'ws-1' },
       { backend: 'claude-code', model: 'm', usage: { inputTokens: 1 }, runId: 'r', role: 'bee', sessionId: 's' },
     );
     const v = values();
-    expect(v[v.length - 3]).toBeNull(); // plan_id → NULL
-    expect(v[v.length - 2]).toBeNull(); // tool_name → NULL
-    expect(v[v.length - 1]).toBeNull(); // turn_trigger → NULL (B-TOK-4)
+    expect(v[v.length - 4]).toBeNull(); // plan_id → NULL
+    expect(v[v.length - 3]).toBeNull(); // tool_name → NULL
+    expect(v[v.length - 2]).toBeNull(); // turn_trigger → NULL (B-TOK-4)
+    expect(v[v.length - 1]).toBeNull(); // account_id → NULL
   });
 
   it('null-safes session_id for backends with no native session id (omp/codex)', async () => {
@@ -122,7 +125,7 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
       { backend: 'codex', model: 'gpt-5', usage: { inputTokens: 50 }, runId: 'r', role: 'bee' },
     );
     const v = values();
-    expect(v[v.length - 4]).toBeNull(); // session_id undefined -> NULL, never a fabricated value
+    expect(v[v.length - 5]).toBeNull(); // session_id undefined -> NULL, never a fabricated value
   });
 
   it('no-ops (no INSERT) on an empty usage so an unparseable run never fabricates a row', async () => {

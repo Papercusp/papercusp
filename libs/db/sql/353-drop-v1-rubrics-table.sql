@@ -7,7 +7,8 @@
 -- them via withPlanLock. The founding hive-coordination-health rubric was migrated from
 -- this table to a plan by migration 338, and the code re-point (drop listTableRubrics +
 -- the table read-leg + the mergeRubricLegs union) is DEPLOYED to :3070 and live-verified
--- (rubrics:get resolves the 13-criteria rubric from its plan). So nothing reads or writes
+-- (rubrics:get resolves the rubric from its plan; mig 371 later adds a 14th criterion to
+-- that plan). So nothing reads or writes
 -- harness_shared.rubrics anymore — drop it.
 --
 -- STAGED EXPAND/CONTRACT (D-007/D-008): this irreversible DROP is the *contract* step,

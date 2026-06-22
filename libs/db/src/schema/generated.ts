@@ -1523,7 +1523,9 @@ export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage
 	planId: text("plan_id"),
 	toolName: text("tool_name"),
 	turnTrigger: text("turn_trigger"),
+	accountId: text("account_id"),
 }, (table) => [
+	index("agent_usage_samples_ws_account_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.accountId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(account_id IS NOT NULL)`),
 	index("agent_usage_samples_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	index("agent_usage_samples_ws_bucket_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.bucketKey.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
 	index("agent_usage_samples_ws_plan_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.planId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(plan_id IS NOT NULL)`),

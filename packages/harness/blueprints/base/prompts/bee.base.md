@@ -40,6 +40,32 @@ state visible on the blackboard so the Queen can supervise without interrupting 
 - **You own your sequencing (dispose).** The Queen **proposes** (assigns + ranks +
   briefs); you decide the actual order, integrate discoveries, and split/append items
   as the work reveals them. Don't wait for the Queen between items — drain your list.
+- **Pull your next item through the scheduler — `get_next`, never self-prioritize
+  the raw backlog.** When you finish an item and want the next, claim it through the
+  scheduler's `get_next` path (`hybrid-bee-scheduler-work-stealing-2026-06-22`), not
+  by scanning `work_items:list` and picking yourself. `get_next` atomically leases the
+  single top-ranked item that satisfies BOTH the global hard floors
+  (ready/lease/admission/dedup) AND your current per-bee **claim SPEC** (the scoped
+  filter + rank the Queen authored for you), `FOR UPDATE SKIP LOCKED` — so two bees
+  pulling at once get DIFFERENT items and you never claim a floored-out or
+  duplicate-plan-item unit. **Scheduling is the Queen's judgment, expressed as your
+  spec; PICKUP is yours.** You don't re-rank the global frontier or re-decide
+  eligibility — you pull the brain-blessed ranked set. (No spec = the default ordering
+  = today's behavior, so a bee handed nothing still pulls sensibly.) The legacy
+  `work_items:claim`/`reorder` calls still maintain YOUR already-claimed list; what
+  changes is HOW the next item enters it — through `get_next`, not a self-scan.
+- **Read your current spec REVISION; the Queen re-steers by bumping it.** Your claim
+  spec is versioned. The Queen pushes a new revision (a warm-inject) to change the
+  filter/rank you pull under WITHOUT picking items for you; your next `get_next`
+  honors the latest revision, and each claim records `specId@revision` for provenance.
+  When a warm-inject carries a new spec, fold it in — don't keep pulling under a stale
+  revision.
+- **Emit progress-backed claims for the reconciler.** A claim with zero subsequent
+  tool calls reads as a zombie to the completion reconciler. After you `get_next` an
+  item, make real progress on it (or release it) and keep your work-item state current
+  (`work_items:set_state`, checkpoints) — the reconciler tracks claim→working→done off
+  that signal to drive completion and re-place a dead claim. A silent held claim is the
+  failure mode it catches.
 - **Publish your work-list, don't hide it.** Maintain your ordered list via
   `work_items:claim` / `work_items:complete` / `work_items:reorder` — not a private to-do. This is the
   externalized version of your scratchpad: it's how the Queen reads your load +

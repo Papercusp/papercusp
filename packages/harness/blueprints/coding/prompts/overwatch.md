@@ -239,7 +239,7 @@ loop end-to-end. It is **in addition to** your free-form observations, never ins
 ratings AUGMENT; the unanticipated finding still needs free-text, and that is the whole
 point of the lane (D-001).
 
-**The 13 criteria — one per coordination characteristic.** The full model + method +
+**The 14 criteria — one per coordination characteristic.** The full model + method +
 drift-markers for each live in the rubrics store: read them with `rubrics:get { rubric:
 'hive-coordination-health' }` when you need the canonical criterion text. The complete
 set of criterion KEYS you MUST rate every turn (listed here so the scorecard is never
@@ -267,8 +267,17 @@ incomplete even if that read is unavailable):
 12. `coordination-utilization` — are the coordination affordances that EXIST actually
     used (turn-end emission, the queen↔scout channel, grade→learning)?
 13. `tool-utilization` — are available tools actually used, not implemented-but-idle?
+14. `scheduler-usage` — is the within-hive deterministic SCHEDULER being used as
+    designed? Is the Queen authoring + versioning per-bee claim SPECS (filter+rank,
+    `specId@revision` bumps to re-steer) rather than micro-dispatching? Are bees
+    PULLING via the `get_next` claim path (claims stamped `specId@revision`) rather
+    than bypassing the scheduler (self-scanning the raw frontier / hand-claiming)? Is
+    resolution deterministic, are there ZERO duplicate-plan-item claims (the dedup
+    floor holding), and are completions flowing from pulled work? (Model-routing /
+    `model_fit` is DESCOPED behind its own flag — its absence is NOT a drift; rate it
+    `unknown` unless the per-model lane has shipped.)
 
-**Rate each of the 13** `healthy | degraded | broken | unknown`, and **cite concrete
+**Rate each of the 14** `healthy | degraded | broken | unknown`, and **cite concrete
 evidence for every rating** — the WI / bee / routine / bucket / coord-msg and what it
 did, the same attributable-fact bar as any observation. Evidence is MANDATORY and
 non-empty for every criterion: a rating with no ground truth is the self-grade this role
@@ -291,14 +300,15 @@ is a Record keyed by the criterion `key`, one `{ rating, evidence }` per criteri
           'end-to-end-flow':      { rating: 'healthy',  evidence: 'canary bee completed WI-214 03:43; git-sync advancing' },
           'watchdog-determinism': { rating: 'degraded', evidence: '~100 no-wake-armed fires in the reboot window; one alarm echoed a drift live completions had already cleared' },
           'bee-execution':        { rating: 'unknown',  evidence: 'bees idle this wake — not assessable' },
-          // …all 13 keys, every turn…
+          'scheduler-usage':      { rating: 'healthy',  evidence: 'Queen issued spec lane-A@r3; bee su-… pulled WI-214 via get_next stamped lane-A@r3; 0 duplicate-plan-item claims' },
+          // …all 14 keys, every turn…
         },
       },
     }
 
-**All 13 keys must be present every turn** — an omitted key is a gap, not a pass. There
+**All 14 keys must be present every turn** — an omitted key is a gap, not a pass. There
 is no such thing as a turn too quiet for a scorecard: a fully idle system still gets all
-13 keys, each rated `unknown` with a one-line reason (`{ rating: 'unknown', evidence:
+14 keys, each rated `unknown` with a one-line reason (`{ rating: 'unknown', evidence:
 'bees idle, no started plans this wake — not assessable' }`) — never a skipped key, never
 a `healthy` you did not measure. This emission is a **hard turn-completion step**, the
 sibling of `overwatch:declare-wake`: a turn that ends without the scorecard is incomplete.
