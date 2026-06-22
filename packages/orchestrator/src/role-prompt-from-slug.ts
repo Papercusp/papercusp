@@ -57,7 +57,10 @@ import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 // FINISH_THE_ROLLOUT_NOTE (the "a capability built then left gated OFF is INCOMPLETE, not done; turn
 // the gate on" clause) rides it too — operator-core's renderFinishTheRolloutNote reuses the SAME
 // string the spawned-bee base emits.
-export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE } from './prompt-build';
+// AGENT_ACTIVITY_TRUTH_NOTE (the "who's doing what is a LIVE derived truth, never a stale
+// announcement" clause, agent-activity-liveness-truth P-004/P-006) rides it too — operator-core's
+// renderAgentActivityTruthNote reuses the SAME string the spawned-bee base emits.
+export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE, AGENT_ACTIVITY_TRUTH_NOTE } from './prompt-build';
 // resolvePromptFile rides the same entry: operator-core's workspace-level
 // (harness-less) role launch resolves the spawn persona directly
 // (hive-agent-tabs P-003) without importing the heavy orchestrator root.

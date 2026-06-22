@@ -774,13 +774,15 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     // No extraneous dividers. Base shared-section dividers: deferred-tools recipe,
     // memory-discipline, friction-tripwire, observation-rubric-nudge, yield-policy,
     // account-routing-note, concurrency-first-note, deploy-pipeline-note, testing-standard,
-    // reuse-first-nudge, code-run-note, finish-the-rollout-note.
+    // reuse-first-nudge, code-run-note, finish-the-rollout-note, agent-activity-truth-note.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 13, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 14, `unexpected divider count: ${dividerCount}`);
     // code-run nudge (B-CX-3) rides the shared bee base.
     assert.match(out, /Collapse a multi-step tool flow into ONE/);
     // finish-the-rollout note (flags-default-on-reach-2026-06-21) rides the shared bee base.
     assert.match(out, /a capability built then left gated OFF is INCOMPLETE/);
+    // agent-activity-truth note (agent-activity-liveness-truth-2026-06-21) rides the shared bee base.
+    assert.match(out, /is a LIVE derived truth/);
   } finally {
     fx.cleanup();
   }

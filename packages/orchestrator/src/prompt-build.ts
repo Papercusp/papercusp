@@ -753,6 +753,43 @@ export const FINISH_THE_ROLLOUT_NOTE = [
   'unblocks the flip — never quietly leave it off.',
 ].join('\n');
 
+/**
+ * AGENT_ACTIVITY_TRUTH_NOTE — the "who's doing what" is a DERIVED LIVE truth, never
+ * a stale announcement (agent-activity-liveness-truth-2026-06-21 P-004/P-006,
+ * D-002). The behavioral half of the durable fix: even with the truthful reconciled
+ * read in place, an agent must actually READ it instead of trusting a coord
+ * broadcast. The incident — a gate-fix bee DIED but its "spawned for X" broadcast
+ * outlived it, so the Queen + idle agents + the coordinator all read it as "being
+ * worked" for ~1h and the reds sat owned+unworked, blocking every deploy.
+ *
+ * Sourced once here (the CONCURRENCY_FIRST_NOTE / DEPLOY_PIPELINE_NOTE precedent):
+ * injected into the spawned-bee base (buildPromptParts below) + the operator-
+ * launched-role base (operator-core renderAgentActivityTruthNote) so they can't desync.
+ */
+export const AGENT_ACTIVITY_TRUTH_NOTE = [
+  "## \"Who's doing what\" is a LIVE derived truth — never trust a stale announcement",
+  '',
+  'A claim is a RESERVATION and a presence heartbeat proves the PROCESS is alive — NEITHER proves the',
+  'WORK is advancing. And a coord broadcast ("bee spawned for X", "I\'m on the gate reds") has NO expiry:',
+  'it outlives the work, the claim, even the agent. So NEVER conclude "someone\'s on it" from a message',
+  'in your inbox or a thing you remember reading. That exact mistake cost ~1h of fleet-wide deploy block:',
+  'a gate-fix bee DIED seconds after spawn, but every reader (the Queen, idle agents, the coordinator)',
+  'kept reading its surviving "spawned for the reds" broadcast as "actively worked" — so the reds sat',
+  'owned-but-unworked and nobody picked them up.',
+  '',
+  '- To answer "is X being worked / who\'s on plan P / what is agent Y doing", READ THE LIVE RECONCILED',
+  '  STATE: `fleet:assignments` (claim + holder-liveness + PROGRESS, joined). It surfaces `orphaned`',
+  '  (live lease, DEAD holder) and `stalled` (live holder, NO item-scoped progress in the window) — BOTH',
+  '  mean NOT covered and PICKABLE. Do not re-derive coverage from `coord:inbox`.',
+  '- "Actively worked" requires alive AND progressing. A claimed item whose holder is dead or stalled is',
+  '  yours to take — the reconciler frees it, and you should treat it as free even before it does.',
+  '- Make YOUR work legible the same way: keep your claim + progress current (set work-item state /',
+  "  checkpoint as you go) so peers reading the live signal see the truth, and don't rely on a one-time",
+  '  broadcast to keep a lane "owned".',
+  '',
+  'Runbook (the incident + the resolver): /internal/docs/agent-insights/agent-activity-truth.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -968,6 +1005,15 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     base, the operator-launched-role base, the su playbooks, and CLAUDE.md can't desync.
   pre.push('\n---');
   pre.push(FINISH_THE_ROLLOUT_NOTE);
+
+  // 3h. Agent-activity-truth note (agent-activity-liveness-truth-2026-06-21 P-004/P-006) — the SHARED
+  //     bee base every role inherits. "Who's doing what" is a LIVE derived truth (fleet:assignments:
+  //     claim + holder-liveness + progress) — NEVER a stale coord broadcast that outlives the work.
+  //     Kills the incident class: a dead/stalled holder read as "covered" so nobody picks up the work.
+  //     Universal (no role skip). Sourced from the one AGENT_ACTIVITY_TRUTH_NOTE constant so the bee
+  //     base + the operator-launched-role base can't desync.
+  pre.push('\n---');
+  pre.push(AGENT_ACTIVITY_TRUTH_NOTE);
 
   // Hive vocabulary (hive-blueprint-generalization P-016): when the hive blueprint
   // renames nouns, tell the agent to read the shared personas' generic terms as this
