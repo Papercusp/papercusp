@@ -18,6 +18,10 @@ changed and rewriting the prose — is your job.
   - `reason` — why the sweep flagged it (which subject code changed).
   - `source` — `generated` (regenerate from code) · `manual` (re-verify + correct) ·
     `augmented` (correct, but PRESERVE the human overlay).
+  - `workItems` — the work-item id(s) that recently changed the anchored code (derived for you
+    from the commit attribution — present when the change was attributed). **Use them:**
+    `work_items:get` each to learn WHY the code changed (the intent + decisions), so you fix the
+    doc to the *new design* — don't reverse-engineer it from the diff alone.
 
 ---
 
