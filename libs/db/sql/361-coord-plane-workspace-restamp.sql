@@ -74,6 +74,18 @@
 
 DO $coord_restamp$
 DECLARE
+  -- the UPDATE-firing triggers on coord_event_log to quiet for the bulk move:
+  --   capture_coord_event_upd_trg    AFTER UPDATE  — CDC / substrate_outbox capture
+  --   emit_change_notify_trg         AFTER UPDATE  — sync change-notify
+  --   stamp_local_federated_write_trg BEFORE UPDATE — federation HLC/origin re-stamp
+  -- Toggled via an existence guard so the migration is robust whether or not a
+  -- given DB has them (the live operator DB does; a fresh/variant DB may not).
+  upd_trigs text[] := ARRAY[
+    'capture_coord_event_upd_trg',
+    'emit_change_notify_trg',
+    'stamp_local_federated_write_trg'
+  ];
+  trg text;
   deleted_wm_dupes  bigint;
   moved_events      bigint;
   moved_wm          bigint;
@@ -83,10 +95,19 @@ DECLARE
   leftover_esc      bigint;
 BEGIN
   -- 0. quiet the UPDATE-firing CDC / change-notify / federation-restamp triggers
-  --    for this bulk workspace-id correction (rolled back with the txn on failure).
-  EXECUTE 'ALTER TABLE harness_shared.coord_event_log DISABLE TRIGGER capture_coord_event_upd_trg';
-  EXECUTE 'ALTER TABLE harness_shared.coord_event_log DISABLE TRIGGER emit_change_notify_trg';
-  EXECUTE 'ALTER TABLE harness_shared.coord_event_log DISABLE TRIGGER stamp_local_federated_write_trg';
+  --    for this bulk workspace-id correction (rolled back with the txn on failure;
+  --    only those actually present are touched).
+  FOREACH trg IN ARRAY upd_trigs LOOP
+    IF EXISTS (
+      SELECT 1 FROM pg_trigger t
+        JOIN pg_class c ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'harness_shared' AND c.relname = 'coord_event_log'
+         AND t.tgname = trg AND NOT t.tgisinternal
+    ) THEN
+      EXECUTE format('ALTER TABLE harness_shared.coord_event_log DISABLE TRIGGER %I', trg);
+    END IF;
+  END LOOP;
 
   -- 1. watermark collision: drop the stale papercusp dupe for owners who also have
   --    a live 'default' read-position (the 'default' one wins — it is current).
@@ -116,9 +137,17 @@ BEGIN
   END IF;
 
   -- 4. restore the triggers (success path; a rollback restores them anyway).
-  EXECUTE 'ALTER TABLE harness_shared.coord_event_log ENABLE TRIGGER capture_coord_event_upd_trg';
-  EXECUTE 'ALTER TABLE harness_shared.coord_event_log ENABLE TRIGGER emit_change_notify_trg';
-  EXECUTE 'ALTER TABLE harness_shared.coord_event_log ENABLE TRIGGER stamp_local_federated_write_trg';
+  FOREACH trg IN ARRAY upd_trigs LOOP
+    IF EXISTS (
+      SELECT 1 FROM pg_trigger t
+        JOIN pg_class c ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'harness_shared' AND c.relname = 'coord_event_log'
+         AND t.tgname = trg AND NOT t.tgisinternal
+    ) THEN
+      EXECUTE format('ALTER TABLE harness_shared.coord_event_log ENABLE TRIGGER %I', trg);
+    END IF;
+  END LOOP;
 
   RAISE NOTICE 'coord-restamp 361: moved events=%, watermarks=%, escalations=% (dropped % stale papercusp watermark dupe(s))',
     moved_events, moved_wm, moved_esc, deleted_wm_dupes;
