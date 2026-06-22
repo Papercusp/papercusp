@@ -74,3 +74,23 @@ UPDATE harness_shared.harness_plans
    AND plan_slug    = 'hive-coordination-health'
    AND template     = 'rubric'
    AND (template_data->'criteria')::text LIKE '%all 13 criteria rated%';
+
+-- The plan's template_data.description (copied from the v1 row by mig 338, before the
+-- 327 seed was bumped to "14-criteria") still opens "The 13-criteria scorecard …".
+-- Bump the leading count so the prose metadata matches the 14 live criteria. Idempotent.
+UPDATE harness_shared.harness_plans
+   SET template_data = jsonb_set(
+         template_data,
+         '{description}',
+         to_jsonb(replace(
+           (template_data->>'description'),
+           'The 13-criteria scorecard',
+           'The 14-criteria scorecard'
+         ))
+       ),
+       updated_at = now()
+ WHERE workspace_id = 'default'
+   AND harness_slug = 'papercusp'
+   AND plan_slug    = 'hive-coordination-health'
+   AND template     = 'rubric'
+   AND (template_data->>'description') LIKE 'The 13-criteria scorecard%';
