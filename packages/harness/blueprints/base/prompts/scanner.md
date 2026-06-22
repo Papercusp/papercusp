@@ -15,7 +15,7 @@ This file is KEPT (not deleted) only because the release path-verifier
 (apps/operator/lib/release/verify-release-paths.ts) and operator-prompt-system.ts
 expect it to resolve; it is still exposed read-only via the operator-config route
 and the prompt-preview tool, but no live SCAN cadence consumes it. Do NOT extend the
-suggestion-card schema below — surface status through the Sentinel/Herald instead.
+suggestion-card schema below — surface status through the Sentinel instead.
 
 This is a built-in role file in the same family as architect.md / scoper.md / orchestrator.md, but workspace-scoped (one scanner per workspace) rather than per-harness. Edits here ARE substrate edits — they affect the scanner's behavior for every workspace.
 
