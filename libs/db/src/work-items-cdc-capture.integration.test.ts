@@ -110,6 +110,22 @@ describe('work_items CDC capture (migration 375)', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('an operator-scoped issue RIDES the workspace single Hive home (ported mig-197 derivation)', async () => {
+    // The operator-scope→Hive-home resolution I earlier worried might be degraded — 375
+    // ports it: with exactly one hives row for the workspace, the operator issue federates
+    // under that home_slug (table_name=engineer_issues).
+    await sql`INSERT INTO harness_shared.hives (workspace_id, home_slug, public_key, keychain_id, created_at)
+      VALUES ('ws1', 'hive-home', ${Buffer.from([1, 2, 3])}, 'kc-ws1', 0)`;
+    await sql`INSERT INTO harness_shared.engineer_issues
+      (workspace_id, issue_id, scope, title, body, state, kind)
+      VALUES ('ws1', 'EI-13', 'operator', 'op task', '', 'open', 'change')`;
+    const rows = await sql<{ table_name: string; harness_slug: string }[]>`
+      SELECT table_name, harness_slug FROM harness_shared.substrate_outbox WHERE key = 'EI-13'`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].table_name).toBe('engineer_issues');
+    expect(rows[0].harness_slug).toBe('hive-home');
+  });
+
   it('a remote-origin write is NOT captured (echo-loop guard)', async () => {
     await sql`INSERT INTO harness_shared.work_items
       (harness_slug, feature_id, workspace_id, title, status, item_kind, origin)
