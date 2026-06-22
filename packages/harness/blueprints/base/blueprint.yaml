@@ -18,6 +18,19 @@ knobs:
   logRetention: 500
   branchIsolation: { enabled: false }
   worktrees: { enabled: false }
+  # Doc-integrity primitive (owner 2026-06-22) — the TWIN of git-sync: every harness
+  # that `extends: base` inherits doc-drift tracking automatically, so a NEW hive
+  # (e.g. from the `coding` blueprint) is doc-honest FROM BIRTH with zero per-hive
+  # setup. `track: true` (default) means: at harness:create, SEED the repo's existing
+  # docs as tracked records, and let the post-sync freshness sweep self-bootstrap a
+  # newly-touched doc. `track: false` opts a harness out. WHERE the docs live is the
+  # existing docsRoot resolution — `<repo>/docs`, or a `.papercusp/docs.json` override
+  # (e.g. Papercusp points it at apps/operator-docs) — NOT re-declared here. Both the
+  # seed and the sweep reuse anchorManualDoc + resolveHarnessDocPaths. Plans:
+  # deterministic-commit-workitem-attribution-2026-06-22 +
+  # docs-corpus-audit-and-engine-improvements-2026-06-20 (WS2).
+  docs:
+    track: true
 
 # Declared UI-introspectable tunables (psu-isolation-and-blueprint-aware-harness-ui
 # P-006 / D-003 / D-007). The UNIVERSAL params every harness shows, KEYED BY DOT-PATH
