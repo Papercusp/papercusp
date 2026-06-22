@@ -26,21 +26,21 @@ CREATE TABLE IF NOT EXISTS harness_shared.edit_attribution_ledger (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     workspace_id    text NOT NULL,
     harness_slug    text NOT NULL,
-    -- 'superproject' or a submodule path (matches git-sync's RepoConflict.scope).
     repo            text NOT NULL,
-    -- repo-relative path that was edited.
     file            text NOT NULL,
-    -- the lock holder: owner id (grouping key), session, and github/account contributor.
     agent_id        text NOT NULL,
     session_id      text,
     contributor     text,
-    -- the holder's claimed lane at edit time (the join that makes this work-item-aware).
     work_item_id    text,
     plan_slug       text,
-    -- the holder's declared intent (becomes the commit subject downstream).
     intent          text,
     ts              timestamptz NOT NULL DEFAULT now()
 );
+-- NOTE: this is the AS-APPLIED schema. Migration 364 reshapes it to the repo_root-keyed
+-- form the code uses (harness_slug not 1:1 with a repo; the lock is repo-root-keyed,
+-- D-015). 363 applied before that was understood; editing it here is inert on the live
+-- DB (the runner skips applied files by name — see the editing-applied-migration-is-inert
+-- runbook), so the reshape lives in 364 and this file stays faithful to what 363 applied.
 
 -- per-file lookup + the git-sync window scan (rows since the last commit for a repo).
 CREATE INDEX IF NOT EXISTS edit_attribution_ledger_repo_file_idx
