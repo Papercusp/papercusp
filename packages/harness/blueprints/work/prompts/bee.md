@@ -16,3 +16,34 @@ coord, carry-note checkpoints, reflect-then-idle. This section is what's specifi
   the judge's acceptance criteria for this kind of work. If a task DOES turn out to
   need code, spin up a `kind:'harness'` coding subharness for that part rather than
   treating this hive as a coding hive.
+
+## Terminal step — always required: call `work_items:complete`
+
+A coord message or artifact attachment does **not** close the work-item. The Queen
+only learns work is done when you call `work_items:complete`. This is **not** a
+"code-shipping ritual" — it is the mechanism by which the system marks an item
+done and stops the Queen from re-placing it. Without this call, the work-item stays
+`todo` and the Queen will place it again on the next wake.
+
+When your deliverable is produced, attached, and meets the acceptance criteria, call:
+
+```
+work_items:complete {
+  id: "<the work-item id>",
+  harness: "<the harness slug>",
+  completion: {
+    summary: "<one-paragraph summary of what you produced>",
+    status: "done",
+    whatLanded: ["<artifact or deliverable description>"]
+  }
+}
+```
+
+Rules:
+- Call this **once**, at the very end, after the artifact is attached and verified.
+- **Never end your turn believing work is done** without having called this.
+- If the judge rejects the deliverable, revise the artifact; then either call
+  `work_items:complete` again with the updated completion, or use
+  `work_items:set_state { id, state: 'todo' }` to re-queue for another attempt.
+- A coord broadcast is a notification, not a completion — always pair it with
+  `work_items:complete`.
