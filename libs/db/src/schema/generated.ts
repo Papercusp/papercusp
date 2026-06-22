@@ -1903,6 +1903,26 @@ export const hiveWatchdogFiresInHarnessShared = harnessShared.table("hive_watchd
 	pgPolicy("hive_watchdog_fires_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const workItemDepsInHarnessShared = harnessShared.table("work_item_deps", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.work_item_deps_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	blockedKind: text("blocked_kind").notNull(),
+	blockedRef: text("blocked_ref").notNull(),
+	blockerKind: text("blocker_kind").notNull(),
+	blockerRef: text("blocker_ref").notNull(),
+	depType: text("dep_type").default('blocks').notNull(),
+	createdBy: text("created_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("work_item_deps_blocked_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.blockedKind.asc().nullsLast().op("text_ops"), table.blockedRef.asc().nullsLast().op("text_ops")),
+	index("work_item_deps_blocker_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.blockerKind.asc().nullsLast().op("text_ops"), table.blockerRef.asc().nullsLast().op("text_ops")),
+	uniqueIndex("work_item_deps_edge_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.blockedKind.asc().nullsLast().op("text_ops"), table.blockedRef.asc().nullsLast().op("text_ops"), table.blockerKind.asc().nullsLast().op("text_ops"), table.blockerRef.asc().nullsLast().op("text_ops"), table.depType.asc().nullsLast().op("text_ops")),
+	check("work_item_deps_endpoints_nonempty", sql`(blocked_kind <> ''::text) AND (blocked_ref <> ''::text) AND (blocker_kind <> ''::text) AND (blocker_ref <> ''::text)`),
+	check("work_item_deps_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("work_item_deps_no_self", sql`NOT ((blocked_kind = blocker_kind) AND (blocked_ref = blocker_ref))`),
+]);
+
 export const memoryRecallStatsInHarnessShared = harnessShared.table("memory_recall_stats", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.memory_recall_stats_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -2904,6 +2924,46 @@ export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table(
 	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
 
+]);
+
+export const gitSyncCommitAttributionInHarnessShared = harnessShared.table("git_sync_commit_attribution", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.git_sync_commit_attribution_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	repo: text().notNull(),
+	commitSha: text("commit_sha").notNull(),
+	file: text().notNull(),
+	agentId: text("agent_id"),
+	sessionId: text("session_id"),
+	contributor: text(),
+	workItemId: text("work_item_id"),
+	planSlug: text("plan_slug"),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("git_sync_commit_attr_repo_file_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.repo.asc().nullsLast().op("timestamptz_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
+	index("git_sync_commit_attr_sha_idx").using("btree", table.commitSha.asc().nullsLast().op("text_ops")),
+	index("git_sync_commit_attr_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")).where(sql`(work_item_id IS NOT NULL)`),
+]);
+
+export const editAttributionLedgerInHarnessShared = harnessShared.table("edit_attribution_ledger", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.edit_attribution_ledger_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id"),
+	harnessSlug: text("harness_slug"),
+	repo: text(),
+	file: text().notNull(),
+	agentId: text("agent_id").notNull(),
+	sessionId: text("session_id"),
+	contributor: text(),
+	workItemId: text("work_item_id"),
+	planSlug: text("plan_slug"),
+	intent: text(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	repoRoot: text("repo_root"),
+}, (table) => [
+	index("edit_attribution_ledger_repo_file_idx").using("btree", table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
+	index("edit_attribution_ledger_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(work_item_id IS NOT NULL)`),
 ]);
 
 export const directivesInPapercuspShared = papercuspShared.table("directives", {
