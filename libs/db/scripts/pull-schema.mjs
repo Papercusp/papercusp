@@ -220,7 +220,7 @@ const pkQuery = [
   "JOIN pg_class t ON c.conrelid = t.oid",
   "JOIN pg_namespace n ON t.relnamespace = n.oid",
   "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)",
-  "WHERE c.contype='p' AND n.nspname IN ('harness_shared','papercup_shared')",
+  "WHERE c.contype='p' AND n.nspname IN ('harness_shared','papercusp_shared')",
   "GROUP BY n.nspname, t.relname",
   "ORDER BY 1, 2;",
 ].join(' ');
