@@ -518,6 +518,45 @@ export const ACCOUNT_ROUTING_NOTE = [
 ].join('\n');
 
 /**
+ * EVIDENCE_DISCIPLINE_NOTE — the GENERAL rule behind ACCOUNT_ROUTING_NOTE: a plausible cause is a
+ * HYPOTHESIS, not a fact, until HARD EVIDENCE confirms it — for EVERY diagnosis, not just rate-limits.
+ * Owner directive (2026-06-23): agents keep falling into the trap of treating a likely-looking cause
+ * ("it's capacity / a rate limit", "the box is contended", "that service is down", "it's flaky infra")
+ * as proven and acting on / reporting it without checking — so the REAL bug is never found. The dual
+ * safety valve: if you CAN'T get the evidence (it isn't logged / there's no query/endpoint/tool for it),
+ * you do NOT fall back to assuming — you ADD the observability and read it, or FILE an improvement to
+ * build the mechanism, so this and the next agent's diagnosis rests on data.
+ *
+ * Sourced once here (the ACCOUNT_ROUTING_NOTE / CONCURRENCY_FIRST_NOTE precedent): injected into the
+ * spawned-bee base (buildPromptParts below) + the operator-launched-role base (operator-core's
+ * renderEvidenceDisciplineNote, re-exported via role-prompt-from-slug) + the su playbooks, so all bases
+ * can't desync. Universal (no role skip — every agent diagnoses). ACCOUNT_ROUTING_NOTE stays the
+ * rate-limit-specific instance; this is the rule it is an instance of.
+ */
+export const EVIDENCE_DISCIPLINE_NOTE = [
+  '## A likely cause is a HYPOTHESIS, not a fact — verify with HARD EVIDENCE, or build the means to',
+  '',
+  'When something LOOKS like the cause of a problem, that is a hypothesis to TEST, not a conclusion',
+  'to act on or report. Do not assert, act on, or give up because of a suspected cause until you',
+  'have HARD EVIDENCE it actually IS the cause. The trap (agents fall into it constantly): a',
+  'plausible story — "it\'s a rate limit / capacity", "the box is too contended", "that service is',
+  'down", "it\'s flaky infra" — gets treated as fact, so the REAL bug is never found and the wrong',
+  'thing gets reported or "fixed".',
+  '',
+  'Before you conclude or report a cause:',
+  '1. Name the hypothesis, then get the SPECIFIC evidence that would confirm OR refute it — a log',
+  '   line, a metric, a query result, the actual error body/headers, the real config value. Prefer',
+  '   evidence that could DISPROVE it: one counter-example kills a wrong theory faster than ten',
+  '   consistent guesses (e.g. suspecting "we are out of capacity" but finding even ONE account with',
+  '   rate/usage headroom is hard evidence AGAINST it — keep digging).',
+  '2. If you do NOT have a way to obtain that evidence — it is not logged, there is no',
+  '   query/endpoint/tool for it — do NOT fall back to assuming. ADD the observability you need (a log',
+  '   line, a counter, a metric, a debug endpoint) and read it, OR FILE an improvement to build that',
+  '   mechanism. "I cannot prove this yet — here is the means to" is correct; asserting an unproven',
+  '   cause is not.',
+].join('\n');
+
+/**
  * CONCURRENCY_FIRST_NOTE — the "never wait for a 'calm window'; effectively-unbounded concurrency
  * is the design, so a non-resource block is a BUG to FIX, not a reason to back off" clause every
  * agent shares (owner directive 2026-06-20).
@@ -1112,6 +1151,15 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     playbooks can't desync.
   pre.push('\n---');
   pre.push(ACCOUNT_ROUTING_NOTE);
+
+  // 3c-bis-1b. Evidence-discipline note — the GENERAL rule the account-routing note above is one
+  //     instance of: a likely-looking cause is a HYPOTHESIS to verify with hard evidence, never a fact
+  //     to act on / report; and when the evidence isn't obtainable, ADD the observability or FILE the
+  //     means rather than assuming. Kills the recurring "treat a plausible cause as proven" trap across
+  //     EVERY diagnosis (not just rate-limits). Universal (no role skip). Sourced from the one
+  //     EVIDENCE_DISCIPLINE_NOTE constant so the bee base, operator-role base, and su playbooks can't desync.
+  pre.push('\n---');
+  pre.push(EVIDENCE_DISCIPLINE_NOTE);
 
   // 3c-bis-2. Concurrency-first note — the SHARED bee base every role inherits, the behavioral dual
   //     of the account-routing note above. Kills the recurring "the box is too contended, let me wait
