@@ -261,27 +261,6 @@ export const telemetryReportsArchiveInHarnessShared = harnessShared.table("telem
 	pgPolicy("telemetry_reports_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const agentRateBudgetInHarnessShared = harnessShared.table("agent_rate_budget", {
-	bucketKey: text("bucket_key").primaryKey().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	windowStart: bigint("window_start", { mode: "number" }).default(0).notNull(),
-	reqInWindow: integer("req_in_window").default(0).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	inTokInWindow: bigint("in_tok_in_window", { mode: "number" }).default(0).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	outTokInWindow: bigint("out_tok_in_window", { mode: "number" }).default(0).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	pausedUntil: bigint("paused_until", { mode: "number" }).default(0).notNull(),
-	paceDelayMs: integer("pace_delay_ms").default(0).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	lastAcquireAt: bigint("last_acquire_at", { mode: "number" }).default(0).notNull(),
-	limits: jsonb().default({}).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	primaryKey({ columns: [table.bucketKey], name: "agent_rate_budget_pkey"}),
-]);
-
 export const schemaMigrationsInHarnessShared = harnessShared.table("schema_migrations", {
 	filename: text().primaryKey().notNull(),
 	appliedAt: timestamp("applied_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -2540,7 +2519,7 @@ export const learningPackCandidatesInHarnessShared = harnessShared.table("learni
 	packId: text("pack_id"),
 	packItemId: text("pack_item_id"),
 }, (table) => [
-	index("learning_pack_candidates_listing_idx").using("btree", table.status.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("learning_pack_candidates_listing_idx").using("btree", table.status.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
 	unique("learning_pack_candidates_signature_uniq").on(table.signature),
 	check("learning_pack_candidates_kind_check", sql`kind = ANY (ARRAY['user'::text, 'feedback'::text, 'project'::text, 'reference'::text])`),
 	check("learning_pack_candidates_status_check", sql`status = ANY (ARRAY['pending'::text, 'adopted'::text, 'dismissed'::text])`),
@@ -2743,6 +2722,23 @@ export const operatorCoordLivenessConfigInHarnessShared = harnessShared.table("o
 
 ]);
 
+export const codeRecipeRunsInHarnessShared = harnessShared.table("code_recipe_runs", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.code_recipe_runs_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	recipeId: text("recipe_id").notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	hiveSlug: text("hive_slug"),
+	agentOwner: text("agent_owner"),
+	agentRole: text("agent_role"),
+	success: boolean().default(true).notNull(),
+	reused: boolean().default(false).notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("code_recipe_runs_recipe_idx").using("btree", table.recipeId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
+	index("code_recipe_runs_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
+	pgPolicy("code_recipe_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const codeRecipesInHarnessShared = harnessShared.table("code_recipes", {
 	id: text().primaryKey().notNull(),
 	title: text().notNull(),
@@ -2763,25 +2759,7 @@ export const codeRecipesInHarnessShared = harnessShared.table("code_recipes", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("code_recipes_runcount_idx").using("btree", table.lastRunAt.desc().nullsLast().op("timestamptz_ops"), table.runCount.desc().nullsFirst().op("int4_ops")),
 	index("code_recipes_title_tsv_idx").using("gin", table.titleTsv.asc().nullsLast().op("tsvector_ops")),
-]);
-
-export const codeRecipeRunsInHarnessShared = harnessShared.table("code_recipe_runs", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.code_recipe_runs_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	recipeId: text("recipe_id").notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	hiveSlug: text("hive_slug"),
-	agentOwner: text("agent_owner"),
-	agentRole: text("agent_role"),
-	success: boolean().default(true).notNull(),
-	reused: boolean().default(false).notNull(),
-	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-	index("code_recipe_runs_recipe_idx").using("btree", table.recipeId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
-	index("code_recipe_runs_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
-	pgPolicy("code_recipe_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const operatorHiveControlPolicyInHarnessShared = harnessShared.table("operator_hive_control_policy", {
@@ -2977,6 +2955,30 @@ export const editAttributionLedgerInHarnessShared = harnessShared.table("edit_at
 }, (table) => [
 	index("edit_attribution_ledger_repo_file_idx").using("btree", table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
 	index("edit_attribution_ledger_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(work_item_id IS NOT NULL)`),
+]);
+
+export const agentRateBudgetInHarnessShared = harnessShared.table("agent_rate_budget", {
+	bucketKey: text("bucket_key").primaryKey().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	windowStart: bigint("window_start", { mode: "number" }).default(0).notNull(),
+	reqInWindow: integer("req_in_window").default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	inTokInWindow: bigint("in_tok_in_window", { mode: "number" }).default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	outTokInWindow: bigint("out_tok_in_window", { mode: "number" }).default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	pausedUntil: bigint("paused_until", { mode: "number" }).default(0).notNull(),
+	paceDelayMs: integer("pace_delay_ms").default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	lastAcquireAt: bigint("last_acquire_at", { mode: "number" }).default(0).notNull(),
+	limits: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+	rpmFactor: doublePrecision("rpm_factor"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rpmFactorAt: bigint("rpm_factor_at", { mode: "number" }),
+}, (table) => [
+	primaryKey({ columns: [table.bucketKey], name: "agent_rate_budget_pkey"}),
 ]);
 
 export const directivesInPapercuspShared = papercuspShared.table("directives", {
@@ -3471,6 +3473,15 @@ export const userPreferencesInHarnessShared = harnessShared.table("user_preferen
 			name: "user_preferences_user_id_fkey"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.userId, table.workspaceId], name: "user_preferences_pkey"}),
+]);
+
+export const workItemBlockedInHarnessShared = harnessShared.table("work_item_blocked", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	featureId: text("feature_id").notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "work_item_blocked_pkey"}),
 ]);
 
 export const coordOpenEscalationsInHarnessShared = harnessShared.table("coord_open_escalations", {
@@ -5961,6 +5972,36 @@ export const toolInvocationsSpawnTreeInHarnessShared = harnessShared.view("tool_
 	rootSpawnId: text("root_spawn_id"),
 }).as(sql`WITH RECURSIVE chain AS ( SELECT tool_invocations.id, tool_invocations.workspace_id, tool_invocations.harness_slug, tool_invocations.plugin_name, tool_invocations.tool_name, tool_invocations.role, tool_invocations.feature_id, tool_invocations.chunk_id, tool_invocations.run_id, tool_invocations.spawn_id, tool_invocations.parent_spawn_id, tool_invocations.window_key, tool_invocations.invoked_at, tool_invocations.duration_ms, tool_invocations.status, tool_invocations.output_ref, tool_invocations.output_size, tool_invocations.error_message, 0 AS depth, tool_invocations.spawn_id AS root_spawn_id FROM harness_shared.tool_invocations WHERE tool_invocations.parent_spawn_id IS NULL OR tool_invocations.parent_spawn_id = ''::text UNION ALL SELECT t.id, t.workspace_id, t.harness_slug, t.plugin_name, t.tool_name, t.role, t.feature_id, t.chunk_id, t.run_id, t.spawn_id, t.parent_spawn_id, t.window_key, t.invoked_at, t.duration_ms, t.status, t.output_ref, t.output_size, t.error_message, c.depth + 1, c.root_spawn_id FROM harness_shared.tool_invocations t JOIN chain c ON t.parent_spawn_id = c.spawn_id AND t.workspace_id = c.workspace_id AND c.depth < 16 ) SELECT id, workspace_id, harness_slug, plugin_name, tool_name, role, feature_id, chunk_id, run_id, spawn_id, parent_spawn_id, window_key, invoked_at, duration_ms, status, output_ref, output_size, error_message, depth, root_spawn_id FROM chain`);
 
+export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues", {	workspaceId: text("workspace_id"),
+	issueId: text("issue_id"),
+	scope: text(),
+	title: text(),
+	body: text(),
+	severity: text(),
+	source: text(),
+	state: text(),
+	assignee: text(),
+	foundDuring: text("found_during"),
+	linkedFeatureId: text("linked_feature_id"),
+	createdBy: text("created_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
+	authorPubkey: text("author_pubkey"),
+	origin: text(),
+	search: tsvectorCustom("_search"),
+	kind: text(),
+	payload: jsonb(),
+	assignedBy: text("assigned_by"),
+	assignedAt: timestamp("assigned_at", { withTimezone: true, mode: 'string' }),
+	assigneeRank: integer("assignee_rank"),
+	rankWriter: text("rank_writer"),
+	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	signalOrigin: text("signal_origin"),
+	fedHlc: text("fed_hlc"),
+}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'local'::text) AS signal_origin, fed_hlc FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+
 export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("harness_features_consolidated", {	harnessSlug: text("harness_slug"),
 	featureId: text("feature_id"),
 	title: text(),
@@ -6035,36 +6076,6 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("ha
 	fedHlc: text("fed_hlc"),
 	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
 }).with({"checkOption":"cascaded"}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
-
-export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues", {	workspaceId: text("workspace_id"),
-	issueId: text("issue_id"),
-	scope: text(),
-	title: text(),
-	body: text(),
-	severity: text(),
-	source: text(),
-	state: text(),
-	assignee: text(),
-	foundDuring: text("found_during"),
-	linkedFeatureId: text("linked_feature_id"),
-	createdBy: text("created_by"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
-	authorPubkey: text("author_pubkey"),
-	origin: text(),
-	search: tsvectorCustom("_search"),
-	kind: text(),
-	payload: jsonb(),
-	assignedBy: text("assigned_by"),
-	assignedAt: timestamp("assigned_at", { withTimezone: true, mode: 'string' }),
-	assigneeRank: integer("assignee_rank"),
-	rankWriter: text("rank_writer"),
-	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	signalOrigin: text("signal_origin"),
-	fedHlc: text("fed_hlc"),
-}).as(sql`SELECT workspace_id, feature_id AS issue_id, COALESCE((payload -> '_ei'::text) ->> 'scope'::text, CASE WHEN harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END) AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'local'::text) AS signal_origin, fed_hlc FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
 
 export const operatorDecisionsInHarnessShared = harnessShared.view("operator_decisions", {	id: text(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
