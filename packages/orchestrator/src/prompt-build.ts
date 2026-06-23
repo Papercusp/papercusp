@@ -329,13 +329,21 @@ export interface BuildPromptInput {
 export const FRICTION_TRIPWIRE = [
   '## Friction trip-wire (self-learning loop)',
   '',
-  'If you just hit friction worth fixing — a workaround, a misleading doc, an',
-  'awkward tool, a retry / repeated tool-error, or a >3-attempt confusing',
-  'failure — file it once via `improvements:capture { kind, title }` and move on.',
-  'Bar: capture only a GENUINE, REPEATABLE improvement (one the next agent would',
-  "hit too), not a one-off or a self-inflicted slip. Don't reflect every turn;",
-  'just trip on real friction. (The watchdog already covers objective signals —',
-  'test/health/tool failures — so you only file what it cannot see: what you felt.)',
+  'If you just hit friction worth fixing — a workaround, a misleading doc, an awkward tool, a',
+  'retry / repeated tool-error, or a >3-attempt confusing failure — capture it ONCE and move on.',
+  'Branch on whether you can name a SPECIFIC, PLAUSIBLE fix (need not be certain):',
+  '• Have such a fix AND it is SMALL + in your current scope → just FIX it inline and record it',
+  '  (the work-item rule); no ticket needed.',
+  '• Have such a fix but it is OUT of scope / a detour → file an EI now: `improvements:capture',
+  '  { kind, title, body:<the fix> }`. Use kind:bug when something is genuinely BROKEN and you',
+  '  have the fix (auto-implement-eligible downstream); change|feature otherwise. It enters the',
+  '  work queue — filing it is NOT a commitment to fix it this turn.',
+  '• NO specific fix yet (you would have to investigate) → `improvements:capture { lane:"observation",',
+  '  title }` — a cheap pre-idea Scout reads, so the signal is not lost WITHOUT an expensive search now',
+  '  (do not rabbit-hole off your real task).',
+  'One signal → one record (never both). Bar: a GENUINE, REPEATABLE issue the next agent would hit',
+  "too, not a one-off or self-inflicted slip. Don't reflect every turn; just trip on real friction.",
+  '(The watchdog covers objective test/health/tool signals — file only what it cannot see.)',
 ].join('\n');
 
 /**
