@@ -556,8 +556,9 @@ export const CONCURRENCY_FIRST_NOTE = [
 ].join('\n');
 
 /**
- * DEPLOY_PIPELINE_NOTE — the "your change reaches :3070 through an ASYNC, SELF-HEALING
- * pipeline; don't babysit it or self-diagnose a stall" clause every agent shares.
+ * DEPLOY_PIPELINE_NOTE — the "your change reaches :3070 through an ASYNC pipeline you don't
+ * babysit — but a RED green-checkpoint gate is EVERYONE's job to FIX (it blocks the whole fleet's
+ * deploys), without asking the owner, even out of your lane" clause every agent shares.
  *
  * Agents repeatedly get confused getting changes live: they edit, re-check :3070 (which serves
  * GREEN main, not their staging edit), conclude "my change didn't ship", and then either thrash
@@ -566,7 +567,9 @@ export const CONCURRENCY_FIRST_NOTE = [
  * (a red gate auto-dispatches a release-fixer; git-sync conflicts → merge-resolver/content-fixer)
  * and `dev:pipeline_position` answers "where is my change + is the gate stalled" in one read. This
  * primes every agent to (a) understand the async stages + the two ports, (b) reach for
- * pipeline_position instead of a browser, and (c) NOT block on / self-diagnose a shared-fate stall.
+ * pipeline_position instead of a browser, and (c) treat a RED gate as everyone's job — diagnose +
+ * FIX it (even out of lane, even when not personally blocked, no owner-ask), since a stalled gate
+ * blocks the whole fleet and the auto-fixer is NOT reliable (it can die).
  *
  * Sourced once here (the ACCOUNT_ROUTING_NOTE / YIELD_POLICY / TESTING_STANDARD precedent):
  * injected into the spawned-bee base (buildPromptParts below) + the operator-launched-role base
@@ -574,7 +577,7 @@ export const CONCURRENCY_FIRST_NOTE = [
  * bases can't desync. Tool names (`dev:pipeline_position`, `coord:escalate`) are `e.g.` hints.
  */
 export const DEPLOY_PIPELINE_NOTE = [
-  "## The deploy pipeline is ASYNC + SELF-HEALING — don't babysit it or self-diagnose a stall",
+  "## The deploy pipeline is ASYNC — don't babysit your OWN change, but a RED gate is EVERYONE's job to FIX (no owner-ask)",
   '',
   'Your code reaches the live operator (:3070) through an AUTOMATIC pipeline, not anything you do',
   'to "submit" it. You leave an edit in the tree; a background git-sync routine commits + pushes it',
@@ -588,25 +591,37 @@ export const DEPLOY_PIPELINE_NOTE = [
   '- To SEE where your change is (committed → staging → main → deployed) and whether the gate is',
   '  stalled, call `dev:pipeline_position { path }`. That is the answer to "did my edit go live?",',
   '  not a browser.',
-  '- The pipeline SELF-HEALS: a red gate auto-dispatches a release-fixer agent (it classifies',
-  '  regression-vs-flake then fixes or quarantines); git-sync conflicts go to a merge-resolver /',
-  '  content-fixer. You do NOT own diagnosing or fixing a deploy stall.',
+  '- The pipeline TRIES to self-heal (a red gate auto-dispatches a release-fixer; git-sync conflicts',
+  '  go to a merge-resolver / content-fixer) — but DO NOT rely on it: that auto-fixer can die or stall,',
+  '  and a red gate then sits unworked for HOURS, freezing EVERY agent\'s deploys (it has happened — a',
+  '  gate-fix bee died and the reds sat owned-but-unworked ~3h, blocking the whole fleet). So a red gate',
+  '  is NOT "someone else\'s job" — it is yours too (next bullet).',
   '- WHY git-sync exists: to keep development FAST and token-CHEAP. A background routine commits +',
   '  pushes your work on a short cadence so you stay focused on the WORK, not on git — which is why',
   '  you do NOT commit yourself. That convenience is NOT a license to sit idle waiting on it.',
-  '- If you are NOT blocked: a stalled gate is usually shared-fate (a peer\'s failing test or a flake',
-  '  under load); your committed change is SAFE on staging and ships automatically when the gate',
-  '  clears. Don\'t babysit it — `coord:escalate` a genuine stall (advisory, non-blocking) and move on.',
+  '- A RED gate is EVERYONE\'S job — FIX it, do NOT ask the owner, even if it is not your lane. A red',
+  '  green-checkpoint gate blocks EVERY agent\'s deploys (not just yours), so unblocking it is the single',
+  '  highest-leverage thing you can do. If you notice a red/stalled gate — or your change is waiting',
+  '  behind one — DIAGNOSE the failing check (`dev:pipeline_position`, `dev:build_status`, the failing',
+  '  test / lint / typecheck / build) and FIX it: a confirmed-unrelated flake → quarantine it',
+  '  accountably; a real regression → fix it. Do this EVEN WHEN the break is in a package or lane that',
+  '  is not yours AND EVEN WHEN you are not personally blocked — a green tree is a shared responsibility.',
+  '  This is the explicit EXCEPTION to "stay in your lane / don\'t grind unrelated errors". Do NOT wait',
+  '  for permission and do NOT ask the owner — fixing a red gate is ALWAYS authorized; just make the fix',
+  '  and leave the diff for git-sync. ONLY coordinate to avoid colliding with a live fixer: check',
+  '  `fleet:assignments` / `coord:presence` first — if someone ALIVE is actively on it, help them or',
+  '  take a different red; otherwise it is yours. (This is distinct from idle-WAITING: never sit and',
+  '  watch your OWN green change — it ships automatically; the point is to ACT on a RED gate.)',
   '- If you ARE blocked — your NEXT STEP needs your change LIVE on :3070 to continue — do NOT idle',
   '  through the scheduled commit→checkpoint→deploy. DIAGNOSE FIRST with `release:deploy { op: \'status\' }`',
   '  (gate red/green/stalled, how far :3070 is behind the green pin, the release-fixer status, + a',
   '  recommendation), then act in order: (1) GREEN-but-stalled (the auto-deploy backed off / hasn\'t fired)',
   '  → `release:deploy { op: \'trigger\', confirm: true }` — the SAFE expedite; it can only ship the already-',
   '  green pin, and refuses if the gate is red. (2) RED gate blocking your change from promoting →',
-  '  GET THE TREE GREEN so your commit can go live: fix the failing tests EVEN IF out of your lane (a confirmed-',
-  '  unrelated flake → quarantine it accountably; a real regression → fix it). A green tree is your job too',
-  '  when it is what is blocking you — the ONE case that overrides "don\'t grind unrelated errors": you act',
-  '  because YOU are blocked, not to "unblock deploys" in the abstract. (3) Last resort, operator/owner-gated',
+  '  GET THE TREE GREEN so your commit (and the whole fleet\'s) can promote: fix the failing tests EVEN IF',
+  '  out of your lane (a confirmed-unrelated flake → quarantine it accountably; a real regression → fix',
+  '  it) — same as the "a red gate is everyone\'s job" bullet above; being personally blocked just makes it',
+  '  doubly urgent for you. (3) Last resort, operator/owner-gated',
   '  + loud + audited: `release:deploy { op: \'force\', acknowledgeRedTests: [...], reason, confirm: true }`',
   '  deploys an UN-GREEN commit past the gate (ships KNOWN-BROKEN code) — prefer greening the gate over',
   '  forcing past it; force is the rare no-users-window escape, never a reflex.',
