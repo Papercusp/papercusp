@@ -818,6 +818,62 @@ export const AGENT_ACTIVITY_TRUTH_NOTE = [
   'Runbook (the incident + the resolver): /internal/docs/agent-insights/agent-activity-truth.',
 ].join('\n');
 
+/**
+ * WAIT_LOOP_NOTE — the "waiting on something? arm a self-wake LOOP — never sleep on an event that
+ * may never fire" clause every agent shares (owner directive 2026-06-23).
+ *
+ * The behavioral complement of the coordination guidance "blocked on something announced? await an
+ * event and sleep". That guidance is correct ONLY when a live emitter is GUARANTEED to fire; the
+ * failure mode it leaves open is the trap this note closes: an agent blocked on something that may
+ * NEVER fire subscribes to an event, ends its turn, and sleeps forever — because the event never
+ * fires, and it never fires precisely BECAUSE something upstream is broken (the exact thing the
+ * agent needs to be awake to notice and FIX). A bare subscription cannot fix the producer that
+ * would make it fire. So when an agent genuinely must wait on something outside its control, it
+ * should keep a LIVE re-check alive via a recurring self-wake (su/interactive → `loop:arm`; an
+ * autonomous fleet supervisor → `hive:declare-wake` / `overwatch:declare-wake`; a worker with no
+ * self-wake → record the blocker on the work-item so the live reconciled signal shows it), at a
+ * cadence matched to how fast the thing changes, and on each wake re-check + FIX-if-stuck rather
+ * than sleep again. It explicitly RECONCILES with the neighbouring notes: first try to REMOVE the
+ * wait (do/force it now — the deploy-pipeline + "a red gate is everyone's job" notes), and it is
+ * NOT the "never poll the datastore as a message bus" anti-pattern (a paced liveness re-check that
+ * ALSO carries a fix-it mandate is the point; the passive bare subscription is the trap).
+ *
+ * Sourced once here (the CONCURRENCY_FIRST_NOTE / DEPLOY_PIPELINE_NOTE / AGENT_ACTIVITY_TRUTH_NOTE
+ * precedent): injected into the spawned-bee base (buildPromptParts below) + the operator-launched-
+ * role base (operator-core's renderWaitLoopNote, re-exported via role-prompt-from-slug) + projected
+ * into the su playbooks (desktop-install injectSharedBaseNotes), so all bases can't desync.
+ * Universal (no role skip — any agent can talk itself into a blind wait). Mechanism verbs are
+ * `e.g.` hints; each role applies the one it actually holds.
+ */
+export const WAIT_LOOP_NOTE = [
+  '## Waiting on something? Arm a self-wake LOOP — never sleep on an event that may never fire',
+  '',
+  'When your next step is blocked on something you cannot finish right now — a dependency, another',
+  "agent's fix, a gate going green, an external job — do NOT just subscribe to an event and end your",
+  'turn indefinitely. A bare `events:await` sleeps until the event fires, but a NEVER-FIRING event',
+  'never wakes you — and the event may never fire precisely BECAUSE something upstream is broken.',
+  'That broken producer is exactly what you need to be awake to notice and FIX; a subscription alone',
+  'cannot fix the thing that would make it fire.',
+  '',
+  '- FIRST, try to REMOVE the wait entirely. If the blocker is actually in your reach — your own',
+  '  change going live, a stalled deploy you can trigger, a fix you could make — DO or FORCE it now',
+  "  instead of waiting at all (per the deploy-pipeline + \"a red gate is everyone's job\" notes).",
+  '- If you GENUINELY must wait on something outside your control, keep a LIVE re-check alive:',
+  '  schedule a RECURRING self-wake at a cadence matched to how fast the thing changes (a few minutes',
+  '  for an active hand-off; longer for a slow job — not a busy-spin, not a multi-hour blind sleep).',
+  '  On each wake: re-check whether it landed → if so, proceed; if it is STUCK, DIAGNOSE and FIX what',
+  '  is preventing it (or escalate WITH your diagnosis), then re-arm — do not just sleep again.',
+  '- MECHANISM (use the one your role holds): an su / interactive session arms',
+  '  `loop:arm { intervalSec, goal }` and ends it with `loop:end` once unblocked; an autonomous fleet',
+  '  supervisor uses its wake-declaration (`hive:declare-wake` / `overwatch:declare-wake`), NOT',
+  '  `loop:arm`. A worker with no self-wake instead records the blocker on the work-item',
+  '  (`work_items:set_state` → blocked, with a reason) so the live reconciled signal shows it for',
+  '  re-placement — never end silently as if the work were done.',
+  '- This is NOT the "never poll the datastore as a message bus" anti-pattern: a paced liveness',
+  '  re-check that ALSO carries a fix-it-if-stuck mandate is the whole point. The trap is the passive',
+  '  bare subscription that waits forever on a producer nobody is keeping alive.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -1042,6 +1098,16 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     base + the operator-launched-role base can't desync.
   pre.push('\n---');
   pre.push(AGENT_ACTIVITY_TRUTH_NOTE);
+
+  // 3i. Wait-loop note (owner directive 2026-06-23) — the SHARED bee base every role inherits. When
+  //     blocked on something that may never fire, keep a LIVE re-check alive (a recurring self-wake)
+  //     and FIX what's preventing the firing — a bare event-await sleeps forever if the producer is
+  //     broken. Complements the coordination "await + sleep" (correct only when an emitter is
+  //     guaranteed) + the deploy/concurrency notes (first try to remove the wait). Universal (no role
+  //     skip). Sourced from the one WAIT_LOOP_NOTE constant so the bee base, the operator-launched-
+  //     role base (operator-core renderWaitLoopNote), and the su playbooks can't desync.
+  pre.push('\n---');
+  pre.push(WAIT_LOOP_NOTE);
 
   // Hive vocabulary (hive-blueprint-generalization P-016): when the hive blueprint
   // renames nouns, tell the agent to read the shared personas' generic terms as this

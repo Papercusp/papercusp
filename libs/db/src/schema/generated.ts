@@ -5497,6 +5497,8 @@ export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	authorPubkey: text("author_pubkey"),
 	origin: text().default('local').notNull(),
+	regenAttempts: integer("regen_attempts").default(0).notNull(),
+	reverifyAttempts: integer("reverify_attempts").default(0).notNull(),
 }, (table) => [
 	index("harness_docs_anchor_paths_idx").using("gin", table.anchorPaths.asc().nullsLast().op("array_ops")),
 	index("harness_docs_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),

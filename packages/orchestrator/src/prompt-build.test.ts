@@ -413,6 +413,41 @@ test('buildPrompt — every role gets the deploy-pipeline note (async; a RED gat
   }
 });
 
+test('buildPrompt — every role gets the wait-loop note (waiting? arm a self-wake loop; never sleep on an event that may never fire)', () => {
+  for (const role of ['worker', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'r1',
+        extras: [],
+      });
+      assert.match(out, /## Waiting on something\? Arm a self-wake LOOP/);
+      // the user's core reasoning: a never-firing event never wakes you, and it may not fire BECAUSE
+      // something upstream is broken — the thing you must be awake to FIX.
+      assert.match(out, /NEVER-FIRING event/);
+      // mechanism verbs (e.g. hints) for each audience: su loop:arm vs autonomous declare-wake
+      assert.match(out, /loop:arm/);
+      assert.match(out, /hive:declare-wake/);
+      // a worker with no self-wake records the blocker so the live reconciled signal shows it
+      assert.match(out, /work_items:set_state/);
+      // reconciles with the "never poll the datastore as a message bus" anti-pattern (it is NOT that)
+      assert.match(out, /never poll the datastore as a message bus/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
 // ── agents-reuse-first-default P-001/D-001: the soft "extend, don't fork" nudge is
 //    UNIVERSAL in the shared bee base (every role, incl. curator — any role can
 //    introduce a new surface). Soft, not a hard cite-on-every-change requirement. ──
@@ -776,15 +811,18 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     // No extraneous dividers. Base shared-section dividers: deferred-tools recipe,
     // memory-discipline, friction-tripwire, observation-rubric-nudge, yield-policy,
     // account-routing-note, concurrency-first-note, deploy-pipeline-note, testing-standard,
-    // reuse-first-nudge, code-run-note, finish-the-rollout-note, agent-activity-truth-note.
+    // reuse-first-nudge, code-run-note, finish-the-rollout-note, agent-activity-truth-note,
+    // wait-loop-note.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 14, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 15, `unexpected divider count: ${dividerCount}`);
     // code-run nudge (B-CX-3) rides the shared bee base.
     assert.match(out, /Collapse a multi-step tool flow into ONE/);
     // finish-the-rollout note (flags-default-on-reach-2026-06-21) rides the shared bee base.
     assert.match(out, /a capability built then left gated OFF is INCOMPLETE/);
     // agent-activity-truth note (agent-activity-liveness-truth-2026-06-21) rides the shared bee base.
     assert.match(out, /is a LIVE derived truth/);
+    // wait-loop note (owner directive 2026-06-23) rides the shared bee base.
+    assert.match(out, /Arm a self-wake LOOP/);
   } finally {
     fx.cleanup();
   }
