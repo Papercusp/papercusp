@@ -374,7 +374,7 @@ test('buildPrompt — every role gets the concurrency-first note (never wait for
   }
 });
 
-test('buildPrompt — every role gets the deploy-pipeline note (async + self-healing; do not babysit a stall)', () => {
+test('buildPrompt — every role gets the deploy-pipeline note (async; a RED gate is everyone\'s job to FIX, no owner-ask)', () => {
   for (const role of ['worker', 'curator', 'reviewer'] as const) {
     const fx = makeFixture(({ harnessDir }) => {
       writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
@@ -392,13 +392,15 @@ test('buildPrompt — every role gets the deploy-pipeline note (async + self-hea
         runId: 'r1',
         extras: [],
       });
-      assert.match(out, /## The deploy pipeline is ASYNC \+ SELF-HEALING/);
+      assert.match(out, /## The deploy pipeline is ASYNC/);
       // the two-port mental model + the pipeline_position reflex (not a browser)
       assert.match(out, /:3070 serves GREEN `main`/);
       assert.match(out, /dev:pipeline_position/);
-      // self-healing + don't-babysit (the NOT-blocked case)
+      // the reframe (2026-06-23): the auto-fixer is unreliable, so a RED gate is EVERYONE's job to
+      // FIX — no owner-ask, even out of lane / even when not personally blocked
       assert.match(out, /release-fixer/);
-      assert.match(out, /don't babysit it/i);
+      assert.match(out, /do NOT ask the owner/);
+      assert.match(out, /even if it is not your lane/);
       // blocked case: don't idle — green the tree so your commit ships, even out of your lane
       assert.match(out, /GET THE TREE GREEN/);
       assert.match(out, /out of your lane/i);

@@ -40,8 +40,8 @@ import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 // ACCOUNT_ROUTING_NOTE (the "inference is multi-account; a 'limit' is usually a
 // routing bug" clause) rides it too — operator-core's renderAccountRoutingNote
 // reuses the SAME string the spawned-bee base emits.
-// DEPLOY_PIPELINE_NOTE (the "deploy pipeline is async + self-healing; don't babysit it /
-// self-diagnose a stall" clause) rides it too — operator-core's renderDeployPipelineNote
+// DEPLOY_PIPELINE_NOTE (the "deploy pipeline is async; don't babysit your own change, but a RED
+// gate is everyone's job to FIX (no owner-ask)" clause) rides it too — operator-core's renderDeployPipelineNote
 // reuses the SAME string the spawned-bee base emits.
 // REUSE_FIRST_NUDGE (the soft "extend, don't fork" clause) rides it too — operator-core's
 // renderReuseFirstNudge reuses the SAME string the spawned-bee base emits.
