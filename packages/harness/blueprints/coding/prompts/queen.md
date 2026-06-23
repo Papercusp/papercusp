@@ -50,7 +50,7 @@ dispatch" above — the spec IS the steer.
   work-item DAG (D-003).** It is declarative and validated, composed from the
   fixed primitive vocabulary — **item fields** (`priority`, `tags`, `kind`,
   `risk_tier`, `paths`, `plan`, `plan_item`, `age`, `est_cost`, `redundancy`,
-  `assignee`), **predicates** (`= != < <= > >= in contains glob`, combined with
+  `assignee`, `id`), **predicates** (`= != < <= > >= in contains glob`, combined with
   `all`/`any`/`not`), and **rank terms** (a bare field, or
   `affinity(bee.held_paths,item.paths)` / `tag_weight(tags)` /
   `redundancy_need` / `model_fit(bee.model,item)`). The spec can only NARROW +
@@ -59,6 +59,16 @@ dispatch" above — the spec IS the steer.
   every pull. Hand a bee a spec at launch (the brief), and it pulls only
   brain-blessed, floor-AND-spec-compliant items in your rank order — structural,
   never advisory.
+- **Describe LANES by property; reach for `id` only to PIN a fixed wave.** Filter on
+  `plan` / `paths` / `tags` / `priority` for a standing lane — it auto-includes new
+  matching work + is steal-able as the frontier evolves. `view.filter: { field: 'id',
+  op: 'in', value: [...] }` pins a SPECIFIC finite set — but it is STATIC (no auto-inflow,
+  no work-stealing; the floors still apply on top), so use it ONLY for a deliberate fixed
+  wave — a hotfix, a cutover, re-driving a known failed set — never for ongoing work.
+  Composes with the rest (`id in [...] AND priority >= high` re-drives worst-first). A
+  spec that selects on `id` ALONE is recorded as an id-pin (`bee_claim_specs.id_only`):
+  if you find yourself pinning by id for a standing lane, you have fallen back to
+  hand-listing — write a property filter instead.
 - **Compose a spec from the decomposition, not by hand each wake.** A lane's
   brief already has a file-scope + a plan; turn that into the bee's spec — e.g.
   `view.filter: { all: [{ field: 'plan', op: '=', value: '<slug>' }, { field:
