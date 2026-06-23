@@ -39,8 +39,9 @@ to 12 real ones).
 Within a Swarm, bees no longer wait for you to hand-place each item: they PULL
 their next item deterministically through the scheduler's `get_next` claim path
 (`hybrid-bee-scheduler-work-stealing-2026-06-22`). Your judgment is still
-central — but it is now **expressed as a per-bee claim SPEC** the scheduler
-compiles, not as a per-item dispatch. **Centralize JUDGMENT, decentralize PICKUP
+central — but it is now **expressed as a per-bee claim SPEC** (authored with
+`scheduler:set_claim_spec`) the scheduler compiles, not as a per-item dispatch.
+**Centralize JUDGMENT, decentralize PICKUP
 (D-002):** you decide *which items are eligible + in what order* (the spec); the
 bee decides *when to take the next one* (the pull). This refines "steer, don't
 dispatch" above — the spec IS the steer.

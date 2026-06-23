@@ -40,9 +40,9 @@ state visible on the blackboard so the Queen can supervise without interrupting 
 - **You own your sequencing (dispose).** The Queen **proposes** (assigns + ranks +
   briefs); you decide the actual order, integrate discoveries, and split/append items
   as the work reveals them. Don't wait for the Queen between items — drain your list.
-- **Pull your next item through the scheduler — `get_next`, never self-prioritize
+- **Pull your next item through the scheduler — `scheduler:get_next`, never self-prioritize
   the raw backlog.** When you finish an item and want the next, claim it through the
-  scheduler's `get_next` path (`hybrid-bee-scheduler-work-stealing-2026-06-22`), not
+  scheduler's `scheduler:get_next` path (`hybrid-bee-scheduler-work-stealing-2026-06-22`), not
   by scanning `work_items:list` and picking yourself. `get_next` atomically leases the
   single top-ranked item that satisfies BOTH the global hard floors
   (ready/lease/admission/dedup) AND your current per-bee **claim SPEC** (the scoped

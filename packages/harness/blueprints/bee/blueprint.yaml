@@ -69,6 +69,9 @@ dependencies:
     - agent_tools:list
     - blueprint:catalog
     - blueprint:validate
+    # Reversible mid-task fork the bee MAY open (and self-decide on `{ self_decide: true }`),
+    # per the bee prompt's "decide reversibly, don't freeze on the owner" section.
+    - chat:ask_choice
     - coord:await-inbox
     - coord:declare-intent
     - coord:inbox
@@ -82,16 +85,23 @@ dependencies:
     - memory:remember
     - memory:search
     - plans:get
+    # The bee auto-claims its plan lane by flipping items wip via plans:set-status
+    # (the prompt's coordinate-via-coord section).
+    - plans:set-status
     # Hybrid bee-scheduler (hybrid-bee-scheduler-work-stealing-2026-06-22): pull
     # the next item through the spec-driven claim path the bee prompt mandates
-    # (get_next, not a work_items:list self-scan).
+    # (scheduler:get_next, not a work_items:list self-scan).
     - scheduler:get_next
     - search:fulltext
     - search:semantic
     - work_items:claim
+    # Carry-note continuity (the bee prompt's end-of-turn checkpoint) + structured
+    # deferral/progress state (set_state → blocked) the completion reconciler reads.
+    - work_items:checkpoint
     - work_items:complete
     - work_items:create
     - work_items:get
     - work_items:list
     - work_items:reorder
+    - work_items:set_state
   plugins: []
