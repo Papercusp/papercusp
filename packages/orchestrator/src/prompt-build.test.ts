@@ -810,11 +810,11 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     assert.match(out, /# WORKER/);
     // No extraneous dividers. Base shared-section dividers: deferred-tools recipe,
     // memory-discipline, friction-tripwire, observation-rubric-nudge, yield-policy,
-    // account-routing-note, concurrency-first-note, deploy-pipeline-note, testing-standard,
-    // reuse-first-nudge, work-record-note, code-run-note, finish-the-rollout-note,
-    // agent-activity-truth-note, wait-loop-note.
+    // account-routing-note, evidence-discipline-note, concurrency-first-note,
+    // deploy-pipeline-note, testing-standard, reuse-first-nudge, work-record-note,
+    // code-run-note, finish-the-rollout-note, agent-activity-truth-note, wait-loop-note.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 16, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 17, `unexpected divider count: ${dividerCount}`);
     // code-run nudge (B-CX-3) rides the shared bee base.
     assert.match(out, /Collapse a multi-step tool flow into ONE/);
     // owner refinement 2026-06-23: the conscious "fewer calls?" token framing rides the lead.
