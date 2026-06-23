@@ -161,7 +161,7 @@ Canonical capability tier table:
 
 | Capability | Tier |
 |---|---|
-| `tasks:read`, `features:read`, `messages:read`, `audit:list`, `search:query`, `harness:*`, `issues:list`, `pending_events:list`, `hindsight:recall` | low |
+| `tasks:read`, `features:read`, `messages:read`, `audit:list`, `search:query`, `harness:*`, `work_items:list`, `pending_events:list`, `hindsight:recall` | low |
 | `tasks:write`, `features:write`, `goals:write`, `projects:write`, `messages:write`, `routines:write`, `data:read:*` | medium |
 | `harness:dispatch:*`, `pending_events:write`, `secrets:read:*`, `secrets:write:*` | high |
 | Anything else (plugin-defined caps not in this table) | high (fail-safe) |

@@ -19,7 +19,7 @@ and **close the loop** by calling `improvements:resolve`. Nothing else.
 
 ## The contract
 
-1. **Read the item first.** `issues:get { id }` — the body carries the repro /
+1. **Read the item first.** `work_items:get { id }` — the body carries the repro /
    context / correct-state, and the comments carry any earlier failed attempts
    (if the kickoff says this is a retry, read them before touching code).
 2. **Reproduce it.** Confirm the bug is real and you understand the correct

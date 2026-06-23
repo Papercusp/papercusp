@@ -84,7 +84,7 @@ knobs:
 # peer to coordinate with. Holding the BASE capabilities identical while removing ONLY
 # the orchestration surface is the fairness invariant. (Reconcile the exact base set
 # with BRIEF 2's `external-bench` coding worker so the two arms' base tools match byte
-# for byte; "blocked" in this arm is the spine's ESCALATE verb, not an issues:create.)
+# for byte; "blocked" in this arm is the spine's ESCALATE verb, not a work_items:create.)
 dependencies:
   tools:
     - agent_tools:list
