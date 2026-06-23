@@ -2745,8 +2745,6 @@ export const operatorCoordLivenessConfigInHarnessShared = harnessShared.table("o
 
 export const codeRecipesInHarnessShared = harnessShared.table("code_recipes", {
 	id: text().primaryKey().notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	hiveSlug: text("hive_slug"),
 	title: text().notNull(),
 	description: text().notNull(),
 	script: text().notNull(),
@@ -2765,10 +2763,8 @@ export const codeRecipesInHarnessShared = harnessShared.table("code_recipes", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("code_recipes_runcount_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.hiveSlug.asc().nullsLast().op("int4_ops"), table.runCount.desc().nullsFirst().op("int4_ops")),
+	index("code_recipes_runcount_idx").using("btree", table.lastRunAt.desc().nullsLast().op("timestamptz_ops"), table.runCount.desc().nullsFirst().op("int4_ops")),
 	index("code_recipes_title_tsv_idx").using("gin", table.titleTsv.asc().nullsLast().op("tsvector_ops")),
-	index("code_recipes_ws_hive_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.hiveSlug.asc().nullsLast().op("text_ops")),
-	pgPolicy("code_recipes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const codeRecipeRunsInHarnessShared = harnessShared.table("code_recipe_runs", {

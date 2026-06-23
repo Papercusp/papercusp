@@ -29,8 +29,15 @@ BEGIN
     -- the workspace+hive list/search index is meaningless once global
     DROP INDEX IF EXISTS harness_shared.code_recipes_ws_hive_idx;
 
-    -- drop the scope columns (auto-drops the workspace_id NOT NULL constraint)
+    -- drop the scope columns. This AUTO-DROPS the workspace_id NOT NULL constraint
+    -- AND any index referencing them — including code_recipes_runcount_idx, which
+    -- led with (workspace_id, hive_slug) — so it is recreated globally below.
     ALTER TABLE harness_shared.code_recipes DROP COLUMN IF EXISTS hive_slug;
     ALTER TABLE harness_shared.code_recipes DROP COLUMN IF EXISTS workspace_id;
+
+    -- recreate the list/order index globally (matches listRecipes ORDER BY:
+    -- last_run_at DESC NULLS LAST, run_count DESC).
+    CREATE INDEX IF NOT EXISTS code_recipes_runcount_idx
+      ON harness_shared.code_recipes USING btree (last_run_at DESC NULLS LAST, run_count DESC);
   END IF;
 END $mig378$;
