@@ -2522,7 +2522,6 @@ export const improvementDispatchesInHarnessShared = harnessShared.table("improve
 ]);
 
 export const learningPackCandidatesInHarnessShared = harnessShared.table("learning_pack_candidates", {
-	workspaceId: text("workspace_id").notNull(),
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	signature: text().notNull(),
 	title: text().notNull(),
@@ -2541,9 +2540,8 @@ export const learningPackCandidatesInHarnessShared = harnessShared.table("learni
 	packId: text("pack_id"),
 	packItemId: text("pack_item_id"),
 }, (table) => [
-	index("learning_pack_candidates_listing_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	unique("learning_pack_candidates_signature_uniq").on(table.workspaceId, table.signature),
-	check("learning_pack_candidates_workspace_nonempty", sql`workspace_id <> ''::text`),
+	index("learning_pack_candidates_listing_idx").using("btree", table.status.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	unique("learning_pack_candidates_signature_uniq").on(table.signature),
 	check("learning_pack_candidates_kind_check", sql`kind = ANY (ARRAY['user'::text, 'feedback'::text, 'project'::text, 'reference'::text])`),
 	check("learning_pack_candidates_status_check", sql`status = ANY (ARRAY['pending'::text, 'adopted'::text, 'dismissed'::text])`),
 	primaryKey({ columns: [table.id], name: "learning_pack_candidates_pkey"}),
