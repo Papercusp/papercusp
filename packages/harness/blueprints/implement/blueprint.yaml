@@ -81,9 +81,9 @@ dependencies:
     - harness:phase_path
     - improvements:capture
     - improvements:resolve
-    - issues:claim
-    - issues:create
-    - issues:get
+    - work_items:claim
+    - work_items:create
+    - work_items:get
     - messages:inbox
     - messages:send
     - topics:feed

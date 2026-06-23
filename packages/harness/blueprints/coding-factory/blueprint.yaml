@@ -225,8 +225,8 @@ dependencies:
     - harness:markdown_index
     - harness:pending_reviews
     - harness:phase_path
-    - issues:claim
-    - issues:create
+    - work_items:claim
+    - work_items:create
     - memory:search
     - messages:inbox
     - messages:send

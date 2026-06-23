@@ -141,7 +141,6 @@ dependencies:
     - improvements:resolve
     - improvements:triage
     - inbox:triage
-    - issues:list
     - memory:forget
     - memory:search
     - memory:update

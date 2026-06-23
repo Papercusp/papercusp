@@ -88,5 +88,4 @@ dependencies:
     - search:fulltext
     - search:semantic
     - work_items:list
-    - issues:list
   plugins: []
