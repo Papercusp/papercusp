@@ -65,7 +65,8 @@ dispatch" above — the spec IS the steer.
   op: 'in', value: [...] }` pins a SPECIFIC finite set — but it is STATIC (no auto-inflow,
   no work-stealing; the floors still apply on top), so use it ONLY for a deliberate fixed
   wave — a hotfix, a cutover, re-driving a known failed set — never for ongoing work.
-  Composes with the rest (`id in [...] AND priority >= high` re-drives worst-first). A
+  Composes with the rest of the grammar (AND it with a property filter, and rank the
+  pinned set — e.g. `rank: priority desc` to re-drive worst-first). A
   spec that selects on `id` ALONE is recorded as an id-pin (`bee_claim_specs.id_only`):
   if you find yourself pinning by id for a standing lane, you have fallen back to
   hand-listing — write a property filter instead.

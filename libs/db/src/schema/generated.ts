@@ -3838,6 +3838,7 @@ export const beeClaimSpecsInHarnessShared = harnessShared.table("bee_claim_specs
 	revision: integer().default(0).notNull(),
 	updatedBy: text("updated_by"),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	idOnly: boolean("id_only").default(false).notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.beeId], name: "bee_claim_specs_pkey"}),
 	check("bee_claim_specs_bee_nonempty", sql`bee_id <> ''::text`),

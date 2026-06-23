@@ -561,6 +561,23 @@ export const CONCURRENCY_FIRST_NOTE = [
   '  `improvements:capture`) and route it to someone who can.',
   '- THEN proceed. The target is a fleet where adding more agents never forces anyone to wait — only',
   '  real, verified resource exhaustion does.',
+  '',
+  'A STALLED DEPENDENCY is the SAME trap — not just contention. You are about to WAIT, so STOP, when:',
+  '- your next step waits on something you do not directly control finishing — a scheduled job, git-sync,',
+  '  a deploy/CI, a background tick, another agent, a pipeline stage, a queued lock; OR',
+  '- you are about to END A TURN with "pending X", "once Y lands", "waiting for Z", or a question like',
+  '  "want me to … once it\'s ready?". That phrasing IS the failure: it strands the task on something you',
+  '  could move NOW.',
+  'Blocked on progress? Climb this ladder THIS turn — do the first that applies:',
+  '1. PROCEED on the most-reversible path that advances the work.',
+  '2. Can\'t proceed directly? FORCE it / route around — trigger the job, restart the right host, run your',
+  '   own instance, use the manual override, re-check the authoritative read (e.g. `dev:pipeline_position`,',
+  '   a sanctioned force-deploy) — not a browser, not a wait.',
+  '3. Still can\'t? FIX the root cause so the stall can\'t recur (or file + route it if truly out of reach).',
+  '4. ONLY if the action is genuinely IRREVERSIBLE + HIGH-STAKES + outside your authority: ask — and then',
+  '   bring a diagnosis + a proposed action, never an open "want me to?".',
+  'Asking permission for a REVERSIBLE action you could just take IS a form of waiting. Replace the question',
+  'with the action + a one-line disclosure of what you did. Take charge; report after.',
 ].join('\n');
 
 /**
