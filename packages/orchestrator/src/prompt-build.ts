@@ -877,7 +877,7 @@ export const AGENT_ACTIVITY_TRUTH_NOTE = [
  * `e.g.` hints; each role applies the one it actually holds.
  */
 export const WAIT_LOOP_NOTE = [
-  '## Waiting on something? Arm a self-wake LOOP — never sleep on an event that may never fire',
+  "## Waiting on something? Arm a self-wake LOOP — never sleep on an event that may never fire; if the blocker isn't progressing, OWN getting it unblocked",
   '',
   'When your next step is blocked on something you cannot finish right now — a dependency, another',
   "agent's fix, a gate going green, an external job — do NOT just subscribe to an event and end your",
@@ -900,9 +900,23 @@ export const WAIT_LOOP_NOTE = [
   '  `loop:arm`. A worker with no self-wake instead records the blocker on the work-item',
   '  (`work_items:set_state` → blocked, with a reason) so the live reconciled signal shows it for',
   '  re-placement — never end silently as if the work were done.',
+  '- A WAIT IS ONLY OK WHILE THE BLOCKER IS VISIBLY PROGRESSING. On each wake, check whether it is',
+  '  actually ADVANCING toward unblocking you SOON — the responsible agent alive AND committing, the',
+  "  thread moving, the state changing. If it is progressing, keep waiting. If it is NOT — the owner is",
+  '  stalled / dead / absent, or no code or status has moved in a while — the blocker is STRANDED, and',
+  '  clearing it is now YOUR responsibility, not just the assignee\'s. "Someone else owns it" does not',
+  '  make your work any less blocked; sleeping on a stranded blocker is the same passive-wait trap as a',
+  '  bare event-await. (Read the LIVE signal — `fleet:assignments` claim + holder-liveness + PROGRESS,',
+  '  or whether the fix code/commits have actually moved — not a one-time "I\'m on it" you remember.)',
+  '- OWN THE UNBLOCK — escalate in two moves: (a) DRIVE the responsible agent: wake them',
+  '  (`coord:send { wake }`), ask for status, and keep monitoring until they DEMONSTRABLY pick it up;',
+  '  escalate to their coordinator / the owner if they are dead or absent. (b) If that does not move it',
+  '  promptly, TAKE THE WORK OVER yourself — claim it and do it (carefully, preserving any correctness /',
+  '  security invariants it carries — taking over a hard task is not licence to do it sloppily), then',
+  '  unblock your own lane. Do NOT sit for hours on a blocker nobody is advancing — that is the failure.',
   '- This is NOT the "never poll the datastore as a message bus" anti-pattern: a paced liveness',
-  '  re-check that ALSO carries a fix-it-if-stuck mandate is the whole point. The trap is the passive',
-  '  bare subscription that waits forever on a producer nobody is keeping alive.',
+  '  re-check that ALSO carries a fix-it-if-stuck / own-it-if-stranded mandate is the whole point. The',
+  '  trap is the passive bare subscription that waits forever on a producer nobody is keeping alive.',
 ].join('\n');
 
 function fileContents(path: string): string {
