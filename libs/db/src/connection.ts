@@ -347,8 +347,22 @@ function buildClient(
   // default unit (ms). Falsy/0 → 60 (kept on; this is pure defense-in-depth).
   const idleInTxMs =
     Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_IN_TX_TIMEOUT) || 60) * 1000;
+  // EI-2582: bound the connect attempt UNDER TEST so an unmocked PG access in a
+  // unit test fails fast (~5s, with a clear connection error) instead of silently
+  // hanging until the 60s vitest timeout — which reads as a "slow test", not the
+  // real cause (a new PG-touching step added to a flow like harness:create without
+  // a per-test `vi.doMock`). Unit tests must mock the db layer (or live in a
+  // *.integration.test.ts against a real DB); a healthy integration DB connects in
+  // well under 5s, so this never trips a real connection. Left UNSET outside tests
+  // to preserve the embedded-pg boot-race tolerance — a background worker may
+  // legitimately wait for embedded PG to finish coming up before its first connect.
+  // Override (any env) via PAPERCUSP_DB_CONNECT_TIMEOUT (seconds; 0 disables).
+  const connectTimeoutSec =
+    Number(process.env.PAPERCUSP_DB_CONNECT_TIMEOUT) ||
+    (process.env.VITEST ? 5 : 0);
   return postgres(connectionUrl, {
     onnotice: () => {},
+    ...(connectTimeoutSec > 0 ? { connect_timeout: connectTimeoutSec } : {}),
     connection: {
       search_path: sp,
       idle_in_transaction_session_timeout: String(idleInTxMs),

@@ -677,6 +677,29 @@ export const REUSE_FIRST_NUDGE = [
 ].join('\n');
 
 /**
+ * WORK_RECORD_NOTE — "every unit of work gets a work-item record, even small ones" (audit-trail
+ * discipline; owner ask 2026-06-23). ALL work should leave a trace in the work-items system for
+ * FUTURE agents, not just fleet-coordination-worthy tasks — the record is the point, not the
+ * coordination. TOKEN-CONSCIOUS by design (the owner's own framing): a SMALL/short task the rest of
+ * the fleet doesn't need live awareness of does NOT need pre-claim/declare-intent overhead — record
+ * it AFTER finishing (or batch the create into a call you're already making), since its live window
+ * is small but the durable record persists. A RECURRING small task ⇒ a recipe, not a re-create each
+ * time. Sourced once here (the REUSE_FIRST_NUDGE precedent): injected into the spawned-bee base
+ * (buildPromptParts below) + the operator-launched-role base (operator-core's renderWorkRecordNote,
+ * re-exported via role-prompt-from-slug) so the bases can't desync. Universal (no role skip).
+ */
+export const WORK_RECORD_NOTE = [
+  '## Record all work as a work-item — even small ones',
+  '',
+  'Every unit of work leaves a trace in the work-items system for the audit trail — no exceptions,',
+  "however small (a future agent learns from the record). You need NOT pre-claim or declare-intent for",
+  "a tiny task the fleet doesn't need live awareness of: just record it AFTER you finish —",
+  '`work_items:create { assign_to:<self> }` then `set_state done` (or batch the create into a tool call',
+  'you are already making). The durable RECORD matters more than the timing. A recurring small task ⇒',
+  'capture it as a recipe instead of re-creating one each time. Never skip the record because "it was small."',
+].join('\n');
+
+/**
  * CODE_RUN_NUDGE — the "collapse a multi-step tool flow into ONE `code:run` instead of paying a
  * round-trip per call" clause (code-execution-tool-orchestration B-CX-3 rollout).
  *
@@ -1072,6 +1095,15 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     role base (operator-core renderReuseFirstNudge), and the su persona base can't desync.
   pre.push('\n---');
   pre.push(REUSE_FIRST_NUDGE);
+
+  // 3e2. Work-record note (audit-trail discipline; owner ask 2026-06-23) — the SHARED bee base every
+  //      role inherits. Every unit of work gets a work-item record even when small; for a tiny task
+  //      the fleet needs no live awareness of, record it AFTER finishing (or batch the create) rather
+  //      than paying pre-claim overhead — the durable record is the point. Recurring small task ⇒ a
+  //      recipe. Sourced from the one WORK_RECORD_NOTE constant so the bee base + operator-launched-
+  //      role base (operator-core renderWorkRecordNote) can't desync. Universal (no role skip).
+  pre.push('\n---');
+  pre.push(WORK_RECORD_NOTE);
 
   // 3f. Code-run nudge (code-execution-tool-orchestration B-CX-3) — the SHARED bee base every role
   //     inherits. Reach for code:run to collapse a multi-step tool flow (loop/branch/filter/fan-out/
