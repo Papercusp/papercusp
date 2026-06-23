@@ -10,10 +10,14 @@ import assert from 'node:assert/strict';
 import { loadBuiltinBlueprint, resolveBlueprint } from './loader.js';
 import { isProgramSpine } from '@papercusp/step-program';
 
-/** id → expected (single decider role, trigger kind, trigger key). */
-const LAUNCHES: Record<string, { role: string; trigger: 'schedule' | 'event'; key?: string }> = {
+/** id → expected (single decider role, trigger kind, trigger key). `trigger: 'none'` = an ON-DEMAND
+ *  launch (no cadence/event trigger) — e.g. `scan`, whose scheduled cadence was RETIRED
+ *  (sentinel-herald-2026-06-21 D-018/P-023: the Queen scans/places continuously + the Sentinel reads
+ *  live state, so a competing scheduled sweep is gone) and now launches only via
+ *  `system:blueprint-run { blueprintId: scan }`. */
+const LAUNCHES: Record<string, { role: string; trigger: 'schedule' | 'event' | 'none'; key?: string }> = {
   deploy: { role: 'release-manager', trigger: 'schedule' },
-  scan: { role: 'scanner', trigger: 'schedule' },
+  scan: { role: 'scanner', trigger: 'none' },
   implement: { role: 'worker', trigger: 'schedule' },
   'merge-resolution': { role: 'merge-resolver', trigger: 'event', key: 'git-sync:conflict' },
   audit: { role: 'auditor', trigger: 'event', key: 'feature:reaches-auditor-lane' },
@@ -35,10 +39,15 @@ for (const [id, expect] of Object.entries(LAUNCHES)) {
     );
     // No validator warnings (a clean, well-formed declaration).
     assert.deepEqual(validation.warnings, [], `${id} has no validator warnings`);
-    // The trigger is DECLARED (D-004): a cadence (schedule) or an event key.
+    // The trigger is DECLARED (D-004): a cadence (schedule) or an event key — OR, for an ON-DEMAND
+    // launch (`trigger: 'none'`, e.g. scan after its scheduled cadence was retired), NO trigger at all
+    // (so materializeBlueprintTriggers mints no routine; it launches via system:blueprint-run).
     if (expect.trigger === 'schedule') {
       assert.ok((blueprint.triggers?.schedule?.length ?? 0) >= 1, `${id} declares a schedule trigger`);
       assert.equal(blueprint.triggers?.event, undefined, `${id} declares no event trigger`);
+    } else if (expect.trigger === 'none') {
+      assert.equal(blueprint.triggers?.schedule?.length ?? 0, 0, `${id} (on-demand) declares no schedule trigger`);
+      assert.equal(blueprint.triggers?.event, undefined, `${id} (on-demand) declares no event trigger`);
     } else {
       assert.equal(blueprint.triggers?.event, expect.key, `${id} declares event ${expect.key}`);
     }
