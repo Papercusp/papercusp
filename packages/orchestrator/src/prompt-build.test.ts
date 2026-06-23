@@ -817,6 +817,8 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     assert.ok(dividerCount <= 16, `unexpected divider count: ${dividerCount}`);
     // code-run nudge (B-CX-3) rides the shared bee base.
     assert.match(out, /Collapse a multi-step tool flow into ONE/);
+    // owner refinement 2026-06-23: the conscious "fewer calls?" token framing rides the lead.
+    assert.match(out, /can I get this result in FEWER calls/);
     // work-record note (audit-trail discipline; owner ask 2026-06-23) rides the shared bee base.
     assert.match(out, /Record all work as a work-item/);
     // finish-the-rollout note (flags-default-on-reach-2026-06-21) rides the shared bee base.

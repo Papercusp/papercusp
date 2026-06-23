@@ -715,20 +715,40 @@ export const WORK_RECORD_NOTE = [
  * real control flow) in the runtime and returns ONLY its final value — so N tool round-trips (each
  * its own inference call re-reading the whole context) collapse into one. The runtime, the typed
  * on-demand signatures (`code:tools`), and the dry-run write gate already exist (B-CX-1A/2A/API);
- * this nudge makes agents REACH for it. Two easy-to-miss points it carries: (1) it is NOT for a
- * single call or a step that needs the agent's judgment mid-flow; (2) only the RETURNED value
- * re-enters context, so summarize CONSERVATIVELY — over-filtering backfires (you re-pay the
- * round-trips re-fetching a field you dropped; the plan §8 consensus).
+ * this nudge makes agents REACH for it. The opening "ASK: fewer calls?" lead is the conscious
+ * self-prompt against the eager one-call-per-turn reflex (owner refinement 2026-06-23). Two
+ * easy-to-miss points it carries: (1) it is NOT for a single call or a step that needs the agent's
+ * judgment mid-flow; (2) only the RETURNED value re-enters context, so summarize CONSERVATIVELY —
+ * over-filtering backfires (you re-pay the round-trips re-fetching a field you dropped; the plan §8
+ * consensus). TWO WORDINGS THAT MUST NOT REGRESS (they were debugged with the owner): the bundle
+ * cutoff is "needs YOUR judgment mid-flow", NOT "calls that depend on each other's results" — a
+ * script threads one call's result into the next fine (that is the canonical list-then-loop), so a
+ * data-dependency framing wrongly excludes the most common batch; and the directive is "batch the
+ * calls you hold THIS turn", NOT "defer/stash work to batch later" (deferral re-loads context and
+ * risks dropping the work — a reliability loss, not a token win).
  *
  * Self-gated ("if `code:run` is in your toolset") since the tool is SU_ROLES-scoped — a role
  * without it simply ignores the clause. Sourced once here (the CONCURRENCY_FIRST_NOTE /
  * REUSE_FIRST_NUDGE precedent): injected into the spawned-bee base (buildPromptParts below) + the
  * operator-launched-role base (operator-core's renderCodeRunNudge, re-exported via
- * role-prompt-from-slug) + mirrored in the su playbooks + the papercup-hive su instance override,
- * so all bases can't desync. Universal (no role skip — the self-gate handles roles without it).
+ * role-prompt-from-slug). The su playbooks + the papercup-hive su instance override carry their own
+ * CONDENSED, profile-tailored paraphrases (NOT this verbatim string — apps/operator/prompts/
+ * papercusp-su-{engineer,power}.tools.md + hive-instances/papercup-hive.su.md); a substantive change
+ * here must be hand-synced into those three (they are intentionally condensed, so they are not
+ * projected). Universal (no role skip — the self-gate handles roles without it).
  */
 export const CODE_RUN_NUDGE = [
   "## Collapse a multi-step tool flow into ONE `code:run` — don't pay a round-trip per call",
+  '',
+  'Before a burst of tool calls, ASK: can I get this result in FEWER calls? Tokens are real cost —',
+  'every separate tool call re-reads your whole context, so the same result in fewer calls is cheaper.',
+  'When you are about to fire several calls you can determine UP FRONT — independent ones, a mechanical',
+  'loop / branch / filter over results, or a fetch whose result several later calls reuse (get it ONCE) —',
+  'put them in ONE `code:run` (or reuse a recipe) instead of a turn each. Keep separate ONLY the steps',
+  'where you must read a result and DECIDE what to do next — a script cannot pause for you to think (so',
+  'the cutoff is YOUR judgment mid-flow, NOT whether one call uses another\'s result — a script threads',
+  'results fine). Batch the calls you hold THIS turn; do NOT stash work to batch later (that just',
+  're-loads the context you were trying to save, and risks dropping the work).',
   '',
   'When `code:run` is in your toolset and a task needs MANY tool calls with control flow — loop /',
   'branch / filter over results, fan-out reads, retry-until, "do X for each of N" — orchestrate them',
