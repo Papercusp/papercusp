@@ -63,7 +63,10 @@ import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 // WAIT_LOOP_NOTE (the "waiting on something? arm a self-wake LOOP — never sleep on an event that may
 // never fire; re-check + FIX what's preventing it" clause, owner directive 2026-06-23) rides it too —
 // operator-core's renderWaitLoopNote reuses the SAME string the spawned-bee base emits.
-export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, EVIDENCE_DISCIPLINE_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, WORK_RECORD_NOTE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE, AGENT_ACTIVITY_TRUTH_NOTE, WAIT_LOOP_NOTE } from './prompt-build';
+// PEER_WAKE_NOTE (the "you can WAKE a peer; a parked agent sleeps until something re-invokes it, so
+// handing work off is not enough" clause, owner directive 2026-06-24) rides it too — operator-core's
+// renderPeerWakeNote reuses the SAME string the spawned-bee base emits.
+export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, EVIDENCE_DISCIPLINE_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, WORK_RECORD_NOTE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE, AGENT_ACTIVITY_TRUTH_NOTE, WAIT_LOOP_NOTE, PEER_WAKE_NOTE } from './prompt-build';
 // resolvePromptFile rides the same entry: operator-core's workspace-level
 // (harness-less) role launch resolves the spawn persona directly
 // (hive-agent-tabs P-003) without importing the heavy orchestrator root.

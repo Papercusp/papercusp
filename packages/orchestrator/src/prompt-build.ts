@@ -995,6 +995,55 @@ export const WAIT_LOOP_NOTE = [
   '  trap is the passive bare subscription that waits forever on a producer nobody is keeping alive.',
 ].join('\n');
 
+/**
+ * PEER_WAKE_NOTE — the "you can WAKE a peer; handing work off does not make a parked agent act on it"
+ * clause every agent shares (fleet-dispatch-wake-clarity precedent; owner directive 2026-06-24).
+ *
+ * Closes a recurring fleet gap: a coordinator hands a brief / assigns a lane to another agent and then
+ * walks away assuming the work continues — but a spawned agent that ended its turn is PARKED and does
+ * NOTHING until something RE-INVOKES it. The handed work then sits untouched in a parked inbox. Agents
+ * kept reaching for `coord:wake`/`coord:nudge`/`fleet:wake` and 404ing; `coord:wake` shipped as the
+ * discoverable alias, `coord:handoff` gained wake-on-open, and `coord:dispatch` is the rich
+ * assign+deliver+wake+confirm primitive — but none of that helps an agent that does not KNOW it may
+ * (and usually must) wake the peer it is depending on. This note teaches the verb-per-situation choice
+ * and the "verify the wake actually landed — a wake that reached nobody means RELAUNCH, not re-wake"
+ * discipline. It is the ACTIVE complement of WAIT_LOOP_NOTE: the cure for "an agent sleeps on work
+ * nobody is driving" is that the agent holding the next step WAKES the one who must act.
+ *
+ * Sourced once here (the WAIT_LOOP_NOTE / AGENT_ACTIVITY_TRUTH_NOTE precedent): injected into the
+ * spawned-bee base (buildPromptParts below) + the operator-launched-role base (operator-core's
+ * renderPeerWakeNote, re-exported via role-prompt-from-slug) + projected into the su playbooks
+ * (desktop-install injectSharedBaseNotes), so all bases can't desync. Universal (no role skip — any
+ * agent can hand work to a peer or wait on one). Verbs are concrete because they ARE the fix; each
+ * role calls the ones in its toolset.
+ */
+export const PEER_WAKE_NOTE = [
+  '## You can WAKE a peer — a parked agent sleeps until something re-invokes it; handing work off is not enough',
+  '',
+  'An agent that ends its turn is PARKED: it does nothing until something starts a NEW turn for it. So',
+  'handing it work — assigning a lane, dropping a brief in its inbox, naming it the next owner — does',
+  'NOT, by itself, make it pick the work up. If you hand off and walk away, the work can sit untouched',
+  'in a parked peer\'s inbox indefinitely while you wait on a result that will never come. You have verbs',
+  'that WAKE a peer (re-invoke its turn); use the right one for the situation, and CONFIRM the wake landed.',
+  '',
+  '- GIVING NEW WORK → `coord:dispatch { to, ... }` — assign a LANE + deliver the brief + wake + confirm',
+  '  pickup in ONE call (the rich hand-off primitive; reach for it first when handing an agent something',
+  '  to do). `coord:handoff` also WAKES the recipient on open so a parked addressee gets a turn to accept',
+  '  — but it reports `recipient_absent` / `woken:0` when no live session was re-invoked.',
+  '- WORK ALREADY ASSIGNED, just need it to resume → `coord:wake { to, note? }` — a bare wake: the target',
+  '  starts a turn and RE-ORIENTS on its own claimed lane (use after `plan_items:assign` or a prior',
+  '  dispatch). Single-target only — never `*`/`human`/a selector (that would thunder-herd the fleet).',
+  '- A CONTEXTUAL MESSAGE + wake → `coord:send { to, wake: \'required\' }`.',
+  '- ALWAYS CHECK THE WAKE LANDED. wake/handoff/dispatch report whether a live session was actually',
+  '  re-invoked (`woken`, `recipient_absent`, `recipient_dead`). A wake that reached NOBODY is a LOUD',
+  '  miss, never a silent `woken:0`: the target is `ended` (dead) and needs a RELAUNCH/resume — NOT',
+  '  another wake, which black-holes. Read `coord:presence` first: `sessionState: parked` = wakeable;',
+  '  `ended` = relaunch it.',
+  '',
+  'This is the active complement of the wait-loop note: do not passively wait on a handed-off peer to',
+  'wake itself — the agent holding the next step is responsible for WAKING the one who must act.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -1247,6 +1296,17 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     role base (operator-core renderWaitLoopNote), and the su playbooks can't desync.
   pre.push('\n---');
   pre.push(WAIT_LOOP_NOTE);
+
+  // 3j. Peer-wake note (owner directive 2026-06-24) — the SHARED bee base every role inherits. A
+  //     parked agent does NOTHING until something re-invokes its turn, so handing work to a peer does
+  //     not make it act; you can (and usually must) WAKE the peer you depend on — coord:dispatch
+  //     (assign+deliver+wake+confirm) / coord:handoff (wakes on open) for new work, coord:wake to
+  //     resume an already-assigned lane — and verify it landed (a wake that woke nobody = ended →
+  //     relaunch). The active complement of WAIT_LOOP_NOTE. Universal (no role skip). Sourced from the
+  //     one PEER_WAKE_NOTE constant so the bee base, the operator-launched-role base (operator-core
+  //     renderPeerWakeNote), and the su playbooks can't desync.
+  pre.push('\n---');
+  pre.push(PEER_WAKE_NOTE);
 
   // Hive vocabulary (hive-blueprint-generalization P-016): when the hive blueprint
   // renames nouns, tell the agent to read the shared personas' generic terms as this

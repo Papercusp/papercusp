@@ -812,9 +812,10 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     // memory-discipline, friction-tripwire, observation-rubric-nudge, yield-policy,
     // account-routing-note, evidence-discipline-note, concurrency-first-note,
     // deploy-pipeline-note, testing-standard, reuse-first-nudge, work-record-note,
-    // code-run-note, finish-the-rollout-note, agent-activity-truth-note, wait-loop-note.
+    // code-run-note, finish-the-rollout-note, agent-activity-truth-note, wait-loop-note,
+    // peer-wake-note.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 17, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 18, `unexpected divider count: ${dividerCount}`);
     // code-run nudge (B-CX-3) rides the shared bee base.
     assert.match(out, /Collapse a multi-step tool flow into ONE/);
     // owner refinement 2026-06-23: the conscious "fewer calls?" token framing rides the lead.
@@ -827,6 +828,8 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     assert.match(out, /is a LIVE derived truth/);
     // wait-loop note (owner directive 2026-06-23) rides the shared bee base.
     assert.match(out, /Arm a self-wake LOOP/);
+    // peer-wake note (owner directive 2026-06-24) rides the shared bee base.
+    assert.match(out, /You can WAKE a peer/);
   } finally {
     fx.cleanup();
   }
