@@ -125,6 +125,11 @@ dependencies:
     - deploy:status
     - discovery:hives
     - fleet:assignments
+    # The Queen's source-side read of the shared inference-capacity oracle — the
+    # queen.base.md placement loop CALLS it each cycle to size the batch (Pass
+    # fleet:capacity { headroom } → fleet:place_batch). Was a dark tool (referenced
+    # in-prompt, absent from deps) — blueprint-prompt-dark-tools guard.
+    - fleet:capacity
     - fleet:drain
     # One-wake BATCH placement (queen-autonomous-execution B-07): ranks the ready
     # frontier task↔bee by affinity, then fans spawn + warm-inject across the fleet
