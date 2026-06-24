@@ -54,6 +54,9 @@ export type {
   WorkerChunkPathMetrics,
   WorkerChunkMetrics,
 } from './worker-chunk-outcome-pg';
+// P-021 deterministic ramp-gate: the pure advance/hold/rollback recommender over P-020 metrics.
+export { decideRampAdvance, DEFAULT_RAMP_THRESHOLDS, RAMP_STEPS } from './worker-chunk-ramp';
+export type { RampStep, RampThresholds, RampDecision } from './worker-chunk-ramp';
 export { readFeaturesPg, durableOwnedFeatureIdsPg } from './state-pg';
 export type { PgStateContext } from './state-pg';
 // G2 Auditor dispatch lane (P-007): screen remote-pending features through the
