@@ -128,15 +128,18 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
        )
        AND (
          -- Features not linked to any plan are always eligible (legacy/manual).
-         -- NB: the plan slug lives in metadata->>'source_plan' on the per-schema
-         -- harness_features table. A dedicated source_plan_slug column exists ONLY
-         -- on harness_shared.harness_features_consolidated (migration 084, which
-         -- backfills it FROM metadata->>'source_plan'); querying that column here
-         -- threw "column source_plan_slug does not exist" on every harness.
-         (hf.metadata->>'source_plan') IS NULL
+         -- ledger P-004: the plan slug now lives in the first-class
+         -- `source_plan_slug` COLUMN (written by plan→work-item promotion +
+         -- convert-at-pickup), with `metadata->>'source_plan'` kept only for
+         -- pre-promotion features. We read it from `hfc` — the consolidated table
+         -- already LEFT JOINed above (qualified, ALWAYS has the column), NULL when
+         -- there's no consolidated row yet (pre-sync local feature → metadata
+         -- fallback). This avoids referencing a per-harness column that a stale,
+         -- SELECT*-frozen `harness_features` view may not expose.
+         COALESCE(hfc.source_plan_slug, hf.metadata->>'source_plan') IS NULL
          OR
          -- Features from plans must belong to a started plan.
-         (hf.metadata->>'source_plan') IN (
+         COALESCE(hfc.source_plan_slug, hf.metadata->>'source_plan') IN (
            SELECT plan_slug
              FROM harness_shared.harness_plans
             WHERE workspace_id = ${ctx.workspaceId}
