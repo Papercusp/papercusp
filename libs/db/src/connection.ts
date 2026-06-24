@@ -568,6 +568,35 @@ export function processConnectionCeiling(): {
 }
 
 /**
+ * Pure verdict for {@link logConnectionBudget} (EI-3379 — unit-testable, no DB). The
+ * worst-case PG-BACKEND pressure this process group contributes vs the live
+ * max_connections.
+ *
+ * Under a transaction pooler the org pools are pgbouncer CLIENT slots, NOT PG backends
+ * — pgbouncer bounds real backends at default_pool_size regardless of process count —
+ * so they do NOT multiply the per-process backend ceiling. Only the DIRECT pools open
+ * backends that scale with process count: per-harness `getHarnessPg` (stays direct,
+ * D-005), the LISTEN buses, the admin cache, the watchdog tick-lock (the fixedOverhead).
+ * Counting the pooled org pools as direct is what made the budget log cry false DANGER
+ * on every correctly-pooled multi-worker boot (a 15-worker cluster reported ~1104 vs a
+ * live, pgbouncer-bounded 199/512).
+ */
+export function connectionBudgetStatus(opts: {
+  orgPools: number;
+  harnessPools: number;
+  fixedOverhead: number;
+  pooled: boolean;
+  expectedProcesses: number;
+  liveMax: number;
+}): { directPerProc: number; fleetWorst: number; danger: boolean } {
+  const directPerProc = (opts.pooled ? 0 : opts.orgPools) + opts.harnessPools + opts.fixedOverhead;
+  const procs = Math.max(1, Math.floor(opts.expectedProcesses) || 1);
+  const fleetWorst = directPerProc * procs;
+  const danger = opts.liveMax > 0 && fleetWorst > opts.liveMax * 0.9;
+  return { directPerProc, fleetWorst, danger };
+}
+
+/**
  * Log this process's connection ceiling vs the LIVE `max_connections`, warning
  * loudly when the fleet-wide worst case would approach the ceiling. Best-effort
  * (queries PG; silent if unreachable). `expectedProcesses` defaults from
@@ -576,7 +605,7 @@ export function processConnectionCeiling(): {
 export async function logConnectionBudget(
   log: (m: string) => void = (m) => console.warn(m),
 ): Promise<void> {
-  const { total, orgPools, harnessPools, fixedOverhead, poolMax } = processConnectionCeiling();
+  const { orgPools, harnessPools, fixedOverhead, poolMax } = processConnectionCeiling();
   let liveMax = 0;
   try {
     const rows = (await getOrgPg().sql`SELECT current_setting('max_connections')::int AS m`) as {
@@ -587,16 +616,33 @@ export async function logConnectionBudget(
     // PG unreachable at boot — skip (the diagnostic is non-fatal).
   }
   const expectedProcs = Math.max(1, Number(process.env.PAPERCUSP_EXPECTED_OPERATOR_PROCS) || 2);
-  const fleetWorst = total * expectedProcs;
+  const pooled = pgbouncerEnabled();
+  const { directPerProc, fleetWorst, danger } = connectionBudgetStatus({
+    orgPools,
+    harnessPools,
+    fixedOverhead,
+    pooled,
+    expectedProcesses: expectedProcs,
+    liveMax,
+  });
+  // EI-3379: when pooled, org pools are pgbouncer client slots (real backends bounded by
+  // default_pool_size, not by process count), so they're excluded from the per-process
+  // backend tally and flagged as such — the warning now reflects DIRECT backend pressure.
+  const orgNote = pooled
+    ? `org ${orgPools} @ poolMax ${poolMax} POOLED (pgbouncer client slots; backends bounded by default_pool_size)`
+    : `org ${orgPools} @ poolMax ${poolMax}`;
   const head =
-    `[pg-budget] pid ${process.pid}: <=${total} conns/process ` +
-    `(org ${orgPools} @ poolMax ${poolMax} + harness ${harnessPools} + cache/listeners ${fixedOverhead}); ` +
-    `~${fleetWorst} across ${expectedProcs} proc(s)`;
-  if (liveMax > 0 && fleetWorst > liveMax * 0.9) {
-    log(
-      `${head} — DANGER vs live max_connections=${liveMax}. Run \`npx tsx scripts/pg-autotune.ts --apply\` ` +
-        `(raise the ceiling to the host), lower PAPERCUSP_DB_POOL_MAX, or front PG with PgBouncer.`,
-    );
+    `[pg-budget] pid ${process.pid}: <=${directPerProc} direct conns/process ` +
+    `(${orgNote} + harness ${harnessPools} + cache/listeners ${fixedOverhead}); ` +
+    `~${fleetWorst} direct across ${expectedProcs} proc(s)`;
+  if (danger) {
+    const remedy = pooled
+      ? `Run \`npx tsx scripts/pg-autotune.ts --apply\` (raise the ceiling to the host) or lower ` +
+        `PAPERCUSP_HARNESS_POOL_CAP / PAPERCUSP_EXPECTED_OPERATOR_PROCS — org pools are already pooled, ` +
+        `so the DIRECT pools (harness + LISTEN + admin) are the pressure.`
+      : `Run \`npx tsx scripts/pg-autotune.ts --apply\` (raise the ceiling to the host), lower ` +
+        `PAPERCUSP_DB_POOL_MAX, or front PG with PgBouncer.`;
+    log(`${head} — DANGER vs live max_connections=${liveMax}. ${remedy}`);
   } else {
     log(`${head} vs live max_connections=${liveMax || '?'} — ok`);
   }

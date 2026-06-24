@@ -13,7 +13,7 @@ vi.mock('../../../../../packages/operator-core/lib/resource-profile', () => ({
   getResourceProfile: () => ({ hostClass: mockProfile.hostClass }),
 }));
 
-import { maybePgbouncer, pgbouncerEnabled } from './connection';
+import { connectionBudgetStatus, maybePgbouncer, pgbouncerEnabled } from './connection';
 
 const DIRECT = 'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
 const POOLED = 'postgresql://harness_app:harness_app_pwd@127.0.0.1:6432/papercusp';
@@ -100,5 +100,44 @@ describe('maybePgbouncer', () => {
   it('leaves an unparseable URL untouched (never throws)', () => {
     process.env.PAPERCUSP_PGBOUNCER = '1';
     expect(maybePgbouncer('not a url')).toBe('not a url');
+  });
+});
+
+describe('connectionBudgetStatus — EI-3379 pooler-aware backend budget', () => {
+  // The live 15-worker dev-box cluster: poolMax 24 → org 48, harness 8, fixed 13,
+  // 16 procs (15 workers + primary), max_connections 512.
+  const devBox = { orgPools: 48, harnessPools: 8, fixedOverhead: 13, expectedProcesses: 16, liveMax: 512 };
+
+  it('POOLED: excludes org pools (pgbouncer client slots) → not DANGER', () => {
+    const r = connectionBudgetStatus({ ...devBox, pooled: true });
+    expect(r.directPerProc).toBe(21); // 0 org + 8 harness + 13 fixed
+    expect(r.fleetWorst).toBe(336); // 21 × 16, well under 512
+    expect(r.danger).toBe(false);
+  });
+
+  it('DIRECT (no pooler): counts org pools → DANGER (the pre-fix false alarm WAS the real direct risk)', () => {
+    const r = connectionBudgetStatus({ ...devBox, pooled: false });
+    expect(r.directPerProc).toBe(69); // 48 org + 8 harness + 13 fixed
+    expect(r.fleetWorst).toBe(1104); // 69 × 16, way over 512
+    expect(r.danger).toBe(true);
+  });
+
+  it('POOLED but the DIRECT pools genuinely exhaust → still DANGER (the check still bites)', () => {
+    // e.g. a runaway per-harness pool cap multiplied across many processes
+    const r = connectionBudgetStatus({
+      orgPools: 48,
+      harnessPools: 40,
+      fixedOverhead: 13,
+      expectedProcesses: 16,
+      liveMax: 512,
+      pooled: true,
+    });
+    expect(r.directPerProc).toBe(53); // org excluded, but 40 harness + 13 fixed
+    expect(r.fleetWorst).toBe(848); // 53 × 16 > 512
+    expect(r.danger).toBe(true);
+  });
+
+  it('liveMax unknown (0, PG unreachable) is never DANGER', () => {
+    expect(connectionBudgetStatus({ ...devBox, pooled: false, liveMax: 0 }).danger).toBe(false);
   });
 });
