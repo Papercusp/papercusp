@@ -242,6 +242,9 @@ deploying**: place a tight cluster of collaborators together on a fresh Swarm
 - **Inbox:** `coord:inbox` — escalations/blockers addressed to you; triage them
   first (see below).
 - **Spawn headroom:** the concurrency budget `{ ceiling, running, headroom }`.
+- **Inference capacity:** `fleet:capacity` — live pool saturation + the bee-tier
+  `dispatchBudget` (how many fresh bees the pool can actually feed right now). Size
+  the batch to this, not just to the spawn ceiling (see step 2a).
 
 ## Triage first, then rank and assign
 
@@ -267,6 +270,25 @@ plus an `await_event` if it hit the ceiling (sleep on it, re-run for the tail).
 **Prefer this over looping `fleet:spawn` / `coord:send` per task** — it IS the
 batch fan-out; `dry_run: true` previews the plan without acting. It does NOT
 evict — graceful-evict (below) stays your own judgment call.
+
+**2a. Size the batch to LIVE inference capacity — `fleet:capacity`.** Spawn
+headroom is your concurrency ceiling; it is NOT the same as how many fresh bees
+the inference POOL can actually feed. A flood of bees beyond the pool's capacity
+just parks/fails at the gateway and starves the interactive lane. Before a
+placement round read `fleet:capacity` (re-read each cycle — capacity moves):
+- **Abundant** (`factor` ≈ 1, low `utilization`, `dispatchBudget` healthy): place
+  BROADLY up to your ceiling.
+- **Tightening / scarce** (`factor` < 1, or `dispatchBudget` small): place the
+  TOP-RANKED items only — up to `dispatchBudget` fresh bees — and HOLD the rest in
+  the frontier for the next wake. Defer the lowest-priority work first (the frontier
+  is already importance-ranked, so trimming the tail is correct).
+- **Saturated** (`paused`/`rejected`, `factor` 0): place ONLY top-ranked tier-1
+  work; hold the bee batch until the pool recovers (`resetInSec`).
+`place_batch` ALSO clamps fresh spawns to capacity automatically when
+`QUEEN_CAPACITY_DISPATCH` is on (the safety floor); `fleet:capacity` is so you
+DECIDE *which* work to hold rather than letting the tail get silently clamped.
+Pass `fleet:capacity { headroom: <bees you mean to place> }` to see the clamped
+`recommendedHeadroom` before you commit.
 
 The affinity signals it ranks each task↔bee by (strongest first) — also your
 manual fallback for a one-off placement:

@@ -39,6 +39,21 @@ export { AGENT_BACKENDS } from './types';
 export { runWorkerChunkLoop, shouldUseWorkerChunkLoop } from './run-worker-chunk-loop';
 export { FileLockQueueCoordinator } from './file-lock-queue-coordinator';
 export type { ChunkLoopOutcome, ChunkLoopFeature, ChunkLoopDeps } from './worker-chunk-loop';
+// P-020 monitoring metrics: per-run outcome persistence + the completion-rate /
+// outcome-distribution-by-path aggregation the dark-launch parity diff + ramp gate read.
+export {
+  outcomeToRecord,
+  recordWorkerChunkOutcome,
+  readWorkerChunkOutcomes,
+  summarizeWorkerChunkOutcomes,
+} from './worker-chunk-outcome-pg';
+export type {
+  WorkerExecutionPath,
+  ChunkLoopOutcomeRecord,
+  WorkerChunkOutcomeCtx,
+  WorkerChunkPathMetrics,
+  WorkerChunkMetrics,
+} from './worker-chunk-outcome-pg';
 export { readFeaturesPg, durableOwnedFeatureIdsPg } from './state-pg';
 export type { PgStateContext } from './state-pg';
 // G2 Auditor dispatch lane (P-007): screen remote-pending features through the

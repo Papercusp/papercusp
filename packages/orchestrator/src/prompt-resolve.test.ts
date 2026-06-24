@@ -660,3 +660,117 @@ test('Brief 6 blueprint-id alias — a stale hive/generic-hive id resolves the r
     join(HARNESS_PKG, 'blueprints', 'work', 'prompts', 'bee.md'),
   );
 });
+
+// ── decouple-agent-prompts-from-release-gate-2026-06-20 P-002/P-005 ──────────
+// Prompt resolution prefers the integration/staging PROMPT root (PAPERCUSP_PROMPT_ROOT,
+// else PAPERCUSP_INTEGRATION_ROOT-derived) over ctx.harnessDir — so a prompt edit goes
+// live without a code-release promotion — while remaining byte-identical when unset.
+
+/** Run `fn` with the given env vars set, restoring prior values afterward. */
+function withEnv(vars: Record<string, string | undefined>, fn: () => void): void {
+  const prior: Record<string, string | undefined> = {};
+  for (const k of Object.keys(vars)) prior[k] = process.env[k];
+  try {
+    for (const [k, v] of Object.entries(vars)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    fn();
+  } finally {
+    for (const [k, v] of Object.entries(prior)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+test('P-002 — PAPERCUSP_PROMPT_ROOT redirects base-prompt resolution off ctx.harnessDir', () => {
+  const running = withHarness((root) => writeBlueprintRole(root, 'base', 'worker', '# RUNNING'));
+  const promptRoot = withHarness((root) => writeBlueprintRole(root, 'base', 'worker', '# INTEGRATION'));
+  try {
+    withEnv({ PAPERCUSP_PROMPT_ROOT: promptRoot.harnessDir, PAPERCUSP_INTEGRATION_ROOT: undefined }, () => {
+      const resolved = resolvePromptFile({ harnessDir: running.harnessDir, phase: '', dept: '' }, 'worker');
+      assert.equal(resolved, join(promptRoot.harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'));
+    });
+  } finally {
+    running.cleanup();
+    promptRoot.cleanup();
+  }
+});
+
+test('P-002 — PAPERCUSP_INTEGRATION_ROOT derives <root>/libs/papercusp/packages/harness for prompts', () => {
+  const running = withHarness((root) => writeBlueprintRole(root, 'base', 'worker', '# RUNNING'));
+  // An integration repo root whose harness subtree carries the new prompt.
+  const integRoot = mkdtempSync(join(tmpdir(), 'papercusp-integ-'));
+  const integHarness = join(integRoot, 'libs', 'papercusp', 'packages', 'harness');
+  writeBlueprintRole(integHarness, 'base', 'worker', '# INTEGRATION');
+  try {
+    withEnv({ PAPERCUSP_INTEGRATION_ROOT: integRoot, PAPERCUSP_PROMPT_ROOT: undefined }, () => {
+      const resolved = resolvePromptFile({ harnessDir: running.harnessDir, phase: '', dept: '' }, 'worker');
+      assert.equal(resolved, join(integHarness, 'blueprints', 'base', 'prompts', 'worker.md'));
+    });
+  } finally {
+    running.cleanup();
+    rmSync(integRoot, { recursive: true, force: true });
+  }
+});
+
+test('P-002 — PAPERCUSP_PROMPT_ROOT wins over PAPERCUSP_INTEGRATION_ROOT (precedence)', () => {
+  const running = withHarness((root) => writeBlueprintRole(root, 'base', 'worker', '# RUNNING'));
+  const direct = withHarness((root) => writeBlueprintRole(root, 'base', 'worker', '# DIRECT'));
+  const integRoot = mkdtempSync(join(tmpdir(), 'papercusp-integ-'));
+  writeBlueprintRole(join(integRoot, 'libs', 'papercusp', 'packages', 'harness'), 'base', 'worker', '# INTEG');
+  try {
+    withEnv({ PAPERCUSP_PROMPT_ROOT: direct.harnessDir, PAPERCUSP_INTEGRATION_ROOT: integRoot }, () => {
+      const resolved = resolvePromptFile({ harnessDir: running.harnessDir, phase: '', dept: '' }, 'worker');
+      assert.equal(resolved, join(direct.harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'));
+    });
+  } finally {
+    running.cleanup();
+    direct.cleanup();
+    rmSync(integRoot, { recursive: true, force: true });
+  }
+});
+
+test('P-002 — a NON-EXISTENT override falls through to ctx.harnessDir (never strands resolution)', () => {
+  const running = withHarness((root) => writeBlueprintRole(root, 'base', 'worker', '# RUNNING'));
+  try {
+    withEnv({ PAPERCUSP_PROMPT_ROOT: join(tmpdir(), 'papercusp-does-not-exist-xyz'), PAPERCUSP_INTEGRATION_ROOT: undefined }, () => {
+      const resolved = resolvePromptFile({ harnessDir: running.harnessDir, phase: '', dept: '' }, 'worker');
+      assert.equal(resolved, join(running.harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'));
+    });
+  } finally {
+    running.cleanup();
+  }
+});
+
+test('P-002 — UNSET env ⇒ byte-identical (resolves entirely from ctx.harnessDir)', () => {
+  const running = withHarness((root) => writeBlueprintRole(root, 'base', 'worker', '# RUNNING'));
+  try {
+    withEnv({ PAPERCUSP_PROMPT_ROOT: undefined, PAPERCUSP_INTEGRATION_ROOT: undefined }, () => {
+      const resolved = resolvePromptFile({ harnessDir: running.harnessDir, phase: '', dept: '' }, 'worker');
+      assert.equal(resolved, join(running.harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'));
+    });
+  } finally {
+    running.cleanup();
+  }
+});
+
+test('P-002 — resolveReplacementSystemPrompt also honors the prompt root (REPLACE_CLAUDE_BASE preamble from integration tree)', () => {
+  const running = withHarness(() => {
+    /* running tree has NO base preamble — only the integration tree does */
+  });
+  const promptRoot = withHarness((root) => {
+    writeBlueprintPrompt(root, 'base', 'agent-base-preamble.md', '# INTEGRATION PREAMBLE');
+    writeBlueprintYaml(root, 'base');
+  });
+  try {
+    withEnv({ PAPERCUSP_PROMPT_ROOT: promptRoot.harnessDir, PAPERCUSP_INTEGRATION_ROOT: undefined }, () => {
+      const out = resolveReplacementSystemPrompt({ harnessDir: running.harnessDir, phase: '', dept: '', blueprintId: 'coding' });
+      assert.equal(out, '# INTEGRATION PREAMBLE\n');
+    });
+  } finally {
+    running.cleanup();
+    promptRoot.cleanup();
+  }
+});

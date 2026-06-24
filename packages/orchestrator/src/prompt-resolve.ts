@@ -30,6 +30,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { promptHarnessRoot } from '@papercusp/harness/paths';
 import { canonicalBlueprintId } from './blueprint-aliases.js';
 
 export interface PromptResolveContext {
@@ -89,9 +90,16 @@ const BASE_BLUEPRINT_ID = 'base';
  * Empty/absent `blueprintRoots` ⇒ just `[harnessDir]` (the pre-tier behavior).
  */
 function rootsFor(ctx: PromptResolveContext): string[] {
+  // The built-in tier is resolved through `promptHarnessRoot` so a
+  // PAPERCUSP_PROMPT_ROOT / PAPERCUSP_INTEGRATION_ROOT override redirects PROMPT
+  // resolution to the integration/staging tree without a code-release promotion
+  // (decouple-agent-prompts-from-release-gate D-001). Unset ⇒ ctx.harnessDir,
+  // byte-identical to before. The per-hive LOCAL/INSTALLED `blueprintRoots` tiers
+  // are NOT redirected — they are real running-system customizations.
+  const builtin = promptHarnessRoot(ctx.harnessDir);
   return ctx.blueprintRoots && ctx.blueprintRoots.length > 0
-    ? [...ctx.blueprintRoots, ctx.harnessDir]
-    : [ctx.harnessDir];
+    ? [...ctx.blueprintRoots, builtin]
+    : [builtin];
 }
 
 /**

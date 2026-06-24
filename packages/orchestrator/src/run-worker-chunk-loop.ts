@@ -326,5 +326,29 @@ export async function runWorkerChunkLoop(
     await setFeatureStatus(ctx.stateDir, fid, 'failing', { ctx: stateCtx(ctx) });
   }
 
+  // P-020 monitoring metrics: record the terminal outcome + execution PATH (subprocess vs
+  // the operator-hosted op) so the dark-launch parity diff + ramp gate can compare
+  // completion-rate / outcome-distribution by path. BEST-EFFORT — a persist hiccup must
+  // never fail the loop (recordWorkerChunkOutcome swallows + logs). Skipped when pg/ws/slug
+  // are absent (CLI / unit runs), exactly like the chunk-plan PG writes.
+  if (ctx.pg && ctx.workspaceId && slug) {
+    try {
+      const { recordWorkerChunkOutcome } = await import('./worker-chunk-outcome-pg.js');
+      await recordWorkerChunkOutcome(
+        { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug: slug },
+        {
+          featureId: fid,
+          executionPath: ctx.executionPath ?? 'subprocess',
+          outcome,
+          log: (m) => logger.log(m),
+        },
+      );
+    } catch (err) {
+      logger.log(
+        `CHUNK_LOOP outcome-metrics persist skipped (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   return outcome;
 }

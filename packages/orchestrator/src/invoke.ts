@@ -143,6 +143,14 @@ export interface InvokeContext {
    * sites pick them up without per-site plumbing.
    */
   extraSpawnEnv?: Record<string, string>;
+  /**
+   * Which execution path is driving this context — the operator-hosted
+   * `worker:chunk-loop` op sets `'op'`; the subprocess `invoke-once` worker path
+   * leaves it undefined (⇒ treated as `'subprocess'`). Used ONLY to label the
+   * worker-chunk-loop outcome metrics (worker-chunk-loop-operator-hosted P-020) so the
+   * dark-launch parity diff can split completion-rate / outcome-distribution by path.
+   */
+  executionPath?: 'subprocess' | 'op';
 }
 
 /** What the spawn step actually returns (richer than the public InvokeResult). */

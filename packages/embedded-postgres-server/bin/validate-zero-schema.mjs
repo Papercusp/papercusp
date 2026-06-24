@@ -13,7 +13,7 @@
  *   PAPERCUSP_PG_USER     (default postgres)
  *   PAPERCUSP_PG_PASSWORD (default postgres)
  *   PAPERCUSP_PG_DB       (default papercusp)
- *   PAPERCUSP_ZERO_SCHEMA (default $PAPERCUP_ROOT/libs/zero-harness/src/schema.ts)
+ *   PAPERCUSP_ZERO_SCHEMA (default $PAPERCUSP_ROOT/libs/zero-harness/src/schema.ts)
  */
 
 import { readFileSync } from 'node:fs';

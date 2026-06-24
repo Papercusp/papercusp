@@ -33,7 +33,7 @@
  *   - File `040-plugin-configs-backfill.sql` is in MANUAL_ONLY skip
  *     list — it requires `psql -v key=...` variable substitution.
  *   - Publication block (CREATE PUBLICATION zero_harness FOR TABLES IN
- *     SCHEMA harness_shared, papercup_shared) MUST run AFTER migrations
+ *     SCHEMA harness_shared, papercusp_shared) MUST run AFTER migrations
  *     so the schemas exist on a fresh initdb.
  */
 
@@ -173,7 +173,7 @@ export async function startEmbeddedPostgresServer(opts = {}) {
 
     // Extensions the baseline schema depends on, created BEFORE migrations.
     // The squashed 000-baseline.sql (self-contained-migration-baseline-2026-06-02)
-    // is a schema-only dump of harness_shared + papercup_shared: it references
+    // is a schema-only dump of harness_shared + papercusp_shared: it references
     // gen_random_uuid()/digest() (pgcrypto), trigram ops (pg_trgm), and vector(N)
     // columns (vector) but does NOT itself CREATE EXTENSION. Previously these came
     // from migrations 027/039/059/060, now archived. pgcrypto + pg_trgm are trusted
@@ -195,7 +195,7 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     // A fresh initdb now builds the full schema by applying migrations directly (below).
 
     // Apply migrations FIRST. The publication-creation block below
-    // references schemas (harness_shared, papercup_shared) that don't
+    // references schemas (harness_shared, papercusp_shared) that don't
     // exist on a fresh initdb until 001-shared.sql runs — moving
     // migrations ahead of the publication step prevents the
     // "schema does not exist" failure on first boot.
@@ -223,7 +223,7 @@ export async function startEmbeddedPostgresServer(opts = {}) {
       await sql.unsafe(`
         DO $pg$ BEGIN
           IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'zero_harness') THEN
-            CREATE PUBLICATION zero_harness FOR TABLES IN SCHEMA harness_shared, papercup_shared;
+            CREATE PUBLICATION zero_harness FOR TABLES IN SCHEMA harness_shared, papercusp_shared;
           END IF;
         END $pg$;
       `);
