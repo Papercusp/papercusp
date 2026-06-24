@@ -6,10 +6,25 @@
 import { describe, it, expect } from 'vitest';
 import {
   outcomeToRecord,
+  recordWorkerChunkOutcome,
+  readWorkerChunkOutcomes,
   summarizeWorkerChunkOutcomes,
   type ChunkLoopOutcomeRecord,
 } from './worker-chunk-outcome-pg';
 import type { ChunkLoopOutcome } from './worker-chunk-loop';
+import type { OrchestratorPg } from './invoke';
+
+/** Tagged-template mock pg: records calls + drives SELECT result (mirrors chunk-plan-pg.test). */
+function makeMockPg(selectResult: Record<string, unknown>[] = []) {
+  const calls: Array<{ sql: string; params: unknown[] }> = [];
+  const pg = ((template: TemplateStringsArray, ...values: unknown[]) => {
+    const sql = template.join('?').replace(/\s+/g, ' ').trim();
+    calls.push({ sql, params: values });
+    if (/^select\b/i.test(sql)) return Promise.resolve(selectResult);
+    return Promise.resolve([]);
+  }) as OrchestratorPg;
+  return { pg, calls };
+}
 
 describe('outcomeToRecord', () => {
   it('maps completed → chunksCommitted, no detail', () => {

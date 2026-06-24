@@ -114,7 +114,7 @@ export {
   buildFleetSrtSettings,
   wrapSpawnWithSrt,
 } from './invoke';
-export type { InvokeContext } from './invoke';
+export type { InvokeContext, OrchestratorPg } from './invoke';
 export { parseDecision, parseDecisionFor, DECISION_VERBS } from './decision-parse';
 export type { DecisionVerb, ParsedDecision, ParsedSpineDecision } from './decision-parse';
 // Harness Blueprint engine (harness-blueprint-orchestration-2026-06-03 Phase A).
