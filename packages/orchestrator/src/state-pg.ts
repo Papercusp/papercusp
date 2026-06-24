@@ -129,13 +129,13 @@ export async function readFeaturesPg(ctx: PgStateContext): Promise<FeatureRecord
        AND (
          -- Features not linked to any plan are always eligible (legacy/manual).
          -- ledger P-004: the plan slug now lives in the first-class
-         -- `source_plan_slug` COLUMN (written by plan→work-item promotion +
-         -- convert-at-pickup), with `metadata->>'source_plan'` kept only for
-         -- pre-promotion features. We read it from `hfc` — the consolidated table
+         -- source_plan_slug COLUMN (written by plan-to-work-item promotion +
+         -- convert-at-pickup), with metadata->>'source_plan' kept only for
+         -- pre-promotion features. We read it from hfc, the consolidated table
          -- already LEFT JOINed above (qualified, ALWAYS has the column), NULL when
-         -- there's no consolidated row yet (pre-sync local feature → metadata
+         -- there is no consolidated row yet (pre-sync local feature, metadata
          -- fallback). This avoids referencing a per-harness column that a stale,
-         -- SELECT*-frozen `harness_features` view may not expose.
+         -- SELECT*-frozen harness_features view may not expose.
          COALESCE(hfc.source_plan_slug, hf.metadata->>'source_plan') IS NULL
          OR
          -- Features from plans must belong to a started plan.
