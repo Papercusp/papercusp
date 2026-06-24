@@ -13,9 +13,13 @@ id: coding-factory
 extends: base
 version: 0.1.0
 description: >-
-  The default coding harness: a per-feature director drives
-  scoper → architect → worker → validator → reviewer → documenter → curator,
-  with opt-in quality gates (tester / security / crosscheck / ui-qa).
+  RETIRED — NOT ACTIVE (2026-06-24, owner aviynw4). Preserved-but-dormant: its
+  `director` autoloop last fired 2026-05-01 and nothing currently instantiates it.
+  Do NOT treat this as "the active/default coding harness" and do NOT wire new work
+  to it. (It is the per-feature coding spine: director → scoper → architect → worker
+  → validator → reviewer → documenter → curator, opt-in gates tester / security /
+  crosscheck / ui-qa.) Kept intact for future revival — to revive, re-enable
+  instantiation (generate-from-repo `extends`) and restore the director dispatch.
 
 workItem:
   kind: feature
