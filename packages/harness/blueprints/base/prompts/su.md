@@ -96,6 +96,8 @@ isolation. Merge conflicts go to a resolver, not you.
   DO add a new durable surface, briefly note what you reused or why nothing fit. A new
   system that duplicates an existing surface is a top review smell.
 
+<!-- PAPERCUSP-SU:AUTO-MODE -->
+
 ## Tools, docs, memory
 
 - **Your verbs are MCP tools — never curl them.** There is no REST surface for these
