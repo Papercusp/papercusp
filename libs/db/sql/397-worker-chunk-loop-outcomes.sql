@@ -38,17 +38,34 @@ CREATE INDEX IF NOT EXISTS worker_chunk_loop_outcomes_recent_idx
 CREATE INDEX IF NOT EXISTS worker_chunk_loop_outcomes_path_idx
   ON harness_shared.worker_chunk_loop_outcomes (workspace_id, execution_path, outcome_kind);
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.worker_chunk_loop_outcomes TO harness_app;
-DO $grant$
+-- Privilege + RLS setup — LOCK-SAFE re-apply. This table was first created under a
+-- migration number that hit a concurrent renumber collision (originally 394, moved to
+-- 397), so a tree that already boot-applied the earlier number will re-apply THIS file
+-- against a DB where the table is ALREADY fully configured AND in use. Re-running GRANT /
+-- ALTER … ENABLE ROW LEVEL SECURITY / CREATE POLICY unconditionally on an in-use table
+-- takes an ACCESS EXCLUSIVE lock and can trip the deploy's lock_timeout → a rolled-back
+-- migration (the 2026-06-09 wedge class). So gate the WHOLE block on the policy not yet
+-- existing: a fresh DB runs the full setup once (brand-new table, no contention); a
+-- re-apply is a pure no-op that acquires no strong locks. (plpgsql runs GRANT / ALTER /
+-- CREATE POLICY as utility statements directly.)
+DO $setup$
 BEGIN
-  GRANT SELECT ON harness_shared.worker_chunk_loop_outcomes TO harness_zero;
-EXCEPTION
-  WHEN undefined_object THEN NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'harness_shared'
+      AND tablename = 'worker_chunk_loop_outcomes'
+      AND policyname = 'worker_chunk_loop_outcomes_workspace_isolation'
+  ) THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.worker_chunk_loop_outcomes TO harness_app;
+    BEGIN
+      GRANT SELECT ON harness_shared.worker_chunk_loop_outcomes TO harness_zero;
+    EXCEPTION
+      WHEN undefined_object THEN NULL;
+    END;
+    ALTER TABLE harness_shared.worker_chunk_loop_outcomes ENABLE ROW LEVEL SECURITY;
+    CREATE POLICY worker_chunk_loop_outcomes_workspace_isolation ON harness_shared.worker_chunk_loop_outcomes
+      USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
+      WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
+  END IF;
 END
-$grant$;
-
-ALTER TABLE harness_shared.worker_chunk_loop_outcomes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS worker_chunk_loop_outcomes_workspace_isolation ON harness_shared.worker_chunk_loop_outcomes;
-CREATE POLICY worker_chunk_loop_outcomes_workspace_isolation ON harness_shared.worker_chunk_loop_outcomes
-  USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
-  WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
+$setup$;

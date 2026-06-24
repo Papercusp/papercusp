@@ -19,8 +19,20 @@
 -- deliberately excluded. emit_change_notify includes the row PK (`id`) generically (mig 368);
 -- coord_links has an `id` identity PK, so `coord_links:<id>` row-tag invalidation works too.
 --
+-- ALSO completes P-005 coverage for adv_sessions: it was added to TABLE_TO_QUERY_NAMES
+-- (mapping to advSessions.list / advRoster.list) on 2026-06-23 by an unrelated change
+-- (scheduler:running) WITHOUT attaching the producer trigger — the exact silent drift the
+-- cache-tag-trigger-coverage guard exists to catch. adv_sessions is a base table of
+-- ADV/OMP session STATE (relkind 'r', has an `id` PK), not an append-heavy log and not a
+-- compat view, so the correct fix is the trigger (so raw-SQL / FEDERATED session-state
+-- writes invalidate the session-list + roster queries), not a COVERAGE_EXEMPT entry.
+--
 -- Idempotent (CREATE OR REPLACE TRIGGER; safe to re-run / re-deploy).
 
 CREATE OR REPLACE TRIGGER emit_change_notify_trg
   AFTER INSERT OR UPDATE OR DELETE ON harness_shared.coord_links
+  FOR EACH ROW EXECUTE FUNCTION harness_shared.emit_change_notify();
+
+CREATE OR REPLACE TRIGGER emit_change_notify_trg
+  AFTER INSERT OR UPDATE OR DELETE ON harness_shared.adv_sessions
   FOR EACH ROW EXECUTE FUNCTION harness_shared.emit_change_notify();
