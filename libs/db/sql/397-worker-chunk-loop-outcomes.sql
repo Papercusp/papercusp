@@ -1,4 +1,4 @@
--- 394-worker-chunk-loop-outcomes.sql — worker-chunk-loop-operator-hosted-2026-06-14 P-020.
+-- 397-worker-chunk-loop-outcomes.sql — worker-chunk-loop-operator-hosted-2026-06-14 P-020.
 --
 -- worker_chunk_loop_outcomes — ONE row per runWorkerChunkLoop() call (a feature
 -- attempt), the durable record the dark-launch parity diff + the ramp metrics gate on.

@@ -141,3 +141,67 @@ describe('summarizeWorkerChunkOutcomes', () => {
     expect(m.completionRateDelta).toBeNull();
   });
 });
+
+describe('recordWorkerChunkOutcome (mock pg)', () => {
+  it('INSERTs the mapped fields in column order', async () => {
+    const m = makeMockPg();
+    const ok = await recordWorkerChunkOutcome(
+      { pg: m.pg, workspaceId: 'ws-1', harnessSlug: 'sb' },
+      {
+        featureId: 'F-9',
+        executionPath: 'op',
+        outcome: { kind: 'completed', chunksCommitted: 5 },
+        atMs: 1717,
+      },
+    );
+    expect(ok).toBe(true);
+    expect(m.calls).toHaveLength(1);
+    expect(m.calls[0].sql).toMatch(/^insert into harness_shared\.worker_chunk_loop_outcomes/i);
+    // (workspace_id, harness_slug, feature_id, execution_path, outcome_kind,
+    //  chunks_committed, replan_strikes, escalated_chunk_id, detail, created_ts)
+    expect(m.calls[0].params).toEqual(['ws-1', 'sb', 'F-9', 'op', 'completed', 5, null, null, null, 1717]);
+  });
+
+  it('is best-effort: returns false (does NOT throw) when the insert errors', async () => {
+    const throwingPg = (() => Promise.reject(new Error('boom'))) as unknown as OrchestratorPg;
+    let logged = '';
+    const ok = await recordWorkerChunkOutcome(
+      { pg: throwingPg, workspaceId: 'ws-1', harnessSlug: 'sb' },
+      {
+        featureId: 'F-9',
+        executionPath: 'subprocess',
+        outcome: { kind: 'aborted', reason: 'x' },
+        log: (s) => (logged = s),
+      },
+    );
+    expect(ok).toBe(false);
+    expect(logged).toMatch(/persist failed/i);
+  });
+});
+
+describe('readWorkerChunkOutcomes (mock pg)', () => {
+  it('maps raw rows → ChunkLoopOutcomeRecord and SELECTs with the workspace filter', async () => {
+    const m = makeMockPg([
+      {
+        execution_path: 'op',
+        outcome_kind: 'escalated',
+        chunks_committed: null,
+        replan_strikes: 3,
+        escalated_chunk_id: 'C-1',
+        detail: 'still failing',
+      },
+    ]);
+    const rows = await readWorkerChunkOutcomes({ pg: m.pg, workspaceId: 'ws-1' }, { harnessSlug: 'sb' });
+    expect(m.calls[0].sql).toMatch(/^select .* from harness_shared\.worker_chunk_loop_outcomes/i);
+    expect(rows).toEqual([
+      {
+        executionPath: 'op',
+        outcomeKind: 'escalated',
+        chunksCommitted: null,
+        replanStrikes: 3,
+        escalatedChunkId: 'C-1',
+        detail: 'still failing',
+      },
+    ]);
+  });
+});
