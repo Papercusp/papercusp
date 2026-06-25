@@ -201,3 +201,106 @@ UPDATE harness_shared.harness_plans hp
   FROM plan_hive_scope_moves m
  WHERE hp.workspace_id = m.workspace_id
    AND hp.harness_slug = m.from_harness;
+
+DO $$
+DECLARE
+  move record;
+  plan record;
+  run_ids bigint[];
+BEGIN
+  FOR move IN
+    SELECT * FROM (
+      VALUES
+        ('papercusp-workspace'::text, 'papercup'::text, 'papercusp-workspace'::text, 'papercusp'::text),
+        ('default'::text, 'papercusp'::text, 'papercusp-workspace'::text, 'papercusp'::text)
+    ) AS v(from_ws, from_harness, to_ws, to_hive)
+  LOOP
+    FOR plan IN
+      SELECT plan_slug
+        FROM harness_shared.harness_plans
+       WHERE workspace_id = move.from_ws
+         AND harness_slug = move.from_harness
+    LOOP
+      IF EXISTS (
+        SELECT 1
+          FROM harness_shared.harness_plans
+         WHERE workspace_id = move.to_ws
+           AND harness_slug = move.to_hive
+           AND plan_slug = plan.plan_slug
+      ) THEN
+        RAISE EXCEPTION 'Cannot migrate retired Papercup plan %.%/%: target exists',
+          move.from_ws, move.from_harness, plan.plan_slug;
+      END IF;
+
+      SELECT array_agg(id) INTO run_ids
+        FROM harness_shared.plan_runs
+       WHERE workspace_id = move.from_ws
+         AND harness_slug = move.from_harness
+         AND plan_slug = plan.plan_slug;
+
+      IF run_ids IS NOT NULL THEN
+        UPDATE harness_shared.plan_run_turns
+           SET workspace_id = move.to_ws
+         WHERE plan_run_id = ANY(run_ids);
+      END IF;
+
+      UPDATE harness_shared.plan_revisions
+         SET workspace_id = move.to_ws, harness_slug = move.to_hive
+       WHERE workspace_id = move.from_ws
+         AND harness_slug = move.from_harness
+         AND plan_slug = plan.plan_slug;
+
+      UPDATE harness_shared.plan_runs
+         SET workspace_id = move.to_ws, harness_slug = move.to_hive
+       WHERE workspace_id = move.from_ws
+         AND harness_slug = move.from_harness
+         AND plan_slug = plan.plan_slug;
+
+      IF to_regclass('harness_shared.harness_plan_parts') IS NOT NULL THEN
+        UPDATE harness_shared.harness_plan_parts
+           SET workspace_id = move.to_ws, harness_slug = move.to_hive
+         WHERE workspace_id = move.from_ws
+           AND harness_slug = move.from_harness
+           AND plan_slug = plan.plan_slug;
+      END IF;
+
+      IF to_regclass('harness_shared.harness_plan_assertions') IS NOT NULL THEN
+        UPDATE harness_shared.harness_plan_assertions
+           SET workspace_id = move.to_ws, harness_slug = move.to_hive
+         WHERE workspace_id = move.from_ws
+           AND harness_slug = move.from_harness
+           AND plan_slug = plan.plan_slug;
+      END IF;
+
+      IF to_regclass('harness_shared.plan_item_claims') IS NOT NULL THEN
+        UPDATE harness_shared.plan_item_claims
+           SET workspace_id = move.to_ws, harness_slug = move.to_hive
+         WHERE workspace_id = move.from_ws
+           AND harness_slug = move.from_harness
+           AND plan_slug = plan.plan_slug;
+      END IF;
+
+      IF to_regclass('harness_shared.plan_item_assignments') IS NOT NULL THEN
+        UPDATE harness_shared.plan_item_assignments
+           SET workspace_id = move.to_ws, harness_slug = move.to_hive
+         WHERE workspace_id = move.from_ws
+           AND harness_slug = move.from_harness
+           AND plan_slug = plan.plan_slug;
+      END IF;
+
+      IF to_regclass('harness_shared.plan_work_group_members') IS NOT NULL THEN
+        UPDATE harness_shared.plan_work_group_members
+           SET workspace_id = move.to_ws, harness_slug = move.to_hive
+         WHERE workspace_id = move.from_ws
+           AND harness_slug = move.from_harness
+           AND plan_slug = plan.plan_slug;
+      END IF;
+
+      UPDATE harness_shared.harness_plans
+         SET workspace_id = move.to_ws, harness_slug = move.to_hive
+       WHERE workspace_id = move.from_ws
+         AND harness_slug = move.from_harness
+         AND plan_slug = plan.plan_slug;
+    END LOOP;
+  END LOOP;
+END $$;
