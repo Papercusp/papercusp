@@ -219,6 +219,7 @@ describe('resolveSpawnOperatorBase', () => {
   });
 });
 
+
 describe('writeSpawnMcp + restoreSpawnMcp', () => {
   const baseInput = {
     harnessSlug: 'sheets', workspaceId: 'default', role: 'worker',

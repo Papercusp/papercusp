@@ -29,7 +29,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
-import { sessionClaudeConfigDir, sessionMcpDir } from './session-launch-dirs';
+import { codexHomeForSessionKey, sessionClaudeConfigDir, sessionMcpDir } from './session-launch-dirs';
 import { readFleetClaudeToken } from './fleet-claude-token';
 import { configGet } from './config';
 import { readEffectiveConfig, loadHarnessAcceptanceKind, loadHarnessLexicon, loadHarnessBlueprintId } from './effective-config';
@@ -2605,7 +2605,10 @@ export async function invoke(
         // it via `--mcp-config`, so concurrent claude spawns in one cwd
         // don't clobber a shared file.
         if (agentBackend === 'codex') {
-          codexHomeHandle = await writeSignedSpawnCodexHome(signedInput);
+          const trackedCodexKey = (process.env.PAPERCUSP_CODEX_SESSION_KEY ?? '').trim();
+          codexHomeHandle = await writeSignedSpawnCodexHome(signedInput, trackedCodexKey
+            ? { codexHome: codexHomeForSessionKey(trackedCodexKey), cleanup: false }
+            : {});
           spawnEnv.CODEX_HOME = codexHomeHandle.codexHome;
         } else {
           // writeSignedSpawnMcp signs the URL params. In strict mode

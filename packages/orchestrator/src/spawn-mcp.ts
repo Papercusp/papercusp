@@ -310,18 +310,21 @@ export interface SpawnCodexHomeHandle {
  */
 export async function writeSignedSpawnCodexHome(
   input: SpawnMcpConfigInput,
-  opts: { ttlSec?: number } = {},
+  opts: { ttlSec?: number; codexHome?: string; cleanup?: boolean } = {},
 ): Promise<SpawnCodexHomeHandle> {
   const base = resolveSpawnOperatorBase(input.operatorUrl);
   const params = buildSpawnUrlParams(input);
   await signSpawnParams(params, opts.ttlSec ?? 24 * 60 * 60);
   const mcpUrl = `${base}?${params.toString()}`;
 
-  const codexHome = mkdtempSync(join(tmpdir(), 'codex-spawn-'));
+  const codexHome = opts.codexHome?.trim() || mkdtempSync(join(tmpdir(), 'codex-spawn-'));
+  const shouldCleanup = opts.cleanup ?? !opts.codexHome;
+  mkdirSync(codexHome, { recursive: true });
   // Share the ChatGPT OAuth login (codex resolves auth from $CODEX_HOME/auth.json).
   try {
     const realAuth = join(homedir(), '.codex', 'auth.json');
-    if (existsSync(realAuth)) symlinkSync(realAuth, join(codexHome, 'auth.json'));
+    const authLink = join(codexHome, 'auth.json');
+    if (existsSync(realAuth) && !existsSync(authLink)) symlinkSync(realAuth, authLink);
   } catch { /* best-effort — codex surfaces an auth error if missing */ }
   // codex does NOT env-expand inside config.toml; the URL is fully baked
   // (incl. the sig), so no bearer_token_env_var is needed (unlike the
@@ -339,7 +342,9 @@ export async function writeSignedSpawnCodexHome(
     codexHome,
     mcpUrl,
     cleanup() {
-      try { rmSync(codexHome, { recursive: true, force: true }); } catch { /* best-effort */ }
+      if (shouldCleanup) {
+        try { rmSync(codexHome, { recursive: true, force: true }); } catch { /* best-effort */ }
+      }
     },
   };
 }
