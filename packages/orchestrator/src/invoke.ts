@@ -354,6 +354,37 @@ export function resolveModel(cfg: HarnessConfig, role: string): string {
   return ROLE_MODEL_DEFAULTS[role] ?? '';
 }
 
+/** Normalize explicit model flags that were already present on the agent command.
+ * The usual model path goes through `resolveModel` + `normalizeModelForBackend`,
+ * but a command like `codex exec --model chatgpt:5.5` used to bypass that path
+ * because invoke() saw the model flag and did not append one. */
+export function normalizeExplicitModelFlagsForBackend(argv: string[], backend: AgentBackend): string[] {
+  if (backend !== 'codex') return [...argv];
+  const out = [...argv];
+  for (let i = 0; i < out.length; i += 1) {
+    const arg = out[i] ?? '';
+    if (arg === '--model' || arg === '-m') {
+      const next = out[i + 1];
+      if (next) out[i + 1] = normalizeModelForBackend(next, backend);
+      i += 1;
+      continue;
+    }
+    const eq = /^(--model=|-m=)(.+)$/.exec(arg);
+    if (eq) out[i] = `${eq[1]}${normalizeModelForBackend(eq[2], backend)}`;
+  }
+  return out;
+}
+
+function explicitModelFromArgv(argv: readonly string[]): string {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i] ?? '';
+    if (arg === '--model' || arg === '-m') return argv[i + 1] ?? '';
+    const eq = /^(?:--model=|-m=)(.+)$/.exec(arg);
+    if (eq) return eq[1];
+  }
+  return '';
+}
+
 /**
  * Resolve the agent command + extra args for a role, layering:
  *   1. config.aiBackend.roles[role]      (most specific)
@@ -1859,8 +1890,8 @@ export async function invoke(
   if (roleAgentCmd !== ctx.claudeCmd) {
     ctx.log(`  role=${role} agentCmd=${roleAgentCmd} (from config.json)`);
   }
-  const argv = splitCommand(roleAgentCmd);
   const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(roleAgentCmd);
+  const argv = normalizeExplicitModelFlagsForBackend(splitCommand(roleAgentCmd), agentBackend);
   const streamFormat = selectStreamFormat(agentBackend, roleAgentCmd);
   const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
   if (agentBackend === 'codex' && streamFormat === 'codex-json' && argv.includes('exec')) {
@@ -1911,7 +1942,7 @@ export async function invoke(
       ctx.log(`  role=${role} model=${model} (from config.json)`);
     }
   } else {
-    resolvedModel = /(?:--model|-m)\s+(\S+)/.exec(roleAgentCmd)?.[1] ?? '';
+    resolvedModel = explicitModelFromArgv(argv);
   }
 
   // 5b. Per-role extraArgs from aiBackend.{default,roles[role]}.extraArgs.

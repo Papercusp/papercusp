@@ -49,6 +49,7 @@ import {
   scopeSpawnEnvForRole,
   SPAWN_ENV_ALL_ROLES_STRIP,
   SEARCH_PROVIDER_ENV_KEYS,
+  normalizeExplicitModelFlagsForBackend,
 } from './invoke.js';
 import { ROLE_MODEL_DEFAULTS } from './role-models.js';
 import { writeSpawnClaudeConfig } from './spawn-mcp.js';
@@ -953,6 +954,21 @@ test('resolveModel — aiBackend.default.model used when no role override', () =
 test('resolveModel — legacy models.<role> still works when aiBackend absent', () => {
   const cfg = { models: { worker: 'legacy-only' } };
   assert.equal(resolveModel(cfg as never, 'worker'), 'legacy-only');
+});
+
+test('normalizeExplicitModelFlagsForBackend — codex command model flags accept chatgpt aliases', () => {
+  assert.deepEqual(
+    normalizeExplicitModelFlagsForBackend(['codex', 'exec', '--model', 'chatgpt:5.5', '-c', 'x=y'], 'codex'),
+    ['codex', 'exec', '--model', 'gpt-5.5', '-c', 'x=y'],
+  );
+  assert.deepEqual(
+    normalizeExplicitModelFlagsForBackend(['codex', 'exec', '--model=chatgpt:5.5:high'], 'codex'),
+    ['codex', 'exec', '--model=gpt-5.5'],
+  );
+  assert.deepEqual(
+    normalizeExplicitModelFlagsForBackend(['claude', '-p', '--model', 'chatgpt:5.5'], 'claude-code'),
+    ['claude', '-p', '--model', 'chatgpt:5.5'],
+  );
 });
 
 // --- claudeMcpArgs: makes claude-code load the per-spawn signed .mcp.json ---
