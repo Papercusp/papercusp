@@ -27,6 +27,16 @@ test('normalizeModelForBackend — claude-code strips any provider, not just ant
   assert.equal(normalizeModelForBackend('openai-codex/gpt-5', 'claude-code'), 'gpt-5');
 });
 
+test('normalizeModelForBackend — codex strips provider and normalizes chatgpt aliases', () => {
+  assert.equal(normalizeModelForBackend('openai-codex/gpt-5.5', 'codex'), 'gpt-5.5');
+  assert.equal(normalizeModelForBackend('chatgpt:5.5', 'codex'), 'gpt-5.5');
+  assert.equal(normalizeModelForBackend('chatgpt:5.5:high', 'codex'), 'gpt-5.5');
+});
+
+test('normalizeModelForBackend — claude-code does not rewrite chatgpt aliases', () => {
+  assert.equal(normalizeModelForBackend('chatgpt:5.5', 'claude-code'), 'chatgpt:5.5');
+});
+
 test('normalizeModelForBackend — omp keeps the provider/model form verbatim', () => {
   assert.equal(
     normalizeModelForBackend('anthropic/claude-opus-4-7', 'omp'),

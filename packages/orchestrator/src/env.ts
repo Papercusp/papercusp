@@ -39,13 +39,18 @@ export function resolveAgentBackend(agentCmd: string): AgentBackend {
  * claude-code backend we strip a single leading `provider/` segment;
  * for omp (and an already-bare id) we pass the value through untouched.
  * codex's `-m` likewise wants a bare id (`gpt-5.5`), so it strips the
- * provider prefix the same way claude-code does. Empty in → empty out.
+ * provider prefix the same way claude-code does and maps Papercusp's
+ * user-facing `chatgpt:5.5` alias to Codex CLI's native `gpt-5.5`.
+ * Empty in → empty out.
  */
 export function normalizeModelForBackend(model: string, backend: AgentBackend): string {
   if (!model) return '';
   if (backend !== 'claude-code' && backend !== 'codex') return model;
   const slash = model.indexOf('/');
-  return slash > 0 ? model.slice(slash + 1) : model;
+  const bare = slash > 0 ? model.slice(slash + 1) : model;
+  if (backend !== 'codex') return bare;
+  const chatgpt = /^chatgpt:(.+?)(?::(?:low|medium|high|xhigh|max))?$/i.exec(bare);
+  return chatgpt ? `gpt-${chatgpt[1]}` : bare;
 }
 
 /**
