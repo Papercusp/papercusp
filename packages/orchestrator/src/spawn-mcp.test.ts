@@ -7,6 +7,7 @@ import { existsSync, readFileSync, mkdirSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
+  buildSpawnCodexConfigToml,
   buildSpawnMcpConfig,
   resolveSpawnOperatorBase,
   writeSpawnMcp,
@@ -268,6 +269,42 @@ describe('writeSpawnMcp + restoreSpawnMcp', () => {
     restoreSpawnMcp(handle);
     restoreSpawnMcp(handle);
     expect(existsSync(handle.path)).toBe(false);
+  });
+});
+
+describe('buildSpawnCodexConfigToml', () => {
+  const savedGatewayPort = process.env.PAPERCUSP_GATEWAY_PORT;
+  afterEach(() => {
+    if (savedGatewayPort === undefined) delete process.env.PAPERCUSP_GATEWAY_PORT;
+    else process.env.PAPERCUSP_GATEWAY_PORT = savedGatewayPort;
+  });
+
+  it('routes model traffic through the gateway when a spawn account is pinned', () => {
+    process.env.PAPERCUSP_GATEWAY_PORT = '8799';
+    const toml = buildSpawnCodexConfigToml(
+      'http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a"b',
+      'aviynw_codex',
+    );
+
+    expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
+    expect(toml).toContain('[model_providers.papercusp-codex-gateway]');
+    expect(toml).toContain('base_url = "http://127.0.0.1:8799/v1"');
+    expect(toml).toContain('wire_api = "responses"');
+    expect(toml).toContain('experimental_bearer_token = "papercusp-gateway"');
+    expect(toml).toContain('http_headers = { "x-papercusp-account" = "aviynw_codex" }');
+    expect(toml).toContain('[mcp_servers.papercusp]');
+    expect(toml).toContain('url = "http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a\\"b"');
+  });
+
+  it('leaves the model provider unset when no spawn account is pinned', () => {
+    const toml = buildSpawnCodexConfigToml(
+      'http://127.0.0.1:3270/api/mcp?harness=papercusp',
+      undefined,
+    );
+
+    expect(toml).not.toContain('papercusp-codex-gateway');
+    expect(toml).not.toContain('model_provider =');
+    expect(toml).toContain('[mcp_servers.papercusp]');
   });
 });
 
