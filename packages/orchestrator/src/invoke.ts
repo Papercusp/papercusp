@@ -420,9 +420,11 @@ export function selectStreamFormat(
   }
 
   if (agentBackend === 'codex') {
-    // codex CLI: `codex exec --json` emits JSONL events. If the command
-    // already names the `exec` subcommand the user is driving it manually.
-    if (/(?:^|\s)exec(?:\s|$)/.test(cmd)) return 'none';
+    // codex CLI: `codex exec --json` emits JSONL events. A bare `codex exec`
+    // remains operator-managed: we still append --json plus the MCP-safe
+    // approval bypass. Only a command that already supplies --json is treated
+    // as fully user-driven for structured-stream flags.
+    if (/(?:^|\s)--json(?:\s|$)/.test(cmd)) return 'none';
     const mentionsCodex = argv.some((a) => /(?:^|\/)codex$/.test(a));
     return mentionsCodex ? 'codex-json' : 'none';
   }
@@ -1117,7 +1119,9 @@ export function codexSandboxArgs(
   enabled: boolean,
 ): string[] {
   void enabled; // codex can't be sandboxed (MCP cancellation) — see docstring.
-  if (agentBackend !== 'codex' || streamFormat !== 'codex-json') return [];
+  if (agentBackend !== 'codex') return [];
+  const isCodexExec = /(?:^|\s)exec(?:\s|$)/.test(roleAgentCmd);
+  if (streamFormat !== 'codex-json' && !isCodexExec) return [];
   // Defer to a user-chosen sandbox/bypass posture in AGENT_CMD.
   if (
     /(?:^|\s)-s\s/.test(roleAgentCmd) ||
@@ -1859,6 +1863,10 @@ export async function invoke(
   const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(roleAgentCmd);
   const streamFormat = selectStreamFormat(agentBackend, roleAgentCmd);
   const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
+  if (agentBackend === 'codex' && streamFormat === 'codex-json' && argv.includes('exec')) {
+    const execIdx = extraFlags.indexOf('exec');
+    if (execIdx >= 0) extraFlags.splice(execIdx, 1);
+  }
 
   // codex sandbox policy (plan fleet-spawn-sandbox Phase 2) — flag-gated
   // workspace-write vs the prior danger-full-access default. Goes in extraFlags

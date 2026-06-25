@@ -1636,7 +1636,11 @@ test('selectStreamFormat — codex with `codex` → codex-json', () => {
   assert.equal(selectStreamFormat('codex', 'codex'), 'codex-json');
 });
 
-test('selectStreamFormat — codex with explicit `exec` subcommand → none (user-driven)', () => {
+test('selectStreamFormat — codex with bare `exec` subcommand remains managed', () => {
+  assert.equal(selectStreamFormat('codex', 'codex exec'), 'codex-json');
+});
+
+test('selectStreamFormat — codex with explicit `exec --json` subcommand → none (user-driven stream)', () => {
   assert.equal(selectStreamFormat('codex', 'codex exec --json'), 'none');
 });
 
@@ -1653,6 +1657,7 @@ test('codexSandboxArgs — always danger-full-access; the flag does NOT switch c
   const bypass = ['-s', 'danger-full-access', '--dangerously-bypass-approvals-and-sandbox'];
   assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex', true), bypass);
   assert.deepEqual(codexSandboxArgs('codex', 'codex-json', 'codex', false), bypass);
+  assert.deepEqual(codexSandboxArgs('codex', 'none', 'codex exec --json', false), bypass);
 });
 
 test('codexSandboxArgs — non-codex → [] (no-op for claude/omp)', () => {
