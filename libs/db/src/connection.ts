@@ -321,6 +321,31 @@ function resolveOrgPoolMax(): number {
   });
 }
 
+// WI-832 — DI seam for a DEFAULT statement_timeout on the org pools. This low-level
+// db lib must NOT read operator-core runtime config (layering); instead the boot path
+// INJECTS a provider (mirrors how the locks host injects getTxnTimeouts). Default
+// `() => 0` ⇒ NO statement_timeout GUC is emitted ⇒ byte-identical to today (the admin
+// pool stays deliberately unbounded — migrations share it). When the operator wires a
+// non-zero value (behind papercusp-txn-timeouts-config, owner-gated live flip), every
+// NEW pooled connection gets that per-statement cap, bounding the whole interactive-
+// write class at the source. The migration runner OPTS OUT per-txn (SET LOCAL
+// statement_timeout = 0), so a non-zero default can never kill a long migration.
+let _adminStatementTimeoutMsProvider: () => number = () => 0;
+export function setAdminPoolStatementTimeoutProvider(fn: () => number): void {
+  _adminStatementTimeoutMsProvider = typeof fn === 'function' ? fn : () => 0;
+}
+/** The currently-configured default statement_timeout (ms) for new org connections;
+ *  0 / falsy / negative ⇒ unset (no GUC). Read at connection-construction time. */
+function adminStatementTimeoutMs(): number {
+  let v = 0;
+  try {
+    v = Math.trunc(_adminStatementTimeoutMsProvider() || 0);
+  } catch {
+    v = 0; // a throwing provider must never break connection construction.
+  }
+  return v > 0 ? v : 0;
+}
+
 function buildClient(
   connectionUrl: string,
   searchPath: string[],
@@ -347,6 +372,8 @@ function buildClient(
   // default unit (ms). Falsy/0 → 60 (kept on; this is pure defense-in-depth).
   const idleInTxMs =
     Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_IN_TX_TIMEOUT) || 60) * 1000;
+  // WI-832: configured default per-statement cap (0 ⇒ unset; see the seam above).
+  const stmtTimeoutMs = adminStatementTimeoutMs();
   // EI-2582: bound the connect attempt UNDER TEST so an unmocked PG access in a
   // unit test fails fast (~5s, with a clear connection error) instead of silently
   // hanging until the 60s vitest timeout — which reads as a "slow test", not the
@@ -367,6 +394,11 @@ function buildClient(
       search_path: sp,
       idle_in_transaction_session_timeout: String(idleInTxMs),
       application_name: pgAppName(label),
+      // WI-832: a configured DEFAULT statement_timeout (ms) for the whole interactive-
+      // write class, injected via setAdminPoolStatementTimeoutProvider. Omitted entirely
+      // when 0 (the default) ⇒ byte-identical to the pre-WI-832 connection opts. The
+      // migration runner overrides this per-txn with SET LOCAL statement_timeout = 0.
+      ...(stmtTimeoutMs > 0 ? { statement_timeout: String(stmtTimeoutMs) } : {}),
     },
     // Skip postgres-js's prepared-statement plan caching. ~80% of the
     // ~1.1s cold-reconnect cost we measured was prepared-statement
