@@ -13,6 +13,7 @@ export {
   processConnectionCeiling,
   logConnectionBudget,
   maybePgbouncer,
+  setAdminPoolStatementTimeoutProvider,
   _resetForTests,
   type OrgPgHandle,
 } from './connection';
