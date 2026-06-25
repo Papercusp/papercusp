@@ -103,8 +103,16 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     // (plpgsql `BEGIN…END` inside $$ bodies is fine). Enforced for new files
     // by `npm run lint:migrations` (audit P-074, EI-170); files 116–200
     // predate this contract and are grandfathered as applied history.
+    //
+    // WI-832: `SET LOCAL statement_timeout = 0` is the MIGRATION OPT-OUT for the
+    // org-pool default statement_timeout (a DDL migration legitimately runs longer
+    // than any interactive cap). SET LOCAL is txn-scoped, so it reverts at COMMIT.
+    // This is the single chokepoint every migration path funnels through (embedded-pg
+    // boot, native boot-migrate, db:migrate), so the opt-out holds regardless of
+    // which client/pool applies the file — even once a non-zero default is live.
+    // ONLY statement_timeout: lock_timeout stays as the deliberate fail-fast guard.
     try {
-      await client.unsafe(`BEGIN;\n${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`);
+      await client.unsafe(`BEGIN;\nSET LOCAL statement_timeout = 0;\n${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`);
       appliedCount++;
     } catch (err) {
       // The failed `BEGIN…COMMIT` left the connection in an aborted
