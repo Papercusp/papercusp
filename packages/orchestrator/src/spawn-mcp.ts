@@ -306,10 +306,21 @@ function gatewayPort(): number {
   return Number.isFinite(p) && p > 0 ? p : 8788;
 }
 
-function codexGatewayConfigToml(accountId?: string | null): { root: string[]; tables: string[] } {
+function codexGatewayConfigToml(
+  accountId?: string | null,
+  opts: { ownerId?: string | null; priority?: string | null } = {},
+): { root: string[]; tables: string[] } {
   const pinnedAccount = accountId?.trim();
   if (!pinnedAccount) return { root: [], tables: [] };
   const providerId = 'papercusp-codex-gateway';
+  const headers: Record<string, string> = { 'x-papercusp-account': pinnedAccount };
+  const ownerId = opts.ownerId?.trim();
+  if (ownerId) headers['x-papercusp-owner'] = ownerId;
+  const priority = opts.priority?.trim();
+  if (priority) headers['x-papercusp-priority'] = priority;
+  const headerToml = Object.entries(headers)
+    .map(([k, v]) => `"${tomlEscape(k)}" = "${tomlEscape(v)}"`)
+    .join(', ');
   return {
     root: [
       '# BEGIN PAPERCUSP_CODEX_GATEWAY_ROOT',
@@ -325,15 +336,19 @@ function codexGatewayConfigToml(accountId?: string | null): { root: string[]; ta
       `base_url = "http://127.0.0.1:${gatewayPort()}/v1"`,
       'wire_api = "responses"',
       'experimental_bearer_token = "papercusp-gateway"',
-      `http_headers = { "x-papercusp-account" = "${tomlEscape(pinnedAccount)}" }`,
+      `http_headers = { ${headerToml} }`,
       '# END PAPERCUSP_CODEX_GATEWAY_PROVIDER',
       '',
     ],
   };
 }
 
-export function buildSpawnCodexConfigToml(mcpUrl: string, accountId?: string | null): string {
-  const gatewayConfig = codexGatewayConfigToml(accountId);
+export function buildSpawnCodexConfigToml(
+  mcpUrl: string,
+  accountId?: string | null,
+  opts: { ownerId?: string | null; priority?: string | null } = {},
+): string {
+  const gatewayConfig = codexGatewayConfigToml(accountId, opts);
   return [
     ...gatewayConfig.root,
     '# Per-spawn codex MCP config (managed by spawn-mcp.ts writeSignedSpawnCodexHome).',
@@ -377,7 +392,10 @@ export async function writeSignedSpawnCodexHome(
   // codex does NOT env-expand inside config.toml; the URL is fully baked
   // (incl. the sig), so no bearer_token_env_var is needed (unlike the
   // superuser codex-su home, which uses ?superuser=1 + a bearer).
-  const toml = buildSpawnCodexConfigToml(mcpUrl, process.env.PAPERCUSP_ACCOUNT_ID);
+  const toml = buildSpawnCodexConfigToml(mcpUrl, process.env.PAPERCUSP_ACCOUNT_ID, {
+    ownerId: input.clientId || input.spawnId,
+    priority: input.role,
+  });
   writeFileSync(join(codexHome, 'config.toml'), toml, 'utf8');
   try { chmodSync(join(codexHome, 'config.toml'), 0o600); } catch { /* best-effort */ }
 

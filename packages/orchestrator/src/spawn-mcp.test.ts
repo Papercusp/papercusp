@@ -284,6 +284,7 @@ describe('buildSpawnCodexConfigToml', () => {
     const toml = buildSpawnCodexConfigToml(
       'http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a"b',
       'aviynw_codex',
+      { ownerId: 's-queen"1', priority: 'queen' },
     );
 
     expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
@@ -291,7 +292,9 @@ describe('buildSpawnCodexConfigToml', () => {
     expect(toml).toContain('base_url = "http://127.0.0.1:8799/v1"');
     expect(toml).toContain('wire_api = "responses"');
     expect(toml).toContain('experimental_bearer_token = "papercusp-gateway"');
-    expect(toml).toContain('http_headers = { "x-papercusp-account" = "aviynw_codex" }');
+    expect(toml).toContain(
+      'http_headers = { "x-papercusp-account" = "aviynw_codex", "x-papercusp-owner" = "s-queen\\"1", "x-papercusp-priority" = "queen" }',
+    );
     expect(toml).toContain('[mcp_servers.papercusp]');
     expect(toml).toContain('url = "http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a\\"b"');
   });
