@@ -40,6 +40,15 @@ it collision-free:
 - **Blocked on something announced? Await an event and sleep — never poll, never hold a
   turn.** `events:await { event }` → END YOUR TURN; the wake turn carries the payload.
   Pair-emit: tell the emitter the key you await; emit the key a peer awaits.
+- **Need someone to act on a blocker? Wake its OWNER DIRECTLY — never relay through a
+  third agent.** When a specific agent owns what's blocking you (their lane, their code,
+  their in-flight work is what's stuck), `coord:send { wake:'required' }` THEM — do NOT
+  ask a second agent to "coordinate" or "relay to" the owner (a relay adds a hop, depends
+  on the middleman re-waking them, and hides the miss signal). Then VERIFY pickup: `woken:1`
+  = delivered to a live session; `woken:0` / `recipient_dead` / `recipient_absent` = MISSED
+  (the owner isn't running) → stop waiting on them, and redirect to a LIVE driver
+  (`coord:presence` → `sessionState:'live'`), respawn the owner, or do it yourself. "I handed
+  it off" only counts if the wake woke a live owner — verify the `woken` count, never assume.
 - **Asked to yield? Checkpoint, then end the turn.** Finish the atomic edit you're
   mid-way through and RELEASE its lock (never a half-written file or orphaned lock),
   persist partial state durably, write a one-line successor note, END YOUR TURN.
