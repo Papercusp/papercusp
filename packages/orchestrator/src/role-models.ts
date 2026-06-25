@@ -75,15 +75,14 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   bee: 'haiku',
   scanner: 'haiku',
   judge: 'haiku',
-  // The hive's JUDGMENT layer (owner-watched autonomous run, 2026-06-11): the
-  // Queen/operator wakes are low-frequency (≤48/day) multi-step tool-driven
-  // placement decisions — and with no entry here they fell to the host CLI
-  // default (haiku on the dev box), which loads MCP tool references then
-  // drifts into bash instead of calling them (three consecutive live wakes:
-  // the 04:03Z home-slug survey, the 05:39Z bash-only queen turn, and the
-  // 01:02Z evidence-fabrication incident, EI-286). Judgment tier per this
-  // file's own rubric — escalate to opus via AGENT_MODELS if needed.
+  // The hive's JUDGMENT/control-loop layer (owner-watched autonomous run,
+  // 2026-06-11): Queen/operator/Overwatch wakes are low-frequency compared with
+  // bees, but they are frequent enough that inheriting a user-level interactive
+  // Opus default can burn the shared weekly pool before required artifacts
+  // (scorecards / wake declarations) land. Sonnet is the committed floor;
+  // escalate to opus via AGENT_MODELS or a per-spawn model only when needed.
   queen: 'sonnet',
+  overwatch: 'sonnet',
   operator: 'sonnet',
 };
 

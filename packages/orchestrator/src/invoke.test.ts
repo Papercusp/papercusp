@@ -480,6 +480,9 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
     assert.equal(resolveModel({}, 'bee'), 'haiku');
     assert.equal(resolveModel({}, 'scanner'), 'haiku');
     assert.equal(resolveModel({}, 'judge'), 'haiku');
+    // The Overwatch health loop must not inherit the user's interactive Claude
+    // default (often Opus); scorecards and wake declarations are required every turn.
+    assert.equal(resolveModel({}, 'overwatch'), 'sonnet');
     // The launch-fixer family's committed floors (D-008 follow-up): the two
     // fleet-blast-radius fixers pin opus:xhigh, the bounded content repairer pins sonnet.
     assert.equal(resolveModel({}, 'merge-resolver'), 'opus:xhigh');
