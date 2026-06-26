@@ -755,6 +755,40 @@ export const CoordinationSchema = z.object({
     .optional(),
 });
 
+/**
+ * One HARNESS-PROVIDED deterministic step-op the blueprint ships
+ * (`harness-provided-cadence-ops-2026-06-26` D-001). A blueprint may declare ops
+ * its spine references (`spine.steps[].op` / a gate-branch `op`) WITHOUT the op
+ * being compiled into operator-core: on admission the platform registers a PROXY
+ * CoordOp per entry into the coord-op registry — so `validateBlueprint({knownOps})`
+ * resolves it and `coordProgramWorkflow` checkpoints it exactly like a built-in op
+ * — and the proxy's `run()` DISPATCHES the call over the harness transport to the
+ * harness's OWN runtime (its sidecar / deployed frame), which executes the op
+ * against its connectors/DB and returns a result the proxy validates against
+ * `resultSchema`. Out-of-process BY DESIGN: operator-core never loads or imports
+ * harness code (the security + repo/process/DB isolation boundary, D-001). This
+ * generalizes the hand-wired `setOddsmithProspectDeps` bridge into a first-class
+ * mechanism. Schemas are JSON Schema (NOT Zod fns) because the manifest crosses the
+ * repo boundary + is persisted/serialized; the registrar compiles them to the
+ * proxy's args/result validators.
+ */
+export const OpManifestEntrySchema = z.object({
+  /** The op name the spine references (`<domain>:<verb>`, e.g. `oddsmith:prospect`).
+   *  Must match a `spine.steps[].op` / gate-branch `op`; registered as a proxy CoordOp. */
+  name: z.string().min(1),
+  /** One line: what the op does (surfaced in the registry / tool projection). */
+  description: z.string().default(''),
+  /** JSON Schema for the op's args — compiled to the proxy's `argsSchema` so the
+   *  program runner validates interpolated step args before dispatch. `{}` ⇒ accept any. */
+  argsSchema: z.record(z.string(), z.unknown()).default({}),
+  /** JSON Schema for the op's result — the proxy validates the harness's response
+   *  against this before binding it into program data (the trust boundary). `{}` ⇒ accept any. */
+  resultSchema: z.record(z.string(), z.unknown()).default({}),
+  /** How the proxy reaches the implementation. `'dispatch'` (the only kind today):
+   *  POST to the harness runtime's `/api/op/<name>` over the harness transport. */
+  handler: z.object({ kind: z.literal('dispatch').default('dispatch') }).prefault({}),
+});
+
 export const BlueprintSchema = z.object({
   id: z.string().min(1),
   /** Parent blueprint id(s); resolved local → installed → built-in. */
@@ -811,6 +845,12 @@ export const BlueprintSchema = z.object({
    *  declare none and the orchestrator keeps its legacy config-only resolution. */
   dispatch: DispatchSchema.optional(),
   dependencies: DependenciesSchema.optional(),
+  /** HARNESS-PROVIDED deterministic step-ops (harness-provided-cadence-ops D-001).
+   *  Each entry's `name` is registered as a PROXY CoordOp on admission so the spine
+   *  may reference an op that lives in + executes from the HARNESS (not operator-core);
+   *  the proxy dispatches to the harness runtime. Additive + optional (default []) —
+   *  a blueprint with no harness ops parses unchanged. */
+  ops: z.array(OpManifestEntrySchema).default([]),
   /** The build/run environment spec — "what to stand up on a frame" (P-007). The
    *  deployment driver reads it to bootstrap a cloud frame; absent ⇒ nothing to
    *  stand up (today's local-only behavior). */
