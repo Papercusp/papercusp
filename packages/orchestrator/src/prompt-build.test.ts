@@ -1622,12 +1622,15 @@ test('buildPromptParts — QUEEN preamble is byte-identical across per-wake vola
     });
     // The cache-shareable prefix must be byte-identical across the two wakes…
     assert.equal(wake1.preamble, wake2.preamble, 'the Queen preamble must not vary with per-wake volatile inputs');
-    // …and it must be a SUBSTANTIVE prefix (persona + shared constants + identity + memory),
+    // …and it must be a SUBSTANTIVE prefix (persona + compact Queen shared base + identity + memory),
     //   not an accidentally-empty one that is trivially "stable".
     assert.match(wake1.preamble, /# The Queen/);
-    assert.match(wake1.preamble, /## Yielding on request \(turn-lifecycle control\)/);
-    assert.match(wake1.preamble, /## Tests follow the project standard/);
-    assert.match(wake1.preamble, /Memory discipline:/);
+    assert.match(wake1.preamble, /## Compact shared operating rules/);
+    assert.match(wake1.preamble, /Capacity first/);
+    assert.match(wake1.preamble, /If interrupted, checkpoint durable state/);
+    assert.match(wake1.preamble, /Verify outcomes before claiming done/);
+    assert.doesNotMatch(wake1.preamble, /## Yielding on request \(turn-lifecycle control\)/);
+    assert.doesNotMatch(wake1.preamble, /## Tests follow the project standard/);
     assert.match(wake1.preamble, /## Your identity \(cross-mission memory for the queen role\)/);
     assert.match(wake1.preamble, /Prior wake: placed 3 bees/);
     // The per-wake survey snapshot / runtime MUST be in the volatile tail, never the prefix.

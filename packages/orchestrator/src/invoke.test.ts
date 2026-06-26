@@ -17,6 +17,8 @@ import {
   streamFormatFlags,
   claudeMcpArgs,
   FLEET_ALLOWED_TOOLS,
+  QUEEN_ALLOWED_TOOLS,
+  QUEEN_MCP_TOOL_NAMES,
   FLEET_DISALLOWED_TOOLS,
   FLEET_NO_WRITE_ROLES,
   fleetAllowedToolsForRole,
@@ -1015,6 +1017,30 @@ test('claudeMcpArgs — allow-list is the safe dev kit + mcp__papercusp wildcard
   // Dangerous automation built-ins must NOT be allow-listed.
   for (const dangerous of ['Workflow', 'CronCreate', 'EnterWorktree', 'RemoteTrigger', 'Task', 'Monitor']) {
     assert.ok(!FLEET_ALLOWED_TOOLS.includes(dangerous), `${dangerous} must not be allow-listed`);
+  }
+});
+
+test('fleetAllowedToolsForRole — queen uses a compact explicit MCP subset, not the server wildcard', () => {
+  const allowed = fleetAllowedToolsForRole('queen');
+  assert.deepEqual(allowed, [...QUEEN_ALLOWED_TOOLS]);
+  assert.ok(!allowed.includes('mcp__papercusp'), 'queen must not load the full MCP schema wildcard');
+  assert.ok(QUEEN_MCP_TOOL_NAMES.includes('hive:survey'), 'queen MCP listing hint must use colon-form names');
+  assert.ok(!QUEEN_MCP_TOOL_NAMES.includes('coord:inbox'), 'queen MCP listing hint must omit broad ambient inbox tools');
+  for (const required of [
+    'mcp__papercusp__hive_survey',
+    'mcp__papercusp__hive_declare-wake',
+    'mcp__papercusp__fleet_spawn',
+    'mcp__papercusp__fleet_assignments',
+    'mcp__papercusp__coord_send',
+    'mcp__papercusp__coord_wake',
+    'mcp__papercusp__scout_grade-idea',
+    'mcp__papercusp__plans_promote',
+    'mcp__papercusp__plans_set-plan-status',
+    'mcp__papercusp__work_items_create',
+    'mcp__papercusp__work_items_set_state',
+    'mcp__papercusp__improvements_capture',
+  ]) {
+    assert.ok(allowed.includes(required), `${required} must remain available to the Queen`);
   }
 });
 

@@ -110,6 +110,19 @@ describe('buildSpawnMcpConfig', () => {
     expect(url.searchParams.get('role')).toBe('bee');
   });
 
+  it('carries a per-spawn MCP tools listing hint when provided', () => {
+    const cfg = buildSpawnMcpConfig({
+      harnessSlug: 'papercusp',
+      workspaceId: 'default',
+      role: 'queen',
+      runId: 'run_Q',
+      spawnId: 'spw_Q',
+      mcpToolNames: ['hive:survey', 'fleet:spawn', 'work_items:create'],
+    });
+    const url = new URL(cfg.mcpServers.papercusp!.url);
+    expect(url.searchParams.get('tools')).toBe('hive:survey,fleet:spawn,work_items:create');
+  });
+
   it('omits `client=` when clientId is not set (legacy pipeline-role path unchanged)', () => {
     const cfg = buildSpawnMcpConfig({
       harnessSlug: 'sheets', workspaceId: 'default', role: 'worker',
@@ -117,6 +130,7 @@ describe('buildSpawnMcpConfig', () => {
     });
     const url = new URL(cfg.mcpServers.papercusp!.url);
     expect(url.searchParams.has('client')).toBe(false);
+    expect(url.searchParams.has('tools')).toBe(false);
   });
 
   it('honors operatorUrl override', () => {
@@ -235,6 +249,17 @@ describe('writeSpawnMcp + restoreSpawnMcp', () => {
     expect(existsSync(handle.path)).toBe(true);
     const content = JSON.parse(readFileSync(handle.path, 'utf8'));
     expect(content.mcpServers.papercusp.url).toContain('harness=sheets');
+  });
+
+  it('writes the MCP tools listing hint into .mcp.json when provided', () => {
+    const handle = writeSpawnMcp(ROOT, {
+      ...baseInput,
+      role: 'queen',
+      mcpToolNames: ['hive:survey', 'fleet:spawn'],
+    });
+    const content = JSON.parse(readFileSync(handle.path, 'utf8'));
+    const url = new URL(content.mcpServers.papercusp.url);
+    expect(url.searchParams.get('tools')).toBe('hive:survey,fleet:spawn');
   });
 
   it('restoreSpawnMcp deletes our file when there was no prior', () => {

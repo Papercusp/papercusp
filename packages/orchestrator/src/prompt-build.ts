@@ -783,8 +783,10 @@ export const WORK_RECORD_NOTE = [
  * calls you hold THIS turn", NOT "defer/stash work to batch later" (deferral re-loads context and
  * risks dropping the work — a reliability loss, not a token win).
  *
- * Self-gated ("if `code:run` is in your toolset") since the tool is SU_ROLES-scoped — a role
- * without it simply ignores the clause. Sourced once here (the CONCURRENCY_FIRST_NOTE /
+ * Self-gated ("if `code:run` is in your toolset"). As of the owner directive 2026-06-25 code:run is
+ * open to EVERY built-in role (run.ts `agentRoles: [...AGENT_ROLES]`), so the clause now applies to
+ * all of them; the self-gate remains only so a deployment that confines a role away from the tool at
+ * the capability envelope still has it cleanly ignore the clause. Sourced once here (the CONCURRENCY_FIRST_NOTE /
  * REUSE_FIRST_NUDGE precedent): injected into the spawned-bee base (buildPromptParts below) + the
  * operator-launched-role base (operator-core's renderCodeRunNudge, re-exported via
  * role-prompt-from-slug). The su playbooks + the papercup-hive su instance override carry their own
@@ -1072,6 +1074,7 @@ export interface PromptParts {
 export function buildPromptParts(input: BuildPromptInput): PromptParts {
   // ── CACHEABLE PREAMBLE — ordered by descending stability (P-009) ──────────
   const pre: string[] = [];
+  const isQueen = input.role === 'queen';
 
   // 1. Role prompt file(s) (always — caller asserts they exist), unless
   //    the caller supplied an inline prompt (chunk-loop driver, etc.).
@@ -1112,7 +1115,7 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //      Authored in the public docs site under
   //      apps/operator-docs/src/content/docs/agents/ and injected by the
   //      caller so the doc page and the prompt content share one source.
-  for (const guide of input.sharedGuides ?? []) {
+  for (const guide of isQueen ? [] : (input.sharedGuides ?? [])) {
     if (guide && guide.trim()) {
       pre.push('\n---');
       pre.push(guide);
@@ -1130,20 +1133,38 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     preamble (cacheable).
   pre.push('\n---');
   pre.push(
-    '- **Platform tool access:** your `<group>:<verb>` platform tools are MCP tools named\n' +
-      '  `mcp__papercusp__<group>_<verb>`. If they are DEFERRED (a ToolSearch tool is present and the\n' +
-      '  platform tools are not yet in your tool list), load them FIRST — one ToolSearch call\n' +
-      '  selecting every tool your task names — and then CALL them directly like any other tool;\n' +
-      '  the references in the result expand into real, callable definitions automatically. NEVER\n' +
-      '  hand-roll raw HTTP/curl against the operator with an arbitrary identity — unattributed HTTP\n' +
-      '  writes corrupt fleet state (EI-311). BUT if your platform tools are STILL unusable after a\n' +
-      '  ToolSearch reload + one retry, do NOT silently give up (that strands your claimed work as a\n' +
-      '  zombie — EI-1758): fall back to the SANCTIONED helper\n' +
-      '  `node scripts/mcp-call.mjs <group>:<verb> <jsonArgs> --client "$PAPERCUSP_SID" [--harness <h>]`\n' +
-      '  (it carries the correct superuser bearer AND attributes the call to YOU) and use it to claim /\n' +
-      '  comment / complete your item. Only if even mcp-call.mjs fails, say so plainly in your final\n' +
-      '  output and stop.',
+    isQueen
+      ? '- **Platform tool access:** use MCP tools directly (`group:verb`, projected as `mcp__papercusp__<group>_<verb>`). If a needed tool is deferred, use ToolSearch once to load every named tool, then call the tools. Never hand-roll raw HTTP/curl; if MCP is genuinely unusable after reload+retry, report the tool fault and declare the next wake with the blocker.'
+      : '- **Platform tool access:** your `<group>:<verb>` platform tools are MCP tools named\n' +
+          '  `mcp__papercusp__<group>_<verb>`. If they are DEFERRED (a ToolSearch tool is present and the\n' +
+          '  platform tools are not yet in your tool list), load them FIRST — one ToolSearch call\n' +
+          '  selecting every tool your task names — and then CALL them directly like any other tool;\n' +
+          '  the references in the result expand into real, callable definitions automatically. NEVER\n' +
+          '  hand-roll raw HTTP/curl against the operator with an arbitrary identity — unattributed HTTP\n' +
+          '  writes corrupt fleet state (EI-311). BUT if your platform tools are STILL unusable after a\n' +
+          '  ToolSearch reload + one retry, do NOT silently give up (that strands your claimed work as a\n' +
+          '  zombie — EI-1758): fall back to the SANCTIONED helper\n' +
+          '  `node scripts/mcp-call.mjs <group>:<verb> <jsonArgs> --client "$PAPERCUSP_SID" [--harness <h>]`\n' +
+          '  (it carries the correct superuser bearer AND attributes the call to YOU) and use it to claim /\n' +
+          '  comment / complete your item. Only if even mcp-call.mjs fails, say so plainly in your final\n' +
+          '  output and stop.',
   );
+
+  if (isQueen) {
+    pre.push('\n---');
+    pre.push([
+      '## Compact shared operating rules',
+      '',
+      '- Evidence first: plausible causes are hypotheses. Verify with tools/rows/logs before acting or reporting.',
+      '- Capacity first: rate/usage limits are usually routing/account-pool bugs. Check account pool/governor before waiting.',
+      '- No passive waits: unblock reachable dependencies, wake peers you depend on, or declare a timed wake with an exact recheck.',
+      '- Record meaningful work and detector gaps durably with work-items, observations, grades, or plan decisions.',
+      '- If filing an observation, use an active rubric/scorecard when one fits; otherwise free-text is acceptable.',
+      '- Reuse before adding a new durable surface. Prefer extending existing tools, tables, routines, or docs.',
+      '- If interrupted, checkpoint durable state, release locks, leave a successor note, and end cleanly.',
+      '- Verify outcomes before claiming done; Queen placement is not success until bees complete and git-sync/checkpoint carries changes.',
+    ].join('\n'));
+  } else {
 
   // 3. Shared-base constants — all static text, so they live in the preamble
   //    (they used to sit AFTER the per-spawn runtime context, which re-wrote
@@ -1309,6 +1330,7 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     renderPeerWakeNote), and the su playbooks can't desync.
   pre.push('\n---');
   pre.push(PEER_WAKE_NOTE);
+  }
 
   // Hive vocabulary (hive-blueprint-generalization P-016): when the hive blueprint
   // renames nouns, tell the agent to read the shared personas' generic terms as this

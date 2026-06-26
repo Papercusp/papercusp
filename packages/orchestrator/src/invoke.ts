@@ -520,6 +520,67 @@ export const FLEET_ALLOWED_TOOLS: readonly string[] = [
   'WebSearch',
 ];
 
+export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
+  'accounts:status',
+  'coord:ack',
+  'coord:ask',
+  'coord:dispatch',
+  'coord:escalate',
+  'coord:escalations',
+  'coord:glance',
+  'coord:handoff',
+  'coord:send',
+  'coord:thread',
+  'coord:wake',
+  'curation:feed',
+  'dev:rate_governor_status',
+  'fleet:assignments',
+  'fleet:cancel',
+  'fleet:capacity',
+  'fleet:drain',
+  'fleet:governor',
+  'fleet:place_batch',
+  'fleet:spawn',
+  'fleet:supervise',
+  'hive:declare-wake',
+  'hive:get',
+  'hive:get-steering',
+  'hive:queen_efficiency',
+  'hive:status',
+  'hive:survey',
+  'improvements:capture',
+  'improvements:digest',
+  'plans:add-decision',
+  'plans:add-item',
+  'plans:promote',
+  'plans:search',
+  'plans:set-plan-status',
+  'plans:set-priority',
+  'plans:set-status',
+  'rubrics:get',
+  'rubrics:list',
+  'scheduler:running',
+  'scheduler:set_claim_spec',
+  'scorecards:freshness',
+  'scorecards:list',
+  'scout:grade-idea',
+  'work_items:co_locate',
+  'work_items:comment',
+  'work_items:create',
+  'work_items:promote',
+  'work_items:reorder',
+  'work_items:set_priority',
+  'work_items:set_state',
+  'work_items:update',
+];
+
+export const QUEEN_ALLOWED_TOOLS: readonly string[] = [
+  ...QUEEN_MCP_TOOL_NAMES.map((name) => `mcp__papercusp__${name.replace(':', '_')}`),
+  'Read',
+  'Glob',
+  'Grep',
+];
+
 /**
  * Hard denies layered on top of the allow-list. `--disallowed-tools` removes
  * a tool from the spawn ENTIRELY — it wins over the allow-list, over the
@@ -662,6 +723,9 @@ export function fleetAllowedToolsForRole(
   capabilityOnly = false,
   scope?: RoleToolScope,
 ): string[] {
+  if (role === 'queen' && !(scope?.allow && scope.allow.length > 0)) {
+    return [...QUEEN_ALLOWED_TOOLS];
+  }
   let tools = scope?.allow && scope.allow.length > 0 ? [...scope.allow] : [...FLEET_ALLOWED_TOOLS];
   if (fleetCutoverApplies(role, capabilityOnly)) {
     tools = tools.filter((t) => !FLEET_CAPABILITY_REPLACED_TOOLS.includes(t));
@@ -2634,6 +2698,7 @@ export async function invoke(
           // durable operator-assigned spawnId — a bare random UUID would not be a real
           // coord owner, so omit it there (the legacy pipeline-role path is unchanged).
           clientId: stableSpawnId || null,
+          mcpToolNames: role === 'queen' ? QUEEN_MCP_TOOL_NAMES : null,
         };
         // codex: no `.mcp.json` discovery — its MCP servers live in
         // $CODEX_HOME/config.toml. Mint a per-spawn CODEX_HOME with the

@@ -50,6 +50,13 @@ export interface SpawnMcpConfigInput {
   /** Parent spawn ID, set when this spawn was created by another agent's `orchestrator.spawn` call. */
   parentSpawnId?: string | null;
   /**
+   * Optional MCP catalog listing hint. When set, the operator MCP endpoint's
+   * `tools/list` advertises only these colon-form tool names via `?tools=`.
+   * Dispatch is unchanged; this only keeps clients from inlining an oversized
+   * schema catalog for roles with a small known working set.
+   */
+  mcpToolNames?: readonly string[] | null;
+  /**
    * Stable coordination owner id for the spawn (THE UMBILICAL voice-gap fix).
    * Baked as the signed URL's `client=` param so the operator's
    * resolveAgentIdentity() attributes the child's coord:* / plans:* / improvements:*
@@ -114,6 +121,7 @@ export function buildSpawnMcpConfig(input: SpawnMcpConfigInput): {
   if (input.featureId) params.set('feature', input.featureId);
   if (input.chunkId) params.set('chunk', input.chunkId);
   if (input.parentSpawnId) params.set('parent_spawn', input.parentSpawnId);
+  if (input.mcpToolNames?.length) params.set('tools', input.mcpToolNames.join(','));
   // Stable coord owner id (operator's `s-…` spawnId). See buildSpawnUrlParams.
   if (input.clientId) params.set('client', input.clientId);
   return {
@@ -225,6 +233,7 @@ export async function writeSignedSpawnMcp(
     su.set('harness', input.harnessSlug);
     su.set('workspace', input.workspaceId);
     su.set('client', input.spawnId); // per-spawn coord/lock owner label
+    if (input.mcpToolNames?.length) su.set('tools', input.mcpToolNames.join(','));
     // token-usage-reduction P-011: narrow tools/list to the spawned role's
     // catalog (the SU door otherwise advertises the full operator-tier
     // surface to every fleet spawn). Dispatch capability is unchanged —
@@ -591,6 +600,7 @@ function buildSpawnUrlParams(input: SpawnMcpConfigInput): URLSearchParams {
   if (input.featureId) params.set('feature', input.featureId);
   if (input.chunkId) params.set('chunk', input.chunkId);
   if (input.parentSpawnId) params.set('parent_spawn', input.parentSpawnId);
+  if (input.mcpToolNames?.length) params.set('tools', input.mcpToolNames.join(','));
   // THE UMBILICAL: the stable coord owner id (operator's `s-…` spawnId). It's in the
   // signed-param allowlist (`client`), so it's part of the HMAC — the operator
   // verifies it before trusting it as the child's coord identity. parseRequestContext
