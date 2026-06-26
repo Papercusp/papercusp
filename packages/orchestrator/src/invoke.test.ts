@@ -17,6 +17,8 @@ import {
   streamFormatFlags,
   claudeMcpArgs,
   FLEET_ALLOWED_TOOLS,
+  BEE_ALLOWED_TOOLS,
+  BEE_MCP_TOOL_NAMES,
   QUEEN_ALLOWED_TOOLS,
   QUEEN_MCP_TOOL_NAMES,
   FLEET_DISALLOWED_TOOLS,
@@ -1042,6 +1044,29 @@ test('fleetAllowedToolsForRole — queen uses a compact explicit MCP subset, not
   ]) {
     assert.ok(allowed.includes(required), `${required} must remain available to the Queen`);
   }
+});
+
+test('fleetAllowedToolsForRole — bee uses a compact worker MCP subset, not the server wildcard', () => {
+  const allowed = fleetAllowedToolsForRole('bee');
+  assert.deepEqual(allowed, [...BEE_ALLOWED_TOOLS]);
+  assert.ok(!allowed.includes('mcp__papercusp'), 'bee must not load the full MCP schema wildcard');
+  for (const required of [
+    'mcp__papercusp__work_items_claim',
+    'mcp__papercusp__work_items_set_state',
+    'mcp__papercusp__work_items_comment',
+    'mcp__papercusp__locks_acquire_granular',
+    'mcp__papercusp__locks_release_granular',
+    'mcp__papercusp__dev_service_health',
+    'mcp__papercusp__db_next_migration',
+    'Read',
+    'Edit',
+    'Write',
+    'Bash',
+  ]) {
+    assert.ok(allowed.includes(required), `${required} must remain available to bees`);
+  }
+  assert.ok(BEE_MCP_TOOL_NAMES.includes('work_items:set_state'), 'bee MCP listing hint must use colon-form names');
+  assert.ok(!BEE_MCP_TOOL_NAMES.includes('fleet:spawn'), 'bee must not receive placement-only fleet spawn tools');
 });
 
 test('fleetAllowedToolsForRole — no roles are write-restricted now; every role gets the full kit', () => {

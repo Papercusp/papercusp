@@ -581,6 +581,45 @@ export const QUEEN_ALLOWED_TOOLS: readonly string[] = [
   'Grep',
 ];
 
+export const BEE_MCP_TOOL_NAMES: readonly string[] = [
+  'coord:ask',
+  'coord:glance',
+  'coord:inbox',
+  'coord:send',
+  'coord:thread',
+  'db:check_drift',
+  'db:next_migration',
+  'dev:service_health',
+  'docs:get',
+  'docs:search',
+  'fleet:assignments',
+  'locks:acquire_granular',
+  'locks:release_granular',
+  'plans:get',
+  'plans:items',
+  'plans:search',
+  'scheduler:running',
+  'work_items:claim',
+  'work_items:comment',
+  'work_items:get',
+  'work_items:list',
+  'work_items:search',
+  'work_items:set_state',
+  'work_items:update',
+];
+
+export const BEE_ALLOWED_TOOLS: readonly string[] = [
+  ...BEE_MCP_TOOL_NAMES.map((name) => `mcp__papercusp__${name.replace(':', '_')}`),
+  'Read',
+  'Edit',
+  'Write',
+  'Bash',
+  'Glob',
+  'Grep',
+  'WebFetch',
+  'WebSearch',
+];
+
 /**
  * Hard denies layered on top of the allow-list. `--disallowed-tools` removes
  * a tool from the spawn ENTIRELY — it wins over the allow-list, over the
@@ -725,6 +764,9 @@ export function fleetAllowedToolsForRole(
 ): string[] {
   if (role === 'queen' && !(scope?.allow && scope.allow.length > 0)) {
     return [...QUEEN_ALLOWED_TOOLS];
+  }
+  if (role === 'bee' && !(scope?.allow && scope.allow.length > 0)) {
+    return [...BEE_ALLOWED_TOOLS];
   }
   let tools = scope?.allow && scope.allow.length > 0 ? [...scope.allow] : [...FLEET_ALLOWED_TOOLS];
   if (fleetCutoverApplies(role, capabilityOnly)) {
@@ -2698,7 +2740,7 @@ export async function invoke(
           // durable operator-assigned spawnId — a bare random UUID would not be a real
           // coord owner, so omit it there (the legacy pipeline-role path is unchanged).
           clientId: stableSpawnId || null,
-          mcpToolNames: role === 'queen' ? QUEEN_MCP_TOOL_NAMES : null,
+          mcpToolNames: role === 'queen' ? QUEEN_MCP_TOOL_NAMES : role === 'bee' ? BEE_MCP_TOOL_NAMES : null,
         };
         // codex: no `.mcp.json` discovery — its MCP servers live in
         // $CODEX_HOME/config.toml. Mint a per-spawn CODEX_HOME with the
