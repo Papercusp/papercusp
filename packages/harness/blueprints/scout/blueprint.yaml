@@ -30,11 +30,11 @@ workItem:
   idPrefix: SCT
 
 # Program-mode spine (P-010): one deterministic step, NO gate ⇒ deterministic
-# pipeline. `payload.cadence` / `payload.budget` / `payload.cycleTimeoutMs` are the
-# cadence + budget + wall-clock timeout overrides the routine's payload_template
-# carries (absent ⇒ the op's / gate's defaults). A whole-string `{{ payload.x }}`
-# that is unset interpolates to undefined → the op's optional arg is omitted → its
-# default applies.
+# pipeline. `payload.cadence` / `payload.budget` / `payload.cycleTimeoutMs` /
+# `payload.scout` are the cadence, budget, wall-clock timeout, and Scout config
+# overrides the routine's payload_template carries (absent ⇒ the op's / gate's
+# defaults). A whole-string `{{ payload.x }}` that is unset interpolates to
+# undefined → the op's optional arg is omitted → its default applies.
 spine:
   steps:
     - id: cycle
@@ -43,6 +43,7 @@ spine:
         cadence: "{{ payload.cadence }}"
         budget: "{{ payload.budget }}"
         cycleTimeoutMs: "{{ payload.cycleTimeoutMs }}"
+        scout: "{{ payload.scout }}"
       bind: cycle
 
 knobs:
