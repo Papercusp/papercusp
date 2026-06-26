@@ -68,11 +68,23 @@ import { writeSpawnClaudeConfig } from './spawn-mcp.js';
 //                                          `claudeMcpArgs`'s allow-list off-default.
 //   - `PAPERCUSP_FLEET_SANDBOX*`         → shift the sandbox enable/egress
 //                                          (`resolveFleetAllowedDomains`) assertions.
+//   - `AGENT_CMD` / `CLAUDE` / `AGENT_BACKEND` / `PAPERCUSP_SPAWN_BACKEND`
+//                                       → make invoke() resolve a fixture `claude`
+//                                         stub as the live session's codex backend.
+//   - `PAPERCUSP_INTEGRATION_ROOT`       → redirects prompt resolution away from
+//                                         the fixture harnessDir to the integration
+//                                         checkout, so prompt-content assertions
+//                                         read the real built-in prompts.
 // Snapshot + clear them per-test so the suite measures the committed defaults,
 // never the host's identity; tests that need one set it themselves.
 // (release-pipeline-resilience-2026-06-09 P-001; EI-942 env isolation.)
 const SESSION_ENV_KEYS = [
+  'AGENT_BACKEND',
+  'AGENT_CMD',
   'AGENT_MODELS',
+  'CLAUDE',
+  'PAPERCUSP_INTEGRATION_ROOT',
+  'PAPERCUSP_SPAWN_BACKEND',
   'PAPERCUSP_SPAWN_MODEL',
   'PAPERCUSP_FLEET_CAPABILITY_ONLY',
   'PAPERCUSP_REPLACE_CLAUDE_BASE',
