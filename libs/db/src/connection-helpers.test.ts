@@ -13,7 +13,7 @@ vi.mock('../../../../../packages/operator-core/lib/resource-profile', () => ({
   getResourceProfile: () => ({ hostClass: mockProfile.hostClass }),
 }));
 
-import { connectionBudgetStatus, maybePgbouncer, pgbouncerEnabled } from './connection';
+import { buildConnectionOptions, connectionBudgetStatus, maybePgbouncer, pgbouncerEnabled } from './connection';
 
 const DIRECT = 'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
 const POOLED = 'postgresql://harness_app:harness_app_pwd@127.0.0.1:6432/papercusp';
@@ -28,6 +28,34 @@ afterEach(() => {
   if (saved.port === undefined) delete process.env.PAPERCUSP_PGBOUNCER_PORT;
   else process.env.PAPERCUSP_PGBOUNCER_PORT = saved.port;
   mockProfile.hostClass = 'server';
+});
+
+describe('buildConnectionOptions — PgBouncer-safe startup params (no "unsupported startup parameter")', () => {
+  const base = { searchPath: '"harness_shared", "public"', applicationName: 'pcusp:org-app:p1' };
+
+  it('DIRECT: sends idle_in_transaction_session_timeout + statement_timeout at startup', () => {
+    const c = buildConnectionOptions({ ...base, idleInTxMs: 60000, stmtTimeoutMs: 30000, pooled: false });
+    expect(c.idle_in_transaction_session_timeout).toBe('60000');
+    expect(c.statement_timeout).toBe('30000');
+    expect(c.search_path).toBe(base.searchPath);
+    expect(c.application_name).toBe(base.applicationName);
+  });
+
+  it('POOLED: OMITS both timeout GUCs — the pooler rejects them as startup parameters', () => {
+    const c = buildConnectionOptions({ ...base, idleInTxMs: 60000, stmtTimeoutMs: 30000, pooled: true });
+    // The bug: these were sent as libpq startup params and PgBouncer 502'd the plans:* writes.
+    expect(c).not.toHaveProperty('statement_timeout');
+    expect(c).not.toHaveProperty('idle_in_transaction_session_timeout');
+    // search_path + application_name still sent (pooler-allowed/ignored; search_path re-applied per-tx).
+    expect(c.search_path).toBe(base.searchPath);
+    expect(c.application_name).toBe(base.applicationName);
+  });
+
+  it('DIRECT with stmtTimeoutMs=0 omits statement_timeout but keeps idle (pre-WI-832 behaviour)', () => {
+    const c = buildConnectionOptions({ ...base, idleInTxMs: 60000, stmtTimeoutMs: 0, pooled: false });
+    expect(c).not.toHaveProperty('statement_timeout');
+    expect(c.idle_in_transaction_session_timeout).toBe('60000');
+  });
 });
 
 describe('pgbouncerEnabled — P-004 default-on for server-class native PG', () => {

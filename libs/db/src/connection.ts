@@ -346,11 +346,50 @@ function adminStatementTimeoutMs(): number {
   return v > 0 ? v : 0;
 }
 
+/**
+ * Pure builder for the postgres-js `connection` STARTUP-options block — extracted +
+ * exported so the PgBouncer-safety invariant is unit-testable without a live DB.
+ *
+ * `idle_in_transaction_session_timeout` + `statement_timeout` are libpq STARTUP
+ * parameters. A transaction pooler (PgBouncer) REJECTS unknown startup parameters
+ * (`unsupported startup parameter: <name>`) unless they're in `ignore_startup_parameters`,
+ * AND a connect-time GUC does not survive transaction pooling anyway (each transaction may
+ * land on a different server backend). So when `pooled`, we OMIT both — under pooling the
+ * real enforcement is per-TRANSACTION `SET LOCAL` (withWorkspace / harnessQuery /
+ * in-workspace-txn re-apply statement_timeout + search_path per tx) and PgBouncer's own
+ * `idle_transaction_timeout` covers the EI-49 idle-in-tx guard. A DIRECT connection keeps
+ * both (no pooler to reject them; the GUCs persist on the long-lived session).
+ * `search_path` + `application_name` are always sent: application_name is a standard
+ * allowed startup param, and search_path is already in the pooler's
+ * `ignore_startup_parameters` (re-applied per-tx under pooling).
+ *
+ * Fixes `unsupported startup parameter: statement_timeout` on pooled plans:* (org-pool)
+ * writes — a fleet-wide intermittent failure once PgBouncer is in front of the org pools.
+ */
+export function buildConnectionOptions(opts: {
+  searchPath: string;
+  applicationName: string;
+  idleInTxMs: number;
+  stmtTimeoutMs: number;
+  pooled: boolean;
+}): Record<string, string> {
+  const c: Record<string, string> = {
+    search_path: opts.searchPath,
+    application_name: opts.applicationName,
+  };
+  if (!opts.pooled) {
+    c.idle_in_transaction_session_timeout = String(opts.idleInTxMs);
+    if (opts.stmtTimeoutMs > 0) c.statement_timeout = String(opts.stmtTimeoutMs);
+  }
+  return c;
+}
+
 function buildClient(
   connectionUrl: string,
   searchPath: string[],
   maxOverride?: number,
   label = 'pool',
+  pooled = false,
 ): Sql {
   const sp = searchPath.map((s) => `"${s.replace(/"/g, '""')}"`).join(', ');
   // The desktop ships embedded-postgres-server (real PG over TCP); the URL
@@ -390,16 +429,18 @@ function buildClient(
   return postgres(connectionUrl, {
     onnotice: () => {},
     ...(connectTimeoutSec > 0 ? { connect_timeout: connectTimeoutSec } : {}),
-    connection: {
-      search_path: sp,
-      idle_in_transaction_session_timeout: String(idleInTxMs),
-      application_name: pgAppName(label),
-      // WI-832: a configured DEFAULT statement_timeout (ms) for the whole interactive-
-      // write class, injected via setAdminPoolStatementTimeoutProvider. Omitted entirely
-      // when 0 (the default) ⇒ byte-identical to the pre-WI-832 connection opts. The
-      // migration runner overrides this per-txn with SET LOCAL statement_timeout = 0.
-      ...(stmtTimeoutMs > 0 ? { statement_timeout: String(stmtTimeoutMs) } : {}),
-    },
+    // PgBouncer-safe startup options. Under transaction pooling the statement_timeout +
+    // idle_in_transaction_session_timeout GUCs are NOT sent at startup (the pooler rejects
+    // them as "unsupported startup parameter", and a connect-time GUC doesn't survive a
+    // transaction pool); they're enforced per-tx via SET LOCAL instead. WI-832's
+    // statement_timeout therefore stays a per-tx cap under pooling. See buildConnectionOptions.
+    connection: buildConnectionOptions({
+      searchPath: sp,
+      applicationName: pgAppName(label),
+      idleInTxMs,
+      stmtTimeoutMs,
+      pooled,
+    }),
     // Skip postgres-js's prepared-statement plan caching. ~80% of the
     // ~1.1s cold-reconnect cost we measured was prepared-statement
     // registration on a fresh connection. Disabling it makes cold
@@ -492,7 +533,9 @@ export function getOrgPg(): OrgPgHandle {
   // the old port forever (E2E round-13 bug #33).
   const url = maybePgbouncer(adminUrl());
   if (!_adminClient) {
-    _adminClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-admin');
+    // pooled = pgbouncerEnabled(): the url above is maybePgbouncer(adminUrl()), which only
+    // reroutes to the pooler when enabled — so the connection is pooled iff that's true.
+    _adminClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-admin', pgbouncerEnabled());
     _adminDrizzle = drizzle(_adminClient, { schema: sharedTables });
     _adminDb = drizzle(_adminClient, { schema: fullSchema });
   }
@@ -522,7 +565,8 @@ export function getOrgPgApp(): OrgPgHandle {
   // Call appUrl() on every invocation — see comment in getOrgPg().
   const url = maybePgbouncer(appUrl());
   if (!_appOrgClient) {
-    _appOrgClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-app');
+    // pooled = pgbouncerEnabled() (url = maybePgbouncer(appUrl())) — see getOrgPg().
+    _appOrgClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-app', pgbouncerEnabled());
     _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedTables });
     _appOrgDb = drizzle(_appOrgClient, { schema: fullSchema });
   }
