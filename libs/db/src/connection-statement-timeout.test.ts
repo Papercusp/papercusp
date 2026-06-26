@@ -19,7 +19,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { setAdminPoolStatementTimeoutProvider } from './connection';
+import { buildConnectionOptions, setAdminPoolStatementTimeoutProvider } from './connection';
 
 const SRC = fs.readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), 'connection.ts'),
@@ -52,12 +52,18 @@ describe('connection: org-pool default statement_timeout seam (WI-832)', () => {
     expect(buildClientBody()).toMatch(/stmtTimeoutMs\s*=\s*adminStatementTimeoutMs\(\)/);
   });
 
-  it('buildClient passes statement_timeout to postgres() ONLY when bounded (>0) — default 0 ⇒ byte-identical opts', () => {
-    // Spread the GUC in only when > 0 so the unset default keeps the pool unbounded
-    // (the admin pool must stay unbounded for migrations until the owner flips a value).
-    expect(buildClientBody()).toMatch(
-      /stmtTimeoutMs\s*>\s*0\s*\?\s*\{\s*statement_timeout:\s*String\(stmtTimeoutMs\)\s*\}\s*:\s*\{\s*\}/,
-    );
+  it('buildConnectionOptions emits statement_timeout ONLY when bounded (>0) AND the connection is DIRECT — default 0, or pooled, ⇒ omitted', () => {
+    // WI-832's per-statement cap is a libpq STARTUP param under postgres-js. A transaction
+    // pooler (PgBouncer) rejects it ("unsupported startup parameter: statement_timeout"), and
+    // a startup GUC does not survive transaction pooling anyway — so when pooled it is OMITTED
+    // and enforced per-tx via SET LOCAL instead. Direct connections keep the >0 cap.
+    const base = { searchPath: '"harness_shared", "public"', applicationName: 'pcusp:org:p1', idleInTxMs: 60000 };
+    // bounded + DIRECT → present
+    expect(buildConnectionOptions({ ...base, stmtTimeoutMs: 30000, pooled: false }).statement_timeout).toBe('30000');
+    // unset (0) + DIRECT → omitted (admin pool stays unbounded for migrations until the owner flips a value)
+    expect(buildConnectionOptions({ ...base, stmtTimeoutMs: 0, pooled: false })).not.toHaveProperty('statement_timeout');
+    // bounded but POOLED → omitted (the PgBouncer-safety fix; enforced per-tx via SET LOCAL)
+    expect(buildConnectionOptions({ ...base, stmtTimeoutMs: 30000, pooled: true })).not.toHaveProperty('statement_timeout');
   });
 
   it('the setter is null-safe — a non-function argument falls back to the () => 0 no-op (never an unset/throwing provider)', () => {
