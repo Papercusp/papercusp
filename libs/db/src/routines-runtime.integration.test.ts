@@ -47,6 +47,8 @@ beforeAll(async () => {
             concurrency text NOT NULL DEFAULT 'queue',
             catchup text NOT NULL DEFAULT 'skip-old',
             active boolean NOT NULL DEFAULT true,
+            -- migration 408 (P-010/D-006): the durable|ephemeral execution-tier discriminator.
+            tier text NOT NULL DEFAULT 'durable',
             next_fire_at timestamptz,
             last_fired_at timestamptz,
             created_at timestamptz NOT NULL DEFAULT now(),
@@ -220,6 +222,22 @@ describe('listDueCronRoutines', () => {
 
     const due = await listDueCronRoutines(sql);
     expect(due.map((r) => r.name)).toEqual(['due']);
+  });
+
+  it('EXCLUDES ephemeral-tier routines — the tick is durable-only (P-011 / D-006)', async () => {
+    await upsertRoutine(sql, baseInput({ name: 'durable-due', nextFireAt: new Date(Date.now() - 1000) }), nextFn);
+    // An ephemeral routine: tier='ephemeral', interval_sec cadence, NO cron, next_fire_at NULL.
+    // It is active + trigger_kind='cron' + due-by-null-next_fire_at, so WITHOUT the tier filter it
+    // would be returned — the durable-only filter is what keeps the DBOS tick from firing it (the
+    // per-host ephemeral executor owns it instead).
+    await sql`
+      INSERT INTO harness_shared.routines
+        (id, workspace_id, install_slug, name, trigger_kind, trigger_config, target_role, tier, active, next_fire_at)
+      VALUES ('rt_eph', ${WS}, 'papercup', 'eph-sweep', 'cron', '{"interval_sec":5}'::jsonb, 'system:foo', 'ephemeral', TRUE, NULL)
+    `;
+    const due = await listDueCronRoutines(sql);
+    expect(due.map((r) => r.name)).toEqual(['durable-due']);
+    expect(due.every((r) => r.tier === 'durable')).toBe(true);
   });
 });
 
