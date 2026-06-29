@@ -33,10 +33,16 @@ it collision-free:
   git-sync resolver merges the tree. The lock system exists precisely so you never have to
   coordinate-before-editing out of fear of interfering. Make the edit your task needs and
   let the lock arbitrate; an unnecessary detour to avoid a peer is the mistake, not the edit.
-- **Declare a real intent + claim your lane.** On starting a distinct piece of work,
-  `coord:declare-intent { intent, current_plan_slug, items }` — the intent line is what
-  a blocked peer reads; `items` CLAIMS the plan items you're taking. An unclaimed lane is
-  invisible to peers and the Queen → work gets double-placed.
+- **Declare a real intent + claim your lane — and hold a work-item before you edit.** On
+  starting a distinct piece of work, `coord:declare-intent { intent, current_plan_slug, items }`
+  — the intent line is what a blocked peer reads; `items` CLAIMS the plan items you're taking.
+  An unclaimed lane is invisible to peers and the Queen → work gets double-placed. Before your
+  first code/deliverable edit you MUST hold a work-item assigned to you — claim the plan item
+  (declare-intent `{ items }` / `plan_items:claim`) or, for ad-hoc work, `work_items:create
+  { title, assign_to:self, state:'wip' }`. No code edit without a work-item; not done until
+  `work_items:complete`. (Exceptions: read-only investigation, a trivial one-shot answer, a
+  one-line fix you weren't asked to track.) The work-item ledger is the durable, shared,
+  fleet-visible record; your client's native to-do list is private scratch, never a substitute.
 - **Blocked on something announced? Await an event and sleep — never poll, never hold a
   turn.** `events:await { event }` → END YOUR TURN; the wake turn carries the payload.
   Pair-emit: tell the emitter the key you await; emit the key a peer awaits.
@@ -67,7 +73,11 @@ isolation. Merge conflicts go to a resolver, not you.
 ## Engineering discipline
 
 - **Plan before non-trivial work.** Durable plans live in the plan store (shared,
-  fleet-visible), never only in a client-local task list.
+  fleet-visible), never only in a client-local task list. A plan is REQUIRED when work
+  decomposes into >=2 work-items, has inter-dependent steps, outlives one session, or
+  sequences multiple subsystems: `plans:new` + `plans:add-item`, then `plans:start`
+  (promotes items into work-items). Don't over-apply — a single work-item, a one-shot
+  fix, or pure investigation needs no plan.
 - **Decompose deliberately; don't reflex-parallelize.** Encode real `blocked-by` deps;
   fan out only when items are genuinely independent AND touch disjoint files (same-file
   "parallel" work just serializes on the locks).
@@ -95,8 +105,12 @@ isolation. Merge conflicts go to a resolver, not you.
   tests fail, say so with the output; state done plainly only when verified.
 - **In alpha, timidity is the failure mode, not breakage.** When the right fix is a
   breaking change, make it now, in full; prefer a maintained library or an existing
-  internal surface over rolling your own. Tell the owner what changed; don't ask
-  permission to do it right.
+  internal surface over rolling your own. Ship features flag-ON by default. Default-OFF
+  is only for the dangerous set — irreversible migration, outward-facing publish/send,
+  fleet-autonomy escalation, auth/security, or a kill-switch — and only when registered
+  (with a reason) in the dark-flags registry. A routine feature behind a dark flag nobody
+  flips is an unfinished ship; a feature isn't done if it's gated behind an unregistered
+  default-OFF flag. Tell the owner what changed; don't ask permission to do it right.
 - **Reuse-first (extend, don't fork).** Before introducing a new durable surface — a
   table, tool/verb, service, cron/routine, config key, abstraction, or parallel
   "system" — first look for an existing one to extend (`search:semantic`, the docs,
@@ -127,8 +141,11 @@ isolation. Merge conflicts go to a resolver, not you.
   topics }` answers inline on a hit or routes to the topic's subscribers — reach for it
   BEFORE escalating to the owner; only ask the owner if the answer is still unclear
   after asking peers.
-- **File what you discover.** An out-of-scope real problem → an issue (never silently
-  drop); claim before fixing; close or promote when done.
+- **File what you discover — the moment you notice it.** Capture what you notice the
+  moment you notice it — don't let it evaporate into prose: a health/degradation signal
+  or turn-end reflection → `improvements:capture` (with evidence); a concrete actionable
+  problem → an issue/work-item (never silently drop; claim before fixing; close or promote
+  when done); durable how-it-works → an agent-insights doc. Evidence-bearing signal only.
 - **Don't paper over missing context with a default.** A missing slug / id / scope means
   the request is underspecified — ask one short question rather than guessing.
 

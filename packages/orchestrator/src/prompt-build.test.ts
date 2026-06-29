@@ -1,9 +1,16 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildPrompt, buildPromptParts, wrapUntrusted, findBriefPlaceholder } from './prompt-build.js';
+import {
+  WORK_RECORD_NOTE,
+  PLAN_DISCIPLINE_NOTE,
+  OBSERVATION_CAPTURE_NOTE,
+  FINISH_THE_ROLLOUT_NOTE,
+} from './prompt-build.js';
 
 interface Fixture {
   harnessDir: string;
@@ -482,6 +489,181 @@ test("buildPrompt — every role gets the reuse-first nudge (extend, don't fork;
   }
 });
 
+// ── enforce-system-on-generic-work-2026-06-29 (P-010/P-015/P-016/P-017/P-018):
+//    the four sharpened agent-discipline directives, single-sourced as shared-base
+//    constants + the su persona spine. These pins guard against drift on the exact
+//    requirement each carries: the work-item precondition, the plan bright-line, the
+//    observation-capture routing, and the flag-on dangerous-set rule. ──
+
+test('buildPrompt — every role gets the work-item PRECONDITION + record rule (P-015)', () => {
+  for (const role of ['worker', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'r1',
+        extras: [],
+      });
+      assert.match(out, /## Hold a work-item before you edit/);
+      // The precondition: a work-item before your first code/deliverable edit.
+      assert.match(out, /Before your first code\/deliverable edit you MUST hold a work-item/);
+      assert.match(out, /No code edit without a work-item; not done until/);
+      assert.match(out, /work_items:complete/);
+      // The ledger-vs-scratch contract + the carved exceptions.
+      assert.match(out, /durable, shared, fleet-visible record/);
+      assert.match(out, /private scratch, never a substitute/);
+      assert.match(out, /Exceptions: read-only investigation/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
+test('buildPrompt — every role gets the plan-discipline bright-line (P-016)', () => {
+  for (const role of ['worker', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'r1',
+        extras: [],
+      });
+      assert.match(out, /## A plan is REQUIRED when work spans multiple steps/);
+      assert.match(out, /A plan is REQUIRED when work decomposes into >=2 work-items/);
+      assert.match(out, /plans:new/);
+      assert.match(out, /plans:start/);
+      // Don't over-apply — the other half of the bright line.
+      assert.match(out, /Don't over-apply/);
+      assert.match(out, /a one-shot fix, or pure\s+investigation needs no plan/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
+test('buildPrompt — every role gets the observation-capture routing (P-017)', () => {
+  for (const role of ['worker', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'r1',
+        extras: [],
+      });
+      assert.match(out, /## Capture what you notice — the moment you notice it/);
+      // The three routes + the evidence bar.
+      assert.match(out, /improvements:capture/);
+      assert.match(out, /an issue\/work-item/);
+      assert.match(out, /agent-insights doc/);
+      assert.match(out, /Evidence-bearing\s+signal only/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
+test('buildPrompt — every role gets the sharpened flag-on dangerous-set rule (P-010)', () => {
+  for (const role of ['worker', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({
+        role,
+        promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '',
+        stateDir: fx.stateDir,
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        cwdOverride: '',
+        featureId: null,
+        runId: 'r1',
+        extras: [],
+      });
+      // The finish-the-rollout note now carries the sharpened flag-on rule.
+      assert.match(out, /Ship features flag-ON by default/);
+      // The dangerous set is enumerated…
+      assert.match(out, /irreversible migration/);
+      assert.match(out, /outward-facing\s+publish\/send/);
+      assert.match(out, /fleet-autonomy escalation/);
+      assert.match(out, /auth\/security/);
+      assert.match(out, /kill-switch/);
+      // …and only when registered with a reason in the dark-flags registry.
+      assert.match(out, /registered WITH A REASON in the dark-flags registry/);
+      assert.match(out, /a feature is NOT done if it\s+is gated behind an UNREGISTERED default-OFF flag/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
+// The four directive constants are the SINGLE source; assert each carries its load-bearing
+// phrase so a future edit to the string can't silently drop the requirement.
+test('the four directive constants each carry their load-bearing phrase (single-source pin)', () => {
+  assert.match(WORK_RECORD_NOTE, /Before your first code\/deliverable edit you MUST hold a work-item/);
+  assert.match(WORK_RECORD_NOTE, /never a substitute/);
+  assert.match(PLAN_DISCIPLINE_NOTE, /A plan is REQUIRED when work decomposes into >=2 work-items/);
+  assert.match(OBSERVATION_CAPTURE_NOTE, /Capture what you notice the moment you notice it/);
+  assert.match(FINISH_THE_ROLLOUT_NOTE, /Ship features flag-ON by default/);
+  assert.match(FINISH_THE_ROLLOUT_NOTE, /Default-OFF is ONLY for the dangerous set/);
+});
+
+// The su persona spine (libs/.../blueprints/base/prompts/su.md) is the canonical home for the
+// su persona; pin that each of the four directives' key phrases is present there too, so the
+// byte-identical synced copies (desktop / .materialized) inherit them and can't drift apart.
+test('su.md persona spine carries all four sharpened directives (drift guard, P-018)', () => {
+  const suPath = join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    '..',
+    'harness',
+    'blueprints',
+    'base',
+    'prompts',
+    'su.md',
+  );
+  const su = readFileSync(suPath, 'utf8');
+  // [WORK-ITEM] — the precondition folded into the declare-intent/claim-lane bullet.
+  //   (Phrase wraps across a line in su.md, so tolerate the break with \s+.)
+  assert.match(su, /Before your\s+first code\/deliverable edit you MUST hold a work-item/);
+  assert.match(su, /never a substitute/);
+  // [PLAN] — the bright-line on the "Plan before non-trivial work" bullet.
+  assert.match(su, /A plan is REQUIRED when work\s+decomposes into >=2 work-items/);
+  // [OBSERVATION] — the capture-the-moment routing on the "File what you discover" bullet.
+  assert.match(su, /Capture what you notice the\s+moment you notice it/);
+  assert.match(su, /agent-insights doc/);
+  // [FLAG-ON] — the dangerous-set rule folded into the timidity bullet.
+  assert.match(su, /Ship features flag-ON by default/);
+  assert.match(su, /dark-flags registry/);
+});
+
 test('buildPrompt — acceptanceKind judge/none swaps TESTING_STANDARD for VERIFICATION_STANDARD (P-008)', () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'worker.md'), '# WORKER');
@@ -811,17 +993,17 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     // No extraneous dividers. Base shared-section dividers: deferred-tools recipe,
     // memory-discipline, friction-tripwire, observation-rubric-nudge, yield-policy,
     // account-routing-note, evidence-discipline-note, concurrency-first-note,
-    // deploy-pipeline-note, testing-standard, reuse-first-nudge, work-record-note,
-    // code-run-note, finish-the-rollout-note, agent-activity-truth-note, wait-loop-note,
-    // peer-wake-note.
+    // deploy-pipeline-note, testing-standard, reuse-first-nudge, plan-discipline-note,
+    // work-record-note, observation-capture-note, code-run-note, finish-the-rollout-note,
+    // agent-activity-truth-note, wait-loop-note, peer-wake-note.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 18, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 20, `unexpected divider count: ${dividerCount}`);
     // code-run nudge (B-CX-3) rides the shared bee base.
     assert.match(out, /Collapse a multi-step tool flow into ONE/);
     // owner refinement 2026-06-23: the conscious "fewer calls?" token framing rides the lead.
     assert.match(out, /can I get this result in FEWER calls/);
     // work-record note (audit-trail discipline; owner ask 2026-06-23) rides the shared bee base.
-    assert.match(out, /Record all work as a work-item/);
+    assert.match(out, /Hold a work-item before you edit/);
     // finish-the-rollout note (flags-default-on-reach-2026-06-21) rides the shared bee base.
     assert.match(out, /a capability built then left gated OFF is INCOMPLETE/);
     // agent-activity-truth note (agent-activity-liveness-truth-2026-06-21) rides the shared bee base.

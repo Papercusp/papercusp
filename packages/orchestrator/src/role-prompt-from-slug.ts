@@ -66,7 +66,13 @@ import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 // PEER_WAKE_NOTE (the "you can WAKE a peer; a parked agent sleeps until something re-invokes it, so
 // handing work off is not enough" clause, owner directive 2026-06-24) rides it too — operator-core's
 // renderPeerWakeNote reuses the SAME string the spawned-bee base emits.
-export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, EVIDENCE_DISCIPLINE_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, WORK_RECORD_NOTE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE, AGENT_ACTIVITY_TRUTH_NOTE, WAIT_LOOP_NOTE, PEER_WAKE_NOTE } from './prompt-build';
+// PLAN_DISCIPLINE_NOTE (the "a plan is REQUIRED when work spans >=2 items / interdependent steps /
+// outlives a session / sequences subsystems — not for a one-shot fix" bright-line,
+// enforce-system-on-generic-work-2026-06-29 P-016) + OBSERVATION_CAPTURE_NOTE (the "capture what you
+// notice the moment you notice it; route signal→improvements:capture / problem→issue / how-it-works→doc"
+// clause, P-017) ride it too — operator-core's renderPlanDisciplineNote / renderObservationCaptureNote
+// reuse the SAME strings the spawned-bee base emits.
+export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, EVIDENCE_DISCIPLINE_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, WORK_RECORD_NOTE, PLAN_DISCIPLINE_NOTE, OBSERVATION_CAPTURE_NOTE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE, AGENT_ACTIVITY_TRUTH_NOTE, WAIT_LOOP_NOTE, PEER_WAKE_NOTE } from './prompt-build';
 // resolvePromptFile rides the same entry: operator-core's workspace-level
 // (harness-less) role launch resolves the spawn persona directly
 // (hive-agent-tabs P-003) without importing the heavy orchestrator root.

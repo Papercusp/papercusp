@@ -741,26 +741,82 @@ export const REUSE_FIRST_NUDGE = [
 ].join('\n');
 
 /**
- * WORK_RECORD_NOTE — "every unit of work gets a work-item record, even small ones" (audit-trail
- * discipline; owner ask 2026-06-23). ALL work should leave a trace in the work-items system for
- * FUTURE agents, not just fleet-coordination-worthy tasks — the record is the point, not the
- * coordination. TOKEN-CONSCIOUS by design (the owner's own framing): a SMALL/short task the rest of
- * the fleet doesn't need live awareness of does NOT need pre-claim/declare-intent overhead — record
- * it AFTER finishing (or batch the create into a call you're already making), since its live window
- * is small but the durable record persists. A RECURRING small task ⇒ a recipe, not a re-create each
- * time. Sourced once here (the REUSE_FIRST_NUDGE precedent): injected into the spawned-bee base
- * (buildPromptParts below) + the operator-launched-role base (operator-core's renderWorkRecordNote,
- * re-exported via role-prompt-from-slug) so the bases can't desync. Universal (no role skip).
+ * WORK_RECORD_NOTE — "hold a work-item BEFORE your first edit, and record EVERY unit of work, even
+ * small ones" (audit-trail discipline; owner ask 2026-06-23, sharpened 2026-06-29 with the
+ * work-item PRECONDITION). Two halves that share one home so they can't desync: (1) the PRECONDITION
+ * — no code/deliverable edit until you hold a work-item assigned to you (claim a plan item or
+ * work_items:create assign_to:self state:'wip'); not done until work_items:complete; the ledger is
+ * the durable SHARED fleet-visible record, the client's native to-do list is private scratch, never
+ * a substitute. (2) The RECORD — ALL work leaves a trace for FUTURE agents, not just
+ * fleet-coordination-worthy tasks. TOKEN-CONSCIOUS by design: a SMALL/short task the rest of the
+ * fleet doesn't need live awareness of (one of the precondition EXCEPTIONS — read-only
+ * investigation, a trivial one-shot answer, a one-line fix you weren't asked to track) does NOT need
+ * pre-claim/declare-intent overhead — record it AFTER finishing (or batch the create into a call
+ * you're already making). A RECURRING small task ⇒ a recipe, not a re-create each time. Sourced once
+ * here (the REUSE_FIRST_NUDGE precedent): injected into the spawned-bee base (buildPromptParts below)
+ * + the operator-launched-role base (operator-core's renderWorkRecordNote, re-exported via
+ * role-prompt-from-slug) + the su persona spine (su.md) + the su playbooks, so all bases can't
+ * desync. Universal (no role skip).
  */
 export const WORK_RECORD_NOTE = [
-  '## Record all work as a work-item — even small ones',
+  '## Hold a work-item before you edit — and record all work, even small ones',
   '',
-  'Every unit of work leaves a trace in the work-items system for the audit trail — no exceptions,',
-  "however small (a future agent learns from the record). You need NOT pre-claim or declare-intent for",
-  "a tiny task the fleet doesn't need live awareness of: just record it AFTER you finish —",
-  '`work_items:create { assign_to:<self> }` then `set_state done` (or batch the create into a tool call',
-  'you are already making). The durable RECORD matters more than the timing. A recurring small task ⇒',
-  'capture it as a recipe instead of re-creating one each time. Never skip the record because "it was small."',
+  'Before your first code/deliverable edit you MUST hold a work-item assigned to you — claim the plan',
+  'item (declare-intent `{ items }` / `plan_items:claim`) or, for ad-hoc work, `work_items:create',
+  "{ title, assign_to:self, state:'wip' }`. No code edit without a work-item; not done until",
+  "`work_items:complete`. (Exceptions: read-only investigation, a trivial one-shot answer, a one-line",
+  "fix you weren't asked to track.) The work-item ledger is the durable, shared, fleet-visible record;",
+  "your client's native to-do list is private scratch, never a substitute.",
+  '',
+  'Beyond that precondition, EVERY unit of work leaves a trace in the work-items system for the audit',
+  'trail — no exceptions, however small (a future agent learns from the record). For one of the tiny',
+  "exceptions above — a task the fleet needs no live awareness of — you need NOT pre-claim or",
+  'declare-intent: just record it AFTER you finish — `work_items:create { assign_to:<self> }` then',
+  '`set_state done` (or batch the create into a tool call you are already making). The durable RECORD',
+  'matters more than the timing. A recurring small task ⇒ capture it as a recipe instead of re-creating',
+  'one each time. Never skip the record because "it was small."',
+].join('\n');
+
+/**
+ * PLAN_DISCIPLINE_NOTE — the bright-line for WHEN a plan is required (enforce-system-on-generic-work
+ * -2026-06-29 P-016). A plan is the durable, shared, fleet-visible decomposition; the trap it closes
+ * is BOTH directions — multi-step interdependent work driven with no plan (invisible, un-sequenced,
+ * un-resumable) AND a ceremony plan spun up for a one-shot fix (over-apply tax). The bright line: a
+ * plan is REQUIRED when work decomposes into >=2 work-items, has inter-dependent steps, outlives one
+ * session, or sequences multiple subsystems; a single work-item / one-shot fix / pure investigation
+ * needs none. Sourced once here (the WORK_RECORD_NOTE / REUSE_FIRST_NUDGE precedent): injected into
+ * the spawned-bee base (buildPromptParts below) + the operator-launched-role base (operator-core's
+ * renderPlanDisciplineNote, re-exported via role-prompt-from-slug) + the su persona spine (su.md) +
+ * the su playbooks, so all bases can't desync. Universal (no role skip).
+ */
+export const PLAN_DISCIPLINE_NOTE = [
+  '## A plan is REQUIRED when work spans multiple steps — not for a one-shot fix',
+  '',
+  'A plan is REQUIRED when work decomposes into >=2 work-items, has inter-dependent steps, outlives',
+  'one session, or sequences multiple subsystems: `plans:new` + `plans:add-item`, then `plans:start`',
+  "(promotes items into work-items). Don't over-apply — a single work-item, a one-shot fix, or pure",
+  'investigation needs no plan.',
+].join('\n');
+
+/**
+ * OBSERVATION_CAPTURE_NOTE — "capture what you notice the moment you notice it; route it to the right
+ * ledger" (enforce-system-on-generic-work-2026-06-29 P-017). The ROUTING sibling of FRICTION_TRIPWIRE
+ * (which primes the friction → improvements:capture reflex) and OBSERVATION_RUBRIC_NUDGE (which grades
+ * an observation once it's being filed): this one names WHERE each kind of noticing goes so it doesn't
+ * evaporate into prose — a health/degradation signal or turn-end reflection → improvements:capture
+ * (with evidence); a concrete actionable problem → an issue/work-item; durable how-it-works → an
+ * agent-insights doc. Evidence-bearing only (no anecdote spam). Sourced once here (the WORK_RECORD_NOTE
+ * precedent): injected into the spawned-bee base (buildPromptParts below) + the operator-launched-role
+ * base (operator-core's renderObservationCaptureNote, re-exported via role-prompt-from-slug) + the su
+ * persona spine (su.md) + the su playbooks, so all bases can't desync. Universal (no role skip).
+ */
+export const OBSERVATION_CAPTURE_NOTE = [
+  '## Capture what you notice — the moment you notice it',
+  '',
+  "Capture what you notice the moment you notice it — don't let it evaporate into prose: a",
+  'health/degradation signal or turn-end reflection → `improvements:capture` (with evidence); a concrete',
+  'actionable problem → an issue/work-item; durable how-it-works → an agent-insights doc. Evidence-bearing',
+  'signal only.',
 ].join('\n');
 
 /**
@@ -880,14 +936,17 @@ export const FINISH_THE_ROLLOUT_NOTE = [
   'proven + left off" is an unfinished rollout, not a finished feature. Turning it ON is the LAST STEP',
   'of the task, not a someday.',
   '',
-  '- New feature flags DEFAULT TO ENABLED (the alpha rule — finished work never ships dark). A flag is',
+  '- Ship features flag-ON by default (the alpha rule — finished work never ships dark). A flag is',
   '  for CUTTING a feature, not for hiding a finished one.',
   '- A feature toggle is a `FLAGS` entry, NEVER an ad-hoc env boolean — an env gate dodges the',
   "  default-on guard + the dark-flag expiry and can't be flipped at runtime, which is exactly how a",
   '  finished capability gets left off and forgotten. Env is for launch-time/test/dev config only.',
-  '- Default-OFF only for genuinely incomplete/unsafe work or an explicit owner ask — and THEN register',
-  '  it (KNOWN_DARK_FLAGS + justification + review-by) AND surface the pending flip LOUDLY in the plan',
-  '  `## Now` + your completion report, owned, with the exact steps to flip it. "Ready but gated" is a',
+  '- Default-OFF is ONLY for the dangerous set — an irreversible migration, an outward-facing',
+  '  publish/send, a fleet-autonomy escalation, auth/security, or a kill-switch — and only when',
+  '  registered WITH A REASON in the dark-flags registry (KNOWN_DARK_FLAGS + justification + review-by).',
+  '  A routine feature behind a dark flag nobody flips is an unfinished ship; a feature is NOT done if it',
+  '  is gated behind an UNREGISTERED default-OFF flag. Surface any pending flip LOUDLY in the plan',
+  '  `## Now` + your completion report, owned, with the exact steps to flip it — "ready but gated" is a',
   '  tracked TODO, never a silent default.',
   '',
   'If you can turn it on now, turn it on now. If you genuinely cannot, say so loudly and name who/what',
@@ -1277,14 +1336,35 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   pre.push('\n---');
   pre.push(REUSE_FIRST_NUDGE);
 
-  // 3e2. Work-record note (audit-trail discipline; owner ask 2026-06-23) — the SHARED bee base every
-  //      role inherits. Every unit of work gets a work-item record even when small; for a tiny task
-  //      the fleet needs no live awareness of, record it AFTER finishing (or batch the create) rather
-  //      than paying pre-claim overhead — the durable record is the point. Recurring small task ⇒ a
-  //      recipe. Sourced from the one WORK_RECORD_NOTE constant so the bee base + operator-launched-
-  //      role base (operator-core renderWorkRecordNote) can't desync. Universal (no role skip).
+  // 3e1b. Plan-discipline note (enforce-system-on-generic-work-2026-06-29 P-016) — the SHARED bee base
+  //      every role inherits. The bright-line for WHEN a plan is required: >=2 work-items / inter-
+  //      dependent steps / outlives one session / sequences subsystems ⇒ plans:new + add-item + start;
+  //      a single item / one-shot fix / pure investigation ⇒ no plan. Sourced from the one
+  //      PLAN_DISCIPLINE_NOTE constant so the bee base + operator-launched-role base (operator-core
+  //      renderPlanDisciplineNote) + su.md + the su playbooks can't desync. Universal (no role skip).
+  pre.push('\n---');
+  pre.push(PLAN_DISCIPLINE_NOTE);
+
+  // 3e2. Work-record note (audit-trail discipline; owner ask 2026-06-23, sharpened 2026-06-29 with the
+  //      work-item PRECONDITION) — the SHARED bee base every role inherits. Hold a work-item assigned to
+  //      you BEFORE your first code/deliverable edit (claim a plan item or work_items:create
+  //      assign_to:self state:'wip'); not done until work_items:complete; the ledger is the durable
+  //      shared record, the client to-do list is private scratch. Beyond that, every unit of work gets a
+  //      record even when small; for a tiny exception task record it AFTER finishing (or batch). Sourced
+  //      from the one WORK_RECORD_NOTE constant so the bee base + operator-launched-role base
+  //      (operator-core renderWorkRecordNote) + su.md + the su playbooks can't desync. Universal.
   pre.push('\n---');
   pre.push(WORK_RECORD_NOTE);
+
+  // 3e2b. Observation-capture note (enforce-system-on-generic-work-2026-06-29 P-017) — the SHARED bee
+  //      base every role inherits. The ROUTING sibling of the friction trip-wire: capture what you
+  //      notice the moment you notice it and route it — a health/degradation signal or turn-end
+  //      reflection → improvements:capture (with evidence); a concrete actionable problem →
+  //      issue/work-item; durable how-it-works → an agent-insights doc. Evidence-bearing only. Sourced
+  //      from the one OBSERVATION_CAPTURE_NOTE constant so the bee base + operator-launched-role base
+  //      (operator-core renderObservationCaptureNote) + su.md + the su playbooks can't desync. Universal.
+  pre.push('\n---');
+  pre.push(OBSERVATION_CAPTURE_NOTE);
 
   // 3f. Code-run nudge (code-execution-tool-orchestration B-CX-3) — the SHARED bee base every role
   //     inherits. Reach for code:run to collapse a multi-step tool flow (loop/branch/filter/fan-out/
