@@ -2744,6 +2744,7 @@ export async function invoke(
     // spawn errors. Spec: apps/operator/docs/plugin-mcp-host-design.md (D4).
     let mcpHandle: SpawnMcpHandle | null = null;
     let codexHomeHandle: SpawnCodexHomeHandle | null = null;
+    let ompHomeHandle: SpawnOmpHomeHandle | null = null;
     if (ctx.workspaceId) {
       try {
         // THE UMBILICAL (voice-gap fix): prefer the operator's durable `s-…` spawnId
