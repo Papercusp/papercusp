@@ -539,6 +539,15 @@ export const FLEET_ALLOWED_TOOLS: readonly string[] = [
 
 export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'accounts:status',
+  // capability:* — gated write/exec/fetch/read surface (parity with the bee kit; the queen
+  // ∈ FLEET_CAPABILITY_ROLES, so under the B-18 cutover its natives are stripped too). The
+  // capability ENVELOPE remains the real per-role boundary. Pinned by cutover-role-parity.test.ts.
+  'capability:bash',
+  'capability:edit',
+  'capability:fetch',
+  'capability:git',
+  'capability:read',
+  'capability:write',
   'coord:ack',
   'coord:ask',
   'coord:dispatch',
