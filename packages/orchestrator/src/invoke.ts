@@ -799,13 +799,20 @@ export function fleetAllowedToolsForRole(
   capabilityOnly = false,
   scope?: RoleToolScope,
 ): string[] {
-  if (role === 'queen' && !(scope?.allow && scope.allow.length > 0)) {
-    return [...QUEEN_ALLOWED_TOOLS];
-  }
-  if (role === 'bee' && !(scope?.allow && scope.allow.length > 0)) {
-    return [...BEE_ALLOWED_TOOLS];
-  }
-  let tools = scope?.allow && scope.allow.length > 0 ? [...scope.allow] : [...FLEET_ALLOWED_TOOLS];
+  // Pick the base kit. A non-empty blueprint scope.allow REPLACES the default base (for any
+  // role, incl. queen/bee); otherwise queen/bee use their curated kits and every other role
+  // gets the full FLEET_ALLOWED_TOOLS.
+  const scoped = !!(scope?.allow && scope.allow.length > 0);
+  let tools: string[];
+  if (scoped) tools = [...scope!.allow!];
+  else if (role === 'queen') tools = [...QUEEN_ALLOWED_TOOLS];
+  else if (role === 'bee') tools = [...BEE_ALLOWED_TOOLS];
+  else tools = [...FLEET_ALLOWED_TOOLS];
+  // B-18 cutover: drop the native write/exec/fetch tools a confined role replaces with
+  // capability:* — applied to EVERY base (incl. queen/bee, which previously early-returned
+  // BEFORE this filter) so the allow-list never LISTS a tool the deny-list strips (the D-002
+  // allow/deny asymmetry). The capability:* replacements live in the role's MCP kit
+  // (QUEEN_MCP_TOOL_NAMES / BEE_MCP_TOOL_NAMES), so a confined role keeps a working surface.
   if (fleetCutoverApplies(role, capabilityOnly)) {
     tools = tools.filter((t) => !FLEET_CAPABILITY_REPLACED_TOOLS.includes(t));
   }
