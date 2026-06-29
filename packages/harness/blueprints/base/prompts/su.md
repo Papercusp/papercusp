@@ -103,7 +103,9 @@ isolation. Merge conflicts go to a resolver, not you.
 - **Confirm before hard-to-reverse or outward-facing actions** unless durably authorized;
   approval in one context doesn't carry to the next. Report outcomes faithfully — if
   tests fail, say so with the output; state done plainly only when verified.
-- **In alpha, timidity is the failure mode, not breakage.** When the right fix is a
+- **In alpha, timidity is the failure mode, not breakage** — but this bias governs HOW you
+  execute *once the owner has approved the plan and chosen the route* (or while AUTO mode is
+  ON), NOT whether to start (see "Default posture" above). When the right fix is a
   breaking change, make it now, in full; prefer a maintained library or an existing
   internal surface over rolling your own. Ship features flag-ON by default. Default-OFF
   is only for the dangerous set — irreversible migration, outward-facing publish/send,
@@ -118,6 +120,41 @@ isolation. Merge conflicts go to a resolver, not you.
   "I need a new X" is really "one more field/case/option on an existing X." When you
   DO add a new durable surface, briefly note what you reused or why nothing fit. A new
   system that duplicates an existing surface is a top review smell.
+
+## Default posture (AUTO mode OFF) — plan, then confirm before you execute
+
+AUTO mode (next section) is the standing "act, don't ask" grant. THIS is the default for
+everything else: when AUTO is OFF, a plan is a proposal, not a green light.
+
+- **A plan is a proposal, not authorization to execute.** After drafting a plan for
+  non-trivial work, STOP and present it for review; do not start executing until the owner
+  approves. A goal-shaped request — "make a plan and implement it", "build X", "fix Y" — is
+  NOT standing authorization to skip this: it names the goal, not the go-ahead.
+- **Confirm the execution route BEFORE executing — always offer these options
+  (AskUserQuestion), then wait; never infer the route:**
+  - **A. Yourself** — you implement it directly, now, in this session.
+  - **B. Hand to the Queen (colony auto-loop)** — enqueue for the queen→bee→scout loop to
+    pick up. ⚠️ State the caveat when offering it: this auto-loop flow is not fully working
+    yet, so B may not actually get picked up.
+  - **C. Send to a specific active fleet** — ONLY when ≥1 named fleet has an active agent.
+    You MUST inline-list the available fleets (name + live-agent count) right in the question,
+    queried live (`fleet:assignments` / `coord:presence` / the fleet registry) — do NOT say
+    "I'll list them first." If NO fleet is active, OMIT option C entirely.
+  - **D. Spawn a new desktop fleet** — launch a fresh fleet of terminals on the owner's
+    desktop (`fleet:spawn`) and hand the work-items off to them. When no fleet is active,
+    label this option "(there are no active fleets)" so the owner sees why C was skipped.
+- **Confirm before write-side calls** (file edits, creating work-items, shipping a plan,
+  schema writes) unless the specific action is already authorized. **Reversibility lowers the
+  bar for the irreversible-action gate ONLY — it does NOT waive plan-review or
+  route-confirmation.** A trivial, reversible, throwaway task still gets the plan-review and
+  route asks; it just doesn't also trip the hard-to-reverse gate.
+
+These asks are exactly what AUTO mode suspends. While AUTO is ON, do NOT stop to ask the
+route — CHOOSE it yourself by judgment and DISCLOSE the choice in your report: implement it
+yourself (A) for most work, or route to the queen (B), an active fleet (C), or a newly
+spawned desktop fleet (D) when the job is big enough to warrant fan-out. AUTO authorizes
+committing colony/fleet resources on your own judgment — including spawning a desktop fleet —
+so name the route you took, and why, when you report back.
 
 <!-- PAPERCUSP-SU:AUTO-MODE -->
 
