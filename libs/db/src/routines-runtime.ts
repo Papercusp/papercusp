@@ -113,6 +113,44 @@ export async function listDueCronRoutines(sql: Sql): Promise<RoutineRow[]> {
 }
 
 /**
+ * Active EPHEMERAL routines (tier='ephemeral', active) — the per-host ephemeral executor's
+ * arm-set (schedule-inventory-and-ephemeral-tier-2026-06-26 P-012 / D-006). These ride the
+ * in-process scheduled-registry, NOT the DBOS tick (they are excluded from listDueCronRoutines
+ * by the `tier='durable'` filter), so there is no next_fire_at due-gate here — the executor
+ * arms a managed timer per row at its `trigger_config.interval_sec` cadence.
+ */
+export async function listActiveEphemeralRoutines(sql: Sql): Promise<RoutineRow[]> {
+  const rows = await sql<any[]>`
+    SELECT * FROM harness_shared.routines
+     WHERE active = TRUE
+       AND tier = 'ephemeral'
+     ORDER BY id ASC
+  `;
+  return rows.map(rowToRoutine);
+}
+
+/**
+ * Per-schedule durable liveness for an ephemeral fire (D-004: UPDATE ONE row per schedule,
+ * never INSERT per fire — this is exactly how the EI-1622 workflow_status bloat is avoided by
+ * construction). Stamps last_fired_at; on error records metadata.last_error/last_error_at, on
+ * success clears last_error.
+ */
+export async function recordEphemeralFire(sql: Sql, routineId: string, error: string | null): Promise<void> {
+  const metaPatch = JSON.stringify(
+    error == null
+      ? { last_error: null, last_error_at: null }
+      : { last_error: error, last_error_at: new Date().toISOString(), last_error_source: 'ephemeral-executor' },
+  );
+  await sql`
+    UPDATE harness_shared.routines
+       SET last_fired_at = now(),
+           metadata = COALESCE(metadata, '{}'::jsonb) || ${metaPatch}::text::jsonb,
+           updated_at = now()
+     WHERE id = ${routineId}
+  `;
+}
+
+/**
  * Fire a routine: insert pending_event + advance routine's next_fire_at.
  *
  * Returns the event ID + computed next_fire_at, or null if skipped due to

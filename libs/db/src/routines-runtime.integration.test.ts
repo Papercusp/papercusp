@@ -11,6 +11,8 @@ import postgres, { type Sql } from 'postgres';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config';
 import {
   listDueCronRoutines,
+  listActiveEphemeralRoutines,
+  recordEphemeralFire,
   fireRoutine,
   upsertRoutine,
   setRoutineActive,
@@ -56,6 +58,7 @@ beforeAll(async () => {
             -- migration 323 (B-LOOP-1): the loop recurrence kind.
             reschedule_interval_sec integer,
             target_owner_id text,
+            metadata jsonb,
             UNIQUE (install_slug, name),
             -- F-E1 migration 305: the composite unique the per-workspace ON CONFLICT targets.
             UNIQUE (workspace_id, install_slug, name)
@@ -238,6 +241,42 @@ describe('listDueCronRoutines', () => {
     const due = await listDueCronRoutines(sql);
     expect(due.map((r) => r.name)).toEqual(['durable-due']);
     expect(due.every((r) => r.tier === 'durable')).toBe(true);
+  });
+});
+
+describe('listActiveEphemeralRoutines + recordEphemeralFire (P-012 / D-006)', () => {
+  const insertEphemeral = (id: string, active: boolean): Promise<unknown> =>
+    sql`INSERT INTO harness_shared.routines
+          (id, workspace_id, install_slug, name, trigger_kind, trigger_config, target_role, tier, active)
+        VALUES (${id}, ${WS}, 'papercup', ${id}, 'cron', '{"interval_sec":5}'::jsonb, 'system:foo', 'ephemeral', ${active})`;
+
+  it('lists ONLY active ephemeral routines (excludes durable + inactive-ephemeral)', async () => {
+    await upsertRoutine(sql, baseInput({ name: 'durable-x' }), nextFn); // tier defaults durable
+    await insertEphemeral('eph-active', true);
+    await insertEphemeral('eph-dark', false);
+    const eph = await listActiveEphemeralRoutines(sql);
+    expect(eph.map((r) => r.id)).toEqual(['eph-active']);
+    expect(eph[0].tier).toBe('ephemeral');
+    expect(eph[0].triggerConfig.interval_sec).toBe(5);
+  });
+
+  it('recordEphemeralFire stamps last_fired_at + sets/clears metadata.last_error in ONE row (never insert per fire — D-004)', async () => {
+    await insertEphemeral('eph1', true);
+    const before = (await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM harness_shared.routines`)[0].n;
+
+    await recordEphemeralFire(sql, 'eph1', 'kaboom');
+    let row = (await sql<Array<{ last_fired_at: Date | null; metadata: Record<string, unknown> }>>`
+      SELECT last_fired_at, metadata FROM harness_shared.routines WHERE id = 'eph1'`)[0];
+    expect(row.last_fired_at).not.toBeNull();
+    expect(row.metadata.last_error).toBe('kaboom');
+
+    await recordEphemeralFire(sql, 'eph1', null); // success clears the error
+    row = (await sql<Array<{ last_fired_at: Date | null; metadata: Record<string, unknown> }>>`
+      SELECT last_fired_at, metadata FROM harness_shared.routines WHERE id = 'eph1'`)[0];
+    expect(row.metadata.last_error).toBeNull();
+
+    const after = (await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM harness_shared.routines`)[0].n;
+    expect(after).toBe(before); // two fires, zero new rows
   });
 });
 

@@ -61,6 +61,8 @@ export {
 
 export {
   listDueCronRoutines,
+  listActiveEphemeralRoutines,
+  recordEphemeralFire,
   fireRoutine,
   upsertRoutine,
   setRoutineActive,
