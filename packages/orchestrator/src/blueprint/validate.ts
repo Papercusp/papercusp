@@ -69,6 +69,11 @@ export interface ValidateOptions {
 }
 
 const TERMINAL = new Set(['done', 'escalate', 'idle']);
+/** Ephemeral-tier cadence floor (seconds) + the coarseness above which durable cron is the better fit (P-010 / D-006). */
+const EPHEMERAL_MIN_INTERVAL_SEC = 1;
+const EPHEMERAL_SUGGEST_DURABLE_SEC = 60;
+/** The default schedule action — a whole blueprint RUN; forbidden for the deterministic ephemeral tier. */
+const BLUEPRINT_RUN_ACTION = 'system:blueprint-run';
 /** Finalize-recipe entries that are pipeline STEPS, not dispatchable roles. */
 const FINALIZE_STEPS = new Set(['archive', 'postCuratorOutputs']);
 

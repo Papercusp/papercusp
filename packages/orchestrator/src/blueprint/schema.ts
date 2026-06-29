@@ -501,7 +501,22 @@ export const TriggersSchema = z.object({
   schedule: z
     .array(
       z.object({
-        cron: z.string().min(1),
+        cron: z.string().min(1).optional(),
+        /**
+         * Execution tier (schedule-inventory-and-ephemeral-tier-2026-06-26 P-010 / D-006).
+         * 'durable' (default) — a `cron` routine fired by the DBOS `routinesTick` (the
+         * existing behavior). 'ephemeral' — a FREQUENT, non-DBOS cadence that rides the
+         * in-process scheduled-registry (`managedSetInterval`); it carries `intervalSec`
+         * (not `cron`) and fires a DETERMINISTIC `action` (never the default
+         * `system:blueprint-run`). `blueprint:validate` enforces the ephemeral contract.
+         */
+        tier: z.enum(['durable', 'ephemeral']).default('durable'),
+        /**
+         * Ephemeral cadence in SECONDS (tier:'ephemeral' only; ignored for durable cron).
+         * The min-interval floor is enforced by `blueprint:validate`, not the schema, so the
+         * pure parse stays permissive and the contract error is friendly/iterable.
+         */
+        intervalSec: z.number().int().positive().optional(),
         action: z.string().default('system:blueprint-run'),
         /**
          * Workspace-SINGLETON trigger (deterministic-blueprints-migration-2026-06-13
