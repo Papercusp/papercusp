@@ -50,6 +50,12 @@ export interface BlueprintDependencyInput {
    *  the work-blueprints its bees spin up). Resolved like plugins: built-in/installed →
    *  satisfied, Cupboard-listed → installable, neither → hard failure. */
   blueprints?: string[];
+  /** First-class datatypes (shared entity TYPES — `bet`, `wager`, … — minted by
+   *  `meta:define-datatype`) this blueprint's roles read/write. Resolved like
+   *  blueprints: workspace-registered/built-in → satisfied, Cupboard-listed →
+   *  installable, neither → hard "needs datatype X".
+   *  (`reflexive-platform-extensibility-datatypes-2026-06-24` P-012, D-009.) */
+  datatypes?: string[];
 }
 
 /** The host capability sets the validator resolves declared deps against. */
@@ -76,19 +82,25 @@ export interface DependencyHostSets {
   availableBlueprints?: Set<string>;
   /** Blueprints listed in the Cupboard (installable but not necessarily installed). */
   cupboardBlueprints?: Set<string>;
+  /** Datatype ids resolvable now — built-ins + workspace-registered (the datatype
+   *  registry, P-013). Optional: a host that has no registry wired passes none,
+   *  and a blueprint that declares no `datatypes` is unaffected. */
+  availableDatatypes?: Set<string>;
+  /** Datatypes published to the Cupboard (installable but not necessarily registered locally). */
+  cupboardDatatypes?: Set<string>;
 }
 
 export interface BlueprintDependencyValidation {
   /** True iff no declared tool/pack/plugin is unresolvable (installable deps do NOT block). */
   ok: boolean;
   /** Unresolvable declared deps — the dep strings as written (with any `@range`). */
-  missing: { tools: string[]; packs: string[]; plugins: string[]; blueprints: string[] };
+  missing: { tools: string[]; packs: string[]; plugins: string[]; blueprints: string[]; datatypes: string[] };
   /**
    * Declared deps not present but resolvable from the Cupboard. Advisory:
    * `init --from`'s auto-install step should fetch these. Does not affect
    * `ok`. `tools` lists tools whose *providing unit* is installable.
    */
-  installable: { tools: string[]; packs: string[]; plugins: string[]; blueprints: string[] };
+  installable: { tools: string[]; packs: string[]; plugins: string[]; blueprints: string[]; datatypes: string[] };
   /** One human-readable line per unresolvable dep — surfaced to the user. */
   messages: string[];
 }
@@ -120,6 +132,8 @@ export function validateBlueprintDependencies(
   const installablePlugins: string[] = [];
   const missingBlueprints: string[] = [];
   const installableBlueprints: string[] = [];
+  const missingDatatypes: string[] = [];
+  const installableDatatypes: string[] = [];
   const messages: string[] = [];
 
   const cupboardPlugins = host.cupboardPlugins ?? new Set<string>();
@@ -128,6 +142,8 @@ export function validateBlueprintDependencies(
   const toolProviders = host.installableToolProviders ?? new Map<string, { kind: 'plugin' | 'pack'; name: string }>();
   const availableBlueprints = host.availableBlueprints ?? new Set<string>();
   const cupboardBlueprints = host.cupboardBlueprints ?? new Set<string>();
+  const availableDatatypes = host.availableDatatypes ?? new Set<string>();
+  const cupboardDatatypes = host.cupboardDatatypes ?? new Set<string>();
 
   for (const raw of deps?.tools ?? []) {
     const { name } = parseDepSpec(raw);
@@ -184,18 +200,46 @@ export function validateBlueprintDependencies(
     );
   }
 
+  // A `datatypes` dep is a shared entity TYPE this blueprint's roles read/write
+  // (`bet`, `wager`, … — minted by meta:define-datatype). Resolved like
+  // blueprints: a built-in/workspace-registered datatype satisfies it; a
+  // Cupboard-published one is installable (the install path pulls it); neither is
+  // a hard failure ("needs datatype X"). Backward-compatible: with no datatype
+  // registry wired the available sets are empty, and a blueprint that declares no
+  // `datatypes` skips this loop entirely. (reflexive-platform-extensibility P-012, D-009.)
+  for (const raw of deps?.datatypes ?? []) {
+    const { name } = parseDepSpec(raw);
+    if (availableDatatypes.has(name)) continue; // built-in or workspace-registered → satisfied
+    if (cupboardDatatypes.has(name)) {
+      installableDatatypes.push(raw); // published to the Cupboard → install pulls it
+      continue;
+    }
+    missingDatatypes.push(raw);
+    messages.push(
+      `needs datatype "${name}" — not a built-in/registered datatype and not published to the Cupboard`,
+    );
+  }
+
   return {
     ok:
       missingTools.length === 0 &&
       missingPacks.length === 0 &&
       missingPlugins.length === 0 &&
-      missingBlueprints.length === 0,
-    missing: { tools: missingTools, packs: missingPacks, plugins: missingPlugins, blueprints: missingBlueprints },
+      missingBlueprints.length === 0 &&
+      missingDatatypes.length === 0,
+    missing: {
+      tools: missingTools,
+      packs: missingPacks,
+      plugins: missingPlugins,
+      blueprints: missingBlueprints,
+      datatypes: missingDatatypes,
+    },
     installable: {
       tools: installableTools,
       packs: installablePacks,
       plugins: installablePlugins,
       blueprints: installableBlueprints,
+      datatypes: installableDatatypes,
     },
     messages,
   };

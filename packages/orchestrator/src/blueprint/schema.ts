@@ -644,6 +644,18 @@ export const DependenciesSchema = z.object({
    *  the install path pulls the closure (blueprint-role-bundling P-007 — this is the
    *  `memberBlueprints` mechanism of hive-blueprint-generalization D-004). */
   blueprints: z.array(z.string()).default([]),
+  /** First-class **datatypes** this blueprint's roles read/write (the shared
+   *  entity TYPES — `bet`, `wager`, `forecast`, … — produced by
+   *  `meta:define-datatype`). A datatype is the SAME kind of reusable,
+   *  independently-distributable artifact as a tool/plugin, so it gets its own
+   *  registry and is REFERENCED by name here (NOT embedded). A blueprint's OWN
+   *  work-unit shape stays inline (`workItem.kind` + `payload`); promote an inline
+   *  payload to a referenced datatype when a SECOND blueprint needs it. Resolved
+   *  like blueprints at import: workspace-registered / built-in → satisfied,
+   *  Cupboard-listed → installable, neither → hard "needs datatype X". Backward-
+   *  compatible: a blueprint that declares none is unaffected.
+   *  (`reflexive-platform-extensibility-datatypes-2026-06-24` P-012, D-009.) */
+  datatypes: z.array(z.string()).default([]),
 });
 
 /** A long-running background service the harness's environment needs (a dev
