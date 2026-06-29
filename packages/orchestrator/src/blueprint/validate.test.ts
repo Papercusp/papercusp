@@ -179,3 +179,57 @@ test('reactive rule guarded only by `cond` (DataCondition) is a valid guard; a s
   const v2 = validateBlueprint(staleCustom);
   assert.ok(v2.errors.some((e) => e.code === 'empty-reactive-guard'), 'custom no longer counts');
 });
+
+// ── ephemeral-tier schedule contract (schedule-inventory-and-ephemeral-tier-2026-06-26 P-010 / D-006) ──
+
+const withSchedule = (schedule: unknown[]) =>
+  BlueprintSchema.parse({
+    id: 'x',
+    workItem: { kind: 'feature' },
+    spine: { edges: { DONE: { to: 'done' } } },
+    triggers: { schedule },
+  });
+
+test('tier defaults to durable; a durable cron schedule has no trigger errors', () => {
+  const bp = withSchedule([{ cron: '*/5 * * * *' }]);
+  assert.equal(bp.triggers!.schedule[0]!.tier, 'durable'); // schema default
+  const v = validateBlueprint(bp);
+  const trigErrs = v.errors.filter((e) => e.code.startsWith('ephemeral-') || e.code === 'durable-no-cron');
+  assert.equal(trigErrs.length, 0, JSON.stringify(trigErrs));
+});
+
+test('tier:ephemeral with a deterministic action + intervalSec validates (no trigger errors)', () => {
+  const bp = withSchedule([{ tier: 'ephemeral', action: 'system:hive-watchdog-sweep', intervalSec: 5 }]);
+  const v = validateBlueprint(bp);
+  assert.equal(v.errors.filter((e) => e.code.startsWith('ephemeral-')).length, 0, JSON.stringify(v.errors));
+});
+
+test('tier:ephemeral that omits action (defaults to system:blueprint-run) AND intervalSec → two contract errors', () => {
+  const bp = withSchedule([{ tier: 'ephemeral' }]);
+  const v = validateBlueprint(bp);
+  assert.equal(v.ok, false);
+  assert.ok(v.errors.some((e) => e.code === 'ephemeral-blueprint-run-action'), JSON.stringify(v.errors));
+  assert.ok(v.errors.some((e) => e.code === 'ephemeral-no-interval'), JSON.stringify(v.errors));
+});
+
+test('tier:ephemeral intervalSec below the floor → ephemeral-interval-floor (raw/out-of-band path)', () => {
+  const bp = withSchedule([{ tier: 'ephemeral', action: 'system:foo', intervalSec: 5 }]);
+  (bp.triggers!.schedule[0] as { intervalSec: number }).intervalSec = 0; // simulate a raw blueprint that bypassed zod
+  const v = validateBlueprint(bp);
+  assert.ok(v.errors.some((e) => e.code === 'ephemeral-interval-floor'), JSON.stringify(v.errors));
+});
+
+test('tier:ephemeral coarse intervalSec (≥60s) + a stray cron → warnings, not errors', () => {
+  const bp = withSchedule([{ tier: 'ephemeral', action: 'system:foo', intervalSec: 120, cron: '* * * * *' }]);
+  const v = validateBlueprint(bp);
+  assert.equal(v.errors.filter((e) => e.code.startsWith('ephemeral-')).length, 0, JSON.stringify(v.errors));
+  assert.ok(v.warnings.some((w) => w.code === 'ephemeral-interval-coarse'), JSON.stringify(v.warnings));
+  assert.ok(v.warnings.some((w) => w.code === 'ephemeral-cron-ignored'), JSON.stringify(v.warnings));
+});
+
+test('tier:durable missing a cron → durable-no-cron (raw/out-of-band path)', () => {
+  const bp = withSchedule([{ cron: '*/5 * * * *' }]);
+  delete (bp.triggers!.schedule[0] as { cron?: string }).cron; // simulate a raw blueprint
+  const v = validateBlueprint(bp);
+  assert.ok(v.errors.some((e) => e.code === 'durable-no-cron'), JSON.stringify(v.errors));
+});

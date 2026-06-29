@@ -45,6 +45,8 @@ export interface RoutineRow {
     tzid?: string;
     rdate?: string[];
     exdate?: string[];
+    /** Ephemeral-tier cadence in SECONDS (tier:'ephemeral' only; P-010/D-006). */
+    interval_sec?: number;
     webhook_token?: string;
     method?: string;
   };
@@ -52,6 +54,13 @@ export interface RoutineRow {
   payloadTemplate: Record<string, unknown> | null;
   concurrency: 'queue' | 'skip' | 'cancel-prev';
   catchup: 'skip-old' | 'run-all-backlog';
+  /**
+   * Execution tier (schedule-inventory-and-ephemeral-tier-2026-06-26 P-010 / D-006).
+   * 'durable' (default) fires via the DBOS `routinesTick`; 'ephemeral' is a frequent,
+   * non-DBOS cadence that rides the in-process scheduled-registry (P-012) and is
+   * EXCLUDED from `listDueCronRoutines`/`routinesTick` (durable-only).
+   */
+  tier: 'durable' | 'ephemeral';
   active: boolean;
   lastFiredAt: Date | null;
   nextFireAt: Date | null;
@@ -96,6 +105,7 @@ export async function listDueCronRoutines(sql: Sql): Promise<RoutineRow[]> {
     SELECT * FROM harness_shared.routines
      WHERE active = TRUE
        AND trigger_kind = 'cron'
+       AND tier = 'durable'
        AND (next_fire_at IS NULL OR next_fire_at <= now())
      ORDER BY next_fire_at ASC NULLS FIRST
   `;
@@ -316,6 +326,9 @@ function rowToRoutine(row: any): RoutineRow {
     payloadTemplate: row.payload_template,
     concurrency: row.concurrency,
     catchup: row.catchup,
+    // Defensive default: a row from a DB where migration 408 hasn't applied yet
+    // (or a hand-built test row) has no `tier` → treat as durable (the column default).
+    tier: row.tier ?? 'durable',
     active: row.active,
     lastFiredAt: row.last_fired_at,
     nextFireAt: normalizeNextFireAt(row.next_fire_at),

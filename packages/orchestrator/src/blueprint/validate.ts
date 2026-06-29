@@ -175,6 +175,37 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
     }
   }
 
+  // ── triggers: durable|ephemeral schedule contract (P-010 / D-006) ──────────
+  // `triggers` is schema-optional; guard for the raw-blueprint secondary-net path.
+  for (const s of bp.triggers?.schedule ?? []) {
+    if (s.tier === 'ephemeral') {
+      // Deterministic-action-only: an ephemeral cadence fires a bounded ACTION in-process
+      // (a sweep), NOT a whole blueprint run. The default action is system:blueprint-run,
+      // so an ephemeral entry that omits `action` trips this — the author must override it.
+      if (s.action === BLUEPRINT_RUN_ACTION) {
+        err(
+          'ephemeral-blueprint-run-action',
+          `tier:ephemeral schedule must declare a DETERMINISTIC action (a concrete system:<action> or role) — never the default ${BLUEPRINT_RUN_ACTION}, which launches a whole blueprint run`,
+        );
+      }
+      if (s.intervalSec == null) {
+        err('ephemeral-no-interval', 'tier:ephemeral schedule requires intervalSec (the cadence in seconds)');
+      } else if (s.intervalSec < EPHEMERAL_MIN_INTERVAL_SEC) {
+        err('ephemeral-interval-floor', `tier:ephemeral intervalSec must be ≥ ${EPHEMERAL_MIN_INTERVAL_SEC}s (got ${s.intervalSec})`);
+      } else if (s.intervalSec >= EPHEMERAL_SUGGEST_DURABLE_SEC) {
+        warn(
+          'ephemeral-interval-coarse',
+          `tier:ephemeral intervalSec ${s.intervalSec}s ≥ ${EPHEMERAL_SUGGEST_DURABLE_SEC}s — a coarse cadence is better declared as tier:durable with a cron`,
+        );
+      }
+      if (s.cron != null) {
+        warn('ephemeral-cron-ignored', 'cron is ignored for tier:ephemeral (the cadence comes from intervalSec)');
+      }
+    } else if (s.cron == null) {
+      err('durable-no-cron', 'tier:durable schedule requires a cron expression');
+    }
+  }
+
   // ── reachability: declared-but-unused roles (dead roles) ───────────────────
   // Decider-mode only: program-mode roles (voter / advocate) are spawned by a
   // `spawn-roles` op step, not by a spine edge, so `dispatched` is empty and the
