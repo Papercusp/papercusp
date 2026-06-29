@@ -17,11 +17,14 @@
 -- in the same commit so a fresh-DB replay (327 seed → 338 copy → 353 drop → THIS) lands the
 -- same text; this UPDATE is then idempotent on that replay (guarded below).
 --
--- SCOPE: workspace_id='default', harness_slug='papercusp', plan_slug=
--- 'hive-coordination-health', template='rubric' — the exact key the rubrics store's plans
--- leg reads (matches mig 338/371). KEYS + COUNT UNCHANGED (still 14 criteria) — this only
--- enriches the `tool-utilization` criterion's method + driftMarkers text, so the lockstep
--- key-set contract (capture gate / persona / scorecard-backstop / pinning tests) is untouched.
+-- SCOPE: matched by harness_slug='papercusp' + plan_slug='hive-coordination-health' +
+-- template='rubric', across ANY workspace_id. NOTE: mig 371 filtered workspace_id='default'
+-- (the seed's documented scope), but the LIVE plan is keyed 'papercusp-workspace'
+-- (rubricsScopeWorkspace() resolves per-deployment), so that UPDATE was inert here and
+-- scheduler-usage only landed via the SEED→plan copy. Dropping the workspace_id filter makes
+-- THIS amend actually hit the live row regardless of deployment scope (and any peer-workspace
+-- copies). KEYS + COUNT UNCHANGED (still 14 criteria) — only the `tool-utilization` criterion's
+-- method + driftMarkers text is enriched, so the lockstep key-set contract is untouched.
 --
 -- The runner wraps each file in its own transaction + strips psql metacommands, so NO
 -- top-level BEGIN;/COMMIT;. ADDITIVE + idempotent: a text-replace inside the criteria jsonb,
@@ -41,8 +44,7 @@ UPDATE harness_shared.harness_plans
          )::jsonb
        ),
        updated_at = now()
- WHERE workspace_id = 'default'
-   AND harness_slug = 'papercusp'
+ WHERE harness_slug = 'papercusp'
    AND plan_slug    = 'hive-coordination-health'
    AND template     = 'rubric'
    -- idempotent: only when the anchor is present and the adoption guidance is not yet added.
