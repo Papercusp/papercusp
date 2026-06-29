@@ -608,6 +608,17 @@ export const QUEEN_ALLOWED_TOOLS: readonly string[] = [
 ];
 
 export const BEE_MCP_TOOL_NAMES: readonly string[] = [
+  // capability:* — the gated write/exec/fetch/read surface. REQUIRED: under the B-18 cutover
+  // (papercusp-fleet-capability-only) native Bash/Edit/Write/WebFetch are stripped
+  // (FLEET_CAPABILITY_REPLACED_TOOLS), so without these in the kit a confined bee has NO write
+  // surface — the autonomous-loop-canary-reliability D-002 stranding that broke the daily canary.
+  // Do NOT remove; pinned by cutover-role-parity.test.ts.
+  'capability:bash',
+  'capability:edit',
+  'capability:fetch',
+  'capability:git',
+  'capability:read',
+  'capability:write',
   'coord:ask',
   'coord:glance',
   'coord:inbox',
