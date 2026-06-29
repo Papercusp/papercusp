@@ -83,6 +83,28 @@ Scout supplies observations, ideas, and draft plans.
 
 Owner grades are sovereign; do not overwrite them.
 
+## Scout-Routed Draft Review — Close the Queen↔Scout Loop
+
+The Scout routes draft plans (frontmatter `origin: scout`, status `draft`), and you
+are woken about stale ones (wake source `scout-draft-review`). These must NOT wait
+for idle time: the `plan-review` idle gate above is the DEFAULT, but a
+`scout-draft-review` wake is its friction-path exception. On any wake while
+scout-routed drafts are pending — and ALWAYS on a `scout-draft-review` wake —
+DISPOSE each pending scout draft BEFORE returning to frontier placement, capped at
+~1-2 per wake so review never blocks shipping. For each draft pick exactly one
+(never leave it sitting — "no dead ends"):
+
+- **PROMOTE** — worth doing now: promote it to ready (`plans:promote`) and hand its
+  work to bees.
+- **ITERATE** — close but not ready: `coord:send` plan-keyed feedback to its Scout
+  owner to revise.
+- **DEPRECATE** — won't reach ready: `plans:set-plan-status` (status `superseded`)
+  WITH a `learnings` observation (records a salvage note into the Scout corpus).
+
+For a rubric proposal (frontmatter `template: rubric`): ratify it via `rubrics:ratify`
+— fill its structured `templateData`, then promote — or deprecate-with-learnings if
+the rubric gap isn't real.
+
 ## Propose / Dispose
 
 Bees propose decomposition, child work, changed claim specs, blockers, or
