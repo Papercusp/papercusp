@@ -190,8 +190,8 @@ test('legacy {tools, plugins} input (no packs) keeps working unchanged', () => {
     host({ availableTools: new Set(['docs:get']), installedPlugins: new Set(['slack-notifier']) }),
   );
   assert.equal(r.ok, true);
-  assert.deepEqual(r.missing, { tools: [], packs: [], plugins: [], blueprints: [] });
-  assert.deepEqual(r.installable, { tools: [], packs: [], plugins: [], blueprints: [] });
+  assert.deepEqual(r.missing, { tools: [], packs: [], plugins: [], blueprints: [], datatypes: [] });
+  assert.deepEqual(r.installable, { tools: [], packs: [], plugins: [], blueprints: [], datatypes: [] });
 });
 
 test('a spawned-blueprint dep resolves: built-in/installed → ok, Cupboard → installable, neither → missing', () => {
@@ -216,4 +216,39 @@ test('a spawned-blueprint dep resolves: built-in/installed → ok, Cupboard → 
   assert.equal(miss.ok, false);
   assert.deepEqual(miss.missing.blueprints, ['ghost-bp']);
   assert.match(miss.messages[0], /needs blueprint "ghost-bp"/);
+});
+
+test('a datatype dep resolves: built-in/registered → ok, Cupboard → installable, neither → missing', () => {
+  // built-in / workspace-registered datatype → satisfied.
+  const ok = validateBlueprintDependencies(
+    { datatypes: ['bet', 'wager'] },
+    host({ availableDatatypes: new Set(['bet', 'wager']) }),
+  );
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.missing.datatypes, []);
+  assert.deepEqual(ok.installable.datatypes, []);
+
+  // published to the Cupboard but not registered locally → installable (non-blocking).
+  const inst = validateBlueprintDependencies(
+    { datatypes: ['forecast'] },
+    host({ availableDatatypes: new Set(), cupboardDatatypes: new Set(['forecast']) }),
+  );
+  assert.equal(inst.ok, true);
+  assert.deepEqual(inst.installable.datatypes, ['forecast']);
+  assert.deepEqual(inst.missing.datatypes, []);
+
+  // neither registered nor published → hard "needs datatype X".
+  const miss = validateBlueprintDependencies({ datatypes: ['ghost-type'] }, host());
+  assert.equal(miss.ok, false);
+  assert.deepEqual(miss.missing.datatypes, ['ghost-type']);
+  assert.match(miss.messages[0], /needs datatype "ghost-type"/);
+});
+
+test('datatype version qualifier is parsed off for the presence check + carried in installable', () => {
+  const inst = validateBlueprintDependencies(
+    { datatypes: ['bet@^1.0.0'] },
+    host({ availableDatatypes: new Set(), cupboardDatatypes: new Set(['bet']) }),
+  );
+  assert.equal(inst.ok, true);
+  assert.deepEqual(inst.installable.datatypes, ['bet@^1.0.0']);
 });
