@@ -132,8 +132,8 @@ VALUES (
       "key": "tool-utilization",
       "title": "Tool utilization",
       "model": "Tools that exist are reached for when apt: scout:grade-idea used regularly, the queen-scout coord+wake channel used, the mcp-call.mjs fallback wired into the bee path.",
-      "method": "Check usage counts + recency for key tools (scout:grade-idea grade count + last use; the queen-scout channel; the bee curl-fallback). A tool with near-zero lifetime use that should be hot is a gap.",
-      "driftMarkers": "A capability built but barely invoked (8 grades ever, none recent; an unused coord+wake channel); a fallback not wired into the path that needs it."
+      "method": "Check usage counts + recency for key tools (scout:grade-idea grade count + last use; the queen-scout channel; the bee curl-fallback). A tool with near-zero lifetime use that should be hot is a gap. ALSO grade code:run ADOPTION: call dev:code_run_adoption (of the spawns that COULD batch — a same-tool burst or a fan-out — what percent folded into one code:run; returns the fleet adoptionRate + a graded rating). A persistent low rate (the baseline sits near 2 percent) is a tool-utilization gap, not healthy.",
+      "driftMarkers": "A capability built but barely invoked (8 grades ever, none recent; an unused coord+wake channel); a fallback not wired into the path that needs it. code:run UNDER-ADOPTED: agents hand-loop the same tool or fan out one-at-a-time instead of folding into one code:run (the dev:code_run_adoption rate stuck low)."
     },
     {
       "key": "scheduler-usage",

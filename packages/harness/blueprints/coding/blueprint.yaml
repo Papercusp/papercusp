@@ -75,7 +75,23 @@ roles:
 
 knobs:
   harnessKind: hive
-  requiresRepo: false
+  # CODING hives MUST be backed by a git repo (per-hive-git-and-release-gate-2026-06-29
+  # D-002). hive:create enforces this — clone an existing repo or init a fresh one;
+  # a repo-less coding hive is rejected (hive_requires_repo). The non-coding `work`
+  # blueprint (extends coding) RE-SETS this false — there the repo is opt-in backup.
+  requiresRepo: true
+  # Staging→main green gate (D-001/D-002). enabled ⇒ green-checkpoint runs greenCmd
+  # in an isolated <slug>-checkpoint checkout and fast-forwards `main` (releaseRef)
+  # from `staging` (integrationBranch) only when green. greenCmd:null ⇒ default to
+  # the `testCommand` knob (auto-detected by harness:generate-from-repo), else
+  # build/typecheck — the SAME command the worker/gym run (D-004). deploy:null ⇒
+  # green-gate only; set deploy to opt into auto-deploy (leg 3).
+  releaseGate:
+    enabled: true
+    integrationBranch: staging
+    releaseRef: main
+    greenCmd: null
+    deploy: null
 
 # Learning: a fresh coding hive seeds the generic `coding` learning pack
 # (domain-generic-hive-architecture-2026-06-18 P-017, D-010) — generic

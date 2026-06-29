@@ -452,6 +452,33 @@ export const KnobsSchema = z
     uiQa: z.object({ enabled: z.boolean().optional() }).optional(),
     /** Does instantiating this blueprint require a git repo? (P-008; coding=true, research=false.) */
     requiresRepo: z.boolean().default(true),
+    /** Per-hive staging→main release gate (per-hive-git-and-release-gate-2026-06-29
+     *  D-001/D-002). `enabled` ⇒ this (coding) hive runs green-checkpoint: run the
+     *  green command in an isolated `<slug>-checkpoint` checkout and fast-forward
+     *  `releaseRef` (default `main`) from `integrationBranch` (default `staging`)
+     *  only when green. `greenCmd` defaults to the existing `testCommand` knob
+     *  (auto-detected by harness:generate-from-repo), else build/typecheck — the
+     *  gate consumes the SAME command the worker/gym already run (D-004), never a
+     *  parallel test path. `deploy` opts a hive into leg 3 (auto-deploy: drain →
+     *  swap release checkout → migrate → restart → health); omit ⇒ green-gate only.
+     *  Non-coding (`work`) blueprints set `enabled:false` — their repo, if any, is
+     *  backup-only and never gated. Effective gate also requires the hive to
+     *  actually have a repo (belt-and-suspenders, enforced at seed time). */
+    releaseGate: z
+      .object({
+        enabled: z.boolean().optional(),
+        integrationBranch: z.string().optional(),
+        releaseRef: z.string().optional(),
+        greenCmd: z.string().nullable().optional(),
+        deploy: z
+          .object({
+            systemdUnit: z.string().optional(),
+            healthUrl: z.string().optional(),
+          })
+          .nullable()
+          .optional(),
+      })
+      .optional(),
     // ── Residual config.json → knobs migration (cloud-deployment-layer P-006) ──
     // These five had no declared blueprint home; they now do. config.json keeps
     // instance-override precedence (resolved by readEffectiveConfig's overlay).
