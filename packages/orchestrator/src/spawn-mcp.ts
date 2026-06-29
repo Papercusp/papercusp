@@ -419,6 +419,78 @@ export async function writeSignedSpawnCodexHome(
   };
 }
 
+/** Handle for a per-spawn OMP HOME (cleaned up after the spawn). */
+export interface SpawnOmpHomeHandle {
+  /** Absolute path to set as the omp child's `HOME` (pi resolves `<HOME>/.omp/agent`). */
+  home: string;
+  /** Absolute path of the gateway `models.yml` written under the seeded home (logging/tests). */
+  modelsPath: string;
+  /** Remove the temp HOME. Best-effort, idempotent. */
+  cleanup(): void;
+}
+
+/** The omp agent-dir essentials seeded (by symlink) into a per-spawn HOME. The
+ *  session's models.yml is AUTHORED (not symlinked) so it shadows the source. */
+export const OMP_SEEDED_AGENT_ESSENTIALS = [
+  'auth.json',
+  'agent.db',
+  'config.yml',
+  'mcp.json',
+  'extensions',
+] as const;
+
+/**
+ * OMP equivalent of {@link writeSignedSpawnCodexHome}. pi reads its model config
+ * + auth from `<HOME>/.omp/agent` (USER-LEVEL only — no `--models` flag and no
+ * agent-dir env var, so HOME is the ONLY lever; omp-account-pinning-gateway
+ * D-002), so a per-session gateway routing override is delivered by minting a
+ * fresh HOME, SEEDING it from the source omp agent dir (symlinking auth/config/
+ * session DBs — NO credential copy; the gateway strips+reinjects OAuth), AUTHORING
+ * the gateway `models.yml` into it, and pointing the omp child at it via `HOME`.
+ * The spawn then force-selects `papercusp-gateway/<model>` via `--model` so omp
+ * POSTs `/v1/messages` (or `/v1/responses`) to the gateway with the account-pin
+ * header — the wire shape VERIFIED end-to-end on real omp 15.5.13 (D-006).
+ *
+ * Per-spawn HOME isolation (vs writing the workspace-shared `<wsHome>/.omp/agent`)
+ * is the correct design: collision-free under concurrent pins + no persistent
+ * mutation; git identity comes from the injected gitConfigNoPushEnv, not HOME's
+ * `.gitconfig`, so a fresh HOME is fine for autonomous spawns (D-005/D-008).
+ *
+ * @param modelsYml the gateway `models.yml` bytes (resolveSpawnGatewayEnv's
+ *   `PAPERCUSP_OMP_MODELS_YML`).
+ * @param sourceAgentDir the omp agent dir to seed essentials FROM
+ *   (`<spawnHome ?? ~>/.omp/agent`).
+ */
+export function writeSpawnOmpHome(
+  modelsYml: string,
+  sourceAgentDir: string,
+): SpawnOmpHomeHandle {
+  const home = mkdtempSync(join(tmpdir(), 'omp-spawn-'));
+  const agentDir = join(home, '.omp', 'agent');
+  mkdirSync(agentDir, { recursive: true });
+  for (const entry of OMP_SEEDED_AGENT_ESSENTIALS) {
+    try {
+      const src = join(sourceAgentDir, entry);
+      const dst = join(agentDir, entry);
+      // A missing source essential degrades gracefully (omp surfaces its own
+      // auth/config error) — never block the spawn on a seed miss.
+      if (existsSync(src) && !existsSync(dst)) symlinkSync(src, dst);
+    } catch { /* best-effort */ }
+  }
+  // The routing override — the ONE file we author (not symlink), so it shadows
+  // the source's models.yml for THIS session only.
+  const modelsPath = join(agentDir, 'models.yml');
+  writeFileSync(modelsPath, modelsYml, 'utf8');
+  try { chmodSync(modelsPath, 0o600); } catch { /* best-effort */ }
+  return {
+    home,
+    modelsPath,
+    cleanup() {
+      try { rmSync(home, { recursive: true, force: true }); } catch { /* best-effort */ }
+    },
+  };
+}
+
 /** Handle for a per-spawn claude-code CLAUDE_CONFIG_DIR (cleaned up after the spawn). */
 export interface SpawnClaudeConfigHandle {
   /**

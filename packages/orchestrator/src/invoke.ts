@@ -44,9 +44,11 @@ import {
   restoreSpawnMcp,
   writeSignedSpawnMcp,
   writeSignedSpawnCodexHome,
+  writeSpawnOmpHome,
   writeSpawnClaudeConfig,
   type SpawnMcpHandle,
   type SpawnCodexHomeHandle,
+  type SpawnOmpHomeHandle,
   type SpawnClaudeConfigHandle,
 } from './spawn-mcp';
 import { createHash, randomUUID } from 'node:crypto';
@@ -383,6 +385,21 @@ function explicitModelFromArgv(argv: readonly string[]): string {
     if (eq) return eq[1];
   }
   return '';
+}
+
+/** Remove any explicit `--model <v>` / `-m <v>` / `--model=<v>` from an argv, in place.
+ *  Used to force the OMP gateway provider selector (`papercusp-gateway/<model>`) over a
+ *  role/AGENT_CMD model — a built-in id resolves to a cloud gateway BEFORE a models.yml
+ *  override applies, so the gateway selector must be the ONLY `--model` (P-006/D-006/D-008). */
+export function stripExplicitModelFlags(argv: string[]): void {
+  for (let i = argv.length - 1; i >= 0; i -= 1) {
+    const arg = argv[i] ?? '';
+    if (arg === '--model' || arg === '-m') {
+      argv.splice(i, 2);
+    } else if (/^(?:--model=|-m=)/.test(arg)) {
+      argv.splice(i, 1);
+    }
+  }
 }
 
 /**
@@ -2038,9 +2055,25 @@ export async function invoke(
   //    codex's model flag is `-m` (bare id); claude/omp use `--model`.
   const modelFlag = agentBackend === 'codex' ? '-m' : '--model';
   const cmdAlreadyHasModel = roleAgentCmd.includes('--model ') || /(?:^|\s)-m\s/.test(roleAgentCmd);
+  // OMP gateway routing (P-006/D-008): when this spawn is pinned through the gateway,
+  // resolveSpawnGatewayEnv emitted PAPERCUSP_OMP_MODEL_SELECTOR (`papercusp-gateway/<model>`)
+  // alongside the models.yml. Force-select that dedicated provider — it MUST win over any
+  // role/AGENT_CMD `--model`, because a built-in id (e.g. `claude-sonnet-4`) resolves to a
+  // cloud gateway BEFORE a models.yml override applies (D-006). So strip any explicit model
+  // from argv and append ONLY the gateway selector. Empty (dormant) unless the omp seeder
+  // is active — the matching `<HOME>/.omp/agent/models.yml` is written by the seeder block below.
+  const ompGatewaySelector =
+    agentBackend === 'omp' && (process.env.PAPERCUSP_OMP_MODELS_YML ?? '').trim()
+      ? (process.env.PAPERCUSP_OMP_MODEL_SELECTOR ?? '').trim()
+      : '';
   // Kept for the usage-telemetry bucket key (step 11.5) — best-effort either way.
   let resolvedModel = '';
-  if (!cmdAlreadyHasModel) {
+  if (ompGatewaySelector) {
+    stripExplicitModelFlags(argv);
+    extraFlags.push('--model', ompGatewaySelector);
+    resolvedModel = ompGatewaySelector;
+    ctx.log(`  role=${role} omp gateway model=${ompGatewaySelector} (routed via models.yml)`);
+  } else if (!cmdAlreadyHasModel) {
     const model = normalizeModelForBackend(resolveModel(cfg, role), agentBackend);
     if (model) {
       resolvedModel = model;
