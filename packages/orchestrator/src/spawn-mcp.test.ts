@@ -3,7 +3,7 @@
  * Run with: npx vitest run libs/papercusp/packages/orchestrator/src/spawn-mcp.test.ts
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { existsSync, readFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, rmSync, writeFileSync, lstatSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -13,6 +13,8 @@ import {
   writeSpawnMcp,
   restoreSpawnMcp,
   extractChunkId,
+  writeSpawnOmpHome,
+  OMP_SEEDED_AGENT_ESSENTIALS,
 } from './spawn-mcp';
 
 const ROOT = join(tmpdir(), `papercusp-spawn-mcp-test-${process.pid}`);
@@ -351,5 +353,67 @@ describe('extractChunkId', () => {
 
   it('returns the first match if multiple are present', () => {
     expect(extractChunkId(['CHUNK_ID=first', 'CHUNK_ID=second'])).toBe('first');
+  });
+});
+
+describe('writeSpawnOmpHome (omp-account-pinning-gateway-2026-06-29 P-006/D-008 — per-spawn omp gateway HOME seeder)', () => {
+  const MODELS_YML =
+    '# BEGIN PAPERCUSP_OMP_GATEWAY\nproviders:\n  papercusp-gateway:\n    baseUrl: "http://127.0.0.1:8788"\n# END PAPERCUSP_OMP_GATEWAY\n';
+
+  // A stand-in source `~/.omp/agent` with the real essentials present (+ `mcp.json` absent,
+  // to exercise the graceful skip) and a SOURCE models.yml the seeded one must shadow.
+  function makeSource(): string {
+    const src = join(ROOT, 'src-home', '.omp', 'agent');
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, 'auth.json'), '{"token":"x"}');
+    writeFileSync(join(src, 'agent.db'), 'SQLITEDB');
+    writeFileSync(join(src, 'config.yml'), 'modelRoles: {}');
+    writeFileSync(join(src, 'models.yml'), '# the SOURCE models.yml (must be shadowed)');
+    mkdirSync(join(src, 'extensions'), { recursive: true });
+    return src;
+  }
+
+  it('mints a HOME, symlinks present essentials, and AUTHORS the gateway models.yml (shadowing the source)', () => {
+    const src = makeSource();
+    const handle = writeSpawnOmpHome(MODELS_YML, src);
+    const agentDir = join(handle.home, '.omp', 'agent');
+
+    // models.yml is the ONE authored (real, not symlink) file, carrying our bytes — the routing
+    // override that shadows the source's own models.yml for THIS session only.
+    expect(handle.modelsPath).toBe(join(agentDir, 'models.yml'));
+    expect(lstatSync(handle.modelsPath).isSymbolicLink()).toBe(false);
+    expect(readFileSync(handle.modelsPath, 'utf8')).toBe(MODELS_YML);
+
+    // essentials present in the source are symlinked BACK to it (no credential copy).
+    for (const entry of ['auth.json', 'agent.db', 'config.yml', 'extensions']) {
+      const link = join(agentDir, entry);
+      expect(existsSync(link)).toBe(true);
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(link)).toBe(join(src, entry));
+    }
+    // an absent essential (mcp.json) is skipped, never created.
+    expect(existsSync(join(agentDir, 'mcp.json'))).toBe(false);
+
+    handle.cleanup();
+    expect(existsSync(handle.home)).toBe(false);
+  });
+
+  it('cleanup() removes only the per-spawn HOME — the symlinked source survives', () => {
+    const src = makeSource();
+    const handle = writeSpawnOmpHome(MODELS_YML, src);
+    handle.cleanup();
+    expect(existsSync(handle.home)).toBe(false);
+    // cleanup removed the symlinks, not their targets — the source agent dir is intact.
+    expect(readFileSync(join(src, 'auth.json'), 'utf8')).toContain('token');
+    expect(readFileSync(join(src, 'models.yml'), 'utf8')).toContain('SOURCE');
+  });
+
+  it('seeds nothing when the source dir is missing (graceful) but still writes models.yml', () => {
+    const handle = writeSpawnOmpHome(MODELS_YML, join(ROOT, 'no-such', '.omp', 'agent'));
+    expect(readFileSync(handle.modelsPath, 'utf8')).toBe(MODELS_YML);
+    for (const entry of OMP_SEEDED_AGENT_ESSENTIALS) {
+      expect(existsSync(join(handle.home, '.omp', 'agent', entry))).toBe(false);
+    }
+    handle.cleanup();
   });
 });

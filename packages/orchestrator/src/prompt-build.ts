@@ -827,6 +827,8 @@ export const CODE_RUN_NUDGE = [
   'batching was meant to save.',
   '- SEARCH FIRST: before authoring a multi-step `code:run`, call `recipes:search { query }` (describe',
   '  what you want to do, in words). A close hit means REUSE it, do not re-author it.',
+  '- AT WAKE IT IS ALREADY THERE: `coord:orient` returns a `recipes` list ranked to your `intent` —',
+  '  scan it FIRST; a close hit means `recipes:run { id }`, not a fresh script (no extra search call).',
   '- REUSE BY ID: run an existing recipe with `recipes:run { id }` — it executes under YOUR role-scoped',
   '  envelope (no privilege travels with a recipe), never the author’s — instead of pasting its logic anew.',
   '- ACT ON THE NUDGE: when a `code:run` result carries `similarRecipes`, prefer `recipes:run`-ing one of',

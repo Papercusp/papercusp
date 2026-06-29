@@ -2809,6 +2809,30 @@ export async function invoke(
       }
     }
 
+    // OMP gateway routing (omp-account-pinning-gateway-2026-06-29 P-006/D-008): pi reads
+    // models.yml + auth from <HOME>/.omp/agent (USER-LEVEL only — HOME is the sole lever, D-002),
+    // so route a pinned omp fleet spawn through the gateway by minting a per-spawn HOME seeded
+    // from the source omp agent dir + carrying the gateway models.yml, then force-selecting
+    // `papercusp-gateway/<model>` (the `--model` appended in the model-flag block above). Gated on
+    // PAPERCUSP_OMP_MODELS_YML — emitted by resolveSpawnGatewayEnv's omp branch ONLY when the
+    // gateway is on + an account is pinned + the capability matrix supports omp ⇒ dormant
+    // otherwise (byte-identical spawn). OVERRIDES the resolveSpawnHome HOME set above (a pinned
+    // omp spawn needs the SEEDED home; its source IS that resolveSpawnHome home, else ~/.omp).
+    // PI_CODING_AGENT_DIR (the session store) is left untouched. Cleaned up on close/error below.
+    if (agentBackend === 'omp' && (process.env.PAPERCUSP_OMP_MODELS_YML ?? '').trim()) {
+      try {
+        const sourceAgentDir = join(spawnHome ?? homedir(), '.omp', 'agent');
+        ompHomeHandle = writeSpawnOmpHome(process.env.PAPERCUSP_OMP_MODELS_YML as string, sourceAgentDir);
+        spawnEnv.HOME = ompHomeHandle.home;
+        spawnEnv.USERPROFILE = ompHomeHandle.home; // Windows
+        ctx.log(`  role=${role} omp gateway home=${ompHomeHandle.home} (seeded from ${sourceAgentDir})`);
+      } catch (err) {
+        // Fail-soft: a seed failure leaves the spawn on its normal HOME (direct egress) and never
+        // blocks the spawn — the matrix still reports omp supported via the connect path.
+        ctx.log(`  omp gateway home seed failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     // External OS-sandbox for backends that can't self-sandbox: codex (P-017/
     // D-017). codex's native sandbox cancels MCP (D-009), so it runs with its
     // sandbox bypassed (codexSandboxArgs) but wrapped in `srt`, which confines
@@ -2841,7 +2865,7 @@ export async function invoke(
           ? [codexHomeHandle?.codexHome].filter((x): x is string => Boolean(x))
           : agentBackend === 'claude-code'
             ? [claudeConfigHandle?.configDir].filter((x): x is string => Boolean(x))
-            : [join(homedir(), '.omp'), spawnEnv.PI_CODING_AGENT_DIR].filter(
+            : [join(spawnEnv.HOME ?? homedir(), '.omp'), spawnEnv.PI_CODING_AGENT_DIR].filter(
                 (x): x is string => Boolean(x),
               );
       const settingsPath = writeFleetSrtSettings({ cwd, backend: agentBackend, agentHomes });
@@ -3009,6 +3033,7 @@ export async function invoke(
       if (mcpHandle && !trackedSessionSpawnId) restoreSpawnMcp(mcpHandle);
       if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       if (codexHomeHandle) codexHomeHandle.cleanup();
+      if (ompHomeHandle) ompHomeHandle.cleanup();
       if (claudeConfigHandle) claudeConfigHandle.cleanup();
       void clearLane();
       resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
@@ -3020,6 +3045,7 @@ export async function invoke(
       if (mcpHandle && !trackedSessionSpawnId) restoreSpawnMcp(mcpHandle);
       if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       if (codexHomeHandle) codexHomeHandle.cleanup();
+      if (ompHomeHandle) ompHomeHandle.cleanup();
       if (claudeConfigHandle) claudeConfigHandle.cleanup();
       void clearLane();
       // bash uses exit 124 for timeout (matches `timeout` coreutil).
