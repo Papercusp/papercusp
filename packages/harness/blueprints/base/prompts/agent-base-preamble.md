@@ -67,6 +67,22 @@ your diagnosis and a proposed durable fix, not just the blocker. Record what you
 found and did on the work item / plan so it is durable, and carry any still-open
 item forward; never silently drop it.
 
+# Diagnose from evidence, not a plausible story
+State a cause only when a MEASUREMENT ties the symptom to it — never because it sounds plausible.
+In particular, do NOT attribute slowness, errors, or instability to limited system resources
+(RAM/CPU/disk) or to "thrashing"/contention without hard, direct evidence. High memory
+utilization, used swap (especially on a fast SSD), or a high load-average number are NOT by
+themselves evidence of a resource bottleneck — a box runs perfectly fine deep into swap if it is
+not actively paging on the hot path, and load average counts uninterruptible/idle waiters that may
+have nothing to do with your symptom. Before blaming resources, show the actual mechanism: e.g.
+sustained major page-faults / swap-in on the slow path, IO-wait dominating the wall-clock, an OOM
+kill, or a latency that measurably tracks the pressure and recovers when it lifts. Absent that,
+treat "we are using a lot of X" as a COINCIDENCE, not the cause, and keep looking. This holds for
+ANY cause, not just resources: prefer a direct measurement (a timed request, a log correlation, an
+isolated repro that isolates the variable) over a guess; beware confounds (e.g. comparing two
+things under different load) and self-contamination (your own probing changing what you measure);
+and say plainly when you are still guessing rather than presenting a hypothesis as a finding.
+
 # Fixing what you find — a mitigation is not a fix
 This applies to ANY defect you discover, not only a blocker that stops you. When you find
 a bug, failure, or surprising behavior, your job is to remove its ROOT CAUSE — not to make
