@@ -19,6 +19,8 @@ import {
   FLEET_ALLOWED_TOOLS,
   BEE_ALLOWED_TOOLS,
   BEE_MCP_TOOL_NAMES,
+  CORE_MCP_TOOL_NAMES,
+  CORE_ALLOWED_TOOLS,
   QUEEN_ALLOWED_TOOLS,
   QUEEN_MCP_TOOL_NAMES,
   FLEET_DISALLOWED_TOOLS,
@@ -1067,6 +1069,33 @@ test('fleetAllowedToolsForRole — bee uses a compact worker MCP subset, not the
   }
   assert.ok(BEE_MCP_TOOL_NAMES.includes('work_items:set_state'), 'bee MCP listing hint must use colon-form names');
   assert.ok(!BEE_MCP_TOOL_NAMES.includes('fleet:spawn'), 'bee must not receive placement-only fleet spawn tools');
+});
+
+test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-weak-models WS1)', () => {
+  // coord:orient is THE bootstrap entry point — it must be present, and WS1 also
+  // backfilled it into the bee/queen allow-lists (it was missing from both before).
+  assert.ok(CORE_MCP_TOOL_NAMES.includes('coord:orient'), 'core must include coord:orient');
+  assert.ok(BEE_MCP_TOOL_NAMES.includes('coord:orient'), 'bee allow-list must include coord:orient');
+  assert.ok(QUEEN_MCP_TOOL_NAMES.includes('coord:orient'), 'queen allow-list must include coord:orient');
+  // No duplicates; colon-form names (the MCP listing-hint convention).
+  assert.equal(new Set(CORE_MCP_TOOL_NAMES).size, CORE_MCP_TOOL_NAMES.length, 'core has no duplicate tool names');
+  for (const n of CORE_MCP_TOOL_NAMES) {
+    assert.match(n, /^[a-z_]+:[a-z0-9_-]+$/, `${n} must be a colon-form MCP tool name`);
+  }
+  // The spine: orient, coordinate, see/claim work, lock files, know things, discover the rest.
+  for (const required of [
+    'coord:orient', 'coord:inbox', 'plans:get', 'work_items:list', 'work_items:claim',
+    'locks:acquire_granular', 'docs:search', 'memory:search', 'tools:find',
+  ]) {
+    assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core`);
+  }
+  // Stays small enough to highlight/pre-load directly (vs the full ~551 surface).
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 25, 'core stays small');
+  // Allow-list maps colon→underscore like the other roles.
+  assert.deepEqual(CORE_ALLOWED_TOOLS, [
+    ...CORE_MCP_TOOL_NAMES.map((n) => `mcp__papercusp__${n.replace(':', '_')}`),
+    'Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep',
+  ]);
 });
 
 test('fleetAllowedToolsForRole — no roles are write-restricted now; every role gets the full kit', () => {
