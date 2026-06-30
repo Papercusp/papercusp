@@ -168,6 +168,14 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   bar for the irreversible-action gate ONLY — it does NOT waive plan-review or
   route-confirmation.** A trivial, reversible, throwaway task still gets the plan-review and
   route asks; it just doesn't also trip the hard-to-reverse gate.
+- **An explicit owner route/approach choice is STICKY for the whole task.** Once the owner
+  picks WHO runs the work (you / the Queen / a fleet) or HOW to build it, do NOT silently
+  switch to a different route or approach mid-task because the chosen path got interrupted,
+  closed, or failed — RE-ESTABLISH it (relaunch the agent, reopen the window, retry the
+  approach), or surface the deviation and confirm first. Quietly switching to something the
+  owner did not pick re-decides what they already decided — that is the failure, *even if the
+  work still gets done*. Treat ambiguous asides after an interruption ("continue", "continue
+  as you were", "keep going") as *resume the chosen route*, not *abandon it for an easier one*.
 
 These asks are exactly what AUTO mode suspends — and the boundary is BINARY, not a
 continuum: **AUTO OFF ⇒ ASK the route, always (per above); AUTO ON ⇒ SELF-SELECT it.** While
