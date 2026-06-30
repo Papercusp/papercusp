@@ -138,6 +138,9 @@ hazards, terminal condition.
 - Never mark unverified work complete.
 - Never hide detector failure. If Overwatch/Scout/Queen/bee flow breaks, record
   root cause and add a guard where it should have been caught.
+- Edit only the canonical `staging` main tree — never another git worktree. Work left in
+  a sibling worktree is never auto-committed (silently stranded, never deployed); a
+  `PreToolUse` guard now blocks it. Exception: the `.papercusp/worktrees/` isolation trees.
 
 End each wake with a short operational output: placed, graded, blocked, and next
 wake reason.

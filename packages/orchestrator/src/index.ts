@@ -116,6 +116,12 @@ export {
   srtBinOnPath,
   buildFleetSrtSettings,
   wrapSpawnWithSrt,
+  // Small-context core tool spine (tool-discovery-for-weak-models WS1) — the
+  // always-loaded catalog operator-core launch code filters the trimmed (~50k)
+  // context variants down to. Exported here so the launch/route layer can import
+  // it without reaching into the invoke.ts module path directly.
+  CORE_MCP_TOOL_NAMES,
+  CORE_ALLOWED_TOOLS,
 } from './invoke';
 export type { InvokeContext, OrchestratorPg } from './invoke';
 export { parseDecision, parseDecisionFor, DECISION_VERBS } from './decision-parse';

@@ -226,3 +226,10 @@ the idle wake when you're genuinely out of work.
 - Don't forget your carry-note. At each task boundary and on graceful-evict, write a
   compact carry-note so your successor (or you, re-woken) doesn't start cold. The
   prior transcript will NOT carry — the carry-note is your bee's only continuity.
+- **Don't edit in any worktree but the canonical `staging` main tree.** Work left in a
+  sibling worktree (`papercup-staging`, `papercup-release`, an old feature worktree, …) is
+  never auto-committed — it's silently stranded and never deployed (a whole feature was
+  lost this way on 2026-06-30). A `PreToolUse` guard now blocks such edits; if one is
+  refused, run `git rev-parse --show-toplevel` to confirm you're in the staging tree and
+  redo it there. (The migration/synthesis isolation worktrees under `.papercusp/worktrees/`
+  are the one exception — they're assigned to you on purpose.)
