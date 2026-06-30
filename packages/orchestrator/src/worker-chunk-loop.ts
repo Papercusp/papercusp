@@ -245,7 +245,7 @@ export async function runChunkLoop(
       try {
         planRaw = await deps.planChunks(feature, parseFeedback);
       } catch (err) {
-        return { kind: 'planning_failed', error: `planChunks threw: ${(err as Error).message}` };
+        return { kind: 'planning_failed', error: `planChunks threw: ${(err as Error).message}`, resumed: wasResumed };
       }
       planParse = parseChunkPlanBlock(planRaw, feature.id);
       if (planParse.ok) break;
@@ -253,7 +253,7 @@ export async function runChunkLoop(
       log(`chunk-loop: plan parse rejected (${planParse.message})${attempt === 0 ? ' — re-asking with the parser error' : ''}`);
     }
     if (!planParse?.ok) {
-      return { kind: 'planning_failed', error: planParse?.message ?? 'plan parse failed' };
+      return { kind: 'planning_failed', error: planParse?.message ?? 'plan parse failed', resumed: wasResumed };
     }
     plan = planParse.value;
     log(`chunk-loop: plan has ${plan.chunks.length} chunks for ${feature.id}`);
@@ -270,7 +270,10 @@ export async function runChunkLoop(
   // D-015 stage-a): a verbatim move so the chunk-iteration is a reusable seam a
   // future `worker:chunk-loop` program-step op can call (the staged rollout). The
   // plan phase above stays in runChunkLoop; behavior is byte-identical.
-  return runChunkLoopCore(feature, plan, deps, committedFromResume);
+  const outcome = await runChunkLoopCore(feature, plan, deps, committedFromResume);
+  // P-020 crash-resume metric: stamp on every outcome kind runChunkLoopCore can
+  // return, regardless of which branch produced it.
+  return { ...outcome, resumed: wasResumed };
 }
 
 /**

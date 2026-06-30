@@ -141,7 +141,8 @@ export async function readWorkerChunkOutcomes(
   const harness = opts.harnessSlug ?? null;
   const rows = (await ctx.pg`
     SELECT execution_path, outcome_kind, chunks_committed, replan_strikes,
-           escalated_chunk_id, detail
+           escalated_chunk_id, detail, resumed, abort_reason, total_replans,
+           chunks_committed_so_far, total_chunks_planned
     FROM harness_shared.worker_chunk_loop_outcomes
     WHERE workspace_id = ${ctx.workspaceId}
       AND created_ts >= ${since}
@@ -155,6 +156,11 @@ export async function readWorkerChunkOutcomes(
     replan_strikes: number | null;
     escalated_chunk_id: string | null;
     detail: string | null;
+    resumed: boolean | null;
+    abort_reason: string | null;
+    total_replans: number | null;
+    chunks_committed_so_far: number | null;
+    total_chunks_planned: number | null;
   }>;
   return rows.map((r) => ({
     executionPath: r.execution_path as WorkerExecutionPath,
@@ -163,6 +169,11 @@ export async function readWorkerChunkOutcomes(
     replanStrikes: r.replan_strikes,
     escalatedChunkId: r.escalated_chunk_id,
     detail: r.detail,
+    resumed: r.resumed ?? null,
+    abortReason: r.abort_reason ?? null,
+    totalReplans: r.total_replans ?? null,
+    chunksCommittedSoFar: r.chunks_committed_so_far ?? null,
+    totalChunksPlanned: r.total_chunks_planned ?? null,
   }));
 }
 
@@ -177,6 +188,24 @@ export interface WorkerChunkPathMetrics {
   avgReplanStrikes: number | null;
   /** mean chunks committed across completed runs; null when none completed. */
   avgChunksCommitted: number | null;
+  /** P-020 file-lock contention: aborted runs whose abortReason was 'lock_contention'
+   * (a chunk's file claim couldn't be acquired within CHUNK_LOCK_TIMEOUT_MS), and that
+   * count as a rate over all runs on this path. */
+  lockContentionCount: number;
+  lockContentionRate: number | null;
+  /** P-020 replan frequency across ALL runs (not just escalated ones): mean total
+   * replan-strikes spent per run, and the share of runs that needed >=1 replan. Null
+   * when no rows on this path report totalReplans (pre-migration data). */
+  avgTotalReplans: number | null;
+  replanRate: number | null;
+  /** P-020 crash-resume success: how many runs on this path resumed a persisted plan
+   * after a crash/restart, and their completion rate (vs the path's overall rate). */
+  resumedCount: number;
+  resumedCompletionRate: number | null;
+  /** P-020 per-chunk durability: sum(chunks actually committed) / sum(chunks planned)
+   * across every run that reported a plan size — 1.0 means every planned chunk across
+   * every run on this path ended up committed. Null when no run reports plan size. */
+  perChunkDurability: number | null;
 }
 
 export interface WorkerChunkMetrics {
@@ -198,6 +227,14 @@ function summarizePath(path: WorkerExecutionPath, rows: ChunkLoopOutcomeRecord[]
   let strikeN = 0;
   let chunkSum = 0;
   let chunkN = 0;
+  let lockContentionCount = 0;
+  let totalReplansSum = 0;
+  let totalReplansN = 0;
+  let replanRunsCount = 0;
+  let resumedCount = 0;
+  let resumedCompletedCount = 0;
+  let committedSoFarSum = 0;
+  let plannedSum = 0;
   for (const r of rows) {
     dist[r.outcomeKind] = (dist[r.outcomeKind] ?? 0) + 1;
     if (r.outcomeKind === 'escalated' && r.replanStrikes != null) {
@@ -208,6 +245,22 @@ function summarizePath(path: WorkerExecutionPath, rows: ChunkLoopOutcomeRecord[]
       chunkSum += r.chunksCommitted;
       chunkN += 1;
     }
+    if (r.outcomeKind === 'aborted' && r.abortReason === 'lock_contention') {
+      lockContentionCount += 1;
+    }
+    if (r.totalReplans != null) {
+      totalReplansSum += r.totalReplans;
+      totalReplansN += 1;
+      if (r.totalReplans > 0) replanRunsCount += 1;
+    }
+    if (r.resumed) {
+      resumedCount += 1;
+      if (r.outcomeKind === 'completed') resumedCompletedCount += 1;
+    }
+    if (r.chunksCommittedSoFar != null && r.totalChunksPlanned != null && r.totalChunksPlanned > 0) {
+      committedSoFarSum += r.chunksCommittedSoFar;
+      plannedSum += r.totalChunksPlanned;
+    }
   }
   const total = rows.length;
   return {
@@ -217,6 +270,13 @@ function summarizePath(path: WorkerExecutionPath, rows: ChunkLoopOutcomeRecord[]
     distribution: dist,
     avgReplanStrikes: strikeN === 0 ? null : strikeSum / strikeN,
     avgChunksCommitted: chunkN === 0 ? null : chunkSum / chunkN,
+    lockContentionCount,
+    lockContentionRate: total === 0 ? null : lockContentionCount / total,
+    avgTotalReplans: totalReplansN === 0 ? null : totalReplansSum / totalReplansN,
+    replanRate: totalReplansN === 0 ? null : replanRunsCount / totalReplansN,
+    resumedCount,
+    resumedCompletionRate: resumedCount === 0 ? null : resumedCompletedCount / resumedCount,
+    perChunkDurability: plannedSum === 0 ? null : committedSoFarSum / plannedSum,
   };
 }
 
