@@ -27,6 +27,19 @@ export interface ChunkLoopOutcomeRecord {
   replanStrikes: number | null;
   escalatedChunkId: string | null;
   detail: string | null;
+  /** P-020 crash-resume: true iff this run resumed a persisted, not-all-done plan. */
+  resumed: boolean | null;
+  /** P-020 file-lock contention: set ('lock_contention') only on aborted runs that hit the
+   * chunk file-claim timeout; also distinguishes scratch-setup / replan failures. */
+  abortReason: string | null;
+  /** P-020 replan frequency: replans spent across the WHOLE run, not just on the chunk
+   * that ultimately escalated (replanStrikes resets per-chunk and is escalated-only). */
+  totalReplans: number | null;
+  /** P-020 per-chunk durability numerator: chunks committed by the time the run ended,
+   * for ANY outcome kind. */
+  chunksCommittedSoFar: number | null;
+  /** P-020 per-chunk durability denominator: size of the chunk plan this run drove. */
+  totalChunksPlanned: number | null;
 }
 
 export interface WorkerChunkOutcomeCtx {
@@ -54,6 +67,11 @@ export function outcomeToRecord(
     replanStrikes: null as number | null,
     escalatedChunkId: null as string | null,
     detail: null as string | null,
+    resumed: outcome.resumed ?? null,
+    totalReplans: outcome.totalReplans ?? null,
+    chunksCommittedSoFar: outcome.chunksCommittedSoFar ?? null,
+    totalChunksPlanned: outcome.totalChunksPlanned ?? null,
+    abortReason: outcome.kind === 'aborted' ? (outcome.abortReason ?? null) : null,
   };
   switch (outcome.kind) {
     case 'completed':
@@ -92,11 +110,14 @@ export async function recordWorkerChunkOutcome(
     await ctx.pg`
       INSERT INTO harness_shared.worker_chunk_loop_outcomes
         (workspace_id, harness_slug, feature_id, execution_path, outcome_kind,
-         chunks_committed, replan_strikes, escalated_chunk_id, detail, created_ts)
+         chunks_committed, replan_strikes, escalated_chunk_id, detail, created_ts,
+         resumed, abort_reason, total_replans, chunks_committed_so_far, total_chunks_planned)
       VALUES
         (${ctx.workspaceId}, ${ctx.harnessSlug}, ${args.featureId}, ${rec.executionPath},
          ${rec.outcomeKind}, ${rec.chunksCommitted}, ${rec.replanStrikes},
-         ${rec.escalatedChunkId}, ${rec.detail}, ${createdTs})
+         ${rec.escalatedChunkId}, ${rec.detail}, ${createdTs},
+         ${rec.resumed}, ${rec.abortReason}, ${rec.totalReplans}, ${rec.chunksCommittedSoFar},
+         ${rec.totalChunksPlanned})
     `;
     return true;
   } catch (err) {
