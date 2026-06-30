@@ -64,11 +64,43 @@ export interface ChunkLoopFeature {
   context?: string;
 }
 
-export type ChunkLoopOutcome =
+/**
+ * P-020 monitoring metadata, additive across every outcome kind (all optional so no
+ * existing outcome-literal construction needs updating). `runChunkLoop` stamps
+ * `resumed`; `runChunkLoopCore` stamps the rest wherever the per-chunk loop actually
+ * ran (absent for `planning_failed`, where zero chunks were attempted).
+ */
+export interface ChunkLoopOutcomeMeta {
+  /** True iff this run resumed from a persisted PG plan after a crash/restart
+   *  (deps.resumeFromPlan was set) — the P-020 crash-resume metric. */
+  resumed?: boolean;
+  /** Total replan-strike attempts spent across ALL chunks this run, not just the
+   *  chunk in the final outcome — the P-020 replan-FREQUENCY metric (broader than
+   *  `escalated.strikes`, which only covers the chunk that exhausted its budget). */
+  totalReplans?: number;
+  /** Chunks committed so far (mirrors `completed.chunksCommitted` but populated for
+   *  every kind) + the plan's total chunk count — together the P-020
+   *  per-chunk-DURABILITY metric (what fraction of a planned feature survives to a
+   *  commit even when the run doesn't fully complete). */
+  chunksCommittedSoFar?: number;
+  totalChunksPlanned?: number;
+}
+
+export type ChunkLoopOutcome = (
   | { kind: 'completed'; chunksCommitted: number }
   | { kind: 'planning_failed'; error: string }
   | { kind: 'escalated'; chunk: Chunk; reason: string; strikes: number }
-  | { kind: 'aborted'; reason: string };
+  | {
+      kind: 'aborted';
+      reason: string;
+      /** Structured abort cause — `lock_contention` is the P-020 file-lock-contention
+       *  metric (a chunk's file claim stayed busy through the full acquire wait). Set
+       *  at each abort call site rather than sniffed from `reason` text later, so the
+       *  metric survives a wording change. */
+      abortReason?: 'lock_contention' | 'scratch_setup' | 'replan_failed' | 'other';
+    }
+) &
+  ChunkLoopOutcomeMeta;
 
 /** Result of a single chunk's worker LLM call — what files were touched
  *  and a summary of what was attempted (used in re-plan prompts). */
@@ -187,6 +219,9 @@ export async function runChunkLoop(
   deps: ChunkLoopDeps,
 ): Promise<ChunkLoopOutcome> {
   const log = deps.log ?? (() => {});
+  // P-020 crash-resume metric: true iff the driver found a persisted, not-all-done
+  // plan and is resuming mid-feature after a crash/restart (vs a fresh attempt).
+  const wasResumed = Boolean(deps.resumeFromPlan);
 
   // ─── 1. Plan ────────────────────────────────────────────────────
   let plan: ChunkPlan;
@@ -292,7 +327,14 @@ export async function runChunkLoopCore(
       );
       if (!acq.ok) {
         const who = acq.busy[0]?.owner ?? 'another worker';
-        return { kind: 'aborted', reason: `lock busy for ${chunk.id} (held by ${who})` };
+        return {
+          kind: 'aborted',
+          reason: `lock busy for ${chunk.id} (held by ${who})`,
+          abortReason: 'lock_contention',
+          chunksCommittedSoFar: committed,
+          totalChunksPlanned: plan.chunks.length,
+          totalReplans,
+        };
       }
       let claim = acq.claim;
       let env: ScratchEnv | null = null;
@@ -304,7 +346,14 @@ export async function runChunkLoopCore(
         });
       } catch (err) {
         await deps.lockCoordinator.release(claim);
-        return { kind: 'aborted', reason: `scratch setup: ${(err as Error).message}` };
+        return {
+          kind: 'aborted',
+          reason: `scratch setup: ${(err as Error).message}`,
+          abortReason: 'scratch_setup',
+          chunksCommittedSoFar: committed,
+          totalChunksPlanned: plan.chunks.length,
+          totalReplans,
+        };
       }
 
       let outcome: 'committed' | 'replan' | 'escalate' | 'aborted' = 'replan';
@@ -369,6 +418,7 @@ export async function runChunkLoopCore(
           outcome = 'committed';
         } else {
           strikes++;
+          totalReplans++;
           isTypecheckFailure = true;
           log(`chunk-loop: ${chunk.id} typecheck failed (strike ${strikes}/${replanStrikes})`);
           if (strikes >= replanStrikes) {
@@ -382,6 +432,7 @@ export async function runChunkLoopCore(
         // Treat as a soft failure (count toward strikes). This catches
         // LLM API errors, file-write errors, etc.
         strikes++;
+        totalReplans++;
         isTypecheckFailure = true;
         typecheckOutput = `[implement error] ${(err as Error).message}`;
         attemptedChange = attemptedChange || `(no summary — implement threw)`;
