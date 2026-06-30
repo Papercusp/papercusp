@@ -295,6 +295,10 @@ export async function runChunkLoopCore(
   const commitChunk = deps.commitChunk ?? defaultCommitChunk;
 
   let committed = 0;
+  // P-020 replan-frequency metric: every strike across the whole run (not reset
+  // per-chunk like `strikes`), so "did this feature need replans at all" is visible
+  // even when it ultimately completed.
+  let totalReplans = 0;
   for (let i = 0; i < plan.chunks.length; i++) {
     let chunk = plan.chunks[i];
 
@@ -467,6 +471,9 @@ export async function runChunkLoopCore(
           chunk,
           reason: typecheckOutput,
           strikes,
+          chunksCommittedSoFar: committed,
+          totalChunksPlanned: plan.chunks.length,
+          totalReplans,
         };
       }
 
@@ -486,6 +493,10 @@ export async function runChunkLoopCore(
           return {
             kind: 'aborted',
             reason: `replanChunk threw: ${(err as Error).message}`,
+            abortReason: 'replan_failed',
+            chunksCommittedSoFar: committed,
+            totalChunksPlanned: plan.chunks.length,
+            totalReplans,
           };
         }
         const replanParse: ParseResult<ChunkPlan> | ParseError = parseChunkPlanBlock(replanRaw, feature.id);
@@ -498,6 +509,9 @@ export async function runChunkLoopCore(
               chunk,
               reason: `replan unparseable: ${replanParse.message}`,
               strikes,
+              chunksCommittedSoFar: committed,
+              totalChunksPlanned: plan.chunks.length,
+              totalReplans,
             };
           }
           continue;
@@ -507,6 +521,10 @@ export async function runChunkLoopCore(
           return {
             kind: 'aborted',
             reason: `replan returned no chunk with id ${chunk.id}`,
+            abortReason: 'replan_failed',
+            chunksCommittedSoFar: committed,
+            totalChunksPlanned: plan.chunks.length,
+            totalReplans,
           };
         }
         chunk = replanned;
@@ -517,7 +535,13 @@ export async function runChunkLoopCore(
     }
   }
 
-  return { kind: 'completed', chunksCommitted: committed };
+  return {
+    kind: 'completed',
+    chunksCommitted: committed,
+    chunksCommittedSoFar: committed,
+    totalChunksPlanned: plan.chunks.length,
+    totalReplans,
+  };
 }
 
 // ─── Default commit implementation ──────────────────────────────────
