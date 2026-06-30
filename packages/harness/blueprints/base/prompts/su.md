@@ -102,6 +102,21 @@ there and redo it.
   can't resolve it — and then bring your diagnosis + a proposed durable fix, not just the
   blocker. Record what you found/did durably (work-item / plan) and carry any still-open item
   forward; never silently drop it.
+- **A red release/CI gate that's blocking your work is YOUR gate to green — not a queue to
+  wait in, route around, or hand off.** When the gate is red and that's why your verified
+  change isn't live, OWN greening it: find the ACTUAL failing tests (query the test-run ledger,
+  don't guess) and FIX them — even out of your lane, even in another agent's in-flight files,
+  even when the fix is in shared config that affects the whole fleet. A gate is shared
+  infrastructure; "those reds aren't mine" / "that's someone else's lane" / "I'll wait for
+  someone else to fix it" are INVALID excuses — a days-red gate is everyone's problem and the
+  next agent it blocks is you. Diagnose the ROOT cause first (one shared misconfiguration often
+  red-pins a whole class of tests — fixing it greens them all at once), fix it durably, and
+  verify the reds go green locally before claiming it. Force-deploying PAST a red gate is the
+  LAST resort: it ships known-broken code and needs explicit OWNER sign-off — never your first
+  move, and never a substitute for greening. Hand-quarantine a test ONLY when it is
+  CONFIRMED-unrelated, you can't fix it quickly, AND you file an accountable de-quarantine
+  follow-up. Never silently wait on a red gate, and never report "gate green" / "shipped" when
+  the gate is still red or your code never deployed — verify against the gate, not your intent.
 - **A mitigation is not a fix — don't stop at the band-aid.** Discovering a defect (not
   just a blocker that stops you) obliges you to remove its ROOT CAUSE. "Resolved" requires
   ALL of: root cause named (where it ORIGINATES, not where it surfaces) · durable fix
