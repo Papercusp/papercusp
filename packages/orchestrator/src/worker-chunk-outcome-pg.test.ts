@@ -36,7 +36,51 @@ describe('outcomeToRecord', () => {
       replanStrikes: null,
       escalatedChunkId: null,
       detail: null,
+      resumed: null,
+      abortReason: null,
+      totalReplans: null,
+      chunksCommittedSoFar: null,
+      totalChunksPlanned: null,
     });
+  });
+
+  it('maps the P-020 monitoring fields through when the outcome carries them', () => {
+    const o: ChunkLoopOutcome = {
+      kind: 'completed',
+      chunksCommitted: 4,
+      resumed: true,
+      totalReplans: 2,
+      chunksCommittedSoFar: 4,
+      totalChunksPlanned: 5,
+    };
+    expect(outcomeToRecord(o, 'op')).toMatchObject({
+      resumed: true,
+      totalReplans: 2,
+      chunksCommittedSoFar: 4,
+      totalChunksPlanned: 5,
+    });
+  });
+
+  it('maps aborted abortReason → lock_contention', () => {
+    const o: ChunkLoopOutcome = {
+      kind: 'aborted',
+      reason: 'lock busy',
+      abortReason: 'lock_contention',
+      chunksCommittedSoFar: 1,
+      totalChunksPlanned: 3,
+      totalReplans: 0,
+    };
+    expect(outcomeToRecord(o, 'subprocess')).toMatchObject({
+      outcomeKind: 'aborted',
+      abortReason: 'lock_contention',
+      chunksCommittedSoFar: 1,
+      totalChunksPlanned: 3,
+    });
+  });
+
+  it('does not leak abortReason onto a non-aborted kind', () => {
+    const o: ChunkLoopOutcome = { kind: 'completed', chunksCommitted: 1 };
+    expect(outcomeToRecord(o, 'op').abortReason).toBeNull();
   });
 
   it('maps planning_failed → detail=error', () => {
@@ -88,6 +132,11 @@ const rec = (
   replanStrikes: null,
   escalatedChunkId: null,
   detail: null,
+  resumed: null,
+  abortReason: null,
+  totalReplans: null,
+  chunksCommittedSoFar: null,
+  totalChunksPlanned: null,
   ...extra,
 });
 
@@ -139,6 +188,71 @@ describe('summarizeWorkerChunkOutcomes', () => {
     const m = summarizeWorkerChunkOutcomes([rec('subprocess', 'completed', { chunksCommitted: 1 })]);
     expect(m.byPath.op.total).toBe(0);
     expect(m.completionRateDelta).toBeNull();
+  });
+
+  it('computes file-lock contention rate from aborted+lock_contention rows', () => {
+    const rows: ChunkLoopOutcomeRecord[] = [
+      rec('op', 'aborted', { abortReason: 'lock_contention' }),
+      rec('op', 'aborted', { abortReason: 'scratch_setup' }),
+      rec('op', 'completed', { chunksCommitted: 1 }),
+    ];
+    const m = summarizeWorkerChunkOutcomes(rows);
+    expect(m.byPath.op.lockContentionCount).toBe(1);
+    expect(m.byPath.op.lockContentionRate).toBeCloseTo(1 / 3);
+    expect(m.byPath.subprocess.lockContentionRate).toBeNull(); // total === 0
+  });
+
+  it('computes replan frequency across ALL runs, not just escalated ones', () => {
+    const rows: ChunkLoopOutcomeRecord[] = [
+      rec('op', 'completed', { chunksCommitted: 2, totalReplans: 0 }),
+      rec('op', 'completed', { chunksCommitted: 1, totalReplans: 2 }),
+      rec('op', 'escalated', { replanStrikes: 3, escalatedChunkId: 'C-1', totalReplans: 3 }),
+    ];
+    const m = summarizeWorkerChunkOutcomes(rows);
+    expect(m.byPath.op.avgTotalReplans).toBeCloseTo((0 + 2 + 3) / 3);
+    expect(m.byPath.op.replanRate).toBeCloseTo(2 / 3); // 2 of 3 runs needed >=1 replan
+  });
+
+  it('avgTotalReplans/replanRate are null when no row reports totalReplans (pre-428 data)', () => {
+    const m = summarizeWorkerChunkOutcomes([rec('op', 'completed', { chunksCommitted: 1 })]);
+    expect(m.byPath.op.avgTotalReplans).toBeNull();
+    expect(m.byPath.op.replanRate).toBeNull();
+  });
+
+  it('computes crash-resume success rate from resumed rows only', () => {
+    const rows: ChunkLoopOutcomeRecord[] = [
+      rec('op', 'completed', { chunksCommitted: 1, resumed: true }),
+      rec('op', 'aborted', { resumed: true, abortReason: 'lock_contention' }),
+      rec('op', 'completed', { chunksCommitted: 1, resumed: false }),
+    ];
+    const m = summarizeWorkerChunkOutcomes(rows);
+    expect(m.byPath.op.resumedCount).toBe(2);
+    expect(m.byPath.op.resumedCompletionRate).toBeCloseTo(0.5); // 1 of 2 resumed runs completed
+  });
+
+  it('resumedCompletionRate is null when no run resumed', () => {
+    const m = summarizeWorkerChunkOutcomes([rec('op', 'completed', { chunksCommitted: 1, resumed: false })]);
+    expect(m.byPath.op.resumedCount).toBe(0);
+    expect(m.byPath.op.resumedCompletionRate).toBeNull();
+  });
+
+  it('computes per-chunk durability as committed/planned across all runs with a plan size', () => {
+    const rows: ChunkLoopOutcomeRecord[] = [
+      rec('op', 'completed', { chunksCommitted: 3, chunksCommittedSoFar: 3, totalChunksPlanned: 3 }),
+      rec('op', 'escalated', {
+        replanStrikes: 3,
+        escalatedChunkId: 'C-2',
+        chunksCommittedSoFar: 1,
+        totalChunksPlanned: 4,
+      }),
+    ];
+    const m = summarizeWorkerChunkOutcomes(rows);
+    expect(m.byPath.op.perChunkDurability).toBeCloseTo((3 + 1) / (3 + 4));
+  });
+
+  it('perChunkDurability is null when no run reports a plan size', () => {
+    const m = summarizeWorkerChunkOutcomes([rec('op', 'completed', { chunksCommitted: 1 })]);
+    expect(m.byPath.op.perChunkDurability).toBeNull();
   });
 });
 
