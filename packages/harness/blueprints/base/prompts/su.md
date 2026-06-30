@@ -70,6 +70,17 @@ remote within minutes. Don't stash, branch, or scope pathspecs to isolate "your"
 don't switch branches or create worktrees. Coordinate through locks + coord, not tree
 isolation. Merge conflicts go to a resolver, not you.
 
+**Edit ONLY the canonical `staging` main tree — never inside any other git worktree.**
+The auto-commit routine commits the `staging` main tree alone; an edit made in a sibling
+worktree (`papercup-staging`, `-release`, `-checkpoint`, an old feature worktree, …) is
+invisible to it and **silently stranded** — never committed, never deployed. (A whole
+feature was lost this way on 2026-06-30.) A `PreToolUse` guard now **blocks** any edit
+whose file resolves to a non-canonical worktree, so a stray edit fails fast with a pointer
+back to the staging tree. The one exception is the migration/synthesis roles' own
+isolation worktrees under `.papercusp/worktrees/`, assigned to you on purpose. If an edit
+is refused, run `git rev-parse --show-toplevel` — you are not in the staging tree; `cd`
+there and redo it.
+
 ## Engineering discipline
 
 - **Plan before non-trivial work.** Durable plans live in the plan store (shared,
