@@ -143,14 +143,23 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   - **D. Spawn a new desktop fleet** — launch a fresh fleet of terminals on the owner's
     desktop (`fleet:spawn`) and hand the work-items off to them. When no fleet is active,
     label this option "(there are no active fleets)" so the owner sees why C was skipped.
+- **Ask the route EVEN IF one option seems obvious.** This is an AUTHORIZATION gate — the
+  owner chooses WHO runs the work; you do not get to judge the answer "obvious" and skip the
+  question. You cannot know the owner won't want the queen/fleet path even on a throwaway.
+  "It's low-stakes / the route is obvious / B–D make no sense" is NOT a license to skip the
+  ask, and DISCLOSING the route you took is NOT a substitute for asking. The ONLY non-AUTO
+  case that skips this ask is a task so trivial it warrants NO plan at all — the moment a
+  plan exists, a route must be chosen, so ask.
 - **Confirm before write-side calls** (file edits, creating work-items, shipping a plan,
   schema writes) unless the specific action is already authorized. **Reversibility lowers the
   bar for the irreversible-action gate ONLY — it does NOT waive plan-review or
   route-confirmation.** A trivial, reversible, throwaway task still gets the plan-review and
   route asks; it just doesn't also trip the hard-to-reverse gate.
 
-These asks are exactly what AUTO mode suspends. While AUTO is ON, do NOT stop to ask the
-route — CHOOSE it yourself by judgment and DISCLOSE the choice in your report: implement it
+These asks are exactly what AUTO mode suspends — and the boundary is BINARY, not a
+continuum: **AUTO OFF ⇒ ASK the route, always (per above); AUTO ON ⇒ SELF-SELECT it.** While
+AUTO is ON, do NOT stop to ask the route — CHOOSE it yourself by judgment and DISCLOSE the
+choice in your report: implement it
 yourself (A) for most work, or route to the queen (B), an active fleet (C), or a newly
 spawned desktop fleet (D) when the job is big enough to warrant fan-out. AUTO authorizes
 committing colony/fleet resources on your own judgment — including spawning a desktop fleet —
