@@ -97,6 +97,27 @@ export function decideRampAdvance(
         `op planning_failed rate ${planningFailedRate(op).toFixed(3)} exceeds subprocess ${planningFailedRate(sub).toFixed(3)} by ${pfDelta.toFixed(3)} (> ${thresholds.maxPlanningFailedRateDelta}) — likely a broken operator-side InvokeContext (D-005)`,
       );
     }
+    // P-020 file-lock contention: only judge once BOTH paths report a contention rate
+    // (lockContentionRate is null when total === 0, which can't happen here since
+    // op.total >= minOpSamples, but subprocess could still be 0 on a brand-new harness).
+    if (op.lockContentionRate != null && sub.lockContentionRate != null) {
+      const lcDelta = op.lockContentionRate - sub.lockContentionRate;
+      if (lcDelta > thresholds.maxLockContentionRateDelta) {
+        reasons.push(
+          `op file-lock contention rate ${op.lockContentionRate.toFixed(3)} exceeds subprocess ${sub.lockContentionRate.toFixed(3)} by ${lcDelta.toFixed(3)} (> ${thresholds.maxLockContentionRateDelta}) — the PG-backed SuLocksCoordinator is contending worse than the in-process default`,
+        );
+      }
+    }
+    // P-020 per-chunk durability: only judge once BOTH paths report a ratio (null until
+    // any run reports a plan size — pre-428 data, or zero plans this window).
+    if (op.perChunkDurability != null && sub.perChunkDurability != null) {
+      const durGap = sub.perChunkDurability - op.perChunkDurability; // >0 ⇒ op worse
+      if (durGap > thresholds.maxDurabilityDeficit) {
+        reasons.push(
+          `op per-chunk durability ${op.perChunkDurability.toFixed(3)} is ${durGap.toFixed(3)} below subprocess ${sub.perChunkDurability.toFixed(3)} (> ${thresholds.maxDurabilityDeficit}) — less of a planned feature survives to a commit on op`,
+        );
+      }
+    }
     if (reasons.length > 0) {
       return { decision: 'rollback', fromStep: currentStep, toStep: prevStep(currentStep), reasons };
     }

@@ -15,6 +15,11 @@ const rec = (path: 'subprocess' | 'op', kind: ChunkLoopOutcome['kind']): ChunkLo
   replanStrikes: kind === 'escalated' ? 3 : null,
   escalatedChunkId: kind === 'escalated' ? 'C-1' : null,
   detail: null,
+  resumed: null,
+  abortReason: null,
+  totalReplans: null,
+  chunksCommittedSoFar: null,
+  totalChunksPlanned: null,
 });
 
 /** n records on a path with a given completed-fraction (rest aborted), plus optional planning_failed count. */
@@ -81,5 +86,62 @@ describe('decideRampAdvance', () => {
   it('HOLDS when a baseline path has no runs (no comparison possible)', () => {
     const d = decide(rows('op', 30, 30), 25); // no subprocess rows
     expect(d.decision).toBe('hold');
+  });
+
+  it('ROLLS BACK on an op-specific file-lock-contention spike even at completion parity', () => {
+    const subRows = rows('subprocess', 100, 90);
+    const opCompleted = rows('op', 100, 90); // same completion rate as subprocess
+    const opLockBusy: ChunkLoopOutcomeRecord[] = Array.from({ length: 10 }, () => ({
+      executionPath: 'op',
+      outcomeKind: 'aborted',
+      chunksCommitted: null,
+      replanStrikes: null,
+      escalatedChunkId: null,
+      detail: 'lock busy',
+      resumed: null,
+      abortReason: 'lock_contention',
+      totalReplans: null,
+      chunksCommittedSoFar: null,
+      totalChunksPlanned: null,
+    }));
+    // op: 90 completed + 10 lock_contention aborts out of 100 → 10% lock contention vs
+    // subprocess's 0% (delta 0.10 > maxLockContentionRateDelta 0.05) ⇒ rollback, even
+    // though completion-rate itself is untouched (90/110 ≈ 0.818, below parity too, but
+    // the lock-contention reason must appear regardless).
+    const d = decide([...subRows, ...opCompleted.slice(0, 90), ...opLockBusy], 50);
+    expect(d.decision).toBe('rollback');
+    expect(d.reasons.join(' ')).toMatch(/lock contention/);
+  });
+
+  it('ROLLS BACK on an op-specific per-chunk-durability deficit even at completion parity', () => {
+    const subRows: ChunkLoopOutcomeRecord[] = Array.from({ length: 25 }, () => ({
+      executionPath: 'subprocess',
+      outcomeKind: 'completed',
+      chunksCommitted: 4,
+      replanStrikes: null,
+      escalatedChunkId: null,
+      detail: null,
+      resumed: null,
+      abortReason: null,
+      totalReplans: 0,
+      chunksCommittedSoFar: 4,
+      totalChunksPlanned: 4, // subprocess: 100% durability
+    }));
+    const opRows: ChunkLoopOutcomeRecord[] = Array.from({ length: 25 }, () => ({
+      executionPath: 'op',
+      outcomeKind: 'completed',
+      chunksCommitted: 4,
+      replanStrikes: null,
+      escalatedChunkId: null,
+      detail: null,
+      resumed: null,
+      abortReason: null,
+      totalReplans: 0,
+      chunksCommittedSoFar: 2,
+      totalChunksPlanned: 4, // op: only 50% of planned chunks survive to a commit
+    }));
+    const d = decide([...subRows, ...opRows], 50);
+    expect(d.decision).toBe('rollback');
+    expect(d.reasons.join(' ')).toMatch(/durability/);
   });
 });
