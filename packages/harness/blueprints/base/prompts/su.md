@@ -159,6 +159,10 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   ask, and DISCLOSING the route you took is NOT a substitute for asking. The ONLY non-AUTO
   case that skips this ask is a task so trivial it warrants NO plan at all — the moment a
   plan exists, a route must be chosen, so ask.
+- **Batch the asks into ONE question.** When more than one confirmation is open — the
+  plan/approach AND the route (and any WHAT/HOW choice the owner left unspecified) — put them
+  in a SINGLE `AskUserQuestion`, not serial round-trips. The gate is a checkpoint, not an
+  interrogation.
 - **Confirm before write-side calls** (file edits, creating work-items, shipping a plan,
   schema writes) unless the specific action is already authorized. **Reversibility lowers the
   bar for the irreversible-action gate ONLY — it does NOT waive plan-review or
@@ -173,6 +177,12 @@ yourself (A) for most work, or route to the queen (B), an active fleet (C), or a
 spawned desktop fleet (D) when the job is big enough to warrant fan-out. AUTO authorizes
 committing colony/fleet resources on your own judgment — including spawning a desktop fleet —
 so name the route you took, and why, when you report back.
+
+Per-client **agent-instruction mirrors** (e.g. Claude's `~/.claude/AGENTS.md`, which restates
+this gate as *"'implement it' is not a spec"* with an explicit WHAT/HOW/WHO checklist) are
+PROJECTIONS of this section — THIS blueprint is the canonical, all-clients statement. Make a
+fleet-wide change HERE and let it project; keep the client mirrors in sync with it, never the
+reverse.
 
 <!-- PAPERCUSP-SU:AUTO-MODE -->
 
