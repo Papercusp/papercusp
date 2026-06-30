@@ -555,6 +555,7 @@ export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'coord:escalations',
   'coord:glance',
   'coord:handoff',
+  'coord:orient',
   'coord:send',
   'coord:thread',
   'coord:wake',
@@ -622,6 +623,7 @@ export const BEE_MCP_TOOL_NAMES: readonly string[] = [
   'coord:ask',
   'coord:glance',
   'coord:inbox',
+  'coord:orient',
   'coord:send',
   'coord:thread',
   'db:check_drift',
@@ -655,6 +657,58 @@ export const BEE_ALLOWED_TOOLS: readonly string[] = [
   'Grep',
   'WebFetch',
   'WebSearch',
+];
+
+/**
+ * The UNIVERSAL core MCP tool set — the small, always-advertised catalog for omp
+ * (and any small-context client) so the bootstrap + coordination + work spine is
+ * callable WITHOUT the discovery/search dance. ~19 tools / ~7k tokens vs the full
+ * ~551-tool / ~141k-token superuser surface (which a 32k local model cannot load
+ * — tool-discovery-for-weak-models-plan-2026-06-30 WS1). Everything else is
+ * reachable via `tools:find` (intent search); for omp, then activated by exact
+ * name via its native `search_tool_bm25`.
+ *
+ * Universal (role-independent) by design: these are the spine EVERY role needs.
+ * Role-specific extras (`fleet:*`, `flags:*`, …) go through `tools:find`. Promote
+ * per-role variants from BEE_/QUEEN_MCP_TOOL_NAMES later if a role's discovery
+ * round-trips prove costly (additive, non-breaking).
+ */
+export const CORE_MCP_TOOL_NAMES: readonly string[] = [
+  // Bootstrap — one call returns assignments + backlog + inbox + plan-events + mem0.
+  'coord:orient',
+  // Coordinate
+  'coord:inbox',
+  'coord:ack',
+  'coord:send',
+  'coord:glance',
+  'coord:ask',
+  // Plans & work
+  'plans:get',
+  'plans:set-status',
+  'plans:items',
+  'work_items:list',
+  'work_items:claim',
+  'work_items:set_state',
+  'work_items:update',
+  // Locks — claim a file before editing
+  'locks:acquire_granular',
+  'locks:release_granular',
+  // Knowledge
+  'docs:search',
+  'memory:search',
+  'memory:remember',
+  // Discovery — load anything else by intent (tools:find — WS3)
+  'tools:find',
+];
+
+export const CORE_ALLOWED_TOOLS: readonly string[] = [
+  ...CORE_MCP_TOOL_NAMES.map((name) => `mcp__papercusp__${name.replace(':', '_')}`),
+  'Read',
+  'Edit',
+  'Write',
+  'Bash',
+  'Glob',
+  'Grep',
 ];
 
 /**
