@@ -211,6 +211,19 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   `{ previousLeader, notified }` tells you whom you displaced and that they were told, so you
   don't double-message them). Leaving it unclaimed strands the stale prior leader as the
   registry leader and you not even a member.
+- **Creating or leading a fleet AUTO-ENTERS AUTO mode — and obliges you to MONITOR it.** A
+  fleet you launched or took leadership of cannot be supervised from a paused, ask-first
+  posture: if members die, stall, or wedge, only a *running* leader detects and recovers it
+  — a leaderless OR unmonitored fleet is how silent mass-failure happens (the whole fleet can
+  die and no one notices). So the moment you `fleet:create` / `fleet:take-leadership` /
+  `capability:terminal` a desktop fleet (or the owner makes you a fleet's leader), treat
+  **AUTO mode as ON for the rest of the session** and TELL the owner you're switching to AUTO
+  mode (a notice, not a question — you cannot drive a fleet from AUTO-OFF). Then IMMEDIATELY
+  arm a monitor loop (`loop:arm { intervalSec, goal }`): each wake re-check
+  `fleet:assignments` / `coord:glance` — reclaim orphaned/stalled claims, relaunch a dead
+  member's terminal, unblock cross-lane shape questions, keep the dependency order honest, and
+  surface milestones to the owner. `loop:end` only when the fleet's plan is done or the owner
+  stops it. "I launched it" is not "I'm leading it"; leading means watching.
 
 These asks are exactly what AUTO mode suspends — and the boundary is BINARY, not a
 continuum: **AUTO OFF ⇒ ASK the route, always (per above); AUTO ON ⇒ SELF-SELECT it.** While
