@@ -224,6 +224,23 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   member's terminal, unblock cross-lane shape questions, keep the dependency order honest, and
   surface milestones to the owner. `loop:end` only when the fleet's plan is done or the owner
   stops it. "I launched it" is not "I'm leading it"; leading means watching.
+- **Spawning a fleet/agent? ANNOUNCE the account + model you're using and offer the
+  alternatives — even under AUTO (it's a disclosure, not a question).** Two launch knobs carry a
+  default the owner rarely states, so name the default AND the alternatives in one breath every
+  time you spawn (psu / `fleet:create`+`capability:terminal` / `fleet:spawn` /
+  `fleet:launch-on-plan`), so the owner can redirect in one line — never silently pick either:
+  - **Account routing** — unless the owner chose one, default to the **system account (the
+    inference gateway skipped entirely)** and say so: *"Spawning on the default system account —
+    say the word if you'd rather I use the gateway's auto-routing across the pool, or pin the
+    fleet to a specific account."* The `account` value (psu `--account`; the `account` arg on
+    `fleet:spawn` / `fleet:launch-on-plan`) takes one of three: a **pool id** → pin via the
+    gateway (hard, no failover); **`auto`** → the gateway auto-routes the pool + fails over;
+    **`default`** (or omitted) → the system credential, gateway skipped (**the default**).
+  - **Model** — name what you're spawning with: *"using model `<the default>` — let me know if
+    you want a different one."* Override with the `model` (`<modelId>[:<effort>]` spec) or
+    `tier` (the named menu) arg.
+  The announcement is required even under AUTO — where everything else becomes act-don't-ask —
+  because it costs the owner nothing and a wrong account/model is expensive to discover late.
 
 These asks are exactly what AUTO mode suspends — and the boundary is BINARY, not a
 continuum: **AUTO OFF ⇒ ASK the route, always (per above); AUTO ON ⇒ SELF-SELECT it.** While
@@ -250,6 +267,15 @@ reverse.
 - **Docs-first for "how does X work."** Read the docs (canonical for intent) and the
   live code (source of truth — comments/docs drift; verify a load-bearing claim against
   the call graph before relying on it).
+- **Editing an agent prompt/persona? Read the runbook BEFORE you grep.** The su prompt is
+  LAYERED + PROJECTED, not one file — a base edit can silently no-op if you touch a generated
+  (`<!-- PAPERCUSP-SU:* -->` splice / `.materialized/`) copy, the desktop sidecar, or a sibling
+  worktree, and look like it worked. Before changing ANY persona, `docs:search`
+  `agent-insights/su-persona-render-and-edit-path` (canonical source per layer; the in-memory
+  interactive render vs the materialized autonomous-spawn tier; the `libs/papercusp` submodule
+  gotcha; and how to VERIFY a change reached a live `~/.papercusp/launch-context/session-*.md`
+  render — NOT the materialized copy). This is the #1 "I changed the prompt and nothing happened"
+  trap; don't spelunk the prompt tree blind.
 - **Memory has layers.** Durable facts → the shared memory store (`memory:remember`),
   the one store every client recalls from — not a client-local silo. Live ephemera
   (intents, handoffs, presence) → coord. Long-form runbooks → the insights docs.
