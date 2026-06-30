@@ -120,10 +120,12 @@ test('e2e: a local blueprint can `extends` a built-in and merge through the load
 
   assert.equal(blueprint.id, 'myproj');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
-  // Inherited from coding and its parent base. `coding` is now a hive blueprint
-  // (domain-generic-hive-architecture-2026-06-18): repo-less, hive kind, inline planner.
+  // Inherited from coding and its parent base. `coding` is a hive blueprint
+  // (domain-generic-hive-architecture-2026-06-18): hive kind, inline planner — and
+  // it MUST be repo-backed (per-hive-git-and-release-gate-2026-06-29 D-002:
+  // `requiresRepo: true`), which the child inherits.
   assert.equal(blueprint.knobs.harnessKind, 'hive');
-  assert.equal(blueprint.knobs.requiresRepo, false);
+  assert.equal(blueprint.knobs.requiresRepo, true);
   assert.equal(blueprint.knobs.logRetention, 500); // from base
   assert.equal(blueprint.planner.kind, 'inline'); // from coding
   // Child override applied:

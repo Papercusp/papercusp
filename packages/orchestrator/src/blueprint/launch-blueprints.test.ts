@@ -73,7 +73,10 @@ test('pot launch blueprint loads + validates — decider=operator, NO trigger (t
   assert.deepEqual(validation.warnings, [], 'pot has no validator warnings');
   assert.equal(blueprint.triggers?.schedule?.length ?? 0, 0, 'pot declares NO schedule trigger');
   assert.equal(blueprint.triggers?.event, undefined, 'pot declares NO event trigger');
-  assert.equal(blueprint.knobs.requiresRepo, false, 'pot needs no repo');
+  // A CODING hive MUST be backed by a git repo (per-hive-git-and-release-gate-2026-06-29
+  // D-002): hive:create clones/inits a repo and rejects a repo-less coding hive. The
+  // non-coding `work` blueprint (extends coding) re-sets this false.
+  assert.equal(blueprint.knobs.requiresRepo, true, 'a coding hive must be repo-backed (per-hive-git D-002)');
 });
 
 test('bee launch blueprint loads + validates — decider=bee, kind:harness, NO trigger (the Queen places it)', () => {
