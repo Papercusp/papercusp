@@ -58,9 +58,13 @@ BEGIN
        AND c2.column_name  = 'harness_slug'
      ORDER BY c1.table_name
   LOOP
+    -- LEFT JOIN + count(matched) rather than a subquery-in-FILTER (the latter is
+    -- not reliably valid inside an aggregate FILTER clause). count(m.slug) counts
+    -- only rows whose harness_slug matched a unique-workspace map entry = movable.
     EXECUTE format(
-      'SELECT count(*), count(*) FILTER (WHERE harness_slug IN (SELECT slug FROM _wsmap_diag)) '
-      'FROM harness_shared.%I WHERE workspace_id = %L',
+      'SELECT count(*), count(m.slug) '
+      'FROM harness_shared.%I t LEFT JOIN _wsmap_diag m ON m.slug = t.harness_slug '
+      'WHERE t.workspace_id = %L',
       rec.table_name, 'default')
       INTO n_default, n_movable;
     IF n_default > 0 THEN
@@ -87,10 +91,13 @@ BEGIN
             AND c3.column_name  = 'harness_slug')
      ORDER BY c1.table_name
   LOOP
+    -- scope = 'harness:' || slug is 295's exact predicate; LEFT JOIN on it so
+    -- count(m.slug) = rows whose scope names a unique-workspace harness = movable.
     EXECUTE format(
-      'SELECT count(*), count(*) FILTER (WHERE scope LIKE %L AND substring(scope from 9) '
-      'IN (SELECT slug FROM _wsmap_diag)) FROM harness_shared.%I WHERE workspace_id = %L',
-      'harness:%', rec.table_name, 'default')
+      'SELECT count(*), count(m.slug) '
+      'FROM harness_shared.%I t LEFT JOIN _wsmap_diag m ON t.scope = %L || m.slug '
+      'WHERE t.workspace_id = %L',
+      rec.table_name, 'harness:', 'default')
       INTO n_default, n_movable;
     IF n_default > 0 THEN
       tbls := tbls + 1; total_def := total_def + n_default; total_mov := total_mov + n_movable;
