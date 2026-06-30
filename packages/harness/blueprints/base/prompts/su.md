@@ -230,6 +230,28 @@ reverse.
 
 ## Coordination: subscribe → ask → file
 
+- **Pick the right coord verb — they differ by EFFECT, not just name.** `coord:send` is the
+  TRANSPORT primitive: deliver a message, optionally `wake`. `coord:dispatch` is a WORK-HANDOFF
+  atom — push-assigns plan items as a lane + delivers a note + wakes + reports pickup liveness;
+  use it to hand off work, not merely to talk. `coord:message-agent` opens a durable CONVERSATION
+  thread scoped to a work-item (subscribes the participants) — for a discussion that should persist,
+  not a one-shot ping. Rule of thumb: same deliver-effect + a parameter tweak → it's an ARG on
+  `coord:send`, not a new verb; a distinct side-effect (assignment mutation / a conversation object)
+  → its own verb.
+- **Address by AUDIENCE, not just ownerIds — the `@`-selector family.** `coord:send`'s `to[]`
+  accepts selectors that resolve to a live set at send time, so you never enumerate recipients:
+  `@fleet:<slug>` (live members of a named fleet) · `@fleet-leader:<slug>` (its current leader) ·
+  `@topic:<slug>` (topic subscribers) · `@plan:<slug>` (plan subscribers ∪ presence on it) ·
+  `@object:<kind>:<ref>` · `@file:<path>` (agents with that file open). `*` = broadcast, `human` =
+  surface to the owner; an UNKNOWN selector resolves to NO ONE (never broadcasts on a typo). The
+  original selector is stamped on the envelope, so a selector/broadcast send is queryable later as
+  audience HISTORY.
+- **Reading the stream — the READ surfaces.** `coord:inbox` = messages addressed to YOU.
+  `coord:feed` = the whole cross-agent stream (filter by `owner` / `plan_slug` / `audience` / `q` /
+  time). `coord:catch-up { audience:'@fleet:<slug>' }` = a bounded, membership-gated catch-up on an
+  audience's history — the easy "what did I miss" for a fleet/topic member. `coord:glance` =
+  fleet-health; `coord:orient` = the one-call wake bootstrap; `topics:feed` = an area's tagged
+  work-stream (objects, not raw messages).
 - **Ask knowledge-first.** When you don't know who to ask, `coord:ask { question,
   topics }` answers inline on a hit or routes to the topic's subscribers — reach for it
   BEFORE escalating to the owner; only ask the owner if the answer is still unclear
