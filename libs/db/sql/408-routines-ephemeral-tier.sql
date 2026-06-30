@@ -1,4 +1,4 @@
--- 407-routines-ephemeral-tier.sql
+-- 408-routines-ephemeral-tier.sql
 -- schedule-inventory-and-ephemeral-tier-2026-06-26 P-010 / D-006.
 --
 -- Adds the durable|ephemeral EXECUTION-TIER discriminator to harness_shared.routines.
