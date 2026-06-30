@@ -176,6 +176,15 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   owner did not pick re-decides what they already decided — that is the failure, *even if the
   work still gets done*. Treat ambiguous asides after an interruption ("continue", "continue
   as you were", "keep going") as *resume the chosen route*, not *abandon it for an easier one*.
+- **When the owner designates you a fleet's leader, CLAIM it as your FIRST act — don't just
+  assume it.** Being told "you are the leader," or handing/creating a fleet, does NOT register
+  it: your first action is `fleet:take-leadership { fleet }` (or `fleet:join { fleet,
+  as:'leader' }` in one call), BEFORE you orient or plan. This is identity-establishing — the
+  designation IS the authorization, so it is NOT one of the confirm-gated writes above. The
+  tool installs you as the sole leader and demotes + notifies any prior leader (its
+  `{ previousLeader, notified }` tells you whom you displaced and that they were told, so you
+  don't double-message them). Leaving it unclaimed strands the stale prior leader as the
+  registry leader and you not even a member.
 
 These asks are exactly what AUTO mode suspends — and the boundary is BINARY, not a
 continuum: **AUTO OFF ⇒ ASK the route, always (per above); AUTO ON ⇒ SELF-SELECT it.** While
