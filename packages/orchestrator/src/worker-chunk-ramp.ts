@@ -30,6 +30,13 @@ export interface RampThresholds {
   regressionThreshold: number;
   /** op planning_failed RATE may exceed subprocess by at most this (the D-005 ctx-build guard). */
   maxPlanningFailedRateDelta: number;
+  /** op file-lock-CONTENTION rate may exceed subprocess by at most this — a wider gap
+   *  means the op path (PG-backed SuLocksCoordinator) is contending worse than the
+   *  in-process subprocess default, the opposite of what P-020 expects. */
+  maxLockContentionRateDelta: number;
+  /** op per-chunk DURABILITY (committed/planned across every run) may sit at most this
+   *  far BELOW subprocess — less of a planned feature is surviving to a commit on op. */
+  maxDurabilityDeficit: number;
 }
 
 export const DEFAULT_RAMP_THRESHOLDS: RampThresholds = {
@@ -37,6 +44,8 @@ export const DEFAULT_RAMP_THRESHOLDS: RampThresholds = {
   completionParityTolerance: 0.02,
   regressionThreshold: 0.05,
   maxPlanningFailedRateDelta: 0.05,
+  maxLockContentionRateDelta: 0.05,
+  maxDurabilityDeficit: 0.05,
 };
 
 export interface RampDecision {

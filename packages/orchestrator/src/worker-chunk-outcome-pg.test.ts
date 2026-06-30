@@ -272,8 +272,12 @@ describe('recordWorkerChunkOutcome (mock pg)', () => {
     expect(m.calls).toHaveLength(1);
     expect(m.calls[0].sql).toMatch(/^insert into harness_shared\.worker_chunk_loop_outcomes/i);
     // (workspace_id, harness_slug, feature_id, execution_path, outcome_kind,
-    //  chunks_committed, replan_strikes, escalated_chunk_id, detail, created_ts)
-    expect(m.calls[0].params).toEqual(['ws-1', 'sb', 'F-9', 'op', 'completed', 5, null, null, null, 1717]);
+    //  chunks_committed, replan_strikes, escalated_chunk_id, detail, created_ts,
+    //  resumed, abort_reason, total_replans, chunks_committed_so_far, total_chunks_planned)
+    expect(m.calls[0].params).toEqual([
+      'ws-1', 'sb', 'F-9', 'op', 'completed', 5, null, null, null, 1717,
+      null, null, null, null, null,
+    ]);
   });
 
   it('is best-effort: returns false (does NOT throw) when the insert errors', async () => {
@@ -303,6 +307,11 @@ describe('readWorkerChunkOutcomes (mock pg)', () => {
         replan_strikes: 3,
         escalated_chunk_id: 'C-1',
         detail: 'still failing',
+        resumed: null,
+        abort_reason: null,
+        total_replans: 3,
+        chunks_committed_so_far: 1,
+        total_chunks_planned: 4,
       },
     ]);
     const rows = await readWorkerChunkOutcomes({ pg: m.pg, workspaceId: 'ws-1' }, { harnessSlug: 'sb' });
@@ -315,7 +324,33 @@ describe('readWorkerChunkOutcomes (mock pg)', () => {
         replanStrikes: 3,
         escalatedChunkId: 'C-1',
         detail: 'still failing',
+        resumed: null,
+        abortReason: null,
+        totalReplans: 3,
+        chunksCommittedSoFar: 1,
+        totalChunksPlanned: 4,
       },
     ]);
+  });
+
+  it('defaults the new P-020 columns to null when the row omits them (pre-428 rows)', async () => {
+    const m = makeMockPg([
+      {
+        execution_path: 'subprocess',
+        outcome_kind: 'completed',
+        chunks_committed: 2,
+        replan_strikes: null,
+        escalated_chunk_id: null,
+        detail: null,
+      },
+    ]);
+    const rows = await readWorkerChunkOutcomes({ pg: m.pg, workspaceId: 'ws-1' }, {});
+    expect(rows[0]).toMatchObject({
+      resumed: null,
+      abortReason: null,
+      totalReplans: null,
+      chunksCommittedSoFar: null,
+      totalChunksPlanned: null,
+    });
   });
 });
