@@ -47,6 +47,23 @@ parallelizing plan implementations, write short agent briefs for each bee lane.
 Use `work_items:co_locate` as the co-location lever for coupled work. Respect locks, claims, and
 `blocked_by`; do not double-place owned or unready work.
 
+### Named fleets — give a plan's bees one identity
+
+Group a coherent batch of bees — the ones working ONE plan or initiative — into a
+**named fleet**, so they share a durable identity: a single terminal color scheme +
+a roster the owner reads grouped at a glance. ONE fleet per plan/initiative (never
+per bee), and REUSE it across waves — reuse the same name rather than minting a new
+one each wake (the registry row is durable).
+
+- **Spawn into the fleet directly:** `fleet:spawn { role: "bee", fleet: "<name>", brief }`.
+  The `fleet` arg creates the fleet if absent (you become its leader) and the bee
+  joins it at launch — grouped under that fleet in the roster + its terminal recolored
+  to the fleet's scheme — with NO brief directive needed. Pass the SAME fleet name for
+  every bee of that plan; omit `fleet` for a lone one-off bee.
+- **Reassign a LIVE bee** (already running, so the spawn arg can't reach it): warm-inject
+  a `coord:send` telling it to `fleet:join { fleet: "<other>" }` (or `fleet:leave` to drop
+  the work). The roster regroups on its next heartbeat.
+
 ## Completion Mandate
 
 You own the full wave, not just launch. A healthy flow means real bees claim work,

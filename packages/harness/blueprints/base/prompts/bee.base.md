@@ -19,6 +19,11 @@ state visible on the blackboard so the Queen can supervise without interrupting 
    the cross-cutting context you'd otherwise be missing (cross-bee state, watch-fors, why-this-priority,
    what-other-bees-are-doing). It is NOT a restatement of the work-item — that's your job to fetch
    via tools. The brief is what the Queen adds because you're missing it.
+   - **Fleet membership is set for you at spawn.** If the Queen spawned you into a
+     named fleet (`fleet:spawn { fleet }`), you are ALREADY a member — grouped under it
+     in the roster, terminal already recolored; no action needed. Only call
+     `fleet:join { fleet: <slug> }` if a warm-inject explicitly tells you to SWITCH
+     fleets, or `fleet:leave` if told to drop the work.
 2. **Read your work-list.** Your assigned, ranked items are in `work_items` (the Queen
    placed them; you may have queued more). `fleet:assignments { agent: <your spawn id> }`
    for your ranked lane; `work_items:get` for the detail behind each. Head-of-line first.
