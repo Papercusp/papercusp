@@ -141,7 +141,13 @@ function appUrl(): string {
     return _resolvedAppUrl;
   }
   // Never cache the native fallback.
-  return 'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
+  // EMBEDDED-PG PORT HONORING: the embedded PG the sidecar/desktop launches is advertised via
+  // PAPERCUSP_PG_PORT (serve.mjs sets it after starting pg). The native fallback is reached BEFORE
+  // the discovery file / HARNESS_DATABASE_URL is ready, so it MUST use that port — hardcoding 5432
+  // made an EARLY getOrgPg caller (e.g. the home=<none> owner-bootstrap-admit) connect to a
+  // nonexistent :5432 on a fresh VM → unhandled pool error → sidecar crash. Falls back to 5432
+  // only when PAPERCUSP_PG_PORT is unset (a real native-PG-on-5432 host).
+  return `postgresql://harness_app:harness_app_pwd@localhost:${Number(process.env.PAPERCUSP_PG_PORT) || 5432}/papercusp`;
 }
 function adminUrl(): string {
   // Env is stable for process lifetime → safe to cache.
@@ -176,7 +182,11 @@ function adminUrl(): string {
     }
     return _resolvedAdminUrl;
   }
-  return 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+  // EMBEDDED-PG PORT HONORING — see appUrl() native fallback above (same sidecar release fix):
+  // honor PAPERCUSP_PG_PORT (the embedded PG's advertised port) so an early getOrgPg caller
+  // before the discovery file/env is ready connects to the real embedded PG, not a nonexistent
+  // :5432 (which crashed the sidecar on any host without a stray 5432 PG).
+  return `postgresql://harness_admin:harness_admin_pwd@localhost:${Number(process.env.PAPERCUSP_PG_PORT) || 5432}/papercusp`;
 }
 /** Test-only — clears cached URLs so a test that mutates env between cases sees the change. */
 export function _resetUrlCacheForTests(): void {
