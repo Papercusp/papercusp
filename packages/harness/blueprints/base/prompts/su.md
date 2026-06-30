@@ -140,9 +140,18 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
     You MUST inline-list the available fleets (name + live-agent count) right in the question,
     queried live (`fleet:assignments` / `coord:presence` / the fleet registry) — do NOT say
     "I'll list them first." If NO fleet is active, OMIT option C entirely.
-  - **D. Spawn a new desktop fleet** — launch a fresh fleet of terminals on the owner's
-    desktop (`fleet:spawn`) and hand the work-items off to them. When no fleet is active,
-    label this option "(there are no active fleets)" so the owner sees why C was skipped.
+  - **D. Spawn a new desktop fleet** — launch a fresh fleet of VISIBLE terminals on the
+    owner's REAL desktop with **`capability:terminal { terminals: [...] }`** (the bulk form —
+    one entry per agent window, each running a `psu --no-picker --agent=<claude|omp|codex>
+    --harness=<slug> --plan=<slug> --launch-context=<brief.md>` launch), then hand the
+    work-items off to them. Canonical flow: `fleet:create` (you become the fleet leader) →
+    `capability:terminal { terminals:[…] }` to open the member windows. ⚠️ `capability:terminal`
+    is the ONLY tool that opens real desktop terminals — `fleet:spawn` / `fleet:place_batch`
+    spawn HEADLESS nursery bees (no window on the owner's desktop), so NEVER use them for a
+    "desktop fleet." ⚠️ Only OFFER option D when `capability:terminal` is actually in your
+    toolset (some client surfaces expose only the headless fleet tools); if it isn't, say so
+    and don't present a desktop fleet you can't launch. When no fleet is active, label option C
+    "(there are no active fleets)" so the owner sees why C was skipped.
 - **Ask the route EVEN IF one option seems obvious.** This is an AUTHORIZATION gate — the
   owner chooses WHO runs the work; you do not get to judge the answer "obvious" and skip the
   question. You cannot know the owner won't want the queen/fleet path even on a throwaway.
