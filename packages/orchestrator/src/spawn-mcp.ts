@@ -255,7 +255,7 @@ export async function writeSignedSpawnMcp(
 
   const params = buildSpawnUrlParams(input);
   try {
-    await signSpawnParams(params, opts.ttlSec ?? 24 * 60 * 60);
+    await signSpawnParams(params, opts.ttlSec ?? 0);
   } catch (err) {
     // Restore the prior .mcp.json (if any) so a half-written file
     // doesn't trip the next spawn's read-then-sign cycle.
@@ -386,7 +386,7 @@ export async function writeSignedSpawnCodexHome(
 ): Promise<SpawnCodexHomeHandle> {
   const base = resolveSpawnOperatorBase(input.operatorUrl);
   const params = buildSpawnUrlParams(input);
-  await signSpawnParams(params, opts.ttlSec ?? 24 * 60 * 60);
+  await signSpawnParams(params, opts.ttlSec ?? 0);
   const mcpUrl = `${base}?${params.toString()}`;
 
   const codexHome = opts.codexHome?.trim() || mkdtempSync(join(tmpdir(), 'codex-spawn-'));
@@ -652,7 +652,10 @@ async function loadSigningKey(): Promise<Buffer> {
 }
 
 async function signSpawnParams(params: URLSearchParams, ttlSec: number): Promise<void> {
-  const exp = Math.floor(Date.now() / 1000) + ttlSec;
+  // ttlSec <= 0 ⇒ PERMANENT (exp=0 sentinel); the operator's verifySpawnParams skips the time
+  // check for exp=0. No time-based re-minting (owner directive 2026-07-01) — kept byte-identical
+  // to the operator-side signer in packages/operator-core/lib/spawn-signing.ts.
+  const exp = ttlSec > 0 ? Math.floor(Date.now() / 1000) + ttlSec : 0;
   params.set('exp', String(exp));
   params.delete('sig');
   const key = await loadSigningKey();
