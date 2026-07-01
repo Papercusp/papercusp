@@ -102,6 +102,18 @@ const DEFAULT_OPERATOR_URL =
  */
 export function resolveSpawnOperatorBase(operatorUrl?: string | null): string {
   if (operatorUrl) return operatorUrl;
+  // Deploy-restart resilience (mcp-host-availability-resilience-2026-06-22 P-005): when the
+  // always-up local MCP proxy is configured (PAPERCUSP_MCP_PROXY_BASE, e.g.
+  // "http://127.0.0.1:9071"), point the spawned agent's `.mcp.json` at the PROXY instead of
+  // directly at :3070. The proxy fronts :3070 and retries a refused upstream, so a deploy that
+  // restarts :3070 is invisible to the bee's MCP client — no dark, tool-less session. Opt-in +
+  // safe-by-construction: unset ⇒ unchanged (direct operator base), so a proxy-less env
+  // (CI / tests / a fresh deploy with no proxy) is never affected. The console + role launch
+  // paths already do this via resolveAgentMcpBaseUrl; this closes the SPAWN-path gap so fleet
+  // bees are covered too. Auth is unaffected — the signed query params ride through the pure
+  // passthrough unchanged. Explicit `operatorUrl` still wins (the documented override contract).
+  const proxyBase = process.env.PAPERCUSP_MCP_PROXY_BASE?.trim();
+  if (proxyBase) return `${proxyBase.replace(/\/+$/, '')}/api/mcp`;
   const selfPort = process.env.PAPERCUSP_HONO_PORT;
   if (selfPort) return `http://127.0.0.1:${selfPort}/api/mcp`;
   return process.env.PAPERCUSP_OPERATOR_URL ?? DEFAULT_OPERATOR_URL;

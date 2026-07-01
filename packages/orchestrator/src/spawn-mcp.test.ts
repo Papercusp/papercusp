@@ -35,12 +35,18 @@ describe('buildSpawnMcpConfig', () => {
   const savedHost = {
     port: process.env.PAPERCUSP_HONO_PORT,
     url: process.env.PAPERCUSP_OPERATOR_URL,
+    proxy: process.env.PAPERCUSP_MCP_PROXY_BASE,
   };
   beforeEach(() => {
     delete process.env.PAPERCUSP_HONO_PORT;
     delete process.env.PAPERCUSP_OPERATOR_URL;
+    // resolveSpawnOperatorBase now also honors PAPERCUSP_MCP_PROXY_BASE — clear it so a dev box
+    // that exports the proxy base can't redirect these host-port assertions out from under them.
+    delete process.env.PAPERCUSP_MCP_PROXY_BASE;
   });
   afterEach(() => {
+    if (savedHost.proxy === undefined) delete process.env.PAPERCUSP_MCP_PROXY_BASE;
+    else process.env.PAPERCUSP_MCP_PROXY_BASE = savedHost.proxy;
     if (savedHost.port === undefined) delete process.env.PAPERCUSP_HONO_PORT;
     else process.env.PAPERCUSP_HONO_PORT = savedHost.port;
     if (savedHost.url === undefined) delete process.env.PAPERCUSP_OPERATOR_URL;
@@ -188,22 +194,49 @@ describe('resolveSpawnOperatorBase', () => {
   const saved = {
     port: process.env.PAPERCUSP_HONO_PORT,
     url: process.env.PAPERCUSP_OPERATOR_URL,
+    proxy: process.env.PAPERCUSP_MCP_PROXY_BASE,
   };
   beforeEach(() => {
     delete process.env.PAPERCUSP_HONO_PORT;
     delete process.env.PAPERCUSP_OPERATOR_URL;
+    delete process.env.PAPERCUSP_MCP_PROXY_BASE;
   });
   afterEach(() => {
     if (saved.port === undefined) delete process.env.PAPERCUSP_HONO_PORT;
     else process.env.PAPERCUSP_HONO_PORT = saved.port;
     if (saved.url === undefined) delete process.env.PAPERCUSP_OPERATOR_URL;
     else process.env.PAPERCUSP_OPERATOR_URL = saved.url;
+    if (saved.proxy === undefined) delete process.env.PAPERCUSP_MCP_PROXY_BASE;
+    else process.env.PAPERCUSP_MCP_PROXY_BASE = saved.proxy;
   });
 
-  it('an explicit per-spawn operatorUrl wins over every env source', () => {
+  it('an explicit per-spawn operatorUrl wins over every env source (incl. the proxy base)', () => {
     process.env.PAPERCUSP_HONO_PORT = '3170';
     process.env.PAPERCUSP_OPERATOR_URL = 'http://env.example/api/mcp';
+    process.env.PAPERCUSP_MCP_PROXY_BASE = 'http://127.0.0.1:9071';
     expect(resolveSpawnOperatorBase('http://pin.example:9/sse')).toBe('http://pin.example:9/sse');
+  });
+
+  // mcp-host-availability-resilience P-005: with the always-up proxy configured, a spawn's
+  // .mcp.json points at the proxy (:9071) — NOT directly at :3070 — so a deploy that restarts
+  // :3070 is invisible to the bee's MCP client. The proxy base wins over the env-derived host
+  // defaults (HONO_PORT / OPERATOR_URL) but not over an explicit operatorUrl (asserted above).
+  it('routes through PAPERCUSP_MCP_PROXY_BASE (appends /api/mcp), winning over HONO_PORT + OPERATOR_URL', () => {
+    process.env.PAPERCUSP_HONO_PORT = '3170';
+    process.env.PAPERCUSP_OPERATOR_URL = 'http://env.example/api/mcp';
+    process.env.PAPERCUSP_MCP_PROXY_BASE = 'http://127.0.0.1:9071';
+    expect(resolveSpawnOperatorBase()).toBe('http://127.0.0.1:9071/api/mcp');
+  });
+
+  it('normalizes trailing slashes on the proxy base before appending /api/mcp', () => {
+    process.env.PAPERCUSP_MCP_PROXY_BASE = 'http://127.0.0.1:9071///';
+    expect(resolveSpawnOperatorBase()).toBe('http://127.0.0.1:9071/api/mcp');
+  });
+
+  it('an empty/whitespace PAPERCUSP_MCP_PROXY_BASE is treated as unset (direct host base)', () => {
+    process.env.PAPERCUSP_HONO_PORT = '3170';
+    process.env.PAPERCUSP_MCP_PROXY_BASE = '   ';
+    expect(resolveSpawnOperatorBase()).toBe('http://127.0.0.1:3170/api/mcp');
   });
 
   it('derives the spawning host base from PAPERCUSP_HONO_PORT (EI-51 core fix)', () => {
