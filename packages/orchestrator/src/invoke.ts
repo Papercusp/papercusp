@@ -660,6 +660,60 @@ export const BEE_ALLOWED_TOOLS: readonly string[] = [
 ];
 
 /**
+ * The Overwatch's scoped MCP kit. The Overwatch is a READ-heavy system-health
+ * supervisor; its ONLY write surface is four verbs — `coord:send` (nudge),
+ * `coord:escalate` (structural issue), `improvements:capture` (observe / emit the
+ * hive-coordination-health scorecard), `messages:send` (durable hand-off) — plus
+ * `overwatch:declare-wake` (its own next wake). It NEVER places work (no
+ * `fleet:spawn` / `fleet:place_batch` / `work_items:set_priority` — the Queen's
+ * D-001 lane) and NEVER edits code (no `capability:*` — its envelope denies
+ * fs-write/bash). Everything else here is a READ used to judge system health.
+ *
+ * Kept deliberately small: an UNSCOPED (null) surface loaded the full ~550-tool /
+ * ~141k-token catalog onto the overwatch's sonnet ~200k window, so every fire died
+ * with "Prompt is too long" and fell back to the synth-floor scorecard — never a
+ * real 14-criterion scorecard (autonomous-loop-full-flow-reliability-2026-06-29).
+ * Mirrors QUEEN_/BEE_MCP_TOOL_NAMES; wired at the spawn chokepoint (`mcpToolNames`).
+ */
+export const OVERWATCH_MCP_TOOL_NAMES: readonly string[] = [
+  'autonomy:decide',
+  'coord:ack',
+  'coord:escalate',
+  'coord:escalations',
+  'coord:glance',
+  'coord:inbox',
+  'coord:orient',
+  'coord:presence',
+  'coord:send',
+  'coord:thread',
+  'coord:watermark',
+  'coord:watermark-set',
+  'curation:feed',
+  'dev:rate_governor_status',
+  'docs:get',
+  'docs:search',
+  'fleet:assignments',
+  'hive:get',
+  'hive:get-steering',
+  'hive:status',
+  'hive:survey',
+  'improvements:capture',
+  'improvements:digest',
+  'messages:send',
+  'notifications:recent',
+  'overwatch:declare-wake',
+  'plans:get',
+  'plans:list',
+  'rubrics:get',
+  'rubrics:list',
+  'scorecards:freshness',
+  'scorecards:list',
+  'tools:find',
+  'work_items:get',
+  'work_items:list',
+];
+
+/**
  * The UNIVERSAL core MCP tool set — the small, always-advertised catalog for omp
  * (and any small-context client) so the bootstrap + coordination + work spine is
  * callable WITHOUT the discovery/search dance. ~19 tools / ~7k tokens vs the full
@@ -697,8 +751,11 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'docs:search',
   'memory:search',
   'memory:remember',
-  // Discovery — load anything else by intent (tools:find — WS3)
+  // Discovery — load anything else by intent (tools:find — WS3), or call it
+  // directly without loading (tools:invoke — the universal reachability hatch,
+  // dynamic-tool-surface-2026-07-01 D-003).
   'tools:find',
+  'tools:invoke',
 ];
 
 export const CORE_ALLOWED_TOOLS: readonly string[] = [
@@ -2855,7 +2912,14 @@ export async function invoke(
           // durable operator-assigned spawnId — a bare random UUID would not be a real
           // coord owner, so omit it there (the legacy pipeline-role path is unchanged).
           clientId: stableSpawnId || null,
-          mcpToolNames: role === 'queen' ? QUEEN_MCP_TOOL_NAMES : role === 'bee' ? BEE_MCP_TOOL_NAMES : null,
+          mcpToolNames:
+            role === 'queen'
+              ? QUEEN_MCP_TOOL_NAMES
+              : role === 'bee'
+                ? BEE_MCP_TOOL_NAMES
+                : role === 'overwatch'
+                  ? OVERWATCH_MCP_TOOL_NAMES
+                  : null,
         };
         // codex: no `.mcp.json` discovery — its MCP servers live in
         // $CODEX_HOME/config.toml. Mint a per-spawn CODEX_HOME with the
