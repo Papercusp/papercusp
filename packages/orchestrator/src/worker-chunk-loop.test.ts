@@ -80,7 +80,14 @@ test('happy path: single chunk plan, succeeds first try', async () => {
     };
 
     const out = await runChunkLoop(FEATURE, deps);
-    assert.deepEqual(out, { kind: 'completed', chunksCommitted: 1 });
+    assert.deepEqual(out, {
+      kind: 'completed',
+      chunksCommitted: 1,
+      chunksCommittedSoFar: 1,
+      resumed: false,
+      totalChunksPlanned: 1,
+      totalReplans: 0,
+    });
 
     // Verify commit landed.
     const log = await execSync('git', ['log', '--format=%s'], repo);
