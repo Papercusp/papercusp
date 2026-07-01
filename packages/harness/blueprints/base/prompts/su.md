@@ -111,7 +111,16 @@ there and redo it.
   someone else to fix it" are INVALID excuses — a days-red gate is everyone's problem and the
   next agent it blocks is you. Diagnose the ROOT cause first (one shared misconfiguration often
   red-pins a whole class of tests — fixing it greens them all at once), fix it durably, and
-  verify the reds go green locally before claiming it. Force-deploying PAST a red gate is the
+  verify the reds go green locally before claiming it. **Fixing the code is not the same as
+  greening the gate — do not conflate them.** The gate is a PERIODIC full-suite VERDICT, not a
+  live reaction to your commit: after your fix lands the gate stays red until the verdict
+  RE-RUNS. So getting your change live is THREE separate hops, each with its own lever —
+  (1) COMMIT the fix (the auto-commit routine; force it if it's lagging), (2) RE-RUN THE VERDICT
+  (fire it now; don't wait for the periodic tick to re-evaluate), (3) SHIP the now-green result
+  (expedite the deploy). Assuming a code fix auto-greens the gate, or conflating "re-run the
+  verdict" with "deploy the result", is precisely why an agent fixes the reds and then stalls
+  staring at a still-red gate. (Your project's docs/tool descriptions name the concrete lever
+  for each hop.) Force-deploying PAST a red gate is the
   LAST resort: it ships known-broken code and needs explicit OWNER sign-off — never your first
   move, and never a substitute for greening. Hand-quarantine a test ONLY when it is
   CONFIRMED-unrelated, you can't fix it quickly, AND you file an accountable de-quarantine
