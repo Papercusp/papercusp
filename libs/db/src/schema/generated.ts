@@ -4580,6 +4580,27 @@ export const harnessFeaturePrsInHarnessShared = harnessShared.table("harness_fea
 	pgPolicy("harness_feature_prs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const hiveIntegrationRequestsInHarnessShared = harnessShared.table("hive_integration_requests", {
+	workspaceId: text("workspace_id").default('').notNull(),
+	hiveSlug: text("hive_slug").notNull(),
+	repoKey: text("repo_key").notNull(),
+	devicePubkey: text("device_pubkey").notNull(),
+	headSha: text("head_sha").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	authorGithubUserId: bigint("author_github_user_id", { mode: "number" }),
+	reason: text().notNull(),
+	state: text().default('pending').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ratifiedTs: bigint("ratified_ts", { mode: "number" }),
+}, (table) => [
+	index("hive_integration_requests_author_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.devicePubkey.asc().nullsLast().op("text_ops"), table.createdTs.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.hiveSlug, table.repoKey, table.devicePubkey, table.headSha], name: "hive_integration_requests_pkey"}),
+	check("hive_integration_requests_reason_check", sql`reason = 'below-steer-tier'::text`),
+	check("hive_integration_requests_state_check", sql`state = ANY (ARRAY['pending'::text, 'ratified'::text])`),
+]);
+
 export const autoReviewAuditInHarnessShared = harnessShared.table("auto_review_audit", {
 	workspaceId: text("workspace_id").default('').notNull(),
 	id: bigserial({ mode: "bigint" }).notNull(),
