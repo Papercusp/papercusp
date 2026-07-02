@@ -222,6 +222,24 @@ export function pgbouncerEnabled(): boolean {
   const flag = process.env.PAPERCUSP_PGBOUNCER;
   if (flag === '1') return true;
   if (flag === '0') return false;
+  // An explicit PAPERCUSP_PG_PORT means THIS process owns its own dedicated,
+  // isolated embedded Postgres (smoke-test witnesses, desktop sidecars,
+  // Hetzner rig instances) — never the box's shared native PG. The real
+  // dev/staging operators on a 'server'-class host NEVER set this (they attach
+  // to the shared native PG via HARNESS_ADMIN_DATABASE_URL / DATABASE_URL /
+  // the discovery file), so this is a safe, exclusive signal. Rerouting such a
+  // process's org pool through the box-wide PgBouncer (which fronts the
+  // SHARED native PG — see /etc/pgbouncer/pgbouncer.ini) would silently
+  // connect it to a totally different, already-populated database instead of
+  // its own freshly-booted empty one, defeating per-process isolation
+  // entirely (WI-1666: a "fresh, isolated" hive-from-repo smoke witness read
+  // pre-existing shared_repo_binding_cache rows because getOrgPg() routed
+  // through :6432 → the box's real native PG, bypassing the witness's own
+  // empty embedded PG bound to its explicit PAPERCUSP_PG_PORT). Confirmed live
+  // on the shared dev box 2026-07-02: the witness's own embedded PG (port
+  // 19532) had 0 matching rows; the box's native PG (port 5432, what :6432
+  // pools to) had the exact "existing" rows the bug reported.
+  if (process.env.PAPERCUSP_PG_PORT) return false;
   try {
     return getResourceProfile().hostClass === 'server';
   } catch {

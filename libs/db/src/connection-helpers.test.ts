@@ -21,12 +21,15 @@ const POOLED = 'postgresql://harness_app:harness_app_pwd@127.0.0.1:6432/papercus
 const saved = {
   on: process.env.PAPERCUSP_PGBOUNCER,
   port: process.env.PAPERCUSP_PGBOUNCER_PORT,
+  pgPort: process.env.PAPERCUSP_PG_PORT,
 };
 afterEach(() => {
   if (saved.on === undefined) delete process.env.PAPERCUSP_PGBOUNCER;
   else process.env.PAPERCUSP_PGBOUNCER = saved.on;
   if (saved.port === undefined) delete process.env.PAPERCUSP_PGBOUNCER_PORT;
   else process.env.PAPERCUSP_PGBOUNCER_PORT = saved.port;
+  if (saved.pgPort === undefined) delete process.env.PAPERCUSP_PG_PORT;
+  else process.env.PAPERCUSP_PG_PORT = saved.pgPort;
   mockProfile.hostClass = 'server';
 });
 
@@ -91,6 +94,36 @@ describe('pgbouncerEnabled — P-004 default-on for server-class native PG', () 
     expect(pgbouncerEnabled()).toBe(true); // server → default on
     mockProfile.hostClass = 'laptop';
     expect(pgbouncerEnabled()).toBe(false); // laptop → default off
+  });
+
+  // WI-1666: a "fresh, isolated" hive-from-repo smoke witness on a server-class
+  // shared dev box got its org-pool connection silently rerouted through the
+  // box-wide PgBouncer (which fronts the SHARED native PG) instead of its own
+  // freshly-booted, empty embedded PG on an explicit PAPERCUSP_PG_PORT — so it
+  // read another process's pre-existing shared_repo_binding_cache rows. An
+  // explicit PAPERCUSP_PG_PORT means this process owns its OWN dedicated,
+  // isolated embedded PG (smoke witnesses / desktop sidecars / Hetzner rigs
+  // always set it; the real dev/staging operators on this box never do), so it
+  // must bypass the box's shared pooler regardless of hostClass.
+  it('PAPERCUSP_PG_PORT set forces OFF even on a server-class host (WI-1666 isolation fix)', () => {
+    delete process.env.PAPERCUSP_PGBOUNCER;
+    mockProfile.hostClass = 'server';
+    process.env.PAPERCUSP_PG_PORT = '19532';
+    expect(pgbouncerEnabled()).toBe(false);
+  });
+
+  it('PAPERCUSP_PGBOUNCER=1 still forces ON even with PAPERCUSP_PG_PORT set (explicit override wins)', () => {
+    process.env.PAPERCUSP_PGBOUNCER = '1';
+    mockProfile.hostClass = 'server';
+    process.env.PAPERCUSP_PG_PORT = '19532';
+    expect(pgbouncerEnabled()).toBe(true);
+  });
+
+  it('unset PAPERCUSP_PG_PORT leaves the server-class default untouched', () => {
+    delete process.env.PAPERCUSP_PGBOUNCER;
+    delete process.env.PAPERCUSP_PG_PORT;
+    mockProfile.hostClass = 'server';
+    expect(pgbouncerEnabled()).toBe(true);
   });
 });
 
