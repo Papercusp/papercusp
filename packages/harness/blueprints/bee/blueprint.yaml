@@ -78,6 +78,11 @@ dependencies:
     - coord:send
     - docs:get
     - docs:search
+    # Durable-facts fold (the bee prompt's "assert what you proved" section): the
+    # bee CALLS facts:assert for reusable findings and facts:retract on disproof —
+    # blueprint-prompt-dark-tools guard.
+    - facts:assert
+    - facts:retract
     - harness:create
     - harness:get
     - harness:list

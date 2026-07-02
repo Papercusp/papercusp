@@ -140,6 +140,11 @@ dependencies:
     - deploy:hive
     - deploy:status
     - discovery:hives
+    # Durable-facts fold (queen.base.md steering loop): the queen CALLS facts:assert
+    # for standing conclusions and facts:retract when one stops being true —
+    # blueprint-prompt-dark-tools guard.
+    - facts:assert
+    - facts:retract
     - fleet:assignments
     # The Queen's source-side read of the shared inference-capacity oracle — the
     # queen.base.md placement loop CALLS it each cycle to size the batch (Pass
