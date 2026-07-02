@@ -94,7 +94,7 @@ describe('work_items CDC capture (migration 375)', () => {
       SELECT table_name, harness_slug, key, row FROM harness_shared.substrate_outbox WHERE key = 'EI-10'`;
     expect(rows).toHaveLength(1);
     expect(rows[0].table_name).toBe('engineer_issues');
-    // mig 452: routing slug canonicalized (papercup → papercusp); payload stays raw (line below).
+    // mig 452: routing slug canonicalized (papercup → papercusp).
     expect(rows[0].harness_slug).toBe('papercusp');
     // ei wire-shape (mig-197 contract / EngineerIssueRow): issue_id/scope/body/state mapped.
     expect(rows[0].row.issue_id).toBe('EI-10');
@@ -102,7 +102,8 @@ describe('work_items CDC capture (migration 375)', () => {
     expect(rows[0].row.body).toBe('the body');
     expect(rows[0].row.state).toBe('open');
     expect(rows[0].row.kind).toBe('bug');
-    expect(rows[0].row.harness_slug).toBe('papercup'); // stamped for per-harness demux
+    // stamped for per-harness demux from v_slug — canonicalized since mig 452
+    expect(rows[0].row.harness_slug).toBe('papercusp');
   });
 
   it('an operator-scoped issue with no single Hive home stays LOCAL (not enqueued)', async () => {
