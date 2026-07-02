@@ -1050,8 +1050,23 @@ test('fleetAllowedToolsForRole — queen uses a compact explicit MCP subset, not
     'mcp__papercusp__work_items_create',
     'mcp__papercusp__work_items_set_state',
     'mcp__papercusp__improvements_capture',
+    // EI-6076: the wake-GATE control pair coord:glance recommends to the queen
+    // audience. Without them seeded, the Queen could detect "wake mode is manual"
+    // via glance but had no callable tool to self-recover (ToolSearch reloads never
+    // surfaced coord:wake-mode), forcing a human blocker.
+    'mcp__papercusp__coord_wake-mode',
+    'mcp__papercusp__coord_wake-queue',
   ]) {
     assert.ok(allowed.includes(required), `${required} must remain available to the Queen`);
+  }
+  // EI-6076 regression: every wake-control tool coord:glance's tips recommend to
+  // the QUEEN audience must be in her seeded kit, or the tip points at a tool she
+  // cannot invoke on the small-surface queen session.
+  for (const wakeCtl of ['coord:wake-mode', 'coord:wake-queue']) {
+    assert.ok(
+      QUEEN_MCP_TOOL_NAMES.includes(wakeCtl),
+      `queen kit must seed ${wakeCtl} — coord:glance recommends it to the queen audience (EI-6076)`,
+    );
   }
 });
 

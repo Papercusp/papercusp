@@ -560,6 +560,16 @@ export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'coord:send',
   'coord:thread',
   'coord:wake',
+  // The wake-GATE control pair (EI-6076): coord:glance surfaces the
+  // `wake-mode-manual` / `staged-wakes-under-auto` tips to the QUEEN audience with
+  // an invoke of coord:wake-mode / coord:wake-queue. The Queen already passes both
+  // gates for them (COORD_ROLES + coord:write) but they were absent from her seeded
+  // kit, so on the small-surface queen session they never advertised and ToolSearch
+  // reloads didn't surface them — she could DETECT "wake mode is manual" via glance
+  // but had no callable tool to self-recover, forcing a human blocker. Seed them so
+  // every glance tip the Queen sees points at a tool she can actually invoke.
+  'coord:wake-mode',
+  'coord:wake-queue',
   'curation:feed',
   'dev:rate_governor_status',
   'fleet:assignments',
