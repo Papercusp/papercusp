@@ -55,6 +55,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { AgentBackend, HarnessConfig, InvokeResult } from './types';
 import { resolveAgentBackend, normalizeModelForBackend } from './env';
 import { hasExplicitDisallowedTools, nativeSchedulerDenyFlag } from './native-scheduler-deny';
+import { NO_SUBAGENT_TOOLS_DENY } from './no-subagent-deny';
 import { ROLE_MODEL_DEFAULTS } from './role-models';
 import { workspaceHomeDir } from './workspace';
 
@@ -779,8 +780,13 @@ export const CORE_ALLOWED_TOOLS: readonly string[] = [
  *    built-ins a `claude -p` spawn carries that bypass the allow-list under
  *    dontAsk (see FLEET_ALLOWED_TOOLS). None are needed by a pipeline role;
  *    `EnterWorktree`/`ExitWorktree` would also violate the repo's
- *    one-tree/no-worktree rule, and `Workflow`/`Task` are uncontrolled
- *    sub-agent fan-out outside the orchestrator's spawn graph.
+ *    one-tree/no-worktree rule, and `Workflow`/`Task`/`Agent` are uncontrolled
+ *    sub-agent fan-out outside the orchestrator's spawn graph. **`Task`/`Agent`
+ *    come from the shared `NO_SUBAGENT_TOOLS_DENY` (no-subagent-deny.ts) —
+ *    the tool was renamed `Task`→`Agent` between claude 2.1.158 and 2.1.198,
+ *    and a `Task`-only deny was verified live (2026-07-01) to be a silent
+ *    no-op on the newer CLI (a spawned Agent-tool subagent still ran); both
+ *    names are carried so the deny survives either CLI generation.**
  * 2. **Dangerous *commands* inside the granted `Bash`** — `Bash` is
  *    allow-listed (roles need it) and can run anything, so the highest-value,
  *    no-legit-fleet-use commands are denied here.
@@ -804,7 +810,7 @@ export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
   'EnterWorktree',
   'ExitWorktree',
   'Workflow',
-  'Task',
+  ...NO_SUBAGENT_TOOLS_DENY, // 'Task' (pre-rename) + 'Agent' (current) — see no-subagent-deny.ts
   'RemoteTrigger',
   'PushNotification',
   'Monitor',

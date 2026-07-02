@@ -37,6 +37,11 @@
       "import": "./src/native-scheduler-deny.ts",
       "default": "./src/native-scheduler-deny.ts"
     },
+    "./no-subagent-deny": {
+      "types": "./src/no-subagent-deny.ts",
+      "import": "./src/no-subagent-deny.ts",
+      "default": "./src/no-subagent-deny.ts"
+    },
     "./session-launch-dirs": {
       "types": "./src/session-launch-dirs.ts",
       "import": "./src/session-launch-dirs.ts",

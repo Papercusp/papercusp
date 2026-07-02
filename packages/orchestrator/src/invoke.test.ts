@@ -1168,7 +1168,7 @@ test('claudeMcpArgs — deny-list hard-removes the dangerous EXEMPT tools (dontA
   // run despite omission), so they must be explicitly denied to be closed.
   for (const exempt of [
     'CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup',
-    'EnterWorktree', 'ExitWorktree', 'Workflow', 'Task',
+    'EnterWorktree', 'ExitWorktree', 'Workflow', 'Task', 'Agent',
     'RemoteTrigger', 'PushNotification', 'Monitor',
   ]) {
     assert.ok(FLEET_DISALLOWED_TOOLS.includes(exempt), `${exempt} must be deny-listed`);
@@ -1176,6 +1176,15 @@ test('claudeMcpArgs — deny-list hard-removes the dangerous EXEMPT tools (dontA
   // git push is denied (backstop to the pre-push hook); sudo is denied.
   assert.ok(FLEET_DISALLOWED_TOOLS.includes('Bash(git push:*)'));
   assert.ok(FLEET_DISALLOWED_TOOLS.includes('Bash(sudo:*)'));
+});
+
+test('claudeMcpArgs — subagent-fanout deny carries BOTH tool names (Task pre-rename, Agent current — 2026-07-01)', () => {
+  // Re-verified live against claude 2.1.198: `--disallowedTools Task` alone no longer
+  // blocks the subagent tool (a spawned Agent-tool subagent still ran and wrote its
+  // marker file) — `Agent` is the name that actually blocks it today. Both stay listed
+  // so the deny survives either CLI generation; see no-subagent-deny.ts.
+  assert.ok(FLEET_DISALLOWED_TOOLS.includes('Task'));
+  assert.ok(FLEET_DISALLOWED_TOOLS.includes('Agent'));
 });
 
 test('claudeMcpArgs — omp backend → [] (omp path-discovers .mcp.json)', () => {
