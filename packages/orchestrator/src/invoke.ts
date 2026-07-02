@@ -572,6 +572,12 @@ export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'coord:wake-queue',
   'curation:feed',
   'dev:rate_governor_status',
+  // queen-memory-hybrid L1e: the standing-facts ledger — the queen persona
+  // directs facts:assert/retract for durable conclusions (prompt-referenced,
+  // so they MUST be in this kit).
+  'facts:assert',
+  'facts:list',
+  'facts:retract',
   'fleet:assignments',
   'fleet:cancel',
   'fleet:capacity',
@@ -642,6 +648,11 @@ export const BEE_MCP_TOOL_NAMES: readonly string[] = [
   'dev:service_health',
   'docs:get',
   'docs:search',
+  // queen-memory-hybrid L1e: standing-facts — the bee persona directs
+  // facts:assert/retract for durable repo/harness conclusions (prompt-referenced).
+  'facts:assert',
+  'facts:list',
+  'facts:retract',
   'fleet:assignments',
   'locks:acquire_granular',
   'locks:release_granular',
