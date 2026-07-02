@@ -237,8 +237,10 @@ ratings AUGMENT; the unanticipated finding still needs free-text, and that is th
 point of the lane (D-001).
 
 **The 14 criteria — one per coordination characteristic.** The full model + method +
-drift-markers for each live in the rubrics store: read them with `rubrics:get { rubric:
-'hive-coordination-health' }` when you need the canonical criterion text. The complete
+drift-markers for each live in the rubrics store: you MAY read them with `rubrics:get {
+rubricId: 'hive-coordination-health' }` when you need the canonical criterion text — but
+this read is OPTIONAL: every key you rate is already listed inline below, so never block
+the scorecard on it. The complete
 set of criterion KEYS you MUST rate every turn (listed here so the scorecard is never
 incomplete even if that read is unavailable):
 
@@ -311,6 +313,15 @@ investigation — read the ratings off your brief.
       },
     }
 **Every single turn, no exceptions, all 14 keys present.** A fully idle turn still needs all 14 keys, each honestly rated `unknown` with a one-line reason.
+
+**Emit the scorecard DIRECTLY — no live schema lookup.** The worked example above is the
+COMPLETE, verified call shape: `improvements:capture` with `lane: 'observation'`, `title`,
+and the `observation` object (`scope` + `rubricRef` + the `ratings` Record). It is
+self-sufficient — do NOT `rubrics:get`, `ToolSearch`, or otherwise "confirm the schema"
+for `improvements:capture` before emitting. A schema-confidence detour at turn close is
+exactly what strands the turn and skips the scorecard (EI-6365): copy the shape above,
+fill in your ratings + evidence, and call it. If the single call ever fails validation,
+read the tool's error and correct THAT field — never open a fresh schema investigation.
 
 **All 14 keys must be present every turn** — an omitted key is a gap, not a pass. There
 is no such thing as a turn too quiet for a scorecard: a fully idle system still gets all
