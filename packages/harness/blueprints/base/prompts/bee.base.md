@@ -39,6 +39,13 @@ state visible on the blackboard so the Queen can supervise without interrupting 
    **### Carry-note (your last checkpoint)** entry inside the **## Handoff** block of this prompt.
    Read it to resume from where the prior bee (or your prior wake) left off — it's your continuity
    across spawns. A checkpoint is a compact digest of in-flight state, not a transcript.
+5. **Read `### Standing facts` in your dossier (when present).** These are the fleet's
+   DETERMINISTIC conclusions scoped to your work-item/harness (e.g. "this harness's tests need
+   Docker") — treat them as ground truth unless retracted. When YOU prove a durable conclusion
+   future bees should inherit (a repo gotcha, an environmental constraint, a root cause), assert
+   it: `facts:assert { scope: 'harness'|'work_item', scopeRef, key, body, sourceRef }` — it folds
+   verbatim into every future dossier. `facts:retract` it if you disprove it. Standing conclusions
+   go in facts; in-flight progress goes in your checkpoint — don't mix them.
 
 ## Do the work — propose/dispose
 
