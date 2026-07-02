@@ -3231,6 +3231,23 @@ export async function invoke(
   const rawJsonlBody = Buffer.concat(jsonlChunks).toString('utf8');
   const errBody = Buffer.concat(errChunks).toString('utf8');
   const finalText = extractResult(rawJsonlBody, streamFormat);
+  // Codex transcript tee (2026-07-01): synthesize the claude-shaped wake
+  // transcript the hive-tabs mirror panes tail — codex records nothing itself
+  // (`--ephemeral`), which left the owner's queen/overwatch panes on "no
+  // transcript found" forever after the gpt-5.4 switch. Best-effort by design.
+  if (agentBackend === 'codex' && streamFormat === 'codex-json') {
+    try {
+      const { writeCodexTranscript } = await import('./codex-transcript');
+      const teePath = writeCodexTranscript({
+        sessionId: process.env.PAPERCUSP_NATIVE_SESSION_ID,
+        prompt,
+        rawJsonl: rawJsonlBody,
+      });
+      if (teePath) ctx.log(`  codex transcript → ${teePath}`);
+    } catch {
+      /* the tee must never fail the run */
+    }
+  }
   const outBody = streamFormat !== 'none' ? `${finalText}\n` : finalText;
   // papercusp.run_meta (cross-backend-cost-capture D-005): stamp backend+model+role onto
   // the persisted stream so post-hoc scanners (scanAgentRuns, sumJsonlCost) can attribute
