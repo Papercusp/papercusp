@@ -154,6 +154,55 @@ describe('upsertRoutine', () => {
     expect(due.map((r) => r.name)).not.toContain('parked'); // infinity <= now() is false → not due
   });
 
+  it("EI-6786: re-arming a CURRENTLY-PARKED loop (loop:arm mid-turn) does NOT un-park it — next_fire_at STAYS 'infinity', but reschedule_interval_sec still updates", async () => {
+    await upsertRoutine(
+      sql,
+      baseInput({ name: 'rearm-parked', triggerConfig: {}, rescheduleIntervalSec: 270, targetOwnerId: 'su-abc' }),
+      nextFn,
+    );
+    // Simulate the claim parking it in-flight (the state a loop is in for the WHOLE
+    // duration of the very turn that would call loop:arm to widen its own cadence).
+    await sql`UPDATE harness_shared.routines SET next_fire_at = 'infinity'::timestamptz WHERE name = 'rearm-parked'`;
+
+    // Re-arm mid-turn: a fresh explicit nextFireAt (what materializeLoop always computes)
+    // + a new interval — mirrors loop:arm { intervalSec: 900 } on an already-active loop.
+    await upsertRoutine(
+      sql,
+      baseInput({
+        name: 'rearm-parked',
+        triggerConfig: {},
+        rescheduleIntervalSec: 900,
+        targetOwnerId: 'su-abc',
+        nextFireAt: new Date(Date.now() + 900_000),
+      }),
+      nextFn,
+    );
+
+    const [row] = await sql<Array<{ still_parked: boolean; reschedule_interval_sec: number }>>`
+      SELECT (next_fire_at = 'infinity'::timestamptz) AS still_parked, reschedule_interval_sec
+      FROM harness_shared.routines WHERE name = 'rearm-parked'
+    `;
+    // Still parked — the completion-rebase (which keys on next_fire_at='infinity') will be
+    // the one to re-arm it once the in-flight turn settles, off the FRESH interval below.
+    expect(row!.still_parked).toBe(true);
+    expect(row!.reschedule_interval_sec).toBe(900);
+    // And it still correctly stays excluded from the due-set while parked.
+    const due = await listDueCronRoutines(sql);
+    expect(due.map((r) => r.name)).not.toContain('rearm-parked');
+  });
+
+  it('EI-6786 regression guard: a NON-parked routine (idle / not currently firing) still gets its next_fire_at updated normally on re-arm', async () => {
+    const original = new Date(Date.now() + 60_000);
+    await upsertRoutine(sql, baseInput({ name: 'idle-loop', triggerConfig: {}, nextFireAt: original }), nextFn);
+    const rearmedAt = new Date(Date.now() + 900_000);
+    const updated = await upsertRoutine(
+      sql,
+      baseInput({ name: 'idle-loop', triggerConfig: {}, nextFireAt: rearmedAt }),
+      nextFn,
+    );
+    expect(updated.nextFireAt?.getTime()).toBe(rearmedAt.getTime());
+  });
+
   it('EI-2019 cluster: per-workspace ON — a cross-workspace re-arm UPDATEs in place (idempotent), never flips workspace_id, never throws routines_pkey', async () => {
     setRoutinesPerWorkspaceConflict(true);
     try {

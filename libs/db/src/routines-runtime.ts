@@ -304,7 +304,19 @@ export async function upsertRoutine(
       concurrency             = EXCLUDED.concurrency,
       catchup                 = EXCLUDED.catchup,
       active                  = EXCLUDED.active,
-      next_fire_at            = EXCLUDED.next_fire_at,
+      -- EI-6786: a loop row PARKED at the 'infinity' in-flight sentinel (NEXT_FIRE_PARKED)
+      -- must stay parked across a re-arm (e.g. loop:arm widening/narrowing intervalSec on
+      -- an already-active loop, called from WITHIN the very turn its own fire is running).
+      -- Unconditionally overwriting next_fire_at with EXCLUDED's freshly-computed timestamp
+      -- would UN-PARK a currently in-flight loop: it defeats the skip-if-in-flight due-guard
+      -- AND, once the turn later settles, the completion-rebase (reconcile-loop-routines.ts)
+      -- can no longer find it — its query keys specifically on next_fire_at='infinity' — so
+      -- the loop is never re-armed off the fresh reschedule_interval_sec at all. 'infinity'
+      -- is EXCLUSIVELY the loop-parked sentinel (never used by cron/webhook/one-shot rows),
+      -- so preserving it here is safe for every OTHER upsertRoutine caller too.
+      next_fire_at            = CASE WHEN harness_shared.routines.next_fire_at = 'infinity'::timestamptz
+                                      THEN harness_shared.routines.next_fire_at
+                                      ELSE EXCLUDED.next_fire_at END,
       reschedule_interval_sec = EXCLUDED.reschedule_interval_sec,
       target_owner_id         = EXCLUDED.target_owner_id,
       updated_at              = now()
