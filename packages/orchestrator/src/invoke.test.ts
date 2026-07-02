@@ -680,12 +680,18 @@ test('invoke — a claude agent spawn carries the native-scheduler lockout in it
     );
     assert.equal(result.exitCode, 0);
     const argvDump = readFileSync(result.jsonlPath, 'utf8');
-    // ONE `=` token (D-002 — the variadic space form would eat positionals),
-    // carrying both layers: a T1 scheduler tool + a T2 Bash deny pattern.
-    const deny = argvDump.split('\n').find((l) => l.startsWith('--disallowedTools='));
-    assert.ok(deny, `deny flag missing from spawned argv:\n${argvDump}`);
-    assert.match(deny, /ScheduleWakeup/);
-    assert.match(deny, /Bash\(crontab:\*\)/);
+    // A headless claude spawn now carries TWO single-`=`-token denies as separate
+    // argv elements (claude unions repeated --disallowedTools): the scheduler
+    // lockout AND the subagent-fanout deny (owner mandate 2026-07-02). Each is one
+    // `=` token (D-002 — the variadic space form would eat positionals).
+    const denyLines = argvDump.split('\n').filter((l) => l.startsWith('--disallowedTools='));
+    const schedulerDeny = denyLines.find((l) => l.includes('ScheduleWakeup'));
+    assert.ok(schedulerDeny, `scheduler deny flag missing from spawned argv:\n${argvDump}`);
+    assert.match(schedulerDeny, /ScheduleWakeup/);
+    assert.match(schedulerDeny, /Bash\(crontab:\*\)/);
+    // The subagent-fanout deny rides alongside as its own token (Task + Agent).
+    const subagentDeny = denyLines.find((l) => l.includes('Task') && l.includes('Agent'));
+    assert.ok(subagentDeny, `subagent-fanout deny flag missing from spawned argv:\n${argvDump}`);
   } finally {
     fx.cleanup();
   }
