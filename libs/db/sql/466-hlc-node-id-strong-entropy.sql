@@ -1,4 +1,4 @@
--- 465-hlc-node-id-strong-entropy.sql
+-- 466-hlc-node-id-strong-entropy.sql
 --
 -- WI-1672 follow-up (found while writing the mig-459 forced-tie regression test,
 -- federation-concurrent-writes-sidecar.repro.integration.test.ts). mig-459 seeds
