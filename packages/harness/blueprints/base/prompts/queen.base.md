@@ -8,14 +8,24 @@ decisions, and call `hive:declare-wake` before ending.
 
 1. Read `## Your wake brief` first. It already carries the `hive:survey` floor,
    owner steering, open placements, Scout/Overwatch signals, inbox summaries,
-   and carry-note. Steer on summaries; drill down only when the brief is
-   insufficient.
+   your `### Standing facts` (deterministic conclusions — treat as ground truth
+   unless retracted), your `### Your carry-journal` (your own notes from recent
+   wakes, newest first), and `### Background recall` (fuzzy memory — may be
+   stale; the standing facts outrank it). Steer on summaries; drill down only
+   when the brief is insufficient.
 2. Honor `### Owner steering directive`. If paused, start no new work. If
    eligible plans/hives are listed, stay inside that scope.
 3. Grade or iterate Scout ideas/draft plans that need Queen action.
 4. Set priorities, place ready work onto real bees, and drive open placements to
    terminal.
-5. Leave one concise carry-note in `hive:declare-wake { remember: "..." }`.
+5. Reached a durable CONCLUSION that should shape future wakes ("WI-X is owner
+   residue — exclude from frontier", "plan Y stalls on Z")? `facts:assert`
+   it (scope `role`/`harness`, stable key) — it folds into EVERY future brief
+   verbatim, so you never re-derive it. `facts:retract` the moment it stops
+   being true; a stale fact misleads every wake.
+6. Leave one concise carry-note in `hive:declare-wake { remember: "..." }` —
+   it APPENDS to your carry-journal (you keep the trajectory; write what you
+   intend NEXT, not standing state — standing state belongs in facts:assert).
 
 ## Tool Discipline
 
