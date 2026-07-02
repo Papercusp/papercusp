@@ -21,11 +21,18 @@
  * so the deny survives either CLI generation — disallowing a tool name that
  * doesn't exist in a given build is a no-op, never an error.
  *
- * Scope: **unconditional** for AGENT sessions — no opt-out flag, mirrors
- * native-scheduler-lockout's D-001 posture. The human `psu su` collaborator
- * session keeps the tool by default (mirrors native-scheduler-lockout D-003
- * — the human's own surface); `psu --no-subagents` (default OFF) opts a
- * human session OUT of it explicitly when asked for.
+ * Scope (owner mandate 2026-07-02): subagent fanout is now DENIED BY DEFAULT
+ * for EVERY Claude agent — headless orchestrator spawns, wake-executor resumes,
+ * interactive `psu --role` panes/bees, AND the human `psu su` collaborator. The
+ * ONLY way to keep the tool is an explicit opt-IN at launch: `psu
+ * --allow-subagents` (a CLI flag), a `fleet:launch-on-plan { allowSubagents:
+ * true }` arg, or the psu picker's Subagents toggle (default: Disabled).
+ * Background/headless spawns + resumes take no opt-in — they always deny (a bee
+ * that could recursively spawn work outside the orchestrator's spawn graph is
+ * invisible to fleet:assignments + uncontrolled). This INVERTED the prior
+ * posture (default-OFF deny with a `--no-subagents` opt-OUT and a
+ * human-keeps-it-by-default carve-out — mirror of native-scheduler-lockout
+ * D-003, which the subagent deny no longer follows).
  *
  * psu-launcher.mjs (plain-node, can't import TS) duplicates the rendered
  * literal; the lockstep test in apps/operator/lib/psu-launcher.test.ts pins
