@@ -1,4 +1,4 @@
--- 462-p2p-peer-grants.sql — p2p-work-distribution-2026-07-02 P-001 (Lane A).
+-- 463-p2p-peer-grants.sql — p2p-work-distribution-2026-07-02 P-001 (Lane A).
 -- Capability-grant schema for opt-in P2P work distribution: a GRANTOR (a hive
 -- member, identified by GitHub NUMERIC user-id — X9: logins are mutable +
 -- reusable, display-only; precedent hive/member-tier-gate.ts) grants a
