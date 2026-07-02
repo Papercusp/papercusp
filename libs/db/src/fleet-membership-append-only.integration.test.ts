@@ -198,7 +198,8 @@ describe('fleet_membership_events: append-only canonical membership fact (WI-134
         GROUP BY event ORDER BY event
       `;
       expect(allEvents).toHaveLength(2); // join and leave
-      expect(allEvents.map((e: any) => e.cnt.toString())).toEqual(['1', '2']);
+      // two joins (fleet1, fleet2) + one leave; GROUP BY event ORDER BY event
+      expect(allEvents.map((e: any) => `${e.event}:${e.cnt}`)).toEqual(['join:2', 'leave:1']);
     });
 
     it('fleet_assignment view reflects latest membership from the fact, not live presence', async () => {
@@ -215,12 +216,13 @@ describe('fleet_membership_events: append-only canonical membership fact (WI-134
         VALUES (${workspaceId}, ${wiId}, 'test-harness', 'test', 'todo', 'feature', 'local', ${agentId}, now())
       `;
 
-      // Ensure a presence row for the agent
+      // Ensure a presence row for the agent (ids are unique per test, so a plain
+      // INSERT suffices — coord_presence has no (workspace_id, owner_id) unique
+      // constraint for ON CONFLICT to target)
       await sql`
         INSERT INTO harness_shared.coord_presence
           (workspace_id, owner_id, owner_label, heartbeat_at)
         VALUES (${workspaceId}, ${agentId}, 'test-bee', now())
-        ON CONFLICT (workspace_id, owner_id) DO UPDATE SET heartbeat_at = now()
       `;
 
       // Agent joins fleet
@@ -371,27 +373,22 @@ describe('fleet_membership_events: append-only canonical membership fact (WI-134
   });
 
   describe('(e) backfill: existing live members keep their membership across migration', () => {
-    it('backfill seeds the append-only log from current coord_presence.fleet_slug values', async () => {
-      // This test verifies that the backfill INSERT in the migration correctly
-      // seeded existing agents' memberships. We check that a pre-existing presence
-      // row (if any) was backfilled into the append-only log.
-
-      const existingRows = await sql`
-        SELECT COUNT(DISTINCT owner_id) as cnt
-        FROM harness_shared.coord_presence
-        WHERE fleet_slug IS NOT NULL
-        LIMIT 1
+    it('no presence row carries a fleet without a membership fact behind it (backfill invariant)', async () => {
+      // On this fresh rig the mig-430 backfill ran against an EMPTY coord_presence,
+      // so there are no event='backfill' rows to count. The durable invariant the
+      // backfill exists to guarantee is projection ⊆ fact: every presence row with
+      // a fleet_slug is backed by a membership event (here they came from the join
+      // events of the earlier tests; on the live DB, from the backfill).
+      const orphans = await sql`
+        SELECT cp.workspace_id, cp.owner_id
+        FROM harness_shared.coord_presence cp
+        WHERE cp.fleet_slug IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM harness_shared.fleet_membership_events e
+            WHERE e.workspace_id = cp.workspace_id AND e.owner_id = cp.owner_id
+          )
       `;
-
-      // If there are existing members with a fleet_slug, verify they are in the log
-      if (existingRows[0].cnt > 0) {
-        const loggedMembers = await sql`
-          SELECT COUNT(DISTINCT owner_id) as cnt
-          FROM harness_shared.fleet_membership_events
-          WHERE event = 'backfill'
-        `;
-        expect(loggedMembers[0].cnt).toBeGreaterThan(0);
-      }
+      expect(orphans).toHaveLength(0);
     });
   });
 
