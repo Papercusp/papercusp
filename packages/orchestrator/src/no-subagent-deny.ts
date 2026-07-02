@@ -1,0 +1,44 @@
+/**
+ * Subagent-fanout deny for spawned agent sessions (owner request, 2026-07-01).
+ *
+ * A bee / pipeline role / headless fleet worker that can call the built-in
+ * subagent-launch tool can recursively spawn work OUTSIDE the orchestrator's
+ * own spawn graph — invisible to fleet:assignments, uncontrolled cost, and a
+ * second fan-out mechanism competing with the one the substrate can actually
+ * see. So every AGENT session (headless fleet/orchestrator spawns, wake-
+ * executor resumes, interactive `psu --role` panes/bees) denies it.
+ *
+ * **The tool's name changed under us — verified empirically, don't trust
+ * either name blindly.** The fleet's original deny-list only listed `Task`
+ * (verified live against claude 2.1.158, see
+ * agent-insights/claude-code-headless-permissions.mdx) — but on claude
+ * 2.1.198 the same tool is named `Agent`, and re-verifying live on
+ * 2026-07-01 (`--disallowedTools Task` + an instructed subagent spawn that
+ * DID write its marker file) confirmed the `Task` entry had become a silent
+ * no-op: the fleet's own subagent-fanout guard was NOT actually blocking
+ * fanout. `--disallowedTools Agent` DID block it (denial message: "Agent
+ * exists but is not enabled in this context"). Both names are carried here
+ * so the deny survives either CLI generation — disallowing a tool name that
+ * doesn't exist in a given build is a no-op, never an error.
+ *
+ * Scope: **unconditional** for AGENT sessions — no opt-out flag, mirrors
+ * native-scheduler-lockout's D-001 posture. The human `psu su` collaborator
+ * session keeps the tool by default (mirrors native-scheduler-lockout D-003
+ * — the human's own surface); `psu --no-subagents` (default OFF) opts a
+ * human session OUT of it explicitly when asked for.
+ *
+ * psu-launcher.mjs (plain-node, can't import TS) duplicates the rendered
+ * literal; the lockstep test in apps/operator/lib/psu-launcher.test.ts pins
+ * the two copies together — mirrors the native-scheduler-deny pattern.
+ */
+
+/** Every name the built-in subagent-launch tool has been observed under
+ *  (`Task` pre-rename, `Agent` as of claude 2.1.198+). */
+export const NO_SUBAGENT_TOOLS_DENY = ['Task', 'Agent'] as const;
+
+/** The ready-to-append argv token (claude CLI). Single `=` token — the flag
+ *  is variadic (`<tools...>`) and the space form greedily eats every
+ *  following token, including a trailing positional prompt. */
+export function noSubagentToolsDenyFlag(): string {
+  return `--disallowedTools=${NO_SUBAGENT_TOOLS_DENY.join(',')}`;
+}
