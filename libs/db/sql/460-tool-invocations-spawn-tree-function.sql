@@ -1,4 +1,4 @@
--- 459-tool-invocations-spawn-tree-function.sql
+-- 460-tool-invocations-spawn-tree-function.sql
 --
 -- WI-1671 (follow-up to EI-6801 / migration 457): the durable fix for
 -- harness_shared.tool_invocations_spawn_tree doing O(whole-table) work per
