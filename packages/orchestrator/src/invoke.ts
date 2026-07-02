@@ -55,7 +55,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { AgentBackend, HarnessConfig, InvokeResult } from './types';
 import { resolveAgentBackend, normalizeModelForBackend } from './env';
 import { hasExplicitDisallowedTools, nativeSchedulerDenyFlag } from './native-scheduler-deny';
-import { NO_SUBAGENT_TOOLS_DENY } from './no-subagent-deny';
+import { NO_SUBAGENT_TOOLS_DENY, noSubagentToolsDenyFlag } from './no-subagent-deny';
 import { ROLE_MODEL_DEFAULTS } from './role-models';
 import { workspaceHomeDir } from './workspace';
 
@@ -2189,10 +2189,25 @@ export async function invoke(
   // receive a claude flag.
   if (
     agentBackend === 'claude-code' &&
-    splitCommand(roleAgentCmd).some((a) => a.includes('claude')) &&
-    !hasExplicitDisallowedTools(roleAgentCmd)
+    splitCommand(roleAgentCmd).some((a) => a.includes('claude'))
   ) {
-    extraFlags.push(nativeSchedulerDenyFlag());
+    // Subagent-fanout deny (owner mandate 2026-07-02): EVERY headless claude spawn
+    // loses the built-in Task/Agent subagent-launch tool, UNCONDITIONALLY — a bee
+    // that could recursively spawn work outside the orchestrator's own spawn graph is
+    // invisible to fleet:assignments + an uncontrolled second fan-out. Applied even
+    // when the operator manages the rest of the permission posture (the D-004 carve-
+    // out below does NOT apply): claude UNIONS repeated `--disallowedTools`
+    // occurrences (verified live, see no-subagent-deny.ts), so this composes with any
+    // operator/Layer-A (claudeMcpArgs) deny rather than overriding it. This is the
+    // headless twin of psu's default-deny + the wake-executor resume re-arm; there is
+    // no headless opt-in (the `--allow-subagents` opt-in is a psu-launch surface only).
+    extraFlags.push(noSubagentToolsDenyFlag());
+    // Native-scheduler lockout (D-001/D-005): every headless claude spawn schedules
+    // ONLY via the harness routines table. An explicit operator-supplied deny list
+    // wins here (D-004), so this KEEPS its guard — unlike the subagent deny above.
+    if (!hasExplicitDisallowedTools(roleAgentCmd)) {
+      extraFlags.push(nativeSchedulerDenyFlag());
+    }
   }
 
   // 5. Per-role model — only inject if user didn't already pass one.
