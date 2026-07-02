@@ -23,6 +23,7 @@ import {
   CORE_ALLOWED_TOOLS,
   QUEEN_ALLOWED_TOOLS,
   QUEEN_MCP_TOOL_NAMES,
+  OVERWATCH_MCP_TOOL_NAMES,
   FLEET_DISALLOWED_TOOLS,
   FLEET_NO_WRITE_ROLES,
   fleetAllowedToolsForRole,
@@ -1069,6 +1070,31 @@ test('fleetAllowedToolsForRole — bee uses a compact worker MCP subset, not the
   }
   assert.ok(BEE_MCP_TOOL_NAMES.includes('work_items:set_state'), 'bee MCP listing hint must use colon-form names');
   assert.ok(!BEE_MCP_TOOL_NAMES.includes('fleet:spawn'), 'bee must not receive placement-only fleet spawn tools');
+});
+
+test('OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-loop-full-flow-reliability: unscoped null → "Prompt is too long")', () => {
+  // The overwatch launch MUST be scoped: an unscoped (null) mcpToolNames loaded the full
+  // ~550-tool / ~141k-token surface onto its sonnet ~200k window, so the agent died
+  // "Prompt is too long" on EVERY fire and never emitted a real 14-criterion scorecard.
+  // Its four write verbs + its own wake must be present…
+  for (const w of ['coord:send', 'coord:escalate', 'improvements:capture', 'messages:send', 'overwatch:declare-wake']) {
+    assert.ok(OVERWATCH_MCP_TOOL_NAMES.includes(w), `overwatch must hold its write/wake verb ${w}`);
+  }
+  // …and the scorecard/health reads it judges on.
+  for (const r of ['scorecards:list', 'rubrics:get', 'hive:status', 'fleet:assignments', 'improvements:digest']) {
+    assert.ok(OVERWATCH_MCP_TOOL_NAMES.includes(r), `overwatch must hold the health read ${r}`);
+  }
+  // The D-001 boundary: the overwatch acts on AGENTS, never on WORK placement, and never
+  // edits code (its capability envelope denies fs-write/bash).
+  for (const forbidden of ['fleet:spawn', 'fleet:place_batch', 'work_items:set_priority', 'work_items:co_locate', 'capability:edit', 'capability:bash', 'capability:write']) {
+    assert.ok(!OVERWATCH_MCP_TOOL_NAMES.includes(forbidden), `overwatch must NOT receive ${forbidden} (Queen's placement lane / code-edit — envelope denies)`);
+  }
+  // Colon-form, no dupes, and small enough to stay well under the model window.
+  assert.equal(new Set(OVERWATCH_MCP_TOOL_NAMES).size, OVERWATCH_MCP_TOOL_NAMES.length, 'overwatch kit has no duplicates');
+  for (const n of OVERWATCH_MCP_TOOL_NAMES) {
+    assert.match(n, /^[a-z_]+:[a-z0-9_-]+$/, `${n} must be a colon-form MCP tool name`);
+  }
+  assert.ok(OVERWATCH_MCP_TOOL_NAMES.length <= 45, 'overwatch kit stays small (well under the full ~550 surface)');
 });
 
 test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-weak-models WS1)', () => {

@@ -322,6 +322,13 @@ reverse.
   audience's history — the easy "what did I miss" for a fleet/topic member. `coord:glance` =
   fleet-health; `coord:orient` = the one-call wake bootstrap; `topics:feed` = an area's tagged
   work-stream (objects, not raw messages).
+- **State answers NOW; only the append-only log answers EVER.** `coord:presence` /
+  `fleet:assignments` are LIVE-STATE — who is alive, who holds which item RIGHT NOW; they
+  CANNOT answer a history question. An ended agent loses its `fleet_slug` and its presence row
+  is reaped on a TTL, so "who was EVER in this fleet / what did I miss" asked from a state tool
+  comes back empty. Route *ever / was / missed / history* questions to the AUDIENCE HISTORY read
+  (`coord:catch-up { audience }` as a member, `coord:feed { audience }` as the firehose) — never
+  a state tool. Full map: the `presence-vs-history-who-is-on-what` agent-insights doc.
 - **Ask knowledge-first.** When you don't know who to ask, `coord:ask { question,
   topics }` answers inline on a hit or routes to the topic's subscribers — reach for it
   BEFORE escalating to the owner; only ask the owner if the answer is still unclear
