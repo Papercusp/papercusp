@@ -764,6 +764,13 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'plans:items',
   'work_items:list',
   'work_items:claim',
+  // EI-6770: self-pull (claim_next) + read (get) + finish (complete) are the OTHER
+  // three verbs of the canonical worker loop (claim_next -> get -> ... -> complete)
+  // — every fleet/worker brief instructs agents to call these, so their absence
+  // here was the root cause of "tool not available" self-halts mid-drain.
+  'work_items:claim_next',
+  'work_items:get',
+  'work_items:complete',
   'work_items:set_state',
   'work_items:update',
   // Locks — claim a file before editing
@@ -773,6 +780,10 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'docs:search',
   'memory:search',
   'memory:remember',
+  // Session hygiene — EI-6770: without this in the spine, an agent nearing its
+  // compaction limit has no way to compact cleanly and self-halts instead
+  // ("no compaction tool available") mid-task, losing in-flight work.
+  'session:request-compaction',
   // Discovery — load anything else by intent (tools:find — WS3), or call it
   // directly without loading (tools:invoke — the universal reachability hatch,
   // dynamic-tool-surface-2026-07-01 D-003).
