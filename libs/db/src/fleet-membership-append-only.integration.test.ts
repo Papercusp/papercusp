@@ -1,20 +1,68 @@
+/**
+ * fleet-membership-append-only.integration.test.ts — WI-1345 / migration 430.
+ * fleet_membership_events is the append-only canonical membership fact;
+ * coord_presence.fleet_slug/fleet_role and the fleet_assignment view are
+ * projections of it (guard trigger rejects direct mutation).
+ *
+ * Real Postgres (testcontainer; Docker required) — provisions the FULL chain,
+ * like its siblings. (An earlier draft imported a nonexistent '../index' and
+ * pointed at the LIVE database, which both never resolved and would have left
+ * test rows in live coordination tables.) Run:
+ *   cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts \
+ *     src/fleet-membership-append-only.integration.test.ts
+ */
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { getHarnessAdminUrl } from '../index';
-import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import postgres, { type Sql } from 'postgres';
+import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const SQL_DIR = join(here, '..', 'sql');
+const RUNNER = join(here, '..', '..', '..', 'packages', 'embedded-postgres-server', 'src', 'migration-runner.js');
+
+const SKIP = (f: string) =>
+  f.includes('per-harness-template') ||
+  f === '040-plugin-configs-backfill.sql' ||
+  f === '__seed_restored__.marker';
+
+const BOOT_PREREQS_DDL = `
+  DO $pg$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='harness_app')   THEN CREATE ROLE harness_app   LOGIN PASSWORD 'harness_app_pwd'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='harness_admin') THEN CREATE ROLE harness_admin LOGIN SUPERUSER PASSWORD 'harness_admin_pwd'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='harness_zero')  THEN CREATE ROLE harness_zero  LOGIN REPLICATION SUPERUSER PASSWORD 'harness_zero_pwd'; END IF;
+  END $pg$;
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+  CREATE EXTENSION IF NOT EXISTS vector;
+`;
+
+async function provision(url: string): Promise<void> {
+  const client = postgres(url, { max: 1, onnotice: () => {} });
+  try {
+    await client.unsafe(BOOT_PREREQS_DDL);
+    const { applyPendingMigrations } = (await import(pathToFileURL(RUNNER).href)) as {
+      applyPendingMigrations: (o: { client: Sql; sqlDir: string; skipFile?: (f: string) => boolean }) => Promise<{ appliedCount: number; totalKnown: number }>;
+    };
+    const { appliedCount, totalKnown } = await applyPendingMigrations({ client, sqlDir: SQL_DIR, skipFile: SKIP });
+    if (appliedCount !== totalKnown) throw new Error(`fleet-membership provision: ${appliedCount}/${totalKnown}`);
+  } finally {
+    await client.end({ timeout: 5 });
+  }
+}
 
 describe('fleet_membership_events: append-only canonical membership fact (WI-1345)', () => {
-  let db: PostgresJsDatabase;
-  let sql: postgres.Sql;
+  let db: MigratedTestDb;
+  let sql: Sql;
 
   beforeAll(async () => {
-    const connStr = getHarnessAdminUrl();
-    sql = postgres(connStr);
-    // Create db connection for queries (using drizzle would be fine too)
-  });
+    db = await createFreshTestDb({ prefix: 'fmae', provision });
+    sql = postgres(db.url, { max: 1, onnotice: () => {} });
+  }, 240_000);
 
   afterAll(async () => {
-    await sql.end();
+    await sql?.end({ timeout: 5 });
+    await db?.drop().catch(() => {});
   });
 
   describe('(a) membership survives agent death', () => {
@@ -159,11 +207,12 @@ describe('fleet_membership_events: append-only canonical membership fact (WI-134
       const agentId = 'test-agent-' + Date.now();
       const fleetSlug = 'test-fleet-' + Date.now();
 
-      // Create a work item claim
+      // Create a work item claim ('WI-' + random()::text was invalid SQL — pg concat is ||)
+      const wiId = 'WI-test-' + Date.now();
       await sql`
         INSERT INTO harness_shared.work_items
-          (workspace_id, feature_id, harness_slug, title, status, taken_by, taken_at)
-        VALUES (${workspaceId}, 'WI-' + random()::text, 'test-harness', 'test', 'todo', ${agentId}, now())
+          (workspace_id, feature_id, harness_slug, title, status, item_kind, origin, taken_by, taken_at)
+        VALUES (${workspaceId}, ${wiId}, 'test-harness', 'test', 'todo', 'feature', 'local', ${agentId}, now())
       `;
 
       // Ensure a presence row for the agent

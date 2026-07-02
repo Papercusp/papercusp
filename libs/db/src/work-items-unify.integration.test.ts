@@ -22,13 +22,16 @@ const RUNNER = join(here, '..', '..', '..', 'packages', 'embedded-postgres-serve
 const MIG_374 = readFileSync(join(SQL_DIR, '374-work-items-unify-base-table.sql'), 'utf8')
   .split('\n').filter((l) => !/^\s*\\/.test(l)).join('\n'); // strip psql \set lines
 
-// Provision 000–373 only (skip 374), so we can seed the OLD tables then apply the
-// cutover and exercise the backfill. Mirrors the runner's default skips + adds 374.
+// Provision 000–373 only, so we can seed the OLD tables then apply the cutover and
+// exercise the backfill. Everything ≥374 must be skipped, not just 374 itself: later
+// migrations (375 capture triggers, 452, …) assume work_items is already the
+// post-cutover base table and fail with `"work_items" is a view` on this rig.
+const MIG_NUM = (f: string) => Number(/^(\d+)-/.exec(f)?.[1] ?? NaN);
 const SKIP_374 = (f: string) =>
   f.includes('per-harness-template') ||
   f === '040-plugin-configs-backfill.sql' ||
   f === '__seed_restored__.marker' ||
-  f.startsWith('374-work-items-unify');
+  MIG_NUM(f) >= 374;
 
 const BOOT_PREREQS_DDL = `
   DO $pg$ BEGIN
