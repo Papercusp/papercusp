@@ -2985,10 +2985,16 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
 	retractedAt: timestamp("retracted_at", { withTimezone: true, mode: 'string' }),
 	shareable: boolean().default(false).notNull(),
+	harnessSlug: text("harness_slug"),
+	authorPubkey: text("author_pubkey"),
+	origin: text().default('local').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	sourceHive: text("source_hive"),
 }, (table) => [
-	index("agent_facts_fold").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("timestamptz_ops"), table.scopeRef.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("text_ops")).where(sql`(retracted_at IS NULL)`),
-	uniqueIndex("agent_facts_identity").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`),
-	index("agent_facts_shareable").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.scope.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("text_ops")).where(sql`((shareable = true) AND (retracted_at IS NULL))`),
+	index("agent_facts_fold").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("text_ops")).where(sql`(retracted_at IS NULL)`),
+	uniqueIndex("agent_facts_identity").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`COALESCE(source_hive, ''::text)`),
+	index("agent_facts_shareable").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.scope.asc().nullsLast().op("timestamptz_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((shareable = true) AND (retracted_at IS NULL))`),
 	check("agent_facts_scope_check", sql`scope = ANY (ARRAY['workspace'::text, 'role'::text, 'owner'::text, 'harness'::text, 'work_item'::text])`),
 	check("agent_facts_body_check", sql`char_length(body) <= 500`),
 	check("agent_facts_check", sql`(scope = 'workspace'::text) OR (scope_ref IS NOT NULL)`),
@@ -3491,6 +3497,7 @@ export const hlcClockInHarnessShared = harnessShared.table("hlc_clock", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	lastMs: bigint("last_ms", { mode: "number" }).default(0).notNull(),
 	lastCount: integer("last_count").default(0).notNull(),
+	nodeId: text("node_id"),
 }, (table) => [
 	check("hlc_clock_singleton", sql`id = 1`),
 	primaryKey({ columns: [table.id], name: "hlc_clock_pkey"}),
