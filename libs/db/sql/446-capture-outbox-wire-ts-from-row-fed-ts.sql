@@ -32,15 +32,21 @@
 --     state; the OLD row's fed_ts would under-stamp it — same rationale as the
 --     fresh hlc_now() for del op_hlc).
 --
+-- TWO capture functions carry the bug — both get the identical fix:
+--   • harness_shared.capture_substrate_outbox()   (generic; live def = mig 359) —
+--     plans, plan-parts, coord_*, hive_*, plan_item_assignments, bee_claim_specs.
+--   • harness_shared.capture_work_items_outbox()  (work-items CDC; live def = mig
+--     423) — the features + engineer-issues family, i.e. the EXACT path the
+--     concurrent_lww scenario exercises (harness_features_consolidated's triggers
+--     bind THIS function, not the generic one — mig 375).
+--
 -- No repair pass: pre-446 receiver rows hold the old wire ts; with fed_hlc present
 -- the LWW guard orders by HLC, so a divergent fed_ts is bookkeeping-only and heals
 -- on the row's next write.
 --
--- Idempotent (CREATE OR REPLACE). Composes onto 359 (byte-identical except the ts
--- stamp). Runs as harness_admin.
-
-\set ON_ERROR_STOP on
-BEGIN;
+-- Idempotent (CREATE OR REPLACE; trigger attachments unchanged — they bind by
+-- function name). The runner provides the transaction — NO BEGIN/COMMIT here
+-- (lint:migrations).
 
 CREATE OR REPLACE FUNCTION harness_shared.capture_substrate_outbox()
   RETURNS trigger
@@ -117,4 +123,113 @@ AS $function$
     END;
     $function$;
 
-COMMIT;
+-- ── capture_work_items_outbox — byte-identical to mig 423 except the wire ts gets
+-- the same one-clock treatment as op_hlc (see header). This is the capture the
+-- features/issues family actually rides (mig 375 bound harness_features_consolidated's
+-- triggers to it), so it is the function behind the live concurrent_lww signature.
+CREATE OR REPLACE FUNCTION harness_shared.capture_work_items_outbox() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      v_op     TEXT;
+      v_rec    RECORD;
+      v_ws     TEXT;
+      v_slug   TEXT;
+      v_scope  TEXT;
+      v_tbl    TEXT;
+      v_key    TEXT;
+      v_row    JSONB;
+      v_cnt    INT;
+      v_op_hlc TEXT;
+      v_ts     BIGINT;
+    BEGIN
+      IF TG_OP = 'DELETE' THEN v_op := 'del'; v_rec := OLD; ELSE v_op := 'put'; v_rec := NEW; END IF;
+
+      -- Echo-loop guard: skip remote-origin writes (the projections' own applies).
+      IF COALESCE(v_rec.origin, 'local') <> 'local' THEN RETURN v_rec; END IF;
+
+      v_ws  := COALESCE(v_rec.workspace_id, '');
+      v_key := v_rec.feature_id;
+
+      IF v_rec.item_kind IN ('bug', 'change', 'task') THEN
+        -- ── ISSUE family (mig 382). ─────────────────────────────────────────────────
+        -- SU cross-workspace meta + unscoped rows have no single Hive to ride → local.
+        IF v_ws = '' OR v_ws = '*' THEN RETURN v_rec; END IF;
+        -- scope derived PURELY from harness_slug (D-003): operator:<ws> => operator;
+        -- harness slug otherwise.
+        v_scope := CASE WHEN v_rec.harness_slug LIKE 'operator:%' THEN 'operator'
+                        ELSE 'harness:' || v_rec.harness_slug END;
+        IF v_scope LIKE 'harness:%' THEN
+          v_slug := substr(v_scope, 9);
+        ELSIF v_scope = 'operator' THEN
+          -- Operator/Queen shared backlog rides the workspace's single Hive home.
+          -- 0 or >1 Hive homes → ambiguous → stay local (multi-Hive pointer is a follow).
+          SELECT count(*)::int, min(home_slug) INTO v_cnt, v_slug
+            FROM harness_shared.hives WHERE workspace_id = v_ws;
+          IF v_cnt <> 1 THEN RETURN v_rec; END IF;
+        ELSE
+          RETURN v_rec;  -- unknown scope shape → local
+        END IF;
+        IF v_slug IS NULL OR v_slug = '' THEN RETURN v_rec; END IF;
+
+        v_tbl := 'engineer_issues';
+        v_row := jsonb_strip_nulls(jsonb_build_object(
+          'workspace_id',      v_ws,
+          'issue_id',          v_rec.feature_id,
+          'scope',             v_scope,
+          'title',             v_rec.title,
+          'body',              COALESCE(v_rec.summary, ''),
+          'severity',          COALESCE(v_rec.payload->'_ei'->>'severity', 'minor'),
+          'source',            COALESCE(v_rec.payload->'_ei'->>'source', 'engineer'),
+          'state',             v_rec.status,
+          'assignee',          v_rec.taken_by,
+          'assigned_by',       v_rec.payload->'_ei'->>'assigned_by',
+          'assigned_at',       v_rec.taken_at,
+          'found_during',      v_rec.payload->'_ei'->>'found_during',
+          'linked_feature_id', v_rec.payload->'_ei'->>'linked_feature_id',
+          'created_by',        v_rec.payload->'_ei'->>'created_by',
+          'kind',              v_rec.item_kind,
+          'payload',           (v_rec.payload - '_ei'),
+          'origin',            v_rec.origin,
+          'author_pubkey',     v_rec.author_pubkey,
+          'fed_ts',            v_rec.fed_ts,
+          'fed_hlc',           v_rec.fed_hlc,
+          'signal_origin',     COALESCE(v_rec.payload->'_ei'->>'signal_origin', 'local'),
+          'harness_slug',      v_slug));
+      ELSE
+        -- ── FEATURE family: original table_name + the (unchanged) hfc row shape. ──────
+        v_tbl  := 'harness_features_consolidated';
+        v_slug := v_rec.harness_slug;
+        v_row  := to_jsonb(v_rec);
+      END IF;
+
+      -- D-001 (EI-79): the op's HLC ordering key, threaded onto the wire op by the drain
+      -- so the remote peer materialises the SAME fed_hlc the author's local row carries
+      -- (identical ordering key on BOTH peers → convergence). put → the row's fed_hlc
+      -- (the mig-314 BEFORE-stamp value); del → a fresh hlc_now() (a del is a new event
+      -- causally-after the row's last state; the OLD row's fed_hlc would under-stamp it).
+      --
+      -- mig 446: the wire ts gets the SAME one-clock treatment — a stamp-regime put
+      -- (row carries fed_hlc ⇒ the BEFORE trigger stamped fed_ts atomically with it)
+      -- threads the ROW's fed_ts so author + receivers persist the SAME fed_ts; now()
+      -- here is the txn-START clock and permanently diverges from the row's
+      -- clock_timestamp() stamp. Dels and unstamped rows keep now() (unchanged).
+      IF v_op = 'del' THEN
+        v_op_hlc := harness_shared.hlc_now();
+        v_ts     := (extract(epoch from now()) * 1000)::bigint;
+      ELSE
+        v_op_hlc := v_rec.fed_hlc;
+        v_ts     := CASE WHEN v_rec.fed_hlc IS NOT NULL
+                         THEN COALESCE(v_rec.fed_ts, (extract(epoch from now()) * 1000)::bigint)
+                         ELSE (extract(epoch from now()) * 1000)::bigint
+                    END;
+      END IF;
+
+      INSERT INTO harness_shared.substrate_outbox
+        (workspace_id, harness_slug, table_name, op, key, row, ts, op_hlc)
+      VALUES
+        (v_ws, v_slug, v_tbl, v_op, v_key, v_row, v_ts, v_op_hlc);
+
+      PERFORM pg_notify('substrate_outbox', v_ws || '::' || COALESCE(v_slug, ''));
+      RETURN v_rec;
+    END;
+    $$;
