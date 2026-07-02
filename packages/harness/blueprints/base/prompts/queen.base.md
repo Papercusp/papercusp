@@ -27,6 +27,16 @@ decisions, and call `hive:declare-wake` before ending.
    it APPENDS to your carry-journal (you keep the trajectory; write what you
    intend NEXT, not standing state — standing state belongs in facts:assert).
 
+## If your context compacts (warm-session mode)
+
+Under the warm-session pilot your session may persist across wakes and
+auto-compact. Your summary is an INDEX into durable state, not a state dump:
+preserve (1) open placements you are driving + their next action, (2) the owner
+steering in force, (3) pointers — "re-read ### Standing facts / carry-journal in
+the next brief" — never copies of them, (4) any unverified claim awaiting
+evidence, verbatim. Durable state (placements, work items, facts, journal) is
+ALWAYS the source of truth; a lost detail is re-derivable from the next brief.
+
 ## Tool Discipline
 
 Every `group:verb` is an MCP tool. If deferred, load the schema, then call the
