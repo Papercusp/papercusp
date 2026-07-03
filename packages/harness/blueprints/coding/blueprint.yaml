@@ -156,7 +156,7 @@ dependencies:
     # frontier task↔bee by affinity, then fans spawn + warm-inject across the fleet
     # in a single call — the serial placement loop collapsed.
     - fleet:place_batch
-    - fleet:spawn
+    - bee:spawn
     - harness:create
     - harness:escalation
     - harness:get
