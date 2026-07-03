@@ -3788,6 +3788,18 @@ export const trustedAuthorsInHarnessShared = harnessShared.table("trusted_author
 	pgPolicy("trusted_authors_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const p2PRefusedOpCountersInHarnessShared = harnessShared.table("p2p_refused_op_counters", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	reason: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	count: bigint({ mode: "number" }).default(0).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.reason], name: "p2p_refused_op_counters_pkey"}),
+	check("p2p_refused_op_counters_nonneg", sql`count >= 0`),
+]);
+
 export const harnessGeneratorItemsInHarnessShared = harnessShared.table("harness_generator_items", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -6029,6 +6041,44 @@ export const p2PPeerGrantsInHarnessShared = harnessShared.table("p2p_peer_grants
 	check("p2p_peer_grants_status", sql`status = ANY (ARRAY['active'::text, 'revoked'::text])`),
 	check("p2p_peer_grants_epoch_nonneg", sql`grantor_epoch >= 0`),
 	check("p2p_peer_grants_wake_cap_pos", sql`(wake_rate_cap_per_hour IS NULL) OR (wake_rate_cap_per_hour > 0)`),
+]);
+
+export const p2PReceiptsInHarnessShared = harnessShared.table("p2p_receipts", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	receiptId: text("receipt_id").notNull(),
+	kind: text().notNull(),
+	offerId: text("offer_id"),
+	action: text().notNull(),
+	refusalCode: text("refusal_code"),
+	missingCapability: text("missing_capability"),
+	budgetAxis: text("budget_axis"),
+	detail: text().notNull(),
+	requesterKind: text("requester_kind"),
+	requesterRef: text("requester_ref"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	requesterGithubUserId: bigint("requester_github_user_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	responderGithubUserId: bigint("responder_github_user_id", { mode: "number" }).notNull(),
+	responderDevicePubkey: text("responder_device_pubkey"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	receiptTs: bigint("receipt_ts", { mode: "number" }).notNull(),
+	origin: text().default('local').notNull(),
+	authorPubkey: text("author_pubkey"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	fedHlc: text("fed_hlc"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("p2p_receipts_offer_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.offerId.asc().nullsLast().op("int8_ops"), table.receiptTs.asc().nullsLast().op("text_ops")).where(sql`(offer_id IS NOT NULL)`),
+	index("p2p_receipts_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.receiptTs.asc().nullsLast().op("int8_ops")),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.receiptId], name: "p2p_receipts_pkey"}),
+	check("p2p_receipts_ws_nonempty", sql`workspace_id <> ''::text`),
+	check("p2p_receipts_slug_nonempty", sql`harness_slug <> ''::text`),
+	check("p2p_receipts_id_nonempty", sql`receipt_id <> ''::text`),
+	check("p2p_receipts_kind", sql`kind = ANY (ARRAY['refusal'::text, 'excused-breach'::text])`),
+	check("p2p_receipts_action_nonempty", sql`action <> ''::text`),
+	check("p2p_receipts_responder_pos", sql`responder_github_user_id > 0`),
 ]);
 
 export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
