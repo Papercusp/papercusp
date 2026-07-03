@@ -540,6 +540,19 @@ export const FLEET_ALLOWED_TOOLS: readonly string[] = [
 
 export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'accounts:status',
+  // code-run-self-state-adoption-2026-07-03 P-001: the BATCHING surface. The Queen is the
+  // per-wake fan-out heavyweight (survey + assignments + status every cycle) yet code:run was
+  // absent from her kit — the audit found 0 fleet adoption because the tool was unreachable,
+  // while the inline nudge kept advising it. recipes:candidates backs her recipe-graduation
+  // duty (code-recipes-2026-06-21). tools:find/invoke = the reachability hatch the CORE spine
+  // already carries (a kit omission must degrade to discovery, not a dead end).
+  'code:run',
+  'code:tools',
+  'recipes:search',
+  'recipes:run',
+  'recipes:candidates',
+  'tools:find',
+  'tools:invoke',
   // capability:* — gated write/exec/fetch/read surface (parity with the bee kit; the queen
   // ∈ FLEET_CAPABILITY_ROLES, so under the B-18 cutover its natives are stripped too). The
   // capability ENVELOPE remains the real per-role boundary. Pinned by cutover-role-parity.test.ts.
@@ -637,6 +650,17 @@ export const BEE_MCP_TOOL_NAMES: readonly string[] = [
   'capability:git',
   'capability:read',
   'capability:write',
+  // code-run-self-state-adoption-2026-07-03 P-001: the BATCHING surface. Bees average ~19 mcp
+  // calls/spawn and ~98% of bee spawns have a batchable shape, yet code:run was absent from
+  // this kit (and from BEE_ALLOWED_TOOLS, which derives from it) — so fleet adoption was
+  // structurally 0 while the inline nudge kept firing. tools:find/invoke = the reachability
+  // hatch so future kit omissions degrade to discovery instead of a dead end.
+  'code:run',
+  'code:tools',
+  'recipes:search',
+  'recipes:run',
+  'tools:find',
+  'tools:invoke',
   'coord:ask',
   'coord:glance',
   'coord:inbox',
@@ -661,6 +685,11 @@ export const BEE_MCP_TOOL_NAMES: readonly string[] = [
   'plans:search',
   'scheduler:running',
   'work_items:claim',
+  // code-run-self-state-adoption-2026-07-03 P-001: the bee persona + the carry-note substrate
+  // (su-cold-auto-mode D-004, mig 472) mandate work_items:checkpoint as the bee's "note to my
+  // next self", and bees were already calling it 28×/14d via non-seeded paths — but it was
+  // absent from this kit, so seeded/allowlisted bees could not comply.
+  'work_items:checkpoint',
   'work_items:comment',
   'work_items:get',
   'work_items:list',
@@ -780,6 +809,20 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'docs:search',
   'memory:search',
   'memory:remember',
+  // Batching + reuse (code-run-self-state-adoption-2026-07-03 P-002) — the token-frugality
+  // lever every prompt base nudges toward. It was absent from the spine, so even su sessions
+  // had to detour through tools:invoke, and the prose nudge's "when code:run is in your
+  // toolset" self-gate read a trimmed seed as "not in my toolset" and switched itself off.
+  'code:run',
+  'recipes:search',
+  'recipes:run',
+  // Agent self-state (same plan, P-002): the standing-facts ledger (upsert-by-key, scoped,
+  // TTL'd, folded into orient) + the carry-note checkpoints a cold wake reads. Prompt-
+  // referenced for fleet roles; in the spine so every seeded client can actually comply.
+  'facts:assert',
+  'facts:list',
+  'work_items:checkpoint',
+  'loop:checkpoint',
   // Session hygiene — EI-6770: without this in the spine, an agent nearing its
   // compaction limit has no way to compact cleanly and self-halts instead
   // ("no compaction tool available") mid-task, losing in-flight work.

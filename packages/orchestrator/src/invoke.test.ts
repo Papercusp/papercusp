@@ -1137,7 +1137,23 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
     assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core`);
   }
   // Stays small enough to highlight/pre-load directly (vs the full ~551 surface).
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 25, 'core stays small');
+  // Raised 25 → 32 (code-run-self-state-adoption-2026-07-03 P-002): +3 batching/reuse
+  // (code:run, recipes:search/run) + +4 self-state (facts:assert/list,
+  // work_items:checkpoint, loop:checkpoint). The guard now pins "no unreviewed creep
+  // past the deliberate 31", not the old 24.
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 32, 'core stays small');
+  for (const required of ['code:run', 'recipes:search', 'recipes:run', 'facts:assert', 'work_items:checkpoint']) {
+    assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core (adoption unlock P-002)`);
+  }
+  // The fleet kits carry the batching surface too (P-001) — the 2026-07-03 audit's root
+  // finding was code:run absent from the BEE/QUEEN kits while the inline nudge advised it.
+  for (const kit of [BEE_MCP_TOOL_NAMES, QUEEN_MCP_TOOL_NAMES]) {
+    for (const t of ['code:run', 'code:tools', 'recipes:search', 'recipes:run', 'tools:find', 'tools:invoke']) {
+      assert.ok(kit.includes(t), `${t} belongs in the bee+queen kits (adoption unlock P-001)`);
+    }
+  }
+  assert.ok(QUEEN_MCP_TOOL_NAMES.includes('recipes:candidates'), 'queen kit carries her recipe-graduation read');
+  assert.ok(BEE_MCP_TOOL_NAMES.includes('work_items:checkpoint'), 'bee kit carries the carry-note checkpoint');
   // Allow-list maps colon→underscore like the other roles.
   assert.deepEqual(CORE_ALLOWED_TOOLS, [
     ...CORE_MCP_TOOL_NAMES.map((n) => `mcp__papercusp__${n.replace(':', '_')}`),
