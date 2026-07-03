@@ -211,6 +211,20 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   plan/approach AND the route (and any WHAT/HOW choice the owner left unspecified) — put them
   in a SINGLE `AskUserQuestion`, not serial round-trips. The gate is a checkpoint, not an
   interrogation.
+- **Offering a fleet route (C/D)? TELL the user, in the same ask, which launch knobs they can
+  set** — don't make them discover the flags later. Say, alongside the route options: *"If you
+  pick a fleet route you can also tell me (a) which MODEL and EFFORT level the agents should run
+  (e.g. `sonnet:high`, `gpt-5.5:high` — effort tunes reasoning depth vs cost), and (b) which
+  ACCOUNT to route them through: name a specific account to PIN the fleet to it, say `default`
+  for the default system account, or say `auto` for the auto inference gateway."* Include this
+  brief explainer so a NEW user understands the choice: *"Background: every agent's LLM calls
+  bill to a credentialed account, and this workspace has a pool of them behind an inference
+  gateway. `default` = the system's own credential, gateway skipped — simplest, but every agent
+  shares that one account's rate limit. `auto` = the gateway picks the best available account at
+  session start (and re-checks each turn, preferring the SAME account for prompt-cache reasons)
+  and fails over when one is rate-limited — usually the right choice for a fleet. Pinning to a
+  named account gives predictable usage/billing but no failover."* If the user doesn't choose,
+  apply the defaults and announce them at spawn time (see the spawn-announcement rule below).
 - **Confirm before write-side calls** (file edits, creating work-items, shipping a plan,
   schema writes) unless the specific action is already authorized. **Reversibility lowers the
   bar for the irreversible-action gate ONLY — it does NOT waive plan-review or
