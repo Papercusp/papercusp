@@ -5070,27 +5070,6 @@ export const fleetEkgSessionsInHarnessShared = harnessShared.table("fleet_ekg_se
 	check("fleet_ekg_sessions_event_count_check", sql`event_count > 0`),
 ]);
 
-export const sharedSessionPresenceInHarnessShared = harnessShared.table("shared_session_presence", {
-	workspaceId: text("workspace_id").default('').notNull(),
-	hiveSlug: text("hive_slug"),
-	harnessSlug: text("harness_slug").notNull(),
-	ownerId: text("owner_id").notNull(),
-	kind: text().default('su').notNull(),
-	intent: text(),
-	planSlug: text("plan_slug"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	githubUserId: bigint("github_user_id", { mode: "number" }).notNull(),
-	machineLabel: text("machine_label").notNull(),
-	devicePubkey: text("device_pubkey").notNull(),
-	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	schemaVersion: bigint("schema_version", { mode: "number" }).default(1).notNull(),
-}, (table) => [
-	index("shared_session_presence_device_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.devicePubkey.asc().nullsLast().op("text_ops")),
-	index("shared_session_presence_hive_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.hiveSlug.asc().nullsLast().op("text_ops"), table.lastSeenAt.desc().nullsFirst().op("text_ops")).where(sql`(hive_slug IS NOT NULL)`),
-	primaryKey({ columns: [table.workspaceId, table.ownerId, table.machineLabel], name: "shared_session_presence_pkey"}),
-]);
-
 export const beeClaimSpecsInHarnessShared = harnessShared.table("bee_claim_specs", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	beeId: text("bee_id").notNull(),
@@ -5355,6 +5334,30 @@ export const experimentRunsInHarnessShared = harnessShared.table("experiment_run
 	check("experiment_runs_tier_check", sql`tier = ANY (ARRAY['offline'::text, 'shadow'::text, 'live'::text])`),
 	check("experiment_runs_decision_check", sql`decision = ANY (ARRAY['proposed'::text, 'applied'::text, 'rejected'::text])`),
 	check("experiment_runs_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
+]);
+
+export const sharedSessionPresenceInHarnessShared = harnessShared.table("shared_session_presence", {
+	workspaceId: text("workspace_id").default('').notNull(),
+	hiveSlug: text("hive_slug"),
+	harnessSlug: text("harness_slug").notNull(),
+	ownerId: text("owner_id").notNull(),
+	kind: text().default('su').notNull(),
+	intent: text(),
+	planSlug: text("plan_slug"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	githubUserId: bigint("github_user_id", { mode: "number" }).notNull(),
+	machineLabel: text("machine_label").notNull(),
+	devicePubkey: text("device_pubkey").notNull(),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	schemaVersion: bigint("schema_version", { mode: "number" }).default(1).notNull(),
+	fleetSlug: text("fleet_slug"),
+	fleetRole: text("fleet_role"),
+}, (table) => [
+	index("shared_session_presence_device_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.devicePubkey.asc().nullsLast().op("text_ops")),
+	index("shared_session_presence_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.fleetSlug.asc().nullsLast().op("timestamptz_ops"), table.lastSeenAt.desc().nullsFirst().op("text_ops")).where(sql`(fleet_slug IS NOT NULL)`),
+	index("shared_session_presence_hive_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.hiveSlug.asc().nullsLast().op("text_ops"), table.lastSeenAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(hive_slug IS NOT NULL)`),
+	primaryKey({ columns: [table.workspaceId, table.ownerId, table.machineLabel], name: "shared_session_presence_pkey"}),
 ]);
 
 export const harnessProposalsSharedInHarnessShared = harnessShared.table("harness_proposals_shared", {
