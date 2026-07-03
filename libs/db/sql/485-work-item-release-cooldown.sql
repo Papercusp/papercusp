@@ -8,25 +8,32 @@
 -- right back to the top for the releasing bee) — the observed claim/release
 -- ping-pong that burned member turns during the 2026-07-03 backlog-clearance run.
 --
--- The release lease row (work_item_claims) is DELETEd on release, so no durable
+-- The claim lease row (work_item_claims) is DELETEd on release, so no durable
 -- "recently released by X" record existed. These two columns capture release
 -- provenance ON the row itself, in the same UPDATE that frees it
 -- (releaseWorkItem: `last_released_by = taken_by` reads the OLD row value); the
 -- shared claim floors (claimFloorsWhereSql) then exclude the row FOR THE RELEASING
--- BEE ONLY for a short cooldown window — every other bee can claim it instantly.
+-- BEE ONLY for a short cooldown window (PAPERCUSP_RELEASE_COOLDOWN_SEC, default
+-- 300s) — every other bee can claim it instantly.
 --
--- Idempotent; composes onto 000-baseline.sql; applies on :5432.
+-- Base table + view re-expansion mirror mig 432 (work_items is the true base;
+-- harness_features_consolidated is its feature-family SELECT * view).
+--
+-- The migration runner wraps each file in its own txn — NO top-level
+-- BEGIN;/COMMIT; (lint:migrations, files >= 215).
 
-\set ON_ERROR_STOP on
-BEGIN;
-
-ALTER TABLE harness_shared.harness_features_consolidated
+ALTER TABLE harness_shared.work_items
   ADD COLUMN IF NOT EXISTS last_released_by text,
   ADD COLUMN IF NOT EXISTS last_released_at timestamptz;
 
-COMMENT ON COLUMN harness_shared.harness_features_consolidated.last_released_by IS
+COMMENT ON COLUMN harness_shared.work_items.last_released_by IS
   'ownerId of the agent whose voluntary release last freed this row (release-cooldown floor, mig 485 / EI-6956). NULL until first released.';
-COMMENT ON COLUMN harness_shared.harness_features_consolidated.last_released_at IS
+COMMENT ON COLUMN harness_shared.work_items.last_released_at IS
   'when that voluntary release happened — the claim floors exclude the row for last_released_by only, for a short cooldown window.';
 
-COMMIT;
+-- Re-expand `SELECT *` to pick up the two new trailing columns (additive; the
+-- view's existing column list/order for everything else is preserved).
+CREATE OR REPLACE VIEW harness_shared.harness_features_consolidated AS
+  SELECT * FROM harness_shared.work_items
+  WHERE item_kind NOT IN ('bug', 'change', 'task')
+  WITH CASCADED CHECK OPTION;
