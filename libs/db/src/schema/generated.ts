@@ -3029,6 +3029,7 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	index("agent_facts_fold").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("text_ops")).where(sql`(retracted_at IS NULL)`),
 	uniqueIndex("agent_facts_identity").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`COALESCE(source_hive, ''::text)`),
 	index("agent_facts_shareable").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.scope.asc().nullsLast().op("timestamptz_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((shareable = true) AND (retracted_at IS NULL))`),
+	pgPolicy("agent_facts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("agent_facts_scope_check", sql`scope = ANY (ARRAY['workspace'::text, 'role'::text, 'owner'::text, 'harness'::text, 'work_item'::text])`),
 	check("agent_facts_body_check", sql`char_length(body) <= 500`),
 	check("agent_facts_check", sql`(scope = 'workspace'::text) OR (scope_ref IS NOT NULL)`),
@@ -5154,6 +5155,7 @@ export const beeClaimSpecsInHarnessShared = harnessShared.table("bee_claim_specs
 	fedHlc: text("fed_hlc"),
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.beeId], name: "bee_claim_specs_pkey"}),
+	pgPolicy("bee_claim_specs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("bee_claim_specs_bee_nonempty", sql`bee_id <> ''::text`),
 	check("bee_claim_specs_ws_nonempty", sql`workspace_id <> ''::text`),
 ]);
@@ -5901,6 +5903,7 @@ export const gateVerdictsInHarnessShared = harnessShared.table("gate_verdicts", 
 	index("gate_verdicts_shard_inputs_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.repoKey.asc().nullsLast().op("text_ops"), table.shardId.asc().nullsLast().op("text_ops"), table.inputsHash.asc().nullsLast().op("text_ops")),
 	index("gate_verdicts_staging_sha_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.repoKey.asc().nullsLast().op("text_ops"), table.stagingSha.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.workspaceId, table.verdictId], name: "gate_verdicts_pkey"}),
+	pgPolicy("gate_verdicts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("gate_verdicts_verdict_check", sql`verdict = ANY (ARRAY['pass'::text, 'fail'::text])`),
 ]);
 
@@ -6195,6 +6198,7 @@ export const p2PPeerGrantsInHarnessShared = harnessShared.table("p2p_peer_grants
 }, (table) => [
 	index("p2p_peer_grants_grantee_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.granteeKind.asc().nullsLast().op("text_ops"), table.granteeRef.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.grantorGithubUserId, table.granteeKind, table.granteeRef], name: "p2p_peer_grants_pkey"}),
+	pgPolicy("p2p_peer_grants_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("p2p_peer_grants_ws_nonempty", sql`workspace_id <> ''::text`),
 	check("p2p_peer_grants_slug_nonempty", sql`harness_slug <> ''::text`),
 	check("p2p_peer_grants_grantor_pos", sql`grantor_github_user_id > 0`),
@@ -6235,6 +6239,7 @@ export const p2PReceiptsInHarnessShared = harnessShared.table("p2p_receipts", {
 	index("p2p_receipts_offer_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.offerId.asc().nullsLast().op("int8_ops"), table.receiptTs.asc().nullsLast().op("text_ops")).where(sql`(offer_id IS NOT NULL)`),
 	index("p2p_receipts_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.receiptTs.asc().nullsLast().op("int8_ops")),
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.receiptId], name: "p2p_receipts_pkey"}),
+	pgPolicy("p2p_receipts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("p2p_receipts_ws_nonempty", sql`workspace_id <> ''::text`),
 	check("p2p_receipts_slug_nonempty", sql`harness_slug <> ''::text`),
 	check("p2p_receipts_id_nonempty", sql`receipt_id <> ''::text`),
