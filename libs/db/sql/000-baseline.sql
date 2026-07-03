@@ -3072,6 +3072,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3081,6 +3082,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3090,6 +3092,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3099,6 +3102,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3108,6 +3112,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3117,6 +3122,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3126,6 +3132,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3135,6 +3142,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3144,6 +3152,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3153,6 +3162,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3162,6 +3172,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3171,6 +3182,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3180,6 +3192,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3189,6 +3202,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3198,6 +3212,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3207,6 +3222,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3216,6 +3232,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3225,6 +3242,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3234,6 +3252,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3243,6 +3262,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3252,6 +3272,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3261,6 +3282,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3270,6 +3292,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3279,6 +3302,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3288,6 +3312,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3297,6 +3322,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3306,6 +3332,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3315,6 +3342,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3324,6 +3352,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3333,6 +3362,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3342,6 +3372,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3351,6 +3382,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3360,6 +3392,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3369,6 +3402,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3378,6 +3412,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3387,6 +3422,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3396,6 +3432,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3405,6 +3442,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3414,6 +3452,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3423,6 +3462,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3432,6 +3472,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3441,6 +3482,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3450,6 +3492,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3459,6 +3502,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3468,6 +3512,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3477,6 +3522,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3486,6 +3532,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3495,6 +3542,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3504,6 +3552,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3513,6 +3562,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3522,6 +3572,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3531,6 +3582,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3540,6 +3592,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3549,6 +3602,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3558,6 +3612,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3567,6 +3622,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3576,6 +3632,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3585,6 +3642,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3594,6 +3652,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3603,6 +3662,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3612,6 +3672,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3621,6 +3682,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3630,6 +3692,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3639,6 +3702,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3648,6 +3712,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3657,6 +3722,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3666,6 +3732,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3675,6 +3742,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3684,6 +3752,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3693,6 +3762,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3702,6 +3772,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3711,6 +3782,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3720,6 +3792,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3729,6 +3802,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3738,6 +3812,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3747,6 +3822,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3756,6 +3832,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3765,6 +3842,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3774,6 +3852,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3783,6 +3862,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3792,6 +3872,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3801,6 +3882,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3810,6 +3892,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3819,6 +3902,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3828,6 +3912,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3837,6 +3922,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3846,6 +3932,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3855,6 +3942,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3864,6 +3952,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3873,6 +3962,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3882,6 +3972,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3891,6 +3982,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3900,6 +3992,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3909,6 +4002,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3918,6 +4012,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3927,6 +4022,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3936,6 +4032,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3945,6 +4042,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3954,6 +4052,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3963,6 +4062,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3972,6 +4072,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3981,6 +4082,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3990,6 +4092,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -3999,6 +4102,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4008,6 +4112,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4017,6 +4122,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4026,6 +4132,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4035,6 +4142,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4044,6 +4152,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4053,6 +4162,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4062,6 +4172,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4071,6 +4182,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4080,6 +4192,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4089,6 +4202,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4098,6 +4212,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4107,6 +4222,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4116,6 +4232,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4125,6 +4242,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4134,6 +4252,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4143,6 +4262,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4152,6 +4272,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4161,6 +4282,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4170,6 +4292,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4179,6 +4302,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4188,6 +4312,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4197,6 +4322,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4206,6 +4332,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4215,6 +4342,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4224,6 +4352,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4233,6 +4362,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4242,6 +4372,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4251,6 +4382,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4260,6 +4392,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4269,6 +4402,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4278,6 +4412,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4287,6 +4422,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4296,6 +4432,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4305,6 +4442,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4314,6 +4452,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4323,6 +4462,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4332,6 +4472,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4341,6 +4482,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4350,6 +4492,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4359,6 +4502,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4368,6 +4512,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4377,6 +4522,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4386,6 +4532,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4395,6 +4542,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4404,6 +4552,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4413,6 +4562,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4422,6 +4572,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4431,6 +4582,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4440,6 +4592,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4449,6 +4602,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4458,6 +4612,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4467,6 +4622,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4476,6 +4632,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4485,6 +4642,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4494,6 +4652,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4503,6 +4662,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4512,6 +4672,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4521,6 +4682,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4530,6 +4692,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4539,6 +4702,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4548,6 +4712,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4557,6 +4722,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4566,6 +4732,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4575,6 +4742,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4584,6 +4752,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4593,6 +4762,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4602,6 +4772,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4611,6 +4782,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4620,6 +4792,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4629,6 +4802,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4638,6 +4812,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4647,6 +4822,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4656,6 +4832,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4665,6 +4842,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4674,6 +4852,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4683,6 +4862,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4692,6 +4872,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4701,6 +4882,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4710,6 +4892,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4719,6 +4902,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4728,6 +4912,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4737,6 +4922,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4746,6 +4932,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4755,6 +4942,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4764,6 +4952,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4773,6 +4962,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4782,6 +4972,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4791,6 +4982,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4800,6 +4992,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4809,6 +5002,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4818,6 +5012,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4827,6 +5022,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -4836,6 +5032,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 CREATE INDEX IF NOT EXISTS adaptive_telemetry_harness_idx ON harness_shared.adaptive_telemetry USING btree (harness_slug, ts DESC);
@@ -5385,6 +5582,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5394,6 +5592,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5403,6 +5602,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5412,6 +5612,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5421,6 +5622,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5430,6 +5632,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5439,6 +5642,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5448,6 +5652,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5457,6 +5662,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5466,6 +5672,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5475,6 +5682,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5484,6 +5692,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5493,6 +5702,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5502,6 +5712,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
@@ -5511,6 +5722,7 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
   WHEN duplicate_table THEN NULL;
   WHEN invalid_table_definition THEN NULL;
+  WHEN wrong_object_type THEN NULL;
 END $baseline_guard$;
 
 ALTER TABLE harness_shared.adv_sessions ENABLE ROW LEVEL SECURITY;
