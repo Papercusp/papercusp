@@ -238,12 +238,6 @@ export const telemetryReportsArchiveInHarnessShared = harnessShared.table("telem
 	pgPolicy("telemetry_reports_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const schemaMigrationsInHarnessShared = harnessShared.table("schema_migrations", {
-	filename: text().primaryKey().notNull(),
-	appliedAt: timestamp("applied_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	sha256: text().notNull(),
-});
-
 export const scoutRoutedIdeasInHarnessShared = harnessShared.table("scout_routed_ideas", {
 	ideaId: text("idea_id").primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -265,16 +259,24 @@ export const scoutRoutedIdeasInHarnessShared = harnessShared.table("scout_routed
 	gradedAt: timestamp("graded_at", { withTimezone: true, mode: 'string' }),
 	sourceHive: text("source_hive"),
 	targetHive: text("target_hive"),
+	origin: text().default('scout').notNull(),
 }, (table) => [
 	index("scout_routed_ideas_routed_ref_idx").using("btree", table.routedRef.asc().nullsLast().op("text_ops")),
 	index("scout_routed_ideas_ws_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
 	index("scout_routed_ideas_ws_harness_lens_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.lens.asc().nullsLast().op("text_ops")),
+	index("scout_routed_ideas_ws_origin_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.origin.asc().nullsLast().op("text_ops")),
 	index("scout_routed_ideas_ws_source_hive_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sourceHive.asc().nullsLast().op("text_ops")),
 	pgPolicy("scout_routed_ideas_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("scout_routed_ideas_human_grade_check", sql`(human_grade >= 1) AND (human_grade <= 5)`),
 	primaryKey({ columns: [table.ideaId], name: "scout_routed_ideas_pkey"}),
 
 ]);
+
+export const schemaMigrationsInHarnessShared = harnessShared.table("schema_migrations", {
+	filename: text().primaryKey().notNull(),
+	appliedAt: timestamp("applied_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	sha256: text().notNull(),
+});
 
 export const routinesInHarnessShared = harnessShared.table("routines", {
 	id: text().primaryKey().notNull(),
@@ -3862,6 +3864,18 @@ export const harnessTextArtifactsInHarnessShared = harnessShared.table("harness_
 	index("hta_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.harnessSlug, table.relPath], name: "harness_text_artifacts_pkey"}),
 	pgPolicy("harness_text_artifacts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
+	workspaceId: text("workspace_id").notNull(),
+	scope: text().notNull(),
+	note: text(),
+	journal: jsonb().default([]).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.scope], name: "carry_notes_pkey"}),
+	pgPolicy("carry_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const workItemCheckpointsInHarnessShared = harnessShared.table("work_item_checkpoints", {

@@ -63,6 +63,15 @@ CREATE POLICY carry_notes_workspace_isolation ON harness_shared.carry_notes
 -- ── Data convergence: fold the two existing stores into carry_notes ───────────
 -- Idempotent (ON CONFLICT DO NOTHING): the migration runner records this once,
 -- but keep it safe to re-run against a partially-migrated DB.
+--
+-- EXPAND phase only (deploy hygiene): this migration is purely ADDITIVE — it
+-- CREATEs carry_notes and COPIES existing data in, but does NOT drop the legacy
+-- stores. The dev box shares one `:5432/papercusp` DB across the release (:3070,
+-- old code that still writes work_item_checkpoints) and staging (:3170) operators,
+-- so dropping the legacy table in the same migration that adds the new one would
+-- break the still-running old code the instant this applies. The CONTRACT phase —
+-- DROP work_item_checkpoints + stop reading the hive_wake carry keys — lands in a
+-- follow-up migration once the re-pointed code is deployed everywhere.
 
 -- (1) Bee checkpoints (mig 281) → scope 'workitem:<harness>:<work_item_id>'.
 --     note = the full checkpoint; journal = [] (the bee checkpoint is a pure note,
@@ -82,9 +91,6 @@ BEGIN
       c.updated_ts
     FROM harness_shared.work_item_checkpoints c
     ON CONFLICT (workspace_id, scope) DO NOTHING;
-
-    -- No back-compat shim (repo rule): the bee checkpoint store now IS carry_notes.
-    DROP TABLE harness_shared.work_item_checkpoints;
   END IF;
 END
 $fold_bee$;
