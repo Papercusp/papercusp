@@ -1940,7 +1940,8 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	index("tool_invocations_invoked_at_cov_idx").using("btree", table.invokedAt.desc().nullsFirst().op("timestamptz_ops"), table.toolName.asc().nullsLast().op("timestamptz_ops"), table.durationMs.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("timestamptz_ops")),
 	index("tool_invocations_parent_spawn_partial_idx").using("btree", table.parentSpawnId.asc().nullsLast().op("text_ops")).where(sql`((parent_spawn_id IS NOT NULL) AND (parent_spawn_id <> ''::text))`),
 	index("tool_invocations_quota_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.windowKey.asc().nullsLast().op("text_ops")).where(sql`(status = 'ok'::text)`),
-	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")),
+	index("tool_invocations_spawn_id_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.spawnId.asc().nullsLast().op("text_ops")),
+	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.harnessSlug.asc().nullsLast().op("timestamptz_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")),
 	pgPolicy("tool_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -2991,6 +2992,7 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	fedTs: bigint("fed_ts", { mode: "number" }),
 	sourceHive: text("source_hive"),
+	fedKey: text("fed_key").generatedAlwaysAs(sql`((((scope || '/'::text) || COALESCE(scope_ref, ''::text)) || '/'::text) || key)`),
 }, (table) => [
 	index("agent_facts_fold").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("text_ops")).where(sql`(retracted_at IS NULL)`),
 	uniqueIndex("agent_facts_identity").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`COALESCE(source_hive, ''::text)`),
@@ -3860,6 +3862,19 @@ export const workItemCheckpointsInHarnessShared = harnessShared.table("work_item
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.workItemId], name: "work_item_checkpoints_pkey"}),
 	pgPolicy("work_item_checkpoints_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const p2PGrantorEpochsInHarnessShared = harnessShared.table("p2p_grantor_epochs", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	grantorGithubUserId: bigint("grantor_github_user_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	highWaterEpoch: bigint("high_water_epoch", { mode: "number" }).default(0).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.grantorGithubUserId], name: "p2p_grantor_epochs_pkey"}),
+	check("p2p_grantor_epochs_nonneg", sql`high_water_epoch >= 0`),
 ]);
 
 export const systemPrincipalsInHarnessShared = harnessShared.table("system_principals", {
@@ -5025,30 +5040,6 @@ export const beeClaimSpecsInHarnessShared = harnessShared.table("bee_claim_specs
 	check("bee_claim_specs_ws_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
-export const gymQdArchiveInHarnessShared = harnessShared.table("gym_qd_archive", {
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	nicheKey: text("niche_key").notNull(),
-	candidateId: text("candidate_id").notNull(),
-	scope: text().notNull(),
-	domain: text().notNull(),
-	risk: text().notNull(),
-	fitness: doublePrecision().notNull(),
-	descriptor: jsonb().notNull(),
-	source: text().default('gym').notNull(),
-	rationale: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdAt: bigint("created_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
-}, (table) => [
-	index("gym_qd_archive_candidate_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.candidateId.asc().nullsLast().op("text_ops")),
-	index("gym_qd_archive_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.source.asc().nullsLast().op("text_ops")),
-	index("gym_qd_archive_ws_harness_fitness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fitness.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.nicheKey], name: "gym_qd_archive_pkey"}),
-	pgPolicy("gym_qd_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const crossHiveOutboxInHarnessShared = harnessShared.table("cross_hive_outbox", {
 	workspaceId: text("workspace_id").notNull(),
 	hiveSlug: text("hive_slug").notNull(),
@@ -5297,6 +5288,31 @@ export const experimentRunsInHarnessShared = harnessShared.table("experiment_run
 	check("experiment_runs_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
 ]);
 
+export const gymQdArchiveInHarnessShared = harnessShared.table("gym_qd_archive", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	nicheKey: text("niche_key").notNull(),
+	candidateId: text("candidate_id").notNull(),
+	scope: text().notNull(),
+	domain: text().notNull(),
+	risk: text().notNull(),
+	fitness: doublePrecision().notNull(),
+	descriptor: jsonb().notNull(),
+	source: text().default('gym').notNull(),
+	rationale: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+	federatable: boolean().default(false).notNull(),
+}, (table) => [
+	index("gym_qd_archive_candidate_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.candidateId.asc().nullsLast().op("text_ops")),
+	index("gym_qd_archive_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.source.asc().nullsLast().op("text_ops")),
+	index("gym_qd_archive_ws_harness_fitness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fitness.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.nicheKey], name: "gym_qd_archive_pkey"}),
+	pgPolicy("gym_qd_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const harnessProposalsSharedInHarnessShared = harnessShared.table("harness_proposals_shared", {
 	harnessSlug: text("harness_slug").notNull(),
 	proposalId: text("proposal_id").notNull(),
@@ -5494,6 +5510,33 @@ export const prReviewReportsInHarnessShared = harnessShared.table("pr_review_rep
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.prNumber, table.headSha], name: "pr_review_reports_pkey"}),
 	pgPolicy("pr_review_reports_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("pr_review_reports_recommendation_check", sql`recommendation = ANY (ARRAY['approve'::text, 'request_changes'::text, 'reject'::text])`),
+]);
+
+export const gymQdForeignElitesInHarnessShared = harnessShared.table("gym_qd_foreign_elites", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	nicheKey: text("niche_key").notNull(),
+	sourceHive: text("source_hive").notNull(),
+	candidateId: text("candidate_id").notNull(),
+	scope: text().notNull(),
+	domain: text().notNull(),
+	risk: text().notNull(),
+	fitness: doublePrecision().notNull(),
+	descriptor: jsonb().notNull(),
+	rationale: text(),
+	noveltyGift: boolean("novelty_gift").default(false).notNull(),
+	authorPubkey: text("author_pubkey"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+}, (table) => [
+	index("gym_qd_foreign_elites_by_source").using("btree", table.sourceHive.asc().nullsLast().op("text_ops")),
+	index("gym_qd_foreign_elites_fitness_idx").using("btree", table.workspaceId.asc().nullsLast().op("float8_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fitness.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.nicheKey, table.sourceHive], name: "gym_qd_foreign_elites_pkey"}),
+	pgPolicy("gym_qd_foreign_elites_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const workerChunkLoopOutcomesInHarnessShared = harnessShared.table("worker_chunk_loop_outcomes", {
@@ -5925,6 +5968,43 @@ export const transferLessonsInHarnessShared = harnessShared.table("transfer_less
 	check("transfer_lessons_tier_check", sql`tier = ANY (ARRAY['probationary'::text, 'validated'::text, 'retired'::text])`),
 	check("transfer_lessons_status_check", sql`status = ANY (ARRAY['candidate'::text, 'passed'::text, 'failed'::text, 'error'::text])`),
 	check("transfer_lessons_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
+]);
+
+export const p2PPeerGrantsInHarnessShared = harnessShared.table("p2p_peer_grants", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	grantorGithubUserId: bigint("grantor_github_user_id", { mode: "number" }).notNull(),
+	grantorLogin: text("grantor_login"),
+	granteeKind: text("grantee_kind").notNull(),
+	granteeRef: text("grantee_ref").notNull(),
+	capabilities: text().array().default([""]).notNull(),
+	preset: text(),
+	status: text().default('active').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	grantorEpoch: bigint("grantor_epoch", { mode: "number" }).default(0).notNull(),
+	wakeRateCapPerHour: integer("wake_rate_cap_per_hour"),
+	excludedDevicePubkeys: text("excluded_device_pubkeys").array().default([""]).notNull(),
+	note: text(),
+	grantFedKey: text("grant_fed_key").generatedAlwaysAs(sql`(((((grantor_github_user_id)::text || ':'::text) || grantee_kind) || ':'::text) || grantee_ref)`),
+	origin: text().default('local').notNull(),
+	authorPubkey: text("author_pubkey"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	fedHlc: text("fed_hlc"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("p2p_peer_grants_grantee_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.granteeKind.asc().nullsLast().op("text_ops"), table.granteeRef.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.grantorGithubUserId, table.granteeKind, table.granteeRef], name: "p2p_peer_grants_pkey"}),
+	check("p2p_peer_grants_ws_nonempty", sql`workspace_id <> ''::text`),
+	check("p2p_peer_grants_slug_nonempty", sql`harness_slug <> ''::text`),
+	check("p2p_peer_grants_grantor_pos", sql`grantor_github_user_id > 0`),
+	check("p2p_peer_grants_grantee_kind", sql`grantee_kind = ANY (ARRAY['fleet'::text, 'pool'::text])`),
+	check("p2p_peer_grants_grantee_nonempty", sql`grantee_ref <> ''::text`),
+	check("p2p_peer_grants_status", sql`status = ANY (ARRAY['active'::text, 'revoked'::text])`),
+	check("p2p_peer_grants_epoch_nonneg", sql`grantor_epoch >= 0`),
+	check("p2p_peer_grants_wake_cap_pos", sql`(wake_rate_cap_per_hour IS NULL) OR (wake_rate_cap_per_hour > 0)`),
 ]);
 
 export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
