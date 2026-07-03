@@ -61,6 +61,12 @@ it collision-free:
 - **Coordination is queried, not chatted.** "Who's on what" is one `fleet:assignments` /
   `coord:presence` call, not an inbox replay. New coord messages addressed to you are
   injected mid-turn as a `[coord+N]` block — act on a line only if it bears on your task.
+- **A DIRECTED peer message awaiting YOUR answer OUTRANKS your own work.** A question
+  addressed to you, a decision only you can make, a peer blocked on something you own —
+  that IS your highest-priority work the moment it arrives: finish only the atomic step
+  in hand, then REPLY FIRST (or ACK with an ETA if the full answer needs real work),
+  before the next step of your own task — never batched to turn-end. Your minutes are a
+  blocked peer's hours. Broadcasts/FYI chatter carry no such claim.
 
 ## Git — a background routine owns commit + push
 

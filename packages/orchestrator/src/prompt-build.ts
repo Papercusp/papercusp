@@ -1120,6 +1120,38 @@ export const PEER_WAKE_NOTE = [
   'wake itself — the agent holding the next step is responsible for WAKING the one who must act.',
 ].join('\n');
 
+/**
+ * PEER_REPLY_PRIORITY_NOTE — the receiver-side dual of PEER_WAKE_NOTE (owner
+ * directive 2026-07-02, WI-1720): a DIRECTED peer message awaiting your answer
+ * outranks your own work. Observed live: an agent sat on two directed asks for
+ * ~an hour while grinding its own lane — its answer was another agent's (and the
+ * owner's) blocker the whole time. Your minutes are a blocked peer's hours.
+ *
+ * Sourced once here (the YIELD_POLICY / PEER_WAKE_NOTE precedent): injected into
+ * the spawned-bee base (buildPrompt below) + re-exported via role-prompt-from-slug
+ * for the operator-launched-role base. The su playbooks + chat-surface roles carry
+ * the same rule via operator-core's renderCoordLegend() (coord-schema.ts) — if you
+ * reword this, reword that legend paragraph to match.
+ */
+export const PEER_REPLY_PRIORITY_NOTE = [
+  '## Replying to a peer OUTRANKS your own work',
+  '',
+  'A DIRECTED message awaiting YOUR answer — a question addressed to you, a decision only you can',
+  'make, a peer blocked on something you own — is not an interruption to your work; it IS your',
+  'highest-priority work the moment it arrives. Peers (and the owner) are BLOCKED on it: your',
+  'minutes of delay are their hours.',
+  '',
+  '- Finish only the ATOMIC step in hand (never leave a half-written file or orphaned lock), then',
+  '  REPLY FIRST — before the next step of your own task, not after it.',
+  '- A fast partial answer beats a complete answer later: if the real answer needs work, ACK now',
+  '  with what you know + when the rest lands ("taking X, full answer by Y"), so the asker is never',
+  '  blind-waiting.',
+  '- Reply DIRECTLY to the sender (`coord:send` with `related_msg_id`; wake them if they are parked)',
+  '  — never batch replies to "after my current work" or leave them for turn-end.',
+  '- This applies to DIRECTED asks. Broadcasts, FYI lines, and status chatter carry no such claim —',
+  '  act on those only if they bear on your task.',
+].join('\n');
+
 function fileContents(path: string): string {
   try {
     if (!existsSync(path)) return '';
@@ -1423,6 +1455,14 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     renderPeerWakeNote), and the su playbooks can't desync.
   pre.push('\n---');
   pre.push(PEER_WAKE_NOTE);
+
+  // 3k. Peer-reply priority (owner directive 2026-07-02, WI-1720) — the RECEIVER-side dual of 3j:
+  //     a DIRECTED message awaiting your answer outranks your own work — finish the atomic step in
+  //     hand, reply first (or ack with an ETA), never batch replies to turn-end. Universal (same
+  //     non-curator gate as 3j). Sourced from the one PEER_REPLY_PRIORITY_NOTE constant; the su
+  //     playbooks + chat-surface roles carry the same rule via renderCoordLegend (operator-core).
+  pre.push('\n---');
+  pre.push(PEER_REPLY_PRIORITY_NOTE);
   }
 
   // Hive vocabulary (hive-blueprint-generalization P-016): when the hive blueprint

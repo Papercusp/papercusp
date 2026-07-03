@@ -5052,30 +5052,6 @@ export const beeClaimSpecsInHarnessShared = harnessShared.table("bee_claim_specs
 	check("bee_claim_specs_ws_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
-export const p2PForeignWorkspacesInHarnessShared = harnessShared.table("p2p_foreign_workspaces", {
-	workspaceId: text("workspace_id").notNull(),
-	offerId: text("offer_id").notNull(),
-	fleetSlug: text("fleet_slug").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	originGithubUserId: bigint("origin_github_user_id", { mode: "number" }).notNull(),
-	executorDevice: text("executor_device").notNull(),
-	rootPath: text("root_path").notNull(),
-	clonePath: text("clone_path").notNull(),
-	sessionId: text("session_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	executionEpoch: bigint("execution_epoch", { mode: "number" }).default(0).notNull(),
-	state: text().default('provisioning').notNull(),
-	parkReason: text("park_reason"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	uniqueIndex("p2p_foreign_workspaces_root_path_key").using("btree", table.rootPath.asc().nullsLast().op("text_ops")),
-	index("p2p_foreign_workspaces_session_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
-	index("p2p_foreign_workspaces_state_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.state.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.offerId], name: "p2p_foreign_workspaces_pkey"}),
-	check("p2p_foreign_workspaces_state_check", sql`state = ANY (ARRAY['provisioning'::text, 'active'::text, 'winding-down'::text, 'parked'::text, 'reaped'::text])`),
-]);
-
 export const crossHiveOutboxInHarnessShared = harnessShared.table("cross_hive_outbox", {
 	workspaceId: text("workspace_id").notNull(),
 	hiveSlug: text("hive_slug").notNull(),
@@ -5245,6 +5221,31 @@ export const coordThreadsInHarnessShared = harnessShared.table("coord_threads", 
 	primaryKey({ columns: [table.workspaceId, table.threadId], name: "coord_threads_pkey"}),
 	check("coord_threads_parent_nonempty", sql`(parent_ref <> ''::text) AND (parent_kind <> ''::text)`),
 	check("coord_threads_workspace_nonempty", sql`workspace_id <> ''::text`),
+]);
+
+export const p2PForeignWorkspacesInHarnessShared = harnessShared.table("p2p_foreign_workspaces", {
+	workspaceId: text("workspace_id").notNull(),
+	offerId: text("offer_id").notNull(),
+	fleetSlug: text("fleet_slug").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	originGithubUserId: bigint("origin_github_user_id", { mode: "number" }).notNull(),
+	executorDevice: text("executor_device").notNull(),
+	rootPath: text("root_path").notNull(),
+	clonePath: text("clone_path").notNull(),
+	sessionId: text("session_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	executionEpoch: bigint("execution_epoch", { mode: "number" }).default(0).notNull(),
+	state: text().default('provisioning').notNull(),
+	parkReason: text("park_reason"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	baseSha: text("base_sha"),
+}, (table) => [
+	uniqueIndex("p2p_foreign_workspaces_root_path_key").using("btree", table.rootPath.asc().nullsLast().op("text_ops")),
+	index("p2p_foreign_workspaces_session_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
+	index("p2p_foreign_workspaces_state_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.state.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.offerId], name: "p2p_foreign_workspaces_pkey"}),
+	check("p2p_foreign_workspaces_state_check", sql`state = ANY (ARRAY['provisioning'::text, 'active'::text, 'winding-down'::text, 'parked'::text, 'reaped'::text])`),
 ]);
 
 export const harnessChunkPlansInHarnessShared = harnessShared.table("harness_chunk_plans", {
