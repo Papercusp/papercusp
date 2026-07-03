@@ -326,7 +326,7 @@ export function resolveTimeout(cfg: HarnessConfig, role: string): number {
     string = use the agent CLI's default. */
 export function resolveModel(cfg: HarnessConfig, role: string): string {
   // Per-spawn escalation (queen-model-tier-selection-2026-06-11 P-001): an
-  // explicit spec for THIS one child — fleet:spawn's model/tier arg, set only
+  // explicit spec for THIS one child — bee:spawn's model/tier arg, set only
   // in the spawned child's env by spawnAgentInHarness (extraEnv), never
   // globally. Outranks even the harness config: an explicit per-task pick is
   // more specific than any standing per-role pin. Usually already applied as
@@ -584,7 +584,7 @@ export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'fleet:drain',
   'fleet:governor',
   'fleet:place_batch',
-  'fleet:spawn',
+  'bee:spawn',
   'fleet:supervise',
   'hive:declare-wake',
   'hive:get',
@@ -687,7 +687,7 @@ export const BEE_ALLOWED_TOOLS: readonly string[] = [
  * `coord:escalate` (structural issue), `improvements:capture` (observe / emit the
  * hive-coordination-health scorecard), `messages:send` (durable hand-off) — plus
  * `overwatch:declare-wake` (its own next wake). It NEVER places work (no
- * `fleet:spawn` / `fleet:place_batch` / `work_items:set_priority` — the Queen's
+ * `bee:spawn` / `fleet:place_batch` / `work_items:set_priority` — the Queen's
  * D-001 lane) and NEVER edits code (no `capability:*` — its envelope denies
  * fs-write/bash). Everything else here is a READ used to judge system health.
  *
@@ -2944,7 +2944,7 @@ export async function invoke(
         // sessionOwner, so baking it as the MCP URL's stable `client=` lets the
         // operator attribute this child's coord:* / plans:* / improvements:* writes to
         // a real coord owner instead of throwing "no attributable identity" (which
-        // made every fleet:spawn bee MUTE). The id stays fixed across the child's
+        // made every bee:spawn bee MUTE). The id stays fixed across the child's
         // tool calls, so it's a valid coord/lock owner (unlike the per-call runId).
         const stableSpawnId = (process.env.PAPERCUSP_SPAWN_ID ?? '').trim();
         const spawnId = stableSpawnId || randomUUID();

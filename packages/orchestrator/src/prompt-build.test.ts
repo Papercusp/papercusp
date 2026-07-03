@@ -729,7 +729,7 @@ test('buildPrompt — a hive lexicon emits a vocabulary block; absent ⇒ none (
 });
 
 // ── EI-75 / EI-317: the deferred-tools recipe (the un-muting fix) ────────────
-//    A fleet:spawn bee's platform MCP tools are DEFERRED behind ToolSearch; a
+//    A bee:spawn bee's platform MCP tools are DEFERRED behind ToolSearch; a
 //    small backend that doesn't know the contract concludes "I can't call MCP
 //    tools" and improvises raw curl with a WRONG identity (EI-311) — so its coord
 //    writes never land under its real session_owner and the Queen↔bee reporting
@@ -1447,8 +1447,8 @@ test('wrapUntrusted — nonce differs across two calls (not constant)', () => {
   assert.notStrictEqual(n1, n2, 'nonces must differ across calls');
 });
 
-test('buildPrompt — Queen brief renders as its own section (P-060, the fleet:spawn path)', () => {
-  // THE FLEET:SPAWN PATH. A fleet:spawn bee does NOT go through assembleRolePrompt;
+test('buildPrompt — Queen brief renders as its own section (P-060, the bee:spawn path)', () => {
+  // THE FLEET:SPAWN PATH. A bee:spawn bee does NOT go through assembleRolePrompt;
   // its prompt is built here, in invoke-once → buildPrompt, from process.env.QUEEN_BRIEF
   // (invoke.ts:8.11). This pins that the brief the Queen attached (extraEnv.QUEEN_BRIEF
   // → child env → buildPrompt({ brief })) reaches the bee's actual assembled prompt.

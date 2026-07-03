@@ -1628,7 +1628,7 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
  *
  * EI-249 added a fail-fast guard at `spawnAgentInHarness` (operator-core), but
  * that chokepoint only covers the BEE launch paths (chat `<spawn>`,
- * `fleet:spawn`, `place_batch`). The psu/closeout dispatch path boots via
+ * `bee:spawn`, `place_batch`). The psu/closeout dispatch path boots via
  * `invoke.ts` → `buildPrompt` and never touches `spawnAgentInHarness`, so the
  * exact incident path stayed unguarded. `buildPrompt` is the ONE prompt-assembly
  * chokepoint EVERY launch funnels through (bee spawns, psu/closeout sessions,

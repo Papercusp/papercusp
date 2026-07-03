@@ -1040,7 +1040,7 @@ test('fleetAllowedToolsForRole — queen uses a compact explicit MCP subset, not
   for (const required of [
     'mcp__papercusp__hive_survey',
     'mcp__papercusp__hive_declare-wake',
-    'mcp__papercusp__fleet_spawn',
+    'mcp__papercusp__bee_spawn',
     'mcp__papercusp__fleet_assignments',
     'mcp__papercusp__coord_send',
     'mcp__papercusp__coord_wake',
@@ -1090,7 +1090,7 @@ test('fleetAllowedToolsForRole — bee uses a compact worker MCP subset, not the
     assert.ok(allowed.includes(required), `${required} must remain available to bees`);
   }
   assert.ok(BEE_MCP_TOOL_NAMES.includes('work_items:set_state'), 'bee MCP listing hint must use colon-form names');
-  assert.ok(!BEE_MCP_TOOL_NAMES.includes('fleet:spawn'), 'bee must not receive placement-only fleet spawn tools');
+  assert.ok(!BEE_MCP_TOOL_NAMES.includes('bee:spawn'), 'bee must not receive placement-only fleet spawn tools');
 });
 
 test('OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-loop-full-flow-reliability: unscoped null → "Prompt is too long")', () => {
@@ -1107,7 +1107,7 @@ test('OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-
   }
   // The D-001 boundary: the overwatch acts on AGENTS, never on WORK placement, and never
   // edits code (its capability envelope denies fs-write/bash).
-  for (const forbidden of ['fleet:spawn', 'fleet:place_batch', 'work_items:set_priority', 'work_items:co_locate', 'capability:edit', 'capability:bash', 'capability:write']) {
+  for (const forbidden of ['bee:spawn', 'fleet:place_batch', 'work_items:set_priority', 'work_items:co_locate', 'capability:edit', 'capability:bash', 'capability:write']) {
     assert.ok(!OVERWATCH_MCP_TOOL_NAMES.includes(forbidden), `overwatch must NOT receive ${forbidden} (Queen's placement lane / code-edit — envelope denies)`);
   }
   // Colon-form, no dupes, and small enough to stay well under the model window.
