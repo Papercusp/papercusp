@@ -5610,6 +5610,33 @@ export const prReviewReportsInHarnessShared = harnessShared.table("pr_review_rep
 	check("pr_review_reports_recommendation_check", sql`recommendation = ANY (ARRAY['approve'::text, 'request_changes'::text, 'reject'::text])`),
 ]);
 
+export const p2PFleetDirectoryInHarnessShared = harnessShared.table("p2p_fleet_directory", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ownerGithubUserId: bigint("owner_github_user_id", { mode: "number" }).notNull(),
+	fleetSlug: text("fleet_slug").notNull(),
+	recordJson: text("record_json").notNull(),
+	signerDevicePubkey: text("signer_device_pubkey").notNull(),
+	signature: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	recordVersion: bigint("record_version", { mode: "number" }).default(1).notNull(),
+	archived: boolean().default(false).notNull(),
+	fleetDirFedKey: text("fleet_dir_fed_key").generatedAlwaysAs(sql`(((owner_github_user_id)::text || '/'::text) || fleet_slug)`),
+	authorPubkey: text("author_pubkey"),
+	origin: text().default('local').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	fedHlc: text("fed_hlc"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.ownerGithubUserId, table.fleetSlug], name: "p2p_fleet_directory_pkey"}),
+	pgPolicy("p2p_fleet_directory_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const workerChunkLoopOutcomesInHarnessShared = harnessShared.table("worker_chunk_loop_outcomes", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).generatedAlwaysAsIdentity({ name: "harness_shared.worker_chunk_loop_outcomes_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
