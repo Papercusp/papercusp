@@ -2895,6 +2895,18 @@ export const operatorReleaseCheckpointConfigInHarnessShared = harnessShared.tabl
 
 ]);
 
+export const agentSeatConsumptionsInHarnessShared = harnessShared.table("agent_seat_consumptions", {
+	ownerId: text("owner_id").primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	fleetSlug: text("fleet_slug").notNull(),
+	seatRef: text("seat_ref").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("agent_seat_consumptions_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops"), table.seatRef.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.ownerId], name: "agent_seat_consumptions_pkey"}),
+
+]);
+
 export const operatorCapabilityEnvelopesInHarnessShared = harnessShared.table("operator_capability_envelopes", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -4776,30 +4788,6 @@ export const autoReviewAuditInHarnessShared = harnessShared.table("auto_review_a
 	check("auto_review_audit_action_check", sql`action = ANY (ARRAY['auto_approve'::text, 'auto_merge'::text, 'manual_approve'::text, 'manual_merge'::text, 'skipped_untrusted'::text, 'skipped_checks_failing'::text, 'error'::text, 'agent_review'::text, 'agent_review_error'::text])`),
 ]);
 
-export const resourceAllotmentsInHarnessShared = harnessShared.table("resource_allotments", {
-	workspaceId: text("workspace_id").notNull(),
-	fleetSlug: text("fleet_slug").notNull(),
-	resourceKind: text("resource_kind").notNull(),
-	resourceRef: text("resource_ref").notNull(),
-	sharePct: integer("share_pct").default(0).notNull(),
-	axis: jsonb().default({}).notNull(),
-	status: text().default('active').notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("resource_allotments_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
-	index("resource_allotments_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
-	primaryKey({ columns: [table.workspaceId, table.fleetSlug, table.resourceKind, table.resourceRef], name: "resource_allotments_pkey"}),
-	check("resource_allotments_ws_nonempty", sql`workspace_id <> ''::text`),
-	check("resource_allotments_fleet_nonempty", sql`fleet_slug <> ''::text`),
-	check("resource_allotments_kind", sql`resource_kind = ANY (ARRAY['account'::text, 'gpu'::text])`),
-	check("resource_allotments_ref_nonempty", sql`resource_ref <> ''::text`),
-	check("resource_allotments_pct", sql`(share_pct >= 0) AND (share_pct <= 100)`),
-	check("resource_allotments_status", sql`status = ANY (ARRAY['active'::text, 'paused'::text])`),
-]);
-
 export const coordQuarantineInHarnessShared = harnessShared.table("coord_quarantine", {
 	workspaceId: text("workspace_id").default('').notNull(),
 	msgId: text("msg_id").notNull(),
@@ -4980,6 +4968,32 @@ export const agentFleetsInHarnessShared = harnessShared.table("agent_fleets", {
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.fleetSlug], name: "agent_fleets_pkey"}),
 	pgPolicy("agent_fleets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const resourceAllotmentsInHarnessShared = harnessShared.table("resource_allotments", {
+	workspaceId: text("workspace_id").notNull(),
+	fleetSlug: text("fleet_slug").notNull(),
+	resourceKind: text("resource_kind").notNull(),
+	resourceRef: text("resource_ref").notNull(),
+	sharePct: integer("share_pct").default(0).notNull(),
+	axis: jsonb().default({}).notNull(),
+	status: text().default('active').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	quantity: integer(),
+}, (table) => [
+	index("resource_allotments_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
+	index("resource_allotments_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
+	primaryKey({ columns: [table.workspaceId, table.fleetSlug, table.resourceKind, table.resourceRef], name: "resource_allotments_pkey"}),
+	check("resource_allotments_ws_nonempty", sql`workspace_id <> ''::text`),
+	check("resource_allotments_fleet_nonempty", sql`fleet_slug <> ''::text`),
+	check("resource_allotments_ref_nonempty", sql`resource_ref <> ''::text`),
+	check("resource_allotments_pct", sql`(share_pct >= 0) AND (share_pct <= 100)`),
+	check("resource_allotments_status", sql`status = ANY (ARRAY['active'::text, 'paused'::text])`),
+	check("resource_allotments_kind", sql`resource_kind = ANY (ARRAY['account'::text, 'gpu'::text, 'agent_slot'::text])`),
+	check("resource_allotments_quantity", sql`((resource_kind = 'agent_slot'::text) AND (quantity IS NOT NULL) AND (quantity >= 1) AND (quantity <= 1000)) OR ((resource_kind <> 'agent_slot'::text) AND (quantity IS NULL))`),
 ]);
 
 export const harnessPendingIssuesInHarnessShared = harnessShared.table("harness_pending_issues", {

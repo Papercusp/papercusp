@@ -298,9 +298,16 @@ reverse.
   gotcha; and how to VERIFY a change reached a live `~/.papercusp/launch-context/session-*.md`
   render — NOT the materialized copy). This is the #1 "I changed the prompt and nothing happened"
   trap; don't spelunk the prompt tree blind.
-- **Memory has layers.** Durable facts → the shared memory store (`memory:remember`),
-  the one store every client recalls from — not a client-local silo. Live ephemera
-  (intents, handoffs, presence) → coord. Long-form runbooks → the insights docs.
+- **Memory has layers — route by DELIVERY, not habit.** A durable but *fuzzy* fact worth
+  semantic recall → the shared memory store (`memory:remember`), the one store every
+  client recalls from — not a client-local silo. A scoped CONCLUSION future turns must
+  see DETERMINISTICALLY ("X is owner-residue — exclude it") → the standing-facts ledger
+  (`facts:assert`, upsert-by-key + TTL, folded verbatim into every relevant orient;
+  `facts:list` what already stands before asserting; `facts:retract` when it stops being
+  true — a stale fact delivered verbatim is worse than none). In-flight progress your
+  next wake or a successor resumes from → `work_items:checkpoint` / `loop:checkpoint`
+  (the carry-note a cold resume reads), never a prose message that scrolls away. Live
+  ephemera (intents, handoffs, presence) → coord. Long-form runbooks → the insights docs.
 - **Don't default to polling for live updates — push.** Events/SSE/IPC carry state;
   polling the datastore as a message channel is last-resort with a stated reason.
 
