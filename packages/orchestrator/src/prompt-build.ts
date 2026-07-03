@@ -1412,7 +1412,9 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   // 3f. Code-run nudge (code-execution-tool-orchestration B-CX-3) — the SHARED bee base every role
   //     inherits. Reach for code:run to collapse a multi-step tool flow (loop/branch/filter/fan-out/
   //     retry over N) into ONE call instead of N inference round-trips; self-gated ("if code:run is
-  //     in your toolset") since the tool is SU_ROLES-scoped, so roles without it ignore it. Sourced
+  //     in your toolset") for roles whose surface/envelope still lacks it. Since
+  //     code-run-self-state-adoption-2026-07-03 P-001 the BEE/QUEEN kits + CORE spine carry code:run,
+  //     so the self-gate resolves TRUE for the fleet (it was the lockout signature before). Sourced
   //     from the one CODE_RUN_NUDGE constant so the bee base + operator-launched-role base can't desync.
   pre.push('\n---');
   pre.push(CODE_RUN_NUDGE);
