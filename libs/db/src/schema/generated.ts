@@ -4532,6 +4532,8 @@ export const perfRegressionSnapshotsInHarnessShared = harnessShared.table("perf_
 	dispatchOrphanRate: doublePrecision("dispatch_orphan_rate"),
 	dispatchSample: integer("dispatch_sample"),
 	coordOpenEscalations: integer("coord_open_escalations"),
+	advTabSwitchMedianMs: doublePrecision("adv_tab_switch_median_ms"),
+	advFcpMs: doublePrecision("adv_fcp_ms"),
 	breached: jsonb(),
 }, (table) => [
 	index("perf_regression_snapshots_ws_captured_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.capturedAt.desc().nullsFirst().op("text_ops")),
