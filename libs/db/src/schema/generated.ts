@@ -5357,31 +5357,6 @@ export const experimentRunsInHarnessShared = harnessShared.table("experiment_run
 	check("experiment_runs_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
 ]);
 
-export const gymQdArchiveInHarnessShared = harnessShared.table("gym_qd_archive", {
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	nicheKey: text("niche_key").notNull(),
-	candidateId: text("candidate_id").notNull(),
-	scope: text().notNull(),
-	domain: text().notNull(),
-	risk: text().notNull(),
-	fitness: doublePrecision().notNull(),
-	descriptor: jsonb().notNull(),
-	source: text().default('gym').notNull(),
-	rationale: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdAt: bigint("created_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
-	federatable: boolean().default(false).notNull(),
-}, (table) => [
-	index("gym_qd_archive_candidate_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.candidateId.asc().nullsLast().op("text_ops")),
-	index("gym_qd_archive_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.source.asc().nullsLast().op("text_ops")),
-	index("gym_qd_archive_ws_harness_fitness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fitness.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.nicheKey], name: "gym_qd_archive_pkey"}),
-	pgPolicy("gym_qd_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const harnessProposalsSharedInHarnessShared = harnessShared.table("harness_proposals_shared", {
 	harnessSlug: text("harness_slug").notNull(),
 	proposalId: text("proposal_id").notNull(),
@@ -5582,6 +5557,32 @@ export const regretFindingsInHarnessShared = harnessShared.table("regret_finding
 	check("regret_findings_divergence_kind_check", sql`(divergence_kind IS NULL) OR (divergence_kind = ANY (ARRAY['error-loop'::text, 'repeat-loop'::text, 'burn-inflection'::text, 'rescue-marker'::text]))`),
 ]);
 
+export const gymQdArchiveInHarnessShared = harnessShared.table("gym_qd_archive", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	nicheKey: text("niche_key").notNull(),
+	candidateId: text("candidate_id").notNull(),
+	scope: text().notNull(),
+	domain: text().notNull(),
+	risk: text().notNull(),
+	fitness: doublePrecision().notNull(),
+	descriptor: jsonb().notNull(),
+	source: text().default('gym').notNull(),
+	rationale: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+	federatable: boolean().default(false).notNull(),
+	outcomeRecord: jsonb("outcome_record"),
+}, (table) => [
+	index("gym_qd_archive_candidate_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.candidateId.asc().nullsLast().op("text_ops")),
+	index("gym_qd_archive_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.source.asc().nullsLast().op("text_ops")),
+	index("gym_qd_archive_ws_harness_fitness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fitness.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.nicheKey], name: "gym_qd_archive_pkey"}),
+	pgPolicy("gym_qd_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const prReviewReportsInHarnessShared = harnessShared.table("pr_review_reports", {
 	workspaceId: text("workspace_id").default('').notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -5607,33 +5608,6 @@ export const prReviewReportsInHarnessShared = harnessShared.table("pr_review_rep
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.prNumber, table.headSha], name: "pr_review_reports_pkey"}),
 	pgPolicy("pr_review_reports_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("pr_review_reports_recommendation_check", sql`recommendation = ANY (ARRAY['approve'::text, 'request_changes'::text, 'reject'::text])`),
-]);
-
-export const gymQdForeignElitesInHarnessShared = harnessShared.table("gym_qd_foreign_elites", {
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	nicheKey: text("niche_key").notNull(),
-	sourceHive: text("source_hive").notNull(),
-	candidateId: text("candidate_id").notNull(),
-	scope: text().notNull(),
-	domain: text().notNull(),
-	risk: text().notNull(),
-	fitness: doublePrecision().notNull(),
-	descriptor: jsonb().notNull(),
-	rationale: text(),
-	noveltyGift: boolean("novelty_gift").default(false).notNull(),
-	authorPubkey: text("author_pubkey"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdAt: bigint("created_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
-}, (table) => [
-	index("gym_qd_foreign_elites_by_source").using("btree", table.sourceHive.asc().nullsLast().op("text_ops")),
-	index("gym_qd_foreign_elites_fitness_idx").using("btree", table.workspaceId.asc().nullsLast().op("float8_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fitness.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.nicheKey, table.sourceHive], name: "gym_qd_foreign_elites_pkey"}),
-	pgPolicy("gym_qd_foreign_elites_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const workerChunkLoopOutcomesInHarnessShared = harnessShared.table("worker_chunk_loop_outcomes", {
@@ -5830,6 +5804,35 @@ export const gateVerdictsInHarnessShared = harnessShared.table("gate_verdicts", 
 	index("gate_verdicts_staging_sha_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.repoKey.asc().nullsLast().op("text_ops"), table.stagingSha.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.workspaceId, table.verdictId], name: "gate_verdicts_pkey"}),
 	check("gate_verdicts_verdict_check", sql`verdict = ANY (ARRAY['pass'::text, 'fail'::text])`),
+]);
+
+export const gymQdForeignElitesInHarnessShared = harnessShared.table("gym_qd_foreign_elites", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	nicheKey: text("niche_key").notNull(),
+	sourceHive: text("source_hive").notNull(),
+	candidateId: text("candidate_id").notNull(),
+	scope: text().notNull(),
+	domain: text().notNull(),
+	risk: text().notNull(),
+	fitness: doublePrecision().notNull(),
+	descriptor: jsonb().notNull(),
+	rationale: text(),
+	noveltyGift: boolean("novelty_gift").default(false).notNull(),
+	authorPubkey: text("author_pubkey"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+	outcomeRecord: jsonb("outcome_record"),
+	outcomeVerified: boolean("outcome_verified").default(false).notNull(),
+}, (table) => [
+	index("gym_qd_foreign_elites_by_source").using("btree", table.sourceHive.asc().nullsLast().op("text_ops")),
+	index("gym_qd_foreign_elites_fitness_idx").using("btree", table.workspaceId.asc().nullsLast().op("float8_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fitness.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.nicheKey, table.sourceHive], name: "gym_qd_foreign_elites_pkey"}),
+	pgPolicy("gym_qd_foreign_elites_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const benchRunTasksInHarnessShared = harnessShared.table("bench_run_tasks", {
