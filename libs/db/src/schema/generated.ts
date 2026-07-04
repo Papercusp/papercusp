@@ -1,4 +1,4 @@
-import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, check, uuid, timestamp, bigserial, boolean, integer, uniqueIndex, smallint, unique, doublePrecision, numeric, foreignKey, vector, date, primaryKey, real } from "drizzle-orm/pg-core"
+import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, check, uuid, timestamp, bigserial, boolean, integer, uniqueIndex, smallint, unique, doublePrecision, numeric, foreignKey, vector, real, date, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 // Custom column types for PG types drizzle-kit can't introspect
@@ -1632,34 +1632,6 @@ export const ptyViewerHeartbeatsInHarnessShared = harnessShared.table("pty_viewe
 
 ]);
 
-export const testRunsInHarnessShared = harnessShared.table("test_runs", {
-	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	filePath: text("file_path").notNull(),
-	framework: text().notNull(),
-	status: text().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	durationMs: bigint("duration_ms", { mode: "number" }),
-	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
-	outputTail: text("output_tail"),
-	suiteId: text("suite_id"),
-	runGroupId: text("run_group_id"),
-	source: text().default('local').notNull(),
-	branch: text(),
-	commitSha: text("commit_sha"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	harnessSlug: text("harness_slug"),
-	workspaceId: text("workspace_id"),
-}, (table) => [
-	index("test_runs_branch_idx").using("btree", table.branch.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(branch IS NOT NULL)`),
-	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops"), table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(harness_slug IS NOT NULL)`),
-	index("test_runs_run_group_idx").using("btree", table.runGroupId.asc().nullsLast().op("text_ops")).where(sql`(run_group_id IS NOT NULL)`),
-	index("test_runs_source_idx").using("btree", table.source.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
-	check("test_runs_source_valid", sql`source = ANY (ARRAY['ci'::text, 'local'::text, 'admin-ui'::text])`),
-	check("test_runs_status_valid", sql`status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text, 'cancelled'::text, 'error'::text, 'running'::text])`),
-]);
-
 export const memoryVecOpenaiInHarnessShared = harnessShared.table("memory_vec_openai", {
 	memoryId: uuid("memory_id").primaryKey().notNull(),
 	vector: vector({ dimensions: 384 }).notNull(),
@@ -1688,6 +1660,36 @@ export const memoryVecLocalInHarnessShared = harnessShared.table("memory_vec_loc
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.memoryId], name: "memory_vec_local_pkey"}),
 
+]);
+
+export const testRunsInHarnessShared = harnessShared.table("test_runs", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	filePath: text("file_path").notNull(),
+	framework: text().notNull(),
+	status: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	durationMs: bigint("duration_ms", { mode: "number" }),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
+	outputTail: text("output_tail"),
+	suiteId: text("suite_id"),
+	runGroupId: text("run_group_id"),
+	source: text().default('local').notNull(),
+	branch: text(),
+	commitSha: text("commit_sha"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	harnessSlug: text("harness_slug"),
+	workspaceId: text("workspace_id"),
+	loopLagP95Ms: real("loop_lag_p95_ms"),
+	rssMb: real("rss_mb"),
+}, (table) => [
+	index("test_runs_branch_idx").using("btree", table.branch.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(branch IS NOT NULL)`),
+	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops"), table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(harness_slug IS NOT NULL)`),
+	index("test_runs_run_group_idx").using("btree", table.runGroupId.asc().nullsLast().op("text_ops")).where(sql`(run_group_id IS NOT NULL)`),
+	index("test_runs_source_idx").using("btree", table.source.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
+	check("test_runs_source_valid", sql`source = ANY (ARRAY['ci'::text, 'local'::text, 'admin-ui'::text])`),
+	check("test_runs_status_valid", sql`status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text, 'cancelled'::text, 'error'::text, 'running'::text])`),
 ]);
 
 export const featureAuditConsolidatedInHarnessShared = harnessShared.table("feature_audit_consolidated", {
@@ -3932,6 +3934,17 @@ export const p2PGrantorEpochsInHarnessShared = harnessShared.table("p2p_grantor_
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.grantorGithubUserId], name: "p2p_grantor_epochs_pkey"}),
 	check("p2p_grantor_epochs_nonneg", sql`high_water_epoch >= 0`),
+]);
+
+export const substrateMergeCursorInHarnessShared = harnessShared.table("substrate_merge_cursor", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	logKeyhex: text("log_keyhex").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	position: bigint({ mode: "number" }).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.logKeyhex], name: "substrate_merge_cursor_pkey"}),
 ]);
 
 export const systemPrincipalsInHarnessShared = harnessShared.table("system_principals", {
