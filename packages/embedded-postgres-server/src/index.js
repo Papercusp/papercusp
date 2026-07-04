@@ -39,8 +39,9 @@
 
 import EmbeddedPostgres from 'embedded-postgres';
 import postgres from 'postgres';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm, cp, stat, chmod } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { applyPendingMigrations } from './migration-runner.js';
@@ -51,12 +52,40 @@ const DEFAULT_OWNER = 'postgres';
 const DEFAULT_OWNER_PWD = 'postgres';
 
 /**
+ * Extract a pre-built PGDATA seed into `dataDir`. `seedPath` may be a directory
+ * (raw PGDATA — recursively copied) or a `.tar`/`.tar.gz` archive whose ROOT is
+ * the PGDATA contents (extracted with the system `tar`, gzip auto-detected;
+ * present on macOS/Linux/Win10+). Postgres requires the data dir be mode 0700,
+ * so we chmod it after (no-op on Windows). Throws on any failure so the caller
+ * can wipe + fall back to a clean initdb — never boot a half-extracted dir.
+ */
+async function extractSeed(seedPath, dataDir) {
+  const st = await stat(seedPath);
+  await mkdir(dataDir, { recursive: true });
+  if (st.isDirectory()) {
+    // cp copies file modes; recursive handles the whole cluster tree.
+    await cp(seedPath, dataDir, { recursive: true });
+  } else {
+    execFileSync('tar', ['-x', '-f', seedPath, '-C', dataDir], { stdio: 'ignore' });
+  }
+  if (process.platform !== 'win32') {
+    await chmod(dataDir, 0o700).catch(() => {});
+  }
+}
+
+/**
  * @param {object} opts
  * @param {string} [opts.dataDir]      Postgres data dir. Default: ~/.papercusp/embedded-pg-data
  * @param {number} [opts.port]         TCP port. Default: 5532 (avoiding 5432 collision with system PG).
  * @param {string} [opts.dbName]       Database to create + connect to. Default: papercusp.
  * @param {boolean} [opts.debug]
  * @param {string} [opts.dbSqlDir]     Directory of *.sql migration files. If set, migrations apply on every boot.
+ * @param {string} [opts.seedPath]     Path to a pre-built PGDATA seed — a directory OR a .tar/.tar.gz
+ *        archive of a data dir already `initdb`'d + fully migrated at package time. On a FRESH data
+ *        dir it is extracted INSTEAD of running initdb + the full migration replay (desktop first-boot
+ *        fast path: ~11s → ~0.3s, measured). The idempotent runner still applies any migration DELTA
+ *        afterwards, so a slightly-stale seed self-heals. Falls back to PAPERCUSP_PG_SEED_PATH env, or
+ *        to a clean initdb if the seed is absent/unusable. Force-disable with PAPERCUSP_PG_DISABLE_SEED=1.
  * @param {Record<string,string>} [opts.extraPostgresSettings] Host-scaled server knobs
  *        (max_connections, shared_buffers, parallelism, …) the caller derived from
  *        resource-profile (`databaseTuningToSettings(getResourceProfile().database)`).
@@ -106,8 +135,39 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     ],
   });
 
-  // initdb is idempotent: if the data dir is already initialized, this
-  // is a no-op. Same for createDatabase below.
+  // Pre-built PGDATA seed (desktop first-boot fast path). On a FRESH data dir,
+  // if a pre-migrated snapshot is available, extract it INSTEAD of running
+  // initdb + replaying the full migration set — this turns a clean install's
+  // ~11s "initdb + 375 migrations" first-boot into a ~0.3s directory extract
+  // (measured 42x). The seed is a physical snapshot produced by THIS package's
+  // own fresh-boot path at package time, so it is byte-compatible with THIS
+  // platform's embedded-postgres binary (the seed is built per-platform during
+  // that platform's packaging). After extraction we fall through to the normal
+  // "reuse existing data dir" path and applyPendingMigrations() STILL runs — it
+  // finds every shipped migration already recorded and applies only the DELTA
+  // (usually none), so a seed a few migrations behind self-heals. If the seed is
+  // absent, corrupt, or extraction fails, we wipe any partial dir and fall back
+  // to a clean initdb — never boot a half-extracted cluster.
+  const seedPath = process.env.PAPERCUSP_PG_DISABLE_SEED
+    ? null
+    : (opts.seedPath ?? process.env.PAPERCUSP_PG_SEED_PATH ?? null);
+  if (!existsSync(join(dataDir, 'PG_VERSION')) && seedPath && existsSync(seedPath)) {
+    try {
+      log(`seeding data dir from pre-built snapshot ${seedPath}`);
+      await extractSeed(seedPath, dataDir);
+      if (!existsSync(join(dataDir, 'PG_VERSION'))) {
+        throw new Error('seed extracted but PG_VERSION missing');
+      }
+      log('seed applied — skipping initdb + full migration replay');
+    } catch (e) {
+      log(`seed failed (${e?.message ?? e}) — falling back to clean initdb`);
+      await rm(dataDir, { recursive: true, force: true }).catch(() => {});
+      await mkdir(dataDir, { recursive: true });
+    }
+  }
+
+  // initdb is idempotent: if the data dir is already initialized (including a
+  // just-extracted seed), this is a no-op. Same for createDatabase below.
   if (!existsSync(join(dataDir, 'PG_VERSION'))) {
     log(`initialising data dir at ${dataDir}`);
     await pg.initialise();
