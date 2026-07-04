@@ -78,6 +78,20 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
   );
   const applied = new Set((appliedRows ?? []).map((r) => r.filename));
 
+  // First-boot fast path (desktop first-launch perf). A fresh install applies the
+  // full migration set (~370 files); each file COMMITs in its own txn → one WAL fsync
+  // per file, and those ~370 serial fsyncs dominate the desktop's ~10s first-boot wait
+  // (measured: cold 13s vs warm 3s — the ~10s delta is initdb + this apply). For a large
+  // batch (a fresh initdb) drop synchronous_commit so those commits don't each fsync,
+  // then restore it + CHECKPOINT after the loop so the applied schema is durable before
+  // the operator touches the DB. SAFE: `client` is a dedicated, short-lived boot-setup
+  // connection (embedded-postgres-server postgres({ max: 1 })), and a crash mid-apply
+  // leaves an INCOMPLETE data dir that first-boot discards + re-initdb's — nothing durable
+  // is lost. Normal update boots (a handful of new files) keep synchronous_commit=on.
+  const pendingCount = allFiles.reduce((n, f) => (applied.has(f) ? n : n + 1), 0);
+  const bulkApply = pendingCount >= 20;
+  if (bulkApply) await client.unsafe('SET synchronous_commit = off').catch(() => {});
+
   let appliedCount = 0;
   for (const f of allFiles) {
     if (applied.has(f)) continue;
@@ -135,6 +149,13 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
       }
       throw err;
     }
+  }
+
+  // Restore durable commits and flush everything the bulk apply wrote, so the schema
+  // is fsync'd before boot proceeds (closes the crash-window that async commit opens).
+  if (bulkApply) {
+    await client.unsafe('SET synchronous_commit = on').catch(() => {});
+    await client.unsafe('CHECKPOINT').catch(() => {});
   }
 
   return { appliedCount, totalKnown: allFiles.length, failed };
