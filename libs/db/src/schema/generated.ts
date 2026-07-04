@@ -3911,18 +3911,6 @@ export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
 	pgPolicy("carry_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const workItemCheckpointsInHarnessShared = harnessShared.table("work_item_checkpoints", {
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	workItemId: text("work_item_id").notNull(),
-	checkpoint: text().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
-}, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.workItemId], name: "work_item_checkpoints_pkey"}),
-	pgPolicy("work_item_checkpoints_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const p2PGrantorEpochsInHarnessShared = harnessShared.table("p2p_grantor_epochs", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
