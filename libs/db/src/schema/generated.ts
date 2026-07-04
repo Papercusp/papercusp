@@ -4524,23 +4524,6 @@ export const commsTrustListInHarnessShared = harnessShared.table("comms_trust_li
 	check("comms_trust_list_tier_check", sql`tier = ANY (ARRAY['observe'::text, 'message'::text, 'wake'::text, 'steer'::text])`),
 ]);
 
-export const perfRegressionSnapshotsInHarnessShared = harnessShared.table("perf_regression_snapshots", {
-	workspaceId: text("workspace_id").notNull(),
-	capturedAt: timestamp("captured_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	loopLagP95Ms: doublePrecision("loop_lag_p95_ms"),
-	connSaturationPct: doublePrecision("conn_saturation_pct"),
-	dispatchOrphanRate: doublePrecision("dispatch_orphan_rate"),
-	dispatchSample: integer("dispatch_sample"),
-	coordOpenEscalations: integer("coord_open_escalations"),
-	advTabSwitchMedianMs: doublePrecision("adv_tab_switch_median_ms"),
-	advFcpMs: doublePrecision("adv_fcp_ms"),
-	breached: jsonb(),
-}, (table) => [
-	index("perf_regression_snapshots_ws_captured_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.capturedAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.capturedAt], name: "perf_regression_snapshots_pkey"}),
-	pgPolicy("perf_regression_snapshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const blueprintsInHarnessShared = harnessShared.table("blueprints", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -4809,6 +4792,23 @@ export const coordQuarantineInHarnessShared = harnessShared.table("coord_quarant
 	index("coord_quarantine_author_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.authorDevicePubkey.asc().nullsLast().op("int8_ops"), table.createdTs.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.workspaceId, table.msgId], name: "coord_quarantine_pkey"}),
 	check("coord_quarantine_reason_check", sql`reason = ANY (ARRAY['below-message-tier'::text, 'handoff-below-steer'::text, 'rate-exceeded'::text])`),
+]);
+
+export const perfRegressionSnapshotsInHarnessShared = harnessShared.table("perf_regression_snapshots", {
+	workspaceId: text("workspace_id").notNull(),
+	capturedAt: timestamp("captured_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	loopLagP95Ms: doublePrecision("loop_lag_p95_ms"),
+	connSaturationPct: doublePrecision("conn_saturation_pct"),
+	dispatchOrphanRate: doublePrecision("dispatch_orphan_rate"),
+	dispatchSample: integer("dispatch_sample"),
+	coordOpenEscalations: integer("coord_open_escalations"),
+	breached: jsonb(),
+	advTabSwitchMedianMs: doublePrecision("adv_tab_switch_median_ms"),
+	advFcpMs: doublePrecision("adv_fcp_ms"),
+}, (table) => [
+	index("perf_regression_snapshots_ws_captured_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.capturedAt.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.capturedAt], name: "perf_regression_snapshots_pkey"}),
+	pgPolicy("perf_regression_snapshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const harnessEscalationsInHarnessShared = harnessShared.table("harness_escalations", {
@@ -6003,6 +6003,37 @@ export const hivePendingJoinsInHarnessShared = harnessShared.table("hive_pending
 	index("hive_pending_joins_by_status").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.githubUserId], name: "hive_pending_joins_pkey"}),
 	pgPolicy("hive_pending_joins_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const p2PWorkOffersInHarnessShared = harnessShared.table("p2p_work_offers", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	publisherGithubUserId: bigint("publisher_github_user_id", { mode: "number" }).notNull(),
+	offerId: text("offer_id").notNull(),
+	recordJson: text("record_json").notNull(),
+	signerDevicePubkey: text("signer_device_pubkey").notNull(),
+	signature: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	recordVersion: bigint("record_version", { mode: "number" }).default(1).notNull(),
+	fleetSlug: text("fleet_slug").notNull(),
+	offerKind: text("offer_kind").notNull(),
+	status: text().default('open').notNull(),
+	localDisposition: text("local_disposition"),
+	offerFedKey: text("offer_fed_key").generatedAlwaysAs(sql`(((publisher_github_user_id)::text || '/'::text) || offer_id)`),
+	authorPubkey: text("author_pubkey"),
+	origin: text().default('local').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	fedHlc: text("fed_hlc"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	index("p2p_work_offers_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.publisherGithubUserId, table.offerId], name: "p2p_work_offers_pkey"}),
+	pgPolicy("p2p_work_offers_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const datatypeRegistryInHarnessShared = harnessShared.table("datatype_registry", {

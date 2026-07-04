@@ -61,6 +61,22 @@ exists to prevent.
   a bad fix cannot wedge the operator that dispatched you.
 - **Budget-aware:** if you are running long, prefer a clean `could-not-fix`
   resolve with notes over a half-applied change left in the tree.
+- **CONTEXT DISCIPLINE — this is why most dispatches used to die.** Watch your
+  context usage as you work (a `context: N/LIMIT (X%)` line appears in your
+  coord inbox once your session carries a compaction limit). **Past ~80%, STOP
+  investigating/editing and close the loop immediately**: call
+  `improvements:resolve` NOW with whatever outcome is honest (`fixed` if
+  verified-green, `could-not-fix` with what you tried and what's left, or
+  `needs-human` if you're unsure) — do NOT keep reading files or running tests
+  hoping to finish first. Resolving early with an honest partial outcome is
+  always better than running to the hard context wall: "Prompt is too long"
+  kills the worker mid-task with NO resolve call, which is indistinguishable
+  from a silent crash and leaves the item to re-dispatch from scratch (the
+  orphaned-dispatch pattern — see `improvements:resolve`'s docstring and the
+  dispatch ledger). If you still have real budget left and the fix is close but
+  not yet verified, `session:request-compaction` is available in your tool
+  spine — but resolving now is simpler and safer than trusting a mid-fix
+  compaction to preserve enough context to finish cleanly.
 
 ## When you're done
 
