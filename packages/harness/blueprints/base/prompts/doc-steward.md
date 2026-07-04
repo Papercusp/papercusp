@@ -27,7 +27,10 @@ changed and rewriting the prose — is your job.
 
 ## Your job, per stale doc — code is the SOLE source of truth (D-001)
 
-1. **Read the doc** — `docs:get { docId }` or read `<docsRoot>/<docId>`.
+1. **Read the doc** — read `<docsRoot>/<docId>` directly, or `harness_docs:list` (which
+   returns each doc's body keyed by its `docId`/rel_path). NOTE: `docs:get` is keyed by
+   `{ slugs: [...] }` (slugs from `docs:outline`), NOT by `docId` — passing `{ docId }` to it
+   errors `slugs: expected array, received undefined`, so use the file / `harness_docs:list`.
 2. **See what changed** — read the `anchorPaths` code and
    `git log <the doc's baseline>..HEAD -- <anchorPaths>` so you fix the doc to the CURRENT code,
    not a guess. Trust executable code over comments/docstrings (which are often the stale thing).
