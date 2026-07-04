@@ -126,6 +126,20 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     createPostgresUser: opts.createPostgresUser ?? false,
     onLog: (m) => log(`pg: ${typeof m === 'string' ? m : (m?.message ?? '')}`),
     onError: (m) => log(`pg-err: ${typeof m === 'string' ? m : (m?.message ?? m?.toString?.() ?? '')}`),
+    // Initialise the cluster with the PORTABLE C.UTF-8 locale rather than
+    // inheriting the build/runtime host's LANG. This is load-bearing for the
+    // pre-migrated seed (build-seed.mjs): a seed built on a full-locale host
+    // (LANG=en_US.UTF-8) bakes lc_*='en_US.UTF-8' into postgresql.conf, which
+    // then FATALs at first boot on the minimal Windows WSL rootfs
+    // (papercup-runtime ships only C / C.utf8 / POSIX — no en_US.UTF-8). Found
+    // live 2026-07-04 (WI-2649): the seed extracted fine but postgres refused to
+    // start ("configuration file contains errors: invalid value for parameter
+    // lc_numeric: en_US.UTF-8"). C.UTF-8 is present on every glibc host AND the
+    // rootfs, giving deterministic byte-order collation + UTF-8 ctype. Only
+    // affects a FRESH initdb (seed build + the seedless fallback); existing data
+    // dirs are untouched. `--encoding=UTF8` is implied by the locale but stated
+    // for clarity.
+    initdbFlags: ['--locale=C.UTF-8', '--encoding=UTF8'],
     // wal_level=logical is REQUIRED for Zero / any pgoutput consumer.
     // The two replication-slot/sender knobs are sized generously enough
     // for one zero-cache + a few diagnostic slots without bumping into
