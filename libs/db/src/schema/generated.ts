@@ -1583,6 +1583,7 @@ export const substrateOutboxInHarnessShared = harnessShared.table("substrate_out
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	drainedAt: bigint("drained_at", { mode: "number" }),
 	opHlc: text("op_hlc"),
+	drainedLogKey: text("drained_log_key"),
 }, (table) => [
 	index("substrate_outbox_drain_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.drainedAt.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("text_ops")),
 	check("substrate_outbox_op_check", sql`op = ANY (ARRAY['put'::text, 'del'::text])`),
@@ -2437,23 +2438,6 @@ export const hiveDirectoryTombstonesInHarnessShared = harnessShared.table("hive_
 
 ]);
 
-export const routeInvocationsInHarnessShared = harnessShared.table("route_invocations", {
-	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	method: text().notNull(),
-	path: text().notNull(),
-	status: text().notNull(),
-	durationMs: integer("duration_ms"),
-	principalKind: text("principal_kind"),
-	principalAuthMethod: text("principal_auth_method"),
-	principalTrust: text("principal_trust"),
-	errorMessage: text("error_message"),
-	invokedAt: timestamp("invoked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("route_invocations_ws_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")),
-	pgPolicy("route_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const operatorOwnerPinsInHarnessShared = harnessShared.table("operator_owner_pins", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -2474,6 +2458,25 @@ export const operatorAccountOverrideInHarnessShared = harnessShared.table("opera
 	pgPolicy("operator_account_override_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_account_override_pkey"}),
 
+]);
+
+export const routeInvocationsInHarnessShared = harnessShared.table("route_invocations", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	method: text().notNull(),
+	path: text().notNull(),
+	status: text().notNull(),
+	durationMs: integer("duration_ms"),
+	principalKind: text("principal_kind"),
+	principalAuthMethod: text("principal_auth_method"),
+	principalTrust: text("principal_trust"),
+	errorMessage: text("error_message"),
+	invokedAt: timestamp("invoked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	resolvedPath: text("resolved_path"),
+	responseBytes: integer("response_bytes"),
+}, (table) => [
+	index("route_invocations_ws_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("route_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const briefingsInPapercuspShared = papercuspShared.table("briefings", {
@@ -6716,6 +6719,85 @@ export const toolInvocationsSpawnTreeInHarnessShared = harnessShared.view("tool_
 	depth: integer(),
 	rootSpawnId: text("root_spawn_id"),
 }).as(sql`WITH RECURSIVE chain AS ( SELECT tool_invocations.id, tool_invocations.workspace_id, tool_invocations.harness_slug, tool_invocations.plugin_name, tool_invocations.tool_name, tool_invocations.role, tool_invocations.feature_id, tool_invocations.chunk_id, tool_invocations.run_id, tool_invocations.spawn_id, tool_invocations.parent_spawn_id, tool_invocations.window_key, tool_invocations.invoked_at, tool_invocations.duration_ms, tool_invocations.status, tool_invocations.output_ref, tool_invocations.output_size, tool_invocations.error_message, 0 AS depth, tool_invocations.spawn_id AS root_spawn_id FROM harness_shared.tool_invocations WHERE tool_invocations.parent_spawn_id IS NULL OR tool_invocations.parent_spawn_id = ''::text UNION ALL SELECT t.id, t.workspace_id, t.harness_slug, t.plugin_name, t.tool_name, t.role, t.feature_id, t.chunk_id, t.run_id, t.spawn_id, t.parent_spawn_id, t.window_key, t.invoked_at, t.duration_ms, t.status, t.output_ref, t.output_size, t.error_message, c.depth + 1, c.root_spawn_id FROM harness_shared.tool_invocations t JOIN chain c ON t.parent_spawn_id = c.spawn_id AND t.workspace_id = c.workspace_id AND c.depth < 16 ) SELECT id, workspace_id, harness_slug, plugin_name, tool_name, role, feature_id, chunk_id, run_id, spawn_id, parent_spawn_id, window_key, invoked_at, duration_ms, status, output_ref, output_size, error_message, depth, root_spawn_id FROM chain`);
+
+export const harnessFeaturesInHarnessShared = harnessShared.view("harness_features", {	harnessSlug: text("harness_slug"),
+	featureId: text("feature_id"),
+	title: text(),
+	summary: text(),
+	status: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	attempts: bigint({ mode: "number" }),
+	claims: text(),
+	notes: text(),
+	metadata: jsonb(),
+	kind: text(),
+	projectId: text("project_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	expectedCostCents: bigint("expected_cost_cents", { mode: "number" }),
+	tags: jsonb(),
+	needsHumanReview: boolean("needs_human_review"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdTs: bigint("created_ts", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedTs: bigint("updated_ts", { mode: "number" }),
+	parentId: text("parent_id"),
+	goalId: text("goal_id"),
+	takenBy: text("taken_by"),
+	takenAt: timestamp("taken_at", { withTimezone: true, mode: 'string' }),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	workspaceId: text("workspace_id"),
+	search: tsvectorCustom("_search"),
+	deprecationReason: text("deprecation_reason"),
+	seeAlso: text("see_also"),
+	needsDesign: boolean("needs_design"),
+	designStatus: text("design_status"),
+	designSpecId: text("design_spec_id"),
+	discardedDesignWork: boolean("discarded_design_work"),
+	completionRef: jsonb("completion_ref"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	workingUsers: bigint("working_users", { mode: "number" }),
+	workedByHistory: jsonb("worked_by_history"),
+	wave: text(),
+	verifiedDoneAtRemoteTs: timestamp("verified_done_at_remote_ts", { withTimezone: true, mode: 'string' }),
+	verifierLastError: text("verifier_last_error"),
+	verifierLastCheckedAt: timestamp("verifier_last_checked_at", { withTimezone: true, mode: 'string' }),
+	sourcePlanSlug: text("source_plan_slug"),
+	sourcePlanItemIds: text("source_plan_item_ids"),
+	featureOrder: integer("feature_order"),
+	authorPubkey: text("author_pubkey"),
+	origin: text(),
+	auditVerdict: text("audit_verdict"),
+	auditReasons: text("audit_reasons"),
+	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
+	itemKind: text("item_kind"),
+	payload: jsonb(),
+	assigneeRank: integer("assignee_rank"),
+	rankWriter: text("rank_writer"),
+	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	redundancy: integer(),
+	swarmAffinity: text("swarm_affinity"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	verifiedAuthorGithubUserId: bigint("verified_author_github_user_id", { mode: "number" }),
+	schedule: jsonb(),
+	scheduleActive: boolean("schedule_active"),
+	scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: 'string' }),
+	tzid: text(),
+	templateSlug: text("template_slug"),
+	runSeq: integer("run_seq"),
+	requeueCount: integer("requeue_count"),
+	fedHlc: text("fed_hlc"),
+	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
+	terminalOwner: text("terminal_owner"),
+	terminalCompletionRef: text("terminal_completion_ref"),
+	lastReleasedBy: text("last_released_by"),
+	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at FROM harness_shared.harness_features_consolidated`);
 
 export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("harness_features_consolidated", {	harnessSlug: text("harness_slug"),
 	featureId: text("feature_id"),
