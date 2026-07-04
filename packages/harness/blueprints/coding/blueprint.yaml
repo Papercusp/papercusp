@@ -134,6 +134,9 @@ dependencies:
     - coord:inbox
     - coord:presence
     - coord:send
+    # queen.base.md's cold-wake identity check: the queen CALLS coord:whoami to
+    # verify her hive/scope before trusting a carry-note — dark-tools guard.
+    - coord:whoami
     - curation:change-feed
     - curation:feed
     - deploy:harness
