@@ -52,6 +52,62 @@ const DEFAULT_OWNER = 'postgres';
 const DEFAULT_OWNER_PWD = 'postgres';
 
 /**
+ * The initdb flags used for EVERY fresh cluster this package creates — the
+ * seedless first-boot fallback AND the pre-migrated seed (build-seed.mjs boots
+ * through startEmbeddedPostgresServer, so the shipped seed's postgresql.conf
+ * inherits these). SINGLE SOURCE OF TRUTH — do not inline a divergent locale.
+ *
+ * Pinning an explicit PORTABLE locale here is load-bearing. initdb otherwise
+ * derives lc_* from the build/runtime host's LANG, so a seed built on a
+ * full-locale host (LANG=en_US.UTF-8) bakes lc_*='en_US.UTF-8' into
+ * postgresql.conf — which then FATALs at first boot on the minimal Windows WSL
+ * rootfs (papercup-runtime ships only C / C.utf8 / POSIX — no en_US.UTF-8):
+ * "configuration file contains errors: invalid value for parameter lc_numeric:
+ * en_US.UTF-8". Found live 2026-07-04 (WI-2649): the seed extracted fine but
+ * postgres refused to start. C.UTF-8 is present on every glibc host AND that
+ * rootfs, giving deterministic byte-order collation + UTF-8 ctype. Only affects
+ * a FRESH initdb (seed build + the seedless fallback); existing data dirs are
+ * untouched. `--encoding=UTF8` is implied by the locale but stated for clarity.
+ */
+export const SEED_INITDB_FLAGS = ['--locale=C.UTF-8', '--encoding=UTF8'];
+
+/**
+ * Locales guaranteed present on EVERY host a shipped seed must boot on —
+ * notably the lean Windows WSL rootfs (papercup-runtime: C / C.utf8 / POSIX
+ * only). A seed whose postgresql.conf names a locale OUTSIDE this set can FATAL
+ * at first boot on such a host (WI-2649). The `.UTF-8` / `.utf8` spellings are
+ * both accepted since glibc and initdb normalise casing/hyphenation differently.
+ */
+export const PORTABLE_INITDB_LOCALES = ['C', 'POSIX', 'C.UTF-8', 'C.utf8', 'C.utf-8', 'c.utf8'];
+
+/**
+ * Extract the `--locale=<value>` an initdb flag list requests, or null if none.
+ * Pure. Handles both the `--locale=X` and the split `--locale X` spellings.
+ */
+export function initdbLocale(flags = []) {
+  for (let i = 0; i < flags.length; i++) {
+    const f = flags[i];
+    if (typeof f !== 'string') continue;
+    if (f.startsWith('--locale=')) return f.slice('--locale='.length);
+    if (f === '--locale' && typeof flags[i + 1] === 'string') return flags[i + 1];
+  }
+  return null;
+}
+
+/**
+ * True when `flags` pin an EXPLICIT, portable initdb locale — i.e. the resulting
+ * cluster's postgresql.conf lc_* will name a locale present on a lean host, never
+ * a host-specific one like en_US.UTF-8. A MISSING `--locale` is NOT portable: it
+ * makes initdb inherit the build host's LANG, which is the exact WI-2649
+ * regression. Pure — the WI-2649 recurrence guard asserts on this.
+ */
+export function initdbLocaleIsPortable(flags = []) {
+  const loc = initdbLocale(flags);
+  if (loc == null) return false;
+  return PORTABLE_INITDB_LOCALES.some((p) => p.toLowerCase() === loc.toLowerCase());
+}
+
+/**
  * Resolve the effective pre-built-seed path from opts + env (pure — the caller
  * checks existence). opts.seedPath wins, then PAPERCUSP_PG_SEED_PATH env;
  * PAPERCUSP_PG_DISABLE_SEED (any truthy value) forces null (always initdb).
@@ -126,20 +182,12 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     createPostgresUser: opts.createPostgresUser ?? false,
     onLog: (m) => log(`pg: ${typeof m === 'string' ? m : (m?.message ?? '')}`),
     onError: (m) => log(`pg-err: ${typeof m === 'string' ? m : (m?.message ?? m?.toString?.() ?? '')}`),
-    // Initialise the cluster with the PORTABLE C.UTF-8 locale rather than
-    // inheriting the build/runtime host's LANG. This is load-bearing for the
-    // pre-migrated seed (build-seed.mjs): a seed built on a full-locale host
-    // (LANG=en_US.UTF-8) bakes lc_*='en_US.UTF-8' into postgresql.conf, which
-    // then FATALs at first boot on the minimal Windows WSL rootfs
-    // (papercup-runtime ships only C / C.utf8 / POSIX — no en_US.UTF-8). Found
-    // live 2026-07-04 (WI-2649): the seed extracted fine but postgres refused to
-    // start ("configuration file contains errors: invalid value for parameter
-    // lc_numeric: en_US.UTF-8"). C.UTF-8 is present on every glibc host AND the
-    // rootfs, giving deterministic byte-order collation + UTF-8 ctype. Only
-    // affects a FRESH initdb (seed build + the seedless fallback); existing data
-    // dirs are untouched. `--encoding=UTF8` is implied by the locale but stated
-    // for clarity.
-    initdbFlags: ['--locale=C.UTF-8', '--encoding=UTF8'],
+    // Initialise the cluster with a PORTABLE locale rather than inheriting the
+    // build/runtime host's LANG — load-bearing for the pre-migrated seed's
+    // cross-platform first boot (WI-2649). Single source of truth + full
+    // rationale: SEED_INITDB_FLAGS above. Spread so nothing downstream mutates
+    // the exported constant.
+    initdbFlags: [...SEED_INITDB_FLAGS],
     // wal_level=logical is REQUIRED for Zero / any pgoutput consumer.
     // The two replication-slot/sender knobs are sized generously enough
     // for one zero-cache + a few diagnostic slots without bumping into
