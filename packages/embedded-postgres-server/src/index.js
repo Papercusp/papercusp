@@ -52,6 +52,17 @@ const DEFAULT_OWNER = 'postgres';
 const DEFAULT_OWNER_PWD = 'postgres';
 
 /**
+ * Resolve the effective pre-built-seed path from opts + env (pure — the caller
+ * checks existence). opts.seedPath wins, then PAPERCUSP_PG_SEED_PATH env;
+ * PAPERCUSP_PG_DISABLE_SEED (any truthy value) forces null (always initdb).
+ * Returns null when no seed is configured.
+ */
+export function resolveSeedPath(opts = {}, env = process.env) {
+  if (env.PAPERCUSP_PG_DISABLE_SEED) return null;
+  return opts.seedPath ?? env.PAPERCUSP_PG_SEED_PATH ?? null;
+}
+
+/**
  * Extract a pre-built PGDATA seed into `dataDir`. `seedPath` may be a directory
  * (raw PGDATA — recursively copied) or a `.tar`/`.tar.gz` archive whose ROOT is
  * the PGDATA contents (extracted with the system `tar`, gzip auto-detected;
@@ -59,7 +70,7 @@ const DEFAULT_OWNER_PWD = 'postgres';
  * so we chmod it after (no-op on Windows). Throws on any failure so the caller
  * can wipe + fall back to a clean initdb — never boot a half-extracted dir.
  */
-async function extractSeed(seedPath, dataDir) {
+export async function extractSeed(seedPath, dataDir) {
   const st = await stat(seedPath);
   await mkdir(dataDir, { recursive: true });
   if (st.isDirectory()) {
@@ -148,9 +159,7 @@ export async function startEmbeddedPostgresServer(opts = {}) {
   // (usually none), so a seed a few migrations behind self-heals. If the seed is
   // absent, corrupt, or extraction fails, we wipe any partial dir and fall back
   // to a clean initdb — never boot a half-extracted cluster.
-  const seedPath = process.env.PAPERCUSP_PG_DISABLE_SEED
-    ? null
-    : (opts.seedPath ?? process.env.PAPERCUSP_PG_SEED_PATH ?? null);
+  const seedPath = resolveSeedPath(opts);
   if (!existsSync(join(dataDir, 'PG_VERSION')) && seedPath && existsSync(seedPath)) {
     try {
       log(`seeding data dir from pre-built snapshot ${seedPath}`);
