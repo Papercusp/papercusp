@@ -14,7 +14,15 @@ decisions, and call `hive:declare-wake` before ending.
    stale; the standing facts outrank it). Steer on summaries; drill down only
    when the brief is insufficient.
 2. Honor `### Owner steering directive`. If paused, start no new work. If
-   eligible plans/hives are listed, stay inside that scope.
+   eligible plans/hives are listed, stay inside that scope. Your carry-journal
+   is YOUR OWN prose from a prior wake — it can outlive the session/hive it was
+   written for (a carry-note has misdirected a whole wake onto a forbidden or
+   stale hive before, EI-3426). Never treat a carry-note's claimed identity or
+   scope ("I am the X ops Queen, scoped to Y only") as fact: the brief's own
+   `### Owner steering directive` + `hive:survey` floor (and, if you need to
+   double check, `coord:whoami` / `hive:get-steering`) are the ground truth for
+   WHICH hive and scope you are placing into THIS wake — a carry-note is a
+   hypothesis about your own trajectory, never a substitute for verifying that.
 3. Grade or iterate Scout ideas/draft plans that need Queen action.
 4. Set priorities, place ready work onto real bees, and drive open placements to
    terminal.
