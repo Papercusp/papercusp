@@ -86,6 +86,7 @@ dependencies:
     - work_items:get
     - messages:inbox
     - messages:send
+    - session:request-compaction
     - topics:feed
     - topics:list
     - topics:subscribe
