@@ -2479,6 +2479,22 @@ export const routeInvocationsInHarnessShared = harnessShared.table("route_invoca
 	pgPolicy("route_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const agentModeChangesInHarnessShared = harnessShared.table("agent_mode_changes", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.agent_mode_changes_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	ownerId: text("owner_id").notNull(),
+	axisKey: text("axis_key").notNull(),
+	oldMode: text("old_mode"),
+	newMode: text("new_mode"),
+	reason: text().default('').notNull(),
+	setBy: text("set_by").notNull(),
+	ownerDirected: boolean("owner_directed").default(false).notNull(),
+	changedAt: timestamp("changed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("agent_mode_changes_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ownerId.asc().nullsLast().op("text_ops"), table.changedAt.desc().nullsFirst().op("timestamptz_ops")),
+]);
+
 export const briefingsInPapercuspShared = papercuspShared.table("briefings", {
 	id: text().primaryKey().notNull(),
 	title: text().notNull(),
@@ -4509,6 +4525,20 @@ export const harnessPlanStatusInHarnessShared = harnessShared.table("harness_pla
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.planSlug], name: "harness_plan_status_pkey"}),
 	pgPolicy("harness_plan_status_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("harness_plan_status_status_check", sql`status = ANY (ARRAY['started'::text, 'paused'::text, 'done'::text])`),
+]);
+
+export const agentModesInHarnessShared = harnessShared.table("agent_modes", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	ownerId: text("owner_id").notNull(),
+	axisKey: text("axis_key").notNull(),
+	mode: text().notNull(),
+	reason: text().default('').notNull(),
+	setBy: text("set_by").notNull(),
+	ownerDirected: boolean("owner_directed").default(false).notNull(),
+	setAt: timestamp("set_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("agent_modes_owner_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.ownerId, table.axisKey], name: "agent_modes_pkey"}),
 ]);
 
 export const commsTrustListInHarnessShared = harnessShared.table("comms_trust_list", {
