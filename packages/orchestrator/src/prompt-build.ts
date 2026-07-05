@@ -1172,7 +1172,9 @@ export const PEER_REPLY_PRIORITY_NOTE = [
   '  with what you know + when the rest lands ("taking X, full answer by Y"), so the asker is never',
   '  blind-waiting.',
   '- Reply DIRECTLY to the sender (`coord:send` with `related_msg_id`; wake them if they are parked)',
-  '  — never batch replies to "after my current work" or leave them for turn-end.',
+  '  — never batch replies to "after my current work" or leave them for turn-end. Your',
+  '  terminal/final-response text does NOT reach the asker — an answer not SENT back via',
+  '  `coord:send` was never delivered; answering only in your own transcript is a silent drop.',
   '- This applies to DIRECTED asks. Broadcasts, FYI lines, and status chatter carry no such claim —',
   '  act on those only if they bear on your task.',
 ].join('\n');
