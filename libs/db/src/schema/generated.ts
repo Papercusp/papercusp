@@ -1121,7 +1121,8 @@ export const coordEventLogInHarnessShared = harnessShared.table("coord_event_log
 	uniqueIndex("coord_event_log_event_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`(surface = ANY (ARRAY['handoffs'::text, 'escalations'::text]))`),
 	uniqueIndex("coord_event_log_fanout_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'notify_kind'::text) IS NOT NULL))`),
 	uniqueIndex("coord_event_log_fed_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((harness_slug IS NOT NULL) AND ((body ->> 'notify_kind'::text) IS NULL))`),
-	index("coord_event_log_surface_id").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("coord_event_log_msg_tsv_idx").using("gin", sql`to_tsvector('english'::regconfig, "left"(((COALESCE((body ->> '`).where(sql`(surface = 'messages'::text)`),
+	index("coord_event_log_surface_id").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.surface.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("text_ops")),
 	pgPolicy("coord_event_log_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4541,6 +4542,21 @@ export const agentModesInHarnessShared = harnessShared.table("agent_modes", {
 	primaryKey({ columns: [table.workspaceId, table.ownerId, table.axisKey], name: "agent_modes_pkey"}),
 ]);
 
+export const sessionIngestStateInHarnessShared = harnessShared.table("session_ingest_state", {
+	sourceKind: text("source_kind").notNull(),
+	filePath: text("file_path").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	byteOffset: bigint("byte_offset", { mode: "number" }).default(0).notNull(),
+	turnCount: integer("turn_count").default(0).notNull(),
+	sessionId: text("session_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	mtimeMs: bigint("mtime_ms", { mode: "number" }),
+	lastError: text("last_error"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.sourceKind, table.filePath], name: "session_ingest_state_pkey"}),
+]);
+
 export const commsTrustListInHarnessShared = harnessShared.table("comms_trust_list", {
 	workspaceId: text("workspace_id").default('').notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -5290,6 +5306,29 @@ export const slotParkedMessagesInHarnessShared = harnessShared.table("slot_parke
 	index("slot_parked_messages_pending_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.slotKind.asc().nullsLast().op("text_ops"), table.slotRef.asc().nullsLast().op("text_ops")).where(sql`((delivered_ts IS NULL) AND (dropped_ts IS NULL))`),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "slot_parked_messages_pkey"}),
 	pgPolicy("slot_parked_messages_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	sourceKind: text("source_kind").notNull(),
+	sessionId: text("session_id").notNull(),
+	turnIdx: integer("turn_idx").notNull(),
+	ts: timestamp({ withTimezone: true }),
+	owner: text(),
+	harnessSlug: text("harness_slug"),
+	cwd: text(),
+	speaker: text().notNull(),
+	text: text().notNull(),
+	textTsv: tsvectorCustom("text_tsv").generatedAlwaysAs(sql`to_tsvector('english'::regconfig, "left"(text, 20000))`),
+	ingestedAt: timestamp("ingested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	textEmbedding: vector("text_embedding", { dimensions: 384 }),
+}, (table) => [
+	index("session_turns_embedding_idx").using("hnsw", table.textEmbedding.asc().nullsLast().op("vector_cosine_ops")),
+	index("session_turns_ingested_idx").using("btree", table.ingestedAt.asc().nullsLast().op("timestamptz_ops")),
+	index("session_turns_owner_ts_idx").using("btree", table.owner.asc().nullsLast().op("timestamptz_ops"), table.ts.asc().nullsLast().op("timestamptz_ops")),
+	index("session_turns_session_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")),
+	index("session_turns_tsv_idx").using("gin", table.textTsv.asc().nullsLast().op("tsvector_ops")),
+	primaryKey({ columns: [table.workspaceId, table.sourceKind, table.sessionId, table.turnIdx], name: "session_turns_pkey"}),
 ]);
 
 export const harnessStatusInHarnessShared = harnessShared.table("harness_status", {
