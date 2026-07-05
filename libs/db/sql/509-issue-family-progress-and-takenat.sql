@@ -63,11 +63,15 @@ CREATE OR REPLACE VIEW harness_shared.engineer_issues AS
     assignee_rank, rank_writer, rank_updated_at, fed_ts,
     COALESCE(payload->'_ei'->>'signal_origin', 'local') AS signal_origin,
     fed_hlc,
+    terminal_owner,
+    terminal_completion_ref,
     -- WI-2990: the real item-scoped progress signal, previously never surfaced
     -- through this view (issueToWorkItem hardcoded it to null downstream).
     -- MUST be appended LAST — CREATE OR REPLACE VIEW can only add trailing
     -- columns, never reorder/insert among existing ones (PG rejects it as
-    -- "cannot drop columns from view").
+    -- "cannot drop columns from view"). (The live view already carries
+    -- terminal_owner/terminal_completion_ref from migration 432 — omitting them
+    -- here is what tripped that error on the first two attempts.)
     last_progress_at
   FROM harness_shared.work_items
   WHERE item_kind IN ('bug', 'change', 'task');
