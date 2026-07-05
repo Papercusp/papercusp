@@ -44,7 +44,7 @@ spine:
   # autonomous" — the P-030 swap): demand/cadence wakes launch the QUEEN
   # placement persona (spawn/warm-inject/drain bees) instead of the steer-only
   # operator decider. Swap back to `operator` for decision-tree-only wakes.
-  decider: queen
+  decider: mug
   # Declared alternative the validator treats as live (not a dead role): an
   # install swaps this in via spine.decider for placement automation (P-030).
   deciderAlternatives: [operator]
@@ -65,7 +65,7 @@ roles:
       The operator in charge: survey the fleet, decide what matters, create or
       supervise harnesses from blueprints, surface curated reports, and declare
       the next wake before ending the turn.
-  - id: queen
+  - id: mug
     description: >-
       The Queen — specialized placement decider for the hive. Surveys the work
       frontier and bee load, ranks tasks, picks a placement for each (free slot /

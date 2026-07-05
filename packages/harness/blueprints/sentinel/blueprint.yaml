@@ -40,11 +40,11 @@ workItem:
 # the sentinel's turn budget only. The sentinel runs one sweep to done/escalate,
 # registers a wake (coord:await-inbox / events:await), then sleeps.
 spine:
-  decider: sentinel
+  decider: papercup
   maxTurns: 40
 
 roles:
-  - id: sentinel
+  - id: papercup
     description: >-
       The fleet watcher: sweep fleet:assignments/tree (stuck/orphaned spawns),
       coord:presence/inbox/feed (substrate health), harness:health/escalation

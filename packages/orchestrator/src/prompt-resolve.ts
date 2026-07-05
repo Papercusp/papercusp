@@ -88,11 +88,9 @@ export interface PromptResolveContext {
  * that persona lands with the rest of the rename.)
  */
 export const ROLE_ALIASES: Record<string, string> = {
-  cup: 'bee',
-  mug: 'queen',
-  papercup: 'sentinel',
-  kettle: 'overwatch',
-  blender: 'scout',
+  // pot-rename SLICE-2 CONTRACT: empty — the persona files are renamed to the
+  // canonical ids (cup/mug/papercup/kettle), so no alias bridge remains. The seam
+  // stays for the next rename.
 };
 
 /** The universal role library — every `extends` chain terminates here. */

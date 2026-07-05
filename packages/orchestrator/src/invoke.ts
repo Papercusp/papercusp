@@ -940,8 +940,8 @@ export const FLEET_CAPABILITY_REPLACED_TOOLS: readonly string[] = ['Bash', 'Edit
 export const FLEET_CAPABILITY_ROLES: ReadonlySet<string> = new Set<string>([
   // SU_ROLES (packages/agent-mcp/src/role-config.ts) — kept literal because the
   // orchestrator does not depend on @papercusp/agent-mcp; the parity test guards it.
-  'scoper', 'architect', 'worker', 'validator', 'reviewer', 'debugger', 'operator', 'queen', 'documenter', 'curator',
-  'bee',
+  'scoper', 'architect', 'worker', 'validator', 'reviewer', 'debugger', 'operator', 'mug', 'documenter', 'curator',
+  'cup',
 ]);
 
 /** True when the B-18 fleet cutover is armed for this spawn. The operator resolves
@@ -997,8 +997,8 @@ export function fleetAllowedToolsForRole(
   const scoped = !!(scope?.allow && scope.allow.length > 0);
   let tools: string[];
   if (scoped) tools = [...scope!.allow!];
-  else if (role === 'queen') tools = [...QUEEN_ALLOWED_TOOLS];
-  else if (role === 'bee') tools = [...BEE_ALLOWED_TOOLS];
+  else if (role === 'mug') tools = [...QUEEN_ALLOWED_TOOLS];
+  else if (role === 'cup') tools = [...BEE_ALLOWED_TOOLS];
   else tools = [...FLEET_ALLOWED_TOOLS];
   // B-18 cutover: drop the native write/exec/fetch tools a confined role replaces with
   // capability:* — applied to EVERY base (incl. queen/bee, which previously early-returned

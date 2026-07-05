@@ -37,11 +37,11 @@ workItem:
 # the bee's turn budget only. The bee runs its placed work to done/escalate/idle and
 # (when idle) registers a coord:await-inbox wake before sleeping (persona-driven).
 spine:
-  decider: bee
+  decider: cup
   maxTurns: 80
 
 roles:
-  - id: bee
+  - id: cup
     description: >-
       The generic Hive worker: read your brief (rides extras) + your ranked
       work-list (work_items), do the work owning your own sequencing (propose/
