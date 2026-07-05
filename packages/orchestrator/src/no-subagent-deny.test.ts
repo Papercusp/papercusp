@@ -8,12 +8,15 @@ describe('noSubagentToolsDenyFlag', () => {
     expect(/\s/.test(flag)).toBe(false);
   });
 
-  it('carries both the pre-rename and current subagent-tool names (verified live 2026-07-01)', () => {
+  it('carries the subagent-tool names AND the Workflow orchestrator (2026-07-05)', () => {
     // Task: pre-rename name, verified against claude 2.1.158. Agent: current
     // name as of claude 2.1.198 — re-verifying live found the `Task`-only
     // deny had become a silent no-op (a spawned Agent-tool subagent still ran).
+    // Workflow: the SEPARATE multi-agent orchestration tool — a subagents-denied
+    // session was still fanning out through it because the deny listed only Task/Agent.
     expect(NO_SUBAGENT_TOOLS_DENY).toContain('Task');
     expect(NO_SUBAGENT_TOOLS_DENY).toContain('Agent');
+    expect(NO_SUBAGENT_TOOLS_DENY).toContain('Workflow');
     const flag = noSubagentToolsDenyFlag();
     for (const t of NO_SUBAGENT_TOOLS_DENY) expect(flag).toContain(t);
   });

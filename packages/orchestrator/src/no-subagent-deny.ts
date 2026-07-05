@@ -39,9 +39,17 @@
  * the two copies together — mirrors the native-scheduler-deny pattern.
  */
 
-/** Every name the built-in subagent-launch tool has been observed under
- *  (`Task` pre-rename, `Agent` as of claude 2.1.198+). */
-export const NO_SUBAGENT_TOOLS_DENY = ['Task', 'Agent'] as const;
+/** Tools that fan out subagents OUTSIDE the orchestrator's spawn graph — all
+ *  denied together. `Task`/`Agent` = the built-in subagent-launch tool under its
+ *  two observed names (`Task` pre-rename, `Agent` as of claude 2.1.198+).
+ *  `Workflow` = the SEPARATE multi-agent orchestration tool: added 2026-07-05
+ *  after a subagents-denied `psu --resume` session was still able to fan out via
+ *  Workflow (the deny listed only Task/Agent, and Workflow is a distinct
+ *  top-level tool — not a rename of the subagent tool — so it slipped the guard).
+ *  Same uncontrolled-fanout concern, so the same deny. Disallowing a name absent
+ *  in a given CLI build is a harmless no-op, so carrying all three is safe;
+ *  verify a NEW name live before trusting it (as Task/Agent were). */
+export const NO_SUBAGENT_TOOLS_DENY = ['Task', 'Agent', 'Workflow'] as const;
 
 /** The ready-to-append argv token (claude CLI). Single `=` token — the flag
  *  is variadic (`<tools...>`) and the space form greedily eats every
