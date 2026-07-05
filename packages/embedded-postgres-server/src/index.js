@@ -68,8 +68,28 @@ const DEFAULT_OWNER_PWD = 'postgres';
  * rootfs, giving deterministic byte-order collation + UTF-8 ctype. Only affects
  * a FRESH initdb (seed build + the seedless fallback); existing data dirs are
  * untouched. `--encoding=UTF8` is implied by the locale but stated for clarity.
+ *
+ * `--lc-messages=C.UTF-8` is NOT redundant with `--locale`: the bundled
+ * `embedded-postgres` package hard-injects `--lc-messages=<getBestLocale()>`
+ * into initdb BEFORE these flags (it greps the initdb readiness banner, so it
+ * forces a known-locale), and getBestLocale() prefers `en_US.UTF-8` when the
+ * BUILD host has it. A per-category `--lc-messages` overrides `--locale` for
+ * that one category regardless of `--locale`, so without pinning it explicitly
+ * (later, so initdb's last-duplicate-wins picks ours) the seed baked
+ * `lc_messages='en_US.utf8'` while every other lc_* was C.UTF-8 — and THAT one
+ * param FATALed first boot on the lean rootfs (WI-2749, follow-on to WI-2649).
+ * normalizeConfLc() below is the deterministic belt-and-suspenders.
  */
-export const SEED_INITDB_FLAGS = ['--locale=C.UTF-8', '--encoding=UTF8'];
+export const SEED_INITDB_FLAGS = ['--locale=C.UTF-8', '--lc-messages=C.UTF-8', '--encoding=UTF8'];
+
+/**
+ * The runtime-settable lc_* GUCs that live in postgresql.conf and are VALIDATED
+ * against the OS locale set at postmaster startup — a non-portable value here
+ * (e.g. en_US.utf8 on a C/C.utf8/POSIX-only rootfs) is the exact "invalid value
+ * for parameter <lc_*>" FATAL of WI-2649 / WI-2749. (lc_collate / lc_ctype are
+ * initdb-fixed in pg_database, not re-validated at start, so they are not here.)
+ */
+export const RUNTIME_LC_PARAMS = ['lc_messages', 'lc_monetary', 'lc_numeric', 'lc_time'];
 
 /**
  * Locales guaranteed present on EVERY host a shipped seed must boot on —
@@ -105,6 +125,68 @@ export function initdbLocaleIsPortable(flags = []) {
   const loc = initdbLocale(flags);
   if (loc == null) return false;
   return PORTABLE_INITDB_LOCALES.some((p) => p.toLowerCase() === loc.toLowerCase());
+}
+
+/** True when `value` names a locale present on every lean target rootfs. Pure. */
+export function localeIsPortable(value) {
+  return typeof value === 'string'
+    && PORTABLE_INITDB_LOCALES.some((p) => p.toLowerCase() === value.toLowerCase());
+}
+
+/**
+ * Return the list of `param='value'` for every ACTIVE (uncommented) RUNTIME_LC_PARAMS
+ * assignment in a postgresql.conf whose value is NOT portable — empty means the
+ * conf will boot on a lean rootfs. Pure; the WI-2749 recurrence guard asserts empty.
+ */
+export function confLcNonPortable(confText) {
+  const bad = [];
+  for (const param of RUNTIME_LC_PARAMS) {
+    const m = confText.match(new RegExp(`^\\s*${param}\\s*=\\s*'([^']*)'`, 'm'));
+    if (m && !localeIsPortable(m[1])) bad.push(`${param}='${m[1]}'`);
+  }
+  return bad;
+}
+
+/**
+ * Rewrite every ACTIVE RUNTIME_LC_PARAMS assignment whose value is non-portable
+ * to `portableLocale`, preserving the trailing comment + surrounding formatting.
+ * Pure — returns { text, changed }. Idempotent: a conf already portable is a no-op.
+ */
+export function normalizeConfLc(confText, portableLocale = 'C.UTF-8') {
+  let changed = false;
+  let out = confText;
+  for (const param of RUNTIME_LC_PARAMS) {
+    const re = new RegExp(`^(\\s*${param}\\s*=\\s*)'([^']*)'`, 'm');
+    out = out.replace(re, (full, lhs, val) => {
+      if (localeIsPortable(val)) return full;
+      changed = true;
+      return `${lhs}'${portableLocale}'`;
+    });
+  }
+  return { text: out, changed };
+}
+
+/**
+ * Force every runtime-settable lc_* GUC in <dataDir>/postgresql.conf to a
+ * PORTABLE locale, on disk, before the postmaster starts. Run on EVERY boot
+ * (fresh initdb, extracted seed, AND a reused/possibly-pre-fix data dir) so an
+ * already-installed broken cluster self-heals on update rather than staying
+ * wedged. Idempotent + best-effort: a missing conf (no initdb yet) is a no-op.
+ * See SEED_INITDB_FLAGS / normalizeConfLc for the why (WI-2749).
+ */
+export async function normalizePortableLocaleConf(dataDir, log = () => {}) {
+  const confPath = join(dataDir, 'postgresql.conf');
+  let conf;
+  try {
+    conf = await readFile(confPath, 'utf8');
+  } catch {
+    return; // no conf on disk yet — nothing to normalize
+  }
+  const { text, changed } = normalizeConfLc(conf);
+  if (changed) {
+    await writeFile(confPath, text);
+    log(`normalized non-portable lc_* in postgresql.conf → C.UTF-8 (WI-2749)`);
+  }
 }
 
 /**
@@ -245,6 +327,13 @@ export async function startEmbeddedPostgresServer(opts = {}) {
   } else {
     log(`reusing existing data dir at ${dataDir}`);
   }
+
+  // Guarantee the cluster's lc_* GUCs are portable BEFORE every start. initdb
+  // (via the bundled embedded-postgres) or a pre-fix seed may have baked a
+  // host-specific locale like en_US.utf8 into postgresql.conf, which FATALs the
+  // postmaster on the lean WSL rootfs (WI-2749). Running on every boot — not
+  // just fresh initdb — self-heals an already-installed broken data dir.
+  await normalizePortableLocaleConf(dataDir, log);
 
   log(`starting postgres on localhost:${port}`);
   await pg.start();

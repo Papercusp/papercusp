@@ -18,12 +18,12 @@
  *   node build-seed.mjs --data <tmp-pgdata> --sql <migrations-dir> --out <seed.tar.gz> [--port 5544]
  * Env fallbacks: PAPERCUSP_PG_DATA_DIR, PAPERCUSP_PG_SQL_DIR, PAPERCUSP_PG_SEED_OUT, PAPERCUSP_PG_PORT
  */
-import { startEmbeddedPostgresServer } from '../src/index.js';
+import { startEmbeddedPostgresServer, confLcNonPortable } from '../src/index.js';
 import postgres from 'postgres';
 import { execFileSync } from 'node:child_process';
-import { rm, mkdir, stat } from 'node:fs/promises';
+import { rm, mkdir, stat, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 
 function arg(flag, envKey, def) {
   const i = process.argv.indexOf(flag);
@@ -67,6 +67,21 @@ try {
     throw new Error(`seed sanity check failed: only ${migCount} migrations recorded (expected the full set)`);
   }
   log(`built schema in ${Date.now() - t} ms — ${migCount} migrations recorded`);
+
+  // WI-2749 recurrence guard: the shipped seed's postgresql.conf must name ONLY
+  // portable lc_* — a host-specific locale (en_US.utf8) baked here FATALs the
+  // postmaster on the lean Windows WSL rootfs at first boot. startEmbeddedPostgresServer
+  // normalizes on boot, but assert on the actual on-disk artifact so a future
+  // regression (removed normalizer, changed package) fails the BUILD, not the user.
+  const conf = await readFile(join(dataDir, 'postgresql.conf'), 'utf8');
+  const badLc = confLcNonPortable(conf);
+  if (badLc.length) {
+    throw new Error(
+      `seed postgresql.conf carries NON-PORTABLE locale(s): ${badLc.join(', ')} — `
+      + `would FATAL first boot on a C/C.utf8/POSIX-only rootfs (WI-2749)`,
+    );
+  }
+  log('seed locale portability check passed (all lc_* portable)');
 
   // Clean shutdown BEFORE archiving so the snapshot is consistent + carries no
   // postmaster.pid / recovery state (a fast, quiet startup on the target).
