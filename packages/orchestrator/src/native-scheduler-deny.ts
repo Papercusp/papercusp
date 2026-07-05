@@ -3,8 +3,8 @@
  * (native-scheduler-lockout-2026-06-09).
  *
  * The hive's liveness contract is "a wake is always armed IN THE ROUTINES
- * TABLE" (`hive:declare-wake` → the one-shot `hive-wake` routine row): that
- * table is the single scheduler of record that `hive:status`, Pause, the
+ * TABLE" (`pot:declare-wake` → the one-shot `hive-wake` routine row): that
+ * table is the single scheduler of record that `pot:status`, Pause, the
  * wake-mode gate, and the liveness backstop all read (D-001). claude-code
  * ships its OWN scheduling surfaces — Cron* tools, `ScheduleWakeup`, the
  * `/schedule` + `/loop` skills — and a wake scheduled there is invisible to

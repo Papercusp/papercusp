@@ -37,7 +37,7 @@ const ROLE_CLAUSES: ReadonlyArray<readonly [label: string, needle: string]> = [
   ['cross-Hive sovereignty', 'cross-hive sovereignty'],
   ['nested-Hive roll-up', 'roll-up'],
   ['trust the claim layer', 'claim layer'],
-  ['declares its next wake', 'hive:declare-wake'],
+  ['declares its next wake', 'pot:declare-wake'],
   ['parallelize plan implementations via briefs', 'agent briefs'],
 ];
 

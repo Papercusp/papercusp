@@ -125,10 +125,10 @@ describe('buildSpawnMcpConfig', () => {
       role: 'queen',
       runId: 'run_Q',
       spawnId: 'spw_Q',
-      mcpToolNames: ['hive:survey', 'bee:spawn', 'work_items:create'],
+      mcpToolNames: ['pot:survey', 'cup:spawn', 'work_items:create'],
     });
     const url = new URL(cfg.mcpServers.papercusp!.url);
-    expect(url.searchParams.get('tools')).toBe('hive:survey,bee:spawn,work_items:create');
+    expect(url.searchParams.get('tools')).toBe('pot:survey,cup:spawn,work_items:create');
   });
 
   it('omits `client=` when clientId is not set (legacy pipeline-role path unchanged)', () => {
@@ -290,11 +290,11 @@ describe('writeSpawnMcp + restoreSpawnMcp', () => {
     const handle = writeSpawnMcp(ROOT, {
       ...baseInput,
       role: 'queen',
-      mcpToolNames: ['hive:survey', 'bee:spawn'],
+      mcpToolNames: ['pot:survey', 'cup:spawn'],
     });
     const content = JSON.parse(readFileSync(handle.path, 'utf8'));
     const url = new URL(content.mcpServers.papercusp.url);
-    expect(url.searchParams.get('tools')).toBe('hive:survey,bee:spawn');
+    expect(url.searchParams.get('tools')).toBe('pot:survey,cup:spawn');
   });
 
   it('restoreSpawnMcp deletes our file when there was no prior', () => {

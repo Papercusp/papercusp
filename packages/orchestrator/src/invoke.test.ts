@@ -1035,7 +1035,7 @@ test('fleetAllowedToolsForRole — queen uses a compact explicit MCP subset, not
   const allowed = fleetAllowedToolsForRole('queen');
   assert.deepEqual(allowed, [...QUEEN_ALLOWED_TOOLS]);
   assert.ok(!allowed.includes('mcp__papercusp'), 'queen must not load the full MCP schema wildcard');
-  assert.ok(QUEEN_MCP_TOOL_NAMES.includes('hive:survey'), 'queen MCP listing hint must use colon-form names');
+  assert.ok(QUEEN_MCP_TOOL_NAMES.includes('pot:survey'), 'queen MCP listing hint must use colon-form names');
   assert.ok(!QUEEN_MCP_TOOL_NAMES.includes('coord:inbox'), 'queen MCP listing hint must omit broad ambient inbox tools');
   for (const required of [
     'mcp__papercusp__hive_survey',
@@ -1090,7 +1090,7 @@ test('fleetAllowedToolsForRole — bee uses a compact worker MCP subset, not the
     assert.ok(allowed.includes(required), `${required} must remain available to bees`);
   }
   assert.ok(BEE_MCP_TOOL_NAMES.includes('work_items:set_state'), 'bee MCP listing hint must use colon-form names');
-  assert.ok(!BEE_MCP_TOOL_NAMES.includes('bee:spawn'), 'bee must not receive placement-only fleet spawn tools');
+  assert.ok(!BEE_MCP_TOOL_NAMES.includes('cup:spawn'), 'bee must not receive placement-only fleet spawn tools');
 });
 
 test('OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-loop-full-flow-reliability: unscoped null → "Prompt is too long")', () => {
@@ -1098,16 +1098,16 @@ test('OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-
   // ~550-tool / ~141k-token surface onto its sonnet ~200k window, so the agent died
   // "Prompt is too long" on EVERY fire and never emitted a real 14-criterion scorecard.
   // Its four write verbs + its own wake must be present…
-  for (const w of ['coord:send', 'coord:escalate', 'improvements:capture', 'messages:send', 'overwatch:declare-wake']) {
+  for (const w of ['coord:send', 'coord:escalate', 'improvements:capture', 'messages:send', 'kettle:declare-wake']) {
     assert.ok(OVERWATCH_MCP_TOOL_NAMES.includes(w), `overwatch must hold its write/wake verb ${w}`);
   }
   // …and the scorecard/health reads it judges on.
-  for (const r of ['scorecards:list', 'rubrics:get', 'hive:status', 'fleet:assignments', 'improvements:digest']) {
+  for (const r of ['scorecards:list', 'rubrics:get', 'pot:status', 'fleet:assignments', 'improvements:digest']) {
     assert.ok(OVERWATCH_MCP_TOOL_NAMES.includes(r), `overwatch must hold the health read ${r}`);
   }
   // The D-001 boundary: the overwatch acts on AGENTS, never on WORK placement, and never
   // edits code (its capability envelope denies fs-write/bash).
-  for (const forbidden of ['bee:spawn', 'fleet:place_batch', 'work_items:set_priority', 'work_items:co_locate', 'capability:edit', 'capability:bash', 'capability:write']) {
+  for (const forbidden of ['cup:spawn', 'fleet:place_batch', 'work_items:set_priority', 'work_items:co_locate', 'capability:edit', 'capability:bash', 'capability:write']) {
     assert.ok(!OVERWATCH_MCP_TOOL_NAMES.includes(forbidden), `overwatch must NOT receive ${forbidden} (Queen's placement lane / code-edit — envelope denies)`);
   }
   // Colon-form, no dupes, and small enough to stay well under the model window.

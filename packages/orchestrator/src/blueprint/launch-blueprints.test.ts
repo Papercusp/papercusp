@@ -58,7 +58,7 @@ test('pot launch blueprint loads + validates — decider=operator, NO trigger (t
   // autoloop-pot-operator-rebuild-2026-06-05 P0 (D-001/D-002): the Pot is the
   // minimal single-role operator blueprint. It deliberately declares NO
   // triggers.schedule and NO triggers.event — its loop is the operator deciding
-  // its own next wake (hive:declare-wake → the one-shot hive-wake routine /
+  // its own next wake (pot:declare-wake → the one-shot hive-wake routine /
   // event-reaction subscriptions), not a cadence. A schedule appearing here
   // would silently reintroduce the timer loop D-002 removes.
   const { blueprint, validation } = loadBuiltinBlueprint('coding');
@@ -74,7 +74,7 @@ test('pot launch blueprint loads + validates — decider=operator, NO trigger (t
   assert.equal(blueprint.triggers?.schedule?.length ?? 0, 0, 'pot declares NO schedule trigger');
   assert.equal(blueprint.triggers?.event, undefined, 'pot declares NO event trigger');
   // A CODING hive MUST be backed by a git repo (per-hive-git-and-release-gate-2026-06-29
-  // D-002): hive:create clones/inits a repo and rejects a repo-less coding hive. The
+  // D-002): pot:create clones/inits a repo and rejects a repo-less coding hive. The
   // non-coding `work` blueprint (extends coding) re-sets this false.
   assert.equal(blueprint.knobs.requiresRepo, true, 'a coding hive must be repo-backed (per-hive-git D-002)');
 });

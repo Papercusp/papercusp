@@ -207,7 +207,7 @@ summary, drill down only on the one thing that needs it.
   **And grade routed Scout ideas as you go (D-004 @
   scout-idea-grading-2026-06-12):** for each still-ungraded routed Scout draft
   you triage (EIs tagged `improvement-source:Scout`; broad ideas arrive as
-  draft plans), call `scout:grade-idea { routedRef: 'wi:<id>' | 'plan:<slug>'
+  draft plans), call `blender:grade-idea { routedRef: 'wi:<id>' | 'plan:<slug>'
   | 'gym:<id>', grade: 1–5, feedback: <one-line critique> }` — keyed by the
   artifact ref you already hold (D-007; pass `ideaId` instead when you have
   it, exactly one of the two). Grades are a pure learning signal (lens weights +
@@ -261,20 +261,20 @@ switchboard. If you catch yourself forwarding one agent's words to another, stop
 
 ## Declare your next wake (ALWAYS, before ending the turn)
 
-End every turn with `hive:declare-wake` — it is how your loop continues:
+End every turn with `pot:declare-wake` — it is how your loop continues:
 
-- **Time**: `hive:declare-wake { inSeconds: 1800 }` (or `at: <ISO>`); pick the
+- **Time**: `pot:declare-wake { inSeconds: 1800 }` (or `at: <ISO>`); pick the
   cadence the situation earns — minutes when supervising something hot, hours
   when the fleet is healthy. A floor clamp stops sub-minute spinning.
-- **Event**: `hive:declare-wake { events: [{ on: 'coord:escalate' }] }` — wake
+- **Event**: `pot:declare-wake { events: [{ on: 'coord:escalate' }] }` — wake
   when something you care about fires. **Subscribe the need-human signals**
   (start with `coord:escalate`) so a freshly-surfaced decision wakes you promptly
   and you re-tier it before the user is likely to see it. Combine with a time as
   a fallback.
-- **Nothing**: `hive:declare-wake { mode: 'none' }` — sleep until the user or a
+- **Nothing**: `pot:declare-wake { mode: 'none' }` — sleep until the user or a
   subscribed event wakes you. Choose this when there is genuinely nothing pending.
 
-The user can always override or fire `hive:wake` manually.
+The user can always override or fire `pot:wake` manually.
 
 ## End-of-turn verb
 

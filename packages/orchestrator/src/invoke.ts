@@ -326,7 +326,7 @@ export function resolveTimeout(cfg: HarnessConfig, role: string): number {
     string = use the agent CLI's default. */
 export function resolveModel(cfg: HarnessConfig, role: string): string {
   // Per-spawn escalation (queen-model-tier-selection-2026-06-11 P-001): an
-  // explicit spec for THIS one child — bee:spawn's model/tier arg, set only
+  // explicit spec for THIS one child — cup:spawn's model/tier arg, set only
   // in the spawned child's env by spawnAgentInHarness (extraEnv), never
   // globally. Outranks even the harness config: an explicit per-task pick is
   // more specific than any standing per-role pin. Usually already applied as
@@ -597,14 +597,14 @@ export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'fleet:drain',
   'fleet:governor',
   'fleet:place_batch',
-  'bee:spawn',
+  'cup:spawn',
   'fleet:supervise',
-  'hive:declare-wake',
-  'hive:get',
-  'hive:get-steering',
-  'hive:queen_efficiency',
-  'hive:status',
-  'hive:survey',
+  'pot:declare-wake',
+  'pot:get',
+  'pot:get-steering',
+  'pot:queen_efficiency',
+  'pot:status',
+  'pot:survey',
   'improvements:capture',
   'improvements:digest',
   'plans:add-decision',
@@ -620,7 +620,7 @@ export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'scheduler:set_claim_spec',
   'scorecards:freshness',
   'scorecards:list',
-  'scout:grade-idea',
+  'blender:grade-idea',
   'work_items:co_locate',
   'work_items:comment',
   'work_items:create',
@@ -715,8 +715,8 @@ export const BEE_ALLOWED_TOOLS: readonly string[] = [
  * supervisor; its ONLY write surface is four verbs — `coord:send` (nudge),
  * `coord:escalate` (structural issue), `improvements:capture` (observe / emit the
  * hive-coordination-health scorecard), `messages:send` (durable hand-off) — plus
- * `overwatch:declare-wake` (its own next wake). It NEVER places work (no
- * `bee:spawn` / `fleet:place_batch` / `work_items:set_priority` — the Queen's
+ * `kettle:declare-wake` (its own next wake). It NEVER places work (no
+ * `cup:spawn` / `fleet:place_batch` / `work_items:set_priority` — the Queen's
  * D-001 lane) and NEVER edits code (no `capability:*` — its envelope denies
  * fs-write/bash). Everything else here is a READ used to judge system health.
  *
@@ -744,15 +744,15 @@ export const OVERWATCH_MCP_TOOL_NAMES: readonly string[] = [
   'docs:get',
   'docs:search',
   'fleet:assignments',
-  'hive:get',
-  'hive:get-steering',
-  'hive:status',
-  'hive:survey',
+  'pot:get',
+  'pot:get-steering',
+  'pot:status',
+  'pot:survey',
   'improvements:capture',
   'improvements:digest',
   'messages:send',
   'notifications:recent',
-  'overwatch:declare-wake',
+  'kettle:declare-wake',
   'plans:get',
   'plans:list',
   'rubrics:get',
@@ -2987,7 +2987,7 @@ export async function invoke(
         // sessionOwner, so baking it as the MCP URL's stable `client=` lets the
         // operator attribute this child's coord:* / plans:* / improvements:* writes to
         // a real coord owner instead of throwing "no attributable identity" (which
-        // made every bee:spawn bee MUTE). The id stays fixed across the child's
+        // made every cup:spawn bee MUTE). The id stays fixed across the child's
         // tool calls, so it's a valid coord/lock owner (unlike the per-call runId).
         const stableSpawnId = (process.env.PAPERCUSP_SPAWN_ID ?? '').trim();
         const spawnId = stableSpawnId || randomUUID();

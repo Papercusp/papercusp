@@ -1013,7 +1013,7 @@ export const AGENT_ACTIVITY_TRUTH_NOTE = [
  * agent needs to be awake to notice and FIX). A bare subscription cannot fix the producer that
  * would make it fire. So when an agent genuinely must wait on something outside its control, it
  * should keep a LIVE re-check alive via a recurring self-wake (su/interactive → `loop:arm`; an
- * autonomous fleet supervisor → `hive:declare-wake` / `overwatch:declare-wake`; a worker with no
+ * autonomous fleet supervisor → `pot:declare-wake` / `kettle:declare-wake`; a worker with no
  * self-wake → record the blocker on the work-item so the live reconciled signal shows it), at a
  * cadence matched to how fast the thing changes, and on each wake re-check + FIX-if-stuck rather
  * than sleep again. It explicitly RECONCILES with the neighbouring notes: first try to REMOVE the
@@ -1048,7 +1048,7 @@ export const WAIT_LOOP_NOTE = [
   '  is preventing it (or escalate WITH your diagnosis), then re-arm — do not just sleep again.',
   '- MECHANISM (use the one your role holds): an su / interactive session arms',
   '  `loop:arm { intervalSec, goal }` and ends it with `loop:end` once unblocked; an autonomous fleet',
-  '  supervisor uses its wake-declaration (`hive:declare-wake` / `overwatch:declare-wake`), NOT',
+  '  supervisor uses its wake-declaration (`pot:declare-wake` / `kettle:declare-wake`), NOT',
   '  `loop:arm`. A worker with no self-wake instead records the blocker on the work-item',
   '  (`work_items:set_state` → blocked, with a reason) so the live reconciled signal shows it for',
   '  re-placement — never end silently as if the work were done.',
@@ -1630,7 +1630,7 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
  *
  * EI-249 added a fail-fast guard at `spawnAgentInHarness` (operator-core), but
  * that chokepoint only covers the BEE launch paths (chat `<spawn>`,
- * `bee:spawn`, `place_batch`). The psu/closeout dispatch path boots via
+ * `cup:spawn`, `place_batch`). The psu/closeout dispatch path boots via
  * `invoke.ts` → `buildPrompt` and never touches `spawnAgentInHarness`, so the
  * exact incident path stayed unguarded. `buildPrompt` is the ONE prompt-assembly
  * chokepoint EVERY launch funnels through (bee spawns, psu/closeout sessions,

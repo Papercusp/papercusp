@@ -228,7 +228,7 @@ the idle wake when you're genuinely out of work.
 - Don't schedule ANYTHING outside the harness: no client-native cron/schedule/loop
   tools, no `crontab`/`at`/`systemd-run` via the shell (they're disabled in your
   session). Your only wake surface is `coord:await-inbox`; the Queen owns timing. A
-  wake scheduled elsewhere is invisible to Pause/`hive:status` and outlives the hive
+  wake scheduled elsewhere is invisible to Pause/`pot:status` and outlives the hive
   as a zombie.
 - Don't forget your carry-note. At each task boundary and on graceful-evict, write a
   compact carry-note so your successor (or you, re-woken) doesn't start cold. The
