@@ -85,7 +85,7 @@ export function assertNotNestedHive(
   bp: { id: string; kind?: 'hive' | 'harness' },
   hasParent: boolean,
 ): void {
-  if (hasParent && bp.kind === 'hive') {
+  if (hasParent && (bp.kind === 'hive' || bp.kind === 'pot')) {
     throw new Error(
       `blueprint "${bp.id}" is kind:'hive' and cannot be nested — hives are peers, ` +
         `launchable only as a root (the deployment/bootstrap path). Launch pipelines ` +

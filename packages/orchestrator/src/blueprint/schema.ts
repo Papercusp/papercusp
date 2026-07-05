@@ -866,7 +866,11 @@ export const BlueprintSchema = z.object({
    * budget-federation invariant). Additive + optional-with-default, so every
    * pre-existing blueprint parses unchanged as a `'harness'`.
    */
-  kind: z.enum(['hive', 'harness']).default('harness'),
+  // pot-rename dual-accept: `pot` is the additive twin of the privileged `hive`
+  // blueprint kind — accepted ALONGSIDE it. (A kind:'pot' blueprint still provisions
+  // a harness_kind:'hive' home; the p2p Hive ENTITY name is unchanged — intentional
+  // asymmetry.) The old `hive` kind stays valid through the dual-accept window.
+  kind: z.enum(['pot', 'hive', 'harness']).default('harness'),
   version: z.string().default('0.1.0'),
   description: z.string().optional(),
   workItem: WorkItemSchema,

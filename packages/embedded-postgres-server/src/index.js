@@ -134,13 +134,36 @@ export const SEED_INITDB_FLAGS = ['--locale=C.UTF-8', '--lc-messages=C.UTF-8', '
 export const RUNTIME_LC_PARAMS = ['lc_messages', 'lc_monetary', 'lc_numeric', 'lc_time'];
 
 /**
- * Locales guaranteed present on EVERY host a shipped seed must boot on —
- * notably the lean Windows WSL rootfs (papercup-runtime: C / C.utf8 / POSIX
- * only). A seed whose postgresql.conf names a locale OUTSIDE this set can FATAL
- * at first boot on such a host (WI-2649). The `.UTF-8` / `.utf8` spellings are
- * both accepted since glibc and initdb normalise casing/hyphenation differently.
+ * Locales acceptable as the INITDB --locale pin (lc_collate/lc_ctype, baked
+ * into pg_database at initdb time and NOT re-validated at postmaster start) —
+ * present on every glibc host including the lean Windows WSL rootfs
+ * (papercup-runtime: C / C.utf8 / POSIX only). A seed whose initdb locale is
+ * OUTSIDE this set can FATAL at first boot on such a host (WI-2649). The
+ * `.UTF-8` / `.utf8` spellings are both accepted since glibc and initdb
+ * normalise casing/hyphenation differently.
+ *
+ * ⚠ Scope: initdb-time ONLY. This set is NOT safe for the four runtime lc_*
+ * GUCs — see UNIVERSAL_LC_VALUES.
  */
 export const PORTABLE_INITDB_LOCALES = ['C', 'POSIX', 'C.UTF-8', 'C.utf8', 'C.utf-8', 'c.utf8'];
+
+/**
+ * Locale values valid for the RUNTIME_LC_PARAMS on EVERY libc a desktop build
+ * ships to — glibc (Linux/WSL), musl, **macOS BSD libc**, and Windows. This is
+ * exactly the POSIX-guaranteed set: `C.UTF-8` is a glibc-ism that macOS
+ * setlocale() REJECTS, so a conf carrying lc_messages='C.UTF-8' FATALs the
+ * postmaster on macOS ("invalid value for parameter lc_messages", found live on
+ * the mac VM 2026-07-05, WI-2945 fallout — the WI-2749 normalizer itself had
+ * stamped it there). The runtime lc_* params control message/number/date
+ * FORMATTING only (never collation/ctype), so plain 'C' loses nothing.
+ */
+export const UNIVERSAL_LC_VALUES = ['C', 'POSIX'];
+
+/** True when `value` is a runtime lc_* value valid on EVERY target libc (incl. macOS). Pure. */
+export function localeIsUniversal(value) {
+  return typeof value === 'string'
+    && UNIVERSAL_LC_VALUES.some((p) => p.toLowerCase() === value.toLowerCase());
+}
 
 /**
  * Extract the `--locale=<value>` an initdb flag list requests, or null if none.
@@ -177,30 +200,35 @@ export function localeIsPortable(value) {
 
 /**
  * Return the list of `param='value'` for every ACTIVE (uncommented) RUNTIME_LC_PARAMS
- * assignment in a postgresql.conf whose value is NOT portable — empty means the
- * conf will boot on a lean rootfs. Pure; the WI-2749 recurrence guard asserts empty.
+ * assignment in a postgresql.conf whose value is not UNIVERSAL — empty means the
+ * conf will boot on every target libc (lean WSL rootfs AND macOS). Pure; the
+ * WI-2749 recurrence guard asserts empty. Judged against UNIVERSAL_LC_VALUES,
+ * not PORTABLE_INITDB_LOCALES: `C.UTF-8` passes the glibc-only initdb set but
+ * FATALs macOS's postmaster (2026-07-05).
  */
 export function confLcNonPortable(confText) {
   const bad = [];
   for (const param of RUNTIME_LC_PARAMS) {
     const m = confText.match(new RegExp(`^\\s*${param}\\s*=\\s*'([^']*)'`, 'm'));
-    if (m && !localeIsPortable(m[1])) bad.push(`${param}='${m[1]}'`);
+    if (m && !localeIsUniversal(m[1])) bad.push(`${param}='${m[1]}'`);
   }
   return bad;
 }
 
 /**
- * Rewrite every ACTIVE RUNTIME_LC_PARAMS assignment whose value is non-portable
+ * Rewrite every ACTIVE RUNTIME_LC_PARAMS assignment whose value is not universal
  * to `portableLocale`, preserving the trailing comment + surrounding formatting.
- * Pure — returns { text, changed }. Idempotent: a conf already portable is a no-op.
+ * Pure — returns { text, changed }. Idempotent: a conf already universal is a
+ * no-op. Default 'C' — the only spelling (with POSIX) every libc accepts; the
+ * previous default C.UTF-8 was itself the macOS FATAL (see UNIVERSAL_LC_VALUES).
  */
-export function normalizeConfLc(confText, portableLocale = 'C.UTF-8') {
+export function normalizeConfLc(confText, portableLocale = 'C') {
   let changed = false;
   let out = confText;
   for (const param of RUNTIME_LC_PARAMS) {
     const re = new RegExp(`^(\\s*${param}\\s*=\\s*)'([^']*)'`, 'm');
     out = out.replace(re, (full, lhs, val) => {
-      if (localeIsPortable(val)) return full;
+      if (localeIsUniversal(val)) return full;
       changed = true;
       return `${lhs}'${portableLocale}'`;
     });
@@ -227,7 +255,7 @@ export async function normalizePortableLocaleConf(dataDir, log = () => {}) {
   const { text, changed } = normalizeConfLc(conf);
   if (changed) {
     await writeFile(confPath, text);
-    log(`normalized non-portable lc_* in postgresql.conf → C.UTF-8 (WI-2749)`);
+    log(`normalized non-universal lc_* in postgresql.conf → C (WI-2749; C.UTF-8 FATALs macOS)`);
   }
 }
 
