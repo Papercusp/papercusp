@@ -781,9 +781,9 @@ export const OVERWATCH_MCP_TOOL_NAMES: readonly string[] = [
 export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // Bootstrap — one call returns assignments + backlog + inbox + plan-events + mem0.
   'coord:orient',
-  // Coordinate
+  // Coordinate. (coord:ack was cut in the 2026-07-05 demand-evidence rebalance — 47
+  // calls/7d; a coord:send reply covers the ack; stays reachable via tools:find/invoke.)
   'coord:inbox',
-  'coord:ack',
   'coord:send',
   'coord:glance',
   'coord:ask',
@@ -798,7 +798,16 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'plans:get',
   'plans:set-status',
   'plans:items',
+  // plans:set-now — the plan-narration duty every plan-holding agent carries ("## Now" is
+  // the status surface peers + the owner read). 467 tools:invoke fallback reaches + 807
+  // direct calls in 7d — a top unmet need (2026-07-05 demand-evidence rebalance).
+  'plans:set-now',
   'work_items:list',
+  // work_items:create — the #1 gap of the 2026-07-05 rebalance (608 fallback reaches +
+  // 1,354 direct calls across 5 roles in 7d). The discipline says "no edit without a
+  // work-item" and "file blockers as WIs", but the spine carried claim/complete and NOT
+  // the verb that CREATES one — every ad-hoc filing paid a tools:invoke round-trip.
+  'work_items:create',
   'work_items:claim',
   // EI-6770: self-pull (claim_next) + read (get) + finish (complete) are the OTHER
   // three verbs of the canonical worker loop (claim_next -> get -> ... -> complete)
@@ -808,27 +817,40 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'work_items:get',
   'work_items:complete',
   'work_items:set_state',
-  'work_items:update',
-  // Locks — claim a file before editing
-  'locks:acquire_granular',
-  'locks:release_granular',
+  // (2026-07-05 cuts: work_items:update — 104 calls/7d, set_state + comment cover the
+  // common cases; locks:acquire_granular/release_granular — the PreToolUse hook
+  // auto-locks every Edit/Write (8K+ hook acquires/week), the hand-held multi-file flow
+  // is rare + su-tier, and the OMP spine had already dropped them after weak models
+  // misused them as an operation-mutex. All stay reachable via tools:find/invoke.)
+  // scheduler:get_next — the fleet-member feed loop: members pull claim-spec work with it
+  // every drain iteration. 732 fallback reaches/7d = the second-loudest unmet need.
+  'scheduler:get_next',
   // Knowledge
   'docs:search',
   'memory:search',
   'memory:remember',
+  // improvements:capture — the universal "file what you notice" reflex every persona
+  // mandates (observations, friction, feature proposals). 227 fallback reaches + 1,128
+  // direct calls across 3 roles in 7d.
+  'improvements:capture',
   // Batching + reuse (code-run-self-state-adoption-2026-07-03 P-002) — the token-frugality
   // lever every prompt base nudges toward. It was absent from the spine, so even su sessions
   // had to detour through tools:invoke, and the prose nudge's "when code:run is in your
   // toolset" self-gate read a trimmed seed as "not in my toolset" and switched itself off.
   'code:run',
+  // (recipes:run was cut 2026-07-05 — 78 calls/7d from a single role; recipes:search
+  // already returns the run pointer, and the run itself routes via tools:invoke.)
   'recipes:search',
-  'recipes:run',
   // Agent self-state (same plan, P-002): the standing-facts ledger (upsert-by-key, scoped,
   // TTL'd, folded into orient) + the carry-note checkpoints a cold wake reads. Prompt-
   // referenced for fleet roles; in the spine so every seeded client can actually comply.
   'facts:assert',
   'facts:list',
   'work_items:checkpoint',
+  // loop:arm + loop:checkpoint — the engine-loop pair. checkpoint sat in the spine while
+  // the verb that CREATES the loop did not (253 fallback reaches/7d): an agent could
+  // checkpoint a loop it couldn't arm (2026-07-05 rebalance).
+  'loop:arm',
   'loop:checkpoint',
   // Session hygiene — EI-6770: without this in the spine, an agent nearing its
   // compaction limit has no way to compact cleanly and self-halts instead
