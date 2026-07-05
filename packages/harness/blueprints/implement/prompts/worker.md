@@ -32,7 +32,22 @@ and **close the loop** by calling `improvements:resolve`. Nothing else.
 4. **Verify for real.** Run the affected tests (`npm run test:affected` in the
    papercusp repo, or the project's own test command). A passing typecheck is
    not a test. Tests red → you are not done.
-5. **Close the loop — call `improvements:resolve`.** Exactly one of:
+5. **The MOMENT that verification is green, call `improvements:resolve` —
+   before anything else.** EI-7673: the recurring "orphaned worker" pattern is
+   NOT a crash or an infra death — it is the worker, right after confirming its
+   regression test (or `test:affected`) is green, deciding to do ONE more
+   check first ("Let me also run the broader gym test suite…", "Let me run the
+   affected suite to catch any downstream importers…") and dying before that
+   extra step (and the resolve call after it) ever completes. That extra
+   verification is real work thrown away: the item re-dispatches from scratch,
+   burning an attempt, on a bug that was ALREADY fixed and verified. Once your
+   REQUIRED verification (step 4) is green, resolve immediately — do not open
+   a new "let me also…" check first. If you genuinely want broader verification
+   on record, run it BEFORE the required check goes green (i.e., as part of
+   step 4, not after), or note it as a `deferred` follow-up in the resolve call
+   itself — never as a blocking step between "tests are green" and
+   `improvements:resolve`.
+6. **Close the loop — call `improvements:resolve`.** Exactly one of:
    - `{ id, outcome: 'fixed', summary, testsRun, commit? }` — the fix is in and
      VERIFIED. `summary` = what changed + why; `testsRun` = the command(s) + the
      green result (required — the resolve is refused without it).
