@@ -11,7 +11,6 @@
 -- per-log key `<owner-uid>/<fleet-slug>`.
 
 \set ON_ERROR_STOP on
-BEGIN;
 
 CREATE TABLE IF NOT EXISTS harness_shared.p2p_fleet_leader_leases (
     workspace_id            text    NOT NULL,
@@ -79,5 +78,3 @@ DROP TRIGGER IF EXISTS stamp_local_federated_write_trg ON harness_shared.p2p_fle
 CREATE TRIGGER stamp_local_federated_write_trg
   BEFORE INSERT OR UPDATE ON harness_shared.p2p_fleet_leader_leases
   FOR EACH ROW EXECUTE FUNCTION harness_shared.stamp_local_federated_write();
-
-COMMIT;
