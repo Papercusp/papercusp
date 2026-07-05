@@ -14,7 +14,7 @@ id: work
 extends: coding
 # Inherited from `hive`, restated for clarity: the privileged Queen blueprint, launchable
 # only as a ROOT (hives are flat peers, never nested).
-kind: hive
+kind: pot
 version: 0.1.0
 description: >-
   A generic (non-coding) Hive — the Queen places research / analysis / deliberation work

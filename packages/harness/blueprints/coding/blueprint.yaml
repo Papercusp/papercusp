@@ -20,7 +20,7 @@ extends: base
 # D-001 / D-009, swarm D-018). Launchable ONLY as a ROOT (the parentless
 # system:blueprint-run / hive:wake path); the no-nest guard rejects any parented
 # instantiation. Every other built-in blueprint defaults to kind:'harness'.
-kind: hive
+kind: pot
 version: 0.1.0
 description: >-
   The Hive/Hive operator — the Queen in charge of the bee fleet. Wakes on its
