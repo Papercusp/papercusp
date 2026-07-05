@@ -52,6 +52,58 @@ const DEFAULT_OWNER = 'postgres';
 const DEFAULT_OWNER_PWD = 'postgres';
 
 /**
+ * Ensure the `zero_harness` logical-replication publication exists and is
+ * correctly configured, then fold in any per-harness schemas. Called at boot
+ * AFTER migrations (the schemas it references must exist) and imported by the
+ * fresh-migrate integration guard so the EXACT boot DDL is tested.
+ *
+ * Scoping: FOR TABLES IN SCHEMA (not FOR ALL TABLES) — the latter captured
+ * zero-cache's own bookkeeping schemas (papercusp_0/cvr, papercusp_0/cdc, audit)
+ * and OOMed initial replication on workspaces with accumulated history. FOR
+ * TABLES IN SCHEMA auto-includes new tables in the listed schemas.
+ *
+ * WI-2914 — publish_generated_columns=stored: harness_shared.agent_facts has
+ * REPLICA IDENTITY FULL (mig 498 — required for its no-PK DELETEs) AND a STORED
+ * generated column `fed_key` (mig 462). On PG18, a table that is in a
+ * delete-publishing publication and whose FULL replica identity contains an
+ * *unpublished* generated column cannot be DELETEd from ("Replica identity must
+ * not contain unpublished generated columns"). That broke the ~30s agent-facts
+ * GC sweep on EVERY embedded/federated operator (unbounded growth + a permanent
+ * "[agent-facts] sweep failed" error loop; found on the packaged Linux desktop,
+ * WI-2902 clean-VM test). Publishing the generated column removes the
+ * "unpublished" condition and restores DELETEs (verified on PG 18.3). ZERO
+ * federation risk: agent_facts federation flows through app-level capture
+ * triggers -> hyperbee outbox (mig 461/462), NOT this publication — zero_harness
+ * is vestigial zero-cache scaffolding (retired) with no live pgoutput consumer.
+ * Idempotent; SELF-HEALS installs whose publication predates this fix.
+ */
+export async function ensureZeroHarnessPublication(sql) {
+  await sql.unsafe(`
+    DO $pg$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'zero_harness') THEN
+        CREATE PUBLICATION zero_harness FOR TABLES IN SCHEMA harness_shared, papercusp_shared;
+      END IF;
+      ALTER PUBLICATION zero_harness SET (publish_generated_columns = stored);
+    END $pg$;
+  `);
+  // Add per-harness schemas to the publication. Idempotent — duplicates raise a
+  // notice we ignore.
+  const perHarnessSchemas = await sql.unsafe(`
+    SELECT schema_name FROM information_schema.schemata
+    WHERE schema_name LIKE 'harness\\_%' ESCAPE '\\'
+      AND schema_name <> 'harness_shared'
+  `);
+  for (const { schema_name } of perHarnessSchemas) {
+    if (!/^harness_[a-z0-9_]+$/i.test(schema_name)) continue;
+    try {
+      await sql.unsafe(`ALTER PUBLICATION zero_harness ADD TABLES IN SCHEMA ${schema_name}`);
+    } catch {
+      // Already in publication — ignore.
+    }
+  }
+}
+
+/**
  * The initdb flags used for EVERY fresh cluster this package creates — the
  * seedless first-boot fallback AND the pre-migrated seed (build-seed.mjs boots
  * through startEmbeddedPostgresServer, so the shipped seed's postgresql.conf
@@ -432,36 +484,12 @@ export async function startEmbeddedPostgresServer(opts = {}) {
       });
       log(`migrations: ${result.appliedCount} applied this boot (${result.totalKnown} total known)`);
 
-      // Zero replication publication. Scoped to schemas the harness owns.
-      // FOR ALL TABLES had captured zero-cache's own bookkeeping schemas
-      // (papercusp_0/cvr, papercusp_0/cdc, audit) which OOMed zero-cache
-      // during initial replication on workspaces with accumulated history.
-      // FOR TABLES IN SCHEMA auto-includes new tables added to listed
-      // schemas, and per-harness schemas are added on-demand by the
-      // bootstrap helper that scaffolds them. Runs AFTER migrations so
-      // the schemas it references actually exist on a fresh initdb.
-      await sql.unsafe(`
-        DO $pg$ BEGIN
-          IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'zero_harness') THEN
-            CREATE PUBLICATION zero_harness FOR TABLES IN SCHEMA harness_shared, papercusp_shared;
-          END IF;
-        END $pg$;
-      `);
-      // Add per-harness schemas to the publication. Idempotent — duplicates
-      // raise a notice we ignore.
-      const perHarnessSchemas = await sql.unsafe(`
-        SELECT schema_name FROM information_schema.schemata
-        WHERE schema_name LIKE 'harness\\_%' ESCAPE '\\'
-          AND schema_name <> 'harness_shared'
-      `);
-      for (const { schema_name } of perHarnessSchemas) {
-        if (!/^harness_[a-z0-9_]+$/i.test(schema_name)) continue;
-        try {
-          await sql.unsafe(`ALTER PUBLICATION zero_harness ADD TABLES IN SCHEMA ${schema_name}`);
-        } catch {
-          // Already in publication — ignore.
-        }
-      }
+      // Zero replication publication. Extracted to ensureZeroHarnessPublication()
+      // so the boot-path DDL (incl. the WI-2914 publish_generated_columns fix) is
+      // exercised verbatim by the fresh-migrate integration guard — mirroring the
+      // extract-a-shared-helper pattern this file already uses for migrations.
+      // Runs AFTER migrations so the schemas it references exist on a fresh initdb.
+      await ensureZeroHarnessPublication(sql);
 
       // Per-harness template application RETIRED (harness-state-storage-
       // unification-2026-06-01, D-007). Per-harness schemas now contain only
