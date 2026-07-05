@@ -15,6 +15,10 @@ const h = vi.hoisted(() => ({ sql: null as unknown as Sql }));
 vi.mock('./connection', () => ({
   getOrgPgApp: () => ({ sql: h.sql }),
   getOrgPg: () => ({ sql: h.sql }),
+  // workspace-context gates its per-txn search_path/GUC re-apply on this (C1-2).
+  // The test's sql is a DIRECT testcontainer client — no pooler in between.
+  pgbouncerEnabled: () => false,
+  getHarnessPg: () => ({ sql: h.sql }),
 }));
 
 import { withWorkspace, withWorkspaceQuery } from './workspace-context';
