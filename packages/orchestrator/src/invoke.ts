@@ -3008,12 +3008,14 @@ export async function invoke(
           // durable operator-assigned spawnId — a bare random UUID would not be a real
           // coord owner, so omit it there (the legacy pipeline-role path is unchanged).
           clientId: stableSpawnId || null,
+          // pot-rename dual-accept: mug/cup/kettle are the additive twins of
+          // queen/bee/overwatch — select the SAME role-scoped tool group.
           mcpToolNames:
-            role === 'queen'
+            role === 'queen' || role === 'mug'
               ? QUEEN_MCP_TOOL_NAMES
-              : role === 'bee'
+              : role === 'bee' || role === 'cup'
                 ? BEE_MCP_TOOL_NAMES
-                : role === 'overwatch'
+                : role === 'overwatch' || role === 'kettle'
                   ? OVERWATCH_MCP_TOOL_NAMES
                   : null,
         };
