@@ -60,12 +60,15 @@ CREATE OR REPLACE VIEW harness_shared.engineer_issues AS
     (payload - '_ei') AS payload,
     payload->'_ei'->>'assigned_by' AS assigned_by,
     taken_at AS assigned_at,
-    -- WI-2990: the real item-scoped progress signal, previously never surfaced
-    -- through this view (issueToWorkItem hardcoded it to null downstream).
-    last_progress_at,
     assignee_rank, rank_writer, rank_updated_at, fed_ts,
     COALESCE(payload->'_ei'->>'signal_origin', 'local') AS signal_origin,
-    fed_hlc
+    fed_hlc,
+    -- WI-2990: the real item-scoped progress signal, previously never surfaced
+    -- through this view (issueToWorkItem hardcoded it to null downstream).
+    -- MUST be appended LAST — CREATE OR REPLACE VIEW can only add trailing
+    -- columns, never reorder/insert among existing ones (PG rejects it as
+    -- "cannot drop columns from view").
+    last_progress_at
   FROM harness_shared.work_items
   WHERE item_kind IN ('bug', 'change', 'task');
 
