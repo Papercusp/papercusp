@@ -54,21 +54,22 @@
 -- ─────────────────────────────────────────────────────────────────────────────────────
 -- DROP the narrow CHECK then ADD the wide one NOT VALID (catalog-only, no table scan),
 -- then VALIDATE (DML-friendly lock). Superset widen ⇒ every existing row already complies.
-ALTER TABLE harness_shared.harness_features_consolidated
+--
+-- FIX (su-bf97d, 2026-07-05): the rank_writer CHECK lives on the UNIFIED base table
+-- harness_shared.work_items (mig 374 folded harness_features_consolidated + engineer_issues
+-- INTO work_items and turned both into VIEWS over it). ALTER TABLE ... CONSTRAINT on a VIEW
+-- fails with 42809 "not supported for views" — which broke the ENTIRE chain from a clean
+-- baseline (every fresh operator boot + the integration baseline global-setup). The single
+-- constraint kept its historical name `hfc_rank_writer_chk` on work_items through the
+-- unification; both views read through it, so widening it ONCE covers both. (There is no
+-- separate `engineer_issues_rank_writer_chk` — verified on live PG18.)
+ALTER TABLE harness_shared.work_items
   DROP CONSTRAINT IF EXISTS hfc_rank_writer_chk;
-ALTER TABLE harness_shared.harness_features_consolidated
+ALTER TABLE harness_shared.work_items
   ADD CONSTRAINT hfc_rank_writer_chk
   CHECK (rank_writer IS NULL OR rank_writer IN ('bee', 'queen', 'cup', 'mug')) NOT VALID;
-ALTER TABLE harness_shared.harness_features_consolidated
+ALTER TABLE harness_shared.work_items
   VALIDATE CONSTRAINT hfc_rank_writer_chk;
-
-ALTER TABLE harness_shared.engineer_issues
-  DROP CONSTRAINT IF EXISTS engineer_issues_rank_writer_chk;
-ALTER TABLE harness_shared.engineer_issues
-  ADD CONSTRAINT engineer_issues_rank_writer_chk
-  CHECK (rank_writer IS NULL OR rank_writer IN ('bee', 'queen', 'cup', 'mug')) NOT VALID;
-ALTER TABLE harness_shared.engineer_issues
-  VALIDATE CONSTRAINT engineer_issues_rank_writer_chk;
 
 -- ─────────────────────────────────────────────────────────────────────────────────────
 -- A') reorder_work_item() guard widen — bee|queen → bee|queen|cup|mug
@@ -239,9 +240,12 @@ CREATE TRIGGER hive_integration_requests_pot_hive_sync_trg BEFORE INSERT OR UPDA
   FOR EACH ROW EXECUTE FUNCTION harness_shared.sync_pot_hive_slug();
 
 -- hive_throughput_ticks (hive_slug NOT NULL; PK is on identity id — no companion key needed)
+-- NOTE: this telemetry table is LARGE (~260k rows). Its historical pot_slug backfill is
+-- DEFERRED to the P5 batched / out-of-band backfill — pot_slug is not READ until CONTRACT,
+-- and the trigger below already mirrors every NEW row, so leaving old rows' pot_slug NULL
+-- during the window is safe. Deferring keeps this EXPAND migration fast so its co-transaction
+-- never holds a long lock on the hot tables (coord_presence etc.). Only ADD COLUMN + trigger here.
 ALTER TABLE harness_shared.hive_throughput_ticks ADD COLUMN IF NOT EXISTS pot_slug text;
-UPDATE harness_shared.hive_throughput_ticks SET pot_slug = hive_slug
-  WHERE hive_slug IS NOT NULL AND pot_slug IS DISTINCT FROM hive_slug;
 DROP TRIGGER IF EXISTS hive_throughput_ticks_pot_hive_sync_trg ON harness_shared.hive_throughput_ticks;
 CREATE TRIGGER hive_throughput_ticks_pot_hive_sync_trg BEFORE INSERT OR UPDATE ON harness_shared.hive_throughput_ticks
   FOR EACH ROW EXECUTE FUNCTION harness_shared.sync_pot_hive_slug();
