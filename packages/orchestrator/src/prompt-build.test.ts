@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { buildPrompt, buildPromptParts, wrapUntrusted, findBriefPlaceholder } from './prompt-build.js';
 import {
   WORK_RECORD_NOTE,
+  WRITE_THROUGH_NOTE,
   PLAN_DISCIPLINE_NOTE,
   OBSERVATION_CAPTURE_NOTE,
   FINISH_THE_ROLLOUT_NOTE,
@@ -626,13 +627,15 @@ test('buildPrompt — every role gets the sharpened flag-on dangerous-set rule (
 
 // The four directive constants are the SINGLE source; assert each carries its load-bearing
 // phrase so a future edit to the string can't silently drop the requirement.
-test('the four directive constants each carry their load-bearing phrase (single-source pin)', () => {
+test('the directive constants each carry their load-bearing phrase (single-source pin)', () => {
   assert.match(WORK_RECORD_NOTE, /Before your first code\/deliverable edit you MUST hold a work-item/);
   assert.match(WORK_RECORD_NOTE, /never a substitute/);
   assert.match(PLAN_DISCIPLINE_NOTE, /A plan is REQUIRED when work decomposes into >=2 work-items/);
   assert.match(OBSERVATION_CAPTURE_NOTE, /Capture what you notice the moment you notice it/);
   assert.match(FINISH_THE_ROLLOUT_NOTE, /Ship features flag-ON by default/);
   assert.match(FINISH_THE_ROLLOUT_NOTE, /Default-OFF is ONLY for the dangerous set/);
+  assert.match(WRITE_THROUGH_NOTE, /flush a conclusion WHEN IT FORMS/);
+  assert.match(WRITE_THROUGH_NOTE, /~75%-context nudge and compaction itself are the BACKSTOP/);
 });
 
 // The su persona spine (libs/.../blueprints/base/prompts/su.md) is the canonical home for the
