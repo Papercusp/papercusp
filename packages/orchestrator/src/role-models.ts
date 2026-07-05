@@ -84,12 +84,6 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   mug: 'sonnet',
   kettle: 'sonnet',
   operator: 'sonnet',
-  // EXPAND-phase rows (WI-2932 pot-rename): pre-existing durable spawn rows
-  // still re-fire with the OLD child_role ids until the S2 role backfill
-  // rewrites them. DELETE these three when s2-role-contract.sql lands.
-  bee: 'haiku',
-  queen: 'sonnet',
-  overwatch: 'sonnet',
 };
 
 /**

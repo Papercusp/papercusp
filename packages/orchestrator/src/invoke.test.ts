@@ -497,12 +497,12 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
     assert.equal(resolveModel({}, 'worker'), 'sonnet');
     assert.equal(resolveModel({}, 'validator'), 'sonnet');
     assert.equal(resolveModel({}, 'documenter'), 'sonnet');
-    assert.equal(resolveModel({}, 'bee'), 'haiku');
+    assert.equal(resolveModel({}, 'cup'), 'haiku');
     assert.equal(resolveModel({}, 'scanner'), 'haiku');
     assert.equal(resolveModel({}, 'judge'), 'haiku');
     // The Overwatch health loop must not inherit the user's interactive Claude
     // default (often Opus); scorecards and wake declarations are required every turn.
-    assert.equal(resolveModel({}, 'overwatch'), 'sonnet');
+    assert.equal(resolveModel({}, 'kettle'), 'sonnet');
     // The launch-fixer family's committed floors (D-008 follow-up): the two
     // fleet-blast-radius fixers pin opus:xhigh, the bounded content repairer pins sonnet.
     assert.equal(resolveModel({}, 'merge-resolver'), 'opus:xhigh');
@@ -1034,9 +1034,6 @@ test('claudeMcpArgs — allow-list is the safe dev kit + mcp__papercusp wildcard
 test('fleetAllowedToolsForRole — mug uses a compact explicit MCP subset, not the server wildcard', () => {
   const allowed = fleetAllowedToolsForRole('mug');
   assert.deepEqual(allowed, [...QUEEN_ALLOWED_TOOLS]);
-  // Pre-rename durable spawns still fire with role 'queen' until the S2 backfill —
-  // the legacy id must keep the SAME compact kit, never widen to the full fleet kit.
-  assert.deepEqual(fleetAllowedToolsForRole('queen'), [...QUEEN_ALLOWED_TOOLS]);
   assert.ok(!allowed.includes('mcp__papercusp'), 'mug must not load the full MCP schema wildcard');
   assert.ok(QUEEN_MCP_TOOL_NAMES.includes('pot:survey'), 'queen MCP listing hint must use colon-form names');
   assert.ok(!QUEEN_MCP_TOOL_NAMES.includes('coord:inbox'), 'queen MCP listing hint must omit broad ambient inbox tools');
@@ -1078,8 +1075,6 @@ test('fleetAllowedToolsForRole — mug uses a compact explicit MCP subset, not t
 test('fleetAllowedToolsForRole — cup uses a compact worker MCP subset, not the server wildcard', () => {
   const allowed = fleetAllowedToolsForRole('cup');
   assert.deepEqual(allowed, [...BEE_ALLOWED_TOOLS]);
-  // Legacy 'bee' spawns (pre-S2 durable rows) keep the same compact worker kit.
-  assert.deepEqual(fleetAllowedToolsForRole('bee'), [...BEE_ALLOWED_TOOLS]);
   assert.ok(!allowed.includes('mcp__papercusp'), 'cup must not load the full MCP schema wildcard');
   for (const required of [
     'mcp__papercusp__work_items_claim',

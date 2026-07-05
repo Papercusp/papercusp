@@ -50,10 +50,8 @@ test('hive blueprint declares operator + mug as the two live deciders (both flag
   assert.deepEqual([...deciders].sort(), ['mug', 'operator']);
 });
 
-// 'queen' rides along: pre-rename durable spawn rows still fire with the old id
-// until the S2 role backfill; the ROLE_ALIASES bridge must resolve them to the
 // SAME complete mug persona.
-for (const role of ['operator', 'mug', 'queen'] as const) {
+for (const role of ['operator', 'mug'] as const) {
   test(`hive decider "${role}" assembles a complete Queen persona (D-007 full role)`, () => {
     // Post queen-split (P-007/P-008): the persona is COMPOSED from the shared base
     // prefix (queen.base.md) + the blueprint delta (coding/queen.md), exactly as the

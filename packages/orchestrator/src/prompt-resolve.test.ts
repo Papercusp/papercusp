@@ -648,17 +648,22 @@ test('P-007/P-008 — bare mug (no blueprintId) composes [base/mug.base.md, base
   ]);
 });
 
-test('Brief 6 blueprint-id + role aliases — stale hive/generic-hive ids and role=bee resolve the renamed files', () => {
+test('Brief 6 blueprint-id aliases — stale hive/generic-hive ids resolve the renamed dirs; role ids are contracted', () => {
   // An un-migrated instance `extends:`/blueprintId naming an OLD id still resolves the
-  // renamed blueprint dir (blueprint-aliases.ts), and a pre-rename durable spawn firing
-  // with role=bee still resolves the renamed cup persona (ROLE_ALIASES expand bridge).
+  // renamed blueprint dir (blueprint-aliases.ts). Role ids are CONTRACTED since the S2
+  // role backfill (s2-role-contract.sql): 'cup' resolves natively, 'bee' resolves nothing
+  // (ROLE_ALIASES is empty — no stored row carries the old ids any more).
   assert.equal(
-    resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'bee'),
+    resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'cup'),
     join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'cup.md'),
   );
   assert.equal(
-    resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'generic-hive' }, 'bee'),
+    resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'generic-hive' }, 'cup'),
     join(HARNESS_PKG, 'blueprints', 'work', 'prompts', 'cup.md'),
+  );
+  assert.equal(
+    resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'bee'),
+    null,
   );
 });
 
