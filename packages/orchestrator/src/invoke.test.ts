@@ -1038,13 +1038,15 @@ test('fleetAllowedToolsForRole — queen uses a compact explicit MCP subset, not
   assert.ok(QUEEN_MCP_TOOL_NAMES.includes('pot:survey'), 'queen MCP listing hint must use colon-form names');
   assert.ok(!QUEEN_MCP_TOOL_NAMES.includes('coord:inbox'), 'queen MCP listing hint must omit broad ambient inbox tools');
   for (const required of [
-    'mcp__papercusp__hive_survey',
-    'mcp__papercusp__hive_declare-wake',
-    'mcp__papercusp__bee_spawn',
+    // P-016 pot-lexicon renames: hive:survey→pot:survey, hive:declare-wake→
+    // pot:declare-wake, bee:spawn→cup:spawn, scout:grade-idea→blender:grade-idea.
+    'mcp__papercusp__pot_survey',
+    'mcp__papercusp__pot_declare-wake',
+    'mcp__papercusp__cup_spawn',
     'mcp__papercusp__fleet_assignments',
     'mcp__papercusp__coord_send',
     'mcp__papercusp__coord_wake',
-    'mcp__papercusp__scout_grade-idea',
+    'mcp__papercusp__blender_grade-idea',
     'mcp__papercusp__plans_promote',
     'mcp__papercusp__plans_set-plan-status',
     'mcp__papercusp__work_items_create',
