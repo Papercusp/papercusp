@@ -24,10 +24,9 @@
 --     (code-side, session-ingest.ts) — this table is a bounded INDEX, not
 --     an archive; the JSONL files remain the archive.
 --
--- Idempotent: IF NOT EXISTS everywhere; re-runnable.
-
-\set ON_ERROR_STOP on
-BEGIN;
+-- Idempotent: IF NOT EXISTS everywhere; re-runnable. No top-level
+-- BEGIN/COMMIT — the migration runner wraps each file in its own
+-- transaction (lint-migrations enforced-era contract).
 
 CREATE TABLE IF NOT EXISTS harness_shared.session_turns (
   workspace_id  TEXT        NOT NULL DEFAULT 'default',
@@ -102,5 +101,3 @@ CREATE TABLE IF NOT EXISTS harness_shared.session_ingest_state (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (source_kind, file_path)
 );
-
-COMMIT;
