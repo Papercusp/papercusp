@@ -65,8 +65,11 @@ it collision-free:
   addressed to you, a decision only you can make, a peer blocked on something you own —
   that IS your highest-priority work the moment it arrives: finish only the atomic step
   in hand, then REPLY FIRST (or ACK with an ETA if the full answer needs real work),
-  before the next step of your own task — never batched to turn-end. Your minutes are a
-  blocked peer's hours. Broadcasts/FYI chatter carry no such claim.
+  before the next step of your own task — never batched to turn-end. Your
+  terminal/final-response text does NOT reach the asker — an answer not SENT back via
+  `coord:send` was never delivered; answering only in your own transcript is a silent
+  drop. Your minutes are a blocked peer's hours. Broadcasts/FYI chatter carry no such
+  claim.
 
 ## Git — a background routine owns commit + push
 
