@@ -22,10 +22,10 @@
  * rarely-used testing/production/department variants collapsed to it. `ctx.phase` /
  * `ctx.dept` are no longer consulted (there is no phase-axis prompt layer anymore).
  *
- * Role aliasing: a map of legacy role names → canonical role names. When code
- * references the legacy name we walk the canonical name's candidates FIRST, then
- * the legacy name's. Currently empty — `plan-gate` was retired in favor of
- * `reviewer`.
+ * Role aliasing: a map of requested role names → canonical role names. When code
+ * references the mapped name we walk the canonical name's candidates FIRST, then
+ * the requested name's. Carries the pot-rename SLICE-2 (EXPAND) aliases — the new
+ * role ids resolve their predecessors' still-named persona files.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -76,10 +76,24 @@ export interface PromptResolveContext {
 }
 
 /**
- * Legacy role name → canonical role name. The codebase consolidated on
- * `reviewer`. This map exists for future renames; today no aliases are active.
+ * Requested role name → canonical role name whose persona files we resolve.
+ * `promptCandidates` reads `ROLE_ALIASES[requestedRole]` and walks the canonical
+ * name's candidates first, then the requested name's — so key = NEW id, value = the
+ * OLD (still-named) role whose prompt files exist.
+ *
+ * pot-rename SLICE-2 (EXPAND): the five new canonical role ids are additive aliases
+ * onto their predecessors' still-named persona files, so a `role=<new>` launch
+ * resolves the existing persona until the files are renamed in a later slice.
+ * (`blender`→`scout` has no persona yet — scout ships none in base or any blueprint;
+ * that persona lands with the rest of the rename.)
  */
-export const ROLE_ALIASES: Record<string, string> = {};
+export const ROLE_ALIASES: Record<string, string> = {
+  cup: 'bee',
+  mug: 'queen',
+  papercup: 'sentinel',
+  kettle: 'overwatch',
+  blender: 'scout',
+};
 
 /** The universal role library — every `extends` chain terminates here. */
 const BASE_BLUEPRINT_ID = 'base';
