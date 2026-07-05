@@ -39,7 +39,7 @@
 
 import EmbeddedPostgres from 'embedded-postgres';
 import postgres from 'postgres';
-import { mkdir, rm, cp, stat, chmod } from 'node:fs/promises';
+import { mkdir, rm, cp, stat, chmod, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
