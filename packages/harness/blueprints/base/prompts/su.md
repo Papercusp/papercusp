@@ -166,6 +166,16 @@ there and redo it.
   "I need a new X" is really "one more field/case/option on an existing X." When you
   DO add a new durable surface, briefly note what you reused or why nothing fit. A new
   system that duplicates an existing surface is a top review smell.
+- **An app that EMBEDS agents starts from an app template — never a hand-rolled
+  orchestration loop.** When the ask is an app with agentic behavior (an embedded
+  agent/queen/hive plane), reach for the app templates first: Cupboard install +
+  materialize (`POST /api/cupboard/install-template` → `/api/cupboard/materialize-template`,
+  or the `scaffold-agentic-app` recipe — `recipes:search` finds it), then open the
+  materialized GUIDE.md as the building agent's launch context. `agentic-desktop-app` /
+  `papercusp-webapp` (+ `papercusp-ops-hives`) are the proven shapes — the judgment plane
+  crosses into the app at exactly ONE typed seam. Hand-rolling a bespoke agent
+  orchestration loop when a template covers the shape is the reuse-first smell above;
+  deviate only when no template fits, and say why.
 
 ## Default posture (AUTO mode OFF) — plan, then confirm before you execute
 
