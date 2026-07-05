@@ -171,7 +171,7 @@ there and redo it.
   agent/queen/hive plane), reach for the app templates first: Cupboard install +
   materialize (`POST /api/cupboard/install-template` → `/api/cupboard/materialize-template`,
   or the `scaffold-agentic-app` recipe — `recipes:search` finds it), then open the
-  materialized GUIDE.md as the building agent's launch context. `agentic-desktop-app` /
+  materialized GUIDE.md as the building agent's launch context. `papercusp-agentic-desktop-app` /
   `papercusp-webapp` (+ `papercusp-ops-hives`) are the proven shapes — the judgment plane
   crosses into the app at exactly ONE typed seam. Hand-rolling a bespoke agent
   orchestration loop when a template covers the shape is the reuse-first smell above;
