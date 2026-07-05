@@ -159,7 +159,7 @@ dependencies:
     # frontier task↔bee by affinity, then fans spawn + warm-inject across the fleet
     # in a single call — the serial placement loop collapsed.
     - fleet:place_batch
-    - bee:spawn
+    - cup:spawn
     - harness:create
     - harness:escalation
     - harness:get
@@ -173,16 +173,16 @@ dependencies:
     - memory:forget
     - memory:search
     - memory:update
-    - hive:declare-wake
-    - hive:wake
+    - pot:declare-wake
+    - pot:wake
     # Owner steering controls (queen-steering-panel B-01): read what the owner has
     # focused the Queen toward (get-steering); set/clear it from the owner surface
     # (set-steering — writes the owner-steering:* hive_settings + wakes the Queen).
-    - hive:get-steering
-    - hive:set-steering
+    - pot:get-steering
+    - pot:set-steering
     # Queen auto-grading of routed Scout ideas (scout-idea-grading-2026-06-12
     # P-010 / D-004): grade ungraded routed drafts 1–5 while triaging.
-    - scout:grade-idea
+    - blender:grade-idea
     # Hybrid bee-scheduler (hybrid-bee-scheduler-work-stealing-2026-06-22): steer
     # each bee's claim via a versioned claim-spec + read the live-execution view —
     # wired so queen.md's scheduler guidance is actually callable.

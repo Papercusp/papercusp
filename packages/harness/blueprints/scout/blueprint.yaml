@@ -38,7 +38,7 @@ workItem:
 spine:
   steps:
     - id: cycle
-      op: scout:cycle
+      op: blender:cycle
       args:
         cadence: "{{ payload.cadence }}"
         budget: "{{ payload.budget }}"

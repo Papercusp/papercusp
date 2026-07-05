@@ -32,7 +32,7 @@ workItem:
 spine:
   steps:
     - id: gen
-      op: hive-eval:gen
+      op: pot-eval:gen
       args:
         budgetUsd: "{{ payload.budgetUsd }}"
         repeats: "{{ payload.repeats }}"
