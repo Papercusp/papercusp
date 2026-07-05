@@ -75,7 +75,7 @@ async function seedDuplicateIssueRows(issueId: string): Promise<void> {
 }
 
 describe('engineer_issues view DML duplicate-id targeting', () => {
-  it('updates duplicate logical issue ids without pkey collision or row collapse', async () => {
+  it('updates duplicate logical issue ids without pkey collision, row collapse, or remote mutation', async () => {
     const issueId = 'EI-900001';
     await seedDuplicateIssueRows(issueId);
 
@@ -85,19 +85,19 @@ describe('engineer_issues view DML duplicate-id targeting', () => {
              body = body || ' touched'
        WHERE workspace_id = 'ws1' AND issue_id = ${issueId}`;
 
-    const rows = await sql<{ harness_slug: string; origin: string; summary: string; touched: boolean }[]>`
+    const rows = await sql<{ harness_slug: string; origin: string; summary: string; touched: boolean | null }[]>`
       SELECT harness_slug, origin, summary, (payload->>'touched')::boolean AS touched
         FROM harness_shared.work_items
        WHERE workspace_id = 'ws1' AND feature_id = ${issueId}
        ORDER BY harness_slug, origin`;
 
     expect(rows).toEqual([
-      { harness_slug: '', origin: 'remote', summary: 'remote body touched', touched: true },
+      { harness_slug: '', origin: 'remote', summary: 'remote body', touched: null },
       { harness_slug: 'operator:ws1', origin: 'local', summary: 'local body touched', touched: true },
     ]);
   });
 
-  it('changes physical slug only when scope changes on that specific view row', async () => {
+  it('does not mutate a remote physical row even when the view UPDATE targets it', async () => {
     const issueId = 'EI-900002';
     await seedDuplicateIssueRows(issueId);
 
@@ -109,8 +109,8 @@ describe('engineer_issues view DML duplicate-id targeting', () => {
          AND origin = 'remote'
          AND base_harness_slug = ''`;
 
-    const rows = await sql<{ harness_slug: string; origin: string; scope: string }[]>`
-      SELECT wi.harness_slug, wi.origin, ei.scope
+    const rows = await sql<{ harness_slug: string; origin: string; scope: string; summary: string }[]>`
+      SELECT wi.harness_slug, wi.origin, ei.scope, wi.summary
         FROM harness_shared.work_items wi
         JOIN harness_shared.engineer_issues ei
           ON ei.workspace_id = wi.workspace_id
@@ -121,8 +121,8 @@ describe('engineer_issues view DML duplicate-id targeting', () => {
        ORDER BY wi.harness_slug, wi.origin`;
 
     expect(rows).toEqual([
-      { harness_slug: 'operator:ws1', origin: 'local', scope: 'operator' },
-      { harness_slug: 'remote-peer', origin: 'remote', scope: 'harness:remote-peer' },
+      { harness_slug: '', origin: 'remote', scope: 'operator', summary: 'remote body' },
+      { harness_slug: 'operator:ws1', origin: 'local', scope: 'operator', summary: 'local body' },
     ]);
   });
 });
