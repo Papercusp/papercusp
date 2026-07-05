@@ -1031,10 +1031,13 @@ test('claudeMcpArgs — allow-list is the safe dev kit + mcp__papercusp wildcard
   }
 });
 
-test('fleetAllowedToolsForRole — queen uses a compact explicit MCP subset, not the server wildcard', () => {
-  const allowed = fleetAllowedToolsForRole('queen');
+test('fleetAllowedToolsForRole — mug uses a compact explicit MCP subset, not the server wildcard', () => {
+  const allowed = fleetAllowedToolsForRole('mug');
   assert.deepEqual(allowed, [...QUEEN_ALLOWED_TOOLS]);
-  assert.ok(!allowed.includes('mcp__papercusp'), 'queen must not load the full MCP schema wildcard');
+  // Pre-rename durable spawns still fire with role 'queen' until the S2 backfill —
+  // the legacy id must keep the SAME compact kit, never widen to the full fleet kit.
+  assert.deepEqual(fleetAllowedToolsForRole('queen'), [...QUEEN_ALLOWED_TOOLS]);
+  assert.ok(!allowed.includes('mcp__papercusp'), 'mug must not load the full MCP schema wildcard');
   assert.ok(QUEEN_MCP_TOOL_NAMES.includes('pot:survey'), 'queen MCP listing hint must use colon-form names');
   assert.ok(!QUEEN_MCP_TOOL_NAMES.includes('coord:inbox'), 'queen MCP listing hint must omit broad ambient inbox tools');
   for (const required of [
@@ -1072,10 +1075,12 @@ test('fleetAllowedToolsForRole — queen uses a compact explicit MCP subset, not
   }
 });
 
-test('fleetAllowedToolsForRole — bee uses a compact worker MCP subset, not the server wildcard', () => {
-  const allowed = fleetAllowedToolsForRole('bee');
+test('fleetAllowedToolsForRole — cup uses a compact worker MCP subset, not the server wildcard', () => {
+  const allowed = fleetAllowedToolsForRole('cup');
   assert.deepEqual(allowed, [...BEE_ALLOWED_TOOLS]);
-  assert.ok(!allowed.includes('mcp__papercusp'), 'bee must not load the full MCP schema wildcard');
+  // Legacy 'bee' spawns (pre-S2 durable rows) keep the same compact worker kit.
+  assert.deepEqual(fleetAllowedToolsForRole('bee'), [...BEE_ALLOWED_TOOLS]);
+  assert.ok(!allowed.includes('mcp__papercusp'), 'cup must not load the full MCP schema wildcard');
   for (const required of [
     'mcp__papercusp__work_items_claim',
     'mcp__papercusp__work_items_set_state',

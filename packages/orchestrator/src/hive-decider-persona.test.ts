@@ -41,16 +41,19 @@ const ROLE_CLAUSES: ReadonlyArray<readonly [label: string, needle: string]> = [
   ['parallelize plan implementations via briefs', 'agent briefs'],
 ];
 
-test('hive blueprint declares operator + queen as the two live deciders (both flag states)', () => {
+test('hive blueprint declares operator + mug as the two live deciders (both flag states)', () => {
   const { blueprint } = loadBuiltinBlueprint('coding');
   const deciders = [
     blueprint.spine.decider,
     ...(blueprint.spine.deciderAlternatives ?? []),
   ];
-  assert.deepEqual([...deciders].sort(), ['operator', 'queen']);
+  assert.deepEqual([...deciders].sort(), ['mug', 'operator']);
 });
 
-for (const role of ['operator', 'queen'] as const) {
+// 'queen' rides along: pre-rename durable spawn rows still fire with the old id
+// until the S2 role backfill; the ROLE_ALIASES bridge must resolve them to the
+// SAME complete mug persona.
+for (const role of ['operator', 'mug', 'queen'] as const) {
   test(`hive decider "${role}" assembles a complete Queen persona (D-007 full role)`, () => {
     // Post queen-split (P-007/P-008): the persona is COMPOSED from the shared base
     // prefix (queen.base.md) + the blueprint delta (coding/queen.md), exactly as the

@@ -1003,9 +1003,13 @@ export function fleetAllowedToolsForRole(
   // gets the full FLEET_ALLOWED_TOOLS.
   const scoped = !!(scope?.allow && scope.allow.length > 0);
   let tools: string[];
+  // 'queen'/'bee' are the pre-rename role ids (WI-2932): durable spawn rows minted
+  // before the rename still fire with them until the S2 role backfill — they must
+  // keep the compact curated kit, never widen to the full FLEET_ALLOWED_TOOLS.
+  // DELETE the legacy arms when s2-role-contract.sql lands.
   if (scoped) tools = [...scope!.allow!];
-  else if (role === 'mug') tools = [...QUEEN_ALLOWED_TOOLS];
-  else if (role === 'cup') tools = [...BEE_ALLOWED_TOOLS];
+  else if (role === 'mug' || role === 'queen') tools = [...QUEEN_ALLOWED_TOOLS];
+  else if (role === 'cup' || role === 'bee') tools = [...BEE_ALLOWED_TOOLS];
   else tools = [...FLEET_ALLOWED_TOOLS];
   // B-18 cutover: drop the native write/exec/fetch tools a confined role replaces with
   // capability:* — applied to EVERY base (incl. queen/bee, which previously early-returned
