@@ -24,9 +24,8 @@
 --       collide again — even if a corrupt empty-slug row is re-introduced later.
 --
 -- Idempotent: the cleanup DELETEs are naturally re-runnable (no-op once clean);
--- the function is CREATE OR REPLACE.
-
-BEGIN;
+-- the function is CREATE OR REPLACE. The migration runner wraps this whole file in
+-- a single BEGIN…COMMIT transaction, so the file itself must NOT open one.
 
 -- (1a) Delete corrupt empty-harness_slug issue rows that pair with a non-empty twin.
 DELETE FROM harness_shared.work_items a
@@ -129,5 +128,3 @@ BEGIN
   END IF;
 END;
 $function$;
-
-COMMIT;
