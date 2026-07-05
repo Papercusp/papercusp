@@ -72,18 +72,24 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // P-012 volume tier — already de facto haiku via env on the dev box;
   // committed so a host without AGENT_MODELS can't silently run the fleet's
   // call-count tier on the CLI default.
-  bee: 'haiku',
+  cup: 'haiku',
   scanner: 'haiku',
   judge: 'haiku',
-  // The hive's JUDGMENT/control-loop layer (owner-watched autonomous run,
-  // 2026-06-11): Queen/operator/Overwatch wakes are low-frequency compared with
-  // bees, but they are frequent enough that inheriting a user-level interactive
+  // The pot's JUDGMENT/control-loop layer (owner-watched autonomous run,
+  // 2026-06-11): Mug/operator/Kettle wakes are low-frequency compared with
+  // cups, but they are frequent enough that inheriting a user-level interactive
   // Opus default can burn the shared weekly pool before required artifacts
   // (scorecards / wake declarations) land. Sonnet is the committed floor;
   // escalate to opus via AGENT_MODELS or a per-spawn model only when needed.
+  mug: 'sonnet',
+  kettle: 'sonnet',
+  operator: 'sonnet',
+  // EXPAND-phase rows (WI-2932 pot-rename): pre-existing durable spawn rows
+  // still re-fire with the OLD child_role ids until the S2 role backfill
+  // rewrites them. DELETE these three when s2-role-contract.sql lands.
+  bee: 'haiku',
   queen: 'sonnet',
   overwatch: 'sonnet',
-  operator: 'sonnet',
 };
 
 /**
