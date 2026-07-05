@@ -62,20 +62,11 @@ const DEFAULT_OWNER_PWD = 'postgres';
  * and OOMed initial replication on workspaces with accumulated history. FOR
  * TABLES IN SCHEMA auto-includes new tables in the listed schemas.
  *
- * WI-2914 — publish_generated_columns=stored: harness_shared.agent_facts has
- * REPLICA IDENTITY FULL (mig 498 — required for its no-PK DELETEs) AND a STORED
- * generated column `fed_key` (mig 462). On PG18, a table that is in a
- * delete-publishing publication and whose FULL replica identity contains an
- * *unpublished* generated column cannot be DELETEd from ("Replica identity must
- * not contain unpublished generated columns"). That broke the ~30s agent-facts
- * GC sweep on EVERY embedded/federated operator (unbounded growth + a permanent
- * "[agent-facts] sweep failed" error loop; found on the packaged Linux desktop,
- * WI-2902 clean-VM test). Publishing the generated column removes the
- * "unpublished" condition and restores DELETEs (verified on PG 18.3). ZERO
- * federation risk: agent_facts federation flows through app-level capture
- * triggers -> hyperbee outbox (mig 461/462), NOT this publication — zero_harness
- * is vestigial zero-cache scaffolding (retired) with no live pgoutput consumer.
- * Idempotent; SELF-HEALS installs whose publication predates this fix.
+ * Note (WI-2914): agent_facts DELETEs under this delete-publishing publication
+ * are made safe by migration 505 (surrogate PK + REPLICA IDENTITY DEFAULT), NOT
+ * by any publication-level setting here — a deliberately version-agnostic fix
+ * (the PG18-only `publish_generated_columns` route would break the PG16 test
+ * container and any non-PG18 server). See that migration for the full root cause.
  */
 export async function ensureZeroHarnessPublication(sql) {
   await sql.unsafe(`
@@ -83,7 +74,6 @@ export async function ensureZeroHarnessPublication(sql) {
       IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'zero_harness') THEN
         CREATE PUBLICATION zero_harness FOR TABLES IN SCHEMA harness_shared, papercusp_shared;
       END IF;
-      ALTER PUBLICATION zero_harness SET (publish_generated_columns = stored);
     END $pg$;
   `);
   // Add per-harness schemas to the publication. Idempotent — duplicates raise a
