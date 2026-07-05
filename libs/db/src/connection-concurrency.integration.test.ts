@@ -56,7 +56,10 @@ beforeAll(async () => {
   process.env.PAPERCUSP_DB_POOL_MAX = String(POOL_MAX);
   // Make sure we exercise the DIRECT (non-pooler) path — that's where pool max ==
   // PG backends and the bound is load-bearing.
-  delete process.env.PAPERCUSP_PGBOUNCER;
+  // PIN '0' explicitly: deleting the env falls back to hostClass detection, which
+  // is POOLED on a 'server'-class host (the dev box / gate runner) — the exact
+  // opposite of this test's intent (rerouted :6432 -> auth-fail, WI-1666 class).
+  process.env.PAPERCUSP_PGBOUNCER = '0';
   _resetUrlCacheForTests();
   await _resetForTests();
   obs = postgres(db.url, { max: 1, onnotice: () => {} });

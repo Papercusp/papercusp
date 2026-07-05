@@ -39,7 +39,10 @@ const savedEnv = {
 beforeAll(async () => {
   db = await createFreshTestDb({ prefix: 'harnsch' });
   process.env.HARNESS_DATABASE_URL = db.url;
-  delete process.env.PAPERCUSP_PGBOUNCER;
+  // PIN '0': deleting the env falls back to hostClass detection — POOLED on a
+  // 'server'-class host (dev box / gate runner), rerouting to the box :6432
+  // instead of this test's private container (WI-1666 class -> auth-fail).
+  process.env.PAPERCUSP_PGBOUNCER = '0';
   _resetUrlCacheForTests();
   await _resetForTests();
 
@@ -65,7 +68,7 @@ afterAll(async () => {
 
 describe('harnessQuery search_path resolution (C1-2)', () => {
   it('DIRECT mode resolves unqualified table to the harness schema', async () => {
-    delete process.env.PAPERCUSP_PGBOUNCER;
+    process.env.PAPERCUSP_PGBOUNCER = '0'; // explicit DIRECT (delete = hostClass fallback = pooled on a server host)
     await _resetForTests();
     const rows = (await harnessQuery(SLUG, (q) => q`SELECT val FROM thing`)) as { val: string }[];
     expect(rows[0]?.val).toBe('harness');
