@@ -79,6 +79,15 @@ BEGIN
 END
 $vec$;
 
+-- coord_message search leg (P-009): an expression GIN index over the coord
+-- message stream so the coord_message SearchSource's BM25 is index-backed on
+-- the 120k+-row coord_event_log. The WHERE + expression MUST match the
+-- source's SQL (sources.ts coordMessage) exactly or the planner won't use it.
+CREATE INDEX IF NOT EXISTS coord_event_log_msg_tsv_idx
+  ON harness_shared.coord_event_log
+  USING gin (to_tsvector('english', left(coalesce(body->>'summary','') || ' ' || coalesce(body->>'body',''), 20000)))
+  WHERE surface = 'messages';
+
 -- The tailer's incremental bookkeeping: one row per source file (JSONL path)
 -- or per agent_chat id. byte_offset = end of the last fully-ingested line;
 -- turn_count = the next turn_idx to assign (monotonic per session).
