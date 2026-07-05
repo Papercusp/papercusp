@@ -35,10 +35,10 @@ test('generic-hive declares its work-blueprint dependencies (the member pipeline
   }
 });
 
-test('generic-hive resolves its own queen/judge/documenter personas (then falls through to base)', () => {
+test('generic-hive resolves its own mug/judge/documenter personas (then falls through to base)', () => {
   const { blueprint: bp } = loadBuiltinBlueprint('work');
   // The roles generic-hive specializes ship in its own prompts dir.
-  for (const role of ['queen', 'judge', 'documenter']) {
+  for (const role of ['mug', 'judge', 'documenter']) {
     const found = resolvePromptFile(
       { harnessDir: harnessPath(), phase: '', dept: '', blueprintId: 'work' },
       role,

@@ -81,7 +81,7 @@ test('assertNotNestedHive — the no-nest guard (local-hive D-009 / swarm D-018)
 
 test('the hive built-in blueprint is kind:hive + cannot be nested (P-010)', () => {
   const { blueprint: hive, validation } = loadBuiltinBlueprint('coding');
-  assert.equal(hive.kind, 'hive');
+  assert.equal(hive.kind, 'pot');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   assert.throws(() => assertNotNestedHive(hive, true), /cannot be nested|hives are peers/i);
   assert.doesNotThrow(() => assertNotNestedHive(hive, false));
@@ -90,7 +90,7 @@ test('the hive built-in blueprint is kind:hive + cannot be nested (P-010)', () =
 test('the bee built-in launch blueprint is kind:harness (NOT a hive) and validates (P-010/P-011)', () => {
   const { blueprint: bee, validation } = loadBuiltinBlueprint('bee');
   assert.equal(bee.kind, 'harness');
-  assert.equal(bee.spine.decider, 'bee');
+  assert.equal(bee.spine.decider, 'cup');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   // A bee placed by the Queen (a parent) is allowed — only hives nest-guard.
   assert.doesNotThrow(() => assertNotNestedHive(bee, true));

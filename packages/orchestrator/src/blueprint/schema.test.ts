@@ -117,15 +117,18 @@ test("BlueprintSchema — kind defaults to 'harness' (additive, optional-with-de
   assert.equal(bp.kind, 'harness');
 });
 
-test("BlueprintSchema — kind:'hive' parses (the privileged Queen blueprint)", () => {
-  const hive = BlueprintSchema.parse({ ...minimal, kind: 'hive' });
-  assert.equal(hive.kind, 'hive');
+test("BlueprintSchema — kind:'pot' parses (the privileged Mug blueprint; hive→pot, WI-2932)", () => {
+  const pot = BlueprintSchema.parse({ ...minimal, kind: 'pot' });
+  assert.equal(pot.kind, 'pot');
   // round-trips (validator-of-record).
-  assert.deepEqual(BlueprintSchema.parse(hive), hive);
+  assert.deepEqual(BlueprintSchema.parse(pot), pot);
 });
 
-test('BlueprintSchema — kind is a closed enum (an unknown kind is rejected)', () => {
+test('BlueprintSchema — kind is a closed enum (unknown AND pre-rename kinds are rejected)', () => {
   assert.throws(() => BlueprintSchema.parse({ ...minimal, kind: 'swarm' }));
+  // The pre-rename 'hive' kind is NOT dual-accepted: built-ins are renamed in lockstep
+  // and installed/workspace blueprints re-validate on load, so a stale kind fails loud.
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, kind: 'hive' }));
 });
 
 test('BlueprintSchema — rejects a blueprint missing required fields', () => {

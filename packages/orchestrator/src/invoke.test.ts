@@ -1141,12 +1141,19 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // Stays small enough to highlight/pre-load directly (vs the full ~551 surface).
   // Raised 25 → 32 (code-run-self-state-adoption-2026-07-03 P-002): +3 batching/reuse
   // (code:run, recipes:search/run) + +4 self-state (facts:assert/list,
-  // work_items:checkpoint, loop:checkpoint). The guard now pins "no unreviewed creep
-  // past the deliberate 31", not the old 24.
+  // work_items:checkpoint, loop:checkpoint). Then +1 → the deliberate 32:
+  // plans:new (cross-platform-hardening-and-agent-ergonomics-2026-07-05 P-002, owner
+  // directive "plans should be one of the core tools in the trimmed list" — an agent
+  // must be able to CREATE a plan without a discovery round-trip). The guard now pins
+  // "no unreviewed creep past the deliberate 32".
   assert.ok(CORE_MCP_TOOL_NAMES.length <= 32, 'core stays small');
   for (const required of ['code:run', 'recipes:search', 'recipes:run', 'facts:assert', 'work_items:checkpoint']) {
     assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core (adoption unlock P-002)`);
   }
+  // plans:new is the create verb — pinned into the core so an agent never has to hunt for
+  // it (cross-platform-hardening-and-agent-ergonomics-2026-07-05 P-002). plans:get/items/
+  // set-status were already core; this closes the CREATE gap the Mac-app agent hit.
+  assert.ok(CORE_MCP_TOOL_NAMES.includes('plans:new'), 'plans:new belongs in the universal core (agent-ergonomics P-002)');
   // The fleet kits carry the batching surface too (P-001) — the 2026-07-03 audit's root
   // finding was code:run absent from the BEE/QUEEN kits while the inline nudge advised it.
   for (const kit of [BEE_MCP_TOOL_NAMES, QUEEN_MCP_TOOL_NAMES]) {

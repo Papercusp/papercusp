@@ -787,7 +787,14 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'coord:send',
   'coord:glance',
   'coord:ask',
-  // Plans & work
+  // Plans & work — plans:new authors an ENTIRE plan in ONE call (P-001 `body` arg), so an
+  // agent never has to hunt for a create verb: the Mac-app plan-authoring fumble that
+  // motivated this (create-template → get-version → set-content, plus a "plans need a
+  // creation tool not just a file" mental-model gap) is the exact friction
+  // cross-platform-hardening-and-agent-ergonomics-2026-07-05 P-002 removes by promoting the
+  // create verb into the always-advertised spine (owner directive: "plans should be one of
+  // the core tools in the trimmed list"). plans:launch stays reachable via tools:find.
+  'plans:new',
   'plans:get',
   'plans:set-status',
   'plans:items',

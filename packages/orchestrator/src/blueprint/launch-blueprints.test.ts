@@ -66,9 +66,9 @@ test('pot launch blueprint loads + validates — decider=operator, NO trigger (t
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   assert.ok(!isProgramSpine(blueprint.spine), 'pot is a decider-mode spine');
   // Placement automation ON (owner mandate 2026-06-11; local-hive P-030): the
-  // hive decider is the QUEEN placement persona; `operator` remains the
-  // declared alternative for decision-tree-only wakes.
-  assert.equal(blueprint.spine.decider, 'queen', 'the hive decider is the queen placement persona (P-030 swap)');
+  // pot decider is the MUG placement persona (queen→mug, WI-2932); `operator`
+  // remains the declared alternative for decision-tree-only wakes.
+  assert.equal(blueprint.spine.decider, 'mug', 'the pot decider is the mug placement persona (P-030 swap)');
   assert.ok(blueprint.roles.some((r) => r.id === 'operator'), 'pot declares its operator role');
   assert.deepEqual(validation.warnings, [], 'pot has no validator warnings');
   assert.equal(blueprint.triggers?.schedule?.length ?? 0, 0, 'pot declares NO schedule trigger');
@@ -90,8 +90,9 @@ test('bee launch blueprint loads + validates — decider=bee, kind:harness, NO t
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   assert.equal(blueprint.kind, 'harness', 'a bee is kind:harness, never a hive');
   assert.ok(!isProgramSpine(blueprint.spine), 'bee is a decider-mode spine');
-  assert.equal(blueprint.spine.decider, 'bee', 'the bee decider IS the bee role');
-  assert.ok(blueprint.roles.some((r) => r.id === 'bee'), 'bee declares its role');
+  // Blueprint ID stays `bee` until W2c (data-coupled); its resolved ROLE is `cup` (WI-2932).
+  assert.equal(blueprint.spine.decider, 'cup', 'the bee blueprint decider IS the cup role');
+  assert.ok(blueprint.roles.some((r) => r.id === 'cup'), 'bee blueprint declares its cup role');
   assert.deepEqual(validation.warnings, [], 'bee has no validator warnings');
   assert.equal(blueprint.triggers?.schedule?.length ?? 0, 0, 'bee declares NO schedule trigger');
   assert.equal(blueprint.triggers?.event, undefined, 'bee declares NO event trigger');
