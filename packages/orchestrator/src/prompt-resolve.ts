@@ -88,9 +88,17 @@ export interface PromptResolveContext {
  * that persona lands with the rest of the rename.)
  */
 export const ROLE_ALIASES: Record<string, string> = {
-  // pot-rename SLICE-2 CONTRACT: empty — the persona files are renamed to the
-  // canonical ids (cup/mug/papercup/kettle), so no alias bridge remains. The seam
-  // stays for the next rename.
+  // pot-rename SLICE-2 (EXPAND, reversed bridge): the persona files are renamed
+  // to the canonical ids (cup/mug/papercup/kettle/blender), but durable spawn
+  // rows + steering configs persisted BEFORE the rename still fire with the OLD
+  // role ids — those must keep resolving a persona. key = OLD id, value = the
+  // renamed role whose files exist. DELETE these when the S2 role backfill
+  // (s2-role-contract.sql) rewrites the stored rows.
+  bee: 'cup',
+  queen: 'mug',
+  overwatch: 'kettle',
+  sentinel: 'papercup',
+  scout: 'blender',
 };
 
 /** The universal role library — every `extends` chain terminates here. */

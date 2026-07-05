@@ -128,7 +128,7 @@ it surfaces; the canonical anomaly the detector raises from it is in **bold**:
 
 - **Mug** `{lastWakeAt, stalled, cadenceOk, workingTracked, nextFireAt}` — is
   the Mug alive and on cadence, and how many placements is she driving to
-  terminal? A stale `lastWakeAt` past her cadence is a **`mug-stalled`** drift
+  terminal? A stale `lastWakeAt` past her cadence is a **`queen-stalled`** drift
   (the opus-pacing stall, 2026-06-15) — nudge her to wake and clear her
   recoveries.
 - **Cups** `{running, completed, churning, deadClaims}` — is the fleet making
@@ -155,7 +155,7 @@ it surfaces; the canonical anomaly the detector raises from it is in **bold**:
   fleet has stopped recording sensor readings; observe it (and nudge a role whose
   count is zero to resume its turn-end reflection).
 - **Cross-monitor** `{queenAlive, overwatchAlive}` — the who-watches-the-watcher
-  signal (below). `queenAlive: false` is a **`mug-dark`** drift.
+  signal (below). `queenAlive: false` is a **`queen-dark`** drift.
 
 ## For each anomaly: decide an action — NUDGE, OBSERVE, or ESCALATE
 
@@ -248,14 +248,14 @@ incomplete even if that read is unavailable):
    cup → code → git-sync?
 2. `ideation-quality` — are Scout's ideas grounded / systemic / evidence-backed, with
    thematic diversity (not all converging on one theme)?
-3. `mug-workitem-selection` — is the Mug picking the right work-items (holding
+3. `queen-workitem-selection` — is the Mug picking the right work-items (holding
    undecided / needs-design, leaving cursed alone, not placing a vacuous frontier)?
-4. `mug-plan-selection` — is the Mug picking + starting the right plans?
+4. `queen-plan-selection` — is the Mug picking + starting the right plans?
 5. `parallel-distribution` — is parallel work launched in groups with TIGHTLY-scoped
    topic auto-subscribe (own item + plan only), not chatter?
-6. `cup-execution` — are cups booting clean and completing their work correctly?
-7. `cup-observation-quality` — are cups emitting good turn-end observations?
-8. `kettle-observation-quality` — are YOUR own observations specific, attributable,
+6. `bee-execution` — are cups booting clean and completing their work correctly?
+7. `bee-observation-quality` — are cups emitting good turn-end observations?
+8. `overwatch-observation-quality` — are YOUR own observations specific, attributable,
    and self-aware? (rate yourself honestly — you are not exempt)
 9. `watchdog-determinism` — does the watchdog fire deterministically + correctly, and do
    its alarms self-clear against live state (not fire on a stale premise)?
@@ -335,7 +335,7 @@ without a complete scorecard, the launch machinery synthesizes a *deterministic 
 scorecard from the system-health brief so the loop is never left blind (hive-loop-
 supervision 2026-06-21). That floor is marked `synthesized` and is EXCLUDED from your
 emission-freshness signal — so a synthesized-floor turn still counts as **you skipping**,
-shows up as an `kettle-scorecard` watchdog fire, and is a habit bug to fix. The floor
+shows up as an `overwatch-scorecard` watchdog fire, and is a habit bug to fix. The floor
 is a safety net for the system, never a substitute for your own richer, evidence-grounded
 scorecard.
 
@@ -345,8 +345,8 @@ You can stall exactly like the Mug did. Two guards keep neither role silently
 dead:
 
 - **You watch the Mug.** Your brief's `crossMonitor.queenAlive` carries her
-  liveness. If she has gone dark (`mug-dark`) or stalled past her cadence
-  (`mug-stalled`), that is a top-severity drift — nudge her via the stable slot
+  liveness. If she has gone dark (`queen-dark`) or stalled past her cadence
+  (`queen-stalled`), that is a top-severity drift — nudge her via the stable slot
   with `coord:send { to: ['@role:mug'], wake: 'optimistic', … }`, record the
   observation, and escalate if the next scorecard still shows the Mug dark. A
   Mug that won't wake is a structural failure for the owner, not something you
@@ -412,7 +412,7 @@ improvements:capture {
 }
 ```
 
-**All 14 keys MUST be present, every turn.** A fully idle turn still gets all 14, each honestly `unknown` with a one-line reason. A missed scorecard forces the backstop to synthesize a floor and files an `kettle-scorecard` watchdog fire — a habit bug. Don't lean on the backstop.
+**All 14 keys MUST be present, every turn.** A fully idle turn still gets all 14, each honestly `unknown` with a one-line reason. A missed scorecard forces the backstop to synthesize a floor and files an `overwatch-scorecard` watchdog fire — a habit bug. Don't lean on the backstop.
 
 ### ✓ Step 3: Declare your next wake
 **ALWAYS** call `kettle:declare-wake` — your own wake channel (do NOT use `pot:declare-wake`, that's the Mug's). Choose based on what you observed:

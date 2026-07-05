@@ -586,25 +586,25 @@ test('tier-aware — empty blueprintRoots is byte-identical to a single-root ctx
 // supplies a thin domain `bee.md` MAIN (coding ships code+tests; work produces a judged
 // deliverable). Asserts the REAL built-in blueprints compose as [base prefix, domain main],
 // and that the work hive (generic-hive) no longer inherits the coding bee (audit Finding B).
-test('P-005 — coding-hive bee composes [base/bee.base.md, hive/bee.md] (real blueprints)', () => {
-  const files = resolvePromptFiles({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'coding' }, 'bee');
+test('P-005 — coding-hive cup composes [base/cup.base.md, coding/cup.md] (real blueprints)', () => {
+  const files = resolvePromptFiles({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'coding' }, 'cup');
   assert.deepEqual(files, [
-    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'bee.base.md'),
-    join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'bee.md'),
+    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'cup.base.md'),
+    join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'cup.md'),
   ]);
 });
 
-test('P-005 — work-hive (generic-hive) bee composes [base/bee.base.md, generic-hive/bee.md] — NOT the coding bee', () => {
+test('P-005 — work-hive (generic-hive) cup composes [base/cup.base.md, work/cup.md] — NOT the coding cup', () => {
   const files = resolvePromptFiles(
     { harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'work' },
-    'bee',
+    'cup',
   );
   assert.deepEqual(files, [
-    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'bee.base.md'),
-    join(HARNESS_PKG, 'blueprints', 'work', 'prompts', 'bee.md'),
+    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'cup.base.md'),
+    join(HARNESS_PKG, 'blueprints', 'work', 'prompts', 'cup.md'),
   ]);
-  // Finding B closed: the work bee main is the generic-hive one, never hive/bee.md (coding).
-  assert.notEqual(files[files.length - 1], join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'bee.md'));
+  // Finding B closed: the work cup main is the generic-hive one, never coding/cup.md.
+  assert.notEqual(files[files.length - 1], join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'cup.md'));
 });
 
 // ── domain-generic-hive-architecture-2026-06-18 P-007/P-008 — Queen neutral base + per-domain delta ──
@@ -615,49 +615,50 @@ test('P-005 — work-hive (generic-hive) bee composes [base/bee.base.md, generic
 // split: asserts the REAL built-in blueprints compose as [base prefix, domain main], that the work
 // hive (generic-hive) does NOT inherit the coding queen, and that the bare fallback is method + a
 // no-domain note (NOT the method twice).
-test('P-007/P-008 — coding-hive queen composes [base/queen.base.md, hive/queen.md] (real blueprints)', () => {
-  const files = resolvePromptFiles({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'coding' }, 'queen');
+test('P-007/P-008 — coding-hive mug composes [base/mug.base.md, coding/mug.md] (real blueprints)', () => {
+  const files = resolvePromptFiles({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'coding' }, 'mug');
   assert.deepEqual(files, [
-    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'queen.base.md'),
-    join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'queen.md'),
+    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'mug.base.md'),
+    join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'mug.md'),
   ]);
 });
 
-test('P-007/P-008 — work-hive (generic-hive) queen composes [base/queen.base.md, generic-hive/queen.md] — NOT the coding queen', () => {
+test('P-007/P-008 — work-hive (generic-hive) mug composes [base/mug.base.md, work/mug.md] — NOT the coding mug', () => {
   const files = resolvePromptFiles(
     { harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'work' },
-    'queen',
+    'mug',
   );
   assert.deepEqual(files, [
-    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'queen.base.md'),
-    join(HARNESS_PKG, 'blueprints', 'work', 'prompts', 'queen.md'),
+    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'mug.base.md'),
+    join(HARNESS_PKG, 'blueprints', 'work', 'prompts', 'mug.md'),
   ]);
-  // The work queen main is the generic-hive one, never hive/queen.md (coding) — even though
-  // generic-hive `extends: hive`, its own queen.md override wins the most-specific slot.
-  assert.notEqual(files[files.length - 1], join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'queen.md'));
+  // The work mug main is the generic-hive one, never coding/mug.md — even though
+  // generic-hive `extends: hive`, its own mug.md override wins the most-specific slot.
+  assert.notEqual(files[files.length - 1], join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'mug.md'));
 });
 
-test('P-007/P-008 — bare queen (no blueprintId) composes [base/queen.base.md, base/queen.md] (method + no-domain note)', () => {
+test('P-007/P-008 — bare mug (no blueprintId) composes [base/mug.base.md, base/mug.md] (method + no-domain note)', () => {
   // The base-only fallback the brain/global-fallback path resolves: the shared method PREFIX +
   // the trimmed no-domain MAIN — method once, not twice. Guards the base-role-library invariant
-  // (a no-blueprintId queen resolves ENTIRELY from base).
-  const files = resolvePromptFiles({ harnessDir: HARNESS_PKG, phase: '', dept: '' }, 'queen');
+  // (a no-blueprintId mug resolves ENTIRELY from base).
+  const files = resolvePromptFiles({ harnessDir: HARNESS_PKG, phase: '', dept: '' }, 'mug');
   assert.deepEqual(files, [
-    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'queen.base.md'),
-    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'queen.md'),
+    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'mug.base.md'),
+    join(HARNESS_PKG, 'blueprints', 'base', 'prompts', 'mug.md'),
   ]);
 });
 
-test('Brief 6 blueprint-id alias — a stale hive/generic-hive id resolves the renamed dir', () => {
-  // An un-migrated instance `extends:` or a stale blueprintId naming an OLD id still
-  // resolves the renamed blueprint dir during the rename transition (blueprint-aliases.ts).
+test('Brief 6 blueprint-id + role aliases — stale hive/generic-hive ids and role=bee resolve the renamed files', () => {
+  // An un-migrated instance `extends:`/blueprintId naming an OLD id still resolves the
+  // renamed blueprint dir (blueprint-aliases.ts), and a pre-rename durable spawn firing
+  // with role=bee still resolves the renamed cup persona (ROLE_ALIASES expand bridge).
   assert.equal(
     resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'bee'),
-    join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'bee.md'),
+    join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'cup.md'),
   );
   assert.equal(
     resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'generic-hive' }, 'bee'),
-    join(HARNESS_PKG, 'blueprints', 'work', 'prompts', 'bee.md'),
+    join(HARNESS_PKG, 'blueprints', 'work', 'prompts', 'cup.md'),
   );
 });
 

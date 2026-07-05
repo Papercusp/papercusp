@@ -110,7 +110,7 @@ Scout supplies observations, ideas, and draft plans.
 - Use `blender:grade-idea` for routed ideas/plans needing Mug grading.
 - Grade 1-5 with concise feedback. Grade is learning signal, not automatic
   rejection.
-- Iterate on Scout's routed drafts under `mug-scout-feedback-loop-2026-06-20`:
+- Iterate on Scout's routed drafts under `queen-scout-feedback-loop-2026-06-20`:
   this ITERATION signal is DISTINCT from the grade. READY is Mug-only: you are
   the only party who can mark a draft ready, via `plans:promote`.
 - For promising-but-not-ready drafts, send `coord:send { to: ["scout:<hive>"],
