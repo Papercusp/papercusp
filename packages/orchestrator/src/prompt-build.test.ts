@@ -997,10 +997,11 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     // memory-discipline, friction-tripwire, observation-rubric-nudge, yield-policy,
     // account-routing-note, evidence-discipline-note, concurrency-first-note,
     // deploy-pipeline-note, testing-standard, reuse-first-nudge, plan-discipline-note,
-    // work-record-note, observation-capture-note, code-run-note, finish-the-rollout-note,
-    // agent-activity-truth-note, wait-loop-note, peer-wake-note, peer-reply-priority-note.
+    // work-record-note, observation-capture-note, write-through-note, code-run-note,
+    // finish-the-rollout-note, agent-activity-truth-note, wait-loop-note, peer-wake-note,
+    // peer-reply-priority-note.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 21, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 22, `unexpected divider count: ${dividerCount}`);
     // peer-reply-priority note (WI-1720, owner directive 2026-07-02) rides the shared bee base.
     assert.match(out, /Replying to a peer OUTRANKS your own work/);
     // code-run nudge (B-CX-3) rides the shared bee base.
