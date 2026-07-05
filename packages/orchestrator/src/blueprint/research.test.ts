@@ -18,7 +18,10 @@ test('research blueprint loads + validates with no errors', () => {
 
 test('research blueprint has the expected research shape', () => {
   const { blueprint: bp } = loadBuiltinBlueprint('research');
-  assert.equal(bp.workItem.kind, 'research-task');
+  // WI-2874 (2026-07-05): the feature-family `research-task` kind was merged into
+  // the issue-family `task` (research is non-code work), so the research blueprint
+  // now rides `task`. idPrefix stays 'R' (display only; ids are WI-NNN, D-008).
+  assert.equal(bp.workItem.kind, 'task');
   assert.equal(bp.workItem.idPrefix, 'R');
   assert.equal(bp.spine.decider, 'research-director');
   assert.equal(bp.knobs.requiresRepo, false); // repo-less (overrides base)
