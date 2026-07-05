@@ -470,6 +470,14 @@ export const KnobsSchema = z
         integrationBranch: z.string().optional(),
         releaseRef: z.string().optional(),
         greenCmd: z.string().nullable().optional(),
+        /** WI-2833: opt-in for a hive that carries its OWN operator SPA — the workspace
+         *  name (e.g. `@my-org/my-spa`) the gate's SPA-build leg should build. Omitted
+         *  (the common case — no subject hive carries an operator SPA today) ⇒
+         *  hive-release-env.ts's resolveHiveReleaseGate defaults to '' (skip), same as
+         *  before this field existed. Was previously undeclared here, so zod's default
+         *  unknown-key stripping silently dropped it before resolveHiveReleaseGate ever
+         *  saw it — see hive-release-env.integration.test.ts's pinned WI-2833 test. */
+        spaBuildWorkspace: z.string().optional(),
         deploy: z
           .object({
             systemdUnit: z.string().optional(),
