@@ -72,9 +72,11 @@ async function insertEdge(rel: string, srcRef: string, dstRef: string): Promise<
 beforeAll(async () => {
   db = await createFreshTestDb({ prefix: 'coordlinksblocks', provision });
   sql = postgres(db.url, { max: 1, onnotice: () => {} });
-  // Set the workspace GUC the trigger reads (session-level), so the payload carries it and
-  // any sibling federation/stamp triggers on coord_links have their context.
+  // Set the workspace GUCs (session-level): app.workspace_id for the federation/stamp
+  // sibling triggers, papercusp.workspace_id for the GENERIC emit_change_notify payload
+  // (that fn reads current_setting('papercusp.workspace_id', true) — see 000-baseline).
   await sql.unsafe(`SELECT set_config('app.workspace_id', 'test-ws', false)`);
+  await sql.unsafe(`SELECT set_config('papercusp.workspace_id', 'test-ws', false)`);
   listener = postgres(db.url, { max: 1, onnotice: () => {} });
   await listener.listen('sync_invalidate', (payload: string) => {
     try {
@@ -91,35 +93,46 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
-describe('migration 366 — coord_links rel=blocks change-notify', () => {
-  it('emits blocks.changed with the affected refs on a blocks-edge INSERT', async () => {
+// CURRENT contract (migrations 383 + 396 superseded 366):
+//   • mig 383 DROPPED the bespoke mig-366 blocks trigger — readiness is a maintained
+//     sidecar (work_item_blocked, mig 379) fed by work_item_deps triggers, so the
+//     scoped 'coord_links.blocks.changed' event has ZERO consumers and must stay dead.
+//   • mig 396 attached the GENERIC emit_change_notify to coord_links (caching-layer
+//     P-013 audit-blocker), so every edge write emits
+//     'harness_shared.coord_links.changed' with { op, workspace_id, id } (mig 368 PK).
+// This suite guards BOTH halves: the generic event fires, the retired bespoke one never.
+const GENERIC = 'harness_shared.coord_links.changed';
+const genericNotifs = (): Notif[] => received.filter((n) => n.name === GENERIC);
+
+describe('coord_links change-notify — generic trigger (mig 396) + retired blocks trigger stays dead (mig 383)', () => {
+  it('emits the generic coord_links.changed on a blocks-edge INSERT; never the retired blocks.changed', async () => {
     received.length = 0;
     await insertEdge('blocks', 'WI-BLOCKER', 'WI-BLOCKED');
     await settle();
-    const n = blocksNotifs();
+    const n = genericNotifs();
     expect(n).toHaveLength(1);
     expect(n[0]!.args.op).toBe('INSERT');
-    expect(n[0]!.args.blocked_ref).toBe('WI-BLOCKED');
-    expect(n[0]!.args.blocker_ref).toBe('WI-BLOCKER');
-    expect(n[0]!.args.workspace_id).toBe('test-ws'); // correct GUC (app.workspace_id), not the buggy papercusp.workspace_id
+    expect(n[0]!.args.workspace_id).toBe('test-ws'); // correct GUC (app.workspace_id)
+    expect(blocksNotifs()).toHaveLength(0); // mig 383's drop holds
   });
 
-  it('does NOT emit blocks.changed for a non-blocks (tagged) edge', async () => {
+  it('emits the generic event for a non-blocks (tagged) edge too — mig 396 is table-wide', async () => {
     received.length = 0;
     await insertEdge('tagged', 'WI-X', 'topic:foo');
     await settle();
+    expect(genericNotifs()).toHaveLength(1);
     expect(blocksNotifs()).toHaveLength(0);
   });
 
-  it('emits blocks.changed on a blocks-edge DELETE', async () => {
+  it('emits the generic event on a blocks-edge DELETE; still no bespoke blocks.changed', async () => {
     await insertEdge('blocks', 'WI-B2', 'WI-D2');
     await settle();
     received.length = 0;
     await sql.unsafe(`DELETE FROM harness_shared.coord_links WHERE rel='blocks' AND src_ref='WI-B2' AND dst_ref='WI-D2'`);
     await settle();
-    const n = blocksNotifs();
+    const n = genericNotifs();
     expect(n).toHaveLength(1);
     expect(n[0]!.args.op).toBe('DELETE');
-    expect(n[0]!.args.blocked_ref).toBe('WI-D2');
+    expect(blocksNotifs()).toHaveLength(0);
   });
 });
