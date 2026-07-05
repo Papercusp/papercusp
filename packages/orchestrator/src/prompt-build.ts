@@ -789,6 +789,31 @@ export const WORK_RECORD_NOTE = [
 ].join('\n');
 
 /**
+ * WRITE_THROUGH_NOTE — "flush a durable conclusion the MOMENT it forms, not when the context fills"
+ * (compaction-context-loss-2026-07-05 P-004; D-001 "the carry system's weakness is behavioral at the
+ * WRITE end"). The memory-hierarchy discipline note: the carry surfaces (facts / checkpoints) only
+ * help if state reaches them BEFORE loss, so the write is moved off the compaction-time chore and onto
+ * the moment of forming. Complements YIELD_POLICY (checkpoint on yield) + WORK_RECORD_NOTE (record the
+ * work) with the WHEN of the flush. Sourced once here (the WORK_RECORD_NOTE / OBSERVATION_CAPTURE_NOTE
+ * precedent): injected into the spawned-bee base (buildPromptParts below) + the operator-launched-role
+ * base (operator-core's renderWriteThroughNote, re-exported via role-prompt-from-slug) + the su
+ * playbooks + compaction-strategy.md, so all bases can't desync. Universal (no role skip).
+ */
+export const WRITE_THROUGH_NOTE = [
+  '## Write-through memory — flush a conclusion WHEN IT FORMS, not when context fills',
+  '',
+  'The moment a durable conclusion forms, park it on its carry surface — do NOT save flushing for',
+  "compaction time. A standing conclusion that must shape future turns → `facts:assert` (scoped, TTL'd,",
+  'folded VERBATIM into every future brief / `coord:orient`). In-flight progress a successor (or a',
+  'future you) must resume from → `work_items:checkpoint` / `loop:checkpoint` (re-injected on the',
+  "item's / loop's next invocation). The ~75%-context nudge and compaction itself are the BACKSTOP for",
+  'whatever was not yet written — never the trigger. A conclusion written down when you have it survives',
+  'a compaction / cold-wake / re-spawn losslessly; one left in the transcript scrolls away. (Verbatim',
+  "episodic recall — `sessions:search { session:'self' }` — is the last-resort safety net, not a reason",
+  'to skip writing the conclusion down.)',
+].join('\n');
+
+/**
  * PLAN_DISCIPLINE_NOTE — the bright-line for WHEN a plan is required (enforce-system-on-generic-work
  * -2026-06-29 P-016). A plan is the durable, shared, fleet-visible decomposition; the trap it closes
  * is BOTH directions — multi-step interdependent work driven with no plan (invisible, un-sequenced,
@@ -1408,6 +1433,17 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //      (operator-core renderObservationCaptureNote) + su.md + the su playbooks can't desync. Universal.
   pre.push('\n---');
   pre.push(OBSERVATION_CAPTURE_NOTE);
+
+  // 3e2c. Write-through note (compaction-context-loss-2026-07-05 P-004) — the SHARED bee base every role
+  //      inherits. Flush a durable conclusion the MOMENT it forms (facts:assert for a standing
+  //      conclusion, work_items:checkpoint / loop:checkpoint for in-flight state) — not when the
+  //      context fills; the ~75% gauge nudge + compaction are the BACKSTOP, never the trigger. Moves the
+  //      write off the compaction-time chore, closing the carry system's behavioral weakness at the
+  //      WRITE end (D-001). Sourced from the one WRITE_THROUGH_NOTE constant so the bee base +
+  //      operator-launched-role base (operator-core renderWriteThroughNote) + su playbooks +
+  //      compaction-strategy.md can't desync. Universal (no role skip).
+  pre.push('\n---');
+  pre.push(WRITE_THROUGH_NOTE);
 
   // 3f. Code-run nudge (code-execution-tool-orchestration B-CX-3) — the SHARED bee base every role
   //     inherits. Reach for code:run to collapse a multi-step tool flow (loop/branch/filter/fan-out/
