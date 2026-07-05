@@ -41,7 +41,10 @@
 -- re-run and safe on a plain non-federated operator (REPLICA IDENTITY is a no-op
 -- where nothing publishes the table).
 \set ON_ERROR_STOP on
-BEGIN;
+-- No explicit BEGIN/COMMIT: the migration runner (db:migrate) wraps each file
+-- in a single transaction, so raw transaction control here is redundant and
+-- unsafe (nested-txn / premature COMMIT). Enforced by lint:migrations (505 was
+-- flagged by the enforced-era gate; WI-2914).
 
 DO $do$
 BEGIN
@@ -77,5 +80,3 @@ BEGIN
     ALTER TABLE harness_shared.agent_facts REPLICA IDENTITY DEFAULT;
   END IF;
 END $do$;
-
-COMMIT;
