@@ -41,7 +41,9 @@ it collision-free:
   (declare-intent `{ items }` / `plan_items:claim`) or, for ad-hoc work, `work_items:create
   { title, assign_to:self, state:'wip' }`. No code edit without a work-item; not done until
   `work_items:complete`. (Exceptions: read-only investigation, a trivial one-shot answer, a
-  one-line fix you weren't asked to track.) The work-item ledger is the durable, shared,
+  one-line fix you weren't asked to track. The exception is NARROW — creating a NEW file or
+  doc, or any multi-sentence/structured deliverable, is ALWAYS above it, even as an ad-hoc
+  ask from a peer or leader: hold the work-item FIRST.) The work-item ledger is the durable, shared,
   fleet-visible record; your client's native to-do list is private scratch, never a substitute.
 - **Blocked on something announced? Await an event and sleep — never poll, never hold a
   turn.** `events:await { event }` → END YOUR TURN; the wake turn carries the payload.
