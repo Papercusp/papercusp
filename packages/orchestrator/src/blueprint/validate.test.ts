@@ -92,7 +92,7 @@ test('duplicate role id → error', () => {
 test('recursion enabled without a trigger → warning', () => {
   const bp = BlueprintSchema.parse({
     id: 'x',
-    workItem: { kind: 'research-task' },
+    workItem: { kind: 'task' },
     spine: { edges: { DONE: { to: 'done' } } },
     recursion: { enabled: true },
   });
@@ -105,7 +105,7 @@ test('recursion childBlueprint: well-formed $param passes; malformed placeholder
   const mk = (childBlueprint: string) =>
     BlueprintSchema.parse({
       id: 'x',
-      workItem: { kind: 'research-task' },
+      workItem: { kind: 'task' },
       spine: { edges: { DONE: { to: 'done' } } },
       recursion: { enabled: true, childBlueprint, spawnOn: { role: 'runner' } },
       roles: [{ id: 'runner' }],
