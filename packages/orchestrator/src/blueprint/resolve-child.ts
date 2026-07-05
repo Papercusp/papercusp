@@ -82,7 +82,7 @@ export function resolveChildBlueprint(
  * a parent spawn id, a recursion parent). A root launch passes `false`.
  */
 export function assertNotNestedHive(
-  bp: { id: string; kind?: 'hive' | 'harness' },
+  bp: { id: string; kind?: 'pot' | 'hive' | 'harness' },
   hasParent: boolean,
 ): void {
   if (hasParent && (bp.kind === 'hive' || bp.kind === 'pot')) {
