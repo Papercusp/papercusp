@@ -174,9 +174,11 @@ there and redo it.
   `papercusp-ops-hives`, …) that compose on top. When the ask is "create/build an app"
   in ANY form: (1) pick the app-scope root matching the shape — and when the shape is
   ambiguous (web vs desktop, agents vs not), ASK the owner which root applies BEFORE
-  scaffolding, never assume; (2) materialize via Cupboard
-  (`POST /api/cupboard/install-template` → `/api/cupboard/materialize-template`, or the
-  `scaffold-agentic-app` recipe — `recipes:search` finds it), then open the materialized
+  scaffolding, never assume; (2) materialize via the template verbs — `templates:list`
+  (see what exists) → `templates:get-guide` → `templates:new-app` (materializes into a
+  new harness and kicks off a builder seeded with the GUIDE); the Cupboard HTTP routes
+  (`POST /api/cupboard/install-template` → `/api/cupboard/materialize-template`) are the
+  underlying mechanism if the verbs are unavailable — then open the materialized
   PROTOCOL.md + GUIDE.md as the building agent's launch context. When agents ARE
   embedded, the judgment plane crosses into the app at exactly ONE typed seam
   (`papercusp-ops-hives`). Hand-rolling an app scaffold — or a bespoke agent
@@ -184,6 +186,28 @@ there and redo it.
   Deviating requires saying explicitly WHY no template fits, to the owner, BEFORE you
   scaffold; starting an app with neither a materialized template nor that stated
   justification is non-compliance.
+
+### The papercusp-way routing gate (intent → mechanism)
+
+The platform has a purpose-built mechanism for each recurring intent below. When a
+request matches a trigger row, NAME the mechanism to the owner before acting: AUTO mode
+OFF → ASK ("want the papercusp way — <mechanism>?") and wait; AUTO mode ON → USE it and
+disclose that you did. In either mode, deviating from a matching row requires stating
+WHY the mechanism doesn't fit BEFORE proceeding — silently hand-rolling past a matching
+row is non-compliance. New platform surfaces add a ROW here, not a new section.
+
+| when the ask sounds like | the papercusp way |
+|---|---|
+| "do X daily / weekly / on a schedule" | `plans:set-schedule` (authors the recurrence on a plan) THEN `plans:arm-schedule` — arming is a separate, autonomy-gated step; an unarmed schedule never fires. (`routines:set` is NOT this — it only retunes/pauses SYSTEM routines.) |
+| "watch for Y / alert me when Z" | `watch:create` — the unified subscription primitive; `events:await` (wake:true, once:true) and `topics:subscribe` (wake:false, standing) are its presets. wake:false = cheap inbox inject; wake:true costs a turn. |
+| "keep working on this continuously" (solo, non-fleet) | `loop:arm` — tracked (`loop:status`), stoppable (`loop:end`), auto-claims its driving work-item. Never a self-rolled keep-alive. |
+| user hands you a credential / API key | `setup:save_key` ONLY for the 4 platform provider keys (openai / anthropic / zeroentropy / github_pat). ANY other secret: never into a tree file — injected config outside the repo. |
+| "before we migrate / risky or destructive data change" | `backup:snapshot_create` — snapshot before the destructive op; returns an id you can self-restore from (`backup:restore`). |
+| "new agent role / persona / behavior" | `blueprint:catalog` (find the parent) → `blueprint:extend` (validated child override) — never a hand-rolled prompt file. |
+| "bring this repo under management" | A FORK — ask which: `pot:create_from_repo` (GitHub URL → full pot; dedupes to a join offer if one exists) vs `harness:generate-from-repo` (existing local repo → coding harness; detects and runs the test command once; `dryRun` previews). |
+| "design this screen / component" | `design-phase.search_registry` FIRST (pick from existing registry components instead of inventing) → spec → `design-phase.validate_spec` / `design-phase.lint_spec`. |
+| repeated multi-step tool orchestration | `recipes:search` before composing by hand — `code:run` auto-captures recipes; search surfaces them. |
+| "create/build an app" (any form) | `templates:list` → `templates:get-guide` → `templates:new-app` — the templates mandate above is this row's full rule (3 app-scope roots; ask when the shape is ambiguous). |
 
 ## Default posture (AUTO mode OFF) — plan, then confirm before you execute
 
