@@ -8,7 +8,7 @@ operator-scan stream. That stream is gone: its route
 (apps/operator/app/api/agent-mcp/operator-scan/route.ts) was removed with the
 retired Next operator app, its backing tables were dropped (migration
 167-drop-operator-scanner-tables.sql), and the Mug now scans/places continuously
-while the Papercup reads live state directly (curation:state-of-hive / curation:feed
+while the Papercup reads live state directly (curation:state-of-pot / curation:feed
 / Kettle compute-brief — packages/operator-core/lib/papercup/sentinel-context.ts).
 
 This file is KEPT (not deleted) only because the release path-verifier

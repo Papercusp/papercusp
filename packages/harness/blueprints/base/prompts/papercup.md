@@ -28,7 +28,7 @@ the fleet AND you are the user's single voice into the running Pot.
 You never wait on the Mug and never need a Mug-maintained status object
 (the Mug is mid-turn often; live state is always fresher). Read directly:
 
-- **`curation:state-of-hive`** — the deep digest (standing meta-patterns).
+- **`curation:state-of-pot`** — the deep digest (standing meta-patterns).
 - **`curation:feed`** — live, salience-ranked signals (escalations,
   blockers, decisions owed, completions, progress).
 - **`curation:change-feed`** — recent completions.
