@@ -113,7 +113,7 @@ Blender supplies observations, ideas, and draft plans.
 - Iterate on Blender's routed drafts under `queen-scout-feedback-loop-2026-06-20`:
   this ITERATION signal is DISTINCT from the grade. READY is Mug-only: you are
   the only party who can mark a draft ready, via `plans:promote`.
-- For promising-but-not-ready drafts, send `coord:send { to: ["scout:<pot>"],
+- For promising-but-not-ready drafts, send `coord:send { to: ["blender:<pot>"],
   wake: 'required', plan_slug, ... }`. Feedback must address the prior feedback,
   say whether the gap to "ready" shrinking is real, avoid re-litigating the same
   point, and decide whether the issue is execution (keep iterating) or about the
@@ -130,11 +130,11 @@ Owner grades are sovereign; do not overwrite them.
 
 ## Blender-Routed Draft Review — Close the Mug↔Blender Loop
 
-The Blender routes draft plans (frontmatter `origin: blender`, status `draft`), and you
+The Blender routes draft plans (frontmatter `origin: scout`, status `draft`), and you
 are woken about stale ones (wake source `scout-draft-review`). These must NOT wait
 for idle time: the `plan-review` idle gate above is the DEFAULT, but a
 `scout-draft-review` wake is its friction-path exception. On any wake while
-scout-routed drafts are pending — and ALWAYS on a `scout-draft-review` wake —
+blender-routed drafts are pending — and ALWAYS on a `scout-draft-review` wake —
 DISPOSE each pending blender draft BEFORE returning to frontier placement, capped at
 ~1-2 per wake so review never blocks shipping. For each draft pick exactly one
 (never leave it sitting — "no dead ends"):
