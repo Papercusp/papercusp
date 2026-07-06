@@ -602,7 +602,7 @@ export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'pot:declare-wake',
   'pot:get',
   'pot:get-steering',
-  'pot:queen_efficiency',
+  'pot:mug_efficiency',
   'pot:status',
   'pot:survey',
   'improvements:capture',

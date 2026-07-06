@@ -9,7 +9,6 @@
 -- the current base table explicitly.
 
 \set ON_ERROR_STOP on
-BEGIN;
 
 CREATE OR REPLACE FUNCTION harness_shared.notify_fleet_assignment() RETURNS trigger
     LANGUAGE plpgsql
@@ -60,5 +59,3 @@ CREATE TRIGGER fleet_assignment_features_upd_trg
   FOR EACH ROW
   WHEN (OLD.taken_by IS DISTINCT FROM NEW.taken_by)
   EXECUTE FUNCTION harness_shared.notify_fleet_assignment();
-
-COMMIT;
