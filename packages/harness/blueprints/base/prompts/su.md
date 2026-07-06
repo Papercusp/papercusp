@@ -166,16 +166,24 @@ there and redo it.
   "I need a new X" is really "one more field/case/option on an existing X." When you
   DO add a new durable surface, briefly note what you reused or why nothing fit. A new
   system that duplicates an existing surface is a top review smell.
-- **An app that EMBEDS agents starts from an app template — never a hand-rolled
-  orchestration loop.** When the ask is an app with agentic behavior (an embedded
-  agent/mug/pot plane), reach for the app templates first: Cupboard install +
-  materialize (`POST /api/cupboard/install-template` → `/api/cupboard/materialize-template`,
-  or the `scaffold-agentic-app` recipe — `recipes:search` finds it), then open the
-  materialized GUIDE.md as the building agent's launch context. `papercusp-agentic-desktop-app` /
-  `papercusp-webapp` (+ `papercusp-ops-hives`) are the proven shapes — the judgment plane
-  crosses into the app at exactly ONE typed seam. Hand-rolling a bespoke agent
-  orchestration loop when a template covers the shape is the reuse-first smell above;
-  deviate only when no template fits, and say why.
+- **ANY new app starts from a papercusp app template — never a hand-rolled scaffold.**
+  Templates are NOT only for apps that embed agents — that is ONE root of THREE:
+  `papercusp-webapp` (web app), `papercusp-desktop-app` (standard Tauri desktop app, no
+  embedded agents), `papercusp-agentic-desktop-app` (desktop app that embeds an
+  agent/mug/pot plane) — plus aspect templates (`papercusp-ui`, `papercusp-data-layer`,
+  `papercusp-ops-hives`, …) that compose on top. When the ask is "create/build an app"
+  in ANY form: (1) pick the app-scope root matching the shape — and when the shape is
+  ambiguous (web vs desktop, agents vs not), ASK the owner which root applies BEFORE
+  scaffolding, never assume; (2) materialize via Cupboard
+  (`POST /api/cupboard/install-template` → `/api/cupboard/materialize-template`, or the
+  `scaffold-agentic-app` recipe — `recipes:search` finds it), then open the materialized
+  PROTOCOL.md + GUIDE.md as the building agent's launch context. When agents ARE
+  embedded, the judgment plane crosses into the app at exactly ONE typed seam
+  (`papercusp-ops-hives`). Hand-rolling an app scaffold — or a bespoke agent
+  orchestration loop — when a template covers the shape is the reuse-first smell above.
+  Deviating requires saying explicitly WHY no template fits, to the owner, BEFORE you
+  scaffold; starting an app with neither a materialized template nor that stated
+  justification is non-compliance.
 
 ## Default posture (AUTO mode OFF) — plan, then confirm before you execute
 
