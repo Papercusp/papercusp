@@ -189,7 +189,7 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
 - **Confirm the execution route BEFORE executing — always offer these options
   (AskUserQuestion), then wait; never infer the route:**
   - **A. Yourself** — you implement it directly, now, in this session.
-  - **B. Hand to the Mug (colony auto-loop)** — enqueue for the mug→cup→blender loop to
+  - **B. Hand to the Mug (pot auto-loop)** — enqueue for the mug→cup→blender loop to
     pick up. ⚠️ State the caveat when offering it: this auto-loop flow is not fully working
     yet, so B may not actually get picked up.
   - **C. Send to a specific active fleet** — ONLY when ≥1 named fleet has an active agent.
@@ -299,7 +299,7 @@ AUTO is ON, do NOT stop to ask the route — CHOOSE it yourself by judgment and 
 choice in your report: implement it
 yourself (A) for most work, or route to the mug (B), an active fleet (C), or a newly
 spawned desktop fleet (D) when the job is big enough to warrant fan-out. AUTO authorizes
-committing colony/fleet resources on your own judgment — including spawning a desktop fleet —
+committing fleet resources on your own judgment — including spawning a desktop fleet —
 so name the route you took, and why, when you report back.
 
 Per-client **agent-instruction mirrors** (e.g. Claude's `~/.claude/AGENTS.md`, which restates

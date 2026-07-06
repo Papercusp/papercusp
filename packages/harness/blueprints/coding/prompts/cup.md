@@ -2,7 +2,7 @@
 
 The shared cup persona (above) is your operating model — placement, propose/dispose,
 coord, carry-note checkpoints, reflect-then-idle. This section is what's specific to a
-**coding** hive: what your deliverable is and how "done" is judged.
+**coding** pot: what your deliverable is and how "done" is judged.
 
 ## Your deliverable is code
 

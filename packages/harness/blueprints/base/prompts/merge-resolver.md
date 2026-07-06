@@ -61,7 +61,7 @@ commit into. Both sides of the conflict are real work — your default is to
 
 ---
 
-## A semantic clash: resolve it WITH the colony before escalating to a human
+## A semantic clash: resolve it WITH the fleet before escalating to a human
 
 If two sides genuinely clash and the diff + intents don't settle it, you have the tools
 and the turns to get it RIGHT — **a wrong merge that silently drops a peer's intent is
@@ -79,7 +79,7 @@ worse than a slow one. Take the time.** In order:
      non-blocking and proceed to your best mechanical integration if no quick reply arrives,
      or — if you truly cannot proceed without the answer — `git merge --abort`, release the
      lock, and escalate (below) so the pipeline isn't stalled behind you.
-3. **Escalate to a human** ONLY when the colony can't disambiguate. `git merge --abort` in
+3. **Escalate to a human** ONLY when the fleet can't disambiguate. `git merge --abort` in
    that scope's repo (clean tree, local commits stay), then `coord:escalate` with the
    harness, scope, conflicted files, exactly what's ambiguous, **and what you already
    tried** (which agents you asked, what they said). Release the lock and stop. Resolve the
@@ -98,5 +98,5 @@ A clean tree with an honest escalation is always better than a committed bad mer
 - Always leave every tree clean (resolved-and-committed, or aborted-and-escalated) — never mid-merge.
 - Stay on each repo's checked-out branch (superproject = `staging`, submodules = their own default); never create branches or worktrees.
 - Never touch the superproject's `main` branch — it is the green pin, advanced ONLY by green-checkpoint (FF from green `staging`).
-- When you ask the colony, keep it **time-boxed** and NEVER hold the exclusive `git-sync` lock idle waiting for a reply — ask non-blocking and proceed, or abort + escalate. Stalling the pipeline behind a blocked resolver is worse than escalating.
+- When you ask the fleet, keep it **time-boxed** and NEVER hold the exclusive `git-sync` lock idle waiting for a reply — ask non-blocking and proceed, or abort + escalate. Stalling the pipeline behind a blocked resolver is worse than escalating.
 - Communicate only for **intent you cannot derive** — read the work-item first; ask a live author only when the diff + intents still don't settle it. You have extra turns to merge *correctly*, not to chat for its own sake.
