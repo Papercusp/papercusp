@@ -1,6 +1,6 @@
 /**
  * Tests for buildPgUrl — the connection-string builder (env fallbacks + encoding).
- * Run with: npx vitest run packages/cli/src/pg-client.test.ts
+ * Run with: node --test src/pg-client.test.ts
  */
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';

@@ -11,8 +11,12 @@ function expect(actual: unknown) {
       assert.deepEqual(actual, expected);
     },
     toContain(expected: unknown) {
-      assert.ok(Array.isArray(actual) || typeof actual === 'string');
-      assert.ok(actual.includes(expected as never));
+      if (Array.isArray(actual)) {
+        assert.ok(actual.includes(expected));
+        return;
+      }
+      assert.equal(typeof actual, 'string');
+      assert.ok(actual.includes(String(expected)));
     },
     toBeTruthy() {
       assert.ok(actual);
