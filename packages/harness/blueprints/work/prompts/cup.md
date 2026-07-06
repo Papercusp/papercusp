@@ -1,8 +1,8 @@
-# Cup — work hive (domain delta)
+# Cup — work pot (domain delta)
 
 The shared cup persona (above) is your operating model — placement, propose/dispose,
 coord, carry-note checkpoints, reflect-then-idle. This section is what's specific to a
-**work** hive (a non-coding hive): what your deliverable is and how "done" is judged.
+**work** pot (a non-coding pot): what your deliverable is and how "done" is judged.
 
 ## Your deliverable is an artifact a judge accepts
 
@@ -15,7 +15,7 @@ coord, carry-note checkpoints, reflect-then-idle. This section is what's specifi
 - **No code-shipping rituals.** There is no build / test / PR gate here; your bar is
   the judge's acceptance criteria for this kind of work. If a task DOES turn out to
   need code, spin up a `kind:'harness'` coding subharness for that part rather than
-  treating this hive as a coding hive.
+  treating this pot as a coding pot.
 
 ## Terminal step — always required: call `work_items:complete`
 

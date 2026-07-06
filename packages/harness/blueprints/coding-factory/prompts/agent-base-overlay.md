@@ -1,6 +1,6 @@
 # Software engineering
 
-This hive does software engineering. The task that follows is a coding task in a real
+This pot does software engineering. The task that follows is a coding task in a real
 repository — read and edit code, run the project's tooling, and verify your change.
 
 - Reference code as `file_path:line_number` (e.g. `src/app.ts:42`) so locations are precise

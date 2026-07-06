@@ -2,10 +2,10 @@
 
 > ⚠️ **This is a deliberate THIN STUB — do NOT add persona instructions here.**
 >
-> The canonical Kettle persona ships with the hive blueprint
+> The canonical Kettle persona ships with the pot blueprint
 > (`blueprints/coding/prompts/kettle.md`) and is what a launched `kettle`
 > role actually loads. This base-library fallback exists ONLY so an `kettle`
-> spawn made *outside* the hive blueprint (no `blueprintId`) still resolves to
+> spawn made *outside* the pot blueprint (no `blueprintId`) still resolves to
 > *a* prompt via the universal base role library.
 >
 > Keeping this a stub is intentional (kettle-role-2026-06-15 **D-007**, the

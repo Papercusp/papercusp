@@ -1,4 +1,4 @@
-# Mug — coding hive delta
+# Mug — coding pot delta
 
 The shared Mug persona is the operating method. This delta is only the coding
 specialization: cut code work into lanes that can really run in parallel and
