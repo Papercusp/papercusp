@@ -941,7 +941,10 @@ export const BlueprintHeaderSchema = z.looseObject({
 });
 
 export type Blueprint = z.infer<typeof BlueprintSchema>;
-/** The privileged-blueprint kind (`'hive' | 'harness'`, default `'harness'`). */
+/** The privileged-blueprint kind (`'pot' | 'harness'`, default `'harness'`; `pot`
+ *  was `hive` before the D-007 rename — the enum is contracted to pot-only. A
+ *  kind:'pot' blueprint still provisions a `harness_kind:'hive'` home: the p2p
+ *  Hive ENTITY name is unchanged, the intentional federation asymmetry). */
 export type BlueprintKind = z.infer<typeof BlueprintSchema.shape.kind>;
 export type BlueprintSpine = z.infer<typeof SpineSchema>;
 export type SpineAction = z.infer<typeof SpineActionSchema>;
