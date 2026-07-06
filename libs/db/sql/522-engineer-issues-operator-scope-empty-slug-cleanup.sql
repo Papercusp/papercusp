@@ -13,7 +13,7 @@
 --   1. drop stale empty-slug issue twins when a non-empty sibling exists;
 --   2. re-home any remaining empty-slug issue rows to operator:<workspace>;
 --   3. restore the engineer_issues view to derive scope from harness_slug, not
---      payload._ei.scope, while preserving base_harness_slug for exact DML.
+--      payload._ei.scope, while preserving base_harness_slug/base_origin for exact DML.
 
 DELETE FROM harness_shared.work_items a
  WHERE a.item_kind IN ('bug', 'change', 'task')
@@ -64,6 +64,7 @@ CREATE OR REPLACE VIEW harness_shared.engineer_issues AS
      terminal_owner,
      terminal_completion_ref,
      last_progress_at,
-     harness_slug AS base_harness_slug
+     harness_slug AS base_harness_slug,
+     origin AS base_origin
     FROM harness_shared.work_items
    WHERE item_kind = ANY (ARRAY['bug', 'change', 'task']);
