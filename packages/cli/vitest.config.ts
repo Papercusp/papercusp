@@ -23,5 +23,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: [],
+    // An intentionally-empty Vitest project (see above) must not exit non-zero
+    // just because it found zero tests — that would still read as "this
+    // workspace's test run failed" to any broader sweep/gate.
+    passWithNoTests: true,
   },
 });

@@ -921,6 +921,15 @@ export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
   // Dangerous commands within the (allow-listed) Bash tool.
   'Bash(sudo:*)',
   'Bash(git push:*)',
+  // WI-3159 (e2e-proven 2026-07-06): deny patterns are evaluated against the
+  // POST-PreToolUse-hook updatedInput, so the rtk token-filter hook's rewrite
+  // (`git push …` → `rtk git push …`) silently evades the `Bash(git push:*)`
+  // prefix match — the control (a non-rewritten command) was denied correctly,
+  // proving pure pattern evasion. rtk is on the dev box PATH today (manual
+  // vector) and any fleet rtk-hook rollout would make the evasion automatic.
+  // The repo pre-push hook stays the primary enforcement; this closes the
+  // concrete rtk variant of the documented command-string evadability.
+  'Bash(rtk git push:*)',
 ];
 
 /**

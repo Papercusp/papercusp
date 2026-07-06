@@ -1232,6 +1232,12 @@ test('claudeMcpArgs — deny-list hard-removes the dangerous EXEMPT tools (dontA
   // git push is denied (backstop to the pre-push hook); sudo is denied.
   assert.ok(FLEET_DISALLOWED_TOOLS.includes('Bash(git push:*)'));
   assert.ok(FLEET_DISALLOWED_TOOLS.includes('Bash(sudo:*)'));
+  // WI-3159: deny patterns match the POST-hook updatedInput, so the rtk
+  // token-filter rewrite (`git push` → `rtk git push`) evades the bare
+  // `Bash(git push:*)` prefix (e2e-proven 2026-07-06 — the control command
+  // was denied, the rewritten push executed). The rtk-prefixed variant must
+  // stay deny-listed alongside the bare one.
+  assert.ok(FLEET_DISALLOWED_TOOLS.includes('Bash(rtk git push:*)'));
 });
 
 test('claudeMcpArgs — subagent-fanout deny carries BOTH tool names (Task pre-rename, Agent current — 2026-07-01)', () => {
