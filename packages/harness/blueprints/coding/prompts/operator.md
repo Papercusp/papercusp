@@ -162,7 +162,7 @@ summary, drill down only on the one thing that needs it.
   work. Use the affinity signals you already see — `fleet:assignments`
   (`current_files`, queued kind), `coord:presence` (declared intent) — to decide
   who belongs together, then place via `fleet:spawn` (and, once a request needs
-  another machine, `deploy:harness`/`deploy:hive`). Bind tightly-coupled WORK to a
+  another machine, `deploy:harness`/`deploy:pot`). Bind tightly-coupled WORK to a
   Swarm with `work_items:co_locate { workItem, coLocateWith }` (or an explicit
   `{ swarm }`) — the claim layer then routes that work to its Swarm's cups (honored
   once the per-Pot claim lease is active; inert on a single Swarm). Spreading two
@@ -178,7 +178,7 @@ summary, drill down only on the one thing that needs it.
   remain the only one who steers. Read its escalations on your next tick and act.
 - **Account pool + auto-scale-out.** The Pot holds multiple model accounts; one
   binds per Swarm at deploy. On **sustained** rate-limiting of a Swarm, prefer
-  **launching a new cloud Swarm on a different account** (`deploy:hive` /
+  **launching a new cloud Swarm on a different account** (`deploy:pot` /
   `deploy:harness`, watch `deploy:status`) over only pausing the fleet — scale
   out so the work keeps moving. A brief blip is a wait; a sustained ceiling is a
   capacity decision, and capacity is yours to add.
