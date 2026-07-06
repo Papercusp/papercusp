@@ -99,30 +99,43 @@ export async function ensureZeroHarnessPublication(sql) {
  * through startEmbeddedPostgresServer, so the shipped seed's postgresql.conf
  * inherits these). SINGLE SOURCE OF TRUTH — do not inline a divergent locale.
  *
- * Pinning an explicit PORTABLE locale here is load-bearing. initdb otherwise
+ * Pinning an explicit UNIVERSAL locale here is load-bearing. initdb otherwise
  * derives lc_* from the build/runtime host's LANG, so a seed built on a
  * full-locale host (LANG=en_US.UTF-8) bakes lc_*='en_US.UTF-8' into
  * postgresql.conf — which then FATALs at first boot on the minimal Windows WSL
  * rootfs (papercup-runtime ships only C / C.utf8 / POSIX — no en_US.UTF-8):
  * "configuration file contains errors: invalid value for parameter lc_numeric:
  * en_US.UTF-8". Found live 2026-07-04 (WI-2649): the seed extracted fine but
- * postgres refused to start. C.UTF-8 is present on every glibc host AND that
- * rootfs, giving deterministic byte-order collation + UTF-8 ctype. Only affects
- * a FRESH initdb (seed build + the seedless fallback); existing data dirs are
- * untouched. `--encoding=UTF8` is implied by the locale but stated for clarity.
+ * postgres refused to start.
  *
- * `--lc-messages=C.UTF-8` is NOT redundant with `--locale`: the bundled
+ * The locale MUST be `C`, not `C.UTF-8`. `C.UTF-8` is a glibc-ism: it exists on
+ * every Linux/WSL host but macOS's BSD libc has NO such locale, so `initdb
+ * --locale=C.UTF-8` FATALs OUTRIGHT on macOS — "initdb: error: invalid locale
+ * name \"C.UTF-8\"" — before any conf is even written (found live on the mac
+ * build VM 2026-07-05: the seed build aborted and the DMG shipped an EMPTY
+ * db-seed.tar.gz, AND the runtime seedless fallback below would identically
+ * FATAL on a fresh user Mac, leaving the app unable to initialise its DB at
+ * all). `C` is the ONE locale POSIX guarantees on every libc (glibc, musl,
+ * macOS, Windows) and every PG version. Its collation is byte-order (memcmp) —
+ * BIT-IDENTICAL to glibc `C.UTF-8`'s collation, so sort/index order is
+ * unchanged; the only delta is lc_ctype (ASCII-only upper/lower vs UTF-8-aware),
+ * immaterial for this control-plane DB and already the accepted trade for the
+ * runtime lc_* (normalized to `C` too — see UNIVERSAL_LC_VALUES). `--encoding=UTF8`
+ * keeps UTF-8 STORAGE regardless of the C ctype. Only affects a FRESH initdb
+ * (seed build + the seedless fallback); existing data dirs are untouched.
+ *
+ * `--lc-messages=C` is NOT redundant with `--locale`: the bundled
  * `embedded-postgres` package hard-injects `--lc-messages=<getBestLocale()>`
  * into initdb BEFORE these flags (it greps the initdb readiness banner, so it
  * forces a known-locale), and getBestLocale() prefers `en_US.UTF-8` when the
  * BUILD host has it. A per-category `--lc-messages` overrides `--locale` for
  * that one category regardless of `--locale`, so without pinning it explicitly
  * (later, so initdb's last-duplicate-wins picks ours) the seed baked
- * `lc_messages='en_US.utf8'` while every other lc_* was C.UTF-8 — and THAT one
+ * `lc_messages='en_US.utf8'` while every other lc_* was C — and THAT one
  * param FATALed first boot on the lean rootfs (WI-2749, follow-on to WI-2649).
  * normalizeConfLc() below is the deterministic belt-and-suspenders.
  */
-export const SEED_INITDB_FLAGS = ['--locale=C.UTF-8', '--lc-messages=C.UTF-8', '--encoding=UTF8'];
+export const SEED_INITDB_FLAGS = ['--locale=C', '--lc-messages=C', '--encoding=UTF8'];
 
 /**
  * The runtime-settable lc_* GUCs that live in postgresql.conf and are VALIDATED
@@ -135,17 +148,19 @@ export const RUNTIME_LC_PARAMS = ['lc_messages', 'lc_monetary', 'lc_numeric', 'l
 
 /**
  * Locales acceptable as the INITDB --locale pin (lc_collate/lc_ctype, baked
- * into pg_database at initdb time and NOT re-validated at postmaster start) —
- * present on every glibc host including the lean Windows WSL rootfs
- * (papercup-runtime: C / C.utf8 / POSIX only). A seed whose initdb locale is
- * OUTSIDE this set can FATAL at first boot on such a host (WI-2649). The
- * `.UTF-8` / `.utf8` spellings are both accepted since glibc and initdb
- * normalise casing/hyphenation differently.
+ * into pg_database at initdb time) on EVERY platform this package ships to.
  *
- * ⚠ Scope: initdb-time ONLY. This set is NOT safe for the four runtime lc_*
- * GUCs — see UNIVERSAL_LC_VALUES.
+ * ⚠ `C.UTF-8` is deliberately NOT here. It is glibc-only: valid at initdb on
+ * Linux/WSL but REJECTED by macOS's BSD libc ("initdb: error: invalid locale
+ * name \"C.UTF-8\"", mac build VM 2026-07-05). Since a desktop build targets
+ * macOS too, the only initdb locales portable across ALL targets are exactly the
+ * POSIX-guaranteed `C` / `POSIX` — which makes this set identical to
+ * UNIVERSAL_LC_VALUES now. (It was ['C','POSIX','C.UTF-8',…] pre-macOS, when
+ * C.UTF-8's UTF-8 ctype looked worth the glibc-only bet — that bet is what
+ * bricked the mac build. Do NOT re-add C.UTF-8: it re-arms the macOS FATAL.)
+ * initdb-time and runtime lc_* now share one universal set: `C` / `POSIX`.
  */
-export const PORTABLE_INITDB_LOCALES = ['C', 'POSIX', 'C.UTF-8', 'C.utf8', 'C.utf-8', 'c.utf8'];
+export const PORTABLE_INITDB_LOCALES = ['C', 'POSIX'];
 
 /**
  * Locale values valid for the RUNTIME_LC_PARAMS on EVERY libc a desktop build

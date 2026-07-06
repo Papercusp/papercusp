@@ -1131,13 +1131,19 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   for (const n of CORE_MCP_TOOL_NAMES) {
     assert.match(n, /^[a-z_]+:[a-z0-9_-]+$/, `${n} must be a colon-form MCP tool name`);
   }
-  // The spine: orient, coordinate, see/claim work, lock files, know things, discover the rest.
+  // The spine: orient, coordinate, see/claim work, know things, discover the rest.
+  // (EI-7797: locks:acquire_granular was DELIBERATELY cut from the core spine in the
+  // 2026-07-05 demand-evidence rebalance — the PreToolUse hook auto-locks every
+  // Edit/Write now, so the hand-held lock verb is rare + su-tier; see invoke.ts's own
+  // comment beside CORE_MCP_TOOL_NAMES. It stays reachable via tools:find/invoke, and
+  // still lives in the bee kit — this assertion was never updated for that cut.)
   for (const required of [
     'coord:orient', 'coord:inbox', 'plans:get', 'work_items:list', 'work_items:claim',
-    'locks:acquire_granular', 'docs:search', 'memory:search', 'tools:find',
+    'docs:search', 'memory:search', 'tools:find',
   ]) {
     assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core`);
   }
+  assert.ok(!CORE_MCP_TOOL_NAMES.includes('locks:acquire_granular'), 'locks:acquire_granular was deliberately cut from the core spine (2026-07-05 rebalance) — still reachable via tools:find/invoke, and present in the bee kit');
   // Stays small enough to highlight/pre-load directly (vs the full ~551 surface).
   // Raised 25 → 32 (code-run-self-state-adoption-2026-07-03 P-002): +3 batching/reuse
   // (code:run, recipes:search/run) + +4 self-state (facts:assert/list,
@@ -1147,9 +1153,13 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // must be able to CREATE a plan without a discovery round-trip). The guard now pins
   // "no unreviewed creep past the deliberate 32".
   assert.ok(CORE_MCP_TOOL_NAMES.length <= 32, 'core stays small');
-  for (const required of ['code:run', 'recipes:search', 'recipes:run', 'facts:assert', 'work_items:checkpoint']) {
+  // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
+  // rebalance — recipes:search already returns the run pointer, and the run itself
+  // routes via tools:invoke. Still present in the bee/queen kits, checked below.)
+  for (const required of ['code:run', 'recipes:search', 'facts:assert', 'work_items:checkpoint']) {
     assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core (adoption unlock P-002)`);
   }
+  assert.ok(!CORE_MCP_TOOL_NAMES.includes('recipes:run'), 'recipes:run was deliberately cut from the core spine (2026-07-05 rebalance) — reachable via tools:invoke, and present in the bee/queen kits');
   // plans:new is the create verb — pinned into the core so an agent never has to hunt for
   // it (cross-platform-hardening-and-agent-ergonomics-2026-07-05 P-002). plans:get/items/
   // set-status were already core; this closes the CREATE gap the Mac-app agent hit.
