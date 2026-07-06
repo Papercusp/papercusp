@@ -2268,9 +2268,13 @@ export const spawnSigVerificationFailuresInHarnessShared = harnessShared.table("
 	expClaim: bigint("exp_claim", { mode: "number" }),
 	remoteAddr: text("remote_addr"),
 	userAgent: text("user_agent"),
+	// WI-3190: 'rotation_strand' | 'unverified' | null — distinguishes a
+	// key-rotation strand (re-spawn) from a role-escalation attempt in the dashboard.
+	classification: text(),
 }, (table) => [
 	index("spawn_sig_failures_reason_idx").using("btree", table.reason.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
 	index("spawn_sig_failures_ts_idx").using("btree", table.ts.desc().nullsFirst().op("timestamptz_ops")),
+	index("spawn_sig_failures_classification_idx").using("btree", table.classification.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")).where(sql`(classification IS NOT NULL)`),
 ]);
 
 export const autonomyTripwiresInHarnessShared = harnessShared.table("autonomy_tripwires", {
