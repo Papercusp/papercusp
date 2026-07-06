@@ -1205,7 +1205,7 @@ export interface PromptParts {
 export function buildPromptParts(input: BuildPromptInput): PromptParts {
   // ── CACHEABLE PREAMBLE — ordered by descending stability (P-009) ──────────
   const pre: string[] = [];
-  const isQueen = input.role === 'queen' || input.role === 'mug';
+  const isQueen = input.role === 'mug';
 
   // 1. Role prompt file(s) (always — caller asserts they exist), unless
   //    the caller supplied an inline prompt (chunk-loop driver, etc.).

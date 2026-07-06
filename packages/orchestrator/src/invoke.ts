@@ -3049,11 +3049,11 @@ export async function invoke(
           // pot-rename dual-accept: mug/cup/kettle are the additive twins of
           // queen/bee/overwatch — select the SAME role-scoped tool group.
           mcpToolNames:
-            role === 'queen' || role === 'mug'
+            role === 'mug'
               ? QUEEN_MCP_TOOL_NAMES
-              : role === 'bee' || role === 'cup'
+              : role === 'cup'
                 ? BEE_MCP_TOOL_NAMES
-                : role === 'overwatch' || role === 'kettle'
+                : role === 'kettle'
                   ? OVERWATCH_MCP_TOOL_NAMES
                   : null,
         };
