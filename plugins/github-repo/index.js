@@ -33,6 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.gitPush = gitPush;
 const GITHUB_API = 'https://api.github.com';
 async function readConfig(ctx) {
     const { promises: fs } = await Promise.resolve().then(() => __importStar(require('node:fs')));
@@ -101,8 +102,27 @@ async function gitPush(ctx, cloneUrl, defaultBranch, token) {
     }
     // 4. push
     const push = await spawn('git', ['push', '-u', 'origin', defaultBranch], { cwd: projectDir, timeoutSec: 60 });
+    // 5. de-tokenize origin — step 3 set `origin` to `authedUrl`, which embeds
+    // the token in plaintext; that must never persist in this harness's own
+    // `.git/config` once the push attempt is over (same defect class as
+    // WI-3057's shared-harness join clone, fixed there via
+    // ensureDetokenizedOrigin — this is the analogous fix for THIS push path).
+    // Attempted regardless of push outcome, since step 3 already wrote the
+    // token to disk the moment `set-url`/`add remote` ran, independent of
+    // whether the subsequent push itself succeeds.
+    const redact = (s) => s.replace(/x-access-token:[^@\s]*@/g, 'x-access-token:***@');
+    const resetOrigin = await spawn('git', ['remote', 'set-url', 'origin', cloneUrl], { cwd: projectDir });
     if (push.code !== 0)
-        return { ok: false, error: `git push failed: ${push.stderr.slice(0, 300) || push.stdout.slice(0, 300)}` };
+        return { ok: false, error: `git push failed: ${redact(push.stderr.slice(0, 300) || push.stdout.slice(0, 300))}` };
+    if (resetOrigin.code !== 0) {
+        // The push succeeded, but the token-free reset failed — surface this as a
+        // failure (not a silent best-effort) so it isn't mistaken for a clean
+        // success while `.git/config` still holds a plaintext token.
+        return {
+            ok: false,
+            error: `push succeeded but failed to remove the embedded token from origin (.git/config may still contain it): ${redact(resetOrigin.stderr.slice(0, 200))}`,
+        };
+    }
     return { ok: true };
 }
 async function createOrReuseRepo(ctx, cfg, signal) {
