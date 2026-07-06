@@ -140,7 +140,7 @@ dependencies:
     - curation:change-feed
     - curation:feed
     - deploy:harness
-    - deploy:hive
+    - deploy:pot
     - deploy:status
     - discovery:hives
     # Durable-facts fold (queen.base.md steering loop): the queen CALLS facts:assert
