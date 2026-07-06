@@ -7,7 +7,8 @@
  */
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { promises as fs } from 'node:fs';
+import { promises as fs, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
@@ -19,24 +20,30 @@ import {
   promptConsent,
 } from './consent.ts';
 
-import { papercuspRoot } from './papercusp-root.ts';
+import { papercuspRoot, _resetPapercuspRootForTests } from './papercusp-root.ts';
+
+// WI-3106 (was flagged flaky by the watchdog as EI-7835): run against an
+// ISOLATED PAPERCUSP_HOME, same pattern as plugin-cli.test.ts (EI-214).
+// Previously this suite resolved ROOT/grantedPath/extendedPath against the
+// REAL shared ~/.papercusp-workspaces/*/granted-capabilities.json +
+// extended-grants.json (backing them up in before() and wiping them clean in
+// EVERY beforeEach()) — on a shared dev box running many concurrent fleet
+// agents, any other process touching those same real files during a test run
+// raced against this suite's own backup/wipe/restore cycle, and a killed run
+// could skip after()'s restore entirely, leaking a wiped state into real
+// capability grants. A /tmp root can never collide with real state no matter
+// how the process dies. (consent.ts now resolves its paths lazily for
+// exactly this reason — keep it that way, matching plugin-cli.ts's
+// convention.)
+process.env.PAPERCUSP_HOME = mkdtempSync(join(tmpdir(), 'consent-test-'));
+_resetPapercuspRootForTests();
+
 const ROOT = papercuspRoot();
 const grantedPath = join(ROOT, 'granted-capabilities.json');
 const extendedPath = join(ROOT, 'extended-grants.json');
 
-let grantedBackup: string | null = null;
-let extendedBackup: string | null = null;
-
-before(async () => {
-  grantedBackup = await fs.readFile(grantedPath, 'utf8').catch(() => null);
-  extendedBackup = await fs.readFile(extendedPath, 'utf8').catch(() => null);
-});
-
 after(async () => {
-  if (grantedBackup !== null) await fs.writeFile(grantedPath, grantedBackup);
-  else await fs.rm(grantedPath, { force: true });
-  if (extendedBackup !== null) await fs.writeFile(extendedPath, extendedBackup);
-  else await fs.rm(extendedPath, { force: true });
+  await fs.rm(ROOT, { recursive: true, force: true });
 });
 
 beforeEach(async () => {

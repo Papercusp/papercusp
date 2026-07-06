@@ -15,9 +15,23 @@ import { createHash } from 'node:crypto';
 import * as readline from 'node:readline';
 
 import { papercuspRoot } from './papercusp-root.ts';
-const PAPERCUSP_ROOT = papercuspRoot();
-const GRANTED_PATH = join(PAPERCUSP_ROOT, 'granted-capabilities.json');
-const EXTENDED_PATH = join(PAPERCUSP_ROOT, 'extended-grants.json');
+// Resolved LAZILY (a function call per use), not cached into a top-level
+// const at import time — matching plugin-cli.ts's convention (see EI-214).
+// papercuspRoot() itself is a per-process singleton cache, so a test can
+// override it (set PAPERCUSP_HOME + call _resetPapercuspRootForTests())
+// BEFORE the first real call into this module and every path here picks up
+// the override. A top-level `const X = join(papercuspRoot(), ...)` would
+// instead freeze the REAL root at this module's import time — which happens
+// during the test file's own import-hoisting, before any test-file setup
+// code (like an env-var override) has a chance to run — making the paths
+// impossible to test-isolate and coupling every test run to the real shared
+// ~/.papercusp-workspaces/*/granted-capabilities.json file (WI-3106).
+function grantedPath(): string {
+  return join(papercuspRoot(), 'granted-capabilities.json');
+}
+function extendedPath(): string {
+  return join(papercuspRoot(), 'extended-grants.json');
+}
 
 function colorize(s: string, code: string): string {
   if (process.stdout.isTTY === false) return s;
@@ -63,11 +77,11 @@ export interface ExtendedFile {
 }
 
 async function readGranted(): Promise<GrantedFile> {
-  return (await readJson<GrantedFile>(GRANTED_PATH)) ?? { grants: {} };
+  return (await readJson<GrantedFile>(grantedPath())) ?? { grants: {} };
 }
 
 async function readExtended(): Promise<ExtendedFile> {
-  return (await readJson<ExtendedFile>(EXTENDED_PATH)) ?? { extended: {} };
+  return (await readJson<ExtendedFile>(extendedPath())) ?? { extended: {} };
 }
 
 function pluginVerKey(slug: string, version: string): string {
@@ -166,7 +180,7 @@ export async function promptConsent(input: ConsentInput): Promise<ConsentOutput>
       grantedAt: new Date().toISOString(),
       source: 'extended',
     };
-    await writeJson(GRANTED_PATH, granted);
+    await writeJson(grantedPath(), granted);
     console.log(green(`✓ capabilities auto-granted (previously extended to all harnesses)`));
     return {
       granted: true,
@@ -244,12 +258,12 @@ async function acceptInternal(
     grantedAt: new Date().toISOString(),
     source: extend ? 'extended' : source,
   };
-  await writeJson(GRANTED_PATH, granted);
+  await writeJson(grantedPath(), granted);
 
   if (extend) {
     const ext = await readExtended();
     ext.extended[key] = { caps, extendedAt: new Date().toISOString() };
-    await writeJson(EXTENDED_PATH, ext);
+    await writeJson(extendedPath(), ext);
   }
 
   console.log(green(`✓ capabilities granted${extend ? ' (extended to all harnesses)' : ''}`));
