@@ -16,7 +16,6 @@
 -- Idempotent + non-destructive — adds a table only.
 
 \set ON_ERROR_STOP on
-BEGIN;
 
 CREATE TABLE IF NOT EXISTS harness_shared.operator_integration_credentials (
   workspace_id  TEXT PRIMARY KEY,
@@ -41,5 +40,3 @@ GRANT ALL
   ON harness_shared.operator_integration_credentials TO harness_admin;
 -- Intentionally NOT granted to harness_zero — credentials must not be
 -- replicated over WS.
-
-COMMIT;

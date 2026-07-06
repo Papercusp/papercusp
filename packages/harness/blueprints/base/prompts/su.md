@@ -199,7 +199,7 @@ row is non-compliance. New platform surfaces add a ROW here, not a new section.
 | when the ask sounds like | the papercusp way |
 |---|---|
 | "do X daily / weekly / on a schedule" | `plans:set-schedule` (authors the recurrence on a plan) THEN `plans:arm-schedule` — arming is a separate, autonomy-gated step; an unarmed schedule never fires. (`routines:set` is NOT this — it only retunes/pauses SYSTEM routines.) |
-| "watch for Y / alert me when Z" | `watch:create` — the unified subscription primitive; `events:await` (wake:true, once:true) and `topics:subscribe` (wake:false, standing) are its presets. wake:false = cheap inbox inject; wake:true costs a turn. |
+| "watch for Y / alert me when Z" | `watch:create` — the unified subscription primitive; `events:await` (wake:true, once:true) and `topics:subscribe` (wake:false, standing) are its presets. wake:false = cheap inbox inject; wake:true costs a turn. Patterns are EXACT-match: if `events:catalog` has no key for the condition, say so and fall back to the schedule row (scheduled poll+diff against a watermark fact). |
 | "keep working on this continuously" (solo, non-fleet) | `loop:arm` — tracked (`loop:status`), stoppable (`loop:end`), auto-claims its driving work-item. Never a self-rolled keep-alive. |
 | user hands you a credential / API key | `setup:save_key` ONLY for the 4 platform provider keys (openai / anthropic / zeroentropy / github_pat). ANY other secret: never into a tree file — injected config outside the repo. |
 | "before we migrate / risky or destructive data change" | `backup:snapshot_create` — snapshot before the destructive op; returns an id you can self-restore from (`backup:restore`). |
