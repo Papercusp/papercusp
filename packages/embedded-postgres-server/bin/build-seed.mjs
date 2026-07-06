@@ -50,6 +50,7 @@ process.env.PAPERCUSP_PG_DISABLE_SEED = '1';
 
 const log = (m) => console.log(`[build-seed] ${m}`);
 let handle = null;
+let ok = true;
 try {
   await rm(dataDir, { recursive: true, force: true }).catch(() => {});
   log(`booting embedded-pg into ${dataDir} (initdb + apply migrations from ${sqlDir}) ...`);
@@ -101,8 +102,18 @@ try {
   log(`seed built: ${(size / 1024 / 1024).toFixed(1)} MB`);
 } catch (e) {
   console.error(`[build-seed] FAILED: ${e?.stack ?? e?.message ?? e}`);
-  process.exitCode = 1;
+  ok = false;
 } finally {
   if (handle) await handle.stop().catch(() => {});
   await rm(dataDir, { recursive: true, force: true }).catch(() => {});
 }
+// A failed seed build MUST be a red build. `process.exitCode = 1` alone was
+// observed to exit 0 anyway — embedded-pg's own cleanup on the failure path
+// resets the code — so the packaging wrapper's `if node build-seed.mjs; then`
+// took the SUCCESS branch and shipped a bundle with NO seed. First boot then
+// falls back to initdb + full migration replay, which re-hits the very
+// migration failure that broke the seed (e.g. a view migration that can't
+// apply on a fresh DB) and CRASHES the operator before it can serve — the
+// exact WI-2902 first-boot failure. Exit hard + explicitly so a broken
+// migration set is caught at BUILD time, never shipped.
+if (!ok) process.exit(1);
