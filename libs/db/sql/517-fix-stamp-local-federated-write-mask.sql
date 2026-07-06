@@ -76,6 +76,7 @@ BEGIN
     -- would hand it a fresh clock and let it through the writers' LWW guard.
     IF NEW.fed_ts IS NULL AND COALESCE(NEW.origin, 'local') = 'local' THEN
       NEW.fed_ts := (extract(epoch FROM clock_timestamp()) * 1000)::bigint;
+      NEW.fed_hlc := harness_shared.hlc_now();
     END IF;
     RETURN NEW;
   END IF;
