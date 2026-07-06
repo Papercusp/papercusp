@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSchemaField } from './papercusp.ts';
+import { normalizeSchemaField } from './normalize-schema.ts';
 
 describe('normalizeSchemaField', () => {
   it('returns empty for unset / null / undefined / wrong type', () => {

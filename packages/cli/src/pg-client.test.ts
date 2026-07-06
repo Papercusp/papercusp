@@ -2,8 +2,21 @@
  * Tests for buildPgUrl — the connection-string builder (env fallbacks + encoding).
  * Run with: npx vitest run packages/cli/src/pg-client.test.ts
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildPgUrl } from './pg-client';
+import { afterEach, beforeEach, describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { buildPgUrl } from './pg-client.ts';
+
+function expect(actual: unknown) {
+  return {
+    toBe(expected: unknown) {
+      assert.equal(actual, expected);
+    },
+    toContain(expected: string) {
+      assert.equal(typeof actual, 'string');
+      assert.ok(actual.includes(expected));
+    },
+  };
+}
 
 const PG_ENV = ['PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE'] as const;
 let saved: Record<string, string | undefined>;

@@ -101,7 +101,7 @@ state visible on the blackboard so the Mug can supervise without interrupting yo
   you're deferring it, record that on the **work_item** — `work_items:set_state` →
   `blocked` with a reason — rather than narrating it in a `coord:send`. The Mug
   supervises by reading your work-item state + lifecycle events, so a structured
-  deferral surfaces to her once and durably (prose burns tokens and scrolls away).
+  deferral surfaces to it once and durably (prose burns tokens and scrolls away).
   Don't silently drop it — propose/dispose cuts both ways.
 - **Need structure?** For genuinely structured work you may spin up a `kind:'harness'`
   subharness (a structured subtask pipeline — coding, research, or your domain's

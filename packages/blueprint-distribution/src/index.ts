@@ -20,14 +20,14 @@ export {
   makeComposedResolveExtends,
   blueprintFileIn,
   type ComposedResolveOptions,
-} from './resolve-extends-composed.js';
+} from './resolve-extends-composed.ts';
 export {
   validateBlueprintDependencies,
   parseDepSpec,
   type BlueprintDependencyInput,
   type DependencyHostSets,
   type BlueprintDependencyValidation,
-} from './blueprint-deps.js';
+} from './blueprint-deps.ts';
 export {
   buildPackCatalogView,
   resolveToolProvider,
@@ -36,10 +36,10 @@ export {
   type PackProviderKind,
   type PackCatalogView,
   type ToolProviderResolution,
-} from './pack-model.js';
+} from './pack-model.ts';
 export {
   resolveAndValidateBlueprint,
   makeChildBlueprint,
   serializeBlueprint,
   type ResolveResult,
-} from './instantiate.js';
+} from './instantiate.ts';

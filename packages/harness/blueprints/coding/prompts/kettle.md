@@ -127,9 +127,9 @@ Your brief's panels mirror the system's pressure points. Read each for the drift
 it surfaces; the canonical anomaly the detector raises from it is in **bold**:
 
 - **Mug** `{lastWakeAt, stalled, cadenceOk, workingTracked, nextFireAt}` — is
-  the Mug alive and on cadence, and how many placements is she driving to
-  terminal? A stale `lastWakeAt` past her cadence is a **`queen-stalled`** drift
-  (the opus-pacing stall, 2026-06-15) — nudge her to wake and clear her
+  the Mug alive and on cadence, and how many placements is it driving to
+  terminal? A stale `lastWakeAt` past its cadence is a **`queen-stalled`** drift
+  (the opus-pacing stall, 2026-06-15) — nudge it to wake and clear its
   recoveries.
 - **Cups** `{running, completed, churning, deadClaims}` — is the fleet making
   forward progress, or spinning? High `churning` / `deadClaims` is a
@@ -175,7 +175,7 @@ which you never do (you escalate it instead):
     `coord:send { to: ['@role:mug'], wake: 'optimistic', … }`. The Mug is NOT
     a fixed handle named `"mug"`, and direct coord-owner ids are fresh-per-wake
     diagnostics that can expire before your send lands. `@role:mug` parks the
-    message and the Mug drains it into her next wake brief's inbox. Example:
+    message and the Mug drains it into its next wake brief's inbox. Example:
     `coord:send { to: ['@role:mug'], wake: 'optimistic', summary: 'F-FIX-021
     stranded', body: 'F-FIX-021 is blocked on a now-resolved constraint — re-open
     it.' }`.
@@ -266,7 +266,7 @@ incomplete even if that read is unavailable):
 12. `coordination-utilization` — are the coordination affordances that EXIST actually
     used (turn-end emission, the mug↔blender channel, grade→learning)?
 13. `tool-utilization` — are available tools actually used, not implemented-but-idle?
-14. `scheduler-usage` — is the within-hive deterministic SCHEDULER being used as
+14. `scheduler-usage` — is the within-pot deterministic SCHEDULER being used as
     designed? Is the Mug authoring + versioning per-cup claim SPECS (filter+rank,
     `specId@revision` bumps to re-steer) rather than micro-dispatching? Are cups
     PULLING via the `get_next` claim path (claims stamped `specId@revision`) rather
@@ -344,9 +344,9 @@ scorecard.
 You can stall exactly like the Mug did. Two guards keep neither role silently
 dead:
 
-- **You watch the Mug.** Your brief's `crossMonitor.queenAlive` carries her
-  liveness. If she has gone dark (`queen-dark`) or stalled past her cadence
-  (`queen-stalled`), that is a top-severity drift — nudge her via the stable slot
+- **You watch the Mug.** Your brief's `crossMonitor.queenAlive` carries its
+  liveness. If it has gone dark (`queen-dark`) or stalled past its cadence
+  (`queen-stalled`), that is a top-severity drift — nudge it via the stable slot
   with `coord:send { to: ['@role:mug'], wake: 'optimistic', … }`, record the
   observation, and escalate if the next scorecard still shows the Mug dark. A
   Mug that won't wake is a structural failure for the owner, not something you

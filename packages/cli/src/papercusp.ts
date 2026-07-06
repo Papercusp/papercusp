@@ -39,7 +39,9 @@ import {
   resolveAndValidateBlueprint,
   validateBlueprintDependencies,
 } from '@papercusp/blueprint-distribution';
+import { normalizeSchemaField } from './normalize-schema.ts';
 import { papercuspPath, papercuspRoot } from './papercusp-root.ts';
+export { normalizeSchemaField } from './normalize-schema.ts';
 const PAPERCUSP_ROOT = papercuspRoot();
 const HARNESSES_DIR = join(PAPERCUSP_ROOT, 'harnesses');
 const GLOBAL_PLUGINS_DIR = join(PAPERCUSP_ROOT, 'global-plugins');
@@ -108,36 +110,6 @@ async function writeRegistry(reg: Registry): Promise<void> {
 
 async function readCredentials(): Promise<Record<string, string | undefined>> {
   return (await readJson<Record<string, string | undefined>>(CREDENTIALS_PATH)) ?? {};
-}
-
-/**
- * Normalize manifest.schema into a list of `{schemaName?, ddlPath}` rows.
- * Accepts:
- *   - Single PluginSchemaDef object: `{schemaName, ddlPath}`
- *   - Array of PluginSchemaDef objects.
- *   - Legacy string-only array of DDL paths.
- *   - Anything else → empty list (silently skipped).
- */
-export function normalizeSchemaField(input: unknown): Array<{ schemaName?: string; ddlPath: string }> {
-  if (!input) return [];
-  const rows: Array<{ schemaName?: string; ddlPath: string }> = [];
-  const items = Array.isArray(input) ? input : [input];
-  for (const item of items) {
-    if (typeof item === 'string') {
-      rows.push({ ddlPath: item });
-      continue;
-    }
-    if (item && typeof item === 'object') {
-      const obj = item as { schemaName?: unknown; ddlPath?: unknown };
-      if (typeof obj.ddlPath === 'string' && obj.ddlPath.length > 0) {
-        rows.push({
-          schemaName: typeof obj.schemaName === 'string' ? obj.schemaName : undefined,
-          ddlPath: obj.ddlPath,
-        });
-      }
-    }
-  }
-  return rows;
 }
 
 function isValidSlug(s: string): boolean {

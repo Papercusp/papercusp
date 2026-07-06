@@ -20,12 +20,14 @@ import assert from 'node:assert/strict';
 import { existsSync, promises as fs } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { spawnSync, spawn as spawnAsync } from 'node:child_process';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI_BIN = join(__dirname, '..', 'bin', 'papercusp');
+const REPO_ROOT = resolve(__dirname, '../../../../..');
+const REPO_BIN = join(REPO_ROOT, 'node_modules', '.bin');
 
 /** Build a real gzipped tarball containing papercusp.json + index.js so the
  *  CLI's tar extract + manifest validate paths actually run. */
@@ -87,9 +89,40 @@ async function startMockMarketplace(): Promise<MockMarketplace> {
 }
 
 /** Run the real papercusp CLI with the given env, capturing exit + output. */
-function runCli(args: string[], env: NodeJS.ProcessEnv): { code: number; stdout: string; stderr: string } {
-  const r = spawnSync(CLI_BIN, args, { env: { ...process.env, ...env }, encoding: 'utf8' });
-  return { code: r.status ?? -1, stdout: r.stdout, stderr: r.stderr };
+async function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string }> {
+  const childEnv = {
+    ...process.env,
+    ...env,
+    PATH: `${REPO_BIN}:${process.env.PATH ?? ''}`,
+  };
+  // Node's test runner injects worker-context env vars into child processes.
+  // The real CLI is not a test worker; inheriting them can leave the subprocess
+  // alive indefinitely under node:test isolation instead of exiting after work.
+  delete childEnv.NODE_TEST_CONTEXT;
+  delete childEnv.NODE_TEST_WORKER_ID;
+
+  return await new Promise((resolve) => {
+    const child = spawnAsync(CLI_BIN, args, {
+      env: childEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    const timeout = setTimeout(() => {
+      stderr += `\nspawn error: ${CLI_BIN} timed out after 15000ms`;
+      child.kill('SIGTERM');
+    }, 15_000);
+    child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
+    child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
+    child.on('error', (err) => {
+      clearTimeout(timeout);
+      resolve({ code: -1, stdout, stderr: `${stderr}\nspawn error: ${err.message}` });
+    });
+    child.on('exit', (code, signal) => {
+      clearTimeout(timeout);
+      resolve({ code: code ?? (signal ? 143 : -1), stdout, stderr });
+    });
+  });
 }
 
 let mp: MockMarketplace;
@@ -119,7 +152,7 @@ describe('papercusp install — atomic staging', () => {
       res.end(tarball);
     });
 
-    const r = runCli(['install', slug], {
+    const r = await runCli(['install', slug], {
       PAPERCUSP_HOME: testHome,
       PAPERCUSP_MARKETPLACE_URL: mp.url,
       PAPERCUSP_ACCEPT_CAPABILITIES: '1',
@@ -149,7 +182,7 @@ describe('papercusp install — atomic staging', () => {
       res.setHeader('content-type', 'application/octet-stream');
       res.end(v1);
     });
-    const r1 = runCli(['install', slug], { PAPERCUSP_HOME: testHome, PAPERCUSP_MARKETPLACE_URL: mp.url, PAPERCUSP_ACCEPT_CAPABILITIES: '1' });
+    const r1 = await runCli(['install', slug], { PAPERCUSP_HOME: testHome, PAPERCUSP_MARKETPLACE_URL: mp.url, PAPERCUSP_ACCEPT_CAPABILITIES: '1' });
     assert.equal(r1.code, 0, `seed install failed: ${r1.stderr}`);
 
     const installDir = join(testHome, 'global-plugins', slug);
@@ -166,7 +199,7 @@ describe('papercusp install — atomic staging', () => {
       res.end(JSON.stringify({ error: 'service unavailable' }));
     });
 
-    const r2 = runCli(['install', `${slug}@0.2.0`], { PAPERCUSP_HOME: testHome, PAPERCUSP_MARKETPLACE_URL: mp.url, PAPERCUSP_ACCEPT_CAPABILITIES: '1' });
+    const r2 = await runCli(['install', `${slug}@0.2.0`], { PAPERCUSP_HOME: testHome, PAPERCUSP_MARKETPLACE_URL: mp.url, PAPERCUSP_ACCEPT_CAPABILITIES: '1' });
     assert.notEqual(r2.code, 0, 'expected install to fail on 503');
 
     // Atomic-staging contract: the v0.1.0 install survives the failed
@@ -199,7 +232,7 @@ describe('papercusp install — atomic staging', () => {
       res.setHeader('content-type', 'application/octet-stream');
       res.end(v1);
     });
-    const r1 = runCli(['install', slug], { PAPERCUSP_HOME: testHome, PAPERCUSP_MARKETPLACE_URL: mp.url, PAPERCUSP_ACCEPT_CAPABILITIES: '1' });
+    const r1 = await runCli(['install', slug], { PAPERCUSP_HOME: testHome, PAPERCUSP_MARKETPLACE_URL: mp.url, PAPERCUSP_ACCEPT_CAPABILITIES: '1' });
     assert.equal(r1.code, 0, `seed install failed: ${r1.stderr}`);
 
     // v0.2.0 tarball has a manifest with the WRONG slug — manifest validation should reject it.
@@ -213,7 +246,7 @@ describe('papercusp install — atomic staging', () => {
       res.end(v2Wrong);
     });
 
-    const r2 = runCli(['install', `${slug}@0.2.0`], { PAPERCUSP_HOME: testHome, PAPERCUSP_MARKETPLACE_URL: mp.url, PAPERCUSP_ACCEPT_CAPABILITIES: '1' });
+    const r2 = await runCli(['install', `${slug}@0.2.0`], { PAPERCUSP_HOME: testHome, PAPERCUSP_MARKETPLACE_URL: mp.url, PAPERCUSP_ACCEPT_CAPABILITIES: '1' });
     assert.notEqual(r2.code, 0, 'expected install to fail on manifest mismatch');
 
     // v0.1.0 must survive — manifest validation should have happened in the

@@ -1,5 +1,24 @@
-import { describe, expect, it } from 'vitest';
-import { scanSource, manifestCovers, buildReport } from './plugin-doctor';
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { scanSource, manifestCovers, buildReport } from './plugin-doctor.ts';
+
+function expect(actual: unknown) {
+  return {
+    toBe(expected: unknown) {
+      assert.equal(actual, expected);
+    },
+    toEqual(expected: unknown) {
+      assert.deepEqual(actual, expected);
+    },
+    toContain(expected: unknown) {
+      assert.ok(Array.isArray(actual) || typeof actual === 'string');
+      assert.ok(actual.includes(expected as never));
+    },
+    toBeTruthy() {
+      assert.ok(actual);
+    },
+  };
+}
 
 describe('scanSource', () => {
   it('detects ctx.spawn literal binaries', () => {
