@@ -3240,6 +3240,31 @@ export async function invoke(
       else options.signal.addEventListener('abort', onAbort, { once: true });
     }
 
+    // WI-3302: this child is invoke.ts's OWN inner agent-CLI process — its
+    // stdout/stderr chunks are forwarded to the chunk-bus/PG below, but were
+    // never echoed back onto invoke.ts's own process.stdout/stderr. invoke.ts
+    // runs in the SAME OS process as invoke-once.ts (imported module, not a
+    // separate spawn), and orchestrator-runner.ts's `runChild` watches THAT
+    // outer process's stdout/stderr `data` events (`reportActivity()`) to stamp
+    // `spawned_agents.last_output_at` via `onOutputActivity`. Because nothing
+    // upstream ever wrote to the outer process's own streams mid-run (only a
+    // final summary at the very end — see invoke-once.ts), `last_output_at`
+    // stayed null for the entire run (0/1553 sampled — WI-3302). Fix: echo a
+    // tiny throttled marker to our OWN process.stderr (never stdout — several
+    // downstream consumers, e.g. classifyTurnError/rawStdoutTail, key off the
+    // exact stdout content, so polluting it would be riskier than necessary)
+    // whenever the inner child emits real output, capped well under
+    // SPAWN_HEARTBEAT_INTERVAL_MS (60s, spawn-reclaim.ts) so the heartbeat tick
+    // almost always has a fresh timestamp to promote.
+    const OUTER_ACTIVITY_ECHO_THROTTLE_MS = 15_000;
+    let lastOuterActivityEchoAt = 0;
+    const echoActivityToOuterProcess = () => {
+      const now = Date.now();
+      if (now - lastOuterActivityEchoAt < OUTER_ACTIVITY_ECHO_THROTTLE_MS) return;
+      lastOuterActivityEchoAt = now;
+      try { process.stderr.write('[papercusp:activity]\n'); } catch { /* best-effort */ }
+    };
+
     // Live streaming via the operator's chunk bus. POST each stdout
     // chunk to /api/internal/run-chunk; the operator publishes to an
     // in-process EventEmitter that the SSE handler subscribes to.
@@ -3248,6 +3273,7 @@ export async function invoke(
     // JSONL still has the chunk and Phase 4 ingest-at-exit + the SSE
     // handler's fs.watch fallback keep the stream functional.
     child.stdout.on('data', (chunk: Buffer) => {
+      echoActivityToOuterProcess();
       jsonlChunks.push(chunk);
       const mySeq = chunkSeq;
       const myData = chunk.toString('utf8');
@@ -3278,7 +3304,7 @@ export async function invoke(
       }
       if (advancedSeq) chunkSeq++;
     });
-    child.stderr.on('data', (chunk: Buffer) => errChunks.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => { echoActivityToOuterProcess(); errChunks.push(chunk); });
 
     // EPIPE protection: if the subprocess exits before reading our stdin
     // (e.g. `true`, or a crashed claude binary), the write would throw an
