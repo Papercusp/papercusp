@@ -146,6 +146,27 @@ test('splitCommand — whitespace-splits like bash unquoted', () => {
   assert.deepEqual(splitCommand('claude'), ['claude']);
 });
 
+// --- WI-3302: outer-process activity echo throttle (last_output_at fix) --
+test('nextOuterActivityEchoAt — fires on the very first call (lastEchoAt=0)', () => {
+  assert.equal(nextOuterActivityEchoAt(0, 1_000), 1_000);
+});
+
+test('nextOuterActivityEchoAt — suppressed within the throttle window', () => {
+  const first = nextOuterActivityEchoAt(0, 1_000)!;
+  assert.equal(nextOuterActivityEchoAt(first, first + OUTER_ACTIVITY_ECHO_THROTTLE_MS - 1), null);
+});
+
+test('nextOuterActivityEchoAt — fires again once the throttle window elapses', () => {
+  const first = nextOuterActivityEchoAt(0, 1_000)!;
+  const now = first + OUTER_ACTIVITY_ECHO_THROTTLE_MS;
+  assert.equal(nextOuterActivityEchoAt(first, now), now);
+});
+
+test('nextOuterActivityEchoAt — respects a custom throttle window', () => {
+  assert.equal(nextOuterActivityEchoAt(100, 105, 10), null);
+  assert.equal(nextOuterActivityEchoAt(100, 110, 10), 110);
+});
+
 // --- P-051: per-spawn HOME (Phase E / D-008) ------------------------------
 test('resolveSpawnHome — shared-operator model returns the workspace HOME dir', () => {
   const root = mkdtempSync(join(tmpdir(), 'papercusp-spawnhome-'));
