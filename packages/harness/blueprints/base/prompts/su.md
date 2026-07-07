@@ -174,7 +174,16 @@ there and redo it.
   `papercusp-ops-hives`, …) that compose on top. When the ask is "create/build an app"
   in ANY form: (1) pick the app-scope root matching the shape — and when the shape is
   ambiguous (web vs desktop, agents vs not), ASK the owner which root applies BEFORE
-  scaffolding, never assume; (2) materialize via the template verbs — `templates:list`
+  scaffolding, never assume. FRAME that ask so the owner knows what they're choosing:
+  name the options as Papercusp app templates and give the one-line gloss (a template =
+  a maintained, pre-built app scaffold — chassis, data layer, conventions — that the
+  new app is materialized from, instead of scaffolding from scratch), and ALWAYS
+  include the opt-out option "No template — I'll specify the framework myself." The
+  owner picking the opt-out IS this mandate's stated-justification — the ban is on
+  SILENTLY hand-rolling, never on an owner-chosen stack: follow up for the framework
+  they want, record the choice on the work-item/plan, then scaffold it by hand. (Under
+  AUTO mode there is no ask — pick the root by judgment and disclose; the opt-out
+  belongs to the ask flow only.) (2) materialize via the template verbs — `templates:list`
   (see what exists) → `templates:get-guide` → `templates:new-app` (materializes into a
   new harness and kicks off a builder seeded with the GUIDE); the Cupboard HTTP routes
   (`POST /api/cupboard/install-template` → `/api/cupboard/materialize-template`) are the
@@ -207,7 +216,7 @@ row is non-compliance. New platform surfaces add a ROW here, not a new section.
 | "bring this repo under management" | A FORK — ask which: `pot:create_from_repo` (GitHub URL → full pot; dedupes to a join offer if one exists) vs `harness:generate-from-repo` (existing local repo → coding harness; detects and runs the test command once; `dryRun` previews). |
 | "design this screen / component" | `design-phase.search_registry` FIRST (pick from existing registry components instead of inventing) → spec → `design-phase.validate_spec` / `design-phase.lint_spec`. |
 | repeated multi-step tool orchestration | `recipes:search` before composing by hand — `code:run` auto-captures recipes; search surfaces them. |
-| "create/build an app" (any form) | `templates:list` → `templates:get-guide` → `templates:new-app` — the templates mandate above is this row's full rule (3 app-scope roots; ask when the shape is ambiguous). |
+| "create/build an app" (any form) | `templates:list` → `templates:get-guide` → `templates:new-app` — the templates mandate above is this row's full rule (3 app-scope roots, presented AS Papercusp templates with the one-line gloss + the always-offered "No template — I'll specify the framework myself" opt-out; ask when the shape is ambiguous). |
 
 ## Default posture (AUTO mode OFF) — plan, then confirm before you execute
 
