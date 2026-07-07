@@ -1779,7 +1779,9 @@ test('buildPromptParts — QUEEN preamble is byte-identical across per-wake vola
   });
   try {
     const base = {
-      role: 'queen',
+      // The Queen decider role is 'mug' post-rename (isQueen === role==='mug');
+      // 'queen' is the dead old name and would skip the isQueen-gated blocks.
+      role: 'mug',
       promptFile: join(fx.harnessDir, 'queen.md'),
       promptOverride: '',
       stateDir: fx.stateDir,
