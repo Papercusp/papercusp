@@ -652,6 +652,7 @@ export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'work_items:comment',
   'work_items:create',
   'work_items:promote',
+  'work_items:release',
   'work_items:reorder',
   'work_items:set_priority',
   'work_items:set_state',
@@ -712,6 +713,7 @@ export const BEE_MCP_TOOL_NAMES: readonly string[] = [
   'plans:search',
   'scheduler:running',
   'work_items:claim',
+  'work_items:release',
   // code-run-self-state-adoption-2026-07-03 P-001: the bee persona + the carry-note substrate
   // (su-cold-auto-mode D-004, mig 472) mandate work_items:checkpoint as the bee's "note to my
   // next self", and bees were already calling it 28×/14d via non-seeded paths — but it was
@@ -836,13 +838,14 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // the verb that CREATES one — every ad-hoc filing paid a tools:invoke round-trip.
   'work_items:create',
   'work_items:claim',
-  // EI-6770: self-pull (claim_next) + read (get) + finish (complete) are the OTHER
-  // three verbs of the canonical worker loop (claim_next -> get -> ... -> complete)
-  // — every fleet/worker brief instructs agents to call these, so their absence
-  // here was the root cause of "tool not available" self-halts mid-drain.
+  // EI-6770/EI-8588: self-pull (claim_next) + read (get) + finish (complete) +
+  // release are the other verbs of the canonical worker loop. Every fleet/worker
+  // brief points at these, so their absence here causes "tool not available"
+  // self-halts mid-drain or stranded claim handoffs.
   'work_items:claim_next',
   'work_items:get',
   'work_items:complete',
+  'work_items:release',
   'work_items:set_state',
   // (2026-07-05 cuts: work_items:update — 104 calls/7d, set_state + comment cover the
   // common cases; locks:acquire_granular/release_granular — the PreToolUse hook
@@ -874,11 +877,14 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'facts:assert',
   'facts:list',
   'work_items:checkpoint',
-  // loop:arm + loop:checkpoint — the engine-loop pair. checkpoint sat in the spine while
-  // the verb that CREATES the loop did not (253 fallback reaches/7d): an agent could
-  // checkpoint a loop it couldn't arm (2026-07-05 rebalance).
+  // Engine-loop lifecycle. arm/checkpoint keep unattended sessions alive; status/end are
+  // the wind-down half. EI-8597: native ToolSearch can miss loop:end/status even when the
+  // catalog lists them, so seeded workers must not depend on discovery to inspect or stop
+  // their own loop after the lane drains.
   'loop:arm',
   'loop:checkpoint',
+  'loop:status',
+  'loop:end',
   // Session hygiene — EI-6770: without this in the spine, an agent nearing its
   // compaction limit has no way to compact cleanly and self-halts instead
   // ("no compaction tool available") mid-task, losing in-flight work.

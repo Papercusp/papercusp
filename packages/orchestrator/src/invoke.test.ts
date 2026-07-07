@@ -1173,9 +1173,13 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // work_items:checkpoint, loop:checkpoint). Then +1 → the deliberate 32:
   // plans:new (cross-platform-hardening-and-agent-ergonomics-2026-07-05 P-002, owner
   // directive "plans should be one of the core tools in the trimmed list" — an agent
-  // must be able to CREATE a plan without a discovery round-trip). The guard now pins
-  // "no unreviewed creep past the deliberate 32".
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 32, 'core stays small');
+  // must be able to CREATE a plan without a discovery round-trip). Then +1 → 33:
+  // work_items:release (EI-8588) is the handoff half of the worker loop; leaving it
+  // deferred stranded misclaimed items when ToolSearch missed the flat MCP verb. The
+  // guard now pins "no unreviewed creep past the deliberate 35". EI-8597 then added
+  // loop:end/status because the already-seeded loop:arm lifecycle needs a directly
+  // callable inspect/stop path when native ToolSearch misses those verbs.
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 35, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)
@@ -1187,6 +1191,9 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // it (cross-platform-hardening-and-agent-ergonomics-2026-07-05 P-002). plans:get/items/
   // set-status were already core; this closes the CREATE gap the Mac-app agent hit.
   assert.ok(CORE_MCP_TOOL_NAMES.includes('plans:new'), 'plans:new belongs in the universal core (agent-ergonomics P-002)');
+  assert.ok(CORE_MCP_TOOL_NAMES.includes('work_items:release'), 'work_items:release belongs in the universal core (EI-8588 worker handoffs)');
+  assert.ok(CORE_MCP_TOOL_NAMES.includes('loop:status'), 'loop:status belongs in the universal core (EI-8597 loop wind-down)');
+  assert.ok(CORE_MCP_TOOL_NAMES.includes('loop:end'), 'loop:end belongs in the universal core (EI-8597 loop wind-down)');
   // The fleet kits carry the batching surface too (P-001) — the 2026-07-03 audit's root
   // finding was code:run absent from the BEE/QUEEN kits while the inline nudge advised it.
   for (const kit of [BEE_MCP_TOOL_NAMES, QUEEN_MCP_TOOL_NAMES]) {
