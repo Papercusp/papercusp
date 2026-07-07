@@ -8,6 +8,8 @@ import {
   findPriorRunForIdempotency,
   extractResult,
   splitCommand,
+  nextOuterActivityEchoAt,
+  OUTER_ACTIVITY_ECHO_THROTTLE_MS,
   resolvePromptOverride,
   resolvePromptOverrideWithStore,
   resolveTimeout,

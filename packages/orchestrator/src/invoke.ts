@@ -170,6 +170,30 @@ export function splitCommand(cmd: string): string[] {
 }
 
 /**
+ * WI-3302 fix. `runChild` (orchestrator-runner.ts) watches invoke.ts's OWN
+ * process.stdout/stderr `data` events to stamp `spawned_agents.last_output_at`
+ * (via `onOutputActivity`), but invoke.ts's inner agent-CLI child's stdout/stderr
+ * chunks were only ever forwarded to the chunk-bus/PG — never echoed back onto
+ * invoke.ts's own streams — so the outer process saw zero activity for the
+ * entire run and `last_output_at` stayed null (0/1553 sampled). The fix echoes a
+ * tiny marker to invoke.ts's own `process.stderr` whenever the inner child
+ * produces real output, throttled well under `SPAWN_HEARTBEAT_INTERVAL_MS` (60s,
+ * spawn-reclaim.ts) so the heartbeat tick almost always has a fresh timestamp.
+ *
+ * Pure throttle decision, extracted for unit testing without spawning anything:
+ * given the last echo time and now, returns the new `lastEchoAt` to store if an
+ * echo should fire, or `null` if still within the throttle window.
+ */
+export const OUTER_ACTIVITY_ECHO_THROTTLE_MS = 15_000;
+export function nextOuterActivityEchoAt(
+  lastEchoAt: number,
+  now: number,
+  throttleMs: number = OUTER_ACTIVITY_ECHO_THROTTLE_MS,
+): number | null {
+  return now - lastEchoAt < throttleMs ? null : now;
+}
+
+/**
  * Per-hive local-tier blueprint roots from the spawn extras
  * (domain-generic-hive-architecture-2026-06-18 P-012/P-014/D-012). The SPAWNER
  * (operator-core, which has the hive + PG context) materializes the hive's federated
@@ -3255,13 +3279,13 @@ export async function invoke(
     // exact stdout content, so polluting it would be riskier than necessary)
     // whenever the inner child emits real output, capped well under
     // SPAWN_HEARTBEAT_INTERVAL_MS (60s, spawn-reclaim.ts) so the heartbeat tick
-    // almost always has a fresh timestamp to promote.
-    const OUTER_ACTIVITY_ECHO_THROTTLE_MS = 15_000;
+    // almost always has a fresh timestamp to promote. Throttle decision is the
+    // pure, unit-tested `nextOuterActivityEchoAt` above.
     let lastOuterActivityEchoAt = 0;
     const echoActivityToOuterProcess = () => {
-      const now = Date.now();
-      if (now - lastOuterActivityEchoAt < OUTER_ACTIVITY_ECHO_THROTTLE_MS) return;
-      lastOuterActivityEchoAt = now;
+      const next = nextOuterActivityEchoAt(lastOuterActivityEchoAt, Date.now());
+      if (next === null) return;
+      lastOuterActivityEchoAt = next;
       try { process.stderr.write('[papercusp:activity]\n'); } catch { /* best-effort */ }
     };
 
