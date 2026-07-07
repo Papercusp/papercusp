@@ -181,15 +181,18 @@ export function splitCommand(cmd: string): string[] {
  * spawn-reclaim.ts) so the heartbeat tick almost always has a fresh timestamp.
  *
  * Pure throttle decision, extracted for unit testing without spawning anything:
- * given the last echo time and now, returns the new `lastEchoAt` to store if an
- * echo should fire, or `null` if still within the throttle window.
+ * given the last echo time (`null` = never echoed yet) and now, returns the new
+ * `lastEchoAt` to store if an echo should fire, or `null` if still within the
+ * throttle window (an explicit `null` sentinel rather than `0`, so "never
+ * echoed" always fires regardless of what epoch/clock the caller uses).
  */
 export const OUTER_ACTIVITY_ECHO_THROTTLE_MS = 15_000;
 export function nextOuterActivityEchoAt(
-  lastEchoAt: number,
+  lastEchoAt: number | null,
   now: number,
   throttleMs: number = OUTER_ACTIVITY_ECHO_THROTTLE_MS,
 ): number | null {
+  if (lastEchoAt === null) return now;
   return now - lastEchoAt < throttleMs ? null : now;
 }
 
@@ -3281,7 +3284,7 @@ export async function invoke(
     // SPAWN_HEARTBEAT_INTERVAL_MS (60s, spawn-reclaim.ts) so the heartbeat tick
     // almost always has a fresh timestamp to promote. Throttle decision is the
     // pure, unit-tested `nextOuterActivityEchoAt` above.
-    let lastOuterActivityEchoAt = 0;
+    let lastOuterActivityEchoAt: number | null = null;
     const echoActivityToOuterProcess = () => {
       const next = nextOuterActivityEchoAt(lastOuterActivityEchoAt, Date.now());
       if (next === null) return;

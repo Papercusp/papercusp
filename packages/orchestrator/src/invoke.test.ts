@@ -147,17 +147,17 @@ test('splitCommand — whitespace-splits like bash unquoted', () => {
 });
 
 // --- WI-3302: outer-process activity echo throttle (last_output_at fix) --
-test('nextOuterActivityEchoAt — fires on the very first call (lastEchoAt=0)', () => {
-  assert.equal(nextOuterActivityEchoAt(0, 1_000), 1_000);
+test('nextOuterActivityEchoAt — fires on the very first call (lastEchoAt=null)', () => {
+  assert.equal(nextOuterActivityEchoAt(null, 1_000), 1_000);
 });
 
 test('nextOuterActivityEchoAt — suppressed within the throttle window', () => {
-  const first = nextOuterActivityEchoAt(0, 1_000)!;
+  const first = nextOuterActivityEchoAt(null, 1_000)!;
   assert.equal(nextOuterActivityEchoAt(first, first + OUTER_ACTIVITY_ECHO_THROTTLE_MS - 1), null);
 });
 
 test('nextOuterActivityEchoAt — fires again once the throttle window elapses', () => {
-  const first = nextOuterActivityEchoAt(0, 1_000)!;
+  const first = nextOuterActivityEchoAt(null, 1_000)!;
   const now = first + OUTER_ACTIVITY_ECHO_THROTTLE_MS;
   assert.equal(nextOuterActivityEchoAt(first, now), now);
 });
