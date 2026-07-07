@@ -1774,7 +1774,7 @@ test('buildPromptParts — QUEEN preamble is byte-identical across per-wake vola
       join(harnessDir, 'queen.md'),
       '# The Queen\nYou steer placement. Survey, rank, place, declare your next wake.',
     );
-    writeFileSync(join(harnessDir, 'identity', 'queen.md'), 'Across missions I have learned to co-locate tight collaborators.');
+    writeFileSync(join(harnessDir, 'identity', 'mug.md'), 'Across missions I have learned to co-locate tight collaborators.');
     writeFileSync(join(stateDir, 'memory', 'summary.md'), 'Prior wake: placed 3 bees on the staging deploy.');
   });
   try {
@@ -1821,7 +1821,7 @@ test('buildPromptParts — QUEEN preamble is byte-identical across per-wake vola
     assert.match(wake1.preamble, /Verify outcomes before claiming done/);
     assert.doesNotMatch(wake1.preamble, /## Yielding on request \(turn-lifecycle control\)/);
     assert.doesNotMatch(wake1.preamble, /## Tests follow the project standard/);
-    assert.match(wake1.preamble, /## Your identity \(cross-mission memory for the queen role\)/);
+    assert.match(wake1.preamble, /## Your identity \(cross-mission memory for the mug role\)/);
     assert.match(wake1.preamble, /Prior wake: placed 3 bees/);
     // The per-wake survey snapshot / runtime MUST be in the volatile tail, never the prefix.
     assert.doesNotMatch(wake1.preamble, /FLOOR:/);
