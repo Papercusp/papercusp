@@ -65,6 +65,19 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // wrong fix is self-correcting (re-quarantined, low blast radius). Not haiku: a file-
   // editing role needs reliable tool-calling (EI-286: haiku drifts into bash).
   'content-fixer': 'sonnet',
+  // The DOC-STEWARD (docs-corpus-audit WS2 / P-008) — the auto doc-freshness fixer, the
+  // launch-fixer family's fourth member alongside merge-resolver / release-fixer / content-fixer.
+  // sonnet, not opus: like content-fixer its work is bounded (re-verify prose against the anchored
+  // code, harness_docs:verify to clear the flag) and self-correcting, but a doc-editing role needs
+  // reliable tool-calling + the BIG window — it reads several whole source files per run to check a
+  // batch of up to 8 drifted docs. EI-8164: registered LATE (role-config.ts), it was the one
+  // fixer role with NO committed default, so `applyRoleModel`/`roleModelDefault` returned the base
+  // command UNCHANGED → it launched on the bare CLI default, which runs a 200k auto-compact window
+  // in CC (no `[1m]` marker gets injected when no spec is resolved). Its multi-file reads then
+  // thrashed autocompact → "Prompt is too long" (context_overflow) — 6+ failed spawns/day. Pinning
+  // `sonnet` here routes it through normalizeModelSpec → `sonnet[1m]` (the 967k window) at launch,
+  // the same fix every sibling fixer already had. Cheap, high-frequency, spec-bounded ⇒ sonnet tier.
+  'doc-steward': 'sonnet',
   // P-012 execution tier — spec-bounded, high-frequency pipeline roles.
   worker: 'sonnet',
   validator: 'sonnet',
