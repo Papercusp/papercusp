@@ -16,21 +16,75 @@
  * mounts, fixture-controlled tests).
  */
 import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, parse, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-function packageRoot(): string {
-  // ESM path: paths.ts → import.meta.url → .../libs/papercusp/packages/harness/
-  if (typeof import.meta !== 'undefined' && import.meta.url) {
-    return dirname(fileURLToPath(import.meta.url));
+function hasHarnessAssets(dir: string): boolean {
+  return existsSync(join(dir, 'blueprints', 'base', 'blueprint.yaml'));
+}
+
+function derivedHarnessRoot(repoRoot: string): string {
+  return join(repoRoot, 'libs', 'papercusp', 'packages', 'harness');
+}
+
+export function resolveHarnessPackageRoot(startDirs: string[]): string | null {
+  const seen = new Set<string>();
+  const consider = (dir: string): string | null => {
+    let cur = resolve(dir);
+    const root = parse(cur).root;
+    for (;;) {
+      const direct = cur;
+      if (!seen.has(direct)) {
+        seen.add(direct);
+        if (hasHarnessAssets(direct)) return direct;
+      }
+
+      const derived = derivedHarnessRoot(cur);
+      if (!seen.has(derived)) {
+        seen.add(derived);
+        if (hasHarnessAssets(derived)) return derived;
+      }
+
+      if (cur === root) return null;
+      cur = dirname(cur);
+    }
+  };
+
+  const integ = process.env.PAPERCUSP_INTEGRATION_ROOT?.trim();
+  if (integ) {
+    const derived = derivedHarnessRoot(integ);
+    if (hasHarnessAssets(derived)) return derived;
   }
+
+  for (const dir of startDirs) {
+    const hit = consider(dir);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function packageRoot(): string {
+  // ESM source path: paths.ts → import.meta.url → .../libs/papercusp/packages/harness/.
+  // Bundled host path: esbuild inlines this module into apps/operator/dist-host/*.mjs,
+  // so import.meta.url points at dist-host. Walk upward to the repo root and recover
+  // the real harness package; otherwise built-in blueprint loads look under dist-host.
+  if (typeof import.meta !== 'undefined' && import.meta.url) {
+    const hit = resolveHarnessPackageRoot([dirname(fileURLToPath(import.meta.url)), process.cwd()]);
+    if (hit) return hit;
+  }
+
   // CJS fallback (Next.js sometimes emits CommonJS for server bundles):
   // __dirname will already point at the transpiled location of this file.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cjsDirname = (globalThis as any).__dirname;
-  if (typeof cjsDirname === 'string') return cjsDirname;
+  if (typeof cjsDirname === 'string') {
+    const hit = resolveHarnessPackageRoot([cjsDirname, process.cwd()]);
+    if (hit) return hit;
+    return cjsDirname;
+  }
+
   // Last-ditch fallback: use process.cwd() relative search
-  return resolve(process.cwd(), 'libs/papercusp/packages/harness');
+  return derivedHarnessRoot(process.cwd());
 }
 
 export function harnessRoot(): string {

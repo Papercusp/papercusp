@@ -6,7 +6,6 @@ marketplace under the `@papercupai` scope; install at runtime via
 
 | Plugin | Spec phase | Surface | Notes |
 |---|---|---|---|
-| `@papercupai/vscode-server` | P5 | `dashboardTabs` | Smallest pilot — iframe code-server. |
 | `@papercupai/cloudflare-pages` | P6 | `actions` + `routines` | First server-runtime plugin; secrets + http:fetch. |
 | `@papercupai/pi-coding` | P7 | `dashboardTabs` | Replaces legacy hard-coded `pi` tab once feature flag flips. |
 | `@papercupai/fumadocs` | P7 | `dashboardTabs` | Replaces legacy hard-coded `docs` tab. |
