@@ -7,12 +7,15 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { harnessPath } from '@papercusp/harness/paths';
 import { BlueprintSchema } from './schema.js';
 import {
   loadBuiltinBlueprint,
+  builtinBlueprintPath,
   mergeRaw,
   resolveExtends,
   blueprintHash,
@@ -131,4 +134,47 @@ test('Brief 6 blueprint-id alias — loadBuiltinBlueprint resolves legacy ids to
   // loadBuiltinBlueprint(<old id>) call still resolves during the rename transition.
   assert.equal(loadBuiltinBlueprint('hive').blueprint.id, 'coding');
   assert.equal(loadBuiltinBlueprint('generic-hive').blueprint.id, 'work');
+});
+
+test('EI-8628: a blueprint missing from a STALE bundled harness root still resolves from the source package', () => {
+  // Simulate a stale bundled `apps/operator/dist-host/blueprints` — a point-in-time
+  // `bundle-host.sh` snapshot that has `base` but is MISSING `scout` (exactly the
+  // routine `bp-singleton-scout-0` failure that filed EI-8628). `PAPERCUSP_HARNESS_DIR`
+  // pins the primary `harnessRoot()` to this stale dir, so a naive lookup would throw
+  // `no built-in blueprint "scout"`.
+  const stale = mkdtempSync(join(tmpdir(), 'stale-harness-'));
+  mkdirSync(join(stale, 'blueprints', 'base'), { recursive: true });
+  writeFileSync(join(stale, 'blueprints', 'base', 'blueprint.yaml'), 'id: base\n');
+  const prevHarnessDir = process.env.PAPERCUSP_HARNESS_DIR;
+  const prevInteg = process.env.PAPERCUSP_INTEGRATION_ROOT;
+  process.env.PAPERCUSP_HARNESS_DIR = stale;
+  delete process.env.PAPERCUSP_INTEGRATION_ROOT; // keep the fallback = the derived SOURCE package
+  try {
+    // `base` IS present in the stale bundle → resolves there (primary root wins — unchanged).
+    assert.equal(
+      builtinBlueprintPath('base'),
+      join(stale, 'blueprints', 'base', 'blueprint.yaml'),
+    );
+    // `scout` is NOT in the stale bundle → the fallback recovers it from the SOURCE
+    // harness package instead of throwing.
+    const scoutPath = builtinBlueprintPath('scout');
+    assert.ok(
+      !scoutPath.startsWith(stale),
+      `scout must not resolve under the stale bundled root: ${scoutPath}`,
+    );
+    assert.ok(
+      scoutPath.endsWith(join('packages', 'harness', 'blueprints', 'scout', 'blueprint.yaml')),
+      `scout must resolve from the source harness package: ${scoutPath}`,
+    );
+    // And it actually loads + validates from source (the routine can fire again).
+    const { blueprint, validation } = loadBuiltinBlueprint('scout');
+    assert.equal(blueprint.id, 'scout');
+    assert.equal(validation.ok, true, JSON.stringify(validation.errors));
+  } finally {
+    if (prevHarnessDir === undefined) delete process.env.PAPERCUSP_HARNESS_DIR;
+    else process.env.PAPERCUSP_HARNESS_DIR = prevHarnessDir;
+    if (prevInteg === undefined) delete process.env.PAPERCUSP_INTEGRATION_ROOT;
+    else process.env.PAPERCUSP_INTEGRATION_ROOT = prevInteg;
+    rmSync(stale, { recursive: true, force: true });
+  }
 });

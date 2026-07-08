@@ -19,9 +19,10 @@
  * replaced wholesale by the child.
  */
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { parse as parseYaml } from 'yaml';
-import { harnessPath } from '@papercusp/harness/paths';
+import { harnessPath, harnessRootCandidates } from '@papercusp/harness/paths';
 import { BlueprintSchema, BlueprintHeaderSchema, type Blueprint } from './schema.js';
 import { validateBlueprint, type BlueprintValidation, type ValidateOptions } from './validate.js';
 import { canonicalBlueprintId } from '../blueprint-aliases.js';
@@ -46,7 +47,17 @@ export type ResolveExtendsPath = (id: string) => string | null;
  *  Legacy ids are aliased (hive→coding, generic-hive→work) so a stale `extends:`
  *  or `loadBuiltinBlueprint(<old id>)` still resolves during the 2026-06-18 rename. */
 export function builtinBlueprintPath(id: string): string {
-  return harnessPath('blueprints', canonicalBlueprintId(id), 'blueprint.yaml');
+  const cid = canonicalBlueprintId(id);
+  // Try each candidate harness root — the primary `harnessRoot()` first, then any
+  // derived SOURCE package (EI-8628: a blueprint present in the fresh source tree
+  // but MISSING from a stale bundled `dist-host/blueprints` copy must still resolve,
+  // not throw `no built-in blueprint`). Fall back to the primary path (for the
+  // caller's error message) when the blueprint exists in none of them.
+  for (const root of harnessRootCandidates()) {
+    const p = join(root, 'blueprints', cid, 'blueprint.yaml');
+    if (existsSync(p)) return p;
+  }
+  return harnessPath('blueprints', cid, 'blueprint.yaml');
 }
 
 /** Default resolver — built-ins only. The distribution plan composes local/installed in front. */

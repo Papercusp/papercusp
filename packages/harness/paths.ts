@@ -96,6 +96,43 @@ export function harnessPath(...parts: string[]): string {
 }
 
 /**
+ * Every candidate harness package root, in resolution order, deduped:
+ *   1. The primary `harnessRoot()` (honors `PAPERCUSP_HARNESS_DIR` / the bundled
+ *      `dist-host` anchor) — tried FIRST, so common-case resolution is unchanged.
+ *   2. Any DERIVED SOURCE package (`<ancestor>/libs/papercusp/packages/harness`)
+ *      recovered by walking up from the primary root AND `process.cwd()`.
+ *
+ * Why (EI-8628): the bundled host (`apps/operator/bin/bundle-host.sh`) copies the
+ * harness `blueprints/` into `apps/operator/dist-host/blueprints` — a POINT-IN-TIME
+ * snapshot. `packageRoot()` then anchors `harnessRoot()` on `dist-host` (its
+ * `hasHarnessAssets` check only verifies `base/blueprint.yaml`), so a blueprint that
+ * exists in the fresh SOURCE tree but not yet in that STALE bundle makes a lookup
+ * under the primary root alone throw `no built-in blueprint "<id>"` (the routine
+ * `bp-singleton-scout-0` failure that filed EI-8628). Callers that resolve a specific
+ * file (e.g. a built-in blueprint YAML) try these roots in order, so a source-present
+ * blueprint still resolves. A packaged deploy (no `libs/` source on disk) yields just
+ * the primary root — byte-identical to before.
+ */
+export function harnessRootCandidates(): string[] {
+  const roots: string[] = [];
+  const add = (d: string | null | undefined): void => {
+    if (d && !roots.includes(d)) roots.push(d);
+  };
+  add(harnessRoot());
+  for (const start of [harnessRoot(), process.cwd()]) {
+    let cur = resolve(start);
+    const fsRoot = parse(cur).root;
+    for (;;) {
+      const derived = derivedHarnessRoot(cur);
+      if (hasHarnessAssets(derived)) add(derived);
+      if (cur === fsRoot) break;
+      cur = dirname(cur);
+    }
+  }
+  return roots;
+}
+
+/**
  * The harness install root used SPECIFICALLY for AGENT PROMPT resolution.
  *
  * decouple-agent-prompts-from-release-gate-2026-06-20 (D-001 — prompts-only):
