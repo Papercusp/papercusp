@@ -6437,7 +6437,7 @@ export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
 
 export const hiveMembersInHarnessShared = harnessShared.table("hive_members", {
 	workspaceId: text("workspace_id").notNull(),
-	hiveHomeSlug: text("hive_home_slug").notNull(),
+	potHomeSlug: text("hive_home_slug").notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	githubUserId: bigint("github_user_id", { mode: "number" }).notNull(),
 	githubUsername: text("github_username").notNull(),
@@ -6463,13 +6463,13 @@ export const hiveMembersInHarnessShared = harnessShared.table("hive_members", {
 	permissionCheckedAt: bigint("permission_checked_at", { mode: "number" }),
 	fedHlc: text("fed_hlc"),
 }, (table) => [
-	index("hive_members_username_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.hiveHomeSlug.asc().nullsLast().op("text_ops"), table.githubUsername.asc().nullsLast().op("text_ops")),
+	index("hive_members_username_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potHomeSlug.asc().nullsLast().op("text_ops"), table.githubUsername.asc().nullsLast().op("text_ops")),
 	foreignKey({
-			columns: [table.workspaceId, table.hiveHomeSlug],
+			columns: [table.workspaceId, table.potHomeSlug],
 			foreignColumns: [hivesInHarnessShared.workspaceId, hivesInHarnessShared.homeSlug],
 			name: "hive_members_hive_fkey"
 		}).onDelete("cascade"),
-	primaryKey({ columns: [table.workspaceId, table.hiveHomeSlug, table.githubUserId], name: "hive_members_pkey"}),
+	primaryKey({ columns: [table.workspaceId, table.potHomeSlug, table.githubUserId], name: "hive_members_pkey"}),
 	pgPolicy("hive_members_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("hive_members_workspace_id_concrete", sql`(workspace_id <> '*'::text) AND (workspace_id <> ''::text)`),
 ]);
