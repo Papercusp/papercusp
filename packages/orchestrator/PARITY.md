@@ -46,7 +46,7 @@ false. Only missions that explicitly opt in lose this auto-apply step.
 
 ### G2. WIP checkpoint shadow commits
 **Bash:** `wip_checkpoint_start`/`wip_checkpoint_stop` (run.sh:955–980).
-A background loop snapshots in-flight worker edits to a sentinel branch
+A background loop snapshots in-flight worker edits to a papercup branch
 so a SIGKILL doesn't lose work mid-feature. TS sequential worker path
 calls `invoke worker` directly with no shadow.
 **Risk:** crash recovery slightly weaker. Chunk-loop path obviates this
@@ -93,7 +93,7 @@ sidecar. `--check` mode added for CI / pre-flight.
 
 ## Non-gaps (intentional differences)
 
-- TS uses Postgres-backed dispatches/lanes/sentinels by default while
+- TS uses Postgres-backed dispatches/lanes/papercups by default while
   bash falls back to filesystem state. This is a feature, not a gap —
   bash retains the FS path for legacy harnesses.
 - `chunk-loop` exists only in TS. Bash will be retired before chunk-loop

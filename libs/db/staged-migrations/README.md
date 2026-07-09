@@ -21,7 +21,7 @@ workspace-identity re-stamp (mig **295**) for the harness-keyed tables 295 did
 
 ### Why this is staged, not landed
 
-The move is **not** a blanket `'default' → 'papercusp-workspace'` sentinel swap
+The move is **not** a blanket `'default' → 'papercusp-workspace'` papercup swap
 (that is the *coord*-plane restamp, migs 361/391 — already shipped). It is a
 **registry-driven, collision-safe, per-harness remap** (295's contract): each
 `'default'` row moves to its harness's *unique* non-default workspace, resolved
@@ -81,6 +81,6 @@ The audit's P-004 reads, in the prior-window summary, as "drop the dead
 is **no `hive_slug` column on it**, never created, never altered in, and zero
 TS/SQL references (`grep -rni hive_slug … | grep bee_claim` → empty). So there is
 nothing to drop. P-004 is a **won't-do disposition** ("`bee_claim_specs` needs no
-hive scope — nothing writes or reads one; `bee_id` is the global identity"),
+pot scope — nothing writes or reads one; `bee_id` is the global identity"),
 which is a one-line plan-status flip via `plans:set-status`, **MCP-gated** — no
 code artifact. Do not write a DROP COLUMN for a column that does not exist.
