@@ -2218,12 +2218,12 @@ export const watchdogTicksInHarnessShared = harnessShared.table("watchdog_ticks"
 
 export const crossHiveBeaconHistoryInHarnessShared = harnessShared.table("cross_hive_beacon_history", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
-	hiveId: text("hive_id").notNull(),
+	potId: text("hive_id").notNull(),
 	hivePubkey: text("hive_pubkey"),
 	beacon: jsonb().notNull(),
 	capturedAt: timestamp("captured_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("cross_hive_beacon_history_hive_captured_idx").using("btree", table.hiveId.asc().nullsLast().op("text_ops"), table.capturedAt.desc().nullsFirst().op("text_ops")),
+	index("cross_hive_beacon_history_hive_captured_idx").using("btree", table.potId.asc().nullsLast().op("text_ops"), table.capturedAt.desc().nullsFirst().op("text_ops")),
 	check("cross_hive_beacon_history_hive_id_nonempty", sql`hive_id <> ''::text`),
 	primaryKey({ columns: [table.id], name: "cross_hive_beacon_history_pkey"}),
 
@@ -5209,7 +5209,7 @@ export const fleetEkgSessionsInHarnessShared = harnessShared.table("fleet_ekg_se
 
 export const beeClaimSpecsInHarnessShared = harnessShared.table("bee_claim_specs", {
 	workspaceId: text("workspace_id").default('default').notNull(),
-	beeId: text("bee_id").notNull(),
+	cupId: text("bee_id").notNull(),
 	spec: jsonb().notNull(),
 	revision: integer().default(0).notNull(),
 	updatedBy: text("updated_by"),
@@ -5222,7 +5222,7 @@ export const beeClaimSpecsInHarnessShared = harnessShared.table("bee_claim_specs
 	fedTs: bigint("fed_ts", { mode: "number" }),
 	fedHlc: text("fed_hlc"),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.beeId], name: "bee_claim_specs_pkey"}),
+	primaryKey({ columns: [table.workspaceId, table.cupId], name: "bee_claim_specs_pkey"}),
 	pgPolicy("bee_claim_specs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("bee_claim_specs_bee_nonempty", sql`bee_id <> ''::text`),
 	check("bee_claim_specs_ws_nonempty", sql`workspace_id <> ''::text`),
@@ -6064,7 +6064,7 @@ export const benchRunTasksInHarnessShared = harnessShared.table("bench_run_tasks
 	instanceId: text("instance_id").notNull(),
 	taskStatus: text("task_status").default('todo').notNull(),
 	resolved: boolean(),
-	beeId: text("bee_id"),
+	cupId: text("bee_id"),
 	disposition: text(),
 	stopReason: text("stop_reason"),
 	generationError: text("generation_error"),
