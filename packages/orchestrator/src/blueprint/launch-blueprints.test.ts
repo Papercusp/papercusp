@@ -85,12 +85,12 @@ test('bee launch blueprint loads + validates — decider=bee, kind:harness, NO t
   // blueprint (extends single-agent) whose decider IS the `bee` role; it is
   // kind:'harness' (a bee is NOT a hive) and declares NO trigger — the Queen's
   // placement loop fires it on demand, not a cadence/event.
-  const { blueprint, validation } = loadBuiltinBlueprint('bee');
-  assert.equal(blueprint.id, 'bee');
+  const { blueprint, validation } = loadBuiltinBlueprint('cup');
+  assert.equal(blueprint.id, 'cup');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   assert.equal(blueprint.kind, 'harness', 'a bee is kind:harness, never a hive');
   assert.ok(!isProgramSpine(blueprint.spine), 'bee is a decider-mode spine');
-  // Blueprint ID stays `bee` until W2c (data-coupled); its resolved ROLE is `cup` (WI-2932).
+  // Blueprint ID renamed bee→cup (cup-lexicon P-005, W2c); stale stored refs resolve via BLUEPRINT_ID_ALIASES.
   assert.equal(blueprint.spine.decider, 'cup', 'the bee blueprint decider IS the cup role');
   assert.ok(blueprint.roles.some((r) => r.id === 'cup'), 'bee blueprint declares its cup role');
   assert.deepEqual(validation.warnings, [], 'bee has no validator warnings');

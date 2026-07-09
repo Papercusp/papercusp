@@ -31,6 +31,13 @@
 export const BLUEPRINT_ID_ALIASES: Readonly<Record<string, string>> = {
   hive: 'coding',
   'generic-hive': 'work',
+  // cup-lexicon-full-rename-2026-07-09 P-005 (Slice D): the launch blueprints moved
+  // to the cup lexicon. Same transition-safety-net contract as above — stale stored
+  // references (instances' blueprint.yaml extends, the PG blueprint cache, routine
+  // payloads seeded with the old ids, federated refs) resolve to the new dirs.
+  bee: 'cup',
+  'hive-eval': 'pot-eval',
+  sentinel: 'papercup',
 };
 
 /** Map a legacy blueprint id to its current canonical id (identity if not aliased). */

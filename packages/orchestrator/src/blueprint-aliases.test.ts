@@ -30,7 +30,14 @@ describe('canonicalBlueprintId', () => {
     expect(BLUEPRINT_ID_ALIASES).not.toHaveProperty('coding');
   });
 
-  it('only the two documented aliases exist', () => {
-    expect(BLUEPRINT_ID_ALIASES).toEqual({ hive: 'coding', 'generic-hive': 'work' });
+  it('only the documented aliases exist', () => {
+    expect(BLUEPRINT_ID_ALIASES).toEqual({
+      hive: 'coding',
+      'generic-hive': 'work',
+      // cup-lexicon-full-rename-2026-07-09 P-005: launch-blueprint dirs moved to the cup lexicon.
+      bee: 'cup',
+      'hive-eval': 'pot-eval',
+      sentinel: 'papercup',
+    });
   });
 });

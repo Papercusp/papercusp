@@ -76,7 +76,7 @@ test('assertNotNestedHive — the no-nest guard (local-hive D-009 / swarm D-018)
   // A kind:'harness' with a parent → allowed (general harnesses recurse freely).
   assert.doesNotThrow(() => assertNotNestedHive({ id: 'coding', kind: 'harness' }, true));
   // Default-kind (undefined → treated as harness) with a parent → allowed.
-  assert.doesNotThrow(() => assertNotNestedHive({ id: 'bee' }, true));
+  assert.doesNotThrow(() => assertNotNestedHive({ id: 'cup' }, true));
 });
 
 test('the hive built-in blueprint is kind:hive + cannot be nested (P-010)', () => {
@@ -88,7 +88,7 @@ test('the hive built-in blueprint is kind:hive + cannot be nested (P-010)', () =
 });
 
 test('the bee built-in launch blueprint is kind:harness (NOT a hive) and validates (P-010/P-011)', () => {
-  const { blueprint: bee, validation } = loadBuiltinBlueprint('bee');
+  const { blueprint: bee, validation } = loadBuiltinBlueprint('cup');
   assert.equal(bee.kind, 'harness');
   assert.equal(bee.spine.decider, 'cup');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
