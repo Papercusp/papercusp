@@ -583,7 +583,7 @@ test('tier-aware — empty blueprintRoots is byte-identical to a single-root ctx
 
 // ── domain-generic-hive-architecture-2026-06-18 P-005 — per-blueprint bees over a shared base bee ──
 // The generic bee persona is the shared `base/prompts/cup.base.md` PREFIX; each hive blueprint
-// supplies a thin domain `bee.md` MAIN (coding ships code+tests; work produces a judged
+// supplies a thin domain `cup.md` MAIN (coding ships code+tests; work produces a judged
 // deliverable). Asserts the REAL built-in blueprints compose as [base prefix, domain main],
 // and that the work hive (generic-hive) no longer inherits the coding bee (audit Finding B).
 test('P-005 — coding-hive cup composes [base/cup.base.md, coding/cup.md] (real blueprints)', () => {
@@ -610,7 +610,7 @@ test('P-005 — work-hive (generic-hive) cup composes [base/cup.base.md, work/cu
 // ── domain-generic-hive-architecture-2026-06-18 P-007/P-008 — Queen neutral base + per-domain delta ──
 // The generic Queen orchestration method (triage / survey / place / propose-dispose / completion /
 // grading / reflect) is the shared `base/prompts/mug.base.md` PREFIX; each hive blueprint supplies
-// a thin domain `queen.md` MAIN (coding decomposes by file-scope + contract seams and verifies by
+// a thin domain `mug.md` MAIN (coding decomposes by file-scope + contract seams and verifies by
 // tests; work decomposes by topic / subject and accepts by a judge rubric). Mirrors the P-005 bee
 // split: asserts the REAL built-in blueprints compose as [base prefix, domain main], that the work
 // hive (generic-hive) does NOT inherit the coding queen, and that the bare fallback is method + a
@@ -651,8 +651,8 @@ test('P-007/P-008 — bare mug (no blueprintId) composes [base/mug.base.md, base
 test('Brief 6 blueprint-id aliases — stale hive/generic-hive ids resolve the renamed dirs; role ids are contracted', () => {
   // An un-migrated instance `extends:`/blueprintId naming an OLD id still resolves the
   // renamed blueprint dir (blueprint-aliases.ts). Role ids are CONTRACTED since the S2
-  // role backfill (s2-role-contract.sql): 'cup' resolves natively, 'cup' resolves nothing
-  // (ROLE_ALIASES is empty — no stored row carries the old ids any more).
+  // role backfill (s2-role-contract.sql): 'cup' resolves natively, the OLD id 'bee'
+  // resolves nothing (ROLE_ALIASES is empty — no stored row carries the old ids any more).
   assert.equal(
     resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'cup'),
     join(HARNESS_PKG, 'blueprints', 'coding', 'prompts', 'cup.md'),
@@ -662,7 +662,7 @@ test('Brief 6 blueprint-id aliases — stale hive/generic-hive ids resolve the r
     join(HARNESS_PKG, 'blueprints', 'work', 'prompts', 'cup.md'),
   );
   assert.equal(
-    resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'cup'),
+    resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'bee'),
     null,
   );
 });
