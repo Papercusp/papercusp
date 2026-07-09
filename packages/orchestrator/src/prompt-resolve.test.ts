@@ -465,16 +465,16 @@ function withTiers(setup: (local: string, builtin: string) => void): {
 test('tier-aware — a local-tier override of a blueprint role beats the built-in copy', () => {
   const { local, builtin, cleanup } = withTiers((loc, bi) => {
     writeBlueprintYaml(bi, 'coding', 'base');
-    writeBlueprintRole(bi, 'coding', 'bee', '# builtin bee');
+    writeBlueprintRole(bi, 'coding', 'cup', '# builtin bee');
     // local tier overrides ONLY the coding bee
-    writeBlueprintRole(loc, 'coding', 'bee', '# local bee');
+    writeBlueprintRole(loc, 'coding', 'cup', '# local bee');
   });
   try {
     const found = resolvePromptFile(
       { harnessDir: builtin, phase: '', dept: '', blueprintId: 'coding', blueprintRoots: [local] },
-      'bee',
+      'cup',
     );
-    assert.equal(found, join(local, 'blueprints', 'coding', 'prompts', 'bee.md'));
+    assert.equal(found, join(local, 'blueprints', 'coding', 'prompts', 'cup.md'));
   } finally {
     cleanup();
   }
@@ -484,16 +484,16 @@ test('tier-aware — blueprint specificity dominates tier: a LEAF built-in beats
   const { local, builtin, cleanup } = withTiers((loc, bi) => {
     writeBlueprintYaml(bi, 'base');
     writeBlueprintYaml(bi, 'coding', 'base');
-    writeBlueprintRole(bi, 'coding', 'queen', '# builtin coding queen (leaf)');
+    writeBlueprintRole(bi, 'coding', 'mug', '# builtin coding queen (leaf)');
     // local tier supplies only an ANCESTOR (base) queen — must NOT win over the leaf
-    writeBlueprintRole(loc, 'base', 'queen', '# local base queen (ancestor)');
+    writeBlueprintRole(loc, 'base', 'mug', '# local base queen (ancestor)');
   });
   try {
     const found = resolvePromptFile(
       { harnessDir: builtin, phase: '', dept: '', blueprintId: 'coding', blueprintRoots: [local] },
-      'queen',
+      'mug',
     );
-    assert.equal(found, join(builtin, 'blueprints', 'coding', 'prompts', 'queen.md'));
+    assert.equal(found, join(builtin, 'blueprints', 'coding', 'prompts', 'mug.md'));
   } finally {
     cleanup();
   }
@@ -503,20 +503,20 @@ test('tier-aware — extends-chain reads a LOCAL blueprint.yaml (local delta blu
   const { local, builtin, cleanup } = withTiers((loc, bi) => {
     writeBlueprintYaml(bi, 'base');
     writeBlueprintYaml(bi, 'coding', 'base');
-    writeBlueprintRole(bi, 'coding', 'bee', '# builtin coding bee');
+    writeBlueprintRole(bi, 'coding', 'cup', '# builtin coding bee');
     // a per-hive LOCAL delta blueprint that extends the built-in coding blueprint,
     // overriding the bee — its blueprint.yaml lives only in the local tier.
     writeBlueprintYaml(loc, 'acme-local', 'coding');
-    writeBlueprintRole(loc, 'acme-local', 'bee', '# acme-local bee');
+    writeBlueprintRole(loc, 'acme-local', 'cup', '# acme-local bee');
   });
   try {
     const chain = resolveBlueprintChainRoots([local, builtin], 'acme-local');
     assert.deepEqual(chain, ['acme-local', 'coding', 'base']);
     const found = resolvePromptFile(
       { harnessDir: builtin, phase: '', dept: '', blueprintId: 'acme-local', blueprintRoots: [local] },
-      'bee',
+      'cup',
     );
-    assert.equal(found, join(local, 'blueprints', 'acme-local', 'prompts', 'bee.md'));
+    assert.equal(found, join(local, 'blueprints', 'acme-local', 'prompts', 'cup.md'));
   } finally {
     cleanup();
   }
@@ -528,7 +528,7 @@ test('tier-aware — falls through the local tier to the built-in when the local
     writeBlueprintRole(bi, 'coding', 'scoper', '# builtin scoper');
     // local delta exists but only overrides the bee — scoper must fall through to built-in
     writeBlueprintYaml(loc, 'acme-local', 'coding');
-    writeBlueprintRole(loc, 'acme-local', 'bee', '# acme-local bee');
+    writeBlueprintRole(loc, 'acme-local', 'cup', '# acme-local bee');
   });
   try {
     const found = resolvePromptFile(
@@ -566,23 +566,23 @@ test('tier-aware — resolveReplacementSystemPrompt prefers a local overlay over
 test('tier-aware — empty blueprintRoots is byte-identical to a single-root ctx', () => {
   const { harnessDir, cleanup } = withHarness((root) => {
     writeBlueprintYaml(root, 'coding', 'base');
-    writeBlueprintRole(root, 'coding', 'bee', '# builtin bee');
+    writeBlueprintRole(root, 'coding', 'cup', '# builtin bee');
   });
   try {
     const withEmpty = resolvePromptFile(
       { harnessDir, phase: '', dept: '', blueprintId: 'coding', blueprintRoots: [] },
-      'bee',
+      'cup',
     );
-    const without = resolvePromptFile({ harnessDir, phase: '', dept: '', blueprintId: 'coding' }, 'bee');
+    const without = resolvePromptFile({ harnessDir, phase: '', dept: '', blueprintId: 'coding' }, 'cup');
     assert.equal(withEmpty, without);
-    assert.equal(without, join(harnessDir, 'blueprints', 'coding', 'prompts', 'bee.md'));
+    assert.equal(without, join(harnessDir, 'blueprints', 'coding', 'prompts', 'cup.md'));
   } finally {
     cleanup();
   }
 });
 
 // ── domain-generic-hive-architecture-2026-06-18 P-005 — per-blueprint bees over a shared base bee ──
-// The generic bee persona is the shared `base/prompts/bee.base.md` PREFIX; each hive blueprint
+// The generic bee persona is the shared `base/prompts/cup.base.md` PREFIX; each hive blueprint
 // supplies a thin domain `bee.md` MAIN (coding ships code+tests; work produces a judged
 // deliverable). Asserts the REAL built-in blueprints compose as [base prefix, domain main],
 // and that the work hive (generic-hive) no longer inherits the coding bee (audit Finding B).
@@ -609,7 +609,7 @@ test('P-005 — work-hive (generic-hive) cup composes [base/cup.base.md, work/cu
 
 // ── domain-generic-hive-architecture-2026-06-18 P-007/P-008 — Queen neutral base + per-domain delta ──
 // The generic Queen orchestration method (triage / survey / place / propose-dispose / completion /
-// grading / reflect) is the shared `base/prompts/queen.base.md` PREFIX; each hive blueprint supplies
+// grading / reflect) is the shared `base/prompts/mug.base.md` PREFIX; each hive blueprint supplies
 // a thin domain `queen.md` MAIN (coding decomposes by file-scope + contract seams and verifies by
 // tests; work decomposes by topic / subject and accepts by a judge rubric). Mirrors the P-005 bee
 // split: asserts the REAL built-in blueprints compose as [base prefix, domain main], that the work
@@ -651,7 +651,7 @@ test('P-007/P-008 — bare mug (no blueprintId) composes [base/mug.base.md, base
 test('Brief 6 blueprint-id aliases — stale hive/generic-hive ids resolve the renamed dirs; role ids are contracted', () => {
   // An un-migrated instance `extends:`/blueprintId naming an OLD id still resolves the
   // renamed blueprint dir (blueprint-aliases.ts). Role ids are CONTRACTED since the S2
-  // role backfill (s2-role-contract.sql): 'cup' resolves natively, 'bee' resolves nothing
+  // role backfill (s2-role-contract.sql): 'cup' resolves natively, 'cup' resolves nothing
   // (ROLE_ALIASES is empty — no stored row carries the old ids any more).
   assert.equal(
     resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'cup'),
@@ -662,7 +662,7 @@ test('Brief 6 blueprint-id aliases — stale hive/generic-hive ids resolve the r
     join(HARNESS_PKG, 'blueprints', 'work', 'prompts', 'cup.md'),
   );
   assert.equal(
-    resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'bee'),
+    resolvePromptFile({ harnessDir: HARNESS_PKG, phase: '', dept: '', blueprintId: 'hive' }, 'cup'),
     null,
   );
 });

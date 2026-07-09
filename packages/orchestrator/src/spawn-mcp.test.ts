@@ -109,20 +109,20 @@ describe('buildSpawnMcpConfig', () => {
     // URL's `client=` param so resolveAgentIdentity can attribute the bee's coord
     // writes to it. `client` is in the signed-param allowlist, so it's part of the HMAC.
     const cfg = buildSpawnMcpConfig({
-      harnessSlug: 'demo', workspaceId: 'ws-1', role: 'bee',
+      harnessSlug: 'demo', workspaceId: 'ws-1', role: 'cup',
       runId: 'opspawn-1780', spawnId: 's-1780-deadbeef',
       clientId: 's-1780-deadbeef',
     });
     const url = new URL(cfg.mcpServers.papercusp!.url);
     expect(url.searchParams.get('client')).toBe('s-1780-deadbeef');
-    expect(url.searchParams.get('role')).toBe('bee');
+    expect(url.searchParams.get('role')).toBe('cup');
   });
 
   it('carries a per-spawn MCP tools listing hint when provided', () => {
     const cfg = buildSpawnMcpConfig({
       harnessSlug: 'papercusp',
       workspaceId: 'default',
-      role: 'queen',
+      role: 'mug',
       runId: 'run_Q',
       spawnId: 'spw_Q',
       mcpToolNames: ['pot:survey', 'cup:spawn', 'work_items:create'],
@@ -289,7 +289,7 @@ describe('writeSpawnMcp + restoreSpawnMcp', () => {
   it('writes the MCP tools listing hint into .mcp.json when provided', () => {
     const handle = writeSpawnMcp(ROOT, {
       ...baseInput,
-      role: 'queen',
+      role: 'mug',
       mcpToolNames: ['pot:survey', 'cup:spawn'],
     });
     const content = JSON.parse(readFileSync(handle.path, 'utf8'));
@@ -344,7 +344,7 @@ describe('buildSpawnCodexConfigToml', () => {
     const toml = buildSpawnCodexConfigToml(
       'http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a"b',
       'aviynw_codex',
-      { ownerId: 's-queen"1', priority: 'queen' },
+      { ownerId: 's-queen"1', priority: 'mug' },
     );
 
     expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
@@ -353,7 +353,7 @@ describe('buildSpawnCodexConfigToml', () => {
     expect(toml).toContain('wire_api = "responses"');
     expect(toml).toContain('experimental_bearer_token = "papercusp-gateway"');
     expect(toml).toContain(
-      'http_headers = { "x-papercusp-account" = "aviynw_codex", "x-papercusp-owner" = "s-queen\\"1", "x-papercusp-priority" = "queen" }',
+      'http_headers = { "x-papercusp-account" = "aviynw_codex", "x-papercusp-owner" = "s-queen\\"1", "x-papercusp-priority" = "mug" }',
     );
     expect(toml).toContain('[mcp_servers.papercusp]');
     expect(toml).toContain('url = "http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a\\"b"');

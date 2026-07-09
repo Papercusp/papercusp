@@ -146,13 +146,13 @@ test('knownRoles: a live agent role as decider is not flagged decider-undeclared
   const bp = BlueprintSchema.parse({
     id: 'x',
     workItem: { kind: 'feature' },
-    spine: { decider: 'queen', edges: { DONE: { to: 'done' } } },
+    spine: { decider: 'mug', edges: { DONE: { to: 'done' } } },
     roles: [{ id: 'worker' }],
   });
-  // Declared-only: `queen` (not in roles[]) → decider-undeclared.
+  // Declared-only: `mug` (not in roles[]) → decider-undeclared.
   assert.ok(validateBlueprint(bp).warnings.some((w) => w.code === 'decider-undeclared'));
-  // With knownRoles incl. `queen`: not flagged.
-  const aware = validateBlueprint(bp, { knownRoles: new Set(['queen', 'worker']) });
+  // With knownRoles incl. `mug`: not flagged.
+  const aware = validateBlueprint(bp, { knownRoles: new Set(['mug', 'worker']) });
   assert.equal(aware.warnings.some((w) => w.code === 'decider-undeclared'), false, JSON.stringify(aware.warnings));
 });
 

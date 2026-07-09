@@ -250,18 +250,18 @@ test('Hive domain-profile (lexicon/fleet/wake/learning/placement) — optional, 
 test('FleetSchema — worker roles carry an enforced capability envelope; watcher is one or many', () => {
   const bp = BlueprintSchema.parse({
     ...minimal,
-    fleet: { workerRoles: [{ id: 'bee', capabilities: ['coord:send', 'artifacts:save'] }], watcher: 'sentinel' },
+    fleet: { workerRoles: [{ id: 'cup', capabilities: ['coord:send', 'artifacts:save'] }], watcher: 'papercup' },
   });
-  assert.equal(bp.fleet?.workerRoles[0]?.id, 'bee');
+  assert.equal(bp.fleet?.workerRoles[0]?.id, 'cup');
   assert.deepEqual(bp.fleet?.workerRoles[0]?.capabilities, ['coord:send', 'artifacts:save']);
-  assert.equal(bp.fleet?.watcher, 'sentinel');
+  assert.equal(bp.fleet?.watcher, 'papercup');
   // capabilities default to [] when omitted; watcher accepts a list.
   const multi = BlueprintSchema.parse({
     ...minimal,
-    fleet: { workerRoles: [{ id: 'bee' }], watcher: ['sentinel', 'overwatch'] },
+    fleet: { workerRoles: [{ id: 'cup' }], watcher: ['papercup', 'overwatch'] },
   });
   assert.deepEqual(multi.fleet?.workerRoles[0]?.capabilities, []);
-  assert.deepEqual(multi.fleet?.watcher, ['sentinel', 'overwatch']);
+  assert.deepEqual(multi.fleet?.watcher, ['papercup', 'overwatch']);
 });
 
 test('Wake/Learning/Placement/Lexicon — parse their declared shapes; placement enums are closed', () => {

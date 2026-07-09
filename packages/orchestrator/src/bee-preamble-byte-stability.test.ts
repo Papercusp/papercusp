@@ -43,7 +43,7 @@ function makeBeeInput(
   } = { spawnId: 'bee-1', runId: 'run-bee-1', coordOwnerId: 's-1111-1111' },
 ): BuildPromptInput {
   return {
-    role: 'bee',
+    role: 'cup',
     promptFile: '/nonexistent/bee.md', // file reads return '' if missing
     projectDir: '/project',
     harnessDir: '/hive',

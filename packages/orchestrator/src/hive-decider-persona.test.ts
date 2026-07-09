@@ -1,6 +1,6 @@
 /**
  * hive-coordination-model-2026-06-08 P-001 — the Hive blueprint's BOTH
- * decider "flag states" (the default `operator` + the swap-in `queen`
+ * decider "flag states" (the default `operator` + the swap-in `mug`
  * alternative) must each RESOLVE a non-empty persona that ENCOMPASSES the full
  * Queen role (D-007).
  *
@@ -54,7 +54,7 @@ test('hive blueprint declares operator + mug as the two live deciders (both flag
 for (const role of ['operator', 'mug'] as const) {
   test(`hive decider "${role}" assembles a complete Queen persona (D-007 full role)`, () => {
     // Post queen-split (P-007/P-008): the persona is COMPOSED from the shared base
-    // prefix (queen.base.md) + the blueprint delta (coding/queen.md), exactly as the
+    // prefix (mug.base.md) + the blueprint delta (coding/queen.md), exactly as the
     // live spawn assembles it via resolvePromptFiles. Check clauses across the union.
     const files = resolvePromptFiles(
       { harnessDir: harnessRoot(), phase: '', dept: '', blueprintId: 'coding' },

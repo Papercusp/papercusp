@@ -1364,7 +1364,7 @@ test('fleetAllowedToolsForRole — cutover ON drops native write/exec/fetch for 
 test('fleetAllowedToolsForRole — cutover ON does NOT strand a role without capability:* (keeps native tools)', () => {
   // An auxiliary role outside FLEET_CAPABILITY_ROLES has no capability replacement,
   // so the cutover must NOT remove its native tools (else it loses shell entirely).
-  const aux = 'sentinel';
+  const aux = 'papercup';
   assert.ok(!FLEET_CAPABILITY_ROLES.has(aux));
   assert.deepEqual(fleetAllowedToolsForRole(aux, true), [...FLEET_ALLOWED_TOOLS]);
 });
@@ -1378,7 +1378,7 @@ test('fleetDisallowedToolsForRole — cutover ON hard-denies the native write/ex
   // OFF (default) → unchanged.
   assert.deepEqual(fleetDisallowedToolsForRole('worker', false), [...FLEET_DISALLOWED_TOOLS]);
   // Aux role under cutover → unchanged (not stranded, not hard-denied).
-  assert.deepEqual(fleetDisallowedToolsForRole('sentinel', true), [...FLEET_DISALLOWED_TOOLS]);
+  assert.deepEqual(fleetDisallowedToolsForRole('papercup', true), [...FLEET_DISALLOWED_TOOLS]);
 });
 
 test('claudeMcpArgs — under the cutover env, a confined role gets dontAsk + no native write/exec in allow-list + hard-deny (P-021 binding proof)', () => {
@@ -1454,7 +1454,7 @@ test('claudeMcpArgs — AGENT_CMD manages perms + cutover OFF → we add nothing
 
 test('claudeMcpArgs — AGENT_CMD manages perms + cutover ON but NON-capability role → no deny (not stranded, not confined)', () => {
   const args = withCutoverEnv('1', () =>
-    claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --permission-mode dontAsk', MCP_PATH, true, 'sentinel'),
+    claudeMcpArgs('claude-code', 'claude-stream-json', 'claude -p --permission-mode dontAsk', MCP_PATH, true, 'papercup'),
   );
   assert.deepEqual(args, ['--mcp-config', MCP_PATH, '--strict-mcp-config']);
 });

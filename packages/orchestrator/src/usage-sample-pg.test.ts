@@ -67,7 +67,7 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
         usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 5000, cacheCreationTokens: 0 },
         harnessSlug: 'h',
         runId: 'opspawn-1',
-        role: 'bee',
+        role: 'cup',
         sessionId: 'sess-abc',
       },
     );
@@ -75,7 +75,7 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
     // INSERT tail order is …session_id, plan_id, tool_name, turn_trigger, account_id.
     expect(v[v.length - 5]).toBe('sess-abc'); // session_id
     expect(v).toContain('opspawn-1'); // run_id still flows
-    expect(v).toContain('bee'); // role still flows
+    expect(v).toContain('cup'); // role still flows
     expect(v).toContain(5000); // cache_read_tokens (the carry signal)
   });
 
@@ -88,7 +88,7 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
         model: 'claude-opus-4-8',
         usage: { inputTokens: 100, outputTokens: 20 },
         runId: 'opspawn-2',
-        role: 'bee',
+        role: 'cup',
         sessionId: 'sess-xyz',
         planId: 'my-plan-2026-06-20',
         toolName: 'accounts:set-egress',
@@ -109,7 +109,7 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
     const { pg, values } = capturingPg();
     await recordUsageSamplePg(
       { pg, workspaceId: 'ws-1' },
-      { backend: 'claude-code', model: 'm', usage: { inputTokens: 1 }, runId: 'r', role: 'bee', sessionId: 's' },
+      { backend: 'claude-code', model: 'm', usage: { inputTokens: 1 }, runId: 'r', role: 'cup', sessionId: 's' },
     );
     const v = values();
     expect(v[v.length - 4]).toBeNull(); // plan_id → NULL
@@ -122,7 +122,7 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
     const { pg, values } = capturingPg();
     await recordUsageSamplePg(
       { pg, workspaceId: 'ws-1' },
-      { backend: 'codex', model: 'gpt-5', usage: { inputTokens: 50 }, runId: 'r', role: 'bee' },
+      { backend: 'codex', model: 'gpt-5', usage: { inputTokens: 50 }, runId: 'r', role: 'cup' },
     );
     const v = values();
     expect(v[v.length - 5]).toBeNull(); // session_id undefined -> NULL, never a fabricated value
@@ -132,7 +132,7 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
     const { pg, values } = capturingPg();
     await recordUsageSamplePg(
       { pg, workspaceId: 'ws-1' },
-      { backend: 'claude-code', model: 'm', usage: {}, runId: 'r', role: 'bee', sessionId: 's' },
+      { backend: 'claude-code', model: 'm', usage: {}, runId: 'r', role: 'cup', sessionId: 's' },
     );
     expect(values()).toEqual([]); // pg was never called
   });
