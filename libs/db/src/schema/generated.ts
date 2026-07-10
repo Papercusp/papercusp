@@ -1091,35 +1091,6 @@ export const coordEventLogInHarnessShared = harnessShared.table("coord_event_log
 	pgPolicy("coord_event_log_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const coordPresenceInHarnessShared = harnessShared.table("coord_presence", {
-	ownerId: text("owner_id").primaryKey().notNull(),
-	ownerLabel: text("owner_label").default('').notNull(),
-	workspaceId: text("workspace_id").default('default').notNull(),
-	source: text().default('').notNull(),
-	intent: text().default('').notNull(),
-	currentPlanSlug: text("current_plan_slug"),
-	currentFiles: jsonb("current_files").default([]).notNull(),
-	host: text().default('').notNull(),
-	pid: integer(),
-	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	heartbeatAt: timestamp("heartbeat_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastActiveAt: timestamp("last_active_at", { withTimezone: true, mode: 'string' }),
-	agentRole: text("agent_role"),
-	fleetSlug: text("fleet_slug"),
-	fleetRole: text("fleet_role"),
-	compactionLimit: integer("compaction_limit"),
-	contextTokens: integer("context_tokens"),
-	contextEstimatedAt: timestamp("context_estimated_at", { withTimezone: true, mode: 'string' }),
-	potSlug: text("pot_slug"),
-}, (table) => [
-	index("coord_presence_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops")).where(sql`(fleet_slug IS NOT NULL)`),
-	index("coord_presence_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")).where(sql`(pot_slug IS NOT NULL)`),
-	index("coord_presence_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.heartbeatAt.desc().nullsFirst().op("text_ops")),
-	pgPolicy("coord_presence_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.ownerId], name: "coord_presence_pkey"}),
-
-]);
-
 export const pendingEventsInHarnessShared = harnessShared.table("pending_events", {
 	id: text().primaryKey().notNull(),
 	installSlug: text("install_slug").notNull(),
@@ -1218,6 +1189,36 @@ export const toastLogInHarnessShared = harnessShared.table("toast_log", {
 }, (table) => [
 	index("toast_log_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("int8_ops")),
 	index("toast_log_slug_created_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.createdAt.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
+]);
+
+export const coordPresenceInHarnessShared = harnessShared.table("coord_presence", {
+	ownerId: text("owner_id").primaryKey().notNull(),
+	ownerLabel: text("owner_label").default('').notNull(),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	source: text().default('').notNull(),
+	intent: text().default('').notNull(),
+	currentPlanSlug: text("current_plan_slug"),
+	currentFiles: jsonb("current_files").default([]).notNull(),
+	host: text().default('').notNull(),
+	pid: integer(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	heartbeatAt: timestamp("heartbeat_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastActiveAt: timestamp("last_active_at", { withTimezone: true, mode: 'string' }),
+	agentRole: text("agent_role"),
+	fleetSlug: text("fleet_slug"),
+	fleetRole: text("fleet_role"),
+	compactionLimit: integer("compaction_limit"),
+	contextTokens: integer("context_tokens"),
+	contextEstimatedAt: timestamp("context_estimated_at", { withTimezone: true, mode: 'string' }),
+	potSlug: text("pot_slug"),
+	intentDeclaredAt: timestamp("intent_declared_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("coord_presence_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops")).where(sql`(fleet_slug IS NOT NULL)`),
+	index("coord_presence_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")).where(sql`(pot_slug IS NOT NULL)`),
+	index("coord_presence_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.heartbeatAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("coord_presence_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.ownerId], name: "coord_presence_pkey"}),
+
 ]);
 
 export const deferralPricingModelInHarnessShared = harnessShared.table("deferral_pricing_model", {
