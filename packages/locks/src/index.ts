@@ -36,3 +36,4 @@ export * from './granular-lock-store';
 export * from './in-workspace-txn';
 export * from './workspace-listener';
 export * from './coordinator';
+export * from './rebind-owner';

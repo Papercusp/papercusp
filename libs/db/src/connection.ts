@@ -96,6 +96,17 @@ let _resolvedAdminUrl: string | null = null;
 let _resolvedAdminUrlSource: 'env' | 'discovery' | null = null;
 export type DiscoveryEndpoint = { user?: string; password?: string; host?: string; port?: number };
 
+/** Is `pid` still running? Injected into _parseDiscoveryJson so tests stay pure. */
+export function _defaultIsPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // EPERM ⇒ the process exists, we just don't own it. Anything else ⇒ gone.
+    return (e as NodeJS.ErrnoException)?.code === 'EPERM';
+  }
+}
+
 /**
  * Parse the embedded-pg discovery file's JSON into a connection endpoint.
  *
@@ -112,18 +123,9 @@ export type DiscoveryEndpoint = { user?: string; password?: string; host?: strin
  * libs/host-platform/src/desktop.ts already reads — and keep the legacy `{host,port}`
  * shape working for any older file still on disk.
  *
- * Exported for tests: pure (no fs, no env), so the shape contract is pinned directly.
+ * Exported for tests: pure apart from the injected liveness probe, so the shape
+ * contract is pinned directly.
  */
-export function _defaultIsPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    // EPERM ⇒ the process exists, we just don't own it. Anything else ⇒ gone.
-    return (e as NodeJS.ErrnoException)?.code === 'EPERM';
-  }
-}
-
 export function _parseDiscoveryJson(
   raw: string,
   isPidAlive: (pid: number) => boolean = _defaultIsPidAlive,
