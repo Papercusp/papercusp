@@ -467,6 +467,10 @@ export function buildConnectionOptions(opts: {
   idleInTxMs: number;
   stmtTimeoutMs: number;
   pooled: boolean;
+  /** WI-3816: ms between the backend polling its socket for a dead/gone client
+   *  (0 ⇒ the GUC's own off-default). Same PgBouncer-safety class as the two
+   *  timeouts above — omitted when pooled. */
+  clientConnCheckMs?: number;
 }): Record<string, string> {
   const c: Record<string, string> = {
     search_path: opts.searchPath,
@@ -475,6 +479,23 @@ export function buildConnectionOptions(opts: {
   if (!opts.pooled) {
     c.idle_in_transaction_session_timeout = String(opts.idleInTxMs);
     if (opts.stmtTimeoutMs > 0) c.statement_timeout = String(opts.stmtTimeoutMs);
+    // WI-3816: the 2026-07-10 ClientWrite-zombie incident — a backend whose query
+    // completed but whose CLIENT is gone/not-reading survives pg_cancel_backend
+    // and holds its pool slot until an operator manually pg_terminate_backend's
+    // it (4h fleet-wide MCP-timeout outage, root cause of WI-3792's aftermath).
+    // client_connection_check_interval makes the backend itself notice the dead
+    // socket and abort — defaults to 0 (off) on every PG install, embedded or
+    // native, so this must be set explicitly; no config-file edit needed since
+    // it is a PGC_USERSET GUC (settable as a libpq startup param, same class as
+    // the two timeouts above). Also tighten the OS-level TCP keepalive probe
+    // (PG's own 2h default is far too slow to matter here) so a network-level
+    // dead peer (not just an app-level unresponsive one) is caught quickly too.
+    if (opts.clientConnCheckMs && opts.clientConnCheckMs > 0) {
+      c.client_connection_check_interval = String(opts.clientConnCheckMs);
+      c.tcp_keepalives_idle = '30';
+      c.tcp_keepalives_interval = '10';
+      c.tcp_keepalives_count = '3';
+    }
   }
   return c;
 }
@@ -508,6 +529,13 @@ function buildClient(
     Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_IN_TX_TIMEOUT) || 60) * 1000;
   // WI-832: configured default per-statement cap (0 ⇒ unset; see the seam above).
   const stmtTimeoutMs = adminStatementTimeoutMs();
+  // WI-3816: dead-client detection interval (seconds ⇒ ms; PG's own GUC unit is ms).
+  // Default 30s: frequent enough to catch a ClientWrite zombie well before it can
+  // exhaust a pool, cheap enough (one extra poll/30s per idle backend) to leave on
+  // everywhere. 0 disables (kept as an escape hatch, not because 0 is ever a good
+  // default). Override via PAPERCUSP_DB_CLIENT_CHECK_INTERVAL (seconds).
+  const clientConnCheckMs =
+    Math.max(0, Number(process.env.PAPERCUSP_DB_CLIENT_CHECK_INTERVAL) || 30) * 1000;
   // EI-2582: bound the connect attempt UNDER TEST so an unmocked PG access in a
   // unit test fails fast (~5s, with a clear connection error) instead of silently
   // hanging until the 60s vitest timeout — which reads as a "slow test", not the
@@ -535,6 +563,7 @@ function buildClient(
       idleInTxMs,
       stmtTimeoutMs,
       pooled,
+      clientConnCheckMs,
     }),
     // Skip postgres-js's prepared-statement plan caching. ~80% of the
     // ~1.1s cold-reconnect cost we measured was prepared-statement

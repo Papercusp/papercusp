@@ -59,6 +59,30 @@ describe('buildConnectionOptions — PgBouncer-safe startup params (no "unsuppor
     expect(c).not.toHaveProperty('statement_timeout');
     expect(c.idle_in_transaction_session_timeout).toBe('60000');
   });
+
+  // WI-3816: ClientWrite-zombie guard — a backend whose client is gone/not-reading
+  // must notice and abort itself instead of surviving pg_cancel_backend forever.
+  it('DIRECT with clientConnCheckMs set: sends client_connection_check_interval + tightened TCP keepalives', () => {
+    const c = buildConnectionOptions({ ...base, idleInTxMs: 60000, stmtTimeoutMs: 30000, pooled: false, clientConnCheckMs: 30000 });
+    expect(c.client_connection_check_interval).toBe('30000');
+    expect(c.tcp_keepalives_idle).toBe('30');
+    expect(c.tcp_keepalives_interval).toBe('10');
+    expect(c.tcp_keepalives_count).toBe('3');
+  });
+
+  it('DIRECT with clientConnCheckMs omitted/0: omits the dead-client GUCs (opt-out preserved)', () => {
+    const withoutArg = buildConnectionOptions({ ...base, idleInTxMs: 60000, stmtTimeoutMs: 30000, pooled: false });
+    expect(withoutArg).not.toHaveProperty('client_connection_check_interval');
+    expect(withoutArg).not.toHaveProperty('tcp_keepalives_idle');
+    const zero = buildConnectionOptions({ ...base, idleInTxMs: 60000, stmtTimeoutMs: 30000, pooled: false, clientConnCheckMs: 0 });
+    expect(zero).not.toHaveProperty('client_connection_check_interval');
+  });
+
+  it('POOLED: OMITS the dead-client GUCs too — same PgBouncer-startup-param rejection risk', () => {
+    const c = buildConnectionOptions({ ...base, idleInTxMs: 60000, stmtTimeoutMs: 30000, pooled: true, clientConnCheckMs: 30000 });
+    expect(c).not.toHaveProperty('client_connection_check_interval');
+    expect(c).not.toHaveProperty('tcp_keepalives_idle');
+  });
 });
 
 describe('pgbouncerEnabled — P-004 default-on for server-class native PG', () => {
