@@ -11,7 +11,18 @@
 --   beekeeper_instances → cup_keeper_instances
 --   beekeeper_runs → cup_keeper_runs
 --   beekeeper_scores → cup_keeper_scores
---   beekeeper_sessions → cup_keeper_sessions
+--
+-- beekeeper_sessions is DELIBERATELY NOT renamed here: migration 200 already
+-- DROPPED it (created speculatively by mig 180, never wired — no live writer,
+-- see 200's own comment; confirmed zero code references to beekeeper_sessions
+-- or cup_keeper_sessions repo-wide). An earlier version of this migration
+-- unconditionally `CREATE OR REPLACE VIEW`'d a beekeeper_sessions compat view
+-- regardless of whether the rename's IF-guard actually ran, which 42P01'd on
+-- ANY DB (fresh or live) where 200 had already applied — i.e. every DB, since
+-- 200 predates this migration and this migration therefore could never
+-- successfully apply anywhere (also fixed here: a `DO $ ... END $;` missing
+-- the second `$` of the dollar-quote, and a RENAME CONSTRAINT on a constraint
+-- migration 217 had already dropped — see below).
 --
 -- IDEMPOTENT: each table/index/constraint rename is guarded (skips if already renamed),
 -- so a partial prior apply or re-run converges safely.
@@ -83,19 +94,8 @@ END $$;
 -- Create backward-compatibility view for beekeeper_scores
 CREATE OR REPLACE VIEW harness_shared.beekeeper_scores AS SELECT * FROM harness_shared.cup_keeper_scores;
 
--- ── beekeeper_sessions -> cup_keeper_sessions ──────────────────────────────────────────────
-DO $$
-BEGIN
-  IF to_regclass('harness_shared.beekeeper_sessions') IS NOT NULL AND to_regclass('harness_shared.cup_keeper_sessions') IS NULL THEN
-    ALTER TABLE harness_shared.beekeeper_sessions RENAME TO cup_keeper_sessions;
-    ALTER TABLE harness_shared.cup_keeper_sessions RENAME CONSTRAINT beekeeper_sessions_pkey TO cup_keeper_sessions_pkey;
-    ALTER TABLE harness_shared.cup_keeper_sessions RENAME CONSTRAINT beekeeper_sessions_instance_id_fkey TO cup_keeper_sessions_instance_id_fkey;
-    ALTER INDEX IF EXISTS harness_shared.beekeeper_sessions_instance_idx RENAME TO cup_keeper_sessions_instance_idx;
-  END IF;
-END $$;
-
--- Create backward-compatibility view for beekeeper_sessions
-CREATE OR REPLACE VIEW harness_shared.beekeeper_sessions AS SELECT * FROM harness_shared.cup_keeper_sessions;
+-- beekeeper_sessions: intentionally skipped — see the SCOPE note above (mig
+-- 200 already dropped it; nothing to rename, no compat view to create).
 
 COMMIT;
 

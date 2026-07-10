@@ -81,8 +81,12 @@ BEGIN
       FOREIGN KEY (workspace_id, pot_home_slug)
       REFERENCES harness_shared.pots (workspace_id, pot_home_slug)
       ON DELETE CASCADE;
-    -- Index
-    ALTER INDEX hive_members_username_idx RENAME TO pot_members_username_idx;
+    -- Index (WI-3961 fixup: was missing the harness_shared. schema qualifier —
+    -- an unqualified ALTER INDEX resolves via search_path, which does not
+    -- include harness_shared, so this 42P01'd "relation does not exist" on
+    -- every apply, wedging this migration — and every migration after it —
+    -- permanently. IF EXISTS added to match this file's own idempotency claim.)
+    ALTER INDEX IF EXISTS harness_shared.hive_members_username_idx RENAME TO pot_members_username_idx;
     ALTER POLICY hive_members_workspace_isolation ON harness_shared.pot_members RENAME TO pot_members_workspace_isolation;
   END IF;
 END $$;
@@ -195,8 +199,13 @@ DO $$
 BEGIN
   IF to_regclass('harness_shared.cross_hive_beacon_history') IS NOT NULL AND to_regclass('harness_shared.cross_pot_beacon_history') IS NULL THEN
     ALTER TABLE harness_shared.cross_hive_beacon_history RENAME TO cross_pot_beacon_history;
+    -- WI-3961 fixup: after the RENAME TO above the table's name IS
+    -- cross_pot_beacon_history — the old name no longer resolves, so the
+    -- constraint rename must target the table by its NEW name (every sibling
+    -- block in this file does this correctly; this one referenced the stale
+    -- pre-rename name and 42P01'd "relation does not exist").
     IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cross_hive_beacon_history_pkey' AND conrelid = 'harness_shared.cross_pot_beacon_history'::regclass) THEN
-      ALTER TABLE harness_shared.cross_hive_beacon_history RENAME CONSTRAINT cross_hive_beacon_history_pkey TO cross_pot_beacon_history_pkey;
+      ALTER TABLE harness_shared.cross_pot_beacon_history RENAME CONSTRAINT cross_hive_beacon_history_pkey TO cross_pot_beacon_history_pkey;
     END IF;
   END IF;
 END $$;
