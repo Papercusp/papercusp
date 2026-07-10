@@ -238,24 +238,24 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
     queried live (`fleet:assignments` / `coord:presence` / the fleet registry) — do NOT say
     "I'll list them first." If NO fleet is active, OMIT option C entirely.
   - **D. Spawn a new desktop fleet** — launch a fresh fleet of VISIBLE terminals on the
-    owner's REAL desktop. **PREFER `fleet:launch-on-plan { name, plan, count, agent }`** — the
-    purpose-built spawn utility: it ensures the fleet (you become leader), opens N member
+    owner's REAL desktop. **ALWAYS PREFER `fleet:launch-on-plan { name, plan, count, agent }`**
+    — the purpose-built spawn utility: it ensures the fleet (you become leader), opens N member
     windows, AND threads `--fleet=<slug>` + the auto-kickoff so each member **auto-JOINS the
-    fleet and auto-STARTS on the plan** with no manual wake. Drop to the hand-rolled
-    `fleet:create` → `capability:terminal { terminals:[…] }` path (each entry running
-    `psu --no-picker --agent=<claude|omp|codex> --harness=<slug> --plan=<slug> --fleet=<slug>
-    --launch-context=<brief.md>`) ONLY when you need a DISTINCT per-member launch-context brief
-    (which `fleet:launch-on-plan` doesn't yet expose). ⚠️ **If you hand-roll, you MUST put
-    `--fleet=<slug>` IN the psu command** — `capability:terminal`'s OWN `fleet` arg is
-    COLOR-ONLY (it tints the window; it does NOT join the fleet). Without `--fleet`, members
-    show `fleetSlug:null` AND may PARK without auto-kickoff (you'll have to wake each one). This
-    is a real, repeatedly-hit trap (EI-5835). ⚠️ `capability:terminal` / `fleet:launch-on-plan`
-    are the ONLY tools that open real desktop terminals — `fleet:spawn` / `fleet:place_batch`
-    spawn HEADLESS nursery cups (no window on the owner's desktop), so NEVER use them for a
-    "desktop fleet." ⚠️ Only OFFER option D when those desktop-launch tools are actually in your
-    toolset (some client surfaces expose only the headless fleet tools); if not, say so and
-    don't present a desktop fleet you can't launch. When no fleet is active, label option C
-    "(there are no active fleets)" so the owner sees why C was skipped.
+    fleet and auto-STARTS on the plan** with no manual wake. It ALSO takes
+    `perMemberLaunchContext: [path1, path2, …]` (EI-8985, index-aligned to member number) when
+    different members need DISTINCT briefs — a member beyond the array, or an unreadable entry,
+    falls back to the shared `launchContext`/baseline rather than failing the launch. This closes
+    the one remaining reason to hand-roll `fleet:create` → `capability:terminal { terminals:[…] }`
+    — prefer `fleet:launch-on-plan` even for per-member briefs now. (`capability:terminal`'s
+    `fleet` arg auto-injects `--fleet=<slug>` into any `psu …` command it detects — EI-5835 is
+    fixed at that layer too — but you still don't need to hand-roll: `fleet:launch-on-plan`
+    covers this.) ⚠️ `capability:terminal` / `fleet:launch-on-plan` are the ONLY tools that open
+    real desktop terminals — `fleet:spawn` / `fleet:place_batch` spawn HEADLESS nursery cups (no
+    window on the owner's desktop), so NEVER use them for a "desktop fleet." ⚠️ Only OFFER
+    option D when those desktop-launch tools are actually in your toolset (some client surfaces
+    expose only the headless fleet tools); if not, say so and don't present a desktop fleet you
+    can't launch. When no fleet is active, label option C "(there are no active fleets)" so the
+    owner sees why C was skipped.
 - **Ask the route EVEN IF one option seems obvious.** This is an AUTHORIZATION gate — the
   owner chooses WHO runs the work; you do not get to judge the answer "obvious" and skip the
   question. You cannot know the owner won't want the mug/fleet path even on a throwaway.
