@@ -881,9 +881,9 @@ export const OBSERVATION_CAPTURE_NOTE = [
  * the capability envelope still has it cleanly ignore the clause. Sourced once here (the CONCURRENCY_FIRST_NOTE /
  * REUSE_FIRST_NUDGE precedent): injected into the spawned-bee base (buildPromptParts below) + the
  * operator-launched-role base (operator-core's renderCodeRunNudge, re-exported via
- * role-prompt-from-slug). The su playbooks + the papercup-hive su instance override carry their own
+ * role-prompt-from-slug). The su playbooks + the papercup-pot su instance override carry their own
  * CONDENSED, profile-tailored paraphrases (NOT this verbatim string — apps/operator/prompts/
- * papercusp-su-{engineer,power}.tools.md + hive-instances/papercup-hive.su.md); a substantive change
+ * papercusp-su-{engineer,power}.tools.md + pot-instances/papercup-pot.su.md); a substantive change
  * here must be hand-synced into those three (they are intentionally condensed, so they are not
  * projected). Universal (no role skip — the self-gate handles roles without it).
  */

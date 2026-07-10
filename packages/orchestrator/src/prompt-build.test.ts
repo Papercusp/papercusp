@@ -1453,8 +1453,8 @@ test('wrapUntrusted — nonce differs across two calls (not constant)', () => {
 
 test('buildPrompt — Queen brief renders as its own section (P-060, the cup:spawn path)', () => {
   // THE FLEET:SPAWN PATH. A cup:spawn bee does NOT go through assembleRolePrompt;
-  // its prompt is built here, in invoke-once → buildPrompt, from process.env.QUEEN_BRIEF
-  // (invoke.ts:8.11). This pins that the brief the Queen attached (extraEnv.QUEEN_BRIEF
+  // its prompt is built here, in invoke-once → buildPrompt, from process.env.MUG_BRIEF
+  // (invoke.ts:8.11). This pins that the brief the Queen attached (extraEnv.MUG_BRIEF
   // → child env → buildPrompt({ brief })) reaches the bee's actual assembled prompt.
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'cup.md'), '# BEE\nDo the placed work.');

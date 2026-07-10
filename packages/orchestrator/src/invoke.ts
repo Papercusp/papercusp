@@ -2607,16 +2607,20 @@ export async function invoke(
 
   // 8.11 Queen brief — situational overlay for a spawned bee (cross-cutting context,
   // watch-fors, priority, what-other-bees-are-doing). Set by the Queen at spawn time
-  // in extraEnv.QUEEN_BRIEF. P-060/061. Best-effort; empty when not set.
-  const brief = (process.env.QUEEN_BRIEF ?? '').trim();
+  // in extraEnv.MUG_BRIEF. P-060/061. Best-effort; empty when not set.
+  const brief = (process.env.MUG_BRIEF ?? process.env.QUEEN_BRIEF /* legacy env name — dual-accept until callers migrate */ ?? '').trim();
 
   // 8.12 Queen wake-brief — the Queen's OWN precomputed survey snapshot (ranked
   // frontier/plans floor + her carry-note), assembled by the hive launch blueprint
-  // (queen-brief-cache-assembly B-03/B-04) and threaded via QUEEN_WAKE_BRIEF.
+  // (queen-brief-cache-assembly B-03/B-04) and threaded via MUG_WAKE_BRIEF.
   // buildPrompt renders it as a <system-reminder> in the volatile tail (D-006), so
   // it never touches the cacheable preamble. Empty ⇒ she falls back to the survey
   // tools (graceful degradation). Distinct from `brief` (the Queen→bee overlay).
-  const queenBrief = (process.env.QUEEN_WAKE_BRIEF ?? '').trim();
+  const queenBrief = (
+    process.env.MUG_WAKE_BRIEF ??
+    process.env.QUEEN_WAKE_BRIEF /* legacy env name — dual-accept until callers migrate */ ??
+    ''
+  ).trim();
 
   // 8.12b Overwatch wake-brief — the overwatch's OWN precomputed system-health
   // snapshot (the OverwatchBrief: detected anomalies + health panels), assembled by
