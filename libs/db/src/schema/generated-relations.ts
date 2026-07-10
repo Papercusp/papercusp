@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { hiveEvalInstancesInHarnessShared, hiveEvalRunsInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, beekeeperInstancesInHarnessShared, beekeeperRunsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryCanonicalInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, memoryAnchorsInHarnessShared, hiveEvalScoresInHarnessShared, beekeeperScoresInHarnessShared, benchRunTasksInHarnessShared, hivesInHarnessShared, hiveMembersInHarnessShared } from "./generated";
+import { hiveEvalInstancesInHarnessShared, hiveEvalRunsInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, beekeeperInstancesInHarnessShared, beekeeperRunsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, memoryAnchorsInHarnessShared, hiveEvalScoresInHarnessShared, beekeeperScoresInHarnessShared, benchRunTasksInHarnessShared, hivesInHarnessShared, hiveMembersInHarnessShared } from "./generated";
 
 export const hiveEvalRunsInHarnessSharedRelations = relations(hiveEvalRunsInHarnessShared, ({one, many}) => ({
 	hiveEvalInstancesInHarnessShared: one(hiveEvalInstancesInHarnessShared, {
@@ -42,6 +42,20 @@ export const llmTestFixturesInHarnessSharedRelations = relations(llmTestFixtures
 		fields: [llmTestFixturesInHarnessShared.recordedFromRunId],
 		references: [llmTestRunsInHarnessShared.id]
 	}),
+}));
+
+export const memoryVecGemmaInHarnessSharedRelations = relations(memoryVecGemmaInHarnessShared, ({one}) => ({
+	memoryCanonicalInHarnessShared: one(memoryCanonicalInHarnessShared, {
+		fields: [memoryVecGemmaInHarnessShared.memoryId],
+		references: [memoryCanonicalInHarnessShared.id]
+	}),
+}));
+
+export const memoryCanonicalInHarnessSharedRelations = relations(memoryCanonicalInHarnessShared, ({many}) => ({
+	memoryVecGemmaInHarnessShareds: many(memoryVecGemmaInHarnessShared),
+	memoryVecOpenaiInHarnessShareds: many(memoryVecOpenaiInHarnessShared),
+	memoryVecLocalInHarnessShareds: many(memoryVecLocalInHarnessShared),
+	memoryAnchorsInHarnessShareds: many(memoryAnchorsInHarnessShared),
 }));
 
 export const beekeeperRunsInHarnessSharedRelations = relations(beekeeperRunsInHarnessShared, ({one, many}) => ({
@@ -95,12 +109,6 @@ export const memoryVecOpenaiInHarnessSharedRelations = relations(memoryVecOpenai
 		fields: [memoryVecOpenaiInHarnessShared.memoryId],
 		references: [memoryCanonicalInHarnessShared.id]
 	}),
-}));
-
-export const memoryCanonicalInHarnessSharedRelations = relations(memoryCanonicalInHarnessShared, ({many}) => ({
-	memoryVecOpenaiInHarnessShareds: many(memoryVecOpenaiInHarnessShared),
-	memoryVecLocalInHarnessShareds: many(memoryVecLocalInHarnessShared),
-	memoryAnchorsInHarnessShareds: many(memoryAnchorsInHarnessShared),
 }));
 
 export const memoryVecLocalInHarnessSharedRelations = relations(memoryVecLocalInHarnessShared, ({one}) => ({

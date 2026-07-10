@@ -952,6 +952,21 @@ export const operatorPromptUserInHarnessShared = harnessShared.table("operator_p
 
 ]);
 
+export const memoryVecGemmaInHarnessShared = harnessShared.table("memory_vec_gemma", {
+	memoryId: uuid("memory_id").primaryKey().notNull(),
+	vector: vector({ dimensions: 384 }).notNull(),
+	embeddedAt: timestamp("embedded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("memory_vec_gemma_hnsw_idx").using("hnsw", table.vector.asc().nullsLast().op("vector_cosine_ops")),
+	foreignKey({
+			columns: [table.memoryId],
+			foreignColumns: [memoryCanonicalInHarnessShared.id],
+			name: "memory_vec_gemma_memory_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.memoryId], name: "memory_vec_gemma_pkey"}),
+
+]);
+
 export const operatorFirstRunInHarnessShared = harnessShared.table("operator_first_run", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().notNull(),
@@ -1087,7 +1102,8 @@ export const coordEventLogInHarnessShared = harnessShared.table("coord_event_log
 	uniqueIndex("coord_event_log_fanout_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'notify_kind'::text) IS NOT NULL))`),
 	uniqueIndex("coord_event_log_fed_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((harness_slug IS NOT NULL) AND ((body ->> 'notify_kind'::text) IS NULL))`),
 	index("coord_event_log_msg_tsv_idx").using("gin", sql`to_tsvector('english'::regconfig, "left"(((COALESCE((body ->> '`).where(sql`(surface = 'messages'::text)`),
-	index("coord_event_log_surface_id").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.surface.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("text_ops")),
+	index("coord_event_log_reply_deadline").using("btree", sql`(((body ->> 'replyDeadlineAt'::text))::bigint)`).where(sql`((surface = 'messages'::text) AND (body ? 'replyDeadlineAt'::text))`),
+	index("coord_event_log_surface_id").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.surface.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("text_ops")),
 	pgPolicy("coord_event_log_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -1719,6 +1735,17 @@ export const eventWakeDeliveriesInHarnessShared = harnessShared.table("event_wak
 	check("event_wake_deliveries_status_check", sql`status = ANY (ARRAY['pending'::text, 'parked'::text, 'delivering'::text, 'delivered'::text, 'dropped'::text, 'dead'::text])`),
 ]);
 
+export const operatorVoiceChannelsInHarnessShared = harnessShared.table("operator_voice_channels", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_voice_channels_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_voice_channels_pkey"}),
+
+]);
+
 export const eventAwaitsInHarnessShared = harnessShared.table("event_awaits", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.event_awaits_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -1737,6 +1764,7 @@ export const eventAwaitsInHarnessShared = harnessShared.table("event_awaits", {
 	once: boolean().default(true).notNull(),
 	minSleepSec: integer("min_sleep_sec"),
 	urgency: boolean().default(false).notNull(),
+	payloadFilter: jsonb("payload_filter"),
 }, (table) => [
 	uniqueIndex("event_awaits_inbox_wake_one_per_agent").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((policy = 'wake'::text) AND (once = false) AND (cancelled_at IS NULL) AND (event_key ~~ 'coord:inbox-wake:%'::text))`),
 	index("event_awaits_pattern_active").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`((event_key ~~ '%*%'::text) AND (fired_at IS NULL) AND (cancelled_at IS NULL))`),
@@ -1746,17 +1774,6 @@ export const eventAwaitsInHarnessShared = harnessShared.table("event_awaits", {
 	pgPolicy("event_awaits_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("event_awaits_policy_check", sql`policy = ANY (ARRAY['wake'::text, 'notify'::text])`),
 	check("event_awaits_timeout_behavior_check", sql`timeout_behavior = ANY (ARRAY['expire'::text, 'wake'::text])`),
-]);
-
-export const operatorVoiceChannelsInHarnessShared = harnessShared.table("operator_voice_channels", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_voice_channels_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_voice_channels_pkey"}),
-
 ]);
 
 export const pipelineEventsInHarnessShared = harnessShared.table("pipeline_events", {
@@ -4338,6 +4355,18 @@ export const p2PMeteringSpendInHarnessShared = harnessShared.table("p2p_metering
 	check("p2p_metering_spend_host_nonempty", sql`host_ref <> ''::text`),
 	check("p2p_metering_spend_fleet_nonempty", sql`fleet_slug <> ''::text`),
 	check("p2p_metering_spend_unit_nonempty", sql`unit <> ''::text`),
+]);
+
+export const coordReadCursorsInHarnessShared = harnessShared.table("coord_read_cursors", {
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	surface: text().notNull(),
+	committed: jsonb(),
+	pending: jsonb(),
+	pendingAt: timestamp("pending_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.ownerId, table.surface], name: "coord_read_cursors_pkey"}),
 ]);
 
 export const federationRefusedOpCountersInHarnessShared = harnessShared.table("federation_refused_op_counters", {
