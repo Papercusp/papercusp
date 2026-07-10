@@ -57,6 +57,11 @@
       "import": "./src/spawn-signing-core.ts",
       "default": "./src/spawn-signing-core.ts"
     },
+    "./codex-gateway-config": {
+      "types": "./src/codex-gateway-config.ts",
+      "import": "./src/codex-gateway-config.ts",
+      "default": "./src/codex-gateway-config.ts"
+    },
     "./decision-parse": {
       "types": "./src/decision-parse.ts",
       "import": "./src/decision-parse.ts",

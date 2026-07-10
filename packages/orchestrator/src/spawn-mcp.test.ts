@@ -369,6 +369,35 @@ describe('buildSpawnCodexConfigToml', () => {
     expect(toml).not.toContain('model_provider =');
     expect(toml).toContain('[mcp_servers.papercusp]');
   });
+
+  // WI-3645: an explicit-auto (or unpinned-after-validation-failure) spawn must still route
+  // through the gateway — just without the account-pin header — instead of silently bypassing
+  // it entirely (the previous behavior, indistinguishable from "gateway off").
+  it('routes model traffic through the gateway with NO account-pin header when gatewayOn is set but no account is pinned (auto-routing)', () => {
+    process.env.PAPERCUSP_GATEWAY_PORT = '8799';
+    const toml = buildSpawnCodexConfigToml(
+      'http://127.0.0.1:3270/api/mcp?harness=papercusp',
+      undefined,
+      { gatewayOn: true, ownerId: 's-queen1', priority: 'mug' },
+    );
+
+    expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
+    expect(toml).toContain('[model_providers.papercusp-codex-gateway]');
+    expect(toml).toContain('base_url = "http://127.0.0.1:8799/v1"');
+    expect(toml).not.toContain('x-papercusp-account"');
+    expect(toml).toContain('http_headers = { "x-papercusp-owner" = "s-queen1", "x-papercusp-priority" = "mug" }');
+  });
+
+  it('omits the http_headers line entirely when gatewayOn is set with no account/owner/priority', () => {
+    const toml = buildSpawnCodexConfigToml(
+      'http://127.0.0.1:3270/api/mcp?harness=papercusp',
+      undefined,
+      { gatewayOn: true },
+    );
+
+    expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
+    expect(toml).not.toContain('http_headers');
+  });
 });
 
 describe('extractChunkId', () => {

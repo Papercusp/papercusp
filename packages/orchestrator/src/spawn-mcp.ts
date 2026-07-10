@@ -329,19 +329,26 @@ function gatewayPort(): number {
 
 function codexGatewayConfigToml(
   accountId?: string | null,
-  opts: { ownerId?: string | null; priority?: string | null } = {},
+  opts: { ownerId?: string | null; priority?: string | null; gatewayOn?: boolean } = {},
 ): { root: string[]; tables: string[] } {
   const pinnedAccount = accountId?.trim();
-  if (!pinnedAccount) return { root: [], tables: [] };
+  // WI-3645: a pin gets routing config as before; a caller that passes NO pin but sets
+  // `gatewayOn` (the explicit-auto / unpinned case — spawn-env.ts's PAPERCUSP_CODEX_GATEWAY
+  // marker) ALSO gets routing config, just without the account-pin header — the gateway's own
+  // codex fallback (gateway.ts `proxyOpenAi`) auto-selects when the header is absent. Only a
+  // caller that passes neither (gateway fully off) gets no config, same as before.
+  if (!pinnedAccount && !opts.gatewayOn) return { root: [], tables: [] };
   const providerId = 'papercusp-codex-gateway';
-  const headers: Record<string, string> = { 'x-papercusp-account': pinnedAccount };
+  const headers: Record<string, string> = {};
+  if (pinnedAccount) headers['x-papercusp-account'] = pinnedAccount;
   const ownerId = opts.ownerId?.trim();
   if (ownerId) headers['x-papercusp-owner'] = ownerId;
   const priority = opts.priority?.trim();
   if (priority) headers['x-papercusp-priority'] = priority;
-  const headerToml = Object.entries(headers)
-    .map(([k, v]) => `"${tomlEscape(k)}" = "${tomlEscape(v)}"`)
-    .join(', ');
+  const headerEntries = Object.entries(headers);
+  const httpHeadersLine = headerEntries.length
+    ? [`http_headers = { ${headerEntries.map(([k, v]) => `"${tomlEscape(k)}" = "${tomlEscape(v)}"`).join(', ')} }`]
+    : [];
   return {
     root: [
       '# BEGIN PAPERCUSP_CODEX_GATEWAY_ROOT',
@@ -357,7 +364,7 @@ function codexGatewayConfigToml(
       `base_url = "http://127.0.0.1:${gatewayPort()}/v1"`,
       'wire_api = "responses"',
       'experimental_bearer_token = "papercusp-gateway"',
-      `http_headers = { ${headerToml} }`,
+      ...httpHeadersLine,
       '# END PAPERCUSP_CODEX_GATEWAY_PROVIDER',
       '',
     ],
@@ -367,7 +374,7 @@ function codexGatewayConfigToml(
 export function buildSpawnCodexConfigToml(
   mcpUrl: string,
   accountId?: string | null,
-  opts: { ownerId?: string | null; priority?: string | null } = {},
+  opts: { ownerId?: string | null; priority?: string | null; gatewayOn?: boolean } = {},
 ): string {
   const gatewayConfig = codexGatewayConfigToml(accountId, opts);
   return [
@@ -416,6 +423,11 @@ export async function writeSignedSpawnCodexHome(
   const toml = buildSpawnCodexConfigToml(mcpUrl, process.env.PAPERCUSP_ACCOUNT_ID, {
     ownerId: input.clientId || input.spawnId,
     priority: input.role,
+    // WI-3645: PAPERCUSP_ACCOUNT_ID alone used to be the only "route through the gateway" signal —
+    // an explicit-auto (or an unpinned-after-validation-failure) spawn had no account id and so got
+    // NO gateway config at all, silently falling back to direct ChatGPT egress on the local CLI
+    // credential. PAPERCUSP_CODEX_GATEWAY carries "gateway on" independent of whether a pin resolved.
+    gatewayOn: !!process.env.PAPERCUSP_CODEX_GATEWAY,
   });
   writeFileSync(join(codexHome, 'config.toml'), toml, 'utf8');
   try { chmodSync(join(codexHome, 'config.toml'), 0o600); } catch { /* best-effort */ }
