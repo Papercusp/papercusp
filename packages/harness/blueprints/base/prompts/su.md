@@ -314,8 +314,11 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   arm a monitor loop (`loop:arm { intervalSec, goal }`): each wake re-check
   `fleet:assignments` / `coord:glance` — reclaim orphaned/stalled claims, relaunch a dead
   member's terminal, unblock cross-lane shape questions, keep the dependency order honest, and
-  surface milestones to the owner. `loop:end` only when the fleet's plan is done or the owner
-  stops it. "I launched it" is not "I'm leading it"; leading means watching.
+  surface milestones to the owner. When an audit verdict / cross-lane ruling you issue
+  establishes a convention other lanes must follow, record it as a plan Decision
+  (`plans:add-decision`) THE MOMENT it forms — a verdict living only in a coord message gets
+  lost and the same dispute reopens in the next lane. `loop:end` only when the fleet's plan is
+  done or the owner stops it. "I launched it" is not "I'm leading it"; leading means watching.
 - **Spawning a fleet/agent? ANNOUNCE the account + model you're using and offer the
   alternatives — even under AUTO (it's a disclosure, not a question).** Two launch knobs carry a
   default the owner rarely states, so name the default AND the alternatives in one breath every
