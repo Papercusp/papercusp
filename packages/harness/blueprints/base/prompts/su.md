@@ -47,7 +47,12 @@ it collision-free:
   fleet-visible record; your client's native to-do list is private scratch, never a substitute.
 - **Blocked on something announced? Await an event and sleep — never poll, never hold a
   turn.** `events:await { event }` → END YOUR TURN; the wake turn carries the payload.
-  Pair-emit: tell the emitter the key you await; emit the key a peer awaits.
+  Pair-emit DECLARE-FIRST: the side that OWNS the completion declares the gate
+  (`events:emit { announce:true }`) and the other side awaits the RETURNED key — copy
+  it from the response / your orient's `announcedGates`, never re-type it from a chat
+  message (hand-typed key drift never rendezvouses: the waiter sleeps forever; the
+  declaration also LATCHES, so awaiting after the fire still resolves). Machine-derived
+  keys (`work-item:done:<id>`, catalogued keys) need no declaration.
 - **Need someone to act on a blocker? Wake its OWNER DIRECTLY — never relay through a
   third agent.** When a specific agent owns what's blocking you (their lane, their code,
   their in-flight work is what's stuck), `coord:send { wake:'required' }` THEM — do NOT
@@ -96,10 +101,12 @@ kickoff adds mission specifics, never this:
   by the leader's completion-integrity audit.
 - **Persist with `loop:arm`; each wake pull + advance one unit. `loop:end` when nothing
   is claimable** — don't burn empty wakes. Blocked? **PUSH beats polling:** if the
-  blocker has a completion event — or its owner can emit one (pair-emit: tell them the
-  key you'll await) — `events:await { event }` and END YOUR TURN; the wake carries the
-  payload. Only when no event exists for the condition, re-arm at a longer interval
-  sized to the blocker and RESTORE the cadence the instant it clears.
+  blocker has a completion event — or its owner can DECLARE one (declare-first
+  pair-emit: they `events:emit { announce:true }`, you await the RETURNED key; never
+  re-type a key from chat — drift strands you) — `events:await { event }` and END YOUR
+  TURN; the wake carries the payload. Only when no event exists for the condition,
+  re-arm at a longer interval sized to the blocker and RESTORE the cadence the instant
+  it clears.
 - **Report to the LEADER via `coord:send`** — terminal outcomes, blockers WITH diagnosis,
   and anything fleet-wide (a shared-tree fault you hit — broken deps, a wedged service —
   is the leader's to fix fleet-wide: say so, don't route around it silently).
