@@ -94,7 +94,76 @@ let _resolvedAppUrl: string | null = null;
 let _resolvedAppUrlSource: 'env' | 'discovery' | null = null;
 let _resolvedAdminUrl: string | null = null;
 let _resolvedAdminUrlSource: 'env' | 'discovery' | null = null;
-function readDiscoveryFile(): { user?: string; password?: string; host?: string; port?: number } | null {
+export type DiscoveryEndpoint = { user?: string; password?: string; host?: string; port?: number };
+
+/**
+ * Parse the embedded-pg discovery file's JSON into a connection endpoint.
+ *
+ * The WRITER (apps/operator/bin/serve.ts) records `{ url, port, pid, startedAt }`
+ * — it has never written a `host` key. This used to gate on `parsed.host && parsed.port`,
+ * which made step 2 of the resolution chain above DEAD CODE: every env-less caller fell
+ * silently through to the native fallback. That is not a harmless miss —
+ *   • on a dev box that also runs the desktop it selects the WRONG DATABASE (native :5432
+ *     instead of the desktop's embedded PG) with no error, and
+ *   • on a packaged install, which has no :5432 at all, it is ECONNREFUSED.
+ * The second is how it was caught: ~200 "unit" suites reddened on a packaged install
+ * (they open a pool transitively via app code) while passing on every box with a stray
+ * native :5432. So parse the `url` the writer actually emits — the same field
+ * libs/host-platform/src/desktop.ts already reads — and keep the legacy `{host,port}`
+ * shape working for any older file still on disk.
+ *
+ * Exported for tests: pure (no fs, no env), so the shape contract is pinned directly.
+ */
+export function _defaultIsPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // EPERM ⇒ the process exists, we just don't own it. Anything else ⇒ gone.
+    return (e as NodeJS.ErrnoException)?.code === 'EPERM';
+  }
+}
+
+export function _parseDiscoveryJson(
+  raw: string,
+  isPidAlive: (pid: number) => boolean = _defaultIsPidAlive,
+): DiscoveryEndpoint | null {
+  let parsed: { url?: string; host?: string; port?: number; user?: string; password?: string; pid?: number };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  // STALE-FILE GUARD. serve.ts writes this file but never unlinks it (there is no
+  // unlink of EMBEDDED_PG_JSON anywhere in serve.ts, despite the chain comment above
+  // claiming it is "deleted on shutdown"). Now that discovery actually resolves, a
+  // leftover file from a stopped desktop would point every env-less caller at a DEAD
+  // port — strictly worse than the native fallback it replaced. The file records the
+  // writer's pid, so ignore it once that process is gone. Files with no pid (older
+  // desktops) are trusted as before.
+  if (typeof parsed?.pid === 'number' && !isPidAlive(parsed.pid)) return null;
+  if (parsed?.url) {
+    try {
+      const u = new URL(parsed.url);
+      const port = Number(u.port) || Number(parsed.port);
+      if (u.hostname && port) {
+        return {
+          host: u.hostname,
+          port,
+          // Embedded-pg uses fixed passwords; callers default them when absent.
+          user: u.username ? decodeURIComponent(u.username) : undefined,
+          password: u.password ? decodeURIComponent(u.password) : undefined,
+        };
+      }
+    } catch {
+      // unparseable url — fall through to the legacy {host,port} shape
+    }
+  }
+  if (parsed?.port && parsed?.host) return parsed;
+  return null;
+}
+
+function readDiscoveryFile(): DiscoveryEndpoint | null {
   if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY === '1') return null;
   try {
     // Lazy require so this module can be imported in environments
@@ -103,11 +172,9 @@ function readDiscoveryFile(): { user?: string; password?: string; host?: string;
     const fs = nodeRequire('node:fs') as typeof import('node:fs');
     const os = nodeRequire('node:os') as typeof import('node:os');
     const path = `${os.homedir()}/.papercusp/embedded-pg.json`;
-    const raw = fs.readFileSync(path, 'utf8');
-    const parsed = JSON.parse(raw) as { host?: string; port?: number; user?: string; password?: string };
-    if (parsed?.port && parsed?.host) return parsed;
+    return _parseDiscoveryJson(fs.readFileSync(path, 'utf8'));
   } catch {
-    // missing / unparseable — fall through to native fallback
+    // missing / unreadable — fall through to native fallback
   }
   return null;
 }
