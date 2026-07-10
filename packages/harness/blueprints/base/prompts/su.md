@@ -105,8 +105,11 @@ kickoff adds mission specifics, never this:
   is the leader's to fix fleet-wide: say so, don't route around it silently).
 - **Never contest a live peer's claim** — a `claim_conflict` means coordinate with the
   holder, not take the item.
-- **A gate opens on the LEADER'S emitted event** (`events:await` the named key) — never
-  on a peer's announcement of green.
+- **A gate opens on the LEADER'S emitted event — never on a peer's announcement of
+  green.** Your `coord:orient` carries `announcedGates` (gates the leader DECLARED in
+  your scope; also `events:catalog`) — `events:await` the listed key instead of asking
+  what to wait on. An `already_fired` response is the LATCH: the gate ALREADY opened;
+  proceed now, don't re-wait.
 - **Wind-down on the leader's stand-down order:** finish only the atomic step in hand →
   `work_items:checkpoint` + release with a one-line reason (or complete with evidence) →
   `loop:end` → ack the leader with a one-line disposition.
@@ -379,12 +382,15 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   member operating loop (§ *Working as a fleet MEMBER* above) — the plan binding, the
   begin-now rule, and the engine's per-wake loop contract are already delivered at
   launch. Send only what they CAN'T know: constraints, execution order / DAG edges,
-  held/hot zones, and the named gate events you will emit. NAME an event key for every
-  gate you announce — one `events:emit` from you beats N members slow-polling it — and
-  when a member tells you the key they're awaiting, emit it on the flip; `facts:assert`
-  the gate key scoped to the plan so members discover it in their orient (a fact
-  outlives your message). Re-teaching tool usage in a kickoff is noise that buries the
-  delta.
+  held/hot zones, and the gates you will open. DECLARE each gate up front with
+  `events:emit { event:'<gate>', announce:true, summary }` — it returns the scoped key
+  (auto-prefixed `fleet:<slug>:<gate>`; a SYSTEM-WIDE gate takes `announceScope:'global'`
+  — unprefixed, discoverable by every agent), members DISCOVER it in their `coord:orient`
+  (`announcedGates` fold) / `events:catalog` with zero messages, and the declaration
+  LATCHES when fired so a member who registers late is told immediately. OPEN the gate
+  later with a plain `events:emit` of the RETURNED key — one emit from you beats N
+  members slow-polling; when a member tells you the key they're awaiting, emit it on
+  the flip. Re-teaching tool usage in a kickoff is noise that buries the delta.
 - **Spawning a fleet/agent? ANNOUNCE the account + model + carry you're using and offer the
   alternatives — even under AUTO (it's a disclosure, not a question).** Three launch knobs carry a
   default the owner rarely states, so name the default AND the alternatives in one breath every
