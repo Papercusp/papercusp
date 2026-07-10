@@ -2904,6 +2904,21 @@ export const predicateWatchesInHarnessShared = harnessShared.table("predicate_wa
 
 ]);
 
+export const memoryVecHarrierInHarnessShared = harnessShared.table("memory_vec_harrier", {
+	memoryId: uuid("memory_id").primaryKey().notNull(),
+	vector: vector({ dimensions: 1024 }).notNull(),
+	embeddedAt: timestamp("embedded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("memory_vec_harrier_hnsw_idx").using("hnsw", table.vector.asc().nullsLast().op("vector_cosine_ops")),
+	foreignKey({
+			columns: [table.memoryId],
+			foreignColumns: [memoryCanonicalInHarnessShared.id],
+			name: "memory_vec_harrier_memory_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.memoryId], name: "memory_vec_harrier_pkey"}),
+
+]);
+
 export const benchRunEventsInHarnessShared = harnessShared.table("bench_run_events", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	eventId: bigint("event_id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.bench_run_events_event_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),

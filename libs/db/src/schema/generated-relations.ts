@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { hiveEvalInstancesInHarnessShared, hiveEvalRunsInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, beekeeperInstancesInHarnessShared, beekeeperRunsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, memoryAnchorsInHarnessShared, hiveEvalScoresInHarnessShared, beekeeperScoresInHarnessShared, benchRunTasksInHarnessShared, hivesInHarnessShared, hiveMembersInHarnessShared } from "./generated";
+import { hiveEvalInstancesInHarnessShared, hiveEvalRunsInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, beekeeperInstancesInHarnessShared, beekeeperRunsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, memoryVecHarrierInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, memoryAnchorsInHarnessShared, hiveEvalScoresInHarnessShared, beekeeperScoresInHarnessShared, benchRunTasksInHarnessShared, hivesInHarnessShared, hiveMembersInHarnessShared } from "./generated";
 
 export const hiveEvalRunsInHarnessSharedRelations = relations(hiveEvalRunsInHarnessShared, ({one, many}) => ({
 	hiveEvalInstancesInHarnessShared: one(hiveEvalInstancesInHarnessShared, {
@@ -55,6 +55,7 @@ export const memoryCanonicalInHarnessSharedRelations = relations(memoryCanonical
 	memoryVecGemmaInHarnessShareds: many(memoryVecGemmaInHarnessShared),
 	memoryVecOpenaiInHarnessShareds: many(memoryVecOpenaiInHarnessShared),
 	memoryVecLocalInHarnessShareds: many(memoryVecLocalInHarnessShared),
+	memoryVecHarrierInHarnessShareds: many(memoryVecHarrierInHarnessShared),
 	memoryAnchorsInHarnessShareds: many(memoryAnchorsInHarnessShared),
 }));
 
@@ -149,6 +150,13 @@ export const benchmarkRunResultInHarnessSharedRelations = relations(benchmarkRun
 
 export const benchmarkRolloutInHarnessSharedRelations = relations(benchmarkRolloutInHarnessShared, ({many}) => ({
 	benchmarkRunResultInHarnessShareds: many(benchmarkRunResultInHarnessShared),
+}));
+
+export const memoryVecHarrierInHarnessSharedRelations = relations(memoryVecHarrierInHarnessShared, ({one}) => ({
+	memoryCanonicalInHarnessShared: one(memoryCanonicalInHarnessShared, {
+		fields: [memoryVecHarrierInHarnessShared.memoryId],
+		references: [memoryCanonicalInHarnessShared.id]
+	}),
 }));
 
 export const benchRunEventsInHarnessSharedRelations = relations(benchRunEventsInHarnessShared, ({one}) => ({
