@@ -855,6 +855,16 @@ async function readQueueInner(
 
 export const MAX_WAITERS_PER_OWNER = 10;
 
+/** The concrete edit a blocked agent attaches to a wake_on_grant waiter ticket
+ *  (EI-9033) — exactly the Edit-tool contract. On grant the bridge applies it
+ *  mechanically iff `old_string` matches EXACTLY ONCE in the current file. */
+export interface PendingEdit {
+  /** Repo-relative POSIX path — MUST equal the ticket's single granted path. */
+  file: string;
+  old_string: string;
+  new_string: string;
+}
+
 export interface InsertWaiterParams {
   coordinationDomain: string;
   owner: string;
@@ -863,6 +873,10 @@ export interface InsertWaiterParams {
   intent: string;
   ttlSec: number;
   maxWaitSec: number;
+  /** Apply-on-grant (EI-9033): when set, the grant bridge applies this edit
+   *  instead of waking the agent to retry. Only meaningful with wake_on_grant
+   *  and a single-path ticket (`paths === [pendingEdit.file]`). */
+  pendingEdit?: PendingEdit;
 }
 
 export type InsertWaiterResult =
@@ -930,16 +944,118 @@ export async function tryInsertWaiter(
   }
 
   const waitText = `${params.maxWaitSec} seconds`;
+  const pendingEditJson = params.pendingEdit ? JSON.stringify(params.pendingEdit) : null;
   const rows = await tx<Array<{ ticket_id: string; wait_until: Date }>>`
     INSERT INTO agent_lock_waiters
-      (coordination_domain, owner, owner_label, paths, intent, ttl_sec, wait_until)
+      (coordination_domain, owner, owner_label, paths, intent, ttl_sec, wait_until, pending_edit)
     VALUES
       (${params.coordinationDomain}, ${params.owner}, ${params.ownerLabel},
        ${params.paths}, ${params.intent}, ${params.ttlSec},
-       clock_timestamp() + ${waitText}::interval)
+       clock_timestamp() + ${waitText}::interval,
+       ${pendingEditJson}::jsonb)
     RETURNING ticket_id, wait_until
   `;
   return { ok: true, ticket_id: rows[0].ticket_id, wait_until: rows[0].wait_until };
+}
+
+// ───────── Apply-on-grant pending edit (EI-9033) ─────────
+
+/** A granted ticket's claimed pending edit + the context needed to apply it. */
+export interface GrantedPendingEdit {
+  ticket_id: string;
+  pending_edit: PendingEdit;
+  granted_lock_id: string;
+  coordination_domain: string;
+  owner: string;
+  owner_label: string | null;
+  intent: string;
+  paths: string[];
+}
+
+/** Disposition of a granted ticket's pending edit, for a reconcile that did NOT
+ *  win the apply latch: 'none' (never had one → normal grant wake), 'claiming'
+ *  (a peer reconcile is applying → no-op), 'applied' (landed → no-op), or
+ *  'fallback' (guardrail/mismatch → normal grant wake). */
+export type PendingEditDisposition = 'none' | 'claiming' | 'applied' | 'fallback';
+
+/**
+ * Atomically claim a granted ticket's pending edit for application. The
+ * conditional UPDATE latch (`pending_edit_status IS NULL` → 'claiming') makes
+ * application EXACTLY-ONCE across the NOTIFY fast-path + the sweep backstop —
+ * only the ONE caller whose UPDATE returns a row applies; every other observer
+ * reads the disposition instead. Returns null when there is no UNCLAIMED
+ * pending edit (none attached, already claimed, or the ticket isn't granted).
+ */
+export async function claimGrantedPendingEdit(
+  sql: Sql,
+  ticketId: string,
+): Promise<GrantedPendingEdit | null> {
+  const rows = await sql<
+    Array<{
+      ticket_id: string;
+      pending_edit: PendingEdit | null;
+      granted_lock_id: string | null;
+      coordination_domain: string;
+      owner: string;
+      owner_label: string | null;
+      intent: string;
+      paths: string[];
+    }>
+  >`
+    UPDATE agent_lock_waiters
+       SET pending_edit_status = 'claiming'
+     WHERE ticket_id = ${ticketId}::uuid
+       AND status = 'granted'
+       AND granted_lock_id IS NOT NULL
+       AND pending_edit IS NOT NULL
+       AND pending_edit_status IS NULL
+    RETURNING ticket_id, pending_edit, granted_lock_id,
+              coordination_domain, owner, owner_label, intent, paths
+  `;
+  const r = rows[0];
+  if (!r || !r.pending_edit || !r.granted_lock_id) return null;
+  return {
+    ticket_id: r.ticket_id,
+    pending_edit: r.pending_edit,
+    granted_lock_id: r.granted_lock_id,
+    coordination_domain: r.coordination_domain,
+    owner: r.owner,
+    owner_label: r.owner_label ?? null,
+    intent: r.intent,
+    paths: r.paths,
+  };
+}
+
+/** Record the terminal outcome of a claimed pending edit (releases the latch). */
+export async function setPendingEditOutcome(
+  sql: Sql,
+  ticketId: string,
+  outcome: 'applied' | 'fallback',
+): Promise<void> {
+  await sql`
+    UPDATE agent_lock_waiters
+       SET pending_edit_status = ${outcome}
+     WHERE ticket_id = ${ticketId}::uuid
+  `;
+}
+
+/** Read a ticket's pending-edit disposition (for a reconcile that lost the
+ *  latch). 'has pending edit but status NULL/claiming' → 'claiming' (in-flight). */
+export async function readPendingEditDisposition(
+  sql: Sql,
+  ticketId: string,
+): Promise<PendingEditDisposition> {
+  const rows = await sql<Array<{ has: boolean; st: string | null }>>`
+    SELECT pending_edit IS NOT NULL AS has, pending_edit_status AS st
+      FROM agent_lock_waiters
+     WHERE ticket_id = ${ticketId}::uuid
+     LIMIT 1
+  `;
+  if (rows.length === 0 || !rows[0].has) return 'none';
+  const st = rows[0].st;
+  if (st === 'applied') return 'applied';
+  if (st === 'fallback') return 'fallback';
+  return 'claiming';
 }
 
 // ───────── Waiter status read ─────────
