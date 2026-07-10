@@ -226,42 +226,103 @@ END $$;
 -- ── Read-compat views under the OLD names (defense-in-depth for any straggler read path;
 --    NOTE: these do NOT support INSERT...ON CONFLICT -- Postgres cannot target a view with
 --    ON CONFLICT under any circumstance. Every known write path was updated in this same
---    change; these views are a safety net for reads/plain writes only.) ────────────────
-CREATE OR REPLACE VIEW harness_shared.hive_placements AS SELECT workspace_id, install_slug, work_item_id, harness_slug, mug_owner_id AS queen_owner_id, cup_spawn_id AS bee_spawn_id, cup_owner_id AS bee_owner_id, status, fail_count, last_disposition, escalation_msg_id, placed_at, last_recovery_at, last_seen_at, updated_at, infra_loss_count, last_loss_spawn_id FROM harness_shared.pot_placements;
-CREATE OR REPLACE VIEW harness_shared.hive_eval_bakeoff_deltas AS SELECT id, workspace_id, flag_key, delta_mean_composite, delta_gate_pass_rate, verdict, run_at_ms, created_at FROM harness_shared.pot_eval_bakeoff_deltas;
-CREATE OR REPLACE VIEW harness_shared.hive_eval_instances AS SELECT instance_id, workspace_id, code_sha, genome_id, battery_slice_id, created_at FROM harness_shared.pot_eval_instances;
-CREATE OR REPLACE VIEW harness_shared.hive_eval_runs AS SELECT run_id, instance_id, scenario_id, shape, repeat, seed, budget_usd_cap, cup_cap AS bee_cap, started_at, finished_at, terminal_state, wall_clock_ms, frontier_drained, work_items_total, work_items_completed, cost_usd, observations, trace_ref FROM harness_shared.pot_eval_runs;
-CREATE OR REPLACE VIEW harness_shared.hive_eval_scenarios AS SELECT scenario_id, title, shape, ideal_wall_clock_units, ideal_cup_count AS ideal_bee_count, total_units, critical_path, work_item_count, planted_bug_location, created_at FROM harness_shared.pot_eval_scenarios;
-CREATE OR REPLACE VIEW harness_shared.hive_eval_scores AS SELECT run_id, rubric_hash, rubric_version, outcome_gate_passed, efficiency_score, speed_score, composite, judge_composite, regressions, planted_bug_caught, fabrication_detected, critical_path_ratio, floor_ceiling, detail, scored_at FROM harness_shared.pot_eval_scores;
-CREATE OR REPLACE VIEW harness_shared.hive_wake AS SELECT workspace_id, payload, updated_at FROM harness_shared.pot_wake;
-CREATE OR REPLACE VIEW harness_shared.hive_watchdog_fires AS SELECT id, workspace_id, install_slug, fired_at, source, reason, wake_at, demand FROM harness_shared.pot_watchdog_fires;
-CREATE OR REPLACE VIEW harness_shared.hive_throughput_ticks AS SELECT id, workspace_id, tick_at, frontier_depth, placements, cups_busy AS bees_busy, cups_cap AS bees_cap, stuck_count, completed, mttc_ms, question_rungs, detail, pot_slug FROM harness_shared.pot_throughput_ticks;
-CREATE OR REPLACE VIEW harness_shared.operator_hive_control_policy AS SELECT workspace_id, payload, updated_at FROM harness_shared.operator_pot_control_policy;
-CREATE OR REPLACE VIEW harness_shared.hive_integration_requests AS SELECT workspace_id, repo_key, device_pubkey, head_sha, author_github_user_id, reason, state, created_ts, ratified_ts, pot_slug FROM harness_shared.pot_integration_requests;
+--    change; these views are a safety net for reads/plain writes only.)
+--    EACH is individually guarded on its NEW base table existing (not just "did the rename
+--    block above just run") so this stays safe against a partial-lineage apply -- e.g. a test
+--    fixture that applies 554 without first creating the pre-rename table via migration 263
+--    etc: the rename DO block above no-ops (guard fails), and an UNGUARDED `CREATE VIEW ... AS
+--    SELECT FROM harness_shared.pot_X` would then fail with "relation does not exist" (found
+--    live via WI-3465's integration-test verification 2026-07-10 -- leg-d-integration-chain
+--    .integration.test.ts applies 554 standalone against a DB that never had hive_placements).
+--    Guarding on to_regclass('...pot_X') IS NOT NULL keeps this correct + idempotent in BOTH
+--    the full-chain case (view created) and the narrow-fixture case (cleanly skipped). ────
 
--- Grants on the compat views (mirror the base table grants; harness_app/harness_zero are the
--- standard app roles used throughout this schema).
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_placements TO harness_app;
-GRANT SELECT ON harness_shared.hive_placements TO harness_zero;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_eval_bakeoff_deltas TO harness_app;
-GRANT SELECT ON harness_shared.hive_eval_bakeoff_deltas TO harness_zero;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_eval_instances TO harness_app;
-GRANT SELECT ON harness_shared.hive_eval_instances TO harness_zero;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_eval_runs TO harness_app;
-GRANT SELECT ON harness_shared.hive_eval_runs TO harness_zero;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_eval_scenarios TO harness_app;
-GRANT SELECT ON harness_shared.hive_eval_scenarios TO harness_zero;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_eval_scores TO harness_app;
-GRANT SELECT ON harness_shared.hive_eval_scores TO harness_zero;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_wake TO harness_app;
-GRANT SELECT ON harness_shared.hive_wake TO harness_zero;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_watchdog_fires TO harness_app;
-GRANT SELECT ON harness_shared.hive_watchdog_fires TO harness_zero;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_throughput_ticks TO harness_app;
-GRANT SELECT ON harness_shared.hive_throughput_ticks TO harness_zero;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.operator_hive_control_policy TO harness_app;
-GRANT SELECT ON harness_shared.operator_hive_control_policy TO harness_zero;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_integration_requests TO harness_app;
-GRANT SELECT ON harness_shared.hive_integration_requests TO harness_zero;
+DO $$ BEGIN
+  IF to_regclass('harness_shared.pot_placements') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.hive_placements AS SELECT workspace_id, install_slug, work_item_id, harness_slug, mug_owner_id AS queen_owner_id, cup_spawn_id AS bee_spawn_id, cup_owner_id AS bee_owner_id, status, fail_count, last_disposition, escalation_msg_id, placed_at, last_recovery_at, last_seen_at, updated_at, infra_loss_count, last_loss_spawn_id FROM harness_shared.pot_placements;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_placements TO harness_app;
+    GRANT SELECT ON harness_shared.hive_placements TO harness_zero;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('harness_shared.pot_eval_bakeoff_deltas') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.hive_eval_bakeoff_deltas AS SELECT id, workspace_id, flag_key, delta_mean_composite, delta_gate_pass_rate, verdict, run_at_ms, created_at FROM harness_shared.pot_eval_bakeoff_deltas;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_eval_bakeoff_deltas TO harness_app;
+    GRANT SELECT ON harness_shared.hive_eval_bakeoff_deltas TO harness_zero;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('harness_shared.pot_eval_instances') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.hive_eval_instances AS SELECT instance_id, workspace_id, code_sha, genome_id, battery_slice_id, created_at FROM harness_shared.pot_eval_instances;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_eval_instances TO harness_app;
+    GRANT SELECT ON harness_shared.hive_eval_instances TO harness_zero;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('harness_shared.pot_eval_runs') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.hive_eval_runs AS SELECT run_id, instance_id, scenario_id, shape, repeat, seed, budget_usd_cap, cup_cap AS bee_cap, started_at, finished_at, terminal_state, wall_clock_ms, frontier_drained, work_items_total, work_items_completed, cost_usd, observations, trace_ref FROM harness_shared.pot_eval_runs;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_eval_runs TO harness_app;
+    GRANT SELECT ON harness_shared.hive_eval_runs TO harness_zero;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('harness_shared.pot_eval_scenarios') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.hive_eval_scenarios AS SELECT scenario_id, title, shape, ideal_wall_clock_units, ideal_cup_count AS ideal_bee_count, total_units, critical_path, work_item_count, planted_bug_location, created_at FROM harness_shared.pot_eval_scenarios;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_eval_scenarios TO harness_app;
+    GRANT SELECT ON harness_shared.hive_eval_scenarios TO harness_zero;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('harness_shared.pot_eval_scores') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.hive_eval_scores AS SELECT run_id, rubric_hash, rubric_version, outcome_gate_passed, efficiency_score, speed_score, composite, judge_composite, regressions, planted_bug_caught, fabrication_detected, critical_path_ratio, floor_ceiling, detail, scored_at FROM harness_shared.pot_eval_scores;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_eval_scores TO harness_app;
+    GRANT SELECT ON harness_shared.hive_eval_scores TO harness_zero;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('harness_shared.pot_wake') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.hive_wake AS SELECT workspace_id, payload, updated_at FROM harness_shared.pot_wake;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_wake TO harness_app;
+    GRANT SELECT ON harness_shared.hive_wake TO harness_zero;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('harness_shared.pot_watchdog_fires') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.hive_watchdog_fires AS SELECT id, workspace_id, install_slug, fired_at, source, reason, wake_at, demand FROM harness_shared.pot_watchdog_fires;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_watchdog_fires TO harness_app;
+    GRANT SELECT ON harness_shared.hive_watchdog_fires TO harness_zero;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('harness_shared.pot_throughput_ticks') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.hive_throughput_ticks AS SELECT id, workspace_id, tick_at, frontier_depth, placements, cups_busy AS bees_busy, cups_cap AS bees_cap, stuck_count, completed, mttc_ms, question_rungs, detail, pot_slug FROM harness_shared.pot_throughput_ticks;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_throughput_ticks TO harness_app;
+    GRANT SELECT ON harness_shared.hive_throughput_ticks TO harness_zero;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('harness_shared.operator_pot_control_policy') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.operator_hive_control_policy AS SELECT workspace_id, payload, updated_at FROM harness_shared.operator_pot_control_policy;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.operator_hive_control_policy TO harness_app;
+    GRANT SELECT ON harness_shared.operator_hive_control_policy TO harness_zero;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('harness_shared.pot_integration_requests') IS NOT NULL THEN
+    CREATE OR REPLACE VIEW harness_shared.hive_integration_requests AS SELECT workspace_id, repo_key, device_pubkey, head_sha, author_github_user_id, reason, state, created_ts, ratified_ts, pot_slug FROM harness_shared.pot_integration_requests;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.hive_integration_requests TO harness_app;
+    GRANT SELECT ON harness_shared.hive_integration_requests TO harness_zero;
+  END IF;
+END $$;
 
 COMMIT;
