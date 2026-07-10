@@ -1,11 +1,18 @@
--- 555-cup-lexicon-db-rename-phase3.sql
+-- 557-cup-lexicon-db-rename-phase3.sql
 --
 -- P-009 Phase 3 (cup-lexicon-full-rename-2026-07-10, Slice H): rename the FEDERATION-CRUD-family
 -- tables that CANNOT use the view-compat pattern from Phase 1, because Postgres INSERT...ON CONFLICT
 -- cannot target a view under any circumstance. This migration is ATOMIC: we rename the tables AND
 -- all ON-CONFLICT accessor sites in the same transaction. No lingering old-name views for these tables.
 --
--- Scope: 13 federation-CRUD tables
+-- Renumbered from a colliding 555 (leader su-7a3c4041, 2026-07-10) — a second agent independently
+-- created 555-cup-lexicon-db-rename-phase2-bee-claim-specs-beekeeper.sql at the same time. That file
+-- is the sole, correct owner of bee_claim_specs (full constraint rename + compat view, already paired
+-- with accessor updates that target the new table name directly, so ON CONFLICT never touches the
+-- view) — this migration's now-redundant duplicate bee_claim_specs block was removed to keep single
+-- ownership; see 555-...-phase2-... for that table.
+--
+-- Scope: 12 federation-CRUD tables
 --   hives -> pots
 --   hive_members -> pot_members
 --   hive_policy -> pot_policy
@@ -18,7 +25,6 @@
 --   hive_epoch_keys -> pot_epoch_keys
 --   hive_directory_cache -> pot_directory_cache
 --   hive_directory_tombstones -> pot_directory_tombstones
---   bee_claim_specs -> cup_claim_specs
 --
 -- Plus critical columns:
 --   hive_home_slug -> pot_home_slug (in hive_members, hive_pending_joins, etc.)
@@ -233,21 +239,8 @@ BEGIN
   END IF;
 END $$;
 
--- ── bee_claim_specs -> cup_claim_specs ──────────────────────────────────────────────
-DO $$
-BEGIN
-  IF to_regclass('harness_shared.bee_claim_specs') IS NOT NULL AND to_regclass('harness_shared.cup_claim_specs') IS NULL THEN
-    ALTER TABLE harness_shared.bee_claim_specs RENAME TO cup_claim_specs;
-    -- Rename columns
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cup_claim_specs' AND column_name = 'bee_id') THEN
-      ALTER TABLE harness_shared.cup_claim_specs RENAME COLUMN bee_id TO cup_id;
-    END IF;
-    -- Constraints
-    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bee_claim_specs_pkey' AND conrelid = 'harness_shared.cup_claim_specs'::regclass) THEN
-      ALTER TABLE harness_shared.cup_claim_specs RENAME CONSTRAINT bee_claim_specs_pkey TO cup_claim_specs_pkey;
-    END IF;
-  END IF;
-END $$;
+-- bee_claim_specs -> cup_claim_specs is owned by 555-cup-lexicon-db-rename-phase2-bee-claim-specs-
+-- beekeeper.sql (full constraint rename + compat view + paired accessor update) — see header note.
 
 -- Note: Grant and view creation for compat views would go here, but since these tables
 -- use ON CONFLICT, we cannot create views that target them. The accessor code MUST
