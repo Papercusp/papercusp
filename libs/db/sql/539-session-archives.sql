@@ -1,4 +1,4 @@
--- Migration 538 — session_archives: PG becomes the canonical archive of ended
+-- Migration 539 — session_archives: PG becomes the canonical archive of ended
 -- CLI sessions (plan session-db-archive-retire-dirs-2026-07-10 P-001,
 -- owner-approved 2026-07-10, route A).
 --
