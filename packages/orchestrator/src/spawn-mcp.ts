@@ -19,6 +19,11 @@
  */
 
 import { canonicalizeSpawnParams, hmacSpawnBytes } from './spawn-signing-core';
+// The gateway config builder + tomlEscape live in the SHARED module (WI-3645): operator-core's
+// role-codex-home.ts (the interactive psu path) renders the SAME blocks via the package's
+// `./codex-gateway-config` subpath export — one builder, one behavior, no drift. Model-specific
+// TOML stays there; this file keeps only the spawn-specific composition (MCP url + CODEX_HOME).
+import { codexGatewayConfigToml, tomlEscape, type CodexGatewayConfigOpts } from './codex-gateway-config';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -317,64 +322,10 @@ export interface SpawnCodexHomeHandle {
   cleanup(): void;
 }
 
-/** Escape a value for a TOML double-quoted basic string. */
-function tomlEscape(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
-
-function gatewayPort(): number {
-  const p = Number(process.env.PAPERCUSP_GATEWAY_PORT);
-  return Number.isFinite(p) && p > 0 ? p : 8788;
-}
-
-function codexGatewayConfigToml(
-  accountId?: string | null,
-  opts: { ownerId?: string | null; priority?: string | null; gatewayOn?: boolean } = {},
-): { root: string[]; tables: string[] } {
-  const pinnedAccount = accountId?.trim();
-  // WI-3645: a pin gets routing config as before; a caller that passes NO pin but sets
-  // `gatewayOn` (the explicit-auto / unpinned case — spawn-env.ts's PAPERCUSP_CODEX_GATEWAY
-  // marker) ALSO gets routing config, just without the account-pin header — the gateway's own
-  // codex fallback (gateway.ts `proxyOpenAi`) auto-selects when the header is absent. Only a
-  // caller that passes neither (gateway fully off) gets no config, same as before.
-  if (!pinnedAccount && !opts.gatewayOn) return { root: [], tables: [] };
-  const providerId = 'papercusp-codex-gateway';
-  const headers: Record<string, string> = {};
-  if (pinnedAccount) headers['x-papercusp-account'] = pinnedAccount;
-  const ownerId = opts.ownerId?.trim();
-  if (ownerId) headers['x-papercusp-owner'] = ownerId;
-  const priority = opts.priority?.trim();
-  if (priority) headers['x-papercusp-priority'] = priority;
-  const headerEntries = Object.entries(headers);
-  const httpHeadersLine = headerEntries.length
-    ? [`http_headers = { ${headerEntries.map(([k, v]) => `"${tomlEscape(k)}" = "${tomlEscape(v)}"`).join(', ')} }`]
-    : [];
-  return {
-    root: [
-      '# BEGIN PAPERCUSP_CODEX_GATEWAY_ROOT',
-      '# Route Codex model traffic through the Papercusp inference gateway account pin.',
-      `model_provider = "${providerId}"`,
-      '# END PAPERCUSP_CODEX_GATEWAY_ROOT',
-      '',
-    ],
-    tables: [
-      '# BEGIN PAPERCUSP_CODEX_GATEWAY_PROVIDER',
-      `[model_providers.${providerId}]`,
-      'name = "Papercusp Codex Gateway"',
-      `base_url = "http://127.0.0.1:${gatewayPort()}/v1"`,
-      'wire_api = "responses"',
-      'experimental_bearer_token = "papercusp-gateway"',
-      ...httpHeadersLine,
-      '# END PAPERCUSP_CODEX_GATEWAY_PROVIDER',
-      '',
-    ],
-  };
-}
-
 export function buildSpawnCodexConfigToml(
   mcpUrl: string,
   accountId?: string | null,
-  opts: { ownerId?: string | null; priority?: string | null; gatewayOn?: boolean } = {},
+  opts: CodexGatewayConfigOpts = {},
 ): string {
   const gatewayConfig = codexGatewayConfigToml(accountId, opts);
   return [
