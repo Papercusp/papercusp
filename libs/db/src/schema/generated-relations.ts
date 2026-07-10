@@ -1,17 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { hiveEvalInstancesInHarnessShared, hiveEvalRunsInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, beekeeperInstancesInHarnessShared, beekeeperRunsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, memoryVecHarrierInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, memoryAnchorsInHarnessShared, hiveEvalScoresInHarnessShared, beekeeperScoresInHarnessShared, benchRunTasksInHarnessShared, hivesInHarnessShared, hiveMembersInHarnessShared } from "./generated";
-
-export const hiveEvalRunsInHarnessSharedRelations = relations(hiveEvalRunsInHarnessShared, ({one, many}) => ({
-	hiveEvalInstancesInHarnessShared: one(hiveEvalInstancesInHarnessShared, {
-		fields: [hiveEvalRunsInHarnessShared.instanceId],
-		references: [hiveEvalInstancesInHarnessShared.instanceId]
-	}),
-	hiveEvalScoresInHarnessShareds: many(hiveEvalScoresInHarnessShared),
-}));
-
-export const hiveEvalInstancesInHarnessSharedRelations = relations(hiveEvalInstancesInHarnessShared, ({many}) => ({
-	hiveEvalRunsInHarnessShareds: many(hiveEvalRunsInHarnessShared),
-}));
+import { usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, beekeeperInstancesInHarnessShared, beekeeperRunsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, potEvalInstancesInHarnessShared, potEvalRunsInHarnessShared, memoryVecHarrierInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, memoryAnchorsInHarnessShared, potEvalScoresInHarnessShared, beekeeperScoresInHarnessShared, benchRunTasksInHarnessShared, hivesInHarnessShared, hiveMembersInHarnessShared } from "./generated";
 
 export const userSessionsInHarnessSharedRelations = relations(userSessionsInHarnessShared, ({one}) => ({
 	usersInHarnessShared: one(usersInHarnessShared, {
@@ -152,6 +140,18 @@ export const benchmarkRolloutInHarnessSharedRelations = relations(benchmarkRollo
 	benchmarkRunResultInHarnessShareds: many(benchmarkRunResultInHarnessShared),
 }));
 
+export const potEvalRunsInHarnessSharedRelations = relations(potEvalRunsInHarnessShared, ({one, many}) => ({
+	potEvalInstancesInHarnessShared: one(potEvalInstancesInHarnessShared, {
+		fields: [potEvalRunsInHarnessShared.instanceId],
+		references: [potEvalInstancesInHarnessShared.instanceId]
+	}),
+	potEvalScoresInHarnessShareds: many(potEvalScoresInHarnessShared),
+}));
+
+export const potEvalInstancesInHarnessSharedRelations = relations(potEvalInstancesInHarnessShared, ({many}) => ({
+	potEvalRunsInHarnessShareds: many(potEvalRunsInHarnessShared),
+}));
+
 export const memoryVecHarrierInHarnessSharedRelations = relations(memoryVecHarrierInHarnessShared, ({one}) => ({
 	memoryCanonicalInHarnessShared: one(memoryCanonicalInHarnessShared, {
 		fields: [memoryVecHarrierInHarnessShared.memoryId],
@@ -214,10 +214,10 @@ export const memoryAnchorsInHarnessSharedRelations = relations(memoryAnchorsInHa
 	}),
 }));
 
-export const hiveEvalScoresInHarnessSharedRelations = relations(hiveEvalScoresInHarnessShared, ({one}) => ({
-	hiveEvalRunsInHarnessShared: one(hiveEvalRunsInHarnessShared, {
-		fields: [hiveEvalScoresInHarnessShared.runId],
-		references: [hiveEvalRunsInHarnessShared.runId]
+export const potEvalScoresInHarnessSharedRelations = relations(potEvalScoresInHarnessShared, ({one}) => ({
+	potEvalRunsInHarnessShared: one(potEvalRunsInHarnessShared, {
+		fields: [potEvalScoresInHarnessShared.runId],
+		references: [potEvalRunsInHarnessShared.runId]
 	}),
 }));
 

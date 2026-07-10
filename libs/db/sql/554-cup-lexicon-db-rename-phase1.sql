@@ -39,7 +39,6 @@ BEGIN
     ALTER TABLE harness_shared.pot_placements RENAME CONSTRAINT hive_placements_work_item_id_not_null TO pot_placements_work_item_id_not_null;
     ALTER TABLE harness_shared.pot_placements RENAME CONSTRAINT hive_placements_workspace_id_not_null TO pot_placements_workspace_id_not_null;
     ALTER INDEX harness_shared.hive_placements_open_idx RENAME TO pot_placements_open_idx;
-    ALTER INDEX harness_shared.hive_placements_pkey RENAME TO pot_placements_pkey;
   END IF;
 END $$;
 
@@ -57,7 +56,6 @@ BEGIN
     ALTER TABLE harness_shared.pot_eval_bakeoff_deltas RENAME CONSTRAINT hive_eval_bakeoff_deltas_run_at_ms_not_null TO pot_eval_bakeoff_deltas_run_at_ms_not_null;
     ALTER TABLE harness_shared.pot_eval_bakeoff_deltas RENAME CONSTRAINT hive_eval_bakeoff_deltas_verdict_not_null TO pot_eval_bakeoff_deltas_verdict_not_null;
     ALTER TABLE harness_shared.pot_eval_bakeoff_deltas RENAME CONSTRAINT hive_eval_bakeoff_deltas_workspace_id_not_null TO pot_eval_bakeoff_deltas_workspace_id_not_null;
-    ALTER INDEX harness_shared.hive_eval_bakeoff_deltas_pkey RENAME TO pot_eval_bakeoff_deltas_pkey;
     ALTER INDEX harness_shared.hive_eval_bakeoff_deltas_ws_run_idx RENAME TO pot_eval_bakeoff_deltas_ws_run_idx;
     IF to_regclass('harness_shared.hive_eval_bakeoff_deltas_id_seq') IS NOT NULL THEN
       ALTER SEQUENCE harness_shared.hive_eval_bakeoff_deltas_id_seq RENAME TO pot_eval_bakeoff_deltas_id_seq;
@@ -76,8 +74,6 @@ BEGIN
     ALTER TABLE harness_shared.pot_eval_instances RENAME CONSTRAINT hive_eval_instances_pkey TO pot_eval_instances_pkey;
     ALTER TABLE harness_shared.pot_eval_instances RENAME CONSTRAINT hive_eval_instances_workspace_id_code_sha_genome_id_key TO pot_eval_instances_workspace_id_code_sha_genome_id_key;
     ALTER TABLE harness_shared.pot_eval_instances RENAME CONSTRAINT hive_eval_instances_workspace_id_not_null TO pot_eval_instances_workspace_id_not_null;
-    ALTER INDEX harness_shared.hive_eval_instances_pkey RENAME TO pot_eval_instances_pkey;
-    ALTER INDEX harness_shared.hive_eval_instances_workspace_id_code_sha_genome_id_key RENAME TO pot_eval_instances_workspace_id_code_sha_genome_id_key;
   END IF;
 END $$;
 
@@ -97,9 +93,7 @@ BEGIN
     ALTER TABLE harness_shared.pot_eval_runs RENAME CONSTRAINT hive_eval_runs_seed_not_null TO pot_eval_runs_seed_not_null;
     ALTER TABLE harness_shared.pot_eval_runs RENAME CONSTRAINT hive_eval_runs_shape_not_null TO pot_eval_runs_shape_not_null;
     ALTER TABLE harness_shared.pot_eval_runs RENAME CONSTRAINT hive_eval_runs_started_at_not_null TO pot_eval_runs_started_at_not_null;
-    ALTER INDEX harness_shared.hive_eval_runs_instance_id_scenario_id_repeat_key RENAME TO pot_eval_runs_instance_id_scenario_id_repeat_key;
     ALTER INDEX harness_shared.hive_eval_runs_instance_idx RENAME TO pot_eval_runs_instance_idx;
-    ALTER INDEX harness_shared.hive_eval_runs_pkey RENAME TO pot_eval_runs_pkey;
     ALTER INDEX harness_shared.hive_eval_runs_scenario_idx RENAME TO pot_eval_runs_scenario_idx;
   END IF;
 END $$;
@@ -120,7 +114,6 @@ BEGIN
     ALTER TABLE harness_shared.pot_eval_scenarios RENAME CONSTRAINT hive_eval_scenarios_title_not_null TO pot_eval_scenarios_title_not_null;
     ALTER TABLE harness_shared.pot_eval_scenarios RENAME CONSTRAINT hive_eval_scenarios_total_units_not_null TO pot_eval_scenarios_total_units_not_null;
     ALTER TABLE harness_shared.pot_eval_scenarios RENAME CONSTRAINT hive_eval_scenarios_work_item_count_not_null TO pot_eval_scenarios_work_item_count_not_null;
-    ALTER INDEX harness_shared.hive_eval_scenarios_pkey RENAME TO pot_eval_scenarios_pkey;
   END IF;
 END $$;
 
@@ -146,7 +139,6 @@ BEGIN
     ALTER TABLE harness_shared.pot_eval_scores RENAME CONSTRAINT hive_eval_scores_scored_at_not_null TO pot_eval_scores_scored_at_not_null;
     ALTER TABLE harness_shared.pot_eval_scores RENAME CONSTRAINT hive_eval_scores_speed_score_not_null TO pot_eval_scores_speed_score_not_null;
     ALTER INDEX harness_shared.hive_eval_scores_composite_idx RENAME TO pot_eval_scores_composite_idx;
-    ALTER INDEX harness_shared.hive_eval_scores_pkey RENAME TO pot_eval_scores_pkey;
     ALTER INDEX harness_shared.hive_eval_scores_run_idx RENAME TO pot_eval_scores_run_idx;
   END IF;
 END $$;
@@ -172,7 +164,6 @@ BEGIN
     ALTER TABLE harness_shared.pot_watchdog_fires RENAME CONSTRAINT hive_watchdog_fires_reason_not_null TO pot_watchdog_fires_reason_not_null;
     ALTER TABLE harness_shared.pot_watchdog_fires RENAME CONSTRAINT hive_watchdog_fires_source_not_null TO pot_watchdog_fires_source_not_null;
     ALTER TABLE harness_shared.pot_watchdog_fires RENAME CONSTRAINT hive_watchdog_fires_workspace_id_not_null TO pot_watchdog_fires_workspace_id_not_null;
-    ALTER INDEX harness_shared.hive_watchdog_fires_pkey RENAME TO pot_watchdog_fires_pkey;
     ALTER INDEX harness_shared.hive_watchdog_fires_ws_install_fired_idx RENAME TO pot_watchdog_fires_ws_install_fired_idx;
   END IF;
 END $$;
@@ -196,7 +187,6 @@ BEGIN
     ALTER TABLE harness_shared.pot_throughput_ticks RENAME CONSTRAINT hive_throughput_ticks_stuck_count_not_null TO pot_throughput_ticks_stuck_count_not_null;
     ALTER TABLE harness_shared.pot_throughput_ticks RENAME CONSTRAINT hive_throughput_ticks_tick_at_not_null TO pot_throughput_ticks_tick_at_not_null;
     ALTER TABLE harness_shared.pot_throughput_ticks RENAME CONSTRAINT hive_throughput_ticks_workspace_id_not_null TO pot_throughput_ticks_workspace_id_not_null;
-    ALTER INDEX harness_shared.hive_throughput_ticks_pkey RENAME TO pot_throughput_ticks_pkey;
     ALTER INDEX harness_shared.hive_throughput_ticks_ws_pot_tick_idx RENAME TO pot_throughput_ticks_ws_pot_tick_idx;
   END IF;
 END $$;
@@ -210,7 +200,6 @@ BEGIN
     ALTER TABLE harness_shared.operator_pot_control_policy RENAME CONSTRAINT operator_hive_control_policy_pkey TO operator_pot_control_policy_pkey;
     ALTER TABLE harness_shared.operator_pot_control_policy RENAME CONSTRAINT operator_hive_control_policy_updated_at_not_null TO operator_pot_control_policy_updated_at_not_null;
     ALTER TABLE harness_shared.operator_pot_control_policy RENAME CONSTRAINT operator_hive_control_policy_workspace_id_not_null TO operator_pot_control_policy_workspace_id_not_null;
-    ALTER INDEX harness_shared.operator_hive_control_policy_pkey RENAME TO operator_pot_control_policy_pkey;
   END IF;
 END $$;
 
@@ -231,7 +220,6 @@ BEGIN
     ALTER TABLE harness_shared.pot_integration_requests RENAME CONSTRAINT hive_integration_requests_state_not_null TO pot_integration_requests_state_not_null;
     ALTER TABLE harness_shared.pot_integration_requests RENAME CONSTRAINT hive_integration_requests_workspace_id_not_null TO pot_integration_requests_workspace_id_not_null;
     ALTER INDEX harness_shared.hive_integration_requests_author_idx RENAME TO pot_integration_requests_author_idx;
-    ALTER INDEX harness_shared.hive_integration_requests_pkey RENAME TO pot_integration_requests_pkey;
   END IF;
 END $$;
 
