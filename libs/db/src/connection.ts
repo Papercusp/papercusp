@@ -502,6 +502,33 @@ export function buildConnectionOptions(opts: {
   return c;
 }
 
+/**
+ * EI-9265: postgres-js parses int8/bigserial columns (OID 20) as JS STRINGS
+ * by default (precision-safety — a bigint can exceed Number's 2^53 range).
+ * Every hand-rolled `postgres(url, {...})` client that is meant to BEHAVE
+ * LIKE the canonical `getOrgPg()`/`getHarnessPg()` clients (test fixtures,
+ * conformance suites, one-off scripts) MUST spread this in, or a raw-SQL read
+ * of a bigserial PK (e.g. `harness_shared.coord_event_log.id`) silently comes
+ * back as a string — a `typeof x === 'number'` guard downstream then treats
+ * it as absent with NO thrown error (the WI-3880 coord:feed cursor bug: page
+ * 2 of a cursor-paginated read silently returned page 1's rows again).
+ * `buildClient` below applies this to every canonical connection; a
+ * hand-rolled client drifts silently if it copies the OTHER postgres-js
+ * options but forgets this one (as `event-log-conformance.test.ts` did,
+ * despite its own comment claiming to "mirror getOrgPg()'s postgres-js
+ * options"). Override case-by-case if a column ever needs full bigint
+ * precision (a `BigInt` result), but our ids/counts/timestamps all fit
+ * safely in Number's range.
+ */
+export const PG_BIGINT_AS_NUMBER_TYPES = {
+  bigint: {
+    to: 20,
+    from: [20],
+    serialize: (x: any) => String(x),
+    parse: (x: string) => Number(x),
+  } as any,
+};
+
 function buildClient(
   connectionUrl: string,
   searchPath: string[],
@@ -590,14 +617,10 @@ function buildClient(
     idle_timeout: Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_TIMEOUT) || 30),
     // BIGINT → number. Our timestamps and attempt counts fit safely in Number's
     // 2^53 range; expected_cost_cents won't realistically exceed it. Override
-    // case-by-case if a column ever needs full BIGINT precision.
-    types: {
-      bigint: {
-        to: 20, from: [20],
-        serialize: (x: any) => String(x),
-        parse: (x: string) => Number(x),
-      } as any,
-    },
+    // case-by-case if a column ever needs full BIGINT precision. Shared
+    // constant (EI-9265) so hand-rolled test/script clients can mirror this
+    // exactly instead of silently drifting — see PG_BIGINT_AS_NUMBER_TYPES.
+    types: PG_BIGINT_AS_NUMBER_TYPES,
   });
 }
 

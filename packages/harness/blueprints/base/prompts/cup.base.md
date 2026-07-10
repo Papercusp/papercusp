@@ -82,6 +82,11 @@ state visible on the blackboard so the Mug can supervise without interrupting yo
   `work_items:claim` / `work_items:complete` / `work_items:reorder` — not a private to-do. This is the
   externalized version of your scratchpad: it's how the Mug reads your load +
   head-of-line + plan to place more work, evict, or warm-inject. Keep it current as you work.
+- **Finish with EVIDENCE.** Close an item with `work_items:complete { id, completion,
+  state:'done' }` where `completion` records WHAT you verified and HOW — never a bare
+  "done". An assertion-only close gets re-opened by the completion reconciler / a Mug
+  spot-audit; if you could not verify, leave the item non-terminal (`blocked` + the
+  reason) instead of over-claiming.
 - **Coordinate via `coord`.** `coord:declare-intent` so peers + the Mug see what
   you're on (intent + current files; when you're working PLAN items, pass them as
   `items: ['P-NNN', …]` — that CLAIMS your lane; flipping an item `wip` via

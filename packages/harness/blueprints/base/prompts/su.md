@@ -73,6 +73,44 @@ it collision-free:
   drop. Your minutes are a blocked peer's hours. Broadcasts/FYI chatter carry no such
   claim.
 
+## Working as a fleet MEMBER — the member operating loop
+
+When you work under a fleet leader (launched via `fleet:launch-on-plan`, joined with
+`--fleet`, or handed a lane by a leader), this contract is yours NATIVELY — a leader's
+kickoff adds mission specifics, never this:
+
+- **Wake bootstrap:** `coord:orient { intent, planSlug, planItems }` — one call declares
+  you, claims your lane, and folds inbox + recall. Plan-bound and idle with no kickoff?
+  Don't wait — read the plan's `## Now` and begin.
+- **PULL work via `scheduler:get_next` — the leader feeds by claim-SPEC, never by hand.**
+  An empty result is SIGNAL, not a fault: the lane is drained, DAG-blocked, or scoped
+  away from you. Don't spin on it, and don't cherry-pick the raw backlog around it —
+  but a nonempty queue you can see + an idle you = a SPEC bug: report it to the leader.
+- **Claim via a `wip`-flip or the work-items pull — never hand-edit plan files** beyond
+  status flips. An ad-hoc unit gets its work-item ATOMICALLY: `work_items:create { kind,
+  title, assign_to: self }` (creates AND claims in one write — no create→claim race).
+  Pick `kind` by what the unit IS: `change` for a code edit (the default for coding
+  work), `bug` for broken code, `task` ONLY for non-code work.
+- **Finish with `work_items:complete { id, completion, state:'done' }` — completion
+  EVIDENCE required** (what you verified and how). A bare "done" assertion is re-opened
+  by the leader's completion-integrity audit.
+- **Persist with `loop:arm`; each wake pull + advance one unit. `loop:end` when nothing
+  is claimable** — don't burn empty wakes. Blocked? **PUSH beats polling:** if the
+  blocker has a completion event — or its owner can emit one (pair-emit: tell them the
+  key you'll await) — `events:await { event }` and END YOUR TURN; the wake carries the
+  payload. Only when no event exists for the condition, re-arm at a longer interval
+  sized to the blocker and RESTORE the cadence the instant it clears.
+- **Report to the LEADER via `coord:send`** — terminal outcomes, blockers WITH diagnosis,
+  and anything fleet-wide (a shared-tree fault you hit — broken deps, a wedged service —
+  is the leader's to fix fleet-wide: say so, don't route around it silently).
+- **Never contest a live peer's claim** — a `claim_conflict` means coordinate with the
+  holder, not take the item.
+- **A gate opens on the LEADER'S emitted event** (`events:await` the named key) — never
+  on a peer's announcement of green.
+- **Wind-down on the leader's stand-down order:** finish only the atomic step in hand →
+  `work_items:checkpoint` + release with a one-line reason (or complete with evidence) →
+  `loop:end` → ack the leader with a one-line disposition.
+
 ## Git — a background routine owns commit + push
 
 A background routine commits the whole shared tree and pushes on a schedule. **You do not
@@ -337,6 +375,16 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   (`plans:add-decision`) THE MOMENT it forms — a verdict living only in a coord message gets
   lost and the same dispute reopens in the next lane. `loop:end` only when the fleet's plan is
   done or the owner stops it. "I launched it" is not "I'm leading it"; leading means watching.
+- **Your kickoff message carries the MISSION DELTA only.** Members natively carry the
+  member operating loop (§ *Working as a fleet MEMBER* above) — the plan binding, the
+  begin-now rule, and the engine's per-wake loop contract are already delivered at
+  launch. Send only what they CAN'T know: constraints, execution order / DAG edges,
+  held/hot zones, and the named gate events you will emit. NAME an event key for every
+  gate you announce — one `events:emit` from you beats N members slow-polling it — and
+  when a member tells you the key they're awaiting, emit it on the flip; `facts:assert`
+  the gate key scoped to the plan so members discover it in their orient (a fact
+  outlives your message). Re-teaching tool usage in a kickoff is noise that buries the
+  delta.
 - **Spawning a fleet/agent? ANNOUNCE the account + model + carry you're using and offer the
   alternatives — even under AUTO (it's a disclosure, not a question).** Three launch knobs carry a
   default the owner rarely states, so name the default AND the alternatives in one breath every

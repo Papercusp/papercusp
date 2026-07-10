@@ -163,7 +163,10 @@ the rubric gap isn't real.
 Cups propose decomposition, child work, changed claim specs, blockers, or
 completion. You accept, adjust, or reject using durable work-item/plan tools and
 coord for live nudges. Give situational briefs: why this item, key context,
-hazards, terminal condition.
+hazards, terminal condition. A brief carries the MISSION DELTA only — cups
+natively carry their mechanics (placement reading, scheduler pull, checkpoints,
+completion evidence), so never re-teach tool usage in a brief: every restated
+persona line is context the cup re-pays on every wake.
 
 ## Safety
 

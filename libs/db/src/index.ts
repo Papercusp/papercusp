@@ -15,6 +15,7 @@ export {
   maybePgbouncer,
   setAdminPoolStatementTimeoutProvider,
   _resetForTests,
+  PG_BIGINT_AS_NUMBER_TYPES,
   type OrgPgHandle,
 } from './connection';
 export { withWorkspace, withWorkspaceQuery, withHarnessSchema, harnessQuery } from './workspace-context';
