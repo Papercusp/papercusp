@@ -1832,8 +1832,10 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	display: text(),
 	launchArgv: jsonb("launch_argv"),
 	launchedAt: timestamp("launched_at", { withTimezone: true, mode: 'string' }),
+	archivedAt: timestamp("archived_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("adv_sessions_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
+	index("adv_sessions_ended_unarchived_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((ended_at IS NOT NULL) AND (archived_at IS NULL))`),
 	index("adv_sessions_pending_workbench_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("text_ops")).where(sql`((display = 'workbench'::text) AND (launched_at IS NULL) AND (ended_at IS NULL))`),
 	index("adv_sessions_plan_idx").using("btree", table.planSlug.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("text_ops")).where(sql`(plan_slug IS NOT NULL)`),
 	index("adv_sessions_session_id_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")),
@@ -2868,6 +2870,36 @@ export const modelPricingInHarnessShared = harnessShared.table("model_pricing", 
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.modelId], name: "model_pricing_pkey"}),
+]);
+
+export const predicateWatchesInHarnessShared = harnessShared.table("predicate_watches", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	ownerId: text("owner_id").notNull(),
+	role: text().default('su').notNull(),
+	harnessSlug: text("harness_slug"),
+	eventKey: text("event_key").notNull(),
+	tool: text().notNull(),
+	args: jsonb().default({}).notNull(),
+	path: text().notNull(),
+	op: text().notNull(),
+	value: jsonb(),
+	intervalSec: integer("interval_sec").default(60).notNull(),
+	once: boolean().default(true).notNull(),
+	lastEval: boolean("last_eval"),
+	lastValue: jsonb("last_value"),
+	lastPolledAt: timestamp("last_polled_at", { withTimezone: true, mode: 'string' }),
+	lastError: text("last_error"),
+	consecutiveErrors: integer("consecutive_errors").default(0).notNull(),
+	active: boolean().default(true).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("predicate_watches_due").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.lastPolledAt.asc().nullsLast().op("text_ops")).where(sql`active`),
+	index("predicate_watches_event_key").using("btree", table.eventKey.asc().nullsLast().op("text_ops")).where(sql`active`),
+	check("predicate_watches_op_check", sql`op = ANY (ARRAY['eq'::text, 'ne'::text, 'gt'::text, 'gte'::text, 'lt'::text, 'lte'::text, 'exists'::text, 'contains'::text])`),
+	check("predicate_watches_interval_sec_check", sql`interval_sec >= 5`),
+	primaryKey({ columns: [table.id], name: "predicate_watches_pkey"}),
+
 ]);
 
 export const benchRunEventsInHarnessShared = harnessShared.table("bench_run_events", {
@@ -5045,6 +5077,24 @@ export const agentFleetsInHarnessShared = harnessShared.table("agent_fleets", {
 	pgPolicy("agent_fleets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const sessionArchiveFilesInHarnessShared = harnessShared.table("session_archive_files", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	sourceKind: text("source_kind").notNull(),
+	sessionId: text("session_id").notNull(),
+	relpath: text().notNull(),
+	codec: text().default('zstd').notNull(),
+	blob: byteaCustom("blob").notNull(),
+	sha256: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	bytesRaw: bigint("bytes_raw", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	bytesStored: bigint("bytes_stored", { mode: "number" }).notNull(),
+	mtime: timestamp({ withTimezone: true }),
+	archivedAt: timestamp("archived_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.sourceKind, table.sessionId, table.relpath], name: "session_archive_files_pkey"}),
+]);
+
 export const resourceAllotmentsInHarnessShared = harnessShared.table("resource_allotments", {
 	workspaceId: text("workspace_id").notNull(),
 	fleetSlug: text("fleet_slug").notNull(),
@@ -5524,6 +5574,30 @@ export const experimentRunsInHarnessShared = harnessShared.table("experiment_run
 	check("experiment_runs_tier_check", sql`tier = ANY (ARRAY['offline'::text, 'shadow'::text, 'live'::text])`),
 	check("experiment_runs_decision_check", sql`decision = ANY (ARRAY['proposed'::text, 'applied'::text, 'rejected'::text])`),
 	check("experiment_runs_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
+]);
+
+export const sessionArchivesInHarnessShared = harnessShared.table("session_archives", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	sourceKind: text("source_kind").notNull(),
+	sessionId: text("session_id").notNull(),
+	owner: text(),
+	harnessSlug: text("harness_slug"),
+	cwd: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	advSessionId: bigint("adv_session_id", { mode: "number" }),
+	sessionRoot: text("session_root").notNull(),
+	fileCount: integer("file_count").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	bytesRaw: bigint("bytes_raw", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	bytesStored: bigint("bytes_stored", { mode: "number" }).notNull(),
+	manifest: jsonb().notNull(),
+	archivedBy: text("archived_by"),
+	archivedAt: timestamp("archived_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("session_archives_adv_idx").using("btree", table.advSessionId.asc().nullsLast().op("int8_ops")).where(sql`(adv_session_id IS NOT NULL)`),
+	index("session_archives_owner_idx").using("btree", table.owner.asc().nullsLast().op("timestamptz_ops"), table.archivedAt.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.sourceKind, table.sessionId], name: "session_archives_pkey"}),
 ]);
 
 export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", {
