@@ -347,10 +347,9 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
     inference gateway skipped entirely)** and say so: *"Spawning on the default system account —
     say the word if you'd rather I use the gateway's auto-routing across the pool, or pin the
     fleet to a specific account."* The `account` value (psu `--account`; the `account` arg on
-    `fleet:spawn` / `fleet:launch-on-plan`) takes one of three: a **pool id** → pin via the
+    `cup:spawn` / `fleet:launch-on-plan`) takes one of three: a **pool id** → pin via the
     gateway (hard, no failover); **`auto`** → the gateway auto-routes the pool + fails over;
-    **`default`** (or omitted) → the system credential, gateway skipped (**the default**). (The
-    `account` arg spelling is the same on `cup:spawn` as on `fleet:launch-on-plan`.)
+    **`default`** (or omitted) → the system credential, gateway skipped (**the default**).
     **Do NOT substitute your own capacity read for this default.** A tight/near-walled pool is
     NOT a reason to preemptively pick `auto` "to get failover" — that is the owner's call, not
     yours. The default stays the **system account** even when a preflight looks scarce; switching
@@ -363,6 +362,12 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   - **Model** — name what you're spawning with: *"using model `<the default>` — let me know if
     you want a different one."* Override with the `model` (`<modelId>[:<effort>]` spec) or
     `tier` (the named menu) arg.
+  - **Carry** — name the auto-mode carry the fleet will run: *"warm carry (default) — each agent
+    resumes its live context on every wake; say `cold` if you'd rather each wake start from a
+    fresh context rebuilt from the agent's last checkpoint."* Set via the `carry` arg on
+    `fleet:launch-on-plan` (`warm` | `cold`, default `warm`); it is INDEPENDENT of
+    visible-vs-headless. Warm stays the default — like account routing, do NOT self-switch to
+    `cold` on your own cost/capacity read; cold is the owner's explicit call.
   The announcement is required even under AUTO — where everything else becomes act-don't-ask —
   because it costs the owner nothing and a wrong account/model is expensive to discover late.
 
