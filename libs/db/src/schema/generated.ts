@@ -1748,36 +1748,6 @@ export const operatorVoiceChannelsInHarnessShared = harnessShared.table("operato
 
 ]);
 
-export const eventAwaitsInHarnessShared = harnessShared.table("event_awaits", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.event_awaits_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	workspaceId: text("workspace_id").default('default').notNull(),
-	subscriberId: text("subscriber_id").notNull(),
-	eventKey: text("event_key").notNull(),
-	policy: text().default('wake').notNull(),
-	note: text(),
-	wakeHandle: jsonb("wake_handle"),
-	timeoutBehavior: text("timeout_behavior").default('expire').notNull(),
-	expiresTs: timestamp("expires_ts", { withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	firedAt: timestamp("fired_at", { withTimezone: true, mode: 'string' }),
-	firedReason: text("fired_reason"),
-	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
-	once: boolean().default(true).notNull(),
-	minSleepSec: integer("min_sleep_sec"),
-	urgency: boolean().default(false).notNull(),
-	payloadFilter: jsonb("payload_filter"),
-}, (table) => [
-	uniqueIndex("event_awaits_inbox_wake_one_per_agent").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((policy = 'wake'::text) AND (once = false) AND (cancelled_at IS NULL) AND (event_key ~~ 'coord:inbox-wake:%'::text))`),
-	index("event_awaits_pattern_active").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`((event_key ~~ '%*%'::text) AND (fired_at IS NULL) AND (cancelled_at IS NULL))`),
-	index("idx_event_awaits_active_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((fired_at IS NULL) AND (cancelled_at IS NULL))`),
-	index("idx_event_awaits_expiry").using("btree", table.expiresTs.asc().nullsLast().op("timestamptz_ops")).where(sql`((fired_at IS NULL) AND (cancelled_at IS NULL) AND (expires_ts IS NOT NULL))`),
-	index("idx_event_awaits_subscriber").using("btree", table.subscriberId.asc().nullsLast().op("text_ops")).where(sql`((fired_at IS NULL) AND (cancelled_at IS NULL))`),
-	pgPolicy("event_awaits_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("event_awaits_policy_check", sql`policy = ANY (ARRAY['wake'::text, 'notify'::text])`),
-	check("event_awaits_timeout_behavior_check", sql`timeout_behavior = ANY (ARRAY['expire'::text, 'wake'::text])`),
-]);
-
 export const pipelineEventsInHarnessShared = harnessShared.table("pipeline_events", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -3087,6 +3057,39 @@ export const operatorQuotaOverridesInHarnessShared = harnessShared.table("operat
 	pgPolicy("operator_quota_overrides_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_quota_overrides_pkey"}),
 
+]);
+
+export const eventAwaitsInHarnessShared = harnessShared.table("event_awaits", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.event_awaits_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	subscriberId: text("subscriber_id").notNull(),
+	eventKey: text("event_key").notNull(),
+	policy: text().default('wake').notNull(),
+	note: text(),
+	wakeHandle: jsonb("wake_handle"),
+	timeoutBehavior: text("timeout_behavior").default('expire').notNull(),
+	expiresTs: timestamp("expires_ts", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	firedAt: timestamp("fired_at", { withTimezone: true, mode: 'string' }),
+	firedReason: text("fired_reason"),
+	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
+	once: boolean().default(true).notNull(),
+	minSleepSec: integer("min_sleep_sec"),
+	urgency: boolean().default(false).notNull(),
+	payloadFilter: jsonb("payload_filter"),
+	scopeKind: text("scope_kind"),
+	scopeRef: text("scope_ref"),
+}, (table) => [
+	index("event_awaits_announce_active").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((policy = 'announce'::text) AND (cancelled_at IS NULL))`),
+	uniqueIndex("event_awaits_inbox_wake_one_per_agent").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((policy = 'wake'::text) AND (once = false) AND (cancelled_at IS NULL) AND (event_key ~~ 'coord:inbox-wake:%'::text))`),
+	index("event_awaits_pattern_active").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`((event_key ~~ '%*%'::text) AND (fired_at IS NULL) AND (cancelled_at IS NULL))`),
+	index("idx_event_awaits_active_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((fired_at IS NULL) AND (cancelled_at IS NULL))`),
+	index("idx_event_awaits_expiry").using("btree", table.expiresTs.asc().nullsLast().op("timestamptz_ops")).where(sql`((fired_at IS NULL) AND (cancelled_at IS NULL) AND (expires_ts IS NOT NULL))`),
+	index("idx_event_awaits_subscriber").using("btree", table.subscriberId.asc().nullsLast().op("text_ops")).where(sql`((fired_at IS NULL) AND (cancelled_at IS NULL))`),
+	pgPolicy("event_awaits_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("event_awaits_policy_check", sql`policy = ANY (ARRAY['wake'::text, 'notify'::text])`),
+	check("event_awaits_timeout_behavior_check", sql`timeout_behavior = ANY (ARRAY['expire'::text, 'wake'::text])`),
 ]);
 
 export const fleetMembershipEventsInHarnessShared = harnessShared.table("fleet_membership_events", {
@@ -6903,6 +6906,8 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	terminalCompletionRef: text("terminal_completion_ref"),
 	lastReleasedBy: text("last_released_by"),
 	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
+	embedding: vector({ dimensions: 384 }),
+	embeddingMode: text("embedding_mode"),
 }, (table) => [
 	index("harness_features_consolidated_claimed_progress_idx").using("btree", table.harnessSlug.asc().nullsLast().op("timestamptz_ops"), table.lastProgressAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((taken_by IS NOT NULL) AND (taken_by <> ''::text))`),
 	index("hfc_assignee_rank_idx").using("btree", table.workspaceId.asc().nullsLast().op("int4_ops"), table.takenBy.asc().nullsLast().op("text_ops"), table.assigneeRank.asc().nullsLast().op("int4_ops")).where(sql`((taken_by IS NOT NULL) AND (assignee_rank IS NOT NULL))`),
@@ -6927,6 +6932,8 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	index("hfc_verifier_pending_idx").using("btree", table.harnessSlug.asc().nullsLast().op("timestamptz_ops"), table.verifierLastCheckedAt.asc().nullsFirst().op("text_ops")).where(sql`((completion_ref IS NOT NULL) AND (verified_done_at_remote_ts IS NULL))`),
 	index("hfc_working_users_active_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(array_length(working_users, 1) IS NOT NULL)`),
 	index("hfc_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
+	index("work_items_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
+	index("work_items_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
 	primaryKey({ columns: [table.harnessSlug, table.featureId], name: "work_items_pkey"}),
 	pgPolicy("work_items_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("hfc_design_status_chk", sql`(design_status IS NULL) OR (design_status = ANY (ARRAY['pending'::text, 'accepted'::text, 'ignored'::text]))`),
@@ -7175,7 +7182,9 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("ha
 	terminalCompletionRef: text("terminal_completion_ref"),
 	lastReleasedBy: text("last_released_by"),
 	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
-}).with({"checkOption":"cascaded"}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+	embedding: vector({ dimensions: 384 }),
+	embeddingMode: text("embedding_mode"),
+}).with({"checkOption":"cascaded"}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
 
 export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues", {	workspaceId: text("workspace_id"),
 	issueId: text("issue_id"),

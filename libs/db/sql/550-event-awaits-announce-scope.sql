@@ -1,4 +1,4 @@
--- 548-event-awaits-announce-scope.sql
+-- 550-event-awaits-announce-scope.sql
 -- Announced gate events (fleet-member-native-guidance-2026-07-10 P-010, EI-9270).
 --
 -- An ANNOUNCEMENT is an emitter-side declaration — "this gate event WILL fire;

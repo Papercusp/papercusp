@@ -21,6 +21,7 @@
 import type { Sql } from 'postgres';
 import { getOrgPg, getOrgPgApp, getHarnessPg, pgbouncerEnabled } from './connection';
 import { slugToSchemaName } from './schema';
+import { retryBeforeCallbackStarts } from './connect-retry';
 
 export interface WorkspaceTxOptions {
   /**
@@ -55,40 +56,49 @@ export async function withWorkspace<T>(
   // Admin-bypass path: harness_admin role, RLS bypassed (intentional for
   // migrations and cross-workspace tooling).
   const { sql } = opts.bypassRlsForAdmin ? getOrgPg() : getOrgPgApp();
-  // postgres-js's `sql.begin` callback receives a TransactionSql which
-  // is a subset of Sql; the cast is safe for the operations we perform
-  // (templated queries + .unsafe).
-  return (sql.begin(async (tx) => {
-    const txSql = tx as unknown as Sql;
-    // postgres-js's TransactionSql is a SUBSET of Sql — it omits
-    // `.options` (the parsers/serializers config). drizzle-orm's
-    // `drizzle(client)` reads `client.options.parsers` in its
-    // constructor, so any `drizzle(tx)` inside a withWorkspace callback
-    // throws "Cannot read properties of undefined (reading 'parsers')"
-    // (2026-05-22 P5 follow-up — broke harness:list and every other
-    // agent-mcp read tool, plus the operator scan-lock). parsers /
-    // serializers are connection-scoped, so point the TransactionSql at
-    // the parent connection's options object — that satisfies
-    // `drizzle(tx)` and is a no-op for raw `tx\`...\`` queries (the
-    // parent's options were already drizzle-mutated by getOrgPgApp()).
-    const txOpts = txSql as unknown as { options?: unknown };
-    txOpts.options ??= (sql as unknown as { options?: unknown }).options;
-    // C1-2 of backend-connection-scaling-2026-06-17: under PgBouncer transaction
-    // pooling the connect-time search_path is NOT preserved (server connections are
-    // shared across clients), so set it per-transaction — mirrors getOrgPg/getOrgPgApp's
-    // connect-time value. Gated on pgbouncerEnabled() (the SAME predicate as
-    // maybePgbouncer) so the direct-connection default (which already carries the
-    // connect-time search_path) is byte-for-byte unchanged, and the pooled path
-    // always re-applies the search_path in lockstep with the URL rerouting. This
-    // makes the HOT path (every agent tool call) pooler-correct.
-    if (pgbouncerEnabled()) {
-      await txSql`SELECT set_config('search_path', 'harness_shared, papercusp_shared, public', true)`;
-    }
-    if (!opts.bypassRlsForAdmin) {
-      await txSql`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
-    }
-    return await fn(txSql);
-  }) as unknown) as Promise<T>;
+  // EI-9279: retry a CONNECTION_CLOSED/CONNECT_TIMEOUT hitting a stale pooled
+  // connection — but ONLY while `markStarted()` proves the caller's own `fn`
+  // hasn't run any query yet (see connect-retry.ts header for why this is
+  // provably safe: BEGIN + the SET_CONFIG statements below are side-effect-free,
+  // and postgres-js's sql.begin() awaits BEGIN's round trip before invoking the
+  // callback at all).
+  return retryBeforeCallbackStarts((markStarted) =>
+    // postgres-js's `sql.begin` callback receives a TransactionSql which
+    // is a subset of Sql; the cast is safe for the operations we perform
+    // (templated queries + .unsafe).
+    (sql.begin(async (tx) => {
+      const txSql = tx as unknown as Sql;
+      // postgres-js's TransactionSql is a SUBSET of Sql — it omits
+      // `.options` (the parsers/serializers config). drizzle-orm's
+      // `drizzle(client)` reads `client.options.parsers` in its
+      // constructor, so any `drizzle(tx)` inside a withWorkspace callback
+      // throws "Cannot read properties of undefined (reading 'parsers')"
+      // (2026-05-22 P5 follow-up — broke harness:list and every other
+      // agent-mcp read tool, plus the operator scan-lock). parsers /
+      // serializers are connection-scoped, so point the TransactionSql at
+      // the parent connection's options object — that satisfies
+      // `drizzle(tx)` and is a no-op for raw `tx\`...\`` queries (the
+      // parent's options were already drizzle-mutated by getOrgPgApp()).
+      const txOpts = txSql as unknown as { options?: unknown };
+      txOpts.options ??= (sql as unknown as { options?: unknown }).options;
+      // C1-2 of backend-connection-scaling-2026-06-17: under PgBouncer transaction
+      // pooling the connect-time search_path is NOT preserved (server connections are
+      // shared across clients), so set it per-transaction — mirrors getOrgPg/getOrgPgApp's
+      // connect-time value. Gated on pgbouncerEnabled() (the SAME predicate as
+      // maybePgbouncer) so the direct-connection default (which already carries the
+      // connect-time search_path) is byte-for-byte unchanged, and the pooled path
+      // always re-applies the search_path in lockstep with the URL rerouting. This
+      // makes the HOT path (every agent tool call) pooler-correct.
+      if (pgbouncerEnabled()) {
+        await txSql`SELECT set_config('search_path', 'harness_shared, papercusp_shared, public', true)`;
+      }
+      if (!opts.bypassRlsForAdmin) {
+        await txSql`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      }
+      markStarted();
+      return await fn(txSql);
+    }) as unknown) as Promise<T>
+  );
 }
 
 /**
@@ -120,14 +130,18 @@ export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promis
     .map((s) => `"${s.replace(/"/g, '""')}"`)
     .join(', ');
   const { sql } = getOrgPgApp();
-  return (sql.begin(async (tx) => {
-    const txSql = tx as unknown as Sql;
-    // Mirror withWorkspace's options-pointer fix so drizzle(tx) (if ever used) works.
-    const txOpts = txSql as unknown as { options?: unknown };
-    txOpts.options ??= (sql as unknown as { options?: unknown }).options;
-    await txSql`SELECT set_config('search_path', ${searchPath}, true)`;
-    return await fn(txSql);
-  }) as unknown) as Promise<T>;
+  // EI-9279: same provably-safe retry as withWorkspace above — see connect-retry.ts.
+  return retryBeforeCallbackStarts((markStarted) =>
+    (sql.begin(async (tx) => {
+      const txSql = tx as unknown as Sql;
+      // Mirror withWorkspace's options-pointer fix so drizzle(tx) (if ever used) works.
+      const txOpts = txSql as unknown as { options?: unknown };
+      txOpts.options ??= (sql as unknown as { options?: unknown }).options;
+      await txSql`SELECT set_config('search_path', ${searchPath}, true)`;
+      markStarted();
+      return await fn(txSql);
+    }) as unknown) as Promise<T>
+  );
 }
 
 /**
