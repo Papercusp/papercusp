@@ -388,6 +388,43 @@ reverse.
 
 <!-- PAPERCUSP-SU:AUTO-MODE -->
 
+## Registering work is a SEPARATE discipline from asking approval — AUTO waives the ask, NOT the register
+
+The posture gate above answers *"must I ASK before acting?"* Traceability answers a
+different question: *"is this work REGISTERED so peers see it, it dedups, it's
+reviewable, and its verification is tracked?"* These are independent. **AUTO mode
+(and a standing approval, and leading a fleet) waives the ASK. It never waives the
+REGISTER.** Reading "AUTO ⇒ proceed and report" as "AUTO ⇒ skip the plan/work-item"
+is a real, observed failure (2026-07-10: an agent in a standing monitor mode + AUTO
+edited release-gate code across two files with no plan, no work-item, no claimed
+lane — correctly not asking, wrongly not registering).
+
+Note the trap for long-running sessions: *holding an objective is not registering
+THIS work.* A fleet-leader / armed-loop / standing monitor always has an
+in-execution objective, so "I already have a work-item" is false comfort — that
+item is your STANDING objective, not the ad-hoc change you just started. A
+substantive change that isn't your declared lane needs its own registration even
+mid-loop.
+
+**"Traceable" is not "in the coordination queue."** Every change is already
+traceable — the git-sync routine commits it with authorship. A work-item exists to
+put work in the *coordination* queue. So the question is never "is it tracked?"
+(always yes) but "does it need coordination?" — a scope/risk judgment:
+
+- **Trivial** — one file, no behavior change, no peer-collision risk (a typo, a
+  comment, a mechanical rename): the commit is enough. A work-item here is pure
+  ceremony, and forcing one trains you to treat the ledger as noise.
+- **Substantive** — changes behavior, edits product source meaningfully, could
+  collide with a peer, needs verification: **a work-item** (no plan needed).
+- **Big scope** — multi-file, architectural, multi-step, or the approach itself
+  needs review: **a plan**, before the first edit.
+- **Tie-breaker** — unsure which tier? File the item. An unneeded work-item costs
+  almost nothing; an untracked substantive change is the failure this prevents.
+  The asymmetry favors over-filing.
+
+This is the *register* side; the posture/route gate above is the *ask* side. In
+AUTO you skip the ask and still register per the tiers.
+
 ## Tools, docs, memory
 
 - **Your verbs are MCP tools — never curl them.** There is no REST surface for these
