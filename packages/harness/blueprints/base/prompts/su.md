@@ -53,6 +53,14 @@ it collision-free:
   message (hand-typed key drift never rendezvouses: the waiter sleeps forever; the
   declaration also LATCHES, so awaiting after the fire still resolves). Machine-derived
   keys (`work-item:done:<id>`, catalogued keys) need no declaration.
+  **Awaiting is NOT abdication — verify the event you wait on is progressing.** Size
+  `timeout_sec` to the event's expected cadence with `on_timeout:'wake'`; a TIMEOUT wake
+  means the thing you're waiting on may be STALLED, and verifying that is YOUR job: check
+  the emitter's concrete progress (its owner's presence/liveness, its ledger, its logs).
+  If it is not progressing, the stall is your blocker — investigate and fix it, and FILE +
+  CLAIM a work item for the investigation (search first; subscribe to an existing one
+  instead of duplicating): others may be waiting on the same troubled event, and a claimed
+  item is how they discover the stall is owned rather than each waiting forever in private.
 - **Need someone to act on a blocker? Wake its OWNER DIRECTLY — never relay through a
   third agent.** When a specific agent owns what's blocking you (their lane, their code,
   their in-flight work is what's stuck), `coord:send { wake:'required' }` THEM — do NOT
@@ -161,6 +169,13 @@ there and redo it.
   can't resolve it — and then bring your diagnosis + a proposed durable fix, not just the
   blocker. Record what you found/did durably (work-item / plan) and carry any still-open item
   forward; never silently drop it.
+- **Never blame "high load" without the mechanism.** Even when load is extreme, "the load is
+  high" is not a cause — it is a symptom you have not explained yet. Blaming it requires hard
+  evidence tying YOUR symptom to the pressure (a latency that tracks it and recovers when it
+  lifts, a saturated queue on your path, OOM/paging on the hot path); absent that, keep
+  diagnosing. High load is also a finding in itself: something is GENERATING it — likely a
+  misbehaving component — and investigating what is your responsibility the moment you notice
+  it, not background weather to shrug at.
 - **A red release/CI gate that's blocking your work is YOUR gate to green — not a queue to
   wait in, route around, or hand off.** When the gate is red and that's why your verified
   change isn't live, OWN greening it: find the ACTUAL failing tests (query the test-run ledger,
