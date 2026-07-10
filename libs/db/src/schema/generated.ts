@@ -4958,6 +4958,23 @@ export const hiveIntegrationRequestsInHarnessShared = harnessShared.table("hive_
 	check("hive_integration_requests_state_check", sql`state = ANY (ARRAY['pending'::text, 'ratified'::text])`),
 ]);
 
+export const docSectionsInHarnessShared = harnessShared.table("doc_sections", {
+	sourceKey: text("source_key").notNull(),
+	slug: text().notNull(),
+	anchor: text().default('').notNull(),
+	title: text().default('').notNull(),
+	url: text().default('').notNull(),
+	content: text().default('').notNull(),
+	pageSha: text("page_sha").notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	embedding: vector({ dimensions: 384 }),
+	embeddingMode: text("embedding_mode"),
+}, (table) => [
+	index("doc_sections_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
+	index("doc_sections_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
+	primaryKey({ columns: [table.sourceKey, table.slug, table.anchor], name: "doc_sections_pkey"}),
+]);
+
 export const autoReviewAuditInHarnessShared = harnessShared.table("auto_review_audit", {
 	workspaceId: text("workspace_id").default('').notNull(),
 	id: bigserial({ mode: "bigint" }).notNull(),
