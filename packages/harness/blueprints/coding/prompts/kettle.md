@@ -248,13 +248,13 @@ incomplete even if that read is unavailable):
    cup → code → git-sync?
 2. `ideation-quality` — are Blender's ideas grounded / systemic / evidence-backed, with
    thematic diversity (not all converging on one theme)?
-3. `mug-workitem-selection` — is the Mug picking the right work-items (holding
+3. `queen-workitem-selection` — is the Mug picking the right work-items (holding
    undecided / needs-design, leaving cursed alone, not placing a vacuous frontier)?
-4. `mug-plan-selection` — is the Mug picking + starting the right plans?
+4. `queen-plan-selection` — is the Mug picking + starting the right plans?
 5. `parallel-distribution` — is parallel work launched in groups with TIGHTLY-scoped
    topic auto-subscribe (own item + plan only), not chatter?
-6. `cup-execution` — are cups booting clean and completing their work correctly?
-7. `cup-observation-quality` — are cups emitting good turn-end observations?
+6. `bee-execution` — are cups booting clean and completing their work correctly?
+7. `bee-observation-quality` — are cups emitting good turn-end observations?
 8. `overwatch-observation-quality` — are YOUR own observations specific, attributable,
    and self-aware? (rate yourself honestly — you are not exempt)
 9. `watchdog-determinism` — does the watchdog fire deterministically + correctly, and do
@@ -305,11 +305,11 @@ investigation — read the ratings off your brief.
         ratings: {
           'end-to-end-flow':      { rating: 'healthy',  evidence: 'canary cup completed WI-214 03:43; git-sync advancing' },
           'ideation-quality':     { rating: 'unknown',  evidence: 'Blender cycle ran; quality needs a live turn' },
-          'mug-workitem-selection': { rating: 'healthy', evidence: 'Mug placed 3 items; no stuck frontier' },
-          'mug-plan-selection': { rating: 'unknown',  evidence: 'no plan transitions this wake — not assessable' },
+          'queen-workitem-selection': { rating: 'healthy', evidence: 'Mug placed 3 items; no stuck frontier' },
+          'queen-plan-selection': { rating: 'unknown',  evidence: 'no plan transitions this wake — not assessable' },
           'parallel-distribution': { rating: 'unknown', evidence: 'no parallel work launched this wake — not assessable' },
-          'cup-execution':        { rating: 'unknown',  evidence: 'cups idle this wake — not assessable' },
-          'cup-observation-quality': { rating: 'unknown', evidence: 'no active cups this wake — not assessable' },
+          'bee-execution':        { rating: 'unknown',  evidence: 'cups idle this wake — not assessable' },
+          'bee-observation-quality': { rating: 'unknown', evidence: 'no active cups this wake — not assessable' },
           'overwatch-observation-quality': { rating: 'degraded', evidence: 'this scorecard is the complete turn output; no additional system-level observations surfaced' },
           'watchdog-determinism': { rating: 'degraded', evidence: '~100 no-wake-armed fires in the reboot window; one alarm echoed a drift live completions had already cleared' },
           'coordination-comms':   { rating: 'unknown',  evidence: 'no active comms this wake — not assessable' },
@@ -404,11 +404,11 @@ improvements:capture {
     ratings: {
       'end-to-end-flow':      { rating: 'healthy|degraded|broken|unknown', evidence: '...' },
       'ideation-quality':     { rating: '...', evidence: '...' },
-      'mug-workitem-selection': { rating: '...', evidence: '...' },
-      'mug-plan-selection': { rating: '...', evidence: '...' },
+      'queen-workitem-selection': { rating: '...', evidence: '...' },
+      'queen-plan-selection': { rating: '...', evidence: '...' },
       'parallel-distribution': { rating: '...', evidence: '...' },
-      'cup-execution':        { rating: '...', evidence: '...' },
-      'cup-observation-quality': { rating: '...', evidence: '...' },
+      'bee-execution':        { rating: '...', evidence: '...' },
+      'bee-observation-quality': { rating: '...', evidence: '...' },
       'overwatch-observation-quality': { rating: '...', evidence: '...' },
       'watchdog-determinism': { rating: '...', evidence: '...' },
       'coordination-comms':   { rating: '...', evidence: '...' },

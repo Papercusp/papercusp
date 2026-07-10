@@ -23,10 +23,29 @@
 -- and the live row currently holds methodRef='hive-coordination-health' (no
 -- '-runbook' suffix, despite the rubric.json/seed-SQL fixture spelling).
 --
+-- Race note (hit live on 2026-07-10 while authoring this): the same change
+-- also renames rubrics/hive-coordination-health/ -> rubrics/pot-coordination-health/
+-- on disk, and the first-party-rubric-bundle cold-start seeder
+-- (local-first-party-rubric-bundling-2026-07-07, cupboard/rubric-store.ts) is
+-- no-clobber PER-ID — it happily seeds a BLANK new 'pot-coordination-health'
+-- row (owner='first-party-bundle') the moment it sees that dir on disk with
+-- no DB row under that id yet, racing ahead of this migration on whichever
+-- boot applies migrations. That blank seed must NOT survive: it has no real
+-- ratification lineage. So this migration explicitly clears a first-party-bundle
+-- placeholder under the NEW id before renaming the real historical row into
+-- its place — idempotent and safe whichever order the two processes land in.
+--
 -- Idempotent: safe to re-run (guarded by plan_slug existence).
 
 DO $$
 BEGIN
+  -- Clear a same-id placeholder the disk-scan seeder may have raced in ahead
+  -- of us (see race note above) — never touch a real (non-seed-placeholder)
+  -- row that happens to already hold the new id.
+  DELETE FROM harness_shared.harness_plans
+   WHERE plan_slug = 'pot-coordination-health'
+     AND owner = 'first-party-bundle';
+
   IF EXISTS (
     SELECT 1 FROM harness_shared.harness_plans
      WHERE plan_slug = 'hive-coordination-health'
