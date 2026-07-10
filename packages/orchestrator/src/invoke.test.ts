@@ -1178,8 +1178,12 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // deferred stranded misclaimed items when ToolSearch missed the flat MCP verb. The
   // guard now pins "no unreviewed creep past the deliberate 35". EI-8597 then added
   // loop:end/status because the already-seeded loop:arm lifecycle needs a directly
-  // callable inspect/stop path when native ToolSearch misses those verbs.
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 35, 'core stays small');
+  // callable inspect/stop path when native ToolSearch misses those verbs. Then +3 → 38
+  // (fleet-member-dx-improvements-2026-07-10 P-008, EI-9012/EI-9034): events:await/
+  // emit/catalog — every persona/leader flow says "don't poll, await the key", but the
+  // verbs weren't in the spine, so seeded sessions whose client search missed them
+  // falsely concluded the capability didn't exist and fell back to blind poll loops.
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 38, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)
@@ -1194,6 +1198,12 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   assert.ok(CORE_MCP_TOOL_NAMES.includes('work_items:release'), 'work_items:release belongs in the universal core (EI-8588 worker handoffs)');
   assert.ok(CORE_MCP_TOOL_NAMES.includes('loop:status'), 'loop:status belongs in the universal core (EI-8597 loop wind-down)');
   assert.ok(CORE_MCP_TOOL_NAMES.includes('loop:end'), 'loop:end belongs in the universal core (EI-8597 loop wind-down)');
+  // fleet-member-dx P-008 (EI-9012/EI-9034): the bench-wait verbs must be directly
+  // reachable — "don't poll, await the key" is a persona mandate, and a seeded session
+  // whose client-side search misses a deferred verb concludes it doesn't exist.
+  for (const required of ['events:await', 'events:emit', 'events:catalog']) {
+    assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core (fleet-member-dx P-008 bench-wait)`);
+  }
   // The fleet kits carry the batching surface too (P-001) — the 2026-07-03 audit's root
   // finding was code:run absent from the BEE/QUEEN kits while the inline nudge advised it.
   for (const kit of [BEE_MCP_TOOL_NAMES, QUEEN_MCP_TOOL_NAMES]) {

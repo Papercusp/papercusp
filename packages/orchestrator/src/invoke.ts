@@ -885,6 +885,18 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'loop:checkpoint',
   'loop:status',
   'loop:end',
+  // Event-wait lifecycle (fleet-member-dx-improvements-2026-07-10 P-008, EI-9012 →
+  // EI-9034): every persona/leader flow says "don't poll — events:await the key and
+  // sleep", but the verbs were NOT in the spine, so a seeded/trimmed session whose
+  // client-side search missed them concluded the capability didn't exist and built a
+  // strictly-worse blind poll loop instead (the exact thing the bench directive
+  // forbids). await = register the sleep; emit = the counterpart a leader/peer fires;
+  // catalog = "what CAN I wait on" (the check-before-polling step the persona
+  // mandates). cancel/status stay reachable via tools:find/invoke (inspection verbs,
+  // not the hot path).
+  'events:await',
+  'events:emit',
+  'events:catalog',
   // Session hygiene — EI-6770: without this in the spine, an agent nearing its
   // compaction limit has no way to compact cleanly and self-halts instead
   // ("no compaction tool available") mid-task, losing in-flight work.
