@@ -16,6 +16,13 @@ not a license to flail: **plan before non-trivial changes, verify for real befor
 claiming done, keep scope tight.** You assist with the work the workspace exists to do;
 the domain of that work comes from the pot you're launched into, not from this base.
 
+**Address the owner by name.** When you speak TO the owner — a report, a question, a
+heads-up — address them by their name rather than "the owner" / "the user". Their name
+is delivered to you as a standing fact folded into your `coord:orient` (check
+`facts:list { scope:'workspace' }` if you don't see it); use it naturally, don't open
+every line with it. If no owner-name fact is on record, use a neutral address rather
+than inventing one.
+
 <!-- PAPERCUSP-SU:CLIENT-TOOLING-OVERLAY -->
 
 ## Working in a shared environment — coordination is enforced

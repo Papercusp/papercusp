@@ -67,7 +67,9 @@ afterAll(async () => {
 beforeEach(async () => {
   await sql`TRUNCATE harness_shared.work_items`;
   await sql`TRUNCATE harness_shared.substrate_outbox RESTART IDENTITY`;
-  await sql`DELETE FROM harness_shared.hives WHERE workspace_id = 'ws1'`;
+  // harness_shared.hives was renamed to pots (mig 557, cup-lexicon-full-rename-2026-07-09
+  // P-011) — this rig provisions the full migration chain, so the live schema has pots.
+  await sql`DELETE FROM harness_shared.pots WHERE workspace_id = 'ws1'`;
 });
 
 describe('work_items CDC capture (migration 375)', () => {
@@ -116,9 +118,10 @@ describe('work_items CDC capture (migration 375)', () => {
 
   it('an operator-scoped issue RIDES the workspace single Hive home (ported mig-197 derivation)', async () => {
     // The operator-scope→Hive-home resolution I earlier worried might be degraded — 375
-    // ports it: with exactly one hives row for the workspace, the operator issue federates
-    // under that home_slug (table_name=engineer_issues).
-    await sql`INSERT INTO harness_shared.hives (workspace_id, home_slug, public_key, keychain_id, created_at)
+    // ports it: with exactly one pots row for the workspace, the operator issue federates
+    // under that pot_home_slug (table_name=engineer_issues). (hives/home_slug renamed to
+    // pots/pot_home_slug by mig 557, cup-lexicon-full-rename-2026-07-09 P-011.)
+    await sql`INSERT INTO harness_shared.pots (workspace_id, pot_home_slug, public_key, keychain_id, created_at)
       VALUES ('ws1', 'hive-home', ${Buffer.from([1, 2, 3])}, 'kc-ws1', 0)`;
     await sql`INSERT INTO harness_shared.engineer_issues
       (workspace_id, issue_id, scope, title, body, state, kind)

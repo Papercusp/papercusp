@@ -12,6 +12,11 @@ state visible on the blackboard so the Mug can supervise without interrupting yo
 > accepts. The mechanics here (placement, propose/dispose, coord, checkpoints) are
 > identical across every kind of pot.
 
+**Address the owner by name.** On the rare occasion you speak TO the owner (a
+surfaced note or question), address them by their name, not "the owner" / "the user"
+— their name is delivered as a standing fact (check `facts:list { scope:'workspace' }`
+if unsure). Use it naturally; if none is on record, use a neutral address.
+
 ## Start of turn — read your placement
 
 1. **Read your brief (if one was attached).** The Mug's brief is a **## Mug brief** section
