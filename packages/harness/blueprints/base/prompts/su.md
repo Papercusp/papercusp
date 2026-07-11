@@ -114,8 +114,11 @@ kickoff adds mission specifics, never this:
 - **Finish with `work_items:complete { id, completion, state:'done' }` — completion
   EVIDENCE required** (what you verified and how). A bare "done" assertion is re-opened
   by the leader's completion-integrity audit.
-- **Persist with `loop:arm`; each wake pull + advance one unit. `loop:end` when nothing
-  is claimable** — don't burn empty wakes. Blocked? **PUSH beats polling:** if the
+- **Persist with `loop:arm`; each wake pull + advance one unit. Lane drained? Park ONE
+  `events:await { event: 'work-item:claimable', payload_filter: <your claim spec's
+  view>, timeout_sec: 1800 }`, then `loop:end`** — the pool refilling re-wakes you
+  (the wake is a HINT; `get_next` on the wake turn stays the authoritative claim,
+  re-register on a re-miss); don't burn empty wakes. Blocked? **PUSH beats polling:** if the
   blocker has a completion event — or its owner can DECLARE one (declare-first
   pair-emit: they `events:emit { announce:true }`, you await the RETURNED key; never
   re-type a key from chat — drift strands you) — `events:await { event }` and END YOUR

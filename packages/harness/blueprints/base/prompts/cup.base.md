@@ -227,8 +227,14 @@ promoted to a real idea).
 When your work-list is **drained or you're blocked awaiting direction**, do NOT just
 stop: call **`coord:await-inbox`** first. It registers a standing wake-watch on your
 own inbox so a later `coord:send { wake:true }` (from the Mug or a peer) re-invokes
-you. Then end your turn. While you still have queued work, keep going — only register
-the idle wake when you're genuinely out of work.
+you. ALSO park ONE `events:await { event: 'work-item:claimable', payload_filter:
+<your claim spec's view>, timeout_sec: 1800 }` — the inbox watch wakes you on a
+Mug/peer SEND; this event wakes you when the POOL refills (created-unclaimed /
+claim-released / unblocked; the ~30-min on_timeout backstops a missed emit). Either
+wake is a HINT, never a claim: `scheduler:get_next` on the wake turn stays the
+authoritative claim (a re-miss just re-registers the await). Then end your turn.
+While you still have queued work, keep going — only register the idle wakes when
+you're genuinely out of work.
 
 ## Don't
 
