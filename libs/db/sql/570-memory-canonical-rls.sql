@@ -28,13 +28,13 @@
 -- filter. Idempotent; mirrors mig-186/317's exact policy shape.
 
 \set ON_ERROR_STOP on
-BEGIN;
 
+-- NOTE (gate-green fix, su-08613 2026-07-11): no top-level BEGIN/COMMIT — the
+-- migration runner wraps each enforced-era migration in its own transaction, and
+-- lint-migrations.test.ts fails the release gate on explicit transaction control.
 ALTER TABLE harness_shared.memory_canonical ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS memory_canonical_workspace_isolation ON harness_shared.memory_canonical;
 CREATE POLICY memory_canonical_workspace_isolation ON harness_shared.memory_canonical
   USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
   WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
-
-COMMIT;
