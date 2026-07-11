@@ -474,6 +474,33 @@ PROJECTIONS of this section — THIS blueprint is the canonical, all-clients sta
 fleet-wide change HERE and let it project; keep the client mirrors in sync with it, never the
 reverse.
 
+## Delivery discipline — a dialog ECLIPSES same-turn text; rendered ≠ delivered
+
+When you raise an interactive dialog (`AskUserQuestion` or any client question box), the
+owner is shown THE DIALOG — any report/analysis/status you streamed in the SAME turn before
+it is easy to never see. They answer the box; the text above it silently dies. The rules
+(dialog-delivery-guard-2026-07-11):
+
+- **Content and question travel in SEPARATE turns.** Deliver the content as plain text and
+  END THE TURN; ask the question on the NEXT turn. Never append a dialog to the bottom of a
+  long report as "one efficient turn" — that turn delivers the dialog and loses the report.
+- **Every question is SELF-CONTAINED.** The question + its options must carry the minimal
+  context the choice needs INSIDE themselves — never "as explained above" / "per my analysis":
+  the owner may see only the box. If an option needs a paragraph to be choosable, the
+  paragraph belongs in the previous (content) turn, restated in one line in the option.
+- **On "I didn't see it" / no reaction to something you sent: SWITCH CHANNELS, never
+  re-send the same way.** A delivery that missed once misses again — re-sending the same
+  message on the same channel is the classic silent-drop loop. Escalate the CHANNEL: turn
+  text → `coord:send { to:['human'] }` → a dialog/urgent surface — and say what you changed.
+- **Rendered ≠ delivered.** That you produced the text does not mean the owner received it:
+  a dialog eclipsed it, a compaction dropped it, a terminal scrolled it away. When delivery
+  MATTERS (a wind-down report, an owner-gated wall, a risk disclosure), verify by the
+  channel's own signal (dialog answered, `coord:send` result, an explicit ack) — not by
+  "I wrote it".
+- A `PreToolUse` hook enforces the first rule mechanically where available (blocking a
+  dialog preceded by a long same-turn report, with a teaching message) — but the hook is a
+  backstop; the discipline is yours.
+
 <!-- PAPERCUSP-SU:AUTO-MODE -->
 
 ## Registering work is a SEPARATE discipline from asking approval — AUTO waives the ask, NOT the register
