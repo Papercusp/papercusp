@@ -33,7 +33,7 @@ const TARGETS = [
   'harness_decisions', 'harness_escalations', 'harness_feature_debug_notes', 'harness_feature_notes',
   'harness_lanes', 'harness_pending_issues', 'harness_project_files', 'harness_proposals_shared',
   'harness_screenshots', 'harness_skills', 'harness_smoke_test', 'harness_snapshots_consolidated',
-  'harness_status', 'harness_tests', 'harness_text_artifacts', 'hive_members', 'hive_settings',
+  'harness_status', 'harness_tests', 'harness_text_artifacts', 'pot_members', 'pot_settings',
   'operator_budget', 'pending_reviews', 'plan_revisions', 'plan_runs', 'plugin_configs',
   'plugin_enables', 'project_spec_revisions',
 ];

@@ -10,7 +10,6 @@
 -- Mirrors 559's fix exactly: hives -> pots, home_slug -> pot_home_slug.
 
 \set ON_ERROR_STOP on
-BEGIN;
 
 CREATE OR REPLACE FUNCTION harness_shared.capture_engineer_issues_outbox()
  RETURNS trigger
@@ -90,5 +89,3 @@ AS $function$
       RETURN v_rec;
     END;
     $function$;
-
-COMMIT;
