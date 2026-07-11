@@ -161,12 +161,14 @@ test('buildPrompt — non-curator bee gets the friction trip-wire (self-learning
       runId: 'r1',
       extras: [],
     });
-    assert.match(out, /## Friction trip-wire \(self-learning loop\)/);
+    assert.match(out, /## Bug \+ friction trip-wire \(self-learning loop\)/);
     assert.match(out, /improvements:capture/);
+    // Filing a suspected bug is unconditional — the heart of the clause.
+    assert.match(out, /FILING IS NOT A JUDGMENT CALL/);
     // Trip-wire, not a per-turn reflection pass.
     assert.match(out, /don't reflect every turn/i);
     // The default (harness-free) base must NOT name harness-pipeline roles.
-    const idx = out.indexOf('## Friction trip-wire');
+    const idx = out.indexOf('## Bug + friction trip-wire');
     const section = out.slice(idx);
     assert.doesNotMatch(section.split('\n---')[0], /validator|reviewer/i);
   } finally {
@@ -191,7 +193,7 @@ test('buildPrompt — curator does NOT get the friction trip-wire (no work outpu
       runId: 'r1',
       extras: [],
     });
-    assert.doesNotMatch(out, /Friction trip-wire/);
+    assert.doesNotMatch(out, /friction trip-wire/i);
   } finally {
     fx.cleanup();
   }
@@ -579,11 +581,11 @@ test('buildPrompt — every role gets the observation-capture routing (P-017)', 
         extras: [],
       });
       assert.match(out, /## Capture what you notice — the moment you notice it/);
-      // The three routes + the evidence bar.
+      // The routes + the unconditional-filing rule (suspected-but-unproven is still filed).
       assert.match(out, /improvements:capture/);
       assert.match(out, /an issue\/work-item/);
       assert.match(out, /agent-insights doc/);
-      assert.match(out, /Evidence-bearing\s+signal only/);
+      assert.match(out, /a suspected-but-unproven bug is STILL filed/);
     } finally {
       fx.cleanup();
     }
