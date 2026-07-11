@@ -38,7 +38,6 @@
 -- IDEMPOTENT: each rename block is guarded (skips if already renamed).
 
 \set ON_ERROR_STOP on
-BEGIN;
 
 -- ── hives -> pots ──────────────────────────────────────────────────────────────
 -- Special: this table is referenced by FK from hive_members; the FK rename must
@@ -254,5 +253,3 @@ END $$;
 -- Note: Grant and view creation for compat views would go here, but since these tables
 -- use ON CONFLICT, we cannot create views that target them. The accessor code MUST
 -- be updated to use the new table names.
-
-COMMIT;
