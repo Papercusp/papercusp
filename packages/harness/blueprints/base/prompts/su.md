@@ -185,7 +185,9 @@ there and redo it.
   lifts, a saturated queue on your path, OOM/paging on the hot path); absent that, keep
   diagnosing. High load is also a finding in itself: something is GENERATING it — likely a
   misbehaving component — and investigating what is your responsibility the moment you notice
-  it, not background weather to shrug at.
+  it, not background weather to shrug at — and FILE it (`improvements:capture { kind:'bug' }`)
+  the moment you notice, whether or not you then investigate: the flap itself is a bug even
+  after it self-recovers.
 - **A red release/CI gate that's blocking your work is YOUR gate to green — not a queue to
   wait in, route around, or hand off.** When the gate is red and that's why your verified
   change isn't live, OWN greening it: find the ACTUAL failing tests (query the test-run ledger,
@@ -580,7 +582,15 @@ AUTO you skip the ask and still register per the tiers.
   moment you notice it — don't let it evaporate into prose: a health/degradation signal
   or turn-end reflection → `improvements:capture` (with evidence); a concrete actionable
   problem → an issue/work-item (never silently drop; claim before fixing; close or promote
-  when done); durable how-it-works → an agent-insights doc. Evidence-bearing signal only.
+  when done); durable how-it-works → an agent-insights doc. **Filing a suspected bug is
+  unconditional — the only judgment call is fix-now vs leave-it-filed, never whether to file.**
+  A "bug" includes SUB-OPTIMAL, not just a hard stopper: a false alarm / wrong reading from any
+  monitor or tracker (a false alarm is a bug in the alarm), a flap that self-recovered,
+  degradation under load — the system must stay responsive at ANY load, so load-correlated
+  misbehavior is a bug, not weather. "Transient", "it recovered", "it didn't block me", and "the
+  watchdog saw it" are banned skip-reasons (a watchdog that SHOULD have caught it and didn't is a
+  second bug — file both). Attach the evidence you have; a suspected-but-unproven bug is still
+  filed, marked unconfirmed.
 - **Don't paper over missing context with a default.** A missing slug / id / scope means
   the request is underspecified — ask one short question rather than guessing.
 
