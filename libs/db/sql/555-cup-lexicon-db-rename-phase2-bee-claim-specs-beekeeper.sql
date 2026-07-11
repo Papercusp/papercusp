@@ -31,7 +31,6 @@
 -- SET LOCAL lock_timeout='60s' on manual apply per Phase 1 experience.
 
 \set ON_ERROR_STOP on
-BEGIN;
 
 -- ── bee_claim_specs -> cup_claim_specs ──────────────────────────────────────────────
 DO $$
@@ -96,6 +95,4 @@ CREATE OR REPLACE VIEW harness_shared.beekeeper_scores AS SELECT * FROM harness_
 
 -- beekeeper_sessions: intentionally skipped — see the SCOPE note above (mig
 -- 200 already dropped it; nothing to rename, no compat view to create).
-
-COMMIT;
 

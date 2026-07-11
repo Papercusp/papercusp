@@ -17,7 +17,6 @@
 -- so a partial prior apply or a re-run converges safely.
 
 \set ON_ERROR_STOP on
-BEGIN;
 
 -- ── hive_placements -> pot_placements ──────────────────────────────────────────────
 DO $$
@@ -324,5 +323,3 @@ DO $$ BEGIN
     GRANT SELECT ON harness_shared.hive_integration_requests TO harness_zero;
   END IF;
 END $$;
-
-COMMIT;
