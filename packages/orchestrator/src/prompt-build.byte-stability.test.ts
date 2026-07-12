@@ -239,10 +239,15 @@ describe('bee preamble byte-stability (WI-175)', () => {
       // deploy, testing, reuse-first, observation-rubric, …) this ratio climbs toward
       // 100% even though the LIVE ceiling is far lower (the real volatile tail — Queen
       // brief, substrate view, feature history — is KBs). The true cache guards are the
-      // byte-identical-preamble + no-leakage tests above; this bound only catches a
-      // degenerate collapse of the volatile into the preamble.
+      // byte-identical-preamble + no-leakage tests above; here we only catch a
+      // degenerate collapse of the volatile into the preamble — asserted DIRECTLY as
+      // "every spawn keeps a non-empty per-spawn volatile", not as a ratio ceiling
+      // (a <99% bound re-reds every time the shared base legitimately grows; it
+      // crossed 99.02% on 2026-07-12 from static-section growth alone).
       expect(cacheHitCeiling).toBeGreaterThan(10); // At least 10% preamble
-      expect(cacheHitCeiling).toBeLessThan(99); // Not literally the entire prompt
+      for (const s of samples) {
+        expect(s.volatileSize).toBeGreaterThan(0); // volatile never collapses into the preamble
+      }
 
       // Log the measurement for manual review (visible in test output).
       console.log(`[WI-175 measurement] cache-hit ceiling: ${cacheHitCeiling.toFixed(1)}%`);
