@@ -1573,6 +1573,14 @@ export const ptyViewerHeartbeatsInHarnessShared = harnessShared.table("pty_viewe
 
 ]);
 
+export const memorySessionEpochsInHarnessShared = harnessShared.table("memory_session_epochs", {
+	sessionId: text("session_id").primaryKey().notNull(),
+	epoch: integer().default(0).notNull(),
+	bumpedAt: timestamp("bumped_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.sessionId], name: "memory_session_epochs_pkey"}),
+]);
+
 export const memoryVecOpenaiInHarnessShared = harnessShared.table("memory_vec_openai", {
 	memoryId: uuid("memory_id").primaryKey().notNull(),
 	vector: vector({ dimensions: 384 }).notNull(),
@@ -3262,7 +3270,6 @@ export const memoryRecallStatsInHarnessShared = harnessShared.table("memory_reca
 }, (table) => [
 	index("memory_recall_stats_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("memory_recall_stats_ws_pot_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	check("memory_recall_stats_surface_check", sql`surface = ANY (ARRAY['search'::text, 'injection'::text])`),
 	check("memory_recall_stats_hit_count_check", sql`hit_count >= 0`),
 ]);
 
@@ -4148,6 +4155,17 @@ export const harnessFeatureNotesInHarnessShared = harnessShared.table("harness_f
 	index("harness_feature_notes_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "harness_feature_notes_pkey"}),
 	pgPolicy("harness_feature_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const memorySessionSurfacedInHarnessShared = harnessShared.table("memory_session_surfaced", {
+	sessionId: text("session_id").notNull(),
+	epoch: integer().default(0).notNull(),
+	memoryId: uuid("memory_id").notNull(),
+	port: text().default('injection').notNull(),
+	surfacedAt: timestamp("surfaced_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("memory_session_surfaced_age_idx").using("btree", table.surfacedAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.sessionId, table.epoch, table.memoryId], name: "memory_session_surfaced_pkey"}),
 ]);
 
 export const hiddenPluginsInHarnessShared = harnessShared.table("hidden_plugins", {
