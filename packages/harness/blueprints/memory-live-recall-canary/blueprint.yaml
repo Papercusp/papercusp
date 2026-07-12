@@ -1,10 +1,10 @@
-# The `memory-recall-canary` blueprint — EI-10047.
+# The `memory-live-recall-canary` blueprint — EI-10047.
 #
 # The live memory recall canary as a SCHEDULED DETERMINISTIC blueprint,
 # mirroring memory-precision. One step fires a registered typed function
-# (`memory-recall:canary`) that replays frozen known-item queries against the
+# (`memory-live-recall:canary`) that replays frozen known-item queries against the
 # LIVE memory stack (read-only — no store writes, no bench schema), records
-# recall@10 vs the frozen baseline to harness_shared.memory_recall_canary_run,
+# recall@10 vs the frozen baseline to harness_shared.memory_live_recall_canary_run,
 # and alerts (attention + severe-event) on a >5pt drop or a zero-hit blackout.
 #
 # Why it exists next to memory-precision: the precision bench seeds a FIXTURE
@@ -14,7 +14,7 @@
 # The canary watches the deployment itself, so its cadence is DAILY, not
 # weekly — a canary that fires weekly is an obituary. Flag-only, NO governor:
 # ~25 live searches/tick, no LLM.
-id: memory-recall-canary
+id: memory-live-recall-canary
 extends: base
 version: 0.1.0
 description: >-
@@ -32,7 +32,7 @@ workItem:
 spine:
   steps:
     - id: canary
-      op: memory-recall:canary
+      op: memory-live-recall:canary
       bind: canary
 
 knobs:
@@ -42,7 +42,7 @@ knobs:
 
 # Scheduled trigger: DAILY 05:45 (offset off the deploy rhythm and the weekly
 # memory-precision slot). Fires `system:blueprint-run`; always-on monitoring —
-# seeds ACTIVE (self-gates on the papercusp-memory-recall-canary flag).
+# seeds ACTIVE (self-gates on the papercusp-memory-live-recall-canary flag).
 triggers:
   schedule:
     - cron: "0 45 5 * * *"
