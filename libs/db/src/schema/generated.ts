@@ -83,6 +83,20 @@ export const workspaceBackupSettingsInHarnessShared = harnessShared.table("works
 
 ]);
 
+export const scoutDigestSnapshotsInHarnessShared = harnessShared.table("scout_digest_snapshots", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.scout_digest_snapshots_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	installSlug: text("install_slug"),
+	cycleId: text("cycle_id"),
+	watermarkAt: timestamp("watermark_at", { withTimezone: true, mode: 'string' }),
+	digest: jsonb().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("scout_digest_snapshots_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("scout_digest_snapshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const coordEntitySubscriptionsInHarnessShared = harnessShared.table("coord_entity_subscriptions", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coord_entity_subscriptions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -4409,6 +4423,19 @@ export const harnessScreenshotsInHarnessShared = harnessShared.table("harness_sc
 	index("harness_screenshots_slug_phase_ts_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.phase.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
 	primaryKey({ columns: [table.harnessSlug, table.phase, table.id], name: "harness_screenshots_pkey"}),
 	pgPolicy("harness_screenshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const scoutSignalAccumulatorInHarnessShared = harnessShared.table("scout_signal_accumulator", {
+	workspaceId: text("workspace_id").notNull(),
+	installSlug: text("install_slug").notNull(),
+	lane: text().notNull(),
+	newCount: integer("new_count").default(0).notNull(),
+	highWaterAt: timestamp("high_water_at", { withTimezone: true, mode: 'string' }),
+	watermarkAt: timestamp("watermark_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.installSlug, table.lane], name: "scout_signal_accumulator_pkey"}),
+	pgPolicy("scout_signal_accumulator_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const coordTopicsInHarnessShared = harnessShared.table("coord_topics", {
