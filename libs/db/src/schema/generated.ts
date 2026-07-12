@@ -3087,6 +3087,20 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	check("agent_facts_check", sql`(scope = 'workspace'::text) OR (scope_ref IS NOT NULL)`),
 ]);
 
+export const systemHealthTransitionsInHarnessShared = harnessShared.table("system_health_transitions", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.system_health_transitions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	panel: text().notNull(),
+	fromStatus: text("from_status").notNull(),
+	toStatus: text("to_status").notNull(),
+	summary: text(),
+	at: timestamp({ withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_shealth_transitions_ws_at").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.at.desc().nullsFirst().op("text_ops")),
+	index("idx_shealth_transitions_ws_panel_at").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.panel.asc().nullsLast().op("text_ops"), table.at.desc().nullsFirst().op("timestamptz_ops")),
+]);
+
 export const operatorMigratePolicyInHarnessShared = harnessShared.table("operator_migrate_policy", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -3988,6 +4002,16 @@ export const workItemBlockedInHarnessShared = harnessShared.table("work_item_blo
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "work_item_blocked_pkey"}),
 ]);
 
+export const systemHealthTicksInHarnessShared = harnessShared.table("system_health_ticks", {
+	workspaceId: text("workspace_id").notNull(),
+	at: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	overall: text().notNull(),
+	statuses: jsonb().notNull(),
+}, (table) => [
+	index("idx_shealth_ticks_at").using("btree", table.at.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.workspaceId, table.at], name: "system_health_ticks_pkey"}),
+]);
+
 export const coordOpenEscalationsInHarnessShared = harnessShared.table("coord_open_escalations", {
 	workspaceId: text("workspace_id").notNull(),
 	msgId: text("msg_id").notNull(),
@@ -4241,6 +4265,18 @@ export const substrateMergeCursorInHarnessShared = harnessShared.table("substrat
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.logKeyhex], name: "substrate_merge_cursor_pkey"}),
+]);
+
+export const agentLaunchIdempotencyInHarnessShared = harnessShared.table("agent_launch_idempotency", {
+	workspaceId: text("workspace_id").notNull(),
+	idempotencyKey: text("idempotency_key").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	launchedAt: bigint("launched_at", { mode: "number" }).notNull(),
+	launchedBy: text("launched_by"),
+	summary: jsonb().default({}).notNull(),
+}, (table) => [
+	index("agent_launch_idempotency_launched_at_idx").using("btree", table.launchedAt.asc().nullsLast().op("int8_ops")),
+	primaryKey({ columns: [table.workspaceId, table.idempotencyKey], name: "agent_launch_idempotency_pkey"}),
 ]);
 
 export const systemPrincipalsInHarnessShared = harnessShared.table("system_principals", {
@@ -4637,6 +4673,19 @@ export const federationRefusedOpCountersInHarnessShared = harnessShared.table("f
 	check("federation_refused_op_counters_source_nonempty", sql`source_hive <> ''::text`),
 	check("federation_refused_op_counters_tag_nonempty", sql`table_tag <> ''::text`),
 	check("federation_refused_op_counters_reason_nonempty", sql`reason <> ''::text`),
+]);
+
+export const systemHealthAcksInHarnessShared = harnessShared.table("system_health_acks", {
+	workspaceId: text("workspace_id").notNull(),
+	panel: text().notNull(),
+	status: text().notNull(),
+	reason: text().notNull(),
+	ackedBy: text("acked_by").notNull(),
+	ackedAt: timestamp("acked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	snoozeUntil: timestamp("snooze_until", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.panel], name: "system_health_acks_pkey"}),
+	check("system_health_acks_status_check", sql`status = ANY (ARRAY['warn'::text, 'crit'::text])`),
 ]);
 
 export const scoutLensWeightsInHarnessShared = harnessShared.table("scout_lens_weights", {
