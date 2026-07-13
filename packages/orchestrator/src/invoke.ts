@@ -847,11 +847,34 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'work_items:complete',
   'work_items:release',
   'work_items:set_state',
-  // (2026-07-05 cuts: work_items:update — 104 calls/7d, set_state + comment cover the
-  // common cases; locks:acquire_granular/release_granular — the PreToolUse hook
-  // auto-locks every Edit/Write (8K+ hook acquires/week), the hand-held multi-file flow
-  // is rare + su-tier, and the OMP spine had already dropped them after weak models
-  // misused them as an operation-mutex. All stay reachable via tools:find/invoke.)
+  // EI-10946 — THE INVERSE OF A SEEDED VERB MUST ALSO BE SEEDED. The 2026-07-05 rebalance
+  // cut work_items:update with the rationale "set_state + comment cover the common cases"
+  // — but work_items:comment was never IN the spine, so that premise was never true. The
+  // result: an agent could CREATE, claim, checkpoint and CLOSE an item, but had no seeded
+  // way to correct or annotate one. Observed 2026-07-13 (su-71d9f8a2): needing to retract a
+  // wrong claim in an item's body, the agent's client-side tool-search reported update and
+  // comment as "not found" (a trimmed surface reports a subset, and a zero-hit search is
+  // indistinguishable from absence), concluded no such verb existed, and abused
+  // work_items:checkpoint as an erratum channel — leaving the wrong claim in the BODY, which
+  // is what every future reader and brief actually inherits.
+  //
+  // This is the SAME failure already fixed three times in this very list — events:await
+  // (EI-9012/EI-9034), loop:end/status (EI-8597), session:request-compaction (EI-6770): a
+  // seeded session whose search missed a verb concludes the capability does not exist and
+  // builds a strictly-worse workaround. Demand-evidence call counts cannot arbitrate this,
+  // because a tool nobody can SEE is a tool nobody calls — the metric measures the
+  // discoverability bug, not the need.
+  //
+  // Rule going forward: never advertise the CREATE and hide the UNDO. If an agent can write
+  // a durable object from the spine, it must be able to correct and annotate it from the
+  // spine — otherwise the workaround IS the corruption.
+  'work_items:comment',
+  'work_items:update',
+  // (2026-07-05 cuts, still reachable via tools:find/invoke:
+  // locks:acquire_granular/release_granular — the PreToolUse hook auto-locks every
+  // Edit/Write (8K+ hook acquires/week), the hand-held multi-file flow is rare + su-tier,
+  // and the OMP spine had already dropped them after weak models misused them as an
+  // operation-mutex.)
   // scheduler:get_next — the fleet-member feed loop: members pull claim-spec work with it
   // every drain iteration. 732 fallback reaches/7d = the second-loudest unmet need.
   'scheduler:get_next',
