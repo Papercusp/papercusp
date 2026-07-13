@@ -3243,8 +3243,16 @@ export const eventAwaitsInHarnessShared = harnessShared.table("event_awaits", {
 	rootId: bigint("root_id", { mode: "number" }),
 	memberFiredAt: timestamp("member_fired_at", { withTimezone: true, mode: 'string' }),
 	memberPayload: jsonb("member_payload"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	causalGeneration: bigint("causal_generation", { mode: "number" }),
+	expectedCondition: jsonb("expected_condition"),
+	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
+	firedBy: text("fired_by"),
+	firedPayload: jsonb("fired_payload"),
 }, (table) => [
 	index("event_awaits_announce_active").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((policy = 'announce'::text) AND (cancelled_at IS NULL))`),
+	index("event_awaits_announce_current").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.eventKey.asc().nullsLast().op("text_ops"), table.causalGeneration.desc().nullsFirst().op("text_ops")).where(sql`((policy = 'announce'::text) AND (superseded_at IS NULL))`),
+	uniqueIndex("event_awaits_announce_generation_unique").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.eventKey.asc().nullsLast().op("text_ops"), table.causalGeneration.asc().nullsLast().op("int8_ops")).where(sql`((policy = 'announce'::text) AND (causal_generation IS NOT NULL))`),
 	index("event_awaits_composed_node_idx").using("btree", table.nodeId.asc().nullsLast().op("int8_ops")).where(sql`(node_id IS NOT NULL)`),
 	index("event_awaits_composed_root_idx").using("btree", table.rootId.asc().nullsLast().op("int8_ops")).where(sql`(root_id IS NOT NULL)`),
 	uniqueIndex("event_awaits_inbox_wake_one_per_agent").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((policy = 'wake'::text) AND (once = false) AND (cancelled_at IS NULL) AND (event_key ~~ 'coord:inbox-wake:%'::text))`),
