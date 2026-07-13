@@ -6,7 +6,7 @@
 -- "channel name too long". The coordination domain is the realpath of the
 -- repo root, so `'ch_coord_' || domain` crosses 63 bytes for any checkout
 -- deeper than 54 chars. Live incident (2026-06-09): the GREEN release
--- checkout `/home/marsh-office/papercupai-workspace/papercup-release`
+-- checkout `/home/dev/papercupai-workspace/papercup-release`
 -- yields a 65-byte channel, so EVERY release/poke whose cascade granted a
 -- queued waiter blew up the whole transaction with "channel name too long"
 -- — the lock could not be released while anyone was waiting on it (the §9

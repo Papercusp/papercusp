@@ -80,7 +80,7 @@ export default function ProfilePage() {
             id="display_name"
             type="text"
             className="pc-input"
-            placeholder="Avi"
+            placeholder="Your name"
             value={profile.display_name ?? ''}
             onChange={(e) => update({ display_name: e.target.value })}
           />

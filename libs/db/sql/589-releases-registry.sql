@@ -6,11 +6,11 @@
 -- file on a host, a manifest. So:
 --   * /api/updates/history (the in-app Update Center) discovered releases from the
 --     GitHub Releases API — the ONLY source. Since releases went local-only
---     [owner:Avi 2026-07-08] we publish nothing there, so it returns an empty list
+--     [owner 2026-07-08] we publish nothing there, so it returns an empty list
 --     on the R2 rail. Same bug class as WI-4389: the rail moved, the discovery
 --     didn't.
 --   * "the full list of work items fixed between releases and plans implemented"
---     [owner:Avi 2026-07-12] has no boundary to compute BETWEEN without a cut_at.
+--     [owner 2026-07-12] has no boundary to compute BETWEEN without a cut_at.
 --
 -- A release is now a ROW, written at cut time. Both surfaces — the beta
 -- release-history page (static, on the R2 secret path) and the in-app history
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS harness_shared.releases (
   published_at     timestamptz,                   -- set when the artifacts + latest.json are LIVE
                                                   -- (uploaded != reachable — see WI-4364: a signed,
                                                   -- schema-valid manifest naming a 404 is still broken)
-  changelog_md     text,                          -- the AGENT's high-level prose [owner:Avi 2026-07-12]
+  changelog_md     text,                          -- the AGENT's high-level prose [owner 2026-07-12]
   work_item_ids    text[]      NOT NULL DEFAULT '{}',
   plan_slugs       text[]      NOT NULL DEFAULT '{}',
   artifacts        jsonb       NOT NULL DEFAULT '[]'::jsonb,  -- [{product,platform,name,url,size,sha256}]

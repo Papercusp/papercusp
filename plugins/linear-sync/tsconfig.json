@@ -13,8 +13,8 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@papercusp/plugin-sdk": ["/home/marsh-office/papercupai-workspace/papercup/node_modules/@papercusp/plugin-sdk/src/index"],
-      "postgres": ["/home/marsh-office/papercupai-workspace/papercup/node_modules/postgres/types/index"]
+      "@papercusp/plugin-sdk": ["../../../../node_modules/@papercusp/plugin-sdk/src/index"],
+      "postgres": ["../../../../node_modules/postgres/types/index"]
     }
   },
   "include": ["index.ts"]
