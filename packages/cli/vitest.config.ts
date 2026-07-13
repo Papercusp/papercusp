@@ -1,24 +1,24 @@
 import { defineConfig } from 'vitest/config';
 
 /**
- * EI-7836: this package's tests are `node:test` (`src/**\/*.test.ts`, run via
- * `npm test` → `node --test src/**\/*.test.ts` — see package.json), NOT Vitest.
- * Without this file, a Vitest invocation whose root/glob reaches this package
- * (e.g. an agent's bare `vitest run <file>` from the repo root — there is no
- * root-level vitest.config.ts, so that default-globs `**\/*.test.ts` — or any
- * broader sweep that isn't scoped to this package's own `npm test`) imports
- * these files under Vitest's collector. Vitest doesn't recognize the
- * `describe`/`it` registered via `node:test` as tests, AND merely importing
- * the file executes its real integration side effects (spawns the CLI binary,
- * mkdtemps, hits a bogus marketplace URL) as an uncontrolled import side
- * effect — then Vitest reports "No test suite found in file …", which the
- * red-test watchdog (harness_shared.test_runs) recorded as a repeatedly-failing
- * test file even though the suite is genuinely green under its own `npm test`.
+ * This package's tests are `node:test` (run via `npm test` → `node --test
+ * src/**\/*.node-test.ts` — see package.json), NOT Vitest.
  *
- * `include: []` makes this package an explicit, empty Vitest project: any
- * Vitest invocation that resolves to (or auto-discovers) THIS config reports
- * zero tests cleanly instead of misinterpreting node:test files as broken
- * Vitest suites.
+ * EI-10878: the PRIMARY defense against a stray Vitest run collecting these as
+ * broken suites is the NAMING CONTRACT — every node:test file is
+ * `*.node-test.ts`, which no Vitest `**\/*.test.ts` glob matches. That closes
+ * the hole this config's original `include: []` could NOT: a root-level
+ * `vitest run <file>` (an agent's bare invocation, or the green-checkpoint's
+ * per-file isolation re-run) resolves the ROOT cwd's config, not this
+ * package-local one, so `include: []` never applied and the `.test.ts`-named
+ * node:test files were still imported → "No test suite found in file …" →
+ * recorded as repeatedly-failing by the red-test watchdog even though they are
+ * green under their own `node --test`. The recurrence guard is
+ * `packages/operator-core/lib/node-test-naming-guard.test.ts` (gated unit test).
+ *
+ * `include: []` is kept as a belt for the CWD-is-this-package case: a bare
+ * `vitest run` here finds zero suites and exits cleanly rather than erroring
+ * "No test files found".
  */
 export default defineConfig({
   test: {

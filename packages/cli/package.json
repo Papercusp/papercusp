@@ -7,7 +7,7 @@
     "papercusp": "./bin/papercusp"
   },
   "scripts": {
-    "test": "node --test src/**/*.test.ts"
+    "test": "node --test src/**/*.node-test.ts"
   },
   "dependencies": {
     "@papercusp/blueprint-distribution": "*",
