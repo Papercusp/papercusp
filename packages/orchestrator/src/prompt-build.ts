@@ -867,12 +867,13 @@ export const OBSERVATION_CAPTURE_NOTE = [
 ].join('\n');
 
 /**
- * CODE_RUN_NUDGE — the "collapse a multi-step tool flow into ONE `code:run` instead of paying a
- * round-trip per call" clause (code-execution-tool-orchestration B-CX-3 rollout).
+ * CODE_RUN_NUDGE — collapse multi-step flows when doing so removes MODEL inference turns or keeps
+ * bulky intermediate results out of model context (code-execution-tool-orchestration B-CX-3).
  *
  * `code:run` executes a JS/TS script that calls the agent's allowed tools (`tools.ns.verb(args)` +
- * real control flow) in the runtime and returns ONLY its final value — so N tool round-trips (each
- * its own inference call re-reading the whole context) collapse into one. The runtime, the typed
+ * real control flow) in the runtime and returns ONLY its final value. Several direct tools emitted
+ * together in one assistant response are already one model turn (despite N downstream RPCs); the
+ * actual win is removing later model turns and intermediate payloads. The runtime, the typed
  * on-demand signatures (`code:tools`), and the dry-run write gate already exist (B-CX-1A/2A/API);
  * this nudge makes agents REACH for it. The opening "ASK: fewer calls?" lead is the conscious
  * self-prompt against the eager one-call-per-turn reflex (owner refinement 2026-06-23). Two
@@ -899,30 +900,32 @@ export const OBSERVATION_CAPTURE_NOTE = [
  * projected). Universal (no role skip — the self-gate handles roles without it).
  */
 export const CODE_RUN_NUDGE = [
-  "## Collapse a multi-step tool flow into ONE `code:run` — don't pay a round-trip per call",
+  '## Optimize tool flows for MODEL turns — use parallel calls or one `code:run`',
   '',
-  'Before a burst of tool calls, ASK: can I get this result in FEWER calls? Tokens are real cost —',
-  'every separate tool call re-reads your whole context, so the same result in fewer calls is cheaper.',
-  'When you are about to fire several calls you can determine UP FRONT — independent ones, a mechanical',
-  'loop / branch / filter over results, or a fetch whose result several later calls reuse (get it ONCE) —',
-  'put them in ONE `code:run` (or reuse a recipe) instead of a turn each. Keep separate ONLY the steps',
-  'where you must read a result and DECIDE what to do next — a script cannot pause for you to think (so',
-  'the cutoff is YOUR judgment mid-flow, NOT whether one call uses another\'s result — a script threads',
-  'results fine). Batch the calls you hold THIS turn; do NOT stash work to batch later (that just',
-  're-loads the context you were trying to save, and risks dropping the work).',
+  'Count MODEL inference turns, not raw tool/RPC calls. One assistant response can emit several',
+  'independent tool calls together; those calls are one inference turn and do NOT re-read your context',
+  'once per RPC. Do not wrap an already-parallel one-turn fan-out in `code:run` merely to reduce the',
+  'RPC count. Tokens are spent when results return to the model and it must generate another turn.',
+  '',
+  'Before a burst, choose the smallest-turn shape you can determine UP FRONT:',
+  '- independent one-off calls whose results you need directly → emit them together in this turn;',
+  '- a mechanical loop / branch / filter / retry, or bulky intermediate results you only need to',
+  '  summarize → use ONE `code:run` (or reuse a recipe) so only the final value enters context;',
+  '- a step where YOU must read a result and exercise judgment before choosing the next action → keep',
+  '  that model-turn boundary. Mere data dependency is not judgment; a script can thread results.',
+  'Batch the work you hold THIS turn; do not stash work to batch later — that reloads context and risks',
+  'dropping the work.',
   '',
   'When `code:run` is in your toolset and a task needs MANY tool calls with control flow — loop /',
   'branch / filter over results, fan-out reads, retry-until, "do X for each of N" — orchestrate them',
-  'in a SINGLE `code:run` script rather than issuing the calls one at a time. Each separate tool call',
-  'is its own inference round-trip that re-reads your whole context; a script runs all of them in the',
-  'runtime and returns ONLY its final value, so N round-trips become one. The round-trip count scales',
-  'with N — that is exactly the shape to script.',
+  'in a SINGLE `code:run` script rather than alternating model→tool→model for every item. The script',
+  'runs all steps in the runtime and returns ONLY its final value, so N sequential inference turns',
+  'become one and intermediate payloads never inflate the next prompt.',
   '',
-  'PREFER IT AGGRESSIVELY. Batching collapses your per-turn token cost SEVERAL-FOLD (each avoided',
-  'round-trip is a whole context re-read you skip), which matters far more than any per-call',
-  'efficiency — so reach for `code:run` even for a SMALL fan-out (2–3 calls) and even when a direct',
-  'loop looks simpler. When in doubt whether a flow is worth scripting: script it. The only real',
-  'mistake is the OTHER direction — hand-looping the same tool call when one script would do.',
+  'Use the number of AVOIDED MODEL TURNS and returned intermediate bytes as the threshold, not N RPCs.',
+  'Two or three independent direct calls emitted together are already cheap; two sequential per-item',
+  'turns that could be a mechanical loop are already the `code:run` shape. Prefer the simplest form',
+  'that preserves the real judgment boundaries.',
   '',
   'REUSE BEFORE YOU AUTHOR. Every successful `code:run` is saved as a reusable RECIPE (a named script',
   'your whole hive can run), so the multi-step script you need may ALREADY EXIST — and the run result',
