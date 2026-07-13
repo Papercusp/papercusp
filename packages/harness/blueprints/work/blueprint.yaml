@@ -67,7 +67,7 @@ lexicon:
   workUnit: deliverable
   reviewGate: review
 
-# Learning: a fresh work hive seeds the generic `work` learning pack
+# Learning: a fresh work hive seeds the generic `work` knowledge pack
 # (domain-generic-hive-architecture-2026-06-18 P-017, D-010) — generic work
 # wisdom, NOT project-specific — and runs the scout ideation loop (no coding
 # gym). `pack: work` overrides the inherited `pack: coding` from `hive` (the
