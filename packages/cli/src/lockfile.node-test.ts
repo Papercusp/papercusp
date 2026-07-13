@@ -1,6 +1,6 @@
 /**
  * Tests for lockfile.ts. Run with:
- *   cd libs/papercusp/packages/cli && npx tsx --test src/lockfile.test.ts
+ *   cd libs/papercusp/packages/cli && node --test --import tsx src/lockfile.node-test.ts
  */
 import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
