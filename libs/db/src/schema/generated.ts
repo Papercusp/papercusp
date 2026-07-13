@@ -3136,6 +3136,10 @@ export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs"
 	firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	potSlug: text("pot_slug"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	controlGeneration: bigint("control_generation", { mode: "number" }).default(0).notNull(),
+	controlState: jsonb("control_state"),
+	controlUpdatedAt: timestamp("control_updated_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("session_briefs_native_session_id_idx").using("btree", table.nativeSessionId.asc().nullsLast().op("text_ops")).where(sql`(native_session_id IS NOT NULL)`),
 	index("session_briefs_updated_at_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
