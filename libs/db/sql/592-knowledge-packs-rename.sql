@@ -41,16 +41,59 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE IF EXISTS harness_shared.knowledge_pack_candidates
-  RENAME CONSTRAINT learning_pack_candidates_pkey TO knowledge_pack_candidates_pkey;
-ALTER TABLE IF EXISTS harness_shared.knowledge_pack_candidates
-  RENAME CONSTRAINT learning_pack_candidates_workspace_nonempty TO knowledge_pack_candidates_workspace_nonempty;
-ALTER TABLE IF EXISTS harness_shared.knowledge_pack_candidates
-  RENAME CONSTRAINT learning_pack_candidates_kind_check TO knowledge_pack_candidates_kind_check;
-ALTER TABLE IF EXISTS harness_shared.knowledge_pack_candidates
-  RENAME CONSTRAINT learning_pack_candidates_status_check TO knowledge_pack_candidates_status_check;
-ALTER TABLE IF EXISTS harness_shared.knowledge_pack_candidates
-  RENAME CONSTRAINT learning_pack_candidates_signature_uniq TO knowledge_pack_candidates_signature_uniq;
+-- `ALTER TABLE IF EXISTS … RENAME CONSTRAINT x TO y` guards only the TABLE: if the table
+-- exists but constraint `x` does not, it still throws 42704. That is not hypothetical —
+-- migration 377 DROPPED the `workspace_id` COLUMN, and a CHECK constraint dies with its
+-- column, so `learning_pack_candidates_workspace_nonempty` no longer exists on ANY database
+-- that ran 377 (i.e. all of them). The unguarded rename below therefore failed
+-- deterministically everywhere, aborting this migration's transaction — which broke every
+-- fresh-DB integration test in the repo (createFreshPgDb runs the full migration set) and
+-- would fail the deploy's migration step identically.
+--
+-- Guard each rename on the OLD name existing AND the NEW name not existing, so the block is
+-- correct no matter which constraints a given database actually carries, and idempotent on
+-- re-run. (WI-4531 drive-by; the same shape any future rename of a constraint set should use.)
+DO $$
+DECLARE
+  r record;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'harness_shared' AND table_name = 'knowledge_pack_candidates'
+  ) THEN
+    RETURN;
+  END IF;
+
+  FOR r IN
+    SELECT * FROM (VALUES
+      ('learning_pack_candidates_pkey',               'knowledge_pack_candidates_pkey'),
+      ('learning_pack_candidates_workspace_nonempty', 'knowledge_pack_candidates_workspace_nonempty'),
+      ('learning_pack_candidates_kind_check',         'knowledge_pack_candidates_kind_check'),
+      ('learning_pack_candidates_status_check',       'knowledge_pack_candidates_status_check'),
+      ('learning_pack_candidates_signature_uniq',     'knowledge_pack_candidates_signature_uniq')
+    ) AS t(old_name, new_name)
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM pg_constraint c
+        JOIN pg_class cl ON cl.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = cl.relnamespace
+       WHERE n.nspname = 'harness_shared'
+         AND cl.relname = 'knowledge_pack_candidates'
+         AND c.conname = r.old_name
+    ) AND NOT EXISTS (
+      SELECT 1 FROM pg_constraint c
+        JOIN pg_class cl ON cl.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = cl.relnamespace
+       WHERE n.nspname = 'harness_shared'
+         AND cl.relname = 'knowledge_pack_candidates'
+         AND c.conname = r.new_name
+    ) THEN
+      EXECUTE format(
+        'ALTER TABLE harness_shared.knowledge_pack_candidates RENAME CONSTRAINT %I TO %I',
+        r.old_name, r.new_name);
+    END IF;
+  END LOOP;
+END $$;
 
 ALTER INDEX IF EXISTS harness_shared.learning_pack_candidates_listing_idx
   RENAME TO knowledge_pack_candidates_listing_idx;
