@@ -918,6 +918,7 @@ export const BlueprintSchema = z.object({
   lexicon: LexiconSchema.optional(),
   fleet: FleetSchema.optional(),
   wake: WakeSchema.optional(),
+  knowledge: KnowledgeSchema.optional(),
   learning: LearningSchema.optional(),
   placement: PlacementSchema.optional(),
   /** Declarative coordination protocol — HOW peers acquire work + communicate (CoordinationSchema).
