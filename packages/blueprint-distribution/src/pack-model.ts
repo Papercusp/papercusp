@@ -29,6 +29,21 @@
 export type PackProviderKind = 'builtin' | 'plugin' | 'pack';
 
 /**
+ * One awaitable event-key FAMILY a unit declares it provides — the provider
+ * half of the events-as-a-dependency axis (D-003, cupboard-public-release
+ * P-005/P-007). A structural subset of the plugin-SDK's `ManifestProvidedEvent`
+ * and of operator-core's `EventCatalogEntry`, so a manifest declaration and a
+ * builtin registry entry both widen to this without a translation layer.
+ */
+export interface ProvidedEventFamily {
+  /** Stable family id — the catalog lookup key and `buildKey` handle. */
+  family: string;
+  /** Key TEMPLATE with `<param>` placeholders; a no-param family is a literal key. */
+  keyTemplate: string;
+  describe?: string | null;
+}
+
+/**
  * One distribution unit, projected into the pack model. Derived by the host:
  * a loaded/installed plugin, an installed code-tool pack, or a Cupboard
  * listing (kind plugin|pack) that has not been installed yet.
@@ -49,6 +64,14 @@ export interface PackDescriptor {
    * (D-004/D-005).
    */
   hasRuntime: boolean;
+  /**
+   * Event-key families this unit declares it PROVIDES (D-003, P-005/P-007) —
+   * the event-axis twin of `tools`. For installed units: the manifest's
+   * `provides.events`. For Cupboard units: the listing's `provides_events`
+   * declaration. Absent/empty on a unit that provides no events (the common
+   * case), so every existing caller is unaffected.
+   */
+  events?: readonly ProvidedEventFamily[];
   /** plugin (runtime-bearing) vs pack (runtime-less code-tool pack). */
   kind: Exclude<PackProviderKind, 'builtin'>;
   /** installed (present on this host) vs cupboard (installable listing). */
@@ -74,6 +97,26 @@ export type ToolProviderResolution =
   | { tool: string; status: 'unknown'; provider?: undefined };
 
 /**
+ * The resolver's answer for one event FAMILY id (D-003's event→provider
+ * mapping) — the event-axis twin of {@link ToolProviderResolution}.
+ */
+export type EventProviderResolution =
+  | {
+      family: string;
+      status: 'available';
+      provider: { kind: PackProviderKind; name: string };
+      /** The key template to build a concrete key from (the whole point of resolving). */
+      keyTemplate?: string;
+    }
+  | {
+      family: string;
+      status: 'installable';
+      provider: { kind: Exclude<PackProviderKind, 'builtin'>; name: string; listingId?: string | null };
+      keyTemplate?: string;
+    }
+  | { family: string; status: 'unknown'; provider?: undefined; keyTemplate?: undefined };
+
+/**
  * An indexed snapshot of every known distribution unit + the host's
  * un-packaged built-in tools. Build once per resolution pass with
  * {@link buildPackCatalogView}; cheap to query.
@@ -93,6 +136,17 @@ export interface PackCatalogView {
    * `{ kind: 'builtin' }` — the floor of the resolution ladder.
    */
   builtinTools: ReadonlySet<string>;
+  /** family id → INSTALLED providing unit (see the ladder note on resolveEventProvider). */
+  installedEventIndex: ReadonlyMap<string, PackDescriptor>;
+  /** family id → CUPBOARD providing unit (first listing claiming it wins). */
+  cupboardEventIndex: ReadonlyMap<string, PackDescriptor>;
+  /**
+   * Event families the host's BUILTIN registry owns (operator-core's
+   * `EVENT_CATALOG`). Injected, not imported — this module stays pure and
+   * host-agnostic, exactly as `builtinTools` is. Maps family → key template so
+   * a resolution can hand back the template without a second lookup.
+   */
+  builtinEvents: ReadonlyMap<string, string>;
 }
 
 /**
@@ -104,10 +158,13 @@ export interface PackCatalogView {
 export function buildPackCatalogView(
   packs: readonly PackDescriptor[],
   builtinTools: ReadonlySet<string>,
+  builtinEvents: ReadonlyMap<string, string> = new Map(),
 ): PackCatalogView {
   const byName = new Map<string, PackDescriptor>();
   const installedToolIndex = new Map<string, PackDescriptor>();
   const cupboardToolIndex = new Map<string, PackDescriptor>();
+  const installedEventIndex = new Map<string, PackDescriptor>();
+  const cupboardEventIndex = new Map<string, PackDescriptor>();
   const ordered: PackDescriptor[] = [];
 
   // Installed units index before cupboard units regardless of input order, so
@@ -124,9 +181,23 @@ export function buildPackCatalogView(
     for (const tool of pack.tools) {
       if (!index.has(tool)) index.set(tool, pack);
     }
+    const eventIndex = pack.source === 'installed' ? installedEventIndex : cupboardEventIndex;
+    for (const ev of pack.events ?? []) {
+      if (!ev?.family) continue;
+      if (!eventIndex.has(ev.family)) eventIndex.set(ev.family, pack);
+    }
   }
 
-  return { packs: ordered, byName, installedToolIndex, cupboardToolIndex, builtinTools };
+  return {
+    packs: ordered,
+    byName,
+    installedToolIndex,
+    cupboardToolIndex,
+    builtinTools,
+    installedEventIndex,
+    cupboardEventIndex,
+    builtinEvents,
+  };
 }
 
 /**
