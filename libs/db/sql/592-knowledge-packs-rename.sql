@@ -16,8 +16,13 @@
 --
 -- Fully idempotent (IF EXISTS / conditional guards) — safe to re-run, and a
 -- no-op on a fresh database that never had the old names.
-
-BEGIN;
+--
+-- NB no BEGIN/COMMIT here: the migration runner wraps every file in
+-- BEGIN … <this file> … <ledger INSERT> … COMMIT. A top-level COMMIT inside the
+-- file would end that transaction EARLY, so the apply and its ledger record stop
+-- being atomic — a later failure would leave the ledger claiming this migration
+-- applied when it did not. (lint:migrations check #2 enforces this ≥494; my
+-- original 592 carried a raw BEGIN/COMMIT and was redding that gate test.)
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. The candidates table + every dependent object name.
@@ -141,5 +146,3 @@ UPDATE harness_shared.operator_flag_overrides
    SET payload = payload - 'papercusp-learning-packs'
  WHERE payload ? 'papercusp-learning-packs'
    AND payload ? 'papercusp-knowledge-packs';
-
-COMMIT;
