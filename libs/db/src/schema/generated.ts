@@ -2481,6 +2481,25 @@ export const operatorScalePolicyInHarnessShared = harnessShared.table("operator_
 
 ]);
 
+export const ownerDirectivesInHarnessShared = harnessShared.table("owner_directives", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	sessionRef: text("session_ref"),
+	sourceTurnRef: text("source_turn_ref"),
+	verbatimText: text("verbatim_text").notNull(),
+	recordedBy: text("recorded_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	dispositionedAt: timestamp("dispositioned_at", { withTimezone: true, mode: 'string' }),
+	dispositionStatus: text("disposition_status"),
+	dispositionNote: text("disposition_note"),
+	dispositionedBy: text("dispositioned_by"),
+}, (table) => [
+	index("owner_directives_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("text_ops")).where(sql`(dispositioned_at IS NULL)`),
+	check("owner_directives_disposition_status_check", sql`disposition_status = ANY (ARRAY['done'::text, 'declined'::text])`),
+	check("owner_directives_disposition_consistent", sql`((dispositioned_at IS NULL) AND (disposition_status IS NULL)) OR ((dispositioned_at IS NOT NULL) AND (disposition_status IS NOT NULL))`),
+]);
+
 export const codeRunNudgeFiresInHarnessShared = harnessShared.table("code_run_nudge_fires", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.code_run_nudge_fires_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -2517,8 +2536,8 @@ export const knowledgePackCandidatesInHarnessShared = harnessShared.table("knowl
 }, (table) => [
 	index("knowledge_pack_candidates_listing_idx").using("btree", table.status.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
 	unique("knowledge_pack_candidates_signature_uniq").on(table.signature),
-	check("knowledge_pack_candidates_kind_check", sql`kind = ANY (ARRAY['user'::text, 'feedback'::text, 'project'::text, 'reference'::text])`),
 	check("knowledge_pack_candidates_status_check", sql`status = ANY (ARRAY['pending'::text, 'adopted'::text, 'dismissed'::text])`),
+	check("knowledge_pack_candidates_kind_check", sql`kind = ANY (ARRAY['user'::text, 'feedback'::text, 'project'::text, 'reference'::text])`),
 	primaryKey({ columns: [table.id], name: "knowledge_pack_candidates_pkey"}),
 
 ]);
@@ -2931,6 +2950,34 @@ export const predicateWatchesInHarnessShared = harnessShared.table("predicate_wa
 
 ]);
 
+export const bak20260713CompoundEntitiesInHarnessShared = harnessShared.table("bak_20260713_compound_entities", {
+	id: uuid(),
+	payload: jsonb(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
+	lastValidatedAt: timestamp("last_validated_at", { withTimezone: true, mode: 'string' }),
+	lastSurfacedAt: timestamp("last_surfaced_at", { withTimezone: true, mode: 'string' }),
+	state: text(),
+	userId: text("user_id"),
+	workspaceId: text("workspace_id"),
+	shareable: boolean(),
+	harnessSlug: text("harness_slug"),
+	authorPubkey: text("author_pubkey"),
+	origin: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	sourceHive: text("source_hive"),
+	validAt: timestamp("valid_at", { withTimezone: true, mode: 'string' }),
+	invalidAt: timestamp("invalid_at", { withTimezone: true, mode: 'string' }),
+	supersededBy: uuid("superseded_by"),
+});
+
+export const bak20260713CompoundVecsInHarnessShared = harnessShared.table("bak_20260713_compound_vecs", {
+	memoryId: uuid("memory_id"),
+	vector: vector({ dimensions: 1024 }),
+	embeddedAt: timestamp("embedded_at", { withTimezone: true, mode: 'string' }),
+});
+
 export const memoryVecHarrierInHarnessShared = harnessShared.table("memory_vec_harrier", {
 	memoryId: uuid("memory_id").primaryKey().notNull(),
 	vector: vector({ dimensions: 1024 }).notNull(),
@@ -3112,17 +3159,6 @@ export const operatorMigratePolicyInHarnessShared = harnessShared.table("operato
 
 ]);
 
-export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table("operator_telemetry_buffer_config", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().default({}).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
-
-]);
-
 export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs", {
 	ownerId: text("owner_id").primaryKey().notNull(),
 	workspaceId: text("workspace_id").default('default').notNull(),
@@ -3144,6 +3180,17 @@ export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs"
 	index("session_briefs_native_session_id_idx").using("btree", table.nativeSessionId.asc().nullsLast().op("text_ops")).where(sql`(native_session_id IS NOT NULL)`),
 	index("session_briefs_updated_at_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
 	primaryKey({ columns: [table.ownerId], name: "session_briefs_pkey"}),
+
+]);
+
+export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table("operator_telemetry_buffer_config", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
 
 ]);
 
@@ -3444,6 +3491,23 @@ export const operatorIntegrationCredentialsInHarnessShared = harnessShared.table
 
 ]);
 
+export const gateDecisionsInHarnessShared = harnessShared.table("gate_decisions", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.gate_decisions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	gate: text().notNull(),
+	expect: text().notNull(),
+	verdict: text().notNull(),
+	value: doublePrecision(),
+	threshold: doublePrecision(),
+	subject: text(),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("gate_decisions_decided_at_idx").using("btree", table.decidedAt.asc().nullsLast().op("timestamptz_ops")),
+	index("gate_decisions_gate_decided_at_idx").using("btree", table.gate.asc().nullsLast().op("text_ops"), table.decidedAt.desc().nullsFirst().op("text_ops")),
+	check("gate_decisions_expect_check", sql`expect = ANY (ARRAY['discriminates'::text, 'guards'::text])`),
+	check("gate_decisions_verdict_check", sql`verdict = ANY (ARRAY['pass'::text, 'reject'::text])`),
+]);
+
 export const directivesInPapercuspShared = papercuspShared.table("directives", {
 	id: text().primaryKey().notNull(),
 	title: text().notNull(),
@@ -3498,6 +3562,8 @@ export const memoryLiveRecallCanaryRunInHarnessShared = harnessShared.table("mem
 	latencyP50Ms: doublePrecision("latency_p50_ms"),
 	status: text().notNull(),
 	notes: text(),
+	retrievalZeroHitRate: doublePrecision("retrieval_zero_hit_rate"),
+	retrievalRAt10: doublePrecision("retrieval_r_at_10"),
 }, (table) => [
 	index("memory_live_recall_canary_run_ws_ran_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ranAt.desc().nullsFirst().op("text_ops")),
 	check("memory_live_recall_canary_run_status_check", sql`status = ANY (ARRAY['ok'::text, 'degraded'::text, 'decayed'::text, 'seeded'::text])`),
@@ -3801,6 +3867,9 @@ export const memoryCanonicalInHarnessShared = harnessShared.table("memory_canoni
 }, (table) => [
 	index("memory_canonical_current_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(invalid_at IS NULL)`),
 	uniqueIndex("memory_canonical_fed_identity").using("btree", sql`workspace_id`, sql`id`, sql`COALESCE(source_hive, ''::text)`),
+	index("memory_canonical_payload_data_trgm").using("gin", sql`((payload ->> 'data'::text))`),
+	index("memory_canonical_payload_description_trgm").using("gin", sql`((payload ->> 'description'::text))`),
+	index("memory_canonical_payload_name_trgm").using("gin", sql`((payload ->> 'name'::text))`),
 	index("memory_canonical_recently_surfaced_idx").using("btree", table.lastSurfacedAt.desc().nullsLast().op("timestamptz_ops")).where(sql`(last_surfaced_at IS NOT NULL)`),
 	index("memory_canonical_shareable_idx").using("btree", table.shareable.asc().nullsLast().op("bool_ops")).where(sql`(shareable = true)`),
 	index("memory_canonical_state_idx").using("btree", table.state.asc().nullsLast().op("text_ops")).where(sql`(state <> 'active'::text)`),
@@ -5514,6 +5583,24 @@ export const harnessDecisionsInHarnessShared = harnessShared.table("harness_deci
 	index("harness_decisions_slug_ts_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.ts.asc().nullsLast().op("int8_ops")),
 	primaryKey({ columns: [table.harnessSlug, table.lineHash], name: "harness_decisions_pkey"}),
 	pgPolicy("harness_decisions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const releasesInHarnessShared = harnessShared.table("releases", {
+	workspaceId: text("workspace_id").notNull(),
+	version: text().notNull(),
+	channel: text().default('alpha').notNull(),
+	cutAt: timestamp("cut_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }),
+	changelogMd: text("changelog_md"),
+	workItemIds: text("work_item_ids").array().default([""]).notNull(),
+	planSlugs: text("plan_slugs").array().default([""]).notNull(),
+	artifacts: jsonb().default([]).notNull(),
+	gitSha: text("git_sha"),
+	cutBy: text("cut_by"),
+	notes: text(),
+}, (table) => [
+	index("releases_ws_channel_cut_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.channel.asc().nullsLast().op("text_ops"), table.cutAt.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.version, table.channel], name: "releases_pkey"}),
 ]);
 
 export const potPolicyInHarnessShared = harnessShared.table("pot_policy", {
@@ -7682,7 +7769,8 @@ export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues
 	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
 	baseHarnessSlug: text("base_harness_slug"),
 	baseOrigin: text("base_origin"),
-}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+	featureOrder: integer("feature_order"),
+}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
 
 export const operatorDecisionsInHarnessShared = harnessShared.view("operator_decisions", {	id: text(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
