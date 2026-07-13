@@ -1007,9 +1007,10 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     // peer-reply-priority note (WI-1720, owner directive 2026-07-02) rides the shared bee base.
     assert.match(out, /Replying to a peer OUTRANKS your own work/);
     // code-run nudge (B-CX-3) rides the shared bee base.
-    assert.match(out, /Collapse a multi-step tool flow into ONE/);
-    // owner refinement 2026-06-23: the conscious "fewer calls?" token framing rides the lead.
-    assert.match(out, /can I get this result in FEWER calls/);
+    assert.match(out, /Optimize tool flows for MODEL turns/);
+    // P-012: batching measures inference turns, and explicitly preserves same-turn parallel calls.
+    assert.match(out, /Count MODEL inference turns, not raw tool\/RPC calls/);
+    assert.match(out, /One assistant response can emit several/);
     // work-record note (audit-trail discipline; owner ask 2026-06-23) rides the shared bee base.
     assert.match(out, /Hold a work-item before you edit/);
     // finish-the-rollout note (flags-default-on-reach-2026-06-21) rides the shared bee base.
