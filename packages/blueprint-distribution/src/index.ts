@@ -32,10 +32,14 @@ export {
   buildPackCatalogView,
   resolveToolProvider,
   availableToolNames,
+  resolveEventProvider,
+  availableEventFamilies,
   type PackDescriptor,
   type PackProviderKind,
   type PackCatalogView,
   type ToolProviderResolution,
+  type EventProviderResolution,
+  type ProvidedEventFamily,
 } from './pack-model.ts';
 export {
   resolveAndValidateBlueprint,

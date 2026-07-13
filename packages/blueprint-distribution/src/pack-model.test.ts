@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  availableEventFamilies,
   availableToolNames,
   buildPackCatalogView,
+  resolveEventProvider,
   resolveToolProvider,
   type PackDescriptor,
 } from './pack-model.js';
@@ -130,6 +132,153 @@ describe('availableToolNames', () => {
     const names = availableToolNames(view());
     expect(names).toEqual(
       new Set(['plans:list', 'coord:send', 'repomix.pack', 'git-tools.blame', 'git-tools.churn']),
+    );
+  });
+});
+
+/* ───────────────────────────────────────────────────────────────────────
+ * The EVENT axis (D-003, cupboard-public-release P-007) — the twin of the
+ * tool axis above, plus the one deliberate asymmetry (builtin outranks
+ * installed) that keeps this resolver consistent with the P-006 catalog merge.
+ * ─────────────────────────────────────────────────────────────────────── */
+
+/** An installed pack that provides an event family (and no tools — legal: events are their own axis). */
+const deployWatcher: PackDescriptor = {
+  name: 'deploy-watcher',
+  tools: [],
+  events: [{ family: 'deploy-watcher:settled', keyTemplate: 'deploy-watcher:settled:<env>' }],
+  hasRuntime: true,
+  kind: 'plugin',
+  source: 'installed',
+};
+
+/** A Cupboard listing (NOT installed) that declares an event family. */
+const canaryPack: PackDescriptor = {
+  name: 'canary',
+  tools: ['canary.check'],
+  events: [{ family: 'canary:flipped', keyTemplate: 'canary:flipped:<flag>', describe: 'a canary flag flipped' }],
+  hasRuntime: false,
+  kind: 'pack',
+  source: 'cupboard',
+  listingId: 'listing-canary',
+};
+
+/** The host's builtin event registry (operator-core EVENT_CATALOG), injected. */
+const builtinEvents = new Map<string, string>([
+  ['deploy', 'deploy:<env>'],
+  ['work-item:done', 'work-item:done:<id>'],
+]);
+
+const eventView = (extra: PackDescriptor[] = []) =>
+  buildPackCatalogView([deployWatcher, canaryPack, ...extra], new Set(['plans:list']), builtinEvents);
+
+describe('resolveEventProvider', () => {
+  it('resolves a BUILTIN family as available, handing back its key template', () => {
+    expect(resolveEventProvider('deploy', eventView())).toEqual({
+      family: 'deploy',
+      status: 'available',
+      provider: { kind: 'builtin', name: 'builtin' },
+      keyTemplate: 'deploy:<env>',
+    });
+  });
+
+  it('resolves an INSTALLED unit’s declared family as available, attributed to that unit', () => {
+    expect(resolveEventProvider('deploy-watcher:settled', eventView())).toEqual({
+      family: 'deploy-watcher:settled',
+      status: 'available',
+      provider: { kind: 'plugin', name: 'deploy-watcher' },
+      keyTemplate: 'deploy-watcher:settled:<env>',
+    });
+  });
+
+  it('resolves a CUPBOARD-declared family as installable, with the listing id + template', () => {
+    expect(resolveEventProvider('canary:flipped', eventView())).toEqual({
+      family: 'canary:flipped',
+      status: 'installable',
+      provider: { kind: 'pack', name: 'canary', listingId: 'listing-canary' },
+      keyTemplate: 'canary:flipped:<flag>',
+    });
+  });
+
+  it('returns unknown for a family nobody provides', () => {
+    expect(resolveEventProvider('nobody:emits-this', eventView())).toEqual({
+      family: 'nobody:emits-this',
+      status: 'unknown',
+    });
+  });
+
+  // ── The load-bearing one. ────────────────────────────────────────────────
+  // A pack that re-declares a BUILTIN family must NOT be reported as its
+  // provider: the P-006 catalog merge REFUSES that declaration (builtin always
+  // wins), and if this resolver answered "the pack provides it" the two would
+  // disagree about the same family. The concrete harm of the disagreement:
+  // `deploy:await` resolves its key template BY FAMILY ID, so a pack that
+  // silently re-pointed `deploy` would leave every awaiter parked on a key
+  // nothing ever emits — a permanent, silent hang.
+  it('REFUSES to let an installed unit shadow a builtin family — builtin wins, with the BUILTIN template', () => {
+    const shadower: PackDescriptor = {
+      name: 'evil-pack',
+      tools: [],
+      events: [{ family: 'deploy', keyTemplate: 'evil-pack:deploy:<whatever>' }],
+      hasRuntime: true,
+      kind: 'plugin',
+      source: 'installed',
+    };
+    const r = resolveEventProvider('deploy', eventView([shadower]));
+    expect(r.status).toBe('available');
+    expect(r.provider).toEqual({ kind: 'builtin', name: 'builtin' });
+    // The template is the BUILTIN's — never the shadower's. This is the exact
+    // byte that would strand an awaiter if the ladder were the other way round.
+    expect(r.keyTemplate).toBe('deploy:<env>');
+  });
+
+  it('also refuses a CUPBOARD listing that shadows a builtin family (never even installable)', () => {
+    const shadowListing: PackDescriptor = {
+      name: 'squatter',
+      tools: [],
+      events: [{ family: 'work-item:done', keyTemplate: 'squatter:wi:<id>' }],
+      hasRuntime: false,
+      kind: 'pack',
+      source: 'cupboard',
+      listingId: 'listing-squatter',
+    };
+    const r = resolveEventProvider('work-item:done', eventView([shadowListing]));
+    expect(r.status).toBe('available');
+    expect(r.provider).toEqual({ kind: 'builtin', name: 'builtin' });
+  });
+
+  it('an INSTALLED unit still shadows a CUPBOARD listing for the same family (install beats listing)', () => {
+    const installedCanary: PackDescriptor = {
+      name: 'canary-local',
+      tools: [],
+      events: [{ family: 'canary:flipped', keyTemplate: 'canary:flipped:<flag>' }],
+      hasRuntime: false,
+      kind: 'pack',
+      source: 'installed',
+    };
+    const r = resolveEventProvider('canary:flipped', eventView([installedCanary]));
+    expect(r.status).toBe('available');
+    expect(r.provider).toEqual({ kind: 'pack', name: 'canary-local' });
+  });
+
+  it('a unit with no events at all is inert on this axis (the common case stays unaffected)', () => {
+    const view = buildPackCatalogView([repomix, gitTools], new Set(['plans:list']), builtinEvents);
+    expect(resolveEventProvider('anything', view)).toEqual({ family: 'anything', status: 'unknown' });
+    expect(resolveEventProvider('deploy', view).status).toBe('available');
+  });
+
+  it('defaults builtinEvents to empty when a caller omits it (back-compat with the tool-only callers)', () => {
+    const view = buildPackCatalogView([deployWatcher], new Set(['plans:list']));
+    expect(resolveEventProvider('deploy', view)).toEqual({ family: 'deploy', status: 'unknown' });
+    // …but the installed unit's own family still resolves.
+    expect(resolveEventProvider('deploy-watcher:settled', view).status).toBe('available');
+  });
+});
+
+describe('availableEventFamilies', () => {
+  it('is builtins ∪ installed-unit families, excluding cupboard-only ones', () => {
+    expect(availableEventFamilies(eventView())).toEqual(
+      new Set(['deploy', 'work-item:done', 'deploy-watcher:settled']),
     );
   });
 });

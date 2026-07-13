@@ -23,6 +23,15 @@
  *                     in `provides_tools` (install that unit and the tool
  *                     resolves);
  *   - `unknown`     — no known provider.
+ *
+ * **The same question, asked of EVENTS** (`cupboard-public-release-2026-07-12`
+ * D-003, P-007): *given an awaitable event family, who provides it?* Events are
+ * a dependency axis exactly like tools — a unit that reacts to `foo:done` is as
+ * broken without a provider of `foo:done` as it is without a tool it calls, so
+ * the same three-valued ladder answers it ({@link resolveEventProvider}). The
+ * one deliberate asymmetry — builtin outranks installed on the event axis, the
+ * reverse of the tool axis — is explained on that function; it exists so the
+ * resolver and the P-006 catalog merge cannot disagree about a collision.
  */
 
 /** Where a pack's provider sits on the tool→provider resolution ladder. */
@@ -234,5 +243,75 @@ export function resolveToolProvider(tool: string, view: PackCatalogView): ToolPr
 export function availableToolNames(view: PackCatalogView): Set<string> {
   const out = new Set<string>(view.builtinTools);
   for (const tool of view.installedToolIndex.keys()) out.add(tool);
+  return out;
+}
+
+/** The template a unit declares for `family`, if it declares it at all. */
+function templateOf(pack: PackDescriptor, family: string): string | undefined {
+  return pack.events?.find((e) => e?.family === family)?.keyTemplate;
+}
+
+/**
+ * Resolve one event FAMILY id to its provider (D-003) — the event-axis twin of
+ * {@link resolveToolProvider}. Ladder:
+ *   1. the BUILTIN registry owns it → `available` (builtin);
+ *   2. an INSTALLED unit declares it → `available` (plugin|pack);
+ *   3. a Cupboard listing declares it in `provides_events` → `installable`;
+ *   4. nobody declares it → `unknown`.
+ *
+ * ⚠ NOTE THE ORDER — builtin outranks installed here, the REVERSE of
+ * `resolveToolProvider`. That inversion is deliberate and load-bearing:
+ *
+ *   - For TOOLS the two rungs can never both hold: the tooldef registry fails
+ *     loud on a duplicate name, so a tool is in exactly one of them and
+ *     ordering is mere attribution (see resolveToolProvider's note).
+ *   - For EVENTS they CAN both hold — a pack is free to declare a family id the
+ *     builtin catalog already owns — and the catalog merge (P-006) resolves
+ *     that collision by REFUSING the installed declaration: builtin always
+ *     wins, because the sugar verbs resolve key templates by family id, so
+ *     letting a pack re-point e.g. `deploy` would leave `deploy:await` waiting
+ *     on a key nothing emits — an agent hung forever, silently.
+ *
+ * So checking installed first would make this resolver ANSWER A COLLISION
+ * DIFFERENTLY FROM THE CATALOG THAT REFUSED IT ("pack X provides deploy" vs
+ * "builtin provides deploy; pack X's declaration was rejected") — two truths
+ * for one family, which is precisely the class of drift that strands awaiters.
+ * One policy, stated once, enforced in both places.
+ */
+export function resolveEventProvider(family: string, view: PackCatalogView): EventProviderResolution {
+  const builtinTemplate = view.builtinEvents.get(family);
+  if (builtinTemplate !== undefined) {
+    return {
+      family,
+      status: 'available',
+      provider: { kind: 'builtin', name: 'builtin' },
+      keyTemplate: builtinTemplate,
+    };
+  }
+  const installed = view.installedEventIndex.get(family);
+  if (installed) {
+    return {
+      family,
+      status: 'available',
+      provider: { kind: installed.kind, name: installed.name },
+      keyTemplate: templateOf(installed, family),
+    };
+  }
+  const cupboard = view.cupboardEventIndex.get(family);
+  if (cupboard) {
+    return {
+      family,
+      status: 'installable',
+      provider: { kind: cupboard.kind, name: cupboard.name, listingId: cupboard.listingId ?? null },
+      keyTemplate: templateOf(cupboard, family),
+    };
+  }
+  return { family, status: 'unknown' };
+}
+
+/** Every event family awaitable right now (built-ins + installed units). */
+export function availableEventFamilies(view: PackCatalogView): Set<string> {
+  const out = new Set<string>(view.builtinEvents.keys());
+  for (const family of view.installedEventIndex.keys()) out.add(family);
   return out;
 }
