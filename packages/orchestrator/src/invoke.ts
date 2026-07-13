@@ -899,6 +899,16 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // referenced for fleet roles; in the spine so every seeded client can actually comply.
   'facts:assert',
   'facts:list',
+  // EI-10946/EI-10947 — facts:retract is the ONLY exit from a standing fact, and a fact is
+  // the one surface delivered VERBATIM into every future orient as BINDING context. Seeding
+  // assert + list without retract meant an agent could arm that trap but not disarm it: a
+  // carry-note fact ("NEXT: implement EI-10539") kept instructing every future orient to redo
+  // finished work, and the agent that noticed — search reporting facts:retract as "not found"
+  // — gave up on retracting it. The stale-source flag (EI-10947) now literally tells the
+  // reader to call `facts:retract { key }`, so the verb it names must be callable without a
+  // discovery detour. Same rule as the work-item verbs above: never seed the create and hide
+  // the undo.
+  'facts:retract',
   'work_items:checkpoint',
   // Engine-loop lifecycle. arm/checkpoint keep unattended sessions alive; status/end are
   // the wind-down half. EI-8597: native ToolSearch can miss loop:end/status even when the
