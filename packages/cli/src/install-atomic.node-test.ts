@@ -8,7 +8,7 @@
  * tests pin both the happy path AND the failure-preserves-existing path.
  *
  * Run with:
- *   cd libs/papercusp/packages/cli && npx tsx --test src/install-atomic.test.ts
+ *   cd libs/papercusp/packages/cli && node --test --import tsx src/install-atomic.node-test.ts
  *
  * Each test spawns the real `papercusp install` CLI against a per-test
  * mock HTTP marketplace served on a random port. The mock validates the
