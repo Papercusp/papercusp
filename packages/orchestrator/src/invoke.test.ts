@@ -1183,7 +1183,13 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // emit/catalog — every persona/leader flow says "don't poll, await the key", but the
   // verbs weren't in the spine, so seeded sessions whose client search missed them
   // falsely concluded the capability didn't exist and fell back to blind poll loops.
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 38, 'core stays small');
+  // Then +3 → 41 (EI-10946): work_items:comment, work_items:update, and facts:retract —
+  // the CORRECTION verbs for the create/mutate verbs already seeded. The spine carried the
+  // WRITE but not the UNDO, so an agent whose client-search missed them concluded no such
+  // verb existed and built a strictly-worse workaround (abusing checkpoint as an erratum
+  // channel; abandoning a stale-fact retract). Invariant now guarded by
+  // core-spine-inverses.test.ts (never seed a create and hide its undo).
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 41, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)
