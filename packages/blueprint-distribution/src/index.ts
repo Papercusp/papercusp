@@ -40,6 +40,7 @@ export {
   type ToolProviderResolution,
   type EventProviderResolution,
   type ProvidedEventFamily,
+  type RequiredEventFamily,
 } from './pack-model.ts';
 export {
   resolveAndValidateBlueprint,

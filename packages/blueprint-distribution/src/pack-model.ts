@@ -53,6 +53,26 @@ export interface ProvidedEventFamily {
 }
 
 /**
+ * One event FAMILY a unit declares it REQUIRES — the consumer half of the same
+ * axis (D-003), and the mirror of `ProvidedEventFamily`. A structural subset of
+ * the plugin-SDK's `ManifestEventDependency`.
+ *
+ * This is a DECLARATION, not a resolution: it says "this unit needs family X",
+ * never "X is available". `resolveEventProvider` answers the latter, against a
+ * catalog. Keeping the two apart is what lets a listing carry its requirements
+ * BEFORE anything is installed — which is the whole point of surfacing them on
+ * a listing's detail page: the P-007 install gate HARD-FAILS a required family
+ * nothing provides, so the user has to be able to see that coming rather than
+ * discover it in a refusal toast after clicking Install.
+ */
+export interface RequiredEventFamily {
+  /** The provided family id this unit needs. */
+  family: string;
+  /** listen-if-present soft dep — an unresolvable optional dep never blocks an install. */
+  optional?: boolean;
+}
+
+/**
  * One distribution unit, projected into the pack model. Derived by the host:
  * a loaded/installed plugin, an installed code-tool pack, or a Cupboard
  * listing (kind plugin|pack) that has not been installed yet.
