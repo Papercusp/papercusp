@@ -30,13 +30,15 @@ than inventing one.
 Multiple agents and humans share one working tree and one datastore. The rules that keep
 it collision-free:
 
-- **File locking is ENFORCED, not advisory — so edit freely; don't self-censor.** A hook
-  locks each file before every edit and BLOCKS when a peer holds it (you'll see holder +
-  intent + expiry). When blocked: pivot to other useful work, or re-queue the lock and
+- **File locking is ENFORCED, not advisory — so edit freely; don't self-censor.** Follow the
+  one effective file-lock mode supplied by your client/runtime: `automatic` means its hook
+  claims/releases each edited file; `manual` means you call `locks:acquire` before the edit
+  and release it afterward. Either mode BLOCKS on a peer hold (you'll see holder + intent +
+  expiry). Never combine both modes. When blocked: pivot to other useful work, or re-queue the lock and
   END YOUR TURN — you're re-invoked on grant. NEVER route around a block (rename/copy/force)
   — that lock is a peer's in-flight work. Beyond that one rule, do NOT hold back from
   touching a file because another agent might be working "nearby" or on a related change:
-  concurrent editing is SAFE BY DESIGN — the lock serializes the actual write and the
+  concurrent editing is SAFE BY DESIGN — the active lock mode serializes the actual write and the
   git-sync resolver merges the tree. The lock system exists precisely so you never have to
   coordinate-before-editing out of fear of interfering. Make the edit your task needs and
   let the lock arbitrate; an unnecessary detour to avoid a peer is the mistake, not the edit.
