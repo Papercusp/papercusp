@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, eventAwaitNodesInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, potEvalInstancesInHarnessShared, potEvalRunsInHarnessShared, memoryVecHarrierInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, cupKeeperInstancesInHarnessShared, cupKeeperRunsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, memoryAnchorsInHarnessShared, potEvalScoresInHarnessShared, cupKeeperScoresInHarnessShared, benchRunTasksInHarnessShared, potsInHarnessShared, potMembersInHarnessShared } from "./generated";
+import { usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, eventAwaitNodesInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, savedPromptsInHarnessShared, potEvalInstancesInHarnessShared, potEvalRunsInHarnessShared, memoryVecHarrierInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, cupKeeperInstancesInHarnessShared, cupKeeperRunsInHarnessShared, goalsInHarnessShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, memoryAnchorsInHarnessShared, potEvalScoresInHarnessShared, cupKeeperScoresInHarnessShared, benchRunTasksInHarnessShared, potsInHarnessShared, potMembersInHarnessShared } from "./generated";
 
 export const userSessionsInHarnessSharedRelations = relations(userSessionsInHarnessShared, ({one}) => ({
 	usersInHarnessShared: one(usersInHarnessShared, {
@@ -137,6 +137,17 @@ export const benchmarkRunResultInHarnessSharedRelations = relations(benchmarkRun
 
 export const benchmarkRolloutInHarnessSharedRelations = relations(benchmarkRolloutInHarnessShared, ({many}) => ({
 	benchmarkRunResultInHarnessShareds: many(benchmarkRunResultInHarnessShared),
+}));
+
+export const savedPromptsInHarnessSharedRelations = relations(savedPromptsInHarnessShared, ({one, many}) => ({
+	savedPromptsInHarnessShared: one(savedPromptsInHarnessShared, {
+		fields: [savedPromptsInHarnessShared.parentId],
+		references: [savedPromptsInHarnessShared.id],
+		relationName: "savedPromptsInHarnessShared_parentId_savedPromptsInHarnessShared_id"
+	}),
+	savedPromptsInHarnessShareds: many(savedPromptsInHarnessShared, {
+		relationName: "savedPromptsInHarnessShared_parentId_savedPromptsInHarnessShared_id"
+	}),
 }));
 
 export const potEvalRunsInHarnessSharedRelations = relations(potEvalRunsInHarnessShared, ({one, many}) => ({

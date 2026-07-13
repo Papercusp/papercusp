@@ -1529,23 +1529,6 @@ export const substrateOutboxInHarnessShared = harnessShared.table("substrate_out
 	check("substrate_outbox_op_check", sql`op = ANY (ARRAY['put'::text, 'del'::text])`),
 ]);
 
-export const savedPromptsInHarnessShared = harnessShared.table("saved_prompts", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug"),
-	name: text().notNull(),
-	body: text().notNull(),
-	description: text(),
-	argHint: text("arg_hint"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	uniqueIndex("saved_prompts_scope_name").using("btree", sql`workspace_id`, sql`COALESCE(harness_slug, ''::text)`, sql`name`),
-	pgPolicy("saved_prompts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.id], name: "saved_prompts_pkey"}),
-
-]);
-
 export const gitExportOutboxInHarnessShared = harnessShared.table("git_export_outbox", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -2749,6 +2732,37 @@ export const benchmarkCoordEventInHarnessShared = harnessShared.table("benchmark
 
 ]);
 
+export const savedPromptsInHarnessShared = harnessShared.table("saved_prompts", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug"),
+	name: text().notNull(),
+	body: text().notNull(),
+	description: text(),
+	argHint: text("arg_hint"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	parentId: uuid("parent_id"),
+	position: text(),
+	title: text(),
+	collapsed: boolean().default(false).notNull(),
+	pinned: boolean().default(false).notNull(),
+	usageCount: integer("usage_count").default(0).notNull(),
+	lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: 'string' }),
+	archivedAt: timestamp("archived_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	uniqueIndex("saved_prompts_scope_name").using("btree", sql`workspace_id`, sql`COALESCE(harness_slug, ''::text)`, sql`name`),
+	index("saved_prompts_scope_parent").using("btree", sql`workspace_id`, sql`COALESCE(harness_slug, ''::text)`, sql`parent_id`),
+	foreignKey({
+			columns: [table.parentId],
+			foreignColumns: [table.id],
+			name: "saved_prompts_parent_fk"
+		}).onDelete("cascade"),
+	pgPolicy("saved_prompts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.id], name: "saved_prompts_pkey"}),
+
+]);
+
 export const operatorCoordLivenessConfigInHarnessShared = harnessShared.table("operator_coord_liveness_config", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -3159,6 +3173,17 @@ export const operatorMigratePolicyInHarnessShared = harnessShared.table("operato
 
 ]);
 
+export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table("operator_telemetry_buffer_config", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
+
+]);
+
 export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs", {
 	ownerId: text("owner_id").primaryKey().notNull(),
 	workspaceId: text("workspace_id").default('default').notNull(),
@@ -3183,17 +3208,6 @@ export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs"
 	index("session_briefs_native_session_id_idx").using("btree", table.nativeSessionId.asc().nullsLast().op("text_ops")).where(sql`(native_session_id IS NOT NULL)`),
 	index("session_briefs_updated_at_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
 	primaryKey({ columns: [table.ownerId], name: "session_briefs_pkey"}),
-
-]);
-
-export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table("operator_telemetry_buffer_config", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().default({}).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
 
 ]);
 
