@@ -383,11 +383,29 @@ export const WakeSchema = z.object({
 });
 
 /**
- * Learning — which shared-memory pack seeds the hive and which learning loops it
- * provisions, lifted from the hardcoded hive-create path (hive-blueprint-generalization
- * Phase 4 / P-014). `pack` omitted ⇒ the default pack; 'none' ⇒ seed nothing.
+ * Knowledge — which shared-memory Knowledge Pack seeds the pot
+ * (cupboard-public-release-2026-07-12 P-001; formerly `learning.pack`).
+ * `pack` omitted ⇒ the default pack; 'none' ⇒ seed nothing.
+ */
+export const KnowledgeSchema = z.object({
+  pack: z.string().optional(),
+});
+
+/**
+ * Learning — which learning LOOPS the pot provisions, lifted from the hardcoded
+ * hive-create path (hive-blueprint-generalization Phase 4 / P-014).
+ *
+ * The seed-pack key moved OUT of this block to `knowledge.pack` in the
+ * learning→knowledge-packs rename: the learning LOOPS (gym, scout, regret-mine)
+ * are a different system from Knowledge Packs and keep their name — only the
+ * PACK moved. `pack` survives here as a DEPRECATED read-side key: a blueprint
+ * authored before the rename (including any installed in a user's tree, which we
+ * do not rewrite) still declares `learning.pack`, and blueprint YAML is a true
+ * boundary per knowledge-packs-2026-07-11 D-001. Readers MUST prefer
+ * `knowledge.pack` and fall back to this. New blueprints must not set it.
  */
 export const LearningSchema = z.object({
+  /** @deprecated authored blueprints use `knowledge.pack`; read-only compat. */
   pack: z.string().optional(),
   loops: z.array(z.string()).default([]),
 });
