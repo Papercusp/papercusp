@@ -67,8 +67,8 @@ export const uiIntentsInHarnessShared = harnessShared.table("ui_intents", {
 export const workspaceBackupSettingsInHarnessShared = harnessShared.table("workspace_backup_settings", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	enabled: boolean().default(true).notNull(),
-	cadenceMode: text("cadence_mode").default('both').notNull(),
-	cadenceMinutes: integer("cadence_minutes").default(5).notNull(),
+	cadenceMode: text("cadence_mode").default('event').notNull(),
+	cadenceMinutes: integer("cadence_minutes").default(60).notNull(),
 	retentionPreset: text("retention_preset").default('default').notNull(),
 	retentionCustomJson: jsonb("retention_custom_json"),
 	eventTriggersJson: jsonb("event_triggers_json").default(["pre_destructive","post_run","plugin_install","secret_change"]).notNull(),
@@ -97,26 +97,6 @@ export const scoutDigestSnapshotsInHarnessShared = harnessShared.table("scout_di
 	pgPolicy("scout_digest_snapshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const coordEntitySubscriptionsInHarnessShared = harnessShared.table("coord_entity_subscriptions", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coord_entity_subscriptions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	workspaceId: text("workspace_id").default('default').notNull(),
-	subscriberId: text("subscriber_id").notNull(),
-	targetKind: text("target_kind").notNull(),
-	targetRef: text("target_ref").notNull(),
-	deliveryMode: text("delivery_mode").default('full').notNull(),
-	expiresTs: timestamp("expires_ts", { withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	uniqueIndex("coord_entity_subscriptions_active_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
-	index("coord_entity_subscriptions_target_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
-	check("coord_entity_subscriptions_mode_check", sql`delivery_mode = ANY (ARRAY['full'::text, 'digest'::text, 'mention'::text])`),
-	check("coord_entity_subscriptions_ref_nonempty", sql`target_ref <> ''::text`),
-	check("coord_entity_subscriptions_workspace_nonempty", sql`workspace_id <> ''::text`),
-	check("coord_entity_subscriptions_kind_check", sql`target_kind = ANY (ARRAY['topic'::text, 'object'::text, 'fleet'::text, 'event'::text])`),
-]);
-
 export const coordLinksInHarnessShared = harnessShared.table("coord_links", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coord_links_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -135,6 +115,30 @@ export const coordLinksInHarnessShared = harnessShared.table("coord_links", {
 	check("coord_links_endpoints_nonempty", sql`(src_kind <> ''::text) AND (src_ref <> ''::text) AND (dst_kind <> ''::text) AND (dst_ref <> ''::text)`),
 	check("coord_links_rel_nonempty", sql`rel <> ''::text`),
 	check("coord_links_workspace_nonempty", sql`workspace_id <> ''::text`),
+]);
+
+export const coordEntitySubscriptionsInHarnessShared = harnessShared.table("coord_entity_subscriptions", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coord_entity_subscriptions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	subscriberId: text("subscriber_id").notNull(),
+	targetKind: text("target_kind").notNull(),
+	targetRef: text("target_ref").notNull(),
+	deliveryMode: text("delivery_mode").default('full').notNull(),
+	expiresTs: timestamp("expires_ts", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
+	followBlockers: boolean("follow_blockers").default(false).notNull(),
+	derivedFromKind: text("derived_from_kind"),
+	derivedFromRef: text("derived_from_ref"),
+}, (table) => [
+	uniqueIndex("coord_entity_subscriptions_active_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
+	index("coord_entity_subscriptions_derived_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.derivedFromKind.asc().nullsLast().op("text_ops"), table.derivedFromRef.asc().nullsLast().op("text_ops")).where(sql`((cancelled_at IS NULL) AND (derived_from_kind IS NOT NULL))`),
+	index("coord_entity_subscriptions_target_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
+	check("coord_entity_subscriptions_mode_check", sql`delivery_mode = ANY (ARRAY['full'::text, 'digest'::text, 'mention'::text])`),
+	check("coord_entity_subscriptions_ref_nonempty", sql`target_ref <> ''::text`),
+	check("coord_entity_subscriptions_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("coord_entity_subscriptions_kind_check", sql`target_kind = ANY (ARRAY['topic'::text, 'object'::text, 'fleet'::text, 'event'::text])`),
 ]);
 
 export const agentActivityInHarnessShared = harnessShared.table("agent_activity", {
@@ -5690,26 +5694,6 @@ export const fleetEkgSessionsInHarnessShared = harnessShared.table("fleet_ekg_se
 	check("fleet_ekg_sessions_event_count_check", sql`event_count > 0`),
 ]);
 
-export const sessionIngestStateInHarnessShared = harnessShared.table("session_ingest_state", {
-	sourceKind: text("source_kind").notNull(),
-	filePath: text("file_path").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	byteOffset: bigint("byte_offset", { mode: "number" }).default(0).notNull(),
-	turnCount: integer("turn_count").default(0).notNull(),
-	sessionId: text("session_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	mtimeMs: bigint("mtime_ms", { mode: "number" }),
-	lastError: text("last_error"),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	promptCount: integer("prompt_count").default(0).notNull(),
-	responseCount: integer("response_count").default(0).notNull(),
-	toolCallCount: integer("tool_call_count").default(0).notNull(),
-	lastInferenceId: text("last_inference_id"),
-}, (table) => [
-	index("session_ingest_state_session_idx").using("btree", table.sourceKind.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
-	primaryKey({ columns: [table.sourceKind, table.filePath], name: "session_ingest_state_pkey"}),
-]);
-
 export const cupClaimSpecsInHarnessShared = harnessShared.table("cup_claim_specs", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	beeId: text("bee_id").notNull(),
@@ -6200,31 +6184,6 @@ export const sharedPresenceInHarnessShared = harnessShared.table("shared_presenc
 	pgPolicy("shared_presence_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const agentFleetsInHarnessShared = harnessShared.table("agent_fleets", {
-	workspaceId: text("workspace_id").notNull(),
-	fleetSlug: text("fleet_slug").notNull(),
-	title: text(),
-	description: text(),
-	owner: text(),
-	leaderOwnerId: text("leader_owner_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdAt: bigint("created_at", { mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	colorScheme: text("color_scheme"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	lastLaunchAt: bigint("last_launch_at", { mode: "number" }),
-	lastLaunchCount: integer("last_launch_count"),
-	controlState: text("control_state").default('active').notNull(),
-	controlReason: text("control_reason"),
-	controlBy: text("control_by"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	controlAt: bigint("control_at", { mode: "number" }),
-}, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.fleetSlug], name: "agent_fleets_pkey"}),
-	pgPolicy("agent_fleets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const regretFindingsInHarnessShared = harnessShared.table("regret_findings", {
 	workspaceId: text("workspace_id").notNull(),
 	runId: text("run_id").notNull(),
@@ -6246,6 +6205,30 @@ export const regretFindingsInHarnessShared = harnessShared.table("regret_finding
 	primaryKey({ columns: [table.workspaceId, table.runId], name: "regret_findings_pkey"}),
 	check("regret_findings_replay_status_check", sql`replay_status = ANY (ARRAY['pending'::text, 'replayed'::text, 'skipped'::text])`),
 	check("regret_findings_divergence_kind_check", sql`(divergence_kind IS NULL) OR (divergence_kind = ANY (ARRAY['error-loop'::text, 'repeat-loop'::text, 'burn-inflection'::text, 'rescue-marker'::text]))`),
+]);
+
+export const sessionIngestStateInHarnessShared = harnessShared.table("session_ingest_state", {
+	sourceKind: text("source_kind").notNull(),
+	filePath: text("file_path").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	byteOffset: bigint("byte_offset", { mode: "number" }).default(0).notNull(),
+	turnCount: integer("turn_count").default(0).notNull(),
+	sessionId: text("session_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	mtimeMs: bigint("mtime_ms", { mode: "number" }),
+	lastError: text("last_error"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	promptCount: integer("prompt_count").default(0).notNull(),
+	responseCount: integer("response_count").default(0).notNull(),
+	toolCallCount: integer("tool_call_count").default(0).notNull(),
+	lastInferenceId: text("last_inference_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	countsBackfillOffset: bigint("counts_backfill_offset", { mode: "number" }).default(0).notNull(),
+	countsBackfillLastInferenceId: text("counts_backfill_last_inference_id"),
+	countsBackfilledAt: timestamp("counts_backfilled_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("session_ingest_state_session_idx").using("btree", table.sourceKind.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
+	primaryKey({ columns: [table.sourceKind, table.filePath], name: "session_ingest_state_pkey"}),
 ]);
 
 export const potEvalScoresInHarnessShared = harnessShared.table("pot_eval_scores", {
@@ -6843,6 +6826,39 @@ export const agentRunsConsolidatedInHarnessShared = harnessShared.table("agent_r
 	index("arc_ts_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
 	index("arc_workspace_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
 	primaryKey({ columns: [table.harnessSlug, table.runId], name: "agent_runs_consolidated_pkey"}),
+]);
+
+export const agentFleetsInHarnessShared = harnessShared.table("agent_fleets", {
+	workspaceId: text("workspace_id").notNull(),
+	fleetSlug: text("fleet_slug").notNull(),
+	title: text(),
+	description: text(),
+	owner: text(),
+	leaderOwnerId: text("leader_owner_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+	colorScheme: text("color_scheme"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	lastLaunchAt: bigint("last_launch_at", { mode: "number" }),
+	lastLaunchCount: integer("last_launch_count"),
+	controlState: text("control_state").default('active').notNull(),
+	controlReason: text("control_reason"),
+	controlBy: text("control_by"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	controlAt: bigint("control_at", { mode: "number" }),
+	headcountTarget: integer("headcount_target"),
+	headcountConfig: jsonb("headcount_config"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	headcountNextAttemptAt: bigint("headcount_next_attempt_at", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	headcountBackoffMs: bigint("headcount_backoff_ms", { mode: "number" }).default(0).notNull(),
+	headcountLastError: text("headcount_last_error"),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.fleetSlug], name: "agent_fleets_pkey"}),
+	pgPolicy("agent_fleets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("agent_fleets_headcount_target_positive", sql`(headcount_target IS NULL) OR ((headcount_target >= 1) AND (headcount_target <= 12))`),
 ]);
 
 export const transferLessonsInHarnessShared = harnessShared.table("transfer_lessons", {
