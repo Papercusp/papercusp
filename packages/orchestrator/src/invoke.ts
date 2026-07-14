@@ -56,6 +56,7 @@ import type { AgentBackend, HarnessConfig, InvokeResult } from './types';
 import { resolveAgentBackend, normalizeModelForBackend } from './env';
 import { hasExplicitDisallowedTools, nativeSchedulerDenyFlag } from './native-scheduler-deny';
 import { NO_SUBAGENT_TOOLS_DENY, noSubagentToolsDenyFlag } from './no-subagent-deny';
+import { ownerDesktopNotifyDenyFlag } from './owner-desktop-notify-deny';
 import { ROLE_MODEL_DEFAULTS } from './role-models';
 import { workspaceHomeDir } from './workspace';
 
@@ -2393,6 +2394,11 @@ export async function invoke(
     // headless twin of psu's default-deny + the wake-executor resume re-arm; there is
     // no headless opt-in (the `--allow-subagents` opt-in is a psu-launch surface only).
     extraFlags.push(noSubagentToolsDenyFlag());
+    // Owner-desktop-notification lockout (owner directive 2026-07-14): every
+    // headless claude spawn loses the easy `notify-send` shell paths,
+    // UNCONDITIONALLY (same union-composition rationale as the subagent deny
+    // above; layered with the psu PATH shim — see owner-desktop-notify-deny.ts).
+    extraFlags.push(ownerDesktopNotifyDenyFlag());
     // Native-scheduler lockout (D-001/D-005): every headless claude spawn schedules
     // ONLY via the harness routines table. An explicit operator-supplied deny list
     // wins here (D-004), so this KEEPS its guard — unlike the subagent deny above.
