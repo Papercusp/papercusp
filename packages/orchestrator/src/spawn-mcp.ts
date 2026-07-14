@@ -488,8 +488,51 @@ export interface SpawnOmpConfigOverlayHandle {
 }
 
 /**
- * Compaction settings for a LOCAL-model omp fleet spawn (deterministic-context-carry
- * P-001, ornith overflow 2026-07-13). A local-model spawn is NOT gateway-pinned, so it
+ * LOCKSTEP with operator-core's inference-gateway/gateway.ts `MAINTENANCE_SUMMARIZE_PATH`
+ * — operator-core depends on THIS package, so the constant cannot be imported here (same
+ * reason OMP_LOCAL_MODEL_PREFIXES above is a mirror, not an import).
+ */
+export const OMP_MAINTENANCE_SUMMARIZE_PATH = '/maintenance/summarize';
+
+/**
+ * The gateway remote-compaction endpoint for an omp spawn (deterministic-context-carry
+ * P-002): where omp's summarizer POSTs `{systemPrompt, prompt}` → `{summary}` instead of
+ * running the summary on the spawn's own backend. Prefer the `baseUrl` already baked into
+ * the spawn's gateway models.yml (stripping the openai wire's trailing `/v1`) so the
+ * endpoint always targets the SAME gateway the spawn's model traffic rides; fall back to
+ * the resolved local gateway port for a spawn with no models.yml (local-model spawns).
+ */
+export function ompRemoteCompactionEndpoint(
+  modelsYml?: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  let root = '';
+  const m = modelsYml?.match(/^[ \t]*baseUrl:[ \t]*"?([^"\s#]+)"?/m);
+  if (m) root = m[1].replace(/\/v1\/?$/, '');
+  if (!root) {
+    const p = Number(env.PAPERCUSP_GATEWAY_PORT);
+    const port = Number.isFinite(p) && p > 0 ? p : 8788;
+    root = `http://127.0.0.1:${port}`;
+  }
+  return root.replace(/\/+$/, '') + OMP_MAINTENANCE_SUMMARIZE_PATH;
+}
+
+/** Options for {@link writeOmpCompactionOverlay}. */
+export interface OmpCompactionOverlayOpts {
+  /**
+   * `'shake'` (the default) seeds the mechanical strategy @70% — for LOCAL-model spawns,
+   * whose text-only models can't read snapcompact's image archives. `null` omits the
+   * strategy keys entirely: a gateway-pinned hosted model keeps its native strategy
+   * (P-001 decision) and the overlay carries only `remoteEndpoint`.
+   */
+  strategy?: 'shake' | null;
+  /** omp `compaction.remoteEndpoint` — the gateway maintenance-lane summarize URL. */
+  remoteEndpoint?: string;
+}
+
+/**
+ * Compaction settings for an omp fleet spawn (deterministic-context-carry P-001/P-002,
+ * ornith overflow 2026-07-13). A local-model spawn is NOT gateway-pinned, so it
  * gets no per-spawn HOME from {@link writeSpawnOmpHome} — it runs on the shared
  * `<HOME>/.omp/agent/config.yml`, whose compaction defaults (`snapcompact`, threshold −1)
  * archive history as images a text-only local model can't read, then fall back to LLM
@@ -497,12 +540,25 @@ export interface SpawnOmpConfigOverlayHandle {
  * un-gated over-window send → HTTP 400). Delivery is omp's repeatable `--config <file>`
  * overlay flag (a config.yml-style mapping merged over the base), so the shared config is
  * never mutated and no per-spawn HOME is needed: `shake` is mechanical (no LLM, no images)
- * and 70% fires it before the wall.
+ * and 70% fires it before the wall. `remoteEndpoint` (P-002) additionally routes any LLM
+ * summarization the session still runs off the spawn's own backend onto the gateway's
+ * reserved maintenance lane. NOTE: omp THROWS on a remoteEndpoint failure (no local
+ * fallback), so callers only deliver it where the gateway is already a hard dependency
+ * (gateway-pinned) or where the alternative is worse (a local model's own saturated slot).
  */
-export function writeOmpCompactionOverlay(): SpawnOmpConfigOverlayHandle {
+export function writeOmpCompactionOverlay(
+  opts: OmpCompactionOverlayOpts = {},
+): SpawnOmpConfigOverlayHandle {
+  const { strategy = 'shake', remoteEndpoint } = opts;
+  const lines = ['compaction:'];
+  if (strategy === 'shake') lines.push('  strategy: shake', '  thresholdPercent: 70');
+  if (remoteEndpoint) lines.push(`  remoteEndpoint: "${remoteEndpoint.replace(/"/g, '\\"')}"`);
+  // A bare `compaction:` parses as YAML null and would NULL-OUT the base compaction
+  // block on merge — reject the strategy:null + no-endpoint combination outright.
+  if (lines.length === 1) throw new Error('empty omp compaction overlay (strategy:null with no remoteEndpoint)');
   const dir = mkdtempSync(join(tmpdir(), 'omp-cfg-overlay-'));
   const path = join(dir, 'compaction-local-model.yml');
-  writeFileSync(path, 'compaction:\n  strategy: shake\n  thresholdPercent: 70\n', 'utf8');
+  writeFileSync(path, lines.join('\n') + '\n', 'utf8');
   try { chmodSync(path, 0o600); } catch { /* best-effort */ }
   return {
     path,
