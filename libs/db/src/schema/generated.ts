@@ -2754,6 +2754,7 @@ export const savedPromptsInHarnessShared = harnessShared.table("saved_prompts", 
 	usageCount: integer("usage_count").default(0).notNull(),
 	lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: 'string' }),
 	archivedAt: timestamp("archived_at", { withTimezone: true, mode: 'string' }),
+	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	uniqueIndex("saved_prompts_scope_name").using("btree", sql`workspace_id`, sql`COALESCE(harness_slug, ''::text)`, sql`name`),
 	index("saved_prompts_scope_parent").using("btree", sql`workspace_id`, sql`COALESCE(harness_slug, ''::text)`, sql`parent_id`),
@@ -3011,6 +3012,17 @@ export const memoryVecHarrierInHarnessShared = harnessShared.table("memory_vec_h
 
 ]);
 
+export const operatorContextDoorsConfigInHarnessShared = harnessShared.table("operator_context_doors_config", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_context_doors_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_context_doors_config_pkey"}),
+
+]);
+
 export const benchRunEventsInHarnessShared = harnessShared.table("bench_run_events", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	eventId: bigint("event_id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.bench_run_events_event_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -3102,6 +3114,28 @@ export const cupKeeperRunsInHarnessShared = harnessShared.table("cup_keeper_runs
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.runId], name: "cup_keeper_runs_pkey"}),
 
+]);
+
+export const sessionTurnJournalInHarnessShared = harnessShared.table("session_turn_journal", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.session_turn_journal_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	ownerId: text("owner_id"),
+	agent: text(),
+	sourceKind: text("source_kind").default('claude').notNull(),
+	sessionId: text("session_id").notNull(),
+	turnTs: timestamp("turn_ts", { withTimezone: true, mode: 'string' }),
+	note: text().notNull(),
+	source: text().notNull(),
+	flagged: boolean().default(false).notNull(),
+	tripwire: jsonb(),
+	harnessSlug: text("harness_slug"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("session_turn_journal_created_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")),
+	index("session_turn_journal_owner_ts_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	uniqueIndex("session_turn_journal_turn_uq").using("btree", sql`session_id`, sql`COALESCE(turn_ts, '1969-12-31 19:00:00-05'::timestamp with time`),
+	check("session_turn_journal_source_check", sql`source = ANY (ARRAY['agent'::text, 'mechanical'::text])`),
 ]);
 
 export const sentinelSaysInHarnessShared = harnessShared.table("sentinel_says", {
