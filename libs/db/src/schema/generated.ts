@@ -6503,12 +6503,14 @@ export const potPlacementsInHarnessShared = harnessShared.table("pot_placements"
 	escalationMsgId: text("escalation_msg_id"),
 	placedAt: timestamp("placed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	lastRecoveryAt: timestamp("last_recovery_at", { withTimezone: true, mode: 'string' }),
+	recoveryStartedAt: timestamp("recovery_started_at", { withTimezone: true, mode: 'string' }),
 	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	infraLossCount: integer("infra_loss_count").default(0).notNull(),
 	lastLossSpawnId: text("last_loss_spawn_id"),
 }, (table) => [
 	index("pot_placements_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	index("pot_placements_recovering_age_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.recoveryStartedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'recovering'::text)`),
 	primaryKey({ columns: [table.workspaceId, table.installSlug, table.workItemId], name: "pot_placements_pkey"}),
 	check("pot_placements_status_check", sql`status = ANY (ARRAY['working'::text, 'recovering'::text, 'cursed'::text, 'stranded'::text, 'completed'::text, 'abandoned'::text, 'blocked'::text])`),
 ]);
