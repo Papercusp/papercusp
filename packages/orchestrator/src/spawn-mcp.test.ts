@@ -15,6 +15,8 @@ import {
   extractChunkId,
   writeSpawnOmpHome,
   OMP_SEEDED_AGENT_ESSENTIALS,
+  isLocalOmpModel,
+  writeOmpCompactionOverlay,
 } from './spawn-mcp';
 
 const ROOT = join(tmpdir(), `papercusp-spawn-mcp-test-${process.pid}`);
@@ -329,6 +331,33 @@ describe('writeSpawnMcp + restoreSpawnMcp', () => {
     restoreSpawnMcp(handle);
     restoreSpawnMcp(handle);
     expect(existsSync(handle.path)).toBe(false);
+  });
+});
+
+describe('isLocalOmpModel + writeOmpCompactionOverlay (deterministic-context-carry P-001 — local-model fleet spawns)', () => {
+  it('detects local provider prefixes, including ollama-cc (the ornith incident model)', () => {
+    expect(isLocalOmpModel('ollama-cc/maxwell1500/ornith-35b:IQ3_M')).toBe(true);
+    expect(isLocalOmpModel('ollama/qwen3.5:latest')).toBe(true);
+    expect(isLocalOmpModel('LMStudio/some-model')).toBe(true); // case-insensitive
+    expect(isLocalOmpModel('anthropic/claude-opus-4-8')).toBe(false);
+    expect(isLocalOmpModel('papercusp-gateway/claude-sonnet-4-6')).toBe(false); // gateway-pinned = hosted
+    expect(isLocalOmpModel('')).toBe(false);
+    expect(isLocalOmpModel(null)).toBe(false);
+    expect(isLocalOmpModel(undefined)).toBe(false);
+  });
+
+  it('writes a shake@70 compaction overlay the spawn passes via --config, and cleanup removes it', () => {
+    const handle = writeOmpCompactionOverlay();
+    try {
+      const written = readFileSync(handle.path, 'utf8');
+      expect(written).toMatch(/^compaction:$/m);
+      expect(written).toMatch(/\n\s+strategy:\s*shake/);
+      expect(written).toMatch(/\n\s+thresholdPercent:\s*70/);
+    } finally {
+      handle.cleanup();
+    }
+    expect(existsSync(handle.path)).toBe(false);
+    handle.cleanup(); // idempotent
   });
 });
 
