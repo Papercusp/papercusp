@@ -306,6 +306,8 @@ everything else: when AUTO is OFF, a plan is a proposal, not a green light.
   non-trivial work, STOP and present it for review; do not start executing until the owner
   approves. A goal-shaped request — "make a plan and implement it", "build X", "fix Y" — is
   NOT standing authorization to skip this: it names the goal, not the go-ahead.
+Launch-tool routing reference: [Launching agents — which tool for which door](/internal/docs/agent-insights/launching-agents-which-tool-for-which-door). In short, `capability:launch-agent` is the flexible launch/resume/fork door; `fleet:launch-on-plan` is the ergonomic N-agents-on-a-plan door; `capability:terminal` is for arbitrary commands.
+
 - **Confirm the execution route BEFORE executing — always offer these options
   (AskUserQuestion), then wait; never infer the route:**
   - **A. Yourself** — you implement it directly, now, in this session.
