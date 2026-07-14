@@ -17,6 +17,8 @@ import {
   OMP_SEEDED_AGENT_ESSENTIALS,
   isLocalOmpModel,
   writeOmpCompactionOverlay,
+  ompRemoteCompactionEndpoint,
+  OMP_MAINTENANCE_SUMMARIZE_PATH,
 } from './spawn-mcp';
 
 const ROOT = join(tmpdir(), `papercusp-spawn-mcp-test-${process.pid}`);
@@ -358,6 +360,67 @@ describe('isLocalOmpModel + writeOmpCompactionOverlay (deterministic-context-car
     }
     expect(existsSync(handle.path)).toBe(false);
     handle.cleanup(); // idempotent
+  });
+
+  it('adds remoteEndpoint alongside shake for the local-model shape (P-002)', () => {
+    const handle = writeOmpCompactionOverlay({
+      strategy: 'shake',
+      remoteEndpoint: 'http://127.0.0.1:8788/maintenance/summarize',
+    });
+    try {
+      const written = readFileSync(handle.path, 'utf8');
+      expect(written).toMatch(/\n\s+strategy:\s*shake/);
+      expect(written).toMatch(/\n\s+thresholdPercent:\s*70/);
+      expect(written).toContain('  remoteEndpoint: "http://127.0.0.1:8788/maintenance/summarize"');
+    } finally {
+      handle.cleanup();
+    }
+  });
+
+  it('writes an endpoint-ONLY overlay for a gateway-pinned hosted model (strategy: null — native strategy kept)', () => {
+    const handle = writeOmpCompactionOverlay({
+      strategy: null,
+      remoteEndpoint: 'http://127.0.0.1:9911/maintenance/summarize',
+    });
+    try {
+      const written = readFileSync(handle.path, 'utf8');
+      expect(written).toMatch(/^compaction:$/m);
+      expect(written).not.toContain('strategy');
+      expect(written).not.toContain('thresholdPercent');
+      expect(written).toContain('  remoteEndpoint: "http://127.0.0.1:9911/maintenance/summarize"');
+    } finally {
+      handle.cleanup();
+    }
+  });
+
+  it('rejects the degenerate strategy:null + no-endpoint overlay (bare `compaction:` would null the base block)', () => {
+    expect(() => writeOmpCompactionOverlay({ strategy: null })).toThrow(/empty omp compaction overlay/);
+  });
+});
+
+describe('ompRemoteCompactionEndpoint (deterministic-context-carry P-002 — gateway maintenance lane)', () => {
+  it('derives the endpoint from the models.yml baseUrl (anthropic wire: gateway root)', () => {
+    const yml = 'providers:\n  papercusp-gateway:\n    baseUrl: "http://127.0.0.1:9911"\n    apiKey: "papercusp-gateway"\n';
+    expect(ompRemoteCompactionEndpoint(yml, {})).toBe('http://127.0.0.1:9911/maintenance/summarize');
+  });
+
+  it('strips the openai wire\'s trailing /v1 from the baseUrl', () => {
+    const yml = 'providers:\n  papercusp-gateway:\n    baseUrl: "http://127.0.0.1:9911/v1"\n';
+    expect(ompRemoteCompactionEndpoint(yml, {})).toBe('http://127.0.0.1:9911/maintenance/summarize');
+  });
+
+  it('falls back to PAPERCUSP_GATEWAY_PORT (then 8788) when there is no models.yml', () => {
+    expect(ompRemoteCompactionEndpoint(null, { PAPERCUSP_GATEWAY_PORT: '8799' })).toBe(
+      'http://127.0.0.1:8799/maintenance/summarize',
+    );
+    expect(ompRemoteCompactionEndpoint('', {})).toBe('http://127.0.0.1:8788/maintenance/summarize');
+    expect(ompRemoteCompactionEndpoint(undefined, { PAPERCUSP_GATEWAY_PORT: 'nonsense' })).toBe(
+      'http://127.0.0.1:8788/maintenance/summarize',
+    );
+  });
+
+  it('path constant stays in lockstep with the gateway route', () => {
+    expect(OMP_MAINTENANCE_SUMMARIZE_PATH).toBe('/maintenance/summarize');
   });
 });
 
