@@ -46,9 +46,12 @@ import {
   writeSignedSpawnCodexHome,
   writeSpawnOmpHome,
   writeSpawnClaudeConfig,
+  isLocalOmpModel,
+  writeOmpCompactionOverlay,
   type SpawnMcpHandle,
   type SpawnCodexHomeHandle,
   type SpawnOmpHomeHandle,
+  type SpawnOmpConfigOverlayHandle,
   type SpawnClaudeConfigHandle,
 } from './spawn-mcp';
 import { createHash, randomUUID } from 'node:crypto';
@@ -2440,6 +2443,24 @@ export async function invoke(
     resolvedModel = explicitModelFromArgv(argv);
   }
 
+  // 5a. LOCAL-model omp spawns get deterministic compaction settings via omp's repeatable
+  //     `--config <file>` overlay (deterministic-context-carry P-001). Such a spawn is not
+  //     gateway-pinned, so it runs on the shared `<HOME>/.omp/agent/config.yml`, whose
+  //     compaction defaults (snapcompact + LLM-summarize fallback on the model's own
+  //     saturated single-slot backend) killed the ornith session 2026-07-13 — see
+  //     writeOmpCompactionOverlay. Overlay file removed with the other handles on close.
+  let ompCompactionOverlay: SpawnOmpConfigOverlayHandle | null = null;
+  if (agentBackend === 'omp' && isLocalOmpModel(resolvedModel)) {
+    try {
+      ompCompactionOverlay = writeOmpCompactionOverlay();
+      extraFlags.push('--config', ompCompactionOverlay.path);
+      ctx.log(`  role=${role} omp local model ${resolvedModel} — compaction overlay (shake @70%) via --config`);
+    } catch (err) {
+      // Fail-soft: the spawn still runs, just on the config's own compaction defaults.
+      ctx.log(`  omp compaction overlay failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   // 5b. Per-role extraArgs from aiBackend.{default,roles[role]}.extraArgs.
   if (roleExtraArgs.length > 0) {
     extraFlags.push(...roleExtraArgs);
@@ -3429,6 +3450,7 @@ export async function invoke(
       if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       if (codexHomeHandle) codexHomeHandle.cleanup();
       if (ompHomeHandle) ompHomeHandle.cleanup();
+      if (ompCompactionOverlay) ompCompactionOverlay.cleanup();
       if (claudeConfigHandle) claudeConfigHandle.cleanup();
       void clearLane();
       resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
@@ -3441,6 +3463,7 @@ export async function invoke(
       if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       if (codexHomeHandle) codexHomeHandle.cleanup();
       if (ompHomeHandle) ompHomeHandle.cleanup();
+      if (ompCompactionOverlay) ompCompactionOverlay.cleanup();
       if (claudeConfigHandle) claudeConfigHandle.cleanup();
       void clearLane();
       // bash uses exit 124 for timeout (matches `timeout` coreutil).

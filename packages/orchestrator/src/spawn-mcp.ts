@@ -466,6 +466,52 @@ export function writeSpawnOmpHome(
   };
 }
 
+/**
+ * LOCAL-model detection for an omp spawn's resolved `--model` id. Mirror of
+ * operator-core's model-tier LOCAL_PROVIDER_PREFIXES — operator-core depends on
+ * THIS package, so the rule can't be imported here (same reason psu-launcher.mjs
+ * keeps its own copy). Unknown/empty ⇒ NOT local (never seed a hosted model).
+ */
+const OMP_LOCAL_MODEL_PREFIXES = ['ollama/', 'ollama-cc/', 'local/', 'llamacpp/', 'llama.cpp/', 'lmstudio/', 'localai/'] as const;
+export function isLocalOmpModel(modelId?: string | null): boolean {
+  if (!modelId) return false;
+  const id = String(modelId).trim().toLowerCase();
+  return OMP_LOCAL_MODEL_PREFIXES.some((p) => id.startsWith(p));
+}
+
+/** Handle for a per-spawn omp `--config` overlay file (cleaned up after the spawn). */
+export interface SpawnOmpConfigOverlayHandle {
+  /** Absolute path to pass as `--config <path>` on the omp child's argv. */
+  path: string;
+  /** Remove the temp overlay. Best-effort, idempotent. */
+  cleanup(): void;
+}
+
+/**
+ * Compaction settings for a LOCAL-model omp fleet spawn (deterministic-context-carry
+ * P-001, ornith overflow 2026-07-13). A local-model spawn is NOT gateway-pinned, so it
+ * gets no per-spawn HOME from {@link writeSpawnOmpHome} — it runs on the shared
+ * `<HOME>/.omp/agent/config.yml`, whose compaction defaults (`snapcompact`, threshold −1)
+ * archive history as images a text-only local model can't read, then fall back to LLM
+ * summarization on the spawn's own saturated single-slot backend (429 self-starvation →
+ * un-gated over-window send → HTTP 400). Delivery is omp's repeatable `--config <file>`
+ * overlay flag (a config.yml-style mapping merged over the base), so the shared config is
+ * never mutated and no per-spawn HOME is needed: `shake` is mechanical (no LLM, no images)
+ * and 70% fires it before the wall.
+ */
+export function writeOmpCompactionOverlay(): SpawnOmpConfigOverlayHandle {
+  const dir = mkdtempSync(join(tmpdir(), 'omp-cfg-overlay-'));
+  const path = join(dir, 'compaction-local-model.yml');
+  writeFileSync(path, 'compaction:\n  strategy: shake\n  thresholdPercent: 70\n', 'utf8');
+  try { chmodSync(path, 0o600); } catch { /* best-effort */ }
+  return {
+    path,
+    cleanup() {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* best-effort */ }
+    },
+  };
+}
+
 /** Handle for a per-spawn claude-code CLAUDE_CONFIG_DIR (cleaned up after the spawn). */
 export interface SpawnClaudeConfigHandle {
   /**
