@@ -5,8 +5,9 @@
 -- interval choices are preserved; only rows still carrying the old unsafe
 -- default are migrated. `enabled` is deliberately untouched, including rows
 -- disabled by an operator during disk-pressure recovery.
-
-BEGIN;
+--
+-- No top-level BEGIN/COMMIT: the migration runner wraps each file in its own
+-- transaction (a nested pair breaks its lock_timeout handling — lint P-038).
 
 ALTER TABLE harness_shared.workspace_backup_settings
   ALTER COLUMN cadence_mode SET DEFAULT 'event',
@@ -18,5 +19,3 @@ SET cadence_mode = 'event',
     updated_at = now()
 WHERE cadence_mode = 'both'
   AND cadence_minutes = 5;
-
-COMMIT;
