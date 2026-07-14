@@ -42,6 +42,11 @@
       "import": "./src/no-subagent-deny.ts",
       "default": "./src/no-subagent-deny.ts"
     },
+    "./owner-desktop-notify-deny": {
+      "types": "./src/owner-desktop-notify-deny.ts",
+      "import": "./src/owner-desktop-notify-deny.ts",
+      "default": "./src/owner-desktop-notify-deny.ts"
+    },
     "./session-launch-dirs": {
       "types": "./src/session-launch-dirs.ts",
       "import": "./src/session-launch-dirs.ts",
