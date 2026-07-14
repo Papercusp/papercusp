@@ -8,6 +8,7 @@
 
 ALTER TABLE harness_shared.session_ingest_state
   ADD COLUMN IF NOT EXISTS counts_backfill_offset BIGINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS counts_backfill_last_inference_id TEXT,
   ADD COLUMN IF NOT EXISTS counts_backfilled_at TIMESTAMPTZ;
 
 -- Rows with already-populated counters do not need historical replay. Rows at
@@ -26,6 +27,9 @@ UPDATE harness_shared.session_ingest_state
 
 COMMENT ON COLUMN harness_shared.session_ingest_state.counts_backfill_offset IS
   'WI-4297: byte cursor for the resumable historical EI-9970 counter backfill; distinct from byte_offset, which owns indexed text turns.';
+
+COMMENT ON COLUMN harness_shared.session_ingest_state.counts_backfill_last_inference_id IS
+  'WI-4297: response-dedup cursor paired with counts_backfill_offset; distinct from the live tailer inference cursor.';
 
 COMMENT ON COLUMN harness_shared.session_ingest_state.counts_backfilled_at IS
   'WI-4297: timestamp when the historical EI-9970 counters reached EOF (or the source was permanently unavailable). NULL means eligible/in progress.';
