@@ -1755,7 +1755,13 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	launchArgv: jsonb("launch_argv"),
 	launchedAt: timestamp("launched_at", { withTimezone: true, mode: 'string' }),
 	archivedAt: timestamp("archived_at", { withTimezone: true, mode: 'string' }),
+	portId: uuid("port_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	portSourceAdvSessionId: bigint("port_source_adv_session_id", { mode: "number" }),
+	portStatus: text("port_status"),
+	portMetadata: jsonb("port_metadata"),
 }, (table) => [
+	index("adv_sessions_port_source_idx").using("btree", table.portSourceAdvSessionId.asc().nullsLast().op("int8_ops")).where(sql`(port_source_adv_session_id IS NOT NULL)`),
 	index("adv_sessions_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("adv_sessions_ended_unarchived_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((ended_at IS NOT NULL) AND (archived_at IS NULL))`),
 	index("adv_sessions_pending_workbench_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("text_ops")).where(sql`((display = 'workbench'::text) AND (launched_at IS NULL) AND (ended_at IS NULL))`),
@@ -1765,6 +1771,41 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	index("adv_sessions_workspace_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("text_ops")),
 	pgPolicy("adv_sessions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("adv_sessions_mode_check", sql`mode = ANY (ARRAY['omp'::text, 'console'::text])`),
+]);
+
+export const sessionPortsInHarnessShared = harnessShared.table("session_ports", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	idempotencyKey: text("idempotency_key").notNull(),
+	protocolVersion: integer("protocol_version").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	sourceAdvSessionId: bigint("source_adv_session_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	targetAdvSessionId: bigint("target_adv_session_id", { mode: "number" }),
+	sourceBackend: text("source_backend").notNull(),
+	targetBackend: text("target_backend").notNull(),
+	targetModel: text("target_model"),
+	status: text().default('prepared').notNull(),
+	sourceHash: text("source_hash").notNull(),
+	normalizedHash: text("normalized_hash").notNull(),
+	renderedHash: text("rendered_hash").notNull(),
+	tokenHash: text("token_hash").notNull(),
+	artifactPath: text("artifact_path").notNull(),
+	metadata: jsonb().default({}).notNull(),
+	error: text(),
+	preparedAt: timestamp("prepared_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	pendingAt: timestamp("pending_at", { withTimezone: true, mode: 'string' }),
+	deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: 'string' }),
+	failedAt: timestamp("failed_at", { withTimezone: true, mode: 'string' }),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+}, (table) => [
+	index("session_ports_pending_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['prepared'::text, 'pending'::text]))`),
+	index("session_ports_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sourceAdvSessionId.asc().nullsLast().op("int8_ops"), table.preparedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("session_ports_target_idx").using("btree", table.targetAdvSessionId.asc().nullsLast().op("int8_ops")).where(sql`(target_adv_session_id IS NOT NULL)`),
+	unique("session_ports_workspace_id_idempotency_key_key").on(table.workspaceId, table.idempotencyKey),
+	pgPolicy("session_ports_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("session_ports_status_check", sql`status = ANY (ARRAY['prepared'::text, 'pending'::text, 'delivered'::text, 'failed'::text, 'expired'::text])`),
+	check("session_ports_backend_check", sql`(source_backend = ANY (ARRAY['claude'::text, 'codex'::text, 'omp'::text])) AND (target_backend = ANY (ARRAY['claude'::text, 'codex'::text, 'omp'::text]))`),
 ]);
 
 export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocations", {
