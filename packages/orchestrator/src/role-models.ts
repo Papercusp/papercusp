@@ -95,14 +95,25 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // (scorecards / wake declarations) land. Sonnet-5 trimmed-mode is the
   // committed floor for high-reliability autonomous roles.
   // (model-switch-2026-07-15: moved queen/bee/mug/kettle/overwatch off gpt-5.4/codex
-  // to sonnet-5[1m]:high for improved reasoning + reduced latency via gateway.)
-  queen: 'sonnet-5[1m]:high',
-  bee: 'sonnet-5[1m]:high',
-  mug: 'sonnet-5[1m]:high',
-  kettle: 'sonnet-5[1m]:high',
-  overwatch: 'sonnet-5[1m]:high',
-  sentinel: 'sonnet-5[1m]:high',
-  operator: 'sonnet-5[1m]:high',
+  // to the latest sonnet (claude-sonnet-5) at 1M-window + high effort for improved
+  // reasoning + reduced latency via gateway.)
+  //
+  // EI-12657: the spec is the BARE `sonnet` alias, NOT the versioned shorthand
+  // `sonnet-5`. psu/the CLI resolve `sonnet` to the latest generation (claude-sonnet-5
+  // today) and the gateway's ONE_MILLION_MODEL_ALIASES maps `sonnet`→`claude-sonnet-5`;
+  // but `sonnet-5` is NOT an alias — validateModelSpec rejects it and the gateway
+  // forwards it verbatim as an unrunnable upstream id ("selected model
+  // unavailable/inaccessible"), so EVERY autonomous-role spawn died before its first
+  // LLM turn (Mug placement stalled 11+ wakes). Keep the `[1m]` marker embedded
+  // (normalizeModelSpec is a no-op when it's already present). Matches
+  // DEFAULT_MODEL_TIERS' canonical `sonnet[1m]`.
+  queen: 'sonnet[1m]:high',
+  bee: 'sonnet[1m]:high',
+  mug: 'sonnet[1m]:high',
+  kettle: 'sonnet[1m]:high',
+  overwatch: 'sonnet[1m]:high',
+  sentinel: 'sonnet[1m]:high',
+  operator: 'sonnet[1m]:high',
 };
 
 /**
