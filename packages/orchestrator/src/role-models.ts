@@ -92,11 +92,17 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // 2026-06-11): Mug/operator/Kettle wakes are low-frequency compared with
   // cups, but they are frequent enough that inheriting a user-level interactive
   // Opus default can burn the shared weekly pool before required artifacts
-  // (scorecards / wake declarations) land. Sonnet is the committed floor;
-  // escalate to opus via AGENT_MODELS or a per-spawn model only when needed.
-  mug: 'sonnet',
-  kettle: 'sonnet',
-  operator: 'sonnet',
+  // (scorecards / wake declarations) land. Sonnet-5 trimmed-mode is the
+  // committed floor for high-reliability autonomous roles.
+  // (model-switch-2026-07-15: moved queen/bee/mug/kettle/overwatch off gpt-5.4/codex
+  // to sonnet-5[1m]:high for improved reasoning + reduced latency via gateway.)
+  queen: 'sonnet-5[1m]:high',
+  bee: 'sonnet-5[1m]:high',
+  mug: 'sonnet-5[1m]:high',
+  kettle: 'sonnet-5[1m]:high',
+  overwatch: 'sonnet-5[1m]:high',
+  sentinel: 'sonnet-5[1m]:high',
+  operator: 'sonnet-5[1m]:high',
 };
 
 /**
