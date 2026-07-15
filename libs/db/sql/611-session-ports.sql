@@ -1,4 +1,4 @@
--- 610-session-ports.sql — durable cross-backend PSU session-port lifecycle.
+-- 611-session-ports.sql — durable cross-backend PSU session-port lifecycle.
 --
 -- A port creates a FRESH target identity. This table records the copy lineage
 -- and delivery state; operational authority (coord owner, claims, locks,

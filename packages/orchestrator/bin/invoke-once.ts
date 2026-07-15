@@ -38,6 +38,12 @@ import { harnessSlug } from '../src/state.js';
 import type { FileClaimCoordinator } from '@papercusp/file-claim';
 import { FileLockQueueCoordinator } from '../src/file-lock-queue-coordinator.js';
 import { shouldUseWorkerChunkLoop, runWorkerChunkLoop } from '../src/run-worker-chunk-loop.js';
+import { installRestartResilientOutputHandlers } from '../src/restart-resilient-output.js';
+
+// WI-4894: this process outlives its launching operator inside a systemd scope.
+// Install before any boot logging so a deploy restart cannot sever stdout/stderr
+// and kill the only process that can finalize RESULT_PATH.
+installRestartResilientOutputHandlers();
 
 /**
  * The file-claim coordinator for the worker chunk loop (P-040 / D-015).
