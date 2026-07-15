@@ -523,14 +523,25 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
     assert.equal(resolveModel({}, 'cup'), 'haiku');
     assert.equal(resolveModel({}, 'scanner'), 'haiku');
     assert.equal(resolveModel({}, 'judge'), 'haiku');
-    // The Overwatch health loop must not inherit the user's interactive Claude
-    // default (often Opus); scorecards and wake declarations are required every turn.
-    assert.equal(resolveModel({}, 'kettle'), 'sonnet');
     // The launch-fixer family's committed floors (D-008 follow-up): the two
     // fleet-blast-radius fixers pin opus:xhigh, the bounded content repairer pins sonnet.
     assert.equal(resolveModel({}, 'merge-resolver'), 'opus:xhigh');
     assert.equal(resolveModel({}, 'release-fixer'), 'opus:xhigh');
     assert.equal(resolveModel({}, 'content-fixer'), 'sonnet');
+    // model-switch-2026-07-15: the pot's judgment/control-loop layer (queen, bees,
+    // mug, kettle/overwatch, sentinel, operator) moved off gpt-5.4/codex-ChatGPT to
+    // sonnet-5[1m]:high (trimmed-mode 1M window + high effort) via the gateway — see
+    // ROLE_MODEL_DEFAULTS. Asserted individually (not via a loop over keys) so a
+    // regression on any ONE role fails with that role's name in the assertion.
+    assert.equal(resolveModel({}, 'queen'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'bee'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'mug'), 'sonnet-5[1m]:high');
+    // The Overwatch health loop must not inherit the user's interactive Claude
+    // default (often Opus); scorecards and wake declarations are required every turn.
+    assert.equal(resolveModel({}, 'kettle'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'overwatch'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'sentinel'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'operator'), 'sonnet-5[1m]:high');
   } finally {
     if (prev === undefined) delete process.env.AGENT_MODELS;
     else process.env.AGENT_MODELS = prev;
