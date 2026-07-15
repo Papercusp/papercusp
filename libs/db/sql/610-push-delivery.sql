@@ -76,7 +76,6 @@ CREATE INDEX IF NOT EXISTS push_delivery_ref_idx
   ON harness_shared.push_delivery (handle_ref);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.push_delivery TO harness_app;
-GRANT USAGE, SELECT ON SEQUENCE harness_shared.push_delivery_id_seq TO harness_app;
 DO $grant$
 BEGIN
   GRANT SELECT ON harness_shared.push_delivery TO harness_zero;
