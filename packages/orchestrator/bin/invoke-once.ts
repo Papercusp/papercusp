@@ -212,7 +212,16 @@ async function main(): Promise<number> {
     exitCode = 1;
   } finally {
     if (pgBoot.cleanup) await pgBoot.cleanup();
-    if (teeAppend) teeAppend('__INVOCATION_DONE__');
+    if (teeAppend) {
+      // WI-4894: RESULT_PATH is also the restart-safe completion channel for a
+      // scope-isolated Cup. The launching operator can disappear during a deploy,
+      // taking its stdout pipe + in-memory completion promise with it, while the
+      // systemd scope correctly keeps this process alive. Persist the real exit
+      // code before the legacy done sentinel so the fresh operator can harvest
+      // the terminal outcome instead of false-reclaiming a clean completion.
+      teeAppend(`__INVOCATION_RESULT__:${JSON.stringify({ exitCode })}`);
+      teeAppend('__INVOCATION_DONE__');
+    }
   }
   return exitCode;
 }
