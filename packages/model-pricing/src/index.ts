@@ -63,6 +63,7 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   // ── OpenAI (codex CLI models; cached input is 0.1× for the gpt-5 family,
   //    no cache-write premium) ──
   'gpt-5': { in: 1.25, out: 10.0, cacheRead: 0.125, cacheWrite: 1.25 },
+  'gpt-5.6': { in: 1.875, out: 15.0, cacheRead: 0.1875, cacheWrite: 1.875 },
   'gpt-5.5': { in: 2.5, out: 20.0, cacheRead: 0.25, cacheWrite: 2.5 },
   // OpenAI-direct models used by LLM-testing hosts (e.g. Restart's Scout SUT).
   'gpt-4o-mini': { in: 0.15, out: 0.6 },
