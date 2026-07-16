@@ -67,6 +67,11 @@
       "import": "./src/codex-gateway-config.ts",
       "default": "./src/codex-gateway-config.ts"
     },
+    "./omp-gateway-config": {
+      "types": "./src/omp-gateway-config.ts",
+      "import": "./src/omp-gateway-config.ts",
+      "default": "./src/omp-gateway-config.ts"
+    },
     "./decision-parse": {
       "types": "./src/decision-parse.ts",
       "import": "./src/decision-parse.ts",
