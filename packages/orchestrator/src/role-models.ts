@@ -26,8 +26,11 @@
  * (token-usage-reduction-audit-2026-06-09 P-012), enforced via the launch
  * spec rather than convention:
  *
- *   - haiku  — high-volume, low-judgment loop roles (bees, scanners, judges):
- *              the fleet's call-count tier; opus here is pure waste.
+ *   - haiku  — high-volume, low-judgment loop roles: the fleet's call-count
+ *              tier; opus here is pure waste. (cup/scanner/judge moved OFF
+ *              this tier onto the autonomous-loop GPT-5.6 luna floor below,
+ *              autonomous-loop-prod-audit-2026-07-02 P-020 — no role
+ *              currently occupies haiku.)
  *   - sonnet — the pipeline's execution tier (worker / validator /
  *              documenter): high-frequency roles whose work is bounded by a
  *              spec + acceptance assertions, not open-ended judgment.
@@ -82,38 +85,62 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   worker: 'sonnet',
   validator: 'sonnet',
   documenter: 'sonnet',
-  // P-012 volume tier — already de facto haiku via env on the dev box;
-  // committed so a host without AGENT_MODELS can't silently run the fleet's
-  // call-count tier on the CLI default.
-  cup: 'haiku',
-  scanner: 'haiku',
-  judge: 'haiku',
+  // P-012 volume tier (haiku) ORIGINALLY also pinned cup/scanner/judge here —
+  // superseded by the P-020 autonomous-loop migration below (those three ARE
+  // autonomous-loop/gym roles the brief names explicitly; moved rather than
+  // duplicated, since an object literal's later key silently wins and a
+  // stray duplicate would be a footgun for the next reader). No other role
+  // currently occupies this volume tier.
   // The pot's JUDGMENT/control-loop layer (owner-watched autonomous run,
-  // 2026-06-11): Mug/operator/Kettle wakes are low-frequency compared with
-  // cups, but they are frequent enough that inheriting a user-level interactive
-  // Opus default can burn the shared weekly pool before required artifacts
-  // (scorecards / wake declarations) land. Sonnet-5 trimmed-mode is the
-  // committed floor for high-reliability autonomous roles.
-  // (model-switch-2026-07-15: moved queen/bee/mug/kettle/overwatch off gpt-5.4/codex
-  // to the latest sonnet (claude-sonnet-5) at 1M-window + high effort for improved
-  // reasoning + reduced latency via gateway.)
+  // 2026-06-11): Mug/Kettle/Cup/Blender wakes are the free-running
+  // Mug→Cup→Kettle→Blender autonomous loop (local-hive-orchestration /
+  // pot-rename D-007). Sonnet-5 trimmed-mode WAS the committed floor for
+  // high-reliability autonomous roles (2026-07-15); superseded below.
   //
-  // EI-12657: the spec is the BARE `sonnet` alias, NOT the versioned shorthand
-  // `sonnet-5`. psu/the CLI resolve `sonnet` to the latest generation (claude-sonnet-5
-  // today) and the gateway's ONE_MILLION_MODEL_ALIASES maps `sonnet`→`claude-sonnet-5`;
-  // but `sonnet-5` is NOT an alias — validateModelSpec rejects it and the gateway
-  // forwards it verbatim as an unrunnable upstream id ("selected model
-  // unavailable/inaccessible"), so EVERY autonomous-role spawn died before its first
-  // LLM turn (Mug placement stalled 11+ wakes). Keep the `[1m]` marker embedded
-  // (normalizeModelSpec is a no-op when it's already present). Matches
-  // DEFAULT_MODEL_TIERS' canonical `sonnet[1m]`.
-  queen: 'sonnet[1m]:high',
-  bee: 'sonnet[1m]:high',
-  mug: 'sonnet[1m]:high',
-  kettle: 'sonnet[1m]:high',
-  overwatch: 'sonnet[1m]:high',
-  sentinel: 'sonnet[1m]:high',
-  operator: 'sonnet[1m]:high',
+  // (autonomous-loop-prod-audit-2026-07-02 P-020): migrated every
+  // AUTONOMOUS-LOOP role — the Mug↔Cup↔Kettle↔Blender placement/execution
+  // loop plus the gym learning-loop's judge — to GPT-5.6 "Luna" (the plan's
+  // "GPT-5.6 Lua" shorthand; the canonical alias is `luna`, confirmed against
+  // WI-4638's official-source identifier verification + WI-4639's completed
+  // catalog/validator implementation — see role-models.test.ts) at `high`
+  // reasoning effort, native Codex backend. Deliberately the FULL id
+  // (`gpt-5.6-luna:high`), NOT the bare `luna:high` alias: the spawn-time
+  // backend inference this floor feeds (`inferBackendFromModelSpec` in
+  // harness-invoke-once.ts / `isCodexShapedModelSpec` in the orchestrator's
+  // own env.ts) keys off the `gpt-5.6-` prefix so a role that relies on
+  // ONLY this committed floor (no explicit tier/spec override) still gets
+  // its subprocess binary swapped to `codex` — the "account-steering path"
+  // half of P-020 (see operator-spawn.ts / invoke.ts for the consuming
+  // fallback fix). A bare alias here would silently keep the claude binary
+  // and hand it an unrunnable OpenAI model id — the EI-7/EI-286/EI-12657/
+  // WI-1979 class of "selected model unavailable" outage this floor exists
+  // to prevent.
+  //
+  // Every key that resolves to the same canonical role via the pot-rename
+  // map (POT_RENAME_ROLE_MAP in agent-tools/coordination/roles.ts:
+  // bee→cup, queen→mug, sentinel→papercup, overwatch→kettle, scout→blender)
+  // is kept in lockstep here — nothing canonicalizes the role string before
+  // this map is looked up, so a stale legacy-name entry would silently keep
+  // running the old sonnet spec for any caller still passing the old name.
+  // `papercup` and `blender` are NEW entries (previously absent — those
+  // roles fell through to the bare CLI default with no committed floor at
+  // all, the exact EI-7 gap this file exists to close).
+  queen: 'gpt-5.6-luna:high',
+  bee: 'gpt-5.6-luna:high',
+  mug: 'gpt-5.6-luna:high',
+  cup: 'gpt-5.6-luna:high',
+  kettle: 'gpt-5.6-luna:high',
+  overwatch: 'gpt-5.6-luna:high',
+  sentinel: 'gpt-5.6-luna:high',
+  papercup: 'gpt-5.6-luna:high',
+  blender: 'gpt-5.6-luna:high',
+  // The gym loop's judgment role (task-generator/variant-runner/proposer stay
+  // unpinned — no committed default existed for them before P-020 either;
+  // out of THIS item's narrow scope, left for a follow-up). `scanner` is
+  // blender's negative-space-scan execution role (AGENT_ROLES: "the
+  // negative-space/scout scanner") — moves with blender.
+  judge: 'gpt-5.6-luna:high',
+  scanner: 'gpt-5.6-luna:high',
 };
 
 /**

@@ -96,6 +96,7 @@ export function ompGatewayModelsConfig(
   const headerLines = Object.entries(headers).map(
     ([key, value]) => `      ${yamlString(key)}: ${yamlString(value)}`,
   );
+  const headerBlock = headerLines.length ? ['    headers:', ...headerLines] : [];
   const modelLines = modelIds.flatMap((id) => [
     `      - id: ${yamlString(id)}`,
     `        name: ${yamlString(`Papercusp Gateway ${id}`)}`,
@@ -115,8 +116,7 @@ export function ompGatewayModelsConfig(
     `    apiKey: ${yamlString(OMP_GATEWAY_PLACEHOLDER_KEY)}`,
     `    api: ${api}`,
     '    auth: apiKey',
-    '    headers:',
-    ...headerLines,
+    ...headerBlock,
     '    models:',
     ...modelLines,
     '# END PAPERCUSP_OMP_GATEWAY',
