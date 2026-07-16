@@ -520,30 +520,30 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
     assert.equal(resolveModel({}, 'worker'), 'sonnet');
     assert.equal(resolveModel({}, 'validator'), 'sonnet');
     assert.equal(resolveModel({}, 'documenter'), 'sonnet');
-    assert.equal(resolveModel({}, 'cup'), 'haiku');
-    assert.equal(resolveModel({}, 'scanner'), 'haiku');
-    assert.equal(resolveModel({}, 'judge'), 'haiku');
+    // P-020 autonomous-loop migration: cup, scanner, judge migrated to GPT-5.6 Lua high
+    assert.equal(resolveModel({}, 'cup'), 'gpt-5.6-luna:high');
+    assert.equal(resolveModel({}, 'scanner'), 'gpt-5.6-luna:high');
+    assert.equal(resolveModel({}, 'judge'), 'gpt-5.6-luna:high');
     // The launch-fixer family's committed floors (D-008 follow-up): the two
     // fleet-blast-radius fixers pin opus:xhigh, the bounded content repairer pins sonnet.
     assert.equal(resolveModel({}, 'merge-resolver'), 'opus:xhigh');
     assert.equal(resolveModel({}, 'release-fixer'), 'opus:xhigh');
     assert.equal(resolveModel({}, 'content-fixer'), 'sonnet');
-    // model-switch-2026-07-15: the pot's judgment/control-loop layer (queen, bees,
-    // mug, kettle/overwatch, sentinel, operator) moved off gpt-5.4/codex-ChatGPT to
-    // the latest sonnet at 1M window + high effort via the gateway — see
-    // ROLE_MODEL_DEFAULTS. EI-12657: the spec is the BARE `sonnet[1m]:high`, NOT the
-    // versioned shorthand `sonnet-5[1m]:high` (an unrunnable id the launcher rejects
-    // and the gateway forwards verbatim). Asserted individually (not via a loop over
-    // keys) so a regression on any ONE role fails with that role's name in the assertion.
-    assert.equal(resolveModel({}, 'queen'), 'sonnet[1m]:high');
-    assert.equal(resolveModel({}, 'bee'), 'sonnet[1m]:high');
-    assert.equal(resolveModel({}, 'mug'), 'sonnet[1m]:high');
-    // The Overwatch health loop must not inherit the user's interactive Claude
-    // default (often Opus); scorecards and wake declarations are required every turn.
-    assert.equal(resolveModel({}, 'kettle'), 'sonnet[1m]:high');
-    assert.equal(resolveModel({}, 'overwatch'), 'sonnet[1m]:high');
-    assert.equal(resolveModel({}, 'sentinel'), 'sonnet[1m]:high');
-    assert.equal(resolveModel({}, 'operator'), 'sonnet[1m]:high');
+    // P-020 autonomous-loop migration: the pot's judgment/control-loop layer (queen/bee/mug/
+    // kettle/overwatch/sentinel) migrated off sonnet to GPT-5.6 Lua high via Codex backend
+    // — see ROLE_MODEL_DEFAULTS. The spec includes the full id prefix (`gpt-5.6-` not bare
+    // alias) so backend inference keys off it to swap the subprocess binary to codex.
+    // Asserted individually (not via a loop over keys) so a regression on any ONE role fails
+    // with that role's name in the assertion.
+    assert.equal(resolveModel({}, 'queen'), 'gpt-5.6-luna:high');
+    assert.equal(resolveModel({}, 'bee'), 'gpt-5.6-luna:high');
+    assert.equal(resolveModel({}, 'mug'), 'gpt-5.6-luna:high');
+    // Kettle (overwatch) and sentinel migrated with the autonomous-loop layer.
+    assert.equal(resolveModel({}, 'kettle'), 'gpt-5.6-luna:high');
+    assert.equal(resolveModel({}, 'overwatch'), 'gpt-5.6-luna:high');
+    assert.equal(resolveModel({}, 'sentinel'), 'gpt-5.6-luna:high');
+    // operator has no committed default in ROLE_MODEL_DEFAULTS (interactive surface, not autonomous-loop).
+    assert.equal(resolveModel({}, 'operator'), '');
   } finally {
     if (prev === undefined) delete process.env.AGENT_MODELS;
     else process.env.AGENT_MODELS = prev;
