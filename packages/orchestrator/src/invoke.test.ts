@@ -1175,7 +1175,7 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // still lives in the bee kit — this assertion was never updated for that cut.)
   for (const required of [
     'coord:orient', 'coord:inbox', 'plans:get', 'work_items:list', 'work_items:claim',
-    'docs:search', 'memory:search', 'tools:find',
+    'docs:search', 'memory:search', 'fleet:launch-on-plan', 'tools:find',
   ]) {
     assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core`);
   }
@@ -1201,8 +1201,10 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // WRITE but not the UNDO, so an agent whose client-search missed them concluded no such
   // verb existed and built a strictly-worse workaround (abusing checkpoint as an erratum
   // channel; abandoning a stale-fact retract). Invariant now guarded by
-  // core-spine-inverses.test.ts (never seed a create and hide its undo).
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 41, 'core stays small');
+  // core-spine-inverses.test.ts (never seed a create and hide its undo). Then +1 → 42:
+  // fleet:launch-on-plan moved from the OMP-only duplicate into the shared seed because
+  // the required su routing gate is shared by Codex, Claude, and OMP.
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 42, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)
@@ -1217,6 +1219,7 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   assert.ok(CORE_MCP_TOOL_NAMES.includes('work_items:release'), 'work_items:release belongs in the universal core (EI-8588 worker handoffs)');
   assert.ok(CORE_MCP_TOOL_NAMES.includes('loop:status'), 'loop:status belongs in the universal core (EI-8597 loop wind-down)');
   assert.ok(CORE_MCP_TOOL_NAMES.includes('loop:end'), 'loop:end belongs in the universal core (EI-8597 loop wind-down)');
+  assert.ok(CORE_MCP_TOOL_NAMES.includes('fleet:launch-on-plan'), 'fleet:launch-on-plan belongs in the universal core (shared su routing-gate execution)');
   // fleet-member-dx P-008 (EI-9012/EI-9034): the bench-wait verbs must be directly
   // reachable — "don't poll, await the key" is a persona mandate, and a seeded session
   // whose client-side search misses a deferred verb concludes it doesn't exist.

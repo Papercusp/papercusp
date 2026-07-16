@@ -808,9 +808,10 @@ export const OVERWATCH_MCP_TOOL_NAMES: readonly string[] = [
  * name via its native `search_tool_bm25`.
  *
  * Universal (role-independent) by design: these are the spine EVERY role needs.
- * Role-specific extras (`fleet:*`, `flags:*`, …) go through `tools:find`. Promote
- * per-role variants from BEE_/QUEEN_MCP_TOOL_NAMES later if a role's discovery
- * round-trips prove costly (additive, non-breaking).
+ * Most role-specific extras (`flags:*`, …) go through `tools:find`. The one
+ * deliberate fleet exception is `fleet:launch-on-plan`: every su routing gate
+ * offers the fleet route, so hiding its execution verb makes that required option
+ * impossible on a trimmed client.
  */
 export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // Bootstrap — one call returns assignments + backlog + inbox + plan-events + mem0.
@@ -939,6 +940,12 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // compaction limit has no way to compact cleanly and self-halts instead
   // ("no compaction tool available") mid-task, losing in-flight work.
   'session:request-compaction',
+  // Routing-gate execution — the AUTO-off su prompt requires every client to offer
+  // a fleet route. Before 2026-07-16 this verb lived only in OMP's duplicated seed,
+  // so trimmed Codex/Claude sessions presented the route but had no directly callable
+  // tool to execute it (the exact failure reported by the owner in a Codex session).
+  // It belongs in the shared seed; client-specific drift here is the bug.
+  'fleet:launch-on-plan',
   // Discovery — load anything else by intent (tools:find — WS3), or call it
   // directly without loading (tools:invoke — the universal reachability hatch,
   // dynamic-tool-surface-2026-07-01 D-003).
