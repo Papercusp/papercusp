@@ -529,6 +529,53 @@ export const PG_BIGINT_AS_NUMBER_TYPES = {
   } as any,
 };
 
+/**
+ * EI-13076: drizzle-orm's postgres-js driver MUTATES the client it wraps —
+ * `drizzle(client)` overwrites `client.options.serializers[<date OIDs>]` with a
+ * transparent passthrough (`(val) => val`) so its OWN pre-stringified params
+ * survive unmangled. But our canonical clients are SHARED between drizzle and
+ * raw `sql\`...\`` tagged-template callers, and a raw caller passing a JS `Date`
+ * param then hits `Buffer.byteLength(Date)` inside postgres-js:
+ *
+ *   TypeError: The "string" argument must be of type string or an instance of
+ *   Buffer or ArrayBuffer. Received an instance of Date
+ *
+ * Every such query THROWS — and a `.catch(() => fallback)` around it silently
+ * feeds zeros forever (the pot-throughput tick recorded placements=0 on all
+ * 22k+ ticks in table history this way). This restores a HYBRID serializer on
+ * the date/time OIDs: a `Date` serializes to ISO (what postgres-js does by
+ * default), anything else (drizzle's pre-stringified values) passes through
+ * unchanged — so BOTH consumers of the shared client work.
+ *
+ * STICKY on purpose: the OIDs are installed as accessor properties whose
+ * setter is a no-op, because `drizzle(tx)` is also called at RUNTIME on
+ * transaction handles (operator-audit, agent-mcp tools, …) which share the
+ * parent client's `options.serializers` object — a plain assignment there
+ * would silently re-break every raw Date param in the process. Parsers are
+ * left as drizzle sets them (raw reads return strings; callers already
+ * tolerate `string | Date`).
+ *
+ * Called by `buildClient` on every canonical connection. A hand-rolled
+ * `postgres(url, …)` client that gets drizzle-wrapped must call this too, or
+ * it drifts back into the trap (same class as EI-9265's bigint note above).
+ */
+const DRIZZLE_MUTATED_DATE_OIDS = ['1184', '1082', '1083', '1114', '1182', '1185', '1115', '1231'] as const;
+export function restoreRawDateSerializers(client: Sql): void {
+  const serializers = (client as any)?.options?.serializers as Record<string, (x: any) => any> | undefined;
+  if (!serializers) return;
+  const hybrid = (x: any) => (x instanceof Date ? x.toISOString() : x);
+  for (const oid of DRIZZLE_MUTATED_DATE_OIDS) {
+    Object.defineProperty(serializers, oid, {
+      configurable: true,
+      enumerable: true,
+      get: () => hybrid,
+      // Swallow drizzle's transparent re-assignment (driver.js does
+      // `serializers[oid] = transparentParser` on every drizzle() call).
+      set: () => {},
+    });
+  }
+}
+
 function buildClient(
   connectionUrl: string,
   searchPath: string[],
@@ -578,7 +625,7 @@ function buildClient(
   const connectTimeoutSec =
     Number(process.env.PAPERCUSP_DB_CONNECT_TIMEOUT) ||
     (process.env.VITEST ? 5 : 0);
-  return postgres(connectionUrl, {
+  const client = postgres(connectionUrl, {
     onnotice: () => {},
     ...(connectTimeoutSec > 0 ? { connect_timeout: connectTimeoutSec } : {}),
     // PgBouncer-safe startup options. Under transaction pooling the statement_timeout +
@@ -622,6 +669,13 @@ function buildClient(
     // exactly instead of silently drifting — see PG_BIGINT_AS_NUMBER_TYPES.
     types: PG_BIGINT_AS_NUMBER_TYPES,
   });
+  // EI-13076: pre-arm the date-OID serializers as sticky accessors BEFORE any
+  // drizzle() wrap can replace them with transparent passthroughs — see
+  // restoreRawDateSerializers. Without this, a raw `sql` Date param on this
+  // shared client throws (Buffer.byteLength(Date)) after the first drizzle
+  // wrap — including runtime `drizzle(tx)` calls that share this options object.
+  restoreRawDateSerializers(client);
+  return client;
 }
 
 export interface OrgPgHandle {
