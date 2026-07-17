@@ -7,6 +7,7 @@ import {
   invoke,
   findPriorRunForIdempotency,
   extractResult,
+  resolveSubstrateSelfSlug,
   splitCommand,
   nextOuterActivityEchoAt,
   OUTER_ACTIVITY_ECHO_THROTTLE_MS,
@@ -496,6 +497,40 @@ test('resolveTimeout — positive integer passes through', () => {
   assert.equal(resolveTimeout({ timeouts: { worker: 600 } }, 'worker'), 600);
   // Floats floor down (matches `timeout` coreutil's integer expectation).
   assert.equal(resolveTimeout({ timeouts: { worker: 600.7 } }, 'worker'), 600);
+});
+
+test('resolveSubstrateSelfSlug — prefers $HARNESS_SLUG (the registry slug) over the config slug (EI-787)', () => {
+  const prevHarness = process.env.HARNESS_SLUG;
+  const prevPapercusp = process.env.PAPERCUSP_HARNESS_SLUG;
+  try {
+    process.env.HARNESS_SLUG = 'xbq72ugvaz-the-real-registry-slug';
+    delete process.env.PAPERCUSP_HARNESS_SLUG;
+    // The config's own `slug` field diverges (the benchmark-harness repro from EI-787) —
+    // the env-injected registry slug must win, not the config value.
+    assert.equal(
+      resolveSubstrateSelfSlug({ slug: 'extbench-q1ubTg' }, '/some/project/dir'),
+      'xbq72ugvaz-the-real-registry-slug',
+    );
+  } finally {
+    if (prevHarness === undefined) delete process.env.HARNESS_SLUG; else process.env.HARNESS_SLUG = prevHarness;
+    if (prevPapercusp === undefined) delete process.env.PAPERCUSP_HARNESS_SLUG; else process.env.PAPERCUSP_HARNESS_SLUG = prevPapercusp;
+  }
+});
+
+test('resolveSubstrateSelfSlug — falls back to the config slug when no env/registry slug resolves to it', () => {
+  const prevHarness = process.env.HARNESS_SLUG;
+  const prevPapercusp = process.env.PAPERCUSP_HARNESS_SLUG;
+  try {
+    delete process.env.HARNESS_SLUG;
+    delete process.env.PAPERCUSP_HARNESS_SLUG;
+    // No env override: harnessSlugFromProjectDir resolves to the directory basename
+    // (a non-empty string), so the config `slug` fallback is never reached here —
+    // this asserts the basename-resolution leg still returns a usable, non-empty slug.
+    assert.equal(resolveSubstrateSelfSlug({ slug: 'ignored-when-basename-resolves' }, '/some/my-project-dir'), 'my-project-dir');
+  } finally {
+    if (prevHarness === undefined) delete process.env.HARNESS_SLUG; else process.env.HARNESS_SLUG = prevHarness;
+    if (prevPapercusp === undefined) delete process.env.PAPERCUSP_HARNESS_SLUG; else process.env.PAPERCUSP_HARNESS_SLUG = prevPapercusp;
+  }
 });
 
 test('resolveModel — returns empty when missing (role without a committed tier default)', () => {

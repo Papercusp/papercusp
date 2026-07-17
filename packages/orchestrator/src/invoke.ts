@@ -2290,7 +2290,7 @@ export async function findPriorRunForIdempotency(
  * FIRST — on a harness whose config `slug` / directory basename diverges from
  * the registry slug (observed on a benchmark member harness: dir/config slug
  * `extbench-q1ubTg` vs registry slug `xbq72ugvaz…`), the banner advertised a
- * slug that work_items:*/`/api/harness/<slug>/*` reject as "unknown project",
+ * slug that work_items tools / the `/api/harness/<slug>/...` route reject as "unknown project",
  * costing ~4 wasted tool calls before the agent found the real slug via
  * GET /api/harness/projects.
  */
