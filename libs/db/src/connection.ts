@@ -175,7 +175,14 @@ function readDiscoveryFile(): DiscoveryEndpoint | null {
     // path is server-only in practice but be defensive.
     const fs = nodeRequire('node:fs') as typeof import('node:fs');
     const os = nodeRequire('node:os') as typeof import('node:os');
-    const path = `${os.homedir()}/.papercusp/embedded-pg.json`;
+    // EI-13917: honor PAPERCUSP_HOME (the established isolation escape hatch —
+    // packages/operator-core/lib/papercusp-root.ts) before the box-wide
+    // `~/.papercusp`, mirroring the matching writer-side fix in
+    // apps/operator/bin/serve.ts. A caller that scoped its OWN PAPERCUSP_HOME
+    // (an isolated gate/smoke-test instance) should discover ITS OWN
+    // embedded-pg.json, never accidentally pick up the box-canonical one.
+    const papercuspDir = process.env.PAPERCUSP_HOME || `${os.homedir()}/.papercusp`;
+    const path = `${papercuspDir}/embedded-pg.json`;
     return _parseDiscoveryJson(fs.readFileSync(path, 'utf8'));
   } catch {
     // missing / unreadable — fall through to native fallback
