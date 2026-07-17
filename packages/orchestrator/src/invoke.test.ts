@@ -520,28 +520,30 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
     assert.equal(resolveModel({}, 'worker'), 'sonnet');
     assert.equal(resolveModel({}, 'validator'), 'sonnet');
     assert.equal(resolveModel({}, 'documenter'), 'sonnet');
-    // P-020 autonomous-loop migration: cup, scanner, judge migrated to GPT-5.6 Lua high
-    assert.equal(resolveModel({}, 'cup'), 'gpt-5.6-luna:high');
-    assert.equal(resolveModel({}, 'scanner'), 'gpt-5.6-luna:high');
-    assert.equal(resolveModel({}, 'judge'), 'gpt-5.6-luna:high');
+    // Autonomous-loop floor (WI-4623, owner decision 2026-07-16): cup, scanner, judge
+    // sit on sonnet-5 trimmed-mode ([1m] window) at high effort. This REVERTS the P-020
+    // gpt-5.6-luna:high migration (WI-4640), which handed claude-backend roles a codex-only
+    // id and hard-downed kettle@papercusp — see ROLE_MODEL_DEFAULTS' history comment.
+    assert.equal(resolveModel({}, 'cup'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'scanner'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'judge'), 'sonnet-5[1m]:high');
     // The launch-fixer family's committed floors (D-008 follow-up): the two
     // fleet-blast-radius fixers pin opus:xhigh, the bounded content repairer pins sonnet.
     assert.equal(resolveModel({}, 'merge-resolver'), 'opus:xhigh');
     assert.equal(resolveModel({}, 'release-fixer'), 'opus:xhigh');
     assert.equal(resolveModel({}, 'content-fixer'), 'sonnet');
-    // P-020 autonomous-loop migration: the pot's judgment/control-loop layer (queen/bee/mug/
-    // kettle/overwatch/sentinel) migrated off sonnet to GPT-5.6 Lua high via Codex backend
-    // — see ROLE_MODEL_DEFAULTS. The spec includes the full id prefix (`gpt-5.6-` not bare
-    // alias) so backend inference keys off it to swap the subprocess binary to codex.
-    // Asserted individually (not via a loop over keys) so a regression on any ONE role fails
-    // with that role's name in the assertion.
-    assert.equal(resolveModel({}, 'queen'), 'gpt-5.6-luna:high');
-    assert.equal(resolveModel({}, 'bee'), 'gpt-5.6-luna:high');
-    assert.equal(resolveModel({}, 'mug'), 'gpt-5.6-luna:high');
-    // Kettle (overwatch) and sentinel migrated with the autonomous-loop layer.
-    assert.equal(resolveModel({}, 'kettle'), 'gpt-5.6-luna:high');
-    assert.equal(resolveModel({}, 'overwatch'), 'gpt-5.6-luna:high');
-    assert.equal(resolveModel({}, 'sentinel'), 'gpt-5.6-luna:high');
+    // The pot's judgment/control-loop layer (queen/bee/mug/kettle/overwatch/sentinel) sits on
+    // the same sonnet-5[1m]:high floor (WI-4623). A trimmed sonnet spec infers the
+    // claude/anthropic backend, keeping the spawn binary correct — the inverse of the luna
+    // trap. Asserted individually (not via a loop over keys) so a regression on any ONE role
+    // fails with that role's name in the assertion.
+    assert.equal(resolveModel({}, 'queen'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'bee'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'mug'), 'sonnet-5[1m]:high');
+    // Kettle (overwatch) and sentinel sit on the same autonomous-loop floor.
+    assert.equal(resolveModel({}, 'kettle'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'overwatch'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'sentinel'), 'sonnet-5[1m]:high');
     // operator has no committed default in ROLE_MODEL_DEFAULTS (interactive surface, not autonomous-loop).
     assert.equal(resolveModel({}, 'operator'), '');
   } finally {
