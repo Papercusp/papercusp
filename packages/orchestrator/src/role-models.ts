@@ -99,7 +99,7 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   //
   // HISTORY: autonomous-loop-prod-audit-2026-07-02 P-020 (WI-4640) migrated this
   // whole set to `gpt-5.6-luna:high` on the native Codex backend. That migration
-  // was REVERTED here per owner decision WI-4623 (Avi, interactive 2026-07-16;
+  // was REVERTED here per owner decision WI-4623 (owner, interactive 2026-07-16;
   // relayed by fleet leader su-d838f112, coord mroerbb3): autonomous-loop roles
   // go to sonnet-5:high TRIMMED via the gateway, NOT gpt-5.6-luna. The luna floor
   // also broke production at runtime — a role whose spawn keeps the `claude`

@@ -1,6 +1,6 @@
 -- 617 — routines grouping: group_slug + a routine_groups registry (WI-5018).
 --
--- OWNER DIRECTIVE [owner:Avi 2026-07-15]: "unlike plans which are one offs so
+-- OWNER DIRECTIVE [owner 2026-07-15]: "unlike plans which are one offs so
 -- are bounded by the amount the user can handle in their head at a time, the
 -- routines can grow infinitely large so I think grouping functionality would
 -- be very beneficial there."
