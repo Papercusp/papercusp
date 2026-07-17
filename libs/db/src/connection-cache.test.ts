@@ -64,4 +64,35 @@ describe('connection cache invalidation source contract (bug #33)', () => {
     expect(body).toMatch(/_adminClient\s*=\s*null/);
     expect(body).toMatch(/_adminDrizzle\s*=\s*null/);
   });
+
+  // WI-5244(2): a discovery-file target is spoofable by any local install; a
+  // newly-built pool sourced from discovery gets a cheap, fire-and-forget
+  // validation query so an impostor/mismatched DB is flagged loudly instead of
+  // silently read as empty (the 2026-07-17 08:29Z incident's ~40-min-to-detect
+  // gap). Env-pinned managed hosts are trusted and skip the check.
+  it("getOrgPg() validates the target ONLY when the admin URL source is 'discovery'", () => {
+    const m = SRC.match(/export function getOrgPg\(\)[^{]*\{([\s\S]+?)^\}/m);
+    expect(m).toBeTruthy();
+    const body = m![1];
+    expect(body, 'getOrgPg() must call validateDiscoveryTargetOnce for a discovery-sourced pool (WI-5244)').toMatch(
+      /_resolvedAdminUrlSource === 'discovery'\)\s*validateDiscoveryTargetOnce\(_adminClient/,
+    );
+  });
+
+  it("getOrgPgApp() validates the target ONLY when the app URL source is 'discovery'", () => {
+    const m = SRC.match(/export function getOrgPgApp\(\)[^{]*\{([\s\S]+?)^\}/m);
+    expect(m).toBeTruthy();
+    const body = m![1];
+    expect(body, 'getOrgPgApp() must call validateDiscoveryTargetOnce for a discovery-sourced pool (WI-5244)').toMatch(
+      /_resolvedAppUrlSource === 'discovery'\)\s*validateDiscoveryTargetOnce\(_appOrgClient/,
+    );
+  });
+
+  it('validateDiscoveryTargetOnce is fail-soft (never throws/blocks on a query error)', () => {
+    const fn = SRC.match(/function validateDiscoveryTargetOnce\([^{]*\{([\s\S]+?)^\}/m);
+    expect(fn, 'validateDiscoveryTargetOnce must exist').toBeTruthy();
+    const body = fn![1];
+    expect(body, 'must be fire-and-forget (void the promise, never await/return it)').toMatch(/^\s*void sql/m);
+    expect(body, 'must swallow a validation-query error rather than propagate it').toMatch(/\.catch\(/);
+  });
 });

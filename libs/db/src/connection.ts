@@ -753,6 +753,37 @@ export function typedSql<R = Record<string, unknown>>(
 }
 
 /**
+ * WI-5244 class (2): a discovery-file target is a SPOOFABLE trust point — ANY
+ * local install can rewrite ~/.papercusp/embedded-pg.json (a packaged Papercusp
+ * Server did exactly that on 2026-07-17 08:29Z and pointed the shared bg-host's
+ * pools at its own empty, partial-schema `papercusp` DB; nothing alarmed, so the
+ * drift surfaced ~40 minutes later as a confusing mid-gate `column … does not
+ * exist` failure). Env-pinned URLs (DATABASE_URL / HARNESS_*_DATABASE_URL — i.e.
+ * every managed host: systemd units, deploy) are inherently trusted and are NOT
+ * re-validated here; this covers ONLY the specifically spoofable discovery-file
+ * path, firing once per newly-built pool. Fire-and-forget + fail-soft by design:
+ * a validation-query failure (including the DB being briefly unreachable) must
+ * never affect the real pool or block/throw on the caller.
+ */
+function validateDiscoveryTargetOnce(sql: Sql, label: string): void {
+  void sql<Array<{ t: string | null }>>`SELECT to_regclass('harness_shared.schema_migrations')::text AS t`
+    .then((rows) => {
+      if (!rows[0]?.t) {
+        console.error(
+          `[connection] WI-5244: the ${label} pool resolved via the discovery file ` +
+            `(~/.papercusp/embedded-pg.json) but harness_shared.schema_migrations does not ` +
+            `exist at that target — this looks like an IMPOSTOR/mismatched papercusp DB, ` +
+            `not the real managed database. Check ~/.papercusp/embedded-pg.json for a recent ` +
+            `rewrite by another local install (see WI-5244).`,
+        );
+      }
+    })
+    .catch(() => {
+      // fail-soft — never let a validation-query error affect the real pool
+    });
+}
+
+/**
  * Admin (cross-harness) client. Use for views/aggregations/projects/messages.
  *
  * search_path includes `papercusp_shared` so the Papercup-specific tables
@@ -774,6 +805,9 @@ export function getOrgPg(): OrgPgHandle {
     _adminClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-admin', pgbouncerEnabled());
     _adminDrizzle = drizzle(_adminClient, { schema: sharedTables });
     _adminDb = drizzle(_adminClient, { schema: fullSchema });
+    // WI-5244(2): only the discovery-file source is spoofable — env-pinned managed
+    // hosts are already trusted, so skip the check there (cheap, but not free).
+    if (_resolvedAdminUrlSource === 'discovery') validateDiscoveryTargetOnce(_adminClient, 'admin');
   }
   return {
     sql: _adminClient,
@@ -805,6 +839,8 @@ export function getOrgPgApp(): OrgPgHandle {
     _appOrgClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-app', pgbouncerEnabled());
     _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedTables });
     _appOrgDb = drizzle(_appOrgClient, { schema: fullSchema });
+    // WI-5244(2) — see the matching check in getOrgPg() above.
+    if (_resolvedAppUrlSource === 'discovery') validateDiscoveryTargetOnce(_appOrgClient, 'app');
   }
   return {
     sql: _appOrgClient,
