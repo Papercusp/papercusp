@@ -48,8 +48,6 @@ DELETE FROM harness_shared.harness_plans
 -- (2) Rename a leftover hive row into place where its tenant has no pot row.
 UPDATE harness_shared.harness_plans p
    SET plan_slug = 'pot-coordination-health',
-       title = CASE WHEN p.title = 'Hive coordination health'
-                    THEN 'Pot coordination health' ELSE p.title END,
        template_data = jsonb_set(
          COALESCE(p.template_data, '{}'::jsonb),
          '{methodRef}', '"pot-coordination-health"', true
@@ -134,3 +132,12 @@ UPDATE harness_shared.harness_plans
    AND plan_slug    = 'pot-coordination-health'
    AND template     = 'rubric'
    AND (template_data->>'description') LIKE 'The 14-criteria scorecard%';
+
+-- (4d) Stale display title from the pre-rename lexicon (the bundle's rubric.json /
+-- listing.json + the 327 seed are fixed in this same change for fresh replays).
+UPDATE harness_shared.harness_plans
+   SET title = 'Pot coordination health',
+       updated_at = now()
+ WHERE plan_slug = 'pot-coordination-health'
+   AND template  = 'rubric'
+   AND title     = 'Hive coordination health';
