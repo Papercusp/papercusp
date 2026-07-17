@@ -231,16 +231,40 @@ export const ReactiveRuleSchema = z.object({
 });
 
 /**
+ * A `gates.finalize` entry: usually just a role/step name (the plain-string
+ * form, e.g. `'curator'` / `'archive'`), or — when the launch needs
+ * parameterizing beyond the outcome-derived extras (`TRIGGER`/`FEATURE_ID`/
+ * `REASON`/`OUTPUT_KIND`) — an object naming the role plus extra `KEY=VALUE`
+ * env entries appended to that role's invoke (unify-agent-launches-as-
+ * blueprints D-007/EI-421: "the finalizer is declared, not a fake pipeline" —
+ * this closes the remaining hardcoded part, letting a fork parameterize its
+ * curator/documenter launch the way the bespoke pre-blueprint path could).
+ * `archive` / `postCuratorOutputs` (non-role finalize steps) only take the
+ * plain-string form — `extras` has no effect on them.
+ */
+export const FinalizeEntrySchema = z.union([
+  z.string(),
+  z
+    .object({
+      role: z.string().min(1),
+      /** Extra `KEY=VALUE` env entries appended after this role's outcome-derived extras. */
+      extras: z.array(z.string()).default([]),
+    })
+    .strict(),
+]);
+
+/**
  * Gates: the finalize-recipe (what runs on a terminal outcome — promoted from a
  * hardcoded constant, P-004) plus named human-approval gates.
  */
 export const GatesSchema = z.object({
   finalize: z
     .object({
-      /** Roles/steps run on `done` — e.g. `['curator','documenter','archive']`. */
-      onDone: z.array(z.string()).default([]),
+      /** Roles/steps run on `done` — e.g. `['curator','documenter','archive']`,
+       *  or `[{ role: 'documenter', extras: ['OUTPUT_KIND=artifacts'] }]`. */
+      onDone: z.array(FinalizeEntrySchema).default([]),
       /** Roles/steps run on `escalate` — e.g. `['curator']`. */
-      onEscalate: z.array(z.string()).default([]),
+      onEscalate: z.array(FinalizeEntrySchema).default([]),
     })
     .optional(),
   approvals: z
@@ -253,6 +277,19 @@ export const GatesSchema = z.object({
     )
     .default([]),
 });
+
+/** The role/step name of a finalize entry, whichever form it's declared in —
+ *  the one place every consumer (validation, docs, the planner) should read
+ *  this from so the two forms never drift apart. */
+export function finalizeEntryRole(entry: z.infer<typeof FinalizeEntrySchema>): string {
+  return typeof entry === 'string' ? entry : entry.role;
+}
+
+/** The declared extra `KEY=VALUE` env entries for a finalize entry (empty for
+ *  the plain-string form, or any non-role step). */
+export function finalizeEntryExtras(entry: z.infer<typeof FinalizeEntrySchema>): string[] {
+  return typeof entry === 'string' ? [] : entry.extras;
+}
 
 /**
  * Harness-boundary recursion (layer 4 — Erlang/OTP supervision): a role spawns a
@@ -973,6 +1010,8 @@ export type BlueprintRole = z.infer<typeof BlueprintRoleSchema>;
 export type BlueprintWorkItem = z.infer<typeof WorkItemSchema>;
 export type BlueprintReactiveRule = z.infer<typeof ReactiveRuleSchema>;
 export type BlueprintGates = z.infer<typeof GatesSchema>;
+/** A single `gates.finalize.onDone`/`onEscalate` entry — see FinalizeEntrySchema. */
+export type BlueprintFinalizeEntry = z.infer<typeof FinalizeEntrySchema>;
 export type BlueprintRecursion = z.infer<typeof RecursionSchema>;
 export type BlueprintGym = z.infer<typeof GymSchema>;
 export type BlueprintKnobs = z.infer<typeof KnobsSchema>;

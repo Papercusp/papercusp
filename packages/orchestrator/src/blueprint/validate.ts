@@ -20,6 +20,7 @@
  * tester/test-writer/monitor verbs kept for switch parity) that don't block.
  */
 import type { Blueprint } from './schema.js';
+import { finalizeEntryRole } from './schema.js';
 import { dataConditionSchema } from '@papercusp/rules';
 import { CHILD_BLUEPRINT_PARAM_RE, isChildBlueprintParam } from './resolve-child.js';
 
@@ -146,7 +147,8 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
   // validate-program.test.ts), so guard the defaulted field.
   const finalize = bp.gates?.finalize;
   if (finalize) {
-    for (const step of [...finalize.onDone, ...finalize.onEscalate]) {
+    for (const entry of [...finalize.onDone, ...finalize.onEscalate]) {
+      const step = finalizeEntryRole(entry);
       if (!FINALIZE_STEPS.has(step) && !isLiveRole(step)) {
         warn('finalize-unknown-role', `gates.finalize references "${step}" which is neither a step nor a declared role`);
       }
@@ -219,7 +221,9 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
         (bp.spine.deciderAlternatives ?? []).includes(id) ||
         dispatched.has(id) ||
         bp.reactive.some((r) => r.role === id) ||
-        (finalize ? [...finalize.onDone, ...finalize.onEscalate].includes(id) : false);
+        (finalize
+          ? [...finalize.onDone, ...finalize.onEscalate].some((entry) => finalizeEntryRole(entry) === id)
+          : false);
       if (!used) {
         warn('unused-role', `role "${id}" is declared but never dispatched, reactive, or in finalize`);
       }
