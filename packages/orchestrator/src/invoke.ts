@@ -2277,6 +2277,32 @@ export async function findPriorRunForIdempotency(
   };
 }
 
+/**
+ * Resolve the slug advertised in the substrate-context "## Your harness" banner
+ * (EI-787). Pure/testable extraction of the resolution order the banner uses:
+ * prefer `harnessSlugFromProjectDir` (the SAME resolver every other operator-API
+ * call in `invoke()` already uses — it prefers the pipeline-injected
+ * $HARNESS_SLUG/$PAPERCUSP_HARNESS_SLUG, the authoritative REGISTRY slug, before
+ * ever falling back to the directory basename), falling back to the harness
+ * config's own `slug` field only if that resolver throws or returns empty.
+ *
+ * Before this, the banner read `cfg.slug` (or the raw projectDir basename)
+ * FIRST — on a harness whose config `slug` / directory basename diverges from
+ * the registry slug (observed on a benchmark member harness: dir/config slug
+ * `extbench-q1ubTg` vs registry slug `xbq72ugvaz…`), the banner advertised a
+ * slug that work_items:*/`/api/harness/<slug>/*` reject as "unknown project",
+ * costing ~4 wasted tool calls before the agent found the real slug via
+ * GET /api/harness/projects.
+ */
+export function resolveSubstrateSelfSlug(cfg: HarnessConfig, projectDir: string): string {
+  let selfSlug = '';
+  try {
+    selfSlug = harnessSlugFromProjectDir(projectDir);
+  } catch { /* fall through to the config fallback below */ }
+  if (!selfSlug) selfSlug = configGet<string>(cfg, 'slug', '');
+  return selfSlug;
+}
+
 export async function invoke(
   ctx: InvokeContext,
   role: string,
@@ -2508,13 +2534,9 @@ export async function invoke(
   ensureMemoryFiles(ctx.stateDir);
 
   // 8.5 Substrate context (Tier 1 + Tier 2 + Tier 3 + bounded supervisor inbox).
-  // Best-effort; empty string on any fetch failure.
-  let selfSlug = configGet<string>(cfg, 'slug', '');
-  if (!selfSlug) {
-    // Fallback to projectDir basename (matches what the file registry uses).
-    const m = ctx.projectDir.match(/[^/]+$/);
-    if (m) selfSlug = m[0];
-  }
+  // Best-effort; empty string on any fetch failure. Slug resolution: see
+  // resolveSubstrateSelfSlug's docstring (EI-787).
+  const selfSlug = resolveSubstrateSelfSlug(cfg, ctx.projectDir);
   const parentSlug = configGet<string>(cfg, 'parent_slug', '') || null;
   let substrateContext = '';
   if (selfSlug) {
