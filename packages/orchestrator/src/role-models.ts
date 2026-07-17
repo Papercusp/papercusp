@@ -134,6 +134,15 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   sentinel: 'gpt-5.6-luna:high',
   papercup: 'gpt-5.6-luna:high',
   blender: 'gpt-5.6-luna:high',
+  // `operator` was a member of THIS SAME judgment/control-loop group pre-migration
+  // (`operator: 'sonnet[1m]:high'`) but is DELIBERATELY absent as of P-020
+  // (autonomous-loop-prod-audit-2026-07-02): it's the interactive brain surface,
+  // not an autonomous-loop role, and the orchestrator's OWN suite pins the
+  // no-committed-default behavior explicitly (invoke.test.ts: "operator has no
+  // committed default in ROLE_MODEL_DEFAULTS (interactive surface, not
+  // autonomous-loop)" — `resolveModel({}, 'operator')` must be `''`). Do not
+  // re-add it without updating that guard test in lockstep — a prior pass on
+  // this file re-added it and broke that invariant.
   // The gym loop's judgment role (task-generator/variant-runner/proposer stay
   // unpinned — no committed default existed for them before P-020 either;
   // out of THIS item's narrow scope, left for a follow-up). `scanner` is
