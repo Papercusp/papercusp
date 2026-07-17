@@ -83,18 +83,29 @@ BEGIN
       tbl);
   END LOOP;
 
-  -- 2. Per-harness views: drop the literal default so the omitted column reaches
+  -- 2. Per-harness views: drop the literal default so an omitted column reaches
   --    the base table as NULL and the trigger above can fill it. Every other view
   --    default (harness_slug, created_at, …) is deliberately left untouched.
+  --
+  --    OWNERSHIP-TOLERANT BY DESIGN. These views span ~240 harness schemas and are
+  --    not uniformly owned: most are owned by harness_admin (the migration role),
+  --    but a handful — harness_org*, harness_papercup, harness_restart,
+  --    harness_sheets* — are owned by postgres_app, and ALTER VIEW requires
+  --    ownership. A single un-owned view would otherwise abort the WHOLE migration
+  --    (it did, on first apply), leaving even the owned schemas unfixed.
+  --
+  --    Skipping is SAFE, not a silent half-fix: a skipped view simply keeps its
+  --    literal default, i.e. EXACTLY today's behavior for that harness — and the
+  --    real fix for every harness is the writer stamping workspace_id explicitly
+  --    (an explicit value makes the view default irrelevant). This layer only
+  --    converts a would-be SILENT mis-stamp into a trigger-derived one for the
+  --    views we can reach. Each skip is RAISEd as a NOTICE — never silent.
   FOR s IN
     SELECT nspname FROM pg_namespace
-    WHERE nspname LIKE 'harness\_%' OR nspname IN (SELECT slug FROM harness_shared.projects)
+    WHERE nspname LIKE 'harness\_%' AND nspname <> 'harness_shared'
   LOOP
     FOREACH v IN ARRAY views LOOP
-      IF to_regclass(format('%I.%I', s, v)) IS NULL THEN
-        CONTINUE;
-      END IF;
-      -- Only views (a schema may still hold a pre-consolidation table).
+      -- Only actual views (a schema may still hold a pre-consolidation table).
       IF NOT EXISTS (
         SELECT 1 FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -102,12 +113,19 @@ BEGIN
       ) THEN
         CONTINUE;
       END IF;
-      IF EXISTS (
+      IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = s AND table_name = v AND column_name = 'workspace_id'
       ) THEN
-        EXECUTE format('ALTER VIEW %I.%I ALTER COLUMN workspace_id DROP DEFAULT', s, v);
+        CONTINUE;
       END IF;
+      BEGIN
+        EXECUTE format('ALTER VIEW %I.%I ALTER COLUMN workspace_id DROP DEFAULT', s, v);
+      EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE
+          '616: skipped %.% — not owned by % (keeps its literal default = today''s behavior; '
+          'the writer-side explicit stamp still fixes it)', s, v, current_user;
+      END;
     END LOOP;
   END LOOP;
 END
