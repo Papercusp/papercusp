@@ -40,6 +40,58 @@ test('coding blueprint warns ONLY about the vestigial undeclared dispatch roles'
   assert.equal(v.warnings.filter((w) => w.code === 'decider-undeclared').length, 0);
 });
 
+test('gates.finalize — a `{role,extras}` entry is resolved the same as a plain-string role (EI-421)', () => {
+  const base = {
+    id: 'finalize-entries',
+    workItem: { kind: 'feature' },
+    spine: {
+      edges: {
+        DONE: { to: 'done' },
+        NEXT_WORKER: { to: 'role', role: 'worker', extras: ['FEATURE_ID={feature}'] },
+      },
+    },
+    roles: [{ id: 'worker' }, { id: 'documenter' }, { id: 'committer' }],
+  };
+
+  // `documenter` is only referenced via the OBJECT finalize-entry form — must count
+  // as both a known role (no finalize-unknown-role) and a USED role (no unused-role).
+  const withObjectEntry = BlueprintSchema.parse({
+    ...base,
+    gates: {
+      finalize: {
+        onDone: [{ role: 'documenter', extras: ['OUTPUT_KIND=artifacts'] }, 'archive'],
+        onEscalate: ['committer'],
+      },
+    },
+  });
+  const v = validateBlueprint(withObjectEntry);
+  assert.equal(v.errors.length, 0, `unexpected errors: ${JSON.stringify(v.errors)}`);
+  assert.equal(
+    v.warnings.filter((w) => w.code === 'finalize-unknown-role').length,
+    0,
+    `unexpected finalize-unknown-role: ${JSON.stringify(v.warnings)}`,
+  );
+  assert.ok(
+    !v.warnings.some((w) => w.code === 'unused-role' && w.message.includes('"documenter"')),
+    `documenter should be counted used via its object finalize entry: ${JSON.stringify(v.warnings)}`,
+  );
+  assert.ok(
+    !v.warnings.some((w) => w.code === 'unused-role' && w.message.includes('"committer"')),
+    `committer should be counted used via onEscalate: ${JSON.stringify(v.warnings)}`,
+  );
+
+  // An object entry naming a role that is neither a known finalize step nor a
+  // declared role still warns (same as the plain-string form).
+  const withUnknownRole = BlueprintSchema.parse({
+    ...base,
+    gates: { finalize: { onDone: [{ role: 'nonexistent-role' }], onEscalate: [] } },
+  });
+  const v2 = validateBlueprint(withUnknownRole);
+  assert.ok(
+    v2.warnings.some((w) => w.code === 'finalize-unknown-role' && w.message.includes('"nonexistent-role"')),
+  );
+});
+
 test('empty spine → error', () => {
   const bp = BlueprintSchema.parse({
     id: 'x',

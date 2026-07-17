@@ -5,7 +5,13 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { BlueprintSchema, BlueprintHeaderSchema, SpineActionSchema } from './schema.js';
+import {
+  BlueprintSchema,
+  BlueprintHeaderSchema,
+  SpineActionSchema,
+  finalizeEntryRole,
+  finalizeEntryExtras,
+} from './schema.js';
 
 /** Smallest blueprint that satisfies the required fields (id, workItem.kind, spine.edges). */
 const minimal = {
@@ -330,4 +336,35 @@ test('ReactiveRuleSchema — `cond` is the canonical @papercusp/rules DataCondit
     reactive: [{ role: 'debugger', when: { beforeRole: 'worker', custom: 'named-host-predicate' } }],
   });
   assert.ok(!('custom' in stale.reactive[0].when), 'custom is stripped, not preserved');
+});
+
+test('GatesSchema.finalize — entries accept plain role/step strings (legacy, unchanged)', () => {
+  const bp = BlueprintSchema.parse({
+    ...minimal,
+    gates: { finalize: { onDone: ['curator', 'postCuratorOutputs', 'documenter', 'archive'], onEscalate: ['curator'] } },
+  });
+  assert.deepEqual(bp.gates.finalize?.onDone, ['curator', 'postCuratorOutputs', 'documenter', 'archive']);
+  assert.equal(finalizeEntryRole(bp.gates.finalize!.onDone[0]), 'curator');
+  assert.deepEqual(finalizeEntryExtras(bp.gates.finalize!.onDone[0]), []);
+});
+
+test('GatesSchema.finalize — a `{role,extras}` entry parameterizes a role launch declaratively (EI-421)', () => {
+  const bp = BlueprintSchema.parse({
+    ...minimal,
+    gates: {
+      finalize: {
+        onDone: ['curator', { role: 'documenter', extras: ['OUTPUT_KIND=artifacts', 'SINK=blob-store'] }],
+        onEscalate: [],
+      },
+    },
+  });
+  const docEntry = bp.gates.finalize!.onDone[1];
+  assert.equal(finalizeEntryRole(docEntry), 'documenter');
+  assert.deepEqual(finalizeEntryExtras(docEntry), ['OUTPUT_KIND=artifacts', 'SINK=blob-store']);
+  // extras defaults to [] when omitted on the object form.
+  const bare = BlueprintSchema.parse({
+    ...minimal,
+    gates: { finalize: { onDone: [{ role: 'committer' }], onEscalate: [] } },
+  });
+  assert.deepEqual(finalizeEntryExtras(bare.gates.finalize!.onDone[0]), []);
 });
