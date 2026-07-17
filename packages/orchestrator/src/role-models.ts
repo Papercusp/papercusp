@@ -91,49 +91,46 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // duplicated, since an object literal's later key silently wins and a
   // stray duplicate would be a footgun for the next reader). No other role
   // currently occupies this volume tier.
-  // The pot's JUDGMENT/control-loop layer (owner-watched autonomous run,
-  // 2026-06-11): Mug/Kettle/Cup/Blender wakes are the free-running
-  // Mug→Cup→Kettle→Blender autonomous loop (local-hive-orchestration /
-  // pot-rename D-007). Sonnet-5 trimmed-mode WAS the committed floor for
-  // high-reliability autonomous roles (2026-07-15); superseded below.
+  // The pot's JUDGMENT/control-loop layer (owner-watched autonomous run):
+  // Mug/Kettle/Cup/Blender wakes are the free-running Mug->Cup->Kettle->Blender
+  // autonomous loop (local-hive-orchestration / pot-rename D-007), plus the gym
+  // learning-loop's judge/scanner. Sonnet-5 trimmed-mode ([1m] window) at `high`
+  // reasoning effort is the committed floor.
   //
-  // (autonomous-loop-prod-audit-2026-07-02 P-020): migrated every
-  // AUTONOMOUS-LOOP role — the Mug↔Cup↔Kettle↔Blender placement/execution
-  // loop plus the gym learning-loop's judge — to GPT-5.6 "Luna" (the plan's
-  // "GPT-5.6 Lua" shorthand; the canonical alias is `luna`, confirmed against
-  // WI-4638's official-source identifier verification + WI-4639's completed
-  // catalog/validator implementation — see role-models.test.ts) at `high`
-  // reasoning effort, native Codex backend. Deliberately the FULL id
-  // (`gpt-5.6-luna:high`), NOT the bare `luna:high` alias: the spawn-time
-  // backend inference this floor feeds (`inferBackendFromModelSpec` in
-  // harness-invoke-once.ts / `isCodexShapedModelSpec` in the orchestrator's
-  // own env.ts) keys off the `gpt-5.6-` prefix so a role that relies on
-  // ONLY this committed floor (no explicit tier/spec override) still gets
-  // its subprocess binary swapped to `codex` — the "account-steering path"
-  // half of P-020 (see operator-spawn.ts / invoke.ts for the consuming
-  // fallback fix). A bare alias here would silently keep the claude binary
-  // and hand it an unrunnable OpenAI model id — the EI-7/EI-286/EI-12657/
-  // WI-1979 class of "selected model unavailable" outage this floor exists
-  // to prevent.
+  // HISTORY: autonomous-loop-prod-audit-2026-07-02 P-020 (WI-4640) migrated this
+  // whole set to `gpt-5.6-luna:high` on the native Codex backend. That migration
+  // was REVERTED here per owner decision WI-4623 (Avi, interactive 2026-07-16;
+  // relayed by fleet leader su-d838f112, coord mroerbb3): autonomous-loop roles
+  // go to sonnet-5:high TRIMMED via the gateway, NOT gpt-5.6-luna. The luna floor
+  // also broke production at runtime — a role whose spawn keeps the `claude`
+  // binary (the gateway / account-steering path) was handed a codex-only
+  // `gpt-5.6-luna` id and hard-downed (kettle@papercusp, 2026-07-16;
+  // independently root-caused + sonnet-pin-verified by su-33019ac2). A trimmed
+  // sonnet spec is the inverse of the trap the luna migration relied on: where
+  // the `gpt-5.6-` prefix made `inferBackendFromModelSpec` (harness-invoke-once.ts)
+  // / `isCodexShapedModelSpec` (orchestrator env.ts) swap the subprocess to
+  // `codex`, `sonnet-5[1m]:high` resolves through normalizeModelSpec to the 967k
+  // trimmed window and infers the claude/anthropic backend, so the spawn binary
+  // stays correct.
   //
   // Every key that resolves to the same canonical role via the pot-rename
   // map (POT_RENAME_ROLE_MAP in agent-tools/coordination/roles.ts:
-  // bee→cup, queen→mug, sentinel→papercup, overwatch→kettle, scout→blender)
+  // bee->cup, queen->mug, sentinel->papercup, overwatch->kettle, scout->blender)
   // is kept in lockstep here — nothing canonicalizes the role string before
   // this map is looked up, so a stale legacy-name entry would silently keep
-  // running the old sonnet spec for any caller still passing the old name.
-  // `papercup` and `blender` are NEW entries (previously absent — those
+  // running a different spec for any caller still passing the old name.
+  // `papercup` and `blender` are entries that were previously absent (those
   // roles fell through to the bare CLI default with no committed floor at
   // all, the exact EI-7 gap this file exists to close).
-  queen: 'gpt-5.6-luna:high',
-  bee: 'gpt-5.6-luna:high',
-  mug: 'gpt-5.6-luna:high',
-  cup: 'gpt-5.6-luna:high',
-  kettle: 'gpt-5.6-luna:high',
-  overwatch: 'gpt-5.6-luna:high',
-  sentinel: 'gpt-5.6-luna:high',
-  papercup: 'gpt-5.6-luna:high',
-  blender: 'gpt-5.6-luna:high',
+  queen: 'sonnet-5[1m]:high',
+  bee: 'sonnet-5[1m]:high',
+  mug: 'sonnet-5[1m]:high',
+  cup: 'sonnet-5[1m]:high',
+  kettle: 'sonnet-5[1m]:high',
+  overwatch: 'sonnet-5[1m]:high',
+  sentinel: 'sonnet-5[1m]:high',
+  papercup: 'sonnet-5[1m]:high',
+  blender: 'sonnet-5[1m]:high',
   // `operator` was a member of THIS SAME judgment/control-loop group pre-migration
   // (`operator: 'sonnet[1m]:high'`) but is DELIBERATELY absent as of P-020
   // (autonomous-loop-prod-audit-2026-07-02): it's the interactive brain surface,
@@ -148,8 +145,8 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // out of THIS item's narrow scope, left for a follow-up). `scanner` is
   // blender's negative-space-scan execution role (AGENT_ROLES: "the
   // negative-space/scout scanner") — moves with blender.
-  judge: 'gpt-5.6-luna:high',
-  scanner: 'gpt-5.6-luna:high',
+  judge: 'sonnet-5[1m]:high',
+  scanner: 'sonnet-5[1m]:high',
 };
 
 /**
