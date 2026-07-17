@@ -13,7 +13,14 @@ vi.mock('../../../../../packages/operator-core/lib/resource-profile', () => ({
   getResourceProfile: () => ({ hostClass: mockProfile.hostClass }),
 }));
 
-import { buildConnectionOptions, connectionBudgetStatus, maybePgbouncer, pgbouncerEnabled } from './connection';
+import {
+  buildConnectionOptions,
+  connectionBudgetStatus,
+  maybePgbouncer,
+  pgbouncerEnabled,
+  _resetUrlCacheForTests,
+  _resolveUrlsForTests,
+} from './connection';
 
 const DIRECT = 'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
 const POOLED = 'postgresql://harness_app:harness_app_pwd@127.0.0.1:6432/papercusp';
@@ -224,5 +231,42 @@ describe('connectionBudgetStatus — EI-3379 pooler-aware backend budget', () =>
 
   it('liveMax unknown (0, PG unreachable) is never DANGER', () => {
     expect(connectionBudgetStatus({ ...devBox, pooled: false, liveMax: 0 }).danger).toBe(false);
+  });
+});
+
+describe('URL resolution env precedence (WI-5244)', () => {
+  const savedUrls = {
+    HARNESS_ADMIN_DATABASE_URL: process.env.HARNESS_ADMIN_DATABASE_URL,
+    HARNESS_DATABASE_URL: process.env.HARNESS_DATABASE_URL,
+    DATABASE_URL: process.env.DATABASE_URL,
+  } as const;
+  afterEach(() => {
+    for (const k of Object.keys(savedUrls) as Array<keyof typeof savedUrls>) {
+      if (savedUrls[k] === undefined) delete process.env[k];
+      else process.env[k] = savedUrls[k];
+    }
+    _resetUrlCacheForTests();
+  });
+
+  it('DATABASE_URL beats the discovery file: admin uses it as-is, app re-keys the endpoint onto the app role', () => {
+    // The WI-5244 incident: a local install rewrote ~/.papercusp/embedded-pg.json
+    // and hijacked every pool on a host that sets DATABASE_URL but not HARNESS_*.
+    delete process.env.HARNESS_ADMIN_DATABASE_URL;
+    delete process.env.HARNESS_DATABASE_URL;
+    process.env.DATABASE_URL = 'postgresql://harness_admin:pw@dbhost.example:5999/papercusp';
+    _resetUrlCacheForTests();
+    const { app, admin } = _resolveUrlsForTests();
+    expect(admin).toBe('postgresql://harness_admin:pw@dbhost.example:5999/papercusp');
+    expect(app).toBe('postgresql://harness_app:harness_app_pwd@dbhost.example:5999/papercusp');
+  });
+
+  it('HARNESS_* env still wins over DATABASE_URL', () => {
+    process.env.HARNESS_ADMIN_DATABASE_URL = 'postgresql://a:b@adminhost:5432/papercusp';
+    process.env.HARNESS_DATABASE_URL = 'postgresql://c:d@apphost:5432/papercusp';
+    process.env.DATABASE_URL = 'postgresql://harness_admin:pw@other:5999/papercusp';
+    _resetUrlCacheForTests();
+    const { app, admin } = _resolveUrlsForTests();
+    expect(admin).toBe('postgresql://a:b@adminhost:5432/papercusp');
+    expect(app).toBe('postgresql://c:d@apphost:5432/papercusp');
   });
 });

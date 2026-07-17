@@ -75,9 +75,11 @@ const fullSchema = {
 // HARNESS_DATABASE_URL after this module is imported) take effect.
 //
 // Resolution chain (added 2026-05-12 — superseded the bare native fallback):
-//   1. Explicit env (HARNESS_DATABASE_URL / HARNESS_ADMIN_DATABASE_URL).
-//      Set by Tauri main when spawning the desktop sidecar — that path
-//      always wins.
+//   1. Explicit env (HARNESS_DATABASE_URL / HARNESS_ADMIN_DATABASE_URL,
+//      then DATABASE_URL as an endpoint pin — admin DSN as-is, app role
+//      re-keyed onto its host:port). Set by Tauri main when spawning the
+//      desktop sidecar, and by every managed host's systemd unit — that
+//      path always wins.
 //   2. Discovery file at $HOME/.papercusp/embedded-pg.json — written
 //      by the desktop's Rust main on embedded-PG ready, deleted on
 //      shutdown. Lets `apps/operator npm run dev` (no env set) share
@@ -187,6 +189,24 @@ function appUrl(): string {
     _resolvedAppUrlSource = 'env';
     return _resolvedAppUrl;
   }
+  // DATABASE_URL pins the ENDPOINT (host:port/db) but carries admin creds; keep
+  // the app role by re-keying it with the fixed harness_app convention creds.
+  // WI-5244 class: every managed host (systemd units, deploy) sets DATABASE_URL
+  // but not HARNESS_DATABASE_URL — without this rung they fell through to the
+  // discovery file, which ANY local desktop/server install can rewrite; a
+  // packaged Papercusp Server did exactly that (08:29Z 2026-07-17) and pointed
+  // the shared bg-host's pools at its empty embedded PG (routines engine read
+  // "0 active routines" → box-wide git-sync/kettle/scout stall).
+  if (process.env.DATABASE_URL) {
+    try {
+      const u = new URL(process.env.DATABASE_URL);
+      _resolvedAppUrl = `postgresql://harness_app:harness_app_pwd@${u.hostname}:${u.port || 5432}${u.pathname || '/papercusp'}`;
+      _resolvedAppUrlSource = 'env';
+      return _resolvedAppUrl;
+    } catch {
+      // unparseable DATABASE_URL — fall through to discovery
+    }
+  }
   const disc = readDiscoveryFile();
   if (disc) {
     // Discovery file ships harness_admin creds; for the app role we
@@ -226,6 +246,14 @@ function adminUrl(): string {
     _resolvedAdminUrlSource = 'env';
     return _resolvedAdminUrl;
   }
+  // DATABASE_URL is the admin DSN on every managed host (systemd units, deploy
+  // env) — it must beat the discovery file, which any local desktop/server
+  // install can rewrite (WI-5244 class; see appUrl above for the incident).
+  if (process.env.DATABASE_URL) {
+    _resolvedAdminUrl = process.env.DATABASE_URL;
+    _resolvedAdminUrlSource = 'env';
+    return _resolvedAdminUrl;
+  }
   // Discovery file can change (desktop restart / port shuffle) — re-read
   // every call. Never cache the native fallback (poisons pool when
   // operator boots before desktop writes the discovery file).
@@ -261,6 +289,11 @@ function adminUrl(): string {
 export function _resetUrlCacheForTests(): void {
   _resolvedAppUrl = null;
   _resolvedAdminUrl = null;
+}
+
+/** Test-only — resolve the app/admin URLs through the live chain (env → discovery → fallback). */
+export function _resolveUrlsForTests(): { app: string; admin: string } {
+  return { app: appUrl(), admin: adminUrl() };
 }
 
 /**
