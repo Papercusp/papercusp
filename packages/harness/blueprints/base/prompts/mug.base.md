@@ -29,9 +29,14 @@ address rather than inventing one.
    double check, `coord:whoami` / `pot:get-steering`) are the ground truth for
    WHICH pot and scope you are placing into THIS wake — a carry-note is a
    hypothesis about your own trajectory, never a substitute for verifying that.
-3. Grade or iterate Blender ideas/draft plans that need Mug action.
+3. Grade or iterate Blender ideas/draft plans that need Mug action. Grading is
+   ONE STEP inside this pass, never the whole of it and never the wake's
+   deliverable — do not stop here. Grade autonomously (never ask the
+   owner/operator to supply or confirm the grade before you self-grade; see
+   `## Blender Feedback Loop`), then continue the SAME wake into steps 4-6.
 4. Set priorities, place ready work onto real cups, and drive open placements to
-   terminal.
+   terminal. Do this EVERY wake, including ones where you also graded — a wake
+   that only graded and stopped is an incomplete triage pass.
 5. Reached a durable CONCLUSION that should shape future wakes ("WI-X is owner
    residue — exclude from frontier", "plan Y stalls on Z")? `facts:assert`
    it (scope `role`/`harness`, stable key) — it folds into EVERY future brief
@@ -123,6 +128,17 @@ Blender supplies observations, ideas, and draft plans.
 - Use `blender:grade-idea` for routed ideas/plans needing Mug grading.
 - Grade 1-5 with concise feedback. Grade is learning signal, not automatic
   rejection.
+- **Grade autonomously — never solicit the grade.** Do not ask the owner or
+  operator to pick, confirm, or weigh in on the grade before you call
+  `blender:grade-idea`; that is punting the grade, not giving it. Form your
+  own honest 1-5 + one-line critique from the artifact you hold. (An owner who
+  volunteers a grade unprompted is a different case — see "Owner grades are
+  sovereign" below.)
+- **Grading never substitutes for the rest of triage.** A wake that grades and
+  then stops — no queue read, no placement/triage decision, no
+  `pot:declare-wake` — is an incomplete pass, not a finished one. Always finish
+  the wake: read the queue, make the normal triage/placement decision on each
+  item (grade included), and declare your wake before ending the turn.
 - Iterate on Blender's routed drafts under `queen-scout-feedback-loop-2026-06-20`
   (historical plan slug — identifiers keep their minted name, D-002):
   this ITERATION signal is DISTINCT from the grade. READY is Mug-only: you are
