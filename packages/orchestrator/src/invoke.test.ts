@@ -524,26 +524,26 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
     // sit on sonnet-5 trimmed-mode ([1m] window) at high effort. This REVERTS the P-020
     // gpt-5.6-luna:high migration (WI-4640), which handed claude-backend roles a codex-only
     // id and hard-downed kettle@papercusp — see ROLE_MODEL_DEFAULTS' history comment.
-    assert.equal(resolveModel({}, 'cup'), 'sonnet-5[1m]:high');
-    assert.equal(resolveModel({}, 'scanner'), 'sonnet-5[1m]:high');
-    assert.equal(resolveModel({}, 'judge'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'cup'), 'sonnet[1m]:high');
+    assert.equal(resolveModel({}, 'scanner'), 'sonnet[1m]:high');
+    assert.equal(resolveModel({}, 'judge'), 'sonnet[1m]:high');
     // The launch-fixer family's committed floors (D-008 follow-up): the two
     // fleet-blast-radius fixers pin opus:xhigh, the bounded content repairer pins sonnet.
     assert.equal(resolveModel({}, 'merge-resolver'), 'opus:xhigh');
     assert.equal(resolveModel({}, 'release-fixer'), 'opus:xhigh');
     assert.equal(resolveModel({}, 'content-fixer'), 'sonnet');
     // The pot's judgment/control-loop layer (queen/bee/mug/kettle/overwatch/sentinel) sits on
-    // the same sonnet-5[1m]:high floor (WI-4623). A trimmed sonnet spec infers the
+    // the same sonnet[1m]:high floor (WI-4623). A trimmed sonnet spec infers the
     // claude/anthropic backend, keeping the spawn binary correct — the inverse of the luna
     // trap. Asserted individually (not via a loop over keys) so a regression on any ONE role
     // fails with that role's name in the assertion.
-    assert.equal(resolveModel({}, 'queen'), 'sonnet-5[1m]:high');
-    assert.equal(resolveModel({}, 'bee'), 'sonnet-5[1m]:high');
-    assert.equal(resolveModel({}, 'mug'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'queen'), 'sonnet[1m]:high');
+    assert.equal(resolveModel({}, 'bee'), 'sonnet[1m]:high');
+    assert.equal(resolveModel({}, 'mug'), 'sonnet[1m]:high');
     // Kettle (overwatch) and sentinel sit on the same autonomous-loop floor.
-    assert.equal(resolveModel({}, 'kettle'), 'sonnet-5[1m]:high');
-    assert.equal(resolveModel({}, 'overwatch'), 'sonnet-5[1m]:high');
-    assert.equal(resolveModel({}, 'sentinel'), 'sonnet-5[1m]:high');
+    assert.equal(resolveModel({}, 'kettle'), 'sonnet[1m]:high');
+    assert.equal(resolveModel({}, 'overwatch'), 'sonnet[1m]:high');
+    assert.equal(resolveModel({}, 'sentinel'), 'sonnet[1m]:high');
     // operator has no committed default in ROLE_MODEL_DEFAULTS (interactive surface, not autonomous-loop).
     assert.equal(resolveModel({}, 'operator'), '');
   } finally {

@@ -109,9 +109,18 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // sonnet spec is the inverse of the trap the luna migration relied on: where
   // the `gpt-5.6-` prefix made `inferBackendFromModelSpec` (harness-invoke-once.ts)
   // / `isCodexShapedModelSpec` (orchestrator env.ts) swap the subprocess to
-  // `codex`, `sonnet-5[1m]:high` resolves through normalizeModelSpec to the 967k
+  // `codex`, `sonnet[1m]:high` resolves through normalizeModelSpec to the 967k
   // trimmed window and infers the claude/anthropic backend, so the spawn binary
   // stays correct.
+  //
+  // ⚠ The spec is the BARE `sonnet[1m]:high`, NOT `sonnet-5[1m]:high` — even
+  // though the owner's decision names "sonnet-5". `sonnet-5` is a VERSIONED
+  // shorthand that validateCloudModelSpec / psu-launcher REJECT as unrunnable
+  // (WI-1979 / EI-12657): only the bare alias `sonnet` is resolvable, and it
+  // resolves to the LATEST sonnet generation (= sonnet-5 today; live-verified a
+  // `--model sonnet` transcript reports "claude-sonnet-5"). Writing `sonnet-5`
+  // here reaches the CLI/gateway as an unrunnable id and kills every autonomous
+  // spawn before its first turn — do NOT "fix" the bare alias to the versioned one.
   //
   // Every key that resolves to the same canonical role via the pot-rename
   // map (POT_RENAME_ROLE_MAP in agent-tools/coordination/roles.ts:
@@ -122,15 +131,15 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // `papercup` and `blender` are entries that were previously absent (those
   // roles fell through to the bare CLI default with no committed floor at
   // all, the exact EI-7 gap this file exists to close).
-  queen: 'sonnet-5[1m]:high',
-  bee: 'sonnet-5[1m]:high',
-  mug: 'sonnet-5[1m]:high',
-  cup: 'sonnet-5[1m]:high',
-  kettle: 'sonnet-5[1m]:high',
-  overwatch: 'sonnet-5[1m]:high',
-  sentinel: 'sonnet-5[1m]:high',
-  papercup: 'sonnet-5[1m]:high',
-  blender: 'sonnet-5[1m]:high',
+  queen: 'sonnet[1m]:high',
+  bee: 'sonnet[1m]:high',
+  mug: 'sonnet[1m]:high',
+  cup: 'sonnet[1m]:high',
+  kettle: 'sonnet[1m]:high',
+  overwatch: 'sonnet[1m]:high',
+  sentinel: 'sonnet[1m]:high',
+  papercup: 'sonnet[1m]:high',
+  blender: 'sonnet[1m]:high',
   // `operator` was a member of THIS SAME judgment/control-loop group pre-migration
   // (`operator: 'sonnet[1m]:high'`) but is DELIBERATELY absent as of P-020
   // (autonomous-loop-prod-audit-2026-07-02): it's the interactive brain surface,
@@ -145,8 +154,8 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // out of THIS item's narrow scope, left for a follow-up). `scanner` is
   // blender's negative-space-scan execution role (AGENT_ROLES: "the
   // negative-space/scout scanner") — moves with blender.
-  judge: 'sonnet-5[1m]:high',
-  scanner: 'sonnet-5[1m]:high',
+  judge: 'sonnet[1m]:high',
+  scanner: 'sonnet[1m]:high',
 };
 
 /**
