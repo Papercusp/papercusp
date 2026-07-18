@@ -25,7 +25,7 @@
  */
 import type { Sql, TransactionSql } from 'postgres';
 import { getOrgPg, getHarnessPg, pgbouncerEnabled } from './connection';
-import { harnessQuery, withHarnessSchema } from './workspace-context';
+import { withHarnessSchema } from './workspace-context';
 
 function translatePlaceholders(sql: string, args: unknown[]): { sql: string; args: unknown[] } {
   // Named-param case: a single object with @-prefixed keys.
