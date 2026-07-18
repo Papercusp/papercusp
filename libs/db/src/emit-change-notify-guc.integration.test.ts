@@ -139,13 +139,17 @@ describe('migration 368 — generic emit_change_notify reads app.workspace_id', 
 describe('migration 625 (WI-4513) — feature_id fallback for id-less work_items + siblings', () => {
   it('emits args.id = feature_id for a work_items write (base table has no `id` column)', async () => {
     received.length = 0;
+    // mig-374: harness_features_consolidated is now a compat VIEW over the real base
+    // table `work_items` — a view cannot carry a row trigger, so the write is redirected
+    // via an INSTEAD-OF trigger and the emit_change_notify_trg attached to `work_items`
+    // fires `harness_shared.work_items.changed`, not the view's own name.
     await sql.unsafe(
       `INSERT INTO harness_shared.harness_features_consolidated
          (workspace_id, harness_slug, feature_id, title, kind)
        VALUES ('test-ws', 'demo-slug', 'WI-99001', 'wi-4513 fixture', 'change')`,
     );
     await settle();
-    const n = notifsFor('harness_shared.harness_features_consolidated.changed');
+    const n = notifsFor('harness_shared.work_items.changed');
     expect(n).toHaveLength(1);
     expect(n[0]!.args.op).toBe('INSERT');
     expect(n[0]!.args.workspace_id).toBe('test-ws');
