@@ -1,4 +1,4 @@
-import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, uuid, timestamp, bigserial, boolean, integer, uniqueIndex, check, foreignKey, unique, smallint, doublePrecision, numeric, vector, real, date, primaryKey } from "drizzle-orm/pg-core"
+import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, uuid, timestamp, bigserial, boolean, integer, uniqueIndex, check, unique, foreignKey, smallint, doublePrecision, numeric, vector, real, date, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 // Custom column types for PG types drizzle-kit can't introspect
@@ -139,6 +139,23 @@ export const coordEntitySubscriptionsInHarnessShared = harnessShared.table("coor
 	check("coord_entity_subscriptions_ref_nonempty", sql`target_ref <> ''::text`),
 	check("coord_entity_subscriptions_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("coord_entity_subscriptions_kind_check", sql`target_kind = ANY (ARRAY['topic'::text, 'object'::text, 'fleet'::text, 'event'::text])`),
+]);
+
+export const scoutCycleStageArtifactsInHarnessShared = harnessShared.table("scout_cycle_stage_artifacts", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.scout_cycle_stage_artifacts_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	installSlug: text("install_slug"),
+	cycleId: text("cycle_id").notNull(),
+	ideas: jsonb(),
+	scored: jsonb(),
+	proposals: jsonb(),
+	ideatorSlots: jsonb("ideator_slots"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("scout_cycle_stage_artifacts_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	unique("scout_cycle_stage_artifacts_ws_cycle_uniq").on(table.workspaceId, table.cycleId),
+	pgPolicy("scout_cycle_stage_artifacts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const agentActivityInHarnessShared = harnessShared.table("agent_activity", {
@@ -1573,6 +1590,22 @@ export const memorySessionEpochsInHarnessShared = harnessShared.table("memory_se
 	bumpedAt: timestamp("bumped_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.sessionId], name: "memory_session_epochs_pkey"}),
+]);
+
+export const gatewayStallEventsInHarnessShared = harnessShared.table("gateway_stall_events", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.gateway_stall_events_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	accountId: text("account_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	soonestResetAt: bigint("soonest_reset_at", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	recordedAtMs: bigint("recorded_at_ms", { mode: "number" }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("gateway_stall_events_recorded_at_idx").using("btree", table.recordedAtMs.asc().nullsLast().op("int8_ops")),
+	pgPolicy("gateway_stall_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const memoryVecOpenaiInHarnessShared = harnessShared.table("memory_vec_openai", {
