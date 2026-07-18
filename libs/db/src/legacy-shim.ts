@@ -117,12 +117,30 @@ export function getLegacyClient(slug?: string): LegacyClient {
  *
  * Use this when retrofitting older `getLegacyClient(slug).prepare(...)` code
  * paths that need workspace-aware harness_shared.* reads after 010-RLS lands.
+ *
+ * PgBouncer routing (WI-4995 part (a)): when `slug` is given AND
+ * pgbouncerEnabled(), this runs through `withHarnessSchema` — the SAME
+ * per-transaction-`search_path` chokepoint `harnessQuery` uses under the
+ * pooler — instead of a direct `getHarnessPg(slug)` connection, and sets
+ * `app.workspace_id` inside that SAME transaction. Direct-connection mode
+ * (pgbouncer disabled) is byte-identical to before: `getHarnessPg(slug)`'s
+ * pool already carries the harness search_path at connect time.
+ *
+ * `slug === undefined` (cross-harness admin) has no harnessQuery/withHarnessSchema
+ * equivalent — that path stays on the direct `getOrgPg()` admin connection; see
+ * WI-4995(c).
  */
 export async function withWorkspaceLegacy<T>(
   slug: string | undefined,
   workspaceId: string,
   fn: (db: LegacyClient) => Promise<T>,
 ): Promise<T> {
+  if (slug && pgbouncerEnabled()) {
+    return withHarnessSchema(slug, async (txTag) => {
+      await txTag`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      return await fn(makeClient(txTag));
+    });
+  }
   const handle = slug ? getHarnessPg(slug) : getOrgPg();
   return (handle.sql as Sql).begin(async (txTag) => {
     await txTag`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
