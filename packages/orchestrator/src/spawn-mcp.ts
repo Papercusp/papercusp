@@ -520,10 +520,11 @@ export function ompRemoteCompactionEndpoint(
 /** Options for {@link writeOmpCompactionOverlay}. */
 export interface OmpCompactionOverlayOpts {
   /**
-   * `'shake'` (the default) seeds the mechanical strategy @70% — for LOCAL-model spawns,
-   * whose text-only models can't read snapcompact's image archives. `null` omits the
-   * strategy keys entirely: a gateway-pinned hosted model keeps its native strategy
-   * (P-001 decision) and the overlay carries only `remoteEndpoint`.
+   * `'shake'` (the default) seeds the mechanical strategy @70%. Since P-022
+   * (2026-07-18) EVERY omp spawn uses it — omp's native strategies (snapcompact
+   * et al.) are retired fleet-wide, superseding the P-001 "gateway-pinned hosted
+   * model keeps its native strategy" posture. `null` (endpoint-only overlay) is
+   * kept for tests/tools but no production spawn path passes it anymore.
    */
   strategy?: 'shake' | null;
   /** omp `compaction.remoteEndpoint` — the gateway maintenance-lane summarize URL. */

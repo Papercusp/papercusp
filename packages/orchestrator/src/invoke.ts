@@ -2478,28 +2478,26 @@ export async function invoke(
   }
 
   // 5a. omp spawns get compaction settings via omp's repeatable `--config <file>` overlay
-  //     (deterministic-context-carry P-001/P-002). Two branches:
-  //     - LOCAL model (not gateway-pinned): runs on the shared `<HOME>/.omp/agent/config.yml`,
-  //       whose compaction defaults (snapcompact + LLM-summarize fallback on the model's own
-  //       saturated single-slot backend) killed the ornith session 2026-07-13 — seed shake@70
-  //       AND route any remaining LLM summarization to the gateway maintenance lane.
-  //     - GATEWAY-PINNED (ompGatewaySelector): the gateway is already a hard dependency, so
-  //       deliver remoteEndpoint ONLY — a hosted model keeps its native strategy (P-001).
-  //     omp THROWS on remoteEndpoint failure (no local fallback), which is why no other spawn
-  //     shape gets an endpoint. Overlay file removed with the other handles on close.
+  //     (deterministic-context-carry P-001/P-002; unified by P-022 2026-07-18:
+  //     omp's NATIVE strategies — snapcompact et al. — are retired fleet-wide, so
+  //     EVERY omp spawn seeds the papercusp mechanical `shake` @70. The P-001
+  //     "a gateway-pinned hosted model keeps its native strategy" posture is
+  //     superseded — that null branch was the last spawn lane still on
+  //     snapcompact, whose image archives + own-backend LLM summarize killed the
+  //     ornith session 2026-07-13). Gateway-pinned spawns ALSO carry
+  //     remoteEndpoint so any remaining LLM summarization routes to the gateway
+  //     maintenance lane. omp THROWS on remoteEndpoint failure (no local
+  //     fallback), which is why no other spawn shape gets an endpoint. Overlay
+  //     file removed with the other handles on close.
   let ompCompactionOverlay: SpawnOmpConfigOverlayHandle | null = null;
   const ompLocalModel = agentBackend === 'omp' && isLocalOmpModel(resolvedModel);
   if (ompLocalModel || ompGatewaySelector) {
     try {
       const remoteEndpoint = ompRemoteCompactionEndpoint(process.env.PAPERCUSP_OMP_MODELS_YML);
-      ompCompactionOverlay = writeOmpCompactionOverlay(
-        ompLocalModel ? { strategy: 'shake', remoteEndpoint } : { strategy: null, remoteEndpoint },
-      );
+      ompCompactionOverlay = writeOmpCompactionOverlay({ strategy: 'shake', remoteEndpoint });
       extraFlags.push('--config', ompCompactionOverlay.path);
       ctx.log(
-        ompLocalModel
-          ? `  role=${role} omp local model ${resolvedModel} — compaction overlay (shake @70%, remote ${remoteEndpoint}) via --config`
-          : `  role=${role} omp gateway-pinned — compaction overlay (remote ${remoteEndpoint}) via --config`,
+        `  role=${role} omp ${ompLocalModel ? `local model ${resolvedModel}` : 'gateway-pinned'} — compaction overlay (shake @70%, remote ${remoteEndpoint}) via --config`,
       );
     } catch (err) {
       // Fail-soft: the spawn still runs, just on the config's own compaction defaults.
