@@ -135,3 +135,48 @@ describe('migration 368 — generic emit_change_notify reads app.workspace_id', 
     expect(n[0]!.args.id ?? null).toBeNull();
   });
 });
+
+describe('migration 625 (WI-4513) — feature_id fallback for id-less work_items + siblings', () => {
+  it('emits args.id = feature_id for a work_items write (base table has no `id` column)', async () => {
+    received.length = 0;
+    await sql.unsafe(
+      `INSERT INTO harness_shared.harness_features_consolidated
+         (workspace_id, harness_slug, feature_id, title, kind)
+       VALUES ('test-ws', 'demo-slug', 'WI-99001', 'wi-4513 fixture', 'change')`,
+    );
+    await settle();
+    const n = notifsFor('harness_shared.harness_features_consolidated.changed');
+    expect(n).toHaveLength(1);
+    expect(n[0]!.args.op).toBe('INSERT');
+    expect(n[0]!.args.workspace_id).toBe('test-ws');
+    // The fix: id is no longer null — it falls back to feature_id.
+    expect(String(n[0]!.args.id)).toBe('WI-99001');
+  });
+
+  it('emits args.id = feature_id for a feature_claims write (a different id-less feature_id sibling)', async () => {
+    received.length = 0;
+    await sql.unsafe(
+      `INSERT INTO harness_shared.feature_claims
+         (workspace_id, harness_slug, feature_id, seq, claimer_pubkey, claimer_github_user_id, claimed_at)
+       VALUES ('test-ws', 'demo-slug', 'WI-99002', 1, 'pubkey-fixture', 42, now())`,
+    );
+    await settle();
+    const n = notifsFor('harness_shared.feature_claims.changed');
+    expect(n).toHaveLength(1);
+    expect(String(n[0]!.args.id)).toBe('WI-99002');
+  });
+
+  it('still prefers a real `id` column over feature_id when both are present (auto_review_audit unaffected)', async () => {
+    received.length = 0;
+    await sql.unsafe(
+      `INSERT INTO harness_shared.auto_review_audit
+         (workspace_id, id, harness_slug, pr_number, reviewer_github_id, action)
+       VALUES ('test-ws', 4244, 'demo-slug', 9, 99, 'auto_approve')`,
+    );
+    await settle();
+    const n = notifsFor('harness_shared.auto_review_audit.changed');
+    expect(n).toHaveLength(1);
+    // Unchanged: this table has its own `id`, so the feature_id fallback never engages.
+    expect(String(n[0]!.args.id)).toBe('4244');
+  });
+});
