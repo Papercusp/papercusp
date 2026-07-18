@@ -193,6 +193,43 @@ describe('maybePgbouncer', () => {
     process.env.PAPERCUSP_PGBOUNCER = '1';
     expect(maybePgbouncer('not a url')).toBe('not a url');
   });
+
+  // EI-2437: the local PgBouncer instance fronts ONLY the box's own native PG
+  // (NATIVE_FALLBACK, always localhost:5432) — a URL that already points
+  // somewhere else (a testcontainer's random ephemeral port; a future
+  // remote/managed PG) is an explicit override and must NOT be rerouted.
+  describe('EI-2437: only reroutes a URL that already targets the native-PG default (localhost:5432)', () => {
+    it('a testcontainer URL on a random port is left DIRECT even with pooling forced on', () => {
+      process.env.PAPERCUSP_PGBOUNCER = '1';
+      const TESTCONTAINER = 'postgresql://harness_app:harness_app_pwd@127.0.0.1:33019/org_abc123';
+      expect(maybePgbouncer(TESTCONTAINER)).toBe(TESTCONTAINER);
+    });
+
+    it('a testcontainer URL is left DIRECT under the server-class DEFAULT-ON path too (not just forced)', () => {
+      delete process.env.PAPERCUSP_PGBOUNCER;
+      mockProfile.hostClass = 'server';
+      const TESTCONTAINER = 'postgresql://harness_app:harness_app_pwd@127.0.0.1:33019/org_abc123';
+      expect(maybePgbouncer(TESTCONTAINER)).toBe(TESTCONTAINER);
+    });
+
+    it('a non-local host is left DIRECT (a future remote/managed PG) even when the port is 5432', () => {
+      process.env.PAPERCUSP_PGBOUNCER = '1';
+      const REMOTE = 'postgresql://harness_app:harness_app_pwd@db.example.internal:5432/papercusp';
+      expect(maybePgbouncer(REMOTE)).toBe(REMOTE);
+    });
+
+    it('an omitted port on the native host still reroutes (implicit 5432 counts as the default)', () => {
+      process.env.PAPERCUSP_PGBOUNCER = '1';
+      delete process.env.PAPERCUSP_PGBOUNCER_PORT;
+      const NO_PORT = 'postgresql://harness_app:harness_app_pwd@localhost/papercusp';
+      expect(maybePgbouncer(NO_PORT)).toBe(POOLED);
+    });
+
+    it('the native-default URL (localhost:5432) still reroutes exactly as before (no regression)', () => {
+      process.env.PAPERCUSP_PGBOUNCER = '1';
+      expect(maybePgbouncer(DIRECT)).toBe(POOLED);
+    });
+  });
 });
 
 describe('connectionBudgetStatus — EI-3379 pooler-aware backend budget', () => {

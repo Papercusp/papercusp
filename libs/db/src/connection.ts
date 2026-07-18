@@ -356,6 +356,11 @@ export function pgbouncerEnabled(): boolean {
   }
 }
 
+/** The box's own native-PG default (NATIVE_FALLBACK in embedded-pg-discovery.ts) —
+ *  the ONLY thing the local PgBouncer instance fronts. See {@link maybePgbouncer}. */
+const NATIVE_PG_HOSTS = new Set(['localhost', '127.0.0.1']);
+const NATIVE_PG_PORT = '5432';
+
 /**
  * When {@link pgbouncerEnabled}, route an org pool URL through the local PgBouncer
  * (transaction pooling) on `PAPERCUSP_PGBOUNCER_PORT` (default 6432) — C2 of
@@ -368,13 +373,32 @@ export function pgbouncerEnabled(): boolean {
  * `getHarnessAdminUrl()` and are intentionally NOT rerouted — LISTEN and
  * session-level advisory locks are session-bound and MUST bypass a transaction
  * pooler (C2-2 / P-001). Per-harness `getHarnessPg` pools also stay DIRECT (D-005).
+ *
+ * EI-2437: only reroute when the incoming URL ALREADY targets the box's own
+ * native-PG default (localhost/127.0.0.1:5432 — NATIVE_FALLBACK). The local
+ * PgBouncer instance fronts THAT native instance and nothing else, so a URL that
+ * already points somewhere else — a testcontainer's random ephemeral port
+ * (integration tests env-routing `HARNESS_ADMIN_DATABASE_URL` at a throwaway DB),
+ * a future remote/managed PG — is an EXPLICIT override the caller made on
+ * purpose. Rerouting it anyway would silently connect through the pooler to the
+ * SHARED native PG instead, which either 404s ("no such database: org_<rand>",
+ * confusing because the DB genuinely exists — just not on :5432) or, worse,
+ * silently reads/writes a totally different, already-populated database (the
+ * same class of bug WI-1666 fixed one layer up in {@link pgbouncerEnabled} for
+ * the `PAPERCUSP_PG_PORT`-isolated-process case). This closes the class fully:
+ * WI-1666 stopped an isolated PROCESS from being rerouted; this stops an
+ * isolated URL (set without the process-wide `PAPERCUSP_PG_PORT` signal, e.g. a
+ * single test's env-routing block) from being rerouted too — no per-test
+ * `PAPERCUSP_PGBOUNCER=0` opt-out needed anymore.
  */
 export function maybePgbouncer(url: string): string {
   if (!pgbouncerEnabled()) return url;
-  const port = Number(process.env.PAPERCUSP_PGBOUNCER_PORT) || 6432;
   try {
     const u = new URL(url);
-    u.host = `127.0.0.1:${port}`;
+    const port = u.port || NATIVE_PG_PORT; // an omitted port means Postgres's own default (5432)
+    if (!NATIVE_PG_HOSTS.has(u.hostname) || port !== NATIVE_PG_PORT) return url;
+    const poolerPort = Number(process.env.PAPERCUSP_PGBOUNCER_PORT) || 6432;
+    u.host = `127.0.0.1:${poolerPort}`;
     return u.toString();
   } catch {
     return url; // unparseable — leave the direct URL untouched
