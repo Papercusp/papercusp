@@ -160,6 +160,60 @@ test('assembleRolePrompt throws on unknown role', () => {
   }
 });
 
+test('assembleRolePrompt resolves blueprint-aware, riding the harness\'s OWN blueprint.yaml id (work-item-chat-context-modernize P-002)', () => {
+  const setup = setupRegistry();
+  const prevHome = process.env.HOME;
+  const prevHarnessDir = process.env.PAPERCUSP_HARNESS_DIR;
+  process.env.HOME = setup.home;
+  process.env.PAPERCUSP_HARNESS_DIR = setup.harnessDir;
+  try {
+    // No .papercusp/blueprint.yaml ⇒ blueprintId undefined ⇒ unchanged [base]
+    // resolution — byte-identical to a harness with no blueprint at all.
+    const noBlueprint = assembleRolePrompt({ slug: 'demo', role: 'worker', mode: 'chat' });
+    assert.match(noBlueprint.text, /Do your job\./);
+    assert.equal(noBlueprint.meta.blueprintId, undefined);
+
+    // A harness that DECLARES a blueprint (id: custom-hive) but whose blueprint
+    // does not override `worker.md` still falls through to base/prompts/worker.md
+    // — the chain is walked, base is just the final candidate — while meta now
+    // correctly reports the resolved blueprintId (previously always undefined).
+    writeFileSync(
+      join(setup.projectDir, '.papercusp', 'blueprint.yaml'),
+      ['id: custom-hive', 'workItem: { kind: feature, idPrefix: F }',
+        'spine: { decider: director, edges: { DONE: { to: done } }, default: { to: idle } }',
+        ''].join('\n'),
+    );
+    const fallenThrough = assembleRolePrompt({ slug: 'demo', role: 'worker', mode: 'chat' });
+    assert.match(fallenThrough.text, /Do your job\./);
+    assert.equal(fallenThrough.meta.blueprintId, 'custom-hive');
+
+    // A harness whose blueprint OVERRIDES `worker.md` (a non-legacy-coding-spine
+    // persona a harness without the coding spine would actually want) now gets
+    // THAT file, never the legacy base/prompts/worker.md — this is the P-002 fix:
+    // previously this override was silently ignored because no blueprintId was
+    // ever threaded through, so every chat resolved through the bare [base] chain
+    // no matter what the harness's own blueprint declared.
+    mkdirSync(join(setup.harnessDir, 'blueprints', 'custom-hive', 'prompts'), { recursive: true });
+    writeFileSync(
+      join(setup.harnessDir, 'blueprints', 'custom-hive', 'blueprint.yaml'),
+      'id: custom-hive\nextends: base\n',
+    );
+    writeFileSync(
+      join(setup.harnessDir, 'blueprints', 'custom-hive', 'prompts', 'worker.md'),
+      '# CUSTOM-HIVE WORKER\n\nNo SPEC.md ritual here.\n',
+    );
+    const overridden = assembleRolePrompt({ slug: 'demo', role: 'worker', mode: 'chat' });
+    assert.match(overridden.text, /No SPEC\.md ritual here\./);
+    assert.doesNotMatch(overridden.text, /Do your job\./);
+    assert.equal(overridden.meta.blueprintId, 'custom-hive');
+  } finally {
+    if (prevHome !== undefined) process.env.HOME = prevHome;
+    if (prevHarnessDir !== undefined) process.env.PAPERCUSP_HARNESS_DIR = prevHarnessDir;
+    else delete process.env.PAPERCUSP_HARNESS_DIR;
+    setup.cleanup();
+  }
+});
+
 test('assembleRolePrompt includes Queen brief when supplied (P-060)', () => {
   const setup = setupRegistry();
   const prevHome = process.env.HOME;

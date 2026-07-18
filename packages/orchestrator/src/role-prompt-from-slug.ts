@@ -23,7 +23,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { harnessRoot } from '@papercusp/harness/paths';
 import { resolvePhase, configGet } from './config';
-import { readEffectiveConfig, loadHarnessAcceptanceKind, loadHarnessLexicon } from './effective-config';
+import { readEffectiveConfig, loadHarnessAcceptanceKind, loadHarnessLexicon, loadHarnessBlueprintId } from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 
@@ -166,6 +166,14 @@ export interface AssembledPrompt {
     stateDir: string;
     harnessDir: string;
     runId: string;
+    /**
+     * The harness's own `blueprint.yaml` id used to resolve `promptFile`
+     * (work-item-chat-context-modernize P-002) — `undefined` for a
+     * blueprint-less harness (resolution fell back to the bare `[base]`
+     * chain). Surfaced for diagnostics / ground-truth capture (P-001) and
+     * for tests asserting blueprint-aware resolution (P-006).
+     */
+    blueprintId?: string;
   };
 }
 
@@ -225,12 +233,25 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
   const { phase } = resolvePhase(cfg);
   const dept = configGet<string>(cfg, 'dept', '');
 
+  // work-item-chat-context-modernize P-002: resolve blueprint-aware, mirroring
+  // invoke.ts's REPLACE_CLAUDE_BASE fallback (`extras.BLUEPRINT_ID= || loadHarnessBlueprintId`) —
+  // a "normal pipeline" autonomous spawn carries no BLUEPRINT_ID extra either, so
+  // `loadHarnessBlueprintId(stateDir)` (this harness's OWN `blueprint.yaml` id) is the
+  // correct default chat should walk too. Previously this call passed no blueprintId at
+  // all, so EVERY chat — regardless of the harness's actual blueprint — resolved through
+  // the bare `[base]` chain and got `blueprints/base/prompts/<role>.md` unconditionally
+  // (e.g. the legacy coding-spine `worker.md`, SPEC.md-reading ritual and all) even for a
+  // harness whose blueprint overrides that role with something else. A blueprint-less
+  // harness (no `.papercusp/blueprint.yaml`, e.g. a flat non-hive coding harness) still
+  // gets `undefined` here ⇒ chain=['base'] ⇒ byte-identical to before.
+  const blueprintId = loadHarnessBlueprintId(stateDir);
+
   // Layered list (base/<role>.md first when present — audit P-019), the
   // concrete most-specific prompt last (kept as `promptFile` for meta).
-  const promptFiles = resolvePromptFiles({ harnessDir, phase, dept }, opts.role);
+  const promptFiles = resolvePromptFiles({ harnessDir, phase, dept, blueprintId }, opts.role);
   const promptFile = promptFiles[promptFiles.length - 1];
   if (!promptFile) {
-    throw new Error(`assembleRolePrompt: no prompt file found for role "${opts.role}" (phase=${phase}, dept=${dept || 'none'})`);
+    throw new Error(`assembleRolePrompt: no prompt file found for role "${opts.role}" (phase=${phase}, dept=${dept || 'none'}, blueprintId=${blueprintId ?? 'none'})`);
   }
 
   // Per-role specialization. The workspace-owned PG override (D-7) is the
@@ -317,6 +338,7 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
       stateDir,
       harnessDir,
       runId,
+      blueprintId,
     },
   };
 }
