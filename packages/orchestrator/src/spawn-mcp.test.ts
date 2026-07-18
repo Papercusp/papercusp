@@ -11,6 +11,7 @@ import {
   buildSpawnMcpConfig,
   resolveSpawnOperatorBase,
   writeSpawnMcp,
+  writeSignedSpawnMcp,
   restoreSpawnMcp,
   extractChunkId,
   writeSpawnOmpHome,
@@ -333,6 +334,61 @@ describe('writeSpawnMcp + restoreSpawnMcp', () => {
     restoreSpawnMcp(handle);
     restoreSpawnMcp(handle);
     expect(existsSync(handle.path)).toBe(false);
+  });
+});
+
+describe('writeSignedSpawnMcp — superuser-spawn door (EI-1547 regression guard)', () => {
+  // A launched hive/Queen invoke (operator-initiated, loopback-gated via
+  // PAPERCUSP_SPAWN_SU_BEARER — see spawn.ts's /harness/:slug/invoke route,
+  // and invoke.ts's `mcpHandle = await writeSignedSpawnMcp(...)` call site)
+  // connects through the `?superuser=1` branch of writeSignedSpawnMcp, NOT
+  // the plain-signed-params branch the tests above (writeSpawnMcp) cover.
+  // EI-1547 traced a write-scoping leak (a launched hive Queen's plans:*
+  // calls landing under papercup instead of its own home harness) to this
+  // door once carrying NO `harness=` param, so ctx.harnessSlug defaulted to
+  // the '*' unscoped sentinel (parseRequestContext) and
+  // plans/_ctx-opts.ts's ctxToPlanSourceOpts fell back to the operator-home
+  // harness. The superuser branch now sets `harness=<input.harnessSlug>`
+  // unconditionally — this locks that in.
+  const savedBearer = process.env.PAPERCUSP_SPAWN_SU_BEARER;
+  beforeEach(() => {
+    process.env.PAPERCUSP_SPAWN_SU_BEARER = 'test-su-bearer-token';
+  });
+  afterEach(() => {
+    if (savedBearer === undefined) delete process.env.PAPERCUSP_SPAWN_SU_BEARER;
+    else process.env.PAPERCUSP_SPAWN_SU_BEARER = savedBearer;
+  });
+
+  it('bakes harness= (the launched project slug) + superuser=1 into the bearer-authed URL', async () => {
+    const handle = await writeSignedSpawnMcp(ROOT, {
+      harnessSlug: 'offsite-planner-demo',
+      workspaceId: 'generic-test',
+      role: 'mug',
+      runId: 'run_hive',
+      spawnId: 'spw_hive',
+    });
+    const content = JSON.parse(readFileSync(handle.path, 'utf8'));
+    const url = new URL(content.mcpServers.papercusp.url);
+    expect(url.searchParams.get('superuser')).toBe('1');
+    expect(url.searchParams.get('harness')).toBe('offsite-planner-demo');
+    expect(url.searchParams.get('workspace')).toBe('generic-test');
+    // The Authorization header carries the bearer — the URL itself needs no `sig`.
+    expect(content.mcpServers.papercusp.headers?.Authorization).toBe('Bearer test-su-bearer-token');
+    expect(url.searchParams.get('sig')).toBeNull();
+  });
+
+  it('narrows tools= to the role catalog on the superuser door too', async () => {
+    const handle = await writeSignedSpawnMcp(ROOT, {
+      harnessSlug: 'offsite-planner-demo',
+      workspaceId: 'generic-test',
+      role: 'mug',
+      runId: 'run_hive',
+      spawnId: 'spw_hive',
+      mcpToolNames: ['pot:survey', 'cup:spawn'],
+    });
+    const content = JSON.parse(readFileSync(handle.path, 'utf8'));
+    const url = new URL(content.mcpServers.papercusp.url);
+    expect(url.searchParams.get('tools')).toBe('pot:survey,cup:spawn');
   });
 });
 
