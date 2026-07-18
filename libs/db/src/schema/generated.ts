@@ -2917,6 +2917,42 @@ export const operatorReleaseCheckpointConfigInHarnessShared = harnessShared.tabl
 
 ]);
 
+export const resourceAllotmentsInHarnessShared = harnessShared.table("resource_allotments", {
+	workspaceId: text("workspace_id").notNull(),
+	fleetSlug: text("fleet_slug"),
+	resourceKind: text("resource_kind").notNull(),
+	resourceRef: text("resource_ref").notNull(),
+	sharePct: integer("share_pct").default(0).notNull(),
+	axis: jsonb().default({}).notNull(),
+	status: text().default('active').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	quantity: integer(),
+	potSlug: text("pot_slug"),
+	audience: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.resource_allotments_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+}, (table) => [
+	index("resource_allotments_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
+	uniqueIndex("resource_allotments_fleet_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops"), table.resourceKind.asc().nullsLast().op("text_ops"), table.resourceRef.asc().nullsLast().op("text_ops")).where(sql`(fleet_slug IS NOT NULL)`),
+	index("resource_allotments_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")).where(sql`((status = 'active'::text) AND (pot_slug IS NOT NULL))`),
+	uniqueIndex("resource_allotments_pot_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.resourceKind.asc().nullsLast().op("text_ops"), table.resourceRef.asc().nullsLast().op("text_ops")).where(sql`(pot_slug IS NOT NULL)`),
+	index("resource_allotments_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
+	check("resource_allotments_pot_nonempty", sql`(pot_slug IS NULL) OR (pot_slug <> ''::text)`),
+	check("resource_allotments_audience", sql`(audience IS NULL) OR (audience = ANY (ARRAY['trusted-members'::text, 'whole-pot'::text]))`),
+	check("resource_allotments_grantee_xor", sql`(fleet_slug IS NOT NULL) <> (pot_slug IS NOT NULL)`),
+	check("resource_allotments_audience_pot_only", sql`(pot_slug IS NOT NULL) = (audience IS NOT NULL)`),
+	check("resource_allotments_ws_nonempty", sql`workspace_id <> ''::text`),
+	check("resource_allotments_fleet_nonempty", sql`fleet_slug <> ''::text`),
+	check("resource_allotments_ref_nonempty", sql`resource_ref <> ''::text`),
+	check("resource_allotments_pct", sql`(share_pct >= 0) AND (share_pct <= 100)`),
+	check("resource_allotments_status", sql`status = ANY (ARRAY['active'::text, 'paused'::text])`),
+	check("resource_allotments_kind", sql`resource_kind = ANY (ARRAY['account'::text, 'gpu'::text, 'agent_slot'::text])`),
+	check("resource_allotments_quantity", sql`((resource_kind = 'agent_slot'::text) AND (quantity IS NOT NULL) AND (quantity >= 1) AND (quantity <= 1000)) OR ((resource_kind <> 'agent_slot'::text) AND (quantity IS NULL))`),
+]);
+
 export const agentSeatConsumptionsInHarnessShared = harnessShared.table("agent_seat_consumptions", {
 	ownerId: text("owner_id").primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -5874,32 +5910,6 @@ export const sessionArchiveFilesInHarnessShared = harnessShared.table("session_a
 	primaryKey({ columns: [table.workspaceId, table.sourceKind, table.sessionId, table.relpath], name: "session_archive_files_pkey"}),
 ]);
 
-export const resourceAllotmentsInHarnessShared = harnessShared.table("resource_allotments", {
-	workspaceId: text("workspace_id").notNull(),
-	fleetSlug: text("fleet_slug").notNull(),
-	resourceKind: text("resource_kind").notNull(),
-	resourceRef: text("resource_ref").notNull(),
-	sharePct: integer("share_pct").default(0).notNull(),
-	axis: jsonb().default({}).notNull(),
-	status: text().default('active').notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	quantity: integer(),
-}, (table) => [
-	index("resource_allotments_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
-	index("resource_allotments_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
-	primaryKey({ columns: [table.workspaceId, table.fleetSlug, table.resourceKind, table.resourceRef], name: "resource_allotments_pkey"}),
-	check("resource_allotments_ws_nonempty", sql`workspace_id <> ''::text`),
-	check("resource_allotments_fleet_nonempty", sql`fleet_slug <> ''::text`),
-	check("resource_allotments_ref_nonempty", sql`resource_ref <> ''::text`),
-	check("resource_allotments_pct", sql`(share_pct >= 0) AND (share_pct <= 100)`),
-	check("resource_allotments_status", sql`status = ANY (ARRAY['active'::text, 'paused'::text])`),
-	check("resource_allotments_kind", sql`resource_kind = ANY (ARRAY['account'::text, 'gpu'::text, 'agent_slot'::text])`),
-	check("resource_allotments_quantity", sql`((resource_kind = 'agent_slot'::text) AND (quantity IS NOT NULL) AND (quantity >= 1) AND (quantity <= 1000)) OR ((resource_kind <> 'agent_slot'::text) AND (quantity IS NULL))`),
-]);
-
 export const harnessPendingIssuesInHarnessShared = harnessShared.table("harness_pending_issues", {
 	harnessSlug: text("harness_slug").notNull(),
 	phase: text().default('staging').notNull(),
@@ -7076,37 +7086,6 @@ export const potPendingJoinsInHarnessShared = harnessShared.table("pot_pending_j
 	pgPolicy("pot_pending_joins_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const p2PWorkOffersInHarnessShared = harnessShared.table("p2p_work_offers", {
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	publisherGithubUserId: bigint("publisher_github_user_id", { mode: "number" }).notNull(),
-	offerId: text("offer_id").notNull(),
-	recordJson: text("record_json").notNull(),
-	signerDevicePubkey: text("signer_device_pubkey").notNull(),
-	signature: text().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	recordVersion: bigint("record_version", { mode: "number" }).default(1).notNull(),
-	fleetSlug: text("fleet_slug").notNull(),
-	offerKind: text("offer_kind").notNull(),
-	status: text().default('open').notNull(),
-	localDisposition: text("local_disposition"),
-	offerFedKey: text("offer_fed_key").generatedAlwaysAs(sql`(((publisher_github_user_id)::text || '/'::text) || offer_id)`),
-	authorPubkey: text("author_pubkey"),
-	origin: text().default('local').notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	fedHlc: text("fed_hlc"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdAt: bigint("created_at", { mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	index("p2p_work_offers_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.publisherGithubUserId, table.offerId], name: "p2p_work_offers_pkey"}),
-	pgPolicy("p2p_work_offers_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const datatypeRegistryInHarnessShared = harnessShared.table("datatype_registry", {
 	id: text().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -7344,6 +7323,41 @@ export const p2PPeerGrantsInHarnessShared = harnessShared.table("p2p_peer_grants
 	check("p2p_peer_grants_status", sql`status = ANY (ARRAY['active'::text, 'revoked'::text])`),
 	check("p2p_peer_grants_epoch_nonneg", sql`grantor_epoch >= 0`),
 	check("p2p_peer_grants_wake_cap_pos", sql`(wake_rate_cap_per_hour IS NULL) OR (wake_rate_cap_per_hour > 0)`),
+]);
+
+export const p2PWorkOffersInHarnessShared = harnessShared.table("p2p_work_offers", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	publisherGithubUserId: bigint("publisher_github_user_id", { mode: "number" }).notNull(),
+	offerId: text("offer_id").notNull(),
+	recordJson: text("record_json").notNull(),
+	signerDevicePubkey: text("signer_device_pubkey").notNull(),
+	signature: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	recordVersion: bigint("record_version", { mode: "number" }).default(1).notNull(),
+	fleetSlug: text("fleet_slug"),
+	offerKind: text("offer_kind").notNull(),
+	status: text().default('open').notNull(),
+	localDisposition: text("local_disposition"),
+	offerFedKey: text("offer_fed_key").generatedAlwaysAs(sql`(((publisher_github_user_id)::text || '/'::text) || offer_id)`),
+	authorPubkey: text("author_pubkey"),
+	origin: text().default('local').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	fedHlc: text("fed_hlc"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+	potSlug: text("pot_slug"),
+}, (table) => [
+	index("p2p_work_offers_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	index("p2p_work_offers_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(pot_slug IS NOT NULL)`),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.publisherGithubUserId, table.offerId], name: "p2p_work_offers_pkey"}),
+	pgPolicy("p2p_work_offers_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("p2p_work_offers_pot_nonempty", sql`(pot_slug IS NULL) OR (pot_slug <> ''::text)`),
+	check("p2p_work_offers_grantee", sql`((offer_kind <> 'seat'::text) AND (fleet_slug IS NOT NULL) AND (pot_slug IS NULL)) OR ((offer_kind = 'seat'::text) AND ((fleet_slug IS NOT NULL) <> (pot_slug IS NOT NULL)))`),
 ]);
 
 export const p2PReceiptsInHarnessShared = harnessShared.table("p2p_receipts", {
