@@ -1881,6 +1881,35 @@ export const planRunTurnsInHarnessShared = harnessShared.table("plan_run_turns",
 	pgPolicy("plan_run_turns_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const sessionPendingGatesInHarnessShared = harnessShared.table("session_pending_gates", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.session_pending_gates_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	sessionId: text("session_id").notNull(),
+	client: text().default('claude').notNull(),
+	kind: text().notNull(),
+	refId: text("ref_id").notNull(),
+	ownerId: text("owner_id"),
+	question: text(),
+	options: jsonb(),
+	source: text().default('watcher').notNull(),
+	rawRef: text("raw_ref"),
+	harnessSlug: text("harness_slug"),
+	openedAt: timestamp("opened_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
+	closedReason: text("closed_reason"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("session_pending_gates_created_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")),
+	index("session_pending_gates_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.openedAt.desc().nullsFirst().op("text_ops")).where(sql`(closed_at IS NULL)`),
+	uniqueIndex("session_pending_gates_ref_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops"), table.refId.asc().nullsLast().op("text_ops")),
+	check("session_pending_gates_client_check", sql`client = ANY (ARRAY['claude'::text, 'omp'::text, 'codex'::text])`),
+	check("session_pending_gates_kind_check", sql`kind = ANY (ARRAY['ask'::text, 'permission_wait'::text])`),
+	check("session_pending_gates_source_check", sql`source = ANY (ARRAY['watcher'::text, 'hook'::text])`),
+	check("session_pending_gates_closed_reason_check", sql`(closed_reason IS NULL) OR (closed_reason = ANY (ARRAY['tool_result_observed'::text, 'hook_cleared'::text]))`),
+]);
+
 export const planRunsInHarnessShared = harnessShared.table("plan_runs", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).default(sql`nextval('harness_shared.plan_runs_id_seq'::regclass)`).primaryKey().notNull(),
@@ -4344,6 +4373,16 @@ export const tuiViewStateInHarnessShared = harnessShared.table("tui_view_state",
 	pgPolicy("tui_view_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const sessionGateWatcherFilesInHarnessShared = harnessShared.table("session_gate_watcher_files", {
+	workspaceId: text("workspace_id").notNull(),
+	filePath: text("file_path").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	byteOffset: bigint("byte_offset", { mode: "number" }).default(0).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.filePath], name: "session_gate_watcher_files_pkey"}),
+]);
+
 export const mobilePushTokensInHarnessShared = harnessShared.table("mobile_push_tokens", {
 	deviceId: text("device_id").notNull(),
 	platform: text().notNull(),
@@ -4483,17 +4522,6 @@ export const harnessPhaseLastUsedInHarnessShared = harnessShared.table("harness_
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.userId], name: "harness_phase_last_used_pkey"}),
 	pgPolicy("harness_phase_last_used_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
-export const operatorCurationLogInHarnessShared = harnessShared.table("operator_curation_log", {
-	workspaceId: text("workspace_id").notNull(),
-	signalId: text("signal_id").notNull(),
-	kind: text().notNull(),
-	policyVersion: text("policy_version").default('').notNull(),
-	surfacedAt: timestamp("surfaced_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("operator_curation_log_surfaced_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surfacedAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.signalId], name: "operator_curation_log_pkey"}),
 ]);
 
 export const harnessFeatureDebugNotesInHarnessShared = harnessShared.table("harness_feature_debug_notes", {
@@ -4741,6 +4769,18 @@ export const planWorkGroupMembersInHarnessShared = harnessShared.table("plan_wor
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.planSlug, table.memberUser], name: "plan_work_group_members_pkey"}),
 	check("plan_work_group_members_user_nonempty", sql`member_user <> ''::text`),
+]);
+
+export const operatorCurationLogInHarnessShared = harnessShared.table("operator_curation_log", {
+	workspaceId: text("workspace_id").notNull(),
+	signalId: text("signal_id").notNull(),
+	kind: text().notNull(),
+	policyVersion: text("policy_version").default('').notNull(),
+	surfacedAt: timestamp("surfaced_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	title: text(),
+}, (table) => [
+	index("operator_curation_log_surfaced_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surfacedAt.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.workspaceId, table.signalId], name: "operator_curation_log_pkey"}),
 ]);
 
 export const harnessMissionStateInHarnessShared = harnessShared.table("harness_mission_state", {
