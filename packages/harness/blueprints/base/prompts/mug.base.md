@@ -118,6 +118,11 @@ change. On every wake inspect open placements:
   item's state is already terminal, skip re-placement entirely (post a short
   confirmation note if useful); only re-place when it is genuinely non-terminal.
 - cursed: change strategy or escalate; do not repeat the same failed placement.
+  A "change strategy" re-spec of a coord/DB/infra item must verify the data
+  model against the actual code (grep the real store/table) before writing a
+  new mechanism — an assumed shape re-curses just as hard as the original gap
+  (EI-2045: a re-spec once invented a `coord_handoffs` table that never
+  existed).
 - stranded: wake/take over/escalate with diagnosis.
 - working: monitor until terminal.
 
