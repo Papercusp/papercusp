@@ -2855,6 +2855,18 @@ export const operatorCoordLivenessConfigInHarnessShared = harnessShared.table("o
 
 ]);
 
+export const routinePoolShedEventsInHarnessShared = harnessShared.table("routine_pool_shed_events", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.routine_pool_shed_events_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	at: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	shedCount: integer("shed_count").notNull(),
+	probeMs: integer("probe_ms"),
+	host: text(),
+}, (table) => [
+	index("routine_pool_shed_events_workspace_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.at.desc().nullsFirst().op("text_ops")),
+]);
+
 export const codeRecipesInHarnessShared = harnessShared.table("code_recipes", {
 	id: text().primaryKey().notNull(),
 	title: text().notNull(),
@@ -5773,6 +5785,25 @@ export const coordQuarantineInHarnessShared = harnessShared.table("coord_quarant
 	index("coord_quarantine_author_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.authorDevicePubkey.asc().nullsLast().op("int8_ops"), table.createdTs.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.workspaceId, table.msgId], name: "coord_quarantine_pkey"}),
 	check("coord_quarantine_reason_check", sql`reason = ANY (ARRAY['below-message-tier'::text, 'handoff-below-steer'::text, 'rate-exceeded'::text])`),
+]);
+
+export const derivedReadSnapshotsInHarnessShared = harnessShared.table("derived_read_snapshots", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").default('').notNull(),
+	key: text().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	computedAt: bigint("computed_at", { mode: "number" }).default(0).notNull(),
+	computeMs: integer("compute_ms"),
+	producerVersion: integer("producer_version").default(1).notNull(),
+	error: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	errorAt: bigint("error_at", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	index("derived_read_snapshots_staleness_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.computedAt.asc().nullsLast().op("int8_ops")),
+	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.key], name: "derived_read_snapshots_pkey"}),
 ]);
 
 export const perfRegressionSnapshotsInHarnessShared = harnessShared.table("perf_regression_snapshots", {
