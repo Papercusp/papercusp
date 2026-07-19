@@ -250,7 +250,10 @@ describe('state — PG path (mocked)', () => {
         const sql = template.join('?');
         queries.push(sql);
         values.push(vals);
-        if (/to_regclass/.test(sql)) return [{ t: 'harness_sheets.harness_features' }]; // EI-13935 topology probe: pretend a real per-harness schema exists (the common case)
+        // EI-13935 topology probe (parameterized: `to_regclass(?)`) — distinct from
+        // durableOwnedFeatureIdsPg's own literal `to_regclass('dbos.workflow_status')`
+        // probe below, which must keep falling through to the dbos-schema-absent case.
+        if (/to_regclass\(\?\)/.test(sql)) return [{ t: 'harness_sheets.harness_features' }];
         if (/EXISTS/.test(sql)) return [{ exists: rows.length > 0 }];
         if (/SELECT attempts/.test(sql)) {
           const id = vals[1];
@@ -298,8 +301,11 @@ describe('state — PG path (mocked)', () => {
     // projectDir supplies the harness slug (audit P-018 — see readFeatures above).
     const ctx = stateCtx({ stateDir: '/x', pg: mock.pg, workspaceId: 'default', projectDir: '/x/sheets' });
     await setFeatureStatus('/x', 'F-001', 'passed', { ctx });
-    // First query is the UPDATE, second is the readFeaturesPg SELECT.
-    assert.match(mock.queries[0], /UPDATE/);
-    assert.match(mock.queries[1], /SELECT/);
+    // EI-13935: with a harnessSlug set, setFeatureStatusPg first probes topology
+    // (to_regclass) before deciding which UPDATE to issue; the readFeaturesPg
+    // SELECT still follows the UPDATE.
+    assert.match(mock.queries[0], /to_regclass/);
+    assert.match(mock.queries[1], /UPDATE/);
+    assert.match(mock.queries[2], /SELECT/);
   });
 });
