@@ -473,6 +473,17 @@ function resolveOrgPoolMax(): number {
     Number.isFinite(envOverride) && envOverride > 0
       ? Math.max(1, Math.floor(envOverride))
       : profile.pgPoolMax;
+  // WI-5456: `profile.database.maxConnections` is derived from `physicalCores` (the
+  // real machine), NOT the cgroup-quota-scoped `cores` every other cap here uses —
+  // see ResourceSignals.physicalCores. Before that fix, a CPU-quota-limited systemd
+  // unit (e.g. papercup-bg-host.service's CPUQuota=1600% on a 128-core box) derived
+  // maxConnections from its OWN ~16-core quota (clamp(16*4,100,1000)=100) instead of
+  // the live server's real max_connections (512), which starved this budget math to
+  // its poolMax=1 floor — collapsing the ENTIRE process's getOrgPg() traffic onto one
+  // connection and turning any single ≥2-3s query into a critical routines-tick pool
+  // shed (371 shed events observed, every 30-90s). Fixing the ceiling upstream (not
+  // here) keeps this call a one-liner and fixes every other maxConnections consumer
+  // (pg-autotune, embedded-pg boot flags) the same way.
   return boundedOrgPoolMax({
     desired,
     maxConnections: profile.database.maxConnections,
