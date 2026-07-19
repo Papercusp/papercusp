@@ -1505,7 +1505,17 @@ ALTER TABLE harness_shared.harness_brainstorm ADD COLUMN IF NOT EXISTS workspace
 
 ALTER TABLE harness_shared.harness_brainstorm ADD COLUMN IF NOT EXISTS content_tsv tsvector;
 
-ALTER TABLE harness_shared.harness_brainstorm ADD COLUMN IF NOT EXISTS content_embedding public.vector(384);
+-- EI-15334: vector is best-effort (tolerated-if-missing at boot) — a migration
+-- must not hard-require it, so this ADD COLUMN is skipped (not a hard failure)
+-- on a server without the pgvector extension (e.g. mac embedded PG lacking the
+-- compiled .so). Consumers already degrade to lexical/in-memory-only search.
+DO $guard_vec$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    ALTER TABLE harness_shared.harness_brainstorm ADD COLUMN IF NOT EXISTS content_embedding public.vector(384);
+  END IF;
+END
+$guard_vec$;
 
 ALTER TABLE ONLY harness_shared.harness_brainstorm REPLICA IDENTITY FULL;
 
@@ -1631,7 +1641,14 @@ ALTER TABLE harness_shared.harness_decisions ADD COLUMN IF NOT EXISTS workspace_
 
 ALTER TABLE harness_shared.harness_decisions ADD COLUMN IF NOT EXISTS body_tsv tsvector;
 
-ALTER TABLE harness_shared.harness_decisions ADD COLUMN IF NOT EXISTS body_embedding public.vector(384);
+-- EI-15334: see the harness_brainstorm guard above — vector is best-effort.
+DO $guard_vec$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    ALTER TABLE harness_shared.harness_decisions ADD COLUMN IF NOT EXISTS body_embedding public.vector(384);
+  END IF;
+END
+$guard_vec$;
 
 ALTER TABLE ONLY harness_shared.harness_decisions REPLICA IDENTITY FULL;
 
@@ -1729,7 +1746,14 @@ ALTER TABLE harness_shared.harness_escalations ADD COLUMN IF NOT EXISTS workspac
 
 ALTER TABLE harness_shared.harness_escalations ADD COLUMN IF NOT EXISTS body_tsv tsvector;
 
-ALTER TABLE harness_shared.harness_escalations ADD COLUMN IF NOT EXISTS body_embedding public.vector(384);
+-- EI-15334: see the harness_brainstorm guard above — vector is best-effort.
+DO $guard_vec$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    ALTER TABLE harness_shared.harness_escalations ADD COLUMN IF NOT EXISTS body_embedding public.vector(384);
+  END IF;
+END
+$guard_vec$;
 
 ALTER TABLE ONLY harness_shared.harness_escalations REPLICA IDENTITY FULL;
 
@@ -3220,7 +3244,14 @@ CREATE TABLE IF NOT EXISTS harness_shared.memory_vec_local (
 
 ALTER TABLE harness_shared.memory_vec_local ADD COLUMN IF NOT EXISTS memory_id uuid;
 
-ALTER TABLE harness_shared.memory_vec_local ADD COLUMN IF NOT EXISTS vector public.vector(384);
+-- EI-15334: see the harness_brainstorm guard above — vector is best-effort.
+DO $guard_vec$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    ALTER TABLE harness_shared.memory_vec_local ADD COLUMN IF NOT EXISTS vector public.vector(384);
+  END IF;
+END
+$guard_vec$;
 
 ALTER TABLE harness_shared.memory_vec_local ADD COLUMN IF NOT EXISTS embedded_at timestamp with time zone DEFAULT now();
 
@@ -3231,7 +3262,14 @@ CREATE TABLE IF NOT EXISTS harness_shared.memory_vec_openai (
 
 ALTER TABLE harness_shared.memory_vec_openai ADD COLUMN IF NOT EXISTS memory_id uuid;
 
-ALTER TABLE harness_shared.memory_vec_openai ADD COLUMN IF NOT EXISTS vector public.vector(384);
+-- EI-15334: see the harness_brainstorm guard above — vector is best-effort.
+DO $guard_vec$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    ALTER TABLE harness_shared.memory_vec_openai ADD COLUMN IF NOT EXISTS vector public.vector(384);
+  END IF;
+END
+$guard_vec$;
 
 ALTER TABLE harness_shared.memory_vec_openai ADD COLUMN IF NOT EXISTS embedded_at timestamp with time zone DEFAULT now();
 
@@ -3823,7 +3861,6 @@ CREATE TABLE IF NOT EXISTS harness_shared.operator_turns (
     audio_url text,
     created_at bigint NOT NULL,
     text_tsv tsvector,
-    text_embedding public.vector(384),
     tools jsonb,
     CONSTRAINT operator_turns_role_check CHECK ((role = ANY (ARRAY['user'::text, 'assistant'::text, 'system'::text])))
 );
