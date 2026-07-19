@@ -3885,7 +3885,14 @@ ALTER TABLE harness_shared.operator_turns ADD COLUMN IF NOT EXISTS created_at bi
 
 ALTER TABLE harness_shared.operator_turns ADD COLUMN IF NOT EXISTS text_tsv tsvector;
 
-ALTER TABLE harness_shared.operator_turns ADD COLUMN IF NOT EXISTS text_embedding public.vector(384);
+-- EI-15334: see the harness_brainstorm guard above — vector is best-effort.
+DO $guard_vec$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    ALTER TABLE harness_shared.operator_turns ADD COLUMN IF NOT EXISTS text_embedding public.vector(384);
+  END IF;
+END
+$guard_vec$;
 
 ALTER TABLE harness_shared.operator_turns ADD COLUMN IF NOT EXISTS tools jsonb;
 
@@ -8259,7 +8266,14 @@ CREATE INDEX IF NOT EXISTS goals_workspace_idx ON harness_shared.goals USING btr
 
 CREATE INDEX IF NOT EXISTS harness_archives_slug_phase_ts_idx ON harness_shared.harness_archives USING btree (harness_slug, phase, ts DESC);
 
-CREATE INDEX IF NOT EXISTS harness_brainstorm_content_embedding_hnsw ON harness_shared.harness_brainstorm USING hnsw (content_embedding public.vector_cosine_ops);
+-- EI-15334: vector best-effort — skip the hnsw index too when the column wasn't created.
+DO $guard_vec_idx$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    CREATE INDEX IF NOT EXISTS harness_brainstorm_content_embedding_hnsw ON harness_shared.harness_brainstorm USING hnsw (content_embedding public.vector_cosine_ops);
+  END IF;
+END
+$guard_vec_idx$;
 
 CREATE INDEX IF NOT EXISTS harness_brainstorm_tsv_idx ON harness_shared.harness_brainstorm USING gin (content_tsv);
 
@@ -8267,7 +8281,14 @@ CREATE INDEX IF NOT EXISTS harness_brainstorm_workspace_idx ON harness_shared.ha
 
 CREATE INDEX IF NOT EXISTS harness_checkpoints_slug_waiting_idx ON harness_shared.harness_checkpoints USING btree (harness_slug, waiting_since_ms);
 
-CREATE INDEX IF NOT EXISTS harness_decisions_body_embedding_hnsw ON harness_shared.harness_decisions USING hnsw (body_embedding public.vector_cosine_ops);
+-- EI-15334: see the harness_brainstorm index guard above.
+DO $guard_vec_idx$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    CREATE INDEX IF NOT EXISTS harness_decisions_body_embedding_hnsw ON harness_shared.harness_decisions USING hnsw (body_embedding public.vector_cosine_ops);
+  END IF;
+END
+$guard_vec_idx$;
 
 CREATE INDEX IF NOT EXISTS harness_decisions_body_tsv_idx ON harness_shared.harness_decisions USING gin (body_tsv);
 
@@ -8275,7 +8296,14 @@ CREATE INDEX IF NOT EXISTS harness_decisions_slug_ts_idx ON harness_shared.harne
 
 CREATE INDEX IF NOT EXISTS harness_dispatches_parent_idx ON harness_shared.harness_dispatches USING btree (workspace_id, parent_slug, dispatch_at DESC);
 
-CREATE INDEX IF NOT EXISTS harness_escalations_body_embedding_hnsw ON harness_shared.harness_escalations USING hnsw (body_embedding public.vector_cosine_ops);
+-- EI-15334: see the harness_brainstorm index guard above.
+DO $guard_vec_idx$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    CREATE INDEX IF NOT EXISTS harness_escalations_body_embedding_hnsw ON harness_shared.harness_escalations USING hnsw (body_embedding public.vector_cosine_ops);
+  END IF;
+END
+$guard_vec_idx$;
 
 CREATE INDEX IF NOT EXISTS harness_escalations_tsv_idx ON harness_shared.harness_escalations USING gin (body_tsv);
 
@@ -8445,9 +8473,23 @@ CREATE INDEX IF NOT EXISTS memory_feedback_mem_idx ON harness_shared.memory_feed
 
 CREATE INDEX IF NOT EXISTS memory_feedback_user_idx ON harness_shared.memory_feedback USING btree (user_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS memory_vec_local_hnsw_idx ON harness_shared.memory_vec_local USING hnsw (vector public.vector_cosine_ops);
+-- EI-15334: see the harness_brainstorm index guard above.
+DO $guard_vec_idx$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    CREATE INDEX IF NOT EXISTS memory_vec_local_hnsw_idx ON harness_shared.memory_vec_local USING hnsw (vector public.vector_cosine_ops);
+  END IF;
+END
+$guard_vec_idx$;
 
-CREATE INDEX IF NOT EXISTS memory_vec_openai_hnsw_idx ON harness_shared.memory_vec_openai USING hnsw (vector public.vector_cosine_ops);
+-- EI-15334: see the harness_brainstorm index guard above.
+DO $guard_vec_idx$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    CREATE INDEX IF NOT EXISTS memory_vec_openai_hnsw_idx ON harness_shared.memory_vec_openai USING hnsw (vector public.vector_cosine_ops);
+  END IF;
+END
+$guard_vec_idx$;
 
 CREATE INDEX IF NOT EXISTS mobile_devices_user_idx ON harness_shared.mobile_devices USING btree (user_email);
 
@@ -8479,7 +8521,14 @@ CREATE INDEX IF NOT EXISTS operator_scans_ws_started_idx ON harness_shared.opera
 
 CREATE INDEX IF NOT EXISTS operator_turns_conv_seq_idx ON harness_shared.operator_turns USING btree (conversation_id, seq);
 
-CREATE INDEX IF NOT EXISTS operator_turns_text_embedding_hnsw ON harness_shared.operator_turns USING hnsw (text_embedding public.vector_cosine_ops);
+-- EI-15334: see the harness_brainstorm index guard above.
+DO $guard_vec_idx$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    CREATE INDEX IF NOT EXISTS operator_turns_text_embedding_hnsw ON harness_shared.operator_turns USING hnsw (text_embedding public.vector_cosine_ops);
+  END IF;
+END
+$guard_vec_idx$;
 
 CREATE INDEX IF NOT EXISTS operator_turns_tsv_idx ON harness_shared.operator_turns USING gin (text_tsv);
 
