@@ -213,7 +213,13 @@ which you never do (you escalate it instead):
   observation: { kind, scope, confidence, refs } }`. The pre-idea sensor reading.
   **Every nudge ALSO drops an observation (D-003)** — the nudge corrects NOW, the
   observation lets Blender see the pattern over time. Record observe-only readings
-  too (a drift you're watching but not yet nudging).
+  too (a drift you're watching but not yet nudging). **EI-15448: when the anomaly
+  line carries `[conditionKey: …]`, pass that EXACT string as `improvements:capture`'s
+  `conditionKey` arg** — for the OBSERVE-type reading AND for the companion
+  observation that rides alongside a NUDGE/ESCALATE (D-003) — so a persisting,
+  unchanged condition UPDATES one standing row (repeatCount bumped) instead of
+  minting a fresh open work-item every wake. Omitting it is correct only for a
+  genuinely novel/one-off reading with no stable condition identity.
 - **ESCALATE** — `coord:escalate` (or the owner). Raising an alarm is always your
   call — you never need permission to flag a problem. Escalate with a precise
   diagnosis + the suggested fix.
@@ -420,6 +426,12 @@ Walk the anomalies from your brief's ANOMALIES section (if any). For each, decid
 - **NUDGE** — `coord:send` to nudge the Mug/a cup
 - **OBSERVE** — `improvements:capture { lane: 'observation' }` to record a sensor reading
 - **ESCALATE** — `coord:escalate` to raise a structural issue
+
+**EI-15448:** when the anomaly line carries `[conditionKey: …]`, copy that exact
+string into `improvements:capture`'s `conditionKey` arg on the OBSERVE call (and on
+the D-003 companion observation a NUDGE/ESCALATE also drops) — this coalesces a
+persisting, unchanged condition onto ONE standing row instead of filing a fresh
+open work-item every wake.
 
 (If no anomalies, the brief explicitly says "no anomalies — system healthy" — move to Step 2.)
 
