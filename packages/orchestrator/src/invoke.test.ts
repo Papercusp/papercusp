@@ -1260,9 +1260,13 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // fleet-member-dx P-008 (EI-9012/EI-9034): the bench-wait verbs must be directly
   // reachable — "don't poll, await the key" is a persona mandate, and a seeded session
   // whose client-side search misses a deferred verb concludes it doesn't exist.
-  for (const required of ['events:await', 'events:emit', 'events:catalog']) {
+  for (const required of ['events:await', 'events:catalog']) {
     assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core (fleet-member-dx P-008 bench-wait)`);
   }
+  // events:emit was deliberately cut from the spine (2026-07-19 rebalance): 29 calls/14d
+  // while SEEDED = true rarity, not a discoverability artifact — members await, leaders/peers
+  // emit, and the system fires most emits from lifecycle events. Reachable via tools:find/invoke.
+  assert.ok(!CORE_MCP_TOOL_NAMES.includes('events:emit'), 'events:emit was deliberately cut from the core spine (2026-07-19 rebalance) — reachable via tools:invoke, not the seeded hot path');
   // The fleet kits carry the batching surface too (P-001) — the 2026-07-03 audit's root
   // finding was code:run absent from the BEE/QUEEN kits while the inline nudge advised it.
   for (const kit of [BEE_MCP_TOOL_NAMES, QUEEN_MCP_TOOL_NAMES]) {
@@ -1722,6 +1726,10 @@ test('resolveFleetAllowedDomains — base list (registries + common toolchain CD
   assert.ok(d.includes('cdn.playwright.dev'), 'Playwright browser CDN in base');
   assert.ok(d.includes('playwright.download.prss.microsoft.com'), 'Playwright fallback in base');
   assert.ok(d.includes('nodejs.org'), 'node-gyp headers host in base');
+  // EI-13191: github.com/<org>/<repo>/releases/download/... 302-redirects to this
+  // host — a plain `curl -L` of a GitHub release asset 403'd without it, even
+  // though github.com/api.github.com/objects.githubusercontent.com all worked.
+  assert.ok(d.includes('release-assets.githubusercontent.com'), 'GitHub release-asset CDN redirect target in base');
   assert.ok(!d.includes('example.com'));
 });
 

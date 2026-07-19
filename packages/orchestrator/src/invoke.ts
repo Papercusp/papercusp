@@ -1297,6 +1297,11 @@ export const FLEET_SANDBOX_ALLOWED_DOMAINS: readonly string[] = [
   'codeload.github.com',
   'objects.githubusercontent.com',
   'raw.githubusercontent.com',
+  // EI-13191: `github.com/<org>/<repo>/releases/download/...` 302-redirects to a
+  // signed Azure blob URL on THIS host — every `curl -L` of a GitHub release
+  // asset (a common install pattern; e.g. papercusp-desktop/bin/mac-vm-build.sh's
+  // zellij download) needs it reachable too, not just the API/git-object hosts above.
+  'release-assets.githubusercontent.com',
   // Common toolchain CDNs a default-on fleet needs out-of-box (P-013/D-015):
   'cdn.playwright.dev', // Playwright browser binaries (primary)
   'playwright.download.prss.microsoft.com', // Playwright browser binaries (fallback)
