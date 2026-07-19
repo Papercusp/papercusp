@@ -1029,8 +1029,30 @@ export async function logConnectionBudget(
 
 /**
  * Test-only: close all open pools so a different DATABASE_URL can be used.
+ *
+ * EI-14436: this MUST also clear the resolved-URL cache (`_resolvedAdminUrl` /
+ * `_resolvedAppUrl`), not just the client pools. `adminUrl()`/`appUrl()` cache
+ * an 'env'-sourced URL as stable "for process lifetime" and short-circuit
+ * BEFORE re-reading `process.env` on every subsequent call — so a test that
+ * mutates `HARNESS_ADMIN_DATABASE_URL`/`HARNESS_DATABASE_URL`/`DATABASE_URL`
+ * AFTER an earlier (unrelated) call in the same worker process already resolved
+ * + cached the admin/app URL from a DIFFERENT env value (e.g. a shell-inherited
+ * `DATABASE_URL` pointing at the real native/dev database) would find this
+ * function a no-op for its purpose: it nulls the pools, but the next
+ * getOrgPg()/getOrgPgApp() call rebuilds them against the SAME STALE cached
+ * URL, silently reconnecting to the wrong database. Observed live: every
+ * summarizeOpenPlacements() assertion in placement-watchdog.integration.test.ts
+ * queried the real dev DB's 200+ unrelated harness rows instead of the
+ * test's own throwaway container, reading back an empty result deterministically
+ * (100% reproduction in isolation, not a race) because the test's own env-var
+ * reassignment in beforeAll never took effect. A handful of call sites already
+ * worked around this by calling the separate `_resetUrlCacheForTests()` before
+ * `_resetForTests()` (see sync/pot-git/serve-wiring.integration.test.ts) — fold
+ * that into the one test-reset entrypoint so every caller gets it for free
+ * instead of relying on each test file to know this footgun exists.
  */
 export async function _resetForTests() {
+  _resetUrlCacheForTests();
   if (_adminClient) {
     await _adminClient.end({ timeout: 1 }).catch(() => {});
   }
