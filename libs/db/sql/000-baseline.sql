@@ -1486,8 +1486,7 @@ CREATE TABLE IF NOT EXISTS harness_shared.harness_brainstorm (
     mindmap jsonb,
     updated_at bigint DEFAULT 0 NOT NULL,
     workspace_id text DEFAULT ''::text NOT NULL,
-    content_tsv tsvector,
-    content_embedding public.vector(384)
+    content_tsv tsvector
 );
 
 ALTER TABLE harness_shared.harness_brainstorm ADD COLUMN IF NOT EXISTS harness_slug text;
@@ -1609,8 +1608,7 @@ CREATE TABLE IF NOT EXISTS harness_shared.harness_decisions (
     iteration integer,
     is_ghost boolean DEFAULT false NOT NULL,
     workspace_id text DEFAULT ''::text NOT NULL,
-    body_tsv tsvector,
-    body_embedding public.vector(384)
+    body_tsv tsvector
 );
 
 ALTER TABLE harness_shared.harness_decisions ADD COLUMN IF NOT EXISTS harness_slug text;
@@ -1714,8 +1712,7 @@ CREATE TABLE IF NOT EXISTS harness_shared.harness_escalations (
     supervisor_notes text,
     mtime_ms bigint DEFAULT 0 NOT NULL,
     workspace_id text DEFAULT ''::text NOT NULL,
-    body_tsv tsvector,
-    body_embedding public.vector(384)
+    body_tsv tsvector
 );
 
 ALTER TABLE harness_shared.harness_escalations ADD COLUMN IF NOT EXISTS harness_slug text;
@@ -3218,7 +3215,6 @@ ALTER TABLE harness_shared.memory_feedback ADD COLUMN IF NOT EXISTS created_at t
 
 CREATE TABLE IF NOT EXISTS harness_shared.memory_vec_local (
     memory_id uuid NOT NULL,
-    vector public.vector(384) NOT NULL,
     embedded_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -3230,7 +3226,6 @@ ALTER TABLE harness_shared.memory_vec_local ADD COLUMN IF NOT EXISTS embedded_at
 
 CREATE TABLE IF NOT EXISTS harness_shared.memory_vec_openai (
     memory_id uuid NOT NULL,
-    vector public.vector(384) NOT NULL,
     embedded_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
