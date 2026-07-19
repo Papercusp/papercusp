@@ -2812,6 +2812,17 @@ export const benchmarkCoordEventInHarnessShared = harnessShared.table("benchmark
 
 ]);
 
+export const operatorLivenessFlapStateInHarnessShared = harnessShared.table("operator_liveness_flap_state", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_liveness_flap_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_liveness_flap_state_pkey"}),
+
+]);
+
 export const savedPromptsInHarnessShared = harnessShared.table("saved_prompts", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
