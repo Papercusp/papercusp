@@ -291,6 +291,44 @@ async function checkDesignGate(
 }
 
 /**
+ * True iff this harness has its OWN per-harness `harness_<slug>` PG schema in the
+ * caller's search_path. Every currently-registered harness gets one at
+ * registration time (scaffold-harness-schema.ts, D-007) — in that case the
+ * unqualified `harness_features` name used below resolves to THAT harness's own
+ * auto-updatable, harness_slug-filtered view, so every UPDATE in this file is
+ * already correctly scoped to exactly this harness.
+ *
+ * False only when no per-harness schema exists at all (a scaffold failure, a
+ * mid-provisioning race, or a throwaway/gym harness whose schema was torn down
+ * — see gym/README.md "worker invoke harness_features 42P01"). In that case the
+ * unqualified name instead falls through to `harness_shared.harness_features`
+ * (497-harness-features-shared-fallback-view.sql) — a compat view spanning
+ * EVERY harness in the workspace with NO harness_slug filter. That view is
+ * (despite its own "read-only by design" comment) actually WRITABLE by the
+ * runtime role in practice — migration 109's `ALTER DEFAULT PRIVILEGES` on
+ * `harness_shared` silently grants INSERT/UPDATE/DELETE to every later-created
+ * object in that schema, this view included — so an unqualified UPDATE here
+ * would not fail loudly as the 497 comment assumes; it would SUCCEED with a
+ * real cross-tenant hazard instead: `feature_id` is only unique PER HARNESS
+ * (the PK is `(harness_slug, feature_id)`), so an UPDATE keyed on
+ * workspace_id+feature_id alone can silently mutate ANOTHER harness's
+ * same-numbered feature (every harness starts its own "F-001") in the same
+ * workspace. EI-13935: on this branch, write the base table directly with an
+ * explicit harness_slug predicate instead of relying on the unqualified name.
+ */
+async function hasPerHarnessSchema(ctx: PgStateContext): Promise<boolean> {
+  if (!ctx.harnessSlug) return true; // unknown slug — can't detect; preserve legacy behavior
+  // Mirrors packages/operator-core/lib/scaffold-harness-schema.ts#harnessSchemaName.
+  // Not imported: this package has no dependency on operator-core (it runs
+  // standalone, shelled out as its own CLI) — keep the two transforms in sync.
+  const schema = 'harness_' + ctx.harnessSlug.toLowerCase().replace(/-/g, '_');
+  const rows = await ctx.pg<{ t: string | null }[]>`
+    SELECT to_regclass(${schema + '.harness_features'}) AS t
+  `;
+  return rows[0]?.t != null;
+}
+
+/**
  * Update a feature's status. Bumps or resets attempts per options. Returns
  * the full feature list after the write. No-op if the feature doesn't
  * exist (matches bash `feature_set_status`'s silent no-op behavior).
@@ -306,6 +344,36 @@ export async function setFeatureStatusPg(
     await checkDesignGate(ctx, featureId, slug);
   }
   const now = Date.now();
+  // EI-13935: when there's no per-harness schema for this harness, the unqualified
+  // name below would resolve to the unfiltered, cross-harness fallback view — write
+  // the base table directly, explicitly scoped, instead. See hasPerHarnessSchema.
+  if (slug != null && !(await hasPerHarnessSchema(ctx))) {
+    if (options.resetAttempts) {
+      await ctx.pg`
+        UPDATE harness_shared.work_items
+           SET status = ${status}, attempts = 0, updated_ts = ${now}
+         WHERE workspace_id = ${ctx.workspaceId} AND harness_slug = ${slug}
+           AND feature_id = ${featureId} AND item_kind NOT IN ('bug', 'change', 'task')
+      `;
+    } else if (options.bumpAttempts) {
+      await ctx.pg`
+        UPDATE harness_shared.work_items
+           SET status = ${status},
+               attempts = COALESCE(attempts, 0) + 1,
+               updated_ts = ${now}
+         WHERE workspace_id = ${ctx.workspaceId} AND harness_slug = ${slug}
+           AND feature_id = ${featureId} AND item_kind NOT IN ('bug', 'change', 'task')
+      `;
+    } else {
+      await ctx.pg`
+        UPDATE harness_shared.work_items
+           SET status = ${status}, updated_ts = ${now}
+         WHERE workspace_id = ${ctx.workspaceId} AND harness_slug = ${slug}
+           AND feature_id = ${featureId} AND item_kind NOT IN ('bug', 'change', 'task')
+      `;
+    }
+    return readFeaturesPg(ctx);
+  }
   if (options.resetAttempts) {
     await ctx.pg`
       UPDATE harness_features

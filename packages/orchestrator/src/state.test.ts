@@ -250,6 +250,7 @@ describe('state — PG path (mocked)', () => {
         const sql = template.join('?');
         queries.push(sql);
         values.push(vals);
+        if (/to_regclass/.test(sql)) return [{ t: 'harness_sheets.harness_features' }]; // EI-13935 topology probe: pretend a real per-harness schema exists (the common case)
         if (/EXISTS/.test(sql)) return [{ exists: rows.length > 0 }];
         if (/SELECT attempts/.test(sql)) {
           const id = vals[1];

@@ -1,6 +1,11 @@
 import { afterEach, describe, test } from 'vitest';
 import assert from 'node:assert/strict';
-import { durableOwnedFeatureIdsPg, isAutoPickable, readFeaturesPg } from './state-pg';
+import {
+  durableOwnedFeatureIdsPg,
+  isAutoPickable,
+  readFeaturesPg,
+  setFeatureStatusPg,
+} from './state-pg';
 
 const FLAG = 'PAPERCUSP_DBOS_ORCHESTRATOR';
 type Ctx = Parameters<typeof durableOwnedFeatureIdsPg>[0];
@@ -149,6 +154,82 @@ describe('durableOwnedFeatureIdsPg — Phase 3 carve-out (D-012/D-013)', () => {
     const ctx = { pg, workspaceId: 'w', harnessSlug: 's' } as unknown as Ctx;
     const owned = await durableOwnedFeatureIdsPg(ctx);
     assert.deepEqual([...owned], ['F-009']);
+  });
+});
+
+// EI-13935: setFeatureStatusPg's bumpAttempts/resetAttempts UPDATE used the
+// unqualified `harness_features` name unconditionally. On a harness with no
+// per-harness schema, that name falls through to the cross-harness
+// `harness_shared.harness_features` compat view (497) instead of this one
+// harness's own row — a real correctness hazard (feature_id is only unique
+// PER HARNESS), not the "fails loudly, read-only" outcome its own doc comment
+// assumed (migration 109's default privileges actually make it writable).
+describe('setFeatureStatusPg — EI-13935 topology-aware attempts write', () => {
+  const orig = process.env[FLAG];
+  afterEach(() => {
+    if (orig === undefined) delete process.env[FLAG];
+    else process.env[FLAG] = orig;
+  });
+
+  test('per-harness schema present → unqualified UPDATE (existing TOWER-style path, unchanged)', async () => {
+    process.env[FLAG] = '0'; // disable the durable-owned carve-out — only the write + readback matter here
+    const { pg, calls } = fakePg((q) => (q.includes('to_regclass') ? [{ t: 'harness_s.harness_features' }] : []));
+    const ctx = { pg, workspaceId: 'w', harnessSlug: 's' } as unknown as Ctx;
+    await setFeatureStatusPg(ctx as unknown as Parameters<typeof setFeatureStatusPg>[0], 'F-1', 'in_progress', {
+      bumpAttempts: true,
+    });
+    const updateCall = calls.find((c) => /UPDATE\s+harness_features\b/i.test(c.q));
+    assert.ok(updateCall, 'wrote through the unqualified per-harness name');
+    assert.equal(
+      calls.find((c) => /UPDATE\s+harness_shared\.work_items\b/i.test(c.q)),
+      undefined,
+      'did not take the base-table fallback path when a real per-harness schema exists',
+    );
+  });
+
+  test('no per-harness schema → writes harness_shared.work_items directly, scoped by harness_slug', async () => {
+    process.env[FLAG] = '0';
+    const { pg, calls } = fakePg((q) => (q.includes('to_regclass') ? [{ t: null }] : []));
+    const ctx = { pg, workspaceId: 'w', harnessSlug: 's' } as unknown as Ctx;
+    await setFeatureStatusPg(ctx as unknown as Parameters<typeof setFeatureStatusPg>[0], 'F-1', 'in_progress', {
+      bumpAttempts: true,
+    });
+    const updateCall = calls.find((c) => /UPDATE\s+harness_shared\.work_items\b/i.test(c.q));
+    assert.ok(updateCall, 'wrote through harness_shared.work_items directly');
+    assert.match(updateCall!.q, /harness_slug\s*=\s*\?/);
+    assert.ok(updateCall!.vals.includes('s'), 'harness_slug bound as an explicit predicate value');
+    assert.equal(
+      calls.find((c) => /UPDATE\s+harness_features\b/i.test(c.q)),
+      undefined,
+      'never fell through to the unqualified name (would hit the unfiltered cross-harness view)',
+    );
+  });
+
+  test('no harnessSlug on ctx → cannot detect topology, preserves legacy unqualified behavior', async () => {
+    process.env[FLAG] = '0';
+    const { pg, calls } = fakePg(() => []);
+    const ctx = { pg, workspaceId: 'w' } as unknown as Ctx;
+    // readFeaturesPg's own no-harnessSlug console.warn (audit P-018, unrelated to
+    // this fix) fires on the post-write readback — expected here, so silence it
+    // rather than let vitest-fail-on-console flag it.
+    const origWarn = console.warn;
+    console.warn = () => {};
+    try {
+      await setFeatureStatusPg(ctx as unknown as Parameters<typeof setFeatureStatusPg>[0], 'F-1', 'in_progress', {
+        bumpAttempts: true,
+      });
+    } finally {
+      console.warn = origWarn;
+    }
+    assert.ok(
+      calls.find((c) => /UPDATE\s+harness_features\b/i.test(c.q)),
+      'fell back to the unqualified legacy UPDATE',
+    );
+    assert.equal(
+      calls.find((c) => c.q.includes('to_regclass')),
+      undefined,
+      'never probed topology without a slug to build the schema name from',
+    );
   });
 });
 
