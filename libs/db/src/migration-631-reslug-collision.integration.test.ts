@@ -60,9 +60,6 @@ async function provision(url: string): Promise<void> {
   }
 }
 
-const EI = (createdBy: string) =>
-  `{"_ei":{"scope":"operator","severity":"minor","source":"su","created_by":"${createdBy}"}}`;
-
 let db: MigratedTestDb;
 let sql: Sql;
 
@@ -78,19 +75,33 @@ afterAll(async () => {
 
 describe('migration 631 reslug operator→papercusp is collision-safe (mac 0.0.12 crash-loop regression)', () => {
   it('dedups a colliding operator-slug row and reslugs a non-colliding one, with NO work_items_pkey crash', async () => {
-    // Reproduce the seed data-shape that crashed the packaged operator:
+    // Reproduce the seed data-shape that crashed the packaged operator, at the
+    // engineer_issues BASE table (the work_items view synthesizes harness_slug from
+    // it: base_harness_slug='papercusp' → view 'papercusp'; base_harness_slug='' +
+    // origin='local' + workspace='papercusp-workspace' → view
+    // 'operator:papercusp-workspace').
     //  • EI-9990001 — a COLLISION: a 'papercusp' row AND an
-    //    'operator:papercusp-workspace' row share the same feature_id (change kind).
-    //    The old straight-UPDATE would dup-key here.
-    //  • EI-9990002 — a NON-colliding operator-slug row that SHOULD be reslugged.
+    //    'operator:papercusp-workspace' row share the same feature_id. The old
+    //    straight-UPDATE dup-keyed here (the mac crash).
+    //  • EI-9990002 — a NON-colliding operator row that SHOULD be reslugged.
     await sql`
-      INSERT INTO harness_shared.work_items
-        (workspace_id, harness_slug, feature_id, title, summary, status,
-         item_kind, origin, ts, created_ts, updated_ts, payload)
+      INSERT INTO harness_shared.engineer_issues
+        (workspace_id, issue_id, base_harness_slug, base_origin, origin, kind, scope,
+         title, body, state, severity, source, created_by, created_at, updated_at)
       VALUES
-        ('papercusp-workspace', 'papercusp',                    'EI-9990001', 'already here', 'b', 'open', 'change', 'local', 1000, 1000, 1000, ${EI('su-a')}::jsonb),
-        ('papercusp-workspace', 'operator:papercusp-workspace', 'EI-9990001', 'stale dup',    'b', 'open', 'change', 'local', 2000, 2000, 2000, ${EI('su-b')}::jsonb),
-        ('papercusp-workspace', 'operator:papercusp-workspace', 'EI-9990002', 'to be moved',  'b', 'open', 'task',   'local', 3000, 3000, 3000, ${EI('su-c')}::jsonb)`;
+        ('papercusp-workspace', 'EI-9990001', 'papercusp', 'local', 'local', 'change', 'operator',
+         'already here', 'b', 'open', 'minor', 'su', 'su-a', now(), now()),
+        ('papercusp-workspace', 'EI-9990001', '',          'local', 'local', 'change', 'operator',
+         'stale dup',    'b', 'open', 'minor', 'su', 'su-b', now(), now()),
+        ('papercusp-workspace', 'EI-9990002', '',          'local', 'local', 'task',   'operator',
+         'to be moved',  'b', 'open', 'minor', 'su', 'su-c', now(), now())`;
+
+    // Sanity: the view shows the two view-slugs 631 keys on, before the migration.
+    const before = await sql<{ harness_slug: string; feature_id: string }[]>`
+      SELECT harness_slug, feature_id FROM harness_shared.work_items
+       WHERE feature_id IN ('EI-9990001', 'EI-9990002') ORDER BY harness_slug`;
+    expect(before.map((r) => r.harness_slug)).toContain('operator:papercusp-workspace');
+    expect(before.map((r) => r.harness_slug)).toContain('papercusp');
 
     // Re-run 631's SQL against the seeded collision. The pre-fix straight UPDATE
     // dup-keyed here (the mac crash). The current (dedup-DELETE) version must NOT.
