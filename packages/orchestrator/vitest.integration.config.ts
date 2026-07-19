@@ -1,4 +1,4 @@
-import { defineVitestConfig } from '@papercusp/test-config';
+import { defineVitestConfig } from '@papercusp/test-config/vitest-config';
 
 // Integration layer: picks up src/**/*.integration.test.ts (the unit config
 // excludes them). These tests provision their own fresh testcontainer
