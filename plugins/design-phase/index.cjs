@@ -28,10 +28,22 @@ const os = require('node:os');
 // (jira-sync/linear-sync/postgres-manager readDiscoveryUrl). Without the
 // discovery tier, a desktop run (embedded PG on a random port) silently
 // pointed this plugin at a wrong/absent native :5432.
+//
+// EI-14499 (same discovery-file-hijack class as EI-13917): the discovery
+// file must be resolved under `PAPERCUSP_HOME` when a caller has scoped
+// its own (an isolated gate/smoke-test instance, a per-workspace fleet
+// session) — never the box-canonical `~/.papercusp/`. Mirrors
+// packages/operator-core/lib/embedded-pg-discovery.ts's discoveryFilePath().
+function discoveryFilePath() {
+  return process.env.PAPERCUSP_HOME
+    ? path.join(process.env.PAPERCUSP_HOME, 'embedded-pg.json')
+    : path.join(os.homedir(), '.papercusp', 'embedded-pg.json');
+}
+
 function readDiscoveryAdminUrl() {
   if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY === '1') return null;
   try {
-    const raw = fs.readFileSync(`${os.homedir()}/.papercusp/embedded-pg.json`, 'utf8');
+    const raw = fs.readFileSync(discoveryFilePath(), 'utf8');
     const parsed = JSON.parse(raw);
     if (!parsed?.host || !parsed?.port) return null;
     if (parsed.user && parsed.password) {
