@@ -27,7 +27,8 @@
 -- row in one txn.
 
 \set ON_ERROR_STOP on
-BEGIN;
+-- (No top-level BEGIN/COMMIT: the migration runner supplies the transaction —
+-- lint-migrations enforced era. Already applied 2026-07-18; content unchanged.)
 
 -- ── resource_allotments ─────────────────────────────────────────────────────
 
@@ -153,5 +154,3 @@ CREATE TRIGGER capture_p2p_work_offers_outbox_upd_trg
 
 COMMENT ON COLUMN harness_shared.p2p_work_offers.pot_slug IS
   'pot-seat-pools-prose-ux-2026-07-18 P-001: for offer_kind=''seat'', the grantee POT when the standing seat-offer is pot-scoped rather than fleet-scoped (exactly one of fleet_slug/pot_slug — p2p_work_offers_grantee). The audience narrowing (trusted-members|whole-pot) rides the signed record_json (SeatOfferPayload.audience), not a column.';
-
-COMMIT;
