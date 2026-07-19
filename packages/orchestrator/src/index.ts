@@ -100,6 +100,11 @@ export {
   resolveModel,
   scopeSpawnEnvForRole,
   SEARCH_PROVIDER_ENV_KEYS,
+  // EI-16502: the outer-process activity-heartbeat marker echoed to stderr —
+  // invoke-outcome.ts strips it before judging/persisting a no-turn death so
+  // the heartbeat noise can't mask a real diagnostic or defeat the
+  // capacity_shed `stderr === ''` fingerprint.
+  OUTER_ACTIVITY_ECHO_MARKER,
   // B-18 fleet cutover (agent-capability-confinement P-020): the capability-only
   // allow/deny derivation + the role set that must stay in lockstep with the
   // capability tools' agentRoles (pinned by capability/cutover-role-parity.test.ts).

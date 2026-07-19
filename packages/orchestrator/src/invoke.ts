@@ -190,7 +190,19 @@ export function splitCommand(cmd: string): string[] {
  * `lastEchoAt` to store if an echo should fire, or `null` if still within the
  * throttle window (an explicit `null` sentinel rather than `0`, so "never
  * echoed" always fires regardless of what epoch/clock the caller uses).
+ *
+ * EI-16502: this marker line is echoed to the OUTER process's stderr, which is
+ * the same stderr the invoke-result body reports back to the caller as
+ * `b.stderr` for no-turn diagnosis (invoke-outcome.ts). A burst-failed spawn
+ * whose child never produced any real output (or died before anything else
+ * hit stderr) ends up with `stderr` consisting ENTIRELY of repeated marker
+ * lines — which (a) defeats the capacity_shed fingerprint's `stderr === ''`
+ * check (silently forcing a genuine capacity-shed death to classify as the
+ * generic infra_loss instead) and (b) buries any real diagnostic under noise
+ * in the persisted error_message. Exported so invoke-outcome.ts can strip it
+ * before judging/persisting — see `stripActivityHeartbeat` there.
  */
+export const OUTER_ACTIVITY_ECHO_MARKER = '[papercusp:activity]';
 export const OUTER_ACTIVITY_ECHO_THROTTLE_MS = 15_000;
 export function nextOuterActivityEchoAt(
   lastEchoAt: number | null,
@@ -3425,7 +3437,7 @@ export async function invoke(
       const next = nextOuterActivityEchoAt(lastOuterActivityEchoAt, Date.now());
       if (next === null) return;
       lastOuterActivityEchoAt = next;
-      try { process.stderr.write('[papercusp:activity]\n'); } catch { /* best-effort */ }
+      try { process.stderr.write(`${OUTER_ACTIVITY_ECHO_MARKER}\n`); } catch { /* best-effort */ }
     };
 
     // Live streaming via the operator's chunk bus. POST each stdout
