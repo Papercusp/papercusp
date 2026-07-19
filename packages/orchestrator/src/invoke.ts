@@ -817,11 +817,13 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // Bootstrap — one call returns assignments + backlog + inbox + plan-events + mem0.
   'coord:orient',
   // Coordinate. (coord:ack was cut in the 2026-07-05 demand-evidence rebalance — 47
-  // calls/7d; a coord:send reply covers the ack; stays reachable via tools:find/invoke.)
+  // calls/7d; a coord:send reply covers the ack. coord:ask cut 2026-07-19 by the same
+  // bar: 16 calls/14d SEEDED — true rarity, not a discoverability artifact — and zero
+  // tools:invoke fallback reaches; a coord:send carrying the question covers it. Both
+  // stay reachable via tools:find/invoke.)
   'coord:inbox',
   'coord:send',
   'coord:glance',
-  'coord:ask',
   // Plans & work — plans:new authors an ENTIRE plan in ONE call (P-001 `body` arg), so an
   // agent never has to hunt for a create verb: the Mac-app plan-authoring fumble that
   // motivated this (create-template → get-version → set-content, plus a "plans need a
@@ -900,6 +902,11 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // (recipes:run was cut 2026-07-05 — 78 calls/7d from a single role; recipes:search
   // already returns the run pointer, and the run itself routes via tools:invoke.)
   'recipes:search',
+  // Canonical-store reads (2026-07-19): dev:pg_query was the LOUDEST unmet need in the
+  // fallback-reach ledger — 1,132 tools:invoke reaches in 14d, 2.4× the next entry —
+  // and the storage policy MANDATES it for filtered/aggregate reads of PG-canonical
+  // state ("query PG — don't dump-and-jq a projection"). Read-only, tiny schema.
+  'dev:pg_query',
   // Agent self-state (same plan, P-002): the standing-facts ledger (upsert-by-key, scoped,
   // TTL'd, folded into orient) + the carry-note checkpoints a cold wake reads. Prompt-
   // referenced for fleet roles; in the spine so every seeded client can actually comply.
@@ -932,9 +939,11 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // forbids). await = register the sleep; emit = the counterpart a leader/peer fires;
   // catalog = "what CAN I wait on" (the check-before-polling step the persona
   // mandates). cancel/status stay reachable via tools:find/invoke (inspection verbs,
-  // not the hot path).
+  // not the hot path). events:emit cut 2026-07-19: 29 calls/14d while SEEDED (true
+  // rarity, not a discoverability artifact — members await; leaders/peers emit, and
+  // the system fires most emits from lifecycle events) and no fallback-reach demand;
+  // reachable via tools:find/invoke, natural member of a future leader-overlay seed.
   'events:await',
-  'events:emit',
   'events:catalog',
   // Session hygiene — EI-6770: without this in the spine, an agent nearing its
   // compaction limit has no way to compact cleanly and self-halts instead
