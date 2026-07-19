@@ -4907,18 +4907,6 @@ export const harnessRunChunksInHarnessShared = harnessShared.table("harness_run_
 	pgPolicy("harness_run_chunks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const autoloopStateInHarnessShared = harnessShared.table("autoloop_state", {
-	harnessSlug: text("harness_slug").notNull(),
-	role: text().default('director').notNull(),
-	lastFiredAt: timestamp("last_fired_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastStatus: text("last_status"),
-	consecutiveErrors: integer("consecutive_errors").default(0).notNull(),
-	workspaceId: text("workspace_id").default('').notNull(),
-}, (table) => [
-	primaryKey({ columns: [table.harnessSlug, table.role, table.workspaceId], name: "autoloop_state_pkey"}),
-	pgPolicy("autoloop_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const piSessionsInHarnessShared = harnessShared.table("pi_sessions", {
 	workspaceId: text("workspace_id").notNull(),
 	sessionId: text("session_id").notNull(),
@@ -5624,6 +5612,21 @@ export const runtimeVintageInHarnessShared = harnessShared.table("runtime_vintag
 }, (table) => [
 	index("runtime_vintage_reported_at_idx").using("btree", table.reportedAt.desc().nullsFirst().op("timestamptz_ops")),
 	primaryKey({ columns: [table.workspaceId, table.unit, table.host], name: "runtime_vintage_pkey"}),
+]);
+
+export const autoloopStateInHarnessShared = harnessShared.table("autoloop_state", {
+	harnessSlug: text("harness_slug").notNull(),
+	role: text().default('director').notNull(),
+	lastFiredAt: timestamp("last_fired_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastStatus: text("last_status"),
+	consecutiveErrors: integer("consecutive_errors").default(0).notNull(),
+	workspaceId: text("workspace_id").default('').notNull(),
+	lastWithheldAt: timestamp("last_withheld_at", { withTimezone: true, mode: 'string' }),
+	lastWithheldReason: text("last_withheld_reason"),
+	lastWithheldDetail: text("last_withheld_detail"),
+}, (table) => [
+	primaryKey({ columns: [table.harnessSlug, table.role, table.workspaceId], name: "autoloop_state_pkey"}),
+	pgPolicy("autoloop_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const executedActionsConsolidatedInHarnessShared = harnessShared.table("executed_actions_consolidated", {
