@@ -3759,6 +3759,13 @@ export const agentRateBudgetInHarnessShared = harnessShared.table("agent_rate_bu
 	primaryKey({ columns: [table.bucketKey], name: "agent_rate_budget_pkey"}),
 ]);
 
+export const bak20260719ReslugWorkspaceBugsInHarnessShared = harnessShared.table("bak_20260719_reslug_workspace_bugs", {
+	featureId: text("feature_id").notNull(),
+	oldHarnessSlug: text("old_harness_slug").notNull(),
+	status: text(),
+	movedAt: timestamp("moved_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+});
+
 export const operatorIntegrationCredentialsInHarnessShared = harnessShared.table("operator_integration_credentials", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -3822,6 +3829,14 @@ export const directivesInPapercuspShared = papercuspShared.table("directives", {
 	index("directives_created_idx").using("btree", table.createdTs.desc().nullsFirst().op("int8_ops")),
 	index("directives_status_idx").using("btree", table.status.asc().nullsLast().op("text_ops")),
 ]);
+
+export const bak20260719ReslugOperatorChangetaskInHarnessShared = harnessShared.table("bak_20260719_reslug_operator_changetask", {
+	featureId: text("feature_id").notNull(),
+	oldHarnessSlug: text("old_harness_slug").notNull(),
+	itemKind: text("item_kind"),
+	status: text(),
+	movedAt: timestamp("moved_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+});
 
 export const memoryLiveRecallCanarySetInHarnessShared = harnessShared.table("memory_live_recall_canary_set", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -5246,6 +5261,19 @@ export const scoutLensWeightsInHarnessShared = harnessShared.table("scout_lens_w
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.lens, table.potSlug], name: "scout_lens_weights_pkey"}),
 	pgPolicy("scout_lens_weights_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const eventKeyFiresInHarnessShared = harnessShared.table("event_key_fires", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	eventKey: text("event_key").notNull(),
+	firstFiredAt: timestamp("first_fired_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastFiredAt: timestamp("last_fired_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastFiredBy: text("last_fired_by"),
+	lastPayload: jsonb("last_payload"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fireCount: bigint("fire_count", { mode: "number" }).default(1).notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.eventKey], name: "event_key_fires_pkey"}),
 ]);
 
 export const harnessLanesInHarnessShared = harnessShared.table("harness_lanes", {
