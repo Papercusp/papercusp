@@ -73,9 +73,46 @@ let txPool: Sql | null = null;
 let listenerPool: Sql | null = null;
 let bootstrapped = false;
 
+/**
+ * EI-18122461766429683: this package has no dependency on `@papercusp/db-org`
+ * (adding one just for this would be a new cross-package edge for two lines of
+ * options), so this is a deliberate INLINE local copy of
+ * `@papercusp/db-org`'s `longLivedPoolConnectionOptions(label)` — same shape,
+ * same rationale: (1) tags the connection with a `pcusp:<label>:p<pid>`
+ * application_name so it is attributable in `pg_stat_activity` / `dev:pg_health`
+ * (postgres-js always overrides a database-level `ALTER DATABASE ... SET
+ * application_name` default with its own startup parameter, so that alone —
+ * see `mainUrl()`'s ALTER DATABASE elsewhere in this codebase — does not
+ * work); (2) applies the WI-3816 dead-client zombie-detection GUC
+ * (`client_connection_check_interval`) + tightened TCP keepalives, so a
+ * long-lived pool whose OWNING PROCESS dies without a clean `.end()` (crash,
+ * `dev:restart`, SIGKILL — common on this dev box) gets reaped by the BACKEND
+ * itself instead of sitting idle forever (this pair of pools was the single
+ * largest attributable contributor to the server-wide connection-saturation
+ * crit: 28 idle, unattributed `postgres.js` connections on `papercusp_su`).
+ * Keep this in sync with `@papercusp/db-org`'s copy if either changes.
+ */
+function suPoolConnectionOptions(label: string): {
+  onnotice: () => void;
+  connection: Record<string, string>;
+} {
+  const appName = `pcusp:${label}:p${process.pid}`.slice(0, 63);
+  return {
+    onnotice: () => {},
+    connection: {
+      application_name: appName,
+      client_connection_check_interval: '30000',
+      tcp_keepalives_idle: '30',
+      tcp_keepalives_interval: '10',
+      tcp_keepalives_count: '3',
+    },
+  };
+}
+
 export function getTxPool(): Sql {
   if (!txPool) {
     txPool = postgres(suUrl(), {
+      ...suPoolConnectionOptions('su-lock-tx'),
       max: 10,
       prepare: false,
       // Run our SET LOCAL inside each txn; don't let postgres-js auto-prepare
@@ -88,6 +125,7 @@ export function getTxPool(): Sql {
 export function getListenerPool(): Sql {
   if (!listenerPool) {
     listenerPool = postgres(suUrl(), {
+      ...suPoolConnectionOptions('su-lock-listener'),
       max: 20, // Cap on concurrent workspace listeners — audit reviewer #3
       prepare: false,
     });
