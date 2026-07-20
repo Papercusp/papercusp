@@ -1527,25 +1527,6 @@ export const promptCompositionsInHarnessShared = harnessShared.table("prompt_com
 	pgPolicy("prompt_compositions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const substrateOutboxInHarnessShared = harnessShared.table("substrate_outbox", {
-	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	tableName: text("table_name").notNull(),
-	op: text().notNull(),
-	key: text().notNull(),
-	row: jsonb(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	drainedAt: bigint("drained_at", { mode: "number" }),
-	opHlc: text("op_hlc"),
-	drainedLogKey: text("drained_log_key"),
-}, (table) => [
-	index("substrate_outbox_drain_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.drainedAt.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("text_ops")),
-	check("substrate_outbox_op_check", sql`op = ANY (ARRAY['put'::text, 'del'::text])`),
-]);
-
 export const gitExportOutboxInHarnessShared = harnessShared.table("git_export_outbox", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -2948,6 +2929,27 @@ export const resourceAllotmentsInHarnessShared = harnessShared.table("resource_a
 	check("resource_allotments_status", sql`status = ANY (ARRAY['active'::text, 'paused'::text])`),
 	check("resource_allotments_kind", sql`resource_kind = ANY (ARRAY['account'::text, 'gpu'::text, 'agent_slot'::text])`),
 	check("resource_allotments_quantity", sql`((resource_kind = 'agent_slot'::text) AND (quantity IS NOT NULL) AND (quantity >= 1) AND (quantity <= 1000)) OR ((resource_kind <> 'agent_slot'::text) AND (quantity IS NULL))`),
+]);
+
+export const substrateOutboxInHarnessShared = harnessShared.table("substrate_outbox", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	tableName: text("table_name").notNull(),
+	op: text().notNull(),
+	key: text().notNull(),
+	row: jsonb(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	drainedAt: bigint("drained_at", { mode: "number" }),
+	opHlc: text("op_hlc"),
+	drainedLogKey: text("drained_log_key"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	quarantinedAt: bigint("quarantined_at", { mode: "number" }),
+}, (table) => [
+	index("substrate_outbox_drain_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.drainedAt.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("text_ops")),
+	check("substrate_outbox_op_check", sql`op = ANY (ARRAY['put'::text, 'del'::text])`),
 ]);
 
 export const agentSeatConsumptionsInHarnessShared = harnessShared.table("agent_seat_consumptions", {
@@ -4828,6 +4830,17 @@ export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
 }, (table) => [
 	primaryKey({ columns: [table.workspaceId, table.scope], name: "carry_notes_pkey"}),
 	pgPolicy("carry_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const secretsGuardPathExemptionsInHarnessShared = harnessShared.table("secrets_guard_path_exemptions", {
+	workspaceId: text("workspace_id").notNull(),
+	path: text().notNull(),
+	reason: text().default('').notNull(),
+	createdBy: text("created_by").default('').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.workspaceId, table.path], name: "secrets_guard_path_exemptions_pkey"}),
+	pgPolicy("secrets_guard_path_exemptions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const p2PGrantorEpochsInHarnessShared = harnessShared.table("p2p_grantor_epochs", {
