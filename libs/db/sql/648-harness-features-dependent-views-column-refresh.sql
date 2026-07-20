@@ -55,6 +55,30 @@
 -- = one implicit transaction (files >=215 get the runner's own transaction
 -- wrap too) — a failure on any one view rolls the whole file back, so there
 -- is no partial-drift window.
+--
+-- INCIDENT (caught + fixed live same-day, 2026-07-20): the FIRST applied
+-- version of this file omitted DISTINCT on the cursor query below. pg_depend
+-- carries roughly one row PER COLUMN REFERENCE from a dependent view's rule
+-- back to harness_features_consolidated, so the un-DISTINCT'd cursor iterated
+-- each dependent ~71 TIMES instead of once. Iteration 1 correctly rebuilt the
+-- view with its slug filter; every subsequent iteration re-read
+-- `pg_get_viewdef(r.view_oid, ...)` against the NOW-STALE oid captured before
+-- iteration 1's DROP — pg_get_viewdef on a stale oid returns NULL, so v_slug
+-- came back NULL, the "unrecognized shape" safety valve's `!~` comparison
+-- against a NULL v_viewdef evaluated to NULL (not TRUE) and fell through
+-- instead of skipping, and the view got dropped+recreated a SECOND time with
+-- NO WHERE clause at all — silently exposing every OTHER harness's rows
+-- through what should have been a slug-scoped view, for all 33 real
+-- (non-harness_shared) dependents. Caught immediately by a post-apply
+-- row-count sanity check (a slug-scoped harness showing the SAME total row
+-- count as the deliberately-unfiltered alias), root-caused, and corrected
+-- live within the same maintenance window (reconstructed each correct slug
+-- from harness_shared.work_items + harness_shared.harness_registry via the
+-- same `harnessSchemaName` forward transform scaffold-harness-schema.ts
+-- uses, since the stale-oid failure meant the ORIGINAL filter text was gone
+-- by the time the bug was noticed). The `SELECT DISTINCT` below is the fix —
+-- collapses the cursor to exactly one row per dependent view, so
+-- `v_viewdef`/`v_slug` are read ONCE per view, before that view's own DROP.
 
 DO $wi_ei18159810588110766$
 DECLARE
@@ -65,7 +89,7 @@ DECLARE
   v_viewdef text;
 BEGIN
   FOR r IN
-    SELECT
+    SELECT DISTINCT
       dependent_ns.nspname AS schema_name,
       dependent_view.relname AS view_name,
       dependent_view.oid AS view_oid,
