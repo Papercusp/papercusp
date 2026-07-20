@@ -61,3 +61,12 @@ export {
   resolveBuiltinExtends,
 } from './loader.js';
 export type { LoadedBlueprint, ResolveExtendsPath, BlueprintValidateRegistry } from './loader.js';
+// Launch-eligibility guard (WI-5645): read a resolved blueprint's inherited
+// `retired` marker, and the assert-form for a launch/spend chokepoint.
+export {
+  blueprintRetirement,
+  describeBlueprintRetirement,
+  assertBlueprintLaunchEligible,
+  BlueprintRetiredError,
+} from './retirement.js';
+export type { BlueprintRetirementInfo } from './retirement.js';

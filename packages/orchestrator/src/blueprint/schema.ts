@@ -929,6 +929,35 @@ export const BlueprintSchema = z.object({
   kind: z.enum(['pot', 'harness']).default('harness'),
   version: z.string().default('0.1.0'),
   description: z.string().optional(),
+  /**
+   * Structured retirement marker (WI-5645 — no-retirement-launch-guard). Before
+   * this, "retired" was ONLY a human-readable convention inside `description`
+   * (see CLAUDE.md "Retired / preserved-not-active surfaces") — nothing machine
+   * checked it, so an autoloop (gym or otherwise) could spend real LLM cost
+   * against a blueprint everyone believed was dormant (EI-18177667809538623:
+   * $14.51+ spent optimizing the retired `coding-factory` via `external-bench`,
+   * which `extends: coding-factory`).
+   *
+   * Deep-merges like any other object field (loader.ts `mergeRaw`): a child that
+   * does not declare its own `retired` INHERITS its parent's — retirement
+   * propagates down an `extends` chain by default, so marking an ancestor
+   * retired automatically retires every undeclared descendant. A child may
+   * explicitly REVIVE by setting `retired: null` (a non-plain-object child value
+   * replaces the parent's wholesale, per `mergeRaw`).
+   *
+   * Read via `blueprintRetirement()` (retirement.ts) — the one place that turns
+   * this into a launch-eligibility verdict; don't hand-check `.retired` at call
+   * sites.
+   */
+  retired: z
+    .object({
+      /** When it was retired (free-form — a date or a plan/decision reference). */
+      at: z.string().optional(),
+      /** Why, and what (if anything) it takes to revive it. */
+      reason: z.string().optional(),
+    })
+    .nullable()
+    .optional(),
   workItem: WorkItemSchema,
   roles: z.array(BlueprintRoleSchema).default([]),
   spine: SpineSchema,
@@ -1017,6 +1046,8 @@ export type BlueprintGym = z.infer<typeof GymSchema>;
 export type BlueprintKnobs = z.infer<typeof KnobsSchema>;
 export type BlueprintTriggers = z.infer<typeof TriggersSchema>;
 export type BlueprintDispatch = z.infer<typeof DispatchSchema>;
+/** The structured `retired` marker's shape (WI-5645) — see `BlueprintSchema.retired`. */
+export type BlueprintRetired = z.infer<typeof BlueprintSchema.shape.retired>;
 export type BlueprintEnvironment = z.infer<typeof EnvironmentSpecSchema>;
 export type BlueprintEnvService = z.infer<typeof EnvServiceSchema>;
 export type BlueprintHeader = z.infer<typeof BlueprintHeaderSchema>;
