@@ -47,9 +47,10 @@
 --       = NULL WHERE id = <id>` — the next drain pass re-attempts it fresh.
 --
 -- Idempotent: ADD COLUMN IF NOT EXISTS.
-
-\set ON_ERROR_STOP on
-BEGIN;
+-- NOTE: no top-level BEGIN/COMMIT and no psql \set meta-commands — the
+-- migration runner (pg-based db:migrate) applies each migration inside its
+-- own transaction and records schema_migrations in that same txn; an explicit
+-- transaction here breaks that wrapping and is rejected by lint-migrations.
 
 ALTER TABLE harness_shared.substrate_outbox
   ADD COLUMN IF NOT EXISTS quarantined_at bigint;
