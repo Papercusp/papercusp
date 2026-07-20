@@ -18,26 +18,35 @@
 -- so they survive the ephemeral-PG teardown and the tabs populate. Heavy blobs
 -- (deterministic_signals, trace/distilled refs, run params) are deliberately NOT copied.
 --
--- Scoping: unlike the ephemeral gym PG (one throwaway DB per cycle ⇒ globally-unique ids),
--- this is ONE shared table across every gym harness + workspace, and the gym's fixed task /
--- variant / cycle ids ('gym-loop-health', 'baseline', 'cyc-0', …) are IDENTICAL across
--- harnesses. So every table is keyed by (workspace_id, harness_slug, <original id>) and every
--- read/join is scoped by (workspace_id, harness_slug). No cross-table FOREIGN KEYS: this is a
--- denormalized read-cache populated by a best-effort copy, so a partial copy must never fail
--- on referential integrity — the readers tolerate a missing join row.
+-- SEPARATE SCHEMA (harness_gym_durable), NOT harness_gym — DELIBERATE. A gym cycle boots a
+-- full operator against its ephemeral gym PG, which applies BOTH this live sql-NNN sequence
+-- AND the gym-PG-resident gym schema (packages/operator-core/lib/gym/sql/001-harness-gym.sql,
+-- via applyGymSchema). That gym schema owns `harness_gym` with a DIFFERENT shape (run_id is a
+-- bare PK, FKs reference it). If this migration also created `harness_gym`, the `CREATE TABLE
+-- IF NOT EXISTS` no-op would leave whichever ran first, and the loser's FK / NOT NULL columns
+-- would break the other — which broke every gym cycle ("no unique constraint matching given
+-- keys for referenced table gym_runs"). A distinct schema name keeps the durable read-cache
+-- and the ephemeral run store completely independent in every database that hosts both.
+--
+-- Scoping: this is ONE shared schema across every gym harness + workspace, and the gym's
+-- fixed task / variant / cycle ids ('gym-loop-health', 'baseline', 'cyc-0', …) are IDENTICAL
+-- across harnesses. So every table is keyed by (workspace_id, harness_slug, <original id>) and
+-- every read/join is scoped by (workspace_id, harness_slug). No cross-table FOREIGN KEYS: a
+-- denormalized read-cache populated by a best-effort copy must never fail a partial copy on
+-- referential integrity — the readers tolerate a missing join row.
 --
 -- Idempotent (CREATE ... IF NOT EXISTS); additive; fresh-migrate-safe. RLS + the runtime-role
 -- grants mirror harness_shared.gym_proposals (migration 110): harness_admin (the operator's
 -- admin pool + the copy step) owns + bypasses RLS; harness_app reads via routeWithWorkspace
 -- under the app.workspace_id GUC policy.
 
-CREATE SCHEMA IF NOT EXISTS harness_gym;
-GRANT USAGE ON SCHEMA harness_gym TO harness_app;
-GRANT USAGE ON SCHEMA harness_gym TO harness_zero;
+CREATE SCHEMA IF NOT EXISTS harness_gym_durable;
+GRANT USAGE ON SCHEMA harness_gym_durable TO harness_app;
+GRANT USAGE ON SCHEMA harness_gym_durable TO harness_zero;
 
--- Synthetic feature tasks, by pool (mirrors the ephemeral harness_gym.gym_tasks columns the
--- read joins need: task_id + pool; the descriptive columns ride along for future UI use).
-CREATE TABLE IF NOT EXISTS harness_gym.gym_tasks (
+-- Synthetic feature tasks, by pool (mirrors the ephemeral gym_tasks columns the read joins
+-- need: task_id + pool; the descriptive columns ride along for future UI use).
+CREATE TABLE IF NOT EXISTS harness_gym_durable.gym_tasks (
     workspace_id text NOT NULL,
     harness_slug text NOT NULL,
     task_id      text NOT NULL,
@@ -52,7 +61,7 @@ CREATE TABLE IF NOT EXISTS harness_gym.gym_tasks (
 );
 
 -- Prompt-overlay variants + lineage.
-CREATE TABLE IF NOT EXISTS harness_gym.gym_variants (
+CREATE TABLE IF NOT EXISTS harness_gym_durable.gym_variants (
     workspace_id       text NOT NULL,
     harness_slug       text NOT NULL,
     variant_id         text NOT NULL,
@@ -69,7 +78,7 @@ CREATE TABLE IF NOT EXISTS harness_gym.gym_variants (
 -- One (variant x task x cycle x repeat) run. Only the columns the read joins need are copied
 -- (variant_id / task_id / cycle) + a few observability fields; the heavy JSONB signals and
 -- trace refs stay in the ephemeral gym PG.
-CREATE TABLE IF NOT EXISTS harness_gym.gym_runs (
+CREATE TABLE IF NOT EXISTS harness_gym_durable.gym_runs (
     workspace_id   text NOT NULL,
     harness_slug   text NOT NULL,
     run_id         text NOT NULL,
@@ -85,7 +94,7 @@ CREATE TABLE IF NOT EXISTS harness_gym.gym_runs (
 );
 
 -- Frozen judge output; the composite the frontier/compare views read, keyed on rubric_hash.
-CREATE TABLE IF NOT EXISTS harness_gym.gym_scores (
+CREATE TABLE IF NOT EXISTS harness_gym_durable.gym_scores (
     workspace_id text NOT NULL,
     harness_slug text NOT NULL,
     run_id       text NOT NULL,
@@ -103,7 +112,7 @@ CREATE TABLE IF NOT EXISTS harness_gym.gym_scores (
 );
 
 -- Loop audit trail — the Cycles tab.
-CREATE TABLE IF NOT EXISTS harness_gym.gym_cycles (
+CREATE TABLE IF NOT EXISTS harness_gym_durable.gym_cycles (
     workspace_id     text NOT NULL,
     harness_slug     text NOT NULL,
     cycle_id         text NOT NULL,
@@ -117,56 +126,56 @@ CREATE TABLE IF NOT EXISTS harness_gym.gym_cycles (
     PRIMARY KEY (workspace_id, harness_slug, cycle_id)
 );
 
-CREATE INDEX IF NOT EXISTS gym_runs_ws_harness_task_idx
-    ON harness_gym.gym_runs (workspace_id, harness_slug, task_id);
-CREATE INDEX IF NOT EXISTS gym_runs_ws_harness_variant_idx
-    ON harness_gym.gym_runs (workspace_id, harness_slug, variant_id);
-CREATE INDEX IF NOT EXISTS gym_tasks_ws_harness_pool_idx
-    ON harness_gym.gym_tasks (workspace_id, harness_slug, pool);
-CREATE INDEX IF NOT EXISTS gym_cycles_ws_harness_cycle_idx
-    ON harness_gym.gym_cycles (workspace_id, harness_slug, cycle);
+CREATE INDEX IF NOT EXISTS gym_durable_runs_ws_harness_task_idx
+    ON harness_gym_durable.gym_runs (workspace_id, harness_slug, task_id);
+CREATE INDEX IF NOT EXISTS gym_durable_runs_ws_harness_variant_idx
+    ON harness_gym_durable.gym_runs (workspace_id, harness_slug, variant_id);
+CREATE INDEX IF NOT EXISTS gym_durable_tasks_ws_harness_pool_idx
+    ON harness_gym_durable.gym_tasks (workspace_id, harness_slug, pool);
+CREATE INDEX IF NOT EXISTS gym_durable_cycles_ws_harness_cycle_idx
+    ON harness_gym_durable.gym_cycles (workspace_id, harness_slug, cycle);
 
 -- Workspace isolation, mirroring harness_shared.gym_proposals (migration 110). harness_admin
 -- (the operator admin pool + the copy step) is a superuser role that bypasses RLS; the policy
 -- keeps the harness_app read path (routeWithWorkspace) workspace-scoped.
-ALTER TABLE harness_gym.gym_tasks ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS gym_tasks_workspace_isolation ON harness_gym.gym_tasks;
-CREATE POLICY gym_tasks_workspace_isolation ON harness_gym.gym_tasks
+ALTER TABLE harness_gym_durable.gym_tasks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gym_tasks_workspace_isolation ON harness_gym_durable.gym_tasks;
+CREATE POLICY gym_tasks_workspace_isolation ON harness_gym_durable.gym_tasks
     USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
     WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
 
-ALTER TABLE harness_gym.gym_variants ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS gym_variants_workspace_isolation ON harness_gym.gym_variants;
-CREATE POLICY gym_variants_workspace_isolation ON harness_gym.gym_variants
+ALTER TABLE harness_gym_durable.gym_variants ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gym_variants_workspace_isolation ON harness_gym_durable.gym_variants;
+CREATE POLICY gym_variants_workspace_isolation ON harness_gym_durable.gym_variants
     USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
     WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
 
-ALTER TABLE harness_gym.gym_runs ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS gym_runs_workspace_isolation ON harness_gym.gym_runs;
-CREATE POLICY gym_runs_workspace_isolation ON harness_gym.gym_runs
+ALTER TABLE harness_gym_durable.gym_runs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gym_runs_workspace_isolation ON harness_gym_durable.gym_runs;
+CREATE POLICY gym_runs_workspace_isolation ON harness_gym_durable.gym_runs
     USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
     WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
 
-ALTER TABLE harness_gym.gym_scores ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS gym_scores_workspace_isolation ON harness_gym.gym_scores;
-CREATE POLICY gym_scores_workspace_isolation ON harness_gym.gym_scores
+ALTER TABLE harness_gym_durable.gym_scores ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gym_scores_workspace_isolation ON harness_gym_durable.gym_scores;
+CREATE POLICY gym_scores_workspace_isolation ON harness_gym_durable.gym_scores
     USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
     WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
 
-ALTER TABLE harness_gym.gym_cycles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS gym_cycles_workspace_isolation ON harness_gym.gym_cycles;
-CREATE POLICY gym_cycles_workspace_isolation ON harness_gym.gym_cycles
+ALTER TABLE harness_gym_durable.gym_cycles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gym_cycles_workspace_isolation ON harness_gym_durable.gym_cycles;
+CREATE POLICY gym_cycles_workspace_isolation ON harness_gym_durable.gym_cycles
     USING ((workspace_id = current_setting('app.workspace_id'::text, true)))
     WITH CHECK ((workspace_id = current_setting('app.workspace_id'::text, true)));
 
 -- Runtime-role grants (harness_app reads via routeWithWorkspace; harness_zero read-only).
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_gym.gym_tasks TO harness_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_gym.gym_variants TO harness_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_gym.gym_runs TO harness_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_gym.gym_scores TO harness_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON harness_gym.gym_cycles TO harness_app;
-GRANT SELECT ON harness_gym.gym_tasks TO harness_zero;
-GRANT SELECT ON harness_gym.gym_variants TO harness_zero;
-GRANT SELECT ON harness_gym.gym_runs TO harness_zero;
-GRANT SELECT ON harness_gym.gym_scores TO harness_zero;
-GRANT SELECT ON harness_gym.gym_cycles TO harness_zero;
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_gym_durable.gym_tasks TO harness_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_gym_durable.gym_variants TO harness_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_gym_durable.gym_runs TO harness_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_gym_durable.gym_scores TO harness_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_gym_durable.gym_cycles TO harness_app;
+GRANT SELECT ON harness_gym_durable.gym_tasks TO harness_zero;
+GRANT SELECT ON harness_gym_durable.gym_variants TO harness_zero;
+GRANT SELECT ON harness_gym_durable.gym_runs TO harness_zero;
+GRANT SELECT ON harness_gym_durable.gym_scores TO harness_zero;
+GRANT SELECT ON harness_gym_durable.gym_cycles TO harness_zero;
