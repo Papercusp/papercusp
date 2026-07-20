@@ -55,27 +55,47 @@ CREATE OR REPLACE FUNCTION harness_shared.pot_membership_ok(p_ws text, p_slug te
 $$;
 
 -- ── 3. the BEFORE INSERT / UPDATE-OF-harness_slug guard. ────────────────────────────
+--   SELF-HEALING, deploy-order-safe: a known workspace-global scope label
+--   (operator:<ws> / operator / * / @singleton / all / hive-canary / the bare
+--   workspace id) is REWRITTEN to the platform Pot — the same mapping migration 649
+--   applied — so a writer that lacks the P-005 app-layer resolver (e.g. an operator
+--   still running pre-P-005 code during a rolling deploy) still lands in a REAL Pot
+--   instead of failing. Only a genuinely unmappable, made-up slug is REJECTED (a typo
+--   must be loud). The app resolver (P-005) already homes these before the row arrives,
+--   so for the tool paths the rewrite branch never fires — this is the backstop.
 CREATE OR REPLACE FUNCTION harness_shared.assert_work_item_pot_membership()
   RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE v_platform text;
 BEGIN
-  -- Federation replicas own their slug — never reject a remote-origin write.
+  -- Federation replicas own their slug — never touch a remote-origin write.
   IF COALESCE(NEW.origin, 'local') <> 'local' THEN RETURN NEW; END IF;
   -- Unscoped / cross-workspace SU rows have no per-workspace Pot set to enforce.
   IF NEW.workspace_id IS NULL OR NEW.workspace_id = '' OR NEW.workspace_id = '*' THEN
     RETURN NEW;
   END IF;
   -- Fail OPEN for a workspace with no platform Pot (isolated fixtures / un-potted tenant).
-  IF harness_shared.workspace_platform_pot(NEW.workspace_id) IS NULL THEN RETURN NEW; END IF;
-  -- Enforce: the (canonicalized) harness_slug must name a real Pot in this workspace.
-  IF NOT harness_shared.pot_membership_ok(NEW.workspace_id, NEW.harness_slug) THEN
-    RAISE EXCEPTION
-      'pot-membership violation: work_item %/% harness_slug ''%'' is not a real Pot in workspace ''%''',
-      NEW.feature_id, NEW.item_kind, NEW.harness_slug, NEW.workspace_id
-      USING ERRCODE = 'check_violation',
-            HINT = 'Every work item must belong to a real Pot (harness_shared.pots). '
-                   'File under a real Pot home slug, or file with no harness to use the '
-                   'workspace platform Pot (pot-membership-enforcement-2026-07-20 P-006).';
+  v_platform := harness_shared.workspace_platform_pot(NEW.workspace_id);
+  IF v_platform IS NULL THEN RETURN NEW; END IF;
+  -- Already a real Pot (canonicalized) → nothing to do.
+  IF harness_shared.pot_membership_ok(NEW.workspace_id, NEW.harness_slug) THEN
+    RETURN NEW;
   END IF;
+  -- Not a real Pot. A known workspace-global label self-heals to the platform Pot.
+  IF NEW.harness_slug IS NULL OR NEW.harness_slug = ''
+     OR NEW.harness_slug LIKE 'operator:%'
+     OR NEW.harness_slug IN ('operator', '*', '@singleton', 'all', 'hive-canary')
+     OR NEW.harness_slug = NEW.workspace_id THEN
+    NEW.harness_slug := v_platform;
+    RETURN NEW;
+  END IF;
+  -- A genuinely unmappable, made-up slug → reject.
+  RAISE EXCEPTION
+    'pot-membership violation: work_item %/% harness_slug ''%'' is not a real Pot in workspace ''%''',
+    NEW.feature_id, NEW.item_kind, NEW.harness_slug, NEW.workspace_id
+    USING ERRCODE = 'check_violation',
+          HINT = 'Every work item must belong to a real Pot (harness_shared.pots). '
+                 'File under a real Pot home slug, or file with no harness to use the '
+                 'workspace platform Pot (pot-membership-enforcement-2026-07-20 P-006).';
   RETURN NEW;
 END;
 $$;
