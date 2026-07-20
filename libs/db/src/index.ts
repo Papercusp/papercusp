@@ -16,6 +16,7 @@ export {
   setAdminPoolStatementTimeoutProvider,
   _resetForTests,
   PG_BIGINT_AS_NUMBER_TYPES,
+  longLivedPoolConnectionOptions,
   type OrgPgHandle,
 } from './connection';
 export { withWorkspace, withWorkspaceQuery, withHarnessSchema, harnessQuery } from './workspace-context';

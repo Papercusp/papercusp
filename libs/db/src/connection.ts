@@ -456,6 +456,56 @@ function pgAppName(label: string): string {
 }
 
 /**
+ * Reusable startup-options fragment for hand-rolled LONG-LIVED `postgres(url, {...})`
+ * pools/singletons OUTSIDE the canonical getOrgPg()/getHarnessPg()/getOrgPgApp()
+ * clients — a dedicated LISTEN bus, a singleton background poller, a shared utility
+ * pool, etc. (EI-18122461766429683: root-caused a server-wide PG connection
+ * saturation crit — 87+ idle, permanently-unattributed `application_name:'postgres.js'`
+ * connections had accumulated across the su-lock pools and ~9 operator-core singleton
+ * pools/listeners that each hand-roll their own `postgres(...)` call instead of going
+ * through `buildClient()`. Every one of those was missing BOTH fixes below.)
+ *
+ * 1. Tags the connection with a `pcusp:<label>:p<pid>` application_name (pgAppName)
+ *    so it is attributable in `pg_stat_activity` / `dev:pg_health` — the ALTER-DATABASE
+ *    default some pools relied on for this (e.g. su-lock's `papercusp_su` database)
+ *    does NOT work: postgres-js always sends its own `application_name: 'postgres.js'`
+ *    startup parameter, which overrides a database-level SET default.
+ * 2. Applies the SAME dead-client zombie-detection GUCs `buildClient()` applies
+ *    (WI-3816's `client_connection_check_interval` + tightened TCP keepalives): a
+ *    long-lived pool's OWNING PROCESS can die (crash, restart, `dev:restart`, an
+ *    abrupt kill without a clean `.end()`) without the TCP FIN reliably reaching
+ *    Postgres, leaving its backend connection idle FOREVER — nothing server-side
+ *    reaps it, since the client-side `idle_timeout` option only runs while the
+ *    (now-dead) client process is alive to execute it. `client_connection_check_interval`
+ *    makes the BACKEND itself detect the dead socket and abort, independent of the
+ *    client's survival.
+ *
+ * Only startup params — safe to add unconditionally here because every caller of
+ * this helper connects DIRECT (via `getHarnessAdminUrl()`/`adminUrl()`, never through
+ * `maybePgbouncer()`), so there is no transaction-pooler in front to reject them (see
+ * `buildConnectionOptions`'s `pooled` branch for the case where that DOES matter).
+ *
+ * Usage: `postgres(url, { ...longLivedPoolConnectionOptions('coord-inbox-bus'), max: 1 })`
+ * — spread FIRST so a call site's own `onnotice`/`connection` overrides still win if it
+ * has a reason to.
+ */
+export function longLivedPoolConnectionOptions(label: string): {
+  onnotice: () => void;
+  connection: Record<string, string>;
+} {
+  return {
+    onnotice: () => {},
+    connection: {
+      application_name: pgAppName(label),
+      client_connection_check_interval: '30000',
+      tcp_keepalives_idle: '30',
+      tcp_keepalives_interval: '10',
+      tcp_keepalives_count: '3',
+    },
+  };
+}
+
+/**
  * Size of each org pool (getOrgPg admin + getOrgPgApp app). C1-1 of
  * backend-connection-scaling-2026-06-17. An explicit `PAPERCUSP_DB_POOL_MAX`
  * wins; otherwise the resource-profile size, but BOUNDED so that
