@@ -3853,6 +3853,20 @@ export const directivesInPapercuspShared = papercuspShared.table("directives", {
 	index("directives_status_idx").using("btree", table.status.asc().nullsLast().op("text_ops")),
 ]);
 
+export const desktopPerfRunsInHarnessShared = harnessShared.table("desktop_perf_runs", {
+	id: text().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
+	source: text().notNull(),
+	status: text().notNull(),
+	gitSha: text("git_sha"),
+	runId: text("run_id"),
+	measures: jsonb().default([]).notNull(),
+}, (table) => [
+	index("desktop_perf_runs_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.createdTs.desc().nullsFirst().op("int8_ops")),
+]);
+
 export const bak20260719ReslugOperatorChangetaskInHarnessShared = harnessShared.table("bak_20260719_reslug_operator_changetask", {
 	featureId: text("feature_id").notNull(),
 	oldHarnessSlug: text("old_harness_slug").notNull(),
@@ -8210,6 +8224,43 @@ export const beekeeperScoresInHarnessShared = harnessShared.view("beekeeper_scor
 	scoredAt: timestamp("scored_at", { withTimezone: true, mode: 'string' }),
 }).as(sql`SELECT run_id, judge_model, rubric_hash, judge_temp, weights, success, tokens_per_task, time_to_green_secs, first_attempt_pass, recurrence, escalation, recall_hit, d1, d2, d3, composite, rationale, scored_at FROM harness_shared.cup_keeper_scores`);
 
+export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues", {	workspaceId: text("workspace_id"),
+	issueId: text("issue_id"),
+	scope: text(),
+	title: text(),
+	body: text(),
+	severity: text(),
+	source: text(),
+	state: text(),
+	assignee: text(),
+	foundDuring: text("found_during"),
+	linkedFeatureId: text("linked_feature_id"),
+	createdBy: text("created_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
+	authorPubkey: text("author_pubkey"),
+	origin: text(),
+	search: tsvectorCustom("_search"),
+	kind: text(),
+	payload: jsonb(),
+	assignedBy: text("assigned_by"),
+	assignedAt: timestamp("assigned_at", { withTimezone: true, mode: 'string' }),
+	assigneeRank: integer("assignee_rank"),
+	rankWriter: text("rank_writer"),
+	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	signalOrigin: text("signal_origin"),
+	fedHlc: text("fed_hlc"),
+	terminalOwner: text("terminal_owner"),
+	terminalCompletionRef: text("terminal_completion_ref"),
+	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
+	baseHarnessSlug: text("base_harness_slug"),
+	baseOrigin: text("base_origin"),
+	featureOrder: integer("feature_order"),
+	terminalReason: text("terminal_reason"),
+}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+
 export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("harness_features_consolidated", {	harnessSlug: text("harness_slug"),
 	featureId: text("feature_id"),
 	title: text(),
@@ -8289,43 +8340,8 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("ha
 	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
 	embedding: vector({ dimensions: 384 }),
 	embeddingMode: text("embedding_mode"),
-}).with({"checkOption":"cascaded"}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
-
-export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues", {	workspaceId: text("workspace_id"),
-	issueId: text("issue_id"),
-	scope: text(),
-	title: text(),
-	body: text(),
-	severity: text(),
-	source: text(),
-	state: text(),
-	assignee: text(),
-	foundDuring: text("found_during"),
-	linkedFeatureId: text("linked_feature_id"),
-	createdBy: text("created_by"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
-	authorPubkey: text("author_pubkey"),
-	origin: text(),
-	search: tsvectorCustom("_search"),
-	kind: text(),
-	payload: jsonb(),
-	assignedBy: text("assigned_by"),
-	assignedAt: timestamp("assigned_at", { withTimezone: true, mode: 'string' }),
-	assigneeRank: integer("assignee_rank"),
-	rankWriter: text("rank_writer"),
-	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	signalOrigin: text("signal_origin"),
-	fedHlc: text("fed_hlc"),
-	terminalOwner: text("terminal_owner"),
-	terminalCompletionRef: text("terminal_completion_ref"),
-	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
-	baseHarnessSlug: text("base_harness_slug"),
-	baseOrigin: text("base_origin"),
-	featureOrder: integer("feature_order"),
-}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+	terminalReason: text("terminal_reason"),
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
 
 export const operatorDecisionsInHarnessShared = harnessShared.view("operator_decisions", {	id: text(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
