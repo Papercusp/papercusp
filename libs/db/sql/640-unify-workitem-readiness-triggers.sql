@@ -1,7 +1,7 @@
 -- 640 · work-item-status-full-unify (P-006) — teach the readiness / terminal-detection
--- layer + the federation CDC + the two family VIEWS about the UNIFIED terminals
--- (done | dropped), so the P-003 writer-flip can store them without breaking
--- blocker-readiness, dependent-sync, or the passed/resolved/deprecated/closed nuance.
+-- layer + the federation CDC about the UNIFIED terminals (done | dropped), so the P-003
+-- writer-flip can store them without breaking blocker-readiness, dependent-sync, or
+-- (on the wire) the passed/resolved/deprecated/closed nuance.
 --
 -- Runs AFTER 638 (which backfilled work_items.status → unified enum + added the
 -- terminal_reason column). EVERY change here is a TRANSITIONAL SUPERSET (legacy ∪
@@ -9,6 +9,15 @@
 -- resolved/closed) AND the unified done/dropped, so it is correct on EITHER side of the
 -- writer-flip. The cleanup pass narrows these to ('done','dropped') once no writer emits
 -- the legacy spellings.
+--
+-- terminal_reason is written by the P-003 writer via a DIRECT work_items base-table
+-- UPDATE (mirroring the reopen-clear path) and read on the wire via v_rec.terminal_reason
+-- in the CDC below — neither goes through the family views, so this migration does NOT
+-- recreate them. Re-exposing terminal_reason through engineer_issues /
+-- harness_features_consolidated for READERS (UI chips, *:list) is deferred to P-007, where
+-- the view SELECT must be rebuilt from the MIGRATION-CHAIN column order — NOT the live
+-- pg_get_viewdef, which has DRIFTED (live has `wave, verified_done_at_remote_ts`; the chain
+-- has them swapped), so a CREATE OR REPLACE VIEW copied from live fails on the fresh chain.
 --
 -- This ALSO fixes a LATENT bug 638 introduced: 638 backfilled with USER triggers DISABLED,
 -- so the maintained work_item_blocked sidecar never re-ran, AND the readiness predicates
@@ -70,128 +79,7 @@ CREATE TRIGGER wir_status_sync_dependents_trg
   )
   EXECUTE FUNCTION harness_shared.wir_status_sync_dependents();
 
--- ── 3. Re-expose terminal_reason (added to the base table by 638) through BOTH family
---       views, so readers (P-007 UI chips / *:list / federation) can see the collapsed
---       nuance AND the auto-updatable harness_features_consolidated writer can STORE it.
---       CREATE OR REPLACE VIEW may only APPEND columns, so each SELECT is the exact
---       current definition with `terminal_reason` added at the tail. ──
-CREATE OR REPLACE VIEW harness_shared.engineer_issues AS
- SELECT workspace_id,
-    feature_id AS issue_id,
-        CASE
-            WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text
-            ELSE 'harness:'::text || harness_slug
-        END AS scope,
-    title,
-    COALESCE(summary, ''::text) AS body,
-    COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity,
-    COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source,
-    status AS state,
-    taken_by AS assignee,
-    (payload -> '_ei'::text) ->> 'found_during'::text AS found_during,
-    (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id,
-    (payload -> '_ei'::text) ->> 'created_by'::text AS created_by,
-    to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at,
-    to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at,
-    author_pubkey,
-    origin,
-    _search,
-    item_kind AS kind,
-    payload - '_ei'::text AS payload,
-    (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by,
-    taken_at AS assigned_at,
-    assignee_rank,
-    rank_writer,
-    rank_updated_at,
-    fed_ts,
-    COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin,
-    fed_hlc,
-    terminal_owner,
-    terminal_completion_ref,
-    last_progress_at,
-    harness_slug AS base_harness_slug,
-    origin AS base_origin,
-    feature_order,
-    terminal_reason
-   FROM harness_shared.work_items
-  WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text]);
-
-CREATE OR REPLACE VIEW harness_shared.harness_features_consolidated AS
- SELECT harness_slug,
-    feature_id,
-    title,
-    summary,
-    status,
-    attempts,
-    claims,
-    notes,
-    metadata,
-    kind,
-    project_id,
-    expected_cost_cents,
-    tags,
-    needs_human_review,
-    ts,
-    created_ts,
-    updated_ts,
-    parent_id,
-    goal_id,
-    taken_by,
-    taken_at,
-    expires_at,
-    workspace_id,
-    _search,
-    deprecation_reason,
-    see_also,
-    needs_design,
-    design_status,
-    design_spec_id,
-    discarded_design_work,
-    completion_ref,
-    created_by_github_user_id,
-    working_users,
-    worked_by_history,
-    wave,
-    verified_done_at_remote_ts,
-    verifier_last_error,
-    verifier_last_checked_at,
-    source_plan_slug,
-    source_plan_item_ids,
-    feature_order,
-    author_pubkey,
-    origin,
-    audit_verdict,
-    audit_reasons,
-    audited_at,
-    item_kind,
-    payload,
-    assignee_rank,
-    rank_writer,
-    rank_updated_at,
-    fed_ts,
-    redundancy,
-    swarm_affinity,
-    verified_author_github_user_id,
-    schedule,
-    schedule_active,
-    scheduled_at,
-    tzid,
-    template_slug,
-    run_seq,
-    requeue_count,
-    fed_hlc,
-    last_progress_at,
-    terminal_owner,
-    terminal_completion_ref,
-    last_released_by,
-    last_released_at,
-    embedding,
-    embedding_mode,
-    terminal_reason
-   FROM harness_shared.work_items
-  WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text]);
-
--- ── 4. Federation CDC: the issue-family outbox row is built column-by-column via
+-- ── 3. Federation CDC: the issue-family outbox row is built column-by-column via
 --       jsonb_build_object, so it must carry terminal_reason explicitly for the
 --       passed/resolved/deprecated/closed nuance to survive the wire (owner hard-req
 --       D-001). The FEATURE branch uses to_jsonb(v_rec) which already includes the new
@@ -321,7 +209,7 @@ AS $function$
     END;
     $function$;
 
--- ── 5. One-time recompute of the maintained work_item_blocked sidecar (feature family
+-- ── 4. One-time recompute of the maintained work_item_blocked sidecar (feature family
 --       only — the wir_ sync loop targets feature dependents). 638 backfilled with USER
 --       triggers disabled, so this sidecar is stale: entries whose blocker is now
 --       done/dropped must be dropped (the latent-bug fix), and any genuinely-blocked
