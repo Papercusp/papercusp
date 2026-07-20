@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
-import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config';
+import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SQL_DIR = join(here, '..', 'sql');

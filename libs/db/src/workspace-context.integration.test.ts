@@ -8,7 +8,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import postgres, { type Sql } from 'postgres';
-import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config';
+import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
 
 // The wrapper resolves its client through ./connection — point both at our test sql.
 const h = vi.hoisted(() => ({ sql: null as unknown as Sql }));

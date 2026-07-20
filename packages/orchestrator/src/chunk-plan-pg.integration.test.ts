@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import postgres, { type Sql } from 'postgres';
-import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config';
+import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
 import { persistPlan, readPlan, type ChunkPlanPgCtx } from './chunk-plan-pg.js';
 import type { OrchestratorPg } from './invoke.js';
 
