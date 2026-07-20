@@ -61,5 +61,3 @@ COMMENT ON COLUMN harness_shared.substrate_outbox.quarantined_at IS
   'is deliberately left undrained (drained_at stays NULL) and excluded from '
   'the drain SELECT batch + the federation-drain-reconcile stall metric. '
   'NULL = not quarantined (normal). Manual retry: SET quarantined_at = NULL.';
-
-COMMIT;
