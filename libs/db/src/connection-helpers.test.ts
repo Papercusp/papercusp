@@ -5,12 +5,30 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// pgbouncerEnabled() consults getResourceProfile().hostClass for the default
-// (unset-env) case. Mock it so the default is deterministic regardless of the
-// test host's core count. Same module specifier connection.ts imports.
-const mockProfile = vi.hoisted(() => ({ hostClass: 'server' as 'server' | 'workstation' | 'laptop' }));
+// pgbouncerEnabled() consults getResourceProfile().signals.physicalCores
+// (falling back to .cores) for the default (unset-env) case — NOT `hostClass`,
+// which is intentionally cgroup-quota-scoped (bug-drain-200k / EI-18217560711347466:
+// a CPU-quota-limited service reads `hostClass:'workstation'` on a genuine
+// 128-core box, which used to silently disable PgBouncer for it). Mock it so
+// the default is deterministic regardless of the test host's core count.
+// `hostClass` setter is kept for the bulk of the existing tests (which only
+// care about the coarse server/workstation/laptop bucket); `coresOverride` /
+// `physicalCoresOverride` let the quota-vs-real-machine tests diverge the two
+// signals independently. Same module specifier connection.ts imports.
+const mockProfile = vi.hoisted(() => ({
+  hostClass: 'server' as 'server' | 'workstation' | 'laptop',
+  coresOverride: undefined as number | undefined,
+  physicalCoresOverride: undefined as number | undefined,
+}));
+const HOST_CLASS_CORES = { server: 64, workstation: 12, laptop: 2 } as const;
 vi.mock('../../../../../packages/operator-core/lib/resource-profile', () => ({
-  getResourceProfile: () => ({ hostClass: mockProfile.hostClass }),
+  getResourceProfile: () => {
+    const cores = mockProfile.coresOverride ?? HOST_CLASS_CORES[mockProfile.hostClass];
+    return {
+      hostClass: mockProfile.hostClass,
+      signals: { cores, physicalCores: mockProfile.physicalCoresOverride ?? cores },
+    };
+  },
 }));
 
 import {
@@ -38,6 +56,8 @@ afterEach(() => {
   if (saved.pgPort === undefined) delete process.env.PAPERCUSP_PG_PORT;
   else process.env.PAPERCUSP_PG_PORT = saved.pgPort;
   mockProfile.hostClass = 'server';
+  mockProfile.coresOverride = undefined;
+  mockProfile.physicalCoresOverride = undefined;
 });
 
 describe('buildConnectionOptions — PgBouncer-safe startup params (no "unsupported startup parameter")', () => {
@@ -155,6 +175,42 @@ describe('pgbouncerEnabled — P-004 default-on for server-class native PG', () 
     delete process.env.PAPERCUSP_PG_PORT;
     mockProfile.hostClass = 'server';
     expect(pgbouncerEnabled()).toBe(true);
+  });
+
+  // bug-drain-200k (2026-07-21, EI-18217560711347466): a systemd unit with a
+  // CPUQuota (e.g. papercup-bg-host.service at 1600% = 16 cores) makes Node's
+  // cgroup-aware `os.availableParallelism()` — i.e. ResourceSignals.cores, what
+  // `hostClass` used to be keyed on — read 16 even on a genuine 128-core box,
+  // so the OLD hostClass-based check misclassified it 'workstation' and
+  // silently disabled PgBouncer, letting it open dozens of direct connections
+  // against the shared native PG (a real contributor to the connection-
+  // saturation regression). `physicalCores` (os.cpus().length, NOT quota-aware)
+  // must be consulted instead so a quota-limited process on a real server still
+  // pools. Same signal WI-5456 already fixed for deriveDatabaseTuning.
+  describe('WI-5456-class fix: keys off physicalCores, not the quota-scoped cores hostClass used', () => {
+    it('a CPU-quota-limited process (cores=16) on a genuine 128-physical-core box still defaults ON', () => {
+      delete process.env.PAPERCUSP_PGBOUNCER;
+      mockProfile.coresOverride = 16; // cgroup quota (os.availableParallelism())
+      mockProfile.physicalCoresOverride = 128; // the real machine (os.cpus().length)
+      expect(pgbouncerEnabled()).toBe(true);
+    });
+
+    it('a genuinely small machine (both signals <=16) still defaults OFF', () => {
+      delete process.env.PAPERCUSP_PGBOUNCER;
+      mockProfile.coresOverride = 8;
+      mockProfile.physicalCoresOverride = 8;
+      expect(pgbouncerEnabled()).toBe(false);
+    });
+
+    it('falls back to `cores` when physicalCores is not supplied (unchanged behavior for a single-signal caller)', () => {
+      delete process.env.PAPERCUSP_PGBOUNCER;
+      mockProfile.coresOverride = 64;
+      mockProfile.physicalCoresOverride = undefined;
+      expect(pgbouncerEnabled()).toBe(true);
+      mockProfile.coresOverride = 8;
+      mockProfile.physicalCoresOverride = undefined;
+      expect(pgbouncerEnabled()).toBe(false);
+    });
   });
 });
 

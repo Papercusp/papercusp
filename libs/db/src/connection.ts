@@ -321,11 +321,29 @@ export function _resolveUrlsForTests(): { app: string; admin: string } {
  *     break it). hostClass is the robust discriminator: a real embedded desktop is
  *     laptop/workstation-class, never `server`.
  *
- * NB: we deliberately gate on `hostClass`, NOT resource-profile `embeddedPg` —
- * `detectEmbeddedPg()` reports `embeddedPg=true` for ANY host that sets an explicit
- * DATABASE_URL, so it misfires on the dev box / a dedicated server pointing at
- * native PG via env (verified live: dev box reports embeddedPg=true). That
- * detection flaw is tracked separately; hostClass sidesteps it here.
+ * NB: we deliberately gate on physical-core-derived machine class, NOT
+ * `getResourceProfile().hostClass` — `hostClass` is intentionally derived from
+ * `ResourceSignals.cores` (`os.availableParallelism()`, cgroup-CPU-quota-aware:
+ * see its doc comment — "how much work can I, THIS PROCESS, actually do at
+ * once"), which is exactly right for agent/queue/pool-size caps but the WRONG
+ * signal for "is the underlying Postgres a shared native instance worth
+ * pooling" — that is a property of the MACHINE Postgres runs on, not of
+ * whichever one CPU-quota-limited client process happens to be asking. This is
+ * the identical confusion `deriveDatabaseTuning` was fixed for under WI-5456 (a
+ * 16-core-quota bg-host on a 128-core box derived a fictional `max_connections`
+ * from its own quota) — `physicalCores` (`os.cpus().length`, NOT quota-aware)
+ * exists precisely so machine-property decisions can bypass a process's own
+ * quota. bug-drain-200k (2026-07-21): confirmed live on THIS box —
+ * `papercup-bg-host.service` carries `CPUQuota=1600%` (16 cores), so
+ * `hostClass` read `'workstation'` for it despite the box being a genuine
+ * 128-core / 512-max_connections server, and it opened dozens of DIRECT
+ * connections instead of routing through :6432 — a real contributor to the
+ * PG-connection-saturation regression (EI-18217560711347466). Also deliberately
+ * NOT `embeddedPg` — `detectEmbeddedPg()` reports `embeddedPg=true` for ANY host
+ * that sets an explicit DATABASE_URL, so it misfires on the dev box / a
+ * dedicated server pointing at native PG via env (verified live: dev box
+ * reports embeddedPg=true). That detection flaw is tracked separately;
+ * physical-core class sidesteps it here, same as hostClass did.
  */
 export function pgbouncerEnabled(): boolean {
   const flag = process.env.PAPERCUSP_PGBOUNCER;
@@ -350,7 +368,9 @@ export function pgbouncerEnabled(): boolean {
   // pools to) had the exact "existing" rows the bug reported.
   if (process.env.PAPERCUSP_PG_PORT) return false;
   try {
-    return getResourceProfile().hostClass === 'server';
+    const { signals } = getResourceProfile();
+    const machineCores = Math.floor(signals.physicalCores ?? signals.cores);
+    return Number.isFinite(machineCores) && machineCores > 16;
   } catch {
     return false; // resource-profile unreadable → safe default (direct)
   }
