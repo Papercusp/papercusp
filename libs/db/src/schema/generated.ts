@@ -1,4 +1,4 @@
-import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, uuid, timestamp, bigserial, boolean, integer, uniqueIndex, check, unique, foreignKey, smallint, doublePrecision, numeric, vector, real, date, primaryKey } from "drizzle-orm/pg-core"
+import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, bigserial, timestamp, uuid, boolean, integer, uniqueIndex, check, unique, smallint, foreignKey, doublePrecision, numeric, vector, real, date, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 // Custom column types for PG types drizzle-kit can't introspect
@@ -32,20 +32,6 @@ export const operatorFlagOverridesInHarnessShared = harnessShared.table("operato
 	primaryKey({ columns: [table.workspaceId], name: "operator_flag_overrides_pkey"}),
 ]);
 
-export const notesInHarnessShared = harnessShared.table("notes", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	title: text().default('').notNull(),
-	body: text().default('').notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("notes_ws_updated_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.updatedAt.desc().nullsFirst().op("text_ops")),
-	pgPolicy("notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.id], name: "notes_pkey"}),
-
-]);
-
 export const uiIntentsInHarnessShared = harnessShared.table("ui_intents", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	clientId: text("client_id").notNull(),
@@ -62,6 +48,20 @@ export const uiIntentsInHarnessShared = harnessShared.table("ui_intents", {
 	index("ui_intents_completed_idx").using("btree", table.completedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(completed_at IS NOT NULL)`),
 	index("ui_intents_pending_idx").using("btree", table.clientId.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(status = 'pending'::text)`),
 	index("ui_intents_workspace_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
+]);
+
+export const notesInHarnessShared = harnessShared.table("notes", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	title: text().default('').notNull(),
+	body: text().default('').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("notes_ws_updated_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.updatedAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.id], name: "notes_pkey"}),
+
 ]);
 
 export const workspaceBackupSettingsInHarnessShared = harnessShared.table("workspace_backup_settings", {
@@ -81,6 +81,30 @@ export const workspaceBackupSettingsInHarnessShared = harnessShared.table("works
 	pgPolicy("workspace_backup_settings_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "workspace_backup_settings_pkey"}),
 
+]);
+
+export const coordEntitySubscriptionsInHarnessShared = harnessShared.table("coord_entity_subscriptions", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coord_entity_subscriptions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	subscriberId: text("subscriber_id").notNull(),
+	targetKind: text("target_kind").notNull(),
+	targetRef: text("target_ref").notNull(),
+	deliveryMode: text("delivery_mode").default('full').notNull(),
+	expiresTs: timestamp("expires_ts", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
+	followBlockers: boolean("follow_blockers").default(false).notNull(),
+	derivedFromKind: text("derived_from_kind"),
+	derivedFromRef: text("derived_from_ref"),
+}, (table) => [
+	uniqueIndex("coord_entity_subscriptions_active_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
+	index("coord_entity_subscriptions_derived_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.derivedFromKind.asc().nullsLast().op("text_ops"), table.derivedFromRef.asc().nullsLast().op("text_ops")).where(sql`((cancelled_at IS NULL) AND (derived_from_kind IS NOT NULL))`),
+	index("coord_entity_subscriptions_target_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
+	check("coord_entity_subscriptions_mode_check", sql`delivery_mode = ANY (ARRAY['full'::text, 'digest'::text, 'mention'::text])`),
+	check("coord_entity_subscriptions_ref_nonempty", sql`target_ref <> ''::text`),
+	check("coord_entity_subscriptions_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("coord_entity_subscriptions_kind_check", sql`target_kind = ANY (ARRAY['topic'::text, 'object'::text, 'fleet'::text, 'event'::text])`),
 ]);
 
 export const scoutDigestSnapshotsInHarnessShared = harnessShared.table("scout_digest_snapshots", {
@@ -117,47 +141,6 @@ export const coordLinksInHarnessShared = harnessShared.table("coord_links", {
 	check("coord_links_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
-export const coordEntitySubscriptionsInHarnessShared = harnessShared.table("coord_entity_subscriptions", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coord_entity_subscriptions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	workspaceId: text("workspace_id").default('default').notNull(),
-	subscriberId: text("subscriber_id").notNull(),
-	targetKind: text("target_kind").notNull(),
-	targetRef: text("target_ref").notNull(),
-	deliveryMode: text("delivery_mode").default('full').notNull(),
-	expiresTs: timestamp("expires_ts", { withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
-	followBlockers: boolean("follow_blockers").default(false).notNull(),
-	derivedFromKind: text("derived_from_kind"),
-	derivedFromRef: text("derived_from_ref"),
-}, (table) => [
-	uniqueIndex("coord_entity_subscriptions_active_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
-	index("coord_entity_subscriptions_derived_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.derivedFromKind.asc().nullsLast().op("text_ops"), table.derivedFromRef.asc().nullsLast().op("text_ops")).where(sql`((cancelled_at IS NULL) AND (derived_from_kind IS NOT NULL))`),
-	index("coord_entity_subscriptions_target_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
-	check("coord_entity_subscriptions_mode_check", sql`delivery_mode = ANY (ARRAY['full'::text, 'digest'::text, 'mention'::text])`),
-	check("coord_entity_subscriptions_ref_nonempty", sql`target_ref <> ''::text`),
-	check("coord_entity_subscriptions_workspace_nonempty", sql`workspace_id <> ''::text`),
-	check("coord_entity_subscriptions_kind_check", sql`target_kind = ANY (ARRAY['topic'::text, 'object'::text, 'fleet'::text, 'event'::text])`),
-]);
-
-export const scoutCycleStageArtifactsInHarnessShared = harnessShared.table("scout_cycle_stage_artifacts", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.scout_cycle_stage_artifacts_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	workspaceId: text("workspace_id").notNull(),
-	installSlug: text("install_slug"),
-	cycleId: text("cycle_id").notNull(),
-	ideas: jsonb(),
-	scored: jsonb(),
-	proposals: jsonb(),
-	ideatorSlots: jsonb("ideator_slots"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("scout_cycle_stage_artifacts_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	unique("scout_cycle_stage_artifacts_ws_cycle_uniq").on(table.workspaceId, table.cycleId),
-	pgPolicy("scout_cycle_stage_artifacts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const agentActivityInHarnessShared = harnessShared.table("agent_activity", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").default('*').notNull(),
@@ -178,6 +161,23 @@ export const agentActivityInHarnessShared = harnessShared.table("agent_activity"
 	index("agent_activity_created_at_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")),
 	index("agent_activity_harness_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("text_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	index("agent_activity_owner_id_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
+]);
+
+export const scoutCycleStageArtifactsInHarnessShared = harnessShared.table("scout_cycle_stage_artifacts", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.scout_cycle_stage_artifacts_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	installSlug: text("install_slug"),
+	cycleId: text("cycle_id").notNull(),
+	ideas: jsonb(),
+	scored: jsonb(),
+	proposals: jsonb(),
+	ideatorSlots: jsonb("ideator_slots"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("scout_cycle_stage_artifacts_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	unique("scout_cycle_stage_artifacts_ws_cycle_uniq").on(table.cycleId, table.workspaceId),
+	pgPolicy("scout_cycle_stage_artifacts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const identityFilesInHarnessShared = harnessShared.table("identity_files", {
@@ -265,47 +265,6 @@ export const telemetryReportsArchiveInHarnessShared = harnessShared.table("telem
 	pgPolicy("telemetry_reports_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const routinesInHarnessShared = harnessShared.table("routines", {
-	id: text().primaryKey().notNull(),
-	installSlug: text("install_slug").notNull(),
-	name: text().notNull(),
-	triggerKind: text("trigger_kind").notNull(),
-	triggerConfig: jsonb("trigger_config").notNull(),
-	targetRole: text("target_role").notNull(),
-	payloadTemplate: jsonb("payload_template"),
-	concurrency: text().default('queue').notNull(),
-	catchup: text().default('skip-old').notNull(),
-	active: boolean().default(true).notNull(),
-	lastFiredAt: timestamp("last_fired_at", { withTimezone: true, mode: 'string' }),
-	nextFireAt: timestamp("next_fire_at", { withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	metadata: jsonb(),
-	workspaceId: text("workspace_id").notNull(),
-	rescheduleIntervalSec: integer("reschedule_interval_sec"),
-	targetOwnerId: text("target_owner_id"),
-	tier: text().default('durable').notNull(),
-	groupSlug: text("group_slug"),
-}, (table) => [
-	index("routines_active_due_idx").using("btree", table.active.asc().nullsLast().op("bool_ops"), table.nextFireAt.asc().nullsLast().op("bool_ops")).where(sql`(active = true)`),
-	index("routines_group_slug_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.groupSlug.asc().nullsLast().op("text_ops")).where(sql`(group_slug IS NOT NULL)`),
-	index("routines_install_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops")),
-	index("routines_loop_interval_idx").using("btree", table.rescheduleIntervalSec.asc().nullsLast().op("int4_ops")).where(sql`(reschedule_interval_sec IS NOT NULL)`),
-	index("routines_tier_active_idx").using("btree", table.tier.asc().nullsLast().op("text_ops"), table.active.asc().nullsLast().op("bool_ops")).where(sql`(active = true)`),
-	index("routines_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	uniqueIndex("routines_workspace_install_slug_name_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.name.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.workspaceId, table.groupSlug],
-			foreignColumns: [routineGroupsInHarnessShared.workspaceId, routineGroupsInHarnessShared.slug],
-			name: "routines_group_slug_fkey"
-		}).onDelete("set null"),
-	unique("routines_install_slug_name_key").on(table.installSlug, table.name),
-	pgPolicy("routines_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("routines_tier_check", sql`tier = ANY (ARRAY['durable'::text, 'ephemeral'::text])`),
-	check("routines_reschedule_interval_positive", sql`(reschedule_interval_sec IS NULL) OR (reschedule_interval_sec > 0)`),
-	check("routines_workspace_nonempty", sql`workspace_id <> ''::text`),
-]);
-
 export const schemaMigrationsInHarnessShared = harnessShared.table("schema_migrations", {
 	filename: text().primaryKey().notNull(),
 	appliedAt: timestamp("applied_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -348,6 +307,64 @@ export const scoutRoutedIdeasInHarnessShared = harnessShared.table("scout_routed
 
 ]);
 
+export const routinesInHarnessShared = harnessShared.table("routines", {
+	id: text().primaryKey().notNull(),
+	installSlug: text("install_slug").notNull(),
+	name: text().notNull(),
+	triggerKind: text("trigger_kind").notNull(),
+	triggerConfig: jsonb("trigger_config").notNull(),
+	targetRole: text("target_role").notNull(),
+	payloadTemplate: jsonb("payload_template"),
+	concurrency: text().default('queue').notNull(),
+	catchup: text().default('skip-old').notNull(),
+	active: boolean().default(true).notNull(),
+	lastFiredAt: timestamp("last_fired_at", { withTimezone: true, mode: 'string' }),
+	nextFireAt: timestamp("next_fire_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	metadata: jsonb(),
+	workspaceId: text("workspace_id").notNull(),
+	rescheduleIntervalSec: integer("reschedule_interval_sec"),
+	targetOwnerId: text("target_owner_id"),
+	tier: text().default('durable').notNull(),
+	groupSlug: text("group_slug"),
+}, (table) => [
+	index("routines_active_due_idx").using("btree", table.active.asc().nullsLast().op("bool_ops"), table.nextFireAt.asc().nullsLast().op("bool_ops")).where(sql`(active = true)`),
+	index("routines_group_slug_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.groupSlug.asc().nullsLast().op("text_ops")).where(sql`(group_slug IS NOT NULL)`),
+	index("routines_install_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops")),
+	index("routines_loop_interval_idx").using("btree", table.rescheduleIntervalSec.asc().nullsLast().op("int4_ops")).where(sql`(reschedule_interval_sec IS NOT NULL)`),
+	index("routines_tier_active_idx").using("btree", table.tier.asc().nullsLast().op("text_ops"), table.active.asc().nullsLast().op("bool_ops")).where(sql`(active = true)`),
+	index("routines_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
+	uniqueIndex("routines_workspace_install_slug_name_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.name.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.groupSlug],
+			foreignColumns: [routineGroupsInHarnessShared.workspaceId, routineGroupsInHarnessShared.slug],
+			name: "routines_group_slug_fkey"
+		}).onDelete("set null"),
+	unique("routines_install_slug_name_key").on(table.installSlug, table.name),
+	pgPolicy("routines_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("routines_tier_check", sql`tier = ANY (ARRAY['durable'::text, 'ephemeral'::text])`),
+	check("routines_reschedule_interval_positive", sql`(reschedule_interval_sec IS NULL) OR (reschedule_interval_sec > 0)`),
+	check("routines_workspace_nonempty", sql`workspace_id <> ''::text`),
+]);
+
+export const pendingWakesInHarnessShared = harnessShared.table("pending_wakes", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.pending_wakes_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	ownerId: text("owner_id").notNull(),
+	summary: text(),
+	payload: jsonb(),
+	source: text(),
+	workspaceId: text("workspace_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	count: integer().default(1).notNull(),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("pending_wakes_dedupe_idx").using("btree", sql`owner_id`, sql`COALESCE(source, ''::text)`, sql`COALESCE(summary, ''::text)`, sql`COALESCE(workspace_id, ''::text)`),
+	index("pending_wakes_owner_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("text_ops")),
+	index("pending_wakes_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.ownerId.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+]);
+
 export const potDirectoryCacheInHarnessShared = harnessShared.table("pot_directory_cache", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().notNull(),
@@ -370,23 +387,6 @@ export const operatorTxnTimeoutsConfigInHarnessShared = harnessShared.table("ope
 
 ]);
 
-export const pendingWakesInHarnessShared = harnessShared.table("pending_wakes", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.pending_wakes_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	ownerId: text("owner_id").notNull(),
-	summary: text(),
-	payload: jsonb(),
-	source: text(),
-	workspaceId: text("workspace_id"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	count: integer().default(1).notNull(),
-	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	uniqueIndex("pending_wakes_dedupe_idx").using("btree", sql`owner_id`, sql`COALESCE(source, ''::text)`, sql`COALESCE(summary, ''::text)`, sql`COALESCE(workspace_id, ''::text)`),
-	index("pending_wakes_owner_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("text_ops")),
-	index("pending_wakes_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.ownerId.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
-]);
-
 export const migrationReservationsInHarnessShared = harnessShared.table("migration_reservations", {
 	num: integer().primaryKey().notNull(),
 	filename: text(),
@@ -394,6 +394,27 @@ export const migrationReservationsInHarnessShared = harnessShared.table("migrati
 	intent: text(),
 	reservedAt: timestamp("reserved_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 });
+
+export const coordThreadPostsInHarnessShared = harnessShared.table("coord_thread_posts", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coord_thread_posts_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	threadId: text("thread_id").notNull(),
+	authorId: text("author_id"),
+	body: text().default('').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	harnessSlug: text("harness_slug"),
+	origin: text().default('local').notNull(),
+	authorPubkey: text("author_pubkey"),
+	postMsgId: text("post_msg_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	fedHlc: text("fed_hlc"),
+}, (table) => [
+	uniqueIndex("coord_thread_posts_fed_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.postMsgId.asc().nullsLast().op("text_ops")).where(sql`((harness_slug IS NOT NULL) AND (post_msg_id IS NOT NULL))`),
+	index("coord_thread_posts_thread_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.threadId.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	check("coord_thread_posts_workspace_nonempty", sql`workspace_id <> ''::text`),
+]);
 
 export const operatorAccountPoolInHarnessShared = harnessShared.table("operator_account_pool", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
@@ -428,27 +449,6 @@ export const behaviorChangeLedgerInHarnessShared = harnessShared.table("behavior
 	pgPolicy("behavior_change_ledger_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.id], name: "behavior_change_ledger_pkey"}),
 
-]);
-
-export const coordThreadPostsInHarnessShared = harnessShared.table("coord_thread_posts", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coord_thread_posts_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	workspaceId: text("workspace_id").default('default').notNull(),
-	threadId: text("thread_id").notNull(),
-	authorId: text("author_id"),
-	body: text().default('').notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	harnessSlug: text("harness_slug"),
-	origin: text().default('local').notNull(),
-	authorPubkey: text("author_pubkey"),
-	postMsgId: text("post_msg_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	fedHlc: text("fed_hlc"),
-}, (table) => [
-	uniqueIndex("coord_thread_posts_fed_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.postMsgId.asc().nullsLast().op("text_ops")).where(sql`((harness_slug IS NOT NULL) AND (post_msg_id IS NOT NULL))`),
-	index("coord_thread_posts_thread_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.threadId.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
-	check("coord_thread_posts_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
 export const operatorCurationStateInHarnessShared = harnessShared.table("operator_curation_state", {
@@ -619,6 +619,28 @@ export const oauthNoncesInHarnessShared = harnessShared.table("oauth_nonces", {
 	index("oauth_nonces_exp_idx").using("btree", table.expMs.asc().nullsLast().op("int8_ops")),
 ]);
 
+export const setupWizardStateInHarnessShared = harnessShared.table("setup_wizard_state", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("setup_wizard_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "setup_wizard_state_pkey"}),
+
+]);
+
+export const telemetryReportsInHarnessShared = harnessShared.table("telemetry_reports", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("telemetry_reports_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "telemetry_reports_pkey"}),
+
+]);
+
 export const cooldownMarksInHarnessShared = harnessShared.table("cooldown_marks", {
 	key: text().primaryKey().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -627,6 +649,20 @@ export const cooldownMarksInHarnessShared = harnessShared.table("cooldown_marks"
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("cooldown_marks_marked_at_idx").using("btree", table.markedAtMs.asc().nullsLast().op("int8_ops")),
+]);
+
+export const voiceLeaseInHarnessShared = harnessShared.table("voice_lease", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	ownerId: text("owner_id").notNull(),
+	ownerKind: text("owner_kind").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	expiresAtMs: bigint("expires_at_ms", { mode: "number" }).notNull(),
+}, (table) => [
+	index("voice_lease_expires_idx").using("btree", table.expiresAtMs.asc().nullsLast().op("int8_ops")),
+	pgPolicy("voice_lease_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("voice_lease_owner_kind_check", sql`owner_kind = ANY (ARRAY['desktop'::text, 'mobile'::text, 'tui'::text])`),
+	primaryKey({ columns: [table.workspaceId], name: "voice_lease_pkey"}),
+
 ]);
 
 export const userSessionsInHarnessShared = harnessShared.table("user_sessions", {
@@ -662,6 +698,13 @@ export const usersInHarnessShared = harnessShared.table("users", {
 
 ]);
 
+export const operatorBudgetTiersInHarnessShared = harnessShared.table("operator_budget_tiers", {
+	ord: integer().primaryKey().notNull(),
+	label: text().notNull(),
+	capUsd: numeric("cap_usd", { precision: 10, scale:  2 }).notNull(),
+	blurb: text().notNull(),
+});
+
 export const operatorSettingsInHarnessShared = harnessShared.table("operator_settings", {
 	key: text().primaryKey().notNull(),
 	value: text().notNull(),
@@ -673,49 +716,6 @@ export const operatorSettingsInHarnessShared = harnessShared.table("operator_set
 	index("operator_settings_workspace_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 ]);
 
-export const operatorBudgetTiersInHarnessShared = harnessShared.table("operator_budget_tiers", {
-	ord: integer().primaryKey().notNull(),
-	label: text().notNull(),
-	capUsd: numeric("cap_usd", { precision: 10, scale:  2 }).notNull(),
-	blurb: text().notNull(),
-});
-
-export const setupWizardStateInHarnessShared = harnessShared.table("setup_wizard_state", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("setup_wizard_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "setup_wizard_state_pkey"}),
-
-]);
-
-export const telemetryReportsInHarnessShared = harnessShared.table("telemetry_reports", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("telemetry_reports_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "telemetry_reports_pkey"}),
-
-]);
-
-export const voiceLeaseInHarnessShared = harnessShared.table("voice_lease", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	ownerId: text("owner_id").notNull(),
-	ownerKind: text("owner_kind").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	expiresAtMs: bigint("expires_at_ms", { mode: "number" }).notNull(),
-}, (table) => [
-	index("voice_lease_expires_idx").using("btree", table.expiresAtMs.asc().nullsLast().op("int8_ops")),
-	pgPolicy("voice_lease_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("voice_lease_owner_kind_check", sql`owner_kind = ANY (ARRAY['desktop'::text, 'mobile'::text, 'tui'::text])`),
-	primaryKey({ columns: [table.workspaceId], name: "voice_lease_pkey"}),
-
-]);
-
 export const operatorAuthConfigInHarnessShared = harnessShared.table("operator_auth_config", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -725,25 +725,6 @@ export const operatorAuthConfigInHarnessShared = harnessShared.table("operator_a
 	pgPolicy("operator_auth_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_auth_config_pkey"}),
 
-]);
-
-export const operatorContinueChainsInHarnessShared = harnessShared.table("operator_continue_chains", {
-	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	conversationId: uuid("conversation_id").notNull(),
-	uiClientId: text("ui_client_id").notNull(),
-	chainId: uuid("chain_id").notNull(),
-	turnIdx: integer("turn_idx").notNull(),
-	trigger: text().notNull(),
-	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	elapsedSecsInChain: numeric("elapsed_secs_in_chain", { precision: 10, scale:  3 }).notNull(),
-	wasCapped: boolean("was_capped").default(false).notNull(),
-	capReason: text("cap_reason"),
-	workspaceId: text("workspace_id").notNull(),
-}, (table) => [
-	index("operator_continue_chains_chain_turn_idx").using("btree", table.chainId.asc().nullsLast().op("int4_ops"), table.turnIdx.asc().nullsLast().op("int4_ops")),
-	index("operator_continue_chains_conversation_idx").using("btree", table.conversationId.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("operator_continue_chains_uic_started_idx").using("btree", table.uiClientId.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("text_ops")),
-	index("operator_continue_chains_workspace_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 ]);
 
 export const llmTestRunsInHarnessShared = harnessShared.table("llm_test_runs", {
@@ -829,9 +810,28 @@ export const llmTestFixturesInHarnessShared = harnessShared.table("llm_test_fixt
 			foreignColumns: [llmTestRunsInHarnessShared.id],
 			name: "llm_test_fixtures_recorded_from_run_id_fkey"
 		}).onDelete("set null"),
-	unique("llm_test_fixtures_scenario_id_label_key").on(table.scenarioId, table.label),
+	unique("llm_test_fixtures_scenario_id_label_key").on(table.label, table.scenarioId),
 	primaryKey({ columns: [table.id], name: "llm_test_fixtures_pkey"}),
 
+]);
+
+export const operatorContinueChainsInHarnessShared = harnessShared.table("operator_continue_chains", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	conversationId: uuid("conversation_id").notNull(),
+	uiClientId: text("ui_client_id").notNull(),
+	chainId: uuid("chain_id").notNull(),
+	turnIdx: integer("turn_idx").notNull(),
+	trigger: text().notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	elapsedSecsInChain: numeric("elapsed_secs_in_chain", { precision: 10, scale:  3 }).notNull(),
+	wasCapped: boolean("was_capped").default(false).notNull(),
+	capReason: text("cap_reason"),
+	workspaceId: text("workspace_id").notNull(),
+}, (table) => [
+	index("operator_continue_chains_chain_turn_idx").using("btree", table.chainId.asc().nullsLast().op("int4_ops"), table.turnIdx.asc().nullsLast().op("int4_ops")),
+	index("operator_continue_chains_conversation_idx").using("btree", table.conversationId.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("operator_continue_chains_uic_started_idx").using("btree", table.uiClientId.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("text_ops")),
+	index("operator_continue_chains_workspace_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 ]);
 
 export const operatorUserProfileInHarnessShared = harnessShared.table("operator_user_profile", {
@@ -887,17 +887,14 @@ export const operatorPreferencesInHarnessShared = harnessShared.table("operator_
 
 ]);
 
-export const powerUserSessionsInHarnessShared = harnessShared.table("power_user_sessions", {
-	authSessionId: text("auth_session_id").primaryKey().notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	userId: text("user_id").notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+export const operatorOraclePromptInHarnessShared = harnessShared.table("operator_oracle_prompt", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	index("power_user_sessions_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	pgPolicy("power_user_sessions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.authSessionId], name: "power_user_sessions_pkey"}),
+	pgPolicy("operator_oracle_prompt_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_oracle_prompt_pkey"}),
 
 ]);
 
@@ -912,14 +909,17 @@ export const operatorOracleMemoryInHarnessShared = harnessShared.table("operator
 
 ]);
 
-export const operatorOraclePromptInHarnessShared = harnessShared.table("operator_oracle_prompt", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+export const powerUserSessionsInHarnessShared = harnessShared.table("power_user_sessions", {
+	authSessionId: text("auth_session_id").primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	userId: text("user_id").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
-	pgPolicy("operator_oracle_prompt_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_oracle_prompt_pkey"}),
+	index("power_user_sessions_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("power_user_sessions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.authSessionId], name: "power_user_sessions_pkey"}),
 
 ]);
 
@@ -935,28 +935,6 @@ export const memoryVecGemmaInHarnessShared = harnessShared.table("memory_vec_gem
 			name: "memory_vec_gemma_memory_id_fkey"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.memoryId], name: "memory_vec_gemma_pkey"}),
-
-]);
-
-export const operatorFirstRunInHarnessShared = harnessShared.table("operator_first_run", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_first_run_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_first_run_pkey"}),
-
-]);
-
-export const operatorCapabilityTiersInHarnessShared = harnessShared.table("operator_capability_tiers", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().default({}).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_capability_tiers_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_capability_tiers_pkey"}),
 
 ]);
 
@@ -981,6 +959,28 @@ export const pluginAuditLogInHarnessShared = harnessShared.table("plugin_audit_l
 	index("plugin_audit_by_harness").using("btree", table.installSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
 	index("plugin_audit_by_plugin").using("btree", table.pluginName.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
 	index("plugin_audit_outcome").using("btree", table.outcome.asc().nullsLast().op("text_ops")).where(sql`(outcome <> 'ok'::text)`),
+]);
+
+export const operatorCapabilityTiersInHarnessShared = harnessShared.table("operator_capability_tiers", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_capability_tiers_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_capability_tiers_pkey"}),
+
+]);
+
+export const operatorFirstRunInHarnessShared = harnessShared.table("operator_first_run", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_first_run_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_first_run_pkey"}),
+
 ]);
 
 export const memoryWriteJournalInHarnessShared = harnessShared.table("memory_write_journal", {
@@ -1016,9 +1016,38 @@ export const cupKeeperInstancesInHarnessShared = harnessShared.table("cup_keeper
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	uniqueIndex("beekeeper_instances_gen0_unique").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.codeSha.asc().nullsLast().op("text_ops")).where(sql`(genome_id IS NULL)`),
-	unique("cup_keeper_instances_workspace_id_code_sha_genome_id_key").on(table.workspaceId, table.codeSha, table.genomeId),
+	unique("cup_keeper_instances_workspace_id_code_sha_genome_id_key").on(table.codeSha, table.genomeId, table.workspaceId),
 	primaryKey({ columns: [table.instanceId], name: "cup_keeper_instances_pkey"}),
 
+]);
+
+export const coordEventLogInHarnessShared = harnessShared.table("coord_event_log", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	surface: text().notNull(),
+	writerKey: text("writer_key"),
+	msgId: text("msg_id").notNull(),
+	body: jsonb().notNull(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	harnessSlug: text("harness_slug"),
+	origin: text().default('local').notNull(),
+	authorPubkey: text("author_pubkey"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	fedHlc: text("fed_hlc"),
+}, (table) => [
+	index("coord_event_log_allhive_broadcast").using("btree", table.ts.asc().nullsLast().op("timestamptz_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'kind'::text) = 'message'::text) AND ((body -> 'to'::text) @> '["*"]'::jsonb))`),
+	index("coord_event_log_conditions_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ? 'condition_key'::text) OR (body ? 'resolves_condition'::text)))`),
+	uniqueIndex("coord_event_log_event_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`(surface = ANY (ARRAY['handoffs'::text, 'escalations'::text]))`),
+	uniqueIndex("coord_event_log_fanout_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'notify_kind'::text) IS NOT NULL))`),
+	uniqueIndex("coord_event_log_fed_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((harness_slug IS NOT NULL) AND ((body ->> 'notify_kind'::text) IS NULL))`),
+	index("coord_event_log_messages_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ts.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(surface = 'messages'::text)`),
+	index("coord_event_log_msg_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")),
+	index("coord_event_log_msg_tsv_idx").using("gin", sql`to_tsvector('english'::regconfig, "left"(((COALESCE((body ->> '`).where(sql`(surface = 'messages'::text)`),
+	index("coord_event_log_reply_deadline").using("btree", sql`(((body ->> 'replyDeadlineAt'::text))::bigint)`).where(sql`((surface = 'messages'::text) AND (body ? 'replyDeadlineAt'::text))`),
+	index("coord_event_log_surface_id").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.surface.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("coord_event_log_surface_kind_id_idx").using("btree", sql`workspace_id`, sql`surface`, sql`((body ->> 'kind'::text))`, sql`id`),
+	pgPolicy("coord_event_log_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const mobileDevicesInHarnessShared = harnessShared.table("mobile_devices", {
@@ -1051,33 +1080,20 @@ export const operatorSearchProviderCredentialsInHarnessShared = harnessShared.ta
 
 ]);
 
-export const coordEventLogInHarnessShared = harnessShared.table("coord_event_log", {
-	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	surface: text().notNull(),
-	writerKey: text("writer_key"),
-	msgId: text("msg_id").notNull(),
-	body: jsonb().notNull(),
-	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
-	workspaceId: text("workspace_id").default('default').notNull(),
-	harnessSlug: text("harness_slug"),
-	origin: text().default('local').notNull(),
-	authorPubkey: text("author_pubkey"),
+export const deferralPricingModelInHarnessShared = harnessShared.table("deferral_pricing_model", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	fedHlc: text("fed_hlc"),
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.deferral_pricing_model_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	trainedAt: timestamp("trained_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	model: jsonb().notNull(),
+	sampleItems: integer("sample_items").notNull(),
+	sampleWeeks: numeric("sample_weeks").notNull(),
+	createdBy: text("created_by"),
 }, (table) => [
-	index("coord_event_log_allhive_broadcast").using("btree", table.ts.asc().nullsLast().op("timestamptz_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'kind'::text) = 'message'::text) AND ((body -> 'to'::text) @> '["*"]'::jsonb))`),
-	index("coord_event_log_conditions_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ? 'condition_key'::text) OR (body ? 'resolves_condition'::text)))`),
-	uniqueIndex("coord_event_log_event_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`(surface = ANY (ARRAY['handoffs'::text, 'escalations'::text]))`),
-	uniqueIndex("coord_event_log_fanout_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'notify_kind'::text) IS NOT NULL))`),
-	uniqueIndex("coord_event_log_fed_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((harness_slug IS NOT NULL) AND ((body ->> 'notify_kind'::text) IS NULL))`),
-	index("coord_event_log_messages_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ts.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(surface = 'messages'::text)`),
-	index("coord_event_log_msg_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")),
-	index("coord_event_log_msg_tsv_idx").using("gin", sql`to_tsvector('english'::regconfig, "left"(((COALESCE((body ->> '`).where(sql`(surface = 'messages'::text)`),
-	index("coord_event_log_reply_deadline").using("btree", sql`(((body ->> 'replyDeadlineAt'::text))::bigint)`).where(sql`((surface = 'messages'::text) AND (body ? 'replyDeadlineAt'::text))`),
-	index("coord_event_log_surface_id").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.surface.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
-	index("coord_event_log_surface_kind_id_idx").using("btree", sql`workspace_id`, sql`surface`, sql`((body ->> 'kind'::text))`, sql`id`),
-	pgPolicy("coord_event_log_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	index("deferral_pricing_model_latest_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.trainedAt.desc().nullsFirst().op("text_ops")),
+	check("deferral_pricing_model_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("deferral_pricing_model_items_nonneg", sql`sample_items >= 0`),
+	check("deferral_pricing_model_weeks_nonneg", sql`sample_weeks >= (0)::numeric`),
 ]);
 
 export const coordPresenceInHarnessShared = harnessShared.table("coord_presence", {
@@ -1131,34 +1147,19 @@ export const pendingEventsInHarnessShared = harnessShared.table("pending_events"
 	check("pending_events_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
-export const projectSpecRevisionsInHarnessShared = harnessShared.table("project_spec_revisions", {
+export const toastLogInHarnessShared = harnessShared.table("toast_log", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	projectId: text("project_id").notNull(),
-	spec: text().notNull(),
-	summary: text(),
-	authorRole: text("author_role").notNull(),
-	author: text(),
-	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
-	includeDecisions: jsonb("include_decisions"),
+	level: text().notNull(),
+	message: text().notNull(),
+	description: text(),
+	harnessSlug: text("harness_slug"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	tokensIn: bigint("tokens_in", { mode: "number" }).default(0).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	tokensOut: bigint("tokens_out", { mode: "number" }).default(0).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	costUsdCents: bigint("cost_usd_cents", { mode: "number" }).default(0).notNull(),
-	workspaceId: text("workspace_id").notNull(),
+	createdAt: bigint("created_at", { mode: "number" }).notNull(),
+	actionLabel: text("action_label"),
+	actionHref: text("action_href"),
 }, (table) => [
-	index("project_spec_revisions_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	index("psr_author_role_idx").using("btree", table.authorRole.asc().nullsLast().op("text_ops")),
-	index("psr_project_idx").using("btree", table.projectId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
-	index("psr_ts_idx").using("btree", table.ts.desc().nullsFirst().op("timestamptz_ops")),
-	foreignKey({
-			columns: [table.projectId],
-			foreignColumns: [projectsInHarnessShared.id],
-			name: "project_spec_revisions_project_id_fkey"
-		}).onDelete("cascade"),
-	pgPolicy("project_spec_revisions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("psr_workspace_nonempty", sql`workspace_id <> ''::text`),
+	index("toast_log_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("int8_ops")),
+	index("toast_log_slug_created_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.createdAt.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
 ]);
 
 export const tokenIndexInHarnessShared = harnessShared.table("token_index", {
@@ -1196,35 +1197,34 @@ export const auditLogInHarnessShared = harnessShared.table("audit_log", {
 	check("audit_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
-export const toastLogInHarnessShared = harnessShared.table("toast_log", {
+export const projectSpecRevisionsInHarnessShared = harnessShared.table("project_spec_revisions", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	level: text().notNull(),
-	message: text().notNull(),
-	description: text(),
-	harnessSlug: text("harness_slug"),
+	projectId: text("project_id").notNull(),
+	spec: text().notNull(),
+	summary: text(),
+	authorRole: text("author_role").notNull(),
+	author: text(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	includeDecisions: jsonb("include_decisions"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdAt: bigint("created_at", { mode: "number" }).notNull(),
-	actionLabel: text("action_label"),
-	actionHref: text("action_href"),
-}, (table) => [
-	index("toast_log_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("int8_ops")),
-	index("toast_log_slug_created_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.createdAt.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
-]);
-
-export const deferralPricingModelInHarnessShared = harnessShared.table("deferral_pricing_model", {
+	tokensIn: bigint("tokens_in", { mode: "number" }).default(0).notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.deferral_pricing_model_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	tokensOut: bigint("tokens_out", { mode: "number" }).default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	costUsdCents: bigint("cost_usd_cents", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").notNull(),
-	trainedAt: timestamp("trained_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	model: jsonb().notNull(),
-	sampleItems: integer("sample_items").notNull(),
-	sampleWeeks: numeric("sample_weeks").notNull(),
-	createdBy: text("created_by"),
 }, (table) => [
-	index("deferral_pricing_model_latest_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.trainedAt.desc().nullsFirst().op("text_ops")),
-	check("deferral_pricing_model_workspace_nonempty", sql`workspace_id <> ''::text`),
-	check("deferral_pricing_model_items_nonneg", sql`sample_items >= 0`),
-	check("deferral_pricing_model_weeks_nonneg", sql`sample_weeks >= (0)::numeric`),
+	index("project_spec_revisions_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
+	index("psr_author_role_idx").using("btree", table.authorRole.asc().nullsLast().op("text_ops")),
+	index("psr_project_idx").using("btree", table.projectId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
+	index("psr_ts_idx").using("btree", table.ts.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.projectId],
+			foreignColumns: [projectsInHarnessShared.id],
+			name: "project_spec_revisions_project_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("project_spec_revisions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("psr_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
 export const localBackendsInHarnessShared = harnessShared.table("local_backends", {
@@ -1272,45 +1272,6 @@ export const provisionAuditLogInHarnessShared = harnessShared.table("provision_a
 	pgPolicy("provision_audit_log_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const messagesInPapercuspShared = papercuspShared.table("messages", {
-	id: text().primaryKey().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }).notNull(),
-	fromDept: text("from_dept").notNull(),
-	kind: text().notNull(),
-	subject: text().notNull(),
-	body: text().notNull(),
-	refId: text("ref_id"),
-	projectId: text("project_id"),
-	directiveId: text("directive_id"),
-	status: text().default('pending').notNull(),
-	metadata: jsonb(),
-}, (table) => [
-	index("messages_directive_idx").using("btree", table.directiveId.asc().nullsLast().op("text_ops")),
-	index("messages_from_idx").using("btree", table.fromDept.asc().nullsLast().op("text_ops")),
-	index("messages_kind_idx").using("btree", table.kind.asc().nullsLast().op("text_ops")),
-	index("messages_project_idx").using("btree", table.projectId.asc().nullsLast().op("text_ops")),
-	index("messages_status_idx").using("btree", table.status.asc().nullsLast().op("text_ops")),
-	index("messages_ts_idx").using("btree", table.ts.asc().nullsLast().op("int8_ops")),
-]);
-
-export const messageCommentsInPapercuspShared = papercuspShared.table("message_comments", {
-	id: text().primaryKey().notNull(),
-	messageId: text("message_id").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }).notNull(),
-	author: text().notNull(),
-	body: text().notNull(),
-}, (table) => [
-	index("comments_msg_idx").using("btree", table.messageId.asc().nullsLast().op("text_ops")),
-	index("comments_ts_idx").using("btree", table.ts.asc().nullsLast().op("int8_ops")),
-	foreignKey({
-			columns: [table.messageId],
-			foreignColumns: [messagesInPapercuspShared.id],
-			name: "message_comments_message_id_fkey"
-		}).onDelete("cascade"),
-]);
-
 export const backupSnapshotsInHarnessShared = harnessShared.table("backup_snapshots", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -1331,17 +1292,6 @@ export const backupSnapshotsInHarnessShared = harnessShared.table("backup_snapsh
 	pgPolicy("backup_snapshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const harnessRegistryInHarnessShared = harnessShared.table("harness_registry", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("harness_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "harness_registry_pkey"}),
-
-]);
-
 export const backupEventsInHarnessShared = harnessShared.table("backup_events", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -1360,15 +1310,14 @@ export const backupEventsInHarnessShared = harnessShared.table("backup_events", 
 	pgPolicy("backup_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const operatorTrustStoreInHarnessShared = harnessShared.table("operator_trust_store", {
+export const harnessRegistryInHarnessShared = harnessShared.table("harness_registry", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	payloadCt: byteaCustom("payload_ct"),
 }, (table) => [
-	pgPolicy("operator_trust_store_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_trust_store_pkey"}),
+	pgPolicy("harness_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "harness_registry_pkey"}),
 
 ]);
 
@@ -1439,6 +1388,18 @@ export const redQueenDrillsInHarnessShared = harnessShared.table("red_queen_dril
 	check("red_queen_drills_status_check", sql`status = ANY (ARRAY['planted'::text, 'detected'::text, 'triaged'::text, 'resolved'::text, 'failed'::text, 'expired'::text])`),
 	check("red_queen_drills_expected_kind_check", sql`expected_kind = ANY (ARRAY['bug'::text, 'change'::text])`),
 	primaryKey({ columns: [table.id], name: "red_queen_drills_pkey"}),
+
+]);
+
+export const operatorTrustStoreInHarnessShared = harnessShared.table("operator_trust_store", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+	payloadCt: byteaCustom("payload_ct"),
+}, (table) => [
+	pgPolicy("operator_trust_store_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_trust_store_pkey"}),
 
 ]);
 
@@ -1562,6 +1523,36 @@ export const memorySessionEpochsInHarnessShared = harnessShared.table("memory_se
 	primaryKey({ columns: [table.sessionId], name: "memory_session_epochs_pkey"}),
 ]);
 
+export const testRunsInHarnessShared = harnessShared.table("test_runs", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	filePath: text("file_path").notNull(),
+	framework: text().notNull(),
+	status: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	durationMs: bigint("duration_ms", { mode: "number" }),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
+	outputTail: text("output_tail"),
+	suiteId: text("suite_id"),
+	runGroupId: text("run_group_id"),
+	source: text().default('local').notNull(),
+	branch: text(),
+	commitSha: text("commit_sha"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	harnessSlug: text("harness_slug"),
+	workspaceId: text("workspace_id"),
+	loopLagP95Ms: real("loop_lag_p95_ms"),
+	rssMb: real("rss_mb"),
+}, (table) => [
+	index("test_runs_branch_idx").using("btree", table.branch.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(branch IS NOT NULL)`),
+	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops"), table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(harness_slug IS NOT NULL)`),
+	index("test_runs_run_group_idx").using("btree", table.runGroupId.asc().nullsLast().op("text_ops")).where(sql`(run_group_id IS NOT NULL)`),
+	index("test_runs_source_idx").using("btree", table.source.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
+	check("test_runs_source_valid", sql`source = ANY (ARRAY['ci'::text, 'local'::text, 'admin-ui'::text])`),
+	check("test_runs_status_valid", sql`status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text, 'cancelled'::text, 'error'::text, 'running'::text])`),
+]);
+
 export const gatewayStallEventsInHarnessShared = harnessShared.table("gateway_stall_events", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.gateway_stall_events_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -1606,36 +1597,6 @@ export const memoryVecLocalInHarnessShared = harnessShared.table("memory_vec_loc
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.memoryId], name: "memory_vec_local_pkey"}),
 
-]);
-
-export const testRunsInHarnessShared = harnessShared.table("test_runs", {
-	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	filePath: text("file_path").notNull(),
-	framework: text().notNull(),
-	status: text().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	durationMs: bigint("duration_ms", { mode: "number" }),
-	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
-	outputTail: text("output_tail"),
-	suiteId: text("suite_id"),
-	runGroupId: text("run_group_id"),
-	source: text().default('local').notNull(),
-	branch: text(),
-	commitSha: text("commit_sha"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	harnessSlug: text("harness_slug"),
-	workspaceId: text("workspace_id"),
-	loopLagP95Ms: real("loop_lag_p95_ms"),
-	rssMb: real("rss_mb"),
-}, (table) => [
-	index("test_runs_branch_idx").using("btree", table.branch.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(branch IS NOT NULL)`),
-	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops"), table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(harness_slug IS NOT NULL)`),
-	index("test_runs_run_group_idx").using("btree", table.runGroupId.asc().nullsLast().op("text_ops")).where(sql`(run_group_id IS NOT NULL)`),
-	index("test_runs_source_idx").using("btree", table.source.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
-	check("test_runs_source_valid", sql`source = ANY (ARRAY['ci'::text, 'local'::text, 'admin-ui'::text])`),
-	check("test_runs_status_valid", sql`status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text, 'cancelled'::text, 'error'::text, 'running'::text])`),
 ]);
 
 export const featureAuditConsolidatedInHarnessShared = harnessShared.table("feature_audit_consolidated", {
@@ -1869,35 +1830,6 @@ export const planRunTurnsInHarnessShared = harnessShared.table("plan_run_turns",
 	pgPolicy("plan_run_turns_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const sessionPendingGatesInHarnessShared = harnessShared.table("session_pending_gates", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.session_pending_gates_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	workspaceId: text("workspace_id").default('default').notNull(),
-	sessionId: text("session_id").notNull(),
-	client: text().default('claude').notNull(),
-	kind: text().notNull(),
-	refId: text("ref_id").notNull(),
-	ownerId: text("owner_id"),
-	question: text(),
-	options: jsonb(),
-	source: text().default('watcher').notNull(),
-	rawRef: text("raw_ref"),
-	harnessSlug: text("harness_slug"),
-	openedAt: timestamp("opened_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
-	closedReason: text("closed_reason"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("session_pending_gates_created_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")),
-	index("session_pending_gates_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.openedAt.desc().nullsFirst().op("text_ops")).where(sql`(closed_at IS NULL)`),
-	uniqueIndex("session_pending_gates_ref_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops"), table.refId.asc().nullsLast().op("text_ops")),
-	check("session_pending_gates_client_check", sql`client = ANY (ARRAY['claude'::text, 'omp'::text, 'codex'::text])`),
-	check("session_pending_gates_kind_check", sql`kind = ANY (ARRAY['ask'::text, 'permission_wait'::text])`),
-	check("session_pending_gates_source_check", sql`source = ANY (ARRAY['watcher'::text, 'hook'::text])`),
-	check("session_pending_gates_closed_reason_check", sql`(closed_reason IS NULL) OR (closed_reason = ANY (ARRAY['tool_result_observed'::text, 'hook_cleared'::text]))`),
-]);
-
 export const planRunsInHarnessShared = harnessShared.table("plan_runs", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).default(sql`nextval('harness_shared.plan_runs_id_seq'::regclass)`).primaryKey().notNull(),
@@ -1930,6 +1862,35 @@ export const planRunsInHarnessShared = harnessShared.table("plan_runs", {
 	pgPolicy("plan_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.id], name: "plan_runs_pkey"}),
 
+]);
+
+export const sessionPendingGatesInHarnessShared = harnessShared.table("session_pending_gates", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.session_pending_gates_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	sessionId: text("session_id").notNull(),
+	client: text().default('claude').notNull(),
+	kind: text().notNull(),
+	refId: text("ref_id").notNull(),
+	ownerId: text("owner_id"),
+	question: text(),
+	options: jsonb(),
+	source: text().default('watcher').notNull(),
+	rawRef: text("raw_ref"),
+	harnessSlug: text("harness_slug"),
+	openedAt: timestamp("opened_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
+	closedReason: text("closed_reason"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("session_pending_gates_created_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")),
+	index("session_pending_gates_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.openedAt.desc().nullsFirst().op("text_ops")).where(sql`(closed_at IS NULL)`),
+	uniqueIndex("session_pending_gates_ref_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops"), table.refId.asc().nullsLast().op("text_ops")),
+	check("session_pending_gates_client_check", sql`client = ANY (ARRAY['claude'::text, 'omp'::text, 'codex'::text])`),
+	check("session_pending_gates_kind_check", sql`kind = ANY (ARRAY['ask'::text, 'permission_wait'::text])`),
+	check("session_pending_gates_source_check", sql`source = ANY (ARRAY['watcher'::text, 'hook'::text])`),
+	check("session_pending_gates_closed_reason_check", sql`(closed_reason IS NULL) OR (closed_reason = ANY (ARRAY['tool_result_observed'::text, 'hook_cleared'::text]))`),
 ]);
 
 export const eventAwaitNodesInHarnessShared = harnessShared.table("event_await_nodes", {
@@ -1980,7 +1941,7 @@ export const planRevisionsInHarnessShared = harnessShared.table("plan_revisions"
 	harnessSlug: text("harness_slug").default('papercup').notNull(),
 	workspaceId: text("workspace_id").default('default').notNull(),
 }, (table) => [
-	unique("plan_revisions_ws_harness_plan_seq_key").on(table.planSlug, table.seq, table.harnessSlug, table.workspaceId),
+	unique("plan_revisions_ws_harness_plan_seq_key").on(table.harnessSlug, table.planSlug, table.seq, table.workspaceId),
 	pgPolicy("plan_revisions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -2033,30 +1994,21 @@ export const potEvalBakeoffDeltasInHarnessShared = harnessShared.table("pot_eval
 	index("pot_eval_bakeoff_deltas_ws_run_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.runAtMs.desc().nullsFirst().op("int8_ops")),
 ]);
 
-export const operatorConversationsInHarnessShared = harnessShared.table("operator_conversations", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
+export const harnessProjectFilesInHarnessShared = harnessShared.table("harness_project_files", {
+	harnessSlug: text("harness_slug").primaryKey().notNull(),
+	spec: text(),
+	agents: text(),
+	contract: text(),
+	config: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
-	harnessSlug: text("harness_slug"),
-	title: text(),
-	status: text().default('active').notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	startedAt: bigint("started_at", { mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	endedAt: bigint("ended_at", { mode: "number" }),
-	elConversationIds: text("el_conversation_ids").array().default([""]).notNull(),
-	hasAudio: boolean("has_audio").default(false).notNull(),
-	summaryText: text("summary_text"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	summaryThroughSeq: bigint("summary_through_seq", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	summaryUpdatedAt: bigint("summary_updated_at", { mode: "number" }),
-	summaryModel: text("summary_model"),
-	summaryTurnsCovered: integer("summary_turns_covered"),
+	version: bigint({ mode: "number" }).default(0).notNull(),
 }, (table) => [
-	index("operator_conversations_active_idx").using("btree", sql`workspace_id`, sql`COALESCE(harness_slug, ''::text)`).where(sql`(status = 'active'::text)`),
-	index("operator_conversations_started_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.startedAt.desc().nullsFirst().op("int8_ops")),
-	pgPolicy("operator_conversations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.id], name: "operator_conversations_pkey"}),
+	index("harness_project_files_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
+	pgPolicy("harness_project_files_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.harnessSlug], name: "harness_project_files_pkey"}),
 
 ]);
 
@@ -2126,21 +2078,30 @@ export const spawnedAgentsInHarnessShared = harnessShared.table("spawned_agents"
 
 ]);
 
-export const harnessProjectFilesInHarnessShared = harnessShared.table("harness_project_files", {
-	harnessSlug: text("harness_slug").primaryKey().notNull(),
-	spec: text(),
-	agents: text(),
-	contract: text(),
-	config: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+export const operatorConversationsInHarnessShared = harnessShared.table("operator_conversations", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
+	harnessSlug: text("harness_slug"),
+	title: text(),
+	status: text().default('active').notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	version: bigint({ mode: "number" }).default(0).notNull(),
+	startedAt: bigint("started_at", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	endedAt: bigint("ended_at", { mode: "number" }),
+	elConversationIds: text("el_conversation_ids").array().default([""]).notNull(),
+	hasAudio: boolean("has_audio").default(false).notNull(),
+	summaryText: text("summary_text"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	summaryThroughSeq: bigint("summary_through_seq", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	summaryUpdatedAt: bigint("summary_updated_at", { mode: "number" }),
+	summaryModel: text("summary_model"),
+	summaryTurnsCovered: integer("summary_turns_covered"),
 }, (table) => [
-	index("harness_project_files_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	pgPolicy("harness_project_files_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.harnessSlug], name: "harness_project_files_pkey"}),
+	index("operator_conversations_active_idx").using("btree", sql`workspace_id`, sql`COALESCE(harness_slug, ''::text)`).where(sql`(status = 'active'::text)`),
+	index("operator_conversations_started_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.startedAt.desc().nullsFirst().op("int8_ops")),
+	pgPolicy("operator_conversations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.id], name: "operator_conversations_pkey"}),
 
 ]);
 
@@ -2343,6 +2304,17 @@ export const potDirectoryTombstonesInHarnessShared = harnessShared.table("pot_di
 
 ]);
 
+export const operatorAccountOverrideInHarnessShared = harnessShared.table("operator_account_override", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_account_override_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_account_override_pkey"}),
+
+]);
+
 export const operatorOwnerPinsInHarnessShared = harnessShared.table("operator_owner_pins", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -2389,36 +2361,6 @@ export const agentModeChangesInHarnessShared = harnessShared.table("agent_mode_c
 	index("agent_mode_changes_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ownerId.asc().nullsLast().op("text_ops"), table.changedAt.desc().nullsFirst().op("timestamptz_ops")),
 ]);
 
-export const operatorAccountOverrideInHarnessShared = harnessShared.table("operator_account_override", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().default({}).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_account_override_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_account_override_pkey"}),
-
-]);
-
-export const briefingsInPapercuspShared = papercuspShared.table("briefings", {
-	id: text().primaryKey().notNull(),
-	title: text().notNull(),
-	quarter: text().default('').notNull(),
-	status: text().notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	scriptPath: text("script_path"),
-	durationSeconds: integer("duration_seconds"),
-	youtubeUrl: text("youtube_url"),
-	youtubeVideoId: text("youtube_video_id"),
-	thumbnailUrl: text("thumbnail_url"),
-	renderLog: text("render_log"),
-	error: text(),
-	summary: text(),
-}, (table) => [
-	index("briefings_quarter_idx").using("btree", table.quarter.asc().nullsLast().op("text_ops")),
-	index("briefings_status_idx").using("btree", table.status.asc().nullsLast().op("text_ops")),
-]);
-
 export const promptAblationRunsInHarnessShared = harnessShared.table("prompt_ablation_runs", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -2448,18 +2390,6 @@ export const promptAblationRunsInHarnessShared = harnessShared.table("prompt_abl
 
 ]);
 
-export const directiveSummariesInPapercuspShared = papercuspShared.table("directive_summaries", {
-	id: text().primaryKey().notNull(),
-	directiveId: text("directive_id").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }).notNull(),
-	author: text().default('ceo').notNull(),
-	body: text().notNull(),
-}, (table) => [
-	index("summaries_directive_idx").using("btree", table.directiveId.asc().nullsLast().op("text_ops")),
-	index("summaries_ts_idx").using("btree", table.ts.asc().nullsLast().op("int8_ops")),
-]);
-
 export const fleetEkgShiftsInHarnessShared = harnessShared.table("fleet_ekg_shifts", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.fleet_ekg_shifts_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -2483,7 +2413,7 @@ export const fleetEkgShiftsInHarnessShared = harnessShared.table("fleet_ekg_shif
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("fleet_ekg_shifts_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("date_ops"), table.windowDate.desc().nullsFirst().op("date_ops")),
-	unique("fleet_ekg_shifts_dedup").on(table.workspaceId, table.windowDate, table.feature),
+	unique("fleet_ekg_shifts_dedup").on(table.feature, table.windowDate, table.workspaceId),
 	check("fleet_ekg_shifts_kind_check", sql`kind = ANY (ARRAY['numeric'::text, 'mix'::text, 'bigram'::text])`),
 	check("fleet_ekg_shifts_severity_check", sql`severity = ANY (ARRAY['moderate'::text, 'major'::text])`),
 ]);
@@ -2533,33 +2463,6 @@ export const codeRunNudgeFiresInHarnessShared = harnessShared.table("code_run_nu
 	pgPolicy("code_run_nudge_fires_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 ]);
 
-export const knowledgePackCandidatesInHarnessShared = harnessShared.table("knowledge_pack_candidates", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	signature: text().notNull(),
-	title: text().notNull(),
-	draftText: text("draft_text").notNull(),
-	kind: text().default('feedback').notNull(),
-	appliesTo: jsonb("applies_to").default(["any"]).notNull(),
-	scopes: jsonb().default([]).notNull(),
-	recurrenceCount: integer("recurrence_count").default(0).notNull(),
-	sourceItemIds: jsonb("source_item_ids").default([]).notNull(),
-	status: text().default('pending').notNull(),
-	createdBy: text("created_by").default('recurrence-escalation').notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
-	decidedBy: text("decided_by"),
-	decisionNote: text("decision_note"),
-	packId: text("pack_id"),
-	packItemId: text("pack_item_id"),
-}, (table) => [
-	index("knowledge_pack_candidates_listing_idx").using("btree", table.status.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	unique("knowledge_pack_candidates_signature_uniq").on(table.signature),
-	check("knowledge_pack_candidates_status_check", sql`status = ANY (ARRAY['pending'::text, 'adopted'::text, 'dismissed'::text])`),
-	check("knowledge_pack_candidates_kind_check", sql`kind = ANY (ARRAY['user'::text, 'feedback'::text, 'project'::text, 'reference'::text])`),
-	primaryKey({ columns: [table.id], name: "knowledge_pack_candidates_pkey"}),
-
-]);
-
 export const operatorAutoImplementPolicyInHarnessShared = harnessShared.table("operator_auto_implement_policy", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -2594,22 +2497,30 @@ export const improvementDispatchesInHarnessShared = harnessShared.table("improve
 
 ]);
 
-export const benchmarkPreregInHarnessShared = harnessShared.table("benchmark_prereg", {
-	preregHash: text("prereg_hash").primaryKey().notNull(),
-	runId: text("run_id").notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	label: text(),
-	suites: jsonb().default([]).notNull(),
-	config: jsonb().notNull(),
-	filePath: text("file_path").notNull(),
-	gitCommitted: boolean("git_committed").default(false).notNull(),
-	gitCommitSha: text("git_commit_sha"),
+export const knowledgePackCandidatesInHarnessShared = harnessShared.table("knowledge_pack_candidates", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	signature: text().notNull(),
+	title: text().notNull(),
+	draftText: text("draft_text").notNull(),
+	kind: text().default('feedback').notNull(),
+	appliesTo: jsonb("applies_to").default(["any"]).notNull(),
+	scopes: jsonb().default([]).notNull(),
+	recurrenceCount: integer("recurrence_count").default(0).notNull(),
+	sourceItemIds: jsonb("source_item_ids").default([]).notNull(),
+	status: text().default('pending').notNull(),
+	createdBy: text("created_by").default('recurrence-escalation').notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
+	decidedBy: text("decided_by"),
+	decisionNote: text("decision_note"),
+	packId: text("pack_id"),
+	packItemId: text("pack_item_id"),
 }, (table) => [
-	index("benchmark_prereg_ws_run_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.runId.asc().nullsLast().op("text_ops")),
-	unique("benchmark_prereg_workspace_id_run_id_key").on(table.runId, table.workspaceId),
-	pgPolicy("benchmark_prereg_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.preregHash], name: "benchmark_prereg_pkey"}),
+	index("knowledge_pack_candidates_listing_idx").using("btree", table.status.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	unique("knowledge_pack_candidates_signature_uniq").on(table.signature),
+	check("knowledge_pack_candidates_status_check", sql`status = ANY (ARRAY['pending'::text, 'adopted'::text, 'dismissed'::text])`),
+	check("knowledge_pack_candidates_kind_check", sql`kind = ANY (ARRAY['user'::text, 'feedback'::text, 'project'::text, 'reference'::text])`),
+	primaryKey({ columns: [table.id], name: "knowledge_pack_candidates_pkey"}),
 
 ]);
 
@@ -2640,44 +2551,6 @@ export const benchmarkRolloutInHarnessShared = harnessShared.table("benchmark_ro
 	index("benchmark_rollout_ws_run_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.runId.asc().nullsLast().op("text_ops")),
 	pgPolicy("benchmark_rollout_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.rolloutId], name: "benchmark_rollout_pkey"}),
-
-]);
-
-export const benchmarkFleetRunInHarnessShared = harnessShared.table("benchmark_fleet_run", {
-	fleetRunId: text("fleet_run_id").primaryKey().notNull(),
-	runId: text("run_id").notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	preregHash: text("prereg_hash").notNull(),
-	suite: text().notNull(),
-	arm: text().notNull(),
-	backlogId: text("backlog_id").notNull(),
-	seed: integer().notNull(),
-	tasks: integer().notNull(),
-	resolved: integer().notNull(),
-	tasksZeroHumanGate: integer("tasks_zero_human_gate").default(0).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	wallClockMs: bigint("wall_clock_ms", { mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	tokensTotal: bigint("tokens_total", { mode: "number" }).notNull(),
-	costUsd: doublePrecision("cost_usd").notNull(),
-	priceTableVersion: text("price_table_version").notNull(),
-	peakConcurrency: integer("peak_concurrency"),
-	valueCapturedUsd: doublePrecision("value_captured_usd"),
-	valueAvailableUsd: doublePrecision("value_available_usd"),
-	budgetUsd: doublePrecision("budget_usd"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	budgetTokens: bigint("budget_tokens", { mode: "number" }),
-	modelId: text("model_id").notNull(),
-	harnessVersion: text("harness_version").notNull(),
-	configSnapshot: jsonb("config_snapshot"),
-	envFingerprint: jsonb("env_fingerprint"),
-	armMeta: jsonb("arm_meta"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("benchmark_fleet_run_ws_run_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.runId.asc().nullsLast().op("text_ops")),
-	unique("benchmark_fleet_run_workspace_id_run_id_backlog_id_arm_seed_key").on(table.runId, table.workspaceId, table.arm, table.backlogId, table.seed),
-	pgPolicy("benchmark_fleet_run_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.fleetRunId], name: "benchmark_fleet_run_pkey"}),
 
 ]);
 
@@ -2735,13 +2608,70 @@ export const benchmarkRunResultInHarnessShared = harnessShared.table("benchmark_
 			foreignColumns: [benchmarkRolloutInHarnessShared.rolloutId],
 			name: "benchmark_run_result_rollout_id_fkey"
 		}).onDelete("cascade"),
-	unique("benchmark_run_result_workspace_id_run_id_suite_task_id_arm__key").on(table.runId, table.workspaceId, table.suite, table.taskId, table.arm, table.seed),
+	unique("benchmark_run_result_workspace_id_run_id_suite_task_id_arm__key").on(table.arm, table.runId, table.seed, table.suite, table.taskId, table.workspaceId),
 	pgPolicy("benchmark_run_result_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("benchmark_run_result_modality_check", sql`modality = ANY (ARRAY['diff'::text, 'in-container'::text])`),
 	check("benchmark_run_result_arm_check", sql`arm = ANY (ARRAY['papercusp'::text, 'baseline-a-ablation'::text, 'baseline-b-native'::text, 'baseline-c-bestofn'::text])`),
 	check("benchmark_run_result_grader_status_check", sql`grader_status = ANY (ARRAY['passed'::text, 'failed'::text, 'error'::text, 'timeout'::text])`),
 	check("benchmark_run_result_generation_status_check", sql`generation_status = ANY (ARRAY['completed'::text, 'error'::text, 'timeout'::text])`),
 	primaryKey({ columns: [table.rolloutId], name: "benchmark_run_result_pkey"}),
+
+]);
+
+export const benchmarkPreregInHarnessShared = harnessShared.table("benchmark_prereg", {
+	preregHash: text("prereg_hash").primaryKey().notNull(),
+	runId: text("run_id").notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	label: text(),
+	suites: jsonb().default([]).notNull(),
+	config: jsonb().notNull(),
+	filePath: text("file_path").notNull(),
+	gitCommitted: boolean("git_committed").default(false).notNull(),
+	gitCommitSha: text("git_commit_sha"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("benchmark_prereg_ws_run_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.runId.asc().nullsLast().op("text_ops")),
+	unique("benchmark_prereg_workspace_id_run_id_key").on(table.runId, table.workspaceId),
+	pgPolicy("benchmark_prereg_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.preregHash], name: "benchmark_prereg_pkey"}),
+
+]);
+
+export const benchmarkFleetRunInHarnessShared = harnessShared.table("benchmark_fleet_run", {
+	fleetRunId: text("fleet_run_id").primaryKey().notNull(),
+	runId: text("run_id").notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	preregHash: text("prereg_hash").notNull(),
+	suite: text().notNull(),
+	arm: text().notNull(),
+	backlogId: text("backlog_id").notNull(),
+	seed: integer().notNull(),
+	tasks: integer().notNull(),
+	resolved: integer().notNull(),
+	tasksZeroHumanGate: integer("tasks_zero_human_gate").default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	wallClockMs: bigint("wall_clock_ms", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	tokensTotal: bigint("tokens_total", { mode: "number" }).notNull(),
+	costUsd: doublePrecision("cost_usd").notNull(),
+	priceTableVersion: text("price_table_version").notNull(),
+	peakConcurrency: integer("peak_concurrency"),
+	valueCapturedUsd: doublePrecision("value_captured_usd"),
+	valueAvailableUsd: doublePrecision("value_available_usd"),
+	budgetUsd: doublePrecision("budget_usd"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	budgetTokens: bigint("budget_tokens", { mode: "number" }),
+	modelId: text("model_id").notNull(),
+	harnessVersion: text("harness_version").notNull(),
+	configSnapshot: jsonb("config_snapshot"),
+	envFingerprint: jsonb("env_fingerprint"),
+	armMeta: jsonb("arm_meta"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("benchmark_fleet_run_ws_run_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.runId.asc().nullsLast().op("text_ops")),
+	unique("benchmark_fleet_run_workspace_id_run_id_backlog_id_arm_seed_key").on(table.arm, table.backlogId, table.runId, table.seed, table.workspaceId),
+	pgPolicy("benchmark_fleet_run_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.fleetRunId], name: "benchmark_fleet_run_pkey"}),
 
 ]);
 
@@ -2983,7 +2913,7 @@ export const potEvalInstancesInHarnessShared = harnessShared.table("pot_eval_ins
 	batterySliceId: text("battery_slice_id"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	unique("pot_eval_instances_workspace_id_code_sha_genome_id_key").on(table.workspaceId, table.codeSha, table.genomeId),
+	unique("pot_eval_instances_workspace_id_code_sha_genome_id_key").on(table.codeSha, table.genomeId, table.workspaceId),
 	primaryKey({ columns: [table.instanceId], name: "pot_eval_instances_pkey"}),
 
 ]);
@@ -3017,7 +2947,7 @@ export const potEvalRunsInHarnessShared = harnessShared.table("pot_eval_runs", {
 			foreignColumns: [potEvalInstancesInHarnessShared.instanceId],
 			name: "pot_eval_runs_instance_id_fkey"
 		}).onDelete("cascade"),
-	unique("pot_eval_runs_instance_id_scenario_id_repeat_key").on(table.instanceId, table.scenarioId, table.repeat),
+	unique("pot_eval_runs_instance_id_scenario_id_repeat_key").on(table.instanceId, table.repeat, table.scenarioId),
 	primaryKey({ columns: [table.runId], name: "pot_eval_runs_pkey"}),
 
 ]);
@@ -3134,32 +3064,6 @@ export const operatorContextDoorsConfigInHarnessShared = harnessShared.table("op
 
 ]);
 
-export const benchRunEventsInHarnessShared = harnessShared.table("bench_run_events", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	eventId: bigint("event_id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.bench_run_events_event_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	runId: text("run_id").notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	seq: bigint({ mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }),
-	kind: text().notNull(),
-	agent: text(),
-	taskId: text("task_id"),
-	payload: jsonb(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("bench_run_events_ws_run_seq_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.runId.asc().nullsLast().op("int8_ops"), table.seq.asc().nullsLast().op("int8_ops")),
-	foreignKey({
-			columns: [table.runId],
-			foreignColumns: [benchRunsInHarnessShared.id],
-			name: "bench_run_events_run_id_fkey"
-		}).onDelete("cascade"),
-	pgPolicy("bench_run_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.eventId], name: "bench_run_events_pkey"}),
-
-]);
-
 export const benchRunsInHarnessShared = harnessShared.table("bench_runs", {
 	id: text().primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -3199,6 +3103,32 @@ export const benchRunsInHarnessShared = harnessShared.table("bench_runs", {
 	pgPolicy("bench_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("bench_runs_status_check", sql`status = ANY (ARRAY['pending'::text, 'running'::text, 'grading'::text, 'done'::text, 'error'::text, 'cancelled'::text])`),
 	check("bench_runs_source_check", sql`source = ANY (ARRAY['ui'::text, 'cli'::text, 'import'::text])`),
+]);
+
+export const benchRunEventsInHarnessShared = harnessShared.table("bench_run_events", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	eventId: bigint("event_id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.bench_run_events_event_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	runId: text("run_id").notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	seq: bigint({ mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	kind: text().notNull(),
+	agent: text(),
+	taskId: text("task_id"),
+	payload: jsonb(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("bench_run_events_ws_run_seq_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.runId.asc().nullsLast().op("int8_ops"), table.seq.asc().nullsLast().op("int8_ops")),
+	foreignKey({
+			columns: [table.runId],
+			foreignColumns: [benchRunsInHarnessShared.id],
+			name: "bench_run_events_run_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("bench_run_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.eventId], name: "bench_run_events_pkey"}),
+
 ]);
 
 export const cupKeeperRunsInHarnessShared = harnessShared.table("cup_keeper_runs", {
@@ -3381,28 +3311,6 @@ export const systemHealthTransitionsInHarnessShared = harnessShared.table("syste
 	index("idx_shealth_transitions_ws_panel_at").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.panel.asc().nullsLast().op("text_ops"), table.at.desc().nullsFirst().op("timestamptz_ops")),
 ]);
 
-export const operatorMigratePolicyInHarnessShared = harnessShared.table("operator_migrate_policy", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().default({}).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_migrate_policy_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_migrate_policy_pkey"}),
-
-]);
-
-export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table("operator_telemetry_buffer_config", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().default({}).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
-
-]);
-
 export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs", {
 	ownerId: text("owner_id").primaryKey().notNull(),
 	workspaceId: text("workspace_id").default('default').notNull(),
@@ -3427,6 +3335,28 @@ export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs"
 	index("session_briefs_native_session_id_idx").using("btree", table.nativeSessionId.asc().nullsLast().op("text_ops")).where(sql`(native_session_id IS NOT NULL)`),
 	index("session_briefs_updated_at_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
 	primaryKey({ columns: [table.ownerId], name: "session_briefs_pkey"}),
+
+]);
+
+export const operatorMigratePolicyInHarnessShared = harnessShared.table("operator_migrate_policy", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_migrate_policy_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_migrate_policy_pkey"}),
+
+]);
+
+export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table("operator_telemetry_buffer_config", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
 
 ]);
 
@@ -3527,19 +3457,6 @@ export const knowledgePackConfigInHarnessShared = harnessShared.table("knowledge
 
 ]);
 
-export const collisionHysteresisInHarnessShared = harnessShared.table("collision_hysteresis", {
-	sessionId: text("session_id").primaryKey().notNull(),
-	ownerId: text("owner_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	tick: bigint({ mode: "number" }).default(0).notNull(),
-	states: jsonb().default([]).notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("collision_hysteresis_updated_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
-	primaryKey({ columns: [table.sessionId], name: "collision_hysteresis_pkey"}),
-
-]);
-
 export const sessionPortsInHarnessShared = harnessShared.table("session_ports", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -3569,11 +3486,24 @@ export const sessionPortsInHarnessShared = harnessShared.table("session_ports", 
 	index("session_ports_pending_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['prepared'::text, 'pending'::text]))`),
 	index("session_ports_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.sourceAdvSessionId.asc().nullsLast().op("timestamptz_ops"), table.preparedAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("session_ports_target_idx").using("btree", table.targetAdvSessionId.asc().nullsLast().op("int8_ops")).where(sql`(target_adv_session_id IS NOT NULL)`),
-	unique("session_ports_workspace_id_idempotency_key_key").on(table.workspaceId, table.idempotencyKey),
+	unique("session_ports_workspace_id_idempotency_key_key").on(table.idempotencyKey, table.workspaceId),
 	pgPolicy("session_ports_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("session_ports_status_check", sql`status = ANY (ARRAY['prepared'::text, 'pending'::text, 'delivered'::text, 'failed'::text, 'expired'::text])`),
 	check("session_ports_backend_check", sql`(source_backend = ANY (ARRAY['claude'::text, 'codex'::text, 'omp'::text])) AND (target_backend = ANY (ARRAY['claude'::text, 'codex'::text, 'omp'::text]))`),
 	primaryKey({ columns: [table.id], name: "session_ports_pkey"}),
+
+]);
+
+export const collisionHysteresisInHarnessShared = harnessShared.table("collision_hysteresis", {
+	sessionId: text("session_id").primaryKey().notNull(),
+	ownerId: text("owner_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	tick: bigint({ mode: "number" }).default(0).notNull(),
+	states: jsonb().default([]).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("collision_hysteresis_updated_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.sessionId], name: "collision_hysteresis_pkey"}),
 
 ]);
 
@@ -3595,13 +3525,30 @@ export const crossPotAsksInHarnessShared = harnessShared.table("cross_pot_asks",
 	potSlug: text("pot_slug").notNull(),
 }, (table) => [
 	index("cross_hive_asks_listing_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	unique("cross_hive_asks_correlation_pot_uniq").on(table.workspaceId, table.correlationId, table.potSlug),
+	unique("cross_hive_asks_correlation_pot_uniq").on(table.correlationId, table.potSlug, table.workspaceId),
 	check("cross_hive_asks_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("cross_hive_asks_direction_check", sql`direction = ANY (ARRAY['out'::text, 'in'::text])`),
 	check("cross_hive_asks_kind_check", sql`kind = ANY (ARRAY['ask'::text, 'work-request'::text])`),
 	check("cross_hive_asks_state_check", sql`state = ANY (ARRAY['queued'::text, 'sent'::text, 'answered'::text, 'declined'::text, 'expired'::text])`),
 	primaryKey({ columns: [table.id], name: "cross_pot_asks_pkey"}),
 
+]);
+
+export const memoryRecallStatsInHarnessShared = harnessShared.table("memory_recall_stats", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.memory_recall_stats_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	surface: text().notNull(),
+	hitCount: integer("hit_count").notNull(),
+	topScore: doublePrecision("top_score"),
+	scores: jsonb().default([]).notNull(),
+	fragmentCount: integer("fragment_count").default(0).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	workspaceId: text("workspace_id"),
+	potSlug: text("pot_slug"),
+}, (table) => [
+	index("memory_recall_stats_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("memory_recall_stats_ws_pot_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	check("memory_recall_stats_hit_count_check", sql`hit_count >= 0`),
 ]);
 
 export const scoutTicksInHarnessShared = harnessShared.table("scout_ticks", {
@@ -3624,23 +3571,6 @@ export const scoutTicksInHarnessShared = harnessShared.table("scout_ticks", {
 	index("scout_ticks_ws_pot_tick_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("timestamptz_ops"), table.tickAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("scout_ticks_ws_tick_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.tickAt.desc().nullsFirst().op("timestamptz_ops")),
 	pgPolicy("scout_ticks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
-export const memoryRecallStatsInHarnessShared = harnessShared.table("memory_recall_stats", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.memory_recall_stats_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	surface: text().notNull(),
-	hitCount: integer("hit_count").notNull(),
-	topScore: doublePrecision("top_score"),
-	scores: jsonb().default([]).notNull(),
-	fragmentCount: integer("fragment_count").default(0).notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	workspaceId: text("workspace_id"),
-	potSlug: text("pot_slug"),
-}, (table) => [
-	index("memory_recall_stats_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("memory_recall_stats_ws_pot_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	check("memory_recall_stats_hit_count_check", sql`hit_count >= 0`),
 ]);
 
 export const memoryFeedbackInHarnessShared = harnessShared.table("memory_feedback", {
@@ -3697,6 +3627,26 @@ export const calibrationPredictionsInHarnessShared = harnessShared.table("calibr
 	check("calibration_predictions_outcome_resolved", sql`(outcome IS NULL) OR (resolved_at IS NOT NULL)`),
 ]);
 
+export const editAttributionLedgerInHarnessShared = harnessShared.table("edit_attribution_ledger", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.edit_attribution_ledger_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id"),
+	harnessSlug: text("harness_slug"),
+	repo: text(),
+	file: text().notNull(),
+	agentId: text("agent_id").notNull(),
+	sessionId: text("session_id"),
+	contributor: text(),
+	workItemId: text("work_item_id"),
+	planSlug: text("plan_slug"),
+	intent: text(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	repoRoot: text("repo_root"),
+}, (table) => [
+	index("edit_attribution_ledger_repo_file_idx").using("btree", table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
+	index("edit_attribution_ledger_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(work_item_id IS NOT NULL)`),
+]);
+
 export const gitSyncCommitAttributionInHarnessShared = harnessShared.table("git_sync_commit_attribution", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.git_sync_commit_attribution_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -3717,25 +3667,88 @@ export const gitSyncCommitAttributionInHarnessShared = harnessShared.table("git_
 	index("git_sync_commit_attr_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")).where(sql`(work_item_id IS NOT NULL)`),
 ]);
 
-export const editAttributionLedgerInHarnessShared = harnessShared.table("edit_attribution_ledger", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.edit_attribution_ledger_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	workspaceId: text("workspace_id"),
+export const potBackfill649DroppedInHarnessShared = harnessShared.table("_pot_backfill_649_dropped", {
 	harnessSlug: text("harness_slug"),
-	repo: text(),
-	file: text().notNull(),
-	agentId: text("agent_id").notNull(),
-	sessionId: text("session_id"),
-	contributor: text(),
-	workItemId: text("work_item_id"),
-	planSlug: text("plan_slug"),
-	intent: text(),
-	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
-	repoRoot: text("repo_root"),
-}, (table) => [
-	index("edit_attribution_ledger_repo_file_idx").using("btree", table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
-	index("edit_attribution_ledger_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(work_item_id IS NOT NULL)`),
-]);
+	featureId: text("feature_id"),
+	title: text(),
+	summary: text(),
+	status: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	attempts: bigint({ mode: "number" }),
+	claims: text(),
+	notes: text(),
+	metadata: jsonb(),
+	kind: text(),
+	projectId: text("project_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	expectedCostCents: bigint("expected_cost_cents", { mode: "number" }),
+	tags: jsonb(),
+	needsHumanReview: boolean("needs_human_review"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdTs: bigint("created_ts", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedTs: bigint("updated_ts", { mode: "number" }),
+	parentId: text("parent_id"),
+	goalId: text("goal_id"),
+	takenBy: text("taken_by"),
+	takenAt: timestamp("taken_at", { withTimezone: true, mode: 'string' }),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	workspaceId: text("workspace_id"),
+	search: tsvectorCustom("_search"),
+	deprecationReason: text("deprecation_reason"),
+	seeAlso: text("see_also"),
+	needsDesign: boolean("needs_design"),
+	designStatus: text("design_status"),
+	designSpecId: text("design_spec_id"),
+	discardedDesignWork: boolean("discarded_design_work"),
+	completionRef: jsonb("completion_ref"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	workingUsers: bigint("working_users", { mode: "number" }),
+	workedByHistory: jsonb("worked_by_history"),
+	wave: text(),
+	verifiedDoneAtRemoteTs: timestamp("verified_done_at_remote_ts", { withTimezone: true, mode: 'string' }),
+	verifierLastError: text("verifier_last_error"),
+	verifierLastCheckedAt: timestamp("verifier_last_checked_at", { withTimezone: true, mode: 'string' }),
+	sourcePlanSlug: text("source_plan_slug"),
+	sourcePlanItemIds: text("source_plan_item_ids"),
+	featureOrder: integer("feature_order"),
+	authorPubkey: text("author_pubkey"),
+	origin: text(),
+	auditVerdict: text("audit_verdict"),
+	auditReasons: text("audit_reasons"),
+	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
+	itemKind: text("item_kind"),
+	payload: jsonb(),
+	assigneeRank: integer("assignee_rank"),
+	rankWriter: text("rank_writer"),
+	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	redundancy: integer(),
+	swarmAffinity: text("swarm_affinity"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	verifiedAuthorGithubUserId: bigint("verified_author_github_user_id", { mode: "number" }),
+	schedule: jsonb(),
+	scheduleActive: boolean("schedule_active"),
+	scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: 'string' }),
+	tzid: text(),
+	templateSlug: text("template_slug"),
+	runSeq: integer("run_seq"),
+	requeueCount: integer("requeue_count"),
+	fedHlc: text("fed_hlc"),
+	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
+	terminalOwner: text("terminal_owner"),
+	terminalCompletionRef: text("terminal_completion_ref"),
+	lastReleasedBy: text("last_released_by"),
+	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
+	embedding: vector({ dimensions: 384 }),
+	embeddingMode: text("embedding_mode"),
+	terminalReason: text("terminal_reason"),
+});
 
 export const federationProbesInHarnessShared = harnessShared.table("federation_probes", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -3833,28 +3846,6 @@ export const topicHysteresisInHarnessShared = harnessShared.table("topic_hystere
 
 ]);
 
-export const directivesInPapercuspShared = papercuspShared.table("directives", {
-	id: text().primaryKey().notNull(),
-	title: text().notNull(),
-	body: text().notNull(),
-	status: text().notNull(),
-	createdBy: text("created_by").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	deadlineTs: bigint("deadline_ts", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	budgetCents: bigint("budget_cents", { mode: "number" }),
-	priority: text(),
-	assignedDepartments: jsonb("assigned_departments").default([]).notNull(),
-	linkedProjectIds: jsonb("linked_project_ids").default([]).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
-}, (table) => [
-	index("directives_created_idx").using("btree", table.createdTs.desc().nullsFirst().op("int8_ops")),
-	index("directives_status_idx").using("btree", table.status.asc().nullsLast().op("text_ops")),
-]);
-
 export const desktopPerfRunsInHarnessShared = harnessShared.table("desktop_perf_runs", {
 	id: text().primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -3888,7 +3879,7 @@ export const memoryLiveRecallCanarySetInHarnessShared = harnessShared.table("mem
 	baselineRAt10: doublePrecision("baseline_r_at_10").notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	unique("memory_live_recall_canary_set_ws_version").on(table.workspaceId, table.version),
+	unique("memory_live_recall_canary_set_ws_version").on(table.version, table.workspaceId),
 ]);
 
 export const memoryLiveRecallCanaryRunInHarnessShared = harnessShared.table("memory_live_recall_canary_run", {
@@ -4181,17 +4172,6 @@ export const goalsInHarnessShared = harnessShared.table("goals", {
 	check("goals_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
-export const operatorBudgetInHarnessShared = harnessShared.table("operator_budget", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_budget_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_budget_pkey"}),
-
-]);
-
 export const operatorCredentialsInHarnessShared = harnessShared.table("operator_credentials", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().notNull(),
@@ -4201,6 +4181,17 @@ export const operatorCredentialsInHarnessShared = harnessShared.table("operator_
 }, (table) => [
 	pgPolicy("operator_credentials_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_credentials_pkey"}),
+
+]);
+
+export const operatorBudgetInHarnessShared = harnessShared.table("operator_budget", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_budget_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_budget_pkey"}),
 
 ]);
 
@@ -4216,18 +4207,6 @@ export const operatorPublishCredentialsInHarnessShared = harnessShared.table("op
 
 ]);
 
-export const operatorMarketplaceTokenInHarnessShared = harnessShared.table("operator_marketplace_token", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	payloadCt: byteaCustom("payload_ct"),
-}, (table) => [
-	pgPolicy("operator_marketplace_token_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_marketplace_token_pkey"}),
-
-]);
-
 export const operatorVoiceCredentialsInHarnessShared = harnessShared.table("operator_voice_credentials", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().notNull(),
@@ -4237,6 +4216,18 @@ export const operatorVoiceCredentialsInHarnessShared = harnessShared.table("oper
 }, (table) => [
 	pgPolicy("operator_voice_credentials_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_voice_credentials_pkey"}),
+
+]);
+
+export const operatorMarketplaceTokenInHarnessShared = harnessShared.table("operator_marketplace_token", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+	payloadCt: byteaCustom("payload_ct"),
+}, (table) => [
+	pgPolicy("operator_marketplace_token_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_marketplace_token_pkey"}),
 
 ]);
 
@@ -4251,17 +4242,6 @@ export const operatorStandingCandidatesInHarnessShared = harnessShared.table("op
 
 ]);
 
-export const operatorVoicePrefsInHarnessShared = harnessShared.table("operator_voice_prefs", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_voice_prefs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_voice_prefs_pkey"}),
-
-]);
-
 export const operatorAgentConfigInHarnessShared = harnessShared.table("operator_agent_config", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().notNull(),
@@ -4270,6 +4250,17 @@ export const operatorAgentConfigInHarnessShared = harnessShared.table("operator_
 }, (table) => [
 	pgPolicy("operator_agent_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "operator_agent_config_pkey"}),
+
+]);
+
+export const operatorTtsSpendInHarnessShared = harnessShared.table("operator_tts_spend", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_tts_spend_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_tts_spend_pkey"}),
 
 ]);
 
@@ -4284,14 +4275,14 @@ export const operatorSttSpendInHarnessShared = harnessShared.table("operator_stt
 
 ]);
 
-export const operatorTtsSpendInHarnessShared = harnessShared.table("operator_tts_spend", {
+export const operatorVoicePrefsInHarnessShared = harnessShared.table("operator_voice_prefs", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	pgPolicy("operator_tts_spend_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_tts_spend_pkey"}),
+	pgPolicy("operator_voice_prefs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_voice_prefs_pkey"}),
 
 ]);
 
@@ -4442,6 +4433,98 @@ export const hlcClockInHarnessShared = harnessShared.table("hlc_clock", {
 
 ]);
 
+export const messagesInPapercuspShared = papercuspShared.table("messages", {
+	id: text().primaryKey().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }).notNull(),
+	fromDept: text("from_dept").notNull(),
+	kind: text().notNull(),
+	subject: text().notNull(),
+	body: text().notNull(),
+	refId: text("ref_id"),
+	projectId: text("project_id"),
+	directiveId: text("directive_id"),
+	status: text().default('pending').notNull(),
+	metadata: jsonb(),
+}, (table) => [
+	index("messages_directive_idx").using("btree", table.directiveId.asc().nullsLast().op("text_ops")),
+	index("messages_from_idx").using("btree", table.fromDept.asc().nullsLast().op("text_ops")),
+	index("messages_kind_idx").using("btree", table.kind.asc().nullsLast().op("text_ops")),
+	index("messages_project_idx").using("btree", table.projectId.asc().nullsLast().op("text_ops")),
+	index("messages_status_idx").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	index("messages_ts_idx").using("btree", table.ts.asc().nullsLast().op("int8_ops")),
+]);
+
+export const messageCommentsInPapercuspShared = papercuspShared.table("message_comments", {
+	id: text().primaryKey().notNull(),
+	messageId: text("message_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }).notNull(),
+	author: text().notNull(),
+	body: text().notNull(),
+}, (table) => [
+	index("comments_msg_idx").using("btree", table.messageId.asc().nullsLast().op("text_ops")),
+	index("comments_ts_idx").using("btree", table.ts.asc().nullsLast().op("int8_ops")),
+	foreignKey({
+			columns: [table.messageId],
+			foreignColumns: [messagesInPapercuspShared.id],
+			name: "message_comments_message_id_fkey"
+		}).onDelete("cascade"),
+]);
+
+export const briefingsInPapercuspShared = papercuspShared.table("briefings", {
+	id: text().primaryKey().notNull(),
+	title: text().notNull(),
+	quarter: text().default('').notNull(),
+	status: text().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	scriptPath: text("script_path"),
+	durationSeconds: integer("duration_seconds"),
+	youtubeUrl: text("youtube_url"),
+	youtubeVideoId: text("youtube_video_id"),
+	thumbnailUrl: text("thumbnail_url"),
+	renderLog: text("render_log"),
+	error: text(),
+	summary: text(),
+}, (table) => [
+	index("briefings_quarter_idx").using("btree", table.quarter.asc().nullsLast().op("text_ops")),
+	index("briefings_status_idx").using("btree", table.status.asc().nullsLast().op("text_ops")),
+]);
+
+export const directiveSummariesInPapercuspShared = papercuspShared.table("directive_summaries", {
+	id: text().primaryKey().notNull(),
+	directiveId: text("directive_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }).notNull(),
+	author: text().default('ceo').notNull(),
+	body: text().notNull(),
+}, (table) => [
+	index("summaries_directive_idx").using("btree", table.directiveId.asc().nullsLast().op("text_ops")),
+	index("summaries_ts_idx").using("btree", table.ts.asc().nullsLast().op("int8_ops")),
+]);
+
+export const directivesInPapercuspShared = papercuspShared.table("directives", {
+	id: text().primaryKey().notNull(),
+	title: text().notNull(),
+	body: text().notNull(),
+	status: text().notNull(),
+	createdBy: text("created_by").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	deadlineTs: bigint("deadline_ts", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	budgetCents: bigint("budget_cents", { mode: "number" }),
+	priority: text(),
+	assignedDepartments: jsonb("assigned_departments").default([]).notNull(),
+	linkedProjectIds: jsonb("linked_project_ids").default([]).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
+}, (table) => [
+	index("directives_created_idx").using("btree", table.createdTs.desc().nullsFirst().op("int8_ops")),
+	index("directives_status_idx").using("btree", table.status.asc().nullsLast().op("text_ops")),
+]);
+
 export const messageRecipientsInPapercuspShared = papercuspShared.table("message_recipients", {
 	messageId: text("message_id").notNull(),
 	deptSlug: text("dept_slug").notNull(),
@@ -4452,7 +4535,7 @@ export const messageRecipientsInPapercuspShared = papercuspShared.table("message
 			foreignColumns: [messagesInPapercuspShared.id],
 			name: "message_recipients_message_id_fkey"
 		}).onDelete("cascade"),
-	primaryKey({ columns: [table.messageId, table.deptSlug], name: "message_recipients_pkey"}),
+	primaryKey({ columns: [table.deptSlug, table.messageId], name: "message_recipients_pkey"}),
 ]);
 
 export const knownSchemaVersionsInHarnessShared = harnessShared.table("known_schema_versions", {
@@ -4462,7 +4545,7 @@ export const knownSchemaVersionsInHarnessShared = harnessShared.table("known_sch
 	maxKnownVersion: bigint("max_known_version", { mode: "number" }).default(1).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug], name: "known_schema_versions_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.workspaceId], name: "known_schema_versions_pkey"}),
 	pgPolicy("known_schema_versions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4472,7 +4555,7 @@ export const insightsFirstVisitInHarnessShared = harnessShared.table("insights_f
 	userId: text("user_id").notNull(),
 	seenAtTs: timestamp("seen_at_ts", { withTimezone: true, mode: 'string' }),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.userId], name: "insights_first_visit_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.userId, table.workspaceId], name: "insights_first_visit_pkey"}),
 	pgPolicy("insights_first_visit_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4485,7 +4568,7 @@ export const userTrustListInHarnessShared = harnessShared.table("user_trust_list
 	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
 }, (table) => [
 	index("user_trust_list_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.trustedGithubUserId], name: "user_trust_list_pkey"}),
+	primaryKey({ columns: [table.trustedGithubUserId, table.workspaceId], name: "user_trust_list_pkey"}),
 	pgPolicy("user_trust_list_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4495,7 +4578,7 @@ export const substrateMetaInHarnessShared = harnessShared.table("substrate_meta"
 	key: text().notNull(),
 	value: text().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.key], name: "substrate_meta_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.key, table.workspaceId], name: "substrate_meta_pkey"}),
 ]);
 
 export const tuiViewStateInHarnessShared = harnessShared.table("tui_view_state", {
@@ -4504,7 +4587,7 @@ export const tuiViewStateInHarnessShared = harnessShared.table("tui_view_state",
 	state: jsonb().default({}).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.ownerId], name: "tui_view_state_pkey"}),
+	primaryKey({ columns: [table.ownerId, table.workspaceId], name: "tui_view_state_pkey"}),
 	pgPolicy("tui_view_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4515,7 +4598,7 @@ export const sessionGateWatcherFilesInHarnessShared = harnessShared.table("sessi
 	byteOffset: bigint("byte_offset", { mode: "number" }).default(0).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.filePath], name: "session_gate_watcher_files_pkey"}),
+	primaryKey({ columns: [table.filePath, table.workspaceId], name: "session_gate_watcher_files_pkey"}),
 ]);
 
 export const mobilePushTokensInHarnessShared = harnessShared.table("mobile_push_tokens", {
@@ -4543,7 +4626,7 @@ export const coordWatermarksInHarnessShared = harnessShared.table("coord_waterma
 	surfaces: jsonb().default({}).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.ownerId], name: "coord_watermarks_pkey"}),
+	primaryKey({ columns: [table.ownerId, table.workspaceId], name: "coord_watermarks_pkey"}),
 	pgPolicy("coord_watermarks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4554,7 +4637,7 @@ export const roleCapabilityGrantsInHarnessShared = harnessShared.table("role_cap
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.role], name: "role_capability_grants_pkey"}),
+	primaryKey({ columns: [table.role, table.workspaceId], name: "role_capability_grants_pkey"}),
 	pgPolicy("role_capability_grants_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4565,7 +4648,7 @@ export const interactiveUsageFilesInHarnessShared = harnessShared.table("interac
 	byteOffset: bigint("byte_offset", { mode: "number" }).default(0).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.filePath], name: "interactive_usage_files_pkey"}),
+	primaryKey({ columns: [table.filePath, table.workspaceId], name: "interactive_usage_files_pkey"}),
 ]);
 
 export const operatorGymGatesInHarnessShared = harnessShared.table("operator_gym_gates", {
@@ -4575,7 +4658,7 @@ export const operatorGymGatesInHarnessShared = harnessShared.table("operator_gym
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug], name: "operator_gym_gates_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.workspaceId], name: "operator_gym_gates_pkey"}),
 	pgPolicy("operator_gym_gates_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4599,7 +4682,7 @@ export const workItemBlockedInHarnessShared = harnessShared.table("work_item_blo
 	featureId: text("feature_id").notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "work_item_blocked_pkey"}),
+	primaryKey({ columns: [table.featureId, table.harnessSlug, table.workspaceId], name: "work_item_blocked_pkey"}),
 ]);
 
 export const systemHealthTicksInHarnessShared = harnessShared.table("system_health_ticks", {
@@ -4609,7 +4692,7 @@ export const systemHealthTicksInHarnessShared = harnessShared.table("system_heal
 	statuses: jsonb().notNull(),
 }, (table) => [
 	index("idx_shealth_ticks_at").using("btree", table.at.asc().nullsLast().op("timestamptz_ops")),
-	primaryKey({ columns: [table.workspaceId, table.at], name: "system_health_ticks_pkey"}),
+	primaryKey({ columns: [table.at, table.workspaceId], name: "system_health_ticks_pkey"}),
 ]);
 
 export const coordOpenEscalationsInHarnessShared = harnessShared.table("coord_open_escalations", {
@@ -4619,7 +4702,7 @@ export const coordOpenEscalationsInHarnessShared = harnessShared.table("coord_op
 	body: jsonb().notNull(),
 }, (table) => [
 	index("coord_open_escalations_ws_ts").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.msgId], name: "coord_open_escalations_pkey"}),
+	primaryKey({ columns: [table.msgId, table.workspaceId], name: "coord_open_escalations_pkey"}),
 ]);
 
 export const agentNamesInHarnessShared = harnessShared.table("agent_names", {
@@ -4630,7 +4713,7 @@ export const agentNamesInHarnessShared = harnessShared.table("agent_names", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("agent_names_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerUser.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.agentName], name: "agent_names_pkey"}),
+	primaryKey({ columns: [table.agentName, table.workspaceId], name: "agent_names_pkey"}),
 	check("agent_names_name_nonempty", sql`agent_name <> ''::text`),
 	check("agent_names_owner_nonempty", sql`owner_user <> ''::text`),
 ]);
@@ -4643,7 +4726,7 @@ export const agentNameSessionsInHarnessShared = harnessShared.table("agent_name_
 	adoptedAt: timestamp("adopted_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("agent_name_sessions_name_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.agentName.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.sessionOwnerId], name: "agent_name_sessions_pkey"}),
+	primaryKey({ columns: [table.sessionOwnerId, table.workspaceId], name: "agent_name_sessions_pkey"}),
 	check("agent_name_sessions_name_nonempty", sql`agent_name <> ''::text`),
 ]);
 
@@ -4655,7 +4738,7 @@ export const harnessPhaseLastUsedInHarnessShared = harnessShared.table("harness_
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.userId], name: "harness_phase_last_used_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.userId, table.workspaceId], name: "harness_phase_last_used_pkey"}),
 	pgPolicy("harness_phase_last_used_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4668,7 +4751,7 @@ export const harnessFeatureDebugNotesInHarnessShared = harnessShared.table("harn
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("hfdn_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "harness_feature_debug_notes_pkey"}),
+	primaryKey({ columns: [table.featureId, table.harnessSlug, table.workspaceId], name: "harness_feature_debug_notes_pkey"}),
 	pgPolicy("harness_feature_debug_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4680,7 +4763,7 @@ export const steeringChurnEscalationsInHarnessShared = harnessShared.table("stee
 	lastEscalatedTs: bigint("last_escalated_ts", { mode: "number" }).notNull(),
 	churnCount: integer("churn_count").default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "steering_churn_escalations_pkey"}),
+	primaryKey({ columns: [table.featureId, table.harnessSlug, table.workspaceId], name: "steering_churn_escalations_pkey"}),
 	pgPolicy("steering_churn_escalations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4692,7 +4775,7 @@ export const provisionStateInHarnessShared = harnessShared.table("provision_stat
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.pluginSlug], name: "provision_state_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.pluginSlug, table.workspaceId], name: "provision_state_pkey"}),
 	pgPolicy("provision_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4703,7 +4786,7 @@ export const pluginReloadStateInHarnessShared = harnessShared.table("plugin_relo
 	byteSize: integer("byte_size").notNull(),
 	savedAt: timestamp("saved_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.pluginId, table.harnessSlug], name: "plugin_reload_state_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.pluginId], name: "plugin_reload_state_pkey"}),
 ]);
 
 export const harnessSkillsInHarnessShared = harnessShared.table("harness_skills", {
@@ -4715,7 +4798,7 @@ export const harnessSkillsInHarnessShared = harnessShared.table("harness_skills"
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("harness_skills_lookup_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.name], name: "harness_skills_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.name, table.workspaceId], name: "harness_skills_pkey"}),
 	pgPolicy("harness_skills_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4729,7 +4812,7 @@ export const trustedAuthorsInHarnessShared = harnessShared.table("trusted_author
 	trustedAt: timestamp("trusted_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("trusted_authors_by_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.trustedByGithubUserId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.trustedGithubUserId], name: "trusted_authors_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.trustedGithubUserId, table.workspaceId], name: "trusted_authors_pkey"}),
 	pgPolicy("trusted_authors_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4741,7 +4824,7 @@ export const p2PRefusedOpCountersInHarnessShared = harnessShared.table("p2p_refu
 	count: bigint({ mode: "number" }).default(0).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.reason], name: "p2p_refused_op_counters_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.reason, table.workspaceId], name: "p2p_refused_op_counters_pkey"}),
 	check("p2p_refused_op_counters_nonneg", sql`count >= 0`),
 ]);
 
@@ -4753,7 +4836,7 @@ export const harnessGeneratorItemsInHarnessShared = harnessShared.table("harness
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "harness_generator_items_pkey"}),
+	primaryKey({ columns: [table.featureId, table.harnessSlug, table.workspaceId], name: "harness_generator_items_pkey"}),
 	pgPolicy("harness_generator_items_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4766,7 +4849,7 @@ export const harnessFeatureNotesInHarnessShared = harnessShared.table("harness_f
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("harness_feature_notes_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "harness_feature_notes_pkey"}),
+	primaryKey({ columns: [table.featureId, table.harnessSlug, table.workspaceId], name: "harness_feature_notes_pkey"}),
 	pgPolicy("harness_feature_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4778,7 +4861,7 @@ export const memorySessionSurfacedInHarnessShared = harnessShared.table("memory_
 	surfacedAt: timestamp("surfaced_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("memory_session_surfaced_age_idx").using("btree", table.surfacedAt.asc().nullsLast().op("timestamptz_ops")),
-	primaryKey({ columns: [table.sessionId, table.epoch, table.memoryId], name: "memory_session_surfaced_pkey"}),
+	primaryKey({ columns: [table.epoch, table.memoryId, table.sessionId], name: "memory_session_surfaced_pkey"}),
 ]);
 
 export const hiddenPluginsInHarnessShared = harnessShared.table("hidden_plugins", {
@@ -4802,7 +4885,7 @@ export const harnessPromptOverridesInHarnessShared = harnessShared.table("harnes
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.role], name: "harness_prompt_overrides_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.role, table.workspaceId], name: "harness_prompt_overrides_pkey"}),
 	pgPolicy("harness_prompt_overrides_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4828,7 +4911,7 @@ export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.scope], name: "carry_notes_pkey"}),
+	primaryKey({ columns: [table.scope, table.workspaceId], name: "carry_notes_pkey"}),
 	pgPolicy("carry_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4839,7 +4922,7 @@ export const secretsGuardPathExemptionsInHarnessShared = harnessShared.table("se
 	createdBy: text("created_by").default('').notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.path], name: "secrets_guard_path_exemptions_pkey"}),
+	primaryKey({ columns: [table.path, table.workspaceId], name: "secrets_guard_path_exemptions_pkey"}),
 	pgPolicy("secrets_guard_path_exemptions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4852,7 +4935,7 @@ export const p2PGrantorEpochsInHarnessShared = harnessShared.table("p2p_grantor_
 	highWaterEpoch: bigint("high_water_epoch", { mode: "number" }).default(0).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.grantorGithubUserId], name: "p2p_grantor_epochs_pkey"}),
+	primaryKey({ columns: [table.grantorGithubUserId, table.harnessSlug, table.workspaceId], name: "p2p_grantor_epochs_pkey"}),
 	check("p2p_grantor_epochs_nonneg", sql`high_water_epoch >= 0`),
 ]);
 
@@ -4864,7 +4947,7 @@ export const substrateMergeCursorInHarnessShared = harnessShared.table("substrat
 	position: bigint({ mode: "number" }).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.logKeyhex], name: "substrate_merge_cursor_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.logKeyhex, table.workspaceId], name: "substrate_merge_cursor_pkey"}),
 ]);
 
 export const agentLaunchIdempotencyInHarnessShared = harnessShared.table("agent_launch_idempotency", {
@@ -4876,7 +4959,7 @@ export const agentLaunchIdempotencyInHarnessShared = harnessShared.table("agent_
 	summary: jsonb().default({}).notNull(),
 }, (table) => [
 	index("agent_launch_idempotency_launched_at_idx").using("btree", table.launchedAt.asc().nullsLast().op("int8_ops")),
-	primaryKey({ columns: [table.workspaceId, table.idempotencyKey], name: "agent_launch_idempotency_pkey"}),
+	primaryKey({ columns: [table.idempotencyKey, table.workspaceId], name: "agent_launch_idempotency_pkey"}),
 ]);
 
 export const systemPrincipalsInHarnessShared = harnessShared.table("system_principals", {
@@ -4887,7 +4970,7 @@ export const systemPrincipalsInHarnessShared = harnessShared.table("system_princ
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("system_principals_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.name], name: "system_principals_pkey"}),
+	primaryKey({ columns: [table.name, table.workspaceId], name: "system_principals_pkey"}),
 	pgPolicy("system_principals_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("system_principals_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
@@ -4902,7 +4985,7 @@ export const pluginKvInHarnessShared = harnessShared.table("plugin_kv", {
 }, (table) => [
 	index("idx_plugin_kv_prefix").using("btree", table.pluginId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_pattern_ops"), table.key.asc().nullsLast().op("text_pattern_ops")),
 	index("idx_plugin_kv_quota").using("btree", table.pluginId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.pluginId, table.harnessSlug, table.key], name: "plugin_kv_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.key, table.pluginId], name: "plugin_kv_pkey"}),
 ]);
 
 export const planWorkGroupMembersInHarnessShared = harnessShared.table("plan_work_group_members", {
@@ -4913,7 +4996,7 @@ export const planWorkGroupMembersInHarnessShared = harnessShared.table("plan_wor
 	memberName: text("member_name"),
 	joinedAt: timestamp("joined_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.planSlug, table.memberUser], name: "plan_work_group_members_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.memberUser, table.planSlug, table.workspaceId], name: "plan_work_group_members_pkey"}),
 	check("plan_work_group_members_user_nonempty", sql`member_user <> ''::text`),
 ]);
 
@@ -4926,7 +5009,7 @@ export const operatorCurationLogInHarnessShared = harnessShared.table("operator_
 	title: text(),
 }, (table) => [
 	index("operator_curation_log_surfaced_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surfacedAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.signalId], name: "operator_curation_log_pkey"}),
+	primaryKey({ columns: [table.signalId, table.workspaceId], name: "operator_curation_log_pkey"}),
 ]);
 
 export const harnessMissionStateInHarnessShared = harnessShared.table("harness_mission_state", {
@@ -4939,7 +5022,7 @@ export const harnessMissionStateInHarnessShared = harnessShared.table("harness_m
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug], name: "harness_mission_state_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.workspaceId], name: "harness_mission_state_pkey"}),
 	pgPolicy("harness_mission_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4953,7 +5036,7 @@ export const harnessRunChunksInHarnessShared = harnessShared.table("harness_run_
 	ts: bigint({ mode: "number" }).notNull(),
 }, (table) => [
 	index("harness_run_chunks_run_idx").using("btree", table.workspaceId.asc().nullsLast().op("int4_ops"), table.harnessSlug.asc().nullsLast().op("int4_ops"), table.runId.asc().nullsLast().op("int4_ops"), table.seq.asc().nullsLast().op("int4_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.runId, table.seq], name: "harness_run_chunks_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.runId, table.seq, table.workspaceId], name: "harness_run_chunks_pkey"}),
 	pgPolicy("harness_run_chunks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -4967,7 +5050,7 @@ export const piSessionsInHarnessShared = harnessShared.table("pi_sessions", {
 }, (table) => [
 	index("pi_sessions_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(ended_at IS NULL)`),
 	index("pi_sessions_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.sessionId], name: "pi_sessions_pkey"}),
+	primaryKey({ columns: [table.sessionId, table.workspaceId], name: "pi_sessions_pkey"}),
 	pgPolicy("pi_sessions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("pi_sessions_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
@@ -4994,7 +5077,7 @@ export const attentionTriageInHarnessShared = harnessShared.table("attention_tri
 	triagedBy: text("triaged_by"),
 	triagedAt: timestamp("triaged_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.itemId], name: "attention_triage_pkey"}),
+	primaryKey({ columns: [table.itemId, table.workspaceId], name: "attention_triage_pkey"}),
 	pgPolicy("attention_triage_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("attention_triage_action_check", sql`action = ANY (ARRAY['confirm'::text, 'escalate'::text, 'downgrade'::text, 'resolve'::text])`),
 ]);
@@ -5014,7 +5097,7 @@ export const memoryAnchorsInHarnessShared = harnessShared.table("memory_anchors"
 			foreignColumns: [memoryCanonicalInHarnessShared.id],
 			name: "memory_anchors_memory_id_fkey"
 		}).onDelete("cascade"),
-	primaryKey({ columns: [table.memoryId, table.kind, table.value], name: "memory_anchors_pkey"}),
+	primaryKey({ columns: [table.kind, table.memoryId, table.value], name: "memory_anchors_pkey"}),
 	check("memory_anchors_kind_check", sql`kind = ANY (ARRAY['file'::text, 'feature'::text, 'plan'::text, 'migration'::text, 'symbol'::text])`),
 ]);
 
@@ -5026,7 +5109,7 @@ export const p2PMeteringContributionInHarnessShared = harnessShared.table("p2p_m
 	unit: text().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.attestedUserId, table.axis], name: "p2p_metering_contribution_pkey"}),
+	primaryKey({ columns: [table.attestedUserId, table.axis, table.workspaceId], name: "p2p_metering_contribution_pkey"}),
 	check("p2p_metering_contribution_axis", sql`axis = ANY (ARRAY['remote'::text, 'local'::text])`),
 	check("p2p_metering_contribution_nonneg", sql`amount >= (0)::double precision`),
 	check("p2p_metering_contribution_ws_nonempty", sql`workspace_id <> ''::text`),
@@ -5060,7 +5143,7 @@ export const harnessArchivesInHarnessShared = harnessShared.table("harness_archi
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
 	index("harness_archives_slug_phase_ts_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.phase.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
-	primaryKey({ columns: [table.harnessSlug, table.phase, table.id], name: "harness_archives_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.id, table.phase], name: "harness_archives_pkey"}),
 	pgPolicy("harness_archives_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5075,7 +5158,7 @@ export const harnessScreenshotsInHarnessShared = harnessShared.table("harness_sc
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
 	index("harness_screenshots_slug_phase_ts_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.phase.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
-	primaryKey({ columns: [table.harnessSlug, table.phase, table.id], name: "harness_screenshots_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.id, table.phase], name: "harness_screenshots_pkey"}),
 	pgPolicy("harness_screenshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5088,7 +5171,7 @@ export const scoutSignalAccumulatorInHarnessShared = harnessShared.table("scout_
 	watermarkAt: timestamp("watermark_at", { withTimezone: true, mode: 'string' }),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.installSlug, table.lane], name: "scout_signal_accumulator_pkey"}),
+	primaryKey({ columns: [table.installSlug, table.lane, table.workspaceId], name: "scout_signal_accumulator_pkey"}),
 	pgPolicy("scout_signal_accumulator_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5102,7 +5185,7 @@ export const coordTopicsInHarnessShared = harnessShared.table("coord_topics", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("coord_topics_live_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")).where(sql`(merged_into IS NULL)`),
-	primaryKey({ columns: [table.workspaceId, table.slug], name: "coord_topics_pkey"}),
+	primaryKey({ columns: [table.slug, table.workspaceId], name: "coord_topics_pkey"}),
 	check("coord_topics_slug_nonempty", sql`slug <> ''::text`),
 	check("coord_topics_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
@@ -5118,7 +5201,7 @@ export const harnessDockLayoutsInHarnessShared = harnessShared.table("harness_do
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.userId, table.layoutName], name: "harness_dock_layouts_pkey"}),
+	primaryKey({ columns: [table.layoutName, table.userId, table.workspaceId], name: "harness_dock_layouts_pkey"}),
 	pgPolicy("harness_dock_layouts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5133,7 +5216,7 @@ export const harnessPromotionsInHarnessShared = harnessShared.table("harness_pro
 	ts: bigint({ mode: "number" }).notNull(),
 }, (table) => [
 	index("harness_promotions_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.promotionId], name: "harness_promotions_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.promotionId, table.workspaceId], name: "harness_promotions_pkey"}),
 	pgPolicy("harness_promotions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5164,7 +5247,7 @@ export const rationaleIndexInHarnessShared = harnessShared.table("rationale_inde
 }, (table) => [
 	index("rationale_index_key_idx").using("btree", table.key.asc().nullsLast().op("text_ops"), table.sortKey.desc().nullsFirst().op("text_ops")),
 	index("rationale_index_source_idx").using("btree", table.sourceId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.sourceId, table.key, table.entryId], name: "rationale_index_pkey"}),
+	primaryKey({ columns: [table.entryId, table.key, table.sourceId], name: "rationale_index_pkey"}),
 ]);
 
 export const pluginCapabilityGrantsInHarnessShared = harnessShared.table("plugin_capability_grants", {
@@ -5178,7 +5261,7 @@ export const pluginCapabilityGrantsInHarnessShared = harnessShared.table("plugin
 }, (table) => [
 	index("plugin_caps_by_harness").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.pluginName.asc().nullsLast().op("text_ops")),
 	index("plugin_caps_by_plugin").using("btree", table.pluginName.asc().nullsLast().op("text_ops"), table.pluginVersion.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.pluginName, table.pluginVersion, table.harnessSlug, table.capability], name: "plugin_capability_grants_pkey"}),
+	primaryKey({ columns: [table.capability, table.harnessSlug, table.pluginName, table.pluginVersion], name: "plugin_capability_grants_pkey"}),
 ]);
 
 export const mcpToolResultsInHarnessShared = harnessShared.table("mcp_tool_results", {
@@ -5191,7 +5274,7 @@ export const mcpToolResultsInHarnessShared = harnessShared.table("mcp_tool_resul
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("mcp_tool_results_created_at_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")),
-	primaryKey({ columns: [table.ownerKey, table.idempotencyKey], name: "mcp_tool_results_pkey"}),
+	primaryKey({ columns: [table.idempotencyKey, table.ownerKey], name: "mcp_tool_results_pkey"}),
 ]);
 
 export const tuiLayoutsInHarnessShared = harnessShared.table("tui_layouts", {
@@ -5204,7 +5287,7 @@ export const tuiLayoutsInHarnessShared = harnessShared.table("tui_layouts", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("tui_layouts_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ownerId.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.desc().nullsFirst().op("timestamptz_ops")),
-	primaryKey({ columns: [table.workspaceId, table.ownerId, table.name], name: "tui_layouts_pkey"}),
+	primaryKey({ columns: [table.name, table.ownerId, table.workspaceId], name: "tui_layouts_pkey"}),
 	pgPolicy("tui_layouts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5221,7 +5304,7 @@ export const harnessDesignArtifactsInHarnessShared = harnessShared.table("harnes
 	index("hda_created_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.createdTs.desc().nullsFirst().op("text_ops")),
 	index("hda_feature_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops")),
 	index("hda_kind_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.id, table.harnessSlug], name: "harness_design_artifacts_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.id], name: "harness_design_artifacts_pkey"}),
 	check("hda_kind_chk", sql`kind = ANY (ARRAY['spec'::text, 'sketch'::text, 'screenshot'::text, 'annotation'::text, 'rejected_candidate'::text, 'review'::text])`),
 ]);
 
@@ -5235,7 +5318,7 @@ export const p2PMeteringSpendInHarnessShared = harnessShared.table("p2p_metering
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("p2p_metering_spend_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.hostRef, table.fleetSlug, table.axis], name: "p2p_metering_spend_pkey"}),
+	primaryKey({ columns: [table.axis, table.fleetSlug, table.hostRef, table.workspaceId], name: "p2p_metering_spend_pkey"}),
 	check("p2p_metering_spend_axis", sql`axis = ANY (ARRAY['remote'::text, 'local'::text])`),
 	check("p2p_metering_spend_nonneg", sql`amount >= (0)::double precision`),
 	check("p2p_metering_spend_ws_nonempty", sql`workspace_id <> ''::text`),
@@ -5253,7 +5336,7 @@ export const coordReadCursorsInHarnessShared = harnessShared.table("coord_read_c
 	pendingAt: timestamp("pending_at", { withTimezone: true, mode: 'string' }),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.ownerId, table.surface], name: "coord_read_cursors_pkey"}),
+	primaryKey({ columns: [table.ownerId, table.surface, table.workspaceId], name: "coord_read_cursors_pkey"}),
 ]);
 
 export const federationRefusedOpCountersInHarnessShared = harnessShared.table("federation_refused_op_counters", {
@@ -5266,7 +5349,7 @@ export const federationRefusedOpCountersInHarnessShared = harnessShared.table("f
 	count: bigint({ mode: "number" }).default(0).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.sourceHive, table.tableTag, table.reason], name: "federation_refused_op_counters_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.reason, table.sourceHive, table.tableTag, table.workspaceId], name: "federation_refused_op_counters_pkey"}),
 	check("federation_refused_op_counters_nonneg", sql`count >= 0`),
 	check("federation_refused_op_counters_ws_nonempty", sql`workspace_id <> ''::text`),
 	check("federation_refused_op_counters_slug_nonempty", sql`harness_slug <> ''::text`),
@@ -5284,7 +5367,7 @@ export const systemHealthAcksInHarnessShared = harnessShared.table("system_healt
 	ackedAt: timestamp("acked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	snoozeUntil: timestamp("snooze_until", { withTimezone: true, mode: 'string' }),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.panel], name: "system_health_acks_pkey"}),
+	primaryKey({ columns: [table.panel, table.workspaceId], name: "system_health_acks_pkey"}),
 	check("system_health_acks_status_check", sql`status = ANY (ARRAY['warn'::text, 'crit'::text])`),
 ]);
 
@@ -5297,7 +5380,7 @@ export const scoutLensWeightsInHarnessShared = harnessShared.table("scout_lens_w
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	potSlug: text("pot_slug").notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.lens, table.potSlug], name: "scout_lens_weights_pkey"}),
+	primaryKey({ columns: [table.lens, table.potSlug, table.workspaceId], name: "scout_lens_weights_pkey"}),
 	pgPolicy("scout_lens_weights_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5311,7 +5394,7 @@ export const eventKeyFiresInHarnessShared = harnessShared.table("event_key_fires
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	fireCount: bigint("fire_count", { mode: "number" }).default(1).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.eventKey], name: "event_key_fires_pkey"}),
+	primaryKey({ columns: [table.eventKey, table.workspaceId], name: "event_key_fires_pkey"}),
 ]);
 
 export const harnessLanesInHarnessShared = harnessShared.table("harness_lanes", {
@@ -5330,6 +5413,21 @@ export const harnessLanesInHarnessShared = harnessShared.table("harness_lanes", 
 	pgPolicy("harness_lanes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const harnessCheckpointsInHarnessShared = harnessShared.table("harness_checkpoints", {
+	harnessSlug: text("harness_slug").notNull(),
+	name: text().notNull(),
+	content: text().default('').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	waitingSinceMs: bigint("waiting_since_ms", { mode: "number" }).default(0).notNull(),
+	granted: boolean().default(false).notNull(),
+	workspaceId: text("workspace_id").default('').notNull(),
+	consumed: boolean().default(false).notNull(),
+}, (table) => [
+	index("harness_checkpoints_slug_waiting_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.waitingSinceMs.asc().nullsLast().op("int8_ops")),
+	primaryKey({ columns: [table.harnessSlug, table.name], name: "harness_checkpoints_pkey"}),
+	pgPolicy("harness_checkpoints_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const harnessHookLogsInHarnessShared = harnessShared.table("harness_hook_logs", {
 	harnessSlug: text("harness_slug").notNull(),
 	logId: text("log_id").notNull(),
@@ -5346,21 +5444,6 @@ export const harnessHookLogsInHarnessShared = harnessShared.table("harness_hook_
 	pgPolicy("harness_hook_logs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const harnessCheckpointsInHarnessShared = harnessShared.table("harness_checkpoints", {
-	harnessSlug: text("harness_slug").notNull(),
-	name: text().notNull(),
-	content: text().default('').notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	waitingSinceMs: bigint("waiting_since_ms", { mode: "number" }).default(0).notNull(),
-	granted: boolean().default(false).notNull(),
-	workspaceId: text("workspace_id").default('').notNull(),
-	consumed: boolean().default(false).notNull(),
-}, (table) => [
-	index("harness_checkpoints_slug_waiting_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.waitingSinceMs.asc().nullsLast().op("int8_ops")),
-	primaryKey({ columns: [table.harnessSlug, table.name], name: "harness_checkpoints_pkey"}),
-	pgPolicy("harness_checkpoints_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const fleetSagasInHarnessShared = harnessShared.table("fleet_sagas", {
 	workspaceId: text("workspace_id").notNull(),
 	sagaId: text("saga_id").notNull(),
@@ -5372,7 +5455,7 @@ export const fleetSagasInHarnessShared = harnessShared.table("fleet_sagas", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("fleet_sagas_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.updatedAt.asc().nullsLast().op("text_ops")).where(sql`(status = 'running'::text)`),
-	primaryKey({ columns: [table.workspaceId, table.sagaId], name: "fleet_sagas_pkey"}),
+	primaryKey({ columns: [table.sagaId, table.workspaceId], name: "fleet_sagas_pkey"}),
 ]);
 
 export const fleetTombstonesInHarnessShared = harnessShared.table("fleet_tombstones", {
@@ -5386,7 +5469,7 @@ export const fleetTombstonesInHarnessShared = harnessShared.table("fleet_tombsto
 	restoredAt: timestamp("restored_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("fleet_tombstones_gc_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.gcAfter.asc().nullsLast().op("timestamptz_ops")).where(sql`(restored_at IS NULL)`),
-	primaryKey({ columns: [table.workspaceId, table.refKind, table.refId], name: "fleet_tombstones_pkey"}),
+	primaryKey({ columns: [table.refId, table.refKind, table.workspaceId], name: "fleet_tombstones_pkey"}),
 ]);
 
 export const claimAuditInHarnessShared = harnessShared.table("claim_audit", {
@@ -5400,7 +5483,7 @@ export const claimAuditInHarnessShared = harnessShared.table("claim_audit", {
 	detail: text(),
 }, (table) => [
 	index("claim_audit_feature_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("timestamptz_ops"), table.attemptTs.desc().nullsFirst().op("timestamptz_ops")),
-	primaryKey({ columns: [table.workspaceId, table.id], name: "claim_audit_pkey"}),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "claim_audit_pkey"}),
 	pgPolicy("claim_audit_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("claim_audit_outcome_check", sql`outcome = ANY (ARRAY['won'::text, 'lost'::text, 'timeout'::text, 'error'::text])`),
 ]);
@@ -5416,7 +5499,7 @@ export const prReviewerSettingsInHarnessShared = harnessShared.table("pr_reviewe
 	mergeMethod: text("merge_method").default('squash').notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.githubUserId], name: "pr_reviewer_settings_pkey"}),
+	primaryKey({ columns: [table.githubUserId, table.harnessSlug, table.workspaceId], name: "pr_reviewer_settings_pkey"}),
 	pgPolicy("pr_reviewer_settings_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("pr_reviewer_settings_merge_method_check", sql`merge_method = ANY (ARRAY['squash'::text, 'merge'::text, 'rebase'::text])`),
 ]);
@@ -5448,7 +5531,7 @@ export const tuiCrewsInHarnessShared = harnessShared.table("tui_crews", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("tui_crews_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ownerId.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.desc().nullsFirst().op("timestamptz_ops")),
-	primaryKey({ columns: [table.workspaceId, table.ownerId, table.name], name: "tui_crews_pkey"}),
+	primaryKey({ columns: [table.name, table.ownerId, table.workspaceId], name: "tui_crews_pkey"}),
 	pgPolicy("tui_crews_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5481,7 +5564,7 @@ export const harnessPlanStatusInHarnessShared = harnessShared.table("harness_pla
 	priority: integer(),
 }, (table) => [
 	index("hps_started_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(status = 'started'::text)`),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.planSlug], name: "harness_plan_status_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.planSlug, table.workspaceId], name: "harness_plan_status_pkey"}),
 	pgPolicy("harness_plan_status_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("harness_plan_status_status_check", sql`status = ANY (ARRAY['started'::text, 'paused'::text, 'done'::text])`),
 ]);
@@ -5497,7 +5580,7 @@ export const agentModesInHarnessShared = harnessShared.table("agent_modes", {
 	setAt: timestamp("set_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("agent_modes_owner_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.ownerId, table.axisKey], name: "agent_modes_pkey"}),
+	primaryKey({ columns: [table.axisKey, table.ownerId, table.workspaceId], name: "agent_modes_pkey"}),
 ]);
 
 export const routineGroupsInHarnessShared = harnessShared.table("routine_groups", {
@@ -5510,7 +5593,7 @@ export const routineGroupsInHarnessShared = harnessShared.table("routine_groups"
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.slug], name: "routine_groups_pkey"}),
+	primaryKey({ columns: [table.slug, table.workspaceId], name: "routine_groups_pkey"}),
 	check("routine_groups_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("routine_groups_slug_nonempty", sql`slug <> ''::text`),
 ]);
@@ -5528,7 +5611,7 @@ export const commsTrustListInHarnessShared = harnessShared.table("comms_trust_li
 	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
 	gate: boolean().default(false).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.trustedGithubUserId], name: "comms_trust_list_pkey"}),
+	primaryKey({ columns: [table.trustedGithubUserId, table.workspaceId], name: "comms_trust_list_pkey"}),
 	check("comms_trust_list_tier_check", sql`tier = ANY (ARRAY['observe'::text, 'message'::text, 'wake'::text, 'steer'::text])`),
 ]);
 
@@ -5544,7 +5627,7 @@ export const potsInHarnessShared = harnessShared.table("pots", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.potHomeSlug], name: "pots_pkey"}),
+	primaryKey({ columns: [table.potHomeSlug, table.workspaceId], name: "pots_pkey"}),
 	unique("pots_public_key_key").on(table.publicKey),
 	pgPolicy("pots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
@@ -5560,7 +5643,7 @@ export const blueprintsInHarnessShared = harnessShared.table("blueprints", {
 	sourceCommit: text("source_commit"),
 	projectedAt: timestamp("projected_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug], name: "blueprints_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.workspaceId], name: "blueprints_pkey"}),
 	pgPolicy("blueprints_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5577,7 +5660,7 @@ export const gymAutoloopConfigInHarnessShared = harnessShared.table("gym_autoloo
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug], name: "gym_autoloop_config_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.workspaceId], name: "gym_autoloop_config_pkey"}),
 	pgPolicy("gym_autoloop_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5593,7 +5676,7 @@ export const prCheckStatusCacheInHarnessShared = harnessShared.table("pr_check_s
 	raw: jsonb(),
 }, (table) => [
 	index("pr_check_status_cache_sha_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.headSha.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.headSha, table.checkName], name: "pr_check_status_cache_pkey"}),
+	primaryKey({ columns: [table.checkName, table.harnessSlug, table.headSha, table.workspaceId], name: "pr_check_status_cache_pkey"}),
 	pgPolicy("pr_check_status_cache_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5612,7 +5695,7 @@ export const featureClaimsInHarnessShared = harnessShared.table("feature_claims"
 	schemaVersion: bigint("schema_version", { mode: "number" }).default(1).notNull(),
 }, (table) => [
 	index("feature_claims_outcome_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops"), table.outcome.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId, table.seq], name: "feature_claims_pkey"}),
+	primaryKey({ columns: [table.featureId, table.harnessSlug, table.seq, table.workspaceId], name: "feature_claims_pkey"}),
 	pgPolicy("feature_claims_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5629,7 +5712,7 @@ export const harnessSnapshotsInHarnessShared = harnessShared.table("harness_snap
 	takenAt: bigint("taken_at", { mode: "number" }).notNull(),
 }, (table) => [
 	index("harness_snapshots_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.takenAt.desc().nullsFirst().op("int8_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.snapshotId], name: "harness_snapshots_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.snapshotId, table.workspaceId], name: "harness_snapshots_pkey"}),
 	pgPolicy("harness_snapshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5644,7 +5727,7 @@ export const autonomyPolicyInHarnessShared = harnessShared.table("autonomy_polic
 	updatedBy: text("updated_by").default('system').notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.category], name: "autonomy_policy_pkey"}),
+	primaryKey({ columns: [table.category, table.workspaceId], name: "autonomy_policy_pkey"}),
 	check("autonomy_policy_ceiling_check", sql`ceiling = ANY (ARRAY['never-auto'::text, 'trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
 	check("autonomy_policy_graduated_level_check", sql`graduated_level = ANY (ARRAY['never-auto'::text, 'trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
 ]);
@@ -5661,7 +5744,7 @@ export const runtimeVintageInHarnessShared = harnessShared.table("runtime_vintag
 	reportedAt: timestamp("reported_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("runtime_vintage_reported_at_idx").using("btree", table.reportedAt.desc().nullsFirst().op("timestamptz_ops")),
-	primaryKey({ columns: [table.workspaceId, table.unit, table.host], name: "runtime_vintage_pkey"}),
+	primaryKey({ columns: [table.host, table.unit, table.workspaceId], name: "runtime_vintage_pkey"}),
 ]);
 
 export const autoloopStateInHarnessShared = harnessShared.table("autoloop_state", {
@@ -5692,7 +5775,7 @@ export const executedActionsConsolidatedInHarnessShared = harnessShared.table("e
 	executedAt: timestamp("executed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("executed_actions_consolidated_recent_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.executedAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.harnessSlug, table.actionId], name: "executed_actions_consolidated_pkey"}),
+	primaryKey({ columns: [table.actionId, table.harnessSlug], name: "executed_actions_consolidated_pkey"}),
 ]);
 
 export const potSettingsInHarnessShared = harnessShared.table("pot_settings", {
@@ -5710,7 +5793,7 @@ export const potSettingsInHarnessShared = harnessShared.table("pot_settings", {
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 	fedHlc: text("fed_hlc"),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.settingKey], name: "pot_settings_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.settingKey, table.workspaceId], name: "pot_settings_pkey"}),
 	pgPolicy("pot_settings_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5726,7 +5809,7 @@ export const negativeSpaceDemandInHarnessShared = harnessShared.table("negative_
 	candidateImprovementId: text("candidate_improvement_id"),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.surface, table.queryNorm], name: "negative_space_demand_pkey"}),
+	primaryKey({ columns: [table.queryNorm, table.surface, table.workspaceId], name: "negative_space_demand_pkey"}),
 	check("negative_space_demand_surface_check", sql`surface = ANY (ARRAY['docs'::text, 'memory'::text, 'plans'::text])`),
 	check("negative_space_demand_miss_count_check", sql`miss_count > 0`),
 ]);
@@ -5744,7 +5827,7 @@ export const webhookAuditInHarnessShared = harnessShared.table("webhook_audit", 
 	error: text(),
 }, (table) => [
 	index("webhook_audit_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.sentAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.id], name: "webhook_audit_pkey"}),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "webhook_audit_pkey"}),
 	pgPolicy("webhook_audit_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5765,7 +5848,7 @@ export const harnessFeaturePrsInHarnessShared = harnessShared.table("harness_fea
 	authorGithubUserId: bigint("author_github_user_id", { mode: "number" }),
 }, (table) => [
 	index("hfp_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId], name: "harness_feature_prs_pkey"}),
+	primaryKey({ columns: [table.featureId, table.harnessSlug, table.workspaceId], name: "harness_feature_prs_pkey"}),
 	pgPolicy("harness_feature_prs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5806,7 +5889,7 @@ export const potIntegrationRequestsInHarnessShared = harnessShared.table("pot_in
 	potSlug: text("pot_slug").notNull(),
 }, (table) => [
 	index("pot_integration_requests_author_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.devicePubkey.asc().nullsLast().op("int8_ops"), table.createdTs.asc().nullsLast().op("int8_ops")),
-	primaryKey({ columns: [table.workspaceId, table.repoKey, table.devicePubkey, table.headSha, table.potSlug], name: "pot_integration_requests_pkey"}),
+	primaryKey({ columns: [table.devicePubkey, table.headSha, table.potSlug, table.repoKey, table.workspaceId], name: "pot_integration_requests_pkey"}),
 	check("pot_integration_requests_reason_check", sql`reason = 'below-steer-tier'::text`),
 	check("pot_integration_requests_state_check", sql`state = ANY (ARRAY['pending'::text, 'ratified'::text])`),
 ]);
@@ -5825,7 +5908,7 @@ export const docSectionsInHarnessShared = harnessShared.table("doc_sections", {
 }, (table) => [
 	index("doc_sections_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("doc_sections_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
-	primaryKey({ columns: [table.sourceKey, table.slug, table.anchor], name: "doc_sections_pkey"}),
+	primaryKey({ columns: [table.anchor, table.slug, table.sourceKey], name: "doc_sections_pkey"}),
 ]);
 
 export const autoReviewAuditInHarnessShared = harnessShared.table("auto_review_audit", {
@@ -5843,7 +5926,7 @@ export const autoReviewAuditInHarnessShared = harnessShared.table("auto_review_a
 	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
 	index("auto_review_audit_pr_idx").using("btree", table.workspaceId.asc().nullsLast().op("int4_ops"), table.harnessSlug.asc().nullsLast().op("int4_ops"), table.prNumber.asc().nullsLast().op("int4_ops"), table.ts.desc().nullsFirst().op("int4_ops")),
-	primaryKey({ columns: [table.workspaceId, table.id], name: "auto_review_audit_pkey"}),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "auto_review_audit_pkey"}),
 	pgPolicy("auto_review_audit_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("auto_review_audit_action_check", sql`action = ANY (ARRAY['auto_approve'::text, 'auto_merge'::text, 'manual_approve'::text, 'manual_merge'::text, 'skipped_untrusted'::text, 'skipped_checks_failing'::text, 'error'::text, 'agent_review'::text, 'agent_review_error'::text])`),
 ]);
@@ -5864,7 +5947,7 @@ export const coordQuarantineInHarnessShared = harnessShared.table("coord_quarant
 	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
 }, (table) => [
 	index("coord_quarantine_author_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.authorDevicePubkey.asc().nullsLast().op("int8_ops"), table.createdTs.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.msgId], name: "coord_quarantine_pkey"}),
+	primaryKey({ columns: [table.msgId, table.workspaceId], name: "coord_quarantine_pkey"}),
 	check("coord_quarantine_reason_check", sql`reason = ANY (ARRAY['below-message-tier'::text, 'handoff-below-steer'::text, 'rate-exceeded'::text])`),
 ]);
 
@@ -5884,7 +5967,7 @@ export const derivedReadSnapshotsInHarnessShared = harnessShared.table("derived_
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("derived_read_snapshots_staleness_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.computedAt.asc().nullsLast().op("int8_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.key], name: "derived_read_snapshots_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.key, table.workspaceId], name: "derived_read_snapshots_pkey"}),
 ]);
 
 export const perfRegressionSnapshotsInHarnessShared = harnessShared.table("perf_regression_snapshots", {
@@ -5900,7 +5983,7 @@ export const perfRegressionSnapshotsInHarnessShared = harnessShared.table("perf_
 	advFcpMs: doublePrecision("adv_fcp_ms"),
 }, (table) => [
 	index("perf_regression_snapshots_ws_captured_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.capturedAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.capturedAt], name: "perf_regression_snapshots_pkey"}),
+	primaryKey({ columns: [table.capturedAt, table.workspaceId], name: "perf_regression_snapshots_pkey"}),
 	pgPolicy("perf_regression_snapshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5920,7 +6003,7 @@ export const pendingReviewsInHarnessShared = harnessShared.table("pending_review
 }, (table) => [
 	index("pending_reviews_slug_resolved_ts_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.resolved.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("text_ops")),
 	index("pending_reviews_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.harnessSlug, table.reviewId, table.phase], name: "pending_reviews_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.phase, table.reviewId], name: "pending_reviews_pkey"}),
 	pgPolicy("pending_reviews_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -5957,7 +6040,7 @@ export const harnessPlanAssertionsInHarnessShared = harnessShared.table("harness
 }, (table) => [
 	index("hpa_plan_item_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.itemId.asc().nullsLast().op("text_ops")),
 	index("hpa_requires_test_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`(NOT requires_test)`),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.valId], name: "harness_plan_assertions_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.valId, table.workspaceId], name: "harness_plan_assertions_pkey"}),
 	pgPolicy("harness_plan_assertions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("harness_plan_assertions_status_check", sql`status = ANY (ARRAY['todo'::text, 'validating'::text, 'passed'::text, 'failed'::text])`),
 ]);
@@ -5980,7 +6063,7 @@ export const featureQueueInHarnessShared = harnessShared.table("feature_queue", 
 }, (table) => [
 	index("feature_queue_feature_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops")),
 	index("feature_queue_user_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.githubUserId.asc().nullsLast().op("int8_ops")).where(sql`(removed_at IS NULL)`),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.githubUserId, table.featureId], name: "feature_queue_pkey"}),
+	primaryKey({ columns: [table.featureId, table.githubUserId, table.harnessSlug, table.workspaceId], name: "feature_queue_pkey"}),
 	pgPolicy("feature_queue_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6001,7 +6084,7 @@ export const contributorUsageEventsInHarnessShared = harnessShared.table("contri
 }, (table) => [
 	index("idx_usage_events_kind").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
 	index("idx_usage_events_user").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.githubUserId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
-	primaryKey({ columns: [table.harnessSlug, table.eventId], name: "contributor_usage_events_pkey"}),
+	primaryKey({ columns: [table.eventId, table.harnessSlug], name: "contributor_usage_events_pkey"}),
 ]);
 
 export const sessionArchiveFilesInHarnessShared = harnessShared.table("session_archive_files", {
@@ -6019,7 +6102,7 @@ export const sessionArchiveFilesInHarnessShared = harnessShared.table("session_a
 	mtime: timestamp({ withTimezone: true }),
 	archivedAt: timestamp("archived_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.sourceKind, table.sessionId, table.relpath], name: "session_archive_files_pkey"}),
+	primaryKey({ columns: [table.relpath, table.sessionId, table.sourceKind, table.workspaceId], name: "session_archive_files_pkey"}),
 ]);
 
 export const harnessPendingIssuesInHarnessShared = harnessShared.table("harness_pending_issues", {
@@ -6037,7 +6120,7 @@ export const harnessPendingIssuesInHarnessShared = harnessShared.table("harness_
 	mtimeMs: bigint("mtime_ms", { mode: "number" }).default(0).notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.harnessSlug, table.phase, table.issueId], name: "harness_pending_issues_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.issueId, table.phase], name: "harness_pending_issues_pkey"}),
 	pgPolicy("harness_pending_issues_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6082,7 +6165,7 @@ export const featureWorkingSetInHarnessShared = harnessShared.table("feature_wor
 }, (table) => [
 	index("feature_working_set_feature_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops")).where(sql`(cleared_at IS NULL)`),
 	index("feature_working_set_user_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.githubUserId.asc().nullsLast().op("int8_ops")).where(sql`(cleared_at IS NULL)`),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.githubUserId, table.featureId], name: "feature_working_set_pkey"}),
+	primaryKey({ columns: [table.featureId, table.githubUserId, table.harnessSlug, table.workspaceId], name: "feature_working_set_pkey"}),
 	pgPolicy("feature_working_set_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6100,7 +6183,7 @@ export const learningGovernorLoopsInHarnessShared = harnessShared.table("learnin
 	registeredAt: timestamp("registered_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.loopId], name: "learning_governor_loops_pkey"}),
+	primaryKey({ columns: [table.loopId, table.workspaceId], name: "learning_governor_loops_pkey"}),
 	pgPolicy("learning_governor_loops_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6121,7 +6204,7 @@ export const harnessRunOutputInHarnessShared = harnessShared.table("harness_run_
 	endedAt: bigint("ended_at", { mode: "number" }).notNull(),
 }, (table) => [
 	index("harness_run_output_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.endedAt.desc().nullsFirst().op("int8_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.runId], name: "harness_run_output_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.runId, table.workspaceId], name: "harness_run_output_pkey"}),
 	pgPolicy("harness_run_output_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6163,7 +6246,7 @@ export const releasesInHarnessShared = harnessShared.table("releases", {
 	notes: text(),
 }, (table) => [
 	index("releases_ws_channel_cut_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.channel.asc().nullsLast().op("text_ops"), table.cutAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.version, table.channel], name: "releases_pkey"}),
+	primaryKey({ columns: [table.channel, table.version, table.workspaceId], name: "releases_pkey"}),
 ]);
 
 export const potPolicyInHarnessShared = harnessShared.table("pot_policy", {
@@ -6183,7 +6266,7 @@ export const potPolicyInHarnessShared = harnessShared.table("pot_policy", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug], name: "pot_policy_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.workspaceId], name: "pot_policy_pkey"}),
 	pgPolicy("pot_policy_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6205,7 +6288,7 @@ export const potEpochKeysInHarnessShared = harnessShared.table("pot_epoch_keys",
 	updatedAt: bigint("updated_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
 }, (table) => [
 	index("hive_epoch_keys_by_member").using("btree", table.workspaceId.asc().nullsLast().op("int4_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.memberDevicePubkey.asc().nullsLast().op("text_ops"), table.epoch.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.epoch, table.memberDevicePubkey], name: "pot_epoch_keys_pkey"}),
+	primaryKey({ columns: [table.epoch, table.harnessSlug, table.memberDevicePubkey, table.workspaceId], name: "pot_epoch_keys_pkey"}),
 	pgPolicy("hive_epoch_keys_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6224,7 +6307,7 @@ export const fleetEkgSessionsInHarnessShared = harnessShared.table("fleet_ekg_se
 	computedAt: timestamp("computed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("fleet_ekg_sessions_ended_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.endedAt.asc().nullsLast().op("timestamptz_ops")),
-	primaryKey({ columns: [table.workspaceId, table.ownerId, table.sessionId], name: "fleet_ekg_sessions_pkey"}),
+	primaryKey({ columns: [table.ownerId, table.sessionId, table.workspaceId], name: "fleet_ekg_sessions_pkey"}),
 	check("fleet_ekg_sessions_event_count_check", sql`event_count > 0`),
 ]);
 
@@ -6243,7 +6326,7 @@ export const cupClaimSpecsInHarnessShared = harnessShared.table("cup_claim_specs
 	fedTs: bigint("fed_ts", { mode: "number" }),
 	fedHlc: text("fed_hlc"),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.beeId], name: "cup_claim_specs_pkey"}),
+	primaryKey({ columns: [table.beeId, table.workspaceId], name: "cup_claim_specs_pkey"}),
 	pgPolicy("bee_claim_specs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("cup_claim_specs_bee_nonempty", sql`bee_id <> ''::text`),
 	check("cup_claim_specs_ws_nonempty", sql`workspace_id <> ''::text`),
@@ -6267,7 +6350,7 @@ export const crossPotOutboxInHarnessShared = harnessShared.table("cross_pot_outb
 	potSlug: text("pot_slug").notNull(),
 }, (table) => [
 	index("cross_hive_outbox_pending_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.id, table.potSlug], name: "cross_pot_outbox_pkey"}),
+	primaryKey({ columns: [table.id, table.potSlug, table.workspaceId], name: "cross_pot_outbox_pkey"}),
 	check("cross_hive_outbox_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("cross_hive_outbox_kind_check", sql`kind = ANY (ARRAY['ask'::text, 'work-request'::text, 'answer'::text, 'decline'::text])`),
 ]);
@@ -6294,7 +6377,7 @@ export const agentChatsConsolidatedInHarnessShared = harnessShared.table("agent_
 	archivedAt: bigint("archived_at", { mode: "number" }),
 }, (table) => [
 	index("agent_chats_consolidated_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.updatedAt.desc().nullsFirst().op("int8_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.id], name: "agent_chats_consolidated_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.id, table.workspaceId], name: "agent_chats_consolidated_pkey"}),
 	pgPolicy("agent_chats_consolidated_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6340,7 +6423,7 @@ export const workItemClaimsInHarnessShared = harnessShared.table("work_item_clai
 	index("work_item_claims_expires_idx").using("btree", table.expiresTs.asc().nullsLast().op("timestamptz_ops")),
 	index("work_item_claims_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.owner.asc().nullsLast().op("text_ops")),
 	index("work_item_claims_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")).where(sql`(pot_slug IS NOT NULL)`),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.workItemId], name: "work_item_claims_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.workItemId, table.workspaceId], name: "work_item_claims_pkey"}),
 	check("work_item_claims_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("work_item_claims_owner_nonempty", sql`owner <> ''::text`),
 ]);
@@ -6390,7 +6473,7 @@ export const planItemClaimsInHarnessShared = harnessShared.table("plan_item_clai
 	index("plan_item_claims_expires_idx").using("btree", table.expiresTs.asc().nullsLast().op("timestamptz_ops")),
 	index("plan_item_claims_name_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerName.asc().nullsLast().op("text_ops")).where(sql`(owner_name IS NOT NULL)`),
 	index("plan_item_claims_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.owner.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.planSlug, table.itemId], name: "plan_item_claims_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.itemId, table.planSlug, table.workspaceId], name: "plan_item_claims_pkey"}),
 	check("plan_item_claims_mode_check", sql`liveness_mode = ANY (ARRAY['availability'::text, 'activity'::text])`),
 	check("plan_item_claims_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("plan_item_claims_owner_nonempty", sql`owner <> ''::text`),
@@ -6415,7 +6498,7 @@ export const coordThreadsInHarnessShared = harnessShared.table("coord_threads", 
 }, (table) => [
 	uniqueIndex("coord_threads_fed_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.threadId.asc().nullsLast().op("text_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	uniqueIndex("coord_threads_parent_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.parentKind.asc().nullsLast().op("text_ops"), table.parentRef.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.threadId], name: "coord_threads_pkey"}),
+	primaryKey({ columns: [table.threadId, table.workspaceId], name: "coord_threads_pkey"}),
 	check("coord_threads_parent_nonempty", sql`(parent_ref <> ''::text) AND (parent_kind <> ''::text)`),
 	check("coord_threads_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
@@ -6441,7 +6524,7 @@ export const p2PForeignWorkspacesInHarnessShared = harnessShared.table("p2p_fore
 	uniqueIndex("p2p_foreign_workspaces_root_path_key").using("btree", table.rootPath.asc().nullsLast().op("text_ops")),
 	index("p2p_foreign_workspaces_session_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
 	index("p2p_foreign_workspaces_state_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.state.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.offerId], name: "p2p_foreign_workspaces_pkey"}),
+	primaryKey({ columns: [table.offerId, table.workspaceId], name: "p2p_foreign_workspaces_pkey"}),
 	check("p2p_foreign_workspaces_state_check", sql`state = ANY (ARRAY['provisioning'::text, 'active'::text, 'winding-down'::text, 'parked'::text, 'reaped'::text])`),
 ]);
 
@@ -6466,7 +6549,7 @@ export const harnessChunkPlansInHarnessShared = harnessShared.table("harness_chu
 	index("chunk_plans_by_spawned_by").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.spawnedBySpawnId.asc().nullsLast().op("text_ops")).where(sql`(spawned_by_spawn_id IS NOT NULL)`),
 	index("idx_chunk_plans_by_feature").using("btree", table.workspaceId.asc().nullsLast().op("int4_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops"), table.chunkIndex.asc().nullsLast().op("int4_ops")),
 	index("idx_chunk_plans_by_status").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(status = ANY (ARRAY['in_progress'::text, 'failing'::text, 'escalated'::text]))`),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.featureId, table.chunkId], name: "harness_chunk_plans_pkey"}),
+	primaryKey({ columns: [table.chunkId, table.featureId, table.harnessSlug, table.workspaceId], name: "harness_chunk_plans_pkey"}),
 	pgPolicy("chunk_plans_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6488,7 +6571,7 @@ export const experimentRunsInHarnessShared = harnessShared.table("experiment_run
 }, (table) => [
 	index("experiment_runs_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("experiment_runs_ws_test_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.testId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.batteryId], name: "experiment_runs_pkey"}),
+	primaryKey({ columns: [table.batteryId, table.workspaceId], name: "experiment_runs_pkey"}),
 	pgPolicy("experiment_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("experiment_runs_tier_check", sql`tier = ANY (ARRAY['offline'::text, 'shadow'::text, 'live'::text])`),
 	check("experiment_runs_decision_check", sql`decision = ANY (ARRAY['proposed'::text, 'applied'::text, 'rejected'::text])`),
@@ -6516,7 +6599,7 @@ export const sessionArchivesInHarnessShared = harnessShared.table("session_archi
 }, (table) => [
 	index("session_archives_adv_idx").using("btree", table.advSessionId.asc().nullsLast().op("int8_ops")).where(sql`(adv_session_id IS NOT NULL)`),
 	index("session_archives_owner_idx").using("btree", table.owner.asc().nullsLast().op("timestamptz_ops"), table.archivedAt.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.sourceKind, table.sessionId], name: "session_archives_pkey"}),
+	primaryKey({ columns: [table.sessionId, table.sourceKind, table.workspaceId], name: "session_archives_pkey"}),
 ]);
 
 export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", {
@@ -6541,7 +6624,7 @@ export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", 
 	index("session_turns_session_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")),
 	index("session_turns_text_embedding_mode_idx").using("btree", table.textEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(text_embedding_mode IS NOT NULL)`),
 	index("session_turns_tsv_idx").using("gin", table.textTsv.asc().nullsLast().op("tsvector_ops")),
-	primaryKey({ columns: [table.workspaceId, table.sourceKind, table.sessionId, table.turnIdx], name: "session_turns_pkey"}),
+	primaryKey({ columns: [table.sessionId, table.sourceKind, table.turnIdx, table.workspaceId], name: "session_turns_pkey"}),
 ]);
 
 export const sharedSessionPresenceInHarnessShared = harnessShared.table("shared_session_presence", {
@@ -6565,7 +6648,7 @@ export const sharedSessionPresenceInHarnessShared = harnessShared.table("shared_
 	index("shared_session_presence_device_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.devicePubkey.asc().nullsLast().op("text_ops")),
 	index("shared_session_presence_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.fleetSlug.asc().nullsLast().op("text_ops"), table.lastSeenAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(fleet_slug IS NOT NULL)`),
 	index("shared_session_presence_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.lastSeenAt.desc().nullsFirst().op("text_ops")).where(sql`(pot_slug IS NOT NULL)`),
-	primaryKey({ columns: [table.workspaceId, table.ownerId, table.machineLabel], name: "shared_session_presence_pkey"}),
+	primaryKey({ columns: [table.machineLabel, table.ownerId, table.workspaceId], name: "shared_session_presence_pkey"}),
 ]);
 
 export const harnessProposalsSharedInHarnessShared = harnessShared.table("harness_proposals_shared", {
@@ -6593,7 +6676,7 @@ export const harnessProposalsSharedInHarnessShared = harnessShared.table("harnes
 	index("harness_proposals_shared_slug_ts_idx").using("btree", table.harnessSlug.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("text_ops")),
 	index("harness_proposals_shared_status_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
 	index("harness_proposals_shared_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.harnessSlug, table.proposalId, table.phase], name: "harness_proposals_shared_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.phase, table.proposalId], name: "harness_proposals_shared_pkey"}),
 	pgPolicy("harness_proposals_shared_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6635,7 +6718,7 @@ export const fleetGovernorInHarnessShared = harnessShared.table("fleet_governor"
 	creditMax: integer("credit_max"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.kind, table.scopeKey], name: "fleet_governor_pkey"}),
+	primaryKey({ columns: [table.kind, table.scopeKey, table.workspaceId], name: "fleet_governor_pkey"}),
 	check("fleet_governor_kind_chk", sql`kind = ANY (ARRAY['bucket'::text, 'circuit'::text, 'credit'::text])`),
 ]);
 
@@ -6660,7 +6743,7 @@ export const harnessPlanPartsInHarnessShared = harnessShared.table("harness_plan
 	fedHlc: text("fed_hlc"),
 }, (table) => [
 	index("harness_plan_parts_by_plan").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.planSlug, table.partKey], name: "harness_plan_parts_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.partKey, table.planSlug, table.workspaceId], name: "harness_plan_parts_pkey"}),
 	pgPolicy("harness_plan_parts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6686,7 +6769,7 @@ export const potReportsInHarnessShared = harnessShared.table("pot_reports", {
 	updatedAt: bigint("updated_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
 }, (table) => [
 	index("hive_reports_by_status").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.reportId], name: "pot_reports_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.reportId, table.workspaceId], name: "pot_reports_pkey"}),
 	pgPolicy("pot_reports_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6714,7 +6797,7 @@ export const sharedPresenceInHarnessShared = harnessShared.table("shared_presenc
 	index("shared_presence_pot_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.lastSeenAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("shared_presence_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.lastSeenAt.desc().nullsFirst().op("text_ops")),
 	index("shared_presence_user_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.githubUserId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.githubUserId, table.machineLabel], name: "shared_presence_pkey"}),
+	primaryKey({ columns: [table.githubUserId, table.harnessSlug, table.machineLabel, table.workspaceId], name: "shared_presence_pkey"}),
 	pgPolicy("shared_presence_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6736,7 +6819,7 @@ export const regretFindingsInHarnessShared = harnessShared.table("regret_finding
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("regret_findings_pending_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.minedAt.desc().nullsFirst().op("text_ops")).where(sql`(replay_status = 'pending'::text)`),
-	primaryKey({ columns: [table.workspaceId, table.runId], name: "regret_findings_pkey"}),
+	primaryKey({ columns: [table.runId, table.workspaceId], name: "regret_findings_pkey"}),
 	check("regret_findings_replay_status_check", sql`replay_status = ANY (ARRAY['pending'::text, 'replayed'::text, 'skipped'::text])`),
 	check("regret_findings_divergence_kind_check", sql`(divergence_kind IS NULL) OR (divergence_kind = ANY (ARRAY['error-loop'::text, 'repeat-loop'::text, 'burn-inflection'::text, 'rescue-marker'::text]))`),
 ]);
@@ -6762,7 +6845,7 @@ export const sessionIngestStateInHarnessShared = harnessShared.table("session_in
 	countsBackfilledAt: timestamp("counts_backfilled_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("session_ingest_state_session_idx").using("btree", table.sourceKind.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
-	primaryKey({ columns: [table.sourceKind, table.filePath], name: "session_ingest_state_pkey"}),
+	primaryKey({ columns: [table.filePath, table.sourceKind], name: "session_ingest_state_pkey"}),
 ]);
 
 export const potEvalScoresInHarnessShared = harnessShared.table("pot_eval_scores", {
@@ -6789,7 +6872,7 @@ export const potEvalScoresInHarnessShared = harnessShared.table("pot_eval_scores
 			foreignColumns: [potEvalRunsInHarnessShared.runId],
 			name: "pot_eval_scores_run_id_fkey"
 		}).onDelete("cascade"),
-	primaryKey({ columns: [table.runId, table.rubricHash], name: "pot_eval_scores_pkey"}),
+	primaryKey({ columns: [table.rubricHash, table.runId], name: "pot_eval_scores_pkey"}),
 ]);
 
 export const p2PFleetLeaderLeasesInHarnessShared = harnessShared.table("p2p_fleet_leader_leases", {
@@ -6817,7 +6900,7 @@ export const p2PFleetLeaderLeasesInHarnessShared = harnessShared.table("p2p_flee
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("p2p_fleet_leader_leases_hive_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.ownerGithubUserId, table.fleetSlug], name: "p2p_fleet_leader_leases_pkey"}),
+	primaryKey({ columns: [table.fleetSlug, table.harnessSlug, table.ownerGithubUserId, table.workspaceId], name: "p2p_fleet_leader_leases_pkey"}),
 	pgPolicy("p2p_fleet_leader_leases_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("p2p_fleet_leader_leases_owner_positive", sql`(owner_github_user_id > 0) AND (leader_github_user_id > 0)`),
 	check("p2p_fleet_leader_leases_epoch_nonnegative", sql`(since_ms >= 0) AND (roster_epoch >= 0)`),
@@ -6845,7 +6928,7 @@ export const gymQdArchiveInHarnessShared = harnessShared.table("gym_qd_archive",
 	index("gym_qd_archive_candidate_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.candidateId.asc().nullsLast().op("text_ops")),
 	index("gym_qd_archive_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.source.asc().nullsLast().op("text_ops")),
 	index("gym_qd_archive_ws_harness_fitness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fitness.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.nicheKey], name: "gym_qd_archive_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.nicheKey, table.workspaceId], name: "gym_qd_archive_pkey"}),
 	pgPolicy("gym_qd_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6871,7 +6954,7 @@ export const prReviewReportsInHarnessShared = harnessShared.table("pr_review_rep
 	reviewedAt: timestamp("reviewed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("pr_review_reports_pr_idx").using("btree", table.workspaceId.asc().nullsLast().op("int4_ops"), table.harnessSlug.asc().nullsLast().op("int4_ops"), table.prNumber.asc().nullsLast().op("int4_ops"), table.reviewedAt.desc().nullsFirst().op("int4_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.prNumber, table.headSha], name: "pr_review_reports_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.headSha, table.prNumber, table.workspaceId], name: "pr_review_reports_pkey"}),
 	pgPolicy("pr_review_reports_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("pr_review_reports_recommendation_check", sql`recommendation = ANY (ARRAY['approve'::text, 'request_changes'::text, 'reject'::text])`),
 ]);
@@ -6899,7 +6982,7 @@ export const p2PFleetDirectoryInHarnessShared = harnessShared.table("p2p_fleet_d
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.ownerGithubUserId, table.fleetSlug], name: "p2p_fleet_directory_pkey"}),
+	primaryKey({ columns: [table.fleetSlug, table.harnessSlug, table.ownerGithubUserId, table.workspaceId], name: "p2p_fleet_directory_pkey"}),
 	pgPolicy("p2p_fleet_directory_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -6952,7 +7035,7 @@ export const planItemAssignmentsInHarnessShared = harnessShared.table("plan_item
 }, (table) => [
 	index("plan_item_assignments_assignee_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.assigneeName.asc().nullsLast().op("text_ops")).where(sql`((assignee_name IS NOT NULL) AND (released_ts IS NULL))`),
 	index("plan_item_assignments_plan_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.planSlug, table.itemId], name: "plan_item_assignments_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.itemId, table.planSlug, table.workspaceId], name: "plan_item_assignments_pkey"}),
 	check("plan_item_assignments_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("plan_item_assignments_item_nonempty", sql`item_id <> ''::text`),
 ]);
@@ -6982,7 +7065,7 @@ export const sharedRepoBindingCacheInHarnessShared = harnessShared.table("shared
 	index("srbc_by_full_name_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.githubFullName.asc().nullsLast().op("text_ops")),
 	index("srbc_by_harness_topic_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessTopic.asc().nullsLast().op("text_ops")),
 	index("srbc_stale_cache_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.cachedAt.asc().nullsLast().op("text_ops")).where(sql`(claim_status = ANY (ARRAY['unclaimed'::text, 'claimed'::text]))`),
-	primaryKey({ columns: [table.workspaceId, table.provider, table.githubRepositoryId], name: "shared_repo_binding_cache_pkey"}),
+	primaryKey({ columns: [table.githubRepositoryId, table.provider, table.workspaceId], name: "shared_repo_binding_cache_pkey"}),
 	pgPolicy("shared_repo_binding_cache_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("shared_repo_binding_cache_provider_check", sql`provider = 'github'::text`),
 	check("shared_repo_binding_cache_privacy_check", sql`privacy = ANY (ARRAY['shared-private'::text, 'shared-public'::text])`),
@@ -7013,7 +7096,7 @@ export const contributorsInHarnessShared = harnessShared.table("contributors", {
 	fedHlc: text("fed_hlc"),
 }, (table) => [
 	index("contributors_username_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.githubUsername.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.githubUserId], name: "contributors_pkey"}),
+	primaryKey({ columns: [table.githubUserId, table.harnessSlug, table.workspaceId], name: "contributors_pkey"}),
 	pgPolicy("contributors_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -7043,7 +7126,7 @@ export const cupKeeperScoresInHarnessShared = harnessShared.table("cup_keeper_sc
 			foreignColumns: [cupKeeperRunsInHarnessShared.runId],
 			name: "cup_keeper_scores_run_id_fkey"
 		}).onDelete("cascade"),
-	primaryKey({ columns: [table.runId, table.rubricHash], name: "cup_keeper_scores_pkey"}),
+	primaryKey({ columns: [table.rubricHash, table.runId], name: "cup_keeper_scores_pkey"}),
 ]);
 
 export const gateVerdictsInHarnessShared = harnessShared.table("gate_verdicts", {
@@ -7071,7 +7154,7 @@ export const gateVerdictsInHarnessShared = harnessShared.table("gate_verdicts", 
 }, (table) => [
 	index("gate_verdicts_shard_inputs_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.repoKey.asc().nullsLast().op("text_ops"), table.shardId.asc().nullsLast().op("text_ops"), table.inputsHash.asc().nullsLast().op("text_ops")),
 	index("gate_verdicts_staging_sha_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.repoKey.asc().nullsLast().op("text_ops"), table.stagingSha.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.verdictId], name: "gate_verdicts_pkey"}),
+	primaryKey({ columns: [table.verdictId, table.workspaceId], name: "gate_verdicts_pkey"}),
 	pgPolicy("gate_verdicts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("gate_verdicts_verdict_check", sql`verdict = ANY (ARRAY['pass'::text, 'fail'::text])`),
 ]);
@@ -7098,7 +7181,7 @@ export const potPlacementsInHarnessShared = harnessShared.table("pot_placements"
 }, (table) => [
 	index("pot_placements_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
 	index("pot_placements_recovering_age_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.recoveryStartedAt.asc().nullsLast().op("text_ops")).where(sql`(status = 'recovering'::text)`),
-	primaryKey({ columns: [table.workspaceId, table.installSlug, table.workItemId], name: "pot_placements_pkey"}),
+	primaryKey({ columns: [table.installSlug, table.workItemId, table.workspaceId], name: "pot_placements_pkey"}),
 	check("pot_placements_status_check", sql`status = ANY (ARRAY['working'::text, 'recovering'::text, 'cursed'::text, 'stranded'::text, 'completed'::text, 'abandoned'::text, 'blocked'::text])`),
 ]);
 
@@ -7127,7 +7210,7 @@ export const gymQdForeignElitesInHarnessShared = harnessShared.table("gym_qd_for
 }, (table) => [
 	index("gym_qd_foreign_elites_by_source").using("btree", table.sourceHive.asc().nullsLast().op("text_ops")),
 	index("gym_qd_foreign_elites_fitness_idx").using("btree", table.workspaceId.asc().nullsLast().op("float8_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fitness.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.nicheKey, table.sourceHive], name: "gym_qd_foreign_elites_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.nicheKey, table.sourceHive, table.workspaceId], name: "gym_qd_foreign_elites_pkey"}),
 	pgPolicy("gym_qd_foreign_elites_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -7160,7 +7243,7 @@ export const benchRunTasksInHarnessShared = harnessShared.table("bench_run_tasks
 			foreignColumns: [benchRunsInHarnessShared.id],
 			name: "bench_run_tasks_run_id_fkey"
 		}).onDelete("cascade"),
-	primaryKey({ columns: [table.runId, table.instanceId], name: "bench_run_tasks_pkey"}),
+	primaryKey({ columns: [table.instanceId, table.runId], name: "bench_run_tasks_pkey"}),
 	pgPolicy("bench_run_tasks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("bench_run_tasks_task_status_check", sql`task_status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'collected'::text, 'graded'::text, 'error'::text])`),
 ]);
@@ -7194,7 +7277,7 @@ export const potPendingJoinsInHarnessShared = harnessShared.table("pot_pending_j
 	updatedAt: bigint("updated_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
 }, (table) => [
 	index("hive_pending_joins_by_status").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.githubUserId], name: "pot_pending_joins_pkey"}),
+	primaryKey({ columns: [table.githubUserId, table.harnessSlug, table.workspaceId], name: "pot_pending_joins_pkey"}),
 	pgPolicy("pot_pending_joins_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -7254,7 +7337,7 @@ export const coordConversationsInHarnessShared = harnessShared.table("coord_conv
 }, (table) => [
 	index("coord_conversations_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(state = 'open'::text)`),
 	index("coord_conversations_scope_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.id], name: "coord_conversations_pkey"}),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "coord_conversations_pkey"}),
 	check("coord_conversations_kind_check", sql`kind = ANY (ARRAY['question'::text, 'discussion'::text])`),
 	check("coord_conversations_scope_check", sql`scope = ANY (ARRAY['operator'::text, 'harness'::text])`),
 	check("coord_conversations_state_check", sql`state = ANY (ARRAY['open'::text, 'resolved'::text, 'closed'::text])`),
@@ -7290,7 +7373,7 @@ export const snapshotFeaturesInHarnessShared = harnessShared.table("snapshot_fea
 	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
 }, (table) => [
 	index("sf_snapshot_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.snapshotId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.harnessSlug, table.snapshotId, table.featureId], name: "snapshot_features_pkey"}),
+	primaryKey({ columns: [table.featureId, table.harnessSlug, table.snapshotId], name: "snapshot_features_pkey"}),
 ]);
 
 export const agentRunsConsolidatedInHarnessShared = harnessShared.table("agent_runs_consolidated", {
@@ -7361,7 +7444,7 @@ export const agentFleetsInHarnessShared = harnessShared.table("agent_fleets", {
 	headcountBackoffMs: bigint("headcount_backoff_ms", { mode: "number" }).default(0).notNull(),
 	headcountLastError: text("headcount_last_error"),
 }, (table) => [
-	primaryKey({ columns: [table.workspaceId, table.fleetSlug], name: "agent_fleets_pkey"}),
+	primaryKey({ columns: [table.fleetSlug, table.workspaceId], name: "agent_fleets_pkey"}),
 	pgPolicy("agent_fleets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("agent_fleets_headcount_target_positive", sql`(headcount_target IS NULL) OR ((headcount_target >= 1) AND (headcount_target <= 12))`),
 ]);
@@ -7390,8 +7473,8 @@ export const transferLessonsInHarnessShared = harnessShared.table("transfer_less
 }, (table) => [
 	index("transfer_lessons_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("transfer_lessons_ws_tier_tested_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.tier.asc().nullsLast().op("text_ops"), table.lastTestedAt.asc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.id], name: "transfer_lessons_pkey"}),
-	unique("transfer_lessons_signature_uniq").on(table.workspaceId, table.signature),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "transfer_lessons_pkey"}),
+	unique("transfer_lessons_signature_uniq").on(table.signature, table.workspaceId),
 	pgPolicy("transfer_lessons_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("transfer_lessons_source_kind_check", sql`source_kind = ANY (ARRAY['transcript'::text, 'memory'::text, 'pack-candidate'::text])`),
 	check("transfer_lessons_tier_check", sql`tier = ANY (ARRAY['probationary'::text, 'validated'::text, 'retired'::text])`),
@@ -7425,7 +7508,7 @@ export const p2PPeerGrantsInHarnessShared = harnessShared.table("p2p_peer_grants
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("p2p_peer_grants_grantee_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.granteeKind.asc().nullsLast().op("text_ops"), table.granteeRef.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.grantorGithubUserId, table.granteeKind, table.granteeRef], name: "p2p_peer_grants_pkey"}),
+	primaryKey({ columns: [table.granteeKind, table.granteeRef, table.grantorGithubUserId, table.harnessSlug, table.workspaceId], name: "p2p_peer_grants_pkey"}),
 	pgPolicy("p2p_peer_grants_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("p2p_peer_grants_ws_nonempty", sql`workspace_id <> ''::text`),
 	check("p2p_peer_grants_slug_nonempty", sql`harness_slug <> ''::text`),
@@ -7466,7 +7549,7 @@ export const p2PWorkOffersInHarnessShared = harnessShared.table("p2p_work_offers
 }, (table) => [
 	index("p2p_work_offers_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
 	index("p2p_work_offers_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`(pot_slug IS NOT NULL)`),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.publisherGithubUserId, table.offerId], name: "p2p_work_offers_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.offerId, table.publisherGithubUserId, table.workspaceId], name: "p2p_work_offers_pkey"}),
 	pgPolicy("p2p_work_offers_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("p2p_work_offers_pot_nonempty", sql`(pot_slug IS NULL) OR (pot_slug <> ''::text)`),
 	check("p2p_work_offers_grantee", sql`((offer_kind <> 'seat'::text) AND (fleet_slug IS NOT NULL) AND (pot_slug IS NULL)) OR ((offer_kind = 'seat'::text) AND ((fleet_slug IS NOT NULL) <> (pot_slug IS NOT NULL)))`),
@@ -7501,7 +7584,7 @@ export const p2PReceiptsInHarnessShared = harnessShared.table("p2p_receipts", {
 }, (table) => [
 	index("p2p_receipts_offer_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.offerId.asc().nullsLast().op("int8_ops"), table.receiptTs.asc().nullsLast().op("text_ops")).where(sql`(offer_id IS NOT NULL)`),
 	index("p2p_receipts_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.receiptTs.asc().nullsLast().op("int8_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.receiptId], name: "p2p_receipts_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.receiptId, table.workspaceId], name: "p2p_receipts_pkey"}),
 	pgPolicy("p2p_receipts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("p2p_receipts_ws_nonempty", sql`workspace_id <> ''::text`),
 	check("p2p_receipts_slug_nonempty", sql`harness_slug <> ''::text`),
@@ -7537,7 +7620,7 @@ export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
 }, (table) => [
 	index("harness_docs_anchor_paths_idx").using("gin", table.anchorPaths.asc().nullsLast().op("array_ops")),
 	index("harness_docs_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.docId], name: "harness_docs_pkey"}),
+	primaryKey({ columns: [table.docId, table.harnessSlug, table.workspaceId], name: "harness_docs_pkey"}),
 	pgPolicy("harness_docs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("harness_docs_source_check", sql`source = ANY (ARRAY['generated'::text, 'manual'::text, 'augmented'::text])`),
 	check("harness_docs_status_check", sql`status = ANY (ARRAY['fresh'::text, 'stale'::text, 'review'::text, 'untracked'::text, 'unknown'::text])`),
@@ -7579,7 +7662,7 @@ export const potMembersInHarnessShared = harnessShared.table("pot_members", {
 			foreignColumns: [potsInHarnessShared.workspaceId, potsInHarnessShared.potHomeSlug],
 			name: "pot_members_pot_fkey"
 		}).onDelete("cascade"),
-	primaryKey({ columns: [table.workspaceId, table.potHomeSlug, table.githubUserId], name: "pot_members_pkey"}),
+	primaryKey({ columns: [table.githubUserId, table.potHomeSlug, table.workspaceId], name: "pot_members_pkey"}),
 	pgPolicy("pot_members_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("hive_members_workspace_id_concrete", sql`(workspace_id <> '*'::text) AND (workspace_id <> ''::text)`),
 ]);
@@ -7611,7 +7694,7 @@ export const replayRunsInHarnessShared = harnessShared.table("replay_runs", {
 }, (table) => [
 	index("replay_runs_ws_battery_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.batteryId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("text_ops")),
 	index("replay_runs_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.runId], name: "replay_runs_pkey"}),
+	primaryKey({ columns: [table.runId, table.workspaceId], name: "replay_runs_pkey"}),
 	pgPolicy("replay_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("replay_runs_status_check", sql`status = ANY (ARRAY['started'::text, 'scored'::text, 'rate_limited'::text, 'errored'::text])`),
 	check("replay_runs_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
@@ -7685,7 +7768,7 @@ export const workItemReplicasInHarnessShared = harnessShared.table("work_item_re
 	index("work_item_replicas_expires_idx").using("btree", table.expiresTs.asc().nullsLast().op("timestamptz_ops")),
 	index("work_item_replicas_item_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.workItemId.asc().nullsLast().op("text_ops")),
 	index("work_item_replicas_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.owner.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.workItemId, table.replicaIndex], name: "work_item_replicas_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.replicaIndex, table.workItemId, table.workspaceId], name: "work_item_replicas_pkey"}),
 	check("work_item_replicas_status_check", sql`status = ANY (ARRAY['claimed'::text, 'complete'::text, 'winner'::text, 'loser'::text])`),
 	check("work_item_replicas_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("work_item_replicas_owner_nonempty", sql`owner <> ''::text`),
@@ -7749,7 +7832,7 @@ export const harnessPlansInHarnessShared = harnessShared.table("harness_plans", 
 	index("harness_plans_search_idx_ccnew").using("gin", table.search.asc().nullsLast().op("tsvector_ops")),
 	index("harness_plans_started_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.opStatus.asc().nullsLast().op("text_ops")).where(sql`(op_status = 'started'::text)`),
 	index("harness_plans_template_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.templateSlug.asc().nullsLast().op("text_ops")).where(sql`(template_slug IS NOT NULL)`),
-	primaryKey({ columns: [table.workspaceId, table.harnessSlug, table.planSlug], name: "harness_plans_pkey"}),
+	primaryKey({ columns: [table.harnessSlug, table.planSlug, table.workspaceId], name: "harness_plans_pkey"}),
 	pgPolicy("harness_plans_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("harness_plans_status_check", sql`(status IS NULL) OR (status = ANY (ARRAY['draft'::text, 'ready'::text, 'active'::text, 'shipped'::text, 'superseded'::text]))`),
 	check("harness_plans_op_status_check", sql`(op_status IS NULL) OR (op_status = ANY (ARRAY['started'::text, 'paused'::text, 'done'::text]))`),
@@ -7863,7 +7946,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	index("hfc_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	index("work_items_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("work_items_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
-	primaryKey({ columns: [table.harnessSlug, table.featureId], name: "work_items_pkey"}),
+	primaryKey({ columns: [table.featureId, table.harnessSlug], name: "work_items_pkey"}),
 	pgPolicy("work_items_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("hfc_design_status_chk", sql`(design_status IS NULL) OR (design_status = ANY (ARRAY['pending'::text, 'accepted'::text, 'ignored'::text]))`),
 	check("hfc_rank_writer_chk", sql`(rank_writer IS NULL) OR (rank_writer = ANY (ARRAY['cup'::text, 'mug'::text]))`),
@@ -7912,25 +7995,6 @@ export const llmTestMatrixResultsInHarnessShared = harnessShared.view("llm_test_
 	stddevByAxis: jsonb("stddev_by_axis"),
 }).as(sql`SELECT matrix_group_id, scenario_id, scenario_version, identity_hash, count(*) AS n_runs, mode() WITHIN GROUP (ORDER BY status) AS majority_status, jsonb_object_agg(axis, stddev_score) AS stddev_by_axis FROM ( SELECT r.matrix_group_id, r.scenario_id, r.scenario_version, r.identity_hash, r.status, k.key AS axis, stddev_pop(k.value::numeric) OVER (PARTITION BY r.matrix_group_id, k.key) AS stddev_score FROM harness_shared.llm_test_runs r, LATERAL jsonb_each_text(r.scores_json) k(key, value) WHERE r.matrix_group_id IS NOT NULL AND r.scores_json IS NOT NULL) s GROUP BY matrix_group_id, scenario_id, scenario_version, identity_hash`);
 
-export const toolInvocationsArtifactsInHarnessShared = harnessShared.view("tool_invocations_artifacts", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }),
-	workspaceId: text("workspace_id"),
-	harnessSlug: text("harness_slug"),
-	pluginName: text("plugin_name"),
-	toolName: text("tool_name"),
-	role: text(),
-	featureId: text("feature_id"),
-	chunkId: text("chunk_id"),
-	runId: text("run_id"),
-	spawnId: text("spawn_id"),
-	invokedAt: timestamp("invoked_at", { withTimezone: true, mode: 'string' }),
-	durationMs: integer("duration_ms"),
-	status: text(),
-	outputRef: text("output_ref"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	outputSize: bigint("output_size", { mode: "number" }),
-}).as(sql`SELECT id, workspace_id, harness_slug, plugin_name, tool_name, role, feature_id, chunk_id, run_id, spawn_id, invoked_at, duration_ms, status, output_ref, output_size FROM harness_shared.tool_invocations WHERE output_ref IS NOT NULL AND output_ref <> ''::text AND status = 'ok'::text`);
-
 export const toolInvocationsSpawnTreeInHarnessShared = harnessShared.view("tool_invocations_spawn_tree", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),
 	workspaceId: text("workspace_id"),
@@ -7955,84 +8019,24 @@ export const toolInvocationsSpawnTreeInHarnessShared = harnessShared.view("tool_
 	rootSpawnId: text("root_spawn_id"),
 }).as(sql`WITH RECURSIVE chain AS ( SELECT tool_invocations.id, tool_invocations.workspace_id, tool_invocations.harness_slug, tool_invocations.plugin_name, tool_invocations.tool_name, tool_invocations.role, tool_invocations.feature_id, tool_invocations.chunk_id, tool_invocations.run_id, tool_invocations.spawn_id, tool_invocations.parent_spawn_id, tool_invocations.window_key, tool_invocations.invoked_at, tool_invocations.duration_ms, tool_invocations.status, tool_invocations.output_ref, tool_invocations.output_size, tool_invocations.error_message, 0 AS depth, tool_invocations.spawn_id AS root_spawn_id FROM harness_shared.tool_invocations WHERE tool_invocations.parent_spawn_id IS NULL OR tool_invocations.parent_spawn_id = ''::text UNION ALL SELECT t.id, t.workspace_id, t.harness_slug, t.plugin_name, t.tool_name, t.role, t.feature_id, t.chunk_id, t.run_id, t.spawn_id, t.parent_spawn_id, t.window_key, t.invoked_at, t.duration_ms, t.status, t.output_ref, t.output_size, t.error_message, c.depth + 1, c.root_spawn_id FROM harness_shared.tool_invocations t JOIN chain c ON t.parent_spawn_id = c.spawn_id AND t.workspace_id = c.workspace_id AND c.depth < 16 ) SELECT id, workspace_id, harness_slug, plugin_name, tool_name, role, feature_id, chunk_id, run_id, spawn_id, parent_spawn_id, window_key, invoked_at, duration_ms, status, output_ref, output_size, error_message, depth, root_spawn_id FROM chain`);
 
-export const harnessFeaturesInHarnessShared = harnessShared.view("harness_features", {	harnessSlug: text("harness_slug"),
-	featureId: text("feature_id"),
-	title: text(),
-	summary: text(),
-	status: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	attempts: bigint({ mode: "number" }),
-	claims: text(),
-	notes: text(),
-	metadata: jsonb(),
-	kind: text(),
-	projectId: text("project_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	expectedCostCents: bigint("expected_cost_cents", { mode: "number" }),
-	tags: jsonb(),
-	needsHumanReview: boolean("needs_human_review"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdTs: bigint("created_ts", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedTs: bigint("updated_ts", { mode: "number" }),
-	parentId: text("parent_id"),
-	goalId: text("goal_id"),
-	takenBy: text("taken_by"),
-	takenAt: timestamp("taken_at", { withTimezone: true, mode: 'string' }),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+export const toolInvocationsArtifactsInHarnessShared = harnessShared.view("tool_invocations_artifacts", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }),
 	workspaceId: text("workspace_id"),
-	search: tsvectorCustom("_search"),
-	deprecationReason: text("deprecation_reason"),
-	seeAlso: text("see_also"),
-	needsDesign: boolean("needs_design"),
-	designStatus: text("design_status"),
-	designSpecId: text("design_spec_id"),
-	discardedDesignWork: boolean("discarded_design_work"),
-	completionRef: jsonb("completion_ref"),
+	harnessSlug: text("harness_slug"),
+	pluginName: text("plugin_name"),
+	toolName: text("tool_name"),
+	role: text(),
+	featureId: text("feature_id"),
+	chunkId: text("chunk_id"),
+	runId: text("run_id"),
+	spawnId: text("spawn_id"),
+	invokedAt: timestamp("invoked_at", { withTimezone: true, mode: 'string' }),
+	durationMs: integer("duration_ms"),
+	status: text(),
+	outputRef: text("output_ref"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	workingUsers: bigint("working_users", { mode: "number" }),
-	workedByHistory: jsonb("worked_by_history"),
-	wave: text(),
-	verifiedDoneAtRemoteTs: timestamp("verified_done_at_remote_ts", { withTimezone: true, mode: 'string' }),
-	verifierLastError: text("verifier_last_error"),
-	verifierLastCheckedAt: timestamp("verifier_last_checked_at", { withTimezone: true, mode: 'string' }),
-	sourcePlanSlug: text("source_plan_slug"),
-	sourcePlanItemIds: text("source_plan_item_ids"),
-	featureOrder: integer("feature_order"),
-	authorPubkey: text("author_pubkey"),
-	origin: text(),
-	auditVerdict: text("audit_verdict"),
-	auditReasons: text("audit_reasons"),
-	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
-	itemKind: text("item_kind"),
-	payload: jsonb(),
-	assigneeRank: integer("assignee_rank"),
-	rankWriter: text("rank_writer"),
-	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	redundancy: integer(),
-	swarmAffinity: text("swarm_affinity"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	verifiedAuthorGithubUserId: bigint("verified_author_github_user_id", { mode: "number" }),
-	schedule: jsonb(),
-	scheduleActive: boolean("schedule_active"),
-	scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: 'string' }),
-	tzid: text(),
-	templateSlug: text("template_slug"),
-	runSeq: integer("run_seq"),
-	requeueCount: integer("requeue_count"),
-	fedHlc: text("fed_hlc"),
-	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
-	terminalOwner: text("terminal_owner"),
-	terminalCompletionRef: text("terminal_completion_ref"),
-	lastReleasedBy: text("last_released_by"),
-	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
-}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at FROM harness_shared.harness_features_consolidated`);
+	outputSize: bigint("output_size", { mode: "number" }),
+}).as(sql`SELECT id, workspace_id, harness_slug, plugin_name, tool_name, role, feature_id, chunk_id, run_id, spawn_id, invoked_at, duration_ms, status, output_ref, output_size FROM harness_shared.tool_invocations WHERE output_ref IS NOT NULL AND output_ref <> ''::text AND status = 'ok'::text`);
 
 export const hivePlacementsInHarnessShared = harnessShared.view("hive_placements", {	workspaceId: text("workspace_id"),
 	installSlug: text("install_slug"),
@@ -8237,6 +8241,88 @@ export const beekeeperScoresInHarnessShared = harnessShared.view("beekeeper_scor
 	scoredAt: timestamp("scored_at", { withTimezone: true, mode: 'string' }),
 }).as(sql`SELECT run_id, judge_model, rubric_hash, judge_temp, weights, success, tokens_per_task, time_to_green_secs, first_attempt_pass, recurrence, escalation, recall_hit, d1, d2, d3, composite, rationale, scored_at FROM harness_shared.cup_keeper_scores`);
 
+export const harnessFeaturesInHarnessShared = harnessShared.view("harness_features", {	harnessSlug: text("harness_slug"),
+	featureId: text("feature_id"),
+	title: text(),
+	summary: text(),
+	status: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	attempts: bigint({ mode: "number" }),
+	claims: text(),
+	notes: text(),
+	metadata: jsonb(),
+	kind: text(),
+	projectId: text("project_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	expectedCostCents: bigint("expected_cost_cents", { mode: "number" }),
+	tags: jsonb(),
+	needsHumanReview: boolean("needs_human_review"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdTs: bigint("created_ts", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedTs: bigint("updated_ts", { mode: "number" }),
+	parentId: text("parent_id"),
+	goalId: text("goal_id"),
+	takenBy: text("taken_by"),
+	takenAt: timestamp("taken_at", { withTimezone: true, mode: 'string' }),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	workspaceId: text("workspace_id"),
+	search: tsvectorCustom("_search"),
+	deprecationReason: text("deprecation_reason"),
+	seeAlso: text("see_also"),
+	needsDesign: boolean("needs_design"),
+	designStatus: text("design_status"),
+	designSpecId: text("design_spec_id"),
+	discardedDesignWork: boolean("discarded_design_work"),
+	completionRef: jsonb("completion_ref"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	workingUsers: bigint("working_users", { mode: "number" }),
+	workedByHistory: jsonb("worked_by_history"),
+	verifiedDoneAtRemoteTs: timestamp("verified_done_at_remote_ts", { withTimezone: true, mode: 'string' }),
+	verifierLastError: text("verifier_last_error"),
+	verifierLastCheckedAt: timestamp("verifier_last_checked_at", { withTimezone: true, mode: 'string' }),
+	sourcePlanSlug: text("source_plan_slug"),
+	sourcePlanItemIds: text("source_plan_item_ids"),
+	wave: text(),
+	featureOrder: integer("feature_order"),
+	authorPubkey: text("author_pubkey"),
+	origin: text(),
+	auditVerdict: text("audit_verdict"),
+	auditReasons: text("audit_reasons"),
+	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
+	itemKind: text("item_kind"),
+	payload: jsonb(),
+	assigneeRank: integer("assignee_rank"),
+	rankWriter: text("rank_writer"),
+	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	swarmAffinity: text("swarm_affinity"),
+	redundancy: integer(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	verifiedAuthorGithubUserId: bigint("verified_author_github_user_id", { mode: "number" }),
+	schedule: jsonb(),
+	scheduleActive: boolean("schedule_active"),
+	scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: 'string' }),
+	tzid: text(),
+	templateSlug: text("template_slug"),
+	runSeq: integer("run_seq"),
+	requeueCount: integer("requeue_count"),
+	fedHlc: text("fed_hlc"),
+	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
+	terminalOwner: text("terminal_owner"),
+	terminalCompletionRef: text("terminal_completion_ref"),
+	lastReleasedBy: text("last_released_by"),
+	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
+	embedding: vector({ dimensions: 384 }),
+	embeddingMode: text("embedding_mode"),
+	terminalReason: text("terminal_reason"),
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, wave, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, swarm_affinity, redundancy, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason FROM harness_shared.harness_features_consolidated`);
+
 export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues", {	workspaceId: text("workspace_id"),
 	issueId: text("issue_id"),
 	scope: text(),
@@ -8275,6 +8361,108 @@ export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues
 }).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
 
 export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("harness_features_consolidated", {	harnessSlug: text("harness_slug"),
+	featureId: text("feature_id"),
+	title: text(),
+	summary: text(),
+	status: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	attempts: bigint({ mode: "number" }),
+	claims: text(),
+	notes: text(),
+	metadata: jsonb(),
+	kind: text(),
+	projectId: text("project_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	expectedCostCents: bigint("expected_cost_cents", { mode: "number" }),
+	tags: jsonb(),
+	needsHumanReview: boolean("needs_human_review"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdTs: bigint("created_ts", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedTs: bigint("updated_ts", { mode: "number" }),
+	parentId: text("parent_id"),
+	goalId: text("goal_id"),
+	takenBy: text("taken_by"),
+	takenAt: timestamp("taken_at", { withTimezone: true, mode: 'string' }),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	workspaceId: text("workspace_id"),
+	search: tsvectorCustom("_search"),
+	deprecationReason: text("deprecation_reason"),
+	seeAlso: text("see_also"),
+	needsDesign: boolean("needs_design"),
+	designStatus: text("design_status"),
+	designSpecId: text("design_spec_id"),
+	discardedDesignWork: boolean("discarded_design_work"),
+	completionRef: jsonb("completion_ref"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	workingUsers: bigint("working_users", { mode: "number" }),
+	workedByHistory: jsonb("worked_by_history"),
+	verifiedDoneAtRemoteTs: timestamp("verified_done_at_remote_ts", { withTimezone: true, mode: 'string' }),
+	verifierLastError: text("verifier_last_error"),
+	verifierLastCheckedAt: timestamp("verifier_last_checked_at", { withTimezone: true, mode: 'string' }),
+	sourcePlanSlug: text("source_plan_slug"),
+	sourcePlanItemIds: text("source_plan_item_ids"),
+	wave: text(),
+	featureOrder: integer("feature_order"),
+	authorPubkey: text("author_pubkey"),
+	origin: text(),
+	auditVerdict: text("audit_verdict"),
+	auditReasons: text("audit_reasons"),
+	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
+	itemKind: text("item_kind"),
+	payload: jsonb(),
+	assigneeRank: integer("assignee_rank"),
+	rankWriter: text("rank_writer"),
+	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	swarmAffinity: text("swarm_affinity"),
+	redundancy: integer(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	verifiedAuthorGithubUserId: bigint("verified_author_github_user_id", { mode: "number" }),
+	schedule: jsonb(),
+	scheduleActive: boolean("schedule_active"),
+	scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: 'string' }),
+	tzid: text(),
+	templateSlug: text("template_slug"),
+	runSeq: integer("run_seq"),
+	requeueCount: integer("requeue_count"),
+	fedHlc: text("fed_hlc"),
+	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
+	terminalOwner: text("terminal_owner"),
+	terminalCompletionRef: text("terminal_completion_ref"),
+	lastReleasedBy: text("last_released_by"),
+	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
+	embedding: vector({ dimensions: 384 }),
+	embeddingMode: text("embedding_mode"),
+	terminalReason: text("terminal_reason"),
+}).with({"checkOption":"cascaded"}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, wave, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, swarm_affinity, redundancy, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+
+export const operatorDecisionsInHarnessShared = harnessShared.view("operator_decisions", {	id: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	actor: text(),
+	action: text(),
+	target: text(),
+	details: jsonb(),
+	workspaceId: text("workspace_id"),
+}).as(sql`SELECT id, ts, actor, action, subject AS target, details, workspace_id FROM harness_shared.audit_log WHERE actor = 'system:operator'::text`);
+
+export const systemPrincipalActivityInHarnessShared = harnessShared.view("system_principal_activity", {	id: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	actor: text(),
+	action: text(),
+	target: text(),
+	details: jsonb(),
+	workspaceId: text("workspace_id"),
+}).as(sql`SELECT id, ts, actor, action, subject AS target, details, workspace_id FROM harness_shared.audit_log WHERE actor ~~ 'system:%'::text OR actor ~~ 'pi:%'::text`);
+
+export const workItemsClaimableInHarnessShared = harnessShared.view("work_items_claimable", {	harnessSlug: text("harness_slug"),
 	featureId: text("feature_id"),
 	title: text(),
 	summary: text(),
@@ -8354,24 +8542,4 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("ha
 	embedding: vector({ dimensions: 384 }),
 	embeddingMode: text("embedding_mode"),
 	terminalReason: text("terminal_reason"),
-}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
-
-export const operatorDecisionsInHarnessShared = harnessShared.view("operator_decisions", {	id: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }),
-	actor: text(),
-	action: text(),
-	target: text(),
-	details: jsonb(),
-	workspaceId: text("workspace_id"),
-}).as(sql`SELECT id, ts, actor, action, subject AS target, details, workspace_id FROM harness_shared.audit_log WHERE actor = 'system:operator'::text`);
-
-export const systemPrincipalActivityInHarnessShared = harnessShared.view("system_principal_activity", {	id: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }),
-	actor: text(),
-	action: text(),
-	target: text(),
-	details: jsonb(),
-	workspaceId: text("workspace_id"),
-}).as(sql`SELECT id, ts, actor, action, subject AS target, details, workspace_id FROM harness_shared.audit_log WHERE actor ~~ 'system:%'::text OR actor ~~ 'pi:%'::text`);
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsHuman'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id)) = 0`);

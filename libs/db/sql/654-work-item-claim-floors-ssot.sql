@@ -118,6 +118,16 @@ CREATE VIEW harness_shared.work_items_claimable AS
   SELECT wi.*
     FROM harness_shared.work_items wi
    WHERE wi.item_kind IN ('bug', 'change', 'task')
+     -- PERF PREFILTER (not a second source of truth): the CHEAP, high-selectivity floors are also
+     -- spelled inline so the planner filters the ~93% of open rows that are observation-lane /
+     -- needs-human scorecards by index/expression BEFORE paying for the per-row function's gated
+     -- subqueries (reserved-plan-lane, blocked-dep). The function below RE-CHECKS every floor and
+     -- remains the authority — these conjuncts can only ever narrow to the same set, never widen it,
+     -- so they cannot drift the result; they just make the full-backlog audit run in ~1s not ~15s.
+     AND wi.status = 'open'
+     AND COALESCE(wi.payload, '{}'::jsonb) ->> 'lane'      IS DISTINCT FROM 'observation'
+     AND COALESCE(wi.payload, '{}'::jsonb) ->> 'needsHuman' IS DISTINCT FROM 'true'
+     -- the authoritative full floor check (the SSOT — every unconditional floor, in one place):
      AND cardinality(harness_shared.work_item_claim_floors(
            wi.status, wi.taken_by, wi.origin, wi.title,
            wi.terminal_owner, wi.terminal_completion_ref, wi.payload, wi.feature_id
