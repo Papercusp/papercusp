@@ -29,7 +29,13 @@
 -- still applies it with its live workspace context. Under-admitting a rare identity-drifted remote
 -- issue is the SAFE direction here (it never re-creates the over-report incident this SSOT exists to
 -- prevent). Feature-family floors (trust-admission + placement-kind, flag-gated) are a follow-up.
--- P-002 refactors the TS claim/admissible paths to CALL this SSOT so the two can never drift again.
+-- P-002 (DONE) BINDS the inline TS claim path to this SSOT via an anti-drift AGREEMENT TEST
+-- (packages/operator-core/lib/scheduler/claim-ssot-agreement.integration.test.ts) rather than a
+-- physical merge: routing claimNextIssueWorkItem THROUGH this bulk view would REGRESS federation
+-- recovery, because the own-node drift-recovery origin leg + the per-claim floors (rig/swarm/
+-- redundancy/cooldown) + the own-lease plan-item exemption are caller/workspace-context this
+-- SSOT deliberately cannot bake in (see below). The test instead asserts the view admits EXACTLY
+-- the rows the claim path serves, modulo those documented divergences — so the two can never drift.
 --
 -- Idempotent: DROP the view + BOTH prior/current function signatures, then CREATE fresh. The
 -- function is STABLE (reads small tables + now(), never writes).
@@ -112,7 +118,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION harness_shared.work_item_claim_floors(text, text, text, text, text, text, jsonb, text) IS
-  'P-001 (work-item-claimability-clarity): the UNCONDITIONAL issue-family claim floors as a queryable SSOT. Returns the VIOLATED floor labels (empty = claimable). Mirrors claimNextIssueWorkItem''s caller-independent floors; per-claim floors (rig/swarm/redundancy/cooldown) and the own-node drift-recovery origin leg are caller/workspace-context and intentionally excluded (fail-safe under-admit). P-002 will make the TS claim/admissible paths call this so they never drift.';
+  'P-001 (work-item-claimability-clarity): the UNCONDITIONAL issue-family claim floors as a queryable SSOT. Returns the VIOLATED floor labels (empty = claimable). Mirrors claimNextIssueWorkItem''s caller-independent floors; per-claim floors (rig/swarm/redundancy/cooldown) and the own-node drift-recovery origin leg are caller/workspace-context and intentionally excluded (fail-safe under-admit). P-002 (DONE) BINDS the inline TS claim path to this SSOT via an agreement test (claim-ssot-agreement.integration.test.ts) — a physical merge would regress those caller-context floors, so the test proves set-equality-modulo-documented-divergences instead.';
 
 CREATE VIEW harness_shared.work_items_claimable AS
   SELECT wi.*
