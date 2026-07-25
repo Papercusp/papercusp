@@ -123,6 +123,25 @@ CREATE TRIGGER harness_plan_parts_canonicalize_slug
 --    harness_slug='papercusp' directly, so the WHEN clause never matches.
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- 2z. Recovery trail FIRST. The dev box runs native PG, so the workspace-dir kopia
+--     snapshot does NOT cover harness_shared — these bak_ tables ARE the undo path
+--     for the 65 dropped duplicate rows (same convention as bak_20260717_unify_work_items).
+--     `IF NOT EXISTS` + the WHERE keeps a re-run inert once the fold has happened.
+CREATE TABLE IF NOT EXISTS harness_shared.bak_wi5720_retired_slug_plans AS
+  SELECT * FROM harness_shared.harness_plans
+   WHERE harness_slug IN ('papercup', 'papercup-hive', 'hive-canary');
+
+CREATE TABLE IF NOT EXISTS harness_shared.bak_wi5720_retired_slug_plan_parts AS
+  SELECT * FROM harness_shared.harness_plan_parts
+   WHERE harness_slug IN ('papercup', 'papercup-hive', 'hive-canary');
+
+CREATE TABLE IF NOT EXISTS harness_shared.bak_wi5720_retired_slug_plan_revisions AS
+  SELECT * FROM harness_shared.plan_revisions
+   WHERE harness_slug IN ('papercup', 'papercup-hive', 'hive-canary');
+
+COMMENT ON TABLE harness_shared.bak_wi5720_retired_slug_plans IS
+  'WI-5720 undo trail: harness_plans rows under retired/pot-less slugs as they stood before migration 656 folded them into papercusp. Droppable once the fold is confirmed good.';
+
 -- 2a. harness_plans — the plan documents themselves.
 INSERT INTO harness_shared.harness_plans (
   workspace_id, harness_slug, plan_slug, title, status, created, updated, owner,
