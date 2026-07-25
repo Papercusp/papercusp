@@ -44,6 +44,12 @@
 -- the 65 duplicates); it is deliberately NOT in the trigger's retired-slug set —
 -- hive-canary is a canary harness, not a papercup alias.
 --
+-- ⚠ AMENDED 2026-07-25, same day, after the first apply caused an incident: the
+-- retired-slug DELETEs are now bracketed by DISABLE/ENABLE of the federation capture
+-- trigger. See the comment above the harness_plans DELETE for the full mechanism, and
+-- migration 657 for the repair. Any future migration that retires rows under an aliased
+-- harness slug must do the same.
+--
 -- Idempotent: CREATE OR REPLACE + DROP/CREATE TRIGGER, and the fold matches nothing
 -- once applied (or on a fresh / embedded-pg boot). Composes onto 000-baseline.
 -- Runs as harness_admin.
@@ -164,8 +170,23 @@ FROM harness_shared.harness_plans
 WHERE harness_slug IN ('papercup', 'papercup-hive', 'hive-canary')
 ON CONFLICT (workspace_id, harness_slug, plan_slug) DO NOTHING;
 
+-- ⚠ DELETING a retired-slug row MUST NOT reach the federation capture.
+--
+-- harness_plans carries `capture_substrate_outbox_trg` (AFTER INSERT OR DELETE), and
+-- migration 359 rewrote that capture function to route every op through
+-- canonical_harness_slug(). A DELETE of a `papercup` row therefore emits a tombstone
+-- keyed (papercusp, <plan_slug>) — against the LIVE plan, not the row being retired.
+-- The first run of this migration did exactly that and the projection applied the
+-- tombstones, destroying 78 harness_plans rows (repaired by migration 657). Retiring a
+-- row under an aliased key is INDISTINGUISHABLE downstream from deleting the canonical
+-- row, so the capture must be gated off for this purely-local cleanup: these deletes are
+-- residue removal, never content deletions to federate. harness_admin owns the table.
+ALTER TABLE harness_shared.harness_plans DISABLE TRIGGER capture_substrate_outbox_trg;
+
 DELETE FROM harness_shared.harness_plans
 WHERE harness_slug IN ('papercup', 'papercup-hive', 'hive-canary');
+
+ALTER TABLE harness_shared.harness_plans ENABLE TRIGGER capture_substrate_outbox_trg;
 
 -- 2b. harness_plan_parts — the per-part federation grain behind those plans.
 -- (part_fed_key is GENERATED ALWAYS — never listed; PG recomputes it from the new row.)

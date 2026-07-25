@@ -3846,6 +3846,95 @@ export const topicHysteresisInHarnessShared = harnessShared.table("topic_hystere
 
 ]);
 
+export const bakWi5720RetiredSlugPlansInHarnessShared = harnessShared.table("bak_wi5720_retired_slug_plans", {
+	workspaceId: text("workspace_id"),
+	harnessSlug: text("harness_slug"),
+	planSlug: text("plan_slug"),
+	title: text(),
+	status: text(),
+	created: text(),
+	updated: text(),
+	owner: text(),
+	supersedes: text(),
+	supersededBy: text("superseded_by"),
+	content: text(),
+	contentHash: text("content_hash"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	version: bigint({ mode: "number" }),
+	opStatus: text("op_status"),
+	opStartedAt: timestamp("op_started_at", { withTimezone: true, mode: 'string' }),
+	opUpdatedAt: timestamp("op_updated_at", { withTimezone: true, mode: 'string' }),
+	currentWave: text("current_wave"),
+	opPriority: integer("op_priority"),
+	archived: boolean(),
+	isLegacy: boolean("is_legacy"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
+	authorPubkey: text("author_pubkey"),
+	origin: text(),
+	search: tsvectorCustom("_search"),
+	items: jsonb(),
+	decisions: jsonb(),
+	nowState: text("now_state"),
+	nowNext: text("now_next"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	initiative: text(),
+	schedule: jsonb(),
+	scheduleActive: boolean("schedule_active"),
+	scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: 'string' }),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	tzid: text(),
+	templateSlug: text("template_slug"),
+	runSeq: integer("run_seq"),
+	fedHlc: text("fed_hlc"),
+	promotePolicy: jsonb("promote_policy"),
+	template: text(),
+	templateData: jsonb("template_data"),
+	ownerAuthorPubkey: text("owner_author_pubkey"),
+	embedding: vector({ dimensions: 384 }),
+	embeddingMode: text("embedding_mode"),
+});
+
+export const bakWi5720RetiredSlugPlanPartsInHarnessShared = harnessShared.table("bak_wi5720_retired_slug_plan_parts", {
+	workspaceId: text("workspace_id"),
+	harnessSlug: text("harness_slug"),
+	planSlug: text("plan_slug"),
+	partKey: text("part_key"),
+	kind: text(),
+	body: text(),
+	ordinal: integer(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	author: text(),
+	tombstone: boolean(),
+	origin: text(),
+	partFedKey: text("part_fed_key"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }),
+	fedHlc: text("fed_hlc"),
+});
+
+export const bakWi5720RetiredSlugPlanRevisionsInHarnessShared = harnessShared.table("bak_wi5720_retired_slug_plan_revisions", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }),
+	planSlug: text("plan_slug"),
+	seq: integer(),
+	contentHash: text("content_hash"),
+	contentSnapshot: text("content_snapshot"),
+	rationale: text(),
+	authorKind: text("author_kind"),
+	authorId: text("author_id"),
+	sessionId: text("session_id"),
+	sessionKind: text("session_kind"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }),
+	harnessSlug: text("harness_slug"),
+	workspaceId: text("workspace_id"),
+});
+
 export const desktopPerfRunsInHarnessShared = harnessShared.table("desktop_perf_runs", {
 	id: text().primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
