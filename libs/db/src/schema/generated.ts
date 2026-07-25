@@ -2193,6 +2193,7 @@ export const watchdogTicksInHarnessShared = harnessShared.table("watchdog_ticks"
 	deferredKeys: text("deferred_keys").array().default([""]).notNull(),
 	knownOpenKeys: text("known_open_keys").array().default([""]).notNull(),
 	staleResolvedKeys: text("stale_resolved_keys").array().default([""]).notNull(),
+	seenKeys: text("seen_keys").array().default([""]).notNull(),
 }, (table) => [
 	index("watchdog_ticks_ws_tick_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.tickAt.desc().nullsFirst().op("text_ops")),
 	pgPolicy("watchdog_ticks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
