@@ -38,7 +38,12 @@
 -- A fresh install has no such outbox rows, so this whole migration is a no-op there.
 
 \set ON_ERROR_STOP on
-BEGIN;
+
+-- NO top-level BEGIN;/COMMIT; here — the migration runner already wraps this file
+-- in a transaction together with its schema_migrations ledger INSERT
+-- (embedded-postgres-server/src/migration-runner.js). An inner COMMIT ends that
+-- wrapper early and breaks apply+record atomicity. Enforced by lint:migrations /
+-- lint-migrations.test.ts (audit P-074, EI-170).
 
 INSERT INTO harness_shared.harness_plans (
   workspace_id, harness_slug, plan_slug, title, status, created, updated, owner,
@@ -69,5 +74,3 @@ FROM (
   ORDER BY o.key, o.ts DESC
 ) r
 ON CONFLICT (workspace_id, harness_slug, plan_slug) DO NOTHING;
-
-COMMIT;

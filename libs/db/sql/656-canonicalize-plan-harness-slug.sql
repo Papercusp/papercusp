@@ -55,7 +55,17 @@
 -- Runs as harness_admin.
 
 \set ON_ERROR_STOP on
-BEGIN;
+
+-- NO top-level BEGIN;/COMMIT; here. The migration runner wraps every file in
+-- `BEGIN; SET LOCAL statement_timeout = 0; <this file>; INSERT INTO
+-- schema_migrations …; COMMIT;` (embedded-postgres-server/src/migration-runner.js),
+-- so this file is ALREADY inside a transaction. An inner COMMIT would end that
+-- wrapper early, decoupling the apply from the ledger INSERT — a mid-file failure
+-- would then leave schema_migrations claiming success. That also matters more here
+-- than usual: the DISABLE/ENABLE of capture_substrate_outbox_trg below is only safe
+-- because it is atomic with the DELETEs it brackets. Enforced by lint:migrations /
+-- lint-migrations.test.ts (audit P-074, EI-170). plpgsql BEGIN…END inside $$ bodies
+-- is unaffected.
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. Backstop trigger — a retired harness slug cannot land in the plan tables.
@@ -219,5 +229,3 @@ ON CONFLICT (workspace_id, harness_slug, plan_slug, seq) DO NOTHING;
 
 DELETE FROM harness_shared.plan_revisions
 WHERE harness_slug IN ('papercup', 'papercup-hive', 'hive-canary');
-
-COMMIT;
