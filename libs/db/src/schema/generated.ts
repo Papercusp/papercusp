@@ -3310,6 +3310,7 @@ export const bashToolSubstitutionsInHarnessShared = harnessShared.table("bash_to
 	falsePositiveCount: integer("false_positive_count").default(0).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	bashPatternFlags: text("bash_pattern_flags").default('').notNull(),
 }, (table) => [
 	index("bash_tool_substitutions_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("bool_ops"), table.enabled.asc().nullsLast().op("bool_ops"), table.tier.asc().nullsLast().op("bool_ops")).where(sql`enabled`),
 	uniqueIndex("bash_tool_substitutions_ws_intent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.intentLabel.asc().nullsLast().op("text_ops")),
@@ -3318,6 +3319,7 @@ export const bashToolSubstitutionsInHarnessShared = harnessShared.table("bash_to
 	check("bash_tool_substitutions_tier_requires_equivalence", sql`(tier = 'observe'::text) OR (equivalence_verdict = 'equivalent'::text) OR (intent_label ~~ 'policy-violation:%'::text)`),
 	check("bash_tool_substitutions_advisory_required", sql`(tier = 'observe'::text) OR ((advisory_text IS NOT NULL) AND (length(btrim(advisory_text)) >= 20))`),
 	check("bash_tool_substitutions_verdict_evidence", sql`(equivalence_verdict = ANY (ARRAY['unaudited'::text, 'equivalent'::text])) OR (jsonb_array_length(failing_cases) > 0)`),
+	check("bash_tool_substitutions_pattern_flags_chk", sql`bash_pattern_flags ~ '^i?m?s?u?$'::text`),
 ]);
 
 export const potWatchdogFiresInHarnessShared = harnessShared.table("pot_watchdog_fires", {
