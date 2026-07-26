@@ -785,7 +785,21 @@ export async function tryHeartbeat(
 // ───────── Queue (read-only — no advisory lock) ─────────
 
 export interface QueueParams {
-  coordinationDomain: string;
+  /**
+   * The lock namespace to read.
+   *
+   * `null` reads across **every** domain — for DIAGNOSTIC readers only (WI-5979).
+   * A domain is the realpath of the repo root of whichever process resolved it
+   * (`lockCoordinationDomain()` keys off `import.meta.url`), so a reader running
+   * from a DIFFERENT checkout than the acquirer matches zero rows and reports a
+   * genuinely-held lock as absent — silently, since an empty result is not an
+   * error. That is correct for the ENFORCEMENT path (two checkouts are two
+   * different files and must not serialize against each other) but wrong for any
+   * "what is this agent holding?" read, where `owner` is already globally unique.
+   * Every row carries `coordination_domain` so a cross-domain read can still
+   * attribute blockers WITHIN a domain and never across one.
+   */
+  coordinationDomain: string | null;
   paths?: string[];
   owner?: string;
   includeCompleted?: boolean;
@@ -798,6 +812,8 @@ export interface ActiveLockRow {
   intent: string;
   acquired_ts: Date;
   expires_ts: Date;
+  /** The lock namespace this row lives in — see {@link QueueParams.coordinationDomain}. */
+  coordination_domain: string;
 }
 
 export interface WaiterRow {
@@ -810,6 +826,8 @@ export interface WaiterRow {
   wait_until: Date;
   status: 'waiting' | 'granted' | 'expired' | 'cancelled';
   ahead_count?: number;
+  /** The lock namespace this row lives in — see {@link QueueParams.coordinationDomain}. */
+  coordination_domain: string;
 }
 
 export interface QueueResult {
@@ -842,11 +860,17 @@ async function readQueueInner(
     ? sql`AND path = ANY(${paths}::text[])`
     : sql``;
   const ownerFilter = owner ? sql`AND owner = ${owner}` : sql``;
+  // WI-5979: `null` = read every domain (diagnostic reads). `TRUE` rather than an
+  // empty fragment so the surrounding `WHERE ... AND` chain stays well-formed.
+  const domainFilter = coordinationDomain === null
+    ? sql`TRUE`
+    : sql`coordination_domain = ${coordinationDomain}`;
 
   const active = await sql<Array<ActiveLockRow>>`
-    SELECT path, owner, owner_label, intent, acquired_ts, expires_ts
+    SELECT path, owner, owner_label, intent, acquired_ts, expires_ts,
+           coordination_domain
       FROM agent_file_locks
-     WHERE coordination_domain = ${coordinationDomain}
+     WHERE ${domainFilter}
        AND expires_ts > clock_timestamp()
        ${lockFilter}
        ${ownerFilter}
@@ -860,9 +884,11 @@ async function readQueueInner(
   const waiting = await sql<Array<WaiterRow & { ahead_count: number }>>`
     SELECT ticket_id, owner, owner_label, paths, intent, queued_ts, wait_until,
            status::text AS status,
-           (ROW_NUMBER() OVER (ORDER BY queued_ts ASC, ticket_id ASC) - 1)::int AS ahead_count
+           coordination_domain,
+           (ROW_NUMBER() OVER (PARTITION BY coordination_domain
+                                   ORDER BY queued_ts ASC, ticket_id ASC) - 1)::int AS ahead_count
       FROM agent_lock_waiters
-     WHERE coordination_domain = ${coordinationDomain}
+     WHERE ${domainFilter}
        AND status = 'waiting'
        ${pathOverlap}
        ${ownerFilter}
@@ -874,9 +900,10 @@ async function readQueueInner(
   if (includeCompleted) {
     result.completed = await sql<Array<WaiterRow>>`
       SELECT ticket_id, owner, owner_label, paths, intent, queued_ts, wait_until,
-             status::text AS status
+             status::text AS status,
+             coordination_domain
         FROM agent_lock_waiters
-       WHERE coordination_domain = ${coordinationDomain}
+       WHERE ${domainFilter}
          AND status IN ('granted','expired','cancelled')
          AND queued_ts > clock_timestamp() - interval '24 hours'
          ${pathOverlap}
