@@ -3274,8 +3274,8 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	index("agent_facts_shareable").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.scope.asc().nullsLast().op("timestamptz_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((shareable = true) AND (retracted_at IS NULL))`),
 	pgPolicy("agent_facts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("agent_facts_scope_check", sql`scope = ANY (ARRAY['workspace'::text, 'role'::text, 'owner'::text, 'harness'::text, 'work_item'::text])`),
-	check("agent_facts_body_check", sql`char_length(body) <= 500`),
 	check("agent_facts_check", sql`(scope = 'workspace'::text) OR (scope_ref IS NOT NULL)`),
+	check("agent_facts_body_check", sql`char_length(body) <= 1200`),
 ]);
 
 export const operatorPromptUserInHarnessShared = harnessShared.table("operator_prompt_user", {
