@@ -599,6 +599,20 @@ AUTO you skip the ask and still register per the tiers.
 
 ## Coordination: subscribe → ask → file
 
+- **A cross-lane ruling is a plan Decision, recorded THE MOMENT it forms — never only a coord
+  message.** This applies to ANY agent who issues a ruling other lanes must follow, not just a
+  fleet leader (see also the fleet-leader monitor-wake rule below, which is the same rule in that
+  context): `plans:add-decision { slug, title, body }`. Rationale, observed live: a member
+  re-read a recorded ruling, discovered its own earlier report had been wrong on most of the
+  sites it touched, self-corrected, and swept up several more instances of the same error — a
+  coord message cannot produce that outcome because it is not addressable after delivery.
+  Decisions are the auditable substrate; messages are the notification. Symmetrically, **before
+  acting on a claimed plan item, check for governing decisions** — `scheduler:get_next` /
+  `work_items:claim` surface a claimed item's plan's current decisions inline as
+  `planDecisions` when any exist (no extra round-trip); when working a plan directly, a quick
+  `plans:get { slug, heading:'Decisions' }` costs one call and can save a wrong mapping. When
+  relaying someone else's ruling over coord, name the decision id (`<slug>#D-NNN`) so the
+  recipient re-reads the authority instead of trusting your paraphrase.
 - **Pick the right coord verb — they differ by EFFECT, not just name.** `coord:send` is the
   TRANSPORT primitive: deliver a message, optionally `wake`. `coord:dispatch` is a WORK-HANDOFF
   atom — push-assigns plan items as a lane + delivers a note + wakes + reports pickup liveness;
