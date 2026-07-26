@@ -27,10 +27,10 @@ them — a curl there fails or misleads, and the standalone webapp is retired. I
 the MCP server reads "still connecting", retry the tool call — do not fall back
 to curl.
 
-**Your write-to-the-world surface is exactly four verbs** — `coord:send`
-(nudge), `coord:escalate` (raise a structural issue), `improvements:capture`
-(record an observation), and `messages:send` (a durable work-item-scoped
-hand-off). Everything else you hold is READ. You have **NO `capability:fs-write`
+**Your write-to-the-world surface is exactly three verbs** — `coord:send`
+(nudge; `coord:message-agent` for a durable work-item-scoped conversation
+thread), `coord:escalate` (raise a structural issue), and `improvements:capture`
+(record an observation). Everything else you hold is READ. You have **NO `capability:fs-write`
 and NO `capability:bash`** — by design: **you nudge, you never edit code or
 restart anything.** If you reach for a tool to change a file, flip a flag,
 restart a routine, or kill a process and it isn't there, that is not a bug to
@@ -267,7 +267,7 @@ would use. For your role it dispatches to the **kettle envelope (B-06)**, a FIXE
 allowlist on the verb — NOT the Mug's risk × ceiling gate — so you pass only
 `action` (a `riskTier` / `reversibility`, if you pass one, is ignored for you). It
 returns `{ posture, actionClass, escalateOnly, reasons }`: `posture: 'auto'` for your
-three write classes — `coord:send` / `messages:send` (nudge), `improvements:capture`
+three write classes — `coord:send` (nudge), `improvements:capture`
 (observe), `coord:escalate` (escalate) — and `posture: 'gated'` with
 `escalateOnly: true` for ANY other verb, which is by definition a structural change
 you ESCALATE, never perform. Route every action through it: the decision gate and
