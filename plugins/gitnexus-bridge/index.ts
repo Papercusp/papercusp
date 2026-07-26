@@ -250,6 +250,81 @@ export function quotaFor(toolName: string): ToolDefinition['rolesQuota'] {
   };
 }
 
+/**
+ * EI-18681162379647090: description/guidance OVERRIDES for the tools agents most need to
+ * find by plain-language intent. Upstream gitnexus's own tool descriptions are written in
+ * the tool's own vocabulary ("code knowledge graph", "execution flows", "Reciprocal Rank
+ * Fusion") — an agent that measured tools:find for phrasings like "find call sites without
+ * grep" got ZERO code-search hits, because none of the agent-side words ("where is X
+ * defined", "who calls this", "search the repo for") appear anywhere in the indexed text
+ * (tools:find embeds `name + description + guidance.when + argSchema`, see
+ * agent-tools/tools/find.ts's buildCorpus). Reachable ONLY by agents who already know the
+ * literal word "gitnexus" — which is exactly the set that doesn't need to search for it.
+ *
+ * These overrides REPLACE upstream's description (still the authoritative capability, just
+ * re-worded) and add `guidance.when`/`notWhen` in first-person agent vocabulary, explicitly
+ * framed as a replacement for shelling out to `grep -r`/`rg` on code (the previous wording,
+ * "Complements grep/IDE search", read as permission to keep using grep alongside it rather
+ * than instead of it). Tools with no entry here keep upstream's description unchanged, so a
+ * future upstream gitnexus release still flows through for anything not overridden.
+ */
+export const TOOL_OVERRIDES: Record<string, { description: string; guidance: NonNullable<ToolDefinition['guidance']> }> = {
+  query: {
+    description:
+      'Find where a symbol is defined, who calls a function, or what code handles a behavior — ' +
+      'searches the code knowledge graph and returns call chains (callers/callees) ranked by ' +
+      'relevance, with symbols and file locations. Use this INSTEAD of shelling out to `grep -r`/`rg` ' +
+      'for a code search: grep returns raw file/line text matches; this returns the actual call ' +
+      'relationships, which is what "who calls X" / "where is Y defined" / "how does Z flow across ' +
+      'files" questions actually need.',
+    guidance: {
+      when:
+        'When you need to find where something is defined, who calls a function, or trace how a ' +
+        'feature\'s code flows across files — "find call sites", "who calls X", "where is Y defined", ' +
+        '"search the repo for code that does Z".',
+      notWhen:
+        'NOT for prose/doc search (use search:fulltext / search:semantic instead) or a repo the graph ' +
+        'hasn\'t indexed. Use this INSTEAD of `grep -r`/`rg` for code-structure questions — reach for ' +
+        'grep only on non-code text, or if the graph index is confirmed stale.',
+      chaining: 'Pair with gitnexus.context for a returned symbol\'s full source, or gitnexus.impact before a rename/refactor.',
+    },
+  },
+  cypher: {
+    description:
+      'Run a direct structural (Cypher) query against the code knowledge graph for precise ' +
+      'call/dependency questions that gitnexus.query\'s ranked natural-language search doesn\'t cover ' +
+      '(e.g. "every function that calls both A and B"). Use INSTEAD of grep -r when you need an exact ' +
+      'structural answer, not a ranked-relevance one.',
+    guidance: {
+      when:
+        'When gitnexus.query\'s natural-language search already ran but isn\'t precise enough, and you ' +
+        'need an exact graph-structure query.',
+      notWhen: 'Start with gitnexus.query first — it is the natural-language front door; reach for cypher only when you need exact graph structure.',
+      chaining: 'Follow up a gitnexus.query miss with this when you can express the relationship as a graph pattern.',
+    },
+  },
+  context: {
+    description:
+      'Fetch the full source and surrounding context for a specific symbol or file location the ' +
+      'graph already identified (e.g. from a gitnexus.query/cypher result), without a manual file ' +
+      'Read+offset.',
+    guidance: {
+      when: 'After gitnexus.query or gitnexus.cypher returns a symbol/location and you need to read its actual source.',
+      chaining: 'Chain directly after gitnexus.query — its results are exactly this tool\'s input.',
+    },
+  },
+  impact: {
+    description:
+      'Find every caller/consumer that would be affected by changing a given symbol — the ' +
+      'blast-radius check before a rename, refactor, or deletion. Use INSTEAD of grep -r when you need ' +
+      'to know "what would break" before a risky edit.',
+    guidance: {
+      when: 'Before renaming, refactoring, or deleting a symbol — "what depends on this", "what would break if I change X".',
+      notWhen: 'Not for exploring code you haven\'t decided to change yet — start with gitnexus.query.',
+    },
+  },
+};
+
 function makeHandler(toolName: string): ToolHandler {
   return async (input, ctx): Promise<ToolResult> => {
     const workspaceId = ctx.workspaceId ?? 'default';
@@ -305,9 +380,10 @@ const plugin: Plugin = {
     const handlers: PluginToolMap = {};
     for (const t of upstream) {
       const cap = `tools:gitnexus:${t.name}`;
+      const override = TOOL_OVERRIDES[t.name];
       const def: ToolDefinition = {
         name: t.name,
-        description: t.description ?? `gitnexus.${t.name}`,
+        description: override?.description ?? t.description ?? `gitnexus.${t.name}`,
         inputSchema: t.inputSchema ?? { type: 'object', properties: {} },
         capabilities: [cap, 'compute:exec:gitnexus'],
         roles: rolesFor(t.name),
@@ -317,6 +393,7 @@ const plugin: Plugin = {
           mcp: { name: `gitnexus.${t.name}`, largeOutput: t.name === 'query' || t.name === 'cypher' || t.name === 'impact' },
           http: { path: `/api/plugins/gitnexus/${t.name}` },
         },
+        ...(override ? { guidance: override.guidance } : {}),
       };
       definitions.push(def);
       handlers[t.name] = makeHandler(t.name);

@@ -15,7 +15,7 @@
  * without touching `gitnexus` or any subprocess.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { rolesFor, quotaFor, gitnexusPath } from './index';
+import { rolesFor, quotaFor, gitnexusPath, TOOL_OVERRIDES } from './index';
 
 // ── Gap 1: rolesFor — the role allowlist security boundary ──────────────────
 
@@ -167,5 +167,53 @@ describe('gitnexusPath — PATH fallback augmentation (Gap 3, P3)', () => {
     process.env.PATH = once;
     const twice = gitnexusPath();
     expect(twice).toEqual(once);
+  });
+});
+
+// ── TOOL_OVERRIDES — discoverability-by-intent (EI-18681162379647090) ───────
+//
+// The upstream gitnexus tool descriptions are written in the tool's own
+// vocabulary ("code knowledge graph", "execution flows") and were undiscoverable
+// by tools:find for plain agent-vocabulary intents ("find call sites without
+// grep" returned zero code-search hits). These tests are the recurrence guard
+// the bug report asked for: assert the override text an agent actually needs
+// is present, in agent-first-person vocabulary, and explicitly frames itself
+// as a REPLACEMENT for grep (not merely a complement — that ambiguity was the
+// original defect: "Complements grep/IDE search" read as permission to keep
+// grepping alongside it).
+describe('TOOL_OVERRIDES — agent-vocabulary description/guidance for code-search tools', () => {
+  const CODE_SEARCH_TOOLS = ['query', 'cypher', 'context', 'impact'];
+
+  it.each(CODE_SEARCH_TOOLS)('%s has an override with a non-empty description and guidance.when', (tool) => {
+    const o = TOOL_OVERRIDES[tool];
+    expect(o).toBeDefined();
+    expect(o.description.length).toBeGreaterThan(0);
+    expect(o.guidance.when).toBeTruthy();
+  });
+
+  it('query\'s override explicitly frames itself as a REPLACEMENT for grep, not a complement', () => {
+    const o = TOOL_OVERRIDES.query;
+    const combined = `${o.description} ${o.guidance.when} ${o.guidance.notWhen ?? ''}`.toLowerCase();
+    expect(combined).toContain('instead of');
+    expect(combined).toContain('grep');
+    // The exact prior wording that read as permission to keep grepping alongside it must be gone.
+    expect(combined).not.toContain('complements grep');
+  });
+
+  it('query\'s description uses agent-first-person search vocabulary, not only graph jargon', () => {
+    const text = TOOL_OVERRIDES.query.description.toLowerCase();
+    // At least one of the plain-language phrasings an agent actually thinks in.
+    const agentPhrases = ['where is', 'who calls', 'find where', 'call chains'];
+    expect(agentPhrases.some((p) => text.includes(p))).toBe(true);
+  });
+
+  it('impact\'s override targets the "what would break" pre-refactor use case', () => {
+    const text = `${TOOL_OVERRIDES.impact.description} ${TOOL_OVERRIDES.impact.guidance.when}`.toLowerCase();
+    expect(text).toMatch(/break|rename|refactor|depend/);
+  });
+
+  it('a tool with no override entry is simply absent from the map (upstream description falls through unchanged)', () => {
+    expect(TOOL_OVERRIDES.list_repos).toBeUndefined();
+    expect(TOOL_OVERRIDES.totally_new_upstream_tool).toBeUndefined();
   });
 });
