@@ -139,7 +139,16 @@ async function pg() {
     process.env.HARNESS_DATABASE_URL ||
     readDiscoveryUrl('app') ||
     'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
-  _pgClient = postgres(url, { onnotice: () => {}, max: 2, idle_timeout: 30 });
+  _pgClient = postgres(url, {
+    onnotice: () => {},
+    max: 2,
+    idle_timeout: 30,
+    // WI-6062: tag so this singleton pool is attributable in pg_stat_activity —
+    // without it postgres-js's own 'postgres.js' default applies and the connection
+    // is indistinguishable from every other untagged pool (a sandboxed plugin can't
+    // import the shared @papercusp/db-org helper, so tag inline).
+    connection: { application_name: `pcusp:linear-sync:p${process.pid}`.slice(0, 63) },
+  });
   return _pgClient;
 }
 

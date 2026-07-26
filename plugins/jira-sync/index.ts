@@ -201,6 +201,11 @@ async function pg() {
     onnotice: () => {},
     max: 2,
     idle_timeout: 30,
+    // WI-6062: tag so this singleton pool is attributable in pg_stat_activity —
+    // without it postgres-js's own 'postgres.js' default applies and the connection
+    // is indistinguishable from every other untagged pool (a sandboxed plugin can't
+    // import the shared @papercusp/db-org helper, so tag inline).
+    connection: { application_name: `pcusp:jira-sync:p${process.pid}`.slice(0, 63) },
   });
   return _pgClient;
 }
