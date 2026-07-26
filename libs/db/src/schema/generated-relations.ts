@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { routineGroupsInHarnessShared, routinesInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, eventAwaitNodesInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, savedPromptsInHarnessShared, potEvalInstancesInHarnessShared, potEvalRunsInHarnessShared, memoryVecHarrierInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, cupKeeperInstancesInHarnessShared, cupKeeperRunsInHarnessShared, goalsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, memoryAnchorsInHarnessShared, potEvalScoresInHarnessShared, cupKeeperScoresInHarnessShared, benchRunTasksInHarnessShared, potsInHarnessShared, potMembersInHarnessShared } from "./generated";
+import { routineGroupsInHarnessShared, routinesInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecOpenaiInHarnessShared, memoryVecLocalInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, eventAwaitNodesInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, savedPromptsInHarnessShared, potEvalInstancesInHarnessShared, potEvalRunsInHarnessShared, memoryVecHarrierInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, cupKeeperInstancesInHarnessShared, cupKeeperRunsInHarnessShared, goalsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, memoryAnchorsInHarnessShared, harnessPlansInHarnessShared, planDecisionsInHarnessShared, planItemsInHarnessShared, potEvalScoresInHarnessShared, cupKeeperScoresInHarnessShared, benchRunTasksInHarnessShared, potsInHarnessShared, potMembersInHarnessShared } from "./generated";
 
 export const routinesInHarnessSharedRelations = relations(routinesInHarnessShared, ({one}) => ({
 	routineGroupsInHarnessShared: one(routineGroupsInHarnessShared, {
@@ -244,6 +244,25 @@ export const memoryAnchorsInHarnessSharedRelations = relations(memoryAnchorsInHa
 	memoryCanonicalInHarnessShared: one(memoryCanonicalInHarnessShared, {
 		fields: [memoryAnchorsInHarnessShared.memoryId],
 		references: [memoryCanonicalInHarnessShared.id]
+	}),
+}));
+
+export const planDecisionsInHarnessSharedRelations = relations(planDecisionsInHarnessShared, ({one}) => ({
+	harnessPlansInHarnessShared: one(harnessPlansInHarnessShared, {
+		fields: [planDecisionsInHarnessShared.workspaceId],
+		references: [harnessPlansInHarnessShared.workspaceId]
+	}),
+}));
+
+export const harnessPlansInHarnessSharedRelations = relations(harnessPlansInHarnessShared, ({many}) => ({
+	planDecisionsInHarnessShareds: many(planDecisionsInHarnessShared),
+	planItemsInHarnessShareds: many(planItemsInHarnessShared),
+}));
+
+export const planItemsInHarnessSharedRelations = relations(planItemsInHarnessShared, ({one}) => ({
+	harnessPlansInHarnessShared: one(harnessPlansInHarnessShared, {
+		fields: [planItemsInHarnessShared.workspaceId],
+		references: [harnessPlansInHarnessShared.workspaceId]
 	}),
 }));
 
