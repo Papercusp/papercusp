@@ -3830,6 +3830,12 @@ export const federationProbesInHarnessShared = harnessShared.table("federation_p
 	check("federation_probes_status_check", sql`status = ANY (ARRAY['pending'::text, 'acked'::text, 'refused'::text, 'timed_out'::text])`),
 ]);
 
+export const knownTimerRegistrationsInHarnessShared = harnessShared.table("known_timer_registrations", {
+	name: text().primaryKey().notNull(),
+	source: text().notNull(),
+	firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+});
+
 export const agentRateBudgetInHarnessShared = harnessShared.table("agent_rate_budget", {
 	bucketKey: text("bucket_key").primaryKey().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -6131,6 +6137,26 @@ export const perfRegressionSnapshotsInHarnessShared = harnessShared.table("perf_
 	index("perf_regression_snapshots_ws_captured_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.capturedAt.desc().nullsFirst().op("text_ops")),
 	primaryKey({ columns: [table.capturedAt, table.workspaceId], name: "perf_regression_snapshots_pkey"}),
 	pgPolicy("perf_regression_snapshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const toolUsageRollupInHarnessShared = harnessShared.table("tool_usage_rollup", {
+	workspaceId: text("workspace_id").notNull(),
+	sourceKind: text("source_kind").notNull(),
+	sessionId: text("session_id").notNull(),
+	day: date().notNull(),
+	toolName: text("tool_name").notNull(),
+	verb: text().default('').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	calls: bigint({ mode: "number" }).default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	atoms: bigint({ mode: "number" }).default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	resultBytes: bigint("result_bytes", { mode: "number" }).default(0).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("tool_usage_rollup_verb_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.day.desc().nullsFirst().op("date_ops"), table.verb.asc().nullsLast().op("text_ops")).where(sql`(verb <> ''::text)`),
+	index("tool_usage_rollup_window_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.day.desc().nullsFirst().op("text_ops"), table.toolName.asc().nullsLast().op("date_ops")),
+	primaryKey({ columns: [table.day, table.sessionId, table.sourceKind, table.toolName, table.verb, table.workspaceId], name: "tool_usage_rollup_pkey"}),
 ]);
 
 export const pendingReviewsInHarnessShared = harnessShared.table("pending_reviews", {
