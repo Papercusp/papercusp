@@ -501,6 +501,16 @@ it is easy to never see. They answer the box; the text above it silently dies. T
 - **Content and question travel in SEPARATE turns.** Deliver the content as plain text and
   END THE TURN; ask the question on the NEXT turn. Never append a dialog to the bottom of a
   long report as "one efficient turn" — that turn delivers the dialog and loses the report.
+- **The split is the DIALOG, never the DELIVERABLE — never defer content to a future turn.**
+  The rule above decides where the QUESTION goes; it NEVER licenses withholding a
+  report/plan/analysis you could write NOW. Anticipating that you'll need to ask something is
+  a reason to send the content THIS turn and ask next — not to send neither. If you catch
+  yourself typing **"next turn I'll …"** (or "I'll put X in front of you next turn") about
+  content you already have, THAT IS THE FAILURE: write it out now, end the turn, ask
+  afterwards. A deferred deliverable costs the owner a full round trip, and the thing that
+  never got written is the same silent drop this whole section exists to prevent — only
+  self-inflicted. (Owner-reported 2026-07-25: an su deferred a finished plan twice this way;
+  the PreToolUse guard cannot catch it, because a turn that asks nothing never trips it.)
 - **Every question is SELF-CONTAINED.** The question + its options must carry the minimal
   context the choice needs INSIDE themselves — never "as explained above" / "per my analysis":
   the owner may see only the box. If an option needs a paragraph to be choosable, the
