@@ -1,17 +1,16 @@
 /**
- * Substrate-context assembler. Fetches Tier 2 neighbor data + bounded
- * supervisor inbox via the operator's read APIs and produces the markdown
- * block prepended to every role's prompt by buildPrompt.
+ * Substrate-context assembler. Fetches Tier 2 neighbor data via the
+ * operator's read APIs and produces the markdown block prepended to every
+ * role's prompt by buildPrompt.
  *
  * Best-effort: any fetch failure → empty section. Tier 1 (preamble) and
- * Tier 3 (capabilities list) are static text; Tier 2 (neighbor view) and
- * the bounded inbox require live data.
+ * Tier 3 (capabilities list) are static text; Tier 2 (neighbor view)
+ * requires live data.
  *
- * G3 security (P-009): inter-agent inbox messages are remote-peer-authored
- * content and are wrapped with wrapUntrusted() before injection into the
- * prompt so agents treat them as DATA rather than instructions.
+ * (The bounded supervisor-inbox section this file used to render — sourced
+ * from the now-retired work-item mail surface's inbox route — was removed;
+ * see retire-work-item-mail-surface-2026-07-26.)
  */
-import { wrapUntrusted } from './prompt-build.js';
 
 const TIER_1_PREAMBLE = `## About Papercusp
 
@@ -22,8 +21,6 @@ where role-based agent crews ("harnesses") build features.
   scoper, worker, validator, ...). Yours is below.
 - Harnesses can have a parent and/or children, related via \`parent_slug\`.
   Yours is shown below if applicable.
-- Harnesses can message each other via the \`send_message\` action (gated
-  by your role's \`allowedActions\`). Always include a \`reason\` of ≥10 chars.
 - The substrate is the same for every harness — yours and everyone else's.
 - You can inspect any other harness on demand via the read APIs listed in
   "Available read capabilities" below. Use them when relevant.`;
@@ -35,8 +32,7 @@ to you. Only do so when relevant to the current task.
 
 - \`curl ${operatorBase}/api/harness/projects\`                       — full registry
 - \`curl ${operatorBase}/api/harness/<slug>/status\`                  — full state of any harness
-- \`curl ${operatorBase}/api/harness/<slug>/inbox\`                   — any harness's inbox
-- \`curl ${operatorBase}/api/harness/<slug>/outbox\`                  — any harness's outbox
+- \`curl ${operatorBase}/api/harness/<slug>/supervisor-notes\`        — any harness's supervisor notes
 - \`curl ${operatorBase}/api/harness/all/recent-activity?limit=N\`    — global audit feed
 - \`curl ${operatorBase}/api/marketplace/spawnable\`                  — templates you can spawn`;
 
@@ -54,17 +50,6 @@ interface HarnessStatus {
   feature_total?: number;
   recent_features?: { id: string; status: string; title: string }[];
   spawned_count?: number;
-}
-
-interface MessageRow {
-  id: string;
-  from_slug: string;
-  to_slug: string;
-  kind: string;
-  subject: string;
-  body?: string;
-  status: string;
-  created_at: string;
 }
 
 async function fetchJson<T>(url: string, timeoutMs = 5000): Promise<T | null> {
@@ -137,16 +122,6 @@ async function buildNeighborSection(
     const parent = await summarizeHarness(operatorBase, parentSlug, allProjects);
     lines.push(`\n### Parent: ${parentSlug}`);
     lines.push(`- ${summaryLine(parent)}`);
-    // Last message between us
-    const inbox = await fetchJson<{ messages: MessageRow[] }>(
-      `${operatorBase}/api/harness/${encodeURIComponent(parentSlug)}/inbox?status=all&limit=5`,
-    );
-    if (inbox?.messages) {
-      const lastFromUs = inbox.messages.find((m) => m.from_slug === selfSlug);
-      if (lastFromUs) {
-        lines.push(`- Last message from us → parent: [${lastFromUs.kind}] "${lastFromUs.subject}"`);
-      }
-    }
   }
 
   // Children
@@ -182,28 +157,6 @@ async function buildNeighborSection(
   }
 
   if (lines.length === 1) return ''; // No relations to show
-  return lines.join('\n');
-}
-
-async function buildInboxSection(operatorBase: string, selfSlug: string, parentSlug: string | null): Promise<string> {
-  if (!parentSlug) return '';
-  const inbox = await fetchJson<{ messages: MessageRow[] }>(
-    `${operatorBase}/api/harness/${encodeURIComponent(selfSlug)}/inbox?status=pending&limit=20`,
-  );
-  if (!inbox?.messages?.length) return '';
-  const fromParent = inbox.messages.filter((m) => m.from_slug === parentSlug);
-  if (fromParent.length === 0) return '';
-  const lines: string[] = [`## Recent supervisor messages (from parent: ${parentSlug})`];
-  for (const m of fromParent.slice(0, 5)) {
-    const ts = m.created_at?.slice(0, 19);
-    // G3 (P-009): inter-agent messages are remote-peer-authored content.
-    // Wrap subject+body together so the agent treats them as DATA.
-    // All messages from the parent/peer inbox qualify as remote — they
-    // cross the harness boundary and may carry attacker-controlled text.
-    const body = m.body ? ` — ${m.body.slice(0, 200)}` : '';
-    const rawContent = `- ${ts} [${m.kind}]: "${m.subject}"${body}`;
-    lines.push(wrapUntrusted(rawContent));
-  }
   return lines.join('\n');
 }
 
@@ -244,12 +197,6 @@ export async function fetchSubstrateContext(input: SubstrateContextInput): Promi
 
   // Tier 3: capabilities
   sections.push(TIER_3_CAPABILITIES_TEMPLATE(operatorBase));
-
-  // Bounded supervisor inbox
-  try {
-    const inbox = await buildInboxSection(operatorBase, input.selfSlug, input.parentSlug);
-    if (inbox) sections.push(inbox);
-  } catch { /* skip */ }
 
   return sections.join('\n\n');
 }
