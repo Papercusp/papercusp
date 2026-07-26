@@ -721,6 +721,67 @@ export function restoreRawDateSerializers(client: Sql): void {
   }
 }
 
+/**
+ * EI-18698602043482898: postgres-js's json/jsonb OIDs (114, 3802) have the
+ * SAME shared-client mutation problem as the date OIDs above, but INVERTED —
+ * and because BOTH the "raw" and the "drizzle-mutated" state are wrong for
+ * one of the two common call shapes, there is no JS-value form that is
+ * correct under both:
+ *
+ *   - `${sql.json(v)}` explicitly types the param 3802 up front. postgres-js's
+ *     DEFAULT serializer for 114/3802 is `JSON.stringify` (types.js), which is
+ *     correct here — `v` is the real JS value and needs encoding once.
+ *   - `${JSON.stringify(v)}::jsonb` (or any raw `${…}::jsonb` with a
+ *     pre-stringified JS value) infers the param as untyped (OID 0); postgres-js
+ *     defers serialization until the server's ParameterDescription response
+ *     resolves the OID to 3802 via the cast, THEN serializes the ORIGINAL
+ *     (already-stringified) value through `options.serializers['3802']`. The
+ *     default `JSON.stringify` serializer here DOUBLE-encodes it — e.g. an
+ *     empty array `[]` becomes the jsonb SCALAR `"[]"` (jsonb_typeof=string)
+ *     instead of the array `[]` — a defect that is invisible on read unless
+ *     something asserts the stored type (see seed.ts's `::text::jsonb`
+ *     workaround + jsonb_array_length note).
+ *
+ *   drizzle-orm's postgres-js driver (driver.js) mutates serializers['114']
+ *   and ['3802'] to a transparent passthrough (to keep ITS OWN
+ *   pre-stringified params from being re-encoded) — which happens to fix the
+ *   second bullet above but BREAKS the first: `sql.json(v)` with a real JS
+ *   array/object now hits `Buffer.byteLength(Array)` inside postgres-js and
+ *   throws. So today, which form is "correct" depends entirely on whether the
+ *   shared client happened to get drizzle-wrapped — neither client is right
+ *   for both callers.
+ *
+ * This installs a HYBRID serializer (mirroring `restoreRawDateSerializers`):
+ * a string passes through unchanged (the pre-stringified-value case), anything
+ * else is JSON.stringify'd (the raw-JS-value / `sql.json` case) — correct for
+ * BOTH call shapes, on any client, whether or not it is later drizzle-wrapped.
+ * STICKY for the same reason as the date OIDs: `drizzle(tx)` is called at
+ * RUNTIME on transaction handles sharing the parent's `options.serializers`
+ * object, so a plain assignment would silently re-break the very next
+ * `drizzle(tx)` call.
+ *
+ * Called by `buildClient` on every canonical connection. A hand-rolled
+ * `postgres(url, …)` client meant to behave like the canonical clients
+ * (test fixtures, conformance suites, one-off scripts) must call this too.
+ */
+const DRIZZLE_MUTATED_JSON_OIDS = ['114', '3802'] as const;
+export function restoreRawJsonbSerializer(client: Sql): void {
+  const serializers = (client as any)?.options?.serializers as Record<string, (x: any) => any> | undefined;
+  if (!serializers) return;
+  const hybrid = (x: any) => (typeof x === 'string' ? x : JSON.stringify(x));
+  for (const oid of DRIZZLE_MUTATED_JSON_OIDS) {
+    Object.defineProperty(serializers, oid, {
+      configurable: true,
+      enumerable: true,
+      get: () => hybrid,
+      // Swallow drizzle's transparent re-assignment (driver.js does
+      // `serializers["114"] = serializers["3802"] = transparentParser` on
+      // every drizzle() call).
+      set: () => {},
+    });
+  }
+}
+
 function buildClient(
   connectionUrl: string,
   searchPath: string[],
@@ -820,6 +881,11 @@ function buildClient(
   // shared client throws (Buffer.byteLength(Date)) after the first drizzle
   // wrap — including runtime `drizzle(tx)` calls that share this options object.
   restoreRawDateSerializers(client);
+  // EI-18698602043482898: same fix for the jsonb/json OIDs — see
+  // restoreRawJsonbSerializer. Without this, whichever of `sql.json(v)` /
+  // `${JSON.stringify(v)}::jsonb` doesn't match drizzle's mutated state
+  // silently double-encodes (or throws).
+  restoreRawJsonbSerializer(client);
   return client;
 }
 
