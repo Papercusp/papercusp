@@ -61,6 +61,28 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runSync = runSync;
+// Resolve embedded-PG URL from discovery file. Returns null if no file.
+function readDiscoveryUrl(role) {
+    if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY === '1')
+        return null;
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const fs = require('node:fs');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const os = require('node:os');
+        const raw = fs.readFileSync(`${os.homedir()}/.papercusp/embedded-pg.json`, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (!parsed?.host || !parsed?.port)
+            return null;
+        if (role === 'admin' && parsed.user && parsed.password) {
+            return `postgresql://${parsed.user}:${parsed.password}@${parsed.host}:${parsed.port}/papercusp`;
+        }
+        return `postgresql://harness_app:harness_app_pwd@${parsed.host}:${parsed.port}/papercusp`;
+    }
+    catch {
+        return null;
+    }
+}
 const DEFAULT_STATUS_MAP = {
     todo: 'To Do',
     in_progress: 'In Progress',
@@ -150,11 +172,17 @@ async function pg() {
     const postgres = (await Promise.resolve().then(() => __importStar(require('postgres')))).default;
     const url = process.env.HARNESS_ADMIN_DATABASE_URL ||
         process.env.HARNESS_DATABASE_URL ||
+        readDiscoveryUrl('app') ||
         'postgresql://harness_app:harness_app_pwd@localhost:5432/papercusp';
     _pgClient = postgres(url, {
         onnotice: () => { },
         max: 2,
         idle_timeout: 30,
+        // WI-6062: tag so this singleton pool is attributable in pg_stat_activity —
+        // without it postgres-js's own 'postgres.js' default applies and the connection
+        // is indistinguishable from every other untagged pool (a sandboxed plugin can't
+        // import the shared @papercusp/db-org helper, so tag inline).
+        connection: { application_name: `pcusp:jira-sync:p${process.pid}`.slice(0, 63) },
     });
     return _pgClient;
 }
