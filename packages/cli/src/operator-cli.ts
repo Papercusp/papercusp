@@ -20,6 +20,16 @@ import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import postgres from 'postgres';
+// EI-18698602043482898: this file builds its OWN raw postgres() client (not
+// the canonical getOrgPg()/getHarnessPg() — those go through buildClient,
+// which already installs this fix). Without it, the RAW client's default
+// jsonb serializer double-encodes `${JSON.stringify(x)}::jsonb` into a jsonb
+// SCALAR STRING instead of the intended object — VERIFIED live against this
+// exact function (savePrefs): jsonb_typeof came back 'string', not 'object',
+// before this fix. See connection.ts's `restoreRawJsonbSerializer` doc for
+// the full mechanism.
+// eslint-disable-next-line import/no-relative-packages -- mirror the canonical client's postgres-js options without pulling in drizzle-orm
+import { restoreRawJsonbSerializer } from '../../../libs/db/src/raw-serializers.ts';
 
 interface RegistryShape {
   current?: string;
@@ -116,10 +126,14 @@ async function loadPrefs(workspaceId: string): Promise<string> {
 
 async function savePrefs(workspaceId: string, content: string): Promise<void> {
   // Bind jsonb as `${JSON.stringify(x)}::jsonb`: the ::jsonb cast runs server-side, so it
-  // yields a real jsonb OBJECT (jsonb_typeof='object', VERIFIED) — NOT a jsonb string — and
-  // it is portable to the getOrgPg client where sql.json() throws (EI-607). NOT sql.json(),
-  // NOT a bare `${obj}`.
+  // yields a real jsonb OBJECT — NOT a jsonb string — under getOrgPg's drizzle-mutated
+  // serializer, and it is portable to the getOrgPg client where sql.json() throws
+  // (EI-607). NOT sql.json(), NOT a bare `${obj}`. But THIS client is a raw, un-mutated
+  // `postgres()` instance (not getOrgPg), so it needs `restoreRawJsonbSerializer` applied
+  // explicitly — without it this double-encodes into a jsonb SCALAR STRING instead of an
+  // object (EI-18698602043482898, verified live against this exact function).
   const sql = postgres(adminUrl(), { max: 1, idle_timeout: 1, prepare: false, onnotice: () => {} });
+  restoreRawJsonbSerializer(sql);
   try {
     await sql`
       INSERT INTO harness_shared.operator_preferences (workspace_id, payload, updated_at)
