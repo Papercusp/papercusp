@@ -16,8 +16,11 @@
 -- with oldest-evicted-past-cap (mirrors harness_shared.coord_quarantine,
 -- migration 436) so a noisy harness cannot grow this table unbounded.
 
-BEGIN;
-
+-- NOTE: no top-level BEGIN;/COMMIT; here. The migration runner already wraps each file in
+-- its own transaction, so an inner COMMIT ENDS that wrapper early and the remainder of the
+-- file runs unprotected (migration 657 carries the same warning). lint-migrations enforces
+-- this for enforced-era migrations, and it was failing the green gate fleet-wide on this
+-- file until removed.
 CREATE TABLE IF NOT EXISTS harness_shared.boot_history_events (
     id              bigserial PRIMARY KEY,
     workspace_id    text NOT NULL DEFAULT '',
@@ -35,5 +38,3 @@ CREATE INDEX IF NOT EXISTS boot_history_events_scope_idx
 
 COMMENT ON TABLE harness_shared.boot_history_events IS
   'Durable mirror of boot-history.ts''s sparse (non-high-frequency) event kinds (EI-18655247267756605) — survives process restart, unlike the in-memory rings. Local-only; never federates. Bounded per (workspace_id, harness_slug), oldest evicted past the per-scope cap.';
-
-COMMIT;
