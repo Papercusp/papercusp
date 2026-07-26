@@ -79,6 +79,30 @@
 -- No behaviour change lands with this migration. Nothing writes the column yet —
 -- P-004 wires the writer.
 
+-- ── 0. lock ordering (this migration deadlocked without it) ────────────────────
+-- `work_items` is the hottest table on the box and both family views sit on top of it,
+-- so this file touches a relation and its dependents in one transaction — the classic
+-- shape for a lock-order deadlock.
+--
+-- A reader (`SELECT … FROM engineer_issues`) acquires AccessShareLock on the VIEW first,
+-- then on the base table. The statement order below is the opposite: ALTER the table,
+-- then REPLACE the views. The first apply attempt duly deadlocked at the second view:
+--
+--   Process A waits for AccessExclusiveLock on engineer_issues; blocked by process B.
+--   Process B waits for AccessShareLock on work_items;          blocked by process A.
+--
+-- Acquiring every relation up front in READER order (views, then base) removes the
+-- cycle: a conflicting reader now just makes this transaction WAIT while it holds
+-- nothing, instead of each side holding what the other needs. Multi-table LOCK acquires
+-- left to right, so the order of this list is the fix — do not reorder it.
+--
+-- The db:migrate runner already wraps this file in BEGIN + `SET LOCAL lock_timeout`, so
+-- a contended apply fails fast and retryably rather than hanging the table.
+LOCK TABLE harness_shared.engineer_issues,
+           harness_shared.harness_features_consolidated,
+           harness_shared.work_items
+  IN ACCESS EXCLUSIVE MODE;
+
 -- ── 1. the column, on the single base table ────────────────────────────────────
 ALTER TABLE harness_shared.work_items
   ADD COLUMN IF NOT EXISTS authority text;
