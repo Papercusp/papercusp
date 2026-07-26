@@ -560,8 +560,10 @@ export const learningSpendEventsInHarnessShared = harnessShared.table("learning_
 	runRef: text("run_ref"),
 	note: text(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	potSlug: text("pot_slug"),
 }, (table) => [
-	index("learning_spend_events_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	index("learning_spend_events_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")),
+	index("learning_spend_events_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("learning_spend_events_ws_loop_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.loopId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
 	pgPolicy("learning_spend_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("learning_spend_events_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
@@ -2383,8 +2385,10 @@ export const promptAblationRunsInHarnessShared = harnessShared.table("prompt_abl
 	ledgerContext: jsonb("ledger_context"),
 	detail: jsonb().notNull(),
 	replayLeg: jsonb("replay_leg"),
+	potSlug: text("pot_slug"),
 }, (table) => [
-	index("prompt_ablation_runs_rule_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ruleKey.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
+	index("prompt_ablation_runs_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")),
+	index("prompt_ablation_runs_rule_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ruleKey.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
 	check("prompt_ablation_runs_origin_check", sql`origin = 'shadow'::text`),
 	check("prompt_ablation_runs_verdict_check", sql`verdict = ANY (ARRAY['load-bearing'::text, 'no-delta'::text, 'improved'::text, 'inconclusive'::text])`),
 	primaryKey({ columns: [table.id], name: "prompt_ablation_runs_pkey"}),
@@ -2783,7 +2787,9 @@ export const codeRecipesInHarnessShared = harnessShared.table("code_recipes", {
 	createdBy: text("created_by"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	potSlug: text("pot_slug"),
 }, (table) => [
+	index("code_recipes_pot_idx").using("btree", table.potSlug.asc().nullsLast().op("text_ops")),
 	index("code_recipes_title_tsv_idx").using("gin", table.titleTsv.asc().nullsLast().op("tsvector_ops")),
 ]);
 
@@ -3296,6 +3302,20 @@ export const potWatchdogFiresInHarnessShared = harnessShared.table("pot_watchdog
 }, (table) => [
 	index("pot_watchdog_fires_ws_install_fired_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.firedAt.desc().nullsFirst().op("text_ops")),
 	pgPolicy("hive_watchdog_fires_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const bootHistoryEventsInHarnessShared = harnessShared.table("boot_history_events", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").default('').notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	kind: text().notNull(),
+	message: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
+}, (table) => [
+	index("boot_history_events_scope_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.createdTs.asc().nullsLast().op("int8_ops")),
 ]);
 
 export const systemHealthTransitionsInHarnessShared = harnessShared.table("system_health_transitions", {
@@ -6259,24 +6279,6 @@ export const featureWorkingSetInHarnessShared = harnessShared.table("feature_wor
 	pgPolicy("feature_working_set_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const learningGovernorLoopsInHarnessShared = harnessShared.table("learning_governor_loops", {
-	workspaceId: text("workspace_id").notNull(),
-	loopId: text("loop_id").notNull(),
-	displayName: text("display_name").notNull(),
-	budgetKind: text("budget_kind").default('lifetime').notNull(),
-	budgetUsd: numeric("budget_usd"),
-	spentUsd: numeric("spent_usd").default('0').notNull(),
-	priority: integer().default(100).notNull(),
-	enabled: boolean().default(true).notNull(),
-	enforcement: text().default('governor').notNull(),
-	meta: jsonb(),
-	registeredAt: timestamp("registered_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	primaryKey({ columns: [table.loopId, table.workspaceId], name: "learning_governor_loops_pkey"}),
-	pgPolicy("learning_governor_loops_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const harnessRunOutputInHarnessShared = harnessShared.table("harness_run_output", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -6443,6 +6445,26 @@ export const crossPotOutboxInHarnessShared = harnessShared.table("cross_pot_outb
 	primaryKey({ columns: [table.id, table.potSlug, table.workspaceId], name: "cross_pot_outbox_pkey"}),
 	check("cross_hive_outbox_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("cross_hive_outbox_kind_check", sql`kind = ANY (ARRAY['ask'::text, 'work-request'::text, 'answer'::text, 'decline'::text])`),
+]);
+
+export const learningGovernorLoopsInHarnessShared = harnessShared.table("learning_governor_loops", {
+	workspaceId: text("workspace_id").notNull(),
+	loopId: text("loop_id").notNull(),
+	displayName: text("display_name").notNull(),
+	budgetKind: text("budget_kind").default('lifetime').notNull(),
+	budgetUsd: numeric("budget_usd"),
+	spentUsd: numeric("spent_usd").default('0').notNull(),
+	priority: integer().default(100).notNull(),
+	enabled: boolean().default(true).notNull(),
+	enforcement: text().default('governor').notNull(),
+	meta: jsonb(),
+	registeredAt: timestamp("registered_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	potSlug: text("pot_slug"),
+}, (table) => [
+	index("learning_governor_loops_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.loopId, table.workspaceId], name: "learning_governor_loops_pkey"}),
+	pgPolicy("learning_governor_loops_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const agentChatsConsolidatedInHarnessShared = harnessShared.table("agent_chats_consolidated", {
@@ -7539,39 +7561,6 @@ export const agentFleetsInHarnessShared = harnessShared.table("agent_fleets", {
 	check("agent_fleets_headcount_target_positive", sql`(headcount_target IS NULL) OR ((headcount_target >= 1) AND (headcount_target <= 12))`),
 ]);
 
-export const transferLessonsInHarnessShared = harnessShared.table("transfer_lessons", {
-	workspaceId: text("workspace_id").notNull(),
-	id: uuid().defaultRandom().notNull(),
-	signature: text().notNull(),
-	title: text(),
-	lessonText: text("lesson_text").notNull(),
-	sourceKind: text("source_kind").default('transcript').notNull(),
-	sourceRef: text("source_ref"),
-	tier: text().default('probationary').notNull(),
-	status: text().default('candidate').notNull(),
-	testCount: integer("test_count").default(0).notNull(),
-	passCount: integer("pass_count").default(0).notNull(),
-	failCount: integer("fail_count").default(0).notNull(),
-	lastTestedAt: timestamp("last_tested_at", { withTimezone: true, mode: 'string' }),
-	lastBatteryId: text("last_battery_id"),
-	lastDelta: numeric("last_delta"),
-	memoryId: uuid("memory_id"),
-	packCandidateId: uuid("pack_candidate_id"),
-	signalOrigin: text("signal_origin").default('replay').notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("transfer_lessons_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("transfer_lessons_ws_tier_tested_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.tier.asc().nullsLast().op("text_ops"), table.lastTestedAt.asc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.id, table.workspaceId], name: "transfer_lessons_pkey"}),
-	unique("transfer_lessons_signature_uniq").on(table.signature, table.workspaceId),
-	pgPolicy("transfer_lessons_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("transfer_lessons_source_kind_check", sql`source_kind = ANY (ARRAY['transcript'::text, 'memory'::text, 'pack-candidate'::text])`),
-	check("transfer_lessons_tier_check", sql`tier = ANY (ARRAY['probationary'::text, 'validated'::text, 'retired'::text])`),
-	check("transfer_lessons_status_check", sql`status = ANY (ARRAY['candidate'::text, 'passed'::text, 'failed'::text, 'error'::text])`),
-	check("transfer_lessons_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
-]);
-
 export const p2PPeerGrantsInHarnessShared = harnessShared.table("p2p_peer_grants", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -7682,6 +7671,41 @@ export const p2PReceiptsInHarnessShared = harnessShared.table("p2p_receipts", {
 	check("p2p_receipts_kind", sql`kind = ANY (ARRAY['refusal'::text, 'excused-breach'::text])`),
 	check("p2p_receipts_action_nonempty", sql`action <> ''::text`),
 	check("p2p_receipts_responder_pos", sql`responder_github_user_id > 0`),
+]);
+
+export const transferLessonsInHarnessShared = harnessShared.table("transfer_lessons", {
+	workspaceId: text("workspace_id").notNull(),
+	id: uuid().defaultRandom().notNull(),
+	signature: text().notNull(),
+	title: text(),
+	lessonText: text("lesson_text").notNull(),
+	sourceKind: text("source_kind").default('transcript').notNull(),
+	sourceRef: text("source_ref"),
+	tier: text().default('probationary').notNull(),
+	status: text().default('candidate').notNull(),
+	testCount: integer("test_count").default(0).notNull(),
+	passCount: integer("pass_count").default(0).notNull(),
+	failCount: integer("fail_count").default(0).notNull(),
+	lastTestedAt: timestamp("last_tested_at", { withTimezone: true, mode: 'string' }),
+	lastBatteryId: text("last_battery_id"),
+	lastDelta: numeric("last_delta"),
+	memoryId: uuid("memory_id"),
+	packCandidateId: uuid("pack_candidate_id"),
+	signalOrigin: text("signal_origin").default('replay').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	potSlug: text("pot_slug"),
+}, (table) => [
+	index("transfer_lessons_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")),
+	index("transfer_lessons_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("transfer_lessons_ws_tier_tested_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.tier.asc().nullsLast().op("text_ops"), table.lastTestedAt.asc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "transfer_lessons_pkey"}),
+	unique("transfer_lessons_signature_uniq").on(table.signature, table.workspaceId),
+	pgPolicy("transfer_lessons_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("transfer_lessons_source_kind_check", sql`source_kind = ANY (ARRAY['transcript'::text, 'memory'::text, 'pack-candidate'::text])`),
+	check("transfer_lessons_tier_check", sql`tier = ANY (ARRAY['probationary'::text, 'validated'::text, 'retired'::text])`),
+	check("transfer_lessons_status_check", sql`status = ANY (ARRAY['candidate'::text, 'passed'::text, 'failed'::text, 'error'::text])`),
+	check("transfer_lessons_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
 ]);
 
 export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
