@@ -109,11 +109,27 @@ function suPoolConnectionOptions(label: string): {
   };
 }
 
+/**
+ * Seconds an idle TRANSACTIONAL connection may live. Mirrors `poolIdleTimeoutSec()`
+ * in `@papercusp/db-org` (this package deliberately does not depend on it — see the
+ * keep-in-sync note on {@link suPoolConnectionOptions}), including its env knob.
+ *
+ * ⚠ postgres-js defaults `idle_timeout` to 0 = NEVER CLOSE. `getTxPool` is a purely
+ * transactional pool with `max: 10`, so on that default every process parked up to 10
+ * backends for its entire lifetime: measured live 2026-07-26, 34 idle `su-lock-tx`
+ * connections on `papercusp_su` (some idle 25+ min), the second-largest consumer of a
+ * saturated 343/512 `max_connections`. The zombie-detection GUCs above only reap
+ * connections whose OWNING PROCESS DIED — they do nothing for a live process holding
+ * idle backends, which is this.
+ */
+const TX_POOL_IDLE_TIMEOUT_SEC = Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_TIMEOUT) || 30);
+
 export function getTxPool(): Sql {
   if (!txPool) {
     txPool = postgres(suUrl(), {
       ...suPoolConnectionOptions('su-lock-tx'),
       max: 10,
+      idle_timeout: TX_POOL_IDLE_TIMEOUT_SEC,
       prepare: false,
       // Run our SET LOCAL inside each txn; don't let postgres-js auto-prepare
       // statements across connections (the SET LOCAL won't carry).
@@ -127,6 +143,11 @@ export function getListenerPool(): Sql {
     listenerPool = postgres(suUrl(), {
       ...suPoolConnectionOptions('su-lock-listener'),
       max: 20, // Cap on concurrent workspace listeners — audit reviewer #3
+      // LISTEN connections are idle BY DESIGN (they hold a subscription and do nothing
+      // between notifications), so they must NEVER be reaped for idleness — closing one
+      // silently drops the subscription. Declared explicitly rather than relying on
+      // postgres-js's 0 default, so the choice is visible and the guard test can see it.
+      idle_timeout: 0,
       prepare: false,
     });
   }

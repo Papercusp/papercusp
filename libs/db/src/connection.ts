@@ -539,6 +539,35 @@ export function longLivedPoolConnectionOptions(label: string): {
 }
 
 /**
+ * Seconds a POOLED connection may sit idle before postgres-js closes it.
+ *
+ * ⚠ postgres-js defaults `idle_timeout` to **0 = never close**. That default is the
+ * single root cause of the fleet-wide connection saturation this exists to bound:
+ * `buildClient()` has always set 30s (so org pools self-drain — measured live at
+ * max_idle 29s), but the ~13 hand-rolled `postgres(...)` pools that bypass
+ * `buildClient` and only spread {@link longLivedPoolConnectionOptions} inherited the
+ * 0 default and held their backends OPEN FOREVER. Live 2026-07-26: 294 idle vs 3
+ * active connections, 343/512 of `max_connections`.
+ *
+ * Why an idle timeout is the DURABLE bound (and per-process `max` tuning is not):
+ * the number of node processes on this box is unbounded and grows with the fleet, so
+ * any cap derived from an expected process count (`PAPERCUSP_EXPECTED_OPERATOR_PROCS`)
+ * drifts the moment the fleet scales. An idle timeout instead makes total backends
+ * proportional to CONCURRENT ACTIVITY, which is genuinely bounded by real work.
+ *
+ * 🚫 NOT for LISTEN pools. A `LISTEN` connection is idle BY DESIGN — it holds a
+ * subscription and does nothing between notifications — so applying this to one closes
+ * the subscription and silently breaks notification delivery. Those pools must declare
+ * `idle_timeout: 0` explicitly (see the `pool-idle-timeout-declared` guard test, which
+ * fails the build if any pool site leaves the choice implicit).
+ *
+ * Shares `PAPERCUSP_DB_IDLE_TIMEOUT` with `buildClient` so the two can never drift.
+ */
+export function poolIdleTimeoutSec(): number {
+  return Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_TIMEOUT) || 30);
+}
+
+/**
  * Size of each org pool (getOrgPg admin + getOrgPgApp app). C1-1 of
  * backend-connection-scaling-2026-06-17. An explicit `PAPERCUSP_DB_POOL_MAX`
  * wins; otherwise the resource-profile size, but BOUNDED so that
@@ -745,7 +774,7 @@ function buildClient(
     // pools from accumulating idle conns indefinitely (Next.js dev mode
     // module re-instantiation otherwise leaks the prior pool's sockets).
     // Override via PAPERCUSP_DB_IDLE_TIMEOUT (seconds; 0 disables).
-    idle_timeout: Math.max(0, Number(process.env.PAPERCUSP_DB_IDLE_TIMEOUT) || 30),
+    idle_timeout: poolIdleTimeoutSec(),
     // BIGINT → number. Our timestamps and attempt counts fit safely in Number's
     // 2^53 range; expected_cost_cents won't realistically exceed it. Override
     // case-by-case if a column ever needs full BIGINT precision. Shared

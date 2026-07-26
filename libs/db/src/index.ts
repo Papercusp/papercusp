@@ -19,6 +19,7 @@ export {
   restoreRawDateSerializers,
   restoreRawJsonbSerializer,
   longLivedPoolConnectionOptions,
+  poolIdleTimeoutSec,
   type OrgPgHandle,
 } from './connection';
 export { withWorkspace, withWorkspaceQuery, withHarnessSchema, harnessQuery } from './workspace-context';
