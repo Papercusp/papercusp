@@ -46,6 +46,19 @@ const nodeRequire = (id: string): unknown =>
   (_nodeRequire ??= createRequire(import.meta.url))(id);
 import * as generatedSchema from './schema/generated';
 import * as generatedRelations from './schema/generated-relations';
+// EI-9265 / EI-13076 / EI-18698602043482898: the bigint-as-number type shape
+// and the raw Date/jsonb serializer restorers live in `./raw-serializers`
+// (deliberately dependency-free of `drizzle-orm`) so test fixtures that must
+// avoid pulling in `drizzle-orm/postgres-js` (see
+// `packages/operator-core/test/_org-test-db.ts`'s docstring) can import them
+// directly. Re-exported here for existing consumers of `./connection` /
+// the package barrel.
+import {
+  PG_BIGINT_AS_NUMBER_TYPES,
+  restoreRawDateSerializers,
+  restoreRawJsonbSerializer,
+} from './raw-serializers';
+export { PG_BIGINT_AS_NUMBER_TYPES, restoreRawDateSerializers, restoreRawJsonbSerializer };
 
 // The `./schema` barrel re-exports `generated` + `generatedRelations` as nested
 // namespace objects (so callers can `import { generated } from '@papercusp/db-org'`).
@@ -645,141 +658,6 @@ export function buildConnectionOptions(opts: {
     }
   }
   return c;
-}
-
-/**
- * EI-9265: postgres-js parses int8/bigserial columns (OID 20) as JS STRINGS
- * by default (precision-safety — a bigint can exceed Number's 2^53 range).
- * Every hand-rolled `postgres(url, {...})` client that is meant to BEHAVE
- * LIKE the canonical `getOrgPg()`/`getHarnessPg()` clients (test fixtures,
- * conformance suites, one-off scripts) MUST spread this in, or a raw-SQL read
- * of a bigserial PK (e.g. `harness_shared.coord_event_log.id`) silently comes
- * back as a string — a `typeof x === 'number'` guard downstream then treats
- * it as absent with NO thrown error (the WI-3880 coord:feed cursor bug: page
- * 2 of a cursor-paginated read silently returned page 1's rows again).
- * `buildClient` below applies this to every canonical connection; a
- * hand-rolled client drifts silently if it copies the OTHER postgres-js
- * options but forgets this one (as `event-log-conformance.test.ts` did,
- * despite its own comment claiming to "mirror getOrgPg()'s postgres-js
- * options"). Override case-by-case if a column ever needs full bigint
- * precision (a `BigInt` result), but our ids/counts/timestamps all fit
- * safely in Number's range.
- */
-export const PG_BIGINT_AS_NUMBER_TYPES = {
-  bigint: {
-    to: 20,
-    from: [20],
-    serialize: (x: any) => String(x),
-    parse: (x: string) => Number(x),
-  } as any,
-};
-
-/**
- * EI-13076: drizzle-orm's postgres-js driver MUTATES the client it wraps —
- * `drizzle(client)` overwrites `client.options.serializers[<date OIDs>]` with a
- * transparent passthrough (`(val) => val`) so its OWN pre-stringified params
- * survive unmangled. But our canonical clients are SHARED between drizzle and
- * raw `sql\`...\`` tagged-template callers, and a raw caller passing a JS `Date`
- * param then hits `Buffer.byteLength(Date)` inside postgres-js:
- *
- *   TypeError: The "string" argument must be of type string or an instance of
- *   Buffer or ArrayBuffer. Received an instance of Date
- *
- * Every such query THROWS — and a `.catch(() => fallback)` around it silently
- * feeds zeros forever (the pot-throughput tick recorded placements=0 on all
- * 22k+ ticks in table history this way). This restores a HYBRID serializer on
- * the date/time OIDs: a `Date` serializes to ISO (what postgres-js does by
- * default), anything else (drizzle's pre-stringified values) passes through
- * unchanged — so BOTH consumers of the shared client work.
- *
- * STICKY on purpose: the OIDs are installed as accessor properties whose
- * setter is a no-op, because `drizzle(tx)` is also called at RUNTIME on
- * transaction handles (operator-audit, agent-mcp tools, …) which share the
- * parent client's `options.serializers` object — a plain assignment there
- * would silently re-break every raw Date param in the process. Parsers are
- * left as drizzle sets them (raw reads return strings; callers already
- * tolerate `string | Date`).
- *
- * Called by `buildClient` on every canonical connection. A hand-rolled
- * `postgres(url, …)` client that gets drizzle-wrapped must call this too, or
- * it drifts back into the trap (same class as EI-9265's bigint note above).
- */
-const DRIZZLE_MUTATED_DATE_OIDS = ['1184', '1082', '1083', '1114', '1182', '1185', '1115', '1231'] as const;
-export function restoreRawDateSerializers(client: Sql): void {
-  const serializers = (client as any)?.options?.serializers as Record<string, (x: any) => any> | undefined;
-  if (!serializers) return;
-  const hybrid = (x: any) => (x instanceof Date ? x.toISOString() : x);
-  for (const oid of DRIZZLE_MUTATED_DATE_OIDS) {
-    Object.defineProperty(serializers, oid, {
-      configurable: true,
-      enumerable: true,
-      get: () => hybrid,
-      // Swallow drizzle's transparent re-assignment (driver.js does
-      // `serializers[oid] = transparentParser` on every drizzle() call).
-      set: () => {},
-    });
-  }
-}
-
-/**
- * EI-18698602043482898: postgres-js's json/jsonb OIDs (114, 3802) have the
- * SAME shared-client mutation problem as the date OIDs above, but INVERTED —
- * and because BOTH the "raw" and the "drizzle-mutated" state are wrong for
- * one of the two common call shapes, there is no JS-value form that is
- * correct under both:
- *
- *   - `${sql.json(v)}` explicitly types the param 3802 up front. postgres-js's
- *     DEFAULT serializer for 114/3802 is `JSON.stringify` (types.js), which is
- *     correct here — `v` is the real JS value and needs encoding once.
- *   - `${JSON.stringify(v)}::jsonb` (or any raw `${…}::jsonb` with a
- *     pre-stringified JS value) infers the param as untyped (OID 0); postgres-js
- *     defers serialization until the server's ParameterDescription response
- *     resolves the OID to 3802 via the cast, THEN serializes the ORIGINAL
- *     (already-stringified) value through `options.serializers['3802']`. The
- *     default `JSON.stringify` serializer here DOUBLE-encodes it — e.g. an
- *     empty array `[]` becomes the jsonb SCALAR `"[]"` (jsonb_typeof=string)
- *     instead of the array `[]` — a defect that is invisible on read unless
- *     something asserts the stored type (see seed.ts's `::text::jsonb`
- *     workaround + jsonb_array_length note).
- *
- *   drizzle-orm's postgres-js driver (driver.js) mutates serializers['114']
- *   and ['3802'] to a transparent passthrough (to keep ITS OWN
- *   pre-stringified params from being re-encoded) — which happens to fix the
- *   second bullet above but BREAKS the first: `sql.json(v)` with a real JS
- *   array/object now hits `Buffer.byteLength(Array)` inside postgres-js and
- *   throws. So today, which form is "correct" depends entirely on whether the
- *   shared client happened to get drizzle-wrapped — neither client is right
- *   for both callers.
- *
- * This installs a HYBRID serializer (mirroring `restoreRawDateSerializers`):
- * a string passes through unchanged (the pre-stringified-value case), anything
- * else is JSON.stringify'd (the raw-JS-value / `sql.json` case) — correct for
- * BOTH call shapes, on any client, whether or not it is later drizzle-wrapped.
- * STICKY for the same reason as the date OIDs: `drizzle(tx)` is called at
- * RUNTIME on transaction handles sharing the parent's `options.serializers`
- * object, so a plain assignment would silently re-break the very next
- * `drizzle(tx)` call.
- *
- * Called by `buildClient` on every canonical connection. A hand-rolled
- * `postgres(url, …)` client meant to behave like the canonical clients
- * (test fixtures, conformance suites, one-off scripts) must call this too.
- */
-const DRIZZLE_MUTATED_JSON_OIDS = ['114', '3802'] as const;
-export function restoreRawJsonbSerializer(client: Sql): void {
-  const serializers = (client as any)?.options?.serializers as Record<string, (x: any) => any> | undefined;
-  if (!serializers) return;
-  const hybrid = (x: any) => (typeof x === 'string' ? x : JSON.stringify(x));
-  for (const oid of DRIZZLE_MUTATED_JSON_OIDS) {
-    Object.defineProperty(serializers, oid, {
-      configurable: true,
-      enumerable: true,
-      get: () => hybrid,
-      // Swallow drizzle's transparent re-assignment (driver.js does
-      // `serializers["114"] = serializers["3802"] = transparentParser` on
-      // every drizzle() call).
-      set: () => {},
-    });
-  }
 }
 
 function buildClient(

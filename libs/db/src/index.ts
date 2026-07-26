@@ -16,6 +16,8 @@ export {
   setAdminPoolStatementTimeoutProvider,
   _resetForTests,
   PG_BIGINT_AS_NUMBER_TYPES,
+  restoreRawDateSerializers,
+  restoreRawJsonbSerializer,
   longLivedPoolConnectionOptions,
   type OrgPgHandle,
 } from './connection';
