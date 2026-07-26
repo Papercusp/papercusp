@@ -25,8 +25,12 @@ workItem:
 spine:
   steps:
     # Rung 1 — ask the owner (bounded wait). The cheapest resolution.
+    # WI-5951: this was `op: coord:ask`, which was already wrong — the comment,
+    # the `body`/`timeout_s` args and the `asked.answered` binding below are all
+    # coord:ask-OWNER's contract. coord:ask never had those args (and args
+    # schemas are .strict(), so the step could only have failed validation).
     - id: ask
-      op: coord:ask
+      op: coord:ask-owner
       args:
         question: "{{ payload.question }}"
         body: "Options: {{ payload.options }}"
