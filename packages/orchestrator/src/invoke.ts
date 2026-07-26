@@ -758,9 +758,11 @@ export const BEE_ALLOWED_TOOLS: readonly string[] = [
 
 /**
  * The Overwatch's scoped MCP kit. The Overwatch is a READ-heavy system-health
- * supervisor; its ONLY write surface is four verbs — `coord:send` (nudge),
+ * supervisor; its ONLY write surface is three verbs — `coord:send` (nudge /
+ * durable hand-off — retire-work-item-mail-surface-2026-07-26 P-006: this used
+ * to also carry `messages:send`, retired to `_retired/work-item-mail/`),
  * `coord:escalate` (structural issue), `improvements:capture` (observe / emit the
- * pot-coordination-health scorecard), `messages:send` (durable hand-off) — plus
+ * pot-coordination-health scorecard) — plus
  * `kettle:declare-wake` (its own next wake). It NEVER places work (no
  * `cup:spawn` / `fleet:place_batch` / `work_items:set_priority` — the Queen's
  * D-001 lane) and NEVER edits code (no `capability:*` — its envelope denies
@@ -796,7 +798,6 @@ export const OVERWATCH_MCP_TOOL_NAMES: readonly string[] = [
   'pot:survey',
   'improvements:capture',
   'improvements:digest',
-  'messages:send',
   'notifications:recent',
   'kettle:declare-wake',
   'plans:get',

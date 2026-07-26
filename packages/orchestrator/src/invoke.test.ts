@@ -1172,10 +1172,12 @@ test('OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-
   // The overwatch launch MUST be scoped: an unscoped (null) mcpToolNames loaded the full
   // ~550-tool / ~141k-token surface onto its sonnet ~200k window, so the agent died
   // "Prompt is too long" on EVERY fire and never emitted a real 14-criterion scorecard.
-  // Its four write verbs + its own wake must be present…
-  for (const w of ['coord:send', 'coord:escalate', 'improvements:capture', 'messages:send', 'kettle:declare-wake']) {
+  // Its three write verbs + its own wake must be present…
+  for (const w of ['coord:send', 'coord:escalate', 'improvements:capture', 'kettle:declare-wake']) {
     assert.ok(OVERWATCH_MCP_TOOL_NAMES.includes(w), `overwatch must hold its write/wake verb ${w}`);
   }
+  // …and the retired work-item mail verb must NOT reappear (retire-work-item-mail-surface-2026-07-26 P-006).
+  assert.ok(!OVERWATCH_MCP_TOOL_NAMES.includes('messages:send'), 'overwatch must not hold the retired messages:send verb');
   // …and the scorecard/health reads it judges on.
   for (const r of ['scorecards:list', 'rubrics:get', 'pot:status', 'fleet:assignments', 'improvements:digest']) {
     assert.ok(OVERWATCH_MCP_TOOL_NAMES.includes(r), `overwatch must hold the health read ${r}`);
