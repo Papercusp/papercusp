@@ -5079,17 +5079,6 @@ export const p2PGrantorEpochsInHarnessShared = harnessShared.table("p2p_grantor_
 	check("p2p_grantor_epochs_nonneg", sql`high_water_epoch >= 0`),
 ]);
 
-export const substrateMergeCursorInHarnessShared = harnessShared.table("substrate_merge_cursor", {
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	logKeyhex: text("log_keyhex").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	position: bigint({ mode: "number" }).notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	primaryKey({ columns: [table.harnessSlug, table.logKeyhex, table.workspaceId], name: "substrate_merge_cursor_pkey"}),
-]);
-
 export const agentLaunchIdempotencyInHarnessShared = harnessShared.table("agent_launch_idempotency", {
 	workspaceId: text("workspace_id").notNull(),
 	idempotencyKey: text("idempotency_key").notNull(),
@@ -5268,6 +5257,18 @@ export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
 }, (table) => [
 	primaryKey({ columns: [table.scope, table.workspaceId], name: "carry_notes_pkey"}),
 	pgPolicy("carry_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const substrateMergeCursorInHarnessShared = harnessShared.table("substrate_merge_cursor", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	logKeyhex: text("log_keyhex").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	position: bigint({ mode: "number" }).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	applyBinding: text("apply_binding"),
+}, (table) => [
+	primaryKey({ columns: [table.harnessSlug, table.logKeyhex, table.workspaceId], name: "substrate_merge_cursor_pkey"}),
 ]);
 
 export const pluginConfigsInHarnessShared = harnessShared.table("plugin_configs", {
