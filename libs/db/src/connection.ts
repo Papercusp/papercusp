@@ -296,6 +296,12 @@ function adminUrl(): string {
         _adminDrizzle = null;
         _adminDb = null;
       }
+      // Mirror the invalidation for the lossless-bigint pool (EI-18789855771421275)
+      // — otherwise it keeps serving the stale target after a discovery-file change.
+      if (_adminLosslessBigintClient) {
+        try { _adminLosslessBigintClient.end({ timeout: 1 }).catch(() => {}); } catch {}
+        _adminLosslessBigintClient = null;
+      }
     }
     return _resolvedAdminUrl;
   }
@@ -441,6 +447,9 @@ export function maybePgbouncer(url: string): string {
 let _adminClient: Sql | null = null;
 let _adminDrizzle: ReturnType<typeof drizzle> | null = null;
 let _adminDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
+// EI-18789855771421275: a SEPARATE, small, dedicated pool for callers that must
+// see exact bigint (int8) values — see getOrgPgLosslessBigint() below.
+let _adminLosslessBigintClient: Sql | null = null;
 type HarnessClient = {
   sql: Sql;
   drizzle: ReturnType<typeof drizzle>;
