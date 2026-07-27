@@ -72,7 +72,7 @@ import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 // notice the moment you notice it; route signal→improvements:capture / problem→issue / how-it-works→doc"
 // clause, P-017) ride it too — operator-core's renderPlanDisciplineNote / renderObservationCaptureNote
 // reuse the SAME strings the spawned-bee base emits.
-export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, EVIDENCE_DISCIPLINE_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, WORK_RECORD_NOTE, WRITE_THROUGH_NOTE, PLAN_DISCIPLINE_NOTE, OBSERVATION_CAPTURE_NOTE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE, AGENT_ACTIVITY_TRUTH_NOTE, WAIT_LOOP_NOTE, PEER_WAKE_NOTE, PEER_REPLY_PRIORITY_NOTE } from './prompt-build';
+export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, EVIDENCE_DISCIPLINE_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, WORK_RECORD_NOTE, WRITE_THROUGH_NOTE, PLAN_DISCIPLINE_NOTE, OBSERVATION_CAPTURE_NOTE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE, AGENT_ACTIVITY_TRUTH_NOTE, WAIT_LOOP_NOTE, PEER_WAKE_NOTE, COUPLING_NOTE, PEER_REPLY_PRIORITY_NOTE } from './prompt-build';
 // resolvePromptFile rides the same entry: operator-core's workspace-level
 // (harness-less) role launch resolves the spawn persona directly
 // (hive-agent-tabs P-003) without importing the heavy orchestrator root.
