@@ -86,11 +86,25 @@ UPDATE harness_shared.pots
 ALTER TABLE harness_shared.pots
   ALTER COLUMN canonical_pot_home_slug SET NOT NULL;
 
--- Default for future inserts that do not name it. A writer that knows the owner's
--- slug (the joiner reconcile) sets it explicitly; everyone else gets local ==
--- canonical, today's behavior.
-ALTER TABLE harness_shared.pots
-  ALTER COLUMN canonical_pot_home_slug SET DEFAULT NULL;
+-- A NOT NULL column with no usable DEFAULT would break every existing writer that
+-- names its columns explicitly (hive-store's inserts, the substrate test rigs, any
+-- raw fixture) — a SQL DEFAULT cannot reference another column, so the fill has to
+-- be a trigger. Writers that know the owner's slug (the joiner reconcile) set it
+-- explicitly; everyone else transparently gets canonical == local, i.e. exactly
+-- today's behavior, with no call-site change anywhere.
+CREATE OR REPLACE FUNCTION harness_shared.pots_fill_canonical_slug()
+  RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.canonical_pot_home_slug IS NULL THEN
+    NEW.canonical_pot_home_slug := NEW.pot_home_slug;
+  END IF;
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS pots_fill_canonical_slug_trg ON harness_shared.pots;
+CREATE TRIGGER pots_fill_canonical_slug_trg
+  BEFORE INSERT OR UPDATE ON harness_shared.pots
+  FOR EACH ROW EXECUTE FUNCTION harness_shared.pots_fill_canonical_slug();
 
 COMMENT ON COLUMN harness_shared.pots.canonical_pot_home_slug IS
   'WI-559: the OWNER-authored (FEDERATED) pot_home_slug this Pot''s rows travel under on the wire — the scope key every hive-home-grained projection persists under, and the target of pot_members_pot_fkey. EQUALS pot_home_slug on the owner and on any joiner whose local slug agrees. Differs ONLY on a joiner whose local handle was suffixed by freeSlug or derived before the owner''s announce was heard. Reconciled BY PUBKEY from the signed announce (pot-canonical-slug-reconcile.ts) — NEVER by name, because the local slug is structurally untrustworthy.';
