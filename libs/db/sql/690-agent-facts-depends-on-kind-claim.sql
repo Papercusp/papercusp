@@ -73,7 +73,12 @@
 -- simply invisible to the detector, which is the honest degradation rather than
 -- a gate that would suppress facts to feed a consumer that does not exist yet.
 
-BEGIN;
+-- NOTE: no top-level BEGIN/COMMIT here. The migration runner already wraps every
+-- file in BEGIN … <ddl> … <schema_migrations INSERT> … COMMIT
+-- (embedded-postgres-server/src/migration-runner.js), so an inner COMMIT ends that
+-- transaction EARLY and the ledger INSERT then lands outside it — the migration can
+-- apply without being recorded and re-runs on every boot. Enforced by
+-- `lint:migrations` check 2.
 
 ALTER TABLE harness_shared.agent_facts
   ADD COLUMN IF NOT EXISTS depends_on jsonb,
@@ -128,5 +133,3 @@ CREATE INDEX IF NOT EXISTS agent_facts_kind
   ON harness_shared.agent_facts
      (workspace_id, kind, scope, scope_ref)
   WHERE kind IS NOT NULL AND retracted_at IS NULL AND superseded_at IS NULL;
-
-COMMIT;

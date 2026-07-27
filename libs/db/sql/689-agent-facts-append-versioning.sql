@@ -38,7 +38,12 @@
 -- The federation projection therefore keeps upserting the live row — it only
 -- has to name the new index predicate.
 
-BEGIN;
+-- NOTE: no top-level BEGIN/COMMIT here. The migration runner already wraps every
+-- file in BEGIN … <ddl> … <schema_migrations INSERT> … COMMIT
+-- (embedded-postgres-server/src/migration-runner.js), so an inner COMMIT ends that
+-- transaction EARLY and the ledger INSERT then lands outside it — the migration can
+-- apply without being recorded and re-runs on every boot. Enforced by
+-- `lint:migrations` check 2.
 
 -- (1) The version columns. Both nullable: every EXISTING row is, correctly, a
 -- current version that supersedes nothing.
@@ -91,5 +96,3 @@ CREATE INDEX IF NOT EXISTS agent_facts_shareable
   ON harness_shared.agent_facts
      (workspace_id, scope, expires_at)
   WHERE shareable = true AND retracted_at IS NULL AND superseded_at IS NULL;
-
-COMMIT;
