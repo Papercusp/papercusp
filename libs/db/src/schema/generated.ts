@@ -422,7 +422,7 @@ export const potMembers686OrphansInHarnessShared = harnessShared.table("_pot_mem
 	displayName: text("display_name"),
 	avatarUrl: text("avatar_url"),
 	deviceAttestations: jsonb("device_attestations").default([]).notNull(),
-	revokedPubkeys: text("revoked_pubkeys").array().default([""]).notNull(),
+	revokedPubkeys: text("revoked_pubkeys").default([""]).notNull(),
 	joinedAt: timestamp("joined_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -3298,10 +3298,14 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	audienceScope: text("audience_scope"),
 	sourceProvenance: jsonb("source_provenance"),
 	confidence: text(),
+	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	supersedesId: bigint("supersedes_id", { mode: "number" }),
 }, (table) => [
-	index("agent_facts_fold").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("text_ops")).where(sql`(retracted_at IS NULL)`),
-	uniqueIndex("agent_facts_identity").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`COALESCE(source_hive, ''::text)`),
-	index("agent_facts_shareable").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.scope.asc().nullsLast().op("timestamptz_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((shareable = true) AND (retracted_at IS NULL))`),
+	index("agent_facts_fold").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((retracted_at IS NULL) AND (superseded_at IS NULL))`),
+	uniqueIndex("agent_facts_identity_current").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`COALESCE(source_hive, ''::text)`).where(sql`(superseded_at IS NULL)`),
+	index("agent_facts_shareable").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.scope.asc().nullsLast().op("timestamptz_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((shareable = true) AND (retracted_at IS NULL) AND (superseded_at IS NULL))`),
+	index("agent_facts_version_chain").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`superseded_at`),
 	pgPolicy("agent_facts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("agent_facts_scope_check", sql`scope = ANY (ARRAY['workspace'::text, 'role'::text, 'owner'::text, 'harness'::text, 'work_item'::text])`),
 	check("agent_facts_check", sql`(scope = 'workspace'::text) OR (scope_ref IS NOT NULL)`),
