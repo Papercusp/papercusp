@@ -33,12 +33,35 @@ test('coding-factory resolves as retired (structured field)', () => {
   assert.ok(info!.reason && info!.reason.length > 0);
 });
 
-test('external-bench (extends coding-factory) INHERITS retirement — the EI-18177667809538623 propagation', () => {
+// WI-6235: this test USED to assert the propagation through `external-bench`,
+// which extended coding-factory and declared no `retired:` of its own. WI-5646
+// (2026-07-26) deliberately gave external-bench its OWN retirement block —
+// precisely so it would NOT silently un-retire if coding-factory were ever
+// revived (see the rationale comment in its blueprint.yaml). That is a correct
+// change, but it means external-bench no longer INHERITS anything, so the old
+// assertion was reading its own field and the date drifted to 2026-07-26.
+//
+// The fix is NOT to bump the expected date — that would leave the test green
+// while silently deleting the coverage it exists for (EI-18177667809538623:
+// retirement must propagate through `extends`). The fixture is replaced with a
+// child that genuinely declares no `retired:`, and external-bench's own
+// retirement is pinned separately below.
+test('a child declaring no `retired:` INHERITS its parent retirement — the EI-18177667809538623 propagation', () => {
+  const raw = { id: 'inheriting-child', extends: 'coding-factory' };
+  const blueprint = BlueprintSchema.parse(resolveExtends(raw, resolveBuiltinExtends));
+  const info = blueprintRetirement(blueprint);
+  assert.ok(info, 'a child that declares no retired: of its own must inherit its parent\'s retirement');
+  assert.equal(info!.retired, true);
+  assert.equal(info!.at, '2026-06-24');
+});
+
+test('external-bench declares its OWN retirement (WI-5646) — it overrides the inherited one rather than tracking it', () => {
   const { blueprint, validation } = loadBuiltinBlueprint('external-bench');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   const info = blueprintRetirement(blueprint);
-  assert.ok(info, 'external-bench must inherit coding-factory\'s retirement — it declares no retired: of its own');
-  assert.equal(info!.at, '2026-06-24');
+  assert.ok(info, 'external-bench must resolve as retired');
+  assert.equal(info!.at, '2026-07-26', 'its own block, NOT coding-factory\'s 2026-06-24');
+  assert.ok(info!.reason && /premise/i.test(info!.reason), 'its own reason, not the inherited one');
 });
 
 test('assertBlueprintLaunchEligible throws BlueprintRetiredError for a retired resolved blueprint', () => {
