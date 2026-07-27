@@ -1160,6 +1160,65 @@ export const PEER_WAKE_NOTE = [
 ].join('\n');
 
 /**
+ * COUPLING_NOTE — the "you can COUPLE yourself (or any two agents) to see each other's
+ * state, and you should DECOUPLE when you stop needing it" clause every agent shares
+ * (owner directive 2026-07-27; unified-agent-state-plane-2026-07-27 P-031, D-061/D-062).
+ *
+ * Coupling is the relevance gate on peer state: coupled peers are the ones worth showing
+ * an agent in detail. It used to be DERIVED only — shared locks, recent coord traffic, a
+ * plan blocked-by edge — so an agent that already KNEW it was working alongside a peer had
+ * no way to say so and had to wait for a derivation to notice. `coord:couple` /
+ * `coord:decouple` are the declaration path.
+ *
+ * Two things this note must teach that the tool descriptions alone do not (D-062):
+ *
+ *   1. THE DECOUPLE TRIGGER, not just the couple verb. A capability taught only as "how to
+ *      turn it on" produces a monotonically growing set — nobody removes an edge they were
+ *      never told to remove — and every stale coupling is paid on every later read by BOTH
+ *      agents.
+ *   2. THE COST, honestly. Deliberately NO token NUMBER: the expanded-entry rendering
+ *      (P-013) is unbuilt, so any figure would be an estimate dressed as a measurement, and
+ *      carrying an unmeasured number across surfaces is a mistake this plan already made
+ *      twice. Teach the SHAPE of the cost — per peer, per read, both sides — and add a real
+ *      figure once there is one to measure.
+ *
+ * Sourced once here (the PEER_WAKE_NOTE precedent): injected into the spawned-bee base
+ * (buildPromptParts below) + the operator-launched-role base (operator-core's
+ * renderCouplingNote, re-exported via role-prompt-from-slug) + projected into the su
+ * playbooks (desktop-install injectSharedBaseNotes), so all bases can't desync. Universal
+ * (no role skip — the owner's ask was explicitly ALL agents, and coupling is not a fleet
+ * mechanism: a coupled pair need not share a fleet).
+ */
+export const COUPLING_NOTE = [
+  '## Coupling — opt IN to a peer\'s state, and opt back OUT when you no longer need it',
+  '',
+  'Coupled agents see each other\'s working state in detail: what the other is currently trying',
+  'to do, and how stale that is. Coupling is partly INFERRED for you (you hold locks on the same',
+  'files, you have been messaging, one of you blocks the other) — but you can also DECLARE it,',
+  'which is better whenever you already know you are working alongside someone.',
+  '',
+  '- COUPLE → `coord:couple { b: <ownerId> }` couples YOU with that agent (`a` defaults to you).',
+  '  Pass `reason` so whoever finds the edge later knows why it exists.',
+  '- EITHER agent argument accepts the literal `"self"`, like other tools.',
+  '- YOU MAY COUPLE ANY TWO AGENTS — including a pair you are not part of: `coord:couple',
+  '  { a: <one>, b: <other> }`. If you can see two peers heading for the same work, couple them',
+  '  so each sees the other. There is no ownership check and no consent step, by design.',
+  '- DECOUPLE → `coord:decouple { b: <ownerId> }`. It also holds against an INFERRED coupling,',
+  '  so it survives instead of silently coming back on the next tick. Re-couple any time.',
+  '',
+  '**Decouple when you no longer want to see each other\'s data intimately.** Coupling is not',
+  'free, and it is not paid only by you: each coupled peer adds their goal and state to every',
+  'read that renders coupling, on BOTH sides of the pair — so coupling someone spends their',
+  'context budget too, and a coupling nobody is using is pure waste for two agents instead of',
+  'one. An agent with no couplings pays nothing, so the cost is per EDGE, not a tax on everyone.',
+  'Couple deliberately while you genuinely need to watch each other; decouple when the shared',
+  'work ends. Do not accumulate couplings you have stopped reading.',
+  '',
+  'Coupling controls RELEVANCE, never ACCESS: it changes whose state is worth surfacing to you,',
+  'not what you are allowed to read, and it does not grant or block messages or wakes.',
+].join('\n');
+
+/**
  * PEER_REPLY_PRIORITY_NOTE — the receiver-side dual of PEER_WAKE_NOTE (owner
  * directive 2026-07-02, WI-1720): a DIRECTED peer message awaiting your answer
  * outranks your own work. Observed live: an agent sat on two directed asks for
@@ -1509,6 +1568,21 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     renderPeerWakeNote), and the su playbooks can't desync.
   pre.push('\n---');
   pre.push(PEER_WAKE_NOTE);
+
+  // 3j-bis. Coupling (owner directive 2026-07-27; unified-agent-state-plane P-031, D-061/D-062) —
+  //     the SHARED bee base every role inherits. Coupling is the relevance gate on peer state and
+  //     was DERIVED-only, so an agent that already knew it was working alongside a peer had to wait
+  //     for a derivation to notice; coord:couple/coord:decouple are the declaration path, and either
+  //     agent arg takes "self". Unrestricted BY RULING — any agent may couple ANY two agents,
+  //     including a pair it is not part of. The note must teach the DECOUPLE trigger and the cost
+  //     SHAPE (per peer, per read, both sides), not just the couple verb — a capability taught only
+  //     as "how to turn it on" grows monotonically and both agents pay for the stale edges.
+  //     Universal (no role skip): coupling is not a fleet mechanism — a coupled pair need not share
+  //     a fleet. Sourced from the one COUPLING_NOTE constant so the bee base, the
+  //     operator-launched-role base (operator-core renderCouplingNote), and the su playbooks can't
+  //     desync.
+  pre.push('\n---');
+  pre.push(COUPLING_NOTE);
 
   // 3k. Peer-reply priority (owner directive 2026-07-02, WI-1720) — the RECEIVER-side dual of 3j:
   //     a DIRECTED message awaiting your answer outranks your own work — finish the atomic step in
