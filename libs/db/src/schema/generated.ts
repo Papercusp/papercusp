@@ -1749,46 +1749,6 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	check("adv_sessions_mode_check", sql`mode = ANY (ARRAY['omp'::text, 'console'::text])`),
 ]);
 
-export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocations", {
-	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	pluginName: text("plugin_name").notNull(),
-	toolName: text("tool_name").notNull(),
-	role: text().notNull(),
-	featureId: text("feature_id"),
-	chunkId: text("chunk_id"),
-	runId: text("run_id"),
-	spawnId: text("spawn_id").notNull(),
-	parentSpawnId: text("parent_spawn_id"),
-	windowKey: text("window_key").notNull(),
-	invokedAt: timestamp("invoked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	durationMs: integer("duration_ms"),
-	status: text().notNull(),
-	outputRef: text("output_ref"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	outputSize: bigint("output_size", { mode: "number" }),
-	errorMessage: text("error_message"),
-	argsJson: jsonb("args_json"),
-	eventCount: integer("event_count"),
-	metadataJson: jsonb("metadata_json"),
-	transport: text(),
-	principalKind: text("principal_kind"),
-	principalAuthMethod: text("principal_auth_method"),
-	principalTrust: text("principal_trust"),
-	errorCode: text("error_code"),
-	coordOwnerId: text("coord_owner_id"),
-}, (table) => [
-	index("tool_invocations_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
-	index("tool_invocations_error_code_idx").using("btree", table.errorCode.asc().nullsLast().op("text_ops"), table.invokedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(error_code IS NOT NULL)`),
-	index("tool_invocations_invoked_at_cov_idx").using("btree", table.invokedAt.desc().nullsFirst().op("timestamptz_ops"), table.toolName.asc().nullsLast().op("timestamptz_ops"), table.durationMs.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("timestamptz_ops")),
-	index("tool_invocations_parent_spawn_partial_idx").using("btree", table.parentSpawnId.asc().nullsLast().op("text_ops")).where(sql`((parent_spawn_id IS NOT NULL) AND (parent_spawn_id <> ''::text))`),
-	index("tool_invocations_quota_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.windowKey.asc().nullsLast().op("text_ops")).where(sql`(status = 'ok'::text)`),
-	index("tool_invocations_spawn_id_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.spawnId.asc().nullsLast().op("text_ops")),
-	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.harnessSlug.asc().nullsLast().op("timestamptz_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")),
-	pgPolicy("tool_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const workItemDepsInHarnessShared = harnessShared.table("work_item_deps", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.work_item_deps_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -4160,6 +4120,53 @@ export const bak20260717UnifyTopicsInHarnessShared = harnessShared.table("bak_20
 	mergedInto: text("merged_into"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
 });
+
+export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocations", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	pluginName: text("plugin_name").notNull(),
+	toolName: text("tool_name").notNull(),
+	role: text().notNull(),
+	featureId: text("feature_id"),
+	chunkId: text("chunk_id"),
+	runId: text("run_id"),
+	spawnId: text("spawn_id").notNull(),
+	parentSpawnId: text("parent_spawn_id"),
+	windowKey: text("window_key").notNull(),
+	invokedAt: timestamp("invoked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	durationMs: integer("duration_ms"),
+	status: text().notNull(),
+	outputRef: text("output_ref"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	outputSize: bigint("output_size", { mode: "number" }),
+	errorMessage: text("error_message"),
+	argsJson: jsonb("args_json"),
+	eventCount: integer("event_count"),
+	metadataJson: jsonb("metadata_json"),
+	transport: text(),
+	principalKind: text("principal_kind"),
+	principalAuthMethod: text("principal_auth_method"),
+	principalTrust: text("principal_trust"),
+	errorCode: text("error_code"),
+	coordOwnerId: text("coord_owner_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	intentEventId: bigint("intent_event_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	assumptionSetId: bigint("assumption_set_id", { mode: "number" }),
+	goalRef: text("goal_ref"),
+}, (table) => [
+	index("tool_invocations_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
+	index("tool_invocations_error_code_idx").using("btree", table.errorCode.asc().nullsLast().op("text_ops"), table.invokedAt.asc().nullsLast().op("text_ops")).where(sql`(error_code IS NOT NULL)`),
+	index("tool_invocations_goal_ref_idx").using("btree", table.goalRef.asc().nullsLast().op("timestamptz_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")).where(sql`(goal_ref IS NOT NULL)`),
+	index("tool_invocations_intent_event_idx").using("btree", table.intentEventId.asc().nullsLast().op("int8_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(intent_event_id IS NOT NULL)`),
+	index("tool_invocations_invoked_at_cov_idx").using("btree", table.invokedAt.desc().nullsFirst().op("timestamptz_ops"), table.toolName.asc().nullsLast().op("timestamptz_ops"), table.durationMs.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("timestamptz_ops")),
+	index("tool_invocations_parent_spawn_partial_idx").using("btree", table.parentSpawnId.asc().nullsLast().op("text_ops")).where(sql`((parent_spawn_id IS NOT NULL) AND (parent_spawn_id <> ''::text))`),
+	index("tool_invocations_quota_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.windowKey.asc().nullsLast().op("text_ops")).where(sql`(status = 'ok'::text)`),
+	index("tool_invocations_spawn_id_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.spawnId.asc().nullsLast().op("text_ops")),
+	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")),
+	pgPolicy("tool_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
 
 export const userActionsInHarnessShared = harnessShared.table("user_actions", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
