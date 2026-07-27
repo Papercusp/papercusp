@@ -49,10 +49,45 @@
 -- reporting on these columns must distinguish "nothing was declared" from
 -- "declared and empty" — P-015 measures the FILL RATE, not just adoption.
 
-ALTER TABLE harness_shared.tool_invocations
-  ADD COLUMN IF NOT EXISTS intent_event_id bigint,
-  ADD COLUMN IF NOT EXISTS assumption_set_id bigint,
-  ADD COLUMN IF NOT EXISTS goal_ref text;
+-- ⚠ POLITE DDL — DO NOT REPLACE WITH A BARE `ALTER TABLE`.
+--
+-- `tool_invocations` is the hottest table in this database (~238,866 inserts a
+-- day, written continuously by every agent on the box), and a bare ALTER here
+-- FAILED five straight attempts on 2026-07-27 with "canceling statement due to
+-- lock timeout". The naive fix — raise lock_timeout — makes it strictly worse:
+-- a pending ACCESS EXCLUSIVE request QUEUES, and every INSERT arriving behind
+-- it queues too, so a 15s wait is 15s of stalled fleet-wide telemetry followed
+-- by a failure anyway. That is the shape of the 2026-06-09 incident where a
+-- lock-contending migration tripped the deploy's 15s lock_timeout and wedged
+-- every deploy for an hour.
+--
+-- So: take the lock only if it is FREE RIGHT NOW (250ms), release instantly if
+-- not, and try again. Each attempt is far too short to build a queue, and the
+-- DDL itself is metadata-only (ADD COLUMN with no DEFAULT never rewrites the
+-- table in PG 11+), so the moment an attempt wins the lock it is done in
+-- microseconds. ~60s of retries, which in practice succeeds in the first few.
+DO $$
+DECLARE
+  attempts int := 0;
+BEGIN
+  LOOP
+    BEGIN
+      SET LOCAL lock_timeout = '250ms';
+      ALTER TABLE harness_shared.tool_invocations
+        ADD COLUMN IF NOT EXISTS intent_event_id bigint,
+        ADD COLUMN IF NOT EXISTS assumption_set_id bigint,
+        ADD COLUMN IF NOT EXISTS goal_ref text;
+      EXIT;
+    EXCEPTION WHEN lock_not_available THEN
+      attempts := attempts + 1;
+      IF attempts >= 240 THEN
+        RAISE EXCEPTION
+          'could not acquire ACCESS EXCLUSIVE on tool_invocations after % polite attempts', attempts;
+      END IF;
+      PERFORM pg_sleep(0.25);
+    END;
+  END LOOP;
+END $$;
 
 COMMENT ON COLUMN harness_shared.tool_invocations.intent_event_id IS
   'P-009/D-011: harness_shared.coord_event_log.id of the caller''s most recent intent declaration (body.lifecycle=''intent''). NULL = none declared or not yet cached. No FK — coord_event_log outlives this table''s retention.';
@@ -66,12 +101,33 @@ COMMENT ON COLUMN harness_shared.tool_invocations.goal_ref IS
 -- "what did this agent do while it held goal X". PARTIAL so it indexes only the
 -- stamped minority — with an empty producer today and a partial-adoption path
 -- ahead, a full index would be ~1.25M entries of NULL for no reader.
-CREATE INDEX IF NOT EXISTS tool_invocations_goal_ref_idx
-  ON harness_shared.tool_invocations (goal_ref, invoked_at DESC)
-  WHERE goal_ref IS NOT NULL;
-
--- The intent bucket ("all calls under this declaration") is the P-010 divergence
--- detector's read. Partial for the same reason.
-CREATE INDEX IF NOT EXISTS tool_invocations_intent_event_idx
-  ON harness_shared.tool_invocations (intent_event_id, invoked_at DESC)
-  WHERE intent_event_id IS NOT NULL;
+-- Same polite-lock discipline: CREATE INDEX takes a SHARE lock, which conflicts
+-- with the ROW EXCLUSIVE every INSERT holds, so it can queue exactly like the
+-- ALTER above. The build itself is quick (the predicate matches ~0 rows today),
+-- but acquiring the lock on a continuously-written table is the hard part.
+DO $$
+DECLARE
+  attempts int := 0;
+BEGIN
+  LOOP
+    BEGIN
+      SET LOCAL lock_timeout = '250ms';
+      CREATE INDEX IF NOT EXISTS tool_invocations_goal_ref_idx
+        ON harness_shared.tool_invocations (goal_ref, invoked_at DESC)
+        WHERE goal_ref IS NOT NULL;
+      -- The intent bucket ("all calls under this declaration") is the P-010
+      -- divergence detector's read. Partial for the same reason.
+      CREATE INDEX IF NOT EXISTS tool_invocations_intent_event_idx
+        ON harness_shared.tool_invocations (intent_event_id, invoked_at DESC)
+        WHERE intent_event_id IS NOT NULL;
+      EXIT;
+    EXCEPTION WHEN lock_not_available THEN
+      attempts := attempts + 1;
+      IF attempts >= 240 THEN
+        RAISE EXCEPTION
+          'could not acquire SHARE on tool_invocations for the P-009 indexes after % attempts', attempts;
+      END IF;
+      PERFORM pg_sleep(0.25);
+    END;
+  END LOOP;
+END $$;
