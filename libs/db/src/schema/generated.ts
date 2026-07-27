@@ -1634,6 +1634,7 @@ export const testRunsInHarnessShared = harnessShared.table("test_runs", {
 	workspaceId: text("workspace_id"),
 	loopLagP95Ms: real("loop_lag_p95_ms"),
 	rssMb: real("rss_mb"),
+	isScratchConfig: boolean("is_scratch_config").default(false).notNull(),
 }, (table) => [
 	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops"), table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(harness_slug IS NOT NULL)`),
@@ -2908,9 +2909,10 @@ export const taskLedgerInHarnessShared = harnessShared.table("task_ledger", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
+	index("task_ledger_bash_job_id_idx").using("btree", sql`((detail ->> 'bashJobId'::text))`).where(sql`((class = 'bash-job'::text) AND (detail ? 'bashJobId'::text))`),
 	index("task_ledger_deadline_idx").using("btree", table.deadlineAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((deadline_at IS NOT NULL) AND (ended_at IS NULL))`),
 	index("task_ledger_ended_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(ended_at IS NOT NULL)`),
-	index("task_ledger_launched_by_idx").using("btree", table.launchedBy.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("task_ledger_launched_by_idx").using("btree", table.launchedBy.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("task_ledger_live_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.state.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['pending'::text, 'running'::text]))`),
 	index("task_ledger_parent_idx").using("btree", table.parentTaskId.asc().nullsLast().op("text_ops")).where(sql`(parent_task_id IS NOT NULL)`),
 	index("task_ledger_process_identity_idx").using("btree", table.processIdentity.asc().nullsLast().op("text_ops")).where(sql`(process_identity IS NOT NULL)`),
