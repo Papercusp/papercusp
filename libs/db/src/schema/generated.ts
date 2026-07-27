@@ -422,7 +422,7 @@ export const potMembers686OrphansInHarnessShared = harnessShared.table("_pot_mem
 	displayName: text("display_name"),
 	avatarUrl: text("avatar_url"),
 	deviceAttestations: jsonb("device_attestations").default([]).notNull(),
-	revokedPubkeys: text("revoked_pubkeys").default([""]).notNull(),
+	revokedPubkeys: text("revoked_pubkeys").array().default([""]).notNull(),
 	joinedAt: timestamp("joined_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
