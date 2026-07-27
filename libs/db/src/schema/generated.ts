@@ -3277,6 +3277,7 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	dependsOn: jsonb("depends_on"),
 	kind: text(),
 	claim: jsonb(),
+	enforcement: jsonb(),
 }, (table) => [
 	index("agent_facts_fold").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((retracted_at IS NULL) AND (superseded_at IS NULL))`),
 	uniqueIndex("agent_facts_identity_current").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`COALESCE(source_hive, ''::text)`).where(sql`(superseded_at IS NULL)`),
@@ -3289,6 +3290,7 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	check("agent_facts_body_check", sql`char_length(body) <= 1200`),
 	check("agent_facts_confidence_check", sql`(confidence IS NULL) OR (confidence = ANY (ARRAY['verified'::text, 'provisional'::text, 'suspected'::text]))`),
 	check("agent_facts_kind_check", sql`(kind IS NULL) OR (kind = ANY (ARRAY['conclusion'::text, 'assumption'::text, 'convention'::text]))`),
+	check("agent_facts_enforcement_tier_check", sql`(enforcement IS NULL) OR ((enforcement ->> 'tier'::text) = ANY (ARRAY['structural'::text, 'gate'::text, 'detector'::text]))`),
 ]);
 
 export const operatorPromptUserInHarnessShared = harnessShared.table("operator_prompt_user", {
