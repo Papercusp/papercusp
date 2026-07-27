@@ -5053,18 +5053,6 @@ export const harnessTextArtifactsInHarnessShared = harnessShared.table("harness_
 	pgPolicy("harness_text_artifacts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
-	workspaceId: text("workspace_id").notNull(),
-	scope: text().notNull(),
-	note: text(),
-	journal: jsonb().default([]).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
-}, (table) => [
-	primaryKey({ columns: [table.scope, table.workspaceId], name: "carry_notes_pkey"}),
-	pgPolicy("carry_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const secretsGuardPathExemptionsInHarnessShared = harnessShared.table("secrets_guard_path_exemptions", {
 	workspaceId: text("workspace_id").notNull(),
 	path: text().notNull(),
@@ -5265,6 +5253,19 @@ export const p2PMeteringContributionInHarnessShared = harnessShared.table("p2p_m
 	check("p2p_metering_contribution_ws_nonempty", sql`workspace_id <> ''::text`),
 	check("p2p_metering_contribution_user_nonempty", sql`attested_user_id <> ''::text`),
 	check("p2p_metering_contribution_unit_nonempty", sql`unit <> ''::text`),
+]);
+
+export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
+	workspaceId: text("workspace_id").notNull(),
+	scope: text().notNull(),
+	note: text(),
+	journal: jsonb().default([]).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
+	deps: jsonb(),
+}, (table) => [
+	primaryKey({ columns: [table.scope, table.workspaceId], name: "carry_notes_pkey"}),
+	pgPolicy("carry_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const pluginConfigsInHarnessShared = harnessShared.table("plugin_configs", {
