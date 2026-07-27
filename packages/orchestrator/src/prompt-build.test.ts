@@ -1001,9 +1001,20 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     // deploy-pipeline-note, testing-standard, reuse-first-nudge, plan-discipline-note,
     // work-record-note, observation-capture-note, write-through-note, code-run-note,
     // finish-the-rollout-note, agent-activity-truth-note, wait-loop-note, peer-wake-note,
-    // peer-reply-priority-note.
+    // coupling-note, peer-reply-priority-note.
+    //
+    // ⚠ MAINTENANCE: this ceiling tracks the number of UNCONDITIONAL shared-base
+    // sections in buildPromptParts. Adding one more `pre.push('\n---')` to that
+    // base without bumping this number reds the fleet-wide green-checkpoint
+    // roughly an hour later, in a package the author never touched — which is
+    // exactly how COUPLING_NOTE (added 2026-07-27) took the gate down. If you
+    // added a base section on purpose: add it to the list above and bump the
+    // ceiling by one, in the same change. The assertion is deliberately `<=`
+    // (not `===`) so a genuinely CONDITIONAL section staying absent for this
+    // fixture is not a failure; its job is to catch dividers this fixture should
+    // never produce — notably `sharedGuides: []` leaking empty sections.
     const dividerCount = (out.match(/\n---\n/g) ?? []).length;
-    assert.ok(dividerCount <= 22, `unexpected divider count: ${dividerCount}`);
+    assert.ok(dividerCount <= 23, `unexpected divider count: ${dividerCount}`);
     // peer-reply-priority note (WI-1720, owner directive 2026-07-02) rides the shared bee base.
     assert.match(out, /Replying to a peer OUTRANKS your own work/);
     // code-run nudge (B-CX-3) rides the shared bee base.
