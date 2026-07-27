@@ -1219,6 +1219,15 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
     assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core`);
   }
   assert.ok(!CORE_MCP_TOOL_NAMES.includes('locks:acquire_granular'), 'locks:acquire_granular was deliberately cut from the core spine (2026-07-05 rebalance) — still reachable via tools:find/invoke, and present in the bee kit');
+  // EI-18745029375690371: search:fulltext was never in the spine even though docs:search
+  // was, despite root CLAUDE.md recommending both for prose recall — a trimmed session
+  // could reach docs:search with zero discovery cost but had to pay one for fulltext.
+  assert.ok(CORE_MCP_TOOL_NAMES.includes('search:fulltext'), 'search:fulltext belongs in the universal core (EI-18745029375690371 — was seeded asymmetrically vs docs:search)');
+  // search:semantic stays DELIBERATELY unseeded: its own tools:invoke fallback-reach
+  // demand (7 reaches/7 callers/14d) is ~3x lower than search:fulltext's (22/11) even
+  // among agents who already went out of their way to find it, and it is a narrower
+  // paraphrase-recall complement, not the default path — reachable via tools:find/invoke.
+  assert.ok(!CORE_MCP_TOOL_NAMES.includes('search:semantic'), 'search:semantic is deliberately NOT in the core spine (EI-18745029375690371) — lower demand-evidence than search:fulltext, reachable via tools:find/invoke');
   // Stays small enough to highlight/pre-load directly (vs the full ~551 surface).
   // Raised 25 → 32 (code-run-self-state-adoption-2026-07-03 P-002): +3 batching/reuse
   // (code:run, recipes:search/run) + +4 self-state (facts:assert/list,
@@ -1243,7 +1252,12 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // core-spine-inverses.test.ts (never seed a create and hide its undo). Then +1 → 42:
   // fleet:launch-on-plan moved from the OMP-only duplicate into the shared seed because
   // the required su routing gate is shared by Codex, Claude, and OMP.
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 42, 'core stays small');
+  // Then +1 → 43: search:fulltext (EI-18745029375690371) — root CLAUDE.md's tool-routing
+  // table has recommended `search:fulltext` for prose recall since before this spine
+  // existed, but it was never seeded (only docs:search was), so every trimmed session
+  // needed a discovery round trip to reach it. 22 tools:invoke fallback-reaches/11
+  // distinct callers in 14d — comparable demand to other additions above.
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 43, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)

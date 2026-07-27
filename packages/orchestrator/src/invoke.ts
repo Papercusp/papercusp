@@ -968,6 +968,27 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // tool to execute it (the exact failure reported by the owner in a Codex session).
   // It belongs in the shared seed; client-specific drift here is the bug.
   'fleet:launch-on-plan',
+  // EI-18745029375690371 (search:semantic-underuse investigation, 2026-07-27): root
+  // CLAUDE.md's tool-routing table recommends "search:fulltext · search:semantic" for
+  // prose recall, but NEITHER was ever in this spine — only docs:search was — so every
+  // trimmed session (now the default for every client+tier) starts unable to reach
+  // either without a tools:find/invoke discovery round trip. Measured over 30d:
+  // docs:search calls_per_caller 2.39 vs search:fulltext 2.82 vs search:semantic 1.19
+  // (near-1:1 — almost nobody who finds it comes back), and su/psu ("null"-role)
+  // sessions accounted for 216/222 docs:search calls but just 1/19 search:semantic
+  // calls — the gap tracks seeding, not quality (search:semantic: 0% error rate,
+  // 213ms avg, and its heaviest real user — the Mug, 16/19 calls — returns to it
+  // repeatedly for genuinely paraphrased queries, i.e. it works as designed for the
+  // caller population that can actually reach it). tools:invoke fallback-reach demand
+  // over 14d confirms the SAME asymmetry among agents who went out of their way to find
+  // it anyway: search:fulltext 22 reaches/11 callers vs search:semantic 7 reaches/7
+  // callers — a ~3x gap even before seeding, so seeding search:semantic too would not
+  // close the remaining difference (that's its narrower by-design niche, not a bug).
+  // Seed the higher-demand, cheaper half of the pair — same demand-evidence bar as
+  // dev:pg_query/code:run above. search:semantic stays reachable via tools:find/invoke,
+  // consistent with other deliberately-cut lower-frequency verbs in this file
+  // (events:emit, recipes:run, locks:acquire_granular).
+  'search:fulltext',
   // Discovery — load anything else by intent (tools:find — WS3), or call it
   // directly without loading (tools:invoke — the universal reachability hatch,
   // dynamic-tool-surface-2026-07-01 D-003).
