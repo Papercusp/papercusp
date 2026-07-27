@@ -122,6 +122,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS pots_canonical_home_slug_key
 --   own pot_home_slug verbatim), so the FEDERATED column is the correct parent.
 --   ON DELETE CASCADE is preserved: dissolving a Pot still reaps its roster.
 --
+--   ⚠ ON UPDATE CASCADE IS LOAD-BEARING, NOT DECORATION. Without it this whole
+--   migration is INERT on exactly the install it exists to repair. Proved on real
+--   PG against a reproduction of the live joiner state: with ON DELETE CASCADE
+--   alone, the runtime reconcile's
+--       UPDATE pots SET canonical_pot_home_slug = '<owner slug>'
+--   is REFUSED —
+--       ERROR: update or delete on table "pots" violates foreign key constraint
+--       "pot_members_pot_fkey" ... Key (workspace_id, canonical_pot_home_slug)=
+--       (<ws>, <local handle>) is still referenced from table "pot_members"
+--   — because roster rows already scoped to the LOCAL handle pin the old value.
+--   The reconcile would fail-open forever and the roster would stay empty.
+--   CASCADE also does the right thing semantically: those rows belong to THIS Pot,
+--   whose federated scope was just corrected, so re-scoping them onto the corrected
+--   slug is the repair, not a side effect. (A pre-existing row already sitting under
+--   the corrected scope would make the cascade collide on the PK; that surfaces as a
+--   loud error and the reconcile fails open, rather than corrupting either row.)
+--
 --   Guarded: only re-create when the constraint is not ALREADY pointing at the new
 --   target, so a re-apply on an up-to-date DB is a true no-op.
 DO $$
@@ -140,8 +157,12 @@ BEGIN
      AND t.relname = 'pot_members'
      AND c.conname = 'pot_members_pot_fkey';
 
-  -- Already repointed (or absent + we are about to create it): skip the drop.
-  IF v_def IS NOT NULL AND v_def LIKE '%canonical_pot_home_slug%' THEN
+  -- Already repointed AND already cascading on update: a true no-op re-apply.
+  -- (The ON UPDATE clause is checked too, so a DB that got an earlier revision of
+  -- this file — repointed but without the cascade — is upgraded rather than skipped.)
+  IF v_def IS NOT NULL
+     AND v_def LIKE '%canonical_pot_home_slug%'
+     AND v_def LIKE '%ON UPDATE CASCADE%' THEN
     RETURN;
   END IF;
 
@@ -190,5 +211,6 @@ BEGIN
     ADD CONSTRAINT pot_members_pot_fkey
     FOREIGN KEY (workspace_id, pot_home_slug)
     REFERENCES harness_shared.pots (workspace_id, canonical_pot_home_slug)
-    ON DELETE CASCADE;
+    ON DELETE CASCADE
+    ON UPDATE CASCADE;
 END $$;
