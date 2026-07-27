@@ -37,6 +37,23 @@ async function sha256(text) {
   return createHash('sha256').update(text).digest('hex');
 }
 
+// Files that the migration runner must NOT auto-apply on boot. These
+// are one-shot manual data backfills that depend on `psql -v` variable
+// substitution (`:key` expansion) — sending them raw to postgres-js
+// produces "syntax error at or near :".
+const MANUAL_ONLY = new Set([
+  '040-plugin-configs-backfill.sql', // requires PAPERCUSP_DB_ENCRYPTION_KEY via psql -v key=...
+  '__seed_restored__.marker',         // sentinel inserted by seed-restore path; not a real migration file
+]);
+
+// ⚠ KEEP THE JSDOC BLOCK BELOW ADJACENT TO THE FUNCTION. It used to sit ABOVE
+// `MANUAL_ONLY`, so TypeScript bound it to that const instead of to
+// `applyPendingMigrations` — every `@param` was silently inert and all four
+// parameters inferred as `any` (and `skipFile` as REQUIRED), in a function that
+// looked fully documented. Anything inserted between the block and the function
+// re-breaks it. The generated `migration-runner.d.ts` + its drift test are the
+// recurrence guard: detach it again and the regenerated declaration falls back
+// to `any`, which fails the compare loudly instead of silently widening types.
 /**
  * @param {object} args
  * @param {object} args.client    postgres-js client (sql tag) OR object with `.unsafe(text)` method.
@@ -50,15 +67,6 @@ async function sha256(text) {
  *   array and the boot CONTINUES (the bad file stays unrecorded → retried next
  *   boot), so one peer's broken migration can't wedge the dev-api for the fleet.
  */
-// Files that the migration runner must NOT auto-apply on boot. These
-// are one-shot manual data backfills that depend on `psql -v` variable
-// substitution (`:key` expansion) — sending them raw to postgres-js
-// produces "syntax error at or near :".
-const MANUAL_ONLY = new Set([
-  '040-plugin-configs-backfill.sql', // requires PAPERCUSP_DB_ENCRYPTION_KEY via psql -v key=...
-  '__seed_restored__.marker',         // sentinel inserted by seed-restore path; not a real migration file
-]);
-
 export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, continueOnError = false }) {
   const skip = skipFile ?? ((f) => f.includes('per-harness-template') || MANUAL_ONLY.has(f));
   const failed = [];
