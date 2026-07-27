@@ -3273,16 +3273,21 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	supersedesId: bigint("supersedes_id", { mode: "number" }),
+	dependsOn: jsonb("depends_on"),
+	kind: text(),
+	claim: jsonb(),
 }, (table) => [
 	index("agent_facts_fold").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((retracted_at IS NULL) AND (superseded_at IS NULL))`),
 	uniqueIndex("agent_facts_identity_current").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`COALESCE(source_hive, ''::text)`).where(sql`(superseded_at IS NULL)`),
-	index("agent_facts_shareable").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.scope.asc().nullsLast().op("timestamptz_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((shareable = true) AND (retracted_at IS NULL) AND (superseded_at IS NULL))`),
+	index("agent_facts_kind").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops")).where(sql`((kind IS NOT NULL) AND (retracted_at IS NULL) AND (superseded_at IS NULL))`),
+	index("agent_facts_shareable").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.scope.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((shareable = true) AND (retracted_at IS NULL) AND (superseded_at IS NULL))`),
 	index("agent_facts_version_chain").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`superseded_at`),
 	pgPolicy("agent_facts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("agent_facts_scope_check", sql`scope = ANY (ARRAY['workspace'::text, 'role'::text, 'owner'::text, 'harness'::text, 'work_item'::text])`),
 	check("agent_facts_check", sql`(scope = 'workspace'::text) OR (scope_ref IS NOT NULL)`),
 	check("agent_facts_body_check", sql`char_length(body) <= 1200`),
 	check("agent_facts_confidence_check", sql`(confidence IS NULL) OR (confidence = ANY (ARRAY['verified'::text, 'provisional'::text, 'suspected'::text]))`),
+	check("agent_facts_kind_check", sql`(kind IS NULL) OR (kind = ANY (ARRAY['conclusion'::text, 'assumption'::text, 'convention'::text]))`),
 ]);
 
 export const operatorPromptUserInHarnessShared = harnessShared.table("operator_prompt_user", {
