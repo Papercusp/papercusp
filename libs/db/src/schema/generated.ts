@@ -413,34 +413,6 @@ export const operatorTxnTimeoutsConfigInHarnessShared = harnessShared.table("ope
 
 ]);
 
-export const potMembers686OrphansInHarnessShared = harnessShared.table("_pot_members_686_orphans", {
-	workspaceId: text("workspace_id").notNull(),
-	potHomeSlug: text("pot_home_slug").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	githubUserId: bigint("github_user_id", { mode: "number" }).notNull(),
-	githubUsername: text("github_username").notNull(),
-	displayName: text("display_name"),
-	avatarUrl: text("avatar_url"),
-	deviceAttestations: jsonb("device_attestations").default([]).notNull(),
-	revokedPubkeys: text("revoked_pubkeys").default([""]).notNull(),
-	joinedAt: timestamp("joined_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	schemaVersion: bigint("schema_version", { mode: "number" }).default(1).notNull(),
-	bindingStatus: text("binding_status").default('unverified').notNull(),
-	channel1VerifiedAt: timestamp("channel1_verified_at", { withTimezone: true, mode: 'string' }),
-	channel2VerifiedAt: timestamp("channel2_verified_at", { withTimezone: true, mode: 'string' }),
-	channel2BranchRef: text("channel2_branch_ref"),
-	bindingLastCheckedAt: timestamp("binding_last_checked_at", { withTimezone: true, mode: 'string' }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	origin: text().default('local').notNull(),
-	authorPubkey: text("author_pubkey"),
-	repoPermission: text("repo_permission"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	permissionCheckedAt: bigint("permission_checked_at", { mode: "number" }),
-	fedHlc: text("fed_hlc"),
-});
 
 export const migrationReservationsInHarnessShared = harnessShared.table("migration_reservations", {
 	num: integer().primaryKey().notNull(),
@@ -3757,88 +3729,6 @@ export const gitSyncCommitAttributionInHarnessShared = harnessShared.table("git_
 	index("git_sync_commit_attr_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")).where(sql`(work_item_id IS NOT NULL)`),
 ]);
 
-export const potBackfill649DroppedInHarnessShared = harnessShared.table("_pot_backfill_649_dropped", {
-	harnessSlug: text("harness_slug"),
-	featureId: text("feature_id"),
-	title: text(),
-	summary: text(),
-	status: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	attempts: bigint({ mode: "number" }),
-	claims: text(),
-	notes: text(),
-	metadata: jsonb(),
-	kind: text(),
-	projectId: text("project_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	expectedCostCents: bigint("expected_cost_cents", { mode: "number" }),
-	tags: jsonb(),
-	needsHumanReview: boolean("needs_human_review"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdTs: bigint("created_ts", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedTs: bigint("updated_ts", { mode: "number" }),
-	parentId: text("parent_id"),
-	goalId: text("goal_id"),
-	takenBy: text("taken_by"),
-	takenAt: timestamp("taken_at", { withTimezone: true, mode: 'string' }),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
-	workspaceId: text("workspace_id"),
-	search: tsvectorCustom("_search"),
-	deprecationReason: text("deprecation_reason"),
-	seeAlso: text("see_also"),
-	needsDesign: boolean("needs_design"),
-	designStatus: text("design_status"),
-	designSpecId: text("design_spec_id"),
-	discardedDesignWork: boolean("discarded_design_work"),
-	completionRef: jsonb("completion_ref"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	workingUsers: bigint("working_users", { mode: "number" }),
-	workedByHistory: jsonb("worked_by_history"),
-	wave: text(),
-	verifiedDoneAtRemoteTs: timestamp("verified_done_at_remote_ts", { withTimezone: true, mode: 'string' }),
-	verifierLastError: text("verifier_last_error"),
-	verifierLastCheckedAt: timestamp("verifier_last_checked_at", { withTimezone: true, mode: 'string' }),
-	sourcePlanSlug: text("source_plan_slug"),
-	sourcePlanItemIds: text("source_plan_item_ids"),
-	featureOrder: integer("feature_order"),
-	authorPubkey: text("author_pubkey"),
-	origin: text(),
-	auditVerdict: text("audit_verdict"),
-	auditReasons: text("audit_reasons"),
-	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
-	itemKind: text("item_kind"),
-	payload: jsonb(),
-	assigneeRank: integer("assignee_rank"),
-	rankWriter: text("rank_writer"),
-	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	redundancy: integer(),
-	swarmAffinity: text("swarm_affinity"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	verifiedAuthorGithubUserId: bigint("verified_author_github_user_id", { mode: "number" }),
-	schedule: jsonb(),
-	scheduleActive: boolean("schedule_active"),
-	scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: 'string' }),
-	tzid: text(),
-	templateSlug: text("template_slug"),
-	runSeq: integer("run_seq"),
-	requeueCount: integer("requeue_count"),
-	fedHlc: text("fed_hlc"),
-	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
-	terminalOwner: text("terminal_owner"),
-	terminalCompletionRef: text("terminal_completion_ref"),
-	lastReleasedBy: text("last_released_by"),
-	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
-	embedding: vector({ dimensions: 384 }),
-	embeddingMode: text("embedding_mode"),
-	terminalReason: text("terminal_reason"),
-});
 
 export const federationProbesInHarnessShared = harnessShared.table("federation_probes", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations

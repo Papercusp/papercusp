@@ -15,6 +15,11 @@
  *
  * Drizzle-kit v0.31.10 quirks the script silently patches so the
  * regenerated output is committable as-is (see PHASE0-AUDIT.md):
+ *   Fix 0: drop MIGRATION-INTERNAL scratch tables (leading underscore, e.g.
+ *          `_pot_members_686_orphans`) — drizzle-kit introspects every table
+ *          it can see, including migration quarantine tables that are not
+ *          application surface. EI-18785808338338490; logic + rationale in
+ *          ../src/schema-scratch-tables.mjs (unit-tested).
  *   Fix 1: empty-string defaults emit `.default(')` (invalid TS).
  *   Fix 2: drop invalid `mode: 'number'` on timestamptz → drizzle default 'date'.
  *   Fix 3: function-call defaults wrapped in sql`` (e.g. to_char(now(), …)).
@@ -33,12 +38,37 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs';
 import { join, dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = resolve(__dirname, '..');
 const SCHEMA_DIR = join(DB_ROOT, 'src/schema');
+
+// MAIN-GUARD (EI-18786840446203185). Everything below runs at module scope, so
+// a bare `import()` of this file — the ordinary way to check that a module
+// loads — CONNECTS TO THE LIVE DB, introspects every table, and overwrites
+// src/schema/*.ts in the shared working tree. That is a fleet-wide blast radius
+// (regenerating pulls in every peer's accumulated schema drift at once), reached
+// by an action that looks read-only. It has happened.
+//
+// Refuse to execute unless we are the process entrypoint. Throwing — rather than
+// exiting — leaves the importer alive with a clear message, so inspection still
+// works. Wrapping the whole script in a main() would be the tidier shape; this
+// guard is the zero-risk version of the same protection.
+// NOTE the absent-argv case must FAIL CLOSED: under `node -e "import(...)"` —
+// the exact accident this guards — process.argv[1] is UNDEFINED, so a
+// `process.argv[1] && ...` condition short-circuits and the guard never fires.
+// (First version of this guard had that bug; it ran the live pull anyway.)
+const __entry = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
+if (import.meta.url !== __entry) {
+  throw new Error(
+    'pull-schema.mjs is a CLI script with side effects (live DB introspection + rewrites ' +
+      'src/schema/*.ts in the shared tree) and was IMPORTED rather than run. Refusing to ' +
+      'execute. Run it as `node libs/papercusp/libs/db/scripts/pull-schema.mjs`; to check ' +
+      'that it merely parses, use `node --check <file>`.',
+  );
+}
 
 console.log('==> running drizzle-kit pull against live papercusp DB');
 
