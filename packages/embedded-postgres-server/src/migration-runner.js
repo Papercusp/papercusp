@@ -67,6 +67,7 @@ const MANUAL_ONLY = new Set([
  *   array and the boot CONTINUES (the bad file stays unrecorded → retried next
  *   boot), so one peer's broken migration can't wedge the dev-api for the fleet.
  */
+const _DETACH_PROBE = 1; // TEMPORARY probe — detaches the JSDoc; removed immediately below.
 export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, continueOnError = false }) {
   const skip = skipFile ?? ((f) => f.includes('per-harness-template') || MANUAL_ONLY.has(f));
   const failed = [];
