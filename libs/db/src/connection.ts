@@ -708,7 +708,10 @@ function buildClient(
   // PG_BIGINT_AS_NUMBER_TYPES (every existing caller's byte-identical behavior);
   // pass `{}` for a client that must NOT silently round a bigint outside
   // Number's safe range — see getOrgPgLosslessBigint().
-  typesOverride: Record<string, unknown> = PG_BIGINT_AS_NUMBER_TYPES,
+  // `any` mirrors PG_BIGINT_AS_NUMBER_TYPES's own typing below — postgres-js's
+  // `types` option is generic over the exact custom-type shape, which isn't
+  // worth threading through this internal helper's signature.
+  typesOverride: any = PG_BIGINT_AS_NUMBER_TYPES,
 ): Sql {
   const sp = searchPath.map((s) => `"${s.replace(/"/g, '""')}"`).join(', ');
   // The desktop ships embedded-postgres-server (real PG over TCP); the URL
