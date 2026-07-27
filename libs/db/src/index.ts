@@ -8,6 +8,7 @@ export {
 export {
   getOrgPg,
   getOrgPgApp,
+  getOrgPgLosslessBigint,
   getHarnessPg,
   typedSql,
   processConnectionCeiling,

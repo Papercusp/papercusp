@@ -918,6 +918,49 @@ export function getOrgPg(): OrgPgHandle {
   };
 }
 
+/**
+ * Admin client WITHOUT the bigint→number override (EI-18789855771421275).
+ *
+ * `getOrgPg()` deliberately converts int8/bigserial (oid 20) to a JS `number`
+ * for convenience (EI-9265) — correct for the columns callers actually rely on
+ * (which fit safely under 2^53), but WRONG for arbitrary agent-supplied SQL: a
+ * `pg_stat_statements.queryid`, a snowflake work-item id, or any other genuine
+ * 64-bit value beyond `Number.MAX_SAFE_INTEGER` gets silently ROUNDED — and the
+ * rounded value is a syntactically valid bigint that just matches ZERO rows,
+ * which reads as a legitimate empty result, not an error (see the EI for the
+ * full incident: an agent nearly recorded a false "already fixed, zero calls"
+ * verdict because of this).
+ *
+ * Use for ANY surface that runs ad-hoc/agent-authored SQL and returns bigint
+ * columns verbatim (currently: `pgReadQuery` / `dev:pg_query`) — NOT for
+ * application code with known-safe numeric columns, which should keep using
+ * `getOrgPg()`/`getOrgPgApp()` so existing `typeof x === 'number'` assumptions
+ * (WI-3880) keep holding. Deliberately a SEPARATE, small (`max: 2`), dedicated
+ * pool rather than mutating the shared admin client's parser: postgres-js's
+ * `options.parsers` map is one shared object across every concurrent query on
+ * that client, so a per-call override would race every OTHER concurrent
+ * `getOrgPg()` caller on this heavily-parallel box.
+ *
+ * With no override, postgres-js's OWN default oid-20 parser applies — an int8
+ * column comes back as an exact-precision JS STRING (the same reason
+ * node-postgres does this by default too). Reflected in `processConnectionCeiling`'s
+ * `fixedOverhead` (+2) so the connection-budget guard stays honest about this pool.
+ */
+export function getOrgPgLosslessBigint(): { sql: Sql } {
+  const url = maybePgbouncer(adminUrl());
+  if (!_adminLosslessBigintClient) {
+    _adminLosslessBigintClient = buildClient(
+      url,
+      ['harness_shared', 'papercusp_shared', 'public'],
+      2,
+      'org-admin-lossless-bigint',
+      pgbouncerEnabled(),
+      {}, // no bigint override — postgres-js's own default (exact string) applies
+    );
+  }
+  return { sql: _adminLosslessBigintClient };
+}
+
 let _appOrgClient: Sql | null = null;
 let _appOrgDrizzle: ReturnType<typeof drizzle> | null = null;
 let _appOrgDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
@@ -999,7 +1042,8 @@ export function getHarnessPg(slug: string) {
  * `fixedOverhead` covers the admin-pg-cache (ADMIN_PG_CACHE_MAX=8, in
  * packages/operator-core) + the 5 long-lived LISTEN connections (sync-sse,
  * coord-inbox, pending-events, fleet-assignment, agent-activity) — both live in
- * other packages, so they're a documented constant here.
+ * other packages, so they're a documented constant here — + the small (max 2)
+ * dedicated `getOrgPgLosslessBigint()` pool (EI-18789855771421275).
  */
 export function processConnectionCeiling(): {
   poolMax: number;
@@ -1012,7 +1056,7 @@ export function processConnectionCeiling(): {
   const orgPools = poolMax * 2; // getOrgPg (admin) + getOrgPgApp (app/RLS)
   const perHarnessMax = Math.max(1, Number(process.env.PAPERCUSP_HARNESS_DB_POOL_MAX) || 1);
   const harnessPools = HARNESS_POOL_CAP * perHarnessMax;
-  const fixedOverhead = 8 /* admin-pg-cache */ + 5 /* LISTEN buses */;
+  const fixedOverhead = 8 /* admin-pg-cache */ + 5 /* LISTEN buses */ + 2 /* org-admin-lossless-bigint pool */;
   return { poolMax, orgPools, harnessPools, fixedOverhead, total: orgPools + harnessPools + fixedOverhead };
 }
 
@@ -1129,6 +1173,10 @@ export async function _resetForTests() {
   _adminClient = null;
   _adminDrizzle = null;
   _adminDb = null;
+  if (_adminLosslessBigintClient) {
+    await _adminLosslessBigintClient.end({ timeout: 1 }).catch(() => {});
+  }
+  _adminLosslessBigintClient = null;
   if (_appOrgClient) {
     await _appOrgClient.end({ timeout: 1 }).catch(() => {});
   }
