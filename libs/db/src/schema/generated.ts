@@ -4576,9 +4576,6 @@ export const memoryCanonicalInHarnessShared = harnessShared.table("memory_canoni
 
 ]);
 
-export const eiPermigDefault20260618InHarnessShared = harnessShared.table("_ei_permig_default_20260618", {
-	issueId: text("issue_id"),
-});
 
 export const memoryPrecisionBenchInHarnessShared = harnessShared.table("memory_precision_bench", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),

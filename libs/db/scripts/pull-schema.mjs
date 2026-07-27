@@ -31,6 +31,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
+import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -84,67 +85,18 @@ console.log('==> applying quirk fixups');
 let schema = readFileSync(schemaPath, 'utf8');
 
 // Fix 0: drop MIGRATION-INTERNAL scratch tables (leading underscore) before any
-// other fixup sees them. EI-18785808338338490.
-//
-// Migrations copy rows aside into quarantine tables — e.g. 686 does
-// `CREATE TABLE harness_shared._pot_members_686_orphans (LIKE pot_members
-// INCLUDING DEFAULTS)` to preserve rows an FK repoint would otherwise strand.
-// The leading underscore IS the convention marking them as not-application
-// surface, but drizzle-kit introspects every table it can see, so they land in
-// the app's ORM schema as first-class exports.
-//
-// That is noise at best, and it has already cost real time: drizzle-kit emitted
-// `text("revoked_pubkeys")` WITHOUT `.array()` for the 686 orphan clone while
-// emitting it correctly for `pot_members` itself — identical column metadata in
-// the catalog (both `_text`, both DEFAULT '{}'::text[], both NOT NULL), so the
-// table name is the only variable. The mis-shaped column then reds `lint:tsc`
-// with a TS2345 in a package that never touched the schema, and — because the
-// orphan table is a LIKE-clone — its columns read exactly like `pot_members`,
-// so the error invites being diagnosed against the WRONG table entirely.
-//
-// Stripping them here fixes the whole class rather than the one column: no
-// scratch table can contribute a declaration, so none can be mis-shaped, and
-// generated.ts stops carrying migration internals it should never have exported.
-let strippedScratchTables = 0;
-{
-  // Walk each `export const X = <pgTable|schema.table>("_name", ` and remove the
-  // whole statement, using a paren-balanced walk (the block contains nested
-  // objects, arrays and template literals, so a regex cannot find its end).
-  const declRe = /export const \w+ = (?:pgTable|\w+\.table)\(\s*"_[^"]*"\s*,/g;
-  const removals = [];
-  let m;
-  while ((m = declRe.exec(schema)) !== null) {
-    // Depth-walk from the '(' that opens the table() call.
-    const open = schema.indexOf('(', m.index);
-    let depth = 0;
-    let i = open;
-    let quote = null;
-    for (; i < schema.length; i++) {
-      const ch = schema[i];
-      if (quote) {
-        if (ch === '\\') { i++; continue; }
-        if (ch === quote) quote = null;
-        continue;
-      }
-      if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
-      if (ch === '(') depth++;
-      else if (ch === ')') { depth--; if (depth === 0) break; }
-    }
-    if (depth !== 0) continue; // unbalanced — leave it alone rather than corrupt the file
-    // Consume the trailing `;` and one newline so no blank statement remains.
-    let end = i + 1;
-    if (schema[end] === ';') end++;
-    if (schema[end] === '\n') end++;
-    removals.push([m.index, end]);
-  }
-  // Splice back-to-front so earlier offsets stay valid.
-  for (const [start, end] of removals.reverse()) {
-    schema = schema.slice(0, start) + schema.slice(end);
-    strippedScratchTables++;
-  }
-}
-if (strippedScratchTables > 0) {
-  console.log(`    Fix 0: stripped ${strippedScratchTables} migration-internal scratch table(s) (leading underscore)`);
+// other fixup sees them. EI-18785808338338490. Logic + rationale live in
+// ../src/schema-scratch-tables.mjs so they are unit-tested rather than buried
+// in a script (schema-scratch-tables.test.ts).
+const { stripped: strippedScratchTables } = (() => {
+  const r = stripScratchTableDeclarations(schema);
+  schema = r.schema;
+  return r;
+})();
+if (strippedScratchTables.length > 0) {
+  console.log(
+    `    Fix 0: stripped ${strippedScratchTables.length} migration-internal scratch table(s): ${strippedScratchTables.join(', ')}`,
+  );
 }
 
 // Fix 1: empty-string default rendering bug.
