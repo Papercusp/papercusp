@@ -27,13 +27,28 @@
 -- binding then self-heals automatically — the seed returns nothing, the fold restarts
 -- from 0 through the corrected scope, and the re-fold is idempotent (LWW put/del).
 --
--- Blast radius is bounded and one-shot. Pre-existing rows have apply_binding NULL:
---   * a NON-hive harness folds with binding NULL → NULL matches → seeds as before
---     (unchanged for the overwhelming majority of harnesses, including hive OWNERS,
---     whose `joinerPotHomeSlug` is remote_hive-gated and so resolves NULL);
---   * a hive JOINER folds with its hive-home slug → NULL does not match → exactly ONE
---     full re-fold on the first boot after this migration, after which its rows carry
---     the stamp and every later boot resumes normally.
+-- Blast radius is one-shot but WIDER than the joiner. Pre-existing rows have
+-- apply_binding NULL, and the binding a fold runs under is the full
+-- `hiveHomeProjectionSlug ?? ownPotHomeSlug ?? memberHomeRebindSlug` chain, so:
+--   * a NON-hive harness folds with binding NULL → NULL matches → seeds as before,
+--     byte-identical to pre-fix behaviour;
+--   * a hive JOINER folds under its hive-home slug → NULL does not match → exactly ONE
+--     full re-fold, after which its rows carry the stamp and later boots resume;
+--   * a hive OWNER booting its HOME harness ALSO re-folds once. (An earlier draft of
+--     this comment claimed owners were exempt because `joinerPotHomeSlug` is
+--     remote_hive-gated and returns NULL for an owner. That is TRUE of that one
+--     resolver but FALSE of the binding: `ownPotHomeSlug` is non-null for the owner's
+--     own home harness, so the stamp is non-null and the NULL rows mismatch.
+--     MEASURED live on the fed-b rig 2026-07-27 — the `papercusp` harness stamped
+--     'papercusp' and re-folded from 0.)
+--
+-- That one-shot re-fold is NOT free on a large log, and it is the same shape as the
+-- condition WI-2105 exists to prevent (a big from-0 re-fold CPU-starving routinesTick
+-- past the 240s bghost-watchdog bound). It is nonetheless bounded and self-limiting:
+-- positions are persisted INTRA-pass (MERGE_PERSIST_EVERY_OPS) under the NEW stamp, so
+-- progress is monotonic and a watchdog restart resumes the re-fold rather than
+-- restarting it. Observed on the rig: a 461,475-op log re-folded monotonically
+-- (39,191 → 100,000 → …) while re-stamping as it went.
 --
 -- Idempotent (ADD COLUMN IF NOT EXISTS) per migration policy. Nullable with no default:
 -- NULL is a meaningful value here ("folded under no pot-home scope"), not a backfill gap.
