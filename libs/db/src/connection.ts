@@ -695,6 +695,11 @@ function buildClient(
   maxOverride?: number,
   label = 'pool',
   pooled = false,
+  // EI-18789855771421275: override the bigint (oid 20) type parser. Defaults to
+  // PG_BIGINT_AS_NUMBER_TYPES (every existing caller's byte-identical behavior);
+  // pass `{}` for a client that must NOT silently round a bigint outside
+  // Number's safe range — see getOrgPgLosslessBigint().
+  typesOverride: Record<string, unknown> = PG_BIGINT_AS_NUMBER_TYPES,
 ): Sql {
   const sp = searchPath.map((s) => `"${s.replace(/"/g, '""')}"`).join(', ');
   // The desktop ships embedded-postgres-server (real PG over TCP); the URL
@@ -780,7 +785,9 @@ function buildClient(
     // case-by-case if a column ever needs full BIGINT precision. Shared
     // constant (EI-9265) so hand-rolled test/script clients can mirror this
     // exactly instead of silently drifting — see PG_BIGINT_AS_NUMBER_TYPES.
-    types: PG_BIGINT_AS_NUMBER_TYPES,
+    // Callers needing exact bigint precision (no silent >2^53 rounding) pass
+    // `typesOverride: {}` — see getOrgPgLosslessBigint (EI-18789855771421275).
+    types: typesOverride,
   });
   // EI-13076: pre-arm the date-OID serializers as sticky accessors BEFORE any
   // drizzle() wrap can replace them with transparent passthroughs — see
