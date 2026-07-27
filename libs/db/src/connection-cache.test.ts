@@ -95,4 +95,37 @@ describe('connection cache invalidation source contract (bug #33)', () => {
     expect(body, 'must be fire-and-forget (void the promise, never await/return it)').toMatch(/^\s*void sql/m);
     expect(body, 'must swallow a validation-query error rather than propagate it').toMatch(/\.catch\(/);
   });
+
+  // EI-18789855771421275: getOrgPgLosslessBigint() is a SEPARATE cached pool
+  // sharing adminUrl()'s discovery-file resolution — if adminUrl()'s
+  // invalidation block doesn't ALSO clear it, a discovery-file URL change
+  // (desktop restart / port shuffle) leaves it silently pointed at the stale
+  // target forever (the exact bug #33 class, for the new pool).
+  it("adminUrl()'s discovery-URL-change invalidation ALSO clears _adminLosslessBigintClient", () => {
+    const fn = SRC.match(/function adminUrl\(\)[^{]*\{([\s\S]+?)^\}/m);
+    expect(fn).toBeTruthy();
+    const body = fn![1];
+    expect(
+      body,
+      'adminUrl() must clear _adminLosslessBigintClient when discovery URL changes (EI-18789855771421275)',
+    ).toMatch(/_adminLosslessBigintClient\s*=\s*null/);
+  });
+
+  it('getOrgPgLosslessBigint() builds its client with an empty types override (no bigint→number rounding)', () => {
+    const m = SRC.match(/export function getOrgPgLosslessBigint\(\)[^{]*\{([\s\S]+?)^\}/m);
+    expect(m, 'getOrgPgLosslessBigint() must be exported as a function').toBeTruthy();
+    const body = m![1];
+    expect(body, 'must call buildClient() rather than roll its own postgres(...) client').toMatch(/buildClient\(/);
+    expect(
+      body,
+      'must NOT pass PG_BIGINT_AS_NUMBER_TYPES — the whole point is an unrounded bigint',
+    ).not.toMatch(/PG_BIGINT_AS_NUMBER_TYPES/);
+  });
+
+  it("processConnectionCeiling()'s fixedOverhead accounts for the lossless-bigint pool", () => {
+    expect(
+      SRC,
+      'fixedOverhead must include the org-admin-lossless-bigint pool so the connection-budget guard stays honest (EI-18789855771421275)',
+    ).toMatch(/const fixedOverhead\s*=\s*8[\s\S]*?\+[\s\S]*?2\s*\/\*\s*org-admin-lossless-bigint/);
+  });
 });
