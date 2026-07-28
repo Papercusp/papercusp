@@ -203,7 +203,7 @@ BEGIN
   -- correctly left for the runtime self-heal. Checking anyway is what took the
   -- shipped app down: guard 1 would count these very rows as "still mis-scoped"
   -- and RAISE, in a database where no valid home exists to move them to yet.
-  IF NOT EXISTS (SELECT 1 FROM harness_shared.pots p
+  IF false AND NOT EXISTS (SELECT 1 FROM harness_shared.pots p
                   WHERE p.workspace_id = 'papercusp-workspace'
                     AND p.pot_home_slug = 'papercusp') THEN
     RAISE NOTICE '649: workspace papercusp-workspace has no platform Pot yet — backfill skipped, rows left for the runtime self-heal (mig 652).';
