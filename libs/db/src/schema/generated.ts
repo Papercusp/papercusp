@@ -6338,6 +6338,23 @@ export const toolUsageRollupInHarnessShared = harnessShared.table("tool_usage_ro
 	primaryKey({ columns: [table.day, table.intentLabel, table.sessionId, table.sourceKind, table.toolName, table.verb, table.workspaceId], name: "tool_usage_rollup_pkey"}),
 ]);
 
+export const sessionTurnPartsInHarnessShared = harnessShared.table("session_turn_parts", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	sourceKind: text("source_kind").notNull(),
+	sessionId: text("session_id").notNull(),
+	partIdx: integer("part_idx").notNull(),
+	ts: timestamp({ withTimezone: true }),
+	owner: text(),
+	speaker: text().notNull(),
+	partKind: text("part_kind").notNull(),
+	toolName: text("tool_name"),
+	text: text().notNull(),
+	ingestedAt: timestamp("ingested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("session_turn_parts_ingested_idx").using("btree", table.ingestedAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.partIdx, table.sessionId, table.sourceKind, table.workspaceId], name: "session_turn_parts_pkey"}),
+]);
+
 export const harnessPendingIssuesInHarnessShared = harnessShared.table("harness_pending_issues", {
 	harnessSlug: text("harness_slug").notNull(),
 	phase: text().default('staging').notNull(),
@@ -7056,30 +7073,6 @@ export const regretFindingsInHarnessShared = harnessShared.table("regret_finding
 	check("regret_findings_divergence_kind_check", sql`(divergence_kind IS NULL) OR (divergence_kind = ANY (ARRAY['error-loop'::text, 'repeat-loop'::text, 'burn-inflection'::text, 'rescue-marker'::text]))`),
 ]);
 
-export const sessionIngestStateInHarnessShared = harnessShared.table("session_ingest_state", {
-	sourceKind: text("source_kind").notNull(),
-	filePath: text("file_path").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	byteOffset: bigint("byte_offset", { mode: "number" }).default(0).notNull(),
-	turnCount: integer("turn_count").default(0).notNull(),
-	sessionId: text("session_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	mtimeMs: bigint("mtime_ms", { mode: "number" }),
-	lastError: text("last_error"),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	promptCount: integer("prompt_count").default(0).notNull(),
-	responseCount: integer("response_count").default(0).notNull(),
-	toolCallCount: integer("tool_call_count").default(0).notNull(),
-	lastInferenceId: text("last_inference_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	countsBackfillOffset: bigint("counts_backfill_offset", { mode: "number" }).default(0).notNull(),
-	countsBackfillLastInferenceId: text("counts_backfill_last_inference_id"),
-	countsBackfilledAt: timestamp("counts_backfilled_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("session_ingest_state_session_idx").using("btree", table.sourceKind.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
-	primaryKey({ columns: [table.filePath, table.sourceKind], name: "session_ingest_state_pkey"}),
-]);
-
 export const potEvalScoresInHarnessShared = harnessShared.table("pot_eval_scores", {
 	runId: text("run_id").notNull(),
 	rubricHash: text("rubric_hash").notNull(),
@@ -7218,6 +7211,31 @@ export const prReviewReportsInHarnessShared = harnessShared.table("pr_review_rep
 	primaryKey({ columns: [table.harnessSlug, table.headSha, table.prNumber, table.workspaceId], name: "pr_review_reports_pkey"}),
 	pgPolicy("pr_review_reports_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("pr_review_reports_recommendation_check", sql`recommendation = ANY (ARRAY['approve'::text, 'request_changes'::text, 'reject'::text])`),
+]);
+
+export const sessionIngestStateInHarnessShared = harnessShared.table("session_ingest_state", {
+	sourceKind: text("source_kind").notNull(),
+	filePath: text("file_path").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	byteOffset: bigint("byte_offset", { mode: "number" }).default(0).notNull(),
+	turnCount: integer("turn_count").default(0).notNull(),
+	sessionId: text("session_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	mtimeMs: bigint("mtime_ms", { mode: "number" }),
+	lastError: text("last_error"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	promptCount: integer("prompt_count").default(0).notNull(),
+	responseCount: integer("response_count").default(0).notNull(),
+	toolCallCount: integer("tool_call_count").default(0).notNull(),
+	lastInferenceId: text("last_inference_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	countsBackfillOffset: bigint("counts_backfill_offset", { mode: "number" }).default(0).notNull(),
+	countsBackfillLastInferenceId: text("counts_backfill_last_inference_id"),
+	countsBackfilledAt: timestamp("counts_backfilled_at", { withTimezone: true, mode: 'string' }),
+	partCount: integer("part_count").default(0).notNull(),
+}, (table) => [
+	index("session_ingest_state_session_idx").using("btree", table.sourceKind.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
+	primaryKey({ columns: [table.filePath, table.sourceKind], name: "session_ingest_state_pkey"}),
 ]);
 
 export const p2PFleetDirectoryInHarnessShared = harnessShared.table("p2p_fleet_directory", {
