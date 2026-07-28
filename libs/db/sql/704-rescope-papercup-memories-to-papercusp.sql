@@ -29,9 +29,14 @@
 --   1. `payload->>'user_id'`      — 'harness:papercup' → 'harness:papercusp'
 --                                    (THE recall key; also regenerates user_id)
 --   2. `payload->>'harness_slug'` — 'papercup' → 'papercusp'  (629 rows)
---   3. `payload->>'workspace_id'` — the 5 rows on the stale workspace 'papercup'
+--   3. `payload->>'workspace_id'` — every row on the stale workspace 'papercup'
 --                                    (no such workspace) → 'papercusp-workspace';
---                                    also regenerates the workspace_id column
+--                                    also regenerates the workspace_id column.
+--                                    10 rows: 5 in the papercup harness pool and
+--                                    5 in a per-USER pool. The user-pool ones were
+--                                    found by this migration's own drain assertion
+--                                    and are the more consequential half — see the
+--                                    comment on step 3.
 -- NOT rewritten: `payload->>'scope'`, which holds the KIND marker 'harness' (not a
 -- pool id), and the `harness_slug` COLUMN, which is never 'papercup' here.
 --
@@ -104,13 +109,18 @@ BEGIN
      AND payload->>'user_id' = 'harness:papercusp';
   GET DIAGNOSTICS n_hslug = ROW_COUNT;
 
-  -- 3) Stale workspace 'papercup' (5 rows) — no such workspace exists. Written
-  --    through the payload; the generated workspace_id column follows.
+  -- 3) Stale workspace 'papercup' — no such workspace exists. Deliberately NOT
+  --    restricted to the papercup pool: 5 of these rows live in a per-USER pool,
+  --    and for those the stale tag is actively harmful. The user-pool workspace
+  --    filter (keepUserPoolHitForWorkspace, data-scoping-audit D-004/D-012) DROPS a
+  --    `project` hit tagged with a different workspace, so a row tagged 'papercup'
+  --    is silently excluded from recall under 'papercusp-workspace' — the same
+  --    class of defect F-A exists to fix, just in a different pool. Written through
+  --    the payload; the generated workspace_id column follows.
   UPDATE harness_shared.memory_canonical
      SET payload    = jsonb_set(payload, '{workspace_id}', '"papercusp-workspace"'::jsonb, true),
          updated_at = now()
-   WHERE payload->>'workspace_id' = 'papercup'
-     AND payload->>'user_id' = 'harness:papercusp';
+   WHERE payload->>'workspace_id' = 'papercup';
   GET DIAGNOSTICS n_ws = ROW_COUNT;
 
   -- 4) Assert the pool is fully drained — catches a partially-rewritten identity
