@@ -47,6 +47,9 @@
 --     the backup table is CREATE-IF-NOT-EXISTS so a re-run never wipes it.
 --   * GUARDED: RAISE (=> runner rollback) on any residual mis-scope, any
 --     non-pot target, or any dropped id with no surviving target-Pot row.
+--   * BOOT-SAFE: the whole backfill is a no-op — and the guards are skipped —
+--     when the workspace has no platform Pot yet, because migrations run BEFORE
+--     the operator that creates Pots. See step 1's precondition.
 -- The migration runner wraps this file in ONE transaction (no BEGIN/COMMIT/\set
 -- here); a RAISE or failure rolls the whole thing back AND re-enables triggers.
 
@@ -101,6 +104,10 @@ SELECT wi.harness_slug AS src, wi.feature_id, wi.status, wi.updated_ts,
   END AS target
 FROM harness_shared.work_items wi
 WHERE wi.workspace_id = 'papercusp-workspace'
+  -- the platform-Pot precondition documented above: no Pot, no backfill.
+  AND EXISTS (SELECT 1 FROM harness_shared.pots p0
+               WHERE p0.workspace_id = 'papercusp-workspace'
+                 AND p0.pot_home_slug = 'papercusp')
   AND NOT EXISTS (SELECT 1 FROM harness_shared.pots p WHERE p.pot_home_slug = wi.harness_slug);
 
 -- ── 1b. collapse any target Pot that does not exist HERE onto the catch-all ────
@@ -125,8 +132,10 @@ WHERE wi.workspace_id = 'papercusp-workspace'
 -- rewriting targets afterwards would group rows under the wrong partition and
 -- could keep two rows that collide on the PK.
 --
--- The guard keeps its teeth: it still fires if 'papercusp' itself is not a Pot, if
--- any row remains mis-scoped, or if a dropped shadow has no surviving row.
+-- The guard keeps its teeth WHEREVER A BACKFILL ACTUALLY RAN: given the platform
+-- Pot, it still fires if any row remains mis-scoped, if a mapped target is not a
+-- real Pot, or if a dropped shadow has no surviving row. What it no longer does is
+-- fire when there was nothing to check — see step 1's precondition and step 5.
 UPDATE _pb649 m
    SET target = 'papercusp'
  WHERE NOT EXISTS (SELECT 1 FROM harness_shared.pots p WHERE p.pot_home_slug = m.target);
@@ -140,7 +149,17 @@ CREATE TEMP TABLE _pb649_drop AS
 SELECT src, feature_id FROM (
   SELECT m.src, m.feature_id
     FROM _pb649 m
-   WHERE EXISTS (SELECT 1 FROM harness_shared.work_items t
+   -- A row is never its OWN duplicate shadow. Without this, a row whose slug already
+   -- EQUALS the target matches itself here and is DELETED in step 4 — silent data
+   -- loss. Not hypothetical: it is exactly what the packaged app's 8 rows (already
+   -- scoped 'papercusp', in a database with no 'papercusp' Pot) did, and only the
+   -- bad_target guard's RAISE rolled the deletion back.
+   -- NOTE the EXISTS stays deliberately UNSCOPED by workspace_id: the PK is
+   -- (harness_slug, feature_id) with NO workspace_id (verified against
+   -- pg_constraint, not just this file's header). Scoping it would let a re-home
+   -- collide with another tenant's row holding the same global key.
+   WHERE m.target <> m.src
+     AND EXISTS (SELECT 1 FROM harness_shared.work_items t
                   WHERE t.harness_slug = m.target AND t.feature_id = m.feature_id)
   UNION ALL
   SELECT src, feature_id FROM (
@@ -177,6 +196,20 @@ UPDATE harness_shared.work_items wi
 DO $g649$
 DECLARE remaining bigint; bad_target bigint; lost bigint;
 BEGIN
+  -- FAIL OPEN, exactly as migrations 651/652 already do for this same condition:
+  -- "Fail OPEN for a workspace with no platform Pot (isolated fixtures / un-potted
+  -- tenant)". Step 1 selected nothing in that case, so nothing was re-homed and
+  -- nothing was dropped — there is no invariant left to check, and the rows are
+  -- correctly left for the runtime self-heal. Checking anyway is what took the
+  -- shipped app down: guard 1 would count these very rows as "still mis-scoped"
+  -- and RAISE, in a database where no valid home exists to move them to yet.
+  IF NOT EXISTS (SELECT 1 FROM harness_shared.pots p
+                  WHERE p.workspace_id = 'papercusp-workspace'
+                    AND p.pot_home_slug = 'papercusp') THEN
+    RAISE NOTICE '649: workspace papercusp-workspace has no platform Pot yet — backfill skipped, rows left for the runtime self-heal (mig 652).';
+    RETURN;
+  END IF;
+
   SELECT count(*) INTO remaining
     FROM harness_shared.work_items wi
    WHERE wi.workspace_id = 'papercusp-workspace'
