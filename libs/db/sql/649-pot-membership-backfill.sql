@@ -58,6 +58,29 @@ ALTER TABLE harness_shared.work_items DISABLE TRIGGER emit_change_notify_trg;
 ALTER TABLE harness_shared.work_items DISABLE TRIGGER record_steering_churn_trg;
 
 -- ── 1. compute the slug -> real-Pot target for every mis-scoped row ────────────
+-- PRECONDITION (see the guard block's matching check in step 5): the workspace
+-- must actually HAVE its platform Pot. Every arm of the CASE below — and the
+-- catch-all every arm collapses to in step 1b — names 'papercusp'. If that Pot
+-- does not exist here there is no valid home for ANY row, so the only correct
+-- backfill is no backfill: select nothing, touch nothing, and let the runtime
+-- self-heal (mig 652 / pot-membership.ts) re-home these rows once the operator
+-- boots and creates the Pot.
+--
+-- This is not defensive padding, it is the single condition that bricked the
+-- SHIPPED APP (EI-18892214197928842). `harness_shared.pots` is populated only at
+-- RUNTIME by hive-store.ts — NO migration, not even 000-baseline, ever inserts a
+-- Pot. Migrations run BEFORE the operator boots, so on the packaged app's fresh
+-- seed the pots table is empty by construction and this file used to RAISE, exit
+-- serve.mjs 1, and respawn-loop the sidecar forever.
+--
+-- Migrations 651 and 652 — same plan, same invariant, written days later —
+-- already settled this: "Fail OPEN for a workspace with no platform Pot
+-- (isolated fixtures / un-potted tenant)". 649 hard-RAISEd on the identical
+-- condition. It was the outlier, and it is now aligned with its siblings.
+--
+-- The obvious alternative — have a migration CREATE the papercusp Pot — is
+-- wrong: a Pot carries a federation identity (public_key, keychain_id). A
+-- migration must never mint a keypair.
 DROP TABLE IF EXISTS _pb649;
 CREATE TEMP TABLE _pb649 AS
 SELECT wi.harness_slug AS src, wi.feature_id, wi.status, wi.updated_ts,
