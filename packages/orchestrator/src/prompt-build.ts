@@ -1234,13 +1234,18 @@ export const COUPLING_NOTE = [
  * plane kept producing one level down.
  *
  * ⚠ Scope honestly (D-016): the prompt is NOT an enforcement tier, and this note is
- * not one. `expects` is a real GATE (`coord:send` refuses without it, D-048); cell
- * registration is a real gate (`lint:no-bespoke-state-read`). The SECTIONED BODY has
- * no tier at all — D-047 row 16 calls its fields "unrepresentable to omit", which is
- * true only once you pass a section array, and the documented n=1 default is a plain
- * string that omits every one of them. So this note is the weakest instrument aimed
- * at the least-covered behaviour; if adoption stays at zero, the answer is a tier,
- * not more prose.
+ * not one. What actually enforces each half:
+ *   · `expects` — GATE. `coord:send` refuses without it (D-048).
+ *   · the SECTIONED BODY — GATE as of 2026-07-28 (owner directive). A string `body` is
+ *     refused; a body is REQUIRED when expects != 'none'; a DIRECTED action/answer needs
+ *     `forYouBecause` on one section. It had NO tier before that, and D-047 row 16's
+ *     "unrepresentable to omit" was false: true only once you pass a section array, while
+ *     the documented n=1 default was a plain string omitting every field. Zero agent uses
+ *     in 30h is what that costs.
+ *   · cell registration — GATE (`lint:no-bespoke-state-read`).
+ *   · READING a cell rather than transcribing — still NO gate, detector-only (D-047 row 4).
+ *     This note is the weakest instrument aimed at the least-covered half; if `state:read`
+ *     adoption stays flat, the answer is a tier, not more prose.
  *
  * Sourced once here (the COUPLING_NOTE precedent): injected into the spawned-bee base
  * (buildPromptParts below) + the operator-launched-role base (operator-core's
@@ -1273,14 +1278,20 @@ export const STATE_PLANE_NOTE = [
   '`coord:send` REQUIRES `expects`: `ack` (confirm receipt) · `answer` (reply with information) ·',
   '`action` (do something) · `none` (FYI). There is no default, so an FYI must say `none` out loud.',
   '',
-  '`body` takes a plain STRING for the ordinary case — that costs nothing and stays the right',
-  'choice for most messages. Pass an ARRAY of sections when the parts of your message have',
-  'DIFFERENT DISPOSITIONS, because a firm finding and an unverified guess sharing one paragraph',
-  'invite the reader to treat them alike. Each section carries its own:',
+'`body` is an ARRAY of sections. **A plain string is REFUSED** — the minimum is',
+  '`body: [{ text: "..." }]`. And when `expects` is anything but `none`, a body is REQUIRED: if you',
+  'are asking someone for something, you may not compress it into `summary`.',
+  '',
+  'Use SEVERAL sections when parts of your message have DIFFERENT DISPOSITIONS, because a firm',
+  'finding and an unverified guess sharing one paragraph invite the reader to treat them alike.',
+  'Each section carries its own:',
   '',
   '- `premises` — the claims this part rests on (a decision, a fact, an owner turn), so a reader',
   '  can re-check your footing instead of taking the conclusion on trust.',
-  '- `forYouBecause` — why THIS recipient is getting it. Structured, not prose.',
+  '- `forYouBecause` — why THIS recipient is getting it. Structured, not prose:',
+  '  `{ relation: holds-a-lock-on | owns | is-blocked-on | awaits | same-fleet | other, ref?, note? }`',
+  '  (`note` is required with `other`). REQUIRED on at least one section of a DIRECTED message',
+  '  whose `expects` is `action` or `answer` — broadcasts and `ack` are exempt.',
   '- `youMayNotKnow` — something you hold that they probably lack.',
   '- `couldNotDetermine` — what you could NOT establish. The highest-value field and the easiest',
   '  to skip: silence here reads as confidence you do not have. Say the gap out loud.',
@@ -1288,6 +1299,9 @@ export const STATE_PLANE_NOTE = [
   'The ENVELOPE fields — `expects`, `blocking`, `why`, `basedOn` — belong to the whole message and',
   'are REFUSED on a section (a scheduler acts on a message as a unit). `basedOn` is DERIVED from',
   'what you actually read; never hand-author it.',
+  '',
+  'Fill the fields that carry something and leave the rest off — the gate asks for structure, not',
+  'filler. A section padded with empty ceremony is worse than the prose it replaced.',
 ].join('\n');
 
 /**
