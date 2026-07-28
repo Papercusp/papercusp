@@ -212,13 +212,13 @@ async function ask(rl: readline.Interface, prompt: string, masked = false): Prom
     let buffer = '';
     const onData = (chunk: Buffer) => {
       const ch = chunk.toString('utf8');
-      if (ch === '\n' || ch === '\r' || ch === '') {
+      if (ch === '\n' || ch === '\r' || ch === '\x04') {
         stdin.removeListener('data', onData);
         if (stdin.isRaw && stdin.setRawMode) stdin.setRawMode(false);
         stdin.pause();
         process.stdout.write('\n');
         resolve(buffer);
-      } else if (ch === '') {
+      } else if (ch === '\x03') {
         process.exit(130);
       } else if (ch === '' || ch === '\b') {
         if (buffer.length > 0) {
