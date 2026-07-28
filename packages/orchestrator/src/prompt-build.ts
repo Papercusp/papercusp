@@ -1219,6 +1219,78 @@ export const COUPLING_NOTE = [
 ].join('\n');
 
 /**
+ * STATE_PLANE_NOTE — the two agent-CHOICE behaviours of the unified state plane
+ * (unified-agent-state-plane-2026-07-27): READ a cell instead of transcribing its
+ * value, and SAY what you want back / split a mixed message into sections.
+ *
+ * Both shipped correct, green, and unreached. Measured 2026-07-28:
+ *   · `state:read` — 5 distinct agents of the 157 that oriented in 7 days.
+ *   · the D-064 sectioned body — ONE message in 30 hours across 5,642, and it was
+ *     the owner typing "HI" in the admin GUI (every field stamped `owner-gui-derived`).
+ *     Agent-authored: zero, ever.
+ * In both cases the per-tool `guidance` was present and correct. Per-tool guidance
+ * tells you HOW to use a tool you already reached for; nothing made anyone reach.
+ * That is the gap this note closes, and it is the same reachability failure the
+ * plane kept producing one level down.
+ *
+ * ⚠ Scope honestly (D-016): the prompt is NOT an enforcement tier, and this note is
+ * not one. `expects` is a real GATE (`coord:send` refuses without it, D-048); cell
+ * registration is a real gate (`lint:no-bespoke-state-read`). The SECTIONED BODY has
+ * no tier at all — D-047 row 16 calls its fields "unrepresentable to omit", which is
+ * true only once you pass a section array, and the documented n=1 default is a plain
+ * string that omits every one of them. So this note is the weakest instrument aimed
+ * at the least-covered behaviour; if adoption stays at zero, the answer is a tier,
+ * not more prose.
+ *
+ * Sourced once here (the COUPLING_NOTE precedent): injected into the spawned-bee base
+ * (buildPromptParts below) + the operator-launched-role base (operator-core's
+ * renderStatePlaneNote, re-exported via role-prompt-from-slug) + projected into the su
+ * playbooks, so all bases can't desync. Universal (no role skip — every coord role
+ * sends messages, and every SU role can read cells).
+ */
+export const STATE_PLANE_NOTE = [
+  '## Read the value; say what you want back',
+  '',
+  '### Read the cell — never transcribe a value that can change under you',
+  '',
+  '`state:read { cell }` returns a registered value RIGHT NOW. Call it with no arguments to list',
+  'the cells you may read. Reach for it at the moment you ACT on — or QUOTE into a message, plan,',
+  'report, or checkpoint — anything live: a deploy position, a holder\'s goal, a queue depth, a gate',
+  'verdict. A value you copied from an earlier turn, a peer\'s message, or your own notes is a',
+  'SNAPSHOT, and the whole class of "I acted on a stale number" bugs starts by trusting one.',
+  '',
+  '- `status:"unknown"` is IN-BAND and branchable — NEVER read it as false, zero, or "fine".',
+  '  `not-measured` → ask for access/enablement (retrying is pointless) · `resolver-failed` →',
+  '  retry or escalate · `insufficient-data` → supply more input (often `as`).',
+  '- `status:"absent"` → the cell is not yours to read. Do NOT reconstruct it from another surface.',
+  '- Waiting for a value to CROSS a threshold is `state:subscribe { cell, on:{op,value} }` — then',
+  '  END YOUR TURN. You are woken on the edge. A sleep/poll loop is the thing it exists to kill.',
+  '- Need a live value that has no cell? REGISTER one — do not mint a bespoke read tool.',
+  '  `lint:no-bespoke-state-read` gates that, and the baseline is shrink-only.',
+  '',
+  '### Say what you want back — and split a message that mixes dispositions',
+  '',
+  '`coord:send` REQUIRES `expects`: `ack` (confirm receipt) · `answer` (reply with information) ·',
+  '`action` (do something) · `none` (FYI). There is no default, so an FYI must say `none` out loud.',
+  '',
+  '`body` takes a plain STRING for the ordinary case — that costs nothing and stays the right',
+  'choice for most messages. Pass an ARRAY of sections when the parts of your message have',
+  'DIFFERENT DISPOSITIONS, because a firm finding and an unverified guess sharing one paragraph',
+  'invite the reader to treat them alike. Each section carries its own:',
+  '',
+  '- `premises` — the claims this part rests on (a decision, a fact, an owner turn), so a reader',
+  '  can re-check your footing instead of taking the conclusion on trust.',
+  '- `forYouBecause` — why THIS recipient is getting it. Structured, not prose.',
+  '- `youMayNotKnow` — something you hold that they probably lack.',
+  '- `couldNotDetermine` — what you could NOT establish. The highest-value field and the easiest',
+  '  to skip: silence here reads as confidence you do not have. Say the gap out loud.',
+  '',
+  'The ENVELOPE fields — `expects`, `blocking`, `why`, `basedOn` — belong to the whole message and',
+  'are REFUSED on a section (a scheduler acts on a message as a unit). `basedOn` is DERIVED from',
+  'what you actually read; never hand-author it.',
+].join('\n');
+
+/**
  * PEER_REPLY_PRIORITY_NOTE — the receiver-side dual of PEER_WAKE_NOTE (owner
  * directive 2026-07-02, WI-1720): a DIRECTED peer message awaiting your answer
  * outranks your own work. Observed live: an agent sat on two directed asks for
@@ -1583,6 +1655,21 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     desync.
   pre.push('\n---');
   pre.push(COUPLING_NOTE);
+
+  // 3c-bis-5. State-plane note — the two agent-CHOICE behaviours of the unified state plane:
+  //     READ a cell (`state:read`/`state:subscribe`) instead of transcribing a value that can
+  //     change under you, and SAY what you want back (`expects`) / split a message that mixes
+  //     dispositions into sections (`premises`, `forYouBecause`, `youMayNotKnow`,
+  //     `couldNotDetermine`). Both shipped with correct per-tool guidance and were still
+  //     unreached — state:read 5 agents of 157; the sectioned body ONE message in 30h, and that
+  //     one the owner's GUI. Per-tool guidance tells you HOW once you reach; nothing made anyone
+  //     reach. Universal (no role skip): every coord role sends messages, every SU role can read
+  //     cells. Sourced from the one STATE_PLANE_NOTE constant so the bee base, the
+  //     operator-launched-role base (operator-core renderStatePlaneNote), and the su playbooks
+  //     can't desync. ⚠ D-016: this is a PROMPT, not an enforcement tier — see the constant's
+  //     doc-comment for which halves have a real gate and which has none.
+  pre.push('\n---');
+  pre.push(STATE_PLANE_NOTE);
 
   // 3k. Peer-reply priority (owner directive 2026-07-02, WI-1720) — the RECEIVER-side dual of 3j:
   //     a DIRECTED message awaiting your answer outranks your own work — finish the atomic step in
