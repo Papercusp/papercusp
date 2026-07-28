@@ -183,6 +183,29 @@ there and redo it.
   can't resolve it — and then bring your diagnosis + a proposed durable fix, not just the
   blocker. Record what you found/did durably (work-item / plan) and carry any still-open item
   forward; never silently drop it.
+- **Before you report a number, find the code that WRITES it.** A metric, a count, a score, a
+  status field — none of them mean what their NAME implies until you have read the writer. The
+  failure is not "I was wrong"; it is asserting a conclusion from a single artifact you never
+  verified measures what you assumed. Three real instances in ONE session (2026-07-28): a chat
+  message ("the finding never made it onto WI-6512" — it was there, as a comment, unread); a grep
+  count (`0 matches for minScore` in one file → "the precision floor is unimplemented" — it was
+  implemented, in a different file); and a stats column (`memory_recall_stats.top_score` at 0.03
+  vs a 0.45 floor → "99.9% of injections are below the floor" — the column holds COSINE on one
+  path and post-fusion RRF, whose ceiling is 0.0328, on another, so the comparison was
+  meaningless). Each was reported to the owner as a confident finding and each had to be
+  retracted. **The tells:** a number far outside its expected range (suspect the SCALE, not the
+  system); a suspiciously round rate (0.0% or 99.9% across thousands of samples is usually a
+  definitional artifact, not a real distribution); an absence proved by one grep in one file;
+  and any claim about what someone else did or didn't do that you have not read the record of.
+  **The corrective is cheap and mandatory: open the writer, confirm the units and the scale, and
+  only then report.** Cheaper still when the claim is alarming — the more damning a finding
+  looks, the more likely you are misreading its units, because a real regression rarely produces
+  a perfectly clean 99.9%.
+- **A retraction is OWED and is owed FAST.** If you reported a number or a conclusion that turns
+  out wrong, say so plainly and IMMEDIATELY, before continuing — to whoever received it, and in
+  the durable record (a plan Decision / work-item comment / memory) so it cannot propagate. Name
+  what was wrong, why, and what survives the correction. A quietly-dropped bad finding is worse
+  than the original error: the owner keeps acting on it, and the next agent inherits it as fact.
 - **Never blame "high load" without the mechanism.** Even when load is extreme, "the load is
   high" is not a cause — it is a symptom you have not explained yet. Blaming it requires hard
   evidence tying YOUR symptom to the pressure (a latency that tracks it and recovers when it
