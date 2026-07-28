@@ -1636,10 +1636,10 @@ export const testRunsInHarnessShared = harnessShared.table("test_runs", {
 	rssMb: real("rss_mb"),
 	isScratchConfig: boolean("is_scratch_config").default(false).notNull(),
 }, (table) => [
-	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops"), table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(harness_slug IS NOT NULL)`),
+	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops"), table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	index("test_runs_run_group_idx").using("btree", table.runGroupId.asc().nullsLast().op("text_ops")).where(sql`(run_group_id IS NOT NULL)`),
-	index("test_runs_source_idx").using("btree", table.source.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
+	index("test_runs_source_idx").using("btree", table.source.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
 	check("test_runs_source_valid", sql`source = ANY (ARRAY['ci'::text, 'local'::text, 'admin-ui'::text])`),
 	check("test_runs_status_valid", sql`status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text, 'cancelled'::text, 'error'::text, 'running'::text])`),
 ]);
@@ -3747,9 +3747,18 @@ export const memoryRecallStatsInHarnessShared = harnessShared.table("memory_reca
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	workspaceId: text("workspace_id"),
 	potSlug: text("pot_slug"),
+	pools: jsonb(),
+	scoreScale: text("score_scale"),
+	queryChars: integer("query_chars"),
+	querySha256: text("query_sha256"),
+	queryOrigin: text("query_origin"),
+	sessionId: text("session_id"),
 }, (table) => [
 	index("memory_recall_stats_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("memory_recall_stats_ws_pot_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	index("memory_recall_stats_pools_idx").using("gin", table.pools.asc().nullsLast().op("jsonb_path_ops")).where(sql`(pools IS NOT NULL)`),
+	index("memory_recall_stats_scale_created_idx").using("btree", table.scoreScale.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(score_scale IS NOT NULL)`),
+	index("memory_recall_stats_session_created_idx").using("btree", table.sessionId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(session_id IS NOT NULL)`),
+	index("memory_recall_stats_ws_pot_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.potSlug.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	check("memory_recall_stats_hit_count_check", sql`hit_count >= 0`),
 ]);
 
@@ -4327,15 +4336,15 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	assumptionSetId: bigint("assumption_set_id", { mode: "number" }),
 	goalRef: text("goal_ref"),
 }, (table) => [
-	index("tool_invocations_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
-	index("tool_invocations_error_code_idx").using("btree", table.errorCode.asc().nullsLast().op("text_ops"), table.invokedAt.asc().nullsLast().op("text_ops")).where(sql`(error_code IS NOT NULL)`),
-	index("tool_invocations_goal_ref_idx").using("btree", table.goalRef.asc().nullsLast().op("timestamptz_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")).where(sql`(goal_ref IS NOT NULL)`),
+	index("tool_invocations_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("timestamptz_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
+	index("tool_invocations_error_code_idx").using("btree", table.errorCode.asc().nullsLast().op("text_ops"), table.invokedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(error_code IS NOT NULL)`),
+	index("tool_invocations_goal_ref_idx").using("btree", table.goalRef.asc().nullsLast().op("timestamptz_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(goal_ref IS NOT NULL)`),
 	index("tool_invocations_intent_event_idx").using("btree", table.intentEventId.asc().nullsLast().op("int8_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(intent_event_id IS NOT NULL)`),
 	index("tool_invocations_invoked_at_cov_idx").using("btree", table.invokedAt.desc().nullsFirst().op("timestamptz_ops"), table.toolName.asc().nullsLast().op("timestamptz_ops"), table.durationMs.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("timestamptz_ops")),
 	index("tool_invocations_parent_spawn_partial_idx").using("btree", table.parentSpawnId.asc().nullsLast().op("text_ops")).where(sql`((parent_spawn_id IS NOT NULL) AND (parent_spawn_id <> ''::text))`),
 	index("tool_invocations_quota_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.windowKey.asc().nullsLast().op("text_ops")).where(sql`(status = 'ok'::text)`),
 	index("tool_invocations_spawn_id_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.spawnId.asc().nullsLast().op("text_ops")),
-	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")),
+	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.harnessSlug.asc().nullsLast().op("timestamptz_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")),
 	pgPolicy("tool_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
