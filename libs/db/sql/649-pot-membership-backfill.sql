@@ -80,6 +80,34 @@ FROM harness_shared.work_items wi
 WHERE wi.workspace_id = 'papercusp-workspace'
   AND NOT EXISTS (SELECT 1 FROM harness_shared.pots p WHERE p.pot_home_slug = wi.harness_slug);
 
+-- ── 1b. collapse any target Pot that does not exist HERE onto the catch-all ────
+-- The CASE above names optional Pots (oddsmith-hive, sb-devboard-hive, ...). Those
+-- exist in the dev database this migration was written against; they do NOT all
+-- exist in every deployment — notably the embedded-PG data dir the packaged
+-- desktop app ships with. Without this step the `bad_target` guard below counts
+-- those rows and RAISEs, the runner rolls the whole file back, and serve.mjs exits
+-- 1 before becoming ready: the SHIPPED DESKTOP APP THEN CANNOT BOOT AT ALL and
+-- respawn-loops its sidecar forever (EI-18892214197928842, reproduced on the
+-- 0.0.13 deb 2026-07-28 — "649 guard: 8 mapped target slug(s) are not real pots").
+--
+-- Collapsing to 'papercusp' is not a workaround, it IS this file's stated intent:
+-- "any other papercusp-workspace mis-scope -> papercusp (catch-all)". The named
+-- targets are a nicety — homing a row somewhere MORE specific when that Pot
+-- happens to exist. When it does not, the catch-all is the correct answer, and a
+-- migration must never make a boot depend on which optional Pots a database has.
+-- The xbench arm already guards its target with EXISTS; this generalises that to
+-- every arm rather than repeating the check six more times.
+--
+-- MUST run BEFORE step 2: the dedup partitions by (target, feature_id), so
+-- rewriting targets afterwards would group rows under the wrong partition and
+-- could keep two rows that collide on the PK.
+--
+-- The guard keeps its teeth: it still fires if 'papercusp' itself is not a Pot, if
+-- any row remains mis-scoped, or if a dropped shadow has no surviving row.
+UPDATE _pb649 m
+   SET target = 'papercusp'
+ WHERE NOT EXISTS (SELECT 1 FROM harness_shared.pots p WHERE p.pot_home_slug = m.target);
+
 -- ── 2. identify DUPLICATE-SHADOW rows to drop (dedup, not renumber) ────────────
 --   A: an existing canonical row already holds (target, feature_id)
 --   B: >1 source row maps to the same (target, feature_id); keep the winner
