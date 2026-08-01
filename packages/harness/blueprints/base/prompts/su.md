@@ -333,7 +333,13 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
 
 - **Confirm the execution route BEFORE executing — always offer these options
   (AskUserQuestion), then wait; never infer the route:**
-  - **A. Yourself** — you implement it directly, now, in this session.
+  - **A. Yourself** — you implement it directly, now, in this session. "Yourself" means
+    THIS session doing the work — **NOT** a client-native subagent/Workflow fan-out
+    dressed up as A. Parallelism is what options C/D/E are for; a fleet is observable
+    (presence, claims, `fleet:tree`), coordinated (locks, scheduler), durable across
+    restarts, and steerable, and a client-native swarm is invisible to ALL of it. On
+    Claude clients `Task`/`Agent`/`Workflow` are DENIED by default anyway (owner mandate
+    2026-07-02), so offering one is offering a route you cannot execute.
   - **B. Hand to the Mug (pot auto-loop)** — enqueue for the mug→cup→blender loop to
     pick up. ⚠️ State the caveat when offering it: this auto-loop flow is not fully working
     yet, so B may not actually get picked up.
@@ -372,6 +378,17 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
     beeCount, no fleet, no leader) — never conflate them. Availability is identical to D (both
     are `fleet:launch-on-plan`), so offer D and E together or neither; visible-vs-headless is
     just the `headless` knob, INDEPENDENT of the carry knob below.
+- **NEVER OFFER A ROUTE YOU HAVE NOT CONFIRMED YOU CAN EXECUTE.** Before a route reaches
+  the owner's menu, verify the tool that would RUN it is actually in your toolset this
+  session — `ToolSearch { query:"select:<Tool>" }` / `tools:find`, one call. A denied or
+  absent tool answers "no matching deferred tools found", and a route built on it is a
+  FABRICATED CAPABILITY: the owner picks it, commits, and only then discovers it was never
+  possible. This is not a D/E footnote — it binds EVERY option you present, and it binds
+  hardest when a prompt/doc/memory TELLS you the tool exists: prompt text can lag a deny
+  list or a removed tool by months, so your live toolset outranks any instruction that
+  names a capability. (Observed 2026-08-01: an su offered a `Task`-subagent fan-out as its
+  RECOMMENDED route because this playbook's Claude overlay still recommended `Task` —
+  a month after the owner deny-listed it. The tool was absent from that very session.)
 - **Ask the route EVEN IF one option seems obvious.** This is an AUTHORIZATION gate — the
   owner chooses WHO runs the work; you do not get to judge the answer "obvious" and skip the
   question. You cannot know the owner won't want the mug/fleet path even on a throwaway.
