@@ -450,6 +450,65 @@ let _adminDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
 // EI-18789855771421275: a SEPARATE, small, dedicated pool for callers that must
 // see exact bigint (int8) values — see getOrgPgLosslessBigint() below.
 let _adminLosslessBigintClient: Sql | null = null;
+
+// The URL each cached admin pool was ACTUALLY BUILT WITH. Tracked separately
+// from `_resolvedAdminUrl` (which records what resolution last *decided*) —
+// they are different questions, and the gap between them is the bug below.
+let _adminClientUrl: string | null = null;
+let _adminLosslessBigintClientUrl: string | null = null;
+
+/**
+ * A cached pool must never outlive the URL that justified it
+ * (EI-19285027465993737).
+ *
+ * THE INCIDENT (2026-08-01, fleet-wide). A desktop booted an embedded PG,
+ * registered `~/.papercusp/embedded-pg.json` on port 19715, and died. The
+ * shared operator had lazily pooled against it, and every DB-backed MCP tool
+ * on the box then failed with `ECONNREFUSED 127.0.0.1:19715` until a manual
+ * restart — a port that appears in NO config file, which is what made it hard
+ * to read.
+ *
+ * WHY THE EXISTING GUARDS DID NOT CATCH IT. There were three, and each is
+ * sound on its own axis:
+ *   - `_parseDiscoveryJson` pid-liveness — checked at RESOLUTION time, so it
+ *     correctly began reporting "absent" once the pid died;
+ *   - `adminUrl()`'s teardown — fires only on discovery→DIFFERENT-discovery.
+ *     It lives inside `if (disc?.host && disc?.port)`, so discovery→ABSENT
+ *     (a clean desktop shutdown, or exactly this dead-pid case) falls through
+ *     to the native-fallback `return` and tears nothing down;
+ *   - `validateDiscoveryTargetOnce` — fires once, at build.
+ * All three ask "what SHOULD we connect to?". None asks "what is the live pool
+ * ACTUALLY bound to?" — so resolution was returning the correct native URL the
+ * entire time the pool was serving a dead port. That gap is the whole bug.
+ *
+ * This closes it by comparing against what was BUILT rather than what was
+ * decided, which makes the rebind total: it covers discovery→absent,
+ * discovery→env, env→discovery, a pgbouncer toggle, and any future source, so
+ * no new resolution path can reintroduce the class by forgetting its own
+ * teardown. The `adminUrl()` teardown is now redundant but harmless — left in
+ * place because it also invalidates on a path this cannot see (it runs even
+ * when no pool is subsequently requested).
+ *
+ * Teardown is best-effort and non-blocking: draining a pool that points at a
+ * dead endpoint must never delay the caller that is trying to escape it.
+ */
+export function endStalePool(
+  client: Sql | null,
+  builtWith: string | null,
+  url: string,
+  label: string,
+): boolean {
+  if (!client || builtWith === url) return false;
+  try {
+    void client.end({ timeout: 1 }).catch(() => {});
+  } catch {
+    /* best-effort: a failed drain must not block the rebind */
+  }
+  // Deliberately noisy: this fires when the DB endpoint moved under a running
+  // process, which is rare, load-bearing, and was previously invisible.
+  console.warn(`[db] ${label} pool rebound: target changed since it was built — rebuilding`);
+  return true;
+}
 type HarnessClient = {
   sql: Sql;
   drizzle: ReturnType<typeof drizzle>;
@@ -903,10 +962,18 @@ export function getOrgPg(): OrgPgHandle {
   // booted before the desktop wrote a new embedded-pg.json caught
   // the old port forever (E2E round-13 bug #33).
   const url = maybePgbouncer(adminUrl());
+  // …and then compare it to what the LIVE pool was actually built with, which
+  // is what finally closes that same bug class for good (EI-19285027465993737).
+  if (endStalePool(_adminClient, _adminClientUrl, url, 'org-admin')) {
+    _adminClient = null;
+    _adminDrizzle = null;
+    _adminDb = null;
+  }
   if (!_adminClient) {
     // pooled = pgbouncerEnabled(): the url above is maybePgbouncer(adminUrl()), which only
     // reroutes to the pooler when enabled — so the connection is pooled iff that's true.
     _adminClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-admin', pgbouncerEnabled());
+    _adminClientUrl = url;
     _adminDrizzle = drizzle(_adminClient, { schema: sharedTables });
     _adminDb = drizzle(_adminClient, { schema: fullSchema });
     // WI-5244(2): only the discovery-file source is spoofable — env-pinned managed
@@ -951,6 +1018,12 @@ export function getOrgPg(): OrgPgHandle {
  */
 export function getOrgPgLosslessBigint(): { sql: Sql } {
   const url = maybePgbouncer(adminUrl());
+  // Same rebind guard as getOrgPg — this pool is built from the SAME adminUrl(),
+  // so it is vulnerable to the identical stale-target bug and must not be left
+  // serving a dead endpoint after its sibling recovers (EI-19285027465993737).
+  if (endStalePool(_adminLosslessBigintClient, _adminLosslessBigintClientUrl, url, 'org-admin-lossless-bigint')) {
+    _adminLosslessBigintClient = null;
+  }
   if (!_adminLosslessBigintClient) {
     _adminLosslessBigintClient = buildClient(
       url,
@@ -960,6 +1033,7 @@ export function getOrgPgLosslessBigint(): { sql: Sql } {
       pgbouncerEnabled(),
       {}, // no bigint override — postgres-js's own default (exact string) applies
     );
+    _adminLosslessBigintClientUrl = url;
   }
   return { sql: _adminLosslessBigintClient };
 }
