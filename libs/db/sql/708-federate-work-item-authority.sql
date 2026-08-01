@@ -1,10 +1,13 @@
--- 708: federate work_items.authority (mig 677) — fixes EI-18785839681430807.
+-- 708: federate work_items.authority (mig 677) + closed_ts (mig 698) —
+-- fixes EI-18785839681430807 and a second, adjacent federation gap this same
+-- pass surfaced (`federated-column-completeness.integration.test.ts` was ALSO
+-- red on closed_ts for both families once the authority failures cleared).
 --
--- Migration 677 (agent-protocol-authority-semantics-2026-07-26 P-003) added
--- `work_items.authority` (proposed|validated|committed|pending_human|invalid,
--- NULL = no judgement) and exposed it on both family views
--- (harness_features_consolidated, engineer_issues), but never wired it into
--- federation:
+-- PART 1 — authority (mig 677, agent-protocol-authority-semantics-2026-07-26
+-- P-003) added `work_items.authority`
+-- (proposed|validated|committed|pending_human|invalid, NULL = no judgement)
+-- and exposed it on both family views (harness_features_consolidated,
+-- engineer_issues), but never wired it into federation:
 --
 --   - the ISSUE family's outbox capture hand-builds its wire row with
 --     jsonb_build_object(...) (capture_work_items_outbox below) and never
@@ -41,9 +44,33 @@
 --      closer") federates as-is, exactly like terminal_owner already does for
 --      a non-committed item; there is no reason to collapse it to NULL.
 --
+-- PART 2 — closed_ts (mig 698, EI-18820653360383242) is a BEFORE-trigger-
+-- maintained column (`stamp_work_item_closed_ts`) recording epoch-ms of when
+-- an item entered its CURRENT terminal status. Its own trigger body is
+-- EXPLICIT that federation must supply it: "COALESCE so a federated write
+-- carrying the origin's real close time wins over local now()". Without this
+-- fix the mapper never carried it, so EVERY federated write arrived with
+-- closed_ts unset, the BEFORE trigger's `COALESCE(NULL, now())` stamped the
+-- RECEIVING peer's local now() as the close time on first-close, and — worse —
+-- once a row federated once (touching status via the FEATURE family's
+-- to_jsonb whole-row carry is fine, but the ISSUE family's jsonb_build_object
+-- never listed it at all) a genuine close time was overwritten by receipt
+-- time on every peer. Exactly the wrong-timestamp bug 698 exists to eliminate,
+-- reintroduced via the one path 698's own author didn't have wired yet.
+--
+-- Treatment: a PLAIN federated column, same as `created_ts` (immutable
+-- set-once-per-transition metadata) — carried in the mapper + INSERT + DO
+-- UPDATE SET, but NOT added to the EI-16756 fed_apply_wins content digest.
+-- Unlike authority/terminal_owner/terminal_reason (which are independently
+-- contentious values a tie-break must not silently clobber), closed_ts's
+-- correctness is already enforced by its OWN BEFORE-trigger idempotency
+-- (frozen across terminal->terminal writes, COALESCE on first close) — the
+-- digest's job is only to stop a WORSE write from winning a tie, and
+-- closed_ts has no "better/worse" axis of its own to protect that way.
+--
 -- Idempotent: CREATE OR REPLACE of the trigger FUNCTION only. No DDL, no data
--- change. Body is mig 688's verbatim, with `authority` added to the
--- issue-family jsonb_build_object.
+-- change. Body is mig 688's verbatim, with `authority` + `closed_ts` added to
+-- the issue-family jsonb_build_object.
 
 CREATE OR REPLACE FUNCTION harness_shared.capture_work_items_outbox()
  RETURNS trigger
@@ -125,6 +152,10 @@ AS $function$
           -- agent-protocol-authority-semantics-2026-07-26 D-035 for why it also
           -- joins the fed_apply_wins content digest in both projections.
           'authority',         v_rec.authority,
+          -- mig 708 (PART 2, EI-18820653360383242): the trigger-maintained close
+          -- time. See this migration's PART 2 header for why the trigger itself
+          -- requires this to federate.
+          'closed_ts',         v_rec.closed_ts,
           -- WI-6327: the row's REAL creation instant, in the same unit as the
           -- work_items.created_ts column the receiver's EI-13285 guard compares
           -- against. Absent here, the drain fabricated new Date().toISOString() and
