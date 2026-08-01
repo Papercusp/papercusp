@@ -1635,6 +1635,7 @@ export const testRunsInHarnessShared = harnessShared.table("test_runs", {
 	loopLagP95Ms: real("loop_lag_p95_ms"),
 	rssMb: real("rss_mb"),
 	isScratchConfig: boolean("is_scratch_config").default(false).notNull(),
+	worktreeDirty: boolean("worktree_dirty").default(false).notNull(),
 }, (table) => [
 	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops"), table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")).where(sql`(harness_slug IS NOT NULL)`),
@@ -8628,6 +8629,47 @@ export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	closedTs: bigint("closed_ts", { mode: "number" }),
 }).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason, authority, closed_ts FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+
+export const eventAwaitsEffectiveInHarnessShared = harnessShared.view("event_awaits_effective", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }),
+	workspaceId: text("workspace_id"),
+	subscriberId: text("subscriber_id"),
+	eventKey: text("event_key"),
+	policy: text(),
+	note: text(),
+	wakeHandle: jsonb("wake_handle"),
+	timeoutBehavior: text("timeout_behavior"),
+	expiresTs: timestamp("expires_ts", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
+	firedAt: timestamp("fired_at", { withTimezone: true, mode: 'string' }),
+	firedReason: text("fired_reason"),
+	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
+	once: boolean(),
+	minSleepSec: integer("min_sleep_sec"),
+	urgency: boolean(),
+	payloadFilter: jsonb("payload_filter"),
+	scopeKind: text("scope_kind"),
+	scopeRef: text("scope_ref"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	nodeId: bigint("node_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rootId: bigint("root_id", { mode: "number" }),
+	memberFiredAt: timestamp("member_fired_at", { withTimezone: true, mode: 'string' }),
+	memberPayload: jsonb("member_payload"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	causalGeneration: bigint("causal_generation", { mode: "number" }),
+	expectedCondition: jsonb("expected_condition"),
+	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
+	firedBy: text("fired_by"),
+	firedPayload: jsonb("fired_payload"),
+	effectiveExpiresTs: timestamp("effective_expires_ts", { withTimezone: true, mode: 'string' }),
+	effectiveTimeoutBehavior: text("effective_timeout_behavior"),
+	composedRole: text("composed_role"),
+	rootExpiresTs: timestamp("root_expires_ts", { withTimezone: true, mode: 'string' }),
+	rootRequiredCount: integer("root_required_count"),
+	rootFiredCount: integer("root_fired_count"),
+	rootCancelledAt: timestamp("root_cancelled_at", { withTimezone: true, mode: 'string' }),
+}).as(sql`SELECT a.id, a.workspace_id, a.subscriber_id, a.event_key, a.policy, a.note, a.wake_handle, a.timeout_behavior, a.expires_ts, a.created_at, a.fired_at, a.fired_reason, a.cancelled_at, a.once, a.min_sleep_sec, a.urgency, a.payload_filter, a.scope_kind, a.scope_ref, a.node_id, a.root_id, a.member_fired_at, a.member_payload, a.causal_generation, a.expected_condition, a.superseded_at, a.fired_by, a.fired_payload, COALESCE(a.expires_ts, rn.expires_ts) AS effective_expires_ts, CASE WHEN a.expires_ts IS NOT NULL THEN a.timeout_behavior ELSE COALESCE(rn.timeout_behavior, a.timeout_behavior) END AS effective_timeout_behavior, CASE WHEN a.root_id IS NULL THEN NULL::text WHEN a.node_id IS NOT NULL THEN 'leaf'::text ELSE 'root-anchor'::text END AS composed_role, rn.expires_ts AS root_expires_ts, rn.required_count AS root_required_count, rn.fired_count AS root_fired_count, rn.cancelled_at AS root_cancelled_at FROM harness_shared.event_awaits a LEFT JOIN harness_shared.event_await_nodes rn ON rn.id = a.root_id AND rn.workspace_id = a.workspace_id`);
 
 export const fleetAssignmentInHarnessShared = harnessShared.view("fleet_assignment", {	source: text(),
 	workspaceId: text("workspace_id"),
