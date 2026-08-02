@@ -77,21 +77,18 @@ END $$;
 
 ALTER TABLE harness_shared.work_items VALIDATE CONSTRAINT work_items_payload_is_object_ck;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-     WHERE conname = 'hfc_payload_is_object_ck'
-       AND conrelid = 'harness_shared.harness_features_consolidated'::regclass
-  ) THEN
-    ALTER TABLE harness_shared.harness_features_consolidated
-      ADD CONSTRAINT hfc_payload_is_object_ck
-      CHECK (payload IS NULL OR jsonb_typeof(payload) = 'object') NOT VALID;
-  END IF;
-END $$;
-
-ALTER TABLE harness_shared.harness_features_consolidated
-  VALIDATE CONSTRAINT hfc_payload_is_object_ck;
+-- WI-7049 (found verifying WI-6052, 2026-08-02): `harness_features_consolidated`
+-- has been a VIEW over `work_items` since migration 374-work-items-unify-base-
+-- table.sql (2026-06-22) — you cannot ALTER TABLE / ADD CONSTRAINT a view
+-- (Postgres 42809 "X is not a table"). This is the same defect class EI-3032
+-- hit for the baseline snapshot; here it was never applied ANYWHERE (the
+-- statement fails identically every time, so schema_migrations never recorded
+-- it), sitting as dead code waiting to break the next full db:migrate replay.
+-- It is also redundant, not just illegal: the current view definition
+-- (migration 677) projects `payload` straight through with no transform for
+-- this projection, so hfc's payload IS work_items.payload for every row it
+-- includes — the CHECK constraint above, on the real base table, already
+-- guarantees hfc's payload shape. No second constraint needed.
 
 -- PART 2 - the indexes the wrap was defeating.
 --
@@ -115,9 +112,8 @@ CREATE INDEX IF NOT EXISTS work_items_plan_item_stamp_idx
   )
   WHERE payload -> 'plan_item' IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS hfc_plan_item_stamp_idx
-  ON harness_shared.harness_features_consolidated (
-    (payload -> 'plan_item' ->> 'plan_slug'),
-    (payload -> 'plan_item' ->> 'item_id')
-  )
-  WHERE payload -> 'plan_item' IS NOT NULL;
+-- WI-7049: no separate `hfc_plan_item_stamp_idx` — `harness_features_consolidated`
+-- is a simple (non-aggregating) view directly over `work_items` (migration 374 /
+-- 677), so a `payload->'plan_item'->>...` predicate against the view is inlined
+-- by the planner and uses the index above on the base table. `CREATE INDEX ...
+-- ON` a view is illegal on Postgres in any case (see PART 1's comment).
