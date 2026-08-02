@@ -38,7 +38,6 @@
 -- row in one txn.
 
 \set ON_ERROR_STOP on
-BEGIN;
 
 DO $$
 BEGIN
@@ -65,5 +64,3 @@ COMMENT ON CONSTRAINT p2p_receipts_kind ON harness_shared.p2p_receipts IS
     'refusal_code and does NOT bump the M15 refused-op counters. Keep this list '
     'in sync with P2P_RECEIPT_KINDS in packages/operator-core/lib/p2p/receipts.ts: '
     'it is a WIRE CONTRACT, and a peer predating a new kind drops those rows.';
-
-COMMIT;
