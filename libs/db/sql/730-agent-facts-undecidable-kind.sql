@@ -58,6 +58,14 @@
 -- constraint present and silently leave the narrower check in place, which is
 -- the failure mode that makes a migration look applied while doing nothing.
 
+-- FORWARD-COMPAT: the DROP+ADD below WIDENS agent_facts_kind_check from migration 690's
+-- ('conclusion','assumption','convention') to add 'undecidable' as a fourth allowed
+-- value — confirmed directly against 690's own constraint definition. Every kind value
+-- the deployed release (checked against sha 1e0ddc5864) can write today remains valid
+-- under the new, superset CHECK; the deployed release has no code path that emits
+-- 'undecidable' yet (that ships with this same plan's tool-layer change), so nothing
+-- live depends on the old, narrower set being exclusive. (WI-6842)
+
 ALTER TABLE harness_shared.agent_facts
   ADD COLUMN IF NOT EXISTS settled_by text;
 

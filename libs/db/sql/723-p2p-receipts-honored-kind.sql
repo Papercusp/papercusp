@@ -37,6 +37,15 @@
 -- Idempotent; apply via the runner (db:migrate) or psql + schema_migrations
 -- row in one txn.
 
+-- FORWARD-COMPAT: the DROP+ADD below WIDENS p2p_receipts_kind from
+-- ('refusal','excused-breach') to add 'honored' as a third allowed value — every value
+-- the deployed release can possibly write today remains valid under the new, superset
+-- CHECK. This is the DROP-then-ADD idempotent-re-add pattern PG requires for altering a
+-- CHECK body (no ADD CONSTRAINT IF NOT EXISTS exists), not a narrowing; the deployed
+-- release (checked against sha 1e0ddc5864) does not emit 'honored' yet (that is exactly
+-- what this migration's own header explains — the emitting code ships separately,
+-- EI-19330215508907244). (WI-6842)
+
 \set ON_ERROR_STOP on
 
 DO $$
