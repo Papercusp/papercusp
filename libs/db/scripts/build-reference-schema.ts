@@ -91,8 +91,11 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import postgres from 'postgres';
-// @ts-expect-error untyped JS package — same shape db-boot-migrate.ts / the
-// fresh-migrate.integration.test.ts STRICT SUCCESS GATE pin.
+// Same shape db-boot-migrate.ts / the fresh-migrate.integration.test.ts STRICT
+// SUCCESS GATE pin. (This import used to carry a `@ts-expect-error untyped JS
+// package`; the package now ships `types: src/index.d.ts`, so the directive had
+// become stale — and an UNUSED @ts-expect-error is itself a hard tsc error.
+// Nothing caught that until EI-19302566985147894 gave this package a tsconfig.)
 import { applyPendingMigrations } from '@papercusp/embedded-postgres-server';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

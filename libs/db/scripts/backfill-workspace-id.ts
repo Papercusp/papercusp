@@ -134,9 +134,14 @@ async function tagRow(
 ): Promise<void> {
   if (!APPLY) return;
   const where = pkCols.map((c, i) => `${c} = $${i + 2}`).join(' AND ');
+  // `pkVals` is `unknown[]` because that is what the driver hands back for an
+  // untyped row (`Record<string, unknown>`), but these values were SELECTed out
+  // of this same database one statement earlier, so they are valid bind
+  // parameters by construction. Narrow at this one boundary rather than
+  // threading a postgres-specific parameter type through every caller.
   await sql.unsafe(
     `UPDATE harness_shared.${table} SET workspace_id = $1 WHERE ${where}`,
-    [workspaceId, ...pkVals],
+    [workspaceId, ...pkVals] as postgres.ParameterOrJSON<never>[],
   );
 }
 
