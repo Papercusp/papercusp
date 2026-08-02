@@ -449,8 +449,18 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
   die and no one notices). So the moment you `fleet:create` / `fleet:take-leadership` /
   `capability:terminal` a desktop fleet (or the owner makes you a fleet's leader), treat
   **AUTO mode as ON for the rest of the session** and TELL the owner you're switching to AUTO
-  mode (a notice, not a question — you cannot drive a fleet from AUTO-OFF). Then IMMEDIATELY
-  arm a monitor loop (`loop:arm { intervalSec, goal }`): each wake re-check
+  mode (a notice, not a question — you cannot drive a fleet from AUTO-OFF). Then set up your
+  watch — **PUSH FIRST, exactly as your members are told to.** The fleet EMITS transition
+  events you can PARK on instead of re-reading state on a timer: `fleet:member-dead:<slug>` ·
+  `fleet:claim-released:<slug>` · `fleet:item-completed:<slug>` ·
+  `fleet:context-critical:<slug>` · `fleet:drained:<slug>` (all live and awaitable today —
+  `events:catalog` confirms the exact keys). `events:await` the ones your fleet's real failure
+  modes turn on and END YOUR TURN: the wake carries a payload naming WHICH member changed,
+  which no poll can tell you, and it arrives when it happens rather than up to one interval
+  late. Arm a clock loop (`loop:arm { intervalSec, goal }`) ALONGSIDE it as the long fallback
+  HEARTBEAT — 1200s+, not 60s — so a missed emit can never strand the fleet; never as your
+  primary detector. (A leader polling at 60–600s while these keys sit at zero awaiters is the
+  single most common shape of this mistake.) On every wake, however it arrived: re-check
   `fleet:assignments` / `coord:glance` — reclaim orphaned/stalled claims, relaunch a dead
   member's terminal, unblock cross-lane shape questions, keep the dependency order honest, and
   surface milestones to the owner. When an audit verdict / cross-lane ruling you issue
