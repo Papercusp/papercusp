@@ -27,6 +27,27 @@ export {
   endStalePool,
   type OrgPgHandle,
 } from './connection';
+// Store IDENTITY — the generation-3 connection guard (plan
+// outage-must-not-be-silent-2026-08-02, D-001). Re-exported HERE deliberately, learning
+// from EI-19306394439939264 above: a guard only reachable inside connection.ts gets zero
+// adoption. `storeIdentityViolation()` is the one every diagnostic/health surface wants —
+// a non-null value means any `not_found` seen since came from a DIFFERENT store and is not
+// evidence of data loss.
+export {
+  storeIdentityViolation,
+  pinnedStoreIdentity,
+  clearStoreIdentityViolation,
+  describeStoreIdentityMismatch,
+  parseStoreIdentity,
+  pinOrVerifyStoreIdentity,
+  sameStore,
+  redactUrl,
+  STORE_IDENTITY_SQL,
+  _resetStoreIdentityForTests,
+  type StoreIdentity,
+  type ObservedStoreIdentity,
+  type StoreIdentityVerdict,
+} from './store-identity';
 export { withWorkspace, withWorkspaceQuery, withHarnessSchema, harnessQuery } from './workspace-context';
 export type { WorkspaceTxOptions } from './workspace-context';
 export {

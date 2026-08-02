@@ -23,6 +23,11 @@ import { createRequire } from 'node:module';
 import postgres, { Sql } from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as sharedSchema from './schema';
+import {
+  describeStoreIdentityMismatch,
+  parseStoreIdentity,
+  pinOrVerifyStoreIdentity,
+} from './store-identity';
 import { getResourceProfile } from '../../../../../packages/operator-core/lib/resource-profile';
 // Pure helper (no host config needed — takes explicit args), so the generic lib
 // directly. The configured binding above is used for the memoized profile.
@@ -1069,7 +1074,10 @@ export function getOrgPg(): OrgPgHandle {
     _adminDb = drizzle(_adminClient, { schema: fullSchema });
     // WI-5244(2): only the discovery-file source is spoofable — env-pinned managed
     // hosts are already trusted, so skip the check there (cheap, but not free).
-    if (_resolvedAdminUrlSource === 'discovery') validateDiscoveryTargetOnce(_adminClient, 'admin');
+    validateDiscoveryTargetOnce(_adminClient, 'admin', {
+      url,
+      checkSchema: _resolvedAdminUrlSource === 'discovery',
+    });
   }
   return {
     sql: _adminClient,
@@ -1151,8 +1159,11 @@ export function getOrgPgApp(): OrgPgHandle {
     _appOrgClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-app', pgbouncerEnabled());
     _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedTables });
     _appOrgDb = drizzle(_appOrgClient, { schema: fullSchema });
-    // WI-5244(2) — see the matching check in getOrgPg() above.
-    if (_resolvedAppUrlSource === 'discovery') validateDiscoveryTargetOnce(_appOrgClient, 'app');
+    // WI-5244(2) + store identity — see the matching check in getOrgPg() above.
+    validateDiscoveryTargetOnce(_appOrgClient, 'app', {
+      url,
+      checkSchema: _resolvedAppUrlSource === 'discovery',
+    });
   }
   return {
     sql: _appOrgClient,

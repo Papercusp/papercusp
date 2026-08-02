@@ -70,21 +70,59 @@ describe('connection cache invalidation source contract (bug #33)', () => {
   // validation query so an impostor/mismatched DB is flagged loudly instead of
   // silently read as empty (the 2026-07-17 08:29Z incident's ~40-min-to-detect
   // gap). Env-pinned managed hosts are trusted and skip the check.
-  it("getOrgPg() validates the target ONLY when the admin URL source is 'discovery'", () => {
+  // The WI-5244 SCHEMA check stays discovery-only (env-pinned managed hosts are trusted and
+  // the check is not free), but the STORE-IDENTITY probe added by
+  // outage-must-not-be-silent-2026-08-02 must run for EVERY pool: the pin has to be
+  // established from the trusted env/native path at boot, or the first impostor observed
+  // would become the pin and legitimise itself. So the discovery condition moved from the
+  // call site into the `checkSchema` argument. Both halves are asserted here.
+  it("getOrgPg() gates the SCHEMA check on 'discovery' but probes identity unconditionally", () => {
     const m = SRC.match(/export function getOrgPg\(\)[^{]*\{([\s\S]+?)^\}/m);
     expect(m).toBeTruthy();
     const body = m![1];
-    expect(body, 'getOrgPg() must call validateDiscoveryTargetOnce for a discovery-sourced pool (WI-5244)').toMatch(
-      /_resolvedAdminUrlSource === 'discovery'\)\s*validateDiscoveryTargetOnce\(_adminClient/,
+    expect(body, 'getOrgPg() must call validateDiscoveryTargetOnce for every pool').toMatch(
+      /validateDiscoveryTargetOnce\(_adminClient/,
+    );
+    expect(body, 'the WI-5244 schema check must remain scoped to discovery-sourced pools').toMatch(
+      /checkSchema:\s*_resolvedAdminUrlSource === 'discovery'/,
+    );
+    expect(body, 'the call must NOT be re-gated on the source — that would skip the identity pin').not.toMatch(
+      /if\s*\(_resolvedAdminUrlSource === 'discovery'\)\s*validateDiscoveryTargetOnce/,
     );
   });
 
-  it("getOrgPgApp() validates the target ONLY when the app URL source is 'discovery'", () => {
+  it("getOrgPgApp() gates the SCHEMA check on 'discovery' but probes identity unconditionally", () => {
     const m = SRC.match(/export function getOrgPgApp\(\)[^{]*\{([\s\S]+?)^\}/m);
     expect(m).toBeTruthy();
     const body = m![1];
-    expect(body, 'getOrgPgApp() must call validateDiscoveryTargetOnce for a discovery-sourced pool (WI-5244)').toMatch(
-      /_resolvedAppUrlSource === 'discovery'\)\s*validateDiscoveryTargetOnce\(_appOrgClient/,
+    expect(body, 'getOrgPgApp() must call validateDiscoveryTargetOnce for every pool').toMatch(
+      /validateDiscoveryTargetOnce\(_appOrgClient/,
+    );
+    expect(body, 'the WI-5244 schema check must remain scoped to discovery-sourced pools').toMatch(
+      /checkSchema:\s*_resolvedAppUrlSource === 'discovery'/,
+    );
+    expect(body, 'the call must NOT be re-gated on the source — that would skip the identity pin').not.toMatch(
+      /if\s*\(_resolvedAppUrlSource === 'discovery'\)\s*validateDiscoveryTargetOnce/,
+    );
+  });
+
+  // The identity probe must stay INSIDE the same fail-soft, fire-and-forget wrapper as the
+  // WI-5244 check: a mismatch is loud, but an unreadable probe must never affect the pool.
+  it('validateDiscoveryTargetOnce probes store identity and reports a mismatch loudly', () => {
+    const fn = SRC.match(/function validateDiscoveryTargetOnce\([^{]*\{([\s\S]+?)^\}/m);
+    expect(fn).toBeTruthy();
+    const body = fn![1];
+    expect(body, 'must fingerprint the cluster, not just the schema shape').toMatch(
+      /system_identifier/,
+    );
+    expect(body, 'must carry current_database() — one cluster hosts several databases').toMatch(
+      /current_database\(\)/,
+    );
+    expect(body, 'must route the probe through the pin/verify state machine').toMatch(
+      /pinOrVerifyStoreIdentity\(/,
+    );
+    expect(body, 'a positive mismatch must be reported, not swallowed').toMatch(
+      /kind === 'mismatch'/,
     );
   });
 
