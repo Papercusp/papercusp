@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "astro dev --host 127.0.0.1 --port ${DOCS_PORT:-4325}",
     "build": "astro build",
-    "preview": "astro preview --host 127.0.0.1 --port ${DOCS_PORT:-4325}"
+    "preview": "astro preview --host 127.0.0.1 --port ${DOCS_PORT:-4325}",
+    "typecheck": "tsc --noEmit --incremental false -p tsconfig.json"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.32.0",
