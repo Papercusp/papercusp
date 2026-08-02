@@ -20,9 +20,14 @@
 --     items claimable that should have been gated. EVERY issue-family blocking
 --     edge in the system did nothing.
 --
---   * FEATURE leg — no workspace predicate, so it can cross-match: 44 feature_ids
---     exist in more than one workspace. A same-named item in another workspace
---     could block (or unblock) this one. Latent, but the same defect class.
+--   * FEATURE leg — no workspace predicate at all. This one is DEFENSIVE, not a live
+--     bug: work_items' PK is (harness_slug, feature_id), so a harness-qualified ref
+--     resolves to exactly one row and cannot cross-match today (measured: 0 rows share
+--     a (harness_slug, feature_id) across workspaces, and 0 of the 54 feature-blocker
+--     edges are cross-workspace, so adding the predicate changes no current verdict).
+--     It is scoped anyway so both legs state the same rule, and so the leg stays
+--     correct if that PK ever gains workspace_id — which is exactly the open question
+--     in work-item-deps-and-readiness-2026-06-22 P-010.
 --
 -- The failure was invisible to every existing guard: it is PERMISSIVE (no error,
 -- no log, no red test), and the drift detector cannot see it because the sidecar
@@ -34,15 +39,18 @@
 -- Verified against live data: for every existing papercusp edge, both endpoints
 -- are in 'papercusp-workspace' — the intended semantics all along.
 --
--- The workspace is now a REQUIRED third argument rather than a defaulted one. The
--- 2-arg form is deleted, not kept as a convenience wrapper, because it is
--- fundamentally ill-defined: (harness_slug, feature_id) is NOT unique across
--- workspaces (44 collisions today), so a 2-arg call has no correct answer to give
--- and would silently pick one. Making the caller name the workspace turns this
--- bug class into a compile/callsite error instead of a wrong boolean. (This is
--- also live evidence for work-item-deps-and-readiness-2026-06-22 P-010, the
--- owner-gated decision on workspace-scoping the work_items PK — the collision it
--- calls "latent" is real and already costing correctness here.)
+-- The workspace is now a REQUIRED third argument rather than a defaulted one, and
+-- the 2-arg form is deleted rather than kept as a convenience wrapper. A defaulted
+-- workspace would just reintroduce the bug: the whole defect was a caller that had
+-- the right workspace in hand (sync_work_item_blocked receives p_ws and keys the
+-- sidecar row with it) and silently dropped it. Making the argument mandatory turns
+-- "forgot the workspace" into a call-site error instead of a wrong boolean, at every
+-- present and future caller.
+--
+-- The issue leg genuinely needs it: blocker_ref there is a BARE feature_id
+-- (issues:link), which is NOT unique on its own — 66 bare issue ids span more than
+-- one harness_slug today — so bare-ref matching without a scope can select a foreign
+-- row. The feature leg is scoped for symmetry (see below).
 --
 -- NOTE on `d.workspace_id = 'default'`, which is deliberately UNCHANGED: that is
 -- the COORDINATION workspace the edge table itself is keyed in (DEFAULT_COORD_
