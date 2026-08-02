@@ -19,13 +19,53 @@
 --
 -- TO ENACT (plan P-006):
 --   1. Confirm the 768 code is live:
---      dev:pipeline_position { path: 'packages/operator-core/lib/search/prose-vector-dims.ts' }
---      -> serving.startedSinceCodeChange must be true.
+--      dev:pipeline_position {
+--        path: 'packages/operator-core/lib/search/prose-vector-dims.ts',
+--        marker: 'PROSE_VECTOR_DIMS = 768'
+--      }
+--      -> require BOTH legs, in this order:
+--           positionsMarker.deployed.present === true   (MY change is in the
+--                                                        release checkout)
+--           serving.startedSinceCodeChange   === true   (the process restarted
+--                                                        since that checkout)
+--
+--      ⚠⚠ DO NOT GATE ON `serving.startedSinceCodeChange` ALONE — the original
+--      version of this step did, and it is WRONG IN THE DANGEROUS DIRECTION.
+--      The two legs answer DIFFERENT questions and only their conjunction means
+--      "my code is live": startedSinceCodeChange says the serving process is
+--      not stale relative to ITS OWN checkout — a statement about a PROCESS,
+--      silent on whether YOUR change is in that checkout. So it reads TRUE for
+--      a release checkout that does not contain this change at all, and alone
+--      it green-lights precisely the migration-first ordering the header above
+--      warns costs an outage of unbounded length.
+--      (This does not contradict the repo guide's "is the running process
+--      executing my code -> serving.startedSinceCodeChange" row: that row is
+--      steering you away from the GIT-side `positions.deployed` boolean. The
+--      marker leg used here, positionsMarker.deployed.present, is a different
+--      and stronger read — it greps the deployed sha for YOUR marker.)
+--      MEASURED 2026-08-02 19:41Z, both legs in the SAME tool result:
+--        serving.startedSinceCodeChange = true
+--        positionsMarker.deployed.present = false   <- 768 code NOT deployed
+--      Following the old step 1 that morning would have applied this migration
+--      with ~414k vectors dropped and the deployed code still emitting 384.
+--      Only the marker leg answers "is MY code live"; it is also explicitly
+--      corroborated ("a genuine miss, not a newer-commit artifact").
+--
 --   2. git mv this file to drop the .PENDING-CODE-DEPLOY suffix.
---   3. Apply via the RUNNER (npm run db:migrate) — never `psql -f`, which
---      leaves no schema_migrations row and re-runs on every deploy.
+--   3. Apply via the RUNNER — the **`db:migrate` MCP TOOL**:
+--        db:migrate { file: '<abs path to this file>', confirm: true }
+--      ⚠ NOT `npm run db:migrate` (what the original step 3 said): that script
+--      DOES NOT EXIST in this repo — the only migration-ish root scripts are
+--      db:next-migration, lint:migrations, lint:migration-forward-compat, so
+--      the command fails with a bare npm "Missing script" and reads like a
+--      broken environment rather than a wrong instruction (plan P-006 D-006).
+--      Either way NEVER `psql -f`: that leaves no schema_migrations row, so the
+--      DDL re-runs on every deploy and a lock-contending re-run trips the
+--      deploy's 15s lock_timeout and rolls it back.
 --   4. node libs/papercusp/libs/db/scripts/pull-schema.mjs
---   5. Watch the backfill sweep refill (~414k vectors, ~24h single-worker).
+--   5. Watch the backfill sweep refill (~414k vectors). Drive it with PARALLEL
+--      WORKERS, never a batching loop (EI-19363253682489176); single-worker is
+--      ~217 ms/doc ≈ 24h.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 727 — Widen every shared prose/registry embedding column from vector(384) to
