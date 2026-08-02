@@ -757,6 +757,53 @@ export function buildConnectionOptions(opts: {
   return c;
 }
 
+/**
+ * EI-19311807188719573 — the UNIT-layer real-database rail.
+ *
+ * A unit test has no legitimate reason to open a real Postgres connection, and until
+ * this existed nothing said so. That silence is not theoretical: it is how the
+ * premise-probes fleet gate red happened. A concurrently-resolved leg escaped
+ * `vi.mock` (two un-memoized `import()`s of one module resolving to different
+ * instances), read the LIVE `WI-6560` row instead of the fixture, and the assertion
+ * passed for as long as production data happened to agree with it — then went red for
+ * the whole fleet the moment that row was closed, landing on whoever was unlucky
+ * rather than whoever caused it.
+ *
+ * WHY THE GUARD IS HERE, at `buildClient`, rather than at `getOrgPg`: this is the one
+ * choke point every real pool passes through, whichever accessor asked for it
+ * (getOrgPg / getOrgPgApp / harness clients) and whichever source resolved the URL
+ * (HARNESS_ADMIN_DATABASE_URL, DATABASE_URL, the discovery file, the native
+ * fallback). Guarding an accessor would leave the siblings open — the exact
+ * fix-one-site-leave-the-class mistake that produced the bug above.
+ *
+ * WHY AN ENV SEAM rather than a `vitest` sniff: `vi.mock` is per-file and hoisted, so
+ * a setup file cannot mock this module for every test; and the integration layer
+ * legitimately builds real clients against a throwaway testcontainer. The unit layer
+ * opts in explicitly (libs/test-config/src/setup-no-real-pg.ts), the integration layer
+ * never sets the var, and a unit test that genuinely needs a live pool can unset it in
+ * its own body — which runs after the setup file, exactly like the PAPERCUSP_PGBOUNCER
+ * and PAPERCUSP_SKIP_PG_DISCOVERY precedents in setup-hermetic-env.ts.
+ *
+ * The message names the offending pool AND the fix, because the alternative symptom is
+ * a confusing connection timeout that reads like flakiness rather than a rule.
+ */
+function assertRealPgAllowed(label: string, connectionUrl: string): void {
+  if (process.env.PAPERCUSP_FORBID_REAL_PG !== '1') return;
+  // Redact credentials — this string lands in test output and CI logs.
+  const safeTarget = connectionUrl.replace(/\/\/[^@/]*@/, '//<redacted>@');
+  throw new Error(
+    `A UNIT test tried to open a REAL Postgres connection (pool "${label}" → ${safeTarget}).\n` +
+      `Unit tests must never touch a live database: the verdict then depends on production ` +
+      `data, so it stays green until that data moves and reds the shared gate for someone else.\n` +
+      `\n` +
+      `FIX: inject the module's own seam/probe double rather than mocking a store beneath a ` +
+      `production function (see PremiseProbes in agent-tools/coordination/premise-resolve.ts). ` +
+      `A double cannot be escaped; a vi.mock beneath concurrent dynamic imports can.\n` +
+      `If this code genuinely needs a live database, it is an INTEGRATION test — rename it ` +
+      `*.integration.test.ts so it runs under the integration config against a testcontainer.`,
+  );
+}
+
 function buildClient(
   connectionUrl: string,
   searchPath: string[],
@@ -772,6 +819,7 @@ function buildClient(
   // worth threading through this internal helper's signature.
   typesOverride: any = PG_BIGINT_AS_NUMBER_TYPES,
 ): Sql {
+  assertRealPgAllowed(label, connectionUrl);
   const sp = searchPath.map((s) => `"${s.replace(/"/g, '""')}"`).join(', ');
   // The desktop ships embedded-postgres-server (real PG over TCP); the URL
   // carries a normal host:port, so no host override is needed. The legacy
