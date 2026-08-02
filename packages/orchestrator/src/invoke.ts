@@ -225,7 +225,7 @@ export function nextOuterActivityEchoAt(
  * resolution, byte-identical to before. invoke.ts only CONSUMES this (it cannot import
  * operator-core's materializer — the dependency runs the other way).
  */
-export function parseBlueprintLocalRoots(extras: string[]): string[] {
+export function parseBlueprintLocalRoots(extras: readonly string[]): string[] {
   const out: string[] = [];
   for (const e of extras) {
     if (!e.startsWith('BLUEPRINT_LOCAL_ROOT=')) continue;
