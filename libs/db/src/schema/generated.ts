@@ -4324,6 +4324,17 @@ export const bak20260717UnifyTopicsInHarnessShared = harnessShared.table("bak_20
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
 });
 
+export const sessionRespawnExpectedInHarnessShared = harnessShared.table("session_respawn_expected", {
+	ownerId: text("owner_id").primaryKey().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	reason: text().default('carry-respawn').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_session_respawn_expected_expires").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.ownerId], name: "session_respawn_expected_pkey"}),
+
+]);
+
 export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocations", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
