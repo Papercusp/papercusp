@@ -1,5 +1,6 @@
 {
   "$comment": "EI-19302566985147894 — before this file, the 57 TS sources in this package (the DB layer, incl. connection.ts's pool code) were typechecked by NOTHING: no tsconfig meant `build:typecheck` refused the package with project_not_found, `lint:tsc` covers only packages/operator-core, and vitest transforms via esbuild without ever typechecking. Options mirror packages/operator-core/tsconfig.json (the repo's main precedent) so behaviour matches what agents already expect; `types` adds vitest for the 40 test files that use its globals.",
+  "$comment_allowJs": "allowJs is TRUE here, unlike operator-core: this package ships real .mjs CLI scripts (scripts/pull-schema.mjs is invoked by name in CLAUDE.md) and two tests import one to assert its behaviour. Without allowJs those imports are TS7016 'implicitly any'. checkJs stays off, so .mjs files are RESOLVED but not error-checked. The alternative — a @ts-expect-error per import — is worse: two such directives had ALREADY gone stale here (build-reference-schema.ts, schema-scratch-tables.test.ts) and an unused @ts-expect-error is itself a hard tsc error. NOTE: this key must live at the top level, not inside compilerOptions, where tsc rejects unknown options with TS5023.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -11,7 +12,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "$comment_allowJs": "TRUE, unlike operator-core: this package ships real .mjs CLI scripts (scripts/pull-schema.mjs is invoked by name in CLAUDE.md) and a test imports one to assert its main-guard throws. Without allowJs that import is TS7016 'implicitly any'. checkJs stays off, so the .mjs files are RESOLVED but not error-checked — the alternative was a @ts-expect-error that would itself go stale the day the script gains types (exactly the bug fixed in build-reference-schema.ts alongside this).",
     "allowJs": true,
     "checkJs": false,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],

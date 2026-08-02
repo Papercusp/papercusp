@@ -30,6 +30,7 @@ import {
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { codexHomeForSessionKey, sessionClaudeConfigDir, sessionMcpDir } from './session-launch-dirs';
+import { harnessProfile, harnessSupports } from './harness-profile';
 import { readFleetClaudeToken } from './fleet-claude-token';
 import { configGet } from './config';
 import { readEffectiveConfig, loadHarnessAcceptanceKind, loadHarnessLexicon, loadHarnessBlueprintId } from './effective-config';
@@ -1726,10 +1727,10 @@ export function srtBinOnPath(): string | null {
  * so there's no single stable host to hardcode like codex's OpenAI).
  */
 export function fleetSrtModelDomains(backend: AgentBackend): string[] {
-  if (backend === 'codex') {
-    return ['api.openai.com', 'chatgpt.com', 'auth.openai.com', '*.openai.com'];
-  }
-  return [];
+  // Declared on the backend's profile (harness-profile.ts) rather than branched
+  // on here, so adding a backend is forced to state its egress hosts instead of
+  // silently inheriting codex's or an empty set.
+  return [...harnessProfile(backend).srtModelDomains];
 }
 
 /**
@@ -1791,9 +1792,15 @@ function shQuote(parts: string[]): string {
   return parts.map((p) => `'${p.replace(/'/g, `'\\''`)}'`).join(' ');
 }
 
-/** Backends wrapped in srt (no usable/any native sandbox): codex + omp. */
+/**
+ * Backends wrapped in srt: those with no usable native sandbox.
+ *
+ * Stated as the REASON (`native-sandbox`) rather than the conclusion
+ * (`codex || omp`) — a new backend answers "do I sandbox myself?" on its
+ * profile, and gets wrapped correctly without editing this predicate.
+ */
 export function backendUsesSrt(backend: AgentBackend): boolean {
-  return backend === 'codex' || backend === 'omp';
+  return !harnessSupports(backend, 'native-sandbox');
 }
 
 /**
@@ -2465,7 +2472,7 @@ export async function invoke(
   // arbitrary commands (e.g. the plain-text test stub `cat`), which must not
   // receive a claude flag.
   if (
-    agentBackend === 'claude-code' &&
+    harnessSupports(agentBackend, 'subagent-tools') &&
     splitCommand(roleAgentCmd).some((a) => a.includes('claude'))
   ) {
     // Subagent-fanout deny (owner mandate 2026-07-02): EVERY headless claude spawn
@@ -2494,7 +2501,7 @@ export async function invoke(
 
   // 5. Per-role model — only inject if user didn't already pass one.
   //    codex's model flag is `-m` (bare id); claude/omp use `--model`.
-  const modelFlag = agentBackend === 'codex' ? '-m' : '--model';
+  const modelFlag = harnessProfile(agentBackend).modelFlag;
   const cmdAlreadyHasModel = roleAgentCmd.includes('--model ') || /(?:^|\s)-m\s/.test(roleAgentCmd);
   // OMP gateway routing (P-006/D-008): when this spawn is pinned through the gateway,
   // resolveSpawnGatewayEnv emitted PAPERCUSP_OMP_MODEL_SELECTOR (`papercusp-gateway/<model>`)
@@ -2504,7 +2511,7 @@ export async function invoke(
   // from argv and append ONLY the gateway selector. Empty (dormant) unless the omp seeder
   // is active — the matching `<HOME>/.omp/agent/models.yml` is written by the seeder block below.
   const ompGatewaySelector =
-    agentBackend === 'omp' && (process.env.PAPERCUSP_OMP_MODELS_YML ?? '').trim()
+    harnessSupports(agentBackend, 'gateway-models-yml') && (process.env.PAPERCUSP_OMP_MODELS_YML ?? '').trim()
       ? (process.env.PAPERCUSP_OMP_MODEL_SELECTOR ?? '').trim()
       : '';
   // Kept for the usage-telemetry bucket key (step 11.5) — best-effort either way.
@@ -2922,7 +2929,7 @@ export async function invoke(
   // their own base). Flag-OFF ⇒ no arg, no temp file — byte-identical to today.
   let sysPromptDir: string | undefined;
   if (
-    agentBackend === 'claude-code' &&
+    harnessSupports(agentBackend, 'system-prompt-override') &&
     streamFormat === 'claude-stream-json' &&
     replaceClaudeBaseEnabled()
   ) {
@@ -3007,7 +3014,7 @@ export async function invoke(
   // can resume them via `claude --resume <sessionId>`. Thread the session ID from
   // the invoke route into the claude argv.
   const nativeSessionId = process.env.PAPERCUSP_NATIVE_SESSION_ID;
-  if (agentBackend === 'claude-code' && nativeSessionId) {
+  if (harnessSupports(agentBackend, 'native-session-id') && nativeSessionId) {
     finalArgv.push('--session-id', nativeSessionId);
   }
 
@@ -3297,7 +3304,7 @@ export async function invoke(
     // otherwise (byte-identical spawn). OVERRIDES the resolveSpawnHome HOME set above (a pinned
     // omp spawn needs the SEEDED home; its source IS that resolveSpawnHome home, else ~/.omp).
     // PI_CODING_AGENT_DIR (the session store) is left untouched. Cleaned up on close/error below.
-    if (agentBackend === 'omp' && (process.env.PAPERCUSP_OMP_MODELS_YML ?? '').trim()) {
+    if (harnessSupports(agentBackend, 'gateway-models-yml') && (process.env.PAPERCUSP_OMP_MODELS_YML ?? '').trim()) {
       try {
         const sourceAgentDir = join(spawnHome ?? homedir(), '.omp', 'agent');
         ompHomeHandle = writeSpawnOmpHome(process.env.PAPERCUSP_OMP_MODELS_YML as string, sourceAgentDir);

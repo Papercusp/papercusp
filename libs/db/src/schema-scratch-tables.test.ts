@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-// @ts-expect-error — plain .mjs helper shared with pull-schema.mjs (a script, not TS)
+// Plain .mjs helper shared with pull-schema.mjs (a script, not TS). This used to
+// carry a `@ts-expect-error`; the package's tsconfig (EI-19302566985147894) sets
+// allowJs, so the module now RESOLVES and its shape is inferred — leaving the
+// directive in place would be an unused-directive error in its own right.
 import { stripScratchTableDeclarations } from './schema-scratch-tables.mjs';
 
 // EI-18785808338338490: migration-internal scratch tables (leading underscore)

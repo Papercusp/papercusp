@@ -1891,6 +1891,7 @@ export const planRunsInHarnessShared = harnessShared.table("plan_runs", {
 	outcome: text(),
 	resultSummary: jsonb("result_summary"),
 	workspaceId: text("workspace_id").default('').notNull(),
+	inputs: jsonb(),
 }, (table) => [
 	index("plan_runs_harness_plan_slug_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")),
 	index("plan_runs_plan_slug_idx").using("btree", table.planSlug.asc().nullsLast().op("text_ops")),
@@ -4132,6 +4133,25 @@ export const memoryLiveRecallCanaryRunInHarnessShared = harnessShared.table("mem
 }, (table) => [
 	index("memory_live_recall_canary_run_ws_ran_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ranAt.desc().nullsFirst().op("text_ops")),
 	check("memory_live_recall_canary_run_status_check", sql`status = ANY (ARRAY['ok'::text, 'degraded'::text, 'decayed'::text, 'seeded'::text])`),
+]);
+
+export const fleetInvariantsInHarnessShared = harnessShared.table("fleet_invariants", {
+	id: text().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug"),
+	fleetSlug: text("fleet_slug").notNull(),
+	name: text().notNull(),
+	description: text(),
+	querySql: text("query_sql").notNull(),
+	severity: text().default('warn').notNull(),
+	active: boolean().default(true).notNull(),
+	createdBy: text("created_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("fleet_invariants_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops")).where(sql`active`),
+	uniqueIndex("fleet_invariants_scope_name_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops"), table.name.asc().nullsLast().op("text_ops")),
+	check("fleet_invariants_severity_valid", sql`severity = ANY (ARRAY['warn'::text, 'critical'::text])`),
 ]);
 
 export const bak20260717UnifyWorkItemsInHarnessShared = harnessShared.table("bak_20260717_unify_work_items", {
@@ -8128,6 +8148,7 @@ export const harnessPlansInHarnessShared = harnessShared.table("harness_plans", 
 	ownerAuthorPubkey: text("owner_author_pubkey"),
 	embedding: vector({ dimensions: 384 }),
 	embeddingMode: text("embedding_mode"),
+	inputSchema: jsonb("input_schema"),
 }, (table) => [
 	index("harness_plans_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("harness_plans_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
