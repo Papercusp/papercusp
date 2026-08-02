@@ -8,7 +8,7 @@ import { driveChunkLoop } from './chunk-loop-driver.js';
 import { FileLockQueue } from './file-lock-queue.js';
 import { FileLockQueueCoordinator } from './file-lock-queue-coordinator.js';
 import type { OrchestratorPg } from './invoke.js';
-import type { HarnessConfig } from './config.js';
+import type { HarnessConfig } from './types.js';
 
 function execSync(cmd: string, args: readonly string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {

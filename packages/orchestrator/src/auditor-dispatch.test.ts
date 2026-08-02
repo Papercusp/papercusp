@@ -247,7 +247,11 @@ describe('dispatchAuditorLane', () => {
   ): AuditorDispatchCtx & { escalations: Array<{ featureId: string; harnessSlug: string; reasons: string }> } {
     const { pg } = makeLanePg(featureRows);
     const escalations: Array<{ featureId: string; harnessSlug: string; reasons: string }> = [];
-    const ctx: AuditorDispatchCtx & typeof escalations extends Array<infer U> ? never : AuditorDispatchCtx = {
+    // The intersection with `{ escalations }` is produced by the Object.assign below, which
+    // is what the return type describes. This annotation is just the plain ctx shape — it
+    // previously carried a stray `extends Array<infer U> ? never : …` conditional that, since
+    // `escalations` IS an array, evaluated to `never` and rejected every literal assigned to it.
+    const ctx: AuditorDispatchCtx = {
       pg,
       workspaceId: 'w1',
       spawnAuditor: vi.fn().mockResolvedValue(spawnResult),

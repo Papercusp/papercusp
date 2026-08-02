@@ -470,7 +470,9 @@ test('crash-during-replan: strikes do NOT persist across resume — a chunk re-r
           await fs.writeFile(path.join(env.dir, chunk.files[0]), `export const b = ${implementCount};\n`);
           return { touchedFiles: chunk.files, attemptedChange: `attempt ${implementCount}` };
         },
-        replanChunk: async (_f, failed) => replanBlock({ id: failed.id, files: failed.files, description: 'retry b' }),
+        replanChunk: async (_f, failed) =>
+          // failed.files is readonly; the response shape owns a mutable copy
+          replanBlock({ id: failed.id, files: [...failed.files], description: 'retry b' }),
         replanStrikes: 3,
         onEscalate: () => {
           escalated = true;

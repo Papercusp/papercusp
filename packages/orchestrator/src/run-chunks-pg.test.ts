@@ -5,6 +5,7 @@ import {
   readChunksAfterPg,
   pruneChunksPg,
 } from './run-chunks-pg';
+import type { OrchestratorPg } from './invoke';
 
 interface MockState {
   rows: Array<{
@@ -19,7 +20,13 @@ interface MockState {
 }
 
 function makeMockPg(): {
-  pg: (template: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+  // `OrchestratorPg` is GENERIC (`<T = any[]>(…) => Promise<T>`, mirroring postgres-js's
+  // `sql<T>``` so call sites can name their own row type). A concrete non-generic mock can
+  // never satisfy that signature, and no implementation can honestly return an arbitrary
+  // caller-chosen `T` — postgres-js casts internally for exactly this reason. So the mock is
+  // declared as the real seam type and cast once, at the single return below, matching the
+  // convention already used at 14 other sites in this package.
+  pg: OrchestratorPg;
   state: MockState;
 } {
   const state: MockState = { rows: [], notifies: [] };
@@ -61,7 +68,7 @@ function makeMockPg(): {
     }
     return [];
   };
-  return { pg, state };
+  return { pg: pg as unknown as OrchestratorPg, state };
 }
 
 const ctx = (mock: ReturnType<typeof makeMockPg>) => ({
@@ -122,8 +129,9 @@ describe('run-chunks-pg', () => {
   });
 
   test('appendChunkPg — swallows errors (best-effort streaming)', async () => {
-    const failingPg: (template: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]> =
-      async () => { throw new Error('pg unreachable'); };
+    const failingPg = (async () => {
+      throw new Error('pg unreachable');
+    }) as unknown as OrchestratorPg;
     // Should not throw — caller relies on this for stream resilience
     await appendChunkPg(
       { pg: failingPg, workspaceId: 'default', harnessSlug: 'sheets' },

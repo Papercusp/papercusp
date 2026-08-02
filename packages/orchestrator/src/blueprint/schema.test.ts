@@ -86,7 +86,10 @@ test('BlueprintSchema — role spine action fills extras/rejectWhenParallel defa
     ...minimal,
     spine: { edges: { NEXT_SECURITY: { to: 'role', role: 'security-reviewer' } } },
   });
-  const edge = bp.spine.edges.NEXT_SECURITY;
+  // `spine.edges` is optional on the schema; this test supplied it, so its absence after
+  // a parse would itself be the bug — assert that rather than casting the optionality away.
+  const edges = bp.spine.edges ?? assert.fail('parsed spine.edges must survive the parse');
+  const edge = edges.NEXT_SECURITY;
   assert.equal(edge.to, 'role');
   if (edge.to === 'role') {
     assert.deepEqual(edge.extras, []);

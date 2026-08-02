@@ -181,7 +181,7 @@ test('escalates after replanStrikes typecheck failures', async () => {
       replanChunk: async (_f, failed) =>
         makeReplanResponse({
           id: failed.id,
-          files: failed.files,
+          files: [...failed.files], // failed.files is readonly; the response shape owns a mutable copy
           description: 'fix it again',
         }),
       typecheckCommand: 'false', // always fails

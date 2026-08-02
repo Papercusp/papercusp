@@ -33,10 +33,14 @@ test('a child `extends: single-agent` inherits the single-role spine edges + inl
   });
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   assert.equal(blueprint.spine.decider, 'worker');
-  // the trivial run-to-done edges are inherited from single-agent
-  assert.deepEqual(blueprint.spine.edges.DONE, { to: 'done' });
-  assert.deepEqual(blueprint.spine.edges.ESCALATE, { to: 'escalate', reasonFrom: 'arg' });
-  assert.deepEqual(blueprint.spine.edges.IDLE, { to: 'idle' });
+  // the trivial run-to-done edges are inherited from single-agent. `spine.edges` is
+  // optional on the schema, and "inherited at all" is precisely what this test claims —
+  // so assert its presence explicitly instead of casting the optionality away.
+  const edges =
+    blueprint.spine.edges ?? assert.fail('spine.edges must be inherited from single-agent');
+  assert.deepEqual(edges.DONE, { to: 'done' });
+  assert.deepEqual(edges.ESCALATE, { to: 'escalate', reasonFrom: 'arg' });
+  assert.deepEqual(edges.IDLE, { to: 'idle' });
   assert.deepEqual(blueprint.spine.default, { to: 'idle' });
   // inline planner inherited
   assert.equal(blueprint.planner.kind, 'inline');
@@ -55,6 +59,7 @@ test('a child overrides the inherited maxTurns (deep-merge: child wins on the le
     roles: [{ id: 'scanner', description: 'sweep' }],
   });
   assert.equal(blueprint.spine.maxTurns, 30); // child override
-  assert.deepEqual(blueprint.spine.edges.DONE, { to: 'done' }); // parent edges survive the merge
+  const edges = blueprint.spine.edges ?? assert.fail('parent edges must survive the merge');
+  assert.deepEqual(edges.DONE, { to: 'done' }); // parent edges survive the merge
   assert.equal(blueprint.planner.kind, 'inline');
 });

@@ -1,6 +1,7 @@
 import { describe, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { recordRunOutputPg, readRunOutputPg } from './run-output-pg';
+import type { OrchestratorPg } from './invoke';
 
 interface MockState {
   rows: Array<Record<string, unknown>>;
@@ -9,7 +10,9 @@ interface MockState {
 }
 
 function makeMockPg(initialRows: Array<Record<string, unknown>> = []): {
-  pg: (template: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+  // See run-chunks-pg.test.ts: OrchestratorPg is generic, so a concrete mock is declared as
+  // the seam type and cast once at the return.
+  pg: OrchestratorPg;
   state: MockState;
 } {
   const state: MockState = { rows: [...initialRows], queries: [], values: [] };
