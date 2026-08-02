@@ -71,8 +71,13 @@ function makeInput(role: string, volatile: { runId: string; extras: string[] }):
     stateDir: '/state',
     runId: volatile.runId,
     extras: volatile.extras,
-    cwdOverride: undefined,
-    featureId: undefined,
+    // BuildPromptInput declares these required-but-emptiable: '' / null IS the "absent"
+    // value production passes (see prompt-build.ts — "May be empty", "Empty string
+    // disables"). Passing `undefined` made this fixture exercise a shape production never
+    // produces; these are the real generic-role values.
+    promptOverride: '',
+    cwdOverride: '',
+    featureId: null,
     featureOrigin: undefined,
     coordOwnerId: undefined,
     acceptanceKind: 'tests',
@@ -107,11 +112,11 @@ describe('bee preamble byte-stability (WI-175)', () => {
     // All preambles must hash to the same value (byte-identical).
     const first = hashes[0];
     for (const h of hashes.slice(1)) {
-      expect(h).toBe(
-        first,
+      expect(
+        h,
         'Preamble must be identical across spawns (cache assumption P-009). ' +
           'If this fails, volatile content leaked into the preamble.',
-      );
+      ).toBe(first);
     }
   });
 
@@ -123,11 +128,11 @@ describe('bee preamble byte-stability (WI-175)', () => {
     const { preamble } = buildPromptParts(input);
 
     const leakage = findPotentialLeakage(preamble);
-    expect(leakage).toEqual(
-      [],
+    expect(
+      leakage,
       `Preamble must not contain per-bee-specific data. Found:\n${leakage.join('\n')}. ` +
         'This breaks the cache assumption — volatile data contaminated the preamble.',
-    );
+    ).toEqual([]);
   });
 
   it('preamble is stable even when volatile section changes dramatically', () => {
@@ -147,10 +152,10 @@ describe('bee preamble byte-stability (WI-175)', () => {
     });
     const { preamble: preamble2 } = buildPromptParts(input2);
 
-    expect(sha256(preamble1)).toBe(
-      sha256(preamble2),
+    expect(
+      sha256(preamble1),
       'Preamble must be stable even with dramatically different volatile sections.',
-    );
+    ).toBe(sha256(preamble2));
   });
 
   it('volatile section is different (as expected) across spawns', () => {
@@ -168,11 +173,11 @@ describe('bee preamble byte-stability (WI-175)', () => {
     });
     const { volatile: volatile2 } = buildPromptParts(input2);
 
-    expect(volatile1).not.toBe(
-      volatile2,
+    expect(
+      volatile1,
       'Volatile sections MUST differ when inputs differ. ' +
         'If this fails, volatile content was not properly segregated.',
-    );
+    ).not.toBe(volatile2);
 
     // Both volatiles should contain their respective runIds (to verify segregation).
     expect(volatile1).toContain('run-1');
@@ -220,10 +225,10 @@ describe('bee preamble byte-stability (WI-175)', () => {
       // All preambles must be identical (byte-for-byte).
       const firstHash = sha256(samples[0].preamble);
       for (const s of samples) {
-        expect(sha256(s.preamble)).toBe(
-          firstHash,
+        expect(
+          sha256(s.preamble),
           'All preambles must be identical for cache-hit ceiling calculation.',
-        );
+        ).toBe(firstHash);
       }
 
       // Calculate the theoretical cache-hit ceiling: preamble bytes / total bytes.

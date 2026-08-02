@@ -54,9 +54,15 @@ function makeBeeInput(
     acceptanceKind: 'tests', // bee default
     identity: '## Bee Identity\nGeneric Hive worker identity.',
     sharedGuides: ['## Bee Guide\nBee execution guide.'],
-    // Intentionally omitting:
+    // A generic bee has no per-role override, no worktree and no feature scope. Those
+    // three are declared REQUIRED-but-emptiable on BuildPromptInput ("May be empty",
+    // "Empty string disables"), so '' / null is how production spells "absent" — stating
+    // them explicitly is what makes this fixture the shape production actually builds.
+    promptOverride: '',
+    cwdOverride: '',
+    featureId: null,
+    // Still intentionally omitted (genuinely optional on the type):
     // - inlinePrompt (must be empty/absent for bee paths)
-    // - featureId (bee is generic, no feature scope)
     // - featureHistory (generic worker, no feature)
     // - planContext (generic worker, no plan)
   };
@@ -83,11 +89,11 @@ describe('bee preamble byte-stability (WI-188, P-014)', () => {
     // Preambles must be BYTE-IDENTICAL, enabling cross-bee cache hits.
     const hash1 = sha256(preamble1);
     const hash2 = sha256(preamble2);
-    expect(hash1).toBe(
-      hash2,
+    expect(
+      hash1,
       'Preamble must be identical across distinct bee spawns (cross-bee cache ceiling D-016). ' +
         'If this fails, per-bee data (spawn ID, run ID, etc.) leaked into the preamble.',
-    );
+    ).toBe(hash2);
   });
 
   it('preamble is stable across multiple bees with dramatically different volatile inputs', () => {
@@ -112,11 +118,11 @@ describe('bee preamble byte-stability (WI-188, P-014)', () => {
     // All preambles must hash identically despite volatile differences.
     const first = hashes[0];
     for (let i = 1; i < hashes.length; i++) {
-      expect(hashes[i]).toBe(
-        first,
+      expect(
+        hashes[i],
         `Preamble must be stable across spawn ${i}. ` +
           'Volatile content contaminated the cacheable prefix.',
-      );
+      ).toBe(first);
     }
   });
 
@@ -168,12 +174,12 @@ describe('bee preamble byte-stability (WI-188, P-014)', () => {
     const baselineHash = sha256(baseline.preamble);
     const modifiedHash = sha256(modified.preamble);
 
-    expect(modifiedHash).not.toBe(
-      baselineHash,
+    expect(
+      modifiedHash,
       'Regression guard: if a bee path accidentally supplies inlinePrompt, ' +
         'the preamble changes and breaks the cross-bee cache. ' +
         'This assertion proves the guard is active.',
-    );
+    ).not.toBe(baselineHash);
 
     // The injected content should appear in the modified preamble (section 1).
     expect(modified.preamble).toContain('INJECTED INLINE PROMPT');
@@ -200,10 +206,7 @@ describe('bee preamble byte-stability (WI-188, P-014)', () => {
     const { volatile: vol2 } = buildPromptParts(bee2);
 
     // Volatile sections MUST differ (per-spawn context).
-    expect(vol1).not.toBe(
-      vol2,
-      'Volatile sections must differ across bee spawns.',
-    );
+    expect(vol1, 'Volatile sections must differ across bee spawns.').not.toBe(vol2);
 
     // Each volatile should carry its own spawn-specific data.
     expect(vol1).toContain('run-vol-1');
