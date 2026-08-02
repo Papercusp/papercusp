@@ -46,7 +46,7 @@ BEGIN
   ) THEN
     ALTER TABLE harness_shared.adv_sessions
       ADD CONSTRAINT adv_sessions_ended_by_check
-      CHECK (ended_by IS NULL OR ended_by IN ('self', 'reaper', 'reconciler'));
+      CHECK (ended_by IS NULL OR ended_by IN ('self', 'reaper', 'reconciler', 'cleanup'));
   END IF;
 END $$;
 
