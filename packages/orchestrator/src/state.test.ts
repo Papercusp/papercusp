@@ -13,6 +13,7 @@ import {
   stateCtx,
 } from './state.js';
 import { seedMemoryStore, _resetMemoryStateForTests } from './state-memory.js';
+import type { OrchestratorPg } from './invoke.js';
 
 // Hermetic env: harnessSlug falls back to process.env.HARNESS_SLUG /
 // process.env.PAPERCUSP_HARNESS_SLUG when not found in the registry. On the
@@ -154,10 +155,10 @@ describe('harnessSlug — non-blocking registry warm (audit P-038 / EI-113)', ()
     delete process.env.HARNESS_SLUG;
     delete process.env.PAPERCUSP_HARNESS_SLUG;
     const urls: string[] = [];
-    let resolveFetch!: (r: unknown) => void;
+    let resolveFetch!: (r: Response) => void;
     globalThis.fetch = ((url: unknown) => {
       urls.push(String(url));
-      return new Promise((res) => {
+      return new Promise<Response>((res) => {
         resolveFetch = res;
       });
     }) as typeof fetch;
@@ -169,10 +170,13 @@ describe('harnessSlug — non-blocking registry warm (audit P-038 / EI-113)', ()
       assert.equal(urls.length, 1);
       // EI-113: the operator API serves :3070 (:3055 is the Vite content port).
       assert.match(urls[0], /localhost:3070\/api\/harness\/projects$/);
+      // Deliberately a minimal Response stand-in — only `ok`/`json` are exercised. The cast
+      // is at the point where that shortcut is actually taken, rather than widening the
+      // resolver's type and hiding it.
       resolveFetch({
         ok: true,
         json: async () => ({ projects: [{ slug: 'widgets', path: dir }] }),
-      });
+      } as unknown as Response);
       await new Promise((r) => setTimeout(r, 0));
       // The background warm corrected the cache for later calls.
       assert.equal(harnessSlug(dir), 'widgets');
@@ -239,14 +243,16 @@ describe('stateCtx — backend selection', () => {
 
 describe('state — PG path (mocked)', () => {
   function makeMockPg(rows: Record<string, unknown>[]): {
-    pg: (template: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+    // See run-chunks-pg.test.ts: OrchestratorPg is generic, so a concrete mock is declared
+    // as the seam type and cast once at the return.
+    pg: OrchestratorPg;
     queries: string[];
     values: unknown[][];
   } {
     const queries: string[] = [];
     const values: unknown[][] = [];
     return {
-      pg: async (template, ...vals) => {
+      pg: (async (template: TemplateStringsArray, ...vals: unknown[]) => {
         const sql = template.join('?');
         queries.push(sql);
         values.push(vals);
@@ -262,7 +268,7 @@ describe('state — PG path (mocked)', () => {
         }
         if (/UPDATE/.test(sql)) return [];
         return rows;
-      },
+      }) as unknown as OrchestratorPg,
       queries,
       values,
     };

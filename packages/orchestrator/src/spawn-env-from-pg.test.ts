@@ -21,6 +21,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+// Type-only, so it is fully erased and cannot disturb the deliberate HOME-before-import
+// ordering enforced below.
+import type { OrchestratorPg } from './invoke';
 
 // The module resolves KEY_FILE = join(homedir(), '.papercusp', 'db-encryption-key')
 // at import time. Point HOME at an empty temp dir BEFORE importing so a real
@@ -90,7 +93,9 @@ interface MockState {
 }
 
 function makeMockPg(rows: CredRow[] = []): {
-  pg: (template: TemplateStringsArray, ...values: unknown[]) => Promise<Array<Record<string, unknown>>>;
+  // See run-chunks-pg.test.ts: OrchestratorPg is generic, so a concrete mock is declared as
+  // the seam type and cast once at the return.
+  pg: OrchestratorPg;
   state: MockState;
 } {
   const state: MockState = { rows, queries: [], values: [] };
@@ -115,7 +120,7 @@ function makeMockPg(rows: CredRow[] = []): {
     }
     return [];
   };
-  return { pg, state };
+  return { pg: pg as unknown as OrchestratorPg, state };
 }
 
 const encryptedRow = (workspaceId: string, payload: unknown, passphrase: string): CredRow => ({
@@ -206,9 +211,9 @@ describe('buildSearchProviderSpawnEnv', () => {
 
   test('PG error (e.g. table missing) → {} (best-effort, never throws)', async () => {
     process.env[ENV_VAR] = 'k';
-    const pg = async (): Promise<Array<Record<string, unknown>>> => {
+    const pg = (async () => {
       throw new Error('relation "harness_shared.operator_search_provider_credentials" does not exist');
-    };
+    }) as unknown as OrchestratorPg;
     assert.deepEqual(await buildSearchProviderSpawnEnv(pg, 'ws-1'), {});
   });
 

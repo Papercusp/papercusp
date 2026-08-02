@@ -42,7 +42,7 @@ function makeMockPg(initialRows: Array<Record<string, unknown>> = []): {
     }
     return [];
   };
-  return { pg, state };
+  return { pg: pg as unknown as OrchestratorPg, state };
 }
 
 const ctx = (mock: ReturnType<typeof makeMockPg>) => ({
