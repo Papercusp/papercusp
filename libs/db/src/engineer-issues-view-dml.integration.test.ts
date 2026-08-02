@@ -126,3 +126,109 @@ describe('engineer_issues view DML duplicate-id targeting', () => {
     ]);
   });
 });
+
+/**
+ * EI-19300744792370081 (root-caused under WI-6752), fixed by migration 711.
+ *
+ * Both write branches used to end `RETURN NEW`. For an INSTEAD OF trigger the
+ * returned row is what a caller's RETURNING clause is evaluated against, so
+ * RETURNING handed back THE CALLER'S OWN INPUT re-labelled as a result — never
+ * read from `work_items`, and therefore never evidence that anything was stored.
+ * `createIssue()` builds `{ created: true, ... }` from exactly that RETURNING.
+ *
+ * `feature_order` is the probe throughout: it is a real view column that neither
+ * the INSERT column list nor the UPDATE SET list mentions, so the trigger silently
+ * drops it. That is the mig-679 class (`authority` was dropped the same way, for
+ * the same reason, and RETURNING cheerfully echoed it back). If RETURNING is read
+ * from storage, a dropped column comes back as stored — visibly not what was sent.
+ */
+describe('engineer_issues view DML RETURNING reflects storage, not caller input', () => {
+  it('INSERT..RETURNING returns the stored row — a column the trigger drops does not echo back', async () => {
+    const issueId = 'EI-900010';
+
+    const [returned] = await sql<{ issue_id: string; title: string; kind: string; base_harness_slug: string; feature_order: number | null }[]>`
+      INSERT INTO harness_shared.engineer_issues
+        (workspace_id, issue_id, title, body, state, kind, scope, severity, feature_order)
+      VALUES
+        ('ws1', ${issueId}, 'returning probe', 'body', 'open', 'bug', 'harness:hx', 'minor', 42)
+      RETURNING issue_id, title, kind, base_harness_slug, feature_order`;
+
+    const [stored] = await sql<{ title: string; item_kind: string; harness_slug: string; feature_order: number | null }[]>`
+      SELECT title, item_kind, harness_slug, feature_order
+        FROM harness_shared.work_items
+       WHERE workspace_id = 'ws1' AND feature_id = ${issueId}`;
+
+    // The regression itself: pre-711 this asserted 42 (the caller's input) against
+    // a stored NULL — a fully-formed success built from data nobody ever stored.
+    expect(stored.feature_order).toBeNull();
+    expect(returned.feature_order).toBeNull();
+
+    // And the columns that DO take must carry their stored values through.
+    expect(returned).toMatchObject({
+      issue_id: issueId,
+      title: stored.title,
+      kind: stored.item_kind,
+      base_harness_slug: stored.harness_slug,
+    });
+  });
+
+  it('UPDATE..RETURNING returns the stored row — an ignored SET column does not echo back', async () => {
+    const issueId = 'EI-900011';
+    await sql`
+      INSERT INTO harness_shared.engineer_issues
+        (workspace_id, issue_id, title, body, state, kind, scope, severity)
+      VALUES ('ws1', ${issueId}, 'before', 'body', 'open', 'bug', 'harness:hx', 'minor')`;
+
+    const [returned] = await sql<{ title: string; state: string; feature_order: number | null }[]>`
+      UPDATE harness_shared.engineer_issues
+         SET title = 'after', state = 'wip', feature_order = 99
+       WHERE workspace_id = 'ws1' AND issue_id = ${issueId}
+      RETURNING title, state, feature_order`;
+
+    const [stored] = await sql<{ title: string; status: string; feature_order: number | null }[]>`
+      SELECT title, status, feature_order
+        FROM harness_shared.work_items
+       WHERE workspace_id = 'ws1' AND feature_id = ${issueId}`;
+
+    expect(stored).toMatchObject({ title: 'after', status: 'wip', feature_order: null });
+    expect(returned).toEqual({ title: 'after', state: 'wip', feature_order: null });
+  });
+
+  it('still reports a DECLINED write as zero rows + empty RETURNING (EI-7833 remote skip)', async () => {
+    // 711 must not convert a deliberate decline into a spurious success — the
+    // federated-row skip and the mig-655 claim-race guard both RETURN NULL, and
+    // callers already read `rows[0] === undefined` as "did not happen".
+    const issueId = 'EI-900012';
+    await seedDuplicateIssueRows(issueId);
+
+    const returned = await sql`
+      UPDATE harness_shared.engineer_issues
+         SET title = 'should not apply'
+       WHERE workspace_id = 'ws1'
+         AND issue_id = ${issueId}
+         AND origin = 'remote'
+         AND base_harness_slug = ''
+      RETURNING issue_id, title`;
+
+    expect(returned).toHaveLength(0);
+
+    const [remote] = await sql<{ title: string }[]>`
+      SELECT title FROM harness_shared.work_items
+       WHERE workspace_id = 'ws1' AND feature_id = ${issueId} AND origin = 'remote'`;
+    expect(remote.title).toBe('remote replication signal');
+  });
+
+  it('no write branch returns NEW — the structural invariant a future migration must not undo', async () => {
+    // The behavioural tests above only cover the columns they probe. This asserts
+    // the property itself, so a later full-body CREATE OR REPLACE that restores an
+    // older definition reds HERE rather than silently reopening the false-success
+    // path. (DELETE returns OLD; the two decline paths return NULL — both fine.)
+    const [{ def }] = await sql<{ def: string }[]>`
+      SELECT pg_get_functiondef(p.oid) AS def
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'harness_shared' AND p.proname = 'engineer_issues_view_dml'`;
+
+    expect(def).not.toContain('RETURN NEW;');
+    expect(def.split('RETURN v_stored;').length - 1).toBe(2);
+  });
+});
