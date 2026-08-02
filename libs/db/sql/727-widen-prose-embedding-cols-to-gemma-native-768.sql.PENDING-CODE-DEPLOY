@@ -1,3 +1,32 @@
+-- ⛔ PARKED — DO NOT RENAME TO `.sql` UNTIL THE 768 CODE IS DEPLOYED TO :3070.
+--
+-- Migration discovery is `filename.endsWith('.sql')` (migration-drift.ts:23),
+-- so this suffix is what keeps it from auto-applying on the next operator
+-- restart — which on this box happens within the hour, routinely.
+--
+-- WHY IT IS PARKED. This migration and the code that emits 768 are MUTUALLY
+-- BLOCKING, and applying them in the wrong order causes an outage of unbounded
+-- length rather than a bounded one:
+--   * migration first  -> all ~414k vectors are dropped, but the DEPLOYED code
+--                         still emits 384, so every refill write fails and
+--                         semantic search stays dead until the new code ships
+--                         (gate-dependent, potentially many hours).
+--   * code first       -> the code emits 768 into vector(384) columns; writes
+--                         fail for the minutes until this is applied, and the
+--                         refill starts the instant it is. Bounded, self-healing.
+-- So: DEPLOY THE CODE, THEN rename this to `.sql` and apply it.
+--
+-- TO ENACT (plan P-006):
+--   1. Confirm the 768 code is live:
+--      dev:pipeline_position { path: 'packages/operator-core/lib/search/prose-vector-dims.ts' }
+--      -> serving.startedSinceCodeChange must be true.
+--   2. git mv this file to drop the .PENDING-CODE-DEPLOY suffix.
+--   3. Apply via the RUNNER (npm run db:migrate) — never `psql -f`, which
+--      leaves no schema_migrations row and re-runs on every deploy.
+--   4. node libs/papercusp/libs/db/scripts/pull-schema.mjs
+--   5. Watch the backfill sweep refill (~414k vectors, ~24h single-worker).
+--
+-- ─────────────────────────────────────────────────────────────────────────────
 -- 727 — Widen every shared prose/registry embedding column from vector(384) to
 -- vector(768), EmbeddingGemma-300m's NATIVE width.
 --
