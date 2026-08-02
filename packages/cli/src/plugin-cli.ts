@@ -1248,7 +1248,7 @@ export async function cmdPluginWatch(args: string[]): Promise<void> {
   }
 
   const { HotReloader } = await import(
-    '../../../../../packages/papercusp-plugin-loader/src/hot-reload.ts'
+    '../../../../../packages/plugin-loader/src/hot-reload.ts'
   );
   const hr = new HotReloader(targetDir, { debounceMs: 300 });
 
