@@ -617,6 +617,8 @@ put work in the *coordination* queue. So the question is never "is it tracked?"
 This is the *register* side; the posture/route gate above is the *ask* side. In
 AUTO you skip the ask and still register per the tiers.
 
+<!-- PAPERCUSP-SU:RESULT-DOOR -->
+
 ## Tools, docs, memory
 
 - **Your verbs are MCP tools — never curl them.** There is no REST surface for these
