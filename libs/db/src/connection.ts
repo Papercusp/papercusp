@@ -978,16 +978,57 @@ export function typedSql<R = Record<string, unknown>>(
  * a validation-query failure (including the DB being briefly unreachable) must
  * never affect the real pool or block/throw on the caller.
  */
-function validateDiscoveryTargetOnce(sql: Sql, label: string): void {
-  void sql<Array<{ t: string | null }>>`SELECT to_regclass('harness_shared.schema_migrations')::text AS t`
+/**
+ * STORE IDENTITY (plan outage-must-not-be-silent-2026-08-02, D-001) — why the WI-5244
+ * check above is necessary but NOT sufficient, and why this runs on EVERY pool.
+ *
+ * The schema check asks *"is this a plausible papercusp database?"*. On 2026-08-02 22:40Z
+ * the answer was yes and the database was still the wrong one: an ephemeral operator
+ * instance's embedded Postgres, freshly migrated with 433 tables. It was alive, listening,
+ * and schema-complete — so the pid gate, the port gate and the WI-5244 check all PASSED —
+ * and it answered `not_found` for every record in the real store. A confident wrong answer,
+ * indistinguishable from data loss, for ~13 minutes fleet-wide.
+ *
+ * `system_identifier` is the discriminator none of those three has: initdb assigns it per
+ * cluster and it never changes, so an impostor cluster cannot share ours while our own
+ * restarts, port shuffles and reconnects keep it. See store-identity.ts for the full lineage.
+ *
+ * Two deliberate scope choices:
+ *
+ *  - **Identity is probed for EVERY managed pool, not just discovery-sourced ones**, unlike
+ *    the WI-5244 schema check. The pin must be established from the TRUSTED env/native path
+ *    at boot; if only spoofable pools were probed, the first impostor to be observed would
+ *    become the pin and legitimise itself. Pinning early is what makes the later comparison
+ *    mean anything.
+ *  - **Fail-soft on an unreadable probe, loud on a positive mismatch.** A query error, a
+ *    missing column, an old server — anything that merely prevents the check — is
+ *    `indeterminate` and changes nothing, mirroring the generic resolver's rule that a check
+ *    which cannot run must never reject a healthy configuration. Only two successfully-read,
+ *    genuinely different identities are ever treated as a violation.
+ */
+function validateDiscoveryTargetOnce(
+  sql: Sql,
+  label: string,
+  opts: { url: string; checkSchema: boolean },
+): void {
+  void sql<Array<{ t: string | null; system_identifier: string | null; database: string | null }>>`
+      SELECT to_regclass('harness_shared.schema_migrations')::text AS t,
+             (SELECT system_identifier::text FROM pg_control_system()) AS system_identifier,
+             current_database() AS database`
     .then((rows) => {
-      if (!rows[0]?.t) {
+      if (opts.checkSchema && !rows[0]?.t) {
         console.error(
           `[connection] WI-5244: the ${label} pool resolved via the discovery file ` +
             `(~/.papercusp/embedded-pg.json) but harness_shared.schema_migrations does not ` +
             `exist at that target — this looks like an IMPOSTOR/mismatched papercusp DB, ` +
             `not the real managed database. Check ~/.papercusp/embedded-pg.json for a recent ` +
             `rewrite by another local install (see WI-5244).`,
+        );
+      }
+      const verdict = pinOrVerifyStoreIdentity(parseStoreIdentity(rows), opts.url);
+      if (verdict.kind === 'mismatch') {
+        console.error(
+          `${describeStoreIdentityMismatch(verdict.pinned, verdict.observed)}\n  pool: ${label}`,
         );
       }
     })
