@@ -21,6 +21,10 @@ export {
   restoreRawJsonbSerializer,
   longLivedPoolConnectionOptions,
   poolIdleTimeoutSec,
+  // EI-19306394439939264: the rebind primitive was exported from connection.ts but never
+  // re-exported here, so no other package could import it — which is why adoption outside
+  // connection.ts was zero and 25 hand-rolled pools still wedge on a dead endpoint.
+  endStalePool,
   type OrgPgHandle,
 } from './connection';
 export { withWorkspace, withWorkspaceQuery, withHarnessSchema, harnessQuery } from './workspace-context';
