@@ -3389,6 +3389,7 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	claim: jsonb(),
 	enforcement: jsonb(),
 	fedHlc: text("fed_hlc"),
+	evictedAt: timestamp("evicted_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("agent_facts_fold").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((retracted_at IS NULL) AND (superseded_at IS NULL))`),
 	uniqueIndex("agent_facts_identity_current").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`COALESCE(source_hive, ''::text)`).where(sql`(superseded_at IS NULL)`),
