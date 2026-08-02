@@ -16,7 +16,8 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit --incremental false -p tsconfig.json"
   },
   "dependencies": {
     "@papercusp/orchestrator": "*",

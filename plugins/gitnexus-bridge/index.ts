@@ -24,6 +24,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { delimiter as PATH_DELIMITER } from 'node:path';
 import { homedir } from 'node:os';
 import type {
+  Capability,
   Plugin,
   PapercuspContext,
   ToolDefinition,
@@ -379,7 +380,10 @@ const plugin: Plugin = {
     const definitions: ToolDefinition[] = [];
     const handlers: PluginToolMap = {};
     for (const t of upstream) {
-      const cap = `tools:gitnexus:${t.name}`;
+      // Annotated, not inferred: a bare `const cap = \`tools:...\`` widens to
+      // `string`, which is not assignable to Capability's `tools:${string}`
+      // member. Surfaced by EI-19305781578043773 giving this plugin a tsconfig.
+      const cap: Capability = `tools:gitnexus:${t.name}`;
       const override = TOOL_OVERRIDES[t.name];
       const def: ToolDefinition = {
         name: t.name,

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit --incremental false -p tsconfig.json"
   },
   "dependencies": {
     "@papercusp/plugin-sdk": "*"
