@@ -1,6 +1,7 @@
 -- ⛔ PARKED — DO NOT RENAME TO `.sql` UNTIL THE 768 CODE IS DEPLOYED TO :3070.
 --
--- Migration discovery is `filename.endsWith('.sql')` (migration-drift.ts:23),
+-- Migration discovery is `filename.endsWith('.sql')` (migration-drift.ts:23, and
+-- packages/operator-core/test/_pg-helpers.ts:200 for the integration-test path),
 -- so this suffix is what keeps it from auto-applying on the next operator
 -- restart — which on this box happens within the hour, routinely.
 --
@@ -54,13 +55,55 @@
 -- predicate is "vector missing OR produced by a different embedder than the
 -- active one", so every NULLed row is simply eligible again.
 --
--- COLUMN LIST WAS ENUMERATED FROM pg_attribute, NOT from the migration files.
--- Grepping migrations yields FIVE of these and silently misses SEVEN
--- (code_recipes, harness_features, harness_features_consolidated,
--- harness_brainstorm, harness_decisions, harness_escalations,
--- datatype_registry). A partial migration is the dangerous outcome: the missed
--- surfaces keep vector(384) while the code emits 768, so every write to them
--- fails inside a background sweep nobody is watching.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- TWO CLASSES OF OBJECT BLOCK AN `ALTER COLUMN ... TYPE`, NOT ONE.
+--
+-- The first version of this migration handled only INDEXES and would have
+-- failed on the very first table with a dependent view (EI-19364746461986832):
+--
+--   PostgresError: cannot alter type of a column used by a view or rule
+--     detail: rule _RETURN on view harness_shared.harness_features_consolidated
+--             depends on column "embedding"
+--
+-- Both classes now get identical treatment — DISCOVER (never hardcode), capture
+-- the definition verbatim, drop, ALTER, recreate:
+--
+--   * INDEXES are discovered from pg_index by ATTNUM, not by matching the
+--     column name inside indexdef text. The previous `indexdef ILIKE '%(' || c
+--     || ' %'` form silently missed any index written without a trailing space
+--     (e.g. a plain `(embedding)`), and an HNSW index is dimension-bound, so a
+--     missed one fails the ALTER.
+--
+--   * VIEWS are discovered by a RECURSIVE walk of pg_depend/pg_rewrite, because
+--     the dependency graph is neither shallow nor confined to this schema:
+--         work_items.embedding
+--           <- harness_shared.harness_features_consolidated   (rank 1)
+--           <- harness_shared.work_items_claimable            (rank 1)
+--                <- <every per-harness schema>.harness_features (rank 2)
+--     That last rank is ~35 views TODAY (harness_papercusp, harness_oddsmith,
+--     harness_quartermaster, ~25 harness_contract_test_* ...) and grows with
+--     every new pot, so naming them literally is not an option. They are
+--     dropped deepest-first and recreated shallowest-first, with owner, grants,
+--     reloptions and comment restored.
+--
+-- Views need no width change of their own: a view's column simply reports the
+-- base column's type, so recreating it after the ALTER yields vector(768) free.
+--
+-- ⚠ THE MISTAKE THAT PRODUCED THE ORIGINAL BUG, so it is not repeated: the
+-- target list below was built from `pg_attribute` WITHOUT filtering
+-- `relkind`, which silently mixes VIEWS in among the TABLES. Two of the
+-- fourteen original entries — harness_features and harness_features_consolidated
+-- — are relkind='v', and `ALTER TABLE ... ALTER COLUMN` against a view fails.
+-- The list is now TABLES ONLY (relkind='r'), and a view appearing in it RAISES
+-- rather than being skipped, because a silent skip is what leaves a surface at
+-- vector(384) under 768-emitting code.
+--
+-- COLUMN LIST WAS ENUMERATED FROM pg_attribute (relkind='r'), NOT from the
+-- migration files. Grepping migrations yields FIVE of these and silently misses
+-- the rest (code_recipes, harness_brainstorm, harness_decisions,
+-- harness_escalations, datatype_registry). A partial migration is the dangerous
+-- outcome: the missed surfaces keep vector(384) while the code emits 768, so
+-- every write to them fails inside a background sweep nobody is watching.
 --
 -- NOT INCLUDED, deliberately: memory_vec_local stays vector(384) (bge-small is
 -- natively 384 with no MRL — it CANNOT emit 768, so `local` simply becomes
@@ -68,42 +111,52 @@
 -- Those are per-mode spaces, not the shared contract.
 --
 -- Idempotent: every step is guarded on the column's CURRENT width, so a re-run
--- (or a run against a fresh DB already created at 768) is a no-op.
+-- (or a run against a fresh DB already created at 768) is a no-op — and when
+-- nothing needs widening it returns BEFORE touching a single view.
 
 DO $$
 DECLARE
-  -- table, column pairs. Keep in sync with PROSE_VECTOR_COLUMNS in
+  -- TABLES ONLY (relkind='r'). Keep in sync with PROSE_VECTOR_COLUMNS in
   -- packages/operator-core/lib/search/prose-vector-dims.ts — the integration
   -- test compares that list against the live schema.
   targets text[][] := ARRAY[
-    ARRAY['session_turns',                 'text_embedding'],
-    ARRAY['operator_turns',                'text_embedding'],
-    ARRAY['work_items',                    'embedding'],
-    ARRAY['doc_sections',                  'embedding'],
-    ARRAY['harness_plans',                 'embedding'],
-    ARRAY['harness_escalations',           'body_embedding'],
-    ARRAY['harness_brainstorm',            'content_embedding'],
-    ARRAY['harness_decisions',             'body_embedding'],
-    ARRAY['code_recipes',                  'embedding'],
-    ARRAY['harness_features',              'embedding'],
-    ARRAY['harness_features_consolidated', 'embedding'],
-    ARRAY['datatype_registry',             'embedding'],
+    ARRAY['session_turns',       'text_embedding'],
+    ARRAY['operator_turns',      'text_embedding'],
+    ARRAY['work_items',          'embedding'],
+    ARRAY['doc_sections',        'embedding'],
+    ARRAY['harness_plans',       'embedding'],
+    ARRAY['harness_escalations', 'body_embedding'],
+    ARRAY['harness_brainstorm',  'content_embedding'],
+    ARRAY['harness_decisions',   'body_embedding'],
+    ARRAY['code_recipes',        'embedding'],
+    ARRAY['datatype_registry',   'embedding'],
     -- The gemma memory space moves with gemma's target width.
-    ARRAY['memory_vec_gemma',              'vector'],
+    ARRAY['memory_vec_gemma',    'vector'],
     -- The openai memory space moves too: openai's targetDims goes 384 -> 768 so
     -- that it stays prose-eligible (continuous MRL, billed per token not per
     -- dimension, so the width is free).
-    ARRAY['memory_vec_openai',             'vector']
+    ARRAY['memory_vec_openai',   'vector']
   ];
+
+  -- Parallel arrays rather than a 2-D array: plpgsql cannot append a row to a
+  -- 2-D array, and these feed the closure query below as unnest(a, b).
+  need_t text[] := ARRAY[]::text[];
+  need_c text[] := ARRAY[]::text[];
+
   t text;
   c text;
   cur_dims int;
+  rk "char";
   idx record;
-  -- Index definitions captured before their columns are re-typed, replayed
-  -- verbatim afterwards. An array, not a temp table: no ON COMMIT semantics to
-  -- reason about, and the statements are plain text.
-  rebuild_stmts text[] := ARRAY[]::text[];
+  v record;
+  g record;
   stmt text;
+
+  -- Captured DDL, replayed after the type change. Arrays, not temp tables: no
+  -- ON COMMIT semantics to reason about and the statements are plain text.
+  index_rebuild_stmts text[] := ARRAY[]::text[];
+  view_drop_stmts     text[] := ARRAY[]::text[];
+  view_rebuild_stmts  text[] := ARRAY[]::text[];
 BEGIN
   -- pgvector must be present; every column below is already a vector type, so
   -- if the extension is missing this DB has no embedding columns to widen.
@@ -112,14 +165,29 @@ BEGIN
     RETURN;
   END IF;
 
+  -- ── PASS 1 ── Decide what actually needs widening, and validate the list. ──
   FOR i IN 1 .. array_length(targets, 1) LOOP
     t := targets[i][1];
     c := targets[i][2];
 
-    -- Skip a table this deployment does not have.
-    IF to_regclass('harness_shared.' || quote_ident(t)) IS NULL THEN
+    SELECT cl.relkind INTO rk
+      FROM pg_class cl
+      JOIN pg_namespace n ON n.oid = cl.relnamespace
+     WHERE n.nspname = 'harness_shared' AND cl.relname = t;
+
+    -- A deployment that simply does not have this table yet.
+    IF rk IS NULL THEN
       RAISE NOTICE '727: harness_shared.% absent — skipped', t;
       CONTINUE;
+    END IF;
+
+    -- A view in the TARGET list is a list bug, not a runtime condition: it can
+    -- never be ALTERed, and skipping it quietly is how a surface gets stranded
+    -- at vector(384) under 768-emitting code. Fail loudly instead.
+    IF rk <> 'r' THEN
+      RAISE EXCEPTION
+        '727: harness_shared.% is relkind ''%'', not a table. A VIEW must not be listed as a target — it inherits its width from the base column and is dropped/recreated automatically by the closure below. (This shipped once: the list was built from pg_attribute without filtering relkind.)',
+        t, rk;
     END IF;
 
     SELECT a.atttypmod INTO cur_dims
@@ -144,28 +212,165 @@ BEGIN
       CONTINUE;
     END IF;
 
-    -- An HNSW/IVFFlat index is bound to the column's dimensionality, so it must
-    -- be dropped before the type change and rebuilt after. Discover them rather
-    -- than hardcoding names: the indexes on these columns follow at least three
-    -- different naming conventions (…_hnsw, …_hnsw_idx, session_turns_embedding_idx).
+    need_t := need_t || t;
+    need_c := need_c || c;
+  END LOOP;
+
+  -- Re-run / fresh-DB case: return BEFORE dropping any view.
+  IF array_length(need_t, 1) IS NULL THEN
+    RAISE NOTICE '727: every target already vector(768) — no-op';
+    RETURN;
+  END IF;
+
+  RAISE NOTICE '727: % column(s) to widen', array_length(need_t, 1);
+
+  -- ── PASS 2 ── Capture the transitive closure of dependent views. ───────────
+  -- Ordered shallowest-first (topological rank = LONGEST path from a target, so
+  -- a view always sorts after everything it reads). Rebuilds replay in this
+  -- order; drops are accumulated in reverse by prepending.
+  FOR v IN
+    WITH RECURSIVE tgt AS (
+      SELECT cl.oid, a.attnum
+        FROM unnest(need_t, need_c) AS u(tname, cname)
+        JOIN pg_class cl ON cl.relname = u.tname AND cl.relkind = 'r'
+        JOIN pg_namespace n ON n.oid = cl.relnamespace AND n.nspname = 'harness_shared'
+        JOIN pg_attribute a ON a.attrelid = cl.oid AND a.attname = u.cname
+                           AND a.attnum > 0 AND NOT a.attisdropped
+    ),
+    dep(view_oid, depth) AS (
+      -- Views whose rewrite rule references one of the target COLUMNS.
+      -- refobjsubid is the column: a view reading other columns of the same
+      -- table does NOT block the ALTER and must not be dropped.
+      SELECT r.ev_class, 1
+        FROM pg_depend d
+        JOIN pg_rewrite r ON r.oid = d.objid AND d.classid = 'pg_rewrite'::regclass
+       WHERE d.refclassid = 'pg_class'::regclass
+         AND (d.refobjid, d.refobjsubid) IN (SELECT oid, attnum FROM tgt)
+         AND r.ev_class <> d.refobjid
+      UNION
+      -- ...and views built on THOSE views, to any depth.
+      SELECT r.ev_class, dep.depth + 1
+        FROM dep
+        JOIN pg_depend d ON d.refobjid = dep.view_oid AND d.refclassid = 'pg_class'::regclass
+        JOIN pg_rewrite r ON r.oid = d.objid AND d.classid = 'pg_rewrite'::regclass
+       WHERE r.ev_class <> dep.view_oid AND dep.depth < 20
+    )
+    SELECT dep.view_oid                              AS oid,
+           max(dep.depth)                            AS topo,
+           nv.nspname                                AS nsp,
+           cv.relname                                AS rel,
+           cv.relkind                                AS kind,
+           pg_get_viewdef(dep.view_oid, true)        AS def,
+           pg_get_userbyid(cv.relowner)              AS owner,
+           cv.relacl                                 AS acl,
+           cv.reloptions                             AS opts,
+           obj_description(dep.view_oid, 'pg_class') AS cmt
+      FROM dep
+      JOIN pg_class cv ON cv.oid = dep.view_oid
+      JOIN pg_namespace nv ON nv.oid = cv.relnamespace
+     GROUP BY dep.view_oid, nv.nspname, cv.relname, cv.relkind,
+              cv.relowner, cv.relacl, cv.reloptions
+     ORDER BY max(dep.depth) ASC, nv.nspname, cv.relname
+  LOOP
+    -- A materialized view would additionally need its data repopulated and its
+    -- own indexes rebuilt. None exist today; refuse rather than guess.
+    IF v.kind <> 'v' THEN
+      RAISE EXCEPTION
+        '727: dependent relation %.% is relkind ''%'' — this migration only knows how to drop and recreate plain VIEWs. Refusing rather than silently mishandling it.',
+        v.nsp, v.rel, v.kind;
+    END IF;
+
+    -- Deepest-first drop order, built by prepending as we walk shallowest-first.
+    -- No CASCADE: if the closure ever misses a dependent, the DROP must fail
+    -- loudly and roll the migration back rather than destroy an object we
+    -- captured no definition for.
+    view_drop_stmts := ARRAY[format('DROP VIEW %I.%I', v.nsp, v.rel)] || view_drop_stmts;
+
+    view_rebuild_stmts := view_rebuild_stmts
+      || format('CREATE VIEW %I.%I AS %s', v.nsp, v.rel, v.def);
+
+    -- Recreated objects are owned by whoever runs the migration; restore the
+    -- original owner explicitly so a runner role change cannot silently
+    -- re-home these views.
+    view_rebuild_stmts := view_rebuild_stmts
+      || format('ALTER VIEW %I.%I OWNER TO %I', v.nsp, v.rel, v.owner);
+
+    IF v.opts IS NOT NULL THEN
+      view_rebuild_stmts := view_rebuild_stmts
+        || format('ALTER VIEW %I.%I SET (%s)', v.nsp, v.rel, array_to_string(v.opts, ', '));
+    END IF;
+
+    -- DROP discards grants, so replay them from the captured ACL. A NULL acl
+    -- means defaults-only (owner privileges), which the ALTER ... OWNER above
+    -- already restores.
+    IF v.acl IS NOT NULL THEN
+      FOR g IN
+        SELECT ae.privilege_type AS priv,
+               CASE WHEN ae.grantee = 0 THEN 'PUBLIC'
+                    ELSE quote_ident(pg_get_userbyid(ae.grantee)) END AS grantee
+          FROM aclexplode(v.acl) ae
+      LOOP
+        view_rebuild_stmts := view_rebuild_stmts
+          || format('GRANT %s ON %I.%I TO %s', g.priv, v.nsp, v.rel, g.grantee);
+      END LOOP;
+    END IF;
+
+    IF v.cmt IS NOT NULL THEN
+      view_rebuild_stmts := view_rebuild_stmts
+        || format('COMMENT ON VIEW %I.%I IS %L', v.nsp, v.rel, v.cmt);
+    END IF;
+  END LOOP;
+
+  IF array_length(view_drop_stmts, 1) IS NULL THEN
+    RAISE NOTICE '727: no dependent views';
+  ELSE
+    RAISE NOTICE '727: % dependent view(s) to drop and recreate', array_length(view_drop_stmts, 1);
+  END IF;
+
+  -- ── PASS 3 ── Drop the views (deepest dependents first). ───────────────────
+  FOREACH stmt IN ARRAY view_drop_stmts LOOP
+    RAISE NOTICE '727: %', stmt;
+    EXECUTE stmt;
+  END LOOP;
+
+  -- ── PASS 4 ── Drop dependent indexes, widen, reset the mode discriminator. ─
+  FOR i IN 1 .. array_length(need_t, 1) LOOP
+    t := need_t[i];
+    c := need_c[i];
+
+    -- Discovered from pg_index BY ATTNUM. An HNSW/IVFFlat index is bound to the
+    -- column's dimensionality so it must be dropped before the type change and
+    -- rebuilt after; pg_get_indexdef gives back opclass, operator class options
+    -- and any WHERE clause verbatim, so nothing has to be re-guessed.
     FOR idx IN
-      SELECT i.indexname, i.indexdef
-        FROM pg_indexes i
-       WHERE i.schemaname = 'harness_shared'
-         AND i.tablename = t
-         AND (i.indexdef ILIKE '%hnsw%' OR i.indexdef ILIKE '%ivfflat%')
-         AND i.indexdef ILIKE '%(' || c || ' %'
+      SELECT ci.relname AS indexname,
+             pg_get_indexdef(ix.indexrelid) AS indexdef,
+             ix.indisprimary OR ix.indisunique OR ix.indisexclusion AS constraint_backed
+        FROM pg_index ix
+        JOIN pg_class ci ON ci.oid = ix.indexrelid
+        JOIN pg_class ct ON ct.oid = ix.indrelid
+        JOIN pg_namespace n ON n.oid = ct.relnamespace
+        JOIN pg_attribute a ON a.attrelid = ct.oid AND a.attname = c
+       WHERE n.nspname = 'harness_shared'
+         AND ct.relname = t
+         AND a.attnum = ANY (ix.indkey::smallint[])
     LOOP
+      -- Dropping a constraint-backing index needs ALTER TABLE ... DROP
+      -- CONSTRAINT and would silently drop the constraint with it.
+      IF idx.constraint_backed THEN
+        RAISE EXCEPTION
+          '727: index % on harness_shared.%.% backs a constraint — refusing to drop it blindly.',
+          idx.indexname, t, c;
+      END IF;
+
       RAISE NOTICE '727: dropping % to widen %.%', idx.indexname, t, c;
-      -- Capture the ORIGINAL definition first, so opclass and any WHERE clause
-      -- survive verbatim after the ALTER rather than being re-guessed.
-      rebuild_stmts := rebuild_stmts || idx.indexdef;
+      index_rebuild_stmts := index_rebuild_stmts || idx.indexdef;
       EXECUTE format('DROP INDEX IF EXISTS harness_shared.%I', idx.indexname);
     END LOOP;
 
     -- The widening itself. USING NULL because no cast exists between vector
     -- widths — this is the all-at-once data loss the header describes.
-    RAISE NOTICE '727: widening harness_shared.%.% from vector(%) to vector(768)', t, c, cur_dims;
+    RAISE NOTICE '727: widening harness_shared.%.% to vector(768)', t, c;
     EXECUTE format(
       'ALTER TABLE harness_shared.%I ALTER COLUMN %I TYPE public.vector(768) USING NULL',
       t, c
@@ -178,15 +383,24 @@ BEGIN
       SELECT 1 FROM information_schema.columns
        WHERE table_schema = 'harness_shared' AND table_name = t AND column_name = c || '_mode'
     ) THEN
-      EXECUTE format('UPDATE harness_shared.%I SET %I = NULL WHERE %I IS NOT NULL', t, c || '_mode', c || '_mode');
+      EXECUTE format('UPDATE harness_shared.%I SET %I = NULL WHERE %I IS NOT NULL',
+                     t, c || '_mode', c || '_mode');
     END IF;
   END LOOP;
 
-  -- Rebuild every index we dropped, from its captured definition. Cheap here:
-  -- the columns are now all-NULL, so each build is near-instant and HNSW fills
-  -- in incrementally as the backfill sweep refills the vectors.
-  FOREACH stmt IN ARRAY rebuild_stmts LOOP
+  -- ── PASS 5 ── Rebuild indexes. ─────────────────────────────────────────────
+  -- Cheap here: the columns are now all-NULL, so each build is near-instant and
+  -- HNSW fills in incrementally as the backfill sweep refills the vectors.
+  FOREACH stmt IN ARRAY index_rebuild_stmts LOOP
     RAISE NOTICE '727: rebuilding index: %', left(stmt, 80);
     EXECUTE stmt;
   END LOOP;
+
+  -- ── PASS 6 ── Recreate the views (shallowest first), with owner/grants. ────
+  FOREACH stmt IN ARRAY view_rebuild_stmts LOOP
+    EXECUTE stmt;
+  END LOOP;
+
+  RAISE NOTICE '727: done — % column(s) widened, % view statement(s) replayed',
+    array_length(need_t, 1), coalesce(array_length(view_rebuild_stmts, 1), 0);
 END $$;
