@@ -5118,6 +5118,17 @@ export const agentLaunchIdempotencyInHarnessShared = harnessShared.table("agent_
 	primaryKey({ columns: [table.idempotencyKey, table.workspaceId], name: "agent_launch_idempotency_pkey"}),
 ]);
 
+export const corpusSessionSurfacedInHarnessShared = harnessShared.table("corpus_session_surfaced", {
+	sessionId: text("session_id").notNull(),
+	epoch: integer().default(0).notNull(),
+	ref: text().notNull(),
+	port: text(),
+	surfacedAt: timestamp("surfaced_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("corpus_session_surfaced_at_idx").using("btree", table.surfacedAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.epoch, table.ref, table.sessionId], name: "corpus_session_surfaced_pkey"}),
+]);
+
 export const systemPrincipalsInHarnessShared = harnessShared.table("system_principals", {
 	workspaceId: text("workspace_id").notNull(),
 	name: text().notNull(),
