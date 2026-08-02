@@ -791,16 +791,18 @@ function assertRealPgAllowed(label: string, connectionUrl: string): void {
   if (process.env.PAPERCUSP_FORBID_REAL_PG !== '1') return;
   // Redact credentials — this string lands in test output and CI logs.
   const safeTarget = connectionUrl.replace(/\/\/[^@/]*@/, '//<redacted>@');
+  // ONE LINE, deliberately. The first measured run of this rail blocked 196 real
+  // connections across the operator-core unit suite — and most call sites FAIL OPEN
+  // (`buildHiveRekeyBootDeps fail-open: …`, `inbox-wake arm failed (non-fatal)`), so they
+  // CATCH this error and log it rather than failing. A multi-line message therefore
+  // multiplies into ~1000 lines of noise that buries the real test output. The rail's
+  // value is preventing the connection, which happens whether or not anyone reads the
+  // text; the full rationale lives in this function's doc comment and in the setup file,
+  // where it is read once instead of printed hundreds of times.
   throw new Error(
-    `A UNIT test tried to open a REAL Postgres connection (pool "${label}" → ${safeTarget}).\n` +
-      `Unit tests must never touch a live database: the verdict then depends on production ` +
-      `data, so it stays green until that data moves and reds the shared gate for someone else.\n` +
-      `\n` +
-      `FIX: inject the module's own seam/probe double rather than mocking a store beneath a ` +
-      `production function (see PremiseProbes in agent-tools/coordination/premise-resolve.ts). ` +
-      `A double cannot be escaped; a vi.mock beneath concurrent dynamic imports can.\n` +
-      `If this code genuinely needs a live database, it is an INTEGRATION test — rename it ` +
-      `*.integration.test.ts so it runs under the integration config against a testcontainer.`,
+    `A UNIT test tried to open a REAL Postgres connection (pool "${label}" → ${safeTarget}). ` +
+      `Unit tests must not touch a live database — inject the module's own seam double, or ` +
+      `rename the file *.integration.test.ts to run it against a testcontainer. [EI-19311807188719573]`,
   );
 }
 
