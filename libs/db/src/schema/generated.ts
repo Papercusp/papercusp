@@ -1074,11 +1074,12 @@ export const coordEventLogInHarnessShared = harnessShared.table("coord_event_log
 	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("coord_event_log_allhive_broadcast").using("btree", table.ts.asc().nullsLast().op("timestamptz_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'kind'::text) = 'message'::text) AND ((body -> 'to'::text) @> '["*"]'::jsonb))`),
-	index("coord_event_log_conditions_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ? 'condition_key'::text) OR (body ? 'resolves_condition'::text)))`),
+	index("coord_event_log_conditions_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ? 'condition_key'::text) OR (body ? 'resolves_condition'::text)))`),
 	uniqueIndex("coord_event_log_event_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`(surface = ANY (ARRAY['handoffs'::text, 'escalations'::text]))`),
 	uniqueIndex("coord_event_log_fanout_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'notify_kind'::text) IS NOT NULL))`),
 	uniqueIndex("coord_event_log_fed_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((harness_slug IS NOT NULL) AND ((body ->> 'notify_kind'::text) IS NULL))`),
-	index("coord_event_log_messages_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.ts.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(surface = 'messages'::text)`),
+	index("coord_event_log_hindsight_notify_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.id.desc().nullsFirst().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'notify_kind'::text) = 'operator_hindsight'::text))`),
+	index("coord_event_log_messages_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(surface = 'messages'::text)`),
 	index("coord_event_log_msg_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")),
 	index("coord_event_log_msg_tsv_idx").using("gin", sql`to_tsvector('english'::regconfig, "left"(((COALESCE((body ->> '`).where(sql`(surface = 'messages'::text)`),
 	index("coord_event_log_related_msg_id_idx").using("btree", sql`((body ->> 'related_msg_id'::text))`).where(sql`(body ? 'related_msg_id'::text)`),
@@ -1781,10 +1782,12 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	portStatus: text("port_status"),
 	portMetadata: jsonb("port_metadata"),
 	firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	endedBy: text("ended_by"),
 }, (table) => [
 	index("adv_sessions_coord_owner_first_seen_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.firstSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("adv_sessions_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("adv_sessions_ended_unarchived_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((ended_at IS NOT NULL) AND (archived_at IS NULL))`),
+	index("adv_sessions_observer_ended_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((ended_at IS NOT NULL) AND (ended_by IS DISTINCT FROM 'self'::text))`),
 	index("adv_sessions_pending_workbench_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((display = 'workbench'::text) AND (launched_at IS NULL) AND (ended_at IS NULL))`),
 	index("adv_sessions_plan_idx").using("btree", table.planSlug.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(plan_slug IS NOT NULL)`),
 	index("adv_sessions_port_source_idx").using("btree", table.portSourceAdvSessionId.asc().nullsLast().op("int8_ops")).where(sql`(port_source_adv_session_id IS NOT NULL)`),
@@ -1793,6 +1796,7 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	index("adv_sessions_workspace_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")),
 	pgPolicy("adv_sessions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("adv_sessions_mode_check", sql`mode = ANY (ARRAY['omp'::text, 'console'::text])`),
+	check("adv_sessions_ended_by_check", sql`(ended_by IS NULL) OR (ended_by = ANY (ARRAY['self'::text, 'reaper'::text, 'reconciler'::text, 'cleanup'::text]))`),
 ]);
 
 export const workItemDepsInHarnessShared = harnessShared.table("work_item_deps", {
