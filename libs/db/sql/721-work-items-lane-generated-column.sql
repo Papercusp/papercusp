@@ -41,6 +41,24 @@
 -- Measured on a full 30,419-row copy of this exact table: **1.51 s**. Bounded and
 -- acceptable for a fleet-hot relation; it is not an online-migration case.
 
+-- ⚠ LOCK ORDER IS LOAD-BEARING — do not reorder these two statements.
+--
+-- A reader of engineer_issues locks the VIEW first and then the base table underneath it.
+-- This migration touches the same two objects in the opposite order (ALTER the table, then
+-- CREATE OR REPLACE the view), and on a fleet-hot table that inversion deadlocks — observed,
+-- not theorised, on the first apply attempt:
+--
+--   ERROR: deadlock detected
+--   Process A waits for AccessExclusiveLock on engineer_issues; blocked by process B.
+--   Process B waits for AccessShareLock on work_items; blocked by process A.
+--
+-- Taking both locks up front, in the SAME order readers take them, removes the cycle: by the
+-- time we touch either object we already hold both, so no reader can be half-way between them.
+-- This also collapses two lock waits into one, which matters here because every wait on
+-- work_items queues the whole fleet behind it (~105 active agents).
+LOCK TABLE harness_shared.engineer_issues IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE harness_shared.work_items IN ACCESS EXCLUSIVE MODE;
+
 ALTER TABLE harness_shared.work_items
   ADD COLUMN IF NOT EXISTS lane text GENERATED ALWAYS AS (payload ->> 'lane') STORED;
 
