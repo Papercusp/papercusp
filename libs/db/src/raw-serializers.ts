@@ -36,6 +36,45 @@ export const PG_BIGINT_AS_NUMBER_TYPES = {
 };
 
 /**
+ * EI-19331550321709126: postgres-js's default PARSER for OID 1114 (`timestamp
+ * WITHOUT time zone`) is `x => new Date(x)` (types.js's `date` type, shared
+ * with 1082/date and 1184/timestamptz). V8's `Date` constructor interprets a
+ * timezone-less date-TIME string as SERVER-LOCAL, not UTC — so on a server
+ * running e.g. America/New_York, a bare `timestamp` value is silently
+ * shifted by the server's UTC offset before it ever reaches JS, and the
+ * shift is invisible because the resulting `Date` still serializes with a
+ * trailing "Z" that looks authoritative (measured: a true 07:15:29Z value
+ * rendered as 11:15:29Z — a ~4h corruption read, at first, as clock skew).
+ *
+ * No canonical schema column in this app is declared bare `timestamp` —
+ * every stored timestamp column is `timestamptz` (OID 1184, which carries
+ * its own offset and is unaffected by this fix). OID 1114 therefore only
+ * ever appears here as a COMPUTED expression, and the idiom agents actually
+ * reach for (dev:pg_query's own advisory documents it) is
+ * `... AT TIME ZONE 'UTC'` — specifically to "get UTC". So the correct
+ * interpretation of a bare 1114 value in this codebase is UTC, not
+ * server-local: force it by appending a `Z` to the raw wire text (which has
+ * no offset of its own) before handing it to `Date`, which pins the parse to
+ * UTC regardless of the process's or server's TZ. OID 1082 (date-only) is
+ * untouched — the ECMA-262 date-only grammar already parses those as UTC.
+ *
+ * Merged into every canonical client's `types` option by `buildClient`
+ * (mergeUserTypes in postgres-js overrides the built-in parser per-OID via
+ * `Object.assign`, so this only replaces the 1114 leg of the shared `date`
+ * type — 1082/1184 keep the library default). Any hand-rolled
+ * `postgres(url, {...})` client meant to behave like the canonical clients
+ * should spread this in too, same as `PG_BIGINT_AS_NUMBER_TYPES`.
+ */
+export const PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES = {
+  timestampNoTzUtc: {
+    to: 1114,
+    from: [1114],
+    serialize: (x: any) => (x instanceof Date ? x : new Date(x)).toISOString(),
+    parse: (x: string) => new Date(/[zZ]$|[+-]\d\d(:?\d\d)?$/.test(x) ? x : `${x}Z`),
+  } as any,
+};
+
+/**
  * EI-13076: drizzle-orm's postgres-js driver MUTATES the client it wraps —
  * `drizzle(client)` overwrites `client.options.serializers[<date OIDs>]` with a
  * transparent passthrough (`(val) => val`) so its OWN pre-stringified params

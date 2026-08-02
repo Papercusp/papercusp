@@ -60,10 +60,16 @@ import * as generatedRelations from './schema/generated-relations';
 // the package barrel.
 import {
   PG_BIGINT_AS_NUMBER_TYPES,
+  PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES,
   restoreRawDateSerializers,
   restoreRawJsonbSerializer,
 } from './raw-serializers';
-export { PG_BIGINT_AS_NUMBER_TYPES, restoreRawDateSerializers, restoreRawJsonbSerializer };
+export {
+  PG_BIGINT_AS_NUMBER_TYPES,
+  PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES,
+  restoreRawDateSerializers,
+  restoreRawJsonbSerializer,
+};
 
 // The `./schema` barrel re-exports `generated` + `generatedRelations` as nested
 // namespace objects (so callers can `import { generated } from '@papercusp/db-org'`).
@@ -913,7 +919,11 @@ function buildClient(
     // exactly instead of silently drifting — see PG_BIGINT_AS_NUMBER_TYPES.
     // Callers needing exact bigint precision (no silent >2^53 rounding) pass
     // `typesOverride: {}` — see getOrgPgLosslessBigint (EI-18789855771421275).
-    types: typesOverride,
+    // EI-19331550321709126: PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES is merged in
+    // UNCONDITIONALLY (not part of the overridable `typesOverride`) — a bare
+    // OID-1114 `timestamp` value must parse as UTC on every canonical
+    // connection, independent of whichever bigint behavior the caller chose.
+    types: { ...typesOverride, ...PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES },
   });
   // EI-13076: pre-arm the date-OID serializers as sticky accessors BEFORE any
   // drizzle() wrap can replace them with transparent passthroughs — see
