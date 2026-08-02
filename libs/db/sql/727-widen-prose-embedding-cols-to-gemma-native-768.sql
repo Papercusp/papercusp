@@ -1,0 +1,163 @@
+-- 727 — Widen every shared prose/registry embedding column from vector(384) to
+-- vector(768), EmbeddingGemma-300m's NATIVE width.
+--
+-- Plan: prose-embedding-384-untrained-mrl-fix-2026-08-02, D-005 (enacting
+-- D-004 route (ii) at 768 rather than 512). Root issue: EI-19301722864393687.
+--
+-- WHY. 384 was an UNTRAINED MRL cut of a 768-native model, chosen to fit
+-- columns that already existed. Measured (D-003) it cost ~19-21% of prose
+-- retrieval MRR: gemma@384 scores .2889 MRR against @512 .3435 and @768 .3492,
+-- and the paired bootstrap vs @384 excludes zero for both (@768 +.0603,
+-- CI [.0210,.1022]). 768 rather than 512 because the model runs a native-768
+-- forward pass either way — so the two cost the SAME ~414k re-embeds — and at
+-- the native width there is no truncation left to get wrong.
+--
+-- ⚠⚠ THIS DROPS EVERY STORED VECTOR IN THESE COLUMNS. pgvector cannot cast
+-- between widths, so there is no in-place widening and no incremental path:
+-- unlike a same-width MODEL swap, which migration 530's per-row
+-- `<col>_mode` discriminator lets converge row-by-row, a WIDTH change is
+-- necessarily all-at-once. ~414k vectors are discarded here and refilled by the
+-- embed-backfill sweep at ~217 ms/doc (~24h single-worker, less in parallel).
+-- Until it catches up the affected surfaces run LEXICAL-ONLY — degraded, not
+-- broken: hybrid search keeps its full-text leg.
+--
+-- The `<col>_mode` discriminator makes that refill self-healing: the sweep's
+-- predicate is "vector missing OR produced by a different embedder than the
+-- active one", so every NULLed row is simply eligible again.
+--
+-- COLUMN LIST WAS ENUMERATED FROM pg_attribute, NOT from the migration files.
+-- Grepping migrations yields FIVE of these and silently misses SEVEN
+-- (code_recipes, harness_features, harness_features_consolidated,
+-- harness_brainstorm, harness_decisions, harness_escalations,
+-- datatype_registry). A partial migration is the dangerous outcome: the missed
+-- surfaces keep vector(384) while the code emits 768, so every write to them
+-- fails inside a background sweep nobody is watching.
+--
+-- NOT INCLUDED, deliberately: memory_vec_local stays vector(384) (bge-small is
+-- natively 384 with no MRL — it CANNOT emit 768, so `local` simply becomes
+-- prose-ineligible, see D-005 §6) and memory_vec_harrier stays vector(1024).
+-- Those are per-mode spaces, not the shared contract.
+--
+-- Idempotent: every step is guarded on the column's CURRENT width, so a re-run
+-- (or a run against a fresh DB already created at 768) is a no-op.
+
+DO $$
+DECLARE
+  -- table, column pairs. Keep in sync with PROSE_VECTOR_COLUMNS in
+  -- packages/operator-core/lib/search/prose-vector-dims.ts — the integration
+  -- test compares that list against the live schema.
+  targets text[][] := ARRAY[
+    ARRAY['session_turns',                 'text_embedding'],
+    ARRAY['operator_turns',                'text_embedding'],
+    ARRAY['work_items',                    'embedding'],
+    ARRAY['doc_sections',                  'embedding'],
+    ARRAY['harness_plans',                 'embedding'],
+    ARRAY['harness_escalations',           'body_embedding'],
+    ARRAY['harness_brainstorm',            'content_embedding'],
+    ARRAY['harness_decisions',             'body_embedding'],
+    ARRAY['code_recipes',                  'embedding'],
+    ARRAY['harness_features',              'embedding'],
+    ARRAY['harness_features_consolidated', 'embedding'],
+    ARRAY['datatype_registry',             'embedding'],
+    -- The gemma memory space moves with gemma's target width.
+    ARRAY['memory_vec_gemma',              'vector'],
+    -- The openai memory space moves too: openai's targetDims goes 384 -> 768 so
+    -- that it stays prose-eligible (continuous MRL, billed per token not per
+    -- dimension, so the width is free).
+    ARRAY['memory_vec_openai',             'vector']
+  ];
+  t text;
+  c text;
+  cur_dims int;
+  idx record;
+  -- Index definitions captured before their columns are re-typed, replayed
+  -- verbatim afterwards. An array, not a temp table: no ON COMMIT semantics to
+  -- reason about, and the statements are plain text.
+  rebuild_stmts text[] := ARRAY[]::text[];
+  stmt text;
+BEGIN
+  -- pgvector must be present; every column below is already a vector type, so
+  -- if the extension is missing this DB has no embedding columns to widen.
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    RAISE NOTICE '727: pgvector not installed — nothing to widen';
+    RETURN;
+  END IF;
+
+  FOR i IN 1 .. array_length(targets, 1) LOOP
+    t := targets[i][1];
+    c := targets[i][2];
+
+    -- Skip a table this deployment does not have.
+    IF to_regclass('harness_shared.' || quote_ident(t)) IS NULL THEN
+      RAISE NOTICE '727: harness_shared.% absent — skipped', t;
+      CONTINUE;
+    END IF;
+
+    SELECT a.atttypmod INTO cur_dims
+      FROM pg_attribute a
+      JOIN pg_class cl ON cl.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = cl.relnamespace
+      JOIN pg_type ty ON ty.oid = a.atttypid
+     WHERE n.nspname = 'harness_shared'
+       AND cl.relname = t
+       AND a.attname = c
+       AND ty.typname = 'vector'
+       AND a.attnum > 0
+       AND NOT a.attisdropped;
+
+    IF cur_dims IS NULL THEN
+      RAISE NOTICE '727: harness_shared.%.% is not a vector column — skipped', t, c;
+      CONTINUE;
+    END IF;
+
+    IF cur_dims = 768 THEN
+      RAISE NOTICE '727: harness_shared.%.% already vector(768) — skipped', t, c;
+      CONTINUE;
+    END IF;
+
+    -- An HNSW/IVFFlat index is bound to the column's dimensionality, so it must
+    -- be dropped before the type change and rebuilt after. Discover them rather
+    -- than hardcoding names: the indexes on these columns follow at least three
+    -- different naming conventions (…_hnsw, …_hnsw_idx, session_turns_embedding_idx).
+    FOR idx IN
+      SELECT i.indexname, i.indexdef
+        FROM pg_indexes i
+       WHERE i.schemaname = 'harness_shared'
+         AND i.tablename = t
+         AND (i.indexdef ILIKE '%hnsw%' OR i.indexdef ILIKE '%ivfflat%')
+         AND i.indexdef ILIKE '%(' || c || ' %'
+    LOOP
+      RAISE NOTICE '727: dropping % to widen %.%', idx.indexname, t, c;
+      -- Capture the ORIGINAL definition first, so opclass and any WHERE clause
+      -- survive verbatim after the ALTER rather than being re-guessed.
+      rebuild_stmts := rebuild_stmts || idx.indexdef;
+      EXECUTE format('DROP INDEX IF EXISTS harness_shared.%I', idx.indexname);
+    END LOOP;
+
+    -- The widening itself. USING NULL because no cast exists between vector
+    -- widths — this is the all-at-once data loss the header describes.
+    RAISE NOTICE '727: widening harness_shared.%.% from vector(%) to vector(768)', t, c, cur_dims;
+    EXECUTE format(
+      'ALTER TABLE harness_shared.%I ALTER COLUMN %I TYPE public.vector(768) USING NULL',
+      t, c
+    );
+
+    -- Force the backfill sweep to treat every row as needing work. The vector
+    -- is now NULL; clearing the space tag too keeps the pair consistent, since
+    -- "has a mode but no vector" is a state no writer ever produces.
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'harness_shared' AND table_name = t AND column_name = c || '_mode'
+    ) THEN
+      EXECUTE format('UPDATE harness_shared.%I SET %I = NULL WHERE %I IS NOT NULL', t, c || '_mode', c || '_mode');
+    END IF;
+  END LOOP;
+
+  -- Rebuild every index we dropped, from its captured definition. Cheap here:
+  -- the columns are now all-NULL, so each build is near-instant and HNSW fills
+  -- in incrementally as the backfill sweep refills the vectors.
+  FOREACH stmt IN ARRAY rebuild_stmts LOOP
+    RAISE NOTICE '727: rebuilding index: %', left(stmt, 80);
+    EXECUTE stmt;
+  END LOOP;
+END $$;
