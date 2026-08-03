@@ -263,7 +263,139 @@ export function _parseDiscoveryJson(
   return null;
 }
 
-function readDiscoveryFile(): DiscoveryEndpoint | null {
+/**
+ * Discovery endpoints PROVEN to be a different Postgres cluster than the one this
+ * process pinned — quarantined for the process lifetime (plan
+ * outage-must-not-be-silent-2026-08-02, the enforcement half of D-001).
+ *
+ * ## Why detection was not enough
+ *
+ * `validateDiscoveryTargetOnce` already identifies an impostor store by cluster
+ * `system_identifier` and latches the violation. But it only ever wrote to
+ * `console.error` and a diagnostic getter: NOTHING refused. So on 2026-08-02 22:40Z an
+ * ephemeral operator's freshly-migrated embedded Postgres — alive, listening, and
+ * schema-complete, so the pid gate, the port gate and the WI-5244 schema check all
+ * PASSED — kept answering `not_found` for every record in the real store for ~13
+ * minutes fleet-wide. A confident wrong answer is worse than an outage: an outage
+ * announces itself, and this did not.
+ *
+ * The pid and port gates ask "is something there?". Identity asks "is it OURS?", and it
+ * is the only one of the three an impostor cannot satisfy. Quarantining on that answer
+ * is what turns the existing detection into a refusal.
+ *
+ * ## Why a process-lifetime Set and not a re-probe
+ *
+ * The discovery file FLAPS (three clusters inside one 24-minute window on 2026-08-03).
+ * A check that re-trusted an endpoint as soon as it looked healthy again would readmit
+ * the same impostor on its next appearance, which is the "it recovered, so there is
+ * nothing to see" failure this plan exists to eliminate. Once an endpoint is proven
+ * foreign, this process is done with it.
+ */
+const _quarantinedDiscoveryEndpoints = new Set<string>();
+
+/**
+ * `host:port` for an endpoint, normalized so the two spellings of loopback compare
+ * equal. Returns null for anything unparseable — an endpoint we cannot NAME is one we
+ * must never quarantine (see `quarantineDiscoveryEndpointIfProvenForeign`'s fail-soft
+ * contract).
+ */
+function endpointKey(host: string | undefined, port: string | number | undefined): string | null {
+  if (!host) return null;
+  const p = String(port || NATIVE_PG_PORT);
+  return `${NATIVE_PG_HOSTS.has(host) ? '127.0.0.1' : host}:${p}`;
+}
+
+function endpointKeyFromUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return endpointKey(u.hostname, u.port);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Act on a positive store-identity mismatch by refusing the offending endpoint.
+ *
+ * FAIL-SOFT BY CONSTRUCTION — every uncertain path returns without quarantining, so the
+ * worst case is today's detect-only behaviour, never a healthy endpoint rejected. Three
+ * conditions must ALL hold:
+ *
+ *  1. A positive mismatch (both identities read successfully). Guaranteed by the caller:
+ *     `pinOrVerifyStoreIdentity` only yields `mismatch` for two determinate reads, and
+ *     `indeterminate` never reaches here.
+ *  2. The OBSERVED endpoint is the one the discovery file currently advertises — i.e.
+ *     this pool really is discovery-sourced. An env-pinned pool is never quarantined:
+ *     env is the trusted rung, and refusing it would leave nothing to fall back TO.
+ *     (`maybePgbouncer` only rewrites host:5432, so a discovery-sourced ephemeral port
+ *      reaches us intact and this comparison is meaningful.)
+ *  3. The PINNED endpoint is NOT that same discovery endpoint. This is the clause that
+ *     keeps the fix from inverting itself: if the pin were itself established from the
+ *     discovery file, quarantining "the endpoint that disagrees with the pin" would
+ *     banish the REAL store and enshrine the impostor. Ordering is not guaranteed — the
+ *     pin is whichever pool was probed first — so it is checked rather than assumed.
+ *
+ * On quarantine the affected pools are torn down explicitly. That teardown cannot be
+ * left to the existing change-detection in `appUrl()`: that block lives INSIDE
+ * `if (disc)`, so once discovery starts returning null the branch is skipped entirely
+ * and a pool already built on the impostor would keep serving it — the fix would land
+ * and do nothing.
+ */
+export function _quarantineDiscoveryEndpointIfProvenForeign(
+  pinned: { url: string },
+  observed: { url: string },
+): boolean {
+  const disc = readDiscoveryFile({ applyQuarantine: false });
+  const discKey = disc ? endpointKey(disc.host, disc.port) : null;
+  if (!discKey) return false; // no discovery endpoint in play — nothing to attribute
+
+  const observedKey = endpointKeyFromUrl(observed.url);
+  if (!observedKey || observedKey !== discKey) return false; // (2) not discovery-sourced
+
+  const pinnedKey = endpointKeyFromUrl(pinned.url);
+  if (!pinnedKey || pinnedKey === discKey) return false; // (3) the pin came from here
+
+  if (!_quarantinedDiscoveryEndpoints.has(discKey)) {
+    _quarantinedDiscoveryEndpoints.add(discKey);
+    console.error(
+      `[connection] QUARANTINED discovery endpoint ${discKey}: its cluster system_identifier ` +
+        `differs from the one this process pinned (${pinnedKey}), so it is a DIFFERENT ` +
+        `Postgres cluster, not ours. Refusing it for the lifetime of this process and ` +
+        `falling back to the next resolution source. Every pool built on it is being torn ` +
+        `down; the next call rebuilds. See ~/.papercusp/embedded-pg.json for the rewrite.`,
+    );
+  }
+
+  // Tear down anything already built on the impostor so the next call re-resolves.
+  for (const end of [_adminClient, _adminLosslessBigintClient, _appOrgClient]) {
+    if (!end) continue;
+    try { end.end({ timeout: 1 }).catch(() => {}); } catch {}
+  }
+  _adminClient = null;
+  _adminDrizzle = null;
+  _adminDb = null;
+  _adminClientUrl = null;
+  _adminLosslessBigintClient = null;
+  _adminLosslessBigintClientUrl = null;
+  _appOrgClient = null;
+  _appOrgDrizzle = null;
+  _appOrgDb = null;
+  // Drop the memoized decisions too, so the next appUrl()/adminUrl() re-resolves through
+  // the quarantine rather than returning the impostor URL it last decided on.
+  if (_resolvedAppUrlSource === 'discovery') { _resolvedAppUrl = null; _resolvedAppUrlSource = null; }
+  if (_resolvedAdminUrlSource === 'discovery') { _resolvedAdminUrl = null; _resolvedAdminUrlSource = null; }
+  return true;
+}
+
+/** Test-only — inspect/reset the quarantine between cases. */
+export function _quarantinedDiscoveryEndpointsForTests(): string[] {
+  return [..._quarantinedDiscoveryEndpoints];
+}
+export function _resetDiscoveryQuarantineForTests(): void {
+  _quarantinedDiscoveryEndpoints.clear();
+}
+
+function readDiscoveryFile(opts?: { applyQuarantine?: boolean }): DiscoveryEndpoint | null {
   if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY === '1') return null;
   try {
     // Lazy require so this module can be imported in environments
@@ -279,7 +411,17 @@ function readDiscoveryFile(): DiscoveryEndpoint | null {
     // embedded-pg.json, never accidentally pick up the box-canonical one.
     const papercuspDir = process.env.PAPERCUSP_HOME || `${os.homedir()}/.papercusp`;
     const path = `${papercuspDir}/embedded-pg.json`;
-    return _parseDiscoveryJson(fs.readFileSync(path, 'utf8'));
+    const endpoint = _parseDiscoveryJson(fs.readFileSync(path, 'utf8'));
+    // IDENTITY GATE (the third and last gate, after pid and port). The other two ask
+    // whether something is THERE; this one asks whether it is OURS, and it is the only
+    // question an alive, listening, schema-complete impostor cannot pass. Skipped when
+    // the quarantine logic itself is asking, so it can still see the raw endpoint it is
+    // deciding about.
+    if (endpoint && opts?.applyQuarantine !== false) {
+      const key = endpointKey(endpoint.host, endpoint.port);
+      if (key && _quarantinedDiscoveryEndpoints.has(key)) return null;
+    }
+    return endpoint;
   } catch {
     // missing / unreadable — fall through to native fallback
   }
@@ -1117,6 +1259,11 @@ function validateDiscoveryTargetOnce(
         console.error(
           `${describeStoreIdentityMismatch(verdict.pinned, verdict.observed)}\n  pool: ${label}`,
         );
+        // ENFORCE, don't merely report. The latched violation stays the durable record
+        // (that is what diagnostics read), but a detector that only narrates lets the
+        // impostor keep answering — which is exactly how ~13 minutes of confident wrong
+        // answers happened with this very check already deployed and firing.
+        _quarantineDiscoveryEndpointIfProvenForeign(verdict.pinned, verdict.observed);
       }
     })
     .catch(() => {
