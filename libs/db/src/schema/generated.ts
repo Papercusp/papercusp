@@ -643,7 +643,6 @@ export const userSessionsInHarnessShared = harnessShared.table("user_sessions", 
 	userAgent: text("user_agent"),
 	remoteAddr: text("remote_addr"),
 }, (table) => [
-	index("user_sessions_expires_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(expires_at > '2026-01-01 00:00:00-05'::timestamp with time zone)`),
 	index("user_sessions_user_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
 	foreignKey({
 			columns: [table.userId],
@@ -4694,9 +4693,8 @@ export const bashToolSubstitutionFiresInHarnessShared = harnessShared.table("bas
 	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
 	firedAt: timestamp("fired_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("bash_tool_substitution_fires_row_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.rowId.asc().nullsLast().op("text_ops"), table.firedAt.desc().nullsFirst().op("text_ops")),
-	index("bash_tool_substitution_fires_session_idx").using("btree", table.sessionId.asc().nullsLast().op("timestamptz_ops"), table.firedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(session_id IS NOT NULL)`),
-	index("bash_tool_substitution_fires_unresolved_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.firedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(resolved_at IS NULL)`),
+	index("bash_tool_substitution_fires_row_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.rowId.asc().nullsLast().op("timestamptz_ops"), table.firedAt.desc().nullsFirst().op("int8_ops")),
+	index("bash_tool_substitution_fires_unresolved_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.firedAt.asc().nullsLast().op("text_ops")).where(sql`(resolved_at IS NULL)`),
 ]);
 
 export const periodicSweepRunsInHarnessShared = harnessShared.table("periodic_sweep_runs", {
@@ -4770,7 +4768,6 @@ export const memoryCanonicalInHarnessShared = harnessShared.table("memory_canoni
 	invalidAt: timestamp("invalid_at", { withTimezone: true, mode: 'string' }),
 	supersededBy: uuid("superseded_by"),
 }, (table) => [
-	index("memory_canonical_current_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(invalid_at IS NULL)`),
 	uniqueIndex("memory_canonical_fed_identity").using("btree", sql`workspace_id`, sql`id`, sql`COALESCE(source_hive, ''::text)`),
 	index("memory_canonical_payload_data_trgm").using("gin", sql`((payload ->> 'data'::text))`),
 	index("memory_canonical_payload_description_trgm").using("gin", sql`((payload ->> 'description'::text))`),
@@ -7076,9 +7073,10 @@ export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", 
 	textEmbedding: vector("text_embedding", { dimensions: 768 }),
 	textEmbeddingMode: text("text_embedding_mode"),
 }, (table) => [
+	index("session_turns_chunkable_idx").using("btree", table.ingestedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(length(text) > 2000)`),
 	index("session_turns_embedding_idx").using("hnsw", table.textEmbedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("session_turns_ingested_idx").using("btree", table.ingestedAt.asc().nullsLast().op("timestamptz_ops")),
-	index("session_turns_owner_ts_idx").using("btree", table.owner.asc().nullsLast().op("timestamptz_ops"), table.ts.asc().nullsLast().op("text_ops")),
+	index("session_turns_owner_ts_idx").using("btree", table.owner.asc().nullsLast().op("text_ops"), table.ts.asc().nullsLast().op("timestamptz_ops")),
 	index("session_turns_session_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")),
 	index("session_turns_text_embedding_mode_idx").using("btree", table.textEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(text_embedding_mode IS NOT NULL)`),
 	index("session_turns_tsv_idx").using("gin", table.textTsv.asc().nullsLast().op("tsvector_ops")),
@@ -7386,7 +7384,6 @@ export const sessionIngestStateInHarnessShared = harnessShared.table("session_in
 	countsBackfilledAt: timestamp("counts_backfilled_at", { withTimezone: true, mode: 'string' }),
 	partCount: integer("part_count").default(0).notNull(),
 }, (table) => [
-	index("session_ingest_state_session_idx").using("btree", table.sourceKind.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
 	primaryKey({ columns: [table.filePath, table.sourceKind], name: "session_ingest_state_pkey"}),
 ]);
 
