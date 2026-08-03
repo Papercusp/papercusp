@@ -118,7 +118,7 @@ describe('a proven-foreign discovery endpoint is refused, not just reported', ()
     writeDiscoveryFile(IMPOSTOR_PORT);
     _quarantineDiscoveryEndpointIfProvenForeign({ url: PINNED_ENV_URL }, { url: IMPOSTOR_URL });
 
-    const said = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    const said = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
     expect(said).toContain('QUARANTINED');
     expect(said).toContain(String(IMPOSTOR_PORT));
   });
