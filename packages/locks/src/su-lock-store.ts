@@ -155,6 +155,39 @@ export function getListenerPool(): Sql {
 }
 
 /**
+ * EI-19404227117727730: force-recreate the listener pool's underlying
+ * connection — the escape hatch `workspace-listener.ts` reaches for when a
+ * LISTEN/UNLISTEN operation on it times out.
+ *
+ * postgres-js multiplexes ALL `sql.listen()`/`unlisten()` calls for a pool
+ * through ONE dedicated internal connection (`listen.sql`, memoized per `Sql`
+ * instance — see `node_modules/postgres/src/index.js`'s `listen()`), and that
+ * connection's `listen.channels` bookkeeping is entirely in-process: if the
+ * connection dies WITHOUT postgres-js detecting the close (a silent
+ * pgbouncer/network drop rather than a clean FIN — this box's su-lock-tx pool
+ * has independently confirmed "pooler error: server conn crashed?" drops, see
+ * the `withConnectionRetry` doc comment in `agent-tools/db/migrate.ts`), every
+ * future `listen()`/`unlisten()` call for ANY channel on that pool queues
+ * behind the same dead promise and hangs forever — no error, no timeout, no
+ * PG-visible activity, because the command never reaches the server. Ending
+ * the pool and nulling the singleton is the only way back: the next
+ * `getListenerPool()` call builds a fresh `Postgres(...)` instance, which
+ * means a fresh closure-scoped `listen` function (and therefore fresh,
+ * unpoisoned `listen.channels`/`listen.sql` state — these are per-instance,
+ * not module-global).
+ *
+ * `.end({ timeout: 1 })` cannot itself re-introduce the hang this exists to
+ * clear: postgres-js forcibly destroys the socket after 1s if it won't close
+ * cleanly, and any rejection is swallowed (fire-and-forget) — the caller only
+ * needs the singleton nulled out, not the old connection's teardown awaited.
+ */
+export function resetListenerPoolAfterTimeout(): void {
+  const stale = listenerPool;
+  listenerPool = null;
+  if (stale) void stale.end({ timeout: 1 }).catch(() => {});
+}
+
+/**
  * Test-only — close pools and reset state. Used by vitest hooks to
  * recycle the connection set between disposable PG instances.
  */

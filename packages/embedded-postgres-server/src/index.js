@@ -45,7 +45,7 @@ import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { applyPendingMigrations } from './migration-runner.js';
-export { applyPendingMigrations } from './migration-runner.js';
+export { applyPendingMigrations, defaultSkipFile } from './migration-runner.js';
 
 const DEFAULT_DB = 'papercusp';
 const DEFAULT_OWNER = 'postgres';

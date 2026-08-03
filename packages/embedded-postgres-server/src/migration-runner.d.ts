@@ -1,3 +1,4 @@
+export function defaultSkipFile(f: any): any;
 /**
  * @param {object} args
  * @param {object} args.client    postgres-js client (sql tag) OR object with `.unsafe(text)` method.

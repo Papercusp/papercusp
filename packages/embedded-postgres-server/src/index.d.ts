@@ -124,7 +124,6 @@ export function startEmbeddedPostgresServer(opts?: {
     };
     stop(): Promise<void>;
 }>;
-export { applyPendingMigrations } from "./migration-runner.js";
 /**
  * The initdb flags used for EVERY fresh cluster this package creates — the
  * seedless first-boot fallback AND the pre-migrated seed (build-seed.mjs boots
@@ -202,3 +201,4 @@ export const PORTABLE_INITDB_LOCALES: string[];
  * FORMATTING only (never collation/ctype), so plain 'C' loses nothing.
  */
 export const UNIVERSAL_LC_VALUES: string[];
+export { applyPendingMigrations, defaultSkipFile } from "./migration-runner.js";

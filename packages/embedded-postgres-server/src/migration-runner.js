@@ -46,6 +46,15 @@ const MANUAL_ONLY = new Set([
   '__seed_restored__.marker',         // sentinel inserted by seed-restore path; not a real migration file
 ]);
 
+// EI-19403856469813053: extracted (pure refactor, same predicate as before) so a
+// caller that wants to layer ITS OWN skip logic on top (e.g. db-boot-migrate.ts's
+// cross-boot failure cooldown, below) can compose with the real default instead
+// of re-deriving/duplicating `per-harness-template` + MANUAL_ONLY knowledge that
+// lives here.
+export function defaultSkipFile(f) {
+  return f.includes('per-harness-template') || MANUAL_ONLY.has(f);
+}
+
 // ⚠ KEEP THE JSDOC BLOCK BELOW ADJACENT TO THE FUNCTION. It used to sit ABOVE
 // `MANUAL_ONLY`, so TypeScript bound it to that const instead of to
 // `applyPendingMigrations` — every `@param` was silently inert and all four
@@ -68,7 +77,7 @@ const MANUAL_ONLY = new Set([
  *   boot), so one peer's broken migration can't wedge the dev-api for the fleet.
  */
 export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, continueOnError = false }) {
-  const skip = skipFile ?? ((f) => f.includes('per-harness-template') || MANUAL_ONLY.has(f));
+  const skip = skipFile ?? defaultSkipFile;
   const failed = [];
 
   // Ensure tracker exists.
