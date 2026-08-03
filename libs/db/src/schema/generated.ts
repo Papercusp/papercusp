@@ -3833,9 +3833,8 @@ export const memoryRecallStatsInHarnessShared = harnessShared.table("memory_reca
 	sessionId: text("session_id"),
 }, (table) => [
 	index("memory_recall_stats_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("memory_recall_stats_pools_idx").using("gin", table.pools.asc().nullsLast().op("jsonb_path_ops")).where(sql`(pools IS NOT NULL)`),
-	index("memory_recall_stats_scale_created_idx").using("btree", table.scoreScale.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(score_scale IS NOT NULL)`),
-	index("memory_recall_stats_session_created_idx").using("btree", table.sessionId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(session_id IS NOT NULL)`),
+	index("memory_recall_stats_scale_created_idx").using("btree", table.scoreScale.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")).where(sql`(score_scale IS NOT NULL)`),
+	index("memory_recall_stats_session_created_idx").using("btree", table.sessionId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
 	index("memory_recall_stats_ws_pot_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.potSlug.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	check("memory_recall_stats_hit_count_check", sql`hit_count >= 0`),
 ]);
