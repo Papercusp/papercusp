@@ -59,9 +59,9 @@
 -- In particular a partial index on the ENTITY side is correctly ignored by the planner,
 -- because that side matches 88% of the table and a seq scan genuinely is cheaper.
 --
--- The MEMORY side is the mirror image — 4,108 of 33,897 rows (12.1%) — so an index-only
--- scan there is at least plausible. It was measured rather than assumed: see the index
--- section at the bottom of this file for the numbers and the verdict.
+-- The MEMORY side is the mirror image — 4,108 of 33,897 rows (12.1%) — so an index there
+-- is at least plausible. It was measured rather than assumed: see the index section at
+-- the bottom of this file for the numbers and the verdict.
 --
 -- This migration's justification is CORRECTNESS AND DISCOVERABILITY, not speed. Anyone
 -- inspecting the table now sees a named column and a comment stating that it holds two
@@ -70,9 +70,12 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. The discriminator.
 --
--- ADD COLUMN with a STORED generated expression rewrites the table and takes an
--- ACCESS EXCLUSIVE lock. Measured on a live-sized copy of this table: ~120ms for
--- 33,897 rows, comfortably inside the deploy's 15s lock_timeout.
+-- ⚠ ADD COLUMN with a STORED generated expression REWRITES the table and holds an
+-- ACCESS EXCLUSIVE lock for the duration. Measured against the live table inside a
+-- rolled-back transaction: 2.01s for 33,897 rows / 27MB. That is inside the deploy's
+-- 15s lock_timeout with margin, but it is two seconds of exclusive lock on a hot
+-- table, not the sub-100ms this kind of DDL is often assumed to cost — worth knowing
+-- if this table grows by an order of magnitude before someone writes the next one.
 ALTER TABLE harness_shared.memory_canonical
   ADD COLUMN IF NOT EXISTS row_kind text
   GENERATED ALWAYS AS (
@@ -101,17 +104,26 @@ COMMENT ON TABLE harness_shared.memory_canonical IS
 -- (knowledge-read.ts readStoreCounts, ~0.68 calls/s fleet-wide) cheaper, given that
 -- WI-9137 refuted the entity-side equivalent?
 --
--- Measured in a rolled-back transaction against the live table (33,897 rows), after
--- ANALYZE, best of three each:
+-- Measured in a rolled-back transaction against the live table (33,897 rows), EXPLAIN
+-- (ANALYZE, BUFFERS) after ANALYZE:
 --
---   count(*) WHERE row_kind = 'memory'
---     without this index : Seq Scan          cost=2141.71  actual= 57.4ms   9,537 buffers
---     with    this index : Index Only Scan   cost=  95.06  actual=  1.9ms      31 buffers
+--   BEFORE  count(*) WHERE NOT (payload ? 'entityType')   -- today's hot query
+--     Aggregate  cost=2557.16  actual=70.9ms  buffers: shared hit=4804
+--       -> Seq Scan  rows=4108
 --
--- ~30x faster and ~300x fewer buffers, because the index covers 12.1% of the table and
--- the count is answerable from the index alone (no heap fetch). This is NOT a
+--   AFTER   count(*) WHERE row_kind = 'memory'
+--     Aggregate  cost=1884.08  actual=5.0ms   buffers: shared hit=1138 read=17
+--       -> Bitmap Heap Scan  rows=4108
+--            -> Bitmap Index Scan on memory_canonical_row_kind_memory_idx
+--
+-- ~14x faster (70.9ms -> 5.0ms) and ~4x fewer buffers (4,804 -> 1,155). This is NOT a
 -- contradiction of WI-9137 — that finding is about the 88% ENTITY side, where the
 -- planner's refusal to use an index is correct. The minority side is the opposite case.
+--
+-- Note it is a Bitmap Heap Scan, NOT an index-only scan: the count still visits the heap
+-- for visibility. It may become index-only once autovacuum sets the visibility map, but
+-- that was not observed here and is deliberately NOT claimed — 5.0ms is the measured
+-- number to hold this change to.
 --
 -- The entity count in that same query stays a seq scan by design; per WI-9137 that is
 -- already optimal and is left alone.
@@ -121,5 +133,6 @@ CREATE INDEX IF NOT EXISTS memory_canonical_row_kind_memory_idx
 
 COMMENT ON INDEX harness_shared.memory_canonical_row_kind_memory_idx IS
   'Partial, MINORITY-side index (12.1% of rows) serving the hot "how many real memories" '
-  'count as an index-only scan. The mirror-image index on the entity side is deliberately '
-  'absent: WI-9137 measured it and the planner correctly refuses it at 88% selectivity.';
+  'count — measured 70.9ms -> 5.0ms. The mirror-image index on the ENTITY side is '
+  'deliberately absent: WI-9137 measured it and the planner correctly refuses it at 88% '
+  'selectivity, where a seq scan is genuinely cheaper.';
