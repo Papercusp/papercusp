@@ -35,6 +35,20 @@
 -- did, by name) must NOT include repoint_qualified_refs_trg in that list, or it
 -- re-creates this defect wholesale.
 --
+-- ⚠⚠ EI-19389225060317498: THAT WARNING IS INCOMPLETE ON ITS OWN — a SECOND trigger is
+-- equally load-bearing and is not named above. `work_item_deps` UPDATEs done by
+-- repoint_qualified_refs() (below) only resync the `work_item_blocked` readiness
+-- sidecar as a CASCADE through `wir_deps_sync_trg` (migration 379). Preserving
+-- repoint_qualified_refs_trg while disabling wir_deps_sync_trg for the same reason
+-- (avoiding trigger-cascade overhead on a big UPDATE) repoints every ref correctly and
+-- STILL silently strands readiness at the OLD harness_slug — measured in
+-- rename-drift-effectiveness.integration.test.ts ("and it is wir_deps_sync_trg doing
+-- it"). Any future trigger-disable window for a bulk re-home must keep BOTH
+-- repoint_qualified_refs_trg (work_items) AND wir_deps_sync_trg (work_item_deps)
+-- enabled, or re-run a readiness reconciliation sweep before serving claims again. A
+-- boot-time guard now detects (does not prevent) this: see
+-- packages/operator-core/lib/startup/validate-repoint-triggers.ts.
+--
 -- ── Deliberately NOT scoped by workspace_id ───────────────────────────────────────
 -- This looks like it violates the multi-tenant "scope both workspace_id AND slug" rule.
 -- It does not, and scoping here would BREAK it: the coordination plane writes its rows
