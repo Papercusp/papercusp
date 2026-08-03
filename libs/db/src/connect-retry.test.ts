@@ -242,3 +242,50 @@ describe('retryBeforeCallbackStarts — connect-phase deadline', () => {
     }
   });
 });
+
+/**
+ * EI-19448665862739845 — this message is a CONTRACT, not prose, so it is pinned.
+ *
+ * It previously said "The transaction never opened, so the caller's own queries
+ * never ran." That is LOCALLY TRUE (this wrapper bounds only the pre-`markStarted`
+ * window) and was still read as a GUARANTEE that the caller's whole call had no
+ * effect — which is exactly what licenses a retry. Measured 2026-08-03: a
+ * coord:send and an improvements:capture each surfaced this error while taking
+ * FULL effect, and the retry delivered a peer the same directed message twice.
+ *
+ * It also said the endpoint is "almost always" DEAD. Also measured false: PG was
+ * accepting connections with 159 of 512 free and reads succeeding throughout, so
+ * a saturated CLIENT pool presents identically and every reader was sent to a
+ * dead end.
+ *
+ * These assertions fail if either property returns. Do not relax them to "fix" a
+ * failing build — reword the message so it still satisfies them.
+ */
+describe('ConnectPhaseDeadlineError message contract', () => {
+  const message = new ConnectPhaseDeadlineError(45_000).message;
+
+  it('never promises the caller’s whole operation was a no-op', () => {
+    expect(message).not.toMatch(/the caller's own queries never ran/i);
+    expect(message).not.toMatch(/transaction never opened/i);
+  });
+
+  it('scopes the no-query claim to THIS connection', () => {
+    expect(message).toMatch(/on this connection/i);
+  });
+
+  it('tells the caller to verify before retrying a non-idempotent operation', () => {
+    expect(message).toMatch(/verify before retrying/i);
+    expect(message).toMatch(/non-idempotent/i);
+  });
+
+  it('does not assert one confident cause, and names the saturated-pool case too', () => {
+    expect(message).not.toMatch(/almost\s+always means/i);
+    expect(message).toMatch(/saturated/i);
+    expect(message).toMatch(/max_connections/i);
+  });
+
+  it('still reports the deadline that was breached', () => {
+    expect(message).toContain('45000ms');
+    expect(new ConnectPhaseDeadlineError(45_000).deadlineMs).toBe(45_000);
+  });
+});
