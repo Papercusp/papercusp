@@ -1405,6 +1405,72 @@ export function withDbCallDeadline<T>(
 }
 
 /**
+ * Default ceiling for {@link withAcquisitionDeadline} — the ACQUISITION phase
+ * only (connect + BEGIN + the SET_CONFIG statements), never the caller's own
+ * work. Generous on purpose: this box runs a large agent fleet, so a legitimate
+ * pool wait under contention can take seconds, and a false positive here would
+ * fail a call that was merely queued. 45s is still finite, which is the entire
+ * point — see below.
+ */
+export const DEFAULT_TX_ACQUIRE_DEADLINE_MS = Math.max(
+  1_000,
+  Number(process.env.PAPERCUSP_DB_TX_ACQUIRE_DEADLINE_MS) || 45_000,
+);
+
+/**
+ * Phase-scoped deadline: bound the part of a DB call that happens BEFORE the
+ * caller's callback runs, and disarm the moment it starts — P-022 / D-020.
+ *
+ * WHY THIS EXISTS AND WHY {@link withDbCallDeadline} CANNOT BE USED INSTEAD.
+ * `withDbCallDeadline` races an ENTIRE promise, so wrapping `sql.begin(...)`
+ * with it would also bound the caller's handler and kill legitimately long
+ * tools. The hang this guards against happens strictly earlier: against a dead
+ * endpoint, postgres-js's `closed()` special-cases a pool's FIRST connection
+ * attempt and calls `reconnect()` with exponential backoff FOREVER without ever
+ * invoking `error()`/`queryError()` — so the caller's query is never rejected
+ * and the call blocks at `sql.begin()` BEFORE its handler runs. That is what
+ * took 100% of MCP dispatch down on 2026-08-03 (including `coord:whoami`) while
+ * `/api/health` stayed at 2ms on the unaffected ADMIN pool; only a process
+ * restart cleared it.
+ *
+ * `run` receives:
+ *  - `disarm()`  — call once the caller's own work is about to begin.
+ *  - `expired()` — true if the deadline already fired. CHECK THIS before
+ *    invoking the caller's callback and throw if set: `Promise.race` does not
+ *    cancel the losing promise, so without the check a timed-out transaction
+ *    would still run the handler with nobody awaiting its result. Throwing
+ *    inside the `sql.begin` callback rolls the transaction back instead.
+ */
+export function withAcquisitionDeadline<T>(
+  run: (phase: { disarm: () => void; expired: () => boolean }) => Promise<T>,
+  opts: { ms?: number; label: string },
+): Promise<T> {
+  const ms = opts.ms ?? DEFAULT_TX_ACQUIRE_DEADLINE_MS;
+  const startedAt = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let settled = false;
+  let expired = false;
+  const disarm = () => {
+    settled = true;
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      if (settled) return;
+      expired = true;
+      settled = true;
+      reject(new DbCallDeadlineError(opts.label, ms, Date.now() - startedAt));
+    }, ms);
+    // Never hold the process open on this timer alone.
+    timer.unref?.();
+  });
+  return Promise.race([run({ disarm, expired: () => expired }), deadline]).finally(disarm);
+}
+
+/**
  * Admin client WITHOUT the bigint→number override (EI-18789855771421275).
  *
  * `getOrgPg()` deliberately converts int8/bigserial (oid 20) to a JS `number`

@@ -19,7 +19,15 @@
  */
 
 import type { Sql } from 'postgres';
-import { getOrgPg, getOrgPgApp, getHarnessPg, pgbouncerEnabled } from './connection';
+import {
+  getOrgPg,
+  getOrgPgApp,
+  getHarnessPg,
+  pgbouncerEnabled,
+  withAcquisitionDeadline,
+  DbCallDeadlineError,
+  DEFAULT_TX_ACQUIRE_DEADLINE_MS,
+} from './connection';
 import { slugToSchemaName } from './schema';
 import { retryBeforeCallbackStarts } from './connect-retry';
 
@@ -62,7 +70,18 @@ export async function withWorkspace<T>(
   // provably safe: BEGIN + the SET_CONFIG statements below are side-effect-free,
   // and postgres-js's sql.begin() awaits BEGIN's round trip before invoking the
   // callback at all).
-  return retryBeforeCallbackStarts((markStarted) =>
+  // P-022 / D-020: bound the ACQUISITION phase (connect + BEGIN + SET_CONFIG),
+  // never the caller's own `fn`. Against a dead endpoint postgres-js retries a
+  // pool's first connect forever and never rejects the pending query, so every
+  // call here blocked at `sql.begin()` BEFORE its handler ran — that is how
+  // 100% of MCP dispatch (coord:whoami included) wedged on 2026-08-03 while
+  // /api/health stayed at 2ms on the unaffected ADMIN pool. The deadline sits
+  // OUTSIDE retryBeforeCallbackStarts on purpose, so it bounds total
+  // acquisition across all retry attempts rather than each attempt separately.
+  const acquireLabel = `withWorkspace:acquire(${opts.bypassRlsForAdmin ? 'admin' : 'app'})`;
+  return withAcquisitionDeadline<T>(
+    ({ disarm, expired }) =>
+      retryBeforeCallbackStarts((markStarted) =>
     // postgres-js's `sql.begin` callback receives a TransactionSql which
     // is a subset of Sql; the cast is safe for the operations we perform
     // (templated queries + .unsafe).
@@ -95,9 +114,25 @@ export async function withWorkspace<T>(
       if (!opts.bypassRlsForAdmin) {
         await txSql`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
       }
+      // Promise.race does NOT cancel the losing promise: if the acquisition
+      // deadline already fired, the caller has its DbCallDeadlineError and is
+      // no longer awaiting us. Throwing here rolls the transaction back rather
+      // than running `fn` — and its side effects — with nobody listening.
+      if (expired()) {
+        throw new DbCallDeadlineError(
+          acquireLabel,
+          DEFAULT_TX_ACQUIRE_DEADLINE_MS,
+          DEFAULT_TX_ACQUIRE_DEADLINE_MS,
+        );
+      }
+      // Past this point the caller's own work begins and may legitimately run
+      // long (a search, a test run), so the acquisition deadline must not apply.
+      disarm();
       markStarted();
       return await fn(txSql);
     }) as unknown) as Promise<T>
+      ),
+    { label: acquireLabel },
   );
 }
 
@@ -130,17 +165,32 @@ export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promis
     .map((s) => `"${s.replace(/"/g, '""')}"`)
     .join(', ');
   const { sql } = getOrgPgApp();
+  // P-022 / D-020: same acquisition deadline as withWorkspace — this path takes
+  // the SAME APP pool, so it shares the dead-endpoint hang exactly.
+  const acquireLabel = `withHarnessSchema:acquire(${slug})`;
   // EI-9279: same provably-safe retry as withWorkspace above — see connect-retry.ts.
-  return retryBeforeCallbackStarts((markStarted) =>
+  return withAcquisitionDeadline<T>(
+    ({ disarm, expired }) =>
+      retryBeforeCallbackStarts((markStarted) =>
     (sql.begin(async (tx) => {
       const txSql = tx as unknown as Sql;
       // Mirror withWorkspace's options-pointer fix so drizzle(tx) (if ever used) works.
       const txOpts = txSql as unknown as { options?: unknown };
       txOpts.options ??= (sql as unknown as { options?: unknown }).options;
       await txSql`SELECT set_config('search_path', ${searchPath}, true)`;
+      if (expired()) {
+        throw new DbCallDeadlineError(
+          acquireLabel,
+          DEFAULT_TX_ACQUIRE_DEADLINE_MS,
+          DEFAULT_TX_ACQUIRE_DEADLINE_MS,
+        );
+      }
+      disarm();
       markStarted();
       return await fn(txSql);
     }) as unknown) as Promise<T>
+      ),
+    { label: acquireLabel },
   );
 }
 

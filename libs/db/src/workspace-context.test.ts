@@ -14,14 +14,24 @@ const h = vi.hoisted(() => ({
   pgbouncerEnabled: vi.fn(() => false),
 }));
 
-vi.mock('./connection', () => ({
-  getOrgPg: () => ({ sql: { begin: h.begin, options: {} } }),
-  getOrgPgApp: () => ({ sql: { begin: h.begin, options: {} } }),
-  getHarnessPg: () => ({ sql: { begin: h.begin, options: {} } }),
-  pgbouncerEnabled: h.pgbouncerEnabled,
-}));
+// Override ONLY the pool accessors; keep every other real export via
+// importOriginal. That is deliberate, not incidental: the acquisition-deadline
+// guard (P-022 / D-020) lives in this module, and stubbing it out would leave
+// the tests below green while never exercising it — a false pass of exactly the
+// kind this file exists to prevent. The pools stay mocked so no real PG is touched.
+vi.mock('./connection', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./connection')>();
+  return {
+    ...actual,
+    getOrgPg: () => ({ sql: { begin: h.begin, options: {} } }),
+    getOrgPgApp: () => ({ sql: { begin: h.begin, options: {} } }),
+    getHarnessPg: () => ({ sql: { begin: h.begin, options: {} } }),
+    pgbouncerEnabled: h.pgbouncerEnabled,
+  };
+});
 
 import { withWorkspace } from './workspace-context';
+import { DEFAULT_TX_ACQUIRE_DEADLINE_MS } from './connection';
 
 const CONNECTION_CLOSED = { code: 'CONNECTION_CLOSED', message: 'write CONNECTION_CLOSED 127.0.0.1:6432' };
 
@@ -97,5 +107,111 @@ describe('withWorkspace — EI-9279 connect-retry wiring', () => {
       code: 'CONNECTION_CLOSED',
     });
     expect(beginAttempts).toBe(3); // initial + 2 retries (connect-retry.ts default)
+  });
+});
+
+/**
+ * P-022 / D-020 — the acquisition deadline.
+ *
+ * The failure being guarded: against a DEAD endpoint, postgres-js's `closed()`
+ * special-cases a pool's FIRST connect attempt and calls `reconnect()` with
+ * exponential backoff FOREVER without ever invoking `error()`/`queryError()`.
+ * The caller's query is therefore never rejected and the call blocks inside
+ * `sql.begin()` BEFORE its callback runs. On 2026-08-03 that wedged 100% of MCP
+ * dispatch (`coord:whoami` included) until an operator restart, while
+ * `/api/health` stayed at 2ms on the unaffected ADMIN pool.
+ *
+ * `begin: () => new Promise(() => {})` below is a faithful model of that: a
+ * promise that neither resolves NOR rejects.
+ */
+describe('withWorkspace — P-022/D-020 acquisition deadline', () => {
+  it('fails fast with DbCallDeadlineError when the pool never connects (instead of hanging forever)', async () => {
+    vi.useFakeTimers();
+    try {
+      h.begin.mockImplementation(() => new Promise(() => {}));
+
+      const p = withWorkspace('ws-1', async () => 'unreached');
+      const assertion = expect(p).rejects.toMatchObject({ name: 'DbCallDeadlineError' });
+      await vi.advanceTimersByTimeAsync(DEFAULT_TX_ACQUIRE_DEADLINE_MS + 50);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * THE REGRESSION TEST. A deadline around the whole `sql.begin(...)` would also
+   * bound the caller's handler and kill legitimately long tools — which is why
+   * the existing `withDbCallDeadline` could not simply be reused here. The guard
+   * must disarm at `markStarted()`.
+   */
+  it('does NOT bound the caller handler — a handler far slower than the deadline still completes', async () => {
+    vi.useFakeTimers();
+    try {
+      h.begin.mockImplementation(async (cb: (tx: Sql) => Promise<unknown>) => cb(fakeTxSql()));
+
+      const p = withWorkspace('ws-1', async () => {
+        await new Promise((r) => setTimeout(r, DEFAULT_TX_ACQUIRE_DEADLINE_MS * 3));
+        return 'slow-but-ok';
+      });
+      await vi.advanceTimersByTimeAsync(DEFAULT_TX_ACQUIRE_DEADLINE_MS * 3 + 100);
+      await expect(p).resolves.toBe('slow-but-ok');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never runs the caller handler when the deadline already fired (rolls back instead)', async () => {
+    vi.useFakeTimers();
+    try {
+      // Connect completes, but only AFTER the deadline has already elapsed.
+      h.begin.mockImplementation(async (cb: (tx: Sql) => Promise<unknown>) => {
+        await new Promise((r) => setTimeout(r, DEFAULT_TX_ACQUIRE_DEADLINE_MS * 2));
+        return cb(fakeTxSql());
+      });
+
+      let handlerRuns = 0;
+      const p = withWorkspace('ws-1', async () => {
+        handlerRuns++;
+        return 'must-not-run';
+      });
+      const assertion = expect(p).rejects.toMatchObject({ name: 'DbCallDeadlineError' });
+      await vi.advanceTimersByTimeAsync(DEFAULT_TX_ACQUIRE_DEADLINE_MS * 2 + 100);
+      await assertion;
+
+      // Promise.race does not cancel the loser, so the transaction DID proceed —
+      // the expired() check is what stops the handler running unawaited.
+      expect(handlerRuns).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * CONTROL (falsifiability). A deliberately-wrong reference implementation kept
+   * HERE, in the test file, per the repo rule against mutating the shared tree to
+   * prove a guard has teeth. This models the pre-fix shape — `sql.begin` awaited
+   * with no acquisition deadline — and asserts it never settles. If this control
+   * ever settles, the model is wrong and the tests above prove nothing.
+   */
+  it('CONTROL: the unguarded shape never settles — proves these tests can tell the difference', async () => {
+    vi.useFakeTimers();
+    try {
+      const unguarded = (begin: () => Promise<unknown>) => begin();
+      let settled = false;
+      void unguarded(() => new Promise(() => {})).then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(DEFAULT_TX_ACQUIRE_DEADLINE_MS * 5);
+      expect(settled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

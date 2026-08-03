@@ -27,6 +27,11 @@ export {
   withDbCallDeadline,
   DbCallDeadlineError,
   DEFAULT_DB_CALL_DEADLINE_MS,
+  // P-022 / D-020: the PHASE-scoped sibling of withDbCallDeadline — bounds only
+  // connect + BEGIN + SET_CONFIG and disarms before the caller's own work, so a
+  // dead endpoint fails fast without capping legitimately long handlers.
+  withAcquisitionDeadline,
+  DEFAULT_TX_ACQUIRE_DEADLINE_MS,
   // EI-19306394439939264: the rebind primitive was exported from connection.ts but never
   // re-exported here, so no other package could import it — which is why adoption outside
   // connection.ts was zero and 25 hand-rolled pools still wedge on a dead endpoint.
