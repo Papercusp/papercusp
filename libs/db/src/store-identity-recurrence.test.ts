@@ -16,10 +16,21 @@
  * It deliberately exercises `_parseDiscoveryJson` — the db package's OWN discovery gate,
  * which is the one on the `getOrgPg()` read path that actually served the wrong answers —
  * rather than the generic resolver used by `getHarnessAdminUrl()`. Those are two separate
- * implementations with different gate coverage (the generic one also has a /proc port gate;
- * this one does not), and this test targets the path the incident took.
+ * implementations that had diverging gate coverage until EI-19384906720464601 (connection.ts
+ * gained its own /proc port-listening gate, matching the generic resolver's). This test
+ * targets the path the incident took.
+ *
+ * EI-19384906720464601 UPDATE: the impostor here now binds a REAL listening socket for its
+ * advertised port, rather than a bare made-up port number. This is not incidental — it is
+ * the file's own stated premise: "in the 2026-08-02 phase-1 failure the impostor was alive
+ * AND listening, so a port gate passes on that input too" (the new gate's own doc comment,
+ * EI-19384906720464601's body). A fake unbound port would now be caught by the NEW port
+ * gate for the wrong reason (nothing is listening on it in a test sandbox), which would
+ * make "LIVENESS ACCEPTS IT" pass by accident and silently stop testing the real claim —
+ * that liveness (pid alive + port genuinely served) is not sufficient, only identity is.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import * as net from 'node:net';
 
 import { _parseDiscoveryJson } from './connection';
 import {
@@ -40,17 +51,33 @@ const REAL_URL = 'postgresql://harness_admin:pw@localhost:5432/papercusp';
  * The impostor: an ephemeral operator instance's embedded Postgres. A DIFFERENT cluster,
  * so initdb necessarily gave it a different system_identifier — but it is a complete,
  * freshly-migrated `papercusp` database, which is why every shape-based check passed.
+ *
+ * `IMPOSTOR_PORT`/`IMPOSTOR_URL` are resolved in `beforeAll` against a REAL listening
+ * socket (see the header comment) — never read them before that hook has run.
  */
 const IMPOSTOR_STORE: StoreIdentity = {
   systemIdentifier: '7111222333444555666',
   database: 'papercusp',
 };
-const IMPOSTOR_PORT = 22060;
-const IMPOSTOR_URL = `postgresql://harness_admin:pw@127.0.0.1:${IMPOSTOR_PORT}/papercusp`;
+let impostorServer: net.Server;
+let IMPOSTOR_PORT: number;
+let IMPOSTOR_URL: string;
+
+beforeAll(async () => {
+  impostorServer = net.createServer();
+  await new Promise<void>((resolve) => impostorServer.listen(0, '127.0.0.1', resolve));
+  IMPOSTOR_PORT = (impostorServer.address() as net.AddressInfo).port;
+  IMPOSTOR_URL = `postgresql://harness_admin:pw@127.0.0.1:${IMPOSTOR_PORT}/papercusp`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => impostorServer.close(() => resolve()));
+});
 
 /**
  * The discovery file exactly as the incident had it: a LIVE writer pid (we use our own
- * process, which is by definition alive) advertising the impostor's port.
+ * process, which is by definition alive) advertising the impostor's port — which, per the
+ * header comment, is now a genuinely LISTENING port too.
  */
 function impostorDiscoveryJson(): string {
   return JSON.stringify({
