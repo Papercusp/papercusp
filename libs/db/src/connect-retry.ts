@@ -90,18 +90,50 @@ export function resolveConnectPhaseDeadlineMs(): number {
  * Thrown when the CONNECT PHASE (everything before the caller's callback starts)
  * exceeds its deadline — i.e. the pool could not obtain a usable connection and
  * postgres-js is retrying in the background with no bound of its own.
+ *
+ * ## The message must NOT promise the whole operation was a no-op (EI-19448665862739845)
+ *
+ * This error used to state: "The transaction never opened, so the caller's own
+ * queries never ran." That is LOCALLY TRUE — this wrapper bounds only the window
+ * before `markStarted()`, so nothing ran on THIS connection — and it was still
+ * read, correctly and disastrously, as a SAFETY GUARANTEE that the caller's whole
+ * call had no effect. A guarantee of no-effect is precisely what licenses a retry.
+ *
+ * Measured 2026-08-03: a `coord:send` and an `improvements:capture` each surfaced
+ * this error while taking FULL effect (message delivered, work-item created).
+ * Believing the sentence and retrying delivered a peer the same directed message
+ * twice; the second duplicate was caught only by an unrelated title-similarity
+ * dedup, i.e. by luck.
+ *
+ * The defect is a SCOPE MISMATCH, not a lie, which is why it survived review:
+ *   the code means  → "no query ran ON THIS CONNECTION"
+ *   the caller reads → "MY CALL had no effect"
+ * Those coincide only when the operation touches exactly ONE connection. Keep the
+ * claim scoped to the connection, and keep the verify-before-retry warning — any
+ * multi-connection caller needs it.
+ *
+ * Do not restore a single confident cause either: a saturated CLIENT pool with a
+ * perfectly healthy endpoint presents identically to a dead endpoint (that same
+ * incident: PG up, 159 of 512 connections free, reads succeeding throughout), so
+ * "this almost always means the endpoint is DEAD" sent every reader to a dead end.
  */
 export class ConnectPhaseDeadlineError extends Error {
   readonly deadlineMs: number;
   constructor(deadlineMs: number) {
     super(
       `[connect-phase-deadline] could not obtain a database connection within ${deadlineMs}ms. ` +
-        `The transaction never opened, so the caller's own queries never ran. This almost ` +
-        `always means the pool's resolved endpoint is DEAD or unreachable — not that any ` +
-        `query is slow: postgres-js retries a failed connect forever when connect_timeout is ` +
-        `unset (the production default). Check the resolved URL for this pool; if it came from ` +
-        `~/.papercusp/embedded-pg.json it is memoized for the process lifetime and only a ` +
-        `restart re-resolves it (EI-19415414498429866).`,
+        `No query ran ON THIS CONNECTION — but that is NOT a guarantee your whole operation ` +
+        `had no effect: if it touches more than one connection, work already committed on ` +
+        `another one STANDS. VERIFY before retrying anything non-idempotent ` +
+        `(EI-19448665862739845: a coord:send and an improvements:capture each took FULL ` +
+        `effect while surfacing this error, and the retry duplicated a peer's message). ` +
+        `Two causes present identically here, so check both: (a) the pool's resolved ` +
+        `endpoint is DEAD or unreachable — postgres-js retries a failed connect forever when ` +
+        `connect_timeout is unset (the production default); check the resolved URL for this ` +
+        `pool, and if it came from ~/.papercusp/embedded-pg.json it is memoized for the ` +
+        `process lifetime so only a restart re-resolves it (EI-19415414498429866). (b) the ` +
+        `CLIENT pool is saturated while the endpoint is perfectly healthy; check pool ` +
+        `in-use/waiting, and pg_stat_activity count against max_connections.`,
     );
     this.name = 'ConnectPhaseDeadlineError';
     this.deadlineMs = deadlineMs;
