@@ -37,6 +37,15 @@
 -- The CONSUMING QUERY IS DELIBERATELY LEFT UNCHANGED. Per D-031: when a flagged
 -- partial index is redundant, drop the index and do not touch the query.
 --
+-- FORWARD-COMPAT: this is a plain non-UNIQUE btree (definition quoted above), so the
+-- still-running older release cannot be using it as an ON CONFLICT arbiter — ON CONFLICT
+-- requires a UNIQUE index or constraint, making the EI-18797473716313783 failure mode
+-- unreachable here by construction. It also cannot be serving any deployed query plan:
+-- idx_scan = 0 across the database's entire lifetime, and the measurement above shows the
+-- planner actively PREFERS tool_usage_rollup_window_idx for the sole consumer (131.1 ms vs
+-- 166.8 ms when forced onto this one). Dropping it removes a duplicate the deployed release
+-- was already declining to use.
+--
 -- REVERSIBILITY: recreate with the exact definition quoted above.
 
 DROP INDEX IF EXISTS harness_shared.tool_usage_rollup_verb_idx;

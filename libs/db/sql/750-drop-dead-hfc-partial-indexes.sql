@@ -39,6 +39,15 @@
 --
 -- REVERSIBILITY: each index's exact definition is preserved in the comment beside its
 -- drop. Recreating any of them is a one-line CREATE INDEX.
+--
+-- FORWARD-COMPAT: none of these five can be an ON CONFLICT arbiter for the still-running
+-- older release, because every one is a plain non-UNIQUE btree (see the exact CREATE INDEX
+-- preserved beside each DROP below) and ON CONFLICT requires a UNIQUE index or constraint.
+-- The EI-18797473716313783 failure mode is therefore unreachable here by construction, not
+-- merely unlikely. Nor can the deployed release depend on any of them for a query PLAN:
+-- each matches ZERO rows (the underlying hfc_* columns are 100% NULL/empty) and each has
+-- idx_scan = 0 across the database's entire lifetime (pg_stat_database.stats_reset IS NULL),
+-- so no plan in any release has ever used one.
 
 -- CREATE INDEX hfc_verifier_divergence_idx ON harness_shared.work_items USING btree (harness_slug, feature_id) WHERE (verifier_last_error IS NOT NULL);
 DROP INDEX IF EXISTS harness_shared.hfc_verifier_divergence_idx;

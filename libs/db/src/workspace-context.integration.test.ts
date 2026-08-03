@@ -12,7 +12,16 @@ import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/p
 
 // The wrapper resolves its client through ./connection — point both at our test sql.
 const h = vi.hoisted(() => ({ sql: null as unknown as Sql }));
-vi.mock('./connection', () => ({
+// SPREAD the real module rather than ENUMERATING it. The previous form listed the
+// four exports ./connection happened to have when this file was written, so the
+// moment workspace-context reached for a fifth the fixture stranded: adding
+// `withAcquisitionDeadline` (2026-08-03) failed all six withWorkspace cases with
+// `No "withAcquisitionDeadline" export is defined on the "./connection" mock` — in
+// a file that change never touched, which is why `test:affected` could not select
+// it. Only the pool getters actually need redirecting at the testcontainer client;
+// everything else stays real, so a new export can no longer strand this fixture.
+vi.mock('./connection', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./connection')>()),
   getOrgPgApp: () => ({ sql: h.sql }),
   getOrgPg: () => ({ sql: h.sql }),
   // workspace-context gates its per-txn search_path/GUC re-apply on this (C1-2).

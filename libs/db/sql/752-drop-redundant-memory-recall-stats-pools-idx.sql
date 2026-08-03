@@ -37,5 +37,12 @@
 -- index is redundant, drop the index and do not touch the query).
 --
 -- REVERSIBILITY: recreate with the exact definition quoted above.
+--
+-- FORWARD-COMPAT: this is a plain non-UNIQUE GIN index (definition quoted above). ON CONFLICT
+-- requires a UNIQUE btree index or a constraint, and GIN cannot back either, so the
+-- EI-18797473716313783 failure mode is doubly unreachable for the still-running older release.
+-- It is likewise absent from every deployed query plan: idx_scan = 0 across the database's
+-- entire lifetime, and the EXPLAIN above shows its only consumer served by
+-- memory_recall_stats_created_idx with `Filter: (pools IS NOT NULL)`.
 
 DROP INDEX IF EXISTS harness_shared.memory_recall_stats_pools_idx;

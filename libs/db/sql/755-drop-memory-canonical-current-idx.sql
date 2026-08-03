@@ -31,5 +31,13 @@
 -- Per D-032 the drop criterion is "no consumer exists in CODE" (established above by reading
 -- the call site), never idx_scan=0. memory_canonical retains 12 other indexes, including the
 -- pkey and the trigram/vector paths its hot queries actually use.
+--
+-- FORWARD-COMPAT: this is a plain non-UNIQUE btree, so the still-running older release cannot
+-- be using it as an ON CONFLICT arbiter (ON CONFLICT requires a UNIQUE index or constraint) —
+-- the EI-18797473716313783 failure mode is unreachable here by construction, and the UNIQUE
+-- pkey that memory_canonical's upserts do arbitrate on is untouched by this migration. It also
+-- cannot be serving any deployed query plan: idx_scan = 0 across the database's entire
+-- lifetime, and point 2 above PROVES the stronger claim that its only candidate consumer could
+-- never use it — with enable_seqscan = off the planner still selected the Seq Scan.
 
 DROP INDEX IF EXISTS harness_shared.memory_canonical_current_idx;

@@ -62,6 +62,15 @@
 --
 -- Not CONCURRENTLY: migrations run inside a transaction, and these are small. IF EXISTS keeps
 -- the migration idempotent and safe against a peer having dropped one already.
+--
+-- FORWARD-COMPAT: all three are plain non-UNIQUE btrees, so none can be an ON CONFLICT arbiter
+-- for the still-running older release (ON CONFLICT requires a UNIQUE index or constraint) —
+-- the EI-18797473716313783 failure mode is unreachable here by construction. Beyond that, each
+-- table's ON CONFLICT paths ride its UNIQUE pkey, which this migration does not touch:
+-- session_ingest_state_pkey (source_kind, file_path) and user_sessions_pkey (token) are both
+-- called out above as the access path the real queries already use. And no deployed query plan
+-- can depend on these three: idx_scan = 0 across the database's entire lifetime, corroborating
+-- the call-site reading above that NO consumer filters on their indexed columns at all.
 
 DROP INDEX IF EXISTS harness_shared.session_ingest_state_session_idx;
 DROP INDEX IF EXISTS harness_shared.bash_tool_substitution_fires_session_idx;
