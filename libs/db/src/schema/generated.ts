@@ -6222,6 +6222,29 @@ export const harnessBrainstormInHarnessShared = harnessShared.table("harness_bra
 	pgPolicy("harness_brainstorm_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const sessionTurnChunksInHarnessShared = harnessShared.table("session_turn_chunks", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	sourceKind: text("source_kind").notNull(),
+	sessionId: text("session_id").notNull(),
+	turnIdx: integer("turn_idx").notNull(),
+	chunkIdx: integer("chunk_idx").notNull(),
+	content: text().notNull(),
+	turnSha: text("turn_sha").notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	embedding: vector({ dimensions: 768 }),
+	embeddingMode: text("embedding_mode"),
+}, (table) => [
+	index("session_turn_chunks_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
+	index("session_turn_chunks_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
+	index("session_turn_chunks_updated_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.sourceKind, table.sessionId, table.turnIdx],
+			foreignColumns: [sessionTurnsInHarnessShared.workspaceId, sessionTurnsInHarnessShared.sourceKind, sessionTurnsInHarnessShared.sessionId, sessionTurnsInHarnessShared.turnIdx],
+			name: "session_turn_chunks_parent_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.chunkIdx, table.sessionId, table.sourceKind, table.turnIdx, table.workspaceId], name: "session_turn_chunks_pkey"}),
+]);
+
 export const potIntegrationRequestsInHarnessShared = harnessShared.table("pot_integration_requests", {
 	workspaceId: text("workspace_id").default('').notNull(),
 	repoKey: text("repo_key").notNull(),
@@ -6493,8 +6516,7 @@ export const toolUsageRollupInHarnessShared = harnessShared.table("tool_usage_ro
 	intentLabel: text("intent_label").default('').notNull(),
 }, (table) => [
 	index("tool_usage_rollup_intent_idx").using("btree", table.workspaceId.asc().nullsLast().op("date_ops"), table.day.desc().nullsFirst().op("text_ops"), table.intentLabel.asc().nullsLast().op("text_ops")).where(sql`(intent_label <> ''::text)`),
-	index("tool_usage_rollup_verb_idx").using("btree", table.workspaceId.asc().nullsLast().op("date_ops"), table.day.desc().nullsFirst().op("date_ops"), table.verb.asc().nullsLast().op("text_ops")).where(sql`(verb <> ''::text)`),
-	index("tool_usage_rollup_window_idx").using("btree", table.workspaceId.asc().nullsLast().op("date_ops"), table.day.desc().nullsFirst().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops")),
+	index("tool_usage_rollup_window_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.day.desc().nullsFirst().op("text_ops"), table.toolName.asc().nullsLast().op("date_ops")),
 	primaryKey({ columns: [table.day, table.intentLabel, table.sessionId, table.sourceKind, table.toolName, table.verb, table.workspaceId], name: "tool_usage_rollup_pkey"}),
 ]);
 
