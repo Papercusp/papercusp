@@ -104,26 +104,30 @@ COMMENT ON TABLE harness_shared.memory_canonical IS
 -- (knowledge-read.ts readStoreCounts, ~0.68 calls/s fleet-wide) cheaper, given that
 -- WI-9137 refuted the entity-side equivalent?
 --
--- Measured in a rolled-back transaction against the live table (33,897 rows), EXPLAIN
--- (ANALYZE, BUFFERS) after ANALYZE:
+-- Measured against the LIVE table AFTER this migration was applied and the table
+-- ANALYZEd — i.e. production steady state, not a synthetic one. EXPLAIN (ANALYZE,
+-- BUFFERS), three consecutive runs each:
 --
---   BEFORE  count(*) WHERE NOT (payload ? 'entityType')   -- today's hot query
---     Aggregate  cost=2557.16  actual=70.9ms  buffers: shared hit=4804
---       -> Seq Scan  rows=4108
+--   BEFORE  count(*) WHERE NOT (payload ? 'entityType')   -- the old hot query
+--     Seq Scan          32.05 / 34.29 / 30.98 ms    buffers: shared hit=4440
 --
 --   AFTER   count(*) WHERE row_kind = 'memory'
---     Aggregate  cost=1884.08  actual=5.0ms   buffers: shared hit=1138 read=17
---       -> Bitmap Heap Scan  rows=4108
---            -> Bitmap Index Scan on memory_canonical_row_kind_memory_idx
+--     Bitmap Heap Scan   8.97 / 10.06 /  9.07 ms    buffers: shared hit=1154
+--       -> Bitmap Index Scan on memory_canonical_row_kind_memory_idx
 --
--- ~14x faster (70.9ms -> 5.0ms) and ~4x fewer buffers (4,804 -> 1,155). This is NOT a
--- contradiction of WI-9137 — that finding is about the 88% ENTITY side, where the
--- planner's refusal to use an index is correct. The minority side is the opposite case.
+-- ~3.4x faster and ~3.8x fewer buffers. This is NOT a contradiction of WI-9137 — that
+-- finding is about the 88% ENTITY side, where the planner's refusal to use an index is
+-- correct. The minority side is the opposite case.
+--
+-- ⚠ An earlier draft of this file claimed 70.9ms -> 5.0ms (~14x). Those numbers came
+-- from a rolled-back transaction against a table this migration had just REWRITTEN, and
+-- they did not survive contact with the live steady state. The figures above replace
+-- them. If you are tempted to quote a speedup from a DDL probe inside a transaction:
+-- don't — re-measure after the migration is applied and ANALYZEd.
 --
 -- Note it is a Bitmap Heap Scan, NOT an index-only scan: the count still visits the heap
 -- for visibility. It may become index-only once autovacuum sets the visibility map, but
--- that was not observed here and is deliberately NOT claimed — 5.0ms is the measured
--- number to hold this change to.
+-- that was not observed and is deliberately NOT claimed.
 --
 -- The entity count in that same query stays a seq scan by design; per WI-9137 that is
 -- already optimal and is left alone.
@@ -133,6 +137,6 @@ CREATE INDEX IF NOT EXISTS memory_canonical_row_kind_memory_idx
 
 COMMENT ON INDEX harness_shared.memory_canonical_row_kind_memory_idx IS
   'Partial, MINORITY-side index (12.1% of rows) serving the hot "how many real memories" '
-  'count — measured 70.9ms -> 5.0ms. The mirror-image index on the ENTITY side is '
+  'count — measured live, post-ANALYZE: ~32ms -> ~9ms. The mirror-image index on the ENTITY side is '
   'deliberately absent: WI-9137 measured it and the planner correctly refuses it at 88% '
   'selectivity, where a seq scan is genuinely cheaper.';
