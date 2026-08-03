@@ -1026,6 +1026,27 @@ export const cupKeeperInstancesInHarnessShared = harnessShared.table("cup_keeper
 
 ]);
 
+export const routineLoopTransitionsInHarnessShared = harnessShared.table("routine_loop_transitions", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.routine_loop_transitions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	at: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	installSlug: text("install_slug").notNull(),
+	routineId: text("routine_id").notNull(),
+	routineName: text("routine_name"),
+	targetRole: text("target_role"),
+	targetOwnerId: text("target_owner_id"),
+	event: text().notNull(),
+	actor: text().notNull(),
+	newNextFireAt: timestamp("new_next_fire_at", { withTimezone: true, mode: 'string' }),
+	intervalSec: integer("interval_sec"),
+	detail: jsonb(),
+	host: text(),
+}, (table) => [
+	index("routine_loop_transitions_at_idx").using("btree", table.at.desc().nullsFirst().op("timestamptz_ops")),
+	index("routine_loop_transitions_routine_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.routineId.asc().nullsLast().op("text_ops"), table.at.desc().nullsFirst().op("text_ops")),
+]);
+
 export const mobileDevicesInHarnessShared = harnessShared.table("mobile_devices", {
 	deviceId: text("device_id").primaryKey().notNull(),
 	userEmail: text("user_email").notNull(),
@@ -1368,6 +1389,26 @@ export const backupEventsInHarnessShared = harnessShared.table("backup_events", 
 			name: "backup_events_snapshot_id_fkey"
 		}).onDelete("cascade"),
 	pgPolicy("backup_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const embedCoverageSamplesInHarnessShared = harnessShared.table("embed_coverage_samples", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	observedAt: timestamp("observed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	surface: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	totalRows: bigint("total_rows", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	eligibleRows: bigint("eligible_rows", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	embeddedRows: bigint("embedded_rows", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	recentEligible: bigint("recent_eligible", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	recentEmbedded: bigint("recent_embedded", { mode: "number" }),
+	recentWindowHours: integer("recent_window_hours"),
+}, (table) => [
+	index("embed_coverage_samples_ws_surface_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops"), table.observedAt.desc().nullsFirst().op("text_ops")),
 ]);
 
 export const operatorTrustStoreInHarnessShared = harnessShared.table("operator_trust_store", {
@@ -5139,6 +5180,19 @@ export const hiddenPluginsInHarnessShared = harnessShared.table("hidden_plugins"
 	pgPolicy("hidden_plugins_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const corpusTermDfInHarnessShared = harnessShared.table("corpus_term_df", {
+	workspaceId: text("workspace_id").notNull(),
+	term: text().notNull(),
+	df: integer().notNull(),
+	ndocs: integer().notNull(),
+	refreshedAt: timestamp("refreshed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("corpus_term_df_workspace_refreshed_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.refreshedAt.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.term, table.workspaceId], name: "corpus_term_df_pkey"}),
+	check("corpus_term_df_df_positive", sql`df > 0`),
+	check("corpus_term_df_ndocs_positive", sql`ndocs > 0`),
+]);
+
 export const harnessPromptOverridesInHarnessShared = harnessShared.table("harness_prompt_overrides", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -8357,6 +8411,93 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	check("work_items_payload_is_object_ck", sql`(payload IS NULL) OR (jsonb_typeof(payload) = 'object'::text)`),
 	check("hfc_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
+export const workItemsClaimableInHarnessShared = harnessShared.view("work_items_claimable", {	harnessSlug: text("harness_slug"),
+	featureId: text("feature_id"),
+	title: text(),
+	summary: text(),
+	status: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	attempts: bigint({ mode: "number" }),
+	claims: text(),
+	notes: text(),
+	metadata: jsonb(),
+	kind: text(),
+	projectId: text("project_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	expectedCostCents: bigint("expected_cost_cents", { mode: "number" }),
+	tags: jsonb(),
+	needsHumanReview: boolean("needs_human_review"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdTs: bigint("created_ts", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedTs: bigint("updated_ts", { mode: "number" }),
+	parentId: text("parent_id"),
+	goalId: text("goal_id"),
+	takenBy: text("taken_by"),
+	takenAt: timestamp("taken_at", { withTimezone: true, mode: 'string' }),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	workspaceId: text("workspace_id"),
+	search: tsvectorCustom("_search"),
+	deprecationReason: text("deprecation_reason"),
+	seeAlso: text("see_also"),
+	needsDesign: boolean("needs_design"),
+	designStatus: text("design_status"),
+	designSpecId: text("design_spec_id"),
+	discardedDesignWork: boolean("discarded_design_work"),
+	completionRef: jsonb("completion_ref"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	workingUsers: bigint("working_users", { mode: "number" }),
+	workedByHistory: jsonb("worked_by_history"),
+	wave: text(),
+	verifiedDoneAtRemoteTs: timestamp("verified_done_at_remote_ts", { withTimezone: true, mode: 'string' }),
+	verifierLastError: text("verifier_last_error"),
+	verifierLastCheckedAt: timestamp("verifier_last_checked_at", { withTimezone: true, mode: 'string' }),
+	sourcePlanSlug: text("source_plan_slug"),
+	sourcePlanItemIds: text("source_plan_item_ids"),
+	featureOrder: integer("feature_order"),
+	authorPubkey: text("author_pubkey"),
+	origin: text(),
+	auditVerdict: text("audit_verdict"),
+	auditReasons: text("audit_reasons"),
+	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
+	itemKind: text("item_kind"),
+	payload: jsonb(),
+	assigneeRank: integer("assignee_rank"),
+	rankWriter: text("rank_writer"),
+	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	redundancy: integer(),
+	swarmAffinity: text("swarm_affinity"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	verifiedAuthorGithubUserId: bigint("verified_author_github_user_id", { mode: "number" }),
+	schedule: jsonb(),
+	scheduleActive: boolean("schedule_active"),
+	scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: 'string' }),
+	tzid: text(),
+	templateSlug: text("template_slug"),
+	runSeq: integer("run_seq"),
+	requeueCount: integer("requeue_count"),
+	fedHlc: text("fed_hlc"),
+	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
+	terminalOwner: text("terminal_owner"),
+	terminalCompletionRef: text("terminal_completion_ref"),
+	lastReleasedBy: text("last_released_by"),
+	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
+	embedding: vector({ dimensions: 768 }),
+	embeddingMode: text("embedding_mode"),
+	terminalReason: text("terminal_reason"),
+	authority: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	closedTs: bigint("closed_ts", { mode: "number" }),
+	lane: text(),
+	conditionKey: text("condition_key"),
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, lane, condition_key FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsHuman'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(workspace_id, status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id)) = 0`);
+
 export const llmTestMatrixResultsInHarnessShared = harnessShared.view("llm_test_matrix_results", {	matrixGroupId: uuid("matrix_group_id"),
 	scenarioId: text("scenario_id"),
 	scenarioVersion: integer("scenario_version"),
@@ -8494,88 +8635,6 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("ha
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	closedTs: bigint("closed_ts", { mode: "number" }),
 }).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, wave, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, swarm_affinity, redundancy, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
-
-export const workItemsClaimableInHarnessShared = harnessShared.view("work_items_claimable", {	harnessSlug: text("harness_slug"),
-	featureId: text("feature_id"),
-	title: text(),
-	summary: text(),
-	status: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	attempts: bigint({ mode: "number" }),
-	claims: text(),
-	notes: text(),
-	metadata: jsonb(),
-	kind: text(),
-	projectId: text("project_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	expectedCostCents: bigint("expected_cost_cents", { mode: "number" }),
-	tags: jsonb(),
-	needsHumanReview: boolean("needs_human_review"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdTs: bigint("created_ts", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedTs: bigint("updated_ts", { mode: "number" }),
-	parentId: text("parent_id"),
-	goalId: text("goal_id"),
-	takenBy: text("taken_by"),
-	takenAt: timestamp("taken_at", { withTimezone: true, mode: 'string' }),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
-	workspaceId: text("workspace_id"),
-	search: tsvectorCustom("_search"),
-	deprecationReason: text("deprecation_reason"),
-	seeAlso: text("see_also"),
-	needsDesign: boolean("needs_design"),
-	designStatus: text("design_status"),
-	designSpecId: text("design_spec_id"),
-	discardedDesignWork: boolean("discarded_design_work"),
-	completionRef: jsonb("completion_ref"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdByGithubUserId: bigint("created_by_github_user_id", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	workingUsers: bigint("working_users", { mode: "number" }),
-	workedByHistory: jsonb("worked_by_history"),
-	wave: text(),
-	verifiedDoneAtRemoteTs: timestamp("verified_done_at_remote_ts", { withTimezone: true, mode: 'string' }),
-	verifierLastError: text("verifier_last_error"),
-	verifierLastCheckedAt: timestamp("verifier_last_checked_at", { withTimezone: true, mode: 'string' }),
-	sourcePlanSlug: text("source_plan_slug"),
-	sourcePlanItemIds: text("source_plan_item_ids"),
-	featureOrder: integer("feature_order"),
-	authorPubkey: text("author_pubkey"),
-	origin: text(),
-	auditVerdict: text("audit_verdict"),
-	auditReasons: text("audit_reasons"),
-	auditedAt: timestamp("audited_at", { withTimezone: true, mode: 'string' }),
-	itemKind: text("item_kind"),
-	payload: jsonb(),
-	assigneeRank: integer("assignee_rank"),
-	rankWriter: text("rank_writer"),
-	rankUpdatedAt: timestamp("rank_updated_at", { withTimezone: true, mode: 'string' }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	redundancy: integer(),
-	swarmAffinity: text("swarm_affinity"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	verifiedAuthorGithubUserId: bigint("verified_author_github_user_id", { mode: "number" }),
-	schedule: jsonb(),
-	scheduleActive: boolean("schedule_active"),
-	scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: 'string' }),
-	tzid: text(),
-	templateSlug: text("template_slug"),
-	runSeq: integer("run_seq"),
-	requeueCount: integer("requeue_count"),
-	fedHlc: text("fed_hlc"),
-	lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: 'string' }),
-	terminalOwner: text("terminal_owner"),
-	terminalCompletionRef: text("terminal_completion_ref"),
-	lastReleasedBy: text("last_released_by"),
-	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
-	embedding: vector({ dimensions: 768 }),
-	embeddingMode: text("embedding_mode"),
-	terminalReason: text("terminal_reason"),
-}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsHuman'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id)) = 0`);
 
 export const hivePlacementsInHarnessShared = harnessShared.view("hive_placements", {	workspaceId: text("workspace_id"),
 	installSlug: text("install_slug"),
