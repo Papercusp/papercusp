@@ -3,7 +3,13 @@
  * EI-9279.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { isRetriableConnectionSetupError, retryBeforeCallbackStarts } from './connect-retry';
+import {
+  ConnectPhaseDeadlineError,
+  DEFAULT_CONNECT_PHASE_DEADLINE_MS,
+  isRetriableConnectionSetupError,
+  resolveConnectPhaseDeadlineMs,
+  retryBeforeCallbackStarts,
+} from './connect-retry';
 
 describe('isRetriableConnectionSetupError', () => {
   it('matches a CONNECTION_CLOSED code', () => {
@@ -124,5 +130,115 @@ describe('retryBeforeCallbackStarts', () => {
       },
     );
     expect(sleeps).toEqual([150]); // backoffMs * attempt(1)
+  });
+});
+
+/**
+ * EI-19415414498429866 — the connect-phase deadline.
+ *
+ * Regression guard for a 29-minute fleet-wide MCP outage: `connect_timeout` is unset
+ * in production, so a connect against a DEAD endpoint neither resolves nor rejects.
+ * Because `dispatch()` wraps every tool handler in `withWorkspace` (which routes here),
+ * that hung 100% of MCP dispatch until the process was restarted.
+ *
+ * The invariant these tests pin: the CONNECT phase is bounded, the caller's own work
+ * is NOT.
+ */
+describe('retryBeforeCallbackStarts — connect-phase deadline', () => {
+  it('rejects when the connect phase never settles (the dead-endpoint case)', async () => {
+    vi.useFakeTimers();
+    try {
+      // Never calls markStarted() and never settles — exactly what postgres-js does
+      // against a dead port with connect_timeout unset.
+      const p = retryBeforeCallbackStarts(() => new Promise<string>(() => {}), {
+        connectDeadlineMs: 45_000,
+      });
+      const assertion = expect(p).rejects.toThrow(ConnectPhaseDeadlineError);
+      await vi.advanceTimersByTimeAsync(45_001);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does NOT bound work once markStarted() has fired (a legitimately long tool)', async () => {
+    vi.useFakeTimers();
+    try {
+      // Connection obtained immediately; the caller's own work then runs far longer
+      // than the deadline. testing:run / code:run must never be cut off by this guard.
+      const p = retryBeforeCallbackStarts(
+        (markStarted) =>
+          new Promise<string>((resolve) => {
+            markStarted();
+            setTimeout(() => resolve('slow-but-legitimate'), 600_000);
+          }),
+        { connectDeadlineMs: 45_000 },
+      );
+      await vi.advanceTimersByTimeAsync(600_001);
+      await expect(p).resolves.toBe('slow-but-legitimate');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does NOT retry a deadline breach — one dead endpoint costs ONE deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      const p = retryBeforeCallbackStarts(
+        () => {
+          attempts += 1;
+          return new Promise<string>(() => {});
+        },
+        { connectDeadlineMs: 1_000, retries: 2, sleep: async () => {} },
+      );
+      const assertion = expect(p).rejects.toThrow(ConnectPhaseDeadlineError);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+      // retries:2 would mean 3 attempts (~3 deadlines) if a breach were retriable.
+      expect(attempts).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('connectDeadlineMs: 0 restores the unbounded wait', async () => {
+    vi.useFakeTimers();
+    try {
+      let settle: ((v: string) => void) | undefined;
+      const p = retryBeforeCallbackStarts(
+        (markStarted) =>
+          new Promise<string>((resolve) => {
+            settle = (v) => {
+              markStarted();
+              resolve(v);
+            };
+          }),
+        { connectDeadlineMs: 0 },
+      );
+      // Well past the default ceiling — with the bound disabled nothing fires.
+      await vi.advanceTimersByTimeAsync(120_000);
+      settle!('eventually');
+      await expect(p).resolves.toBe('eventually');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('classifies a deadline breach as NOT retriable', () => {
+    expect(isRetriableConnectionSetupError(new ConnectPhaseDeadlineError(45_000))).toBe(false);
+  });
+
+  it('a non-numeric env override does not silently disable the guard', () => {
+    const prev = process.env.PAPERCUSP_DB_CONNECT_PHASE_DEADLINE_MS;
+    try {
+      process.env.PAPERCUSP_DB_CONNECT_PHASE_DEADLINE_MS = 'not-a-number';
+      expect(resolveConnectPhaseDeadlineMs()).toBe(DEFAULT_CONNECT_PHASE_DEADLINE_MS);
+      process.env.PAPERCUSP_DB_CONNECT_PHASE_DEADLINE_MS = '0';
+      expect(resolveConnectPhaseDeadlineMs()).toBe(0);
+    } finally {
+      if (prev === undefined) delete process.env.PAPERCUSP_DB_CONNECT_PHASE_DEADLINE_MS;
+      else process.env.PAPERCUSP_DB_CONNECT_PHASE_DEADLINE_MS = prev;
+    }
   });
 });

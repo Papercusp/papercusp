@@ -442,14 +442,26 @@ function appUrl(): string {
   // packaged Papercusp Server did exactly that (08:29Z 2026-07-17) and pointed
   // the shared bg-host's pools at its empty embedded PG (routines engine read
   // "0 active routines" → box-wide git-sync/kettle/scout stall).
-  if (process.env.DATABASE_URL) {
+  // WI-7424: HARNESS_ADMIN_DATABASE_URL is an endpoint pin for the APP role too,
+  // and must be honored here in the SAME precedence order adminUrl() uses
+  // (HARNESS_ADMIN_DATABASE_URL, then DATABASE_URL). It was missing: a process
+  // pinned ONLY via HARNESS_ADMIN_DATABASE_URL — which is exactly the WI-7180
+  // papercup-dev-api pin, and the shape every integration test that env-routes a
+  // throwaway admin DSN takes — got a protected ADMIN pool and an APP pool that
+  // still fell through to the discovery file. So the hijack this rung exists to
+  // stop stayed open on the app half, silently: the two pools resolve to
+  // DIFFERENT databases, which reads as data "disappearing" between an admin
+  // write and an app read rather than as a connection fault.
+  for (const pinVar of ['HARNESS_ADMIN_DATABASE_URL', 'DATABASE_URL'] as const) {
+    const pinned = process.env[pinVar];
+    if (!pinned) continue;
     try {
-      const u = new URL(process.env.DATABASE_URL);
+      const u = new URL(pinned);
       _resolvedAppUrl = `postgresql://harness_app:harness_app_pwd@${u.hostname}:${u.port || 5432}${u.pathname || '/papercusp'}`;
       _resolvedAppUrlSource = 'env';
       return _resolvedAppUrl;
     } catch {
-      // unparseable DATABASE_URL — fall through to discovery
+      // unparseable pin — try the next pin, then the discovery file
     }
   }
   const disc = readDiscoveryFile();

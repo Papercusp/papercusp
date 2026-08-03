@@ -353,6 +353,35 @@ describe('URL resolution env precedence (WI-5244)', () => {
     expect(app).toBe('postgresql://harness_app:harness_app_pwd@dbhost.example:5999/papercusp');
   });
 
+  it('WI-7424: HARNESS_ADMIN_DATABASE_URL alone pins the APP endpoint too, not just admin', () => {
+    // The asymmetry this guards: adminUrl() honored HARNESS_ADMIN_DATABASE_URL but
+    // appUrl() did not, so a process pinned ONLY that way (the WI-7180
+    // papercup-dev-api pin) kept a protected admin pool while its app pool still
+    // fell through to the hijackable discovery file. The failure is quiet — the two
+    // pools land on DIFFERENT databases, so it reads as data vanishing between an
+    // admin write and an app read rather than as a connection error.
+    delete process.env.HARNESS_DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    process.env.HARNESS_ADMIN_DATABASE_URL =
+      'postgresql://harness_admin:pw@pinned.example:5998/papercusp';
+    _resetUrlCacheForTests();
+    const { app, admin } = _resolveUrlsForTests();
+    expect(admin).toBe('postgresql://harness_admin:pw@pinned.example:5998/papercusp');
+    // Same host:port as admin — NOT whatever the discovery file happens to advertise.
+    expect(app).toBe('postgresql://harness_app:harness_app_pwd@pinned.example:5998/papercusp');
+  });
+
+  it('WI-7424: app endpoint-pin precedence mirrors admin — HARNESS_ADMIN_DATABASE_URL beats DATABASE_URL', () => {
+    delete process.env.HARNESS_DATABASE_URL;
+    process.env.HARNESS_ADMIN_DATABASE_URL =
+      'postgresql://harness_admin:pw@pinned.example:5998/papercusp';
+    process.env.DATABASE_URL = 'postgresql://harness_admin:pw@other.example:5999/papercusp';
+    _resetUrlCacheForTests();
+    const { app, admin } = _resolveUrlsForTests();
+    expect(admin).toBe('postgresql://harness_admin:pw@pinned.example:5998/papercusp');
+    expect(app).toBe('postgresql://harness_app:harness_app_pwd@pinned.example:5998/papercusp');
+  });
+
   it('HARNESS_* env still wins over DATABASE_URL', () => {
     process.env.HARNESS_ADMIN_DATABASE_URL = 'postgresql://a:b@adminhost:5432/papercusp';
     process.env.HARNESS_DATABASE_URL = 'postgresql://c:d@apphost:5432/papercusp';
