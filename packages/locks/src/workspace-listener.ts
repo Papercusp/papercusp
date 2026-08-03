@@ -26,9 +26,71 @@
  */
 
 import { createHash } from 'node:crypto';
-import { getListenerPool, runBackgroundJanitorOnce } from './su-lock-store';
+import { getListenerPool, resetListenerPoolAfterTimeout, runBackgroundJanitorOnce } from './su-lock-store';
 
 const MAX_ACTIVE_WORKSPACES = 20;
+
+/**
+ * EI-19404227117727730: postgres-js provides no query-level timeout of its
+ * own — `sql.listen()`/`unlisten()` (like any `sql\`...\`` call) just awaits
+ * a response that, if the underlying connection died silently, never comes.
+ * This bounds each LISTEN/UNLISTEN op so a dead connection surfaces as a
+ * fast, clear failure instead of hanging the caller (and everything
+ * downstream of it — e.g. db:migrate's exclusive(db-schema) hold) forever.
+ * 20s is generous for a command that normally completes in milliseconds, and
+ * tiny next to the resource TTLs (minutes) a stuck caller would otherwise
+ * block. Overridable for tests / an unusually loaded box.
+ */
+const LISTEN_OP_TIMEOUT_MS = Math.max(1000, Number(process.env.PAPERCUSP_LISTEN_OP_TIMEOUT_MS) || 20_000);
+
+/** Thrown by {@link withListenTimeout} when the raced promise never settles
+ *  in time. Exported for tests; callers should treat it as "the LISTEN
+ *  connection is presumed dead" and call {@link recoverFromDeadListenConnection}. */
+export class ListenOpTimeoutError extends Error {
+  constructor(op: string) {
+    super(`listen_op_timeout: ${op} exceeded ${LISTEN_OP_TIMEOUT_MS}ms — the LISTEN connection is presumed dead`);
+    this.name = 'ListenOpTimeoutError';
+  }
+}
+
+/** Race `p` against {@link LISTEN_OP_TIMEOUT_MS}; rejects with
+ *  {@link ListenOpTimeoutError} on timeout, otherwise settles exactly as `p`
+ *  does. Never leaves a dangling timer (cleared on either outcome). Exported
+ *  + pure(ish) for unit testing. */
+export function withListenTimeout<T>(op: string, p: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new ListenOpTimeoutError(op)), LISTEN_OP_TIMEOUT_MS);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+/**
+ * A timed-out listen/unlisten means the pool's single dedicated LISTEN
+ * connection is presumed dead for EVERY channel it serves, not just the one
+ * that timed out — so self-heal by discarding the whole pool (the next
+ * `getListenerPool()` call rebuilds a clean connection + clean
+ * postgres-js-internal listen state) and dropping every subscription this
+ * module was tracking on it.
+ *
+ * A subscriber that loses its LISTEN this way is not left blind:
+ * `acquireResourceExclusiveWithWait`'s own `WAIT_CEILING_MS` poll loop
+ * re-checks lock status every 5s independent of any NOTIFY — correctness
+ * never depended on LISTEN succeeding, only latency does. Exported for
+ * tests.
+ */
+export function recoverFromDeadListenConnection(): void {
+  STATE.clear();
+  resetListenerPoolAfterTimeout();
+}
 
 /**
  * The per-domain NOTIFY/LISTEN channel: `ch_coord_` + md5(domain) = 41
@@ -102,7 +164,16 @@ export async function subscribeWorkspace(
         }
       }
     });
-    const result = await req;
+    // EI-19404227117727730: bounded — an unbounded `await req` here is what
+    // let a dead LISTEN connection hang every future subscribeWorkspace
+    // caller (across every domain, not just this one) forever.
+    let result: Awaited<typeof req>;
+    try {
+      result = await withListenTimeout('listen', req);
+    } catch (e) {
+      if (e instanceof ListenOpTimeoutError) recoverFromDeadListenConnection();
+      throw e;
+    }
 
     state = { unlisten: result.unlisten, listeners };
     STATE.set(coordinationDomain, state);
@@ -117,9 +188,14 @@ export async function subscribeWorkspace(
     if (cur.listeners.size === 0) {
       STATE.delete(coordinationDomain);
       try {
-        await cur.unlisten();
-      } catch {
-        // Best-effort — pool may already be torn down.
+        // EI-19404227117727730: bounded for the same reason as the listen()
+        // await above — this is the exact call that left db:migrate hung
+        // for 300s+ with the exclusive(db-schema) resource already granted
+        // but guardResource's run() never invoked (psql never spawned).
+        await withListenTimeout('unlisten', cur.unlisten());
+      } catch (e) {
+        // Best-effort — pool may already be torn down, or (now) reset.
+        if (e instanceof ListenOpTimeoutError) recoverFromDeadListenConnection();
       }
     }
   };
