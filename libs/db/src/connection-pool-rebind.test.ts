@@ -21,6 +21,7 @@
  * No Postgres needed — same as connection-helpers.test.ts, importing ./connection
  * opens no connection (all pools are lazy).
  */
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { endStalePool } from './connection';
 
@@ -101,6 +102,136 @@ describe('the teardown must never be able to block the caller escaping a dead po
     // that timeout to every rebind on the recovery path.
     const end = vi.fn(() => new Promise<void>(() => {})); // never settles
     expect(endStalePool({ end } as never, DISCOVERY, NATIVE, 'org-admin')).toBe(true);
+  });
+});
+
+/**
+ * THE WIRING — everything above this line tests the DECISION, and every one of it
+ * passed for four weeks while the app pool had no guard at all.
+ *
+ * `endStalePool` was defined, exported, unit-tested to six decimal places, and
+ * called from two of the four pool getters. `getOrgPgApp()` — the pool that 100%
+ * of workspace-scoped MCP calls take, via `withWorkspace()` — recomputed its URL
+ * on every invocation and then THREW IT AWAY (EI-19461720588871359). A test suite
+ * that only exercises the helper cannot see that: "the helper exists" is not "the
+ * feature works", and the difference is the call site.
+ *
+ * So these assert the call graph, not the function. They read the source rather
+ * than calling the getters because building a pool constructs a real postgres-js
+ * client and fires `validateDiscoveryTargetOnce`'s probe query, neither of which
+ * belongs in a no-DB unit test.
+ */
+// Overridable so falsifiability can be proven against a COPY (scripts/mutation-probe.sh)
+// instead of mutating the shared tree — git-sync sweeps every few minutes and will
+// happily commit a mutant that is only meant to live for the length of one run.
+const CONNECTION_SRC = readFileSync(
+  process.env.PROBE_CONNECTION_SRC ?? new URL('./connection.ts', import.meta.url),
+  'utf8',
+);
+
+/**
+ * Pool getters that legitimately have nothing to compare, each with its reason.
+ * An entry here is a DECISION on the record, not a silent exemption — which is
+ * the difference between this allowlist and the gap it replaces.
+ */
+const UNGUARDED_BY_DESIGN: Record<string, string> = {
+  getHarnessPg:
+    'Its LRU cache-hit path returns the cached handle WITHOUT recomputing appUrl(), ' +
+    'so there is no fresh URL to compare against. Adding one would put ' +
+    "readDiscoveryFile()'s synchronous readFileSync on a hot path that currently " +
+    'avoids it entirely — a real cost, unlike the org getters where the URL is ' +
+    'already recomputed every call and the comparison is free. These pools are ' +
+    'LRU-capped (HARNESS_POOL_CAP) and are being migrated onto harnessQuery() over ' +
+    'the pooled org-app pool, which IS guarded. Filed separately, not fixed here.',
+};
+
+const isCommentLine = (line: string) => /^\s*(\*|\/\/|\/\*)/.test(line);
+
+/**
+ * Every function in connection.ts that builds a cached pool, with its body
+ * (comment lines stripped, so a doc-comment MENTION of endStalePool can never
+ * masquerade as a call).
+ */
+function poolBuildingFunctions(): Array<{ name: string; body: string }> {
+  const lines = CONNECTION_SRC.split('\n');
+  const declAt = (i: number) => /^(export\s+)?function\s+(\w+)/.exec(lines[i] ?? '');
+  const found = new Map<string, string>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (isCommentLine(line) || !line.includes('buildClient(')) continue;
+    if (/function\s+buildClient\s*\(/.test(line)) continue; // the definition itself
+
+    let start = i;
+    while (start >= 0 && !declAt(start)) start--;
+    if (start < 0) continue;
+    const name = declAt(start)![2]!;
+    if (found.has(name)) continue;
+
+    // Top-level declarations sit at column 0, so the next one delimits this body.
+    let end = start + 1;
+    while (end < lines.length && !declAt(end)) end++;
+    found.set(
+      name,
+      lines
+        .slice(start, end)
+        .filter((l) => !isCommentLine(l))
+        .join('\n'),
+    );
+  }
+  return [...found].map(([name, body]) => ({ name, body }));
+}
+
+describe('the rebind guard is WIRED INTO every pool getter, not merely exported', () => {
+  const getters = poolBuildingFunctions();
+
+  it('finds the pool getters at all — a zero-match scan would pass every case below', () => {
+    // The failure this file exists to prevent is a check that measures nothing and
+    // reports clean. If the source shape drifts so the scan stops finding getters,
+    // that must be a RED here rather than a silent green everywhere else.
+    expect(getters.map((g) => g.name).sort()).toEqual(
+      ['getHarnessPg', 'getOrgPg', 'getOrgPgApp', 'getOrgPgLosslessBigint'].sort(),
+    );
+  });
+
+  it.each(poolBuildingFunctions())(
+    '$name either calls endStalePool or is allowlisted with a reason',
+    ({ name, body }) => {
+      if (name in UNGUARDED_BY_DESIGN) {
+        expect(UNGUARDED_BY_DESIGN[name]!.length).toBeGreaterThan(40);
+        expect(body).not.toContain('endStalePool');
+        return;
+      }
+      expect(body).toContain('endStalePool(');
+    },
+  );
+
+  it.each(poolBuildingFunctions().filter((g) => !(g.name in UNGUARDED_BY_DESIGN)))(
+    '$name compares against the URL IT records — not a sibling pool’s',
+    ({ name, body }) => {
+      // Passing the wrong module var typechecks perfectly (they are all
+      // `string | null`) and fails silently in one of two directions: a pool that
+      // never rebinds, or one that rebinds on every call. Only the pairing catches it.
+      const call = /endStalePool\(\s*([^,]+?)\s*,\s*([^,]+?)\s*,/.exec(body);
+      expect(call, `${name} calls endStalePool with an unparseable argument list`).toBeTruthy();
+      const [, poolVar, builtWithVar] = call!;
+      expect(body).toMatch(new RegExp(`\\b${builtWithVar}\\s*=\\s*url\\b`));
+      expect(builtWithVar).toBe(`${poolVar}Url`);
+    },
+  );
+
+  it('records the app pool’s built-with URL — the var whose absence WAS the bug', () => {
+    // Grep-able, deliberately: the filed report's whole evidence was that no
+    // `_appOrgClientUrl` existed anywhere in the repo.
+    expect(CONNECTION_SRC).toContain('let _appOrgClientUrl: string | null = null;');
+  });
+
+  it('clears every built-with URL in _resetForTests, so a reset is never half-done', () => {
+    const reset = /export async function _resetForTests\(\)[\s\S]*?\n}/.exec(CONNECTION_SRC);
+    expect(reset).toBeTruthy();
+    for (const v of ['_adminClientUrl', '_adminLosslessBigintClientUrl', '_appOrgClientUrl']) {
+      expect(reset![0]).toContain(`${v} = null`);
+    }
   });
 });
 

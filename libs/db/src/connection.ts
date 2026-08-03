@@ -380,6 +380,7 @@ export function _quarantineDiscoveryEndpointIfProvenForeign(
   _appOrgClient = null;
   _appOrgDrizzle = null;
   _appOrgDb = null;
+  _appOrgClientUrl = null;
   // Drop the memoized decisions too, so the next appUrl()/adminUrl() re-resolves through
   // the quarantine rather than returning the impostor URL it last decided on.
   if (_resolvedAppUrlSource === 'discovery') { _resolvedAppUrl = null; _resolvedAppUrlSource = null; }
@@ -1523,6 +1524,9 @@ export function getOrgPgLosslessBigint(): { sql: Sql } {
 let _appOrgClient: Sql | null = null;
 let _appOrgDrizzle: ReturnType<typeof drizzle> | null = null;
 let _appOrgDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
+// The URL the cached APP pool was ACTUALLY BUILT WITH — the app-side counterpart
+// of `_adminClientUrl` (connection.ts:694). See the rebind guard in getOrgPgApp().
+let _appOrgClientUrl: string | null = null;
 
 /**
  * App-role org client. Same search_path as `getOrgPg()` but uses the
@@ -1537,9 +1541,22 @@ let _appOrgDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
 export function getOrgPgApp(): OrgPgHandle {
   // Call appUrl() on every invocation — see comment in getOrgPg().
   const url = maybePgbouncer(appUrl());
+  // …and then COMPARE it to what the live pool was built with. Without this the
+  // recomputed `url` was dead code on the cache-hit path: appUrl()'s own teardown
+  // (connection.ts:480) lives inside `if (disc)`, so it fires only on
+  // discovery→DIFFERENT-discovery and misses discovery→ABSENT — the dead-pid /
+  // clean-shutdown shape that IS the EI-19285027465993737 incident. That hole was
+  // closed for the two admin pools and left open on the app pool, which is the one
+  // every workspace-scoped MCP call takes via withWorkspace() (EI-19461720588871359).
+  if (endStalePool(_appOrgClient, _appOrgClientUrl, url, 'org-app')) {
+    _appOrgClient = null;
+    _appOrgDrizzle = null;
+    _appOrgDb = null;
+  }
   if (!_appOrgClient) {
     // pooled = pgbouncerEnabled() (url = maybePgbouncer(appUrl())) — see getOrgPg().
     _appOrgClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-app', pgbouncerEnabled());
+    _appOrgClientUrl = url;
     _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedTables });
     _appOrgDb = drizzle(_appOrgClient, { schema: fullSchema });
     // WI-5244(2) + store identity — see the matching check in getOrgPg() above.
@@ -1735,16 +1752,23 @@ export async function _resetForTests() {
   _adminClient = null;
   _adminDrizzle = null;
   _adminDb = null;
+  _adminClientUrl = null;
   if (_adminLosslessBigintClient) {
     await _adminLosslessBigintClient.end({ timeout: 1 }).catch(() => {});
   }
   _adminLosslessBigintClient = null;
+  _adminLosslessBigintClientUrl = null;
   if (_appOrgClient) {
     await _appOrgClient.end({ timeout: 1 }).catch(() => {});
   }
   _appOrgClient = null;
   _appOrgDrizzle = null;
   _appOrgDb = null;
+  // Clear the built-with URLs alongside their pools. Harmless today (endStalePool
+  // returns false whenever the client is null, so a stale `builtWith` self-corrects
+  // on the next build) but leaving a reset half-done is the trap that produced this
+  // whole bug class — a var that records what a pool was built with must die with it.
+  _appOrgClientUrl = null;
   for (const h of _harnessClients.values()) {
     await h.sql.end({ timeout: 1 }).catch(() => {});
   }
