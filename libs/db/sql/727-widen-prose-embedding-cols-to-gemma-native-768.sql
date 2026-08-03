@@ -236,6 +236,7 @@ DECLARE
   t text;
   c text;
   cur_dims int;
+  col_notnull boolean;
   rk "char";
   idx record;
   v record;
@@ -457,6 +458,67 @@ BEGIN
       index_rebuild_stmts := index_rebuild_stmts || idx.indexdef;
       EXECUTE format('DROP INDEX IF EXISTS harness_shared.%I', idx.indexname);
     END LOOP;
+
+    -- ── A NOT NULL column cannot be widened with USING NULL. ─────────────────
+    -- `USING NULL` sets every row to NULL, which a NOT NULL column rejects:
+    --   column "vector" of relation "memory_vec_gemma" contains null values
+    -- Both memory_vec_gemma.vector and memory_vec_openai.vector are NOT NULL,
+    -- so this aborted the whole migration and left it PERMANENTLY pending. That
+    -- is worse than one broken migration: release:checkpoint-run preflights with
+    -- applyPendingMigrationsNow() and refuses on `failed.length > 0`, so a
+    -- permanently-failing 727 took the fleet's only manual gate lever down for
+    -- everyone, with a message that reads like the caller's problem
+    -- (EI-19404620261958999).
+    --
+    -- ⚠⚠ DO NOT "FIX" THIS BY DROPPING THE NOT NULL. That applies cleanly, looks
+    -- successful, and PERMANENTLY STRANDS every vector in the table — a far worse
+    -- outcome than the loud failure it replaces, because nothing reports it.
+    -- BOTH refill paths select on ROW ABSENCE, never on a NULL vector:
+    --   * packages/operator-core/lib/memory/federated-vec-backfill.ts
+    --       selectFederatedRowsMissingVectors:
+    --       NOT EXISTS (SELECT 1 FROM <vecTable> v WHERE v.memory_id = c.id)
+    --   * libs/generic/memory/src/reembed.ts:
+    --       NOT EXISTS (SELECT 1 FROM <toTable> t WHERE t.memory_id = c.id)
+    -- A surviving NULL-vector row therefore satisfies EXISTS, is never selected,
+    -- and never gets a vector again: semantic recall for that mode degrades to
+    -- nothing, with no error and no log line. (vec-write.ts documents the same
+    -- silent-failure shape for a stale MODE_DIMS entry.)
+    --
+    -- DELETE is the correct treatment, and ONLY for a pure vector-join table
+    -- whose row exists solely to carry the vector. memory_vec_* is
+    -- (memory_id PK -> memory_canonical, vector, embedded_at): the TEXT survives
+    -- in memory_canonical, and the row is rebuilt by vec-write.ts's
+    -- `ON CONFLICT (memory_id) DO UPDATE` upsert. So this is the SAME data loss
+    -- the header already describes for every other column here — expressed the
+    -- only way this table shape permits, and self-healing by the same sweep.
+    SELECT a.attnotnull INTO col_notnull
+      FROM pg_attribute a
+      JOIN pg_class cl ON cl.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = cl.relnamespace
+     WHERE n.nspname = 'harness_shared'
+       AND cl.relname = t
+       AND a.attname = c
+       AND a.attnum > 0
+       AND NOT a.attisdropped;
+
+    IF col_notnull THEN
+      -- Narrow BY CONSTRUCTION: only the per-mode vector-join tables. Any other
+      -- NOT NULL vector column belongs to a table whose rows carry content, so
+      -- deleting them would destroy data the widening was never meant to touch —
+      -- and dropping the NOT NULL would strand them per the note above. Neither
+      -- is safe, so refuse loudly: the same rule as the relkind, materialized-view
+      -- and constraint-backed-index checks elsewhere in this migration.
+      IF left(t, 11) = 'memory_vec_' THEN
+        RAISE NOTICE
+          '727: harness_shared.%.% is NOT NULL — deleting rows so the widening can proceed (refill re-INSERTs them; see comment above)',
+          t, c;
+        EXECUTE format('DELETE FROM harness_shared.%I', t);
+      ELSE
+        RAISE EXCEPTION
+          '727: harness_shared.%.% is NOT NULL and is not a memory_vec_* join table. USING NULL cannot satisfy it; dropping the NOT NULL would strand every row (both refill paths select on row ABSENCE, not on a NULL vector) and deleting rows would destroy content. Refusing rather than guessing.',
+          t, c;
+      END IF;
+    END IF;
 
     -- The widening itself. USING NULL because no cast exists between vector
     -- widths — this is the all-at-once data loss the header describes.
