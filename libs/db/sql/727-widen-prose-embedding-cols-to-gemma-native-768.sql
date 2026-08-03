@@ -446,6 +446,21 @@ BEGIN
          AND ct.relname = t
          AND a.attnum = ANY (ix.indkey::smallint[])
     LOOP
+      -- FORWARD-COMPAT: these DROP INDEXes cannot break the deployed release.
+      -- The EI-18797473716313783 hazard is dropping an index the running code
+      -- infers as an ON CONFLICT arbiter — and an arbiter must be a UNIQUE,
+      -- PRIMARY KEY or EXCLUSION index. This loop REFUSES to drop any of those:
+      -- `constraint_backed` (line above) is exactly
+      -- `indisprimary OR indisunique OR indisexclusion`, and the guard below
+      -- RAISEs instead of dropping. So the only indexes this can drop are
+      -- non-unique ones — here the HNSW/ivfflat vector indexes on the columns
+      -- being widened, which no ON CONFLICT can ever name. Each one is also
+      -- rebuilt from its own `pg_get_indexdef` in this SAME transaction
+      -- (`index_rebuild_stmts`), so the deployed release never observes a
+      -- window without it; the HNSW graphs then refill incrementally as the
+      -- backfill sweep restores the vectors. This is a genuine "the deployed
+      -- release does not use this" case, NOT an expand/contract deferral.
+      --
       -- Dropping a constraint-backing index needs ALTER TABLE ... DROP
       -- CONSTRAINT and would silently drop the constraint with it.
       IF idx.constraint_backed THEN
