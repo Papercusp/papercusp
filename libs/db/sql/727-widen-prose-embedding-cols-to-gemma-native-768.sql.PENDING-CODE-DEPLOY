@@ -13,8 +13,31 @@
 --                         semantic search stays dead until the new code ships
 --                         (gate-dependent, potentially many hours).
 --   * code first       -> the code emits 768 into vector(384) columns; writes
---                         fail for the minutes until this is applied, and the
---                         refill starts the instant it is. Bounded, self-healing.
+--                         fail until this is applied, and the refill starts the
+--                         instant it is. Self-healing, but see the tail below.
+--
+-- ⚠ THE CODE-FIRST TAIL IS NOT "A FEW MINUTES" — it is however long the GREEN
+-- GATE takes, and that is not under your control. This header used to say the
+-- writes "fail for the minutes until this is applied", which reads as a cost so
+-- small it needs no monitoring. It is wrong in a way that matters: step 1 below
+-- requires the 768 code to be DEPLOYED, and deployment requires green ->
+-- main fast-forward -> deploy. A red gate therefore extends this window
+-- arbitrarily.
+-- MEASURED 2026-08-03 (EI-19389713448796977), with the gate at 9 consecutive
+-- reds: the skew opened at 23:17:13Z the moment 768 reached the STAGING tree
+-- (staging-tree hosts — bg-host routines, :3170, gateway :8788 — run tsx from
+-- the working tree, so they pick up a new constant immediately, long before any
+-- deploy), and 1h11m later had silently skipped 56 code_recipes embeds, 1
+-- session_turn embed, and 12 code:run recipe captures, still accruing ~1 per 30s.
+-- The ordering choice above is still CORRECT — code-first is genuinely the
+-- lesser evil, and NONE of this is corruption: pgvector REJECTS a mismatched
+-- write rather than coercing it, and every skipped row keeps `embedding IS NULL`,
+-- which is exactly what the refill selects on. It all comes back.
+-- What you should take from this: the window is OBSERVABLE and worth watching,
+-- not a rounding error --
+--   journalctl --user --since "1 hour ago" | grep "different vector dimensions"
+-- and the failures are SWALLOWED (the log line says so), so nothing will tell
+-- you it is still happening unless you look.
 -- So: DEPLOY THE CODE, THEN rename this to `.sql` and apply it.
 --
 -- TO ENACT (plan P-006):

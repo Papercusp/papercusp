@@ -1098,6 +1098,82 @@ export function getOrgPg(): OrgPgHandle {
 }
 
 /**
+ * Default ceiling for {@link withDbCallDeadline} — comfortably under the ~300s
+ * generic "no response or progress" idle-timeout an MCP client transport
+ * imposes on a stuck call, so a deadline-wrapped call fails fast with a clear
+ * cause well before the caller's own transport times out silently.
+ */
+export const DEFAULT_DB_CALL_DEADLINE_MS = 45_000;
+
+/**
+ * Thrown by {@link withDbCallDeadline} when the wrapped DB call does not
+ * settle within its deadline.
+ */
+export class DbCallDeadlineError extends Error {
+  readonly label: string;
+  readonly deadlineMs: number;
+  readonly elapsedMs: number;
+  constructor(label: string, deadlineMs: number, elapsedMs: number) {
+    super(
+      `[db-call-deadline] "${label}" did not resolve within ${deadlineMs}ms ` +
+        `(waited ${elapsedMs}ms). This most often means the pool's INITIAL ` +
+        `connection attempt failed and postgres.js is silently retrying forever ` +
+        `(see WI-7097) rather than this specific query being slow — check ` +
+        `dev:service_health for the target DB, or verify the resolved admin URL.`,
+    );
+    this.name = 'DbCallDeadlineError';
+    this.label = label;
+    this.deadlineMs = deadlineMs;
+    this.elapsedMs = elapsedMs;
+  }
+}
+
+/**
+ * Caller-facing deadline for ONE DB round trip — WI-7097.
+ *
+ * Root cause this guards against (verified in `node_modules/postgres/src/connection.js`):
+ * `closed()` special-cases a pool's FIRST ("initial") connection attempt — on
+ * failure it calls `reconnect()` with exponential backoff FOREVER, and never
+ * invokes `error()`/`queryError()` to reject the caller's pending query. So a
+ * query issued while the pool is still in that "never yet connected" state
+ * (e.g. right after boot against a not-yet-up embedded PG, or a genuinely dead
+ * endpoint) neither resolves nor rejects — the caller's only signal ends up
+ * being whatever generic idle-timeout ITS OWN transport happens to impose
+ * (e.g. an MCP client's blanket 300s "no response or progress" abort), with
+ * zero information about the real cause.
+ *
+ * This is deliberately NOT a substitute for `connect_timeout` (see this
+ * file's `connectTimeoutSec`, left disabled outside tests on purpose to
+ * tolerate a slow embedded-pg cold boot): it bounds one CALLER's wait, not
+ * the pool's retry policy, so anything that legitimately needs to wait out a
+ * boot race is unaffected as long as it doesn't itself call through this
+ * wrapper. When the deadline wins the race, the underlying query/connection
+ * attempt is NOT cancelled — it keeps retrying in the background exactly as
+ * before; this only stops the caller from waiting on it.
+ *
+ * Usage: `await withDbCallDeadline(sql\`SELECT …\`, { label: '…' })`.
+ */
+export function withDbCallDeadline<T>(
+  promise: Promise<T>,
+  opts: { ms?: number; label: string },
+): Promise<T> {
+  const ms = opts.ms ?? DEFAULT_DB_CALL_DEADLINE_MS;
+  const label = opts.label;
+  const startedAt = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new DbCallDeadlineError(label, ms, Date.now() - startedAt));
+    }, ms);
+    // Never hold the process open on this timer alone.
+    timer.unref?.();
+  });
+  return Promise.race([promise, deadline]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/**
  * Admin client WITHOUT the bigint→number override (EI-18789855771421275).
  *
  * `getOrgPg()` deliberately converts int8/bigserial (oid 20) to a JS `number`

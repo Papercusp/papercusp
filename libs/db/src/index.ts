@@ -22,6 +22,11 @@ export {
   restoreRawJsonbSerializer,
   longLivedPoolConnectionOptions,
   poolIdleTimeoutSec,
+  // WI-7097: a caller-facing deadline for one DB round trip, guarding against
+  // postgres.js's silent-retry-forever-on-failed-initial-connect. See connection.ts.
+  withDbCallDeadline,
+  DbCallDeadlineError,
+  DEFAULT_DB_CALL_DEADLINE_MS,
   // EI-19306394439939264: the rebind primitive was exported from connection.ts but never
   // re-exported here, so no other package could import it — which is why adoption outside
   // connection.ts was zero and 25 hand-rolled pools still wedge on a dead endpoint.
