@@ -278,7 +278,7 @@ test('Wake/Learning/Placement/Lexicon — parse their declared shapes; placement
     ...minimal,
     lexicon: { workUnit: 'deliverable', reviewGate: 'review' },
     wake: { subscriptions: [{ on: 'work_items:create', note: 'new work' }], kickoffTemplate: 'survey the frontier' },
-    learning: { pack: 'papercusp-default', loops: ['scout'] },
+    learning: { pack: 'coding', loops: ['scout'] },
     placement: { injectLoadThreshold: 3, maxInjectPerBee: 2, strategy: 'balanced' },
   });
   assert.equal(bp.lexicon?.workUnit, 'deliverable');
