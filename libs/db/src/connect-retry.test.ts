@@ -284,6 +284,29 @@ describe('ConnectPhaseDeadlineError message contract', () => {
     expect(message).toMatch(/max_connections/i);
   });
 
+  it('gives a DISCRIMINATOR between the causes, not just a list of them', () => {
+    // WI-8848: naming two causes without a way to tell them apart sent readers guessing,
+    // and the two branches have different fixes. The message must point at the pooler
+    // queue depth and the per-application pool occupancy, in that order.
+    expect(message).toMatch(/SHOW POOLS/i);
+    expect(message).toMatch(/cl_waiting|maxwait/i);
+    expect(message).toMatch(/application_name/i);
+    expect(message).toMatch(/PAPERCUSP_DB_POOL_MAX/);
+  });
+
+  it('warns that an idle-looking server is NOT evidence against pool saturation', () => {
+    // The measured breach had 205/512 connections free. An agent reading "the DB is fine"
+    // as "therefore not a pool problem" is the specific wrong turn this sentence prevents.
+    expect(message).toMatch(/idle/i);
+    expect(message).toMatch(/205 of 512/);
+  });
+
+  it('does not claim a statement timeout protects the connect path', () => {
+    // A per-statement timeout bounds how long a slot is HELD, never the wait to ACQUIRE one;
+    // conflating them makes a configured timeout look like a fix for this error.
+    expect(message).toMatch(/bounds how long each slot is HELD, not the wait to acquire one/i);
+  });
+
   it('still reports the deadline that was breached', () => {
     expect(message).toContain('45000ms');
     expect(new ConnectPhaseDeadlineError(45_000).deadlineMs).toBe(45_000);

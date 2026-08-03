@@ -133,7 +133,17 @@ export class ConnectPhaseDeadlineError extends Error {
         `pool, and if it came from ~/.papercusp/embedded-pg.json it is memoized for the ` +
         `process lifetime so only a restart re-resolves it (EI-19415414498429866). (b) the ` +
         `CLIENT pool is saturated while the endpoint is perfectly healthy; check pool ` +
-        `in-use/waiting, and pg_stat_activity count against max_connections.`,
+        `in-use/waiting, and pg_stat_activity count against max_connections. ` +
+        `HOW TO TELL THEM APART (WI-8848, measured 2026-08-03 at a real breach): server capacity ` +
+        `does NOT decide this — that breach had a fully IDLE server, 205 of 512 connections free ` +
+        `and only 32 active, so "the database looks fine" is the EXPECTED reading here and is not ` +
+        `evidence against (b). Discriminate in this order: (1) behind PgBouncer, ` +
+        `"SHOW POOLS" on :6432 — cl_waiting > 0 or maxwait > 0 means the queue is at the POOLER ` +
+        `(its default_pool_size), not in this process; (2) both zero ⇒ group pg_stat_activity by ` +
+        `application_name and find THIS process's own pcusp:org-*:p<pid> row — at ` +
+        `PAPERCUSP_DB_POOL_MAX (per process AND workspace) this client pool is the bottleneck; ` +
+        `(3) only if both look healthy is (a) worth chasing. Note a per-statement timeout does ` +
+        `not protect this path: it bounds how long each slot is HELD, not the wait to acquire one.`,
     );
     this.name = 'ConnectPhaseDeadlineError';
     this.deadlineMs = deadlineMs;
