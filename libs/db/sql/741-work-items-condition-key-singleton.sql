@@ -74,6 +74,27 @@
 -- SAFETY. `ADD COLUMN` with no default is a catalog-only change on PG11+ (no
 -- table rewrite). The new column is NULL for every existing row, so the partial
 -- index is built over zero rows and can conflict with nothing.
+--
+-- FORWARD-COMPAT: both the column and the index are introduced by THIS migration,
+-- so no deployed release can reference either — `condition_key` does not exist in
+-- any shipped code path, and there is no pre-existing non-partial index of these
+-- columns whose ON CONFLICT arbiter could be narrowed out from under a running
+-- release. This is a pure EXPAND with nothing to contract. (The guard exists
+-- because migration 689 narrowed an in-use arbiter and broke facts:assert
+-- fleet-wide for ~3h — EI-18797473716313783.)
+--
+-- ⚠ CONSEQUENCE FOR P-003's BRIDGE UPSERT. Because this index is PARTIAL,
+-- Postgres will only infer it as an ON CONFLICT arbiter when the statement
+-- REPEATS the predicate. The bridge must therefore write:
+--
+--     INSERT INTO harness_shared.work_items (...)
+--     ON CONFLICT (workspace_id, harness_slug, condition_key)
+--       WHERE condition_key IS NOT NULL
+--       DO UPDATE SET ...
+--
+-- Omitting that `WHERE` yields a runtime "no unique or exclusion constraint
+-- matching the ON CONFLICT specification" error, NOT a silent duplicate — it
+-- fails loudly at the first upsert, which is the failure direction we want.
 
 ALTER TABLE harness_shared.work_items
   ADD COLUMN IF NOT EXISTS condition_key TEXT;
