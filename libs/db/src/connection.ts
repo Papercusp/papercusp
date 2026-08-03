@@ -134,6 +134,63 @@ export function _defaultIsPidAlive(pid: number): boolean {
 }
 
 /**
+ * Is `port` actually in LISTEN state right now? Injected into
+ * _parseDiscoveryJson (mirrors _defaultIsPidAlive) so tests stay pure.
+ *
+ * EI-19384906720464601: this is the port-listening gate `libs/generic/embedded-pg-discovery`
+ * already carries (`isDiscoveredPortServed`, landed 2026-08-01 after a measured outage — a
+ * discovery file's writer pid was alive, nothing was listening on its advertised port, and
+ * the pid-only gate waved every consumer straight into an ECONNREFUSED storm). connection.ts
+ * is the resolver behind `getOrgPg()` — the hottest DB read path — and had NO port gate at
+ * all, so the same failure mode was uncaught on the highest-traffic caller.
+ *
+ * DELIBERATELY DUPLICATED rather than imported from `@papercusp/embedded-pg-discovery`: that
+ * package statically `import`s `node:fs` at module scope, and this file's `nodeRequire` lazy-
+ * require pattern above exists SPECIFICALLY because an eager Node-only import here has
+ * previously blanked the entire desktop app (see the comment on `nodeRequire`) — the operator
+ * SPA pulls this module in via the route tree and externalizes `node:module`/`node:fs` for the
+ * browser. Importing the generic package would reintroduce that exact crash. A full collapse
+ * of connection.ts's resolver onto the generic one (this function's real fix) is tracked
+ * separately — it also has to carry PgBouncer rerouting, the PAPERCUSP_PG_PORT early-boot
+ * fallback, and this file's own caching/pool-invalidation semantics, which is why it wasn't
+ * folded into this narrower parity fix (see EI-19384906720464601's own body for the reasoning).
+ *
+ * Same /proc/net/tcp{,6} LISTEN scan as the generic lib's `listeningPorts()`. Linux-only by
+ * construction (/proc); everywhere else this declines to judge (returns true) rather than
+ * reject a healthy config, matching the generic lib's degradation contract.
+ */
+export function _defaultIsPortServed(port: number): boolean {
+  try {
+    const fs = nodeRequire('node:fs') as typeof import('node:fs');
+    const TCP_LISTEN = '0A';
+    // Read BOTH tcp and tcp6: a server bound to `::` (dual-stack, the common default)
+    // appears ONLY in tcp6, so checking tcp alone would report a perfectly healthy
+    // port as dead. `readAny` tracks whether /proc was readable at all, distinct
+    // from "readable but the port wasn't in it".
+    let readAny = false;
+    for (const f of ['/proc/net/tcp', '/proc/net/tcp6']) {
+      let raw: string;
+      try {
+        raw = fs.readFileSync(f, 'utf8');
+      } catch {
+        continue;
+      }
+      readAny = true;
+      for (const line of raw.split('\n').slice(1)) {
+        // sl  local_address rem_address st ...  — local_address is HEXIP:HEXPORT
+        const cols = line.trim().split(/\s+/);
+        if (cols.length < 4 || cols[3] !== TCP_LISTEN) continue;
+        const hexPort = cols[1]?.split(':')[1];
+        if (hexPort && parseInt(hexPort, 16) === port) return true;
+      }
+    }
+    return !readAny; // /proc unreadable → decline to judge (true); readable but absent → false
+  } catch {
+    return true; // /proc unavailable on this platform — decline to judge, never reject
+  }
+}
+
+/**
  * Parse the embedded-pg discovery file's JSON into a connection endpoint.
  *
  * The WRITER (apps/operator/bin/serve.ts) records `{ url, port, pid, startedAt }`
@@ -149,12 +206,13 @@ export function _defaultIsPidAlive(pid: number): boolean {
  * libs/host-platform/src/desktop.ts already reads — and keep the legacy `{host,port}`
  * shape working for any older file still on disk.
  *
- * Exported for tests: pure apart from the injected liveness probe, so the shape
+ * Exported for tests: pure apart from the injected liveness/port probes, so the shape
  * contract is pinned directly.
  */
 export function _parseDiscoveryJson(
   raw: string,
   isPidAlive: (pid: number) => boolean = _defaultIsPidAlive,
+  isPortServed: (port: number) => boolean = _defaultIsPortServed,
 ): DiscoveryEndpoint | null {
   let parsed: { url?: string; host?: string; port?: number; user?: string; password?: string; pid?: number };
   try {
@@ -175,6 +233,17 @@ export function _parseDiscoveryJson(
       const u = new URL(parsed.url);
       const port = Number(u.port) || Number(parsed.port);
       if (u.hostname && port) {
+        // PORT-LISTENING GUARD (EI-19384906720464601, mirrors the generic resolver's
+        // isDiscoveredPortServed): the pid gate above proves the writer PROCESS exists,
+        // not that it is SERVING on the advertised port — the file is written at
+        // startup, before the port is necessarily bound, and a bind failure leaves a
+        // live pid pointing at a dead port forever. A live-pid, dead-port file passed
+        // the pid-only gate and sent every consumer into an ECONNREFUSED storm
+        // (measured 2026-08-01 on the generic resolver's copy of this exact bug). A
+        // dead port here is treated the same as a dead pid: null, no legacy fallback
+        // within this same file — there is no reason to trust a DIFFERENT host/port
+        // pair from the same stale file once the primary one is confirmed dead.
+        if (!isPortServed(port)) return null;
         return {
           host: u.hostname,
           port,
@@ -187,7 +256,10 @@ export function _parseDiscoveryJson(
       // unparseable url — fall through to the legacy {host,port} shape
     }
   }
-  if (parsed?.port && parsed?.host) return parsed;
+  if (parsed?.port && parsed?.host) {
+    if (!isPortServed(parsed.port)) return null;
+    return parsed;
+  }
   return null;
 }
 
