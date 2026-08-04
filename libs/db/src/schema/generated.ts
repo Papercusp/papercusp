@@ -3830,6 +3830,8 @@ export const memoryRecallStatsInHarnessShared = harnessShared.table("memory_reca
 	querySha256: text("query_sha256"),
 	queryOrigin: text("query_origin"),
 	sessionId: text("session_id"),
+	legs: jsonb(),
+	admission: jsonb(),
 }, (table) => [
 	index("memory_recall_stats_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("memory_recall_stats_scale_created_idx").using("btree", table.scoreScale.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")).where(sql`(score_scale IS NOT NULL)`),
@@ -4767,12 +4769,18 @@ export const memoryCanonicalInHarnessShared = harnessShared.table("memory_canoni
 	validAt: timestamp("valid_at", { withTimezone: true, mode: 'string' }),
 	invalidAt: timestamp("invalid_at", { withTimezone: true, mode: 'string' }),
 	supersededBy: uuid("superseded_by"),
+	rowKind: text("row_kind").generatedAlwaysAs(sql`
+CASE
+    WHEN (payload ? 'entityType'::text) THEN 'entity'::text
+    ELSE 'memory'::text
+END`),
 }, (table) => [
 	uniqueIndex("memory_canonical_fed_identity").using("btree", sql`workspace_id`, sql`id`, sql`COALESCE(source_hive, ''::text)`),
 	index("memory_canonical_payload_data_trgm").using("gin", sql`((payload ->> 'data'::text))`),
 	index("memory_canonical_payload_description_trgm").using("gin", sql`((payload ->> 'description'::text))`),
 	index("memory_canonical_payload_name_trgm").using("gin", sql`((payload ->> 'name'::text))`),
 	index("memory_canonical_recently_surfaced_idx").using("btree", table.lastSurfacedAt.desc().nullsLast().op("timestamptz_ops")).where(sql`(last_surfaced_at IS NOT NULL)`),
+	index("memory_canonical_row_kind_memory_idx").using("btree", table.id.asc().nullsLast().op("uuid_ops")).where(sql`(row_kind = 'memory'::text)`),
 	index("memory_canonical_shareable_idx").using("btree", table.shareable.asc().nullsLast().op("bool_ops")).where(sql`(shareable = true)`),
 	index("memory_canonical_state_idx").using("btree", table.state.asc().nullsLast().op("text_ops")).where(sql`(state <> 'active'::text)`),
 	index("memory_canonical_user_id_col_idx").using("btree", table.userId.asc().nullsLast().op("text_ops")),
