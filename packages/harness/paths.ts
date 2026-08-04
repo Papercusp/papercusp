@@ -27,8 +27,34 @@ function derivedHarnessRoot(repoRoot: string): string {
   return join(repoRoot, 'libs', 'papercusp', 'packages', 'harness');
 }
 
-export function resolveHarnessPackageRoot(startDirs: string[]): string | null {
+export interface ResolveHarnessPackageRootOptions {
+  /**
+   * Highest ancestor the upward walk may consider, inclusive. Once this
+   * directory has been probed the walk stops instead of continuing to the
+   * filesystem root.
+   *
+   * Default (omitted) = the filesystem root, i.e. the historical behavior —
+   * every production caller is unchanged.
+   *
+   * Why it exists: the walk probes EVERY ancestor, so a `blueprints/base/
+   * blueprint.yaml` dropped in a world-shared ancestor (`/tmp`) makes that
+   * ancestor answer as "the harness package root" for anything started
+   * beneath it. That is unobservable in normal dev and it red-pinned the
+   * fleet gate on 2026-08-04 (WI-10675): the `paths.test.ts` case asserting
+   * "null when no candidate has harness assets" builds its candidates under
+   * `mkdtemp(tmpdir())`, so it was asserting about `/tmp` and `/` — machine
+   * state no test can own. A test that must be decidable passes the root it
+   * created here, and then measures only the candidates it constructed.
+   */
+  stopAt?: string;
+}
+
+export function resolveHarnessPackageRoot(
+  startDirs: string[],
+  { stopAt }: ResolveHarnessPackageRootOptions = {},
+): string | null {
   const seen = new Set<string>();
+  const ceiling = stopAt === undefined ? null : resolve(stopAt);
   const consider = (dir: string): string | null => {
     let cur = resolve(dir);
     const root = parse(cur).root;
@@ -45,7 +71,7 @@ export function resolveHarnessPackageRoot(startDirs: string[]): string | null {
         if (hasHarnessAssets(derived)) return derived;
       }
 
-      if (cur === root) return null;
+      if (cur === root || cur === ceiling) return null;
       cur = dirname(cur);
     }
   };

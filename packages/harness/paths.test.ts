@@ -34,28 +34,59 @@ describe('promptHarnessRoot — prompt-root override', () => {
     return d;
   };
 
+  /**
+   * Every `resolveHarnessPackageRoot` case below passes `{ stopAt: root }`.
+   *
+   * The walk probes EVERY ancestor of its start dirs, and these fixtures live
+   * under `mkdtemp(tmpdir())` — so an unbounded walk leaves the tree above
+   * `root` (`/tmp`, then `/`) inside the assertion, and no test can own that.
+   * On 2026-08-04 something left a full `blueprints/` tree at bare `/tmp`
+   * (WI-10675); `hasHarnessAssets('/tmp')` flipped true, the null case below
+   * resolved to `'/tmp'`, and that red-pinned `main` for the whole fleet.
+   * Bounding the walk at the root each case created makes these assertions
+   * decidable from the fixtures alone.
+   */
+  const mkAsset = (dir: string): void => {
+    mkdirSync(join(dir, 'blueprints', 'base'), { recursive: true });
+    writeFileSync(join(dir, 'blueprints', 'base', 'blueprint.yaml'), 'id: base\nkind: harness\n');
+  };
+
   it('resolveHarnessPackageRoot recovers the source harness package from a bundled dist-host start dir', () => {
     const root = mk();
     const harness = join(root, 'libs', 'papercusp', 'packages', 'harness');
-    mkdirSync(join(harness, 'blueprints', 'base'), { recursive: true });
-    writeFileSync(join(harness, 'blueprints', 'base', 'blueprint.yaml'), 'id: base\nkind: harness\n');
+    mkAsset(harness);
     mkdirSync(join(root, 'apps', 'operator', 'dist-host'), { recursive: true });
     const start = join(root, 'apps', 'operator', 'dist-host');
-    expect(resolveHarnessPackageRoot([start])).toBe(harness);
+    expect(resolveHarnessPackageRoot([start], { stopAt: root })).toBe(harness);
   });
 
   it('resolveHarnessPackageRoot prefers PAPERCUSP_INTEGRATION_ROOT when it has harness assets', () => {
     const root = mk();
     const harness = join(root, 'libs', 'papercusp', 'packages', 'harness');
-    mkdirSync(join(harness, 'blueprints', 'base'), { recursive: true });
-    writeFileSync(join(harness, 'blueprints', 'base', 'blueprint.yaml'), 'id: base\nkind: harness\n');
+    mkAsset(harness);
     process.env.PAPERCUSP_INTEGRATION_ROOT = root;
-    expect(resolveHarnessPackageRoot(['/missing/start'])).toBe(harness);
+    expect(resolveHarnessPackageRoot(['/missing/start'], { stopAt: root })).toBe(harness);
   });
 
   it('resolveHarnessPackageRoot returns null when no candidate has harness assets', () => {
     const root = mk();
-    expect(resolveHarnessPackageRoot([root])).toBeNull();
+    expect(resolveHarnessPackageRoot([root], { stopAt: root })).toBeNull();
+  });
+
+  it('stopAt bounds the upward walk — an ancestor carrying harness assets is NOT adopted', () => {
+    // The exact WI-10675 shape, reproduced hermetically: a polluted ANCESTOR
+    // (the stand-in for `/tmp`) holding a `blueprints/base/blueprint.yaml`.
+    const polluted = mk();
+    mkAsset(polluted);
+    const start = join(polluted, 'nested', 'start');
+    mkdirSync(start, { recursive: true });
+
+    // Bounded below the pollutant: the walk stops at `nested` and reports null.
+    expect(resolveHarnessPackageRoot([start], { stopAt: join(polluted, 'nested') })).toBeNull();
+
+    // Calibration — without the bound the SAME fixture is adopted, so the
+    // assertion above is falsifiable and not vacuously true.
+    expect(resolveHarnessPackageRoot([start])).toBe(polluted);
   });
 
   it('UNSET ⇒ returns the explicit fallback (byte-identical to pre-decouple)', () => {
