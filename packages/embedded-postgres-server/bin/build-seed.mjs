@@ -91,12 +91,32 @@ try {
   handle = null;
 
   // Archive the PGDATA contents at archive-root so `tar -x -C <dataDir>` restores
-  // PG_VERSION at <dataDir>/PG_VERSION. Exclude the pid lock (should already be
-  // gone after a clean stop) defensively.
+  // PG_VERSION at <dataDir>/PG_VERSION.
+  //
+  // BOTH postmaster files are excluded because BOTH record BUILD-BOX ABSOLUTE PATHS,
+  // and this archive ships inside the public desktop bundle:
+  //   • postmaster.pid  — data-directory path (already excluded; defensive, a clean
+  //                       stop removes it).
+  //   • postmaster.opts — the full postmaster ARGV, including the absolute path to
+  //                       the binary on the machine that built the seed. Measured
+  //                       2026-08-08 in the shipping sidecar (P-012): the one
+  //                       leaking member of 3,836 was postmaster.opts, carrying
+  //                       /home/<builder>/…/src-tauri/sidecar.tmp.<pid>/node_modules/…
+  //                       — the builder's username, home layout and workspace path.
+  // Neither is needed to restore a seed: PG rewrites both on next start, and
+  // postmaster.opts only exists to let `pg_ctl restart` recall prior options.
+  // This was invisible for so long because the release identity scan used
+  // `grep -rIlE`, and -I skips binary files, so it never opened the archive at all.
   await mkdir(dirname(outPath), { recursive: true });
   await rm(outPath, { force: true }).catch(() => {});
   log(`archiving seed → ${outPath}`);
-  execFileSync('tar', ['-c', '-z', '-f', outPath, '--exclude', './postmaster.pid', '-C', dataDir, '.'], { stdio: 'inherit' });
+  execFileSync(
+    'tar',
+    ['-c', '-z', '-f', outPath,
+     '--exclude', './postmaster.pid', '--exclude', './postmaster.opts',
+     '-C', dataDir, '.'],
+    { stdio: 'inherit' },
+  );
 
   const { size } = await stat(outPath);
   log(`seed built: ${(size / 1024 / 1024).toFixed(1)} MB`);
