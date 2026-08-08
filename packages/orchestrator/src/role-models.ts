@@ -110,8 +110,23 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // the `gpt-5.6-` prefix made `inferBackendFromModelSpec` (harness-invoke-once.ts)
   // / `isCodexShapedModelSpec` (orchestrator env.ts) swap the subprocess to
   // `codex`, `sonnet[1m]:high` resolves through normalizeModelSpec to the 967k
-  // trimmed window and infers the claude/anthropic backend, so the spawn binary
+  // trimmed window and now infers the claude-code backend, so the spawn binary
   // stays correct.
+  //
+  // ⚠ CORRECTION (2026-08-08, WI-36197): that last clause USED TO BE FALSE, and
+  // the false comment is very likely why nobody re-checked the path. Until this
+  // date `inferBackendFromModelSpec` returned a backend ONLY for Codex-shaped
+  // specs and `undefined` for everything else — it never inferred claude. The
+  // spawn binary therefore came from `AGENT_CMD ?? CLAUDE ?? 'omp -p'`, so it
+  // "stayed correct" only in processes that happen to export AGENT_CMD.
+  // papercup-bg-host.service does (mug/kettle boot fine); the OPERATOR process
+  // does not — so every `cup:spawn` served there launched
+  // `omp -p --model sonnet[1m]:high`, which omp has no bare alias for, and died
+  // in ~1.5s with exit 1 before its first turn. Six consecutive spawns reported
+  // `ok` while the pot made zero progress. The claude-code branch now exists in
+  // inferBackendFromModelSpec (harness-invoke-once.ts), making the sentence
+  // above true; do not "simplify" it back out — the spec must drive the binary
+  // at EVERY spawner, not only ones with the env var set.
   //
   // ⚠ The spec is the BARE `sonnet[1m]:high`, NOT `sonnet-5[1m]:high` — even
   // though the owner's decision names "sonnet-5". `sonnet-5` is a VERSIONED
