@@ -210,7 +210,12 @@ describe('withAcquisitionDeadline — registry wiring', () => {
       pool: 'org-app',
       ms: 45_000,
     });
-    const caught = p.catch((e: unknown) => e as DbCallDeadlineError);
+    const caught = p.then(
+      () => {
+        throw new Error('expected a deadline rejection');
+      },
+      (e: unknown) => e as DbCallDeadlineError,
+    );
     await vi.advanceTimersByTimeAsync(45_001);
     const err = await caught;
     expect(err).toBeInstanceOf(DbCallDeadlineError);
@@ -276,7 +281,12 @@ describe('withAcquisitionDeadline — registry wiring', () => {
       label: 'unlabelled',
       ms: 1_000,
     });
-    const caught = p.catch((e: unknown) => e as DbCallDeadlineError);
+    const caught = p.then(
+      () => {
+        throw new Error('expected a deadline rejection');
+      },
+      (e: unknown) => e as DbCallDeadlineError,
+    );
     await vi.advanceTimersByTimeAsync(1_001);
     const err = await caught;
     expect(err).toBeInstanceOf(DbCallDeadlineError);
