@@ -893,9 +893,47 @@ export function poolIdleTimeoutSec(): number {
  * pooler *client* slots, not PG backends, so it keeps the full resource-profile
  * size — that decoupling is the whole point of C2.
  */
+export const VITEST_ORG_POOL_MAX = 4;
+
+/**
+ * True when this process is a VITEST WORKER — one of N sibling processes, not a
+ * long-lived operator. See {@link resolveOrgPoolMax} for why that distinction
+ * changes the pool budget by an order of magnitude.
+ *
+ * A `VITEST` sniff rather than a dedicated env seam because the budget must be
+ * right for EVERY worker without each suite remembering to opt in — the failure
+ * mode is a stampede, and a stampede is exactly what an opt-in misses. (The
+ * `assertRealPgAllowed` seam nearby is deliberately env-based for the opposite
+ * reason: it must be overridable per test file.)
+ */
+function isVitestWorker(): boolean {
+  return Boolean(process.env.VITEST);
+}
+
 function resolveOrgPoolMax(): number {
   const envOverride = Number(process.env.PAPERCUSP_DB_POOL_MAX);
   const profile = getResourceProfile();
+  // EI-19448641861408544: under vitest, EVERY WORKER IS ITS OWN PROCESS with its
+  // own admin + app org pools, and `expectedProcesses` below defaults to 2 — a
+  // number that is right for the operator and wrong by an order of magnitude
+  // here. Measured 2026-08-08 on this box: a worker resolved max=52 PER POOL, so
+  // ~15 workers of one `npm run test:affected` could demand ~1,560 connections
+  // against a 512-slot server. Measured 2026-08-03 they actually held 90 idle
+  // checked-out connections and starved the LIVE operator's write path
+  // fleet-wide — every peer's work_items:checkpoint / facts:assert — while every
+  // read-side probe said the database was healthy (39ms reads, 344/512 conns).
+  // That is the whole trap: server capacity does not decide CLIENT-pool
+  // saturation, so "the DB looks fine" is the EXPECTED reading during it.
+  //
+  // 4, not the 1-2 the issue proposed: a test worker runs its files sequentially
+  // so it needs very little concurrency, but a flow that legitimately nests an
+  // acquisition inside another would DEADLOCK at max:1 rather than merely queue,
+  // and a deadlock in the test tier is a worse failure than the one being fixed.
+  // An explicit PAPERCUSP_DB_POOL_MAX still wins, so a suite that genuinely
+  // needs more can say so.
+  if (isVitestWorker() && !(Number.isFinite(envOverride) && envOverride > 0)) {
+    return VITEST_ORG_POOL_MAX;
+  }
   const desired =
     Number.isFinite(envOverride) && envOverride > 0
       ? Math.max(1, Math.floor(envOverride))

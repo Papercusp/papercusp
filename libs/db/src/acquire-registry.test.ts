@@ -19,7 +19,12 @@ import {
   recordPoolMax,
   resetAcquireRegistryForTest,
 } from './acquire-registry';
-import { withAcquisitionDeadline, DbCallDeadlineError } from './connection';
+import {
+  withAcquisitionDeadline,
+  DbCallDeadlineError,
+  VITEST_ORG_POOL_MAX,
+  processConnectionCeiling,
+} from './connection';
 
 beforeEach(() => {
   resetAcquireRegistryForTest();
@@ -323,6 +328,8 @@ describe('withAcquisitionDeadline — registry wiring', () => {
   });
 
   it('omitting `pool` keeps the guard working and registers nothing', async () => {
+    // (see the vitest pool-budget block below — same defect, opposite end: this
+    // file measures the SYMPTOM, that one bounds the CAUSE.)
     vi.useFakeTimers();
     const p = withAcquisitionDeadline<string>(() => new Promise<string>(() => {}), {
       label: 'unlabelled',
@@ -340,5 +347,54 @@ describe('withAcquisitionDeadline — registry wiring', () => {
     expect(err.pool).toBeNull();
     expect(err.measured).toBeNull();
     expect(err.message).toMatch(/No acquire measurements were available/);
+  });
+});
+
+/**
+ * EI-19448641861408544 — the CAUSE, not the symptom. Lives beside the registry
+ * because they are one defect: the registry MEASURES client-pool saturation, and
+ * this bounds the biggest producer of it on this box.
+ *
+ * Under vitest every worker is its own process with its own admin + app org
+ * pools, while `resolveOrgPoolMax`'s budget math assumes ~2 operator processes.
+ * Measured 2026-08-08: a worker resolved max=52 PER POOL, so ~15 workers of one
+ * `npm run test:affected` could demand ~1,560 connections against a 512-slot
+ * server. Measured 2026-08-03: they held 90 idle checked-out connections and
+ * starved the LIVE operator's write path fleet-wide while every read-side probe
+ * reported a healthy database.
+ *
+ * These run INSIDE vitest, so they observe the real resolved value rather than a
+ * re-implementation of it.
+ */
+describe('org pool budget under vitest (EI-19448641861408544)', () => {
+  const prev = process.env.PAPERCUSP_DB_POOL_MAX;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.PAPERCUSP_DB_POOL_MAX;
+    else process.env.PAPERCUSP_DB_POOL_MAX = prev;
+  });
+
+  it('clamps a test worker to a small pool instead of the operator-sized one', () => {
+    delete process.env.PAPERCUSP_DB_POOL_MAX;
+    expect(processConnectionCeiling().poolMax).toBe(VITEST_ORG_POOL_MAX);
+  });
+
+  it('is small enough that a full worker fan-out cannot exhaust the server', () => {
+    delete process.env.PAPERCUSP_DB_POOL_MAX;
+    const perWorker = processConnectionCeiling().orgPools; // admin + app
+    // The measured fan-out (15 workers) against the measured server ceiling (512).
+    expect(perWorker * 15).toBeLessThan(512);
+    // …and the pre-fix value provably could not make that claim.
+    expect(52 * 2 * 15).toBeGreaterThan(512);
+  });
+
+  it('an explicit PAPERCUSP_DB_POOL_MAX still wins — a suite that needs more can say so', () => {
+    process.env.PAPERCUSP_DB_POOL_MAX = '11';
+    expect(processConnectionCeiling().poolMax).toBe(11);
+  });
+
+  it('leaves room for a nested acquisition rather than deadlocking at 1', () => {
+    // max:1 would turn a flow that nests one acquisition inside another from a
+    // QUEUE into a DEADLOCK — a worse failure than the starvation being fixed.
+    expect(VITEST_ORG_POOL_MAX).toBeGreaterThan(1);
   });
 });
