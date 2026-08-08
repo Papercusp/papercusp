@@ -2,7 +2,7 @@
  * connect-retry — unit tests (no DB needed; pure retry-loop logic).
  * EI-9279.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ConnectPhaseDeadlineError,
   DEFAULT_CONNECT_PHASE_DEADLINE_MS,
@@ -10,6 +10,7 @@ import {
   resolveConnectPhaseDeadlineMs,
   retryBeforeCallbackStarts,
 } from './connect-retry';
+import { beginAcquire, recordPoolMax, resetAcquireRegistryForTest } from './acquire-registry';
 
 describe('isRetriableConnectionSetupError', () => {
   it('matches a CONNECTION_CLOSED code', () => {
@@ -310,5 +311,80 @@ describe('ConnectPhaseDeadlineError message contract', () => {
   it('still reports the deadline that was breached', () => {
     expect(message).toContain('45000ms');
     expect(new ConnectPhaseDeadlineError(45_000).deadlineMs).toBe(45_000);
+  });
+});
+
+/**
+ * EI-19485014132257783 — the message must MEASURE, not hand out a probe.
+ *
+ * The contract above got the message from "one confident wrong cause" to "two
+ * causes plus a 3-step procedure for telling them apart". Those three steps are
+ * still manual work handed to a reader mid-incident, and step 2 is a database
+ * query — against a pool that is saturated by hypothesis, so the diagnostic
+ * queues behind the thing it is diagnosing.
+ *
+ * These assertions pin the addition WITHOUT weakening anything above: with no
+ * pool the message is byte-identical to the pinned contract (so a caller that
+ * cannot name its pool loses nothing), and with a pool the measured counters
+ * LEAD it.
+ */
+describe('ConnectPhaseDeadlineError — measured acquire pressure', () => {
+  beforeEach(() => {
+    resetAcquireRegistryForTest();
+  });
+  afterEach(() => {
+    resetAcquireRegistryForTest();
+  });
+
+  it('without a pool the message is unchanged — the pinned contract is not weakened', () => {
+    const withoutPool = new ConnectPhaseDeadlineError(45_000);
+    expect(withoutPool.pool).toBeNull();
+    expect(withoutPool.measured).toBeNull();
+    expect(withoutPool.message).not.toMatch(/MEASURED IN THIS PROCESS/);
+    // Same object the contract block above asserts against.
+    expect(withoutPool.message).toBe(new ConnectPhaseDeadlineError(45_000).message);
+  });
+
+  it('an unmeasured pool degrades to the unchanged message, never to confident zeroes', () => {
+    const err = new ConnectPhaseDeadlineError(45_000, 'org-app');
+    expect(err.measured).toBeNull();
+    expect(err.message).toBe(new ConnectPhaseDeadlineError(45_000).message);
+  });
+
+  it('leads with the numbers when the pool HAS been measured', () => {
+    recordPoolMax('org-app', 20);
+    const held = beginAcquire('org-app');
+    held.acquired();
+    const waiter = beginAcquire('org-app');
+    try {
+      const err = new ConnectPhaseDeadlineError(45_000, 'org-app');
+      expect(err.pool).toBe('org-app');
+      expect(err.measured).toMatch(/pool "org-app"/);
+      // Numbers before prose: the manual discriminator is the FALLBACK now.
+      expect(err.message.indexOf('MEASURED IN THIS PROCESS')).toBeLessThan(
+        err.message.indexOf('SHOW POOLS'),
+      );
+      // …and the fallback is still there in full, for what the counters cannot see.
+      expect(err.message).toMatch(/SHOW POOLS/);
+      expect(err.message).toMatch(/PAPERCUSP_DB_POOL_MAX/);
+    } finally {
+      held.release();
+      waiter.release();
+    }
+  });
+
+  it('keeps the caller-facing safety warning ahead of nothing — measurement never displaces it', () => {
+    recordPoolMax('org-app', 20);
+    const t = beginAcquire('org-app');
+    try {
+      const message = new ConnectPhaseDeadlineError(45_000, 'org-app').message;
+      // The EI-19448665862739845 guarantees are independent of the measurement.
+      expect(message).toMatch(/on this connection/i);
+      expect(message).toMatch(/verify before retrying/i);
+      expect(message).toMatch(/non-idempotent/i);
+      expect(message).not.toMatch(/transaction never opened/i);
+    } finally {
+      t.release();
+    }
   });
 });
