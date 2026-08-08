@@ -105,7 +105,7 @@ describe('describeAcquirePressure — the verdict is bounded by the measurement'
   it('NEVER-acquired reads as consistent-with-dead-endpoint, not as proof of one', () => {
     recordPoolMax('org-app', 20);
     const t = beginAcquire('org-app');
-    const msg = describeAcquirePressure('org-app')!;
+    const msg = describeAcquirePressure('org-app')!.text;
     expect(msg).toMatch(/NEVER obtained a connection in this process/i);
     // The pooler-queue alternative must survive: this is the branch where an
     // over-confident "the endpoint is dead" would send the reader to a dead end.
@@ -119,7 +119,7 @@ describe('describeAcquirePressure — the verdict is bounded by the measurement'
     const held = beginAcquire('org-app');
     held.acquired();
     const waiter = beginAcquire('org-app');
-    const msg = describeAcquirePressure('org-app')!;
+    const msg = describeAcquirePressure('org-app')!.text;
     expect(msg).toMatch(/RULED OUT/);
     expect(msg).toMatch(/queued, not disconnected/i);
     held.release();
@@ -133,7 +133,7 @@ describe('describeAcquirePressure — the verdict is bounded by the measurement'
     a.acquired();
     b.acquired();
     const waiter = beginAcquire('org-app');
-    const msg = describeAcquirePressure('org-app')!;
+    const msg = describeAcquirePressure('org-app')!.text;
     expect(msg).toMatch(/CONFIRMED/);
     expect(msg).toMatch(/PAPERCUSP_DB_POOL_MAX/);
     // WI-8848's lesson, kept measurable: a healthy server is the EXPECTED reading here.
@@ -147,7 +147,7 @@ describe('describeAcquirePressure — the verdict is bounded by the measurement'
     recordPoolMax('org-app', 20);
     const a = beginAcquire('org-app');
     a.acquired();
-    const msg = describeAcquirePressure('org-app')!;
+    const msg = describeAcquirePressure('org-app')!.text;
     expect(msg).toMatch(/LOWER BOUND/);
     expect(msg).toMatch(/does NOT\s+mean free slots/i);
     expect(msg).not.toMatch(/CONFIRMED/);
@@ -161,7 +161,7 @@ describe('describeAcquirePressure — the verdict is bounded by the measurement'
     recordPoolMax('org-app', 20);
     const t = beginAcquire('org-app');
     t.acquired();
-    const msg = describeAcquirePressure('org-app')!;
+    const msg = describeAcquirePressure('org-app')!.text;
     expect(msg).toMatch(/THIS process/);
     expect(msg).toMatch(/vitest worker/i);
     t.release();
@@ -175,7 +175,7 @@ describe('describeAcquirePressure — the verdict is bounded by the measurement'
     first.release();
     vi.advanceTimersByTime(ACQUIRE_RECENT_SUCCESS_MS + 1_000);
     const waiter = beginAcquire('org-app');
-    const msg = describeAcquirePressure('org-app')!;
+    const msg = describeAcquirePressure('org-app')!.text;
     expect(msg).not.toMatch(/RULED OUT/);
     expect(msg).toMatch(/DID work earlier/i);
     expect(msg).toMatch(/memoized for the process lifetime/i);
@@ -189,9 +189,56 @@ describe('describeAcquirePressure — the verdict is bounded by the measurement'
     vi.advanceTimersByTime(30_000);
     const fresh = beginAcquire('org-app');
     expect(acquireSnapshot('org-app').oldestWaitMs).toBe(30_000);
-    expect(describeAcquirePressure('org-app')!).toContain('oldest 30.0s');
+    expect(describeAcquirePressure('org-app')!.text).toContain('oldest 30.0s');
     old.release();
     fresh.release();
+  });
+});
+
+/**
+ * The verdict decides how much PROCEDURE the error still needs to print.
+ *
+ * This is the actual deliverable: the old message handed the reader a 3-step
+ * manual probe. Measuring is only half the fix — if the answer is then buried
+ * under the same procedure it replaces, the reader is no better off. So a
+ * DECISIVE verdict must swap the cause-fork for the short residual, and a
+ * non-decisive one must keep the full fork intact.
+ */
+describe('verdict → how much procedure survives', () => {
+  it('marks a ruled-out-endpoint verdict decisive', () => {
+    recordPoolMax('org-app', 20);
+    const held = beginAcquire('org-app');
+    held.acquired();
+    const r = describeAcquirePressure('org-app')!;
+    expect(r.verdict).toBe('queued');
+    expect(r.decisive).toBe(true);
+    held.release();
+  });
+
+  it('marks saturation decisive and distinguishes it from a plain queue', () => {
+    recordPoolMax('org-app', 1);
+    const a = beginAcquire('org-app');
+    a.acquired();
+    const r = describeAcquirePressure('org-app')!;
+    expect(r.verdict).toBe('client-saturation');
+    expect(r.decisive).toBe(true);
+    a.release();
+  });
+
+  it('leaves never-acquired and stale-success NON-decisive — the fork is still open', () => {
+    vi.useFakeTimers();
+    recordPoolMax('org-app', 20);
+    const t = beginAcquire('org-app');
+    const never = describeAcquirePressure('org-app')!;
+    expect(never.verdict).toBe('never-acquired');
+    expect(never.decisive).toBe(false);
+
+    t.acquired();
+    t.release();
+    vi.advanceTimersByTime(ACQUIRE_RECENT_SUCCESS_MS + 1);
+    const stale = describeAcquirePressure('org-app')!;
+    expect(stale.verdict).toBe('stale-success');
+    expect(stale.decisive).toBe(false);
   });
 });
 

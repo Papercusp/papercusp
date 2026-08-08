@@ -35,7 +35,12 @@ import { boundedOrgPoolMax } from '@papercusp/resource-profile';
 // EI-19485014132257783: this process's own acquisition counters, so a deadline
 // error can LEAD with measured numbers instead of a 3-step manual probe that
 // itself queues behind the saturated pool it is meant to diagnose.
-import { beginAcquire, describeAcquirePressure, recordPoolMax } from './acquire-registry';
+import {
+  ACQUIRE_QUEUE_LOCATION_RESIDUAL,
+  beginAcquire,
+  describeAcquirePressure,
+  recordPoolMax,
+} from './acquire-registry';
 
 // This package is `"type": "module"`, so ESM has no ambient `require`.
 // `createRequire` gives us a synchronous loader for the lazy node-builtin
@@ -1376,26 +1381,31 @@ export class DbCallDeadlineError extends Error {
   readonly measured: string | null;
   constructor(label: string, deadlineMs: number, elapsedMs: number, pool?: string) {
     const measured = pool ? describeAcquirePressure(pool) : null;
-    super(
-      `[db-call-deadline] "${label}" did not resolve within ${deadlineMs}ms ` +
-        `(waited ${elapsedMs}ms). ` +
-        (measured
-          ? `${measured} `
-          : `No acquire measurements were available for this call, so both causes are still open: `) +
-        `Two causes present identically at this point — (a) the pool's resolved endpoint is ` +
+    // A decisive measurement has already answered "which cause"; re-printing the
+    // cause fork after it would bury the answer under the procedure it replaces.
+    const tail = measured?.decisive
+      ? ACQUIRE_QUEUE_LOCATION_RESIDUAL
+      : `Two causes present identically at this point — (a) the pool's resolved endpoint is ` +
         `unreachable and postgres.js is silently retrying its INITIAL connect forever without ` +
         `rejecting (WI-7097), or (b) the CLIENT pool's acquire queue is saturated while the ` +
         `server is perfectly healthy. Server capacity does NOT decide (b), so ` +
         `dev:service_health / pg_stat_activity looking fine is not evidence against it — ` +
         `check this process's own pcusp:${pool ?? '<pool>'}:p<pid> rows and ` +
-        `PAPERCUSP_DB_POOL_MAX before the endpoint.`,
+        `PAPERCUSP_DB_POOL_MAX before the endpoint (WI-7097).`;
+    super(
+      `[db-call-deadline] "${label}" did not resolve within ${deadlineMs}ms ` +
+        `(waited ${elapsedMs}ms). ` +
+        (measured
+          ? `${measured.text} `
+          : `No acquire measurements were available for this call, so both causes are still open. `) +
+        tail,
     );
     this.name = 'DbCallDeadlineError';
     this.label = label;
     this.deadlineMs = deadlineMs;
     this.elapsedMs = elapsedMs;
     this.pool = pool ?? null;
-    this.measured = measured;
+    this.measured = measured?.text ?? null;
   }
 }
 

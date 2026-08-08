@@ -73,7 +73,7 @@
 // the tickets are OPENED at the single acquisition seam (withAcquisitionDeadline),
 // which wraps this module on both withWorkspace paths, so registering again here
 // would double-count every waiter.
-import { describeAcquirePressure } from './acquire-registry';
+import { ACQUIRE_QUEUE_LOCATION_RESIDUAL, describeAcquirePressure } from './acquire-registry';
 
 /** Connect-phase ceiling (ms) — the wait before `markStarted()` proves a connection
  *  was obtained. Chosen to sit comfortably under the ~300s blanket "no response or
@@ -147,15 +147,22 @@ export class ConnectPhaseDeadlineError extends Error {
   readonly measured: string | null;
   constructor(deadlineMs: number, pool?: string) {
     const measured = pool ? describeAcquirePressure(pool) : null;
-    super(
-      `[connect-phase-deadline] could not obtain a database connection within ${deadlineMs}ms. ` +
-        (measured ? `${measured} ` : '') +
-        `No query ran ON THIS CONNECTION — but that is NOT a guarantee your whole operation ` +
-        `had no effect: if it touches more than one connection, work already committed on ` +
-        `another one STANDS. VERIFY before retrying anything non-idempotent ` +
-        `(EI-19448665862739845: a coord:send and an improvements:capture each took FULL ` +
-        `effect while surfacing this error, and the retry duplicated a peer's message). ` +
-        `Two causes present identically here, so check both: (a) the pool's resolved ` +
+    // The caller-safety paragraph is INDEPENDENT of any measurement — it is
+    // about what may already have committed, not about why the connect stalled —
+    // so it is emitted on every path (EI-19448665862739845).
+    const callerSafety =
+      `No query ran ON THIS CONNECTION — but that is NOT a guarantee your whole operation ` +
+      `had no effect: if it touches more than one connection, work already committed on ` +
+      `another one STANDS. VERIFY before retrying anything non-idempotent ` +
+      `(EI-19448665862739845: a coord:send and an improvements:capture each took FULL ` +
+      `effect while surfacing this error, and the retry duplicated a peer's message). `;
+    // A decisive measurement has already ANSWERED the cause question, so
+    // re-printing the full three-step procedure would bury its own answer —
+    // which is the complaint this change exists to fix. Only the residual
+    // (WHERE the queue sits) survives.
+    const causes = measured?.decisive
+      ? ACQUIRE_QUEUE_LOCATION_RESIDUAL
+      : `Two causes present identically here, so check both: (a) the pool's resolved ` +
         `endpoint is DEAD or unreachable — postgres-js retries a failed connect forever when ` +
         `connect_timeout is unset (the production default); check the resolved URL for this ` +
         `pool, and if it came from ~/.papercusp/embedded-pg.json it is memoized for the ` +
@@ -171,12 +178,17 @@ export class ConnectPhaseDeadlineError extends Error {
         `application_name and find THIS process's own pcusp:org-*:p<pid> row — at ` +
         `PAPERCUSP_DB_POOL_MAX (per process AND workspace) this client pool is the bottleneck; ` +
         `(3) only if both look healthy is (a) worth chasing. Note a per-statement timeout does ` +
-        `not protect this path: it bounds how long each slot is HELD, not the wait to acquire one.`,
+        `not protect this path: it bounds how long each slot is HELD, not the wait to acquire one.`;
+    super(
+      `[connect-phase-deadline] could not obtain a database connection within ${deadlineMs}ms. ` +
+        (measured ? `${measured.text} ` : '') +
+        callerSafety +
+        causes,
     );
     this.name = 'ConnectPhaseDeadlineError';
     this.deadlineMs = deadlineMs;
     this.pool = pool ?? null;
-    this.measured = measured;
+    this.measured = measured?.text ?? null;
   }
 }
 

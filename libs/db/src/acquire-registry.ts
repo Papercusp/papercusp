@@ -194,14 +194,31 @@ function fmtAge(ms: number | null): string {
 }
 
 /**
- * The measured lead line for a deadline error: the numbers first, then the ONE
- * conclusion they license, then the honest bound on what they cover.
+ * What the counters concluded.
+ *
+ * `client-saturation` and `queued` both RULE OUT a dead endpoint, so they are
+ * `decisive` — the caller should print a short "where is the queue" residual
+ * instead of the full dead-endpoint-vs-saturation procedure. `never-acquired`
+ * and `stale-success` leave the fork open, so the full procedure still applies.
+ */
+export type AcquireVerdict = 'never-acquired' | 'stale-success' | 'queued' | 'client-saturation';
+
+export interface AcquirePressureReport {
+  /** Numbers first, then the ONE conclusion they license, then their honest bound. */
+  text: string;
+  verdict: AcquireVerdict;
+  /** True when the measurement settles the dead-endpoint-vs-saturation fork by itself. */
+  decisive: boolean;
+}
+
+/**
+ * The measured lead for a deadline error.
  *
  * Returns null when nothing was measured for `pool` (no ticket has ever been
  * opened and the pool was never built here) — the caller then falls back to the
  * manual discriminator, rather than printing a row of confident zeroes.
  */
-export function describeAcquirePressure(pool: string): string | null {
+export function describeAcquirePressure(pool: string): AcquirePressureReport | null {
   const s = acquireSnapshot(pool);
   if (s.max === null && s.totalAcquired === 0 && s.waiting === 0 && s.held === 0) return null;
 
@@ -213,24 +230,30 @@ export function describeAcquirePressure(pool: string): string | null {
     `${s.lastAcquiredAgoMs === null ? 'NEVER' : `${fmtAge(s.lastAcquiredAgoMs)} ago`} ` +
     `(${s.totalAcquired} total this process).`;
 
-  let verdict: string;
+  let verdict: AcquireVerdict;
+  let conclusion: string;
   if (s.totalAcquired === 0) {
-    verdict =
+    verdict = 'never-acquired';
+    conclusion =
       ` ⇒ this pool has NEVER obtained a connection in this process, which is what (a) a dead/` +
       `unreachable endpoint looks like — but a pooler queue that never granted a slot looks the ` +
       `same, so confirm with the steps below before declaring the endpoint dead.`;
   } else if (s.lastAcquiredAgoMs !== null && s.lastAcquiredAgoMs <= ACQUIRE_RECENT_SUCCESS_MS) {
-    verdict =
+    conclusion =
       ` ⇒ this pool obtained a connection ${fmtAge(s.lastAcquiredAgoMs)} ago, so (a) a dead endpoint ` +
       `is RULED OUT for this pool — you are queued, not disconnected.`;
     if (s.max !== null && s.held >= s.max) {
-      verdict +=
+      verdict = 'client-saturation';
+      conclusion +=
         ` And ${s.held} held ≥ max ${s.max}: this CLIENT pool is at its ceiling from this ` +
         `measurement alone, so (b) is CONFIRMED — raise PAPERCUSP_DB_POOL_MAX or reduce ` +
         `concurrency in THIS process; the server's spare capacity is irrelevant.`;
+    } else {
+      verdict = 'queued';
     }
   } else {
-    verdict =
+    verdict = 'stale-success';
+    conclusion =
       ` ⇒ this pool DID work earlier but has not obtained a connection for ` +
       `${fmtAge(s.lastAcquiredAgoMs)}, so a previously-good endpoint going away is live again — ` +
       `note the resolved URL is memoized for the process lifetime.`;
@@ -242,8 +265,30 @@ export function describeAcquirePressure(pool: string): string | null {
     `mean free slots — and a sibling process, e.g. one vitest worker of ~15, has its own pool ` +
     `entirely.)`;
 
-  return counts + verdict + bound;
+  return {
+    text: counts + conclusion + bound,
+    verdict,
+    decisive: verdict === 'queued' || verdict === 'client-saturation',
+  };
 }
+
+/**
+ * The residual question after a DECISIVE verdict. The cause is settled; only
+ * WHERE the queue lives is still open, and that is two lookups rather than the
+ * full three-step cause procedure.
+ *
+ * Kept here, beside the verdict that selects it, so the two cannot drift — and
+ * deliberately still naming `SHOW POOLS` / `application_name` /
+ * `PAPERCUSP_DB_POOL_MAX`, because a decisive verdict about THIS process says
+ * nothing about the pooler's own queue or a sibling process's pool.
+ */
+export const ACQUIRE_QUEUE_LOCATION_RESIDUAL =
+  `The CAUSE is settled by the numbers above; only WHERE the queue sits is still open — ` +
+  `(1) behind PgBouncer, "SHOW POOLS" on :6432: cl_waiting > 0 or maxwait > 0 means the queue ` +
+  `is at the POOLER (its default_pool_size), not in this process; (2) otherwise group ` +
+  `pg_stat_activity by application_name and compare this process's own pcusp:org-*:p<pid> row ` +
+  `and its siblings' against PAPERCUSP_DB_POOL_MAX. Note a per-statement timeout does not help ` +
+  `either way: it bounds how long each slot is HELD, not the wait to acquire one.`;
 
 /** Test-only: drop every pool's counters. */
 export function resetAcquireRegistryForTest(): void {

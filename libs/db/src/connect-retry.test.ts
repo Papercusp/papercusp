@@ -360,15 +360,50 @@ describe('ConnectPhaseDeadlineError — measured acquire pressure', () => {
       const err = new ConnectPhaseDeadlineError(45_000, 'org-app');
       expect(err.pool).toBe('org-app');
       expect(err.measured).toMatch(/pool "org-app"/);
-      // Numbers before prose: the manual discriminator is the FALLBACK now.
+      // Numbers before prose.
       expect(err.message.indexOf('MEASURED IN THIS PROCESS')).toBeLessThan(
         err.message.indexOf('SHOW POOLS'),
       );
-      // …and the fallback is still there in full, for what the counters cannot see.
+      // The residual still points at what the counters CANNOT see — the pooler's
+      // own queue and sibling processes' pools.
       expect(err.message).toMatch(/SHOW POOLS/);
       expect(err.message).toMatch(/PAPERCUSP_DB_POOL_MAX/);
     } finally {
       held.release();
+      waiter.release();
+    }
+  });
+
+  it('a DECISIVE measurement REPLACES the 3-step cause procedure, it does not append to it', () => {
+    // The point of measuring is to hand the reader an answer. Printing the same
+    // procedure underneath it buries the answer and leaves them where they were.
+    recordPoolMax('org-app', 20);
+    const held = beginAcquire('org-app');
+    held.acquired();
+    try {
+      const message = new ConnectPhaseDeadlineError(45_000, 'org-app').message;
+      expect(message).toMatch(/The CAUSE is settled by the numbers above/);
+      expect(message).not.toMatch(/Two causes present identically/);
+      expect(message).not.toMatch(/HOW TO TELL THEM APART/);
+      // It must also get SHORTER than the unmeasured form, not longer.
+      expect(message.length).toBeLessThan(new ConnectPhaseDeadlineError(45_000).message.length);
+    } finally {
+      held.release();
+    }
+  });
+
+  it('a NON-decisive measurement keeps the full cause procedure', () => {
+    // Nothing has ever been acquired: the dead-endpoint / saturation fork is
+    // genuinely still open, so the reader needs every step.
+    recordPoolMax('org-app', 20);
+    const waiter = beginAcquire('org-app');
+    try {
+      const message = new ConnectPhaseDeadlineError(45_000, 'org-app').message;
+      expect(message).toMatch(/MEASURED IN THIS PROCESS/);
+      expect(message).toMatch(/Two causes present identically/);
+      expect(message).toMatch(/HOW TO TELL THEM APART/);
+      expect(message).toMatch(/205 of 512/);
+    } finally {
       waiter.release();
     }
   });
