@@ -32,6 +32,10 @@ import { getResourceProfile } from '../../../../../packages/operator-core/lib/re
 // Pure helper (no host config needed — takes explicit args), so the generic lib
 // directly. The configured binding above is used for the memoized profile.
 import { boundedOrgPoolMax } from '@papercusp/resource-profile';
+// EI-19485014132257783: this process's own acquisition counters, so a deadline
+// error can LEAD with measured numbers instead of a 3-step manual probe that
+// itself queues behind the saturated pool it is meant to diagnose.
+import { beginAcquire, describeAcquirePressure, recordPoolMax } from './acquire-registry';
 
 // This package is `"type": "module"`, so ESM has no ambient `require`.
 // `createRequire` gives us a synchronous loader for the lazy node-builtin
@@ -1102,6 +1106,12 @@ function buildClient(
   const connectTimeoutSec =
     Number(process.env.PAPERCUSP_DB_CONNECT_TIMEOUT) ||
     (process.env.VITEST ? 5 : 0);
+  // Hoisted out of the options literal so the acquire registry can report it
+  // (EI-19485014132257783). postgres-js keeps its queue/connection lists in a
+  // closure, so `max` is the only pool-sizing fact obtainable without reaching
+  // into internals — and the error needs it to say "N waiting against a max of M".
+  const poolMax = Math.max(1, maxOverride ?? resolveOrgPoolMax());
+  recordPoolMax(label, poolMax);
   const client = postgres(connectionUrl, {
     onnotice: () => {},
     ...(connectTimeoutSec > 0 ? { connect_timeout: connectTimeoutSec } : {}),
@@ -1133,7 +1143,7 @@ function buildClient(
     // pool (~52–64). Env override for backward compatibility; explicit maxOverride is
     // used if provided by the caller (currently unused, reserved for future direct-pool
     // configuration). P4-3 of operator-scalability-event-loop-2026-06-16.
-    max: Math.max(1, maxOverride ?? resolveOrgPoolMax()),
+    max: poolMax,
     // Auto-close connections that sit idle for >30s. Prevents per-harness
     // pools from accumulating idle conns indefinitely (Next.js dev mode
     // module re-instantiation otherwise leaks the prior pool's sockets).
@@ -1340,23 +1350,52 @@ export const DEFAULT_DB_CALL_DEADLINE_MS = 45_000;
 /**
  * Thrown by {@link withDbCallDeadline} when the wrapped DB call does not
  * settle within its deadline.
+ *
+ * ## `pool` makes this MEASURE instead of speculate (EI-19485014132257783)
+ *
+ * The old message asserted one confident cause — "this most often means the
+ * pool's INITIAL connection attempt failed" — which sent every reader chasing a
+ * dead endpoint. Measured 2026-08-08, the real mechanism behind the fleet-wide
+ * repeats was the other one entirely: CLIENT-side acquire-queue saturation with
+ * Postgres demonstrably healthy (344/512 connections, reads at 39ms). "The
+ * database looks fine" is the EXPECTED reading during that failure, not
+ * evidence against it.
+ *
+ * So when a `pool` is known, the acquire registry's own counters lead the
+ * message and the speculation follows as fallback. The registry is per-process
+ * and zero-I/O by construction: any diagnostic query would queue behind the
+ * exact saturation it is trying to report.
  */
 export class DbCallDeadlineError extends Error {
   readonly label: string;
   readonly deadlineMs: number;
   readonly elapsedMs: number;
-  constructor(label: string, deadlineMs: number, elapsedMs: number) {
+  /** The pool label the acquisition was against (`org-app`/`org-admin`), when known. */
+  readonly pool: string | null;
+  /** The measured acquire-pressure line, or null when nothing was measured. */
+  readonly measured: string | null;
+  constructor(label: string, deadlineMs: number, elapsedMs: number, pool?: string) {
+    const measured = pool ? describeAcquirePressure(pool) : null;
     super(
       `[db-call-deadline] "${label}" did not resolve within ${deadlineMs}ms ` +
-        `(waited ${elapsedMs}ms). This most often means the pool's INITIAL ` +
-        `connection attempt failed and postgres.js is silently retrying forever ` +
-        `(see WI-7097) rather than this specific query being slow — check ` +
-        `dev:service_health for the target DB, or verify the resolved admin URL.`,
+        `(waited ${elapsedMs}ms). ` +
+        (measured
+          ? `${measured} `
+          : `No acquire measurements were available for this call, so both causes are still open: `) +
+        `Two causes present identically at this point — (a) the pool's resolved endpoint is ` +
+        `unreachable and postgres.js is silently retrying its INITIAL connect forever without ` +
+        `rejecting (WI-7097), or (b) the CLIENT pool's acquire queue is saturated while the ` +
+        `server is perfectly healthy. Server capacity does NOT decide (b), so ` +
+        `dev:service_health / pg_stat_activity looking fine is not evidence against it — ` +
+        `check this process's own pcusp:${pool ?? '<pool>'}:p<pid> rows and ` +
+        `PAPERCUSP_DB_POOL_MAX before the endpoint.`,
     );
     this.name = 'DbCallDeadlineError';
     this.label = label;
     this.deadlineMs = deadlineMs;
     this.elapsedMs = elapsedMs;
+    this.pool = pool ?? null;
+    this.measured = measured;
   }
 }
 
@@ -1441,34 +1480,57 @@ export const DEFAULT_TX_ACQUIRE_DEADLINE_MS = Math.max(
  *    cancel the losing promise, so without the check a timed-out transaction
  *    would still run the handler with nobody awaiting its result. Throwing
  *    inside the `sql.begin` callback rolls the transaction back instead.
+ *
+ * `opts.pool` is the `buildClient` label of the pool being acquired from
+ * (`org-app` / `org-admin`). Passing it registers this acquisition in the
+ * acquire registry, which is what lets a breach report MEASURED waiting/held
+ * counts instead of the manual 3-step probe — see `acquire-registry.ts`. It is
+ * optional so a caller with no single identifiable pool still gets the guard.
  */
 export function withAcquisitionDeadline<T>(
   run: (phase: { disarm: () => void; expired: () => boolean }) => Promise<T>,
-  opts: { ms?: number; label: string },
+  opts: { ms?: number; label: string; pool?: string },
 ): Promise<T> {
   const ms = opts.ms ?? DEFAULT_TX_ACQUIRE_DEADLINE_MS;
   const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let settled = false;
   let expired = false;
-  const disarm = () => {
+  // Registered BEFORE the first await so this caller counts itself among the
+  // waiters its own error reports — "18 waiting, oldest 44.9s" includes you.
+  const ticket = opts.pool ? beginAcquire(opts.pool) : null;
+  const clearDeadlineTimer = () => {
     settled = true;
     if (timer) {
       clearTimeout(timer);
       timer = undefined;
     }
   };
+  // What `run` receives: the connection is in hand and the caller's own work is
+  // about to begin, so stop the clock AND move this ticket waiting -> held.
+  const disarm = () => {
+    clearDeadlineTimer();
+    ticket?.acquired();
+  };
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       if (settled) return;
       expired = true;
       settled = true;
-      reject(new DbCallDeadlineError(opts.label, ms, Date.now() - startedAt));
+      // Constructed while this ticket is still WAITING, on purpose: the snapshot
+      // in the message is the state at the moment of the breach.
+      reject(new DbCallDeadlineError(opts.label, ms, Date.now() - startedAt, opts.pool));
     }, ms);
     // Never hold the process open on this timer alone.
     timer.unref?.();
   });
-  return Promise.race([run({ disarm, expired: () => expired }), deadline]).finally(disarm);
+  return Promise.race([run({ disarm, expired: () => expired }), deadline]).finally(() => {
+    clearDeadlineTimer();
+    // Must run on EVERY exit path — a ticket that is never released leaks a
+    // waiter and inflates every later snapshot, which would make this
+    // diagnostic worse than none.
+    ticket?.release();
+  });
 }
 
 /**

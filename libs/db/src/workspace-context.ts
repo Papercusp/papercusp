@@ -79,6 +79,12 @@ export async function withWorkspace<T>(
   // OUTSIDE retryBeforeCallbackStarts on purpose, so it bounds total
   // acquisition across all retry attempts rather than each attempt separately.
   const acquireLabel = `withWorkspace:acquire(${opts.bypassRlsForAdmin ? 'admin' : 'app'})`;
+  // EI-19485014132257783: the POOL, not the call site — these are the labels
+  // getOrgPg()/getOrgPgApp() hand buildClient(), so they match the
+  // `pcusp:<label>:p<pid>` application_name a reader will grep pg_stat_activity
+  // for. Passing it makes a deadline breach report MEASURED waiting/held counts
+  // rather than the 3-step manual probe the message used to hand out.
+  const acquirePool = opts.bypassRlsForAdmin ? 'org-admin' : 'org-app';
   return withAcquisitionDeadline<T>(
     ({ disarm, expired }) =>
       retryBeforeCallbackStarts((markStarted) =>
@@ -123,6 +129,7 @@ export async function withWorkspace<T>(
           acquireLabel,
           DEFAULT_TX_ACQUIRE_DEADLINE_MS,
           DEFAULT_TX_ACQUIRE_DEADLINE_MS,
+          acquirePool,
         );
       }
       // Past this point the caller's own work begins and may legitimately run
@@ -131,8 +138,8 @@ export async function withWorkspace<T>(
       markStarted();
       return await fn(txSql);
     }) as unknown) as Promise<T>
-      ),
-    { label: acquireLabel },
+      , { pool: acquirePool }),
+    { label: acquireLabel, pool: acquirePool },
   );
 }
 
@@ -168,6 +175,10 @@ export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promis
   // P-022 / D-020: same acquisition deadline as withWorkspace — this path takes
   // the SAME APP pool, so it shares the dead-endpoint hang exactly.
   const acquireLabel = `withHarnessSchema:acquire(${slug})`;
+  // Same APP pool as withWorkspace (getOrgPgApp above), so the acquire registry
+  // must attribute both to the SAME pool — that shared queue is the whole point
+  // of the measurement (EI-19485014132257783).
+  const acquirePool = 'org-app';
   // EI-9279: same provably-safe retry as withWorkspace above — see connect-retry.ts.
   return withAcquisitionDeadline<T>(
     ({ disarm, expired }) =>
@@ -183,14 +194,15 @@ export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promis
           acquireLabel,
           DEFAULT_TX_ACQUIRE_DEADLINE_MS,
           DEFAULT_TX_ACQUIRE_DEADLINE_MS,
+          acquirePool,
         );
       }
       disarm();
       markStarted();
       return await fn(txSql);
     }) as unknown) as Promise<T>
-      ),
-    { label: acquireLabel },
+      , { pool: acquirePool }),
+    { label: acquireLabel, pool: acquirePool },
   );
 }
 

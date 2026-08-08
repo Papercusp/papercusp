@@ -38,6 +38,21 @@ export {
   endStalePool,
   type OrgPgHandle,
 } from './connection';
+// EI-19485014132257783 — this process's own acquisition counters, the MEASURED
+// discriminator behind the two deadline errors' "dead endpoint vs saturated client
+// pool" fork. Re-exported for the same reason `endStalePool` is (EI-19306394439939264):
+// a diagnostic only reachable inside this package gets zero adoption, and a health
+// surface wanting live acquire pressure has nowhere else to read it.
+export {
+  acquireSnapshot,
+  describeAcquirePressure,
+  beginAcquire,
+  recordPoolMax,
+  resetAcquireRegistryForTest,
+  ACQUIRE_RECENT_SUCCESS_MS,
+  type AcquireSnapshot,
+  type AcquireTicket,
+} from './acquire-registry';
 // Store IDENTITY — the generation-3 connection guard (plan
 // outage-must-not-be-silent-2026-08-02, D-001). Re-exported HERE deliberately, learning
 // from EI-19306394439939264 above: a guard only reachable inside connection.ts gets zero

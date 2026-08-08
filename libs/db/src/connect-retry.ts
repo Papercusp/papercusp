@@ -69,6 +69,12 @@
  * ~300s abort with no cause attached.
  */
 
+// EI-19485014132257783: this process's own acquisition counters. Read-only here —
+// the tickets are OPENED at the single acquisition seam (withAcquisitionDeadline),
+// which wraps this module on both withWorkspace paths, so registering again here
+// would double-count every waiter.
+import { describeAcquirePressure } from './acquire-registry';
+
 /** Connect-phase ceiling (ms) — the wait before `markStarted()` proves a connection
  *  was obtained. Chosen to sit comfortably under the ~300s blanket "no response or
  *  progress" abort an MCP client transport imposes, so the failure is reported HERE,
@@ -116,12 +122,34 @@ export function resolveConnectPhaseDeadlineMs(): number {
  * perfectly healthy endpoint presents identically to a dead endpoint (that same
  * incident: PG up, 159 of 512 connections free, reads succeeding throughout), so
  * "this almost always means the endpoint is DEAD" sent every reader to a dead end.
+ *
+ * ## …but naming both causes is not the same as DISCRIMINATING them (EI-19485014132257783)
+ *
+ * Two rewrites (EI-19448665862739845, then WI-8848) got the message from "one
+ * confident wrong cause" to "two causes plus a procedure for telling them
+ * apart". The procedure is still THREE MANUAL STEPS handed to a reader
+ * mid-incident, and step 2 is a database query — against a pool that is
+ * saturated by hypothesis, so the diagnostic queues behind the thing it is
+ * diagnosing.
+ *
+ * When `pool` is supplied the message now LEADS with this process's own
+ * acquire-registry counters (zero I/O — see `acquire-registry.ts`), which
+ * settles the common case outright: a RECENT successful acquisition on the same
+ * pool rules out a dead endpoint, and `held >= max` confirms client saturation.
+ * The manual steps stay as the fallback for everything the counters cannot see
+ * (other processes, direct pool users, the pooler's own queue).
  */
 export class ConnectPhaseDeadlineError extends Error {
   readonly deadlineMs: number;
-  constructor(deadlineMs: number) {
+  /** The pool label this acquisition was against (`org-app`/`org-admin`), when known. */
+  readonly pool: string | null;
+  /** The measured acquire-pressure line, or null when nothing was measured. */
+  readonly measured: string | null;
+  constructor(deadlineMs: number, pool?: string) {
+    const measured = pool ? describeAcquirePressure(pool) : null;
     super(
       `[connect-phase-deadline] could not obtain a database connection within ${deadlineMs}ms. ` +
+        (measured ? `${measured} ` : '') +
         `No query ran ON THIS CONNECTION — but that is NOT a guarantee your whole operation ` +
         `had no effect: if it touches more than one connection, work already committed on ` +
         `another one STANDS. VERIFY before retrying anything non-idempotent ` +
@@ -147,6 +175,8 @@ export class ConnectPhaseDeadlineError extends Error {
     );
     this.name = 'ConnectPhaseDeadlineError';
     this.deadlineMs = deadlineMs;
+    this.pool = pool ?? null;
+    this.measured = measured;
   }
 }
 
@@ -163,6 +193,7 @@ function boundConnectPhase<T>(
   p: Promise<T>,
   isStarted: () => boolean,
   deadlineMs: number,
+  pool?: string,
 ): Promise<T> {
   if (deadlineMs <= 0) return p;
   return new Promise<T>((resolve, reject) => {
@@ -172,7 +203,7 @@ function boundConnectPhase<T>(
       // applies, and `p` alone decides the outcome.
       if (settled || isStarted()) return;
       settled = true;
-      reject(new ConnectPhaseDeadlineError(deadlineMs));
+      reject(new ConnectPhaseDeadlineError(deadlineMs, pool));
     }, deadlineMs);
     // Never hold the event loop open on account of this guard.
     (timer as unknown as { unref?: () => void }).unref?.();
@@ -234,6 +265,13 @@ export interface RetryBeforeCallbackOpts {
    * costs one deadline — not `retries + 1` of them.
    */
   connectDeadlineMs?: number;
+  /**
+   * The `buildClient` label of the pool being acquired from (`org-app` /
+   * `org-admin`). Purely diagnostic: it lets a {@link ConnectPhaseDeadlineError}
+   * lead with this process's MEASURED acquire pressure for that pool instead of
+   * handing the reader a manual probe (EI-19485014132257783).
+   */
+  pool?: string;
 }
 
 const defaultSleep = (ms: number): Promise<void> =>
@@ -269,6 +307,7 @@ export async function retryBeforeCallbackStarts<T>(
         }),
         () => started,
         connectDeadlineMs,
+        opts.pool,
       );
     } catch (e) {
       lastErr = e;

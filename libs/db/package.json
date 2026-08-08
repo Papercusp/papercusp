@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
+    "@papercusp/module-singleton": "*",
     "@papercusp/papercusp-db": "*",
     "@papercusp/resource-profile": "*",
     "drizzle-orm": "^0.45.2",
