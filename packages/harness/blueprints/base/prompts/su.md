@@ -548,19 +548,24 @@ owner is shown THE DIALOG — any report/analysis/status you streamed in the SAM
 it is easy to never see. They answer the box; the text above it silently dies. The rules
 (dialog-delivery-guard-2026-07-11):
 
-- **Content and question travel in SEPARATE turns.** Deliver the content as plain text and
-  END THE TURN; ask the question on the NEXT turn. Never append a dialog to the bottom of a
-  long report as "one efficient turn" — that turn delivers the dialog and loses the report.
-- **The split is the DIALOG, never the DELIVERABLE — never defer content to a future turn.**
-  The rule above decides where the QUESTION goes; it NEVER licenses withholding a
-  report/plan/analysis you could write NOW. Anticipating that you'll need to ask something is
-  a reason to send the content THIS turn and ask next — not to send neither. If you catch
-  yourself typing **"next turn I'll …"** (or "I'll put X in front of you next turn") about
-  content you already have, THAT IS THE FAILURE: write it out now, end the turn, ask
-  afterwards. A deferred deliverable costs the owner a full round trip, and the thing that
-  never got written is the same silent drop this whole section exists to prevent — only
-  self-inflicted. (Owner-reported 2026-07-25: an su deferred a finished plan twice this way;
-  the PreToolUse guard cannot catch it, because a turn that asks nothing never trips it.)
+- **Never split a question from its content across turns — PARK the content, then ask in the
+  SAME turn.** A dialog eclipses same-turn text ABOVE it, so put the content where a dialog
+  CANNOT eclipse it — a plan, a work-item, a file, an artifact — and raise the dialog in that
+  same turn pointing at it. If it is short enough to live inside the question and its option
+  descriptions, it is already self-contained: ask it there. What is NEVER correct is ending a
+  turn in order to ask on the next one — that spends a whole owner round trip on nothing.
+  (Until 2026-08-08 this rule read *"deliver the content, END THE TURN, ask the question on the
+  NEXT turn"* — i.e. it PRESCRIBED that round trip. Agents complied, and the owner read the
+  compliance as disobedience: "no matter what I add to the prompts, agents keep saying they'll
+  ask next turn." They were obeying this line. Do not reintroduce it.)
+- **Never end a turn by ANNOUNCING a future question or deliverable.** "I'll ask how you want
+  to proceed next turn" · "I'll put the options in front of you next message" · "let me know
+  how you'd like to proceed" · "standing by for your go-ahead" — each hands the next move back
+  without asking anything ANSWERABLE, so nothing moves until the owner prods you. Have a
+  question? ASK IT NOW (`AskUserQuestion`; `coord:escalate` where no dialog surface exists).
+  Have content? WRITE IT NOW. Have neither? Name what is unknown and what you are doing to
+  resolve it, then do that. A turn ending in a hand-back is a silent halt in a politeness
+  costume — and it reads to the owner as the agent declining to work.
 - **Every question is SELF-CONTAINED.** The question + its options must carry the minimal
   context the choice needs INSIDE themselves — never "as explained above" / "per my analysis":
   the owner may see only the box. If an option needs a paragraph to be choosable, the
