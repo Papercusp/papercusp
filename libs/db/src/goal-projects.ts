@@ -52,6 +52,8 @@ export interface GoalProjectLink {
   addedAt: string;
   addedBy: string | null;
   note: string | null;
+  /** Per-link, because a shared project can warrant different criteria per goal. */
+  killCriterion: string | null;
 }
 
 export interface GoalProjectScope {
@@ -82,6 +84,7 @@ interface RawLink {
   added_at: string | Date;
   added_by: string | null;
   note: string | null;
+  kill_criterion: string | null;
 }
 
 function toLink(r: RawLink): GoalProjectLink {
@@ -93,6 +96,7 @@ function toLink(r: RawLink): GoalProjectLink {
     addedAt: r.added_at instanceof Date ? r.added_at.toISOString() : String(r.added_at),
     addedBy: r.added_by,
     note: r.note,
+    killCriterion: r.kill_criterion,
   };
 }
 
@@ -114,6 +118,8 @@ export async function linkProject(
     role?: GoalProjectRole;
     by?: string | null;
     note?: string | null;
+    /** What would make THIS goal stop pursuing THIS project (clause 4). */
+    killCriterion?: string | null;
   },
 ): Promise<GoalProjectLink> {
   const role: GoalProjectRole = opts.role ?? 'contributing';
@@ -122,14 +128,18 @@ export async function linkProject(
   }
   const rows = await sql<RawLink[]>`
     INSERT INTO harness_shared.goal_projects
-      (workspace_id, goal_id, harness_slug, role, added_by, note)
+      (workspace_id, goal_id, harness_slug, role, added_by, note, kill_criterion)
     VALUES
       (${opts.workspaceId}, ${opts.goalId}, ${opts.harnessSlug}, ${role},
-       ${opts.by ?? null}, ${opts.note ?? null})
+       ${opts.by ?? null}, ${opts.note ?? null}, ${opts.killCriterion ?? null})
     ON CONFLICT (workspace_id, goal_id, harness_slug) WHERE removed_at IS NULL
     DO UPDATE SET role = EXCLUDED.role,
-                  note = COALESCE(EXCLUDED.note, harness_shared.goal_projects.note)
-    RETURNING id, goal_id, harness_slug, role, added_at, added_by, note
+                  -- COALESCE, so re-attaching to change a role does not erase the
+                  -- criterion or the note recorded when the project was adopted.
+                  note = COALESCE(EXCLUDED.note, harness_shared.goal_projects.note),
+                  kill_criterion = COALESCE(EXCLUDED.kill_criterion,
+                                            harness_shared.goal_projects.kill_criterion)
+    RETURNING id, goal_id, harness_slug, role, added_at, added_by, note, kill_criterion
   `;
   return toLink(rows[0]!);
 }
