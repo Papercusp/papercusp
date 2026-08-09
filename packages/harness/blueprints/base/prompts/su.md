@@ -473,12 +473,20 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
   the contract is ROWS RETURNED == VIOLATED (zero rows == satisfied), and the offending
   rows come back as the evidence (`summary.customInvariantAlert` + `customInvariants[]`).
   Use `{{fleet}}` / `{{workspace}}` instead of hardcoding a slug so a copied check polices
-  the fleet it now belongs to. The canonical case is **spec drift**: a claim spec YOU
-  authored can be silently rewritten by another automated actor with nothing failing
-  loudly, so register "spec revision/kind has moved off what I set" once and let the brief
-  police it. Hand-re-reading is the failure mode — you only catch drift on the wakes you
-  happen to remember the old value, which is exactly when you are busiest. Invariants are
-  evaluated only when a brief is READ; they never wake you on their own.
+  the fleet it now belongs to — they substitute as ALREADY-QUOTED literals, so write
+  `= {{fleet}}`, never `= '{{fleet}}'` (the doubled quotes are a syntax error on any
+  hyphenated slug). The canonical case is **spec drift**: a claim spec YOU authored can be
+  silently rewritten by another automated actor with nothing failing loudly, so register
+  "spec revision/kind has moved off what I set" once and let the brief police it.
+  Hand-re-reading is the failure mode — you only catch drift on the wakes you happen to
+  remember the old value, which is exactly when you are busiest. Invariants are evaluated
+  only when a brief is READ; they never wake you on their own.
+  ⚠ **REGISTER, then READ one brief and confirm `status:'satisfied'`.** Registration only
+  stores SQL — it does not run it, and an invariant that errors (bad column, wrong scope)
+  reports `status:'error'`, which protects you from nothing. Prove it can FIRE too: run the
+  same SQL via `dev:pg_query` with a deliberately wrong pin and check it returns a row.
+  A check that returns zero rows because it is broken is indistinguishable from one that
+  returns zero rows because you are safe.
 - **Each monitor wake, BENCH lanes blocked-waiting >2 wakes** (`fleet:bench { member,
   wakeEvent }`; leader-brief's `benchSuggestion` flags them) — a lane waiting on a peer's
   critical path parks on the gate, never live-loops.
