@@ -4,7 +4,7 @@
  * (decouple-agent-prompts-from-release-gate-2026-06-20 P-002 / D-001).
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { harnessRoot, promptHarnessRoot, resolveHarnessPackageRoot } from './paths.js';
@@ -87,6 +87,31 @@ describe('promptHarnessRoot — prompt-root override', () => {
     // Calibration — without the bound the SAME fixture is adopted, so the
     // assertion above is falsifiable and not vacuously true.
     expect(resolveHarnessPackageRoot([start])).toBe(polluted);
+  });
+
+  it('a WORLD-WRITABLE ancestor holding harness assets is never adopted, even inside stopAt (EI-19481118729454265)', () => {
+    // The actual incident, reproduced hermetically: on 2026-08-03/04 a full
+    // byte-identical copy of the built-in blueprint set sat at bare
+    // `/tmp/blueprints/base/blueprint.yaml` — `/tmp` is other-writable
+    // (mode 1777), so ANYONE on the box could have put it there. `stopAt`
+    // only bounds the hermetic-test WALK; it says nothing about whether a
+    // matched directory should be TRUSTED, so it must not be the only guard.
+    const writable = mk();
+    chmodSync(writable, 0o1777);
+    mkAsset(writable);
+    const start = join(writable, 'nested', 'start');
+    mkdirSync(start, { recursive: true });
+
+    // Even with `stopAt` pinned exactly at the polluted dir — which the
+    // 'stopAt bounds…' case above proves is otherwise sufficient to adopt
+    // it — the world-writable guard still refuses the match.
+    expect(resolveHarnessPackageRoot([start], { stopAt: writable })).toBeNull();
+
+    // Calibration: strip the world-writable bit and the identical structure
+    // IS adopted — proving the guard (not the fixture shape, not `stopAt`)
+    // is what excluded it above.
+    chmodSync(writable, 0o755);
+    expect(resolveHarnessPackageRoot([start], { stopAt: writable })).toBe(writable);
   });
 
   it('UNSET ⇒ returns the explicit fallback (byte-identical to pre-decouple)', () => {

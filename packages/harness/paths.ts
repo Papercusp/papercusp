@@ -15,11 +15,47 @@
  * a different install root is wanted (Tauri sidecar runtime, container
  * mounts, fixture-controlled tests).
  */
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { dirname, join, parse, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/**
+ * True when `dir` is other-writable (mode & 0o002) — the hallmark of a
+ * shared, multi-user scratch area (`/tmp`, `/var/tmp`, …), not a directory
+ * this process or its deploy owns exclusively.
+ *
+ * Why this matters here (EI-19481118729454265): `resolveHarnessPackageRoot`'s
+ * upward walk probes EVERY ancestor of its start dirs, and by default (no
+ * `stopAt`) that walk is unbounded — it runs all the way to the filesystem
+ * root. A `blueprints/base/blueprint.yaml` dropped in ANY world-writable
+ * ancestor along that walk (accidentally, by a stray `cp -r`, or by a
+ * malicious actor with local access) makes that ancestor answer as "the
+ * harness package root" for every harness process whose module path or cwd
+ * sits beneath it — silently substituting an untrusted blueprint set for the
+ * real one. Measured live 2026-08-03/04: a full byte-identical copy of the
+ * 48 built-in blueprints sat at bare `/tmp/blueprints` for unknown reasons,
+ * and `hasHarnessAssets('/tmp')` was `true`. It happened to be harmless only
+ * because the copy was byte-identical to source that day.
+ *
+ * Bounding the walk with `stopAt` (see below) fixes hermetic TESTS, but every
+ * production caller passes no `stopAt` by design (recovering the source
+ * package from an arbitrarily-deep bundled `dist-host` path needs to walk up
+ * to the real repo root, whose depth isn't known in advance). So production
+ * needs its own floor, independent of `stopAt`: never trust harness assets
+ * discovered in a directory anyone on the box could have written into.
+ * `statSync` failures (permission denied, dir vanished mid-walk) are treated
+ * as "not safe to trust" rather than thrown — the walk simply keeps going.
+ */
+function isWorldWritable(dir: string): boolean {
+  try {
+    return (statSync(dir).mode & 0o002) !== 0;
+  } catch {
+    return true;
+  }
+}
+
 function hasHarnessAssets(dir: string): boolean {
+  if (isWorldWritable(dir)) return false;
   return existsSync(join(dir, 'blueprints', 'base', 'blueprint.yaml'));
 }
 
