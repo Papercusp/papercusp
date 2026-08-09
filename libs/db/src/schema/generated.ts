@@ -3454,6 +3454,22 @@ export const pushDeliveryInHarnessShared = harnessShared.table("push_delivery", 
 	index("push_delivery_ref_idx").using("btree", table.handleRef.asc().nullsLast().op("text_ops")),
 ]);
 
+export const memoryRecallQueryTextInHarnessShared = harnessShared.table("memory_recall_query_text", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	statsId: bigint("stats_id", { mode: "number" }).primaryKey().notNull(),
+	queryText: text("query_text").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("memory_recall_query_text_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.statsId],
+			foreignColumns: [memoryRecallStatsInHarnessShared.id],
+			name: "memory_recall_query_text_stats_fk"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.statsId], name: "memory_recall_query_text_pkey"}),
+
+]);
+
 export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	workspaceId: text("workspace_id").notNull(),
 	scope: text().notNull(),
@@ -3862,11 +3878,15 @@ export const memoryRecallStatsInHarnessShared = harnessShared.table("memory_reca
 	sessionId: text("session_id"),
 	legs: jsonb(),
 	admission: jsonb(),
+	client: text(),
+	topCosineScore: doublePrecision("top_cosine_score"),
+	cosineScores: jsonb("cosine_scores"),
 }, (table) => [
+	index("memory_recall_stats_client_surface_idx").using("btree", table.createdAt.desc().nullsFirst().op("text_ops"), table.client.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops")).where(sql`(client IS NOT NULL)`),
 	index("memory_recall_stats_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("memory_recall_stats_scale_created_idx").using("btree", table.scoreScale.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")).where(sql`(score_scale IS NOT NULL)`),
-	index("memory_recall_stats_session_created_idx").using("btree", table.sessionId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
-	index("memory_recall_stats_ws_pot_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.potSlug.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("memory_recall_stats_scale_created_idx").using("btree", table.scoreScale.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(score_scale IS NOT NULL)`),
+	index("memory_recall_stats_session_created_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(session_id IS NOT NULL)`),
+	index("memory_recall_stats_ws_pot_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.potSlug.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
 	check("memory_recall_stats_hit_count_check", sql`hit_count >= 0`),
 ]);
 
