@@ -990,6 +990,27 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // consistent with other deliberately-cut lower-frequency verbs in this file
   // (events:emit, recipes:run, locks:acquire_granular).
   'search:fulltext',
+  // P-003 of psu-seed-prompt-mandate-alignment-2026-08-09. These three are CROSS-ROLE
+  // (every role records rulings, pulls claimable work, and registers a mode), which is
+  // why they belong in the shared spine rather than the Claude-only extras. Admitted on
+  // measured reach-per-KB (plan D-001 — seed cost is the tools/list WIRE payload, which
+  // argSchema dominates), not on reach alone:
+  //   plans:add-decision   622 reaches/65 callers, 4,250 B, 149.9 reach/KB — the loudest
+  //     unmet need in the entire fallback ledger. Both root CLAUDE.md and the su persona
+  //     make recording a cross-lane ruling MANDATORY ("a message is not addressable after
+  //     delivery; a decision is"), so the one verb that discharges a standing obligation
+  //     was reachable only by discovery round-trip.
+  //   mode:set             124/56, 1,732 B, 73.3 — an unregistered mode is invisible
+  //     session state that a compaction silently drops; the persona requires registering
+  //     it, and on non-Claude clients no hook does it for you.
+  //   work_items:claimable 135/55, 2,198 B, 62.9 — the SSOT claim floors. The documented
+  //     alternative is a raw status='open' query that overcounts ~13x, so an unreachable
+  //     tool here actively pushes callers onto a wrong answer.
+  // Subtotal +8,180 B. MIRROR THIS ORDER EXACTLY in psu-launcher.mjs's
+  // OMP_CORE_MCP_TOOL_NAMES or the lockstep drift guard (psu-launcher.test.ts) fails.
+  'plans:add-decision',
+  'mode:set',
+  'work_items:claimable',
   // Discovery — load anything else by intent (tools:find — WS3), or call it
   // directly without loading (tools:invoke — the universal reachability hatch,
   // dynamic-tool-surface-2026-07-01 D-003).
