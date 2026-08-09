@@ -1540,19 +1540,17 @@ export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage
 	cacheCreationTokens: bigint("cache_creation_tokens", { mode: "number" }),
 	turnCount: integer("turn_count"),
 	sessionId: text("session_id"),
-	planId: text("plan_id"),
 	toolName: text("tool_name"),
 	turnTrigger: text("turn_trigger"),
 	accountId: text("account_id"),
 }, (table) => [
 	index("agent_usage_samples_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	index("agent_usage_samples_ws_account_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.accountId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")).where(sql`(account_id IS NOT NULL)`),
-	index("agent_usage_samples_ws_bucket_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.bucketKey.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
-	index("agent_usage_samples_ws_plan_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.planId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")).where(sql`(plan_id IS NOT NULL)`),
-	index("agent_usage_samples_ws_role_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.role.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(role IS NOT NULL)`),
-	index("agent_usage_samples_ws_session_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.sessionId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")).where(sql`(session_id IS NOT NULL)`),
-	index("agent_usage_samples_ws_trigger_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.turnTrigger.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("text_ops")).where(sql`(turn_trigger IS NOT NULL)`),
-	index("agent_usage_samples_ws_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
+	index("agent_usage_samples_ws_bucket_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.bucketKey.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("text_ops")),
+	index("agent_usage_samples_ws_role_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")).where(sql`(role IS NOT NULL)`),
+	index("agent_usage_samples_ws_session_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("int8_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(session_id IS NOT NULL)`),
+	index("agent_usage_samples_ws_trigger_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.turnTrigger.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(turn_trigger IS NOT NULL)`),
+	index("agent_usage_samples_ws_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
 	pgPolicy("agent_usage_samples_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
@@ -2976,8 +2974,8 @@ export const taskLedgerInHarnessShared = harnessShared.table("task_ledger", {
 	index("task_ledger_root_idx").using("btree", table.rootTaskId.asc().nullsLast().op("text_ops")),
 	uniqueIndex("task_ledger_scope_unit_key").using("btree", table.scopeUnit.asc().nullsLast().op("text_ops")).where(sql`(scope_unit IS NOT NULL)`),
 	index("task_ledger_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("text_ops")).where(sql`(work_item_id IS NOT NULL)`),
+	check("task_ledger_state_check", sql`state = ANY (ARRAY['pending'::text, 'running'::text, 'exited'::text, 'killed'::text, 'timed_out'::text, 'stranded'::text, 'unaccounted'::text, 'foreign'::text, 'ended_unobserved'::text])`),
 	check("task_ledger_workspace_nonempty", sql`workspace_id <> ''::text`),
-	check("task_ledger_state_check", sql`state = ANY (ARRAY['pending'::text, 'running'::text, 'exited'::text, 'killed'::text, 'timed_out'::text, 'stranded'::text, 'unaccounted'::text, 'foreign'::text])`),
 	primaryKey({ columns: [table.taskId], name: "task_ledger_pkey"}),
 
 ]);
@@ -9076,7 +9074,9 @@ export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	closedTs: bigint("closed_ts", { mode: "number" }),
 	lane: text(),
-}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason, authority, closed_ts, lane FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+	embedding: vector({ dimensions: 768 }),
+	embeddingMode: text("embedding_mode"),
+}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason, authority, closed_ts, lane, embedding, embedding_mode FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
 
 export const eventAwaitsEffectiveInHarnessShared = harnessShared.view("event_awaits_effective", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),
