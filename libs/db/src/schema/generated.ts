@@ -6178,6 +6178,22 @@ export const runtimeVintageInHarnessShared = harnessShared.table("runtime_vintag
 	primaryKey({ columns: [table.host, table.unit, table.workspaceId], name: "runtime_vintage_pkey"}),
 ]);
 
+export const contextInjectionCoverageInHarnessShared = harnessShared.table("context_injection_coverage", {
+	day: date().notNull(),
+	workspaceId: text("workspace_id").default('').notNull(),
+	client: text().default('').notNull(),
+	port: text().notNull(),
+	outcome: text().notNull(),
+	tool: text().default('').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	n: bigint({ mode: "number" }).default(0).notNull(),
+	firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("context_injection_coverage_day_idx").using("btree", table.day.desc().nullsFirst().op("date_ops")),
+	primaryKey({ columns: [table.client, table.day, table.outcome, table.port, table.tool, table.workspaceId], name: "context_injection_coverage_pkey"}),
+]);
+
 export const autoloopStateInHarnessShared = harnessShared.table("autoloop_state", {
 	harnessSlug: text("harness_slug").notNull(),
 	role: text().default('director').notNull(),
