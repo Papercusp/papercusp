@@ -31,21 +31,41 @@ export function _resetPapercuspRootForTests(): void {
   cached = null;
 }
 
+/**
+ * Resolve the workspaces root (`~/.papercusp-workspaces`), honoring
+ * `PAPERCUSP_WORKSPACES_ROOT` before falling back to `homedir()`.
+ *
+ * Spawned CLI children can run with `HOME` remapped to a per-workspace dir
+ * (P-051); a bare `homedir()` there resolves to a NESTED registry that
+ * disagrees with the real one — the documented "switch failed: workspace
+ * dir ... missing" trap (agent-insights/workspaces-root-vs-remapped-home).
+ * `homedir()` alone is correct only in dev, where HOME is not remapped.
+ *
+ * Mirrors `workspacesRoot()` in `@papercusp/operator-core`'s
+ * `workspace-registry.ts` (kept local to avoid pulling operator-core's
+ * server-oriented module graph into the CLI).
+ */
+function workspacesRootDir(): string {
+  const env = process.env.PAPERCUSP_WORKSPACES_ROOT;
+  if (env && env.trim()) return env;
+  return join(homedir(), '.papercusp-workspaces');
+}
+
 function resolve(): string {
   if (process.env.PAPERCUSP_HOME) return process.env.PAPERCUSP_HOME;
 
-  const wsIndex = join(homedir(), '.papercusp-workspaces', 'registry.json');
+  const wsIndex = join(workspacesRootDir(), 'registry.json');
   if (existsSync(wsIndex)) {
     try {
       const parsed = JSON.parse(readFileSync(wsIndex, 'utf8')) as { current?: string };
       if (parsed.current) {
-        const cand = join(homedir(), '.papercusp-workspaces', parsed.current, '.papercusp');
+        const cand = join(workspacesRootDir(), parsed.current, '.papercusp');
         if (existsSync(cand)) return cand;
       }
     } catch { /* fall through */ }
   }
 
-  const def = join(homedir(), '.papercusp-workspaces', 'default', '.papercusp');
+  const def = join(workspacesRootDir(), 'default', '.papercusp');
   if (existsSync(def)) return def;
 
   return join(homedir(), '.papercusp');

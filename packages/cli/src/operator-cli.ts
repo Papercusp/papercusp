@@ -36,9 +36,25 @@ interface RegistryShape {
   workspaces?: { id: string }[];
 }
 
+/**
+ * Resolve the workspaces root (`~/.papercusp-workspaces`), honoring
+ * `PAPERCUSP_WORKSPACES_ROOT` before falling back to `homedir()`.
+ *
+ * Spawned CLI children can run with `HOME` remapped to a per-workspace dir
+ * (P-051); a bare `homedir()` there resolves to a NESTED registry that
+ * disagrees with the real one (agent-insights/workspaces-root-vs-remapped-home).
+ * Mirrors `workspacesRoot()` in `@papercusp/operator-core`'s
+ * `workspace-registry.ts` (kept local to avoid pulling in that module graph).
+ */
+function workspacesRootDir(): string {
+  const env = process.env.PAPERCUSP_WORKSPACES_ROOT;
+  if (env && env.trim()) return env;
+  return join(homedir(), '.papercusp-workspaces');
+}
+
 async function activeWorkspaceId(): Promise<string> {
   try {
-    const raw = await fs.readFile(join(homedir(), '.papercusp-workspaces', 'registry.json'), 'utf8');
+    const raw = await fs.readFile(join(workspacesRootDir(), 'registry.json'), 'utf8');
     const reg = JSON.parse(raw) as RegistryShape;
     if (typeof reg.current === 'string' && reg.current) return reg.current;
   } catch { /* fallthrough */ }
