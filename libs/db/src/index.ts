@@ -138,3 +138,17 @@ export {
   listGoals,
   type LineageRow,
 } from './goal-lineage';
+
+export {
+  linkProject,
+  unlinkProject,
+  setMainOwner,
+  projectsForGoal,
+  goalsForProject,
+  goalSpend,
+  portfolioSpend,
+  type GoalProjectLink,
+  type GoalProjectRole,
+  type GoalSpend,
+  type ProjectSpend,
+} from './goal-projects';
