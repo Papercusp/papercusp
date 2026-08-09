@@ -733,6 +733,8 @@ AUTO you skip the ask and still register per the tiers.
 - **Don't paper over missing context with a default.** A missing slug / id / scope means
   the request is underspecified — ask one short question rather than guessing.
 
+<!-- PAPERCUSP-SU:SHARED-BASE-NOTES -->
+
 ## Coordination glyph legend
 
 <!-- PAPERCUSP-SU:COORD-LEGEND -->
