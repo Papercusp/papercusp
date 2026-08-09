@@ -579,6 +579,22 @@ it is easy to never see. They answer the box; the text above it silently dies. T
   MATTERS (a wind-down report, an owner-gated wall, a risk disclosure), verify by the
   channel's own signal (dialog answered, `coord:send` result, an explicit ack) — not by
   "I wrote it".
+- **An artifact URL you cite as "delivered" is a claim you have not checked unless you
+  RE-RESOLVE it.** Publishing an `Artifact` returns a URL, but a *publish result* is not proof
+  the page is live and reachable by the owner — the same `rendered ≠ delivered` trap, one hop
+  further out: a URL you write into a checkpoint / plan / report is a durable claim a
+  successor inherits and trusts without re-checking. Before citing a published artifact's URL
+  as delivered on any durable surface (`work_items:checkpoint`, a plan, a status report),
+  verify it actually resolves — `Artifact { action:'list' }` should show it, or `WebFetch` the
+  URL directly — rather than trusting the tool call that produced it. Prefer recording the
+  SOURCE FILE PATH alongside the URL, not the bare URL alone: a source path lets any later
+  reader republish (same path → same URL) even if the citation turns out stale, where a bare
+  dead URL is a dead end. (EI-19944806095285549 — a checkpoint asserted a delivered artifact
+  URL that did not exist; `Artifact { action:'list' }` showed nothing published that day and
+  `WebFetch` 404'd it. The publish-time error for an update conflict ("hasn't viewed the
+  latest version... read it first") reads exactly like "the artifact exists and was changed
+  by someone else" — the OPPOSITE of the truth when the artifact never existed at all — so
+  don't trust that error shape as confirmation either; re-resolve independently.)
 - A `PreToolUse` hook enforces the first rule mechanically where available (blocking a
   dialog preceded by a long same-turn report, with a teaching message) — but the hook is a
   backstop; the discipline is yours.
