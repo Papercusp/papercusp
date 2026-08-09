@@ -70,11 +70,28 @@ function adminUrl(): string {
     ?? 'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
 }
 
+/**
+ * Resolve the workspaces root (`~/.papercusp-workspaces`), honoring
+ * `PAPERCUSP_WORKSPACES_ROOT` before falling back to `homedir()`.
+ *
+ * Spawned CLI children can run with `HOME` remapped to a per-workspace dir
+ * (P-051); a bare `homedir()` there resolves to a NESTED registry that
+ * disagrees with the real one (agent-insights/workspaces-root-vs-remapped-home).
+ * Mirrors `workspacesRoot()` in `@papercusp/operator-core`'s
+ * `workspace-registry.ts` (kept local — this script has no dependency on
+ * operator-core).
+ */
+function workspacesRootDir(): string {
+  const env = process.env.PAPERCUSP_WORKSPACES_ROOT;
+  if (env && env.trim()) return env;
+  return join(homedir(), '.papercusp-workspaces');
+}
+
 function discoverHarnessLocations(): {
   registry: Registry;
   harnesses: HarnessLocation[];
 } {
-  const wsRoot = join(homedir(), '.papercusp-workspaces');
+  const wsRoot = workspacesRootDir();
   const registryPath = join(wsRoot, 'registry.json');
   if (!existsSync(registryPath)) {
     throw new Error(`registry.json missing at ${registryPath}`);

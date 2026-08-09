@@ -15,8 +15,27 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const REGISTRY_PATH = join(homedir(), '.papercusp-workspaces', 'registry.json');
 const DEFAULT_WORKSPACE_ID = 'default';
+
+/**
+ * Resolve the workspaces root (`~/.papercusp-workspaces`), honoring
+ * `PAPERCUSP_WORKSPACES_ROOT` before falling back to `homedir()`.
+ *
+ * The orchestrator can run with `HOME` remapped to a per-workspace dir
+ * (P-051 spawned-child case); a bare `homedir()` there resolves to a
+ * NESTED registry that disagrees with the real one
+ * (agent-insights/workspaces-root-vs-remapped-home). Mirrors
+ * `workspacesRoot()` in `@papercusp/operator-core`'s `workspace-registry.ts`.
+ */
+function workspacesRootDir(): string {
+  const env = process.env.PAPERCUSP_WORKSPACES_ROOT;
+  if (env && env.trim()) return env;
+  return join(homedir(), '.papercusp-workspaces');
+}
+
+function registryPath(): string {
+  return join(workspacesRootDir(), 'registry.json');
+}
 
 interface WorkspaceRegistry {
   current?: string;
@@ -41,9 +60,10 @@ export function activeWorkspaceId(): string {
     cached = env.trim();
     return cached;
   }
-  if (existsSync(REGISTRY_PATH)) {
+  const registryFile = registryPath();
+  if (existsSync(registryFile)) {
     try {
-      const raw = JSON.parse(readFileSync(REGISTRY_PATH, 'utf8')) as WorkspaceRegistry;
+      const raw = JSON.parse(readFileSync(registryFile, 'utf8')) as WorkspaceRegistry;
       if (typeof raw.current === 'string' && raw.current.trim()) {
         cached = raw.current.trim();
         return cached;
@@ -72,8 +92,6 @@ export function _resetActiveWorkspaceCache(): void {
  * `~/.papercusp-workspaces`, mirroring `apps/operator/lib/workspace-registry.ts`.
  */
 export function workspaceHomeDir(id: string, env: NodeJS.ProcessEnv = process.env): string {
-  const root =
-    env.PAPERCUSP_WORKSPACES_ROOT?.trim() ||
-    join(homedir(), '.papercusp-workspaces');
+  const root = env.PAPERCUSP_WORKSPACES_ROOT?.trim() || workspacesRootDir();
   return join(root, id);
 }

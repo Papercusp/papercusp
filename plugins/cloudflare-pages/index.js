@@ -57,22 +57,34 @@ async function readToken() {
     const { homedir } = await Promise.resolve().then(() => __importStar(require('node:os')));
     const { join } = await Promise.resolve().then(() => __importStar(require('node:path')));
     // Resolve workspace-aware root (mirrors operator/CLI resolver).
+    //
+    // Honor PAPERCUSP_WORKSPACES_ROOT before falling back to homedir() — a bare
+    // homedir() here resolves to a NESTED registry when this plugin runs with
+    // HOME remapped to a per-workspace dir (P-051 spawned-child case). See
+    // agent-insights/workspaces-root-vs-remapped-home and the same env-first
+    // resolver in @papercusp/operator-core's workspace-registry.ts.
+    const workspacesRootDir = () => {
+        const env = process.env.PAPERCUSP_WORKSPACES_ROOT;
+        if (env && env.trim())
+            return env;
+        return join(homedir(), '.papercusp-workspaces');
+    };
     const root = (() => {
         if (process.env.PAPERCUSP_HOME)
             return process.env.PAPERCUSP_HOME;
-        const wsIndex = join(homedir(), '.papercusp-workspaces', 'registry.json');
+        const wsIndex = join(workspacesRootDir(), 'registry.json');
         if (existsSync(wsIndex)) {
             try {
                 const parsed = JSON.parse(readFileSync(wsIndex, 'utf8'));
                 if (parsed.current) {
-                    const cand = join(homedir(), '.papercusp-workspaces', parsed.current, '.papercusp');
+                    const cand = join(workspacesRootDir(), parsed.current, '.papercusp');
                     if (existsSync(cand))
                         return cand;
                 }
             }
             catch { /* fall through */ }
         }
-        const def = join(homedir(), '.papercusp-workspaces', 'default', '.papercusp');
+        const def = join(workspacesRootDir(), 'default', '.papercusp');
         if (existsSync(def))
             return def;
         return join(homedir(), '.papercusp');
