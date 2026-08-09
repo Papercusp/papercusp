@@ -5766,6 +5766,22 @@ export const federationRefusedOpCountersInHarnessShared = harnessShared.table("f
 	check("federation_refused_op_counters_reason_nonempty", sql`reason <> ''::text`),
 ]);
 
+export const fleetBriefSnapshotsInHarnessShared = harnessShared.table("fleet_brief_snapshots", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	fleetSlug: text("fleet_slug").notNull(),
+	ownerId: text("owner_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fireCount: bigint("fire_count", { mode: "number" }),
+	baseline: jsonb(),
+	observation: jsonb().notNull(),
+	rotatedAt: timestamp("rotated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.fleetSlug, table.ownerId, table.workspaceId], name: "fleet_brief_snapshots_pkey"}),
+	check("fleet_brief_snapshots_ws_nonempty", sql`workspace_id <> ''::text`),
+	check("fleet_brief_snapshots_fleet_nonempty", sql`fleet_slug <> ''::text`),
+	check("fleet_brief_snapshots_owner_nonempty", sql`owner_id <> ''::text`),
+]);
+
 export const systemHealthAcksInHarnessShared = harnessShared.table("system_health_acks", {
 	workspaceId: text("workspace_id").notNull(),
 	panel: text().notNull(),
