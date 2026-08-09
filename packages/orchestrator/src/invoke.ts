@@ -990,20 +990,32 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // consistent with other deliberately-cut lower-frequency verbs in this file
   // (events:emit, recipes:run, locks:acquire_granular).
   'search:fulltext',
-  // NOT ADDED HERE, on purpose (psu-seed-prompt-mandate-alignment-2026-08-09 P-003 +
-  // D-003): plans:add-decision (622 fallback reaches/65 callers), mode:set (124/56) and
-  // work_items:claimable (135/55) are genuinely CROSS-ROLE and by rights belong in this
-  // shared spine. They were tried here and REVERTED to CLAUDE_SEED_EXTRA_TOOL_NAMES,
-  // because this spine is defended by TWO count caps at different numbers —
-  // invoke.test.ts (<=43) and core-spine-inverses.test.ts (<=45) — and it sits at 42.
-  // Adding three exceeds the tighter one. Raising a cap in the very change that fills it
-  // is how the DARK_FLAGS watermark got walked 22->24->25->26 for one bug class, so the
-  // cap was left alone and the tools were routed to the Claude-only list instead.
-  // CONSEQUENCE, stated so it is not discovered by surprise: non-Claude clients (OMP,
-  // codex) still cannot reach these three directly. Lifting that needs ONE deliberate
-  // decision about the spine budget — see plan D-003, which argues a COUNT cap is the
-  // wrong instrument (coord:send 30,512 B vs locks:list 383 B is an 80x spread a count
-  // prices identically) and that the wire-byte ceiling should replace it.
+  // ADMITTED by P-006 of psu-seed-prompt-mandate-alignment-2026-08-09 (D-006), and this
+  // RAISES NO CAP: the array was measured at 42 against a <=43 ratchet, so the slot
+  // already existed. 622 tools:invoke fallback-reaches / 65 distinct callers in 14d — the
+  // highest demand in the whole fallback ledger — at 4,250 B, i.e. 149.9 reaches/KB on
+  // D-001's admission metric. It also discharges a MANDATORY obligation: root CLAUDE.md
+  // requires a cross-lane ruling to be recorded as a plan Decision, so the one verb an
+  // agent MUST call to comply was reachable only by a discovery round-trip on every
+  // non-Claude client. P-003 tried to add this verb here as part of a set of three,
+  // which overshot the ratchet; admitted alone, it fits.
+  'plans:add-decision',
+  // STILL NOT HERE, on purpose: mode:set (124 reaches/56 callers, 1,732 B) and
+  // work_items:claimable (135/55, 2,198 B) stay in CLAUDE_SEED_EXTRA_TOOL_NAMES. With
+  // plans:add-decision admitted the array is now EXACTLY 43 = the ratchet, so admitting
+  // either would mean raising a cap in the very change that fills it — how the DARK_FLAGS
+  // watermark got walked 22->24->25->26 for one bug class, and what P-003 already
+  // correctly refused. Both stay reachable via tools:find/invoke. Admitting them is a
+  // separate deliberate budget decision, and D-001 argues it should be priced in WIRE
+  // BYTES rather than by count (coord:send 30,512 B vs locks:list 383 B is an 80x spread
+  // that a count prices identically).
+  // NOTE for whoever adds the next verb: the two guards on this array are NOT rival caps.
+  // invoke.test.ts (<=43) is a RATCHET pinned to the current size, carrying the per-
+  // increment changelog above (25->32->33->38->41->42->43) so no addition is unreviewed;
+  // core-spine-inverses.test.ts (<=45) is a separate BLOAT ceiling ("a seed, not a
+  // catalog"). Ratchet + ceiling is one design, not a discrepancy — do not "reconcile"
+  // them into a single constant, which would destroy either the review forcing-function
+  // or the backstop.
   // Discovery — load anything else by intent (tools:find — WS3), or call it
   // directly without loading (tools:invoke — the universal reachability hatch,
   // dynamic-tool-surface-2026-07-01 D-003).

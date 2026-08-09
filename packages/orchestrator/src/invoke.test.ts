@@ -1257,6 +1257,19 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // existed, but it was never seeded (only docs:search was), so every trimmed session
   // needed a discovery round trip to reach it. 22 tools:invoke fallback-reaches/11
   // distinct callers in 14d — comparable demand to other additions above.
+  // Then +1 with NO cap change → the array is now EXACTLY 43 (psu-seed-prompt-mandate-
+  // alignment-2026-08-09 P-006 / D-006): plans:add-decision, 622 tools:invoke fallback-
+  // reaches/65 distinct callers in 14d — the highest demand in the whole ledger — and the
+  // verb root CLAUDE.md MANDATES for recording a cross-lane ruling, so the one call an
+  // agent must make to comply cost a discovery round-trip on every non-Claude client.
+  // WHY NO BUMP ACCOMPANIED IT, since every prior addition above raised this number:
+  // MEASURED before that change, the array held 42 entries while this running tally had
+  // already reached 43 — so a documented slot existed and was simply unoccupied. (The
+  // likeliest cause is one of the deliberate CUTS noted below/above — locks:acquire_granular
+  // and recipes:run were both removed in the 2026-07-05 rebalance — decrementing the array
+  // without decrementing this tally. Stated as the likely cause, not a verified one.)
+  // The net effect is that cap and size now AGREE at 43, which is this ratchet's intended
+  // invariant; the next addition genuinely does have to raise it, with justification.
   assert.ok(CORE_MCP_TOOL_NAMES.length <= 43, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself

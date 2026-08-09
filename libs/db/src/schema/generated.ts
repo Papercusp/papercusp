@@ -8486,6 +8486,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	closedTs: bigint("closed_ts", { mode: "number" }),
 	lane: text().generatedAlwaysAs(sql`(payload ->> 'lane'::text)`),
 	conditionKey: text("condition_key"),
+	embeddingRecipe: smallint("embedding_recipe"),
 }, (table) => [
 	index("harness_features_consolidated_claimed_progress_idx").using("btree", table.harnessSlug.asc().nullsLast().op("timestamptz_ops"), table.lastProgressAt.asc().nullsLast().op("text_ops")).where(sql`((taken_by IS NOT NULL) AND (taken_by <> ''::text))`),
 	index("hfc_audit_pending_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((origin = 'remote'::text) AND ((audit_verdict IS NULL) OR (audit_verdict = 'pending'::text)))`),
