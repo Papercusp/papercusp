@@ -189,8 +189,24 @@ function adfToText(doc: unknown): string {
  * ───────────────────────────────────────────────────────────────────── */
 
 let _pgClient: any = null;
-async function pg() {
-  if (_pgClient) return _pgClient;
+/**
+ * WI-37473: the IN-FLIGHT build, memoized separately from the finished pool.
+ *
+ * `pg()` used to be `async` and guard on `_pgClient` alone, which put an `await
+ * import('postgres')` between the check and the assignment. Every caller that
+ * entered during that window saw `null`, passed the guard, and constructed its OWN
+ * pool; only the last assignment was retained, so each loser's pool was left
+ * unreferenced and never `.end()`-ed — its connections held against the shared
+ * Postgres until process exit. With ~22 `await pg()` call sites, concurrent entry is
+ * the normal case, not an edge case.
+ *
+ * The fix is to memoize the PROMISE and assign it SYNCHRONOUSLY, so no await sits
+ * between check and set. Do NOT make `pg()` async again, and do NOT reintroduce an
+ * `await` before `_pgClientPromise = …` — either change silently restores the race.
+ */
+let _pgClientPromise: Promise<any> | null = null;
+
+async function buildPgClient(): Promise<any> {
   const postgres = (await import('postgres')).default;
   const url =
     process.env.HARNESS_ADMIN_DATABASE_URL ||
@@ -208,6 +224,18 @@ async function pg() {
     connection: { application_name: `pcusp:jira-sync:p${process.pid}`.slice(0, 63) },
   });
   return _pgClient;
+}
+
+function pg(): Promise<any> {
+  if (_pgClient) return Promise.resolve(_pgClient);
+  if (_pgClientPromise) return _pgClientPromise;
+  // Assigned synchronously — this is the line that closes the race.
+  _pgClientPromise = buildPgClient().catch((err: unknown) => {
+    // Let the next caller retry rather than inheriting a rejected memo.
+    _pgClientPromise = null;
+    throw err;
+  });
+  return _pgClientPromise;
 }
 
 function harnessSchema(slug: string): string {
