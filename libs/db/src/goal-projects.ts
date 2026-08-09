@@ -200,7 +200,7 @@ export async function projectsForGoal(
   opts: { workspaceId: string; goalId: string },
 ): Promise<GoalProjectLink[]> {
   const rows = await sql<RawLink[]>`
-    SELECT id, goal_id, harness_slug, role, added_at, added_by, note
+    SELECT id, goal_id, harness_slug, role, added_at, added_by, note, kill_criterion
       FROM harness_shared.goal_projects
      WHERE workspace_id = ${opts.workspaceId}
        AND goal_id = ${opts.goalId}
@@ -220,7 +220,7 @@ export async function goalsForProject(
   opts: { workspaceId: string; harnessSlug: string },
 ): Promise<GoalProjectLink[]> {
   const rows = await sql<RawLink[]>`
-    SELECT id, goal_id, harness_slug, role, added_at, added_by, note
+    SELECT id, goal_id, harness_slug, role, added_at, added_by, note, kill_criterion
       FROM harness_shared.goal_projects
      WHERE workspace_id = ${opts.workspaceId}
        AND harness_slug = ${opts.harnessSlug}
