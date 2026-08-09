@@ -89,7 +89,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await sql?.end({ timeout: 5 });
-  await db?.stop?.();
+  await db?.drop();
 });
 
 beforeEach(async () => {

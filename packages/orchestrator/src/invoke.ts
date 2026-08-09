@@ -3684,10 +3684,6 @@ export async function invoke(
             // carry-cost read (bee-context-efficiency P-001). Undefined → NULL
             // for omp/codex (no forced native id), matching --session-id.
             sessionId: process.env.PAPERCUSP_NATIVE_SESSION_ID,
-            // Per-plan attribution (B-TOK-2): the spawn stamps PAPERCUSP_PLAN_SLUG
-            // when the run serves a plan (operator-spawn). Undefined → NULL for a
-            // run not spawned for a plan, exactly like sessionId for non-claude.
-            planId: process.env.PAPERCUSP_PLAN_SLUG,
             // Per-turn trigger (B-TOK-4): the spawn/wake stamps PAPERCUSP_TURN_TRIGGER
             // ('coord-wake' | 'cron' | 'autoloop' | 'user') so coordination-driven
             // spend is summable. Undefined → NULL ('unattributed') for an unstamped path.

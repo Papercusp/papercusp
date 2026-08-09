@@ -61,10 +61,6 @@ export interface UsageSampleRun {
    *  share, so the carry-cost (cache_read growth across tasks) is queryable
    *  (bee-context-efficiency P-001). NULL for omp/codex (no forced native id). */
   sessionId?: string;
-  /** Per-plan attribution (B-TOK-2, migration 330): the plan slug this run served,
-   *  threaded from the spawn via `PAPERCUSP_PLAN_SLUG`. Lets the Tokens dashboard sum
-   *  spend per-plan. NULL for a run not spawned for a plan. */
-  planId?: string;
   /** Per-tool attribution (B-TOK-2, migration 330): the tool/feature that drove the
    *  call, when a clean source supplies it. NULL on the subprocess agent-run path
    *  (a full session has no single tool). */
@@ -106,11 +102,11 @@ export async function recordUsageSamplePg(
     INSERT INTO harness_shared.agent_usage_samples
       (workspace_id, ts, bucket_key, provider, model_class, source,
        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd,
-       model, cost_source, harness_slug, run_id, role, turn_count, session_id, plan_id, tool_name, turn_trigger, account_id)
+       model, cost_source, harness_slug, run_id, role, turn_count, session_id, tool_name, turn_trigger, account_id)
     VALUES (
       ${ctx.workspaceId}, ${Date.now()}, ${`${provider}:${modelClass}`}, ${provider}, ${modelClass}, ${'jsonl'},
       ${n(usage.inputTokens)}, ${n(usage.outputTokens)}, ${n(usage.cacheReadTokens)}, ${n(usage.cacheCreationTokens)}, ${costUsd},
-      ${model || null}, ${costSource}, ${run.harnessSlug ?? null}, ${run.runId ?? null}, ${run.role ?? null}, ${n(usage.turns)}, ${run.sessionId ?? null}, ${run.planId ?? null}, ${run.toolName ?? null}, ${run.turnTrigger ?? null}, ${run.accountId ?? null}
+      ${model || null}, ${costSource}, ${run.harnessSlug ?? null}, ${run.runId ?? null}, ${run.role ?? null}, ${n(usage.turns)}, ${run.sessionId ?? null}, ${run.toolName ?? null}, ${run.turnTrigger ?? null}, ${run.accountId ?? null}
     )
   `;
 }
