@@ -10,7 +10,6 @@ import { resolveAdminUrl } from './src/resolve-cli-admin-url.mjs';
 // a STALE discovery file silently won over the live native fallback and
 // drizzle-kit failed with a content-free "0 tables fetching" that read
 // exactly like a DB outage).
-const resolveDbUrl = resolveAdminUrl;
 
 /**
  * Drizzle config — INTROSPECTION ONLY.
@@ -32,7 +31,7 @@ export default defineConfig({
   schemaFilter: ['harness_shared', 'papercusp_shared'],
   out: './src/schema',
   dbCredentials: {
-    url: resolveDbUrl(),
+    url: resolveAdminUrl(),
   },
   introspect: {
     casing: 'camel',
