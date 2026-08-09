@@ -37,6 +37,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs';
+import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
@@ -71,6 +72,40 @@ if (import.meta.url !== __entry) {
 }
 
 console.log('==> running drizzle-kit pull against live papercusp DB');
+
+// Resolve the admin URL ONCE and reuse it for both the precheck below and the
+// Fix 5 composite-PK psql query further down — so they can never diverge
+// (they used to: this `dbUrl` used to be a separate, narrower env-only
+// resolution with no discovery-file support at all, so on a desktop-embedded-
+// PG box it could silently query a DIFFERENT Postgres than the one
+// drizzle-kit had just introspected).
+const { url: dbUrl, source: dbUrlSource } = resolveAdminUrlWithSource();
+
+// PRECHECK connectivity before invoking drizzle-kit (EI-19949168182332635).
+// A dead/unreachable target — most commonly a STALE discovery-file entry
+// from a desktop embedded-PG that has since exited — makes drizzle-kit fail
+// with a content-free "0 tables fetching ... drizzle-kit pull failed", which
+// reads exactly like a real DB outage or an empty schema. Fail loud and
+// specific here instead, when we can: this needs `psql` on PATH, and if it's
+// missing we skip the precheck and fall through to drizzle-kit unchanged
+// (same behavior as before this fix) rather than blocking the script on a
+// tool it doesn't otherwise require.
+{
+  const precheck = spawnSync('psql', [dbUrl, '-tAc', 'SELECT 1'], { encoding: 'utf8' });
+  if (precheck.error == null && precheck.status !== 0) {
+    console.error(
+      '\n✗ Cannot reach Postgres at the resolved admin URL ' +
+        `(source: ${dbUrlSource}):\n    ${redactAdminUrl(dbUrl)}\n` +
+        (precheck.stderr?.trim() ? `  psql said: ${precheck.stderr.trim()}\n` : '') +
+        '\n  This is why drizzle-kit would otherwise fail with a content-free ' +
+        '"0 tables fetching ... drizzle-kit pull failed" — the target above is ' +
+        'UNREACHABLE, not an empty database.\n' +
+        '  Fix: set HARNESS_ADMIN_DATABASE_URL (or DATABASE_URL) to a reachable ' +
+        'connection string, or start the desktop app / native PG this resolved from.\n',
+    );
+    process.exit(1);
+  }
+}
 
 // Prefer the locally-installed drizzle-kit. `npx -y drizzle-kit@^0.31.10`
 // refetches a fresh, isolated copy into the npx cache, which then can't
@@ -255,10 +290,7 @@ let fixedUnknownFallback = 0;
 // Fix 5: drizzle-kit drops primary keys. Re-query PG and inject any missing
 // `primaryKey({ columns: [...] })` into the table-config callback.
 let fixedMissingPks = 0;
-const dbUrl =
-  process.env.HARNESS_ADMIN_DATABASE_URL ??
-  process.env.DATABASE_URL ??
-  'postgres://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
+// dbUrl resolved once above (shared with the precheck) — see the comment there.
 const pkQuery = [
   "SELECT n.nspname, t.relname,",
   "  string_agg(a.attname, ',' ORDER BY array_position(c.conkey, a.attnum))",

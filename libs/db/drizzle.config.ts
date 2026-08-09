@@ -1,23 +1,16 @@
 import { defineConfig } from 'drizzle-kit';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
+import { resolveAdminUrl } from './src/resolve-cli-admin-url.mjs';
 
 // Resolve PG URL: env > discovery file (~/.papercusp/embedded-pg.json,
-// written by the desktop's Rust main on embedded-PG ready) > native
-// :5432 fallback. Lets `drizzle-kit pull` introspect the embedded PG
-// when the desktop is running, instead of always hitting native :5432.
-function resolveDbUrl(): string {
-  if (process.env.HARNESS_ADMIN_DATABASE_URL) return process.env.HARNESS_ADMIN_DATABASE_URL;
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY !== '1') {
-    try {
-      const raw = fs.readFileSync(`${os.homedir()}/.papercusp/embedded-pg.json`, 'utf8');
-      const parsed = JSON.parse(raw) as { url?: string };
-      if (parsed?.url) return parsed.url;
-    } catch { /* fall through */ }
-  }
-  return 'postgres://harness_admin:harness_admin_pwd@localhost:5432/papercusp';
-}
+// written by the desktop's Rust main on embedded-PG ready, LIVENESS-checked
+// — pid alive + port actually listening) > native :5432 fallback. Lets
+// `drizzle-kit pull` introspect the embedded PG when the desktop is running,
+// instead of always hitting native :5432. See resolve-cli-admin-url.mjs for
+// why this is no longer a hand-rolled fs.readFileSync (EI-19949168182332635:
+// a STALE discovery file silently won over the live native fallback and
+// drizzle-kit failed with a content-free "0 tables fetching" that read
+// exactly like a DB outage).
+const resolveDbUrl = resolveAdminUrl;
 
 /**
  * Drizzle config — INTROSPECTION ONLY.
