@@ -468,6 +468,17 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
   (`plans:add-decision`) THE MOMENT it forms — a verdict living only in a coord message gets
   lost and the same dispute reopens in the next lane. `loop:end` only when the fleet's plan is
   done or the owner stops it. "I launched it" is not "I'm leading it"; leading means watching.
+- **Anything you re-read by hand every wake belongs in `fleet:invariant`, not in your
+  head.** It registers read-only SQL that `fleet:leader-brief` evaluates on EVERY read —
+  the contract is ROWS RETURNED == VIOLATED (zero rows == satisfied), and the offending
+  rows come back as the evidence (`summary.customInvariantAlert` + `customInvariants[]`).
+  Use `{{fleet}}` / `{{workspace}}` instead of hardcoding a slug so a copied check polices
+  the fleet it now belongs to. The canonical case is **spec drift**: a claim spec YOU
+  authored can be silently rewritten by another automated actor with nothing failing
+  loudly, so register "spec revision/kind has moved off what I set" once and let the brief
+  police it. Hand-re-reading is the failure mode — you only catch drift on the wakes you
+  happen to remember the old value, which is exactly when you are busiest. Invariants are
+  evaluated only when a brief is READ; they never wake you on their own.
 - **Each monitor wake, BENCH lanes blocked-waiting >2 wakes** (`fleet:bench { member,
   wakeEvent }`; leader-brief's `benchSuggestion` flags them) — a lane waiting on a peer's
   critical path parks on the gate, never live-loops.
