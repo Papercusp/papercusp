@@ -271,37 +271,46 @@ export function quotaFor(toolName: string): ToolDefinition['rolesQuota'] {
  */
 export const TOOL_OVERRIDES: Record<string, { description: string; guidance: NonNullable<ToolDefinition['guidance']> }> = {
   query: {
+    // WI-35557 (2026-08-09): BROKEN on this install — returns 0 results for
+    // EVERY input, always. Both retrieval legs are structurally dead: BM25
+    // because upstream 1.6.3 defers `CREATE_FTS_INDEX` to the first query,
+    // but every query path here (CLI and MCP) opens LadybugDB read-only, so
+    // that write can never succeed (logs "Cannot execute write operations in
+    // a read-only database!" on every call, forever); vector because
+    // `analyze` only generates embeddings under an explicit --embeddings
+    // flag AND a hardcoded 50k-node cap that papercusp's 257k-node graph
+    // exceeds regardless. A local fix was attempted (eagerly creating FTS
+    // indexes during `analyze`, while the DB is genuinely writable) and
+    // CONFIRMED to segfault the native LadybugDB binding — reverted, not
+    // shipped. Until fixed upstream, do not advertise this as working:
+    // description/guidance say so plainly rather than promising a search
+    // that silently returns empty (the worst shape — reads as "no match"
+    // rather than "broken tool").
     description:
-      'Find where a symbol is defined, who calls a function, or what code handles a behavior — ' +
-      'searches the code knowledge graph and returns call chains (callers/callees) ranked by ' +
-      'relevance, with symbols and file locations. Use this INSTEAD of shelling out to `grep -r`/`rg` ' +
-      'for a code search: grep returns raw file/line text matches; this returns the actual call ' +
-      'relationships, which is what "who calls X" / "where is Y defined" / "how does Z flow across ' +
-      'files" questions actually need.',
+      'BROKEN as of WI-35557 (2026-08-09) — returns 0 results for every input, on every repo, always ' +
+      '(upstream read-only-DB defect; a local fix was tried and confirmed to segfault the native ' +
+      'binding, so it was reverted rather than shipped). Do NOT use for code search. Use ' +
+      '`gitnexus.context` for an exact symbol you already have a name/uid for, or `grep -r`/`rg` for ' +
+      'keyword search, until this is fixed.',
     guidance: {
-      when:
-        'When you need to find where something is defined, who calls a function, or trace how a ' +
-        'feature\'s code flows across files — "find call sites", "who calls X", "where is Y defined", ' +
-        '"search the repo for code that does Z".',
+      when: 'Nothing right now — this tool is confirmed non-functional (WI-35557). Do not call it expecting real results.',
       notWhen:
-        'NOT for prose/doc search (use search:fulltext / search:semantic instead) or a repo the graph ' +
-        'hasn\'t indexed. Use this INSTEAD of `grep -r`/`rg` for code-structure questions — reach for ' +
-        'grep only on non-code text, or if the graph index is confirmed stale.',
-      chaining: 'Pair with gitnexus.context for a returned symbol\'s full source, or gitnexus.impact before a rename/refactor.',
+        'Always, until WI-35557 is resolved. Use gitnexus.context (exact symbol) or grep -r/rg ' +
+        '(keyword search) instead.',
+      chaining: 'N/A — see gitnexus.context for the working symbol-lookup path.',
     },
   },
   cypher: {
     description:
-      'Run a direct structural (Cypher) query against the code knowledge graph for precise ' +
-      'call/dependency questions that gitnexus.query\'s ranked natural-language search doesn\'t cover ' +
-      '(e.g. "every function that calls both A and B"). Use INSTEAD of grep -r when you need an exact ' +
-      'structural answer, not a ranked-relevance one.',
+      'Run a direct structural (Cypher) query against the code knowledge graph. Read-capable and NOT ' +
+      'affected by the WI-35557 FTS/embedding defect (it queries graph edges directly, no FTS index ' +
+      'needed) — but note gitnexus.query, the natural-language front door this was meant to follow up ' +
+      'on a miss from, is itself broken (see gitnexus.query). Use for an exact structural answer (e.g. ' +
+      '"every function that calls both A and B") when you can express it as a graph pattern.',
     guidance: {
-      when:
-        'When gitnexus.query\'s natural-language search already ran but isn\'t precise enough, and you ' +
-        'need an exact graph-structure query.',
-      notWhen: 'Start with gitnexus.query first — it is the natural-language front door; reach for cypher only when you need exact graph structure.',
-      chaining: 'Follow up a gitnexus.query miss with this when you can express the relationship as a graph pattern.',
+      when: 'When you need an exact graph-structure answer and can express it as a Cypher pattern — do not expect gitnexus.query to have run first (it\'s broken, WI-35557).',
+      notWhen: 'Not for prose search (search:fulltext/search:semantic) or when gitnexus.context (exact symbol) already answers it more simply.',
+      chaining: 'Follow up a gitnexus.context lookup with this when you need the wider graph structure around a known symbol.',
     },
   },
   context: {
