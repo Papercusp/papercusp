@@ -191,20 +191,19 @@ describe('TOOL_OVERRIDES — agent-vocabulary description/guidance for code-sear
     expect(o.guidance.when).toBeTruthy();
   });
 
-  it('query\'s override explicitly frames itself as a REPLACEMENT for grep, not a complement', () => {
+  // WI-35557 (2026-08-09): query was found to return 0 results for EVERY
+  // input on this install (an upstream read-only-DB defect; a local fix was
+  // tried and confirmed to segfault the native binding, so it was reverted
+  // rather than shipped). The override was rewritten to warn plainly instead
+  // of promising a working grep-replacement — these tests were updated to
+  // match. See gitnexus-bridge/README.md and WI-35557 for the full story.
+  it('query\'s override plainly warns it is broken and points at a working alternative', () => {
     const o = TOOL_OVERRIDES.query;
     const combined = `${o.description} ${o.guidance.when} ${o.guidance.notWhen ?? ''}`.toLowerCase();
-    expect(combined).toContain('instead of');
     expect(combined).toContain('grep');
-    // The exact prior wording that read as permission to keep grepping alongside it must be gone.
-    expect(combined).not.toContain('complements grep');
-  });
-
-  it('query\'s description uses agent-first-person search vocabulary, not only graph jargon', () => {
-    const text = TOOL_OVERRIDES.query.description.toLowerCase();
-    // At least one of the plain-language phrasings an agent actually thinks in.
-    const agentPhrases = ['where is', 'who calls', 'find where', 'call chains'];
-    expect(agentPhrases.some((p) => text.includes(p))).toBe(true);
+    expect(combined).toContain('wi-35557');
+    // Must not silently claim to work — that's the exact defect this warning replaced.
+    expect(combined).toMatch(/broken|non-functional|do not/);
   });
 
   it('impact\'s override targets the "what would break" pre-refactor use case', () => {
