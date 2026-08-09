@@ -127,6 +127,12 @@ export {
   // it without reaching into the invoke.ts module path directly.
   CORE_MCP_TOOL_NAMES,
   CORE_ALLOWED_TOOLS,
+  // Repairs the fleet sandbox's 0-byte package.json mask artifact. Exported so the
+  // OPERATOR spawn path (operator-core's spawnInvokeOnceWithFallback) can heal too:
+  // invoke.ts heals its own spawns, but a cup placed through operator-spawn.ts never
+  // reached that call, so the first sandboxed agent in a fresh app dir bricked every
+  // later one with ERR_INVALID_PACKAGE_CONFIG (measured 2026-08-09, P-010 canary).
+  healSandboxZeroByteManifest,
 } from './invoke';
 export type { InvokeContext, OrchestratorPg } from './invoke';
 export { parseDecision, parseDecisionFor, DECISION_VERBS } from './decision-parse';
