@@ -1,6 +1,6 @@
 /**
- * goal-projects.integration.test.ts — the goal ↔ project edge and, above all,
- * the recurrence guard for D-021: GOAL METERS DO NOT SUM.
+ * goal-pots.integration.test.ts — the goal ↔ pot edge and, above all, the
+ * recurrence guard for D-021: GOAL METERS DO NOT SUM.
  *
  * Why this is an INTEGRATION test rather than a unit test with a fake `sql`:
  * every property worth protecting here is a property of the SQL itself — a
@@ -9,10 +9,10 @@
  * *sent* certain strings, which is precisely the assertion that stays green
  * while the semantics break. The schema comes from the real migration runner,
  * so there is no hand-rolled `CREATE TABLE` to drift out of sync with
- * migration 765.
+ * migrations 765 (the original table) and 782 (its rename to `goal_pots`).
  *
  * Real Postgres (testcontainer; Docker required). Run:
- *   cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/goal-projects.integration.test.ts
+ *   cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/goal-pots.integration.test.ts
  */
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -21,13 +21,13 @@ import postgres, { type Sql } from 'postgres';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
 import {
   goalSpend,
-  goalsForProject,
-  linkProject,
+  goalsForPot,
+  linkPot,
   portfolioSpend,
-  projectsForGoal,
+  potsForGoal,
   setMainOwner,
-  unlinkProject,
-} from './goal-projects';
+  unlinkPot,
+} from './goal-pots';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SQL_DIR = join(here, '..', 'sql');
@@ -53,7 +53,7 @@ async function provision(url: string): Promise<void> {
     };
     const { appliedCount, totalKnown } = await applyPendingMigrations({ client, sqlDir: SQL_DIR });
     if (appliedCount !== totalKnown) {
-      throw new Error(`goal-projects provision: applied ${appliedCount}/${totalKnown} (expected zero skips)`);
+      throw new Error(`goal-pots provision: applied ${appliedCount}/${totalKnown} (expected zero skips)`);
     }
   } finally {
     await client.end({ timeout: 5 });
@@ -81,7 +81,7 @@ async function spend(harnessSlug: string, cost: number, ts = Date.now()): Promis
 }
 
 beforeAll(async () => {
-  db = await createFreshTestDb({ prefix: 'goalprojects', provision });
+  db = await createFreshTestDb({ prefix: 'goalpots', provision });
   sql = postgres(db.url, { max: 1, onnotice: () => {} });
   await sql.unsafe(`SELECT set_config('app.workspace_id', '${WS}', false)`);
   await sql.unsafe(`SELECT set_config('papercusp.workspace_id', '${WS}', false)`);
@@ -93,14 +93,14 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await sql`DELETE FROM harness_shared.goal_projects`;
+  await sql`DELETE FROM harness_shared.goal_pots`;
   await sql`DELETE FROM harness_shared.agent_usage_samples`;
   await sql`DELETE FROM harness_shared.goals`;
 });
 
 describe('D-021 — goal meters DO NOT SUM', () => {
   /**
-   * THE guard. Two goals share one project; the project cost $10.
+   * THE guard. Two goals share one pot; the pot cost $10.
    *
    * Each goal correctly reports the full $10 — from that goal's point of view
    * the shared work IS what pursuing it costs. The portfolio total is
@@ -109,11 +109,11 @@ describe('D-021 — goal meters DO NOT SUM', () => {
    * because both inputs are individually correct and the wrong answer is a
    * plausible number.
    */
-  it('counts a SHARED project in full per goal, but exactly once across the portfolio', async () => {
+  it('counts a SHARED pot in full per goal, but exactly once across the portfolio', async () => {
     await makeGoal('goal-a');
     await makeGoal('goal-b');
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'payments-lib' });
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-b', harnessSlug: 'payments-lib' });
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'payments-lib' });
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-b', harnessSlug: 'payments-lib' });
     await spend('payments-lib', 10);
 
     const a = await goalSpend(sql, { workspaceId: WS, goalId: 'goal-a' });
@@ -123,7 +123,7 @@ describe('D-021 — goal meters DO NOT SUM', () => {
 
     const portfolio = await portfolioSpend(sql, { workspaceId: WS, goalIds: ['goal-a', 'goal-b'] });
     expect(portfolio.costUsd).toBeCloseTo(10, 6); // NOT 20
-    expect(portfolio.projects).toBe(1);
+    expect(portfolio.pots).toBe(1);
     // Stated as the inequality the invariant actually is, so a reader of a
     // failure sees the claim rather than two bare numbers.
     expect(portfolio.costUsd).not.toBeCloseTo(a.costUsd + b.costUsd, 6);
@@ -132,55 +132,55 @@ describe('D-021 — goal meters DO NOT SUM', () => {
   it('still adds up when the goals share nothing — the DISTINCT must not under-count', async () => {
     await makeGoal('goal-a');
     await makeGoal('goal-b');
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'proj-a' });
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-b', harnessSlug: 'proj-b' });
-    await spend('proj-a', 3);
-    await spend('proj-b', 4);
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'pot-a' });
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-b', harnessSlug: 'pot-b' });
+    await spend('pot-a', 3);
+    await spend('pot-b', 4);
 
     const portfolio = await portfolioSpend(sql, { workspaceId: WS, goalIds: ['goal-a', 'goal-b'] });
     expect(portfolio.costUsd).toBeCloseTo(7, 6);
-    expect(portfolio.projects).toBe(2);
+    expect(portfolio.pots).toBe(2);
   });
 
-  it('excludes an unlinked project from the goal it left', async () => {
+  it('excludes an unlinked pot from the goal it left', async () => {
     await makeGoal('goal-a');
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'proj-a' });
-    await spend('proj-a', 5);
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'pot-a' });
+    await spend('pot-a', 5);
     expect((await goalSpend(sql, { workspaceId: WS, goalId: 'goal-a' })).costUsd).toBeCloseTo(5, 6);
 
-    await unlinkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'proj-a' });
+    await unlinkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'pot-a' });
     expect((await goalSpend(sql, { workspaceId: WS, goalId: 'goal-a' })).costUsd).toBeCloseTo(0, 6);
   });
 
   it('totals every goal in the workspace when no ids are named', async () => {
     await makeGoal('goal-a');
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'proj-a' });
-    await spend('proj-a', 2);
-    await spend('unlinked-project', 99); // never attached to a goal
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'pot-a' });
+    await spend('pot-a', 2);
+    await spend('unlinked-pot', 99); // never attached to a goal
     const portfolio = await portfolioSpend(sql, { workspaceId: WS });
     expect(portfolio.costUsd).toBeCloseTo(2, 6);
   });
 });
 
-describe('one main owner per project — enforced by the schema, not by convention', () => {
+describe('one main owner per pot — enforced by the schema, not by convention', () => {
   it('demotes the incumbent owner instead of violating the partial unique index', async () => {
     await makeGoal('goal-a');
     await makeGoal('goal-b');
     await setMainOwner(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'shared' });
     await setMainOwner(sql, { workspaceId: WS, goalId: 'goal-b', harnessSlug: 'shared' });
 
-    const links = await goalsForProject(sql, { workspaceId: WS, harnessSlug: 'shared' });
+    const links = await goalsForPot(sql, { workspaceId: WS, harnessSlug: 'shared' });
     expect(links.filter((l) => l.role === 'owner').map((l) => l.goalId)).toEqual(['goal-b']);
     // The demoted goal keeps a real, secondary claim — losing it would drop
-    // the project off goal-a's page entirely.
+    // the pot off goal-a's page entirely.
     expect(links.find((l) => l.goalId === 'goal-a')?.role).toBe('contributing');
     expect(links).toHaveLength(2);
   });
 
   it('re-linking an existing pair updates it rather than erroring', async () => {
     await makeGoal('goal-a');
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'p', note: 'first' });
-    const again = await linkProject(sql, {
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'p', note: 'first' });
+    const again = await linkPot(sql, {
       workspaceId: WS,
       goalId: 'goal-a',
       harnessSlug: 'p',
@@ -188,46 +188,46 @@ describe('one main owner per project — enforced by the schema, not by conventi
     });
     expect(again.role).toBe('owner');
     expect(again.note).toBe('first'); // an omitted note must not erase the recorded one
-    expect(await projectsForGoal(sql, { workspaceId: WS, goalId: 'goal-a' })).toHaveLength(1);
+    expect(await potsForGoal(sql, { workspaceId: WS, goalId: 'goal-a' })).toHaveLength(1);
   });
 
   it('lists the main owner first', async () => {
     await makeGoal('goal-a');
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'contrib' });
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'contrib' });
     await setMainOwner(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'main' });
-    const projects = await projectsForGoal(sql, { workspaceId: WS, goalId: 'goal-a' });
-    expect(projects.map((p) => p.harnessSlug)).toEqual(['main', 'contrib']);
+    const pots = await potsForGoal(sql, { workspaceId: WS, goalId: 'goal-a' });
+    expect(pots.map((p) => p.harnessSlug)).toEqual(['main', 'contrib']);
   });
 });
 
 describe('unlink is a tombstone, not a DELETE', () => {
   it('keeps the history row and allows a later re-link', async () => {
     await makeGoal('goal-a');
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'p' });
-    expect(await unlinkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'p' })).toBe(true);
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'p' });
+    expect(await unlinkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'p' })).toBe(true);
 
     const [{ count }] = await sql<Array<{ count: string }>>`
-      SELECT COUNT(*) AS count FROM harness_shared.goal_projects WHERE removed_at IS NOT NULL
+      SELECT COUNT(*) AS count FROM harness_shared.goal_pots WHERE removed_at IS NOT NULL
     `;
     expect(Number(count)).toBe(1);
-    expect(await projectsForGoal(sql, { workspaceId: WS, goalId: 'goal-a' })).toHaveLength(0);
+    expect(await potsForGoal(sql, { workspaceId: WS, goalId: 'goal-a' })).toHaveLength(0);
 
     // The live-pair uniqueness index is partial on removed_at IS NULL, so this
-    // must be legal — a project can leave a goal and come back.
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'p' });
-    expect(await projectsForGoal(sql, { workspaceId: WS, goalId: 'goal-a' })).toHaveLength(1);
+    // must be legal — a pot can leave a goal and come back.
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'p' });
+    expect(await potsForGoal(sql, { workspaceId: WS, goalId: 'goal-a' })).toHaveLength(1);
   });
 
   it('reports false when there was no live link to remove', async () => {
     await makeGoal('goal-a');
-    expect(await unlinkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'nope' })).toBe(false);
+    expect(await unlinkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'nope' })).toBe(false);
   });
 });
 
 describe('workspace scoping', () => {
   it('never counts another workspace\'s spend against this goal', async () => {
     await makeGoal('goal-a');
-    await linkProject(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'p' });
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'p' });
     await spend('p', 4);
     await sql`
       INSERT INTO harness_shared.agent_usage_samples

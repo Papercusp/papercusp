@@ -140,15 +140,15 @@ export {
 } from './goal-lineage';
 
 export {
-  linkProject,
-  unlinkProject,
+  linkPot,
+  unlinkPot,
   setMainOwner,
-  projectsForGoal,
-  goalsForProject,
+  potsForGoal,
+  goalsForPot,
   goalSpend,
   portfolioSpend,
-  type GoalProjectLink,
-  type GoalProjectRole,
+  type GoalPotLink,
+  type GoalPotRole,
   type GoalSpend,
-  type ProjectSpend,
-} from './goal-projects';
+  type PotSpend,
+} from './goal-pots';

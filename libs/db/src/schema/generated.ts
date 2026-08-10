@@ -2161,9 +2161,9 @@ export const harnessProjectFilesInHarnessShared = harnessShared.table("harness_p
 
 ]);
 
-export const goalProjectsInHarnessShared = harnessShared.table("goal_projects", {
+export const goalPotsInHarnessShared = harnessShared.table("goal_pots", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.goal_projects_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.goal_pots_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
 	workspaceId: text("workspace_id").notNull(),
 	goalId: text("goal_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -2175,19 +2175,19 @@ export const goalProjectsInHarnessShared = harnessShared.table("goal_projects", 
 	note: text(),
 	killCriterion: text("kill_criterion"),
 }, (table) => [
-	index("goal_projects_by_goal_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops")).where(sql`(removed_at IS NULL)`),
-	index("goal_projects_by_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`(removed_at IS NULL)`),
-	uniqueIndex("goal_projects_live_pair_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`(removed_at IS NULL)`),
-	uniqueIndex("goal_projects_one_owner_per_project").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((role = 'owner'::text) AND (removed_at IS NULL))`),
+	index("goal_pots_by_goal_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops")).where(sql`(removed_at IS NULL)`),
+	index("goal_pots_by_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`(removed_at IS NULL)`),
+	uniqueIndex("goal_pots_live_pair_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`(removed_at IS NULL)`),
+	uniqueIndex("goal_pots_one_owner_per_pot").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((role = 'owner'::text) AND (removed_at IS NULL))`),
 	foreignKey({
 			columns: [table.goalId],
 			foreignColumns: [goalsInHarnessShared.id],
-			name: "goal_projects_goal_id_fkey"
+			name: "goal_pots_goal_id_fkey"
 		}).onDelete("cascade"),
-	pgPolicy("goal_projects_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("goal_projects_role_check", sql`role = ANY (ARRAY['owner'::text, 'contributing'::text])`),
-	check("goal_projects_workspace_nonempty", sql`workspace_id <> ''::text`),
-	check("goal_projects_harness_nonempty", sql`harness_slug <> ''::text`),
+	pgPolicy("goal_pots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("goal_pots_role_check", sql`role = ANY (ARRAY['owner'::text, 'contributing'::text])`),
+	check("goal_pots_harness_nonempty", sql`harness_slug <> ''::text`),
+	check("goal_pots_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
 export const potThroughputTicksInHarnessShared = harnessShared.table("pot_throughput_ticks", {
@@ -9232,6 +9232,20 @@ export const fleetAssignmentInHarnessShared = harnessShared.view("fleet_assignme
 	fleetSlug: text("fleet_slug"),
 	fleetRole: text("fleet_role"),
 }).as(sql`WITH presence AS ( SELECT coord_presence.owner_id, coord_presence.owner_label, coord_presence.workspace_id, coord_presence.source, coord_presence.intent, coord_presence.current_plan_slug, coord_presence.heartbeat_at, (now() - coord_presence.heartbeat_at) < '00:10:00'::interval AS alive FROM harness_shared.coord_presence ), holder AS ( SELECT presence.owner_id AS alias, presence.owner_label, presence.workspace_id, presence.intent, presence.current_plan_slug, presence.heartbeat_at, presence.alive FROM presence UNION ALL SELECT DISTINCT ON (a.alias) a.alias, 'bee · '::text || "left"(n.spawn_id, 10) AS owner_label, n.workspace_id, NULL::text AS intent, NULL::text AS current_plan_slug, n.heartbeat_at, n.heartbeat_at IS NOT NULL AND (now() - n.heartbeat_at) < '00:10:00'::interval AS alive FROM harness_shared.spawned_agents n CROSS JOIN LATERAL ( VALUES (n.spawn_id), (n.session_owner), (n.run_id)) a(alias) WHERE n.status = 'running'::text AND a.alias IS NOT NULL AND a.alias <> ''::text AND NOT (EXISTS ( SELECT 1 FROM presence p WHERE p.owner_id = a.alias)) ), membership AS ( SELECT DISTINCT ON (fleet_membership_events.workspace_id, fleet_membership_events.owner_id) fleet_membership_events.workspace_id, fleet_membership_events.owner_id, fleet_membership_events.fleet_slug, fleet_membership_events.fleet_role FROM harness_shared.fleet_membership_events ORDER BY fleet_membership_events.workspace_id, fleet_membership_events.owner_id, fleet_membership_events.id DESC ) SELECT 'plan_item_claim'::text AS source, c.workspace_id, c.owner AS agent_id, COALESCE(NULLIF(c.owner_label, ''::text), p.owner_label) AS agent_label, c.owner_name AS agent_name, c.harness_slug, c.plan_slug, c.item_id, NULL::text AS work_item_id, NULL::text AS item_kind, c.intent AS detail, NULL::text AS status, c.acquired_ts AS claim_acquired_ts, c.expires_ts AS claim_expires_ts, c.expires_ts > now() AS claim_active, c.liveness_mode, c.last_activity_ts, p.alias IS NOT NULL AS holder_present, COALESCE(p.alive, false) AS holder_alive, p.heartbeat_at AS holder_heartbeat_at, p.intent AS holder_intent, p.current_plan_slug AS holder_plan_slug, c.expires_ts > now() AND NOT COALESCE(p.alive, false) AND c.owner <> 'improvement-runner'::text AS orphaned, NOT p.current_plan_slug IS DISTINCT FROM c.plan_slug AS declared_plan_matches, NULL::integer AS assignee_rank, NULL::text AS rank_writer, NULL::timestamp with time zone AS last_progress_at, NULL::boolean AS stalled, m.fleet_slug, m.fleet_role FROM harness_shared.plan_item_claims c LEFT JOIN holder p ON p.alias = c.owner LEFT JOIN membership m ON m.workspace_id = COALESCE(p.workspace_id, c.workspace_id) AND m.owner_id = c.owner UNION ALL SELECT 'plan_item_assignment'::text AS source, a.workspace_id, a.assignee_name AS agent_id, NULL::text AS agent_label, a.assignee_name AS agent_name, a.harness_slug, a.plan_slug, a.item_id, NULL::text AS work_item_id, NULL::text AS item_kind, COALESCE(a.note, ''::text) AS detail, NULL::text AS status, a.assigned_ts AS claim_acquired_ts, NULL::timestamp with time zone AS claim_expires_ts, true AS claim_active, NULL::text AS liveness_mode, a.updated_at AS last_activity_ts, false AS holder_present, false AS holder_alive, NULL::timestamp with time zone AS holder_heartbeat_at, NULL::text AS holder_intent, NULL::text AS holder_plan_slug, false AS orphaned, NULL::boolean AS declared_plan_matches, NULL::integer AS assignee_rank, NULL::text AS rank_writer, NULL::timestamp with time zone AS last_progress_at, NULL::boolean AS stalled, m.fleet_slug, m.fleet_role FROM harness_shared.plan_item_assignments a LEFT JOIN holder p ON p.alias = a.assignee_name LEFT JOIN membership m ON m.workspace_id = COALESCE(p.workspace_id, a.workspace_id) AND m.owner_id = a.assignee_name WHERE a.assignee_name IS NOT NULL AND a.released_ts IS NULL UNION ALL SELECT 'work_item_claim'::text AS source, w.workspace_id, w.taken_by AS agent_id, p.owner_label AS agent_label, NULL::text AS agent_name, w.harness_slug, w.source_plan_slug AS plan_slug, NULL::text AS item_id, w.feature_id AS work_item_id, w.item_kind, COALESCE(w.title, ''::text) AS detail, w.status, w.taken_at AS claim_acquired_ts, NULL::timestamp with time zone AS claim_expires_ts, true AS claim_active, NULL::text AS liveness_mode, w.taken_at AS last_activity_ts, p.alias IS NOT NULL AS holder_present, COALESCE(p.alive, false) AS holder_alive, p.heartbeat_at AS holder_heartbeat_at, p.intent AS holder_intent, p.current_plan_slug AS holder_plan_slug, NOT COALESCE(p.alive, false) AND w.taken_by <> 'improvement-runner'::text AS orphaned, CASE WHEN w.source_plan_slug IS NULL THEN NULL::boolean ELSE NOT p.current_plan_slug IS DISTINCT FROM w.source_plan_slug END AS declared_plan_matches, w.assignee_rank, w.rank_writer, w.last_progress_at, COALESCE(p.alive, false) AND w.taken_by <> 'improvement-runner'::text AND (now() - COALESCE(w.last_progress_at, w.taken_at)) > '00:10:00'::interval AS stalled, m.fleet_slug, m.fleet_role FROM harness_shared.work_items w LEFT JOIN holder p ON p.alias = w.taken_by LEFT JOIN membership m ON m.workspace_id = COALESCE(p.workspace_id, w.workspace_id) AND m.owner_id = w.taken_by WHERE w.taken_by IS NOT NULL AND w.taken_by <> ''::text AND (COALESCE(w.status, ''::text) <> ALL (ARRAY['done'::text, 'passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'dropped'::text, 'needs-human'::text, 'blocked'::text])) UNION ALL SELECT 'presence'::text AS source, p.workspace_id, p.owner_id AS agent_id, p.owner_label AS agent_label, NULL::text AS agent_name, NULL::text AS harness_slug, p.current_plan_slug AS plan_slug, NULL::text AS item_id, NULL::text AS work_item_id, NULL::text AS item_kind, p.intent AS detail, NULL::text AS status, NULL::timestamp with time zone AS claim_acquired_ts, NULL::timestamp with time zone AS claim_expires_ts, NULL::boolean AS claim_active, NULL::text AS liveness_mode, p.heartbeat_at AS last_activity_ts, true AS holder_present, p.alive AS holder_alive, p.heartbeat_at AS holder_heartbeat_at, p.intent AS holder_intent, p.current_plan_slug AS holder_plan_slug, false AS orphaned, NULL::boolean AS declared_plan_matches, NULL::integer AS assignee_rank, NULL::text AS rank_writer, NULL::timestamp with time zone AS last_progress_at, NULL::boolean AS stalled, m.fleet_slug, m.fleet_role FROM presence p LEFT JOIN membership m ON m.workspace_id = p.workspace_id AND m.owner_id = p.owner_id`);
+
+export const goalProjectsInHarnessShared = harnessShared.view("goal_projects", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }),
+	workspaceId: text("workspace_id"),
+	goalId: text("goal_id"),
+	harnessSlug: text("harness_slug"),
+	role: text(),
+	addedAt: timestamp("added_at", { withTimezone: true, mode: 'string' }),
+	addedBy: text("added_by"),
+	removedAt: timestamp("removed_at", { withTimezone: true, mode: 'string' }),
+	removedBy: text("removed_by"),
+	note: text(),
+	killCriterion: text("kill_criterion"),
+}).with({"securityInvoker":true}).as(sql`SELECT id, workspace_id, goal_id, harness_slug, role, added_at, added_by, removed_at, removed_by, note, kill_criterion FROM harness_shared.goal_pots`);
 
 export const operatorDecisionsInHarnessShared = harnessShared.view("operator_decisions", {	id: text(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
