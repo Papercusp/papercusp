@@ -3982,6 +3982,25 @@ export const editAttributionLedgerInHarnessShared = harnessShared.table("edit_at
 	index("edit_attribution_ledger_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(work_item_id IS NOT NULL)`),
 ]);
 
+export const docRevisionsInHarnessShared = harnessShared.table("doc_revisions", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	harnessSlug: text("harness_slug").default('papercup').notNull(),
+	docId: text("doc_id").notNull(),
+	seq: integer().notNull(),
+	contentHash: text("content_hash").notNull(),
+	contentSnapshot: text("content_snapshot").notNull(),
+	rationale: text(),
+	authorKind: text("author_kind").notNull(),
+	authorId: text("author_id").notNull(),
+	sessionId: text("session_id"),
+	sessionKind: text("session_kind"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+}, (table) => [
+	unique("doc_revisions_ws_harness_doc_seq_key").on(table.docId, table.harnessSlug, table.seq, table.workspaceId),
+]);
+
 
 export const federationProbesInHarnessShared = harnessShared.table("federation_probes", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -7885,6 +7904,39 @@ export const datatypeRegistryInHarnessShared = harnessShared.table("datatype_reg
 	pgPolicy("datatype_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"] }),
 ]);
 
+export const harnessDocPartsInHarnessShared = harnessShared.table("harness_doc_parts", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	docId: text("doc_id").notNull(),
+	partKey: text("part_key").notNull(),
+	kind: text().notNull(),
+	body: text().default('').notNull(),
+	ordinal: integer().default(0).notNull(),
+	tombstone: boolean().default(false).notNull(),
+	origin: text().default('local').notNull(),
+	author: text(),
+	partFedKey: text("part_fed_key"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+	fedHlc: text("fed_hlc"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+	clientScope: text("client_scope").array().default([""]).notNull(),
+	projectRank: integer("project_rank").default(1000).notNull(),
+	targetSection: text("target_section"),
+	rationalePartKey: text("rationale_part_key"),
+}, (table) => [
+	index("harness_doc_parts_by_doc").using("btree", table.workspaceId.asc().nullsLast().op("int4_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.docId.asc().nullsLast().op("int4_ops"), table.ordinal.asc().nullsLast().op("int4_ops")),
+	index("harness_doc_parts_projection_idx").using("gin", table.clientScope.asc().nullsLast().op("array_ops")).where(sql`((tombstone = false) AND (cardinality(client_scope) > 0))`),
+	primaryKey({ columns: [table.docId, table.harnessSlug, table.partKey, table.workspaceId], name: "harness_doc_parts_pkey"}),
+	check("harness_doc_parts_kind_check", sql`kind = ANY (ARRAY['invariant'::text, 'pointer'::text, 'recipe'::text, 'prose'::text])`),
+	check("harness_doc_parts_projected_needs_section", sql`(cardinality(client_scope) = 0) OR (target_section IS NOT NULL)`),
+	check("harness_doc_parts_rationale_only_on_recipe", sql`(rationale_part_key IS NULL) OR (kind = 'recipe'::text)`),
+	check("harness_doc_parts_prose_never_projects", sql`(kind <> 'prose'::text) OR (cardinality(client_scope) = 0)`),
+]);
+
 export const coordConversationsInHarnessShared = harnessShared.table("coord_conversations", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	id: text().notNull(),
@@ -8170,40 +8222,6 @@ export const transferLessonsInHarnessShared = harnessShared.table("transfer_less
 	check("transfer_lessons_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
 ]);
 
-export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	docId: text("doc_id").notNull(),
-	source: text().default('manual').notNull(),
-	subjectRef: jsonb("subject_ref").default([]).notNull(),
-	anchorPaths: text("anchor_paths").array().default([""]).notNull(),
-	generatedFromSha: text("generated_from_sha"),
-	lastVerifiedSha: text("last_verified_sha"),
-	lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true, mode: 'string' }),
-	overlay: text(),
-	status: text().default('untracked').notNull(),
-	statusDetail: text("status_detail"),
-	statusCheckedAt: timestamp("status_checked_at", { withTimezone: true, mode: 'string' }),
-	regenEnqueuedAt: timestamp("regen_enqueued_at", { withTimezone: true, mode: 'string' }),
-	reverifyFlaggedAt: timestamp("reverify_flagged_at", { withTimezone: true, mode: 'string' }),
-	title: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	authorPubkey: text("author_pubkey"),
-	origin: text().default('local').notNull(),
-	regenAttempts: integer("regen_attempts").default(0).notNull(),
-	reverifyAttempts: integer("reverify_attempts").default(0).notNull(),
-}, (table) => [
-	index("harness_docs_anchor_paths_idx").using("gin", table.anchorPaths.asc().nullsLast().op("array_ops")),
-	index("harness_docs_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.docId, table.harnessSlug, table.workspaceId], name: "harness_docs_pkey"}),
-	pgPolicy("harness_docs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("harness_docs_source_check", sql`source = ANY (ARRAY['generated'::text, 'manual'::text, 'augmented'::text])`),
-	check("harness_docs_status_check", sql`status = ANY (ARRAY['fresh'::text, 'stale'::text, 'review'::text, 'untracked'::text, 'unknown'::text])`),
-	check("harness_docs_workspace_nonempty", sql`workspace_id <> ''::text`),
-	check("harness_docs_doc_id_nonempty", sql`doc_id <> ''::text`),
-]);
-
 export const potMembersInHarnessShared = harnessShared.table("pot_members", {
 	workspaceId: text("workspace_id").notNull(),
 	potHomeSlug: text("pot_home_slug").notNull(),
@@ -8350,6 +8368,53 @@ export const workItemReplicasInHarnessShared = harnessShared.table("work_item_re
 	check("work_item_replicas_owner_nonempty", sql`owner <> ''::text`),
 	check("work_item_replicas_index_nonneg", sql`replica_index >= 0`),
 	check("work_item_replicas_redundancy_positive", sql`redundancy >= 1`),
+]);
+
+export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	docId: text("doc_id").notNull(),
+	source: text().default('manual').notNull(),
+	subjectRef: jsonb("subject_ref").default([]).notNull(),
+	anchorPaths: text("anchor_paths").array().default([""]).notNull(),
+	generatedFromSha: text("generated_from_sha"),
+	lastVerifiedSha: text("last_verified_sha"),
+	lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true, mode: 'string' }),
+	overlay: text(),
+	status: text().default('untracked').notNull(),
+	statusDetail: text("status_detail"),
+	statusCheckedAt: timestamp("status_checked_at", { withTimezone: true, mode: 'string' }),
+	regenEnqueuedAt: timestamp("regen_enqueued_at", { withTimezone: true, mode: 'string' }),
+	reverifyFlaggedAt: timestamp("reverify_flagged_at", { withTimezone: true, mode: 'string' }),
+	title: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	authorPubkey: text("author_pubkey"),
+	origin: text().default('local').notNull(),
+	regenAttempts: integer("regen_attempts").default(0).notNull(),
+	reverifyAttempts: integer("reverify_attempts").default(0).notNull(),
+	content: text().default('').notNull(),
+	contentHash: text("content_hash").default('').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	version: bigint({ mode: "number" }).default(0).notNull(),
+	frontmatter: jsonb(),
+	contentMode: text("content_mode").default('authored').notNull(),
+	search: tsvectorCustom("_search"),
+	embedding: vector({ dimensions: 768 }),
+	embeddingMode: text("embedding_mode"),
+}, (table) => [
+	index("harness_docs_anchor_paths_idx").using("gin", table.anchorPaths.asc().nullsLast().op("array_ops")),
+	index("harness_docs_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
+	index("harness_docs_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
+	index("harness_docs_search_idx").using("gin", table.search.asc().nullsLast().op("tsvector_ops")),
+	index("harness_docs_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.docId, table.harnessSlug, table.workspaceId], name: "harness_docs_pkey"}),
+	pgPolicy("harness_docs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("harness_docs_source_check", sql`source = ANY (ARRAY['generated'::text, 'manual'::text, 'augmented'::text])`),
+	check("harness_docs_status_check", sql`status = ANY (ARRAY['fresh'::text, 'stale'::text, 'review'::text, 'untracked'::text, 'unknown'::text])`),
+	check("harness_docs_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("harness_docs_doc_id_nonempty", sql`doc_id <> ''::text`),
+	check("harness_docs_content_mode_check", sql`content_mode = ANY (ARRAY['authored'::text, 'composed'::text])`),
 ]);
 
 export const harnessPlansInHarnessShared = harnessShared.table("harness_plans", {
