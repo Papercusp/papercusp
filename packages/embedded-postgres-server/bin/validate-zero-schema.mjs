@@ -127,7 +127,10 @@ async function main() {
   console.error(`✗ Zero schema validation failed:`);
   for (const l of lines) console.error(l);
   console.error(`  Total: ${total}  Drift: ${drift}  Missing: ${missing}`);
-  process.exit(1);
+  // NOT process.exit(): the drift loop above grows with the number of violations and
+  // exit() does not drain an async pipe write — the WORST case here, since a truncated
+  // failure list reads as fewer violations. See scripts/check-undrained-stdout-exit.mjs.
+  process.exitCode = 1;
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

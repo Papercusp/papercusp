@@ -1095,7 +1095,10 @@ export async function cmdPluginInvoke(args: string[]): Promise<void> {
     console.error('--- audit rows ---');
     console.error(JSON.stringify(audit.rowsForInspection(), null, 2));
   }
-  if ((result as { ok?: boolean }).ok === false) process.exit(5);
+  // NOT process.exit(): stdout is async on a pipe and exit() does not drain it, so
+  // `plugin invoke … | jq` would silently truncate the result printed above.
+  // See scripts/check-undrained-stdout-exit.mjs.
+  if ((result as { ok?: boolean }).ok === false) process.exitCode = 5;
 }
 
 // ─── plugin verify — flag configHash drift in enabled-plugins.json ─────────
