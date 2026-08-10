@@ -3623,17 +3623,6 @@ export const operatorMigratePolicyInHarnessShared = harnessShared.table("operato
 
 ]);
 
-export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table("operator_telemetry_buffer_config", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().default({}).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
-
-]);
-
 export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs", {
 	ownerId: text("owner_id").primaryKey().notNull(),
 	workspaceId: text("workspace_id").default('default').notNull(),
@@ -3654,10 +3643,23 @@ export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs"
 	controlTransition: jsonb("control_transition"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	controlDeliveredGeneration: bigint("control_delivered_generation", { mode: "number" }).default(0).notNull(),
+	goalId: text("goal_id"),
 }, (table) => [
+	index("session_briefs_goal_id_idx").using("btree", table.goalId.asc().nullsLast().op("text_ops")).where(sql`(goal_id IS NOT NULL)`),
 	index("session_briefs_native_session_id_idx").using("btree", table.nativeSessionId.asc().nullsLast().op("text_ops")).where(sql`(native_session_id IS NOT NULL)`),
 	index("session_briefs_updated_at_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
 	primaryKey({ columns: [table.ownerId], name: "session_briefs_pkey"}),
+
+]);
+
+export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table("operator_telemetry_buffer_config", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
 
 ]);
 
@@ -3942,6 +3944,27 @@ export const calibrationPredictionsInHarnessShared = harnessShared.table("calibr
 	check("calibration_predictions_outcome_resolved", sql`(outcome IS NULL) OR (resolved_at IS NOT NULL)`),
 ]);
 
+export const editAttributionLedgerInHarnessShared = harnessShared.table("edit_attribution_ledger", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.edit_attribution_ledger_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id"),
+	harnessSlug: text("harness_slug"),
+	repo: text(),
+	file: text().notNull(),
+	agentId: text("agent_id").notNull(),
+	sessionId: text("session_id"),
+	contributor: text(),
+	workItemId: text("work_item_id"),
+	planSlug: text("plan_slug"),
+	intent: text(),
+	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	repoRoot: text("repo_root"),
+	acquiredVia: text("acquired_via"),
+}, (table) => [
+	index("edit_attribution_ledger_repo_file_idx").using("btree", table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
+	index("edit_attribution_ledger_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(work_item_id IS NOT NULL)`),
+]);
+
 export const gitSyncCommitAttributionInHarnessShared = harnessShared.table("git_sync_commit_attribution", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.git_sync_commit_attribution_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -3960,26 +3983,6 @@ export const gitSyncCommitAttributionInHarnessShared = harnessShared.table("git_
 	index("git_sync_commit_attr_repo_file_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.repo.asc().nullsLast().op("timestamptz_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
 	index("git_sync_commit_attr_sha_idx").using("btree", table.commitSha.asc().nullsLast().op("text_ops")),
 	index("git_sync_commit_attr_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")).where(sql`(work_item_id IS NOT NULL)`),
-]);
-
-export const editAttributionLedgerInHarnessShared = harnessShared.table("edit_attribution_ledger", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.edit_attribution_ledger_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	workspaceId: text("workspace_id"),
-	harnessSlug: text("harness_slug"),
-	repo: text(),
-	file: text().notNull(),
-	agentId: text("agent_id").notNull(),
-	sessionId: text("session_id"),
-	contributor: text(),
-	workItemId: text("work_item_id"),
-	planSlug: text("plan_slug"),
-	intent: text(),
-	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
-	repoRoot: text("repo_root"),
-}, (table) => [
-	index("edit_attribution_ledger_repo_file_idx").using("btree", table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
-	index("edit_attribution_ledger_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("timestamptz_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(work_item_id IS NOT NULL)`),
 ]);
 
 export const docRevisionsInHarnessShared = harnessShared.table("doc_revisions", {
