@@ -335,19 +335,16 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
   (AskUserQuestion), then wait; never infer the route:**
   - **A. Yourself** — you implement it directly, now, in this session. "Yourself" means
     THIS session doing the work — **NOT** a client-native subagent/Workflow fan-out
-    dressed up as A. Parallelism is what options C/D/E are for; a fleet is observable
+    dressed up as A. Parallelism is what options B/C/D are for; a fleet is observable
     (presence, claims, `fleet:tree`), coordinated (locks, scheduler), durable across
     restarts, and steerable, and a client-native swarm is invisible to ALL of it. On
     Claude clients `Task`/`Agent`/`Workflow` are DENIED by default anyway (owner mandate
     2026-07-02), so offering one is offering a route you cannot execute.
-  - **B. Hand to the Mug (pot auto-loop)** — enqueue for the mug→cup→blender loop to
-    pick up. ⚠️ State the caveat when offering it: this auto-loop flow is not fully working
-    yet, so B may not actually get picked up.
-  - **C. Send to a specific active fleet** — ONLY when ≥1 named fleet has an active agent.
+  - **B. Send to a specific active fleet** — ONLY when ≥1 named fleet has an active agent.
     You MUST inline-list the available fleets (name + live-agent count) right in the question,
     queried live (`fleet:assignments` / `coord:presence` / the fleet registry) — do NOT say
-    "I'll list them first." If NO fleet is active, OMIT option C entirely.
-  - **D. Spawn a new VISIBLE desktop fleet** — launch a fresh fleet of VISIBLE terminals on the
+    "I'll list them first." If NO fleet is active, OMIT option B entirely.
+  - **C. Spawn a new VISIBLE desktop fleet** — launch a fresh fleet of VISIBLE terminals on the
     owner's REAL desktop. **ALWAYS PREFER `fleet:launch-on-plan { name, plan, count, agent }`**
     — the purpose-built spawn utility: it ensures the fleet (you become leader), opens N member
     windows, AND threads `--fleet=<slug>` + the auto-kickoff so each member **auto-JOINS the
@@ -361,12 +358,12 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
     fixed at that layer too — but you still don't need to hand-roll: `fleet:launch-on-plan`
     covers this.) ⚠️ `capability:terminal` / `fleet:launch-on-plan` are the ONLY tools that open
     real desktop terminals — `cup:spawn` / `fleet:place_batch` spawn HEADLESS nursery cups (no
-    window on the owner's desktop, Mug-supervised — NOT the same as option E's headless su
-    FLEET), so NEVER use them for a "desktop fleet." ⚠️ Only OFFER options D/E when
+    window on the owner's desktop, Mug-supervised — NOT the same as option D's headless su
+    FLEET), so NEVER use them for a "desktop fleet." ⚠️ Only OFFER options C/D when
     `fleet:launch-on-plan` is actually in your toolset (some client surfaces expose only the
-    nursery-cup tools); if not, say so and don't present a fleet you can't launch. When no fleet is active, label option C "(there are no active fleets)" so the
-    owner sees why C was skipped.
-  - **E. Spawn a new HEADLESS fleet** — the SAME fleet as D via the SAME tool, just
+    nursery-cup tools); if not, say so and don't present a fleet you can't launch. When no fleet is active, label option B "(there are no active fleets)" so the
+    owner sees why B was skipped.
+  - **D. Spawn a new HEADLESS fleet** — the SAME fleet as C via the SAME tool, just
     `fleet:launch-on-plan { name, plan, count, agent, headless: true }`: the members are
     background su sessions with **NO desktop window**, identical to D in every other way — you
     become leader, each member auto-JOINS the fleet and auto-STARTS on the plan, registers
@@ -391,7 +388,7 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
   a month after the owner deny-listed it. The tool was absent from that very session.)
 - **Ask the route EVEN IF one option seems obvious.** This is an AUTHORIZATION gate — the
   owner chooses WHO runs the work; you do not get to judge the answer "obvious" and skip the
-  question. You cannot know the owner won't want the mug/fleet path even on a throwaway.
+  question. You cannot know the owner won't want the fleet path even on a throwaway.
   "It's low-stakes / the route is obvious / B–D make no sense" is NOT a license to skip the
   ask, and DISCLOSING the route you took is NOT a substitute for asking. The ONLY non-AUTO
   case that skips this ask is a task so trivial it warrants NO plan at all — the moment a
@@ -400,7 +397,7 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
   plan/approach AND the route (and any WHAT/HOW choice the owner left unspecified) — put them
   in a SINGLE `AskUserQuestion`, not serial round-trips. The gate is a checkpoint, not an
   interrogation.
-- **Offering a fleet route (C/D/E)? TELL the user, in the same ask, which launch knobs they can
+- **Offering a fleet route (B/C/D)? TELL the user, in the same ask, which launch knobs they can
   set** — don't make them discover the flags later. Say, alongside the route options: *"If you
   pick a fleet route you can also tell me (a) which MODEL and EFFORT level the agents should run
   (e.g. `sonnet:high`, `gpt-5.5:high` — effort tunes reasoning depth vs cost), (b) which
@@ -418,7 +415,7 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
   thread) — the safe default; `cold` starts each wake from a FRESH context rebuilt from the
   agent's last checkpoint (cheaper over a long run, survives compaction, but the checkpoint note
   becomes its only memory) — suited to very long unattended drains. Carry is INDEPENDENT of
-  whether the fleet is visible (D) or headless (E)."* If the user doesn't choose, apply the
+  whether the fleet is visible (C) or headless (D)."* If the user doesn't choose, apply the
   defaults (warm carry) and announce them at spawn time (see the spawn-announcement rule below).
 - **Confirm before write-side calls** (file edits, creating work-items, shipping a plan,
   schema writes) unless the specific action is already authorized. **Reversibility lowers the
@@ -426,7 +423,7 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
   route-confirmation.** A trivial, reversible, throwaway task still gets the plan-review and
   route asks; it just doesn't also trip the hard-to-reverse gate.
 - **An explicit owner route/approach choice is STICKY for the whole task.** Once the owner
-  picks WHO runs the work (you / the Mug / a fleet) or HOW to build it, do NOT silently
+  picks WHO runs the work (you / a fleet) or HOW to build it, do NOT silently
   switch to a different route or approach mid-task because the chosen path got interrupted,
   closed, or failed — RE-ESTABLISH it (relaunch the agent, reopen the window, retry the
   approach), or surface the deviation and confirm first. Quietly switching to something the
@@ -549,8 +546,8 @@ These asks are exactly what AUTO mode suspends — and the boundary is BINARY, n
 continuum: **AUTO OFF ⇒ ASK the route, always (per above); AUTO ON ⇒ SELF-SELECT it.** While
 AUTO is ON, do NOT stop to ask the route — CHOOSE it yourself by judgment and DISCLOSE the
 choice in your report: implement it
-yourself (A) for most work, or route to the mug (B), an active fleet (C), or a newly
-spawned desktop fleet (D) when the job is big enough to warrant fan-out. AUTO authorizes
+yourself (A) for most work, or an active fleet (B), or a newly
+spawned desktop fleet (C/D) when the job is big enough to warrant fan-out. AUTO authorizes
 committing fleet resources on your own judgment — including spawning a desktop fleet —
 so name the route you took, and why, when you report back.
 
