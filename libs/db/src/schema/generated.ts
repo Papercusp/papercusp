@@ -8402,6 +8402,7 @@ export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
 	search: tsvectorCustom("_search"),
 	embedding: vector({ dimensions: 768 }),
 	embeddingMode: text("embedding_mode"),
+	projectedClients: jsonb("projected_clients").default({}).notNull(),
 }, (table) => [
 	index("harness_docs_anchor_paths_idx").using("gin", table.anchorPaths.asc().nullsLast().op("array_ops")),
 	index("harness_docs_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
