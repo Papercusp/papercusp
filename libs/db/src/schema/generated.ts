@@ -4608,6 +4608,7 @@ export const goalsInHarnessShared = harnessShared.table("goals", {
 	search: tsvectorCustom("_search").generatedAlwaysAs(sql`(setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(body, ''::text)), 'B'::"char"))`),
 	killCriterion: text("kill_criterion"),
 	tripwires: jsonb(),
+	launchSettings: jsonb("launch_settings"),
 }, (table) => [
 	index("goals_install_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops")),
 	index("goals_parent_idx").using("btree", table.parentId.asc().nullsLast().op("text_ops")),
