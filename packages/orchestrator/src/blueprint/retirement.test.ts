@@ -77,10 +77,48 @@ test('assertBlueprintLaunchEligible throws BlueprintRetiredError for a retired r
   }
 });
 
-test('a non-retired blueprint (coding) is launch-eligible — no throw, blueprintRetirement returns null', () => {
-  const { blueprint } = loadBuiltinBlueprint('coding');
+// FIXTURE CONTRACT: this is the NEGATIVE control — it must name a builtin that is
+// genuinely live, so it proves `blueprintRetirement` can still answer null rather
+// than just always-throwing. It must also be CONCRETE: an abstract base such as
+// `single-agent` declares no `workItem` and fails schema parse when loaded on its
+// own, so it cannot serve here. `doc-steward` (extends `single-agent` → `base`,
+// none of which declare `retired`) is both live and concrete.
+//
+// It used to be `coding` — which was retired on 2026-08-09 by
+// retire-mug-kettle-su-only-2026-08-09 P-062 (`coding` is the pot/hive blueprint
+// whose spine decider is the `mug` role, NOT the user-project coding pipeline).
+// That turned this control RED, which is the guard working: if you are here
+// because this test failed again, the fix is to re-point it at a still-live
+// builtin, never to delete the assertion — without a null case, a
+// `blueprintRetirement` that returned non-null for EVERYTHING would pass the
+// whole file.
+test('a non-retired blueprint (doc-steward) is launch-eligible — no throw, blueprintRetirement returns null', () => {
+  const { blueprint } = loadBuiltinBlueprint('doc-steward');
   assert.equal(blueprintRetirement(blueprint), null);
   assert.doesNotThrow(() => assertBlueprintLaunchEligible(blueprint));
+});
+
+// The retirement applied by P-062, pinned so a silent revert is caught: `coding`
+// is the pot/hive blueprint (kind:'pot', spine.decider:'mug') and `work` extends
+// it, so `work` must inherit the retirement WITHOUT declaring its own block.
+test('P-062: the pot blueprint `coding` is retired, and `work` inherits it through extends', () => {
+  for (const id of ['coding', 'work'] as const) {
+    const { blueprint, validation } = loadBuiltinBlueprint(id);
+    assert.equal(validation.ok, true, `${id}: ${JSON.stringify(validation.errors)}`);
+    const info = blueprintRetirement(blueprint);
+    assert.ok(info, `${id} must resolve as retired`);
+    assert.equal(info!.at, '2026-08-09');
+    assert.throws(() => assertBlueprintLaunchEligible(blueprint), BlueprintRetiredError);
+  }
+});
+
+// The `cup` launch blueprint exists only to launch the retired `cup` role.
+test('P-062: the `cup` launch blueprint is retired', () => {
+  const { blueprint, validation } = loadBuiltinBlueprint('cup');
+  assert.equal(validation.ok, true, JSON.stringify(validation.errors));
+  const info = blueprintRetirement(blueprint);
+  assert.ok(info, 'cup must resolve as retired');
+  assert.throws(() => assertBlueprintLaunchEligible(blueprint), BlueprintRetiredError);
 });
 
 test('a child can explicitly un-retire via `retired: null` (mergeRaw wholesale-replaces a non-plain-object child value)', () => {
