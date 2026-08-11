@@ -523,6 +523,9 @@ export interface AcquireParams {
   paths: string[]; // already normalized
   intent: string;
   ttlSec: number;
+  /** Automatic guards must not refresh or release paths held by a
+   * deliberate same-owner claim. */
+  automatic?: boolean;
 }
 
 export interface AcquireBusy {
@@ -556,7 +559,9 @@ export type AcquireResult =
  *
  * Strategy:
  *   1. Head-waiter check — if any older waiter overlaps our paths, return busy.
- *   2. Upsert all paths; ON CONFLICT only overwrites expired rows.
+ *   2. Upsert all paths (or only new paths for an automatic guard that
+ *      overlaps a deliberate same-owner claim); ON CONFLICT only overwrites
+ *      expired rows.
  *   3. Verify our lock_id won every path. Mismatch → busy.
  *
  * Per audit 4 #1: success path short-circuits the busy SELECT.
@@ -566,6 +571,7 @@ export async function tryAcquire(
   params: AcquireParams,
 ): Promise<AcquireResult> {
   const { coordinationDomain, owner, ownerLabel, paths, intent, ttlSec } = params;
+  const automatic = params.automatic ?? intent.startsWith('PreToolUse:');
 
   if (paths.length === 0) {
     return {
@@ -596,8 +602,8 @@ export async function tryAcquire(
   // Skip paths the calling owner already holds — a same-owner refresh
   // shouldn't be blocked by a waiter queued behind that owner. Subtract
   // the owner's currently-held paths from the set we head-waiter-check.
-  const ownedRows = await tx<Array<{ path: string; lock_id: string }>>`
-    SELECT path, lock_id::text AS lock_id FROM agent_file_locks
+  const ownedRows = await tx<Array<{ path: string; lock_id: string; expires_ts: Date }>>`
+    SELECT path, lock_id::text AS lock_id, expires_ts FROM agent_file_locks
      WHERE coordination_domain = ${coordinationDomain}
        AND owner = ${owner}
        AND path = ANY(${paths}::text[])
@@ -605,6 +611,23 @@ export async function tryAcquire(
   `;
   const ownedSet = new Set(ownedRows.map((r) => r.path));
   const newPaths = paths.filter((p) => !ownedSet.has(p));
+  // A hook/guard that is entirely covered by a deliberate same-owner claim
+  // is already authorized. Do not refresh that claim's TTL/intent: doing so
+  // would make the short automatic lease replace the deliberate one, and a
+  // matching post-hook release could then dissolve the deliberate hold.
+  if (automatic && ownedRows.length > 0 && newPaths.length === 0) {
+    const expiresTs = ownedRows.reduce(
+      (earliest, row) => row.expires_ts < earliest ? row.expires_ts : earliest,
+      ownedRows[0].expires_ts,
+    );
+    return {
+      ok: true,
+      lock_id: ownedRows[0].lock_id,
+      expires_ts: expiresTs,
+      held: paths,
+      newly_held: [],
+    };
+  }
   // If the owner already holds at least one of the requested paths,
   // reuse that lock_id for the new path inserts so the entire returned
   // set shares ONE lock_id. Otherwise mixed lock_ids would mean
@@ -656,27 +679,28 @@ export async function tryAcquire(
     }
   }
 
-  // Step 3: atomic upsert.
-  // Use the reusable lock_id from any same-owner row we're refreshing,
-  // so the returned lock_id matches every row this call creates or
-  // refreshes. Without this, new paths in an extending acquire get a
-  // fresh lock_id while refreshed paths keep their old one — caller
-  // sees one lock_id but DB has two, and release-by-id leaks the
-  // mismatched subset.
-  const lockId = reusableLockId ?? crypto.randomUUID();
+  // Step 3: atomic upsert. Deliberate re-acquires reuse an existing lock_id
+  // so the returned handle covers every row this call creates or refreshes.
+  // Automatic guards that overlap an existing same-owner claim use a fresh
+  // id for new paths only; this keeps deliberate rows untouched and lets the
+  // guard release its own paths without dissolving that claim.
+  const lockId = automatic && ownedRows.length > 0
+    ? crypto.randomUUID()
+    : reusableLockId ?? crypto.randomUUID();
+  const acquirePaths = automatic && ownedRows.length > 0 ? newPaths : paths;
   const ttlText = `${ttlSec} seconds`;
 
   // Step 2b above already excludes the "another live owner holds one
-  // of our paths" case, so by the time we reach the upsert every path
-  // is either free or already-ours. The ON CONFLICT branch refreshes
+  // of our paths" case, so by the time we reach the upsert every path in
+  // acquirePaths is either free or already-ours. The ON CONFLICT branch refreshes
   // OUR rows (or steals expired ones); the INSERT branch covers the
-  // never-existed rows. The upsert ALWAYS takes every requested path
+  // never-existed rows. The upsert takes every path in that selected set
   // — file-locking #6 removes the former `(xmax = 0) AS is_new`
   // partial-rollback machinery that became dead code when Step 2b
   // landed. (xmax is PG-internal and not part of the documented
   // stable API; the new shape avoids depending on it.)
   const upserted = await tx<Array<{ path: string; lock_id: string }>>`
-    WITH wanted AS (SELECT unnest(${paths}::text[]) AS path)
+    WITH wanted AS (SELECT unnest(${acquirePaths}::text[]) AS path)
     INSERT INTO agent_file_locks
       (coordination_domain, path, owner, owner_label, intent, lock_id, acquired_ts, expires_ts)
     SELECT
@@ -704,7 +728,7 @@ export async function tryAcquire(
   // pre-check and the upsert). Surface as busy with no partial state
   // — the upsert never partially commits because we run inside a
   // single transaction.
-  if (upserted.length !== paths.length) {
+  if (upserted.length !== acquirePaths.length) {
     const busy = await readBusySnapshot(tx, coordinationDomain, paths, owner);
     return { ok: false, busy };
   }
