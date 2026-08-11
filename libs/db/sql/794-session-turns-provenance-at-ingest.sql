@@ -77,5 +77,13 @@ COMMENT ON COLUMN harness_shared.session_turns.turn_origin_classifier_version IS
 -- serving the reclassification lane the first time a pattern is added, which is
 -- the exact moment the sweep matters most. A plain btree indexes NULLs too, so
 -- one index serves both halves for the life of the feature.
+-- NOT CONCURRENTLY, deliberately: a plain CREATE INDEX holds a lock that blocks
+-- WRITES for its duration, which on a hot table under a live fleet is a real
+-- hazard worth checking rather than assuming. Measured before writing this:
+-- 366,541 estimated rows, and this is a single narrow integer column, so the
+-- build is ~a second. That matches the house pattern -- all 8 existing indexes
+-- on this table were created non-concurrently in migrations 501/753 -- and
+-- CONCURRENTLY cannot run inside the runner's transaction anyway. Revisit if
+-- this table grows by an order of magnitude.
 CREATE INDEX IF NOT EXISTS session_turns_provenance_version_idx
   ON harness_shared.session_turns (turn_origin_classifier_version);
