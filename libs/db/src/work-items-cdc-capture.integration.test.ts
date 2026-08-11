@@ -138,15 +138,16 @@ describe('work_items CDC capture (migration 375)', () => {
       (workspace_id, issue_id, scope, title, body, severity, source, state, kind)
       VALUES ('ws1', 'EI-20', 'harness:papercup', 'conv', 'b', 'minor', 'engineer', 'open', 'bug')`;
     await sql`TRUNCATE harness_shared.substrate_outbox RESTART IDENTITY`;
-    // a federated-field change (state→status) re-federates
+    // a federated-field change (state→status) re-federates; terminal lifecycle
+    // transitions are intentionally reserved for the gated work-items writer.
     await sql`UPDATE harness_shared.engineer_issues
-                 SET state = 'resolved', terminal_owner = 'integration-test', terminal_completion_ref = 'cdc-state'
+                 SET state = 'wip'
                WHERE workspace_id = 'ws1' AND issue_id = 'EI-20'`;
     expect(await sql`SELECT 1 FROM harness_shared.substrate_outbox WHERE key = 'EI-20'`).toHaveLength(1);
     await sql`TRUNCATE harness_shared.substrate_outbox RESTART IDENTITY`;
     // a bare re-write of the SAME value: only updated_ts changes → must NOT re-federate
     // (375's issue UPDATE WHEN masks updated_ts; left in, every own-log merge re-enqueues forever).
-    await sql`UPDATE harness_shared.engineer_issues SET state = 'resolved' WHERE workspace_id = 'ws1' AND issue_id = 'EI-20'`;
+    await sql`UPDATE harness_shared.engineer_issues SET state = 'wip' WHERE workspace_id = 'ws1' AND issue_id = 'EI-20'`;
     expect(await sql`SELECT 1 FROM harness_shared.substrate_outbox WHERE key = 'EI-20'`).toHaveLength(0);
   });
 

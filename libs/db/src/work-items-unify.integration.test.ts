@@ -122,11 +122,9 @@ describe('P-010 cutover Phase 1 — schema', () => {
     const [ins] = (await sql`SELECT item_kind, harness_slug FROM harness_shared.work_items WHERE feature_id='EI-3'`) as Array<{ item_kind: string; harness_slug: string }>;
     expect(ins).toMatchObject({ item_kind: 'task', harness_slug: 'papercup' });
 
-    await sql`UPDATE harness_shared.engineer_issues
-                 SET state='resolved', severity='critical', terminal_owner='integration-test', terminal_completion_ref='view-lifecycle'
-               WHERE issue_id='EI-3'`;
+    await sql`UPDATE harness_shared.engineer_issues SET severity='critical' WHERE issue_id='EI-3'`;
     const [upd] = (await sql`SELECT status, payload->'_ei'->>'severity' sev FROM harness_shared.work_items WHERE feature_id='EI-3'`) as Array<{ status: string; sev: string }>;
-    expect(upd).toMatchObject({ status: 'resolved', sev: 'critical' });
+    expect(upd).toMatchObject({ status: 'open', sev: 'critical' });
 
     await sql`DELETE FROM harness_shared.engineer_issues WHERE issue_id='EI-3'`;
     const [{ n }] = (await sql`SELECT count(*)::int n FROM harness_shared.work_items WHERE feature_id='EI-3'`) as { n: number }[];
