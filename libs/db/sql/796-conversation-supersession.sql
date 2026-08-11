@@ -13,6 +13,9 @@ ALTER TABLE harness_shared.coord_conversations
   ADD COLUMN IF NOT EXISTS superseded_at timestamptz;
 
 ALTER TABLE harness_shared.coord_conversations
+  -- FORWARD-COMPAT: the replacement CHECK preserves every pre-existing
+  -- open/resolved/closed value; the deployed release never writes superseded,
+  -- so replacing this constraint cannot reject an older release's writes.
   DROP CONSTRAINT IF EXISTS coord_conversations_state_check;
 
 ALTER TABLE harness_shared.coord_conversations
