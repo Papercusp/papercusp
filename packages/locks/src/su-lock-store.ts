@@ -33,11 +33,11 @@ export type SuSqlTxn = Sql;
 export type SuTransactionSql = TransactionSql<Record<string, unknown>>;
 
 /**
- * SU-locks feature key in the per-workspace advisory-lock registry
- * (see `sql/advisory-lock-keys.md`). First arg of the two-arg
- * `pg_advisory_xact_lock(feature_key, hashtext('su:'||ws))`. Lives in
- * this lowest-level locks module so both the per-call txn wrapper
- * (`in-workspace-txn.ts`) and the background janitor share one
+ * SU-locks feature key in the advisory-lock registry (see
+ * `sql/advisory-lock-keys.md`). The workspace gate uses
+ * `hashtext('su:'||domain)` and path-scoped transactions add one lock for
+ * each `hashtext('su:'||domain||':'||path)`. Lives here so both the per-call
+ * txn wrapper (`in-workspace-txn.ts`) and the background janitor share one
  * definition.
  */
 export const SU_LOCKS_FEATURE_KEY = 101;

@@ -2,7 +2,9 @@
  * Per-workspace transaction wrapper.
  *
  * Every state-mutating tool runs through this. Provides:
- *   - Per-workspace serialization via pg_advisory_xact_lock (key 101 in
+ *   - A shared per-workspace gate plus deterministic per-path advisory locks
+ *     for file-lock operations. Unrelated paths can proceed concurrently;
+ *     global operations keep the exclusive workspace lock (key 101 in
  *     `sql/advisory-lock-keys.md`).
  *   - Safe default timeouts (overridden per-op inside the handler).
  *   - application_name tagging for pg_stat_activity visibility.
@@ -18,7 +20,7 @@ import { txnTimeouts } from './config';
 
 /**
  * Thrown when a per-workspace transaction can't proceed in time under
- * same-workspace contention: the `pg_advisory_xact_lock` wait exceeds
+ * same-workspace contention: an advisory-lock wait exceeds
  * `lock_timeout` (PG `55P03`) or a statement exceeds `statement_timeout`
  * (PG `57014`). Callers map this to a structured busy result (`{ok:false}`)
  * instead of leaking a raw postgres error to the agent. The originating PG
@@ -47,10 +49,60 @@ function isTestEnv(): boolean {
   return Boolean(process.env.VITEST) || process.env.NODE_ENV === 'test';
 }
 
+export interface WorkspaceTxnOptions {
+  /**
+   * Canonical file-lock paths touched by this transaction. When present,
+   * acquire the shared workspace gate and one exclusive advisory lock per
+   * path hash, in sorted order. An omitted/empty set keeps the historical
+   * exclusive workspace scope for resource, granular, and housekeeping work.
+   */
+  paths?: readonly string[];
+}
+
+function uniqueSortedPaths(paths: readonly string[] | undefined): string[] {
+  if (!paths || paths.length === 0) return [];
+  return Array.from(new Set(paths)).sort();
+}
+
+async function acquireAdvisoryScope(
+  tx: Sql,
+  coordinationDomain: string,
+  paths: readonly string[] | undefined,
+): Promise<void> {
+  const scopedPaths = uniqueSortedPaths(paths);
+  if (scopedPaths.length === 0) {
+    // Preserve the original key for global operations and rolling
+    // compatibility with processes that still use the workspace lock alone.
+    await tx`SELECT pg_advisory_xact_lock(
+      ${SU_LOCKS_FEATURE_KEY}::int,
+      hashtext(${'su:' + coordinationDomain})
+    )`;
+    return;
+  }
+
+  // The shared gate prevents a path-scoped operation from racing a global
+  // sweep/resource operation. The old workspace key is deliberately reused so
+  // an old process holding the exclusive key still blocks new path work.
+  await tx`SELECT pg_advisory_xact_lock_shared(
+    ${SU_LOCKS_FEATURE_KEY}::int,
+    hashtext(${'su:' + coordinationDomain})
+  )`;
+
+  // Lock every requested path in a stable order. This preserves atomic
+  // multi-path claims without making unrelated paths wait on one another.
+  for (const path of scopedPaths) {
+    await tx`SELECT pg_advisory_xact_lock(
+      ${SU_LOCKS_FEATURE_KEY}::int,
+      hashtext(${'su:' + coordinationDomain + ':' + path})
+    )`;
+  }
+}
+
 export async function inWorkspaceTxn<T>(
   coordinationDomain: string,
   ownerId: string,
   fn: (tx: Sql) => Promise<T>,
+  options: WorkspaceTxnOptions = {},
 ): Promise<T> {
   await ensureBootstrap();
   // Arm the background expiry janitor on the first mutating locks:* op
@@ -74,12 +126,7 @@ export async function inWorkspaceTxn<T>(
     const { lockTimeoutMs, statementTimeoutMs } = txnTimeouts();
     await tx`SELECT set_config('lock_timeout', ${`${Math.trunc(lockTimeoutMs)}ms`}, true)`;
     await tx`SELECT set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`;
-    // Workspace-scoped advisory lock. Two-arg form prevents collisions
-    // with future features that pick a different feature_key.
-    await tx`SELECT pg_advisory_xact_lock(
-      ${SU_LOCKS_FEATURE_KEY}::int,
-      hashtext(${'su:' + coordinationDomain})
-    )`;
+    await acquireAdvisoryScope(tx as unknown as Sql, coordinationDomain, options.paths);
     // TransactionSql has the same tagged-template surface as Sql for our
     // purposes; the cast lets store helpers take a single `Sql` type
     // rather than juggling a union that TS can't resolve as callable.

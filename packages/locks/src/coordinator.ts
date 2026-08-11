@@ -4,9 +4,10 @@
  * interface (file-locking #11).
  *
  * Workspace is fixed at construction (matches the SU-locks model: a
- * coordinator instance speaks for one coordination domain). Each
- * method wraps the underlying store call in inWorkspaceTxn so the
- * advisory lock + grant_cascade bookkeeping stays correct.
+ * coordinator instance speaks for one coordination domain). Each file-claim
+ * method wraps the underlying store call in inWorkspaceTxn with its canonical
+ * paths so unrelated claims do not serialize; global reap remains workspace
+ * scoped.
  *
  * Implementation notes:
  *   - claimId = the SU-locks lock_id (PG UUID). Stable across the
@@ -94,7 +95,7 @@ export class SuLocksCoordinator implements FileClaimCoordinator {
         };
       }
       return { ok: false, busy: r.busy.map(toBusyEntry) };
-    });
+    }, { paths });
   }
 
   async release(claim: FileClaim): Promise<void> {
@@ -103,8 +104,9 @@ export class SuLocksCoordinator implements FileClaimCoordinator {
         coordinationDomain: this.coordinationDomain,
         owner: claim.owner,
         lockId: claim.claimId,
+        paths: [...claim.paths],
       });
-    });
+    }, { paths: claim.paths });
   }
 
   async extend(claim: FileClaim, options: ExtendOptions): Promise<ExtendResult> {
@@ -137,7 +139,7 @@ export class SuLocksCoordinator implements FileClaimCoordinator {
       // failure — same-owner refresh of the original paths did not
       // happen because Step 2b returned busy before the upsert).
       return { ok: false, busy: r.busy.map(toBusyEntry) };
-    });
+    }, { paths: union });
   }
 
   async heartbeat(claim: FileClaim, ttlMs?: number): Promise<HeartbeatResult> {
@@ -166,7 +168,7 @@ export class SuLocksCoordinator implements FileClaimCoordinator {
         };
       }
       return { ok: false, expired: true };
-    });
+    }, { paths: claim.paths });
   }
 
   async reap(owner: string): Promise<number> {
