@@ -68,11 +68,22 @@ export interface PotSpend {
   samples: number;
 }
 
+/** Provenance marker for the only spend snapshot goals:update may persist. */
+export const GOAL_SPEND_SNAPSHOT_SOURCE = 'goal-pots-rollup' as const;
+
 export interface GoalSpend {
   goalId: string;
   /** Sum over this goal's linked pots. NOT additive across goals. */
   costUsd: number;
   byPot: PotSpend[];
+  /** Number of usage samples included in the rollup. */
+  samples: number;
+  /** Samples with a provider/estimated cost value. */
+  pricedSamples: number;
+  /** Samples present in the rollup but lacking a cost value. */
+  unpricedSamples: number;
+  /** True only when the rollup has at least one sample and every sample is priced. */
+  measured: boolean;
 }
 
 interface RawLink {
@@ -246,10 +257,20 @@ export async function goalSpend(
   opts: { workspaceId: string; goalId: string; sinceMs?: number },
 ): Promise<GoalSpend> {
   const since = opts.sinceMs ?? 0;
-  const rows = await sql<Array<{ harness_slug: string; cost: string | null; samples: string }>>`
+  const rows = await sql<
+    Array<{
+      harness_slug: string;
+      cost: string | null;
+      samples: string;
+      priced_samples: string;
+      unpriced_samples: string;
+    }>
+  >`
     SELECT s.harness_slug,
            COALESCE(SUM(s.cost_usd), 0) AS cost,
-           COUNT(*)                     AS samples
+           COUNT(*)                     AS samples,
+           COUNT(*) FILTER (WHERE s.cost_usd IS NOT NULL) AS priced_samples,
+           COUNT(*) FILTER (WHERE s.cost_usd IS NULL) AS unpriced_samples
       FROM harness_shared.agent_usage_samples s
       JOIN harness_shared.goal_pots gp
         ON gp.harness_slug = s.harness_slug
@@ -266,10 +287,17 @@ export async function goalSpend(
     costUsd: Number(r.cost ?? 0),
     samples: Number(r.samples),
   }));
+  const samples = rows.reduce((sum, r) => sum + Number(r.samples), 0);
+  const pricedSamples = rows.reduce((sum, r) => sum + Number(r.priced_samples), 0);
+  const unpricedSamples = rows.reduce((sum, r) => sum + Number(r.unpriced_samples), 0);
   return {
     goalId: opts.goalId,
     costUsd: byPot.reduce((acc, p) => acc + p.costUsd, 0),
     byPot,
+    samples,
+    pricedSamples,
+    unpricedSamples,
+    measured: samples > 0 && unpricedSamples === 0,
   };
 }
 
