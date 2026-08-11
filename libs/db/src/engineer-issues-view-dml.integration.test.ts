@@ -127,6 +127,42 @@ describe('engineer_issues view DML duplicate-id targeting', () => {
   });
 });
 
+describe('engineer_issues terminal lifecycle boundary', () => {
+  it('refuses a view UPDATE that transitions an issue into a terminal state', async () => {
+    const issueId = 'EI-900020';
+    await sql`
+      INSERT INTO harness_shared.engineer_issues
+        (workspace_id, issue_id, title, body, state, kind, scope, severity)
+      VALUES ('ws1', ${issueId}, 'terminal guard', 'body', 'open', 'bug', 'harness:hx', 'minor')`;
+
+    await expect(sql`
+      UPDATE harness_shared.engineer_issues
+         SET state = 'resolved'
+       WHERE workspace_id = 'ws1' AND issue_id = ${issueId}`
+    ).rejects.toThrow(/terminal transition refused/);
+
+    const [after] = await sql<{ status: string; terminal_owner: string | null; terminal_completion_ref: string | null }[]>`
+      SELECT status, terminal_owner, terminal_completion_ref
+        FROM harness_shared.work_items
+       WHERE workspace_id = 'ws1' AND feature_id = ${issueId}`;
+    expect(after).toEqual({ status: 'open', terminal_owner: null, terminal_completion_ref: null });
+  });
+
+  it('does not treat caller-supplied terminal attribution as a view lifecycle bypass', async () => {
+    const issueId = 'EI-900021';
+    await sql`
+      INSERT INTO harness_shared.engineer_issues
+        (workspace_id, issue_id, title, body, state, kind, scope, severity)
+      VALUES ('ws1', ${issueId}, 'terminal guard attributed', 'body', 'open', 'bug', 'harness:hx', 'minor')`;
+
+    await expect(sql`
+      UPDATE harness_shared.engineer_issues
+         SET state = 'done', terminal_owner = 'agent-a', terminal_completion_ref = 'claimed-ref'
+       WHERE workspace_id = 'ws1' AND issue_id = ${issueId}`
+    ).rejects.toThrow(/terminal transition refused/);
+  });
+});
+
 /**
  * EI-19300744792370081 (root-caused under WI-6752), fixed by migration 711.
  *

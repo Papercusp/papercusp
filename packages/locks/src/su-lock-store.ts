@@ -540,6 +540,11 @@ export type AcquireResult =
       lock_id: string;
       expires_ts: Date;
       held: string[];
+      /** Paths this acquire added to the caller's existing lock set. A
+       * same-owner refresh may return fewer paths here: automatic edit
+       * guards must release only what they acquired, never a deliberate
+       * lock that happened to cover the same path. */
+      newly_held: string[];
     }
   | {
       ok: false;
@@ -563,7 +568,13 @@ export async function tryAcquire(
   const { coordinationDomain, owner, ownerLabel, paths, intent, ttlSec } = params;
 
   if (paths.length === 0) {
-    return { ok: true, lock_id: crypto.randomUUID(), expires_ts: new Date(), held: [] };
+    return {
+      ok: true,
+      lock_id: crypto.randomUUID(),
+      expires_ts: new Date(),
+      held: [],
+      newly_held: [],
+    };
   }
 
   await tx`SET LOCAL statement_timeout = '500ms'`;
@@ -704,6 +715,7 @@ export async function tryAcquire(
     lock_id: effectiveLockId,
     expires_ts: new Date(Date.now() + ttlSec * 1000),
     held: paths,
+    newly_held: newPaths,
   };
 }
 

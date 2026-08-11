@@ -49,6 +49,26 @@ export interface CodexGatewayConfigOpts {
 }
 
 /**
+ * Feature policy baked into every Papercusp-managed CODEX_HOME.
+ *
+ * Codex 0.147 enables `remote_compaction_v2` by default. That native path cuts
+ * the conversation before Papercusp can write a carry note or deliberately
+ * restart the session, so managed sessions disable it and use
+ * `session:request-compaction` instead. Interactive role/SU homes also disable
+ * Codex's native memory store; short-lived spawn homes preserve their existing
+ * memory setting by passing `disableMemories: false`.
+ */
+export function codexManagedFeaturesToml(opts: { disableMemories?: boolean } = {}): string[] {
+  return [
+    '# Papercusp owns context carry/restart; Codex native compaction must not cut first.',
+    '[features]',
+    ...(opts.disableMemories === false ? [] : ['memories = false']),
+    'remote_compaction_v2 = false',
+    '',
+  ];
+}
+
+/**
  * The managed gateway blocks for a codex `config.toml`: `root` lines (top-level
  * `model_provider = …`) and `tables` lines (the `[model_providers.…]` table).
  * Empty when neither a pin nor `gatewayOn` asked for the gateway.

@@ -23,7 +23,12 @@ import { canonicalizeSpawnParams, hmacSpawnBytes } from './spawn-signing-core';
 // role-codex-home.ts (the interactive psu path) renders the SAME blocks via the package's
 // `./codex-gateway-config` subpath export — one builder, one behavior, no drift. Model-specific
 // TOML stays there; this file keeps only the spawn-specific composition (MCP url + CODEX_HOME).
-import { codexGatewayConfigToml, tomlEscape, type CodexGatewayConfigOpts } from './codex-gateway-config';
+import {
+  codexGatewayConfigToml,
+  codexManagedFeaturesToml,
+  tomlEscape,
+  type CodexGatewayConfigOpts,
+} from './codex-gateway-config';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -330,6 +335,7 @@ export function buildSpawnCodexConfigToml(
   const gatewayConfig = codexGatewayConfigToml(accountId, opts);
   return [
     ...gatewayConfig.root,
+    ...codexManagedFeaturesToml({ disableMemories: false }),
     '# Per-spawn codex MCP config (managed by spawn-mcp.ts writeSignedSpawnCodexHome).',
     ...gatewayConfig.tables,
     '[mcp_servers.papercusp]',

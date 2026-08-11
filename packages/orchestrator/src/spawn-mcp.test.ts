@@ -515,6 +515,7 @@ describe('buildSpawnCodexConfigToml', () => {
 
     expect(toml).not.toContain('papercusp-codex-gateway');
     expect(toml).not.toContain('model_provider =');
+    expect(toml).toContain('[features]\nremote_compaction_v2 = false');
     expect(toml).toContain('[mcp_servers.papercusp]');
   });
 
