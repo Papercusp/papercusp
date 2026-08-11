@@ -65,9 +65,17 @@ COMMENT ON COLUMN harness_shared.session_turns.turn_origin_verdict IS
 COMMENT ON COLUMN harness_shared.session_turns.turn_origin_classifier_version IS
   'Revision of the classifier/machine-surface catalogue that produced turn_origin_verdict. Bumped when the catalogue changes so stale heuristic verdicts stay findable (WHERE turn_origin_classifier_version < CURRENT) and can be re-derived by a backfill sweep. turn_origin itself never needs this -- it is authored, not inferred.';
 
--- Backfill/repair lane: find rows never classified, or classified by a catalogue
--- older than the current one. Partial so it stays small once the corpus is
--- converged -- the steady state is zero rows, and the index is empty then.
-CREATE INDEX IF NOT EXISTS session_turns_provenance_backfill_idx
-  ON harness_shared.session_turns (ingested_at DESC)
-  WHERE turn_origin_verdict IS NULL OR turn_origin_classifier_version IS NULL;
+-- Backfill/repair lane. The sweep asks ONE question -- "which rows were not
+-- classified by the CURRENT catalogue?" -- which covers both populations:
+--   * turn_origin_classifier_version IS NULL  -> never classified (pre-794)
+--   * turn_origin_classifier_version < N      -> classified by an older catalogue
+--
+-- Indexed on the version column alone, NOT as a partial index over
+-- "IS NULL OR ...". A partial index cannot express "< the current version",
+-- because that constant changes every time the catalogue is bumped and an index
+-- predicate is fixed at CREATE time -- so a partial index would silently stop
+-- serving the reclassification lane the first time a pattern is added, which is
+-- the exact moment the sweep matters most. A plain btree indexes NULLs too, so
+-- one index serves both halves for the life of the feature.
+CREATE INDEX IF NOT EXISTS session_turns_provenance_version_idx
+  ON harness_shared.session_turns (turn_origin_classifier_version);
