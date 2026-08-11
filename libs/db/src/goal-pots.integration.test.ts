@@ -72,7 +72,7 @@ async function makeGoal(id: string, title = id): Promise<void> {
 }
 
 /** One usage sample worth `cost` dollars, attributed to `harnessSlug`. */
-async function spend(harnessSlug: string, cost: number, ts = Date.now()): Promise<void> {
+async function spend(harnessSlug: string, cost: number | null, ts = Date.now()): Promise<void> {
   await sql`
     INSERT INTO harness_shared.agent_usage_samples
       (workspace_id, ts, bucket_key, provider, model_class, source, cost_usd, harness_slug)
@@ -127,6 +127,22 @@ describe('D-021 — goal meters DO NOT SUM', () => {
     // Stated as the inequality the invariant actually is, so a reader of a
     // failure sees the claim rather than two bare numbers.
     expect(portfolio.costUsd).not.toBeCloseTo(a.costUsd + b.costUsd, 6);
+  });
+
+  it('marks a rollup unmeasured when any linked sample lacks a cost', async () => {
+    await makeGoal('goal-a');
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'pot-a' });
+    await spend('pot-a', 3);
+    await spend('pot-a', null);
+
+    const spendRollup = await goalSpend(sql, { workspaceId: WS, goalId: 'goal-a' });
+    expect(spendRollup).toMatchObject({
+      costUsd: 3,
+      samples: 2,
+      pricedSamples: 1,
+      unpricedSamples: 1,
+      measured: false,
+    });
   });
 
   it('still adds up when the goals share nothing — the DISTINCT must not under-count', async () => {
