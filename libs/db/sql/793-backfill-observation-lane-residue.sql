@@ -44,8 +44,6 @@
 -- acknowledgment is required — the currently-deployed release reads `lane` through the same
 -- generated column and gets the corrected value with no code change.
 
-BEGIN;
-
 -- `lane` is GENERATED ALWAYS — never written directly. Writing `payload.lane` is what moves it
 -- (migration 721's own COMMENT ON COLUMN says so), and the stored column follows in the same
 -- statement.
@@ -60,5 +58,3 @@ UPDATE harness_shared.work_items
    SET payload = COALESCE(payload, '{}'::jsonb) || '{"lane":"observation"}'::jsonb
  WHERE payload ? 'observation'
    AND NOT (payload ? 'lane');
-
-COMMIT;
