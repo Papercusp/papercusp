@@ -37,13 +37,36 @@
 -- DB is ahead of it. Nothing is dropped that the old code depends on: the index name,
 -- its column list and its access method are unchanged, only the partial predicate widens.
 --
+-- DEPLOY ORDER IS SAFE IN BOTH DIRECTIONS, deliberately checked because making an
+-- existing index MORE partial is a cutover that has already caused a ~4h fleet-wide
+-- outage here (EI-18786592200395716). This is the opposite operation — the predicate
+-- WIDENS to a superset — and this index is a plain btree used for counting, never a
+-- UNIQUE arbiter for ON CONFLICT, which is what that incident actually broke.
+--   DB ahead of code (the normal order — migrations auto-apply, code ships after the
+--     green gate): old code writes only 'ok' and reads only `status='ok'` — still served,
+--     still index-only. See FORWARD-COMPAT above.
+--   Code ahead of DB: new code counts ('ok','refused') against the old narrow index, so
+--     the planner falls back to the 179ms seq scan measured above — DEGRADED, never wrong,
+--     and self-heals the moment this migration applies.
+--
 -- The swap is DROP+CREATE inside the runner's per-file transaction, so it is atomic
 -- to every other session — no window exists in which the index is missing. It is a
 -- plain (non-CONCURRENT) build because the runner wraps each file in a transaction
 -- and CREATE INDEX CONCURRENTLY cannot run inside one (same tradeoff as migrations
 -- 753 and every other index on this table). It takes a ShareLock for the build,
--- blocking telemetry INSERTs for that window; the table measured fully cached above
--- (189,975 buffers, all shared HITS, no reads), so the scan side is seconds, not minutes.
+-- blocking telemetry INSERTs for that window: MEASURED at 3.79s for the build against
+-- the live 1,038,122-row table (the table is fully cached — 189,975 buffers, all shared
+-- HITS, zero reads), by running this exact DROP+CREATE inside a rolled-back transaction.
+--
+-- VERIFIED (isolated temp-table replica, 300k rows, post-ANALYZE) that the new index is
+-- actually CHOSEN for both readers, which is the whole point of the change:
+--   WHERE status IN ('ok','refused')   Index Only Scan   0.068 ms
+--   WHERE status = 'ok'                Index Only Scan   0.028 ms   <- old release, still index-only
+-- ⚠ Do NOT try to confirm this by EXPLAINing inside the same transaction that builds the
+-- index: a freshly built index in an uncommitted transaction has no statistics and the
+-- planner falls back to a seq scan for BOTH predicates — including `status = 'ok'`, which
+-- is index-only in steady state. That reads as "the new index does not work" and is an
+-- artifact of the probe, not of the index.
 --
 -- The migration runner wraps each file in its own transaction, so this file
 -- carries NO top-level BEGIN;/COMMIT; (migration-runner contract; files >=215).
