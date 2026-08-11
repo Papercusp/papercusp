@@ -3493,6 +3493,7 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	audienceScope: text("audience_scope"),
 	sourceProvenance: jsonb("source_provenance"),
 	confidence: text(),
+	measurement: jsonb(),
 	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	supersedesId: bigint("supersedes_id", { mode: "number" }),
