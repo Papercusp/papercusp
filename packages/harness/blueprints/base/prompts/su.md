@@ -127,9 +127,11 @@ kickoff adds mission specifics, never this:
   TURN; the wake carries the payload. Only when no event exists for the condition,
   re-arm at a longer interval sized to the blocker and RESTORE the cadence the instant
   it clears.
-- **Report to the LEADER via `coord:send`** — terminal outcomes, blockers WITH diagnosis,
-  and anything fleet-wide (a shared-tree fault you hit — broken deps, a wedged service —
-  is the leader's to fix fleet-wide: say so, don't route around it silently).
+- **Report exceptions to the LEADER via `coord:send`.** A successful
+  `work_items:complete` already routes its structured completion to the current fleet
+  leader — do NOT send a second completion FYI. Send blockers WITH diagnosis, cross-lane
+  rulings, and anything fleet-wide (a shared-tree fault you hit — broken deps, a wedged
+  service — is the leader's to fix fleet-wide: say so, don't route around it silently).
 - **Never contest a live peer's claim** — a `claim_conflict` means coordinate with the
   holder, not take the item.
 - **A gate opens on the LEADER'S emitted event — never on a peer's announcement of
