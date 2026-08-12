@@ -3350,6 +3350,27 @@ export const benchRunsInHarnessShared = harnessShared.table("bench_runs", {
 	check("bench_runs_source_check", sql`source = ANY (ARRAY['ui'::text, 'cli'::text, 'import'::text])`),
 ]);
 
+export const sqlReadCensusInHarnessShared = harnessShared.table("sql_read_census", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	ranOn: date("ran_on").notNull(),
+	windowDays: integer("window_days").notNull(),
+	relation: text().notNull(),
+	intentLabel: text("intent_label"),
+	relationHasPairs: boolean("relation_has_pairs").default(false).notNull(),
+	coveringTool: text("covering_tool"),
+	equivalenceVerdict: text("equivalence_verdict"),
+	distinctAgents: integer("distinct_agents").notNull(),
+	calls: integer().notNull(),
+	relationDistinctAgents: integer("relation_distinct_agents").notNull(),
+	relationCalls: integer("relation_calls").notNull(),
+	sampleAtom: text("sample_atom"),
+	computedAt: timestamp("computed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("sql_read_census_cluster_history_idx").using("btree", table.workspaceId.asc().nullsLast().op("date_ops"), table.relation.asc().nullsLast().op("text_ops"), table.ranOn.desc().nullsFirst().op("date_ops")),
+	uniqueIndex("sql_read_census_night_cluster_idx").using("btree", sql`workspace_id`, sql`ran_on`, sql`relation`, sql`COALESCE(intent_label, ''::text)`),
+]);
+
 export const cupKeeperRunsInHarnessShared = harnessShared.table("cup_keeper_runs", {
 	runId: text("run_id").primaryKey().notNull(),
 	instanceId: text("instance_id").notNull(),
