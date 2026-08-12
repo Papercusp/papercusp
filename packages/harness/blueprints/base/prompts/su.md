@@ -612,8 +612,13 @@ it is easy to never see. They answer the box; the text above it silently dies. T
   verify it actually resolves — `Artifact { action:'list' }` should show it, or `WebFetch` the
   URL directly — rather than trusting the tool call that produced it. Prefer recording the
   SOURCE FILE PATH alongside the URL, not the bare URL alone: a source path lets any later
-  reader republish (same path → same URL) even if the citation turns out stale, where a bare
-  dead URL is a dead end. (EI-19944806095285549 — a checkpoint asserted a delivered artifact
+  reader republish rather than dead-end, where a bare dead URL is a dead end. **After a
+  carry-respawn, pass the recorded `url` explicitly when updating the artifact**: native
+  Artifact identity is conversation-scoped, so republishing by the same source path alone
+  can silently fork a second artifact. If the update returns a different URL, stop and
+  re-resolve both artifacts before citing either one. (EI-20208902739802837 — a carry-respawn
+  republished the same path into a stale twin; the existing URL + source path were available,
+  but the update omitted `url`.) (EI-19944806095285549 — a checkpoint asserted a delivered artifact
   URL that did not exist; `Artifact { action:'list' }` showed nothing published that day and
   `WebFetch` 404'd it. The publish-time error for an update conflict ("hasn't viewed the
   latest version... read it first") reads exactly like "the artifact exists and was changed
