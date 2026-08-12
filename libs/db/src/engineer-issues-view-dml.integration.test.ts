@@ -10,6 +10,7 @@
  *   cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts \
  *     src/engineer-issues-view-dml.integration.test.ts
  */
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -41,6 +42,27 @@ async function provision(url: string): Promise<void> {
     const { appliedCount, totalKnown } = await applyPendingMigrations({ client, sqlDir: SQL_DIR });
     if (appliedCount !== totalKnown) {
       throw new Error(`engineer-issues-view-dml provision: applied ${appliedCount}/${totalKnown}`);
+    }
+
+    /**
+     * The terminal-lifecycle guard is migration 797, which is PARKED on disk
+     * (`.sql.PENDING-CODE-DEPLOY`) even though it is recorded APPLIED on the live
+     * database — it was armed, applied, then re-parked pending the base-table
+     * writer deploy. The runner filters to `*.sql`, so a fresh test database gets
+     * NO guard, and every assertion in "engineer_issues terminal lifecycle
+     * boundary" below fails against an absence rather than against behaviour.
+     * (Measured 2026-08-12: 4 failed / 6 passed for exactly this reason, two of
+     * those failures pre-dating migration 799.)
+     *
+     * So model the live database: apply the parked guard, then re-apply 799 —
+     * which is idempotent and, having already no-op'd during the ordered run
+     * above (no guard existed yet), installs its self-diagnosing refusal now.
+     */
+    for (const file of [
+      '797-guard-engineer-issues-terminal-state.sql.PENDING-CODE-DEPLOY',
+      '799-guard-797-message-self-diagnosis.sql',
+    ]) {
+      await client.unsafe(await readFile(join(SQL_DIR, file), 'utf8'));
     }
   } finally {
     await client.end({ timeout: 5 });
