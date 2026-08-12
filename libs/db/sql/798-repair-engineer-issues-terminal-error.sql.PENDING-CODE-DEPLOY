@@ -1,7 +1,7 @@
 -- 798-repair-engineer-issues-terminal-error.sql — EI-20202629116790410
 --
 -- REQUIRES-DEPLOYED: packages/operator-core/lib/issues-engineer.ts#EI-20092514168581881
--- PENDING-CODE-DEPLOY: arm only after the release contains the base-table
+-- PENDING-CODE-DEPLOY: keep parked; arm only after the release contains the base-table
 -- setIssueState writer named by the marker above.  Migration 797 is the guard;
 -- this companion makes its stale-writer failure actionable on already-migrated
 -- databases.  Keeping this file parked until the writer is deployed prevents a
