@@ -1823,20 +1823,23 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	endedBy: text("ended_by"),
 	launchSpec: jsonb("launch_spec"),
+	endedSignal: text("ended_signal"),
 }, (table) => [
 	index("adv_sessions_coord_owner_first_seen_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.firstSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("adv_sessions_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("adv_sessions_ended_unarchived_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((ended_at IS NOT NULL) AND (archived_at IS NULL))`),
-	index("adv_sessions_observer_ended_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((ended_at IS NOT NULL) AND (ended_by IS DISTINCT FROM 'self'::text))`),
-	index("adv_sessions_pending_workbench_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((display = 'workbench'::text) AND (launched_at IS NULL) AND (ended_at IS NULL))`),
-	index("adv_sessions_plan_idx").using("btree", table.planSlug.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(plan_slug IS NOT NULL)`),
+	index("adv_sessions_observer_ended_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((ended_at IS NOT NULL) AND ((ended_by IS NULL) OR (ended_by <> ALL (ARRAY['self'::text, 'signal'::text]))))`),
+	index("adv_sessions_pending_workbench_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((display = 'workbench'::text) AND (launched_at IS NULL) AND (ended_at IS NULL))`),
+	index("adv_sessions_plan_idx").using("btree", table.planSlug.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("text_ops")).where(sql`(plan_slug IS NOT NULL)`),
 	index("adv_sessions_port_source_idx").using("btree", table.portSourceAdvSessionId.asc().nullsLast().op("int8_ops")).where(sql`(port_source_adv_session_id IS NOT NULL)`),
 	index("adv_sessions_session_id_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")),
+	index("adv_sessions_signal_ended_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(ended_by = 'signal'::text)`),
 	index("adv_sessions_workspace_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(ended_at IS NULL)`),
 	index("adv_sessions_workspace_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")),
 	pgPolicy("adv_sessions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("adv_sessions_mode_check", sql`mode = ANY (ARRAY['omp'::text, 'console'::text])`),
-	check("adv_sessions_ended_by_check", sql`(ended_by IS NULL) OR (ended_by = ANY (ARRAY['self'::text, 'reaper'::text, 'reconciler'::text, 'cleanup'::text]))`),
+	check("adv_sessions_ended_by_check", sql`(ended_by IS NULL) OR (ended_by = ANY (ARRAY['self'::text, 'signal'::text, 'reaper'::text, 'reconciler'::text, 'cleanup'::text]))`),
+	check("adv_sessions_ended_signal_check", sql`(ended_signal IS NULL) OR (ended_by = 'signal'::text)`),
 ]);
 
 export const workItemDepsInHarnessShared = harnessShared.table("work_item_deps", {
@@ -3493,7 +3496,6 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	audienceScope: text("audience_scope"),
 	sourceProvenance: jsonb("source_provenance"),
 	confidence: text(),
-	measurement: jsonb(),
 	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	supersedesId: bigint("supersedes_id", { mode: "number" }),
@@ -3504,6 +3506,7 @@ export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	fedHlc: text("fed_hlc"),
 	evictedAt: timestamp("evicted_at", { withTimezone: true, mode: 'string' }),
 	settledBy: text("settled_by"),
+	measurement: jsonb(),
 }, (table) => [
 	index("agent_facts_fold").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((retracted_at IS NULL) AND (superseded_at IS NULL))`),
 	uniqueIndex("agent_facts_identity_current").using("btree", sql`workspace_id`, sql`scope`, sql`COALESCE(scope_ref, ''::text)`, sql`key`, sql`COALESCE(source_hive, ''::text)`).where(sql`(superseded_at IS NULL)`),
@@ -6590,8 +6593,6 @@ export const featureQueueInHarnessShared = harnessShared.table("feature_queue", 
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	fedTs: bigint("fed_ts", { mode: "number" }),
 	fedHlc: text("fed_hlc"),
-	supersededBy: text("superseded_by"),
-	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("feature_queue_feature_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops")),
 	index("feature_queue_user_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.harnessSlug.asc().nullsLast().op("int8_ops"), table.githubUserId.asc().nullsLast().op("int8_ops")).where(sql`(removed_at IS NULL)`),
@@ -7199,32 +7200,6 @@ export const sessionArchivesInHarnessShared = harnessShared.table("session_archi
 	primaryKey({ columns: [table.sessionId, table.sourceKind, table.workspaceId], name: "session_archives_pkey"}),
 ]);
 
-export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", {
-	workspaceId: text("workspace_id").default('default').notNull(),
-	sourceKind: text("source_kind").notNull(),
-	sessionId: text("session_id").notNull(),
-	turnIdx: integer("turn_idx").notNull(),
-	ts: timestamp({ withTimezone: true }),
-	owner: text(),
-	harnessSlug: text("harness_slug"),
-	cwd: text(),
-	speaker: text().notNull(),
-	text: text().notNull(),
-	textTsv: tsvectorCustom("text_tsv").generatedAlwaysAs(sql`to_tsvector('english'::regconfig, "left"(text, 20000))`),
-	ingestedAt: timestamp("ingested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	textEmbedding: vector("text_embedding", { dimensions: 768 }),
-	textEmbeddingMode: text("text_embedding_mode"),
-}, (table) => [
-	index("session_turns_chunkable_idx").using("btree", table.ingestedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(length(text) > 2000)`),
-	index("session_turns_embedding_idx").using("hnsw", table.textEmbedding.asc().nullsLast().op("vector_cosine_ops")),
-	index("session_turns_ingested_idx").using("btree", table.ingestedAt.asc().nullsLast().op("timestamptz_ops")),
-	index("session_turns_owner_ts_idx").using("btree", table.owner.asc().nullsLast().op("text_ops"), table.ts.asc().nullsLast().op("timestamptz_ops")),
-	index("session_turns_session_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")),
-	index("session_turns_text_embedding_mode_idx").using("btree", table.textEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(text_embedding_mode IS NOT NULL)`),
-	index("session_turns_tsv_idx").using("gin", table.textTsv.asc().nullsLast().op("tsvector_ops")),
-	primaryKey({ columns: [table.sessionId, table.sourceKind, table.turnIdx, table.workspaceId], name: "session_turns_pkey"}),
-]);
-
 export const sharedSessionPresenceInHarnessShared = harnessShared.table("shared_session_presence", {
 	workspaceId: text("workspace_id").default('').notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -7672,6 +7647,36 @@ export const sharedPresenceInHarnessShared = harnessShared.table("shared_presenc
 	pgPolicy("shared_presence_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	sourceKind: text("source_kind").notNull(),
+	sessionId: text("session_id").notNull(),
+	turnIdx: integer("turn_idx").notNull(),
+	ts: timestamp({ withTimezone: true }),
+	owner: text(),
+	harnessSlug: text("harness_slug"),
+	cwd: text(),
+	speaker: text().notNull(),
+	text: text().notNull(),
+	textTsv: tsvectorCustom("text_tsv").generatedAlwaysAs(sql`to_tsvector('english'::regconfig, "left"(text, 20000))`),
+	ingestedAt: timestamp("ingested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	textEmbedding: vector("text_embedding", { dimensions: 768 }),
+	textEmbeddingMode: text("text_embedding_mode"),
+	turnOrigin: text("turn_origin"),
+	turnOriginVerdict: text("turn_origin_verdict"),
+	turnOriginClassifierVersion: integer("turn_origin_classifier_version"),
+}, (table) => [
+	index("session_turns_chunkable_idx").using("btree", table.ingestedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(length(text) > 2000)`),
+	index("session_turns_embedding_idx").using("hnsw", table.textEmbedding.asc().nullsLast().op("vector_cosine_ops")),
+	index("session_turns_ingested_idx").using("btree", table.ingestedAt.asc().nullsLast().op("timestamptz_ops")),
+	index("session_turns_owner_ts_idx").using("btree", table.owner.asc().nullsLast().op("timestamptz_ops"), table.ts.asc().nullsLast().op("text_ops")),
+	index("session_turns_provenance_version_idx").using("btree", table.turnOriginClassifierVersion.asc().nullsLast().op("int4_ops")),
+	index("session_turns_session_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")),
+	index("session_turns_text_embedding_mode_idx").using("btree", table.textEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(text_embedding_mode IS NOT NULL)`),
+	index("session_turns_tsv_idx").using("gin", table.textTsv.asc().nullsLast().op("tsvector_ops")),
+	primaryKey({ columns: [table.sessionId, table.sourceKind, table.turnIdx, table.workspaceId], name: "session_turns_pkey"}),
+]);
+
 export const contributorsInHarnessShared = harnessShared.table("contributors", {
 	workspaceId: text("workspace_id").default('').notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -7944,44 +7949,6 @@ export const harnessDocPartsInHarnessShared = harnessShared.table("harness_doc_p
 	check("harness_doc_parts_prose_never_projects", sql`(kind <> 'prose'::text) OR (cardinality(client_scope) = 0)`),
 ]);
 
-export const coordConversationsInHarnessShared = harnessShared.table("coord_conversations", {
-	workspaceId: text("workspace_id").default('default').notNull(),
-	id: text().notNull(),
-	kind: text().notNull(),
-	scope: text().default('operator').notNull(),
-	harnessSlug: text("harness_slug"),
-	askerId: text("asker_id").notNull(),
-	title: text(),
-	body: text().default('').notNull(),
-	state: text().default('open').notNull(),
-	acceptedAnswer: text("accepted_answer"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	acceptedPostId: bigint("accepted_post_id", { mode: "number" }),
-	captureTarget: text("capture_target"),
-	promotedIssueId: text("promoted_issue_id"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
-	origin: text().default('local').notNull(),
-	authorPubkey: text("author_pubkey"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	fedTs: bigint("fed_ts", { mode: "number" }),
-	fedHlc: text("fed_hlc"),
-	supersededBy: text("superseded_by"),
-	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("coord_conversations_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(state = 'open'::text)`),
-	index("coord_conversations_scope_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scope.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	index("coord_conversations_superseded_by_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.supersededBy.asc().nullsLast().op("text_ops")).where(sql`superseded_by IS NOT NULL`),
-	primaryKey({ columns: [table.id, table.workspaceId], name: "coord_conversations_pkey"}),
-	check("coord_conversations_kind_check", sql`kind = ANY (ARRAY['question'::text, 'discussion'::text])`),
-	check("coord_conversations_scope_check", sql`scope = ANY (ARRAY['operator'::text, 'harness'::text])`),
-	check("coord_conversations_state_check", sql`state = ANY (ARRAY['open'::text, 'resolved'::text, 'closed'::text, 'superseded'::text])`),
-	check("coord_conversations_scope_slug_check", sql`((scope = 'harness'::text) AND (harness_slug IS NOT NULL) AND (harness_slug <> ''::text)) OR ((scope = 'operator'::text) AND (harness_slug IS NULL))`),
-	check("coord_conversations_id_nonempty", sql`id <> ''::text`),
-	check("coord_conversations_workspace_nonempty", sql`workspace_id <> ''::text`),
-]);
-
 export const snapshotFeaturesInHarnessShared = harnessShared.table("snapshot_features", {
 	harnessSlug: text("harness_slug").notNull(),
 	snapshotId: text("snapshot_id").notNull(),
@@ -8230,6 +8197,44 @@ export const transferLessonsInHarnessShared = harnessShared.table("transfer_less
 	check("transfer_lessons_tier_check", sql`tier = ANY (ARRAY['probationary'::text, 'validated'::text, 'retired'::text])`),
 	check("transfer_lessons_status_check", sql`status = ANY (ARRAY['candidate'::text, 'passed'::text, 'failed'::text, 'error'::text])`),
 	check("transfer_lessons_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
+]);
+
+export const coordConversationsInHarnessShared = harnessShared.table("coord_conversations", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	id: text().notNull(),
+	kind: text().notNull(),
+	scope: text().default('operator').notNull(),
+	harnessSlug: text("harness_slug"),
+	askerId: text("asker_id").notNull(),
+	title: text(),
+	body: text().default('').notNull(),
+	state: text().default('open').notNull(),
+	acceptedAnswer: text("accepted_answer"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	acceptedPostId: bigint("accepted_post_id", { mode: "number" }),
+	captureTarget: text("capture_target"),
+	promotedIssueId: text("promoted_issue_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
+	origin: text().default('local').notNull(),
+	authorPubkey: text("author_pubkey"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	fedHlc: text("fed_hlc"),
+	supersededBy: text("superseded_by"),
+	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("coord_conversations_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(state = 'open'::text)`),
+	index("coord_conversations_scope_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.scope.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	index("coord_conversations_superseded_by_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.supersededBy.asc().nullsLast().op("text_ops")).where(sql`(superseded_by IS NOT NULL)`),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "coord_conversations_pkey"}),
+	check("coord_conversations_kind_check", sql`kind = ANY (ARRAY['question'::text, 'discussion'::text])`),
+	check("coord_conversations_scope_check", sql`scope = ANY (ARRAY['operator'::text, 'harness'::text])`),
+	check("coord_conversations_scope_slug_check", sql`((scope = 'harness'::text) AND (harness_slug IS NOT NULL) AND (harness_slug <> ''::text)) OR ((scope = 'operator'::text) AND (harness_slug IS NULL))`),
+	check("coord_conversations_id_nonempty", sql`id <> ''::text`),
+	check("coord_conversations_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("coord_conversations_state_check", sql`state = ANY (ARRAY['open'::text, 'resolved'::text, 'closed'::text, 'superseded'::text])`),
 ]);
 
 export const potMembersInHarnessShared = harnessShared.table("pot_members", {
