@@ -44,12 +44,27 @@
 -- RETURNING fix in separate migrations. Patch the installed definition and assert
 -- the post-condition so this migration cannot silently revert a sibling fix.
 
+-- ORDERING HAZARD, HANDLED EXPLICITLY. Migration 798
+-- (EI-20202629116790410, currently parked PENDING-CODE-DEPLOY) rewrites the SAME
+-- RAISE statement this migration patches, toward the same goal by a simpler
+-- route: one unconditional "this release still uses the compatibility-view
+-- writer" message, with no way to tell an operator from a raw caller.
+--
+-- If 798 is ever armed it sorts FIRST, so a single-anchor 799 would find nothing,
+-- raise, and fail the whole migration run — breaking every fresh database
+-- provision (including the integration suite, which asserts
+-- appliedCount === totalKnown). So this migration accepts EITHER predecessor's
+-- text as its anchor and converges both to the same self-diagnosing pair. 798
+-- then no-ops or is harmlessly superseded, in any order, with no coordination.
+
 DO $mig799$
 DECLARE
-  def      text;
-  patched  text;
-  marker   CONSTANT text := 'EI-20202062074776959: self-diagnosing refusal';
-  anchor   CONSTANT text := 'RAISE EXCEPTION ''engineer_issues terminal transition refused — use setIssueState/work_items:set_state or work_items:complete so completion integrity is enforced (issue %) '', NEW.issue_id;';
+  def         text;
+  patched     text;
+  anchor      text;
+  marker      CONSTANT text := 'EI-20202062074776959: self-diagnosing refusal';
+  anchor_797  CONSTANT text := 'RAISE EXCEPTION ''engineer_issues terminal transition refused — use setIssueState/work_items:set_state or work_items:complete so completion integrity is enforced (issue %) '', NEW.issue_id;';
+  anchor_798  CONSTANT text := 'RAISE EXCEPTION ''engineer_issues terminal transition refused — this release still uses the compatibility-view writer; deploy the base-table setIssueState/work_items companion before retrying (issue %) '', NEW.issue_id;';
 BEGIN
   SELECT pg_get_functiondef(p.oid)
     INTO def
@@ -67,8 +82,29 @@ BEGIN
     RETURN;
   END IF;
 
-  IF position(anchor IN def) = 0 THEN
-    RAISE EXCEPTION '799: migration-797 refusal statement not found verbatim in engineer_issues_view_dml — the guard was restructured; re-derive the surgery anchor instead of forcing this migration';
+  -- 797 IS PARKED ON DISK (.PENDING-CODE-DEPLOY) THOUGH IT IS RECORDED APPLIED ON
+  -- THE LIVE DB — it was armed, applied, then re-parked. The migration runner
+  -- filters to *.sql, so a FRESH database never installs the guard, and a hard
+  -- failure here would abort the whole provision for every new install and every
+  -- integration run. There is nothing to improve when there is no refusal to
+  -- improve: no-op, and let 797 install the pair whenever it is finally armed.
+  --
+  -- Deliberately NOT installing the guard ourselves: parking 797 is what keeps
+  -- the refusal off hosts whose writer is not deployed, and arming it from here
+  -- would defeat exactly that.
+  IF position('EI-20092514168581881: refuse ungated terminal transitions' IN def) = 0 THEN
+    RAISE NOTICE '799: migration 797''s terminal guard is not installed on this database (797 is parked) — nothing to diagnose; no-op';
+    RETURN;
+  END IF;
+
+  -- Accept either predecessor's refusal statement (see the ORDERING HAZARD note).
+  IF position(anchor_797 IN def) > 0 THEN
+    anchor := anchor_797;
+  ELSIF position(anchor_798 IN def) > 0 THEN
+    anchor := anchor_798;
+    RAISE NOTICE '799: migration 798 already rewrote the refusal — converging its message to the self-diagnosing pair';
+  ELSE
+    RAISE EXCEPTION '799: neither migration 797''s nor migration 798''s refusal statement was found verbatim in engineer_issues_view_dml — the guard was restructured; re-derive the surgery anchor instead of forcing this migration';
   END IF;
 
   patched := replace(
