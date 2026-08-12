@@ -13,6 +13,7 @@ export {
   typedSql,
   processConnectionCeiling,
   logConnectionBudget,
+  explicitOrgPoolOverrideWarning,
   maybePgbouncer,
   setAdminPoolStatementTimeoutProvider,
   _resetForTests,
