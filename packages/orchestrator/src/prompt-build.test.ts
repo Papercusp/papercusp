@@ -35,11 +35,12 @@ function makeFixture(setup: (paths: Omit<Fixture, 'cleanup'>) => void): Fixture 
 }
 
 test('STATE_PLANE_NOTE — teaches coord:send why envelope object shape', () => {
-  assert.match(
-    STATE_PLANE_NOTE,
-    /`why` — when present, it is an object: \{ goalRef: "<goal\/work-item ref>", note\?: "<detail>" \}/,
+  assert.ok(
+    STATE_PLANE_NOTE.includes(
+      '`why` — when present, it is an object: `{ goalRef: "<goal/work-item ref>", note?: "<detail>" }`.',
+    ),
   );
-  assert.match(STATE_PLANE_NOTE, /`goalRef` is a goal reference, not prose/);
+  assert.ok(STATE_PLANE_NOTE.includes('`goalRef` is a goal reference, not prose'));
 });
 
 test('buildPrompt — minimal: just the role prompt + runtime context', () => {
