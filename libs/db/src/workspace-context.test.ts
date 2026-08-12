@@ -6,7 +6,7 @@
  * is a mid-transaction failure. See workspace-context.integration.test.ts for the
  * real-Postgres proof of the GUC/RLS behavior this file does not re-test.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Sql } from 'postgres';
 
 const h = vi.hoisted(() => ({
@@ -32,6 +32,7 @@ vi.mock('./connection', async (importOriginal) => {
 
 import { withWorkspace } from './workspace-context';
 import { DEFAULT_TX_ACQUIRE_DEADLINE_MS } from './connection';
+import { beginAcquire, recordPoolMax, resetAcquireRegistryForTest } from './acquire-registry';
 
 const CONNECTION_CLOSED = { code: 'CONNECTION_CLOSED', message: 'write CONNECTION_CLOSED 127.0.0.1:6432' };
 
@@ -125,6 +126,12 @@ describe('withWorkspace — EI-9279 connect-retry wiring', () => {
  * promise that neither resolves NOR rejects.
  */
 describe('withWorkspace — P-022/D-020 acquisition deadline', () => {
+  beforeEach(() => {
+    // The retry wrapper keys off process-local successful acquisitions. Keep
+    // each deadline case independent from the connection-setup cases above.
+    resetAcquireRegistryForTest();
+  });
+
   it('fails fast with DbCallDeadlineError when the pool never connects (instead of hanging forever)', async () => {
     vi.useFakeTimers();
     try {
@@ -183,6 +190,38 @@ describe('withWorkspace — P-022/D-020 acquisition deadline', () => {
       // the expired() check is what stops the handler running unawaited.
       expect(handlerRuns).toBe(0);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries a pre-handler deadline when the local registry proves pool pressure', async () => {
+    vi.useFakeTimers();
+    resetAcquireRegistryForTest();
+    recordPoolMax('org-app', 1);
+    const held = beginAcquire('org-app');
+    held.acquired();
+    try {
+      let beginAttempts = 0;
+      h.begin.mockImplementation(async (cb: (tx: Sql) => Promise<unknown>) => {
+        beginAttempts++;
+        if (beginAttempts === 1) return new Promise<never>(() => {});
+        return cb(fakeTxSql());
+      });
+
+      let handlerRuns = 0;
+      const p = withWorkspace('ws-1', async () => {
+        handlerRuns++;
+        return 'retry-ok';
+      });
+      const assertion = expect(p).resolves.toBe('retry-ok');
+      await vi.advanceTimersByTimeAsync(DEFAULT_TX_ACQUIRE_DEADLINE_MS + 500);
+      await assertion;
+
+      expect(beginAttempts).toBe(2);
+      expect(handlerRuns).toBe(1);
+    } finally {
+      held.release();
+      resetAcquireRegistryForTest();
       vi.useRealTimers();
     }
   });

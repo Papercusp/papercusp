@@ -25,6 +25,7 @@ import {
   getHarnessPg,
   pgbouncerEnabled,
   withAcquisitionDeadline,
+  retryOnRetryableDbDeadline,
   DbCallDeadlineError,
   DEFAULT_TX_ACQUIRE_DEADLINE_MS,
 } from './connection';
@@ -85,9 +86,10 @@ export async function withWorkspace<T>(
   // for. Passing it makes a deadline breach report MEASURED waiting/held counts
   // rather than the 3-step manual probe the message used to hand out.
   const acquirePool = opts.bypassRlsForAdmin ? 'org-admin' : 'org-app';
-  return withAcquisitionDeadline<T>(
-    ({ disarm, expired }) =>
-      retryBeforeCallbackStarts((markStarted) =>
+  return retryOnRetryableDbDeadline(() =>
+    withAcquisitionDeadline<T>(
+      ({ disarm, expired }) =>
+        retryBeforeCallbackStarts((markStarted) =>
     // postgres-js's `sql.begin` callback receives a TransactionSql which
     // is a subset of Sql; the cast is safe for the operations we perform
     // (templated queries + .unsafe).
@@ -139,7 +141,8 @@ export async function withWorkspace<T>(
       return await fn(txSql);
     }) as unknown) as Promise<T>
       , { pool: acquirePool }),
-    { label: acquireLabel, pool: acquirePool },
+      { label: acquireLabel, pool: acquirePool },
+    ),
   );
 }
 
@@ -180,9 +183,10 @@ export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promis
   // of the measurement (EI-19485014132257783).
   const acquirePool = 'org-app';
   // EI-9279: same provably-safe retry as withWorkspace above — see connect-retry.ts.
-  return withAcquisitionDeadline<T>(
-    ({ disarm, expired }) =>
-      retryBeforeCallbackStarts((markStarted) =>
+  return retryOnRetryableDbDeadline(() =>
+    withAcquisitionDeadline<T>(
+      ({ disarm, expired }) =>
+        retryBeforeCallbackStarts((markStarted) =>
     (sql.begin(async (tx) => {
       const txSql = tx as unknown as Sql;
       // Mirror withWorkspace's options-pointer fix so drizzle(tx) (if ever used) works.
@@ -202,7 +206,8 @@ export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promis
       return await fn(txSql);
     }) as unknown) as Promise<T>
       , { pool: acquirePool }),
-    { label: acquireLabel, pool: acquirePool },
+      { label: acquireLabel, pool: acquirePool },
+    ),
   );
 }
 
