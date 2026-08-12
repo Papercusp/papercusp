@@ -4536,6 +4536,8 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	assumptionSetId: bigint("assumption_set_id", { mode: "number" }),
 	goalRef: text("goal_ref"),
+	callOrigin: text("call_origin"),
+	callOriginSource: text("call_origin_source"),
 }, (table) => [
 	index("tool_invocations_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("text_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("tool_invocations_error_code_idx").using("btree", table.errorCode.asc().nullsLast().op("text_ops"), table.invokedAt.asc().nullsLast().op("text_ops")).where(sql`(error_code IS NOT NULL)`),
