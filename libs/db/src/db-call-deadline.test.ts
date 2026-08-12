@@ -14,7 +14,9 @@ import {
   withDbCallDeadline,
   DbCallDeadlineError,
   DEFAULT_DB_CALL_DEADLINE_MS,
+  retryOnRetryableDbDeadline,
 } from './connection';
+import { beginAcquire, recordPoolMax, resetAcquireRegistryForTest } from './acquire-registry';
 
 describe('withDbCallDeadline (WI-7097)', () => {
   afterEach(() => {
@@ -84,5 +86,48 @@ describe('withDbCallDeadline (WI-7097)', () => {
     // Advancing well past the deadline after resolution must not throw /
     // leave a dangling unhandled rejection.
     await vi.advanceTimersByTimeAsync(10_000);
+  });
+});
+
+describe('retryOnRetryableDbDeadline', () => {
+  afterEach(() => {
+    resetAcquireRegistryForTest();
+  });
+
+  it('retries a deadline only after decisive local pool-pressure evidence', async () => {
+    recordPoolMax('org-app', 1);
+    const held = beginAcquire('org-app');
+    held.acquired();
+    const waiting = beginAcquire('org-app');
+    let attempts = 0;
+
+    const result = await retryOnRetryableDbDeadline(
+      async () => {
+        attempts++;
+        if (attempts === 1) throw new DbCallDeadlineError('principal-acquire', 45_000, 45_000, 'org-app');
+        return 'ok';
+      },
+      { sleep: async () => undefined },
+    );
+
+    expect(result).toBe('ok');
+    expect(attempts).toBe(2);
+    waiting.release();
+    held.release();
+  });
+
+  it('does not retry an unmeasured deadline that could be a dead endpoint', async () => {
+    let attempts = 0;
+    const error = new DbCallDeadlineError('principal-acquire', 45_000, 45_000);
+
+    await expect(
+      retryOnRetryableDbDeadline(async () => {
+        attempts++;
+        throw error;
+      }, { sleep: async () => undefined }),
+    ).rejects.toBe(error);
+
+    expect(attempts).toBe(1);
+    expect(error.retryable).toBe(false);
   });
 });

@@ -1417,6 +1417,12 @@ export class DbCallDeadlineError extends Error {
   readonly pool: string | null;
   /** The measured acquire-pressure line, or null when nothing was measured. */
   readonly measured: string | null;
+  /**
+   * True only when this process measured a recent successful acquisition or a
+   * client-side saturation/queue verdict for the pool. An unmeasured or stale
+   * pool may still be a dead endpoint, so those deadlines stay non-retryable.
+   */
+  readonly retryable: boolean;
   constructor(label: string, deadlineMs: number, elapsedMs: number, pool?: string) {
     const measured = pool ? describeAcquirePressure(pool) : null;
     // A decisive measurement has already answered "which cause"; re-printing the
@@ -1444,7 +1450,57 @@ export class DbCallDeadlineError extends Error {
     this.elapsedMs = elapsedMs;
     this.pool = pool ?? null;
     this.measured = measured?.text ?? null;
+    this.retryable = measured?.decisive === true;
   }
+}
+
+/** Options for the narrow pre-handler retry used by dispatch seams. */
+export interface RetryOnRetryableDbDeadlineOptions {
+  /** Additional attempts after the first. Defaults to two. */
+  retries?: number;
+  /** Linear backoff base in milliseconds. Defaults to 150ms. */
+  backoffMs?: number;
+  /** Injectable sleep for deterministic tests. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Optional observability hook before each retry. */
+  onRetry?: (attempt: number, error: DbCallDeadlineError) => void;
+}
+
+const defaultDbDeadlineRetrySleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Retry only a deadline that the local acquire registry proved is pool
+ * pressure, never an ambiguous/dead-endpoint deadline.
+ *
+ * This is intentionally a generic wrapper rather than a retry inside the
+ * checkpoint handler: callers must use it around a transaction that has not
+ * entered the caller's handler yet. A `DbCallDeadlineError` from a decisive
+ * queue/saturation measurement means the acquisition did not complete in the
+ * first attempt, while the transaction's own `expired()` guard prevents its
+ * eventual late connection from invoking the handler. Retrying that
+ * pre-handler acquisition cannot duplicate the later write; retrying the whole
+ * tool after an ambiguous deadline could.
+ */
+export async function retryOnRetryableDbDeadline<T>(
+  run: () => Promise<T>,
+  opts: RetryOnRetryableDbDeadlineOptions = {},
+): Promise<T> {
+  const retries = Math.max(0, Math.floor(opts.retries ?? 2));
+  const backoffMs = Math.max(0, opts.backoffMs ?? 150);
+  const sleep = opts.sleep ?? defaultDbDeadlineRetrySleep;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      const deadline = error instanceof DbCallDeadlineError ? error : null;
+      if (!deadline?.retryable || attempt >= retries) throw error;
+      opts.onRetry?.(attempt + 1, deadline);
+      await sleep(backoffMs * (attempt + 1));
+    }
+  }
+  throw new Error('retryOnRetryableDbDeadline: unreachable');
 }
 
 /**

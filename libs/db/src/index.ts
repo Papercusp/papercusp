@@ -27,6 +27,8 @@ export {
   withDbCallDeadline,
   DbCallDeadlineError,
   DEFAULT_DB_CALL_DEADLINE_MS,
+  retryOnRetryableDbDeadline,
+  type RetryOnRetryableDbDeadlineOptions,
   // P-022 / D-020: the PHASE-scoped sibling of withDbCallDeadline — bounds only
   // connect + BEGIN + SET_CONFIG and disarms before the caller's own work, so a
   // dead endpoint fails fast without capping legitimately long handlers.
