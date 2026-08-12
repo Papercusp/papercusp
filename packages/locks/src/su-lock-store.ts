@@ -896,6 +896,8 @@ export interface QueueParams {
 }
 
 export interface ActiveLockRow {
+  /** The release handle returned by locks:acquire for this held lock set. */
+  lock_id: string;
   path: string;
   owner: string;
   owner_label: string | null;
@@ -1046,7 +1048,7 @@ async function readQueueInner(
     : sql`coordination_domain = ${coordinationDomain}`;
 
   const active = await sql<Array<ActiveLockRow>>`
-    SELECT path, owner, owner_label, intent, acquired_ts, expires_ts,
+    SELECT lock_id::text AS lock_id, path, owner, owner_label, intent, acquired_ts, expires_ts,
            coordination_domain
       FROM agent_file_locks
      WHERE ${domainFilter}
