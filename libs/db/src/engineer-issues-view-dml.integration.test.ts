@@ -161,6 +161,82 @@ describe('engineer_issues terminal lifecycle boundary', () => {
        WHERE workspace_id = 'ws1' AND issue_id = ${issueId}`
     ).rejects.toThrow(/terminal transition refused/);
   });
+
+  /**
+   * Migration 799 (EI-20202062074776959). The refusal used to name
+   * `work_items:set_state` / `work_items:complete` as the fix — which is a closed
+   * loop for the caller that hits it most: an operator process whose build
+   * predates the base-table lifecycle writer, for which those two tools ARE the
+   * thing being refused. A current operator writes `work_items` directly and
+   * never reaches this trigger, so a `pcusp:%` client arriving here is
+   * necessarily stale, and the guard says so instead.
+   *
+   * The discriminator is `application_name`, which the operator tags
+   * `pcusp:<pool>:p<pid>` — so these two cases are the whole behavioural
+   * contract, and testing only one would let the branch silently collapse.
+   */
+  it('tells a STALE OPERATOR to redeploy rather than re-call the tools it is refusing', async () => {
+    const issueId = 'EI-900022';
+    await sql`
+      INSERT INTO harness_shared.engineer_issues
+        (workspace_id, issue_id, title, body, state, kind, scope, severity)
+      VALUES ('ws1', ${issueId}, 'stale operator diagnosis', 'body', 'open', 'bug', 'harness:hx', 'minor')`;
+
+    const operatorish = postgres(db.url, {
+      max: 1,
+      onnotice: () => {},
+      connection: { application_name: 'pcusp:org-app:p424242' },
+    });
+    try {
+      const err = await operatorish`
+        UPDATE harness_shared.engineer_issues
+           SET state = 'done'
+         WHERE workspace_id = 'ws1' AND issue_id = ${issueId}`.then(
+        () => null,
+        (e: unknown) => e as { message: string; hint?: string },
+      );
+
+      expect(err, 'the terminal transition must still be refused').not.toBeNull();
+      // Still the load-bearing substring every other consumer matches on.
+      expect(err!.message).toMatch(/terminal transition refused/);
+      // The diagnosis: retrying is futile, the process is stale, and WHICH process.
+      expect(err!.message).toMatch(/RE-CALLING work_items:complete/);
+      expect(err!.message).toMatch(/redeploy or restart/i);
+      expect(err!.message).toContain('pcusp:org-app:p424242');
+      expect(err!.hint ?? '').toMatch(/deploy-cli/);
+    } finally {
+      await operatorish.end({ timeout: 5 }).catch(() => {});
+    }
+
+    // The guard still refused: nothing was written.
+    const [after] = await sql<{ status: string }[]>`
+      SELECT status FROM harness_shared.work_items
+       WHERE workspace_id = 'ws1' AND feature_id = ${issueId}`;
+    expect(after).toEqual({ status: 'open' });
+  });
+
+  it('keeps the original instruction for a NON-operator (raw/legacy) UPDATE', async () => {
+    const issueId = 'EI-900023';
+    await sql`
+      INSERT INTO harness_shared.engineer_issues
+        (workspace_id, issue_id, title, body, state, kind, scope, severity)
+      VALUES ('ws1', ${issueId}, 'raw update diagnosis', 'body', 'open', 'bug', 'harness:hx', 'minor')`;
+
+    const err = await sql`
+      UPDATE harness_shared.engineer_issues
+         SET state = 'done'
+       WHERE workspace_id = 'ws1' AND issue_id = ${issueId}`.then(
+      () => null,
+      (e: unknown) => e as { message: string; hint?: string },
+    );
+
+    expect(err, 'the terminal transition must still be refused').not.toBeNull();
+    expect(err!.message).toMatch(/use setIssueState\/work_items:set_state or work_items:complete/);
+    // A raw caller is NOT told its build is stale — that would be the same
+    // misdiagnosis in the other direction.
+    expect(err!.message).not.toMatch(/RE-CALLING work_items:complete/);
+    expect(err!.hint ?? '').toMatch(/not a lifecycle writer/);
+  });
 });
 
 /**
