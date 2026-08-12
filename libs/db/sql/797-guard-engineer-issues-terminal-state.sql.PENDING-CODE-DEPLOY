@@ -1,5 +1,9 @@
 -- 797-guard-engineer-issues-terminal-state.sql
 --
+-- PENDING-CODE-DEPLOY: keep parked; arm only after the base-table lifecycle
+-- writer named below is present in the deployed release checkout.
+-- REQUIRES-DEPLOYED: packages/operator-core/lib/issues-engineer.ts#EI-20092514168581881
+--
 -- EI-20092514168581881 — the pre-unification `work_items` union-view report
 -- named migration 159, but the live topology is now the unified work_items BASE
 -- table with `engineer_issues` as its issue-family compatibility view. Its
