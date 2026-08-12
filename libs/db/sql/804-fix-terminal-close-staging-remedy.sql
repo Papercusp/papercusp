@@ -15,7 +15,9 @@ DO $mig804$
 DECLARE
   def       text;
   patched   text;
-  marker    CONSTANT text := 'EI-20219410123616014: staging remedy';
+  -- pg_get_functiondef may normalize away comments, so use the durable URL
+  -- literal as the idempotence marker rather than the migration comment.
+  marker    CONSTANT text := '127.0.0.1:3170/api/mcp?superuser=1';
   old_raise CONSTANT text := $old804$RAISE EXCEPTION 'engineer_issues terminal transition refused for issue % — and RE-CALLING work_items:complete / work_items:set_state CANNOT FIX IT. This UPDATE arrived on operator connection "%", which still routes terminal state through the engineer_issues compatibility view; a CURRENT operator writes harness_shared.work_items directly and never reaches this trigger. So that process is running code older than issues-engineer.ts EI-20092514168581881, the REQUIRES-DEPLOYED half of migration 797. FIX: redeploy or restart THAT operator process, then retry the close once. Any completion record you already submitted is stored — only the state flip is outstanding.', NEW.issue_id, COALESCE(current_setting('application_name', true), '?')$old804$;
   old_hint  CONSTANT text := $hint804$Dev box, force it now: PAPERCUSP_ALLOW_DEV_RESTART=1 npx tsx apps/operator/lib/release/deploy-cli.ts --execute — then re-run the close. Do NOT revert the guard and do NOT force-deploy on a fleet-wide premise: this refusal is PER-HOST (plan gui-chat-e2e-actions-2026-08-11, D-014).$hint804$;
 BEGIN
@@ -74,7 +76,12 @@ BEGIN
      OR position('EI-20092514168581881: refuse ungated terminal transitions' IN def) = 0
      OR position('NEW.state IN (''resolved'', ''closed'', ''done'', ''dropped'')' IN def) = 0
   THEN
-    RAISE EXCEPTION '804: post-condition failed — engineer_issues_view_dml is missing the staging recovery or migration 797''s guard predicate';
+    RAISE EXCEPTION '804: post-condition failed — marker=%, url=%, recall=%, guard=%, predicate=%',
+      position(marker IN def) > 0,
+      position('127.0.0.1:3170/api/mcp?superuser=1' IN def) > 0,
+      position('RE-CALLING work_items:complete' IN def) > 0,
+      position('EI-20092514168581881: refuse ungated terminal transitions' IN def) > 0,
+      position('NEW.state IN (''resolved'', ''closed'', ''done'', ''dropped'')' IN def) > 0;
   END IF;
 
   RAISE NOTICE '804: engineer_issues_view_dml refusal now names staging :3170 as the immediate recovery';

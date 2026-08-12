@@ -12,9 +12,6 @@
 -- trigger relation. The trigger surgery is guarded by exact anchors so a future
 -- restructured trigger fails loudly instead of installing a partial no-op.
 
-\set ON_ERROR_STOP on
-BEGIN;
-
 CREATE OR REPLACE VIEW harness_shared.engineer_issues AS
  SELECT workspace_id,
     feature_id AS issue_id,
@@ -92,5 +89,3 @@ BEGIN
   EXECUTE v_def;
 END
 $parent_dml$;
-
-COMMIT;
