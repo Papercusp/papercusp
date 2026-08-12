@@ -6,6 +6,11 @@
 -- the same completion payload to the staging operator on :3170, whose current
 -- writer updates harness_shared.work_items directly.
 --
+-- ptool has its own operator-origin default of :3070. Clearing
+-- PAPERCUSP_OPERATOR_URL does not select staging; callers using ptool must pass
+-- --url=http://127.0.0.1:3170 explicitly. The trigger message below names that
+-- flag so a recovery is not silently sent back to the stale release operator.
+--
 -- This is a message-only surgery. The terminal guard, its predicate, and the
 -- completion-integrity boundary remain unchanged. A new migration is required
 -- because 799 is already applied on live databases; editing 799 would not
@@ -59,12 +64,12 @@ BEGIN
     def,
     old_raise,
     $patch804$-- EI-20219410123616014: staging recovery is the immediate remedy for a stale release operator.
-    RAISE EXCEPTION 'engineer_issues terminal transition refused for issue % — and RE-CALLING work_items:complete / work_items:set_state CANNOT FIX IT. This UPDATE arrived on operator connection "%", which still routes terminal state through the engineer_issues compatibility view; a CURRENT operator writes harness_shared.work_items directly and never reaches this trigger. So that process is running code older than issues-engineer.ts EI-20092514168581881, the REQUIRES-DEPLOYED half of migration 797. FIX: re-post the same unmodified work_items:complete / work_items:set_state payload to the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1; it writes harness_shared.work_items directly. Redeploying or restarting the release operator is not required. Any completion record you already submitted is stored — only the state flip is outstanding.', NEW.issue_id, COALESCE(current_setting('application_name', true), '?')$patch804$
+    RAISE EXCEPTION 'engineer_issues terminal transition refused for issue % — and RE-CALLING work_items:complete / work_items:set_state CANNOT FIX IT. This UPDATE arrived on operator connection "%", which still routes terminal state through the engineer_issues compatibility view; a CURRENT operator writes harness_shared.work_items directly and never reaches this trigger. So that process is running code older than issues-engineer.ts EI-20092514168581881, the REQUIRES-DEPLOYED half of migration 797. FIX: re-post the same unmodified work_items:complete / work_items:set_state payload to the staging operator. With ptool, pass --url=http://127.0.0.1:3170 explicitly — unsetting PAPERCUSP_OPERATOR_URL leaves ptool on its default :3070. Direct MCP clients may use the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1. The staging writer updates harness_shared.work_items directly. Redeploying or restarting the release operator is not required. Any completion record you already submitted is stored — only the state flip is outstanding.', NEW.issue_id, COALESCE(current_setting('application_name', true), '?')$patch804$
   );
   patched := replace(
     patched,
     old_hint,
-    $patch804hint$Re-post the same payload to the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1 on this host; it writes harness_shared.work_items directly. Do not keep retrying this release connection. Redeploying or restarting the release operator is optional, not required.$patch804hint$
+  $patch804hint$Re-post the same payload to the staging operator on this host. For ptool, pass --url=http://127.0.0.1:3170 explicitly; unsetting PAPERCUSP_OPERATOR_URL still leaves ptool''s default at :3070. Direct MCP clients may use the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1. The staging writer updates harness_shared.work_items directly. Do not keep retrying this release connection. Redeploying or restarting the release operator is optional, not required.$patch804hint$
   );
 
   EXECUTE patched;

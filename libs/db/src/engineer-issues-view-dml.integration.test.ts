@@ -229,9 +229,13 @@ describe('engineer_issues terminal lifecycle boundary', () => {
       // The diagnosis: retrying is futile, the process is stale, and WHICH process.
       expect(err!.message).toMatch(/RE-CALLING work_items:complete/);
       expect(err!.message).toMatch(/staging operator at http:\/\/127\.0\.0\.1:3170\/api\/mcp\?superuser=1/);
+      expect(err!.message).toMatch(/ptool.*--url=http:\/\/127\.0\.0\.1:3170 explicitly/);
+      expect(err!.message).toMatch(/unsetting PAPERCUSP_OPERATOR_URL leaves ptool on its default :3070/);
       expect(err!.message).toMatch(/redeploy.*not required/i);
       expect(err!.message).toContain('pcusp:org-app:p424242');
       expect(err!.hint ?? '').toMatch(/staging operator at http:\/\/127\.0\.0\.1:3170\/api\/mcp\?superuser=1/);
+      expect(err!.hint ?? '').toMatch(/ptool.*--url=http:\/\/127\.0\.0\.1:3170 explicitly/);
+      expect(err!.hint ?? '').toMatch(/unsetting PAPERCUSP_OPERATOR_URL.*default at :3070/);
       expect(err!.hint ?? '').toMatch(/optional, not required/i);
     } finally {
       await operatorish.end({ timeout: 5 }).catch(() => {});
