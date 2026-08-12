@@ -62,7 +62,7 @@ async function provision(url: string): Promise<void> {
     for (const file of [
       '797-guard-engineer-issues-terminal-state.sql.PENDING-CODE-DEPLOY',
       '799-guard-797-message-self-diagnosis.sql',
-      '804-fix-terminal-close-staging-remedy.sql.DRAFT',
+      '804-fix-terminal-close-staging-remedy.sql',
     ]) {
       await client.unsafe(await readFile(join(SQL_DIR, file), 'utf8'));
     }
