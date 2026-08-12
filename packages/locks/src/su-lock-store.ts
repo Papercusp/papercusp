@@ -940,6 +940,73 @@ export async function readQueue(
   }) as Promise<QueueResult>;
 }
 
+/** One owner's live interest in one path — held OR intended. Shaped for `groupHeldFilesByOwner`. */
+export interface PathInterestRow {
+  owner: string;
+  node: string;
+}
+
+/**
+ * Every LIVE PATH INTEREST per owner — held locks UNION in-flight waiter tickets —
+ * for a bounded owner set, across coordination domains by default.
+ *
+ * ⚠ THIS EXISTS BECAUSE THE OBVIOUS QUERY IS STRUCTURALLY INCAPABLE OF ITS JOB.
+ * Its consumer is the `holds-a-lock-on` coupling derivation, which emits an edge
+ * when two agents are interested in the SAME path. Reading only `agent_file_locks`
+ * can never satisfy that predicate: `agent_file_locks_pkey` is
+ * `PRIMARY KEY (coordination_domain, path)`, so at most ONE owner exists per path.
+ * A mutual-exclusion table records who WON contention; it cannot record that
+ * contention happened. The derivation therefore read as a clean, error-free,
+ * permanently-empty signal — which is why it went unnoticed for weeks
+ * (EI-20199756190949760, the third dead-source instance in that feature).
+ *
+ * The contention IS recorded, in `agent_lock_waiters`, whose `paths text[]` can
+ * hold two owners against one path. Measured over the retained window at the time
+ * this landed: 56 time-overlapping owner pairs across 4 paths, and a minute-by-minute
+ * replay had this predicate non-empty for 119 of 311 minutes (38.3%), against the
+ * old predicate's structural 0%.
+ *
+ * ⚠ GATE TICKETS ON `wait_until`, NEVER ON `status`. `status` is TRANSIENT — a
+ * ticket passes through `waiting` and settles into granted/expired/cancelled within
+ * seconds, so `status = 'waiting'` reads empty essentially always. Measured on the
+ * live table: granted 20, expired 4, cancelled 3, **waiting 0** — filtering on it
+ * would have reproduced the very defect this function exists to remove. The ticket's
+ * `[queued_ts, wait_until)` interval is the honest intent window, and a settled
+ * ticket inside its window still means "this agent is working these paths".
+ *
+ * NEVER WIDENS: the caller passes `owners` already bounded to its own roster, and
+ * the coupling derivation intersects against that roster again before emitting.
+ * `coordinationDomain` is a PARTITION key here, not an access control — and passing
+ * one is usually WRONG for coupling: agents write locks under the proxying
+ * operator's checkout while a reader resolves its own tree, so a domain-filtered
+ * read returns zero by construction. Default `null` = every domain (the WI-5979
+ * diagnostic-read convention).
+ */
+export async function readPathInterestsByOwner(
+  sql: Sql,
+  owners: readonly string[],
+  opts?: { coordinationDomain?: string | null | undefined },
+): Promise<PathInterestRow[]> {
+  if (owners.length === 0) return [];
+  const ownerList = [...owners];
+  const domain = opts?.coordinationDomain ?? null;
+  const heldDomain = domain === null ? sql`TRUE` : sql`coordination_domain = ${domain}`;
+  const waitDomain = domain === null ? sql`TRUE` : sql`coordination_domain = ${domain}`;
+  return sql<PathInterestRow[]>`
+    SELECT owner, path AS node
+      FROM agent_file_locks
+     WHERE ${heldDomain}
+       AND expires_ts > clock_timestamp()
+       AND owner = ANY(${ownerList}::text[])
+    UNION
+    SELECT w.owner, p AS node
+      FROM agent_lock_waiters w, LATERAL unnest(w.paths) AS p
+     WHERE ${waitDomain}
+       AND w.wait_until > clock_timestamp()
+       AND w.owner = ANY(${ownerList}::text[])
+  `;
+}
+
 async function readQueueInner(
   sql: Sql,
   params: QueueParams,

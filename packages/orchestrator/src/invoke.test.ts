@@ -1112,10 +1112,17 @@ test('fleetAllowedToolsForRole — mug uses a compact explicit MCP subset, not t
   assert.ok(!QUEEN_MCP_TOOL_NAMES.includes('coord:inbox'), 'queen MCP listing hint must omit broad ambient inbox tools');
   for (const required of [
     // P-016 pot-lexicon renames: hive:survey→pot:survey, hive:declare-wake→
-    // pot:declare-wake, bee:spawn→cup:spawn, scout:grade-idea→blender:grade-idea.
+    // pot:declare-wake, scout:grade-idea→blender:grade-idea.
+    // P-059/D-087: bee:spawn→cup:spawn is RETIRED with the Mug/Kettle/Cup tier,
+    // so it is gone from QUEEN_MCP_TOOL_NAMES (see the comment at invoke.ts:645).
+    // Per D-087 a retiring ALLOW-list entry is RE-POINTED to whatever now occupies
+    // that role, never simply deleted: dropping it would narrow this assert to
+    // NOTHING on the spawn/placement axis it exists to hold, in the direction no
+    // test detects (every remaining assertion still passes). fleet:place_batch is
+    // the surviving placement door in the Queen's kit.
     'mcp__papercusp__pot_survey',
     'mcp__papercusp__pot_declare-wake',
-    'mcp__papercusp__cup_spawn',
+    'mcp__papercusp__fleet_place_batch',
     'mcp__papercusp__fleet_assignments',
     'mcp__papercusp__coord_send',
     'mcp__papercusp__coord_wake',
