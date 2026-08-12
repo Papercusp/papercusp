@@ -8502,10 +8502,13 @@ export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
 	embedding: vector({ dimensions: 768 }),
 	embeddingMode: text("embedding_mode"),
 	projectedClients: jsonb("projected_clients").default({}).notNull(),
+	retiredAt: timestamp("retired_at", { withTimezone: true, mode: 'string' }),
+	retiredReason: text("retired_reason"),
 }, (table) => [
 	index("harness_docs_anchor_paths_idx").using("gin", table.anchorPaths.asc().nullsLast().op("array_ops")),
 	index("harness_docs_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("harness_docs_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
+	index("harness_docs_live_authored_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((retired_at IS NULL) AND (content_mode = 'authored'::text))`),
 	index("harness_docs_search_idx").using("gin", table.search.asc().nullsLast().op("tsvector_ops")),
 	index("harness_docs_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.docId, table.harnessSlug, table.workspaceId], name: "harness_docs_pkey"}),
