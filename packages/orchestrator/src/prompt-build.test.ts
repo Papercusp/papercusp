@@ -41,6 +41,9 @@ test('STATE_PLANE_NOTE — teaches coord:send why envelope object shape', () => 
     ),
   );
   assert.ok(STATE_PLANE_NOTE.includes('`goalRef` is a goal reference, not prose'));
+  assert.ok(STATE_PLANE_NOTE.includes('`youMayNotKnow`') && STATE_PLANE_NOTE.includes('{ ref, provenance }'));
+  assert.ok(STATE_PLANE_NOTE.includes('`couldNotDetermine`') && STATE_PLANE_NOTE.includes('{ what, note? }'));
+  assert.match(STATE_PLANE_NOTE, /bare string or array of strings is REFUSED/);
 });
 
 test('buildPrompt — minimal: just the role prompt + runtime context', () => {
