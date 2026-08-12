@@ -3175,6 +3175,17 @@ export const substrateBootedHandlesStatusInHarnessShared = harnessShared.table("
 	primaryKey({ columns: [table.workspaceId], name: "substrate_booted_handles_status_pkey"}),
 ]);
 
+export const operatorSupervisionPauseStateInHarnessShared = harnessShared.table("operator_supervision_pause_state", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_supervision_pause_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_supervision_pause_state_pkey"}),
+
+]);
+
 export const modelPricingInHarnessShared = harnessShared.table("model_pricing", {
 	modelId: text("model_id").primaryKey().notNull(),
 	inputPerMtok: numeric("input_per_mtok").notNull(),
