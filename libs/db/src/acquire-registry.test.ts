@@ -387,9 +387,15 @@ describe('org pool budget under vitest (EI-19448641861408544)', () => {
     expect(52 * 2 * 15).toBeGreaterThan(512);
   });
 
-  it('an explicit PAPERCUSP_DB_POOL_MAX still wins — a suite that needs more can say so', () => {
+  it('an explicit PAPERCUSP_DB_POOL_MAX is an upper bound, subject to the host safety cap', () => {
     process.env.PAPERCUSP_DB_POOL_MAX = '11';
-    expect(processConnectionCeiling().poolMax).toBe(11);
+    const poolMax = processConnectionCeiling().poolMax;
+    // The explicit value skips the Vitest worker default, but it must still
+    // pass through boundedOrgPoolMax: opting into more test concurrency cannot
+    // overrun the host's max_connections budget. Do not hard-code the capped
+    // value; the resource profile is intentionally host-dependent.
+    expect(poolMax).toBeGreaterThanOrEqual(1);
+    expect(poolMax).toBeLessThanOrEqual(11);
   });
 
   it('leaves room for a nested acquisition rather than deadlocking at 1', () => {
