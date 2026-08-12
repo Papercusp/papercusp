@@ -69,6 +69,7 @@ export function defaultSkipFile(f) {
  * @param {string} args.sqlDir    Directory of *.sql files.
  * @param {(s: string) => void} [args.log]
  * @param {(file: string) => boolean} [args.skipFile]   Optional filter; defaults to skipping the per-harness template.
+ * @param {(file: string, raw: string) => void | Promise<void>} [args.beforeApply] Optional fail-closed guard run after the file is read and before its SQL executes.
  * @param {boolean} [args.continueOnError]   Default false (fail-loud — embedded-pg
  *   boot + the fresh-migrate gate rely on a broken migration HALTING). Pass true
  *   on the shared native-:5432 operator boot (handoff-coordination-dx-followups A1):
@@ -76,7 +77,7 @@ export function defaultSkipFile(f) {
  *   array and the boot CONTINUES (the bad file stays unrecorded → retried next
  *   boot), so one peer's broken migration can't wedge the dev-api for the fleet.
  */
-export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, continueOnError = false }) {
+export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, beforeApply, continueOnError = false }) {
   const skip = skipFile ?? defaultSkipFile;
   const failed = [];
 
@@ -143,6 +144,7 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     // which client/pool applies the file — even once a non-zero default is live.
     // ONLY statement_timeout: lock_timeout stays as the deliberate fail-fast guard.
     try {
+      await beforeApply?.(f, ddlRaw);
       await client.unsafe(`BEGIN;\nSET LOCAL statement_timeout = 0;\n${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`);
       appliedCount++;
     } catch (err) {
