@@ -985,12 +985,34 @@ export interface PathInterestRow {
 export async function readPathInterestsByOwner(
   sql: Sql,
   owners: readonly string[],
-  opts?: { coordinationDomain?: string | null | undefined },
+  opts?: {
+    coordinationDomain?: string | null | undefined;
+    /**
+     * Include in-flight waiter tickets (intended paths), not just held locks.
+     * DEFAULT true — it is what makes the co-interest predicate satisfiable.
+     * Pass false for the `include_detail` heldFiles lane, which answers the
+     * narrower question "what does this agent HOLD right now" and would be
+     * actively misleading if it reported paths the agent is merely queued for.
+     */
+    includeIntents?: boolean | undefined;
+  },
 ): Promise<PathInterestRow[]> {
   if (owners.length === 0) return [];
   const ownerList = [...owners];
   const domain = opts?.coordinationDomain ?? null;
   const heldDomain = domain === null ? sql`TRUE` : sql`coordination_domain = ${domain}`;
+  // Build the holds-only template ONLY when it is the one being returned: a
+  // postgres.js tagged template is a live Query object, so constructing the unused
+  // branch would risk issuing a second, pointless round-trip against the lock DB.
+  if (opts?.includeIntents === false) {
+    return sql<PathInterestRow[]>`
+      SELECT owner, path AS node
+        FROM agent_file_locks
+       WHERE ${heldDomain}
+         AND expires_ts > clock_timestamp()
+         AND owner = ANY(${ownerList}::text[])
+    `;
+  }
   const waitDomain = domain === null ? sql`TRUE` : sql`coordination_domain = ${domain}`;
   return sql<PathInterestRow[]>`
     SELECT owner, path AS node
