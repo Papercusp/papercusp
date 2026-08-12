@@ -129,7 +129,7 @@ describe('migration 806 — shared-base worked_by_history writer', () => {
     await seed('WI-history-remote', 'bug', 'remote');
     await sql`
       UPDATE harness_shared.work_items
-         SET taken_by = 'peer-agent'
+         SET taken_by = 'peer-agent', fed_ts = 1
        WHERE workspace_id = 'default' AND feature_id = 'WI-history-remote'`;
     expect(await history('WI-history-remote')).toEqual([]);
   });

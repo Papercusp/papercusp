@@ -15,7 +15,8 @@ DECLARE
 BEGIN
   -- Remote rows are owned by their authoring peer. Their projected claim churn
   -- must not become local prior-worker attribution on this node.
-  IF COALESCE(NEW.origin, 'local') = 'remote' THEN
+  IF NEW.fed_ts IS DISTINCT FROM OLD.fed_ts
+     OR COALESCE(NEW.origin, 'local') = 'remote' THEN
     RETURN NEW;
   END IF;
 
@@ -45,8 +46,12 @@ BEGIN
 END;
 $worked_history$;
 
+-- Trigger names are execution order for same-kind PostgreSQL triggers. Run
+-- before stamp_local_federated_write_trg so a local claim's fed_ts stamp does
+-- not look like a remote projection to this writer.
 DROP TRIGGER IF EXISTS work_items_worked_by_history_trg ON harness_shared.work_items;
-CREATE TRIGGER work_items_worked_by_history_trg
+DROP TRIGGER IF EXISTS record_work_item_worked_by_history_trg ON harness_shared.work_items;
+CREATE TRIGGER record_work_item_worked_by_history_trg
   BEFORE UPDATE OF taken_by ON harness_shared.work_items
   FOR EACH ROW
   EXECUTE FUNCTION harness_shared.record_work_item_worked_by_history();
