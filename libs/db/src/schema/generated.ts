@@ -4822,6 +4822,26 @@ export const attentionNotificationsInHarnessShared = harnessShared.table("attent
 	pgPolicy("attention_notifications_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const cupClaimSpecRevisionsInHarnessShared = harnessShared.table("cup_claim_spec_revisions", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.cup_claim_spec_revisions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	beeId: text("bee_id").notNull(),
+	revision: integer().notNull(),
+	spec: jsonb().notNull(),
+	harnessSlug: text("harness_slug"),
+	idOnly: boolean("id_only"),
+	updatedBy: text("updated_by"),
+	cause: text().notNull(),
+	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("cup_claim_spec_revisions_lookup_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.beeId.asc().nullsLast().op("text_ops"), table.supersededAt.desc().nullsFirst().op("timestamptz_ops")),
+	pgPolicy("cup_claim_spec_revisions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("cup_claim_spec_revisions_cause_known", sql`cause = ANY (ARRAY['update'::text, 'delete'::text])`),
+	check("cup_claim_spec_revisions_bee_nonempty", sql`bee_id <> ''::text`),
+	check("cup_claim_spec_revisions_ws_nonempty", sql`workspace_id <> ''::text`),
+]);
+
 export const periodicSweepRunsInHarnessShared = harnessShared.table("periodic_sweep_runs", {
 	sweepName: text("sweep_name").primaryKey().notNull(),
 	lastRunAt: timestamp("last_run_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
