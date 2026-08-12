@@ -78,6 +78,17 @@ CREATE TABLE IF NOT EXISTS harness_shared.sql_read_census (
   distinct_agents integer     NOT NULL,
   calls           integer     NOT NULL,
 
+  -- RELATION-level totals, repeated on every row of the same relation-night.
+  -- Deliberate denormalisation, for a reason the alternative cannot satisfy: the
+  -- "did traffic fall after the row shipped" check is a RELATION-level question
+  -- (before the row shipped there was no intent to group by), and summing
+  -- `distinct_agents` across a relation's clusters would DOUBLE-COUNT every agent
+  -- that wrote two shapes. Only a count taken across the whole relation before it
+  -- is split into clusters is a true distinct count, so it is computed once and
+  -- carried.
+  relation_distinct_agents integer NOT NULL,
+  relation_calls           integer NOT NULL,
+
   -- One IDENTITY-SCRUBBED exemplar query, so an escalation can show what the
   -- cluster actually looks like without a responder re-querying the ledger. Scrubbed
   -- because these are verbatim agent-written queries and a literal can carry a real
