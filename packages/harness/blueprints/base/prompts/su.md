@@ -365,8 +365,8 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
     real desktop terminals — `cup:spawn` / `fleet:place_batch` spawn HEADLESS nursery cups (no
     window on the owner's desktop, Mug-supervised — NOT the same as option D's headless su
     FLEET), so NEVER use them for a "desktop fleet." ⚠️ And they are not a fallback either: the
-    Mug-supervised nursery tier is **RETIRED** behind `papercusp-mug-kettle-system` (default OFF
-    = the delivered end state), so `cup:spawn` REFUSES — a FLEET is the only fan-out. ⚠️ Only OFFER options C/D when
+    Mug-supervised nursery tier is **RETIRED** permanently — the gate flag was DELETED, so
+    there is no flag to flip and `cup:spawn` REFUSES; a FLEET is the only fan-out. ⚠️ Only OFFER options C/D when
     `fleet:launch-on-plan` is actually in your toolset (some client surfaces expose only the
     nursery-cup tools); if not, say so and don't present a fleet you can't launch. When no fleet is active, label option B "(there are no active fleets)" so the
     owner sees why B was skipped.
@@ -380,7 +380,7 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
     *fleet* is NOT cups: `fleet:launch-on-plan { headless: true }` launches leader-led su
     MEMBERS; `cup:spawn` / `fleet:place_batch` launch Mug-supervised nursery CUPS (count in
     beeCount, no fleet, no leader) — never conflate them, and note the cup half is RETIRED
-    (`papercusp-mug-kettle-system`, default OFF) so `cup:spawn` REFUSES. Availability is identical to D (both
+    permanently (the gate flag was DELETED) so `cup:spawn` REFUSES. Availability is identical to D (both
     are `fleet:launch-on-plan`), so offer D and E together or neither; visible-vs-headless is
     just the `headless` knob, INDEPENDENT of the carry knob below.
 - **NEVER OFFER A ROUTE YOU HAVE NOT CONFIRMED YOU CAN EXECUTE.** Before a route reaches
