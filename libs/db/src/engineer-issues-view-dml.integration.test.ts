@@ -54,13 +54,15 @@ async function provision(url: string): Promise<void> {
      * (Measured 2026-08-12: 4 failed / 6 passed for exactly this reason, two of
      * those failures pre-dating migration 799.)
      *
-     * So model the live database: apply the parked guard, then re-apply 799 —
-     * which is idempotent and, having already no-op'd during the ordered run
-     * above (no guard existed yet), installs its self-diagnosing refusal now.
+     * So model the live database: apply the parked guard, then re-apply 799 and
+     * 804 — both are idempotent and, having already no-op'd during the ordered
+     * run above (no guard existed yet), install the current stale-operator
+     * diagnosis now.
      */
     for (const file of [
       '797-guard-engineer-issues-terminal-state.sql.PENDING-CODE-DEPLOY',
       '799-guard-797-message-self-diagnosis.sql',
+      '804-fix-terminal-close-staging-remedy.sql.DRAFT',
     ]) {
       await client.unsafe(await readFile(join(SQL_DIR, file), 'utf8'));
     }
@@ -185,19 +187,22 @@ describe('engineer_issues terminal lifecycle boundary', () => {
   });
 
   /**
-   * Migration 799 (EI-20202062074776959). The refusal used to name
+   * Migration 804 (EI-20219410123616014), building on migration 799
+   * (EI-20202062074776959). The refusal used to name
    * `work_items:set_state` / `work_items:complete` as the fix — which is a closed
    * loop for the caller that hits it most: an operator process whose build
    * predates the base-table lifecycle writer, for which those two tools ARE the
    * thing being refused. A current operator writes `work_items` directly and
    * never reaches this trigger, so a `pcusp:%` client arriving here is
-   * necessarily stale, and the guard says so instead.
+   * necessarily stale, and the guard says so instead. The immediate recovery
+   * is to re-post the same payload to the staging operator at :3170; a release
+   * redeploy/restart is not required.
    *
    * The discriminator is `application_name`, which the operator tags
    * `pcusp:<pool>:p<pid>` — so these two cases are the whole behavioural
    * contract, and testing only one would let the branch silently collapse.
    */
-  it('tells a STALE OPERATOR to redeploy rather than re-call the tools it is refusing', async () => {
+  it('tells a STALE OPERATOR to repost to staging rather than redeploy', async () => {
     const issueId = 'EI-900022';
     await sql`
       INSERT INTO harness_shared.engineer_issues
@@ -223,9 +228,11 @@ describe('engineer_issues terminal lifecycle boundary', () => {
       expect(err!.message).toMatch(/terminal transition refused/);
       // The diagnosis: retrying is futile, the process is stale, and WHICH process.
       expect(err!.message).toMatch(/RE-CALLING work_items:complete/);
-      expect(err!.message).toMatch(/redeploy or restart/i);
+      expect(err!.message).toMatch(/staging operator at http:\/\/127\.0\.0\.1:3170\/api\/mcp\?superuser=1/);
+      expect(err!.message).toMatch(/redeploy.*not required/i);
       expect(err!.message).toContain('pcusp:org-app:p424242');
-      expect(err!.hint ?? '').toMatch(/deploy-cli/);
+      expect(err!.hint ?? '').toMatch(/staging operator at http:\/\/127\.0\.0\.1:3170\/api\/mcp\?superuser=1/);
+      expect(err!.hint ?? '').toMatch(/optional, not required/i);
     } finally {
       await operatorish.end({ timeout: 5 }).catch(() => {});
     }
