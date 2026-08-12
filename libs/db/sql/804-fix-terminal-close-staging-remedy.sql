@@ -37,6 +37,14 @@ BEGIN
     RETURN;
   END IF;
 
+  -- Migration 797 is intentionally parked on fresh databases. Migration 799
+  -- therefore no-ops when the terminal guard is absent; this follow-up must do
+  -- the same instead of requiring a marker that 799 deliberately did not add.
+  IF position('EI-20092514168581881: refuse ungated terminal transitions' IN def) = 0 THEN
+    RAISE NOTICE '804: migration 797''s terminal guard is not installed on this database (797 is parked) — no staging remedy is needed; no-op';
+    RETURN;
+  END IF;
+
   IF position('EI-20202062074776959: self-diagnosing refusal' IN def) = 0 THEN
     RAISE EXCEPTION '804: migration 799''s self-diagnosing refusal was not found — re-derive the surgery anchor instead of forcing this migration';
   END IF;
