@@ -642,7 +642,8 @@ export const QUEEN_MCP_TOOL_NAMES: readonly string[] = [
   'fleet:drain',
   'fleet:governor',
   'fleet:place_batch',
-  'cup:spawn',
+  // (cup:spawn removed by P-059 — the verb retired with the Mug/Kettle/Cup tier,
+  // so keeping it in the kit would hand the role a name that never resolves.)
   'fleet:supervise',
   'pot:declare-wake',
   'pot:get',
