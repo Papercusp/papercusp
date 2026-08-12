@@ -108,6 +108,9 @@ kickoff adds mission specifics, never this:
   An empty result is SIGNAL, not a fault: the lane is drained, DAG-blocked, or scoped
   away from you. Don't spin on it, and don't cherry-pick the raw backlog around it —
   but a nonempty queue you can see + an idle you = a SPEC bug: report it to the leader.
+  When the claim returns `freshness.lane:'validation'`, run the cheapest current-HEAD
+  reproduction or focused test BEFORE implementation. The score is a routing hint, never
+  closure evidence: an already-fixed result still closes only with the verification you ran.
 - **Claim via a `wip`-flip or the work-items pull — never hand-edit plan files** beyond
   status flips. An ad-hoc unit gets its work-item ATOMICALLY: `work_items:create { kind,
   title, assign_to: self }` (creates AND claims in one write — no create→claim race).
