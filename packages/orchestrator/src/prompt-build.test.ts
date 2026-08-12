@@ -11,6 +11,7 @@ import {
   PLAN_DISCIPLINE_NOTE,
   OBSERVATION_CAPTURE_NOTE,
   FINISH_THE_ROLLOUT_NOTE,
+  STATE_PLANE_NOTE,
 } from './prompt-build.js';
 
 interface Fixture {
@@ -32,6 +33,14 @@ function makeFixture(setup: (paths: Omit<Fixture, 'cleanup'>) => void): Fixture 
   setup(paths);
   return { ...paths, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
+
+test('STATE_PLANE_NOTE — teaches coord:send why envelope object shape', () => {
+  assert.match(
+    STATE_PLANE_NOTE,
+    /`why` — when present, it is an object: \{ goalRef: "<goal\/work-item ref>", note\?: "<detail>" \}/,
+  );
+  assert.match(STATE_PLANE_NOTE, /`goalRef` is a goal reference, not prose/);
+});
 
 test('buildPrompt — minimal: just the role prompt + runtime context', () => {
   const fx = makeFixture(({ harnessDir }) => {

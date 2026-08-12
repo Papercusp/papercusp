@@ -1299,6 +1299,8 @@ export const STATE_PLANE_NOTE = [
   'The ENVELOPE fields — `expects`, `blocking`, `why`, `basedOn` — belong to the whole message and',
   'are REFUSED on a section (a scheduler acts on a message as a unit). `basedOn` is DERIVED from',
   'what you actually read; never hand-author it.',
+  '- `why` — when present, it is an object: `{ goalRef: "<goal/work-item ref>", note?: "<detail>" }`.',
+  '  `goalRef` is a goal reference, not prose; `note` carries any explanatory detail.',
   '',
   'Fill the fields that carry something and leave the rest off — the gate asks for structure, not',
   'filler. A section padded with empty ceremony is worse than the prose it replaced.',
