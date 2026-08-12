@@ -763,6 +763,12 @@ AUTO you skip the ask and still register per the tiers.
   costs seconds; the uncaptured friction re-costs every next agent the same discovery.
   **Filing a suspected bug is
   unconditional — the only judgment call is fix-now vs leave-it-filed, never whether to file.**
+  For a suspected TOOL-CALL failure, preserve that immediacy without exciting the work queue:
+  pass `improvements:capture { toolFailure:{ toolName, errorCode?, status?, message,
+  schemaRevision?, fieldPath?, runtimeVersion? } }`. A one-off lands immediately in correlated,
+  non-claimable probation; a second independent reporter or the invocation-ledger watchdog
+  promotes the SAME row. Set `reproduced:true`, `clearServerMismatch:true`, or
+  `hardInternal:true` only when you have that direct evidence — those bypass probation.
   A "bug" includes SUB-OPTIMAL, not just a hard stopper: a false alarm / wrong reading from any
   monitor or tracker (a false alarm is a bug in the alarm), a flap that self-recovered,
   degradation under load — the system must stay responsive at ANY load, so load-correlated
