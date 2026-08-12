@@ -34,6 +34,7 @@ vi.mock('../../../../../packages/operator-core/lib/resource-profile', () => ({
 import {
   buildConnectionOptions,
   connectionBudgetStatus,
+  explicitOrgPoolOverrideWarning,
   maybePgbouncer,
   pgbouncerEnabled,
   _resetUrlCacheForTests,
@@ -47,6 +48,7 @@ const saved = {
   on: process.env.PAPERCUSP_PGBOUNCER,
   port: process.env.PAPERCUSP_PGBOUNCER_PORT,
   pgPort: process.env.PAPERCUSP_PG_PORT,
+  poolMax: process.env.PAPERCUSP_DB_POOL_MAX,
 };
 afterEach(() => {
   if (saved.on === undefined) delete process.env.PAPERCUSP_PGBOUNCER;
@@ -55,6 +57,8 @@ afterEach(() => {
   else process.env.PAPERCUSP_PGBOUNCER_PORT = saved.port;
   if (saved.pgPort === undefined) delete process.env.PAPERCUSP_PG_PORT;
   else process.env.PAPERCUSP_PG_PORT = saved.pgPort;
+  if (saved.poolMax === undefined) delete process.env.PAPERCUSP_DB_POOL_MAX;
+  else process.env.PAPERCUSP_DB_POOL_MAX = saved.poolMax;
   mockProfile.hostClass = 'server';
   mockProfile.coresOverride = undefined;
   mockProfile.physicalCoresOverride = undefined;
@@ -324,6 +328,26 @@ describe('connectionBudgetStatus — EI-3379 pooler-aware backend budget', () =>
 
   it('liveMax unknown (0, PG unreachable) is never DANGER', () => {
     expect(connectionBudgetStatus({ ...devBox, pooled: false, liveMax: 0 }).danger).toBe(false);
+  });
+});
+
+describe('explicitOrgPoolOverrideWarning — EI-20245956069519471 recurrence detector', () => {
+  it('warns when a client-slot cap is pinned in front of PgBouncer', () => {
+    process.env.PAPERCUSP_PGBOUNCER = '1';
+    process.env.PAPERCUSP_DB_POOL_MAX = '8';
+    expect(explicitOrgPoolOverrideWarning()).toMatch(
+      /PAPERCUSP_DB_POOL_MAX=8.*PgBouncer.*caps per-process client slots/i,
+    );
+  });
+
+  it('stays silent when PgBouncer is disabled or no explicit cap is set', () => {
+    process.env.PAPERCUSP_PGBOUNCER = '0';
+    process.env.PAPERCUSP_DB_POOL_MAX = '8';
+    expect(explicitOrgPoolOverrideWarning()).toBeNull();
+
+    process.env.PAPERCUSP_PGBOUNCER = '1';
+    delete process.env.PAPERCUSP_DB_POOL_MAX;
+    expect(explicitOrgPoolOverrideWarning()).toBeNull();
   });
 });
 

@@ -883,6 +883,21 @@ export function poolIdleTimeoutSec(): number {
 }
 
 /**
+ * Detect the configuration combination that reintroduced client-pool starvation
+ * on the release host (EI-20245956069519471): an explicit per-process pool cap
+ * alongside PgBouncer. The cap may be intentional for a test or a constrained
+ * deployment, so this is a loud diagnostic rather than a runtime override.
+ */
+export function explicitOrgPoolOverrideWarning(): string | null {
+  const override = Number(process.env.PAPERCUSP_DB_POOL_MAX);
+  if (!pgbouncerEnabled() || !Number.isFinite(override) || override <= 0) return null;
+  return (
+    `PAPERCUSP_DB_POOL_MAX=${Math.floor(override)} is explicitly pinned while PgBouncer is enabled; ` +
+    'this caps per-process client slots and bypasses resource-profile sizing'
+  );
+}
+
+/**
  * Size of each org pool (getOrgPg admin + getOrgPgApp app). C1-1 of
  * backend-connection-scaling-2026-06-17. An explicit `PAPERCUSP_DB_POOL_MAX`
  * wins; otherwise the resource-profile size, but BOUNDED so that
@@ -1844,6 +1859,7 @@ export async function logConnectionBudget(
   log: (m: string) => void = (m) => console.warn(m),
 ): Promise<void> {
   const { orgPools, harnessPools, fixedOverhead, poolMax } = processConnectionCeiling();
+  const poolOverrideWarning = explicitOrgPoolOverrideWarning();
   let liveMax = 0;
   try {
     const rows = (await getOrgPg().sql`SELECT current_setting('max_connections')::int AS m`) as {
@@ -1873,6 +1889,7 @@ export async function logConnectionBudget(
     `[pg-budget] pid ${process.pid}: <=${directPerProc} direct conns/process ` +
     `(${orgNote} + harness ${harnessPools} + cache/listeners ${fixedOverhead}); ` +
     `~${fleetWorst} direct across ${expectedProcs} proc(s)`;
+  const configNote = poolOverrideWarning ? ` — WARNING: ${poolOverrideWarning}` : '';
   if (danger) {
     const remedy = pooled
       ? `Run \`npx tsx scripts/pg-autotune.ts --apply\` (raise the ceiling to the host) or lower ` +
@@ -1880,9 +1897,9 @@ export async function logConnectionBudget(
         `so the DIRECT pools (harness + LISTEN + admin) are the pressure.`
       : `Run \`npx tsx scripts/pg-autotune.ts --apply\` (raise the ceiling to the host), lower ` +
         `PAPERCUSP_DB_POOL_MAX, or front PG with PgBouncer.`;
-    log(`${head} — DANGER vs live max_connections=${liveMax}. ${remedy}`);
+    log(`${head} — DANGER vs live max_connections=${liveMax}. ${remedy}${configNote}`);
   } else {
-    log(`${head} vs live max_connections=${liveMax || '?'} — ok`);
+    log(`${head} vs live max_connections=${liveMax || '?'} — ok${configNote}`);
   }
 }
 
