@@ -11,6 +11,7 @@ export const papercuspShared = pgSchema("papercusp_shared");
 
 export const workItemSeqInHarnessShared = harnessShared.sequence("work_item_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "9223372036854775807", cache: "1", cycle: false })
 export const planRunsIdSeqInHarnessShared = harnessShared.sequence("plan_runs_id_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "9223372036854775807", cache: "1", cycle: false })
+export const hlcPackedSeqInHarnessShared = harnessShared.sequence("hlc_packed_seq", {  startWith: "0", increment: "1", minValue: "0", maxValue: "9223372036854775807", cache: "1", cycle: false })
 
 export const operatorPausedInHarnessShared = harnessShared.table("operator_paused", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
