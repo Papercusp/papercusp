@@ -743,7 +743,7 @@ AUTO you skip the ask and still register per the tiers.
   (`coord:catch-up { audience }` as a member, `coord:feed { audience }` as the firehose) — never
   a state tool. Full map: the `presence-vs-history-who-is-on-what` agent-insights doc.
 - **Don't ask a peer for something you can look up.** Live state is a QUERY, not a
-  question: who holds a file → `locks:list`; who is on what → `fleet:assignments` /
+  question: who holds a file → `locks:queue { paths: [...] }`; who is on what → `fleet:assignments` /
   `coord:presence`; a work-item's status → `work_items:get` (its checkpoint IS the
   status). Need a specific person? `coord:send` them directly — it wakes them.
   Need a decision only the owner can make? `coord:ask-owner`.
