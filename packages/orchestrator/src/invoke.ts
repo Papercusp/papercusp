@@ -788,7 +788,6 @@ export const OVERWATCH_MCP_TOOL_NAMES: readonly string[] = [
   'coord:send',
   'coord:thread',
   'coord:watermark',
-  'coord:watermark-set',
   'curation:feed',
   'dev:rate_governor_status',
   'docs:get',
