@@ -129,6 +129,12 @@ let _resolvedAppUrl: string | null = null;
 let _resolvedAppUrlSource: 'env' | 'discovery' | null = null;
 let _resolvedAdminUrl: string | null = null;
 let _resolvedAdminUrlSource: 'env' | 'discovery' | null = null;
+// Test resets intentionally rotate this process between independent Postgres clusters. Identity
+// probes are fire-and-forget, so closing an old pool cannot guarantee its already-issued probe's
+// `.then` callback runs before the replacement pool is built. Fence those pre-reset callbacks or
+// they can poison the replacement generation with a correctly-read but now-stale identity.
+// Production never calls `_resetForTests`, so its process-lifetime identity contract is unchanged.
+let _identityProbeTestGeneration = 0;
 export type DiscoveryEndpoint = { user?: string; password?: string; host?: string; port?: number };
 
 /** Is `pid` still running? Injected into _parseDiscoveryJson so tests stay pure. */
@@ -1321,11 +1327,16 @@ function validateDiscoveryTargetOnce(
   label: string,
   opts: { url: string; checkSchema: boolean },
 ): void {
+  const probeGeneration = _identityProbeTestGeneration;
   void sql<Array<{ t: string | null; system_identifier: string | null; database: string | null }>>`
       SELECT to_regclass('harness_shared.schema_migrations')::text AS t,
              (SELECT system_identifier::text FROM pg_control_system()) AS system_identifier,
              current_database() AS database`
     .then((rows) => {
+      // `_resetForTests` may have retired this pool while the fire-and-forget query was in
+      // flight. Its result belongs to the old test generation and must not pin or reject the
+      // replacement cluster (EI-20321995598569419).
+      if (probeGeneration !== _identityProbeTestGeneration) return;
       if (opts.checkSchema && !rows[0]?.t) {
         console.error(
           `[connection] WI-5244: the ${label} pool resolved via the discovery file ` +
@@ -1928,6 +1939,11 @@ export async function logConnectionBudget(
  * instead of relying on each test file to know this footgun exists.
  */
 export async function _resetForTests() {
+  // Invalidate callbacks from identity probes issued by pools this reset is about to retire.
+  // postgres-js pool shutdown does not order a detached promise's `.then` callback ahead of the
+  // caller building its replacement pool, which previously let a stale ambient probe race a
+  // testcontainer pin and report a false cross-store violation.
+  _identityProbeTestGeneration += 1;
   _resetUrlCacheForTests();
   if (_adminClient) {
     await _adminClient.end({ timeout: 1 }).catch(() => {});

@@ -134,6 +134,26 @@ describe('connection cache invalidation source contract (bug #33)', () => {
     expect(body, 'must swallow a validation-query error rather than propagate it').toMatch(/\.catch\(/);
   });
 
+  it('test pool resets fence already-issued identity probes from the retired generation', () => {
+    const validate = SRC.match(/function validateDiscoveryTargetOnce\([^{]*\{([\s\S]+?)^\}/m);
+    expect(validate, 'validateDiscoveryTargetOnce must exist').toBeTruthy();
+    expect(
+      validate![1],
+      'a detached identity probe must capture the generation of the pool that issued it',
+    ).toMatch(/const probeGeneration\s*=\s*_identityProbeTestGeneration/);
+    expect(
+      validate![1],
+      'a probe resolving after a test reset must not pin or reject the replacement cluster',
+    ).toMatch(/probeGeneration\s*!==\s*_identityProbeTestGeneration\) return/);
+
+    const reset = SRC.match(/export async function _resetForTests\(\)[^{]*\{([\s\S]+?)^\}/m);
+    expect(reset, '_resetForTests must exist').toBeTruthy();
+    expect(
+      reset![1],
+      'the test reset must invalidate callbacks before it retires their pools',
+    ).toMatch(/_identityProbeTestGeneration\s*\+=\s*1[\s\S]*?_resetUrlCacheForTests\(\)/);
+  });
+
   // EI-18789855771421275: getOrgPgLosslessBigint() is a SEPARATE cached pool
   // sharing adminUrl()'s discovery-file resolution — if adminUrl()'s
   // invalidation block doesn't ALSO clear it, a discovery-file URL change
