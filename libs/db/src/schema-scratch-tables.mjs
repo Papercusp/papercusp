@@ -2,12 +2,13 @@
  * Strip MIGRATION-INTERNAL scratch tables from a drizzle-kit-introspected schema.
  * EI-18785808338338490.
  *
- * Migrations copy rows aside into quarantine tables — e.g. migration 686 does
- * `CREATE TABLE harness_shared._pot_members_686_orphans (LIKE pot_members
- * INCLUDING DEFAULTS)` to preserve rows an FK repoint would otherwise strand.
- * The leading underscore IS the convention marking them as not-application
- * surface, but drizzle-kit introspects every table it can see, so they land in
- * the application's ORM schema as first-class exports.
+ * Migrations copy rows aside into quarantine or backup tables — e.g. migration
+ * 686 does `CREATE TABLE harness_shared._pot_members_686_orphans (LIKE
+ * pot_members INCLUDING DEFAULTS)` to preserve rows an FK repoint would
+ * otherwise strand. Migration-internal tables use either a leading underscore
+ * or a `bak_` prefix. Neither convention is application surface, but
+ * drizzle-kit introspects every table it can see, so both otherwise land in the
+ * application's ORM schema as first-class exports.
  *
  * That is noise at best, and it has already cost real time: drizzle-kit emitted
  * `text("revoked_pubkeys")` WITHOUT `.array()` for the 686 orphan clone while
@@ -32,7 +33,7 @@
  *   table statements removed, and the table names removed (in file order)
  */
 export function stripScratchTableDeclarations(schema) {
-  const declRe = /export const \w+ = (?:pgTable|\w+\.table)\(\s*"(_[^"]*)"\s*,/g;
+  const declRe = /export const \w+ = (?:pgTable|\w+\.table)\(\s*"((?:_|bak_)[^"]*)"\s*,/g;
   const removals = [];
   let m;
   while ((m = declRe.exec(schema)) !== null) {

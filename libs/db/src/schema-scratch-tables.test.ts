@@ -7,8 +7,8 @@ import { join } from 'node:path';
 // directive in place would be an unused-directive error in its own right.
 import { stripScratchTableDeclarations } from './schema-scratch-tables.mjs';
 
-// EI-18785808338338490: migration-internal scratch tables (leading underscore)
-// must never reach the application's ORM schema.
+// EI-18785808338338490: migration-internal scratch/backup tables (leading
+// underscore or `bak_`) must never reach the application's ORM schema.
 describe('stripScratchTableDeclarations', () => {
   const realTable = `export const potMembersInHarnessShared = harnessShared.table("pot_members", {
 \tworkspaceId: text("workspace_id").notNull(),
@@ -20,11 +20,22 @@ describe('stripScratchTableDeclarations', () => {
 \trevokedPubkeys: text("revoked_pubkeys").default([""]).notNull(),
 });
 `;
+  const backupTable = `export const workItemTwinsBackupInHarnessShared = harnessShared.table("bak_20260813_work_item_physical_twins", {
+\tworkspaceId: text("workspace_id").notNull(),
+\tworkingUsers: bigint("working_users", { mode: "number" }).default([]).notNull(),
+});
+`;
 
   it('removes a leading-underscore table and reports it by name', () => {
     const { schema, stripped } = stripScratchTableDeclarations(realTable + scratchTable);
     expect(stripped).toEqual(['_pot_members_686_orphans']);
     expect(schema).not.toContain('_pot_members_686_orphans');
+  });
+
+  it('removes a bak_ migration backup and reports it by name', () => {
+    const { schema, stripped } = stripScratchTableDeclarations(realTable + backupTable);
+    expect(stripped).toEqual(['bak_20260813_work_item_physical_twins']);
+    expect(schema).toBe(realTable);
   });
 
   it('leaves the real table byte-identical — including a LIKE-clone twin', () => {
@@ -56,10 +67,14 @@ describe('stripScratchTableDeclarations', () => {
     expect(schema).toBe(realTable);
   });
 
-  it('removes every scratch table when several are present', () => {
+  it('removes every migration-internal table when conventions are mixed', () => {
     const second = scratchTable.replace(/_pot_members_686_orphans/g, '_other_999_orphans');
-    const { stripped } = stripScratchTableDeclarations(scratchTable + realTable + second);
-    expect(stripped).toEqual(['_pot_members_686_orphans', '_other_999_orphans']);
+    const { stripped } = stripScratchTableDeclarations(scratchTable + realTable + backupTable + second);
+    expect(stripped).toEqual([
+      '_pot_members_686_orphans',
+      'bak_20260813_work_item_physical_twins',
+      '_other_999_orphans',
+    ]);
   });
 
   it('leaves an UNBALANCED block alone rather than corrupting the file', () => {
@@ -70,7 +85,7 @@ describe('stripScratchTableDeclarations', () => {
   });
 
   // The regression that motivated this: the committed schema must stay clean.
-  it('the committed generated.ts carries no migration scratch tables', () => {
+  it('the committed generated.ts carries no migration scratch or backup tables', () => {
     const generated = join(__dirname, 'schema', 'generated.ts');
     if (!existsSync(generated)) return; // generated artifact may be absent in a fresh checkout
     const src = readFileSync(generated, 'utf8');
