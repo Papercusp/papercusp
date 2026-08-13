@@ -8,6 +8,14 @@
  */
 
 export type OmpGatewayProvider = 'anthropic' | 'openai';
+export type OmpGatewayAccountProvider = 'claude' | 'codex';
+
+export interface OmpGatewayModelRoute {
+  /** Exact model id sent through the gateway after removing an OMP effort suffix. */
+  modelId: string;
+  gatewayProvider: OmpGatewayProvider;
+  accountProvider: OmpGatewayAccountProvider;
+}
 
 export const OMP_GATEWAY_PLACEHOLDER_KEY = 'papercusp-gateway';
 export const OMP_GATEWAY_PROVIDER_ID = 'papercusp-gateway';
@@ -52,10 +60,61 @@ export function ompProviderForAccountProvider(p: 'claude' | 'codex'): OmpGateway
   return p === 'codex' ? 'openai' : 'anthropic';
 }
 
+const EFFORT_SUFFIXES = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+
+function modelIdWithoutEffort(value: string): string {
+  const colon = value.lastIndexOf(':');
+  if (colon < 0) return value;
+  return EFFORT_SUFFIXES.has(value.slice(colon + 1).toLowerCase()) ? value.slice(0, colon) : value;
+}
+
+/**
+ * Map an OMP model selector to a gateway wire and credential provider only when
+ * the selector's ORIGINAL provider is known to speak that wire. Model ids alone
+ * are insufficient: e.g. an amazon-bedrock Claude id is not interchangeable
+ * with Anthropic /v1/messages, and silently stripping its provider changes the
+ * requested model/account route.
+ */
+export function ompGatewayModelFromSpec(spec?: string | null): OmpGatewayModelRoute | null {
+  const value = spec?.trim();
+  if (!value) return null;
+
+  const slash = value.indexOf('/');
+  const provider = slash >= 0 ? value.slice(0, slash).trim().toLowerCase() : '';
+  const modelId = modelIdWithoutEffort(slash >= 0 ? value.slice(slash + 1).trim() : value);
+  if (!modelId) return null;
+
+  if (provider === 'anthropic' || provider === 'claude-bridge') {
+    return /^claude-/.test(modelId)
+      ? { modelId, gatewayProvider: 'anthropic', accountProvider: 'claude' }
+      : null;
+  }
+  if (provider === 'openai' || provider === 'openai-codex') {
+    return { modelId, gatewayProvider: 'openai', accountProvider: 'codex' };
+  }
+  if (provider === OMP_GATEWAY_PROVIDER_ID) {
+    if (/^claude-/.test(modelId)) {
+      return { modelId, gatewayProvider: 'anthropic', accountProvider: 'claude' };
+    }
+    if (/^(?:gpt-|o\d)/.test(modelId)) {
+      return { modelId, gatewayProvider: 'openai', accountProvider: 'codex' };
+    }
+    return null;
+  }
+
+  // Legacy role defaults may still be stored as a bare upstream id. Keep those
+  // exact ids compatible without allowing a qualified foreign provider through.
+  if (slash < 0 && /^claude-/.test(modelId)) {
+    return { modelId, gatewayProvider: 'anthropic', accountProvider: 'claude' };
+  }
+  if (slash < 0 && /^(?:gpt-|o\d)/.test(modelId)) {
+    return { modelId, gatewayProvider: 'openai', accountProvider: 'codex' };
+  }
+  return null;
+}
+
 export function ompModelIdFromSpec(spec?: string | null): string | null {
-  if (!spec) return null;
-  const id = spec.trim().split('/').pop()?.split(':')[0]?.trim();
-  return id && /^claude-/.test(id) ? id : null;
+  return ompGatewayModelFromSpec(spec)?.modelId ?? null;
 }
 
 function gatewayPort(): number {
