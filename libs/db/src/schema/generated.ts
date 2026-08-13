@@ -4322,6 +4322,26 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	pgPolicy("tool_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const workItemOccurrencesInHarnessShared = harnessShared.table("work_item_occurrences", {
+	occurrenceId: bigserial("occurrence_id", { mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	canonicalHarnessSlug: text("canonical_harness_slug").notNull(),
+	canonicalWorkItemId: text("canonical_work_item_id").notNull(),
+	reporter: text(),
+	sourceTool: text("source_tool").notNull(),
+	reportKind: text("report_kind").notNull(),
+	reportedTitle: text("reported_title").notNull(),
+	evidence: jsonb().default({}).notNull(),
+	admissionIdentity: jsonb("admission_identity"),
+	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("work_item_occurrences_canonical_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.canonicalHarnessSlug.asc().nullsLast().op("text_ops"), table.canonicalWorkItemId.asc().nullsLast().op("timestamptz_ops"), table.occurredAt.desc().nullsFirst().op("text_ops")),
+	index("work_item_occurrences_flow_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.occurredAt.desc().nullsFirst().op("timestamptz_ops")),
+	check("work_item_occurrences_report_kind_check", sql`report_kind = ANY (ARRAY['canonical-created'::text, 'duplicate'::text, 'coalesced'::text, 'promoted'::text, 'regression'::text])`),
+	primaryKey({ columns: [table.occurrenceId], name: "work_item_occurrences_pkey"}),
+
+]);
+
 export const userActionsInHarnessShared = harnessShared.table("user_actions", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	harnessSlug: text("harness_slug").notNull(),
