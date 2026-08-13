@@ -14,8 +14,6 @@
  * Real Postgres (testcontainer; Docker required). Run:
  *   cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/goal-pots.integration.test.ts
  */
-import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -34,16 +32,6 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const SQL_DIR = join(here, '..', 'sql');
 const RUNNER = join(here, '..', '..', '..', 'packages', 'embedded-postgres-server', 'src', 'migration-runner.js');
-const MIGRATION_TEMPLATE_KEY = createHash('sha256')
-  .update(
-    readdirSync(SQL_DIR)
-      .filter((file) => file.endsWith('.sql'))
-      .sort()
-      .map((file) => `${file}\0${readFileSync(join(SQL_DIR, file), 'utf8')}`)
-      .join('\0'),
-  )
-  .digest('hex')
-  .slice(0, 16);
 
 const BOOT_PREREQS_DDL = `
   DO $pg$ BEGIN
@@ -93,21 +81,11 @@ async function spend(harnessSlug: string, cost: number | null, ts = Date.now()):
 }
 
 beforeAll(async () => {
-  db = await createFreshTestDb({
-    prefix: 'goalpots',
-    template: {
-      key: MIGRATION_TEMPLATE_KEY,
-      provision,
-      // The first process to see a new migration hash builds the template;
-      // later suites clone it in milliseconds. This budget covers that one
-      // real replay without making every run pay for it.
-      lockTimeoutMs: 240_000,
-    },
-  });
+  db = await createFreshTestDb({ prefix: 'goalpots', provision });
   sql = postgres(db.url, { max: 1, onnotice: () => {} });
   await sql.unsafe(`SELECT set_config('app.workspace_id', '${WS}', false)`);
   await sql.unsafe(`SELECT set_config('papercusp.workspace_id', '${WS}', false)`);
-}, 360_000);
+}, 180_000);
 
 afterAll(async () => {
   await sql?.end({ timeout: 5 });
