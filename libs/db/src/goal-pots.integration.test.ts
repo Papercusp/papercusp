@@ -99,6 +99,41 @@ beforeEach(async () => {
 });
 
 describe('D-021 — goal meters DO NOT SUM', () => {
+  it('never charges a goal for pot spend from before the goal existed', async () => {
+    const goalCreatedAt = Date.now();
+    await makeGoal('goal-a');
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'existing-pot' });
+    await spend('existing-pot', 1000, goalCreatedAt - 60_000);
+    await spend('existing-pot', 4, goalCreatedAt + 60_000);
+
+    const rollup = await goalSpend(sql, { workspaceId: WS, goalId: 'goal-a' });
+    expect(rollup.costUsd).toBeCloseTo(4, 6);
+    expect(rollup.samples).toBe(1);
+  });
+
+  it('lets an explicit sinceMs narrow, but never widen, the goal-lifetime window', async () => {
+    const goalCreatedAt = Date.now();
+    await makeGoal('goal-a');
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'existing-pot' });
+    await spend('existing-pot', 1000, goalCreatedAt - 60_000);
+    await spend('existing-pot', 4, goalCreatedAt + 30_000);
+    await spend('existing-pot', 2, goalCreatedAt + 90_000);
+
+    const widened = await goalSpend(sql, {
+      workspaceId: WS,
+      goalId: 'goal-a',
+      sinceMs: goalCreatedAt - 120_000,
+    });
+    expect(widened.costUsd).toBeCloseTo(6, 6);
+
+    const narrowed = await goalSpend(sql, {
+      workspaceId: WS,
+      goalId: 'goal-a',
+      sinceMs: goalCreatedAt + 60_000,
+    });
+    expect(narrowed.costUsd).toBeCloseTo(2, 6);
+  });
+
   /**
    * THE guard. Two goals share one pot; the pot cost $10.
    *

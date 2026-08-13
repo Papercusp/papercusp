@@ -276,9 +276,20 @@ export async function goalSpend(
         ON gp.harness_slug = s.harness_slug
        AND gp.workspace_id = s.workspace_id
        AND gp.removed_at IS NULL
+      JOIN harness_shared.goals g
+        ON g.id = gp.goal_id
+       AND g.workspace_id = gp.workspace_id
      WHERE s.workspace_id = ${opts.workspaceId}
        AND gp.goal_id = ${opts.goalId}
-       AND s.ts >= ${since}
+       -- A pot can predate the goal by years. Charging that historical spend
+       -- to a newly-created goal makes a fresh $25 ceiling look blown the
+       -- instant the pot is attached. The goal lifetime is therefore the hard
+       -- lower bound; an explicit sinceMs may narrow the window further but
+       -- can never reach back before the goal existed.
+       AND s.ts >= GREATEST(
+         ${since}::bigint,
+         (EXTRACT(EPOCH FROM g.created_at) * 1000)::bigint
+       )
      GROUP BY s.harness_slug
      ORDER BY cost DESC
   `;
