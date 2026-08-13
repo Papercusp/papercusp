@@ -677,6 +677,12 @@ test('su.md persona spine carries all four sharpened directives (drift guard, P-
   // [OBSERVATION] — the capture-the-moment routing on the "File what you discover" bullet.
   assert.match(su, /Capture what you notice the\s+moment you notice it/);
   assert.match(su, /agent-insights doc/);
+  // WI-38401: DRAIN is the one explicit exception to the otherwise-unconditional
+  // suspected-defect rule, and only a direct blocker may mint one linked row.
+  assert.match(su, /Outside DRAIN, filing a suspected bug is unconditional/);
+  assert.match(su, /DRAIN is the explicit exception/);
+  assert.match(su, /Only a defect that directly blocks the scoped drain may be filed/);
+  assert.match(su, /linked to\s+the active drain item\/plan/);
   // [FLAG-ON] — the dangerous-set rule folded into the timidity bullet.
   assert.match(su, /Ship features flag-ON by default/);
   assert.match(su, /dark-flags registry/);
