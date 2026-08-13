@@ -6345,6 +6345,23 @@ export const perfRegressionSnapshotsInHarnessShared = harnessShared.table("perf_
 	pgPolicy("perf_regression_snapshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const planAuditsInHarnessShared = harnessShared.table("plan_audits", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	planSlug: text("plan_slug").notNull(),
+	auditSeq: integer("audit_seq").notNull(),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	auditedSha: text("audited_sha"),
+	items: jsonb().default([]).notNull(),
+	findings: jsonb().default([]).notNull(),
+	summary: text(),
+}, (table) => [
+	index("plan_audits_created_by_idx").using("btree", table.createdBy.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("plan_audits_harness_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.auditSeq, table.planSlug, table.workspaceId], name: "plan_audits_pkey"}),
+]);
+
 export const pendingReviewsInHarnessShared = harnessShared.table("pending_reviews", {
 	harnessSlug: text("harness_slug").notNull(),
 	reviewId: text("review_id").notNull(),
@@ -7844,39 +7861,6 @@ export const agentRunsConsolidatedInHarnessShared = harnessShared.table("agent_r
 	primaryKey({ columns: [table.harnessSlug, table.runId], name: "agent_runs_consolidated_pkey"}),
 ]);
 
-export const agentFleetsInHarnessShared = harnessShared.table("agent_fleets", {
-	workspaceId: text("workspace_id").notNull(),
-	fleetSlug: text("fleet_slug").notNull(),
-	title: text(),
-	description: text(),
-	owner: text(),
-	leaderOwnerId: text("leader_owner_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdAt: bigint("created_at", { mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-	colorScheme: text("color_scheme"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	lastLaunchAt: bigint("last_launch_at", { mode: "number" }),
-	lastLaunchCount: integer("last_launch_count"),
-	controlState: text("control_state").default('active').notNull(),
-	controlReason: text("control_reason"),
-	controlBy: text("control_by"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	controlAt: bigint("control_at", { mode: "number" }),
-	headcountTarget: integer("headcount_target"),
-	headcountConfig: jsonb("headcount_config"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	headcountNextAttemptAt: bigint("headcount_next_attempt_at", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	headcountBackoffMs: bigint("headcount_backoff_ms", { mode: "number" }).default(0).notNull(),
-	headcountLastError: text("headcount_last_error"),
-}, (table) => [
-	primaryKey({ columns: [table.fleetSlug, table.workspaceId], name: "agent_fleets_pkey"}),
-	pgPolicy("agent_fleets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("agent_fleets_headcount_target_positive", sql`(headcount_target IS NULL) OR ((headcount_target >= 1) AND (headcount_target <= 12))`),
-]);
-
 export const p2PPeerGrantsInHarnessShared = harnessShared.table("p2p_peer_grants", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -7987,6 +7971,40 @@ export const p2PReceiptsInHarnessShared = harnessShared.table("p2p_receipts", {
 	check("p2p_receipts_action_nonempty", sql`action <> ''::text`),
 	check("p2p_receipts_responder_pos", sql`responder_github_user_id > 0`),
 	check("p2p_receipts_kind", sql`kind = ANY (ARRAY['refusal'::text, 'excused-breach'::text, 'honored'::text])`),
+]);
+
+export const agentFleetsInHarnessShared = harnessShared.table("agent_fleets", {
+	workspaceId: text("workspace_id").notNull(),
+	fleetSlug: text("fleet_slug").notNull(),
+	title: text(),
+	description: text(),
+	owner: text(),
+	leaderOwnerId: text("leader_owner_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdAt: bigint("created_at", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+	colorScheme: text("color_scheme"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	lastLaunchAt: bigint("last_launch_at", { mode: "number" }),
+	lastLaunchCount: integer("last_launch_count"),
+	controlState: text("control_state").default('active').notNull(),
+	controlReason: text("control_reason"),
+	controlBy: text("control_by"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	controlAt: bigint("control_at", { mode: "number" }),
+	headcountTarget: integer("headcount_target"),
+	headcountConfig: jsonb("headcount_config"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	headcountNextAttemptAt: bigint("headcount_next_attempt_at", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	headcountBackoffMs: bigint("headcount_backoff_ms", { mode: "number" }).default(0).notNull(),
+	headcountLastError: text("headcount_last_error"),
+	lastLaunchTransaction: jsonb("last_launch_transaction"),
+}, (table) => [
+	primaryKey({ columns: [table.fleetSlug, table.workspaceId], name: "agent_fleets_pkey"}),
+	pgPolicy("agent_fleets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("agent_fleets_headcount_target_positive", sql`(headcount_target IS NULL) OR ((headcount_target >= 1) AND (headcount_target <= 12))`),
 ]);
 
 export const transferLessonsInHarnessShared = harnessShared.table("transfer_lessons", {
