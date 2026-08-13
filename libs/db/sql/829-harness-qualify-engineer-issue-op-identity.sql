@@ -1,4 +1,4 @@
--- 828-harness-qualify-engineer-issue-op-identity.sql
+-- 829-harness-qualify-engineer-issue-op-identity.sql
 --
 -- EI-20340649204632164 / WI-38468 P-005 follow-up.  Migration 826 removed
 -- non-Papercusp physical twins, but engineer-issue tombstones were keyed only
@@ -117,8 +117,8 @@ AS $function$
 -- Restore only the 15 Papercusp survivors that legacy bare tombstones erased.
 -- The complete pre-mutation rows remain in migration 826's durable backup; the
 -- same evidence merge is replayed so terminal/completion data is not regressed.
-CREATE TEMP TABLE repair_828_missing_ids (feature_id text PRIMARY KEY) ON COMMIT DROP;
-INSERT INTO repair_828_missing_ids
+CREATE TEMP TABLE repair_829_missing_ids (feature_id text PRIMARY KEY) ON COMMIT DROP;
+INSERT INTO repair_829_missing_ids
 SELECT v.feature_id
 FROM (VALUES
   ('EI-1435'), ('EI-1629'), ('EI-1700'), ('EI-2205'), ('EI-6706'),
@@ -131,20 +131,20 @@ WHERE EXISTS (
   SELECT 1 FROM harness_shared.bak_20260813_work_item_physical_twins LIMIT 1
 );
 
-DO $restore828$
+DO $restore829$
 DECLARE
   bad text;
   cols text;
   backup_cols text;
 BEGIN
   IF to_regclass('harness_shared.bak_20260813_work_item_physical_twins') IS NULL THEN
-    RAISE EXCEPTION '828: migration 826 backup table is missing';
+    RAISE EXCEPTION '829: migration 826 backup table is missing';
   END IF;
 
   SELECT string_agg(feature_id, ', ' ORDER BY feature_id) INTO bad
   FROM (
     SELECT m.feature_id
-    FROM repair_828_missing_ids m
+    FROM repair_829_missing_ids m
     LEFT JOIN harness_shared.bak_20260813_work_item_physical_twins b USING (feature_id)
     GROUP BY m.feature_id
     HAVING count(b.*) <> 2
@@ -153,7 +153,7 @@ BEGIN
        OR count(DISTINCT coalesce(b.summary, '')) <> 1
   ) drift;
   IF bad IS NOT NULL THEN
-    RAISE EXCEPTION '828: backup classification drifted for %', bad;
+    RAISE EXCEPTION '829: backup classification drifted for %', bad;
   END IF;
 
   -- Idempotent over an already-restored exact Papercusp survivor, but fail on
@@ -161,7 +161,7 @@ BEGIN
   SELECT string_agg(feature_id, ', ' ORDER BY feature_id) INTO bad
   FROM (
     SELECT m.feature_id
-    FROM repair_828_missing_ids m
+    FROM repair_829_missing_ids m
     LEFT JOIN harness_shared.work_items w
       ON w.workspace_id = 'papercusp-workspace' AND w.feature_id = m.feature_id
     GROUP BY m.feature_id
@@ -169,7 +169,7 @@ BEGIN
        OR (count(w.*) = 1 AND count(*) FILTER (WHERE w.harness_slug = 'papercusp') <> 1)
   ) unexpected;
   IF bad IS NOT NULL THEN
-    RAISE EXCEPTION '828: unexpected live survivor shape for %', bad;
+    RAISE EXCEPTION '829: unexpected live survivor shape for %', bad;
   END IF;
 
   -- Copy every non-generated work_items column so the backup remains the
@@ -184,14 +184,14 @@ BEGIN
   EXECUTE format(
     'INSERT INTO harness_shared.work_items (%s) '
     'SELECT %s FROM harness_shared.bak_20260813_work_item_physical_twins b '
-    'JOIN repair_828_missing_ids m ON m.feature_id = b.feature_id '
+    'JOIN repair_829_missing_ids m ON m.feature_id = b.feature_id '
     'WHERE b.harness_slug = ''papercusp'' '
     'AND NOT EXISTS (SELECT 1 FROM harness_shared.work_items w '
     '  WHERE w.workspace_id = ''papercusp-workspace'' '
     '    AND w.harness_slug = ''papercusp'' AND w.feature_id = b.feature_id)',
     cols, backup_cols);
 END
-$restore828$;
+$restore829$;
 
 WITH pairs AS (
   SELECT p.harness_slug AS source_harness, p.feature_id, p.status AS source_status,
@@ -201,7 +201,7 @@ WITH pairs AS (
          p.closed_ts AS source_closed_ts, p.updated_ts AS source_updated_ts,
          p.fed_hlc AS source_fed_hlc
   FROM harness_shared.bak_20260813_work_item_physical_twins p
-  JOIN repair_828_missing_ids m USING (feature_id)
+  JOIN repair_829_missing_ids m USING (feature_id)
   WHERE p.harness_slug <> 'papercusp'
 )
 UPDATE harness_shared.work_items s
@@ -234,13 +234,13 @@ FROM pairs p
 WHERE s.workspace_id = 'papercusp-workspace'
   AND s.harness_slug = 'papercusp' AND s.feature_id = p.feature_id;
 
-DO $post828$
+DO $post829$
 DECLARE bad text;
 BEGIN
   SELECT string_agg(feature_id, ', ' ORDER BY feature_id) INTO bad
   FROM (
     SELECT m.feature_id
-    FROM repair_828_missing_ids m
+    FROM repair_829_missing_ids m
     LEFT JOIN harness_shared.work_items w
       ON w.workspace_id = 'papercusp-workspace' AND w.feature_id = m.feature_id
     GROUP BY m.feature_id
@@ -248,7 +248,7 @@ BEGIN
        OR count(*) FILTER (WHERE w.harness_slug = 'papercusp') <> 1
   ) failed;
   IF bad IS NOT NULL THEN
-    RAISE EXCEPTION '828: survivor restoration postcondition failed for %', bad;
+    RAISE EXCEPTION '829: survivor restoration postcondition failed for %', bad;
   END IF;
 END
-$post828$;
+$post829$;
