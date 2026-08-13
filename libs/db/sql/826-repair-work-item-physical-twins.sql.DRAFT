@@ -19,17 +19,17 @@
 -- while the older release remains live.
 
 CREATE TABLE IF NOT EXISTS harness_shared.bak_20260813_work_item_physical_twins
-  (LIKE harness_shared.work_items INCLUDING DEFAULTS INCLUDING GENERATED);
+  (LIKE harness_shared.work_items INCLUDING DEFAULTS);
 CREATE UNIQUE INDEX IF NOT EXISTS bak_20260813_work_item_physical_twins_uq
   ON harness_shared.bak_20260813_work_item_physical_twins (harness_slug, feature_id);
 
 CREATE TABLE IF NOT EXISTS harness_shared.bak_20260813_physical_twin_links
-  (LIKE harness_shared.coord_links INCLUDING DEFAULTS INCLUDING GENERATED);
+  (LIKE harness_shared.coord_links INCLUDING DEFAULTS);
 CREATE UNIQUE INDEX IF NOT EXISTS bak_20260813_physical_twin_links_uq
   ON harness_shared.bak_20260813_physical_twin_links (id);
 
 CREATE TABLE IF NOT EXISTS harness_shared.bak_20260813_physical_twin_threads
-  (LIKE harness_shared.coord_threads INCLUDING DEFAULTS INCLUDING GENERATED);
+  (LIKE harness_shared.coord_threads INCLUDING DEFAULTS);
 CREATE UNIQUE INDEX IF NOT EXISTS bak_20260813_physical_twin_threads_uq
   ON harness_shared.bak_20260813_physical_twin_threads (workspace_id, thread_id);
 
@@ -207,12 +207,13 @@ SET status = CASE
     authority = coalesce(s.authority, p.source_authority),
     closed_ts = coalesce(s.closed_ts, p.source_closed_ts),
     updated_ts = greatest(s.updated_ts, p.source_updated_ts),
-    payload = coalesce(s.payload, '{}'::jsonb)
-      || CASE WHEN NOT coalesce(s.payload, '{}'::jsonb) ? '_completionEvidence'
-                   AND coalesce(p.source_payload, '{}'::jsonb) ? '_completionEvidence'
+    payload = jsonb_strip_nulls(
+      coalesce(s.payload, '{}'::jsonb)
+      || CASE WHEN (coalesce(s.payload, '{}'::jsonb)->'_completionEvidence') IS NULL
+                   AND (coalesce(p.source_payload, '{}'::jsonb)->'_completionEvidence') IS NOT NULL
               THEN jsonb_build_object('_completionEvidence', p.source_payload->'_completionEvidence')
-              ELSE '{}'::jsonb END
-      || jsonb_build_object('_physicalTwinRepair', jsonb_build_object(
+              ELSE '{}'::jsonb END)
+      || jsonb_build_object('_physicalTwinRepair', jsonb_strip_nulls(jsonb_build_object(
            'migration', 826, 'sourceHarness', p.source_harness,
            'sourceStatus', p.source_status, 'sourcePayload', coalesce(p.source_payload, '{}'::jsonb),
            'sourceCompletionRef', p.source_completion_ref,
@@ -220,7 +221,8 @@ SET status = CASE
            'sourceTerminalOwner', p.source_terminal_owner,
            'sourceAuthority', p.source_authority, 'sourceClosedTs', p.source_closed_ts,
            'sourceUpdatedTs', p.source_updated_ts, 'sourceFedHlc', p.source_fed_hlc,
-           'restoreSnapshot', 'ee8d1d2dacd7b4522d3155fba6a1019d'))
+           'restoreSnapshot', 'ee8d1d2dacd7b4522d3155fba6a1019d')
+           || jsonb_build_object('sourcePayload', coalesce(p.source_payload, '{}'::jsonb))))
 FROM pairs p
 WHERE s.workspace_id = 'papercusp-workspace' AND s.harness_slug = 'papercusp'
   AND s.feature_id = p.feature_id;
