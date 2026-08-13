@@ -37,7 +37,7 @@ CREATE TEMP TABLE repair_826_divergent_map (
   old_id text PRIMARY KEY,
   source_harness text NOT NULL,
   new_id text NOT NULL UNIQUE,
-  source_creator text NOT NULL
+  reference_creator text
 ) ON COMMIT DROP;
 
 INSERT INTO repair_826_divergent_map VALUES
@@ -51,7 +51,10 @@ INSERT INTO repair_826_divergent_map VALUES
   ('EI-17122', 'papercusp-public-site-pot',  'EI-82600000000000008', 'su-6f7850f2-2112-4e72-bb09-e8983af3f851'),
   ('EI-17123', 'papercusp-public-site-pot',  'EI-82600000000000009', 'su-6f7850f2-2112-4e72-bb09-e8983af3f851'),
   ('EI-4644',  'oddsmith-hive',              'EI-82600000000000010', 'system:improvement-watchdog'),
-  ('EI-8869',  'operator:papercusp-workspace','EI-82600000000000011', 'system:replication-liveness');
+  -- The two system:replication-liveness links on EI-8869 were stamped at the
+  -- Papercusp survivor's exact creation time, 21 minutes before the operator
+  -- collision existed.  NULL deliberately keeps those references on old_id.
+  ('EI-8869',  'operator:papercusp-workspace','EI-82600000000000011', NULL);
 
 CREATE TEMP TABLE repair_826_identical_ids (feature_id text PRIMARY KEY) ON COMMIT DROP;
 INSERT INTO repair_826_identical_ids VALUES
@@ -115,37 +118,39 @@ INSERT INTO harness_shared.bak_20260813_physical_twin_links
 SELECT l.* FROM harness_shared.coord_links l
 JOIN repair_826_divergent_map m
   ON (l.src_ref = m.old_id OR l.dst_ref = m.old_id)
- AND l.created_by = m.source_creator
+ AND l.created_by = m.reference_creator
 WHERE l.workspace_id = 'papercusp-workspace'
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO harness_shared.bak_20260813_physical_twin_threads
 SELECT t.* FROM harness_shared.coord_threads t
 JOIN repair_826_divergent_map m
-  ON t.parent_ref = m.old_id AND t.created_by = m.source_creator
+  ON t.parent_ref = m.old_id AND t.created_by = m.reference_creator
 WHERE t.workspace_id = 'papercusp-workspace'
 ON CONFLICT (workspace_id, thread_id) DO NOTHING;
 
 -- A bare ref is ambiguous only until provenance is consulted.  Rows authored
--- by the divergent source's creator move with that source; all remaining bare
--- refs continue to name the Papercusp row, which deliberately keeps old_id.
+-- by the divergent source's reference creator move with that source; all
+-- remaining bare refs continue to name the Papercusp row, which deliberately
+-- keeps old_id.  A NULL reference_creator means the audit attributed no bare
+-- references to that source row.
 UPDATE harness_shared.coord_links l
 SET src_ref = m.new_id
 FROM repair_826_divergent_map m
 WHERE l.workspace_id = 'papercusp-workspace'
-  AND l.src_ref = m.old_id AND l.created_by = m.source_creator;
+  AND l.src_ref = m.old_id AND l.created_by = m.reference_creator;
 
 UPDATE harness_shared.coord_links l
 SET dst_ref = m.new_id
 FROM repair_826_divergent_map m
 WHERE l.workspace_id = 'papercusp-workspace'
-  AND l.dst_ref = m.old_id AND l.created_by = m.source_creator;
+  AND l.dst_ref = m.old_id AND l.created_by = m.reference_creator;
 
 UPDATE harness_shared.coord_threads t
 SET parent_ref = m.new_id
 FROM repair_826_divergent_map m
 WHERE t.workspace_id = 'papercusp-workspace'
-  AND t.parent_ref = m.old_id AND t.created_by = m.source_creator;
+  AND t.parent_ref = m.old_id AND t.created_by = m.reference_creator;
 
 -- The P-004 reference census found zero rows on these harness-qualified
 -- surfaces, but update them correctly if a late historical row arrived.
