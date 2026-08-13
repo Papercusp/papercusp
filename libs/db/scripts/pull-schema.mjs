@@ -149,10 +149,10 @@ if (!existsSync(schemaPath)) {
 console.log('==> applying quirk fixups');
 let schema = readFileSync(schemaPath, 'utf8');
 
-// Fix 0: drop MIGRATION-INTERNAL scratch tables (leading underscore) before any
-// other fixup sees them. EI-18785808338338490. Logic + rationale live in
-// ../src/schema-scratch-tables.mjs so they are unit-tested rather than buried
-// in a script (schema-scratch-tables.test.ts).
+// Fix 0: drop MIGRATION-INTERNAL scratch/backup tables (leading underscore or
+// `bak_`) before any other fixup sees them. EI-18785808338338490. Logic +
+// rationale live in ../src/schema-scratch-tables.mjs so they are unit-tested
+// rather than buried in a script (schema-scratch-tables.test.ts).
 const { stripped: strippedScratchTables } = (() => {
   const r = stripScratchTableDeclarations(schema);
   schema = r.schema;
@@ -160,7 +160,7 @@ const { stripped: strippedScratchTables } = (() => {
 })();
 if (strippedScratchTables.length > 0) {
   console.log(
-    `    Fix 0: stripped ${strippedScratchTables.length} migration-internal scratch table(s): ${strippedScratchTables.join(', ')}`,
+    `    Fix 0: stripped ${strippedScratchTables.length} migration-internal table(s): ${strippedScratchTables.join(', ')}`,
   );
 }
 

@@ -84,12 +84,16 @@ describe('stripScratchTableDeclarations', () => {
     expect(schema).toBe(truncated);
   });
 
-  // The regression that motivated this: the committed schema must stay clean.
-  it('the committed generated.ts carries no migration scratch or backup tables', () => {
-    const generated = join(__dirname, 'schema', 'generated.ts');
-    if (!existsSync(generated)) return; // generated artifact may be absent in a fresh checkout
-    const src = readFileSync(generated, 'utf8');
-    const { stripped } = stripScratchTableDeclarations(src);
-    expect(stripped).toEqual([]);
+  // The regression that motivated this: both drizzle-kit's source artifact and
+  // the promoted application schema must stay clean. The package typechecks
+  // both, even though runtime imports generated.ts.
+  it('the committed schema artifacts carry no migration scratch or backup tables', () => {
+    for (const artifact of ['schema.ts', 'generated.ts']) {
+      const path = join(__dirname, 'schema', artifact);
+      if (!existsSync(path)) continue; // generated artifacts may be absent in a fresh checkout
+      const src = readFileSync(path, 'utf8');
+      const { stripped } = stripScratchTableDeclarations(src);
+      expect(stripped, artifact).toEqual([]);
+    }
   });
 });
