@@ -11,7 +11,6 @@
 -- dispositions remain untouched.
 
 \set ON_ERROR_STOP on
-BEGIN;
 
 UPDATE harness_shared.routines
    SET active = false,
@@ -24,5 +23,3 @@ UPDATE harness_shared.p2p_work_offers
    SET local_disposition = 'retired:legacy_work_kind'
  WHERE offer_kind = 'work'
    AND local_disposition IS NULL;
-
-COMMIT;
