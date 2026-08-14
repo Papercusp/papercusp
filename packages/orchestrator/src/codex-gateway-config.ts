@@ -27,6 +27,15 @@
  * and diagnostics locate/replace the managed blocks by them — keep them byte-stable.
  */
 
+/**
+ * The one provider id every managed codex config names. Exported because it is
+ * not just a config-writing detail: codex stamps it into each rollout's
+ * `session_meta.model_provider` and re-resolves it against the CURRENT config at
+ * `thread/resume`, so the RESUME path has to recognise a thread that is bound to
+ * it and refuse to strip the table (WI-38706). One constant, both readers.
+ */
+export const CODEX_GATEWAY_PROVIDER_ID = 'papercusp-codex-gateway';
+
 /** Escape a value for a TOML double-quoted basic string. */
 export function tomlEscape(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -83,7 +92,7 @@ export function codexGatewayConfigToml(
   // account-pin header — the gateway's own codex fallback auto-selects when the header is
   // absent. Only a caller that passes neither (gateway fully off) gets no config.
   if (!pinnedAccount && !opts.gatewayOn) return { root: [], tables: [] };
-  const providerId = 'papercusp-codex-gateway';
+  const providerId = CODEX_GATEWAY_PROVIDER_ID;
   const headers: Record<string, string> = {};
   if (pinnedAccount) headers['x-papercusp-account'] = pinnedAccount;
   const ownerId = opts.ownerId?.trim();
