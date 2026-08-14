@@ -1319,13 +1319,14 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   ]);
 });
 
-test('fleetAllowedToolsForRole — no roles are write-restricted now; every role gets the full kit', () => {
-  // The former expert/feedback API-only roles were removed; FLEET_NO_WRITE_ROLES
-  // is currently empty, so every role (writer or unknown) gets the full kit.
-  assert.equal(FLEET_NO_WRITE_ROLES.size, 0);
+test('fleetAllowedToolsForRole — the dedicated acceptance judge cannot edit; normal roles keep the full kit', () => {
+  assert.deepEqual([...FLEET_NO_WRITE_ROLES], ['judge']);
   for (const role of ['worker', 'documenter', 'reviewer', 'totally-unknown-role', '']) {
     assert.deepEqual(fleetAllowedToolsForRole(role), [...FLEET_ALLOWED_TOOLS]);
   }
+  const judge = fleetAllowedToolsForRole('judge');
+  assert.ok(!judge.includes('Edit') && !judge.includes('Write'));
+  assert.ok(judge.includes('Read') && judge.includes('Glob') && judge.includes('Grep'));
 });
 
 test('P-005 — RoleToolScope narrows a role kit (allow replaces base, deny adds, composes w/ cutover)', () => {
@@ -1488,6 +1489,12 @@ test('fleetDisallowedToolsForRole — cutover ON hard-denies the native write/ex
   assert.deepEqual(fleetDisallowedToolsForRole('worker', false), [...FLEET_DISALLOWED_TOOLS]);
   // Aux role under cutover → unchanged (not stranded, not hard-denied).
   assert.deepEqual(fleetDisallowedToolsForRole('papercup', true), [...FLEET_DISALLOWED_TOOLS]);
+});
+
+test('fleetDisallowedToolsForRole — acceptance judge always hard-denies Bash', () => {
+  const denied = fleetDisallowedToolsForRole('judge', false);
+  assert.ok(denied.includes('Bash'));
+  for (const base of FLEET_DISALLOWED_TOOLS) assert.ok(denied.includes(base));
 });
 
 test('claudeMcpArgs — under the cutover env, a confined role gets dontAsk + no native write/exec in allow-list + hard-deny (P-021 binding proof)', () => {

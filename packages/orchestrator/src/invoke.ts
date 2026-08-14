@@ -1099,7 +1099,8 @@ export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
  * enforcing the instruction the prompt already gives (resists a model that
  * ignores it, e.g. via prompt-injection).
  *
- * (Currently empty — the former `expert`/`feedback` API-only roles were removed.)
+ * The dedicated acceptance `judge` is evidence-only: it reads the frozen
+ * context and emits a scorecard, never edits implementation files.
  *
  * This is the ONLY per-role built-in tightening that's verifiably safe from a
  * prompt read: other review/gate roles (reviewer, validator, infra-reviewer,
@@ -1110,7 +1111,7 @@ export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
  * a shell redirect — closing that needs a sandbox, not an allow-list. Further
  * per-role cuts should be gated on a real fleet-spawn run, not a prompt read.
  */
-export const FLEET_NO_WRITE_ROLES: ReadonlySet<string> = new Set<string>([]);
+export const FLEET_NO_WRITE_ROLES: ReadonlySet<string> = new Set<string>(['judge']);
 
 /* ─── B-18 fleet cutover (agent-capability-confinement-2026-06-13 P-020/D-001) ──
  * When the cutover is ARMED (papercusp-fleet-capability-only, surfaced per-spawn
@@ -1222,6 +1223,7 @@ export function fleetDisallowedToolsForRole(
   scope?: RoleToolScope,
 ): string[] {
   const base = [...FLEET_DISALLOWED_TOOLS, ...(scope?.deny ?? [])];
+  if (role === 'judge' && !base.includes('Bash')) base.push('Bash');
   if (fleetCutoverApplies(role, capabilityOnly)) {
     return [...base, ...FLEET_CAPABILITY_REPLACED_TOOLS];
   }
