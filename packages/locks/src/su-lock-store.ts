@@ -784,7 +784,7 @@ export interface ReleaseParams {
 export async function tryRelease(
   tx: Sql,
   params: ReleaseParams,
-): Promise<{ released: string[] }> {
+): Promise<{ released: string[]; heldBefore: number }> {
   const { coordinationDomain, owner, lockId, paths, allMine } = params;
 
   await tx`SET LOCAL statement_timeout = '5s'`;
@@ -794,6 +794,30 @@ export async function tryRelease(
   // unconditional cascade at the end of the function, so we ignore the
   // swept flag here (a janitor-driven cascade would be redundant).
   await sweepWorkspaceExpired(tx, coordinationDomain);
+
+  /**
+   * EI-20405390083792304: how many live locks this owner held in this domain
+   * at release time — counted AFTER the expiry sweep (so an expired row is
+   * never counted as held) and BEFORE the DELETE below.
+   *
+   * WHY THIS EXISTS: `released: []` is produced by two situations that mean
+   * OPPOSITE things, and the caller could not tell them apart:
+   *   (a) the owner held nothing here    → the release is a correct no-op;
+   *   (b) the owner held locks but the selector matched none of them
+   *       (wrong lock_id, wrong paths filter, or — the incident that filed
+   *       this — a coordination domain that is not the one holding the lock)
+   *       → the release SILENTLY did nothing while reporting ok:true.
+   * Reporting an unqualified success for (b) is how an agent tells a blocked
+   * peer "you're unblocked" while still holding the lock. `heldBefore`
+   * separates them: 0 ⇒ (a); >0 with an empty `released` ⇒ (b).
+   */
+  const heldBeforeRows = await tx<Array<{ held: number }>>`
+    SELECT count(*)::int AS held
+      FROM agent_file_locks
+     WHERE coordination_domain = ${coordinationDomain}
+       AND owner = ${owner}
+  `;
+  const heldBefore = heldBeforeRows[0]?.held ?? 0;
 
   let released: Array<{ path: string }>;
 
@@ -832,7 +856,7 @@ export async function tryRelease(
   // Run the cascade. NOTIFY fires inside; we don't need the result set.
   await tx`SELECT grant_cascade(${coordinationDomain}, clock_timestamp())`;
 
-  return { released: released.map((r) => r.path) };
+  return { released: released.map((r) => r.path), heldBefore };
 }
 
 // ───────── Heartbeat ─────────
