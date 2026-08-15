@@ -7,15 +7,14 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
-import {
-  generateProjectHistory,
-  type ProjectHistoryCommitInput,
-  type ProjectHistoryDocument,
-  type ProjectHistoryPlanInput,
-  type ProjectHistoryProject,
-  type ProjectHistoryProvider,
-  type ProjectHistoryRepository,
-  type ProjectHistoryWorkItemInput,
+import type {
+  ProjectHistoryCommitInput,
+  ProjectHistoryDocument,
+  ProjectHistoryPlanInput,
+  ProjectHistoryProject,
+  ProjectHistoryProvider,
+  ProjectHistoryRepository,
+  ProjectHistoryWorkItemInput,
 } from '@papercusp/plan-parser/project-history';
 
 type OutputFormat = 'json' | 'typescript';
@@ -315,10 +314,16 @@ export function renderProjectHistory(
 }
 
 class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
+  private readonly options: ProjectHistoryGenerateOptions;
+  private readonly runner: CommandRunner;
+
   constructor(
-    private readonly options: ProjectHistoryGenerateOptions,
-    private readonly runner: CommandRunner,
-  ) {}
+    options: ProjectHistoryGenerateOptions,
+    runner: CommandRunner,
+  ) {
+    this.options = options;
+    this.runner = runner;
+  }
 
   async loadPlans(): Promise<readonly ProjectHistoryPlanInput[]> {
     const listed = planRows(ptool(this.runner, this.options, 'plans:list', {
@@ -408,8 +413,7 @@ function detectProject(
 ): ProjectHistoryProject {
   git(runner, options.repoRoot, ['rev-parse', '--is-inside-work-tree']);
   const remoteUrl = options.repositoryUrl
-    ?? git(runner, options.repoRoot, ['remote', 'get-url', 'origin'], true).trim()
-    || null;
+    ?? (git(runner, options.repoRoot, ['remote', 'get-url', 'origin'], true).trim() || null);
   const branchRef = git(runner, options.repoRoot, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], true).trim();
   const defaultBranch = options.defaultBranch ?? (branchRef ? branchRef.replace(/^origin\//, '') : null);
   return {
@@ -462,6 +466,7 @@ export async function cmdProjectHistory(
 
   const options = parseProjectHistoryGenerateArgs(argv.slice(1));
   const project = detectProject(options, runner);
+  const { generateProjectHistory } = await import('@papercusp/plan-parser/project-history');
   const document = await generateProjectHistory({
     project,
     source: {
