@@ -211,16 +211,49 @@ export async function _resetForTests(): Promise<void> {
 
 // ───────── Bootstrap + migrations ─────────
 
-// The package OWNS its migrations: `sql/` lives adjacent to this module
-// at `packages/locks/src/sql/`. Resolve relative to the module's own URL
-// (works under src-as-entry dev, standalone tsc/vitest, and Node ESM)
-// rather than `process.cwd()` — cwd is the *embedding app's* root, which
-// no longer contains these files after extraction. Consumers that bundle
-// this package server-side must keep it external (real files on disk) so
-// `import.meta.url` + fs resolve to the symlinked package dir.
-const SQL_DIR = path.join(
+// The package OWNS its migrations: `sql/` normally lives adjacent to this
+// module at `packages/locks/src/sql/`. A server bundle copies those files next
+// to the generated host module, so that adjacent directory remains the primary
+// source in both src-as-entry and bundled execution.
+//
+// EI-20511768945438743: a failed release swap can roll the source checkout back
+// while leaving the already-running process's generated `dist-host/` directory
+// absent. If locks are imported lazily after that swap, import.meta.url still
+// points at the now-missing bundle and the first locks:* call used to crash on
+// readdirSync(dist-host/sql), even though the release checkout's canonical lock
+// sources were intact. Walk ancestors for that canonical source tree as a
+// recovery source; do not use process.cwd(), which belongs to the embedding app
+// and is not a stable package locator.
+export function resolveLocksSqlDir(moduleDir: string): string {
+  const adjacent = path.join(moduleDir, 'sql');
+  if (fs.existsSync(adjacent)) return adjacent;
+
+  let ancestor = moduleDir;
+  for (;;) {
+    const source = path.join(
+      ancestor,
+      'libs',
+      'papercusp',
+      'packages',
+      'locks',
+      'src',
+      'sql',
+    );
+    if (fs.existsSync(source)) return source;
+
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+
+  // Preserve the historical error location when neither supported layout is
+  // present; readdirSync below then fails loudly instead of silently skipping
+  // unapplied lock migrations.
+  return adjacent;
+}
+
+const SQL_DIR = resolveLocksSqlDir(
   path.dirname(fileURLToPath(import.meta.url)),
-  'sql',
 );
 
 /**
