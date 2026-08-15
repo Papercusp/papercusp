@@ -1133,6 +1133,8 @@ export interface PendingEdit {
   file: string;
   old_string: string;
   new_string: string;
+  /** Queue-time active work-item pointer used by delayed edit attribution. */
+  goal_ref?: string;
 }
 
 export interface InsertWaiterParams {
