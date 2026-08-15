@@ -10,6 +10,7 @@ import {
   loadProjectHistoryPlansFromExport,
   parseGitLog,
   parseProjectHistoryGenerateArgs,
+  projectHistoryOutputIsCurrent,
   projectHistoryWorkItemBatches,
   renderProjectHistory,
   repositoryFromRemote,
@@ -127,4 +128,33 @@ test('TypeScript rendering is a stable generated module', () => {
   assert.match(rendered, /export const DEMO_HISTORY = \{/);
   assert.match(rendered, /"schemaVersion": 1/);
   assert.ok(rendered.endsWith('as const;\n'));
+});
+
+test('check freshness ignores generatedAt drift but detects content drift', () => {
+  const document = {
+    schemaVersion: 1,
+    project: { id: 'demo', name: 'Demo', repository: null },
+    source: {
+      kind: 'papercusp-plan-export',
+      workspace: 'workspace',
+      harness: 'demo',
+      planPrefix: 'demo-',
+      generatedAt: '2026-08-15T00:00:00.000Z',
+      planCount: 0,
+      generator: 'papercusp project-history generate',
+    },
+    plans: [],
+  } satisfies ProjectHistoryDocument;
+  const current = renderProjectHistory(document, 'typescript', 'DEMO_HISTORY');
+  const later = renderProjectHistory({
+    ...document,
+    source: { ...document.source, generatedAt: '2026-08-15T01:00:00.000Z' },
+  }, 'typescript', 'DEMO_HISTORY');
+  const changed = renderProjectHistory({
+    ...document,
+    project: { ...document.project, name: 'Changed' },
+  }, 'typescript', 'DEMO_HISTORY');
+
+  assert.equal(projectHistoryOutputIsCurrent(current, later, 'typescript'), true);
+  assert.equal(projectHistoryOutputIsCurrent(current, changed, 'typescript'), false);
 });

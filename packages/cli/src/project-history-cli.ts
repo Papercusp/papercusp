@@ -324,6 +324,31 @@ export function renderProjectHistory(
   ].join('\n');
 }
 
+function parseRenderedProjectHistory(rendered: string, format: OutputFormat): ProjectHistoryDocument {
+  if (format === 'json') return JSON.parse(rendered) as ProjectHistoryDocument;
+  const match = rendered.trim().match(
+    /export\s+const\s+[A-Za-z_$][\w$]*\s*=\s*([\s\S]+)\s+as\s+const;?$/,
+  );
+  if (!match?.[1]) throw new Error('generated TypeScript Project History has an unsupported shape');
+  return JSON.parse(match[1]) as ProjectHistoryDocument;
+}
+
+/** Check semantic freshness while treating generatedAt as provenance, not content. */
+export function projectHistoryOutputIsCurrent(
+  current: string,
+  generated: string,
+  format: OutputFormat,
+): boolean {
+  try {
+    const left = parseRenderedProjectHistory(current, format);
+    const right = parseRenderedProjectHistory(generated, format);
+    if (left.source && right.source) left.source.generatedAt = right.source.generatedAt;
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
 class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
   private readonly options: ProjectHistoryGenerateOptions;
   private readonly runner: CommandRunner;
@@ -513,7 +538,9 @@ export async function cmdProjectHistory(
 
   if (options.check) {
     const current = await fs.readFile(options.output, 'utf8').catch(() => null);
-    if (current !== rendered) throw new Error(`Project History artifact is stale: ${options.output}`);
+    if (current === null || !projectHistoryOutputIsCurrent(current, rendered, options.format)) {
+      throw new Error(`Project History artifact is stale: ${options.output}`);
+    }
     process.stdout.write(`Project History artifact is current: ${options.output}\n`);
     return;
   }
