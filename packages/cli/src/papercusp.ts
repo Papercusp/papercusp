@@ -12,6 +12,7 @@
  *   doctor                            Check prerequisites (Postgres, claude, env).
  *   plugin <subcmd>                   Plugin management (install/enable/disable/...).
  *   snapshot <subcmd>                 Snapshot management (create/list/info/install).
+ *   project-history generate          Generate a portable Project History v1 artifact.
  *   help                              Show this help.
  *
  * Storage layout:
@@ -168,6 +169,10 @@ ${bold('Commands:')}
   ${cyan('operator audit-prefs')}             List operator preferences.md entries (workspace-scoped). Pass
                                        --remove <N> to drop one, --filter <user-typed|operator-proposed|all>
                                        to restrict, --workspace <id> to override the active workspace.
+
+  ${cyan('project-history generate')}         Generate a validated JSON or TypeScript History artifact from
+                                       Papercusp plan/work-item ledgers and the current project's Git repo.
+                                       Run \`papercusp project-history help\` for details.
 
   ${cyan('help')}                              Show this help.
 
@@ -1714,6 +1719,10 @@ async function main(): Promise<void> {
     case 'snapshot': {
       const { cmdSnapshot } = await import('./snapshot-cli.ts');
       return cmdSnapshot(args);
+    }
+    case 'project-history': {
+      const { cmdProjectHistory } = await import('./project-history-cli.ts');
+      return cmdProjectHistory(args);
     }
     case 'upgrade-pin': {
       const { cmdUpgradePin } = await import('./plugin-cli.ts');
