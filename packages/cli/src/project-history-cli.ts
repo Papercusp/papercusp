@@ -64,16 +64,23 @@ const defaultRunner: CommandRunner = {
   },
 };
 
-function takeOption(args: string[], index: number, name: string): { value: string; consumed: number } | null {
+function takeOption(
+  args: string[],
+  index: number,
+  name: string,
+  allowEmpty = false,
+): { value: string; consumed: number } | null {
   const argument = args[index];
   if (argument === name) {
     const value = args[index + 1];
-    if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);
+    if (value === undefined || value.startsWith('--') || (!allowEmpty && value.length === 0)) {
+      throw new Error(`${name} requires a value`);
+    }
     return { value, consumed: 2 };
   }
   if (argument?.startsWith(`${name}=`)) {
     const value = argument.slice(name.length + 1);
-    if (!value) throw new Error(`${name} requires a value`);
+    if (!allowEmpty && value.length === 0) throw new Error(`${name} requires a value`);
     return { value, consumed: 1 };
   }
   return null;
@@ -101,7 +108,7 @@ export function parseProjectHistoryGenerateArgs(
     ];
     const name = names.find((candidate) => args[index] === candidate || args[index]?.startsWith(`${candidate}=`));
     if (!name) throw new Error(`project-history generate: unknown argument ${args[index]}`);
-    const parsed = takeOption(args, index, name);
+    const parsed = takeOption(args, index, name, name === '--prefix');
     if (!parsed) throw new Error(`project-history generate: invalid argument ${args[index]}`);
     values.set(name, parsed.value);
     index += parsed.consumed;
@@ -331,13 +338,7 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
       compact: true,
       limit: 500,
       order: 'updated',
-    })).filter((plan) => {
-      const slug = string(plan.slug);
-      return slug && (!this.options.planPrefix || slug.startsWith(this.options.planPrefix));
-    }).sort((left, right) => {
-      const byUpdated = (string(right.updated) ?? '').localeCompare(string(left.updated) ?? '');
-      return byUpdated || (string(left.slug) ?? '').localeCompare(string(right.slug) ?? '');
-    });
+    }));
 
     const exportDirectory = await fs.mkdtemp(join(tmpdir(), 'papercusp-project-history-'));
     try {
@@ -345,14 +346,11 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
         harness: this.options.harness,
         toDir: exportDirectory,
       });
-      return await Promise.all(listed.map(async (plan) => {
-        const slug = string(plan.slug)!;
-        return {
-          markdown: await fs.readFile(join(exportDirectory, `${slug}.md`), 'utf8'),
-          filePath: `${slug}.md`,
-          updatedAt: string(plan.updated),
-        } satisfies ProjectHistoryPlanInput;
-      }));
+      return await loadProjectHistoryPlansFromExport(
+        exportDirectory,
+        listed,
+        this.options.planPrefix,
+      );
     } finally {
       await fs.rm(exportDirectory, { recursive: true, force: true });
     }
@@ -405,6 +403,34 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
     const remoteShas = remoteOutput.length > 0 ? new Set(remoteOutput.split(/\r?\n/).filter(Boolean)) : null;
     return commitsForWorkItems(parseGitLog(log), ids, remoteShas);
   }
+}
+
+/**
+ * `plans:list` is a bounded display surface and may replace rows beyond its
+ * payload cap with a truncation marker. The export directory is the complete
+ * artifact surface, so enumerate it and use listed rows only as metadata.
+ */
+export async function loadProjectHistoryPlansFromExport(
+  exportDirectory: string,
+  listed: readonly Record<string, unknown>[],
+  planPrefix: string | null,
+): Promise<ProjectHistoryPlanInput[]> {
+  const listedBySlug = new Map(listed.flatMap((plan) => {
+    const slug = string(plan.slug);
+    return slug ? [[slug, plan] as const] : [];
+  }));
+  const entries = await fs.readdir(exportDirectory, { withFileTypes: true });
+  const slugs = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+    .map((entry) => basename(entry.name, '.md'))
+    .filter((slug) => !planPrefix || slug.startsWith(planPrefix))
+    .sort((left, right) => left.localeCompare(right));
+
+  return await Promise.all(slugs.map(async (slug) => ({
+    markdown: await fs.readFile(join(exportDirectory, `${slug}.md`), 'utf8'),
+    filePath: `${slug}.md`,
+    updatedAt: string(listedBySlug.get(slug)?.updated),
+  } satisfies ProjectHistoryPlanInput)));
 }
 
 function detectProject(

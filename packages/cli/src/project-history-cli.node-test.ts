@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
   commitsForWorkItems,
   githubWebUrl,
+  loadProjectHistoryPlansFromExport,
   parseGitLog,
   parseProjectHistoryGenerateArgs,
   renderProjectHistory,
@@ -35,6 +39,37 @@ test('project-history args derive portable defaults and accept equals syntax', (
     repositoryWebUrl: null,
     defaultBranch: null,
   });
+});
+
+test('project-history accepts an empty prefix to include every harness plan', () => {
+  const options = parseProjectHistoryGenerateArgs([
+    '--harness', 'sidestage',
+    '--prefix=',
+  ], '/repo', {}, new Date(0));
+
+  assert.equal(options.planPrefix, null);
+});
+
+test('exported Markdown remains the complete plan enumeration when plans:list is truncated', async () => {
+  const directory = await fs.mkdtemp(join(tmpdir(), 'project-history-cli-test-'));
+  try {
+    await Promise.all([
+      fs.writeFile(join(directory, 'demo-a.md'), '# A\n', 'utf8'),
+      fs.writeFile(join(directory, 'demo-b.md'), '# B\n', 'utf8'),
+      fs.writeFile(join(directory, 'other.md'), '# Other\n', 'utf8'),
+    ]);
+
+    const plans = await loadProjectHistoryPlansFromExport(directory, [{
+      slug: 'demo-a',
+      updated: '2026-08-15T00:00:00.000Z',
+    }], 'demo-');
+
+    assert.deepEqual(plans.map((plan) => plan.filePath), ['demo-a.md', 'demo-b.md']);
+    assert.equal(plans[0]?.updatedAt, '2026-08-15T00:00:00.000Z');
+    assert.equal(plans[1]?.updatedAt, null);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('repository metadata converts common GitHub remotes without guessing other hosts', () => {
