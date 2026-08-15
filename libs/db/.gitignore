@@ -1,5 +1,0 @@
-# drizzle-kit pull intermediate artifacts (pull-schema.mjs copies to generated.*)
-src/schema/schema.ts
-src/schema/relations.ts
-src/schema/meta/
-src/schema/0000_*.sql
