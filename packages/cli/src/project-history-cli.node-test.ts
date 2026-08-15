@@ -10,6 +10,7 @@ import {
   loadProjectHistoryPlansFromExport,
   parseGitLog,
   parseProjectHistoryGenerateArgs,
+  projectHistoryWorkItemBatches,
   renderProjectHistory,
   repositoryFromRemote,
 } from './project-history-cli.ts';
@@ -70,6 +71,11 @@ test('exported Markdown remains the complete plan enumeration when plans:list is
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
+});
+
+test('work-item ledger reads stay in timeout-resistant batches', () => {
+  const batches = projectHistoryWorkItemBatches(Array.from({ length: 61 }, (_, index) => index));
+  assert.deepEqual(batches.map((batch) => batch.length), [25, 25, 11]);
 });
 
 test('repository metadata converts common GitHub remotes without guessing other hosts', () => {

@@ -209,6 +209,10 @@ function chunks<T>(values: readonly T[], size: number): T[][] {
   return output;
 }
 
+export function projectHistoryWorkItemBatches<T>(values: readonly T[]): T[][] {
+  return chunks(values, 25);
+}
+
 function git(runner: CommandRunner, repoRoot: string, args: readonly string[], allowFailure = false): string {
   const result = runner.run('git', args, { cwd: repoRoot });
   if (allowFailure && result.status !== 0) return '';
@@ -358,7 +362,7 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
 
   async loadWorkItems(ids: readonly string[]): Promise<readonly ProjectHistoryWorkItemInput[]> {
     const items: ProjectHistoryWorkItemInput[] = [];
-    for (const batch of chunks(ids, 100)) {
+    for (const batch of projectHistoryWorkItemBatches(ids)) {
       const payload = ptool(this.runner, this.options, 'tools:invoke', {
         name: 'work_items:get',
         args: {
