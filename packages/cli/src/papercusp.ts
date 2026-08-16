@@ -1046,7 +1046,7 @@ async function cmdInit(args: string[]): Promise<void> {
       JSON.stringify(
         {
           phase: 'staging',
-          models: { scoper: 'claude-opus-4-7', worker: 'claude-sonnet-4-6', validator: 'claude-opus-4-7', orchestrator: 'claude-haiku-4-5', reviewer: 'claude-opus-4-7' },
+          models: { scoper: 'claude-opus-5', worker: 'claude-opus-5', validator: 'claude-opus-5', orchestrator: 'claude-opus-5', reviewer: 'claude-opus-5' },
           timeouts: { worker: 900, validator: 600, scoper: 600, reviewer: 300, orchestrator: 120 },
           maxCostUsd: 10,
         },
