@@ -9,7 +9,8 @@
 --     idx_scan   = 0       -- confirming zero reads, since stats began
 --
 -- That combination is the worst of both: pure write amplification for no read benefit,
--- and it sits on the hottest write tables in the schema.
+-- and it sits on the hottest write tables in the schema. The population observed at
+-- 2026-08-16T08:45Z was:
 --
 --     route_invocations_ws_time_idx_ccnew      719 MB   (table ~14.9M rows)
 --     tool_invocations_quota_idx_ccnew         268 MB   (table ~2.4M rows)
@@ -18,7 +19,16 @@
 --                                              8 kB each, but shared_presence is written
 --                                              on every heartbeat from ~96 live agents
 --     ------------------------------------------------------------------
---     total reclaimed                        ~1.1 GB
+--     ~1.1 GB at that instant
+--
+-- ⚠ THAT LIST IS AN OBSERVATION, NOT THIS MIGRATION'S TARGET SET. The population is
+-- genuinely dynamic: re-measured ~75 minutes later (2026-08-16T10:00Z) only ONE of those
+-- eight was still present (test_runs_file_path_idx_ccnew, by then 65 MB) — the other seven
+-- had been cleaned up in the interim. That is exactly why the body below SELECTS the
+-- invalid `_ccnew` set at apply time instead of naming eight indexes: hardcoding the
+-- observed list would half-fail against whatever the set actually is when this runs, and
+-- would go stale again before it ever applied. On a database with no residue left, this
+-- migration is a clean no-op.
 --
 -- WHY A PLAIN `DROP INDEX` AND NOT `DROP INDEX CONCURRENTLY`. The migration runner applies
 -- each file as a single `BEGIN; <ddl>; COMMIT;` (db-boot-migrate.ts), and
