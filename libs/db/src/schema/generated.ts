@@ -1682,9 +1682,8 @@ export const testRunsInHarnessShared = harnessShared.table("test_runs", {
 	isScratchConfig: boolean("is_scratch_config").default(false).notNull(),
 	worktreeDirty: boolean("worktree_dirty").default(false).notNull(),
 }, (table) => [
-	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("test_runs_file_path_idx_ccnew").using("btree", table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
-	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("timestamptz_ops"), table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")).where(sql`(harness_slug IS NOT NULL)`),
+	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops"), table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	index("test_runs_run_group_idx").using("btree", table.runGroupId.asc().nullsLast().op("text_ops")).where(sql`(run_group_id IS NOT NULL)`),
 	index("test_runs_source_idx").using("btree", table.source.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
 	check("test_runs_source_valid", sql`source = ANY (ARRAY['ci'::text, 'local'::text, 'admin-ui'::text])`),
@@ -2606,6 +2605,9 @@ export const knowledgePackCandidatesInHarnessShared = harnessShared.table("knowl
 	decisionNote: text("decision_note"),
 	packId: text("pack_id"),
 	packItemId: text("pack_item_id"),
+	reviewErrorCount: integer("review_error_count").default(0).notNull(),
+	lastReviewError: text("last_review_error"),
+	lastReviewErrorAt: timestamp("last_review_error_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("knowledge_pack_candidates_listing_idx").using("btree", table.status.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
 	unique("knowledge_pack_candidates_signature_uniq").on(table.signature),
@@ -7969,39 +7971,6 @@ export const p2PWorkOffersInHarnessShared = harnessShared.table("p2p_work_offers
 	check("p2p_work_offers_grantee", sql`((offer_kind <> 'seat'::text) AND (fleet_slug IS NOT NULL) AND (pot_slug IS NULL)) OR ((offer_kind = 'seat'::text) AND ((fleet_slug IS NOT NULL) <> (pot_slug IS NOT NULL)))`),
 ]);
 
-export const consultStateInHarnessShared = harnessShared.table("consult_state", {
-	workspaceId: text("workspace_id").default('default').notNull(),
-	conversationId: text("conversation_id").notNull(),
-	requesterId: text("requester_id").notNull(),
-	responderId: text("responder_id"),
-	state: text().default('routing').notNull(),
-	question: text().default('').notNull(),
-	latencyContract: text("latency_contract").default('proceed').notNull(),
-	maxExchanges: integer("max_exchanges").default(4).notNull(),
-	exchangesUsed: integer("exchanges_used").default(0).notNull(),
-	wakeBudget: integer("wake_budget").default(4).notNull(),
-	wakesUsed: integer("wakes_used").default(0).notNull(),
-	depth: integer().default(0).notNull(),
-	parentConsultId: text("parent_consult_id"),
-	originTaskRef: text("origin_task_ref"),
-	routing: jsonb().default({}).notNull(),
-	outcome: jsonb(),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("consult_state_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((expires_at IS NOT NULL) AND (closed_at IS NULL))`),
-	index("consult_state_origin_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.originTaskRef.asc().nullsLast().op("text_ops")).where(sql`(origin_task_ref IS NOT NULL)`),
-	index("consult_state_parent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.parentConsultId.asc().nullsLast().op("text_ops")).where(sql`(parent_consult_id IS NOT NULL)`),
-	index("consult_state_responder_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.responderId.asc().nullsLast().op("text_ops")).where(sql`(responder_id IS NOT NULL)`),
-	index("consult_state_state_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.state.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	primaryKey({ columns: [table.conversationId, table.workspaceId], name: "consult_state_pkey"}),
-	check("consult_state_state_check", sql`state = ANY (ARRAY['routing'::text, 'no_qualified_responder'::text, 'awaiting_responder'::text, 'active'::text, 'closed_answered'::text, 'closed_cant_help'::text, 'declined'::text, 'graduated'::text, 'expired'::text])`),
-	check("consult_state_latency_check", sql`latency_contract = ANY (ARRAY['proceed'::text, 'hard-blocked'::text])`),
-	check("consult_state_depth_check", sql`(depth >= 0) AND (depth <= 2)`),
-]);
-
 export const p2PReceiptsInHarnessShared = harnessShared.table("p2p_receipts", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -8108,6 +8077,41 @@ export const transferLessonsInHarnessShared = harnessShared.table("transfer_less
 	check("transfer_lessons_tier_check", sql`tier = ANY (ARRAY['probationary'::text, 'validated'::text, 'retired'::text])`),
 	check("transfer_lessons_status_check", sql`status = ANY (ARRAY['candidate'::text, 'passed'::text, 'failed'::text, 'error'::text])`),
 	check("transfer_lessons_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
+]);
+
+export const consultStateInHarnessShared = harnessShared.table("consult_state", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	conversationId: text("conversation_id").notNull(),
+	requesterId: text("requester_id").notNull(),
+	responderId: text("responder_id"),
+	state: text().default('routing').notNull(),
+	question: text().default('').notNull(),
+	latencyContract: text("latency_contract").default('proceed').notNull(),
+	maxExchanges: integer("max_exchanges").default(4).notNull(),
+	exchangesUsed: integer("exchanges_used").default(0).notNull(),
+	wakeBudget: integer("wake_budget").default(4).notNull(),
+	wakesUsed: integer("wakes_used").default(0).notNull(),
+	depth: integer().default(0).notNull(),
+	parentConsultId: text("parent_consult_id"),
+	originTaskRef: text("origin_task_ref"),
+	routing: jsonb().default({}).notNull(),
+	outcome: jsonb(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
+	queryEmbedding: vector("query_embedding", { dimensions: 384 }),
+}, (table) => [
+	index("consult_state_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((expires_at IS NOT NULL) AND (closed_at IS NULL))`),
+	index("consult_state_origin_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.originTaskRef.asc().nullsLast().op("text_ops")).where(sql`(origin_task_ref IS NOT NULL)`),
+	index("consult_state_parent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.parentConsultId.asc().nullsLast().op("text_ops")).where(sql`(parent_consult_id IS NOT NULL)`),
+	index("consult_state_query_embedding_idx").using("hnsw", table.queryEmbedding.asc().nullsLast().op("vector_cosine_ops")).where(sql`(query_embedding IS NOT NULL)`),
+	index("consult_state_responder_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.responderId.asc().nullsLast().op("text_ops")).where(sql`(responder_id IS NOT NULL)`),
+	index("consult_state_state_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.state.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	primaryKey({ columns: [table.conversationId, table.workspaceId], name: "consult_state_pkey"}),
+	check("consult_state_state_check", sql`state = ANY (ARRAY['routing'::text, 'no_qualified_responder'::text, 'awaiting_responder'::text, 'active'::text, 'closed_answered'::text, 'closed_cant_help'::text, 'declined'::text, 'graduated'::text, 'expired'::text])`),
+	check("consult_state_latency_check", sql`latency_contract = ANY (ARRAY['proceed'::text, 'hard-blocked'::text])`),
+	check("consult_state_depth_check", sql`(depth >= 0) AND (depth <= 2)`),
 ]);
 
 export const coordConversationsInHarnessShared = harnessShared.table("coord_conversations", {
