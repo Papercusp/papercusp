@@ -110,9 +110,23 @@ try {
   await mkdir(dirname(outPath), { recursive: true });
   await rm(outPath, { force: true }).catch(() => {});
   log(`archiving seed → ${outPath}`);
+  //
+  // --owner=0 --group=0 --numeric-owner is LOAD-BEARING, not tidiness (WI-39458).
+  // Without it `tar` stamps the BUILDING USER's account name into every member's
+  // uid/gid NAME fields, and this archive ships inside the public desktop bundle.
+  // Those fields are metadata — not a member's payload and not a member's path —
+  // so they were invisible to the release identity gate's content grep AND to its
+  // member-name manifest: measured 2026-08-16, a PGDATA seed whose contents were
+  // clean expanded through the gate and certified `✓ CLEAN` exit 0 while carrying
+  // the build-box username on every one of its members. The gate now reads
+  // uname/gname too (audit-release-bundle.py `_expand_tar_memberwise`), which is
+  // the backstop; this is the fix that stops producing the leak in the first
+  // place. Numeric ownership is also strictly more correct for a seed that is
+  // extracted as whatever user the target machine happens to run as.
   execFileSync(
     'tar',
     ['-c', '-z', '-f', outPath,
+     '--owner=0', '--group=0', '--numeric-owner',
      '--exclude', './postmaster.pid', '--exclude', './postmaster.opts',
      '-C', dataDir, '.'],
     { stdio: 'inherit' },
