@@ -92,10 +92,16 @@ describe('work_items CDC capture (migration 375)', () => {
     await sql`INSERT INTO harness_shared.engineer_issues
       (workspace_id, issue_id, scope, title, body, severity, source, state, kind)
       VALUES ('ws1', 'EI-10', 'harness:papercup', 'a bug', 'the body', 'major', 'engineer', 'open', 'bug')`;
+    // mig 829: the issue-family outbox key is harness-qualified as <storage slug>/<feature id>.
+    // The qualifier is the STORAGE slug (raw `papercup`), NOT the canonicalized routing slug —
+    // only the storage identity can safely target a delete (EI-20340649204632164).
     const rows = await sql<{ table_name: string; harness_slug: string; key: string; row: Record<string, unknown> }[]>`
-      SELECT table_name, harness_slug, key, row FROM harness_shared.substrate_outbox WHERE key = 'EI-10'`;
+      SELECT table_name, harness_slug, key, row FROM harness_shared.substrate_outbox WHERE key = 'papercup/EI-10'`;
     expect(rows).toHaveLength(1);
     expect(rows[0].table_name).toBe('engineer_issues');
+    // pin the mig-829 key shape itself: an unqualified key is what erased same-ID rows in
+    // other harnesses, so a silent regression back to the bare id must fail here.
+    expect(rows[0].key).toBe('papercup/EI-10');
     // mig 452: routing slug canonicalized (papercup → papercusp).
     expect(rows[0].harness_slug).toBe('papercusp');
     // ei wire-shape (mig-197 contract / EngineerIssueRow): issue_id/scope/body/state mapped.
