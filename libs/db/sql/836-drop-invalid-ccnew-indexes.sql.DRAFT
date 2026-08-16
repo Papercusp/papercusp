@@ -37,6 +37,19 @@
 --       transaction, so a valid index can never be dropped by name-matching alone.
 -- Both make this safe to re-run: it is idempotent and self-limiting, and on a database
 -- with no such residue it is a no-op.
+--
+-- FORWARD-COMPAT: the currently-deployed release cannot be using any of these, because
+-- they are INVALID (`indisvalid = false`) — and that is a property Postgres enforces, not
+-- one this migration is asserting. An invalid index is excluded from planning entirely, so
+-- no deployed query can have a plan that references it, and it is likewise ineligible as
+-- an `ON CONFLICT` arbiter (arbiter inference considers only valid indexes — the
+-- EI-18797473716313783 failure mode needs a VALID unique index, which by definition these
+-- are not). Their `idx_scan = 0` since stats began corroborates this from the other side.
+-- The VALID originals they were meant to replace (route_invocations_ws_time_idx,
+-- tool_invocations_quota_idx, test_runs_file_path_idx, and the shared_presence set) all
+-- remain in place and untouched — this migration drops only the `_ccnew` residue, so every
+-- index the deployed release can actually reach still exists afterwards. There is
+-- therefore nothing to expand/contract: this is pure dead-weight removal.
 
 DO $$
 DECLARE
