@@ -4556,6 +4556,29 @@ export const operatorTtsSpendInHarnessShared = harnessShared.table("operator_tts
 
 ]);
 
+export const interestWatchesInHarnessShared = harnessShared.table("interest_watches", {
+	id: uuid().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	harnessSlug: text("harness_slug"),
+	eventKey: text("event_key").notNull(),
+	interest: text().notNull(),
+	simFloor: doublePrecision("sim_floor").notNull(),
+	intervalSec: integer("interval_sec").default(120).notNull(),
+	once: boolean().default(false).notNull(),
+	watermark: timestamp({ withTimezone: true }).defaultNow().notNull(),
+	lastSweptAt: timestamp("last_swept_at", { withTimezone: true, mode: 'string' }),
+	lastMatchCount: integer("last_match_count"),
+	fireCount: integer("fire_count").default(0).notNull(),
+	lastError: text("last_error"),
+	consecutiveErrors: integer("consecutive_errors").default(0).notNull(),
+	active: boolean().default(true).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	embedding: vector({ dimensions: 384 }),
+}, (table) => [
+	index("interest_watches_due_idx").using("btree", table.lastSweptAt.asc().nullsFirst().op("timestamptz_ops")).where(sql`active`),
+]);
+
 export const harnessSmokeTestInHarnessShared = harnessShared.table("harness_smoke_test", {
 	harnessSlug: text("harness_slug").primaryKey().notNull(),
 	status: text().default('unknown').notNull(),
