@@ -5680,6 +5680,21 @@ export const scoutLensWeightsInHarnessShared = harnessShared.table("scout_lens_w
 	pgPolicy("scout_lens_weights_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const consultPostMetaInHarnessShared = harnessShared.table("consult_post_meta", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	postId: bigint("post_id", { mode: "number" }).notNull(),
+	conversationId: text("conversation_id").notNull(),
+	authorId: text("author_id"),
+	kind: text().notNull(),
+	evidence: jsonb(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("consult_post_meta_conversation_idx").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.conversationId.asc().nullsLast().op("text_ops"), table.postId.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.postId, table.workspaceId], name: "consult_post_meta_pkey"}),
+	check("consult_post_meta_kind_check", sql`kind = ANY (ARRAY['question'::text, 'answer'::text, 'clarifying_question'::text, 'new_fact'::text, 'decline'::text, 'close'::text])`),
+]);
+
 export const eventKeyFiresInHarnessShared = harnessShared.table("event_key_fires", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	eventKey: text("event_key").notNull(),
@@ -7954,6 +7969,39 @@ export const p2PWorkOffersInHarnessShared = harnessShared.table("p2p_work_offers
 	check("p2p_work_offers_grantee", sql`((offer_kind <> 'seat'::text) AND (fleet_slug IS NOT NULL) AND (pot_slug IS NULL)) OR ((offer_kind = 'seat'::text) AND ((fleet_slug IS NOT NULL) <> (pot_slug IS NOT NULL)))`),
 ]);
 
+export const consultStateInHarnessShared = harnessShared.table("consult_state", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	conversationId: text("conversation_id").notNull(),
+	requesterId: text("requester_id").notNull(),
+	responderId: text("responder_id"),
+	state: text().default('routing').notNull(),
+	question: text().default('').notNull(),
+	latencyContract: text("latency_contract").default('proceed').notNull(),
+	maxExchanges: integer("max_exchanges").default(4).notNull(),
+	exchangesUsed: integer("exchanges_used").default(0).notNull(),
+	wakeBudget: integer("wake_budget").default(4).notNull(),
+	wakesUsed: integer("wakes_used").default(0).notNull(),
+	depth: integer().default(0).notNull(),
+	parentConsultId: text("parent_consult_id"),
+	originTaskRef: text("origin_task_ref"),
+	routing: jsonb().default({}).notNull(),
+	outcome: jsonb(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("consult_state_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((expires_at IS NOT NULL) AND (closed_at IS NULL))`),
+	index("consult_state_origin_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.originTaskRef.asc().nullsLast().op("text_ops")).where(sql`(origin_task_ref IS NOT NULL)`),
+	index("consult_state_parent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.parentConsultId.asc().nullsLast().op("text_ops")).where(sql`(parent_consult_id IS NOT NULL)`),
+	index("consult_state_responder_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.responderId.asc().nullsLast().op("text_ops")).where(sql`(responder_id IS NOT NULL)`),
+	index("consult_state_state_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.state.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.conversationId, table.workspaceId], name: "consult_state_pkey"}),
+	check("consult_state_state_check", sql`state = ANY (ARRAY['routing'::text, 'no_qualified_responder'::text, 'awaiting_responder'::text, 'active'::text, 'closed_answered'::text, 'closed_cant_help'::text, 'declined'::text, 'graduated'::text, 'expired'::text])`),
+	check("consult_state_latency_check", sql`latency_contract = ANY (ARRAY['proceed'::text, 'hard-blocked'::text])`),
+	check("consult_state_depth_check", sql`(depth >= 0) AND (depth <= 2)`),
+]);
+
 export const p2PReceiptsInHarnessShared = harnessShared.table("p2p_receipts", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -8092,12 +8140,12 @@ export const coordConversationsInHarnessShared = harnessShared.table("coord_conv
 	index("coord_conversations_scope_idx").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.scope.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
 	index("coord_conversations_superseded_by_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.supersededBy.asc().nullsLast().op("text_ops")).where(sql`(superseded_by IS NOT NULL)`),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "coord_conversations_pkey"}),
-	check("coord_conversations_kind_check", sql`kind = ANY (ARRAY['question'::text, 'discussion'::text])`),
 	check("coord_conversations_scope_check", sql`scope = ANY (ARRAY['operator'::text, 'harness'::text])`),
 	check("coord_conversations_scope_slug_check", sql`((scope = 'harness'::text) AND (harness_slug IS NOT NULL) AND (harness_slug <> ''::text)) OR ((scope = 'operator'::text) AND (harness_slug IS NULL))`),
 	check("coord_conversations_id_nonempty", sql`id <> ''::text`),
 	check("coord_conversations_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("coord_conversations_state_check", sql`state = ANY (ARRAY['open'::text, 'resolved'::text, 'closed'::text, 'superseded'::text])`),
+	check("coord_conversations_kind_check", sql`kind = ANY (ARRAY['question'::text, 'discussion'::text, 'consult'::text])`),
 ]);
 
 export const potMembersInHarnessShared = harnessShared.table("pot_members", {
