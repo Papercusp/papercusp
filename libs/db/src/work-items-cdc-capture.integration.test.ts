@@ -118,7 +118,10 @@ describe('work_items CDC capture (migration 375)', () => {
     await sql`INSERT INTO harness_shared.engineer_issues
       (workspace_id, issue_id, scope, title, body, state, kind)
       VALUES ('ws1', 'EI-11', 'operator', 'op task', '', 'open', 'change')`;
-    const rows = await sql`SELECT 1 FROM harness_shared.substrate_outbox WHERE key = 'EI-11'`;
+    // match on the wire issue_id, not the key: since mig 829 harness-qualified issue keys,
+    // a bare `key = 'EI-11'` predicate can never match ANY row, so it would pass vacuously
+    // even if this write were wrongly enqueued.
+    const rows = await sql`SELECT 1 FROM harness_shared.substrate_outbox WHERE "row"->>'issue_id' = 'EI-11'`;
     expect(rows).toHaveLength(0);
   });
 
@@ -132,8 +135,11 @@ describe('work_items CDC capture (migration 375)', () => {
     await sql`INSERT INTO harness_shared.engineer_issues
       (workspace_id, issue_id, scope, title, body, state, kind)
       VALUES ('ws1', 'EI-13', 'operator', 'op task', '', 'open', 'change')`;
+    // keyed on the wire issue_id: an operator-scoped issue's mig-829 key qualifier is its
+    // storage slug (`operator:…`), which this test never fixes, so asserting the key literal
+    // here would couple the test to an identity it does not control.
     const rows = await sql<{ table_name: string; harness_slug: string }[]>`
-      SELECT table_name, harness_slug FROM harness_shared.substrate_outbox WHERE key = 'EI-13'`;
+      SELECT table_name, harness_slug FROM harness_shared.substrate_outbox WHERE "row"->>'issue_id' = 'EI-13'`;
     expect(rows).toHaveLength(1);
     expect(rows[0].table_name).toBe('engineer_issues');
     expect(rows[0].harness_slug).toBe('hive-home');
@@ -149,12 +155,12 @@ describe('work_items CDC capture (migration 375)', () => {
     await sql`UPDATE harness_shared.engineer_issues
                  SET state = 'wip'
                WHERE workspace_id = 'ws1' AND issue_id = 'EI-20'`;
-    expect(await sql`SELECT 1 FROM harness_shared.substrate_outbox WHERE key = 'EI-20'`).toHaveLength(1);
+    expect(await sql`SELECT 1 FROM harness_shared.substrate_outbox WHERE key = 'papercup/EI-20'`).toHaveLength(1);
     await sql`TRUNCATE harness_shared.substrate_outbox RESTART IDENTITY`;
     // a bare re-write of the SAME value: only updated_ts changes → must NOT re-federate
     // (375's issue UPDATE WHEN masks updated_ts; left in, every own-log merge re-enqueues forever).
     await sql`UPDATE harness_shared.engineer_issues SET state = 'wip' WHERE workspace_id = 'ws1' AND issue_id = 'EI-20'`;
-    expect(await sql`SELECT 1 FROM harness_shared.substrate_outbox WHERE key = 'EI-20'`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM harness_shared.substrate_outbox WHERE key = 'papercup/EI-20'`).toHaveLength(0);
   });
 
   it('a remote-origin write is NOT captured (echo-loop guard)', async () => {
