@@ -1260,22 +1260,6 @@ export const deferralPricingModelInHarnessShared = harnessShared.table("deferral
 	check("deferral_pricing_model_weeks_nonneg", sql`sample_weeks >= (0)::numeric`),
 ]);
 
-export const localBackendsInHarnessShared = harnessShared.table("local_backends", {
-	id: text().primaryKey().notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	kind: text().notNull(),
-	baseUrl: text("base_url").notNull(),
-	models: jsonb().default([]).notNull(),
-	maxConcurrent: integer("max_concurrent").default(4).notNull(),
-	enabled: boolean().default(true).notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("local_backends_workspace").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`enabled`),
-	check("local_backends_kind_check", sql`kind = ANY (ARRAY['llama-server'::text, 'vllm'::text, 'ollama'::text])`),
-	check("local_backends_max_concurrent_check", sql`max_concurrent > 0`),
-]);
-
 export const voiceUtterancesInHarnessShared = harnessShared.table("voice_utterances", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
@@ -1289,6 +1273,29 @@ export const voiceUtterancesInHarnessShared = harnessShared.table("voice_utteran
 }, (table) => [
 	index("voice_utterances_mode_idx").using("btree", table.mode.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("text_ops")),
 	index("voice_utterances_ts_idx").using("btree", table.ts.desc().nullsFirst().op("timestamptz_ops")),
+]);
+
+export const localBackendsInHarnessShared = harnessShared.table("local_backends", {
+	id: text().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	kind: text().notNull(),
+	baseUrl: text("base_url").notNull(),
+	models: jsonb().default([]).notNull(),
+	maxConcurrent: integer("max_concurrent").default(4).notNull(),
+	enabled: boolean().default(true).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lifecycle: text().default('always-on').notNull(),
+	idleTtlSec: integer("idle_ttl_sec"),
+	unitName: text("unit_name"),
+}, (table) => [
+	index("local_backends_on_demand").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(enabled AND (lifecycle = 'on-demand'::text))`),
+	index("local_backends_workspace").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`enabled`),
+	check("local_backends_kind_check", sql`kind = ANY (ARRAY['llama-server'::text, 'vllm'::text, 'ollama'::text])`),
+	check("local_backends_max_concurrent_check", sql`max_concurrent > 0`),
+	check("local_backends_lifecycle_check", sql`lifecycle = ANY (ARRAY['always-on'::text, 'on-demand'::text])`),
+	check("local_backends_idle_ttl_sec_check", sql`(idle_ttl_sec IS NULL) OR (idle_ttl_sec > 0)`),
+	check("local_backends_on_demand_needs_unit_check", sql`(lifecycle <> 'on-demand'::text) OR (unit_name IS NOT NULL)`),
 ]);
 
 export const provisionAuditLogInHarnessShared = harnessShared.table("provision_audit_log", {
