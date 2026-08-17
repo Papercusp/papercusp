@@ -151,6 +151,7 @@ export {
   goalSpend,
   portfolioSpend,
   GOAL_SPEND_SNAPSHOT_SOURCE,
+  GOAL_SPEND_TICK_SOURCE,
   type GoalPotLink,
   type GoalPotRole,
   type GoalSpend,

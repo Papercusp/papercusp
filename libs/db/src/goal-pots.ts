@@ -71,6 +71,14 @@ export interface PotSpend {
 /** Provenance marker for the only spend snapshot goals:update may persist. */
 export const GOAL_SPEND_SNAPSHOT_SOURCE = 'goal-pots-rollup' as const;
 
+/** Provenance marker for the PLATFORM spend-rollup tick's snapshot
+ *  (goal-mode-design-intent-hardening-2026-08-16 P-005 / D-003). Distinct from
+ *  GOAL_SPEND_SNAPSHOT_SOURCE because the tick's value is a SUPERSET of the pots
+ *  rollup (it adds the goal subject/descendant SESSION leg), so writing it under
+ *  the pots marker would break goals:update's exact-match verification. Writer:
+ *  operator-core lib/goals/spend-rollup.ts; readers accept either marker. */
+export const GOAL_SPEND_TICK_SOURCE = 'goal-spend-tick' as const;
+
 export interface GoalSpend {
   goalId: string;
   /** Sum over this goal's linked pots. NOT additive across goals. */
