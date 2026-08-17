@@ -1288,6 +1288,7 @@ export const localBackendsInHarnessShared = harnessShared.table("local_backends"
 	lifecycle: text().default('always-on').notNull(),
 	idleTtlSec: integer("idle_ttl_sec"),
 	unitName: text("unit_name"),
+	lastBusyAt: timestamp("last_busy_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("local_backends_on_demand").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(enabled AND (lifecycle = 'on-demand'::text))`),
 	index("local_backends_workspace").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`enabled`),
