@@ -7155,6 +7155,27 @@ export const harnessProposalsSharedInHarnessShared = harnessShared.table("harnes
 	pgPolicy("harness_proposals_shared_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const searchJudgeGradesInHarnessShared = harnessShared.table("search_judge_grades", {
+	workspaceId: text("workspace_id").notNull(),
+	judgeModel: text("judge_model").notNull(),
+	rubricVersion: text("rubric_version").notNull(),
+	queryHash: text("query_hash").notNull(),
+	docId: text("doc_id").notNull(),
+	docTextHash: text("doc_text_hash").notNull(),
+	relevance: real().notNull(),
+	judgedRelevant: boolean("judged_relevant").notNull(),
+	judgeNotes: text("judge_notes"),
+	judgeCostUsd: numeric("judge_cost_usd", { precision: 12, scale:  6 }).default('0').notNull(),
+	queryText: text("query_text").notNull(),
+	pairId: text("pair_id"),
+	runId: text("run_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("search_judge_grades_contract_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.judgeModel.asc().nullsLast().op("timestamptz_ops"), table.rubricVersion.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("search_judge_grades_run_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.runId.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.docId, table.docTextHash, table.judgeModel, table.queryHash, table.rubricVersion, table.workspaceId], name: "search_judge_grades_pkey"}),
+]);
+
 export const messagesConsolidatedInHarnessShared = harnessShared.table("messages_consolidated", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
