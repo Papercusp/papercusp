@@ -455,11 +455,32 @@ export async function loadProjectHistoryPlansFromExport(
     .filter((slug) => !planPrefix || slug.startsWith(planPrefix))
     .sort((left, right) => left.localeCompare(right));
 
-  return await Promise.all(slugs.map(async (slug) => ({
+  const loaded = await Promise.all(slugs.map(async (slug) => ({
     markdown: await fs.readFile(join(exportDirectory, `${slug}.md`), 'utf8'),
     filePath: `${slug}.md`,
     updatedAt: string(listedBySlug.get(slug)?.updated),
   } satisfies ProjectHistoryPlanInput)));
+
+  return loaded.filter((plan) => !isTemplateCarrierPlan(plan.markdown));
+}
+
+/**
+ * A plan that conforms to a TEMPLATE (`template:` frontmatter — e.g. `rubric`) is a PROCESS
+ * artifact, not product history: acceptance-rubric carriers and scheduled template instances.
+ * Ordinary plans carry no `template:` key at all, which is what makes this a reliable split.
+ *
+ * They are excluded because a project History artifact is a product-facing record of what was
+ * BUILT. Projecting rubric carriers into it publishes internal QA bookkeeping as though it were
+ * shipped work — measured on SideStage, where 17 `acceptance-*` rubric plans had reached the
+ * public History page (EI-20475585438015488).
+ *
+ * Scoped to the frontmatter block on purpose: `template:` occurring in a plan's BODY prose must
+ * not silently drop a real plan from the artifact.
+ */
+export function isTemplateCarrierPlan(markdown: string): boolean {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown);
+  if (!frontmatter) return false;
+  return /^template:[ \t]*\S/m.test(frontmatter[1]);
 }
 
 function detectProject(
