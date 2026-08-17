@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
   commitsForWorkItems,
   githubWebUrl,
+  isTemplateCarrierPlan,
   loadProjectHistoryPlansFromExport,
   parseGitLog,
   parseProjectHistoryGenerateArgs,
@@ -72,6 +73,59 @@ test('exported Markdown remains the complete plan enumeration when plans:list is
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
+});
+
+test('template-carrier plans are excluded from the History artifact, ordinary plans are not', async () => {
+  const directory = await fs.mkdtemp(join(tmpdir(), 'project-history-cli-template-'));
+  try {
+    // A rubric carrier, exactly as plans:export writes it (frontmatter `template: rubric`).
+    await fs.writeFile(join(directory, 'demo-acceptance.md'), [
+      '---',
+      'title: Demo — acceptance',
+      'slug: demo-acceptance',
+      'status: superseded',
+      'template: rubric',
+      '---',
+      '',
+      '## Now',
+      '',
+    ].join('\n'), 'utf8');
+    // POSITIVE CONTROL: an ordinary plan carries no `template:` key and MUST survive, so a
+    // passing test cannot be satisfied by a filter that simply drops everything.
+    await fs.writeFile(join(directory, 'demo-real.md'), [
+      '---',
+      'title: Demo — real product work',
+      'slug: demo-real',
+      'status: shipped',
+      '---',
+      '',
+      '## Now',
+      '',
+    ].join('\n'), 'utf8');
+    // A real plan that merely DISCUSSES templates in its body must not be dropped.
+    await fs.writeFile(join(directory, 'demo-prose.md'), [
+      '---',
+      'title: Demo — mentions templates in prose',
+      'slug: demo-prose',
+      '---',
+      '',
+      'We considered whether template: rubric should gate this.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const plans = await loadProjectHistoryPlansFromExport(directory, [], null);
+
+    assert.deepEqual(plans.map((plan) => plan.filePath), ['demo-prose.md', 'demo-real.md']);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('template-carrier detection keys on frontmatter, not body prose', () => {
+  assert.equal(isTemplateCarrierPlan('---\nslug: a\ntemplate: rubric\n---\n\nbody\n'), true);
+  assert.equal(isTemplateCarrierPlan('---\nslug: a\n---\n\ntemplate: rubric\n'), false);
+  assert.equal(isTemplateCarrierPlan('---\nslug: a\ntemplate:\n---\n\nbody\n'), false);
+  assert.equal(isTemplateCarrierPlan('no frontmatter at all\n'), false);
 });
 
 test('work-item ledger reads stay in timeout-resistant batches', () => {
