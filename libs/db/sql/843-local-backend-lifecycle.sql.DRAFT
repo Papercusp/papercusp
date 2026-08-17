@@ -26,31 +26,50 @@ ALTER TABLE harness_shared.local_backends
   ADD COLUMN IF NOT EXISTS idle_ttl_sec integer,
   ADD COLUMN IF NOT EXISTS unit_name    text;
 
+-- The three constraints below are added through a guarded DO block rather than the usual
+-- `DROP CONSTRAINT IF EXISTS` + `ADD CONSTRAINT` idiom. All three names are introduced BY this
+-- migration, so a drop could only ever be a re-run convenience — but a bare DROP is still
+-- destructive DDL against a database the currently-deployed :3070 release is live on, and it
+-- trips lint:migration-forward-compat for good reason. Guarding the ADD keeps the migration
+-- re-runnable with no destructive statement to acknowledge.
+
 -- 'always-on': start it and leave it resident (the pre-843 behaviour, and the default).
 -- 'on-demand': the idle-reaper may stop it once idle past idle_ttl_sec; the gateway starts it
 --              again on a request routed to it.
-ALTER TABLE harness_shared.local_backends
-  DROP CONSTRAINT IF EXISTS local_backends_lifecycle_check;
-ALTER TABLE harness_shared.local_backends
-  ADD CONSTRAINT local_backends_lifecycle_check
-  CHECK (lifecycle IN ('always-on', 'on-demand'));
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'local_backends_lifecycle_check'
+  ) THEN
+    ALTER TABLE harness_shared.local_backends
+      ADD CONSTRAINT local_backends_lifecycle_check
+      CHECK (lifecycle IN ('always-on', 'on-demand'));
+  END IF;
+END $$;
 
 -- A TTL is only meaningful for an on-demand backend, and a non-positive TTL would mean "reap it
 -- the instant it goes idle", which is never what anyone means. Enforce both rather than leaving
 -- the reaper to guess at a nonsense value.
-ALTER TABLE harness_shared.local_backends
-  DROP CONSTRAINT IF EXISTS local_backends_idle_ttl_sec_check;
-ALTER TABLE harness_shared.local_backends
-  ADD CONSTRAINT local_backends_idle_ttl_sec_check
-  CHECK (idle_ttl_sec IS NULL OR idle_ttl_sec > 0);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'local_backends_idle_ttl_sec_check'
+  ) THEN
+    ALTER TABLE harness_shared.local_backends
+      ADD CONSTRAINT local_backends_idle_ttl_sec_check
+      CHECK (idle_ttl_sec IS NULL OR idle_ttl_sec > 0);
+  END IF;
+END $$;
 
 -- An on-demand backend the reaper cannot stop is a configuration that looks armed and silently
 -- does nothing — the exact failure mode this plan exists to remove. Require the unit up front.
-ALTER TABLE harness_shared.local_backends
-  DROP CONSTRAINT IF EXISTS local_backends_on_demand_needs_unit_check;
-ALTER TABLE harness_shared.local_backends
-  ADD CONSTRAINT local_backends_on_demand_needs_unit_check
-  CHECK (lifecycle <> 'on-demand' OR unit_name IS NOT NULL);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'local_backends_on_demand_needs_unit_check'
+  ) THEN
+    ALTER TABLE harness_shared.local_backends
+      ADD CONSTRAINT local_backends_on_demand_needs_unit_check
+      CHECK (lifecycle <> 'on-demand' OR unit_name IS NOT NULL);
+  END IF;
+END $$;
 
 -- The reaper's hot read: every enabled on-demand backend. Partial, because that set stays tiny
 -- while the table as a whole is read on every gateway hot-reload.
