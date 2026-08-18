@@ -3747,6 +3747,17 @@ export const operatorMigratePolicyInHarnessShared = harnessShared.table("operato
 
 ]);
 
+export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table("operator_telemetry_buffer_config", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
+
+]);
+
 export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs", {
 	ownerId: text("owner_id").primaryKey().notNull(),
 	workspaceId: text("workspace_id").default('default').notNull(),
@@ -3768,22 +3779,13 @@ export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs"
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	controlDeliveredGeneration: bigint("control_delivered_generation", { mode: "number" }).default(0).notNull(),
 	goalId: text("goal_id"),
+	lastOrientDisclosures: jsonb("last_orient_disclosures"),
+	lastOrientDisclosuresAt: timestamp("last_orient_disclosures_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("session_briefs_goal_id_idx").using("btree", table.goalId.asc().nullsLast().op("text_ops")).where(sql`(goal_id IS NOT NULL)`),
 	index("session_briefs_native_session_id_idx").using("btree", table.nativeSessionId.asc().nullsLast().op("text_ops")).where(sql`(native_session_id IS NOT NULL)`),
 	index("session_briefs_updated_at_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
 	primaryKey({ columns: [table.ownerId], name: "session_briefs_pkey"}),
-
-]);
-
-export const operatorTelemetryBufferConfigInHarnessShared = harnessShared.table("operator_telemetry_buffer_config", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().default({}).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_telemetry_buffer_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_telemetry_buffer_config_pkey"}),
 
 ]);
 
