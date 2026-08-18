@@ -12,9 +12,9 @@ import {
   parseGitLog,
   parseProjectHistoryGenerateArgs,
   projectHistoryOutputIsCurrent,
-  projectHistoryWorkItemBatches,
   renderProjectHistory,
   repositoryFromRemote,
+  workItemRows,
 } from './project-history-cli.ts';
 import type { ProjectHistoryDocument } from '@papercusp/plan-parser/project-history';
 
@@ -193,9 +193,55 @@ test('template-carrier detection keys on frontmatter, not body prose', () => {
   assert.equal(isTemplateCarrierPlan('no frontmatter at all\n'), false);
 });
 
-test('work-item ledger reads stay in timeout-resistant batches', () => {
-  const batches = projectHistoryWorkItemBatches(Array.from({ length: 61 }, (_, index) => index));
-  assert.deepEqual(batches.map((batch) => batch.length), [25, 25, 11]);
+// REPLACES 'work-item ledger reads stay in timeout-resistant batches', which asserted
+// the 25-id chunking and passed for the entire life of WI-39831 — while every one of
+// those batches returned zero rows. The batches were not too slow, they were too BIG
+// for the result projector, so the test certified the exact mechanism that was broken.
+// What actually needed guarding is that a TRUNCATED payload is never read as an EMPTY
+// one; that is what these two tests pin.
+test('a bounded-payload projection envelope is REFUSED, never read as "no work items"', () => {
+  // Verbatim shape observed from `ptool tools:invoke { work_items:get }` on 2026-08-18:
+  // past the transport budget the projector drops `results` entirely and substitutes a
+  // summary string plus a `_projection` report.
+  const truncated = {
+    summary: '[payload preview omitted: serialized projection exceeded transport budget]',
+    _projection: {
+      kind: 'bounded-payload',
+      truncated: true,
+      tier: 'trimmed',
+      forced: true,
+      originalChars: 14904,
+      returnedChars: 2673,
+      omittedCount: 13,
+      omitted: [
+        { path: '$.results[0].workItem.terminalCompletionEvidence.filesChanged', reason: 'nested value omitted at projection depth limit' },
+        { path: '$.results[0].workItem.payload._completionEvidence', reason: 'nested value omitted at projection depth limit' },
+      ],
+    },
+  };
+
+  assert.throws(
+    () => workItemRows(truncated),
+    /TRUNCATED by the result projector/,
+    'a truncated payload must fail loudly — returning [] here is the WI-39831 defect',
+  );
+
+  // The `summary`-only variant (no _projection report) must fail the same way, or the
+  // guard is trivially bypassed by a projector that reports less.
+  assert.throws(
+    () => workItemRows({ summary: 'anything' }),
+    /TRUNCATED by the result projector/,
+  );
+});
+
+test('a genuinely empty result set is still an empty array, not a throw', () => {
+  // The guard must distinguish "did not fit" from "nothing matched" — collapsing those
+  // two is the whole bug, in either direction.
+  assert.deepEqual(workItemRows({ results: [], counts: { ok: 0, failed: 0 } }), []);
+  assert.deepEqual(
+    workItemRows({ results: [{ ok: true, id: 'WI-1', workItem: { id: 'WI-1', title: 'a' } }] }),
+    [{ id: 'WI-1', title: 'a' }],
+  );
 });
 
 test('repository metadata converts common GitHub remotes without guessing other hosts', () => {

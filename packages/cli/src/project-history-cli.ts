@@ -277,15 +277,13 @@ async function readExportedWorkItems(directory: string): Promise<ProjectHistoryW
   return items;
 }
 
-function chunks<T>(values: readonly T[], size: number): T[][] {
-  const output: T[][] = [];
-  for (let index = 0; index < values.length; index += size) output.push(values.slice(index, index + size));
-  return output;
-}
-
-export function projectHistoryWorkItemBatches<T>(values: readonly T[]): T[][] {
-  return chunks(values, 25);
-}
+// `projectHistoryWorkItemBatches` (25-id chunking for the tools:invoke ledger read)
+// was DELETED with that read path, not kept as a shim. Its test asserted the batches
+// were "timeout-resistant", which was true and irrelevant: the batches were not too
+// SLOW, they were too BIG for the result projector, so every one of them came back
+// empty. Keeping the helper would invite the batch-size fix D-003 rejects — no fixed
+// N is safe when one row can exceed the budget alone. Bulk reads go through
+// work_items:export { toDir }.
 
 function git(runner: CommandRunner, repoRoot: string, args: readonly string[], allowFailure = false): string {
   const result = runner.run('git', args, { cwd: repoRoot });
