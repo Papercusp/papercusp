@@ -197,10 +197,84 @@ function planRows(payload: unknown): Record<string, unknown>[] {
   return records(first?.plans);
 }
 
-function workItemRows(payload: unknown): Record<string, unknown>[] {
-  return records(object(payload)?.results)
+/**
+ * A bounded-payload envelope is the shape the result projector substitutes when a
+ * payload exceeds the transport budget: `results` is GONE, replaced by a `summary`
+ * string and a `_projection` report. `records(root.results)` reads that as `[]`.
+ *
+ * That empty array is not "no work items" — it is "the answer did not fit", and the
+ * two were indistinguishable for the entire life of this bug (WI-39831). Detect it
+ * and THROW, so the failure can never again be silent. Kept (and exercised) even
+ * though the work-item leg now reads files: it is the recurrence guard for anyone
+ * who routes a bulk ledger read back through the payload.
+ */
+export function workItemRows(payload: unknown): Record<string, unknown>[] {
+  const root = object(payload);
+  if (root && !Array.isArray(root.results) && (root._projection !== undefined || typeof root.summary === 'string')) {
+    const projection = object(root._projection);
+    const detail = projection
+      ? ` (tier=${String(projection.tier)}, ${String(projection.returnedChars)} of ${String(projection.originalChars)} chars, ${String(projection.omittedCount)} omitted)`
+      : '';
+    throw new Error(
+      `work-item payload was TRUNCATED by the result projector${detail}: it carries no \`results\` array, `
+      + 'only a bounded-payload envelope. Reading this as "no work items" is the WI-39831 defect. '
+      + 'Bulk ledger reads must go through work_items:export { toDir } (files), not the result payload.',
+    );
+  }
+  return records(root?.results)
     .map((row) => object(row.workItem))
     .filter((row): row is Record<string, unknown> => row !== null);
+}
+
+/** `work_items:export` returns counts only — the rows are on disk. */
+function exportedCount(payload: unknown, leg: string): number {
+  const root = object(payload);
+  if (!root || root.ok !== true) {
+    throw new Error(`work_items:export (${leg} leg) did not report ok: ${JSON.stringify(payload).slice(0, 400)}`);
+  }
+  if (root.truncatedByLimit === true) {
+    throw new Error(
+      `work_items:export (${leg} leg) hit its row limit, so this export is PARTIAL. Refusing to publish a `
+      + 'Project History built from a silently short ledger read — raise `limit` or narrow the harness.',
+    );
+  }
+  return typeof root.written === 'number' ? root.written : 0;
+}
+
+/**
+ * Read every `<id>.json` an export wrote and map it onto the History work-item shape.
+ * Both export legs write into the same directory, so the union is deduplicated by
+ * filename for free.
+ */
+async function readExportedWorkItems(directory: string): Promise<ProjectHistoryWorkItemInput[]> {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  const items: ProjectHistoryWorkItemInput[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+    const raw = await fs.readFile(join(directory, entry.name), 'utf8');
+    // A malformed row is a real export failure, not a row to skip quietly.
+    const row = object(JSON.parse(raw) as unknown);
+    if (!row) throw new Error(`work_items:export wrote a non-object row at ${entry.name}`);
+    const id = string(row.id);
+    const title = string(row.title);
+    if (!id || !title) continue;
+    const evidence = object(row.terminalCompletionEvidence)
+      ?? object(object(row.payload)?._completionEvidence);
+    const planItem = object(object(row.payload)?.plan_item);
+    const planSlug = string(planItem?.plan_slug) ?? string(row.sourcePlanSlug);
+    items.push({
+      id,
+      kind: string(row.kind) ?? 'work-item',
+      title,
+      state: string(row.state) ?? 'unknown',
+      completedAt: string(row.closedAt),
+      completionAuthority: string(row.completionAuthority) ?? 'work-item-ledger',
+      completionSummary: string(evidence?.summary),
+      completionEvidence: evidence,
+      planSlugs: planSlug ? [planSlug] : undefined,
+    });
+  }
+  return items;
 }
 
 function chunks<T>(values: readonly T[], size: number): T[][] {
@@ -389,41 +463,64 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
     }
   }
 
+  /**
+   * Work items come out through `work_items:export { toDir }` — FILES — never
+   * through the result payload.
+   *
+   * This used to batch 25 ids through `tools:invoke { work_items:get }` and read
+   * `payload.results`. The result payload is a bounded transport (~3.5KB after
+   * projection), so every batch came back as `{ summary, _projection }` with no
+   * `results` at all, and this method returned `[]` on every call — silently,
+   * with a zero exit. `generateProjectHistory` then fell through to the
+   * `completedWorkItemsFromPlan` compatibility stub, and the published History
+   * showed 327 of 327 items as evidence-free `plan-ledger` records while 505
+   * fully-evidenced completions sat in the ledger (WI-39831, plan
+   * project-history-real-completion-evidence-2026-08-18 D-003).
+   *
+   * Batch size is NOT the fix and must not be reintroduced as one: a single fat
+   * row can exceed the budget alone, so no fixed N is safe.
+   *
+   * TWO exports land in one directory and the union is read back:
+   *   1. by HARNESS — every terminal row, which is what admits work by its own
+   *      ledger linkage (`payload.plan_item.plan_slug`) rather than only by a
+   *      `← WI-NNN completed` marker someone remembered to write (P-005).
+   *   2. by ID — the marker-referenced ids, which picks up anything the harness
+   *      enumeration misses (a referenced row that is not terminal).
+   */
   async loadWorkItems(ids: readonly string[]): Promise<readonly ProjectHistoryWorkItemInput[]> {
-    const items: ProjectHistoryWorkItemInput[] = [];
-    for (const batch of projectHistoryWorkItemBatches(ids)) {
-      const payload = ptool(this.runner, this.options, 'tools:invoke', {
-        name: 'work_items:get',
-        args: {
-          ids: batch,
+    const exportDirectory = await fs.mkdtemp(join(tmpdir(), 'papercusp-project-history-items-'));
+    try {
+      const harnessExport = exportedCount(ptool(this.runner, this.options, 'work_items:export', {
+        harness: this.options.harness,
+        toDir: exportDirectory,
+      }), 'harness');
+
+      const idExport = ids.length > 0
+        ? exportedCount(ptool(this.runner, this.options, 'work_items:export', {
+          ids: [...ids],
           harness: this.options.harness,
-          detail: false,
-          threadLimit: 1,
-          payloadTier: 'full',
-        },
-      });
-      for (const row of workItemRows(payload)) {
-        const id = string(row.id);
-        const title = string(row.title);
-        if (!id || !title) continue;
-        const evidence = object(row.terminalCompletionEvidence)
-          ?? object(object(row.payload)?._completionEvidence);
-        const planItem = object(object(row.payload)?.plan_item);
-        const planSlug = string(planItem?.plan_slug);
-        items.push({
-          id,
-          kind: string(row.kind) ?? 'work-item',
-          title,
-          state: string(row.state) ?? 'unknown',
-          completedAt: string(row.closedAt),
-          completionAuthority: string(row.completionAuthority) ?? 'work-item-ledger',
-          completionSummary: string(evidence?.summary),
-          completionEvidence: evidence,
-          planSlugs: planSlug ? [planSlug] : undefined,
-        });
+          toDir: exportDirectory,
+        }), 'ids')
+        : 0;
+
+      const items = await readExportedWorkItems(exportDirectory);
+
+      // The silent zero is what shipped this bug, so it is now the loud case.
+      // Both legs resolving nothing while the plans clearly reference work is a
+      // broken export door, never a project with no completed work.
+      if (ids.length > 0 && items.length === 0) {
+        throw new Error(
+          `work_items:export resolved 0 work items for harness "${this.options.harness}" `
+          + `while the plan ledger references ${ids.length}. Refusing to emit a Project `
+          + 'History document built entirely from plan-completion markers — that is the '
+          + 'evidence-free output this export exists to prevent (WI-39831). '
+          + `Reported written: harness=${harnessExport}, ids=${idExport}.`,
+        );
       }
+      return items;
+    } finally {
+      await fs.rm(exportDirectory, { recursive: true, force: true });
     }
-    return items;
   }
 
   async loadCommits(ids: readonly string[]): Promise<readonly ProjectHistoryCommitInput[]> {
