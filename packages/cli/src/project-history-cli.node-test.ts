@@ -234,6 +234,38 @@ test('a bounded-payload projection envelope is REFUSED, never read as "no work i
   );
 });
 
+test('the PRE-FIX implementation is kept as a control and demonstrably swallows the same envelope', () => {
+  // A guard test that has never failed is a guard nobody has tested. Rather than mutate
+  // the shared tree to prove falsifiability (unsafe here — git-sync sweeps it mid-probe),
+  // the defective implementation lives on permanently as a control, per the repo's
+  // "keep a deliberately-wrong implementation in the test file" rule.
+  //
+  // This is verbatim what workItemRows did before WI-39831: no envelope check.
+  const legacyWorkItemRows = (payload: unknown): unknown[] => {
+    const root = payload && typeof payload === 'object' ? payload as Record<string, unknown> : null;
+    const results = Array.isArray(root?.results) ? root.results as Record<string, unknown>[] : [];
+    return results
+      .map((row) => (row.workItem && typeof row.workItem === 'object' ? row.workItem : null))
+      .filter((row) => row !== null);
+  };
+
+  const truncated = {
+    summary: '[payload preview omitted: serialized projection exceeded transport budget]',
+    _projection: { kind: 'bounded-payload', truncated: true, omittedCount: 13 },
+  };
+
+  // The control returns a clean, plausible, WRONG empty array — indistinguishable from
+  // a project with no completed work. This is the whole defect in one assertion.
+  assert.deepEqual(legacyWorkItemRows(truncated), [], 'control must reproduce the silent zero');
+  // And the shipped implementation must NOT agree with it.
+  assert.throws(() => workItemRows(truncated), /TRUNCATED by the result projector/);
+
+  // Calibration: on a well-formed payload the two agree, so the control is measuring the
+  // envelope handling specifically and not merely being broken in general.
+  const wellFormed = { results: [{ ok: true, workItem: { id: 'WI-1', title: 'a' } }] };
+  assert.deepEqual(legacyWorkItemRows(wellFormed), workItemRows(wellFormed));
+});
+
 test('a genuinely empty result set is still an empty array, not a throw', () => {
   // The guard must distinguish "did not fit" from "nothing matched" — collapsing those
   // two is the whole bug, in either direction.
