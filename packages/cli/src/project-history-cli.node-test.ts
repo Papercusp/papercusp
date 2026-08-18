@@ -75,6 +75,71 @@ test('exported Markdown remains the complete plan enumeration when plans:list is
   }
 });
 
+test('archived plans stay in the History artifact — plans:export writes them under archive/', async () => {
+  const directory = await fs.mkdtemp(join(tmpdir(), 'project-history-cli-archive-'));
+  try {
+    // Exactly the layout plans:export produces: live plans at the root, archived ones under
+    // `archive/`. `archived` is a reversible declutter flag, and archiving the implementation plan
+    // is a normal post-ship closeout step — so a shipped plan must NOT drop out of the product
+    // History artifact just because it was tidied away (WI-39765).
+    await fs.mkdir(join(directory, 'archive'), { recursive: true });
+    await Promise.all([
+      fs.writeFile(join(directory, 'demo-live.md'), '# Live\n', 'utf8'),
+      fs.writeFile(join(directory, 'archive', 'demo-archived.md'), '# Archived\n', 'utf8'),
+      // A template carrier is still a process artifact wherever it lives.
+      fs.writeFile(
+        join(directory, 'archive', 'demo-acceptance.md'),
+        '---\nslug: demo-acceptance\ntemplate: rubric\n---\n\nbody\n',
+        'utf8',
+      ),
+      // The prefix filter applies inside archive/ too.
+      fs.writeFile(join(directory, 'archive', 'other-archived.md'), '# Other\n', 'utf8'),
+    ]);
+
+    const plans = await loadProjectHistoryPlansFromExport(directory, [{
+      slug: 'demo-archived',
+      updated: '2026-08-15T05:37:16.793Z',
+    }], 'demo-');
+
+    // Sorted by SLUG across both directories, not root-then-archive.
+    assert.deepEqual(plans.map((plan) => plan.filePath), ['archive/demo-archived.md', 'demo-live.md']);
+    assert.equal(plans[0]?.markdown, '# Archived\n');
+    // Archived plans keep their `updated` metadata — which is why loadPlans() lists with
+    // includeArchived:true.
+    assert.equal(plans[0]?.updatedAt, '2026-08-15T05:37:16.793Z');
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a harness with no archived plans exports no archive/ directory and still loads', async () => {
+  const directory = await fs.mkdtemp(join(tmpdir(), 'project-history-cli-no-archive-'));
+  try {
+    await fs.writeFile(join(directory, 'demo-live.md'), '# Live\n', 'utf8');
+
+    const plans = await loadProjectHistoryPlansFromExport(directory, [], 'demo-');
+
+    assert.deepEqual(plans.map((plan) => plan.filePath), ['demo-live.md']);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a genuinely unreadable export directory throws instead of reading as empty', async () => {
+  const directory = await fs.mkdtemp(join(tmpdir(), 'project-history-cli-unreadable-'));
+  try {
+    // A FILE where the loader expects a directory: ENOTDIR, not ENOENT. Only ENOENT ("this
+    // harness has no archived plans") may degrade to an empty enumeration — a real read failure
+    // that silently produced zero plans would delete history exactly as WI-39765 did.
+    await fs.writeFile(join(directory, 'archive'), 'not a directory\n', 'utf8');
+    await fs.writeFile(join(directory, 'demo-live.md'), '# Live\n', 'utf8');
+
+    await assert.rejects(() => loadProjectHistoryPlansFromExport(directory, [], 'demo-'));
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('template-carrier plans are excluded from the History artifact, ordinary plans are not', async () => {
   const directory = await fs.mkdtemp(join(tmpdir(), 'project-history-cli-template-'));
   try {

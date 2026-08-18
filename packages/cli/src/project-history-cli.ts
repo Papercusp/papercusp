@@ -367,6 +367,10 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
       compact: true,
       limit: 500,
       order: 'updated',
+      // The export includes archived plans (they stay product history — see
+      // loadProjectHistoryPlansFromExport), so the metadata list must too, or every archived
+      // plan silently loses its `updated` timestamp.
+      includeArchived: true,
     }));
 
     const exportDirectory = await fs.mkdtemp(join(tmpdir(), 'papercusp-project-history-'));
