@@ -1637,36 +1637,6 @@ export const gatewayStallEventsInHarnessShared = harnessShared.table("gateway_st
 	pgPolicy("gateway_stall_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const memoryVecLocalInHarnessShared = harnessShared.table("memory_vec_local", {
-	memoryId: uuid("memory_id").primaryKey().notNull(),
-	vector: vector({ dimensions: 384 }).notNull(),
-	embeddedAt: timestamp("embedded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("memory_vec_local_hnsw_idx").using("hnsw", table.vector.asc().nullsLast().op("vector_cosine_ops")),
-	foreignKey({
-			columns: [table.memoryId],
-			foreignColumns: [memoryCanonicalInHarnessShared.id],
-			name: "memory_vec_local_memory_id_fkey"
-		}).onDelete("cascade"),
-	primaryKey({ columns: [table.memoryId], name: "memory_vec_local_pkey"}),
-
-]);
-
-export const memoryVecOpenaiInHarnessShared = harnessShared.table("memory_vec_openai", {
-	memoryId: uuid("memory_id").primaryKey().notNull(),
-	vector: vector({ dimensions: 768 }).notNull(),
-	embeddedAt: timestamp("embedded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("memory_vec_openai_hnsw_idx").using("hnsw", table.vector.asc().nullsLast().op("vector_cosine_ops")),
-	foreignKey({
-			columns: [table.memoryId],
-			foreignColumns: [memoryCanonicalInHarnessShared.id],
-			name: "memory_vec_openai_memory_id_fkey"
-		}).onDelete("cascade"),
-	primaryKey({ columns: [table.memoryId], name: "memory_vec_openai_pkey"}),
-
-]);
-
 export const testRunsInHarnessShared = harnessShared.table("test_runs", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	filePath: text("file_path").notNull(),
@@ -1696,6 +1666,36 @@ export const testRunsInHarnessShared = harnessShared.table("test_runs", {
 	index("test_runs_source_idx").using("btree", table.source.asc().nullsLast().op("timestamptz_ops"), table.finishedAt.desc().nullsFirst().op("text_ops")),
 	check("test_runs_source_valid", sql`source = ANY (ARRAY['ci'::text, 'local'::text, 'admin-ui'::text])`),
 	check("test_runs_status_valid", sql`status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text, 'cancelled'::text, 'error'::text, 'running'::text])`),
+]);
+
+export const memoryVecLocalInHarnessShared = harnessShared.table("memory_vec_local", {
+	memoryId: uuid("memory_id").primaryKey().notNull(),
+	vector: vector({ dimensions: 384 }).notNull(),
+	embeddedAt: timestamp("embedded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("memory_vec_local_hnsw_idx").using("hnsw", table.vector.asc().nullsLast().op("vector_cosine_ops")),
+	foreignKey({
+			columns: [table.memoryId],
+			foreignColumns: [memoryCanonicalInHarnessShared.id],
+			name: "memory_vec_local_memory_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.memoryId], name: "memory_vec_local_pkey"}),
+
+]);
+
+export const memoryVecOpenaiInHarnessShared = harnessShared.table("memory_vec_openai", {
+	memoryId: uuid("memory_id").primaryKey().notNull(),
+	vector: vector({ dimensions: 768 }).notNull(),
+	embeddedAt: timestamp("embedded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("memory_vec_openai_hnsw_idx").using("hnsw", table.vector.asc().nullsLast().op("vector_cosine_ops")),
+	foreignKey({
+			columns: [table.memoryId],
+			foreignColumns: [memoryCanonicalInHarnessShared.id],
+			name: "memory_vec_openai_memory_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.memoryId], name: "memory_vec_openai_pkey"}),
+
 ]);
 
 export const featureAuditConsolidatedInHarnessShared = harnessShared.table("feature_audit_consolidated", {
@@ -3270,6 +3270,81 @@ export const operatorContextDoorsConfigInHarnessShared = harnessShared.table("op
 
 ]);
 
+export const testingSurfacesInHarnessShared = harnessShared.table("testing_surfaces", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.testing_surfaces_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	kind: text().notNull(),
+	surfaceId: text("surface_id").notNull(),
+	sourceFile: text("source_file"),
+	schemaRef: jsonb("schema_ref"),
+	attrs: jsonb().default({}).notNull(),
+	provider: text().notNull(),
+	fidelity: text().notNull(),
+	firstSeen: timestamp("first_seen", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastSeen: timestamp("last_seen", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	retiredAt: timestamp("retired_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	uniqueIndex("testing_surfaces_identity").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.surfaceId.asc().nullsLast().op("text_ops")),
+	index("testing_surfaces_live").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")).where(sql`(retired_at IS NULL)`),
+	index("testing_surfaces_source_file").using("btree", table.sourceFile.asc().nullsLast().op("text_ops")).where(sql`((source_file IS NOT NULL) AND (retired_at IS NULL))`),
+	check("testing_surfaces_fidelity_check", sql`fidelity = ANY (ARRAY['declared'::text, 'spec'::text, 'convention'::text, 'observed'::text, 'file-only'::text])`),
+]);
+
+export const coverageEvidenceInHarnessShared = harnessShared.table("coverage_evidence", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coverage_evidence_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	surfaceRef: bigint("surface_ref", { mode: "number" }).notNull(),
+	evidenceKind: text("evidence_kind").notNull(),
+	verdict: text().notNull(),
+	generated: boolean().default(false).notNull(),
+	testFile: text("test_file"),
+	testCase: text("test_case"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	testRunId: bigint("test_run_id", { mode: "number" }),
+	score: real(),
+	details: jsonb().default({}).notNull(),
+	observedAt: timestamp("observed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("coverage_evidence_by_run").using("btree", table.testRunId.asc().nullsLast().op("int8_ops")).where(sql`(test_run_id IS NOT NULL)`),
+	index("coverage_evidence_by_surface").using("btree", table.surfaceRef.asc().nullsLast().op("timestamptz_ops"), table.evidenceKind.asc().nullsLast().op("text_ops"), table.observedAt.desc().nullsFirst().op("text_ops")),
+	uniqueIndex("coverage_evidence_dedup").using("btree", sql`surface_ref`, sql`evidence_kind`, sql`COALESCE(test_file, ''::text)`, sql`COALESCE(test_case, ''::text)`, sql`COALESCE(test_run_id, ('-1'::integer)::bigint)`),
+	foreignKey({
+			columns: [table.surfaceRef],
+			foreignColumns: [testingSurfacesInHarnessShared.id],
+			name: "coverage_evidence_surface_ref_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.testRunId],
+			foreignColumns: [testRunsInHarnessShared.id],
+			name: "coverage_evidence_test_run_id_fkey"
+		}).onDelete("set null"),
+	check("coverage_evidence_kind_check", sql`evidence_kind = ANY (ARRAY['traffic'::text, 'file-coverage'::text, 'fuzz'::text, 'crawl'::text, 'mutation'::text])`),
+	check("coverage_evidence_verdict_check", sql`verdict = ANY (ARRAY['pass'::text, 'fail'::text, 'error'::text, 'skip'::text])`),
+	check("coverage_evidence_score_check", sql`((evidence_kind <> 'mutation'::text) AND ((score IS NULL) OR ((score >= (0)::double precision) AND (score <= (1)::double precision)))) OR ((evidence_kind = 'mutation'::text) AND (score IS NOT NULL) AND (score >= (0)::double precision) AND (score <= (1)::double precision))`),
+]);
+
+export const coverageWaiversInHarnessShared = harnessShared.table("coverage_waivers", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coverage_waivers_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	surfaceRef: bigint("surface_ref", { mode: "number" }).notNull(),
+	reason: text().notNull(),
+	addedBy: text("added_by").notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("coverage_waivers_active").using("btree", table.surfaceRef.asc().nullsLast().op("int8_ops"), table.expiresAt.desc().nullsFirst().op("int8_ops")),
+	foreignKey({
+			columns: [table.surfaceRef],
+			foreignColumns: [testingSurfacesInHarnessShared.id],
+			name: "coverage_waivers_surface_ref_fkey"
+		}).onDelete("cascade"),
+	check("coverage_waivers_reason_check", sql`length(btrim(reason)) >= 12`),
+]);
+
 export const benchRunEventsInHarnessShared = harnessShared.table("bench_run_events", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	eventId: bigint("event_id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.bench_run_events_event_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -4553,17 +4628,6 @@ export const operatorSttSpendInHarnessShared = harnessShared.table("operator_stt
 
 ]);
 
-export const operatorTtsSpendInHarnessShared = harnessShared.table("operator_tts_spend", {
-	workspaceId: text("workspace_id").primaryKey().notNull(),
-	payload: jsonb().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
-}, (table) => [
-	pgPolicy("operator_tts_spend_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	primaryKey({ columns: [table.workspaceId], name: "operator_tts_spend_pkey"}),
-
-]);
-
 export const interestWatchesInHarnessShared = harnessShared.table("interest_watches", {
 	id: uuid().primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -4582,9 +4646,20 @@ export const interestWatchesInHarnessShared = harnessShared.table("interest_watc
 	consecutiveErrors: integer("consecutive_errors").default(0).notNull(),
 	active: boolean().default(true).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	embedding: vector({ dimensions: 384 }),
+	embedding: vector({ dimensions: 768 }),
 }, (table) => [
 	index("interest_watches_due_idx").using("btree", table.lastSweptAt.asc().nullsFirst().op("timestamptz_ops")).where(sql`active`),
+]);
+
+export const operatorTtsSpendInHarnessShared = harnessShared.table("operator_tts_spend", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_tts_spend_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_tts_spend_pkey"}),
+
 ]);
 
 export const harnessSmokeTestInHarnessShared = harnessShared.table("harness_smoke_test", {
@@ -5943,6 +6018,20 @@ export const commsTrustListInHarnessShared = harnessShared.table("comms_trust_li
 }, (table) => [
 	primaryKey({ columns: [table.trustedGithubUserId, table.workspaceId], name: "comms_trust_list_pkey"}),
 	check("comms_trust_list_tier_check", sql`tier = ANY (ARRAY['observe'::text, 'message'::text, 'wake'::text, 'steer'::text])`),
+]);
+
+export const censusProviderRegistrationsInHarnessShared = harnessShared.table("census_provider_registrations", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	provider: text().notNull(),
+	config: jsonb().default({}).notNull(),
+	enabled: boolean().default(true).notNull(),
+	source: text().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.harnessSlug, table.provider, table.workspaceId], name: "census_provider_registrations_pkey"}),
+	check("census_provider_registrations_source_check", sql`source = ANY (ARRAY['template'::text, 'detected'::text, 'manual'::text])`),
 ]);
 
 export const blueprintsInHarnessShared = harnessShared.table("blueprints", {
@@ -8302,7 +8391,7 @@ export const consultStateInHarnessShared = harnessShared.table("consult_state", 
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
-	queryEmbedding: vector("query_embedding", { dimensions: 384 }),
+	queryEmbedding: vector("query_embedding", { dimensions: 768 }),
 	cascadeCursor: integer("cascade_cursor").default(0).notNull(),
 	cascadeDigest: jsonb("cascade_digest").default([]).notNull(),
 }, (table) => [
@@ -8969,6 +9058,30 @@ export const workItemsClaimableInHarnessShared = harnessShared.view("work_items_
 	lane: text(),
 	conditionKey: text("condition_key"),
 }).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, lane, condition_key FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsHuman'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(workspace_id, status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id)) = 0`);
+
+export const testingSurfaceDepthInHarnessShared = harnessShared.view("testing_surface_depth", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }),
+	workspaceId: text("workspace_id"),
+	harnessSlug: text("harness_slug"),
+	kind: text(),
+	surfaceId: text("surface_id"),
+	sourceFile: text("source_file"),
+	provider: text(),
+	fidelity: text(),
+	firstSeen: timestamp("first_seen", { withTimezone: true, mode: 'string' }),
+	lastSeen: timestamp("last_seen", { withTimezone: true, mode: 'string' }),
+	retiredAt: timestamp("retired_at", { withTimezone: true, mode: 'string' }),
+	meetsL1: boolean("meets_l1"),
+	meetsL2: boolean("meets_l2"),
+	meetsL3: boolean("meets_l3"),
+	meetsL4: boolean("meets_l4"),
+	mutationScore: real("mutation_score"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	authoredEvidence: bigint("authored_evidence", { mode: "number" }),
+	lastEvidenceAt: timestamp("last_evidence_at", { withTimezone: true, mode: 'string' }),
+	depth: integer(),
+	waived: boolean(),
+}).as(sql`WITH fresh AS ( SELECT e.id, e.surface_ref, e.evidence_kind, e.verdict, e.generated, e.test_file, e.test_case, e.test_run_id, e.score, e.details, e.observed_at FROM harness_shared.coverage_evidence e WHERE e.observed_at > (now() - '30 days'::interval) ), graded AS ( SELECT s_1.id AS surface_ref, bool_or(f.verdict = 'pass'::text AND (f.evidence_kind = ANY (ARRAY['traffic'::text, 'file-coverage'::text]))) AS meets_l1, bool_or(f.verdict = 'pass'::text AND (f.evidence_kind = ANY (ARRAY['fuzz'::text, 'crawl'::text]))) AS meets_l2, bool_or(f.verdict = 'pass'::text AND f.generated = false AND (f.evidence_kind = ANY (ARRAY['traffic'::text, 'file-coverage'::text]))) AS meets_l3, max(f.score) FILTER (WHERE f.evidence_kind = 'mutation'::text) AS mutation_score, count(*) FILTER (WHERE f.generated = false AND f.verdict = 'pass'::text) AS authored_evidence, max(f.observed_at) AS last_evidence_at FROM harness_shared.testing_surfaces s_1 LEFT JOIN fresh f ON f.surface_ref = s_1.id GROUP BY s_1.id ) SELECT s.id, s.workspace_id, s.harness_slug, s.kind, s.surface_id, s.source_file, s.provider, s.fidelity, s.first_seen, s.last_seen, s.retired_at, COALESCE(g.meets_l1, false) AS meets_l1, COALESCE(g.meets_l2, false) AS meets_l2, COALESCE(g.meets_l3, false) AS meets_l3, g.mutation_score IS NOT NULL AND g.mutation_score >= 0.6::double precision AS meets_l4, g.mutation_score, COALESCE(g.authored_evidence, 0::bigint) AS authored_evidence, g.last_evidence_at, CASE WHEN g.mutation_score IS NOT NULL AND g.mutation_score >= 0.6::double precision THEN 4 WHEN COALESCE(g.meets_l3, false) THEN 3 WHEN COALESCE(g.meets_l2, false) THEN 2 WHEN COALESCE(g.meets_l1, false) THEN 1 ELSE 0 END AS depth, (EXISTS ( SELECT 1 FROM harness_shared.coverage_waivers w WHERE w.surface_ref = s.id AND w.expires_at > now())) AS waived FROM harness_shared.testing_surfaces s LEFT JOIN graded g ON g.surface_ref = s.id`);
 
 export const beeClaimSpecsInHarnessShared = harnessShared.view("bee_claim_specs", {	workspaceId: text("workspace_id"),
 	beeId: text("bee_id"),
