@@ -246,9 +246,12 @@ function exportedCount(payload: unknown, leg: string): number {
  * Both export legs write into the same directory, so the union is deduplicated by
  * filename for free.
  */
-async function readExportedWorkItems(directory: string): Promise<ProjectHistoryWorkItemInput[]> {
+async function readExportedWorkItems(
+  directory: string,
+): Promise<{ items: ProjectHistoryWorkItemInput[]; fileEvidence: WorkItemFileEvidence[] }> {
   const entries = await fs.readdir(directory, { withFileTypes: true });
   const items: ProjectHistoryWorkItemInput[] = [];
+  const fileEvidence: WorkItemFileEvidence[] = [];
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
     const raw = await fs.readFile(join(directory, entry.name), 'utf8');
@@ -273,8 +276,17 @@ async function readExportedWorkItems(directory: string): Promise<ProjectHistoryW
       completionEvidence: evidence,
       planSlugs: planSlug ? [planSlug] : undefined,
     });
+
+    const changed = Array.isArray(evidence?.filesChanged)
+      ? (evidence.filesChanged as unknown[]).filter((file): file is string => typeof file === 'string')
+      : [];
+    const closedAt = string(row.closedAt);
+    const closedAtMs = closedAt ? Date.parse(closedAt) : Number.NaN;
+    if (changed.length > 0 && Number.isFinite(closedAtMs)) {
+      fileEvidence.push({ id, filesChanged: changed, closedAtMs });
+    }
   }
-  return items;
+  return { items, fileEvidence };
 }
 
 // `projectHistoryWorkItemBatches` (25-id chunking for the tools:invoke ledger read)
@@ -382,6 +394,87 @@ export function commitsForWorkItems(
   return output;
 }
 
+/** What a work item's own completion record says it changed, and when it closed. */
+export interface WorkItemFileEvidence {
+  id: string;
+  filesChanged: readonly string[];
+  closedAtMs: number;
+}
+
+/**
+ * How far from `closedAt` an inferred commit may sit. Deliberately TIGHT.
+ *
+ * Calibrated against the sidestage ledger 2026-08-18 (365 items carrying
+ * filesChanged + closedAt, 1,241 commits): widening 6h → 72h moved coverage by
+ * 3 items (230 → 233). The matching commit is essentially always adjacent in
+ * time, so a wide window buys nothing and only widens the chance of pinning an
+ * unrelated commit onto an item.
+ */
+export const INFERRED_COMMIT_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+/** At most this many inferred commits per item — the strongest few, not a dragnet. */
+export const INFERRED_COMMITS_PER_ITEM = 3;
+
+/**
+ * Infer commit links from a work item's OWN completion evidence, for the ~85% of
+ * commits that carry no `Papercusp-Work-Item:` trailer (git-sync sweeps the whole
+ * tree on a schedule under one identity, so most commits are unattributable by
+ * message alone — 1,239 commits / 182 trailer lines / 23 distinct ids here).
+ *
+ * A commit is admitted only when it covers a MAJORITY of the item's changed files
+ * within the window. That is the conservative half of the trade: measured, it links
+ * 63% of eligible items where a touches-any-file rule links 76%. The looser rule was
+ * rejected on purpose — a confidently-wrong commit attribution is strictly worse than
+ * an empty Commits section, which is the entire lesson of WI-39831. The uncertainty
+ * that remains rides on `attribution: 'inferred'`, the third variant the schema has
+ * always declared and nothing has ever produced.
+ *
+ * ⚠ Do NOT reach for `terminalCompletionEvidence.treeStamp.headSha` here (D-002): it
+ * is the HEAD of the PAPERCUSP control-plane tree the completing agent ran in, not of
+ * the product repo — measured, it does not even resolve as an object in the product
+ * repo — and even in the right repo it is HEAD at completion, which for a scheduled
+ * git-sync is typically BEFORE the work was committed.
+ */
+export function inferredCommitLinks(
+  commits: readonly ParsedGitCommit[],
+  evidence: readonly WorkItemFileEvidence[],
+  remotelyKnownShas: ReadonlySet<string> | null,
+): ProjectHistoryCommitInput[] {
+  const output: ProjectHistoryCommitInput[] = [];
+  for (const item of evidence) {
+    const changed = new Set(item.filesChanged.filter((file) => typeof file === 'string' && file.length > 0));
+    if (changed.size === 0 || !Number.isFinite(item.closedAtMs)) continue;
+    const required = Math.ceil(changed.size / 2);
+
+    const scored: { commit: ParsedGitCommit; overlap: number; distance: number }[] = [];
+    for (const commit of commits) {
+      const committedAtMs = commit.committedAt ? Date.parse(commit.committedAt) : Number.NaN;
+      if (!Number.isFinite(committedAtMs)) continue;
+      const distance = Math.abs(committedAtMs - item.closedAtMs);
+      if (distance > INFERRED_COMMIT_WINDOW_MS) continue;
+      let overlap = 0;
+      for (const file of commit.files) if (changed.has(file)) overlap++;
+      if (overlap < required) continue;
+      scored.push({ commit, overlap, distance });
+    }
+
+    scored.sort((left, right) => (right.overlap - left.overlap) || (left.distance - right.distance));
+    for (const { commit } of scored.slice(0, INFERRED_COMMITS_PER_ITEM)) {
+      output.push({
+        sha: commit.sha,
+        subject: commit.subject,
+        committedAt: commit.committedAt,
+        files: commit.files,
+        remoteStatus: remotelyKnownShas === null
+          ? 'unknown'
+          : remotelyKnownShas.has(commit.sha) ? 'confirmed' : 'local-only',
+        links: [{ workItemId: item.id, attribution: 'inferred' as const }],
+      });
+    }
+  }
+  return output;
+}
+
 export function renderProjectHistory(
   document: ProjectHistoryDocument,
   format: OutputFormat,
@@ -424,6 +517,8 @@ export function projectHistoryOutputIsCurrent(
 class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
   private readonly options: ProjectHistoryGenerateOptions;
   private readonly runner: CommandRunner;
+  /** Populated by loadWorkItems; consumed by loadCommits for `inferred` attribution. */
+  private fileEvidence: WorkItemFileEvidence[] = [];
 
   constructor(
     options: ProjectHistoryGenerateOptions,
@@ -501,7 +596,11 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
         }), 'ids')
         : 0;
 
-      const items = await readExportedWorkItems(exportDirectory);
+      const { items, fileEvidence } = await readExportedWorkItems(exportDirectory);
+      // generateProjectHistory calls loadWorkItems before loadCommits, so the file
+      // evidence each item published about ITSELF is available to attribute commits
+      // that carry no work-item trailer.
+      this.fileEvidence = fileEvidence;
 
       // The silent zero is what shipped this bug, so it is now the loud case.
       // Both legs resolving nothing while the plans clearly reference work is a
@@ -529,7 +628,14 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
     ]);
     const remoteOutput = git(this.runner, this.options.repoRoot, ['rev-list', '--remotes'], true).trim();
     const remoteShas = remoteOutput.length > 0 ? new Set(remoteOutput.split(/\r?\n/).filter(Boolean)) : null;
-    return commitsForWorkItems(parseGitLog(log), ids, remoteShas);
+    const parsed = parseGitLog(log);
+    // Message-derived links FIRST: an explicit trailer or body reference is stronger
+    // evidence than file-overlap inference, and commitsByWorkItem keeps the first
+    // link it sees for a given (sha, work-item) pair.
+    return [
+      ...commitsForWorkItems(parsed, ids, remoteShas),
+      ...inferredCommitLinks(parsed, this.fileEvidence, remoteShas),
+    ];
   }
 }
 
