@@ -435,9 +435,38 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
 }
 
 /**
+ * `plans:export` writes ARCHIVED plans into this subdirectory of `toDir` rather than
+ * alongside the live ones (see plans/export.ts). A reader that enumerates only the top
+ * level therefore sees a SUBSET of the export and cannot tell that from a complete one.
+ */
+const PLAN_EXPORT_ARCHIVE_SUBDIR = 'archive';
+
+/** Plan slugs exported as `<slug>.md` directly under `directory`; a missing directory is empty. */
+async function exportedPlanSlugs(directory: string, planPrefix: string | null): Promise<string[]> {
+  const entries = await fs.readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
+    // ENOENT is the ordinary "this harness has no archived plans" case. Anything else is a real
+    // read failure and must NOT be swallowed into a silent empty enumeration.
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return [];
+    throw error;
+  });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+    .map((entry) => basename(entry.name, '.md'))
+    .filter((slug) => !planPrefix || slug.startsWith(planPrefix));
+}
+
+/**
  * `plans:list` is a bounded display surface and may replace rows beyond its
  * payload cap with a truncation marker. The export directory is the complete
  * artifact surface, so enumerate it and use listed rows only as metadata.
+ *
+ * "Complete" includes `archive/`: `archived` is an internal DECLUTTER flag (plans:set-archived
+ * — reversible, drops a plan out of default plan lists), not a retraction of the work. Archiving
+ * the implementation plan is a normal post-ship closeout step here, so enumerating only the top
+ * level silently deletes SHIPPED work from a product-facing History artifact as soon as its plan
+ * is tidied away — measured on SideStage, where sidestage-watch-drop-runway-implementation-2026-08-14
+ * (status shipped, 2 completed items) vanished between the 08-15 and 08-17 snapshots because it had
+ * been archived at 2026-08-15T05:37Z (WI-39765).
  */
 export async function loadProjectHistoryPlansFromExport(
   exportDirectory: string,
@@ -448,18 +477,33 @@ export async function loadProjectHistoryPlansFromExport(
     const slug = string(plan.slug);
     return slug ? [[slug, plan] as const] : [];
   }));
-  const entries = await fs.readdir(exportDirectory, { withFileTypes: true });
-  const slugs = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
-    .map((entry) => basename(entry.name, '.md'))
-    .filter((slug) => !planPrefix || slug.startsWith(planPrefix))
-    .sort((left, right) => left.localeCompare(right));
+  const archiveDirectory = join(exportDirectory, PLAN_EXPORT_ARCHIVE_SUBDIR);
+  const [liveSlugs, archivedSlugs] = await Promise.all([
+    exportedPlanSlugs(exportDirectory, planPrefix),
+    exportedPlanSlugs(archiveDirectory, planPrefix),
+  ]);
 
-  const loaded = await Promise.all(slugs.map(async (slug) => ({
-    markdown: await fs.readFile(join(exportDirectory, `${slug}.md`), 'utf8'),
-    filePath: `${slug}.md`,
-    updatedAt: string(listedBySlug.get(slug)?.updated),
-  } satisfies ProjectHistoryPlanInput)));
+  const bySlug = new Map<string, { directory: string; filePath: string }>();
+  for (const slug of archivedSlugs) {
+    bySlug.set(slug, {
+      directory: archiveDirectory,
+      filePath: `${PLAN_EXPORT_ARCHIVE_SUBDIR}/${slug}.md`,
+    });
+  }
+  // A plan is either live or archived, never both; if an export ever produces both, the LIVE copy
+  // wins and the plan still appears exactly once.
+  for (const slug of liveSlugs) bySlug.set(slug, { directory: exportDirectory, filePath: `${slug}.md` });
+
+  const slugs = [...bySlug.keys()].sort((left, right) => left.localeCompare(right));
+
+  const loaded = await Promise.all(slugs.map(async (slug) => {
+    const source = bySlug.get(slug)!;
+    return {
+      markdown: await fs.readFile(join(source.directory, `${slug}.md`), 'utf8'),
+      filePath: source.filePath,
+      updatedAt: string(listedBySlug.get(slug)?.updated),
+    } satisfies ProjectHistoryPlanInput;
+  }));
 
   return loaded.filter((plan) => !isTemplateCarrierPlan(plan.markdown));
 }
