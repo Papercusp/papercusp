@@ -52,8 +52,9 @@
 -- legitimate population anywhere near the boundary. The tolerance exists only so
 -- ordinary app-host-vs-DB clock offset (and a 'running' row stamped a moment
 -- ahead) is never touched.
-
-BEGIN;
+--
+-- (No top-level BEGIN/COMMIT: the migration runner wraps each file in its own
+-- transaction — lint-migrations enforces this for every enforced-era file.)
 
 CREATE OR REPLACE FUNCTION harness_shared.test_runs_clamp_future_timestamps()
 RETURNS trigger
@@ -104,5 +105,3 @@ UPDATE harness_shared.test_runs
 UPDATE harness_shared.test_runs
    SET started_at = created_at - make_interval(secs => COALESCE(duration_ms, 0) / 1000.0)
  WHERE started_at > now() + interval '5 minutes';
-
-COMMIT;
