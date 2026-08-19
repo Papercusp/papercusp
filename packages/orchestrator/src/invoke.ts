@@ -52,6 +52,7 @@ import {
   writeOmpCompactionOverlay,
   type SpawnMcpHandle,
   type SpawnCodexHomeHandle,
+  type SpawnCodexContextConfig,
   type SpawnOmpHomeHandle,
   type SpawnOmpConfigOverlayHandle,
   type SpawnClaudeConfigHandle,
@@ -2386,6 +2387,28 @@ export function resolveSubstrateSelfSlug(cfg: HarnessConfig, projectDir: string)
   return selfSlug;
 }
 
+/** Copy the canonical Codex window pair already present on the actual launch
+ * argv into a per-spawn CODEX_HOME. Policy stays in operator-core's
+ * model-context-budget.mjs; this lower layer only recognizes the two exact
+ * config overrides it was handed. A partial/invalid pair is ignored. */
+export function codexContextConfigFromArgv(argv: readonly string[]): SpawnCodexContextConfig | null {
+  const values = new Map<string, number>();
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] !== '-c') continue;
+    const entry = argv[i + 1] ?? '';
+    const match = /^(model_context_window|model_auto_compact_token_limit)=(\d+)$/.exec(entry);
+    if (!match) continue;
+    const value = Number(match[2]);
+    if (Number.isSafeInteger(value) && value > 0) values.set(match[1], value);
+    i += 1;
+  }
+  const modelContextWindow = values.get('model_context_window');
+  const modelAutoCompactTokenLimit = values.get('model_auto_compact_token_limit');
+  if (modelContextWindow == null || modelAutoCompactTokenLimit == null) return null;
+  if (modelAutoCompactTokenLimit >= modelContextWindow) return null;
+  return { modelContextWindow, modelAutoCompactTokenLimit };
+}
+
 export async function invoke(
   ctx: InvokeContext,
   role: string,
@@ -3299,9 +3322,10 @@ export async function invoke(
         // don't clobber a shared file.
         if (agentBackend === 'codex') {
           const trackedCodexKey = (process.env.PAPERCUSP_CODEX_SESSION_KEY ?? '').trim();
+          const contextConfig = codexContextConfigFromArgv(argv);
           codexHomeHandle = await writeSignedSpawnCodexHome(signedInput, trackedCodexKey
-            ? { codexHome: codexHomeForSessionKey(trackedCodexKey), cleanup: false }
-            : {});
+            ? { codexHome: codexHomeForSessionKey(trackedCodexKey), cleanup: false, contextConfig }
+            : { contextConfig });
           spawnEnv.CODEX_HOME = codexHomeHandle.codexHome;
         } else {
           // writeSignedSpawnMcp signs the URL params. In strict mode

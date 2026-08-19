@@ -487,6 +487,18 @@ describe('buildSpawnCodexConfigToml', () => {
     else process.env.PAPERCUSP_GATEWAY_PORT = savedGatewayPort;
   });
 
+  it('prepends a resolved context pair as TOML root keys before every table', () => {
+    const toml = buildSpawnCodexConfigToml(
+      'http://127.0.0.1:3270/api/mcp?harness=papercusp',
+      undefined,
+      { contextConfig: { modelContextWindow: 1_000_000, modelAutoCompactTokenLimit: 900_000 } },
+    );
+    expect(toml).toMatch(
+      /^model_context_window = 1000000\nmodel_auto_compact_token_limit = 900000\n/,
+    );
+    expect(toml.indexOf('model_context_window')).toBeLessThan(toml.indexOf('[features]'));
+  });
+
   it('routes model traffic through the gateway when a spawn account is pinned', () => {
     process.env.PAPERCUSP_GATEWAY_PORT = '8799';
     const toml = buildSpawnCodexConfigToml(

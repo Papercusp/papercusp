@@ -60,6 +60,7 @@ import {
   SPAWN_ENV_ALL_ROLES_STRIP,
   SEARCH_PROVIDER_ENV_KEYS,
   normalizeExplicitModelFlagsForBackend,
+  codexContextConfigFromArgv,
 } from './invoke.js';
 import { ROLE_MODEL_DEFAULTS } from './role-models.js';
 import { writeSpawnClaudeConfig } from './spawn-mcp.js';
@@ -145,6 +146,24 @@ test('splitCommand — whitespace-splits like bash unquoted', () => {
     'claude', '-p', '--model', 'sonnet',
   ]);
   assert.deepEqual(splitCommand('claude'), ['claude']);
+});
+
+test('codexContextConfigFromArgv — copies only a complete valid window pair', () => {
+  assert.deepEqual(
+    codexContextConfigFromArgv([
+      'codex', 'exec', '-c', 'model_context_window=1000000',
+      '-c', 'model_auto_compact_token_limit=900000',
+    ]),
+    { modelContextWindow: 1_000_000, modelAutoCompactTokenLimit: 900_000 },
+  );
+  assert.equal(codexContextConfigFromArgv(['codex', '-c', 'model_context_window=1000000']), null);
+  assert.equal(
+    codexContextConfigFromArgv([
+      'codex', '-c', 'model_context_window=900000',
+      '-c', 'model_auto_compact_token_limit=1000000',
+    ]),
+    null,
+  );
 });
 
 // --- WI-3302: outer-process activity echo throttle (last_output_at fix) --

@@ -327,13 +327,32 @@ export interface SpawnCodexHomeHandle {
   cleanup(): void;
 }
 
+/** Model-window values already resolved by the canonical upper-layer launch
+ * policy. The orchestrator only renders them; it deliberately does not carry a
+ * second model-family/registry policy that could drift. */
+export interface SpawnCodexContextConfig {
+  modelContextWindow: number;
+  modelAutoCompactTokenLimit: number;
+}
+
+export interface SpawnCodexConfigOpts extends CodexGatewayConfigOpts {
+  contextConfig?: SpawnCodexContextConfig | null;
+}
+
 export function buildSpawnCodexConfigToml(
   mcpUrl: string,
   accountId?: string | null,
-  opts: CodexGatewayConfigOpts = {},
+  opts: SpawnCodexConfigOpts = {},
 ): string {
   const gatewayConfig = codexGatewayConfigToml(accountId, opts);
+  const contextConfig = opts.contextConfig;
   return [
+    ...(contextConfig
+      ? [
+          `model_context_window = ${contextConfig.modelContextWindow}`,
+          `model_auto_compact_token_limit = ${contextConfig.modelAutoCompactTokenLimit}`,
+        ]
+      : []),
     ...gatewayConfig.root,
     ...codexManagedFeaturesToml({ disableMemories: false }),
     '# Per-spawn codex MCP config (managed by spawn-mcp.ts writeSignedSpawnCodexHome).',
@@ -358,7 +377,12 @@ export function buildSpawnCodexConfigToml(
  */
 export async function writeSignedSpawnCodexHome(
   input: SpawnMcpConfigInput,
-  opts: { ttlSec?: number; codexHome?: string; cleanup?: boolean } = {},
+  opts: {
+    ttlSec?: number;
+    codexHome?: string;
+    cleanup?: boolean;
+    contextConfig?: SpawnCodexContextConfig | null;
+  } = {},
 ): Promise<SpawnCodexHomeHandle> {
   const base = resolveSpawnOperatorBase(input.operatorUrl);
   const params = buildSpawnUrlParams(input);
@@ -385,6 +409,7 @@ export async function writeSignedSpawnCodexHome(
     // NO gateway config at all, silently falling back to direct ChatGPT egress on the local CLI
     // credential. PAPERCUSP_CODEX_GATEWAY carries "gateway on" independent of whether a pin resolved.
     gatewayOn: !!process.env.PAPERCUSP_CODEX_GATEWAY,
+    contextConfig: opts.contextConfig,
   });
   writeFileSync(join(codexHome, 'config.toml'), toml, 'utf8');
   try { chmodSync(join(codexHome, 'config.toml'), 0o600); } catch { /* best-effort */ }
