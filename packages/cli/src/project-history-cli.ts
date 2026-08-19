@@ -635,22 +635,61 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
     }
   }
 
-  async loadCommits(ids: readonly string[]): Promise<readonly ProjectHistoryCommitInput[]> {
-    const log = git(this.runner, this.options.repoRoot, [
+  /**
+   * Commits from ONE repo. `repository` is stamped onto every returned commit only for
+   * a SECONDARY repo — the primary repo's commits leave it undefined and resolve against
+   * `project.repository`, keeping existing single-repo output byte-identical.
+   */
+  private commitsFromRepo(
+    repoRoot: string,
+    ids: readonly string[],
+    repository: ProjectHistoryRepository | null,
+  ): readonly ProjectHistoryCommitInput[] {
+    const log = git(this.runner, repoRoot, [
       'log', '--all', '--no-renames',
       '--format=%x1e%H%x00%s%x00%cI%x00%B%x00',
       '--name-only',
     ]);
-    const remoteOutput = git(this.runner, this.options.repoRoot, ['rev-list', '--remotes'], true).trim();
+    const remoteOutput = git(this.runner, repoRoot, ['rev-list', '--remotes'], true).trim();
     const remoteShas = remoteOutput.length > 0 ? new Set(remoteOutput.split(/\r?\n/).filter(Boolean)) : null;
     const parsed = parseGitLog(log);
     // Message-derived links FIRST: an explicit trailer or body reference is stronger
     // evidence than file-overlap inference, and commitsByWorkItem keeps the first
     // link it sees for a given (sha, work-item) pair.
-    return [
+    const commits = [
       ...commitsForWorkItems(parsed, ids, remoteShas),
       ...inferredCommitLinks(parsed, this.fileEvidence, remoteShas),
     ];
+    return repository ? commits.map((commit) => ({ ...commit, repository })) : commits;
+  }
+
+  async loadCommits(ids: readonly string[]): Promise<readonly ProjectHistoryCommitInput[]> {
+    const commits = [...this.commitsFromRepo(this.options.repoRoot, ids, null)];
+    for (const extraRoot of this.options.extraRepoRoots ?? []) {
+      // An extra repo that is missing or unreadable must NOT take the whole document
+      // down — the primary history is still correct and publishable without it. It is
+      // reported loudly instead, because silently emitting a history that is missing a
+      // whole repo's commits is the exact failure this option exists to fix.
+      try {
+        commits.push(...this.commitsFromRepo(extraRoot, ids, this.repositoryFor(extraRoot)));
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        process.stderr.write(
+          `project-history generate: --extra-repo ${extraRoot} was skipped (${detail}). `
+          + 'Its commits are ABSENT from this document.\n',
+        );
+      }
+    }
+    return commits;
+  }
+
+  /** Resolve a secondary repo's own origin so its commits link to the right project. */
+  private repositoryFor(repoRoot: string): ProjectHistoryRepository | null {
+    git(this.runner, repoRoot, ['rev-parse', '--is-inside-work-tree']);
+    const remoteUrl = git(this.runner, repoRoot, ['remote', 'get-url', 'origin'], true).trim() || null;
+    const branchRef = git(this.runner, repoRoot, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], true).trim();
+    const defaultBranch = branchRef ? branchRef.replace(/^origin\//, '') : null;
+    return repositoryFromRemote(remoteUrl, null, defaultBranch);
   }
 }
 
