@@ -103,6 +103,10 @@ export function parseProjectHistoryGenerateArgs(
 ): ProjectHistoryGenerateOptions {
   const args = [...argv];
   const values = new Map<string, string>();
+  // --extra-repo is REPEATABLE, so it cannot live in the single-value map above:
+  // a second occurrence would silently overwrite the first and drop a whole repo's
+  // commits with nothing to show for it.
+  const extraRepoRoots: string[] = [];
   let check = false;
   for (let index = 0; index < args.length;) {
     if (args[index] === '--check') {
@@ -112,14 +116,15 @@ export function parseProjectHistoryGenerateArgs(
     }
     const names = [
       '--workspace', '--harness', '--prefix', '--project-id', '--project-name',
-      '--repo', '--output', '--format', '--export-name', '--generated-at',
+      '--repo', '--extra-repo', '--output', '--format', '--export-name', '--generated-at',
       '--repository-url', '--repository-web-url', '--default-branch',
     ];
     const name = names.find((candidate) => args[index] === candidate || args[index]?.startsWith(`${candidate}=`));
     if (!name) throw new Error(`project-history generate: unknown argument ${args[index]}`);
     const parsed = takeOption(args, index, name, name === '--prefix');
     if (!parsed) throw new Error(`project-history generate: invalid argument ${args[index]}`);
-    values.set(name, parsed.value);
+    if (name === '--extra-repo') extraRepoRoots.push(parsed.value);
+    else values.set(name, parsed.value);
     index += parsed.consumed;
   }
 
@@ -145,6 +150,7 @@ export function parseProjectHistoryGenerateArgs(
     projectId: values.get('--project-id') ?? harness,
     projectName: values.get('--project-name') ?? harness,
     repoRoot,
+    extraRepoRoots: extraRepoRoots.map((root) => resolve(cwd, root)),
     output,
     format: rawFormat === 'ts' ? 'typescript' : rawFormat,
     exportName,
