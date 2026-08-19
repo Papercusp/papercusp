@@ -26,6 +26,15 @@ export interface ProjectHistoryGenerateOptions {
   projectId: string;
   projectName: string;
   repoRoot: string;
+  /**
+   * Additional repositories whose commits also belong to this product's history
+   * (`--extra-repo`, repeatable). A product can span repos — SideStage's iOS/Android
+   * work lives in `sidestage-mobile` — and a work item completed there otherwise shows
+   * zero commits, which reads as "the GitHub links are gone" (WI-39898). Each extra
+   * repo resolves its OWN remote, so its commits link to the right GitHub project.
+   * The primary `repoRoot` remains the one published as `project.repository`.
+   */
+  extraRepoRoots: readonly string[];
   output: string;
   format: OutputFormat;
   exportName: string;
