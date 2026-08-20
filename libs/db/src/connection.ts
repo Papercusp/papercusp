@@ -27,6 +27,7 @@ import {
   describeStoreIdentityMismatch,
   parseStoreIdentity,
   pinOrVerifyStoreIdentity,
+  _resetStoreIdentityForTests,
 } from './store-identity';
 import { getResourceProfile } from '../../../../../packages/operator-core/lib/resource-profile';
 // Pure helper (no host config needed — takes explicit args), so the generic lib
@@ -1944,6 +1945,11 @@ export async function _resetForTests() {
   // caller building its replacement pool, which previously let a stale ambient probe race a
   // testcontainer pin and report a false cross-store violation.
   _identityProbeTestGeneration += 1;
+  // Test fixtures deliberately rotate between independent Postgres clusters. The production
+  // identity pin is process-lifetime, but retaining it across this test-only reset makes the
+  // replacement fixture look like a WRONG STORE and trips fail-on-console before the fixture
+  // can run. Reset all test-only identity state with the pools it describes.
+  _resetStoreIdentityForTests();
   _resetUrlCacheForTests();
   if (_adminClient) {
     await _adminClient.end({ timeout: 1 }).catch(() => {});
