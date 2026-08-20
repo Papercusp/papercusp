@@ -6,10 +6,6 @@
 -- those answered consults as unanswered. Repair only that unambiguous legacy
 -- shape; preserve every explicit outcome and every genuinely unanswered row.
 
-\set ON_ERROR_STOP on
-
-BEGIN;
-
 WITH answer_events AS (
   SELECT cs.workspace_id,
          cs.conversation_id,
@@ -61,5 +57,3 @@ UPDATE harness_shared.consult_state cs
    AND cs.conversation_id = rollup.conversation_id
    AND cs.state = 'expired'
    AND cs.outcome IS NULL;
-
-COMMIT;
