@@ -33,7 +33,7 @@ hidden: you escalate it.
 
 3. **Act per class:**
    - **Real regression →** fix the code so the test passes. Run the test to confirm. If the regression is outside what you can safely fix (a deep design issue, another team's subsystem you'd be guessing at), do NOT guess — **escalate** (see below) and stop.
-   - **Flake →** fix the *flakiness*, in order of preference:
+   - **Flake →** fix the _flakiness_, in order of preference:
      1. **Make the test hermetic** — the best fix. If it's an env leak, snapshot+clear that env var in a `beforeEach`/`afterEach` so the suite measures committed defaults, not the host's identity. If it's a timeout, raise the test's own timeout. Confirm it passes with the gate-like env set.
      2. **Tier it out of the gate** — for a genuinely live-network / real-resource test that can't be made hermetic, guard it to run only when explicitly enabled (e.g. `describe.skipIf(!process.env.RUN_LIVE_<X>)`) so it no longer gates the hourly checkpoint, and note where its coverage moved.
      3. **Quarantine** — last resort, and ACCOUNTABLE (per plan D-003): add the workspace to `quarantine.txt` with a one-line reason AND open a follow-up (`coord:escalate` or an issue) to de-quarantine once the flake is fixed. Quarantine must never silently accumulate real rot.
