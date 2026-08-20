@@ -29,13 +29,16 @@
 -- `audit_seq` for the plan; the rest is history.
 --
 -- SHAPE ----------------------------------------------------------------------
--- The per-item detail is jsonb rather than a child table, deliberately. It is written
--- once as a unit, always read as a unit alongside its parent, and is never queried
--- across plans — the three conditions under which a child table buys nothing and costs
--- a join. `items` holds objects of the form:
+-- The per-item detail is jsonb rather than a child table, deliberately. D-006 means
+-- entries ARE folded across a single plan's handful of pass rows (newest itemId wins),
+-- so the original "always read as a unit alongside its parent" premise no longer holds.
+-- The load-bearing reason remains: entries are never queried across plans, and every
+-- read is bounded to one plan's small append-only pass history. A child table would add
+-- a join without enabling a required cross-plan query. `items` holds objects of the form:
 --
---   { itemId, verdict, citations: [{ kind, path?, line?, symbol?, ref?, reason? }],
---     note? }
+--   { itemId, verdict,
+--     citations: [{ kind, path?, line?, symbol?, ref?, reason?, blobSha? }],
+--     note?, auditedSha, auditedAt, itemTextHash, carriedFrom? }
 --
 --   verdict  implemented | not-code | partial | missing | dropped
 --
@@ -80,7 +83,10 @@ COMMENT ON TABLE harness_shared.plan_audits IS
 
 COMMENT ON COLUMN harness_shared.plan_audits.items IS
   'Per-item audit detail: [{ itemId, verdict, citations:[{kind,path?,line?,symbol?,'
-  'ref?,reason?}], note? }]. verdict is implemented|not-code|partial|missing|dropped. '
+  'ref?,reason?,blobSha?}], note?, auditedSha, auditedAt, itemTextHash, carriedFrom? }]. '
+  'Entries are folded newest-first by itemId across one plan''s passes (D-006); an '
+  'unlisted prior entry is mechanically carried with its original provenance, never '
+  're-stamped at the new pass sha/time. verdict is implemented|not-code|partial|missing|dropped. '
   'Per plan D-002 no verdict refuses a ship on its own — they RECORD. `dropped` must '
   'carry a reason (the intentional-departure path); `implemented` must carry at least '
   'one citation. kind:''none'' is the escape hatch for items with no code artifact and '
