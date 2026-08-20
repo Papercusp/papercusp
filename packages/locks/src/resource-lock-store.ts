@@ -346,6 +346,13 @@ export interface ResourceReleaseParams {
   resource?: string;
 }
 
+export interface ExpiredResourceLock {
+  lockId: string;
+  resource: string;
+  mode: ResourceMode;
+  expiredAt: Date;
+}
+
 /**
  * Release the caller's hold(s). After deleting, run the drain cascade —
  * releasing the last shared holder is exactly what completes a pending
@@ -359,12 +366,47 @@ export async function tryReleaseResource(
   released: number;
   releasedModes: ResourceMode[];
   exclusiveResources: string[];
+  /** Holds matching this release that expired before the call could release
+   * them. Captured before the expiry sweep removes the rows. */
+  expired: ExpiredResourceLock[];
   /** owner ids who were waiting on each freed exclusive resource — the
    *  targeted back-up broadcast audience (A4). Cleared as part of this read. */
   waiters: Record<string, string[]>;
 }> {
   const { coordinationDomain: cd, owner, lockId, resource } = params;
   await tx`SET LOCAL statement_timeout = '5s'`;
+
+  // Capture matching expired rows before sweeping them. Once the sweep runs,
+  // the database no longer retains enough information for the caller to tell
+  // "expired before release" from "nothing matched this selector".
+  let expiredRows: Array<{
+    lock_id: string;
+    resource: string;
+    mode: ResourceMode;
+    expires_ts: Date;
+  }>;
+  if (lockId) {
+    expiredRows = await tx`
+      SELECT lock_id::text AS lock_id, resource, mode, expires_ts
+        FROM agent_resource_locks
+       WHERE coordination_domain = ${cd}
+         AND lock_id = ${lockId}::uuid
+         AND owner = ${owner}
+         AND expires_ts <= clock_timestamp()
+    `;
+  } else if (resource) {
+    expiredRows = await tx`
+      SELECT lock_id::text AS lock_id, resource, mode, expires_ts
+        FROM agent_resource_locks
+       WHERE coordination_domain = ${cd}
+         AND resource = ${resource}
+         AND owner = ${owner}
+         AND expires_ts <= clock_timestamp()
+    `;
+  } else {
+    throw new Error('tryReleaseResource requires lockId or resource');
+  }
+
   await sweepResourceExpired(tx, cd);
 
   let deleted: Array<{ mode: ResourceMode; resource: string }>;
@@ -396,7 +438,13 @@ export async function tryReleaseResource(
   for (const res of exclusiveResources) {
     waiters[res] = await readAndClearResourceWaiters(tx, cd, res);
   }
-  return { released: deleted.length, releasedModes: deleted.map((d) => d.mode), exclusiveResources, waiters };
+  const expired = expiredRows.map((row) => ({
+    lockId: row.lock_id,
+    resource: row.resource,
+    mode: row.mode,
+    expiredAt: row.expires_ts,
+  }));
+  return { released: deleted.length, releasedModes: deleted.map((d) => d.mode), exclusiveResources, expired, waiters };
 }
 
 /**
