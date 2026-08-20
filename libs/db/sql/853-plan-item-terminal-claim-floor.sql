@@ -17,6 +17,7 @@
 
 DROP VIEW IF EXISTS harness_shared.work_items_claimable;
 
+-- FORWARD-COMPAT: The currently deployed release calls only the original public work_item_claim_floors signature, which this same migration recreates before commit; no deployed caller references the renamed private v13 helper.
 ALTER FUNCTION harness_shared.work_item_claim_floors(text, text, text, text, text, text, text, jsonb, text)
   RENAME TO work_item_claim_floors_v13;
 

@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS harness_shared.plan_spec_clauses (
 
 -- A legacy VAL id is already unique per harness in harness_plan_assertions.
 -- Preserve that invariant in the canonical identity map as well.
+-- FORWARD-COMPAT: The currently deployed release cannot infer or depend on this partial index because plan_spec_clauses is created for the first time by this same migration.
 CREATE UNIQUE INDEX IF NOT EXISTS plan_spec_clauses_source_val_identity
   ON harness_shared.plan_spec_clauses (workspace_id, harness_slug, source_val_id)
   WHERE source_val_id IS NOT NULL;
