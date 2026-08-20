@@ -597,15 +597,42 @@ const REGISTRIES_BY_ECOSYSTEM = {
 function searchRegistryEntries(ecosystem, query) {
   const list = REGISTRIES_BY_ECOSYSTEM[ecosystem] || [];
   if (!query || !query.trim()) return list;
-  const q = query.toLowerCase();
-  return list.filter((e) => {
-    if (e.id.toLowerCase().includes(q)) return true;
-    if (e.summary.toLowerCase().includes(q)) return true;
-    for (const inp of e.inputs || []) {
-      if (inp.name.toLowerCase().includes(q)) return true;
-    }
-    return false;
-  });
+
+  // Treat query as free text rather than one literal substring. Designers
+  // commonly include the product surface in the query (for example,
+  // "Seller dock controls"), even though the registry only contains the
+  // reusable primitive name ("control"). Match at token boundaries with a
+  // prefix check so singular/plural forms and partial terms still work.
+  const tokenize = (value) => String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const entryTokens = (e) => tokenize([
+    e.id,
+    e.summary,
+    ...(e.inputs || []).map((input) => input.name),
+  ].join(' '));
+  const entriesWithTokens = list.map((entry) => ({ entry, tokens: entryTokens(entry) }));
+  const queryTokens = tokenize(query);
+  const matchesToken = (queryToken, token) => (
+    token.startsWith(queryToken) || queryToken.startsWith(token)
+  );
+
+  // Ignore contextual words that have no registry vocabulary ("Seller" and
+  // "dock" above), but require every recognized term. This keeps a focused
+  // query such as "primary button" precise while still returning controls
+  // for a product-level query whose only registry term is "controls".
+  const recognizedTokens = queryTokens.filter((queryToken) => (
+    entriesWithTokens.some(({ tokens }) => tokens.some((token) => matchesToken(queryToken, token)))
+  ));
+  if (recognizedTokens.length === 0) return [];
+
+  return entriesWithTokens
+    .filter(({ tokens }) => recognizedTokens.every((queryToken) => (
+      tokens.some((token) => matchesToken(queryToken, token))
+    )))
+    .map(({ entry }) => entry);
 }
 
 // ─── tool handlers ─────────────────────────────────────────────────
@@ -855,4 +882,12 @@ const plugin = {
 module.exports = plugin;
 module.exports.default = plugin;
 // expose internals for in-process tests
-module.exports._internal = { validateIr, lintIr, parseFrontmatter, resolveDesignSpec, listMemos, readMemo, resolveAdminPgUrl };
+module.exports._internal = {
+  validateIr,
+  lintIr,
+  parseFrontmatter,
+  resolveDesignSpec,
+  listMemos,
+  readMemo,
+  resolveAdminPgUrl,
+};
