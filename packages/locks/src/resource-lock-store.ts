@@ -735,3 +735,38 @@ export async function upsertResource(
   `;
   return mapRegistry(rows[0]);
 }
+
+export interface RegisterResourceResult {
+  created: boolean;
+  resource: ResourceRegistryRow;
+}
+
+/** Register a named resource without rewriting an existing coordination policy. */
+export async function registerResource(
+  tx: Sql,
+  row: UpsertResourceInput,
+): Promise<RegisterResourceResult> {
+  const rows = await tx<
+    Array<{
+      resource: string;
+      description: string;
+      rule_text: string;
+      enforcement: ResourceEnforcement;
+      match_patterns: string[] | null;
+      max_holders: number | null;
+    }>
+  >`
+    INSERT INTO agent_resource_registry
+      (resource, description, rule_text, enforcement, match_patterns, max_holders, updated_ts)
+    VALUES
+      (${row.resource}, ${row.description ?? ''}, ${row.rule_text ?? ''},
+       ${row.enforcement ?? 'advisory'}, ${row.match_patterns ?? []}, ${row.max_holders ?? null}, clock_timestamp())
+    ON CONFLICT (resource) DO NOTHING
+    RETURNING resource, description, rule_text, enforcement, match_patterns, max_holders
+  `;
+  if (rows[0]) return { created: true, resource: mapRegistry(rows[0]) };
+
+  const existing = await getResource(tx, row.resource);
+  if (!existing) throw new Error(`resource registration race lost without a row: ${row.resource}`);
+  return { created: false, resource: existing };
+}
