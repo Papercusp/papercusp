@@ -33,6 +33,7 @@ test('project-history args derive portable defaults and accept equals syntax', (
     projectId: 'sidestage',
     projectName: 'SideStage',
     repoRoot: '/repo',
+    extraRepoRoots: [],
     output: '/repo/apps/api/src/history.snapshot.ts',
     format: 'typescript',
     exportName: 'PROJECT_HISTORY',
