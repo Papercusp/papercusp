@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -55,10 +56,12 @@ describe('gitnexus-bridge runtime artifact', () => {
     expect(artifact).not.toMatch(/spawn\(\s*['"]gitnexus['"]/);
   });
 
-  it('exposes the export shape the plugin host loads', async () => {
-    const loaded = (await import(ARTIFACT)) as { default: Record<string, unknown> };
-    // CJS interop: the module namespace's default is the plugin object itself.
-    const plugin = (loaded.default.default ?? loaded.default) as Record<string, unknown>;
+  it('exposes the export shape the plugin host loads', () => {
+    // Load exactly the way the plugin host does — CommonJS require(). Going
+    // through ESM import() here would assert on the test runner's CJS interop
+    // rather than on this artifact's contract.
+    const require = createRequire(import.meta.url);
+    const plugin = require(ARTIFACT) as Record<string, unknown>;
     expect(plugin.name).toBe('@papercupai/gitnexus-bridge');
     expect(typeof plugin.getDynamicTools).toBe('function');
     expect(typeof plugin._resetChildrenForTests).toBe('function');

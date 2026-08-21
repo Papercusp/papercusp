@@ -373,18 +373,24 @@ function _resetChildrenForTests() {
 });
 
 // --- export-shape interop (see gen-gitnexus-bridge-runtime.mjs) ---
+// Builds a FRESH object rather than mutating the bundled plugin. esbuild
+// exposes named exports as accessor properties, and some loaders (Vitest's
+// module evaluator among them) surface the default export carrying those
+// getter-only descriptors — assigning onto it throws at module-load time.
+// Copying into a plain object sidesteps loader-dependent descriptors entirely.
 {
   const __exported = module.exports;
   const __plugin = __exported.default;
   if (!__plugin || typeof __plugin !== 'object') {
     throw new Error('gitnexus-bridge runtime: expected a default plugin export');
   }
-  __plugin.default = __plugin;
-  __plugin.tools = __exported.tools;
+  const __final = Object.assign(
+    Object.create(Object.getPrototypeOf(__plugin) || Object.prototype),
+    __plugin,
+  );
   for (const __k of Object.keys(__exported)) {
-    if (__k !== 'default' && __k !== 'tools' && __plugin[__k] === undefined) {
-      __plugin[__k] = __exported[__k];
-    }
+    if (__k !== 'default') __final[__k] = __exported[__k];
   }
-  module.exports = __plugin;
+  __final.default = __final;
+  module.exports = __final;
 }
