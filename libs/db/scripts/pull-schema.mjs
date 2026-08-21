@@ -39,6 +39,8 @@
  *   Fix 9: after promotion, remove drizzle-kit's ignored schema.ts /
  *          relations.ts intermediates so package typecheck cannot compile a
  *          stale second schema mirror.
+ *   Fix 10: drizzle-kit can attach ordered index operator classes to the wrong
+ *           fields in multi-column indexes; restore the live PG catalog order.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -47,6 +49,7 @@ import {
   annotateCircularForeignKeyExtraConfigs,
   promoteGeneratedSchemaArtifacts,
 } from '../src/schema-generated-artifacts.mjs';
+import { repairIndexOperatorClasses } from '../src/schema-index-opclasses.mjs';
 import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -566,6 +569,54 @@ if (existsSync(relationsPath)) {
 const circularForeignKeyFix = annotateCircularForeignKeyExtraConfigs(schema);
 schema = circularForeignKeyFix.schema;
 
+// Fix 10: drizzle-kit can shift ordered operator classes between fields in a
+// multi-column index (for example, applying timestamptz_ops to a text column
+// and text_ops to the following timestamp column). Read the authoritative
+// ordered classes from pg_index rather than inferring from generated TS types.
+let fixedIndexOperatorClasses = 0;
+let matchedIndexOperatorClasses = 0;
+const indexOpclassQuery = [
+  "SELECT COALESCE(json_agg(row_to_json(q) ORDER BY q.schema_name, q.table_name, q.index_name), '[]'::json)",
+  "FROM (",
+  "  SELECT n.nspname AS schema_name, t.relname AS table_name, i.relname AS index_name,",
+  "    json_agg(json_build_object('opclass', opc.opcname, 'expression', u.attnum = 0) ORDER BY u.ord) AS keys",
+  "  FROM pg_index ix",
+  "  JOIN pg_class i ON i.oid = ix.indexrelid",
+  "  JOIN pg_class t ON t.oid = ix.indrelid",
+  "  JOIN pg_namespace n ON n.oid = t.relnamespace",
+  "  CROSS JOIN LATERAL unnest(ix.indkey, ix.indclass) WITH ORDINALITY AS u(attnum, opclass_oid, ord)",
+  "  LEFT JOIN pg_opclass opc ON opc.oid = u.opclass_oid",
+  "  WHERE n.nspname IN ('harness_shared','papercusp_shared')",
+  "  GROUP BY n.nspname, t.relname, i.relname",
+  ") q;",
+].join(' ');
+const indexOpclasses = spawnSync('psql', [dbUrl, '-tA', '-c', indexOpclassQuery], {
+  encoding: 'utf8',
+});
+if (indexOpclasses.status === 0) {
+  try {
+    const catalogRows = JSON.parse(indexOpclasses.stdout.trim() || '[]');
+    const metadata = catalogRows.map((row) => ({
+      schemaName: row.schema_name,
+      tableName: row.table_name,
+      indexName: row.index_name,
+      opclasses: Array.isArray(row.keys) ? row.keys.map((key) => key.opclass) : [],
+      expression: Array.isArray(row.keys) && row.keys.some((key) => key.expression),
+    }));
+    const repaired = repairIndexOperatorClasses(schema, metadata);
+    schema = repaired.source;
+    fixedIndexOperatorClasses = repaired.changed;
+    matchedIndexOperatorClasses = repaired.matched;
+  } catch (error) {
+    console.warn(
+      '    skipped Fix 10 (index operator-class metadata was not valid JSON):',
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+} else {
+  console.warn('    skipped Fix 10 (psql failed):', indexOpclasses.stderr);
+}
+
 writeFileSync(schemaPath, schema);
 console.log(`    fixed ${fixedDefaults} empty-string defaults`);
 console.log(`    fixed ${fixedTimestamps} timestamptz columns (dropped invalid mode)`);
@@ -574,6 +625,9 @@ console.log(`    typed ${fixedUnknownCols} unparsed columns via customType (byte
 console.log(`    rewrote ${fixedUnknownFallback} still-unmapped unknown-type columns to text()`);
 console.log(`    injected ${fixedMissingPks} missing primary keys`);
 console.log(`    repaired ${fixedExtractDefaults} truncated EXTRACT defaults`);
+console.log(
+  `    aligned ${fixedIndexOperatorClasses} of ${matchedIndexOperatorClasses} index operator-class declaration(s)`,
+);
 console.log(
   `    typed ${circularForeignKeyFix.circularTables.length} circular composite-FK table callback(s)`,
 );
