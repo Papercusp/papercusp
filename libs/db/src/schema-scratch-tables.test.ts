@@ -1,11 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // Plain .mjs helper shared with pull-schema.mjs (a script, not TS). This used to
 // carry a `@ts-expect-error`; the package's tsconfig (EI-19302566985147894) sets
 // allowJs, so the module now RESOLVES and its shape is inferred — leaving the
 // directive in place would be an unused-directive error in its own right.
 import { stripScratchTableDeclarations } from './schema-scratch-tables.mjs';
+import {
+  annotateCircularForeignKeyExtraConfigs,
+  promoteGeneratedSchemaArtifacts,
+} from './schema-generated-artifacts.mjs';
 
 // EI-18785808338338490: migration-internal scratch/backup tables (leading
 // underscore or `bak_`) must never reach the application's ORM schema.
@@ -94,6 +99,61 @@ describe('stripScratchTableDeclarations', () => {
       const src = readFileSync(path, 'utf8');
       const { stripped } = stripScratchTableDeclarations(src);
       expect(stripped, artifact).toEqual([]);
+    }
+  });
+});
+
+describe('generated schema artifact fixes', () => {
+  const importLine =
+    'import { text, foreignKey } from "drizzle-orm/pg-core"\n';
+  const table = (name: string, foreignName?: string) =>
+    `export const ${name} = harnessShared.table("${name}", {\n` +
+    `\tid: text("id").notNull(),\n` +
+    `}, (table) => [\n` +
+    (foreignName
+      ? `\tforeignKey({ columns: [table.id], foreignColumns: [${foreignName}.id] }),\n`
+      : '') +
+    `]);\n`;
+
+  it('types every table in a mutual composite-FK cycle and is idempotent', () => {
+    const source = importLine + table('alpha', 'beta') + table('beta', 'alpha');
+    const first = annotateCircularForeignKeyExtraConfigs(source);
+    expect(first.circularTables).toEqual(['alpha', 'beta']);
+    expect(first.schema.match(/: PgTableExtraConfigValue\[\] => \[/g)).toHaveLength(2);
+    expect(first.schema.match(/type PgTableExtraConfigValue/g)).toHaveLength(1);
+
+    const second = annotateCircularForeignKeyExtraConfigs(first.schema);
+    expect(second).toEqual(first);
+  });
+
+  it('leaves an acyclic foreign key byte-identical', () => {
+    const source = importLine + table('child', 'parent') + table('parent');
+    expect(annotateCircularForeignKeyExtraConfigs(source)).toEqual({
+      schema: source,
+      circularTables: [],
+    });
+  });
+
+  it('promotes both generated artifacts and removes their ignored intermediates', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'papercusp-schema-promote-'));
+    try {
+      const schemaPath = join(dir, 'schema.ts');
+      const relationsPath = join(dir, 'relations.ts');
+      writeFileSync(schemaPath, 'schema-body');
+      writeFileSync(relationsPath, 'relations-body');
+
+      const promoted = promoteGeneratedSchemaArtifacts({
+        schemaPath,
+        relationsPath,
+        schemaDir: dir,
+      });
+
+      expect(readFileSync(promoted.generatedSchemaPath, 'utf8')).toBe('schema-body');
+      expect(readFileSync(promoted.generatedRelationsPath!, 'utf8')).toBe('relations-body');
+      expect(existsSync(schemaPath)).toBe(false);
+      expect(existsSync(relationsPath)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

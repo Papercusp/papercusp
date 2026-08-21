@@ -33,10 +33,20 @@
  *          at the type-cast colon, producing unbalanced-paren SQL that
  *          breaks esbuild. Rewrite to a balanced `(EXTRACT(epoch FROM
  *          now()) * 1000)::bigint`.
+ *   Fix 8: mutually-referencing composite foreign keys make TypeScript infer
+ *          both generated table declarations through each other (TS7022 /
+ *          TS7024). Annotate only cycle participants' extra-config callbacks.
+ *   Fix 9: after promotion, remove drizzle-kit's ignored schema.ts /
+ *          relations.ts intermediates so package typecheck cannot compile a
+ *          stale second schema mirror.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs';
+import {
+  annotateCircularForeignKeyExtraConfigs,
+  promoteGeneratedSchemaArtifacts,
+} from '../src/schema-generated-artifacts.mjs';
 import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -550,6 +560,12 @@ if (existsSync(relationsPath)) {
   writeFileSync(relationsPath, rel);
 }
 
+// Fix 8: composite foreign keys can create a declaration-inference cycle when
+// two generated tables reference each other. Put the explicit Drizzle extra-
+// config return type at every table participating in such a cycle.
+const circularForeignKeyFix = annotateCircularForeignKeyExtraConfigs(schema);
+schema = circularForeignKeyFix.schema;
+
 writeFileSync(schemaPath, schema);
 console.log(`    fixed ${fixedDefaults} empty-string defaults`);
 console.log(`    fixed ${fixedTimestamps} timestamptz columns (dropped invalid mode)`);
@@ -558,12 +574,13 @@ console.log(`    typed ${fixedUnknownCols} unparsed columns via customType (byte
 console.log(`    rewrote ${fixedUnknownFallback} still-unmapped unknown-type columns to text()`);
 console.log(`    injected ${fixedMissingPks} missing primary keys`);
 console.log(`    repaired ${fixedExtractDefaults} truncated EXTRACT defaults`);
+console.log(
+  `    typed ${circularForeignKeyFix.circularTables.length} circular composite-FK table callback(s)`,
+);
 
-// Promote: schema.ts → generated.ts, relations.ts → generated-relations.ts
-copyFileSync(schemaPath, join(SCHEMA_DIR, 'generated.ts'));
-if (existsSync(relationsPath)) {
-  copyFileSync(relationsPath, join(SCHEMA_DIR, 'generated-relations.ts'));
-}
+// Fix 9 / promote: copy first, then remove the ignored drizzle-kit source
+// names. Leaving schema.ts behind makes tsc compile a stale second mirror.
+promoteGeneratedSchemaArtifacts({ schemaPath, relationsPath, schemaDir: SCHEMA_DIR });
 
 console.log('==> done. generated.ts + generated-relations.ts updated.');
 console.log('    Inspect with: git diff src/schema/generated.ts');
