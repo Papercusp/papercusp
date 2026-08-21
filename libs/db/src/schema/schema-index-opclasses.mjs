@@ -112,7 +112,7 @@ function escapedRegExp(value) {
 
 /**
  * @param {string} source generated schema source
- * @param {Array<{schemaName:string, tableName:string, indexName:string, opclasses:string[], expression?:boolean}>} metadata
+ * @param {Array<{schemaName:string, tableName:string, indexName:string, opclasses:(string|null)[], expression?:boolean}>} metadata
  * @returns {{source:string, matched:number, changed:number, skipped:number}}
  */
 export function repairIndexOperatorClasses(source, metadata) {
@@ -171,7 +171,7 @@ export function repairIndexOperatorClasses(source, metadata) {
     }
 
     const indexSource = output.slice(indexOpen, indexEnd);
-    const opRe = /\.op\(\s*"[^"]*"\s*\)/g;
+    const opRe = /\.op\(\s*(?:"[^"]*"|null)\s*\)/g;
     const operators = [...indexSource.matchAll(opRe)];
     if (operators.length !== row.opclasses.length) {
       skipped += 1;
@@ -182,7 +182,15 @@ export function repairIndexOperatorClasses(source, metadata) {
     let repairedIndex = indexSource;
     for (let i = operators.length - 1; i >= 0; i -= 1) {
       const operator = operators[i];
-      const replacement = operator[0].replace(/"[^"]*"/, JSON.stringify(row.opclasses[i]));
+      // PostgreSQL has no operator class for INCLUDE attributes. The catalog
+      // query pads indclass with nulls for those attrs, while drizzle-kit
+      // renders the unsupported value as `.op(null)`. Remove that call so the
+      // generated mirror remains valid TypeScript; ordinary attrs use the
+      // authoritative catalog class as before.
+      const replacement =
+        row.opclasses[i] == null
+          ? ''
+          : operator[0].replace(/"[^"]*"/, JSON.stringify(row.opclasses[i]));
       repairedIndex =
         repairedIndex.slice(0, operator.index) + replacement + repairedIndex.slice(operator.index + operator[0].length);
     }
