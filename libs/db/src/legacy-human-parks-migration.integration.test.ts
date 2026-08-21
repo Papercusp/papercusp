@@ -251,10 +251,10 @@ describe('migration 864 — guarded execution', () => {
        ORDER BY idea_id
     `) as Array<{ idea_id: string; routed_ref: string; created_by: string }>;
     expect(ledger).toEqual([
+      { idea_id: 'agent-review:REVIEW-001', routed_ref: 'wi:REVIEW-001', created_by: 'system:legacy-agent-review' },
       { idea_id: 'REVIEW-001', routed_ref: 'wi:OTHER', created_by: 'collision-author' },
       { idea_id: 'REVIEW-002', routed_ref: 'wi:REVIEW-002', created_by: 'ledger-author-2' },
       { idea_id: 'REVIEW-003', routed_ref: 'wi:REVIEW-003', created_by: 'creator-3' },
-      { idea_id: 'agent-review:REVIEW-001', routed_ref: 'wi:REVIEW-001', created_by: 'system:legacy-agent-review' },
     ]);
   });
 
