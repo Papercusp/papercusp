@@ -429,7 +429,9 @@ export const TOOL_OVERRIDES: Record<string, { description: string; guidance: Non
  * NOT REGISTERED rather than registered-and-refusing, deliberately: a tool that always
  * refuses still costs its full description in every agent's tool catalog, which is a
  * budgeted resource here, and buys no capability. The reason lives in this comment and
- * in the startup log line, so it is discoverable without being carried in every prompt.
+ * in this exported set, so it is discoverable without being carried in every prompt --
+ * and without a per-discovery log line, which only restated this constant (see the
+ * silence note in getDynamicTools).
  */
 export const MUTATING_TOOLS: ReadonlySet<string> = new Set(['rename', 'group_sync']);
 
@@ -779,13 +781,18 @@ const plugin: Plugin = {
 
     const definitions: ToolDefinition[] = [];
     const handlers: PluginToolMap = {};
-    const refused: string[] = [];
     for (const t of upstream) {
       // P-004 read-only enforcement. Dropped BEFORE a definition is built, so a mutating
-      // tool costs nothing in the agent tool catalog. Logged once at discovery so the
-      // omission is visible in the operator log rather than silently mysterious.
+      // tool costs nothing in the agent tool catalog.
+      //
+      // Deliberately SILENT: the refusal set is static, so a log here would restate a
+      // constant on every discovery, in every process, forever — and on the anomaly
+      // channel, where `vitest-fail-on-console` correctly reds any gate test that
+      // imports this plugin (it did: events/catalog.test.ts). The rail operating as
+      // designed is not an anomaly. What was dropped and why is auditable on demand
+      // via the exported MUTATING_TOOLS / isReadOnlyTool(), and is already absent from
+      // plugin.capabilities — all queryable, none of them noise.
       if (!isReadOnlyTool(t.name)) {
-        refused.push(t.name);
         continue;
       }
       // Annotated, not inferred: a bare `const cap = \`tools:...\`` widens to
@@ -813,12 +820,6 @@ const plugin: Plugin = {
         (t.inputSchema?.properties as Record<string, unknown> | undefined)?.repo,
       );
       handlers[t.name] = makeHandler(t.name, acceptsRepo);
-    }
-    if (refused.length > 0) {
-      console.warn(
-        `[gitnexus-bridge] read-only enforcement (P-004): not registering mutating tool(s) ${refused.join(', ')} — ` +
-          'they write files directly and would bypass the PreToolUse lock arbitration on this shared tree.',
-      );
     }
     return { definitions, handlers };
   },

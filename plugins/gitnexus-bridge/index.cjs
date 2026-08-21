@@ -460,10 +460,8 @@ var plugin = {
     const upstream = await listUpstreamTools(handle);
     const definitions = [];
     const handlers = {};
-    const refused = [];
     for (const t of upstream) {
       if (!isReadOnlyTool(t.name)) {
-        refused.push(t.name);
         continue;
       }
       const cap = `tools:gitnexus:${t.name}`;
@@ -487,11 +485,6 @@ var plugin = {
         t.inputSchema?.properties?.repo
       );
       handlers[t.name] = makeHandler(t.name, acceptsRepo);
-    }
-    if (refused.length > 0) {
-      console.warn(
-        `[gitnexus-bridge] read-only enforcement (P-004): not registering mutating tool(s) ${refused.join(", ")} \u2014 they write files directly and would bypass the PreToolUse lock arbitration on this shared tree.`
-      );
     }
     return { definitions, handlers };
   },
