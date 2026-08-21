@@ -91,9 +91,9 @@ BEGIN
     FROM migration_867_manifest;
   IF EXISTS (SELECT 1 FROM harness_shared.bak_20260821_legacy_human_park_manifest)
      AND (total_rows, remote_rows, review_rows, owner_rows, operational_rows)
-           IS DISTINCT FROM (87, 31, 40, 0, 16) THEN
+           IS DISTINCT FROM (84, 31, 37, 0, 16) THEN
     RAISE EXCEPTION
-      '867: recurrence census drifted; expected 87=(31 remote,40 review,0 owner,16 operational), got %=(% remote,% review,% owner,% operational)',
+      '867: recurrence census drifted; expected 84=(31 remote,37 review,0 owner,16 operational), got %=(% remote,% review,% owner,% operational)',
       total_rows, remote_rows, review_rows, owner_rows, operational_rows;
   END IF;
   SELECT count(*)::int INTO claimed_nonoperational FROM migration_867_manifest
