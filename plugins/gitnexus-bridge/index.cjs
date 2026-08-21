@@ -302,7 +302,7 @@ function formatFreshnessNote(f, looksNegative) {
   if (f.unknown) {
     return '\n\n\u26A0 INDEX FRESHNESS UNKNOWN \u2014 no gitnexus registry entry could be read, so the age and commit of the graph behind this answer are not established. Treat a "not found" as UNVERIFIED and confirm with grep/rg before concluding a symbol does not exist.';
   }
-  const stale = f.ageMs != null && f.ageMs > FRESHNESS_STALE_MS || f.behindHead;
+  const stale = f.ageMs != null && f.ageMs > FRESHNESS_STALE_MS;
   if (!stale && !looksNegative) return "";
   const ageMin = f.ageMs != null ? Math.round(f.ageMs / 6e4) : null;
   const parts = [];

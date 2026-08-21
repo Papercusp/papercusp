@@ -499,7 +499,16 @@ export function formatFreshnessNote(f: IndexFreshness, looksNegative: boolean): 
       'UNVERIFIED and confirm with grep/rg before concluding a symbol does not exist.'
     );
   }
-  const stale = (f.ageMs != null && f.ageMs > FRESHNESS_STALE_MS) || f.behindHead;
+  // AGE ALONE decides staleness. `behindHead` deliberately does NOT, even though it is
+  // the more intuitive signal: git-sync commits this whole tree every few minutes, so
+  // HEAD has essentially ALWAYS moved past the indexed commit and a behindHead-triggered
+  // warning fires on every response forever. Measured 2026-08-21 during live
+  // verification — a FOUR-MINUTE-OLD index, freshly built by the hourly routine, was
+  // being reported as stale on a perfectly good positive answer. A warning that is
+  // always on is a warning nobody reads, which would cost us the NOT-FOUND case below —
+  // the one that actually matters. behindHead is kept as explanatory DETAIL, shown only
+  // once some other condition has already earned the note.
+  const stale = f.ageMs != null && f.ageMs > FRESHNESS_STALE_MS;
   if (!stale && !looksNegative) return '';
   const ageMin = f.ageMs != null ? Math.round(f.ageMs / 60000) : null;
   const parts: string[] = [];

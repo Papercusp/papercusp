@@ -320,9 +320,19 @@ describe('formatFreshnessNote (P-004)', () => {
     expect(formatFreshnessNote(stale, false)).toContain('stale');
   });
 
-  it('warns when HEAD has moved even if the index is young', () => {
+  it('stays SILENT on a young index whose HEAD has merely moved — the anti-noise rail', () => {
+    // git-sync commits this tree every few minutes, so behindHead is near-permanently
+    // true. Measured live 2026-08-21: a 4-minute-old index, freshly built by the hourly
+    // routine, was warning "stale" on a good positive answer. A note that always fires
+    // is a note nobody reads, which would cost us the NOT-FOUND case that matters.
     const moved = { ...fresh, ageMs: 1_000, behindHead: true };
-    expect(formatFreshnessNote(moved, false)).toContain('HEAD has moved');
+    expect(formatFreshnessNote(moved, false)).toBe('');
+  });
+
+  it('still surfaces "HEAD has moved" as DETAIL once a note is warranted', () => {
+    // Kept as explanation, not as a trigger: on a not-found it is often the reason.
+    const moved = { ...fresh, ageMs: 1_000, behindHead: true };
+    expect(formatFreshnessNote(moved, true)).toContain('HEAD has moved');
   });
 
   it('says freshness is UNKNOWN rather than staying silent', () => {
