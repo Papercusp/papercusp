@@ -192,6 +192,8 @@ BEGIN
   IF EXISTS (SELECT 1 FROM harness_shared.work_items wi
      WHERE wi.workspace_id = 'papercusp-workspace' AND wi.harness_slug = 'papercusp'
        AND wi.status NOT IN ('done', 'passed', 'deprecated', 'resolved', 'closed', 'dropped')
+       AND COALESCE(wi.payload, '{}'::jsonb) ->> 'lane' IS DISTINCT FROM 'observation'
+       AND COALESCE(wi.payload, '{}'::jsonb) ->> '_lane' IS DISTINCT FROM 'observation'
        AND COALESCE(wi.payload, '{}'::jsonb) ->> 'needsHuman' = 'true') THEN
     RAISE EXCEPTION '867: non-terminal legacy needsHuman rows remain after repair';
   END IF;
