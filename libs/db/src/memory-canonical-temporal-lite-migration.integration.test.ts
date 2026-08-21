@@ -49,32 +49,38 @@ beforeAll(async () => {
   db = await createFreshTestDb({ prefix: 'memory578' });
   sql = postgres(db.url, { max: 1, onnotice: () => {} });
   await sql.unsafe(PRE_578_DDL);
-  await sql.unsafe(
-    `INSERT INTO harness_shared.memory_canonical (id, payload, created_at, updated_at)
-     VALUES
-       ($1, $2::jsonb, '2026-06-01T00:00:00Z', '2026-06-02T00:00:00Z'),
-       ($3, $4::jsonb, '2026-06-03T00:00:00Z', '2026-06-04T00:00:00Z'),
-       ($5, $6::jsonb, '2026-06-05T00:00:00Z', '2026-06-06T00:00:00Z')`,
-    [
-      LEGACY_ID,
-      JSON.stringify({ data: 'legacy fact', user_id: 'scope-a' }),
-      NULLISH_ID,
-      JSON.stringify({
-        data: 'legacy payload with null temporal lookalikes',
-        user_id: 'scope-a',
-        valid_at: null,
-        invalid_at: null,
-        superseded_by: null,
-      }),
-      ENTITY_ID,
-      JSON.stringify({
-        data: 'Ada Lovelace',
-        user_id: 'scope-a',
-        entityType: 'PROPER',
-        linkedMemoryIds: [LEGACY_ID],
-      }),
-    ],
-  );
+  await sql`
+    INSERT INTO harness_shared.memory_canonical (id, payload, created_at, updated_at)
+    VALUES
+      (
+        ${LEGACY_ID}::uuid,
+        ${sql.json({ data: 'legacy fact', user_id: 'scope-a' })},
+        '2026-06-01T00:00:00Z',
+        '2026-06-02T00:00:00Z'
+      ),
+      (
+        ${NULLISH_ID}::uuid,
+        ${sql.json({
+          data: 'legacy payload with null temporal lookalikes',
+          user_id: 'scope-a',
+          valid_at: null,
+          invalid_at: null,
+          superseded_by: null,
+        })},
+        '2026-06-03T00:00:00Z',
+        '2026-06-04T00:00:00Z'
+      ),
+      (
+        ${ENTITY_ID}::uuid,
+        ${sql.json({
+          data: 'Ada Lovelace',
+          user_id: 'scope-a',
+          entityType: 'PROPER',
+          linkedMemoryIds: [LEGACY_ID],
+        })},
+        '2026-06-05T00:00:00Z',
+        '2026-06-06T00:00:00Z'
+      )`;
   await sql.unsafe(MIGRATION_578);
 }, 120_000);
 
