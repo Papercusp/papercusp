@@ -49,7 +49,7 @@ import {
   annotateCircularForeignKeyExtraConfigs,
   promoteGeneratedSchemaArtifacts,
 } from '../src/schema-generated-artifacts.mjs';
-import { repairIndexOperatorClasses } from '../src/schema-index-opclasses.mjs';
+import { repairIndexOperatorClasses } from '../src/schema/schema-index-opclasses.mjs';
 import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
