@@ -15,10 +15,13 @@ clean so the next git-sync tick commits them.
 ## Context you receive
 
 - The harness name + its project directory (your CWD is the **superproject** working tree).
-- The **offending files** + their detector errors, two ways:
-  - the `--git-sync-content-error` extra: a JSON `{ files: [{ scope, file, detectorKey, error }] }`;
-  - the open **git-sync-content-error escalation** for this harness (read it for the
-    authoritative `files[]` list).
+- The **offending files** + their detector errors from the `--git-sync-content-error` extra:
+  a JSON `{ files: [{ scope, file, detectorKey, error }] }`. This dispatch extra is the
+  only authoritative offender list.
+- The open **git-sync-content-error escalation** for this harness is human-visible status
+  context only. Its `files[]` may be stale or come from a phase-loose escalation reader;
+  never use it as the offender list. If the dispatch extra is absent or incomplete, stop
+  and escalate instead of inferring files from the escalation.
 - For each offender:
   - `scope` — either `superproject` or a **submodule path** (e.g. `libs/generic/sync`).
   - `file` — the path **relative to that scope's repo**. From your CWD (the project
