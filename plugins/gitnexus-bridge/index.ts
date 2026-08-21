@@ -20,10 +20,10 @@
  * License note: GitNexus is PolyForm-Noncommercial-1.0.0. Bundling here
  * per pre-alpha freedom; revisit before any commercial launch.
  */
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { delimiter as PATH_DELIMITER, join as joinPath } from 'node:path';
 import { homedir } from 'node:os';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type {
   Capability,
   Plugin,
@@ -409,8 +409,239 @@ export const TOOL_OVERRIDES: Record<string, { description: string; guidance: Non
   },
 };
 
+// ===========================================================================
+// P-004 HARDENING — read-only enforcement, freshness metadata, response budgets.
+// ===========================================================================
+
+/**
+ * Tools that MUTATE and are therefore never registered (P-004 "read-only MCP").
+ *
+ * `rename` is the load-bearing one: it performs a multi-file coordinated rename by
+ * writing source files directly. On this shared tree that is not merely risky, it is a
+ * RAIL VIOLATION — every file write here is arbitrated by the `PreToolUse` lock hook
+ * (matched on Edit|Write|MultiEdit), and a plugin child process writing through its own
+ * fd bypasses that hook completely, along with the secrets guard and the migration /
+ * generated-file guards. It can silently clobber a peer's held file.
+ *
+ * `group_sync` rebuilds a group's contracts.json — a smaller write, excluded under the
+ * same rule rather than carving an exception nobody can audit later.
+ *
+ * NOT REGISTERED rather than registered-and-refusing, deliberately: a tool that always
+ * refuses still costs its full description in every agent's tool catalog, which is a
+ * budgeted resource here, and buys no capability. The reason lives in this comment and
+ * in the startup log line, so it is discoverable without being carried in every prompt.
+ */
+export const MUTATING_TOOLS: ReadonlySet<string> = new Set(['rename', 'group_sync']);
+
+export function isReadOnlyTool(toolName: string): boolean {
+  return !MUTATING_TOOLS.has(toolName);
+}
+
+/** One `~/.gitnexus/registry.json` entry, as gitnexus writes it. */
+export interface GitnexusRegistryStats {
+  name?: string;
+  indexedAt?: string;
+  lastCommit?: string;
+  stats?: { files?: number };
+}
+
+export interface IndexFreshness {
+  /** Milliseconds since the index was built; null when unknowable. */
+  ageMs: number | null;
+  /** Short sha the index was built from; null when unknowable. */
+  indexedCommit: string | null;
+  /** True when HEAD has moved past the indexed commit. */
+  behindHead: boolean;
+  /** True when we could not establish freshness at all — reported, never assumed fresh. */
+  unknown: boolean;
+}
+
+export const FRESHNESS_STALE_MS = 60 * 60 * 1000;
+
+/**
+ * PURE — derive freshness from inputs, so the policy is testable without a registry
+ * file, a clock, or a git subprocess.
+ *
+ * `unknown` is IN-BAND and must never collapse to "fresh". A missing registry entry
+ * means we do not know what the graph contains; reporting that honestly is the whole
+ * point, because the failure this guards against is a confident wrong answer.
+ */
+export function deriveFreshness(
+  entry: GitnexusRegistryStats | null,
+  headSha: string | null,
+  nowMs: number,
+): IndexFreshness {
+  if (!entry) return { ageMs: null, indexedCommit: null, behindHead: false, unknown: true };
+  const indexedAtMs = entry.indexedAt ? Date.parse(entry.indexedAt) : Number.NaN;
+  const ageMs = Number.isFinite(indexedAtMs) ? nowMs - indexedAtMs : null;
+  const indexedCommit = entry.lastCommit ? entry.lastCommit.slice(0, 10) : null;
+  const behindHead = Boolean(headSha && entry.lastCommit && !entry.lastCommit.startsWith(headSha) && !headSha.startsWith(entry.lastCommit));
+  return { ageMs, indexedCommit, behindHead, unknown: ageMs == null && indexedCommit == null };
+}
+
+/**
+ * PURE — the note appended to a response, or '' when the index is fresh enough that a
+ * note would be pure noise.
+ *
+ * THE FAILURE THIS EXISTS TO PREVENT, reproduced live on 2026-08-21: asking the bridge
+ * for `resolveGitnexusExecutable` returned `Symbol '...' not found`. The symbol exists —
+ * it had been written three minutes AFTER the index was built. A "not found" from a
+ * stale graph is indistinguishable from a genuine absence, and an agent that believes it
+ * goes on to re-declare a symbol that already exists. So the note is escalated
+ * specifically for negative answers: an empty result is exactly the case where staleness
+ * changes the meaning of the answer.
+ */
+export function formatFreshnessNote(f: IndexFreshness, looksNegative: boolean): string {
+  if (f.unknown) {
+    return (
+      '\n\n⚠ INDEX FRESHNESS UNKNOWN — no gitnexus registry entry could be read, so the age and ' +
+      'commit of the graph behind this answer are not established. Treat a "not found" as ' +
+      'UNVERIFIED and confirm with grep/rg before concluding a symbol does not exist.'
+    );
+  }
+  const stale = (f.ageMs != null && f.ageMs > FRESHNESS_STALE_MS) || f.behindHead;
+  if (!stale && !looksNegative) return '';
+  const ageMin = f.ageMs != null ? Math.round(f.ageMs / 60000) : null;
+  const parts: string[] = [];
+  if (ageMin != null) parts.push(`built ${ageMin}min ago`);
+  if (f.indexedCommit) parts.push(`at commit ${f.indexedCommit}`);
+  if (f.behindHead) parts.push('HEAD has moved since');
+  const desc = parts.length > 0 ? parts.join(', ') : 'age unknown';
+  if (looksNegative) {
+    return (
+      `\n\n⚠ EMPTY/NOT-FOUND RESULT FROM A ${stale ? 'STALE' : ''} INDEX (${desc}). ` +
+      'A symbol written after the index was built is reported EXACTLY like one that does not ' +
+      'exist. Before concluding it is absent, confirm with grep/rg — or re-index.'
+    );
+  }
+  return `\n\n⚠ Index is stale (${desc}) — symbols added since then are missing from this answer.`;
+}
+
+/** Default ceiling on a single forwarded response. */
+export const RESPONSE_BUDGET_CHARS = 20_000;
+
+export interface BudgetedText {
+  text: string;
+  truncated: boolean;
+  originalChars: number;
+}
+
+/**
+ * PURE — bound one response, and TEACH on the way out rather than just cutting.
+ *
+ * Why this is needed at all: every `File` node in this graph stores the ENTIRE FILE
+ * CONTENT in `f.content` (measured 2026-08-21 — it is why the database is 4.26 GB). A
+ * cypher that returns a bare node, rather than projecting fields, therefore dumps whole
+ * source files into the caller's context, and a handful of them can consume a session's
+ * whole budget. A silent cut would leave the caller reading a truncated answer as a
+ * complete one, so the marker names the cause and the fix.
+ */
+export function applyResponseBudget(text: string, budget: number = RESPONSE_BUDGET_CHARS): BudgetedText {
+  if (text.length <= budget) return { text, truncated: false, originalChars: text.length };
+  const keep = text.slice(0, budget);
+  return {
+    text:
+      keep +
+      `\n\n… ⚠ TRUNCATED at ${budget} of ${text.length} chars by the gitnexus bridge response budget. ` +
+      'This is a BOUNDED view, not a complete answer — do not read the absence of a later row as a real absence. ' +
+      'Most oversized responses come from returning whole graph NODES: a File node carries the entire file ' +
+      'body in `content`. Project the fields you need instead (RETURN f.filePath, f.name), or add LIMIT.',
+    truncated: true,
+    originalChars: text.length,
+  };
+}
+
+/** Heuristic: does this response read as "nothing found"? Drives the escalated note. */
+export function looksLikeEmptyResult(text: string): boolean {
+  const t = text.toLowerCase();
+  return (
+    t.includes('not found') ||
+    t.includes('"row_count": 0') ||
+    t.includes('no results') ||
+    t.includes('no matches')
+  );
+}
+
+/**
+ * Freshness is read from disk, so it is cached briefly: every forwarded call wants it,
+ * and the underlying facts change at most once per reindex (hourly). The TTL is what
+ * keeps this off the hot path without letting the note itself go stale.
+ */
+const FRESHNESS_TTL_MS = 60_000;
+let freshnessCache: { at: number; value: IndexFreshness } | null = null;
+
+export function _resetFreshnessCacheForTests(): void {
+  freshnessCache = null;
+}
+
+function readRegistryEntrySync(repoName: string): GitnexusRegistryStats | null {
+  try {
+    const file = joinPath(homedir(), '.gitnexus', 'registry.json');
+    const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    if (!Array.isArray(raw)) return null;
+    const hit = raw.find((e) => e && typeof e === 'object' && (e as { name?: unknown }).name === repoName);
+    return (hit as GitnexusRegistryStats | undefined) ?? null;
+  } catch {
+    // Absent/unparseable registry ⇒ freshness UNKNOWN, which deriveFreshness reports
+    // honestly. It must never read as "fresh".
+    return null;
+  }
+}
+
+function headShaSync(cwd: string): string | null {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8', timeout: 5_000 }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function loadFreshness(): IndexFreshness {
+  const now = Date.now();
+  if (freshnessCache && now - freshnessCache.at < FRESHNESS_TTL_MS) return freshnessCache.value;
+  const repoName = process.env.PAPERCUSP_GITNEXUS_REPO_NAME ?? 'papercusp';
+  const entry = readRegistryEntrySync(repoName);
+  const root = entry && typeof (entry as { path?: string }).path === 'string' ? (entry as { path: string }).path : process.cwd();
+  const value = deriveFreshness(entry, headShaSync(root), now);
+  freshnessCache = { at: now, value };
+  return value;
+}
+
+/**
+ * PURE — apply the freshness note and the response budget to a forwarded MCP envelope.
+ *
+ * ORDER MATTERS AND IS LOAD-BEARING: the freshness note is appended FIRST, then the
+ * whole thing is budgeted. Budgeting first would let a large response push the note off
+ * the end — losing exactly the warning that a big, confident-looking answer came from a
+ * stale graph.
+ */
+export function decorateResult(result: ToolResult, f: IndexFreshness, budget: number = RESPONSE_BUDGET_CHARS): ToolResult {
+  const envelope = result as unknown as { content?: Array<{ type?: string; text?: string }> };
+  if (!Array.isArray(envelope?.content)) return result;
+  const joined = envelope.content.map((c) => (typeof c?.text === 'string' ? c.text : '')).join('');
+  const note = formatFreshnessNote(f, looksLikeEmptyResult(joined));
+
+  const content = envelope.content.map((c, i) => {
+    if (typeof c?.text !== 'string') return c;
+    const withNote = i === envelope.content!.length - 1 ? c.text + note : c.text;
+    const budgeted = applyResponseBudget(withNote, budget);
+    return { ...c, text: budgeted.text };
+  });
+  return { ...(result as object), content } as ToolResult;
+}
+
 function makeHandler(toolName: string): ToolHandler {
   return async (input, ctx): Promise<ToolResult> => {
+    // Defence in depth: a mutating tool is never registered, so this is unreachable via
+    // the normal path — but a handler map is a public surface, and the rail should not
+    // depend on registration being the only caller.
+    if (!isReadOnlyTool(toolName)) {
+      throw new Error(
+        `gitnexus.${toolName} is a MUTATING tool and is disabled on this bridge (P-004, read-only MCP). ` +
+          'It writes files directly, bypassing the PreToolUse lock arbitration that keeps this shared tree ' +
+          'safe. Use Edit/Write for file changes.',
+      );
+    }
     const workspaceId = ctx.workspaceId ?? 'default';
     const handle = await ensureChild(workspaceId);
     bumpIdle(handle);
@@ -421,7 +652,7 @@ function makeHandler(toolName: string): ToolHandler {
     }
     ctx.progress?.(100, 'done');
     // Upstream returns the standard MCP tool-call envelope: { content, isError? }.
-    return r.result as ToolResult;
+    return decorateResult(r.result as ToolResult, loadFreshness());
   };
 }
 
@@ -444,14 +675,16 @@ const plugin: Plugin = {
     'tools:gitnexus:cypher',
     'tools:gitnexus:context',
     'tools:gitnexus:detect_changes',
-    'tools:gitnexus:rename',
+    // `tools:gitnexus:rename` and `tools:gitnexus:group_sync` are deliberately ABSENT:
+    // both are mutating and are refused by MUTATING_TOOLS (P-004 read-only enforcement).
+    // A declared capability that can no longer be exercised makes the audit surface read
+    // wider than the code actually is.
     'tools:gitnexus:impact',
     'tools:gitnexus:route_map',
     'tools:gitnexus:tool_map',
     'tools:gitnexus:shape_check',
     'tools:gitnexus:api_impact',
     'tools:gitnexus:group_list',
-    'tools:gitnexus:group_sync',
   ],
 
   async getDynamicTools(): Promise<{ definitions: ToolDefinition[]; handlers: PluginToolMap }> {
@@ -462,7 +695,15 @@ const plugin: Plugin = {
 
     const definitions: ToolDefinition[] = [];
     const handlers: PluginToolMap = {};
+    const refused: string[] = [];
     for (const t of upstream) {
+      // P-004 read-only enforcement. Dropped BEFORE a definition is built, so a mutating
+      // tool costs nothing in the agent tool catalog. Logged once at discovery so the
+      // omission is visible in the operator log rather than silently mysterious.
+      if (!isReadOnlyTool(t.name)) {
+        refused.push(t.name);
+        continue;
+      }
       // Annotated, not inferred: a bare `const cap = \`tools:...\`` widens to
       // `string`, which is not assignable to Capability's `tools:${string}`
       // member. Surfaced by EI-19305781578043773 giving this plugin a tsconfig.
@@ -484,6 +725,12 @@ const plugin: Plugin = {
       };
       definitions.push(def);
       handlers[t.name] = makeHandler(t.name);
+    }
+    if (refused.length > 0) {
+      console.warn(
+        `[gitnexus-bridge] read-only enforcement (P-004): not registering mutating tool(s) ${refused.join(', ')} — ` +
+          'they write files directly and would bypass the PreToolUse lock arbitration on this shared tree.',
+      );
     }
     return { definitions, handlers };
   },
