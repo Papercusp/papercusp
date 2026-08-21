@@ -253,6 +253,16 @@ SELECT m.ledger_idea_id, m.workspace_id, m.harness_slug, 'papercusp', NULL, NULL
  WHERE m.destination = 'agent-review'
 ON CONFLICT (idea_id) DO NOTHING;
 
+-- This is a deterministic per-database historical backfill, not a new local
+-- authorship event. In particular, changing payload/status through the normal
+-- work_items trigger path would make stamp_local_federated_write() restamp all
+-- 357 remote-owned rows as origin='local', destroying the ownership boundary
+-- this migration is specifically preserving. Quiet every USER trigger for the
+-- one bulk UPDATE so remote origin + LWW clocks survive verbatim and the 759-row
+-- rewrite does not create a CDC/notify storm. DISABLE/ENABLE are transactional:
+-- any later guard failure rolls both the data and trigger state back together.
+ALTER TABLE harness_shared.work_items DISABLE TRIGGER USER;
+
 WITH base AS (
   SELECT m.*,
          -- Every destination leaves the ambiguous legacy flags. Strict owner
@@ -358,6 +368,8 @@ UPDATE harness_shared.work_items wi
  WHERE wi.workspace_id = n.workspace_id
    AND wi.harness_slug = n.harness_slug
    AND wi.feature_id = n.feature_id;
+
+ALTER TABLE harness_shared.work_items ENABLE TRIGGER USER;
 
 DO $data_post864$
 DECLARE
