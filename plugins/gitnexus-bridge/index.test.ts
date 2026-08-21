@@ -14,6 +14,8 @@
  * are created lazily inside ensureChild(), never at module load), so these run
  * without touching `gitnexus` or any subprocess.
  */
+import { homedir } from 'node:os';
+import nodePath from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import plugin, {
   rolesFor,
@@ -28,6 +30,8 @@ import plugin, {
   applyResponseBudget,
   decorateResult,
   looksLikeEmptyResult,
+  repoPolicyFromEnv,
+  applyRepoPolicy,
 } from './index';
 
 // ── Gap 1: rolesFor — the role allowlist security boundary ──────────────────
@@ -409,5 +413,95 @@ describe('looksLikeEmptyResult (P-004)', () => {
 
   it('does not fire on a genuine answer', () => {
     expect(looksLikeEmptyResult('{ "row_count": 12, "markdown": "| n |" }')).toBe(false);
+  });
+});
+
+// ── P-004: allowed / default repo ───────────────────────────────────────────
+//
+// This rail guards a SCOPE boundary, not a spelling: upstream documents `repo` as
+// "Repository name or path", so an unguarded bridge will happily read a tree outside
+// this checkout. Every refusal case below is a real escape shape, not a synthetic
+// string — that is what makes a passing test here mean anything.
+
+describe('repoPolicyFromEnv (P-004)', () => {
+  it('defaults to papercusp when nothing is configured', () => {
+    const p = repoPolicyFromEnv({});
+    expect(p.defaultRepo).toBe('papercusp');
+    expect([...p.allowed]).toEqual(['papercusp']);
+  });
+
+  it('treats a blank override as unset rather than as an empty repo name', () => {
+    expect(repoPolicyFromEnv({ PAPERCUSP_GITNEXUS_REPO_NAME: '   ' }).defaultRepo).toBe('papercusp');
+  });
+
+  it('honours an explicit default and always includes it in the allowlist', () => {
+    const p = repoPolicyFromEnv({ PAPERCUSP_GITNEXUS_REPO_NAME: 'other' });
+    expect(p.defaultRepo).toBe('other');
+    expect(p.allowed.has('other')).toBe(true);
+  });
+
+  it('extends the allowlist without displacing the default', () => {
+    const p = repoPolicyFromEnv({ PAPERCUSP_GITNEXUS_ALLOWED_REPOS: 'sidecar , tools,' });
+    expect([...p.allowed].sort()).toEqual(['papercusp', 'sidecar', 'tools']);
+  });
+});
+
+describe('applyRepoPolicy (P-004)', () => {
+  const policy = repoPolicyFromEnv({});
+
+  it('injects the default when repo is omitted, null, or blank', () => {
+    for (const args of [{}, { repo: null }, { repo: '' }, { repo: '  ' }]) {
+      expect(applyRepoPolicy('query', args as Record<string, unknown>, policy).repo).toBe('papercusp');
+    }
+  });
+
+  it('passes an allowed name through and preserves every other argument', () => {
+    const out = applyRepoPolicy('cypher', { repo: 'papercusp', query: 'MATCH (f:File)' }, policy);
+    expect(out).toEqual({ repo: 'papercusp', query: 'MATCH (f:File)' });
+  });
+
+  it("does not mutate the caller's argument object", () => {
+    const args = { query: 'x' };
+    applyRepoPolicy('query', args, policy);
+    expect(args).toEqual({ query: 'x' });
+  });
+
+  // THE escape this rail exists for: a path reaches any tree the operator uid can read.
+  it('refuses a filesystem path even though upstream accepts one', () => {
+    // Derived, never a literal home path: a hardcoded build-box path is wrong on every
+    // other machine AND reds the green-checkpoint identity-lint leg for the whole fleet.
+    const releaseCheckout = nodePath.join(homedir(), 'papercupai-workspace', 'papercup-release');
+    for (const escape of [releaseCheckout, '.', '../peer-worktree']) {
+      expect(() => applyRepoPolicy('query', { repo: escape }, policy)).toThrow(/not allowed on this bridge/);
+    }
+  });
+
+  it('refuses an @group fan-out', () => {
+    expect(() => applyRepoPolicy('trace', { repo: '@everything' }, policy)).toThrow(/not allowed on this bridge/);
+  });
+
+  it('refuses an unknown repo name', () => {
+    expect(() => applyRepoPolicy('query', { repo: 'some-other-repo' }, policy)).toThrow(/not allowed on this bridge/);
+  });
+
+  it('refuses a non-string repo instead of coercing it', () => {
+    expect(() => applyRepoPolicy('query', { repo: 42 }, policy)).toThrow(/must be a repository NAME/);
+  });
+
+  // A refusal the caller cannot act on is just a mystery in a log.
+  it('names both the allowed set and the omit-for-default escape hatch', () => {
+    let msg = '';
+    try {
+      applyRepoPolicy('query', { repo: '/tmp/elsewhere' }, policy);
+    } catch (e) {
+      msg = String(e);
+    }
+    expect(msg).toContain('papercusp');
+    expect(msg).toMatch(/Omit `repo`/);
+  });
+
+  it('admits a repo added to the allowlist, so the rail is configurable not hardcoded', () => {
+    const wide = repoPolicyFromEnv({ PAPERCUSP_GITNEXUS_ALLOWED_REPOS: 'sidecar' });
+    expect(applyRepoPolicy('query', { repo: 'sidecar' }, wide).repo).toBe('sidecar');
   });
 });

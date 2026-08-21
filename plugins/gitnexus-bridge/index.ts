@@ -437,6 +437,75 @@ export function isReadOnlyTool(toolName: string): boolean {
   return !MUTATING_TOOLS.has(toolName);
 }
 
+/**
+ * P-004 — ALLOWED / DEFAULT REPO.
+ *
+ * Every per-repo gitnexus tool takes an optional `repo`, which upstream documents as
+ * "Repository name or path" (its own tool schema). The PATH half is what matters here:
+ * it lets any caller aim the graph engine at a tree OUTSIDE the sanctioned checkout —
+ * a peer's worktree, the release checkout, anything readable by the operator uid. The
+ * read-only rail above stops this bridge WRITING; this one stops it READING out of
+ * scope. `@group` forms are refused under the same rule: they fan a single call out
+ * across repos, which is the same escape with a different spelling.
+ *
+ * The DEFAULT half guards a quieter failure. Upstream resolves an omitted `repo` as
+ * "the only repo, if exactly one is indexed" — true on this box TODAY (the registry
+ * holds `papercusp` alone) and false the moment a second repo is registered, at which
+ * point every omitted-repo call silently changes meaning with nothing failing. Naming
+ * the default explicitly makes the answer deterministic BEFORE that happens rather
+ * than after someone has trusted a wrong one.
+ */
+export interface RepoPolicy {
+  /** Injected when the caller omits `repo`. */
+  defaultRepo: string;
+  /** Every repo name a caller may name explicitly. */
+  allowed: ReadonlySet<string>;
+}
+
+export function repoPolicyFromEnv(env: NodeJS.ProcessEnv = process.env): RepoPolicy {
+  const defaultRepo = (env.PAPERCUSP_GITNEXUS_REPO_NAME ?? '').trim() || 'papercusp';
+  const extra = (env.PAPERCUSP_GITNEXUS_ALLOWED_REPOS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return { defaultRepo, allowed: new Set([defaultRepo, ...extra]) };
+}
+
+/**
+ * PURE — resolve the `repo` argument of one forwarded call against the policy.
+ *
+ * Applied ONLY to tools whose upstream schema actually declares `repo` (see
+ * getDynamicTools). Deriving that from the schema rather than a hardcoded tool list is
+ * deliberate: a hardcoded list silently stops covering a tool the day upstream adds one,
+ * and a rail that quietly stops applying is worse than no rail.
+ */
+export function applyRepoPolicy(
+  toolName: string,
+  args: Record<string, unknown>,
+  policy: RepoPolicy,
+): Record<string, unknown> {
+  const raw = args.repo;
+  if (raw === undefined || raw === null || (typeof raw === 'string' && raw.trim() === '')) {
+    return { ...args, repo: policy.defaultRepo };
+  }
+  const allowedList = [...policy.allowed].join(', ');
+  if (typeof raw !== 'string') {
+    throw new Error(
+      `gitnexus.${toolName}: \`repo\` must be a repository NAME (got ${typeof raw}). ` +
+        `Allowed: ${allowedList}.`,
+    );
+  }
+  const name = raw.trim();
+  if (policy.allowed.has(name)) return { ...args, repo: name };
+  throw new Error(
+    `gitnexus.${toolName}: repo ${JSON.stringify(name)} is not allowed on this bridge ` +
+      `(P-004, allowed/default repo). Allowed: ${allowedList}. ` +
+      'A filesystem PATH or an "@group" is refused even when it exists — the bridge is scoped ' +
+      'to this checkout, and reading another tree escapes that scope. Omit `repo` to use ' +
+      `${JSON.stringify(policy.defaultRepo)}, or add the name to PAPERCUSP_GITNEXUS_ALLOWED_REPOS.`,
+  );
+}
+
 /** One `~/.gitnexus/registry.json` entry, as gitnexus writes it. */
 export interface GitnexusRegistryStats {
   name?: string;
@@ -608,7 +677,9 @@ function headShaSync(cwd: string): string | null {
 function loadFreshness(): IndexFreshness {
   const now = Date.now();
   if (freshnessCache && now - freshnessCache.at < FRESHNESS_TTL_MS) return freshnessCache.value;
-  const repoName = process.env.PAPERCUSP_GITNEXUS_REPO_NAME ?? 'papercusp';
+  // Same resolution the repo rail uses, so the graph we REPORT freshness for can never
+  // drift from the graph we actually QUERY.
+  const repoName = repoPolicyFromEnv().defaultRepo;
   const entry = readRegistryEntrySync(repoName);
   const root = entry && typeof (entry as { path?: string }).path === 'string' ? (entry as { path: string }).path : process.cwd();
   const value = deriveFreshness(entry, headShaSync(root), now);
@@ -639,7 +710,7 @@ export function decorateResult(result: ToolResult, f: IndexFreshness, budget: nu
   return { ...(result as object), content } as ToolResult;
 }
 
-function makeHandler(toolName: string): ToolHandler {
+function makeHandler(toolName: string, acceptsRepo: boolean): ToolHandler {
   return async (input, ctx): Promise<ToolResult> => {
     // Defence in depth: a mutating tool is never registered, so this is unreachable via
     // the normal path — but a handler map is a public surface, and the rail should not
@@ -651,11 +722,15 @@ function makeHandler(toolName: string): ToolHandler {
           'safe. Use Edit/Write for file changes.',
       );
     }
+    // P-004 allowed/default repo. Resolved BEFORE the child is spawned so a refused repo
+    // costs nothing, and applied only to tools that actually declare `repo`.
+    const rawArgs = (input ?? {}) as Record<string, unknown>;
+    const args = acceptsRepo ? applyRepoPolicy(toolName, rawArgs, repoPolicyFromEnv()) : rawArgs;
     const workspaceId = ctx.workspaceId ?? 'default';
     const handle = await ensureChild(workspaceId);
     bumpIdle(handle);
     ctx.progress?.(0, `forwarding to gitnexus.${toolName}`);
-    const r = await rpc(handle, 'tools/call', { name: toolName, arguments: input as Record<string, unknown> });
+    const r = await rpc(handle, 'tools/call', { name: toolName, arguments: args });
     if (r.error) {
       throw new Error(`gitnexus.${toolName}: ${r.error.message}`);
     }
@@ -733,7 +808,11 @@ const plugin: Plugin = {
         ...(override ? { guidance: override.guidance } : {}),
       };
       definitions.push(def);
-      handlers[t.name] = makeHandler(t.name);
+      // Derived from the UPSTREAM schema, never a hardcoded list — see applyRepoPolicy.
+      const acceptsRepo = Boolean(
+        (t.inputSchema?.properties as Record<string, unknown> | undefined)?.repo,
+      );
+      handlers[t.name] = makeHandler(t.name, acceptsRepo);
     }
     if (refused.length > 0) {
       console.warn(

@@ -39,6 +39,7 @@ __export(index_exports, {
   TOOL_OVERRIDES: () => TOOL_OVERRIDES,
   _resetChildrenForTests: () => _resetChildrenForTests,
   _resetFreshnessCacheForTests: () => _resetFreshnessCacheForTests,
+  applyRepoPolicy: () => applyRepoPolicy,
   applyResponseBudget: () => applyResponseBudget,
   decorateResult: () => decorateResult,
   default: () => index_default,
@@ -50,6 +51,7 @@ __export(index_exports, {
   looksLikeEmptyResult: () => looksLikeEmptyResult,
   pinnedGitnexusBin: () => pinnedGitnexusBin,
   quotaFor: () => quotaFor,
+  repoPolicyFromEnv: () => repoPolicyFromEnv,
   resolveGitnexusExecutable: () => resolveGitnexusExecutable,
   rolesFor: () => rolesFor,
   tools: () => tools
@@ -289,6 +291,28 @@ var MUTATING_TOOLS = /* @__PURE__ */ new Set(["rename", "group_sync"]);
 function isReadOnlyTool(toolName) {
   return !MUTATING_TOOLS.has(toolName);
 }
+function repoPolicyFromEnv(env = process.env) {
+  const defaultRepo = (env.PAPERCUSP_GITNEXUS_REPO_NAME ?? "").trim() || "papercusp";
+  const extra = (env.PAPERCUSP_GITNEXUS_ALLOWED_REPOS ?? "").split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  return { defaultRepo, allowed: /* @__PURE__ */ new Set([defaultRepo, ...extra]) };
+}
+function applyRepoPolicy(toolName, args, policy) {
+  const raw = args.repo;
+  if (raw === void 0 || raw === null || typeof raw === "string" && raw.trim() === "") {
+    return { ...args, repo: policy.defaultRepo };
+  }
+  const allowedList = [...policy.allowed].join(", ");
+  if (typeof raw !== "string") {
+    throw new Error(
+      `gitnexus.${toolName}: \`repo\` must be a repository NAME (got ${typeof raw}). Allowed: ${allowedList}.`
+    );
+  }
+  const name = raw.trim();
+  if (policy.allowed.has(name)) return { ...args, repo: name };
+  throw new Error(
+    `gitnexus.${toolName}: repo ${JSON.stringify(name)} is not allowed on this bridge (P-004, allowed/default repo). Allowed: ${allowedList}. A filesystem PATH or an "@group" is refused even when it exists \u2014 the bridge is scoped to this checkout, and reading another tree escapes that scope. Omit \`repo\` to use ${JSON.stringify(policy.defaultRepo)}, or add the name to PAPERCUSP_GITNEXUS_ALLOWED_REPOS.`
+  );
+}
 var FRESHNESS_STALE_MS = 60 * 60 * 1e3;
 function deriveFreshness(entry, headSha, nowMs) {
   if (!entry) return { ageMs: null, indexedCommit: null, behindHead: false, unknown: true };
@@ -361,7 +385,7 @@ function headShaSync(cwd) {
 function loadFreshness() {
   const now = Date.now();
   if (freshnessCache && now - freshnessCache.at < FRESHNESS_TTL_MS) return freshnessCache.value;
-  const repoName = process.env.PAPERCUSP_GITNEXUS_REPO_NAME ?? "papercusp";
+  const repoName = repoPolicyFromEnv().defaultRepo;
   const entry = readRegistryEntrySync(repoName);
   const root = entry && typeof entry.path === "string" ? entry.path : process.cwd();
   const value = deriveFreshness(entry, headShaSync(root), now);
@@ -381,18 +405,20 @@ function decorateResult(result, f, budget = RESPONSE_BUDGET_CHARS) {
   });
   return { ...result, content };
 }
-function makeHandler(toolName) {
+function makeHandler(toolName, acceptsRepo) {
   return async (input, ctx) => {
     if (!isReadOnlyTool(toolName)) {
       throw new Error(
         `gitnexus.${toolName} is a MUTATING tool and is disabled on this bridge (P-004, read-only MCP). It writes files directly, bypassing the PreToolUse lock arbitration that keeps this shared tree safe. Use Edit/Write for file changes.`
       );
     }
+    const rawArgs = input ?? {};
+    const args = acceptsRepo ? applyRepoPolicy(toolName, rawArgs, repoPolicyFromEnv()) : rawArgs;
     const workspaceId = ctx.workspaceId ?? "default";
     const handle = await ensureChild(workspaceId);
     bumpIdle(handle);
     ctx.progress?.(0, `forwarding to gitnexus.${toolName}`);
-    const r = await rpc(handle, "tools/call", { name: toolName, arguments: input });
+    const r = await rpc(handle, "tools/call", { name: toolName, arguments: args });
     if (r.error) {
       throw new Error(`gitnexus.${toolName}: ${r.error.message}`);
     }
@@ -457,7 +483,10 @@ var plugin = {
         ...override ? { guidance: override.guidance } : {}
       };
       definitions.push(def);
-      handlers[t.name] = makeHandler(t.name);
+      const acceptsRepo = Boolean(
+        t.inputSchema?.properties?.repo
+      );
+      handlers[t.name] = makeHandler(t.name, acceptsRepo);
     }
     if (refused.length > 0) {
       console.warn(
@@ -490,6 +519,7 @@ function _resetChildrenForTests() {
   TOOL_OVERRIDES,
   _resetChildrenForTests,
   _resetFreshnessCacheForTests,
+  applyRepoPolicy,
   applyResponseBudget,
   decorateResult,
   deriveFreshness,
@@ -500,6 +530,7 @@ function _resetChildrenForTests() {
   looksLikeEmptyResult,
   pinnedGitnexusBin,
   quotaFor,
+  repoPolicyFromEnv,
   resolveGitnexusExecutable,
   rolesFor,
   tools
