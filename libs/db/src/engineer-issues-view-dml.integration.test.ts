@@ -377,3 +377,68 @@ describe('engineer_issues view DML RETURNING reflects storage, not caller input'
     expect(def.split('RETURN v_stored;').length - 1).toBe(2);
   });
 });
+
+describe('engineer_issues issue-family expiry removal', () => {
+  it('does not derive an expiry when an assigned issue is inserted through the view', async () => {
+    const issueId = 'EI-866001';
+    const assignedAt = new Date('2026-08-20T12:34:56.000Z');
+
+    await sql`
+      INSERT INTO harness_shared.engineer_issues
+        (workspace_id, issue_id, title, body, state, kind, scope, severity,
+         assignee, assigned_at)
+      VALUES
+        ('ws1', ${issueId}, 'issue expiry regression', 'body', 'open', 'bug',
+         'harness:hx', 'major', 'agent-866', ${assignedAt})`;
+
+    const [stored] = await sql<{ expires_at: Date | null; taken_at: Date | null }[]>`
+      SELECT expires_at, taken_at
+        FROM harness_shared.work_items
+       WHERE workspace_id = 'ws1' AND feature_id = ${issueId}`;
+
+    expect(stored.expires_at).toBeNull();
+    expect(stored.taken_at).not.toBeNull();
+    expect(new Date(String(stored.taken_at)).toISOString()).toBe(assignedAt.toISOString());
+  });
+
+  it('clears historical issue expiry while preserving a feature-family lease', async () => {
+    const issueId = 'EI-866002';
+    const featureId = 'F-866001';
+    const issueExpiry = new Date('2026-08-21T00:00:00.000Z');
+    const featureExpiry = new Date('2026-08-22T00:00:00.000Z');
+
+    await sql`
+      INSERT INTO harness_shared.work_items
+        (workspace_id, harness_slug, feature_id, title, summary, status,
+         item_kind, expires_at, ts, created_ts, updated_ts, payload)
+      VALUES
+        ('ws1', 'harness-x', ${issueId}, 'historical issue expiry', 'body', 'open',
+         'bug', ${issueExpiry}, 1000, 1000, 1000, '{}'::jsonb),
+        ('ws1', 'harness-x', ${featureId}, 'feature lease', 'body', 'todo',
+         'feature', ${featureExpiry}, 1000, 1000, 1000, '{}'::jsonb)`;
+
+    await sql.unsafe(await readFile(join(SQL_DIR, '866-clear-issue-expiry.sql'), 'utf8'));
+
+    const rows = await sql<{
+      feature_id: string;
+      item_kind: string;
+      expiry_epoch: number | null;
+    }[]>`
+      SELECT feature_id, item_kind,
+             extract(epoch FROM expires_at)::double precision AS expiry_epoch
+        FROM harness_shared.work_items
+       WHERE workspace_id = 'ws1'
+         AND feature_id IN (${issueId}, ${featureId})
+       ORDER BY feature_id`;
+
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.feature_id === issueId)).toMatchObject({
+      item_kind: 'bug',
+      expiry_epoch: null,
+    });
+    expect(rows.find((row) => row.feature_id === featureId)).toMatchObject({
+      item_kind: 'feature',
+      expiry_epoch: featureExpiry.getTime() / 1000,
+    });
+  });
+});
