@@ -8617,6 +8617,48 @@ export const workItemReplicasInHarnessShared = harnessShared.table("work_item_re
 	check("work_item_replicas_redundancy_positive", sql`redundancy >= 1`),
 ]);
 
+export const dreamRunsInHarnessShared = harnessShared.table("dream_runs", {
+	workspaceId: text("workspace_id").notNull(),
+	runId: text("run_id").notNull(),
+	cycleId: text("cycle_id").notNull(),
+	potSlug: text("pot_slug").notNull(),
+	mode: text().notNull(),
+	status: text().default('running').notNull(),
+	fragmentRefs: jsonb("fragment_refs").default([]).notNull(),
+	fragmentKinds: jsonb("fragment_kinds").default([]).notNull(),
+	pairing: text(),
+	similarity: doublePrecision(),
+	dreamerModel: text("dreamer_model"),
+	reviewerModel: text("reviewer_model"),
+	dreamUsage: jsonb("dream_usage"),
+	reviewUsage: jsonb("review_usage"),
+	outcome: jsonb(),
+	review: jsonb(),
+	routedRef: text("routed_ref"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	inputTokens: bigint("input_tokens", { mode: "number" }).default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	outputTokens: bigint("output_tokens", { mode: "number" }).default(0).notNull(),
+	costUsd: doublePrecision("cost_usd").default(0).notNull(),
+	error: text(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
+	spendRecordedAt: timestamp("spend_recorded_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("dream_runs_ws_cycle_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.cycleId.asc().nullsLast().op("text_ops"), table.startedAt.asc().nullsLast().op("text_ops")),
+	index("dream_runs_ws_pot_started_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("timestamptz_ops"), table.startedAt.desc().nullsFirst().op("text_ops")),
+	index("dream_runs_ws_status_started_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("text_ops")),
+	primaryKey({ columns: [table.runId, table.workspaceId], name: "dream_runs_pkey"}),
+	pgPolicy("dream_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("dream_runs_mode_check", sql`mode = ANY (ARRAY['manual'::text, 'auto'::text])`),
+	check("dream_runs_status_check", sql`status = ANY (ARRAY['running'::text, 'no-pair'::text, 'abstained'::text, 'malformed'::text, 'duplicate'::text, 'rejected'::text, 'accepted'::text, 'error'::text])`),
+	check("dream_runs_pairing_check", sql`(pairing IS NULL) OR (pairing = ANY (ARRAY['banded'::text, 'random'::text]))`),
+	check("dream_runs_fragment_refs_array_check", sql`jsonb_typeof(fragment_refs) = 'array'::text`),
+	check("dream_runs_fragment_kinds_array_check", sql`jsonb_typeof(fragment_kinds) = 'array'::text`),
+	check("dream_runs_usage_nonnegative_check", sql`(input_tokens >= 0) AND (output_tokens >= 0) AND (cost_usd >= (0)::double precision)`),
+]);
+
 export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -8718,6 +8760,7 @@ export const harnessPlansInHarnessShared = harnessShared.table("harness_plans", 
 	embeddingMode: text("embedding_mode"),
 	inputSchema: jsonb("input_schema"),
 	goalId: text("goal_id"),
+	forcedPast: jsonb("forced_past"),
 }, (table) => [
 	index("harness_plans_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("harness_plans_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
