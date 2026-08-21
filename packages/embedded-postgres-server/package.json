@@ -10,7 +10,7 @@
     "embedded-postgres-server": "bin/embedded-postgres-server.mjs"
   },
   "scripts": {
-    "gen:types": "rm -f src/index.d.ts src/migration-runner.d.ts && tsc -p tsconfig.types.json"
+    "gen:types": "rm -f src/index.d.ts src/migration-runner.d.ts && node ../../../../node_modules/typescript/lib/tsc.js -p tsconfig.types.json"
   },
   "dependencies": {
     "embedded-postgres": "^18.3.0-beta.17",
