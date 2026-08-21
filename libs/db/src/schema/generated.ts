@@ -188,7 +188,6 @@ export const agentActivityInHarnessShared = harnessShared.table("agent_activity"
 	index("agent_activity_created_at_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")),
 	index("agent_activity_harness_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	index("agent_activity_owner_id_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
-	index("agent_activity_owner_id_idx_ccnew").using("btree", table.ownerId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
 	index("agent_activity_session_id_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
 	index("agent_activity_workspace_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
 ]);
@@ -1664,7 +1663,6 @@ export const testRunsInHarnessShared = harnessShared.table("test_runs", {
 	worktreeDirty: boolean("worktree_dirty").default(false).notNull(),
 }, (table) => [
 	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("test_runs_file_path_idx_ccnew").using("btree", table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("test_runs_harness_scope_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops"), table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	index("test_runs_run_group_idx").using("btree", table.runGroupId.asc().nullsLast().op("text_ops")).where(sql`(run_group_id IS NOT NULL)`),
 	index("test_runs_source_idx").using("btree", table.source.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
@@ -4581,6 +4579,7 @@ export const goalsInHarnessShared = harnessShared.table("goals", {
 	check("goals_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
+
 export const operatorBudgetInHarnessShared = harnessShared.table("operator_budget", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().notNull(),
@@ -4796,6 +4795,7 @@ export const cupClaimSpecRevisionsInHarnessShared = harnessShared.table("cup_cla
 	check("cup_claim_spec_revisions_bee_nonempty", sql`bee_id <> ''::text`),
 	check("cup_claim_spec_revisions_ws_nonempty", sql`workspace_id <> ''::text`),
 ]);
+
 
 
 
@@ -6640,6 +6640,7 @@ export const planAuditsInHarnessShared = harnessShared.table("plan_audits", {
 	primaryKey({ columns: [table.auditSeq, table.planSlug, table.workspaceId], name: "plan_audits_pkey"}),
 ]);
 
+
 export const pendingReviewsInHarnessShared = harnessShared.table("pending_reviews", {
 	harnessSlug: text("harness_slug").notNull(),
 	reviewId: text("review_id").notNull(),
@@ -6837,6 +6838,7 @@ export const harnessEscalationsInHarnessShared = harnessShared.table("harness_es
 	check("harness_escalations_risk_tier_check", sql`(risk_tier IS NULL) OR (risk_tier = ANY (ARRAY['trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text]))`),
 	check("harness_escalations_authority_check", sql`(authority IS NULL) OR (authority = ANY (ARRAY['system'::text, 'owner'::text]))`),
 ]);
+
 
 export const featureWorkingSetInHarnessShared = harnessShared.table("feature_working_set", {
 	workspaceId: text("workspace_id").default('').notNull(),
@@ -8896,6 +8898,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	index("work_items_obs_rubric_ref_idx").using("btree", sql`((((payload - '_ei'::text) -> 'observation'::text) ->> 'rubricR`).where(sql`((((payload - '_ei'::text) -> 'observation'::text) ->> 'rubricRef'::text) IS NOT NULL)`),
 	index("work_items_obs_supersedes_idx").using("btree", sql`((((payload - '_ei'::text) -> 'observation'::text) ->> 'superse`).where(sql`((((payload - '_ei'::text) -> 'observation'::text) ->> 'supersedes'::text) IS NOT NULL)`),
 	index("work_items_plan_item_stamp_idx").using("btree", sql`(((payload -> 'plan_item'::text) ->> 'plan_slug'::text))`, sql`(((payload -> 'plan_item'::text) ->> 'item_id'::text))`).where(sql`((payload -> 'plan_item'::text) IS NOT NULL)`),
+	uniqueIndex("work_items_watchdog_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload ->> 'watchdogKey'::text))`, sql`COALESCE(((payload -> '_ei'::text) ->> 'signal_origin'::text), `, sql`COALESCE((payload ->> 'lane'::text), 'improvement'::text)`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND ((payload ->> 'watchdogKey'::text) IS NOT NULL))`),
 	primaryKey({ columns: [table.featureId, table.harnessSlug], name: "work_items_pkey"}),
 	pgPolicy("work_items_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("hfc_design_status_chk", sql`(design_status IS NULL) OR (design_status = ANY (ARRAY['pending'::text, 'accepted'::text, 'ignored'::text]))`),
@@ -9476,6 +9479,26 @@ export const fleetAssignmentInHarnessShared = harnessShared.view("fleet_assignme
 	fleetRole: text("fleet_role"),
 }).as(sql`WITH presence AS ( SELECT coord_presence.owner_id, coord_presence.owner_label, coord_presence.workspace_id, coord_presence.source, coord_presence.intent, coord_presence.current_plan_slug, coord_presence.heartbeat_at, (now() - coord_presence.heartbeat_at) < '00:10:00'::interval AS alive FROM harness_shared.coord_presence ), holder AS ( SELECT presence.owner_id AS alias, presence.owner_label, presence.workspace_id, presence.intent, presence.current_plan_slug, presence.heartbeat_at, presence.alive FROM presence UNION ALL SELECT DISTINCT ON (a.alias) a.alias, 'bee · '::text || "left"(n.spawn_id, 10) AS owner_label, n.workspace_id, NULL::text AS intent, NULL::text AS current_plan_slug, n.heartbeat_at, n.heartbeat_at IS NOT NULL AND (now() - n.heartbeat_at) < '00:10:00'::interval AS alive FROM harness_shared.spawned_agents n CROSS JOIN LATERAL ( VALUES (n.spawn_id), (n.session_owner), (n.run_id)) a(alias) WHERE n.status = 'running'::text AND a.alias IS NOT NULL AND a.alias <> ''::text AND NOT (EXISTS ( SELECT 1 FROM presence p WHERE p.owner_id = a.alias)) ), membership AS ( SELECT DISTINCT ON (fleet_membership_events.workspace_id, fleet_membership_events.owner_id) fleet_membership_events.workspace_id, fleet_membership_events.owner_id, fleet_membership_events.fleet_slug, fleet_membership_events.fleet_role FROM harness_shared.fleet_membership_events ORDER BY fleet_membership_events.workspace_id, fleet_membership_events.owner_id, fleet_membership_events.id DESC ) SELECT 'plan_item_claim'::text AS source, c.workspace_id, c.owner AS agent_id, COALESCE(NULLIF(c.owner_label, ''::text), p.owner_label) AS agent_label, c.owner_name AS agent_name, c.harness_slug, c.plan_slug, c.item_id, NULL::text AS work_item_id, NULL::text AS item_kind, c.intent AS detail, NULL::text AS status, c.acquired_ts AS claim_acquired_ts, c.expires_ts AS claim_expires_ts, c.expires_ts > now() AS claim_active, c.liveness_mode, c.last_activity_ts, p.alias IS NOT NULL AS holder_present, COALESCE(p.alive, false) AS holder_alive, p.heartbeat_at AS holder_heartbeat_at, p.intent AS holder_intent, p.current_plan_slug AS holder_plan_slug, c.expires_ts > now() AND NOT COALESCE(p.alive, false) AND c.owner <> 'improvement-runner'::text AS orphaned, NOT p.current_plan_slug IS DISTINCT FROM c.plan_slug AS declared_plan_matches, NULL::integer AS assignee_rank, NULL::text AS rank_writer, NULL::timestamp with time zone AS last_progress_at, NULL::boolean AS stalled, m.fleet_slug, m.fleet_role FROM harness_shared.plan_item_claims c LEFT JOIN holder p ON p.alias = c.owner LEFT JOIN membership m ON m.workspace_id = COALESCE(p.workspace_id, c.workspace_id) AND m.owner_id = c.owner UNION ALL SELECT 'plan_item_assignment'::text AS source, a.workspace_id, a.assignee_name AS agent_id, NULL::text AS agent_label, a.assignee_name AS agent_name, a.harness_slug, a.plan_slug, a.item_id, NULL::text AS work_item_id, NULL::text AS item_kind, COALESCE(a.note, ''::text) AS detail, NULL::text AS status, a.assigned_ts AS claim_acquired_ts, NULL::timestamp with time zone AS claim_expires_ts, true AS claim_active, NULL::text AS liveness_mode, a.updated_at AS last_activity_ts, false AS holder_present, false AS holder_alive, NULL::timestamp with time zone AS holder_heartbeat_at, NULL::text AS holder_intent, NULL::text AS holder_plan_slug, false AS orphaned, NULL::boolean AS declared_plan_matches, NULL::integer AS assignee_rank, NULL::text AS rank_writer, NULL::timestamp with time zone AS last_progress_at, NULL::boolean AS stalled, m.fleet_slug, m.fleet_role FROM harness_shared.plan_item_assignments a LEFT JOIN holder p ON p.alias = a.assignee_name LEFT JOIN membership m ON m.workspace_id = COALESCE(p.workspace_id, a.workspace_id) AND m.owner_id = a.assignee_name WHERE a.assignee_name IS NOT NULL AND a.released_ts IS NULL UNION ALL SELECT 'work_item_claim'::text AS source, w.workspace_id, w.taken_by AS agent_id, p.owner_label AS agent_label, NULL::text AS agent_name, w.harness_slug, w.source_plan_slug AS plan_slug, NULL::text AS item_id, w.feature_id AS work_item_id, w.item_kind, COALESCE(w.title, ''::text) AS detail, w.status, w.taken_at AS claim_acquired_ts, NULL::timestamp with time zone AS claim_expires_ts, true AS claim_active, NULL::text AS liveness_mode, w.taken_at AS last_activity_ts, p.alias IS NOT NULL AS holder_present, COALESCE(p.alive, false) AS holder_alive, p.heartbeat_at AS holder_heartbeat_at, p.intent AS holder_intent, p.current_plan_slug AS holder_plan_slug, NOT COALESCE(p.alive, false) AND w.taken_by <> 'improvement-runner'::text AS orphaned, CASE WHEN w.source_plan_slug IS NULL THEN NULL::boolean ELSE NOT p.current_plan_slug IS DISTINCT FROM w.source_plan_slug END AS declared_plan_matches, w.assignee_rank, w.rank_writer, w.last_progress_at, COALESCE(p.alive, false) AND w.taken_by <> 'improvement-runner'::text AND (now() - GREATEST(w.last_progress_at, w.taken_at)) > '00:10:00'::interval AS stalled, m.fleet_slug, m.fleet_role FROM harness_shared.work_items w LEFT JOIN holder p ON p.alias = w.taken_by LEFT JOIN membership m ON m.workspace_id = COALESCE(p.workspace_id, w.workspace_id) AND m.owner_id = w.taken_by WHERE w.taken_by IS NOT NULL AND w.taken_by <> ''::text AND (COALESCE(w.status, ''::text) <> ALL (ARRAY['done'::text, 'passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'dropped'::text, 'needs-human'::text, 'blocked'::text])) UNION ALL SELECT 'presence'::text AS source, p.workspace_id, p.owner_id AS agent_id, p.owner_label AS agent_label, NULL::text AS agent_name, NULL::text AS harness_slug, p.current_plan_slug AS plan_slug, NULL::text AS item_id, NULL::text AS work_item_id, NULL::text AS item_kind, p.intent AS detail, NULL::text AS status, NULL::timestamp with time zone AS claim_acquired_ts, NULL::timestamp with time zone AS claim_expires_ts, NULL::boolean AS claim_active, NULL::text AS liveness_mode, p.heartbeat_at AS last_activity_ts, true AS holder_present, p.alive AS holder_alive, p.heartbeat_at AS holder_heartbeat_at, p.intent AS holder_intent, p.current_plan_slug AS holder_plan_slug, false AS orphaned, NULL::boolean AS declared_plan_matches, NULL::integer AS assignee_rank, NULL::text AS rank_writer, NULL::timestamp with time zone AS last_progress_at, NULL::boolean AS stalled, m.fleet_slug, m.fleet_role FROM presence p LEFT JOIN membership m ON m.workspace_id = p.workspace_id AND m.owner_id = p.owner_id`);
 
+export const operatorDecisionsInHarnessShared = harnessShared.view("operator_decisions", {	id: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	actor: text(),
+	action: text(),
+	target: text(),
+	details: jsonb(),
+	workspaceId: text("workspace_id"),
+}).as(sql`SELECT id, ts, actor, action, subject AS target, details, workspace_id FROM harness_shared.audit_log WHERE actor = 'system:operator'::text`);
+
+export const systemPrincipalActivityInHarnessShared = harnessShared.view("system_principal_activity", {	id: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }),
+	actor: text(),
+	action: text(),
+	target: text(),
+	details: jsonb(),
+	workspaceId: text("workspace_id"),
+}).as(sql`SELECT id, ts, actor, action, subject AS target, details, workspace_id FROM harness_shared.audit_log WHERE actor ~~ 'system:%'::text OR actor ~~ 'pi:%'::text`);
+
 export const workItemsClaimableInHarnessShared = harnessShared.view("work_items_claimable", {	harnessSlug: text("harness_slug"),
 	featureId: text("feature_id"),
 	title: text(),
@@ -9562,24 +9585,4 @@ export const workItemsClaimableInHarnessShared = harnessShared.view("work_items_
 	lane: text(),
 	conditionKey: text("condition_key"),
 	embeddingRecipe: smallint("embedding_recipe"),
-}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, lane, condition_key, embedding_recipe FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsHuman'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(workspace_id, status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id)) = 0`);
-
-export const operatorDecisionsInHarnessShared = harnessShared.view("operator_decisions", {	id: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }),
-	actor: text(),
-	action: text(),
-	target: text(),
-	details: jsonb(),
-	workspaceId: text("workspace_id"),
-}).as(sql`SELECT id, ts, actor, action, subject AS target, details, workspace_id FROM harness_shared.audit_log WHERE actor = 'system:operator'::text`);
-
-export const systemPrincipalActivityInHarnessShared = harnessShared.view("system_principal_activity", {	id: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }),
-	actor: text(),
-	action: text(),
-	target: text(),
-	details: jsonb(),
-	workspaceId: text("workspace_id"),
-}).as(sql`SELECT id, ts, actor, action, subject AS target, details, workspace_id FROM harness_shared.audit_log WHERE actor ~~ 'system:%'::text OR actor ~~ 'pi:%'::text`);
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, lane, condition_key, embedding_recipe FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsOwnerAction'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(workspace_id, status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id)) = 0`);
