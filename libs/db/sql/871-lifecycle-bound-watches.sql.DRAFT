@@ -23,7 +23,8 @@ BEGIN
       ADD CONSTRAINT event_awaits_bound_to_shape CHECK (
         bound_to IS NULL OR (
           jsonb_typeof(bound_to) = 'object'
-          AND jsonb_object_length(bound_to) = 2
+          AND bound_to ?& ARRAY['kind', 'ref']
+          AND bound_to - ARRAY['kind', 'ref'] = '{}'::jsonb
           AND jsonb_typeof(bound_to -> 'kind') = 'string'
           AND jsonb_typeof(bound_to -> 'ref') = 'string'
           AND length(btrim(bound_to ->> 'kind')) > 0
@@ -41,7 +42,8 @@ BEGIN
       ADD CONSTRAINT predicate_watches_bound_to_shape CHECK (
         bound_to IS NULL OR (
           jsonb_typeof(bound_to) = 'object'
-          AND jsonb_object_length(bound_to) = 2
+          AND bound_to ?& ARRAY['kind', 'ref']
+          AND bound_to - ARRAY['kind', 'ref'] = '{}'::jsonb
           AND jsonb_typeof(bound_to -> 'kind') = 'string'
           AND jsonb_typeof(bound_to -> 'ref') = 'string'
           AND length(btrim(bound_to ->> 'kind')) > 0
