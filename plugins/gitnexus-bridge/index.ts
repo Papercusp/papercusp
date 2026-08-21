@@ -21,8 +21,9 @@
  * per pre-alpha freedom; revisit before any commercial launch.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { delimiter as PATH_DELIMITER } from 'node:path';
+import { delimiter as PATH_DELIMITER, join as joinPath } from 'node:path';
 import { homedir } from 'node:os';
+import { existsSync } from 'node:fs';
 import type {
   Capability,
   Plugin,
@@ -88,6 +89,72 @@ export function gitnexusPath(): string {
 }
 
 /**
+ * The exact GitNexus version this bridge is vetted against. Bump only with
+ * a re-run of the index-compatibility + canary checks (plan
+ * code-intelligence-routing-lsp-gitnexus-2026-08-20, D-004).
+ */
+export const PINNED_GITNEXUS_VERSION = '1.6.9';
+
+/**
+ * Operator-owned pinned install location. Deliberately OUTSIDE the repo and
+ * outside the shared workspace node_modules: a shared-tree install rewrites
+ * `node_modules/.bin` under every other agent's in-flight test run, so this
+ * bridge's dependency is vendored to its own prefix instead.
+ *
+ *   npm install --prefix ~/.papercusp/vendor/gitnexus gitnexus@<pinned>
+ */
+export function pinnedGitnexusBin(): string {
+  return joinPath(homedir(), '.papercusp', 'vendor', 'gitnexus', 'node_modules', '.bin', 'gitnexus');
+}
+
+/**
+ * Resolve the executable to spawn, in priority order, returning the FIRST
+ * that exists on disk. Resolution is explicit and absolute rather than a
+ * bare-name PATH lookup: the operator host runs under a frozen PATH, and a
+ * bare name there fails with `spawn gitnexus ENOENT`, which surfaces to
+ * agents as a plugin with ZERO tools rather than as an error (WI-40192 /
+ * plan D-004 — this exact outage).
+ *
+ * `null` means genuinely not installed; callers must raise a discovery
+ * error naming the install command, never register an empty tool list.
+ */
+export function resolveGitnexusExecutable(): { path: string; source: string } | null {
+  const candidates: Array<{ path: string | undefined; source: string }> = [
+    // 1. Explicit operator override — escape hatch for packaged/odd hosts.
+    { path: process.env.PAPERCUSP_GITNEXUS_BIN, source: 'env:PAPERCUSP_GITNEXUS_BIN' },
+    // 2. The pinned operator-owned vendor install (the supported path).
+    { path: pinnedGitnexusBin(), source: 'pinned-vendor' },
+    // 3. Packaged desktop: Tauri vendors the binary beside the sidecar.
+    {
+      path: process.env.PAPERCUSP_SIDECAR_BIN_DIR
+        ? joinPath(process.env.PAPERCUSP_SIDECAR_BIN_DIR, 'gitnexus')
+        : undefined,
+      source: 'sidecar-bin',
+    },
+    // 4. Legacy global installs (`npm i -g gitnexus`), kept for continuity.
+    { path: joinPath(homedir(), '.local', 'bin', 'gitnexus'), source: 'global:~/.local/bin' },
+    { path: '/home/linuxbrew/.linuxbrew/bin/gitnexus', source: 'global:linuxbrew' },
+    { path: '/opt/homebrew/bin/gitnexus', source: 'global:homebrew' },
+    { path: '/usr/local/bin/gitnexus', source: 'global:/usr/local/bin' },
+  ];
+  for (const c of candidates) {
+    if (c.path && existsSync(c.path)) return { path: c.path, source: c.source };
+  }
+  return null;
+}
+
+/** Discovery error text — names the fix rather than just the symptom. */
+export function gitnexusMissingMessage(): string {
+  return (
+    `GitNexus executable not found (pinned v${PINNED_GITNEXUS_VERSION}). ` +
+    `Install it at the operator-owned path with:\n` +
+    `  npm install --prefix ~/.papercusp/vendor/gitnexus gitnexus@${PINNED_GITNEXUS_VERSION}\n` +
+    `or set PAPERCUSP_GITNEXUS_BIN to an absolute path. ` +
+    `Topology questions should fall back to rg/grep until this resolves.`
+  );
+}
+
+/**
  * Children are keyed by workspace ID. Even though gitnexus's catalog is
  * machine-global (it indexes per-repo and shows them all), keying by
  * workspace gives us clean idle-cleanup semantics and avoids leaking
@@ -96,13 +163,20 @@ export function gitnexusPath(): string {
 const children = new Map<string, ChildHandle>();
 
 function startChild(): ChildHandle {
-  // Call gitnexus directly. `npx --yes gitnexus mcp` would be more robust
-  // for users who haven't `npm i -g`'d, but npm-as-child-of-node hits an
-  // internal bug on Node 25 ("Cannot destructure property 'package' of
-  // 'node.target'"). Direct PATH lookup works — plugin requires a global
-  // install (`npm i -g gitnexus`); plugin host surfaces a clean discovery
-  // error if the binary is missing.
-  const proc = spawn('gitnexus', ['mcp'], {
+  // Spawn an ABSOLUTE, pinned executable (D-004). `npx --yes gitnexus mcp`
+  // would be more robust for users who haven't installed it, but
+  // npm-as-child-of-node hits an internal bug on Node 25 ("Cannot
+  // destructure property 'package' of 'node.target'"). A bare-name PATH
+  // lookup was the previous approach and is what produced the live outage
+  // this resolver exists to prevent: under the operator's frozen PATH it
+  // fails `spawn gitnexus ENOENT`, and the plugin then registers ZERO
+  // tools — indistinguishable to an agent from "gitnexus has nothing to
+  // say". Fail loudly instead.
+  const resolved = resolveGitnexusExecutable();
+  if (!resolved) throw new Error(gitnexusMissingMessage());
+  // PATH is still augmented: gitnexus's own `#!/usr/bin/env node` shebang
+  // has to resolve `node` from the child's PATH.
+  const proc = spawn(resolved.path, ['mcp'], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, PATH: gitnexusPath() },
   });
