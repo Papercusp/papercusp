@@ -1,4 +1,4 @@
-import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, uuid, timestamp, bigserial, boolean, integer, check, doublePrecision, uniqueIndex, unique, foreignKey, smallint, numeric, vector, real, date, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core"
+import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, uuid, timestamp, bigserial, boolean, integer, check, doublePrecision, uniqueIndex, unique, foreignKey, smallint, numeric, vector, real, date, primaryKey, type AnyPgColumn, type PgTableExtraConfigValue } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 // Custom column types for PG types drizzle-kit can't introspect
@@ -6172,7 +6172,7 @@ export const planSpecClausesInHarnessShared = harnessShared.table("plan_spec_cla
 	createdBy: text("created_by").notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
+}, (table): PgTableExtraConfigValue[] => [
 	index("plan_spec_clauses_by_plan").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops")),
 	uniqueIndex("plan_spec_clauses_source_val_identity").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.sourceValId.asc().nullsLast().op("text_ops")).where(sql`(source_val_id IS NOT NULL)`),
 	foreignKey({
@@ -8255,7 +8255,7 @@ export const planSpecClauseRevisionsInHarnessShared = harnessShared.table("plan_
 	acceptedBy: text("accepted_by"),
 	acceptedAt: timestamp("accepted_at", { withTimezone: true, mode: 'string' }),
 	acceptanceRef: text("acceptance_ref"),
-}, (table) => [
+}, (table): PgTableExtraConfigValue[] => [
 	index("plan_spec_clause_revisions_by_item").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("int4_ops"), table.planSlug.asc().nullsLast().op("int4_ops"), table.planItemId.asc().nullsLast().op("int4_ops"), table.specId.asc().nullsLast().op("text_ops"), table.revision.desc().nullsFirst().op("text_ops")),
 	index("plan_spec_clause_revisions_by_status").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.lifecycleStatus.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops")),
 	foreignKey({
