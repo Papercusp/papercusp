@@ -15,7 +15,20 @@
  * without touching `gitnexus` or any subprocess.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { rolesFor, quotaFor, gitnexusPath, TOOL_OVERRIDES } from './index';
+import plugin, {
+  rolesFor,
+  quotaFor,
+  gitnexusPath,
+  TOOL_OVERRIDES,
+  MUTATING_TOOLS,
+  isReadOnlyTool,
+  deriveFreshness,
+  formatFreshnessNote,
+  FRESHNESS_STALE_MS,
+  applyResponseBudget,
+  decorateResult,
+  looksLikeEmptyResult,
+} from './index';
 
 // ── Gap 1: rolesFor — the role allowlist security boundary ──────────────────
 
@@ -214,5 +227,177 @@ describe('TOOL_OVERRIDES — agent-vocabulary description/guidance for code-sear
   it('a tool with no override entry is simply absent from the map (upstream description falls through unchanged)', () => {
     expect(TOOL_OVERRIDES.list_repos).toBeUndefined();
     expect(TOOL_OVERRIDES.totally_new_upstream_tool).toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// P-004 hardening — read-only enforcement, freshness metadata, response budgets.
+//
+// Every block below carries a CALIBRATION case: an assertion that fails if the
+// mechanism does nothing at all. Without one, a suite of "no note was added" /
+// "nothing was truncated" assertions passes identically against a feature that
+// was never wired up — which is exactly how inert code ships green.
+// ===========================================================================
+
+describe('read-only enforcement (P-004)', () => {
+  it('classifies the two mutating tools as NOT read-only', () => {
+    expect(isReadOnlyTool('rename')).toBe(false);
+    expect(isReadOnlyTool('group_sync')).toBe(false);
+  });
+
+  it('leaves every genuine read tool callable', () => {
+    for (const t of ['query', 'cypher', 'context', 'impact', 'trace', 'route_map', 'tool_map', 'check', 'list_repos', 'group_list']) {
+      expect(isReadOnlyTool(t)).toBe(true);
+    }
+  });
+
+  it('holds the set to exactly the audited two — a silent addition here removes a capability fleet-wide', () => {
+    expect([...MUTATING_TOOLS].sort()).toEqual(['group_sync', 'rename']);
+  });
+
+  it('does not declare a capability for a tool it refuses to register', () => {
+    // The audit surface must not read wider than the code. `rename` writes files
+    // directly, bypassing PreToolUse lock arbitration on this shared tree.
+    const caps = (plugin.capabilities ?? []) as string[];
+    expect(caps).not.toContain('tools:gitnexus:rename');
+    expect(caps).not.toContain('tools:gitnexus:group_sync');
+    // CALIBRATION: the list is genuinely populated, so the two absences above mean
+    // something. Without this, an empty capabilities array would pass both.
+    expect(caps).toContain('tools:gitnexus:cypher');
+  });
+});
+
+describe('deriveFreshness (P-004)', () => {
+  const NOW = Date.parse('2026-08-21T06:00:00.000Z');
+
+  it('reports UNKNOWN — never "fresh" — when there is no registry entry', () => {
+    // In-band and load-bearing: collapsing unknown to fresh is what produces a
+    // confident wrong answer from a graph nobody can vouch for.
+    const f = deriveFreshness(null, 'abc1234', NOW);
+    expect(f.unknown).toBe(true);
+    expect(f.ageMs).toBeNull();
+    expect(f.indexedCommit).toBeNull();
+  });
+
+  it('computes age and short commit from a real entry', () => {
+    const f = deriveFreshness(
+      { indexedAt: '2026-08-21T03:46:05.267Z', lastCommit: '8fae7667fcd590af101bbd26ed9eb494c77858c3' },
+      '8fae7667fcd590af101bbd26ed9eb494c77858c3',
+      NOW,
+    );
+    expect(f.unknown).toBe(false);
+    expect(f.indexedCommit).toBe('8fae7667fc');
+    expect(Math.round(f.ageMs! / 60000)).toBe(134);
+    expect(f.behindHead).toBe(false);
+  });
+
+  it('flags behindHead when HEAD has moved off the indexed commit', () => {
+    const f = deriveFreshness({ indexedAt: '2026-08-21T05:59:00.000Z', lastCommit: '8fae7667fc' }, 'deadbeef00', NOW);
+    expect(f.behindHead).toBe(true);
+  });
+});
+
+describe('formatFreshnessNote (P-004)', () => {
+  const fresh = { ageMs: 60_000, indexedCommit: 'abc1234567', behindHead: false, unknown: false };
+
+  it('says NOTHING when the index is fresh and the answer is positive', () => {
+    expect(formatFreshnessNote(fresh, false)).toBe('');
+  });
+
+  it('CALIBRATION: warns on a NOT-FOUND even from a fresh index', () => {
+    // The live failure (2026-08-21): context('resolveGitnexusExecutable') answered
+    // "Symbol not found" for a symbol written 3 minutes after the index was built.
+    // A negative answer is exactly where staleness changes the meaning, so this must
+    // fire — and it is what proves the previous test is measuring a real branch.
+    const note = formatFreshnessNote(fresh, true);
+    expect(note).not.toBe('');
+    expect(note).toContain('NOT-FOUND');
+    expect(note).toContain('grep');
+  });
+
+  it('warns when the index is older than the staleness threshold', () => {
+    const stale = { ...fresh, ageMs: FRESHNESS_STALE_MS + 1 };
+    expect(formatFreshnessNote(stale, false)).toContain('stale');
+  });
+
+  it('warns when HEAD has moved even if the index is young', () => {
+    const moved = { ...fresh, ageMs: 1_000, behindHead: true };
+    expect(formatFreshnessNote(moved, false)).toContain('HEAD has moved');
+  });
+
+  it('says freshness is UNKNOWN rather than staying silent', () => {
+    const note = formatFreshnessNote({ ageMs: null, indexedCommit: null, behindHead: false, unknown: true }, false);
+    expect(note).toContain('UNKNOWN');
+  });
+});
+
+describe('applyResponseBudget (P-004)', () => {
+  it('passes a small response through byte-identical', () => {
+    const r = applyResponseBudget('small', 100);
+    expect(r.text).toBe('small');
+    expect(r.truncated).toBe(false);
+  });
+
+  it('CALIBRATION: truncates an oversized response and reports the real size', () => {
+    const r = applyResponseBudget('x'.repeat(500), 100);
+    expect(r.truncated).toBe(true);
+    expect(r.originalChars).toBe(500);
+    expect(r.text.length).toBeLessThan(500);
+  });
+
+  it('names the CAUSE and the fix, so a bounded view is not read as a real absence', () => {
+    // A File node carries the entire file body in `content` — measured, and the reason
+    // the database is 4.26 GB. A silent cut would read as a complete answer.
+    const r = applyResponseBudget('x'.repeat(500), 100);
+    expect(r.text).toContain('TRUNCATED');
+    expect(r.text).toContain('BOUNDED view');
+    expect(r.text).toContain('content');
+  });
+});
+
+describe('decorateResult (P-004)', () => {
+  const stale = { ageMs: FRESHNESS_STALE_MS + 1, indexedCommit: 'abc1234567', behindHead: true, unknown: false };
+
+  it('appends the freshness note to the final text block', () => {
+    const out = decorateResult({ content: [{ type: 'text', text: 'some answer' }] } as never, stale) as never as {
+      content: Array<{ text: string }>;
+    };
+    expect(out.content[0].text).toContain('some answer');
+    expect(out.content[0].text).toContain('stale');
+  });
+
+  it('escalates the note when the answer reads as not-found', () => {
+    const out = decorateResult({ content: [{ type: 'text', text: "Symbol 'foo' not found" }] } as never, stale) as never as {
+      content: Array<{ text: string }>;
+    };
+    expect(out.content[0].text).toContain('NOT-FOUND');
+  });
+
+  it('keeps the freshness note even when the response is over budget', () => {
+    // ORDER IS LOAD-BEARING: budget-then-note would push the warning off the end of a
+    // large response — losing it in exactly the case where a big, confident-looking
+    // answer came from a stale graph.
+    const big = 'y'.repeat(5_000);
+    const out = decorateResult({ content: [{ type: 'text', text: big }] } as never, stale, 400) as never as {
+      content: Array<{ text: string }>;
+    };
+    expect(out.content[0].text).toContain('TRUNCATED');
+    expect(out.content[0].text.length).toBeLessThan(5_000);
+  });
+
+  it('returns a non-envelope result untouched rather than throwing', () => {
+    const odd = { notAnEnvelope: true } as never;
+    expect(decorateResult(odd, stale)).toBe(odd);
+  });
+});
+
+describe('looksLikeEmptyResult (P-004)', () => {
+  it('recognises the real shapes gitnexus emits for "nothing"', () => {
+    expect(looksLikeEmptyResult("Symbol 'x' not found")).toBe(true);
+    expect(looksLikeEmptyResult('{ "row_count": 0 }')).toBe(true);
+  });
+
+  it('does not fire on a genuine answer', () => {
+    expect(looksLikeEmptyResult('{ "row_count": 12, "markdown": "| n |" }')).toBe(false);
   });
 });

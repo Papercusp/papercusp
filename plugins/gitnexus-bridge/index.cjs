@@ -32,12 +32,22 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // libs/papercusp/plugins/gitnexus-bridge/index.ts
 var index_exports = {};
 __export(index_exports, {
+  FRESHNESS_STALE_MS: () => FRESHNESS_STALE_MS,
+  MUTATING_TOOLS: () => MUTATING_TOOLS,
   PINNED_GITNEXUS_VERSION: () => PINNED_GITNEXUS_VERSION,
+  RESPONSE_BUDGET_CHARS: () => RESPONSE_BUDGET_CHARS,
   TOOL_OVERRIDES: () => TOOL_OVERRIDES,
   _resetChildrenForTests: () => _resetChildrenForTests,
+  _resetFreshnessCacheForTests: () => _resetFreshnessCacheForTests,
+  applyResponseBudget: () => applyResponseBudget,
+  decorateResult: () => decorateResult,
   default: () => index_default,
+  deriveFreshness: () => deriveFreshness,
+  formatFreshnessNote: () => formatFreshnessNote,
   gitnexusMissingMessage: () => gitnexusMissingMessage,
   gitnexusPath: () => gitnexusPath,
+  isReadOnlyTool: () => isReadOnlyTool,
+  looksLikeEmptyResult: () => looksLikeEmptyResult,
   pinnedGitnexusBin: () => pinnedGitnexusBin,
   quotaFor: () => quotaFor,
   resolveGitnexusExecutable: () => resolveGitnexusExecutable,
@@ -275,8 +285,109 @@ var TOOL_OVERRIDES = {
     }
   }
 };
+var MUTATING_TOOLS = /* @__PURE__ */ new Set(["rename", "group_sync"]);
+function isReadOnlyTool(toolName) {
+  return !MUTATING_TOOLS.has(toolName);
+}
+var FRESHNESS_STALE_MS = 60 * 60 * 1e3;
+function deriveFreshness(entry, headSha, nowMs) {
+  if (!entry) return { ageMs: null, indexedCommit: null, behindHead: false, unknown: true };
+  const indexedAtMs = entry.indexedAt ? Date.parse(entry.indexedAt) : Number.NaN;
+  const ageMs = Number.isFinite(indexedAtMs) ? nowMs - indexedAtMs : null;
+  const indexedCommit = entry.lastCommit ? entry.lastCommit.slice(0, 10) : null;
+  const behindHead = Boolean(headSha && entry.lastCommit && !entry.lastCommit.startsWith(headSha) && !headSha.startsWith(entry.lastCommit));
+  return { ageMs, indexedCommit, behindHead, unknown: ageMs == null && indexedCommit == null };
+}
+function formatFreshnessNote(f, looksNegative) {
+  if (f.unknown) {
+    return '\n\n\u26A0 INDEX FRESHNESS UNKNOWN \u2014 no gitnexus registry entry could be read, so the age and commit of the graph behind this answer are not established. Treat a "not found" as UNVERIFIED and confirm with grep/rg before concluding a symbol does not exist.';
+  }
+  const stale = f.ageMs != null && f.ageMs > FRESHNESS_STALE_MS || f.behindHead;
+  if (!stale && !looksNegative) return "";
+  const ageMin = f.ageMs != null ? Math.round(f.ageMs / 6e4) : null;
+  const parts = [];
+  if (ageMin != null) parts.push(`built ${ageMin}min ago`);
+  if (f.indexedCommit) parts.push(`at commit ${f.indexedCommit}`);
+  if (f.behindHead) parts.push("HEAD has moved since");
+  const desc = parts.length > 0 ? parts.join(", ") : "age unknown";
+  if (looksNegative) {
+    return `
+
+\u26A0 EMPTY/NOT-FOUND RESULT FROM A ${stale ? "STALE" : ""} INDEX (${desc}). A symbol written after the index was built is reported EXACTLY like one that does not exist. Before concluding it is absent, confirm with grep/rg \u2014 or re-index.`;
+  }
+  return `
+
+\u26A0 Index is stale (${desc}) \u2014 symbols added since then are missing from this answer.`;
+}
+var RESPONSE_BUDGET_CHARS = 2e4;
+function applyResponseBudget(text, budget = RESPONSE_BUDGET_CHARS) {
+  if (text.length <= budget) return { text, truncated: false, originalChars: text.length };
+  const keep = text.slice(0, budget);
+  return {
+    text: keep + `
+
+\u2026 \u26A0 TRUNCATED at ${budget} of ${text.length} chars by the gitnexus bridge response budget. This is a BOUNDED view, not a complete answer \u2014 do not read the absence of a later row as a real absence. Most oversized responses come from returning whole graph NODES: a File node carries the entire file body in \`content\`. Project the fields you need instead (RETURN f.filePath, f.name), or add LIMIT.`,
+    truncated: true,
+    originalChars: text.length
+  };
+}
+function looksLikeEmptyResult(text) {
+  const t = text.toLowerCase();
+  return t.includes("not found") || t.includes('"row_count": 0') || t.includes("no results") || t.includes("no matches");
+}
+var FRESHNESS_TTL_MS = 6e4;
+var freshnessCache = null;
+function _resetFreshnessCacheForTests() {
+  freshnessCache = null;
+}
+function readRegistryEntrySync(repoName) {
+  try {
+    const file = (0, import_node_path.join)((0, import_node_os.homedir)(), ".gitnexus", "registry.json");
+    const raw = JSON.parse((0, import_node_fs.readFileSync)(file, "utf8"));
+    if (!Array.isArray(raw)) return null;
+    const hit = raw.find((e) => e && typeof e === "object" && e.name === repoName);
+    return hit ?? null;
+  } catch {
+    return null;
+  }
+}
+function headShaSync(cwd) {
+  try {
+    return (0, import_node_child_process.execFileSync)("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8", timeout: 5e3 }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+function loadFreshness() {
+  const now = Date.now();
+  if (freshnessCache && now - freshnessCache.at < FRESHNESS_TTL_MS) return freshnessCache.value;
+  const repoName = process.env.PAPERCUSP_GITNEXUS_REPO_NAME ?? "papercusp";
+  const entry = readRegistryEntrySync(repoName);
+  const root = entry && typeof entry.path === "string" ? entry.path : process.cwd();
+  const value = deriveFreshness(entry, headShaSync(root), now);
+  freshnessCache = { at: now, value };
+  return value;
+}
+function decorateResult(result, f, budget = RESPONSE_BUDGET_CHARS) {
+  const envelope = result;
+  if (!Array.isArray(envelope?.content)) return result;
+  const joined = envelope.content.map((c) => typeof c?.text === "string" ? c.text : "").join("");
+  const note = formatFreshnessNote(f, looksLikeEmptyResult(joined));
+  const content = envelope.content.map((c, i) => {
+    if (typeof c?.text !== "string") return c;
+    const withNote = i === envelope.content.length - 1 ? c.text + note : c.text;
+    const budgeted = applyResponseBudget(withNote, budget);
+    return { ...c, text: budgeted.text };
+  });
+  return { ...result, content };
+}
 function makeHandler(toolName) {
   return async (input, ctx) => {
+    if (!isReadOnlyTool(toolName)) {
+      throw new Error(
+        `gitnexus.${toolName} is a MUTATING tool and is disabled on this bridge (P-004, read-only MCP). It writes files directly, bypassing the PreToolUse lock arbitration that keeps this shared tree safe. Use Edit/Write for file changes.`
+      );
+    }
     const workspaceId = ctx.workspaceId ?? "default";
     const handle = await ensureChild(workspaceId);
     bumpIdle(handle);
@@ -286,7 +397,7 @@ function makeHandler(toolName) {
       throw new Error(`gitnexus.${toolName}: ${r.error.message}`);
     }
     ctx.progress?.(100, "done");
-    return r.result;
+    return decorateResult(r.result, loadFreshness());
   };
 }
 var plugin = {
@@ -307,21 +418,28 @@ var plugin = {
     "tools:gitnexus:cypher",
     "tools:gitnexus:context",
     "tools:gitnexus:detect_changes",
-    "tools:gitnexus:rename",
+    // `tools:gitnexus:rename` and `tools:gitnexus:group_sync` are deliberately ABSENT:
+    // both are mutating and are refused by MUTATING_TOOLS (P-004 read-only enforcement).
+    // A declared capability that can no longer be exercised makes the audit surface read
+    // wider than the code actually is.
     "tools:gitnexus:impact",
     "tools:gitnexus:route_map",
     "tools:gitnexus:tool_map",
     "tools:gitnexus:shape_check",
     "tools:gitnexus:api_impact",
-    "tools:gitnexus:group_list",
-    "tools:gitnexus:group_sync"
+    "tools:gitnexus:group_list"
   ],
   async getDynamicTools() {
     const handle = await ensureChild("default");
     const upstream = await listUpstreamTools(handle);
     const definitions = [];
     const handlers = {};
+    const refused = [];
     for (const t of upstream) {
+      if (!isReadOnlyTool(t.name)) {
+        refused.push(t.name);
+        continue;
+      }
       const cap = `tools:gitnexus:${t.name}`;
       const override = TOOL_OVERRIDES[t.name];
       const def = {
@@ -340,6 +458,11 @@ var plugin = {
       };
       definitions.push(def);
       handlers[t.name] = makeHandler(t.name);
+    }
+    if (refused.length > 0) {
+      console.warn(
+        `[gitnexus-bridge] read-only enforcement (P-004): not registering mutating tool(s) ${refused.join(", ")} \u2014 they write files directly and would bypass the PreToolUse lock arbitration on this shared tree.`
+      );
     }
     return { definitions, handlers };
   },
@@ -360,11 +483,21 @@ function _resetChildrenForTests() {
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  FRESHNESS_STALE_MS,
+  MUTATING_TOOLS,
   PINNED_GITNEXUS_VERSION,
+  RESPONSE_BUDGET_CHARS,
   TOOL_OVERRIDES,
   _resetChildrenForTests,
+  _resetFreshnessCacheForTests,
+  applyResponseBudget,
+  decorateResult,
+  deriveFreshness,
+  formatFreshnessNote,
   gitnexusMissingMessage,
   gitnexusPath,
+  isReadOnlyTool,
+  looksLikeEmptyResult,
   pinnedGitnexusBin,
   quotaFor,
   resolveGitnexusExecutable,
