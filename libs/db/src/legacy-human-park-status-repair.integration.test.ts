@@ -18,16 +18,7 @@ import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/p
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SQL_DIR = path.join(HERE, '..', 'sql');
-const RUNNER = path.join(
-  HERE,
-  '..',
-  '..',
-  '..',
-  'packages',
-  'embedded-postgres-server',
-  'src',
-  'migration-runner.js',
-);
+const RUNNER = path.join(HERE, '..', '..', '..', 'packages', 'embedded-postgres-server', 'src', 'migration-runner.js');
 
 const BOOT_PREREQS_DDL = `
   DO $pg$ BEGIN
@@ -176,10 +167,28 @@ describe('migration 868 — preserve legacy human-park status', () => {
       repair_migration: string | null;
     }>;
     expect(repaired).toEqual([
-      { feature_id: 'REPAIR-BLOCKED', status: 'needs-human', taken_by: null, needs_human: 'true', repair_migration: '868' },
-      { feature_id: 'REPAIR-CLAIMED', status: 'needs-human', taken_by: 'su:claimed', needs_human: null, repair_migration: null },
+      {
+        feature_id: 'REPAIR-BLOCKED',
+        status: 'needs-human',
+        taken_by: null,
+        needs_human: 'true',
+        repair_migration: '868',
+      },
+      {
+        feature_id: 'REPAIR-CLAIMED',
+        status: 'needs-human',
+        taken_by: 'su:claimed',
+        needs_human: null,
+        repair_migration: null,
+      },
       { feature_id: 'REPAIR-DONE', status: 'done', taken_by: null, needs_human: 'true', repair_migration: null },
-      { feature_id: 'REPAIR-OPEN', status: 'needs-human', taken_by: null, needs_human: 'true', repair_migration: '868' },
+      {
+        feature_id: 'REPAIR-OPEN',
+        status: 'needs-human',
+        taken_by: null,
+        needs_human: 'true',
+        repair_migration: '868',
+      },
     ]);
 
     const [{ backups }] = (await sql`
