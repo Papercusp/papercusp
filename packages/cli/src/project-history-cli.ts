@@ -304,13 +304,27 @@ async function readExportedWorkItems(
   return { items, fileEvidence };
 }
 
-// `projectHistoryWorkItemBatches` (25-id chunking for the tools:invoke ledger read)
-// was DELETED with that read path, not kept as a shim. Its test asserted the batches
-// were "timeout-resistant", which was true and irrelevant: the batches were not too
-// SLOW, they were too BIG for the result projector, so every one of them came back
-// empty. Keeping the helper would invite the batch-size fix D-003 rejects — no fixed
-// N is safe when one row can exceed the budget alone. Bulk reads go through
-// work_items:export { toDir }.
+/** Public `work_items:export.ids` schema ceiling. Rows stay in files, never payloads. */
+export const WORK_ITEMS_EXPORT_IDS_BATCH_SIZE = 2_000;
+
+/**
+ * Export marker-referenced ids without exceeding the tool argument schema.
+ *
+ * This is intentionally NOT the deleted 25-row `work_items:get` payload batching:
+ * no row crosses the bounded result transport here. Every call writes whole rows to
+ * the same directory and returns counts only, so splitting the ID argument is lossless.
+ */
+export function exportWorkItemsByIdBatches(
+  ids: readonly string[],
+  exportBatch: (batch: readonly string[]) => number,
+): number {
+  const unique = [...new Set(ids)];
+  let written = 0;
+  for (let offset = 0; offset < unique.length; offset += WORK_ITEMS_EXPORT_IDS_BATCH_SIZE) {
+    written += exportBatch(unique.slice(offset, offset + WORK_ITEMS_EXPORT_IDS_BATCH_SIZE));
+  }
+  return written;
+}
 
 function git(runner: CommandRunner, repoRoot: string, args: readonly string[], allowFailure = false): string {
   const result = runner.run('git', args, { cwd: repoRoot });
@@ -603,13 +617,14 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
         toDir: exportDirectory,
       }), 'harness');
 
-      const idExport = ids.length > 0
-        ? exportedCount(ptool(this.runner, this.options, 'work_items:export', {
-          ids: [...ids],
+      const idExport = exportWorkItemsByIdBatches(ids, (batch) => exportedCount(
+        ptool(this.runner, this.options, 'work_items:export', {
+          ids: [...batch],
           harness: this.options.harness,
           toDir: exportDirectory,
-        }), 'ids')
-        : 0;
+        }),
+        'ids',
+      ));
 
       const { items, fileEvidence } = await readExportedWorkItems(exportDirectory);
       // generateProjectHistory calls loadWorkItems before loadCommits, so the file

@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import {
   commitsForWorkItems,
+  exportWorkItemsByIdBatches,
   githubWebUrl,
   isTemplateCarrierPlan,
   loadProjectHistoryPlansFromExport,
@@ -14,6 +15,7 @@ import {
   projectHistoryOutputIsCurrent,
   renderProjectHistory,
   repositoryFromRemote,
+  WORK_ITEMS_EXPORT_IDS_BATCH_SIZE,
   workItemRows,
 } from './project-history-cli.ts';
 import type { ProjectHistoryDocument } from '@papercusp/plan-parser/project-history';
