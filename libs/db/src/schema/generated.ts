@@ -8357,7 +8357,7 @@ export const agentFleetsInHarnessShared = harnessShared.table("agent_fleets", {
 }, (table) => [
 	primaryKey({ columns: [table.fleetSlug, table.workspaceId], name: "agent_fleets_pkey"}),
 	pgPolicy("agent_fleets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("agent_fleets_headcount_target_positive", sql`(headcount_target IS NULL) OR ((headcount_target >= 1) AND (headcount_target <= 12))`),
+	check("agent_fleets_headcount_target_positive", sql`(headcount_target IS NULL) OR ((headcount_target >= 1) AND (headcount_target <= 64))`),
 ]);
 
 export const transferLessonsInHarnessShared = harnessShared.table("transfer_lessons", {
