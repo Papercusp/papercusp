@@ -244,5 +244,11 @@ export type RoutineInsert = typeof routines.$inferInsert;
 //
 // See libs/db/PHASE0-AUDIT.md for naming convention + drizzle-kit
 // v0.31.10 quirks (timestamptz mode, tsvector handling).
-export * as generated from './generated';
-export * as generatedRelations from './generated-relations';
+// D-022 / P-012 (harden-shared-hive-to-256-peers-2026-06-29): these were
+// `export * as generated from './generated'`, which forces ESM evaluation of the
+// 9589-line introspection artifact for EVERY importer of the db-org barrel —
+// ~95MB measured, paid even by processes that never open a connection. They are
+// re-exported lazily instead, so the cost lands on the first `generated.x`
+// access rather than on module load. Behaviour at the call site is unchanged.
+// See ./lazy-generated.ts for the full rationale and the measurements.
+export { generated, generatedRelations } from './lazy-generated';

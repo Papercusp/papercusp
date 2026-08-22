@@ -59,8 +59,12 @@ import {
 let _nodeRequire: ReturnType<typeof createRequire> | undefined;
 const nodeRequire = (id: string): unknown =>
   (_nodeRequire ??= createRequire(import.meta.url))(id);
-import * as generatedSchema from './schema/generated';
-import * as generatedRelations from './schema/generated-relations';
+// D-022 / P-012 (harden-shared-hive-to-256-peers-2026-06-29): these were static
+// namespace imports, and `fullSchema` below spread them at MODULE SCOPE — so
+// importing this module evaluated the 9589-line introspection artifact (~95MB
+// measured) even for a process that never calls `drizzle()`. They are now loaded
+// inside `getFullSchema()` through the same deferred `nodeRequire` used above.
+// See ./schema/lazy-generated.ts for the measurements and the rationale.
 // EI-9265 / EI-13076 / EI-18698602043482898: the bigint-as-number type shape
 // and the raw Date/jsonb serializer restorers live in `./raw-serializers`
 // (deliberately dependency-free of `drizzle-orm`) so test fixtures that must
@@ -99,11 +103,30 @@ void _omitGeneratedRelationsNs;
 // table refs internally; the hand-written `auditLog`/`projects`/etc.
 // shadow the same PG tables that `generated.audit_logInHarness_shared`
 // covers, which is fine — both accessors point at the same rows.
-const fullSchema = {
-  ...sharedTables,
-  ...generatedSchema,
-  ...generatedRelations,
-};
+// The value is built on first use rather than at module scope — spreading the
+// generated namespaces here is exactly what used to force their evaluation for
+// every importer (D-022). The TYPE is unchanged and still fully static, so every
+// `drizzle<FullSchema>` inference below is identical to what it was.
+type FullSchema = typeof sharedTables &
+  typeof import('./schema/generated') &
+  typeof import('./schema/generated-relations');
+
+let _fullSchema: FullSchema | undefined;
+
+function getFullSchema(): FullSchema {
+  if (_fullSchema === undefined) {
+    const generatedSchema = nodeRequire('./schema/generated') as typeof import('./schema/generated');
+    const generatedRelations = nodeRequire(
+      './schema/generated-relations',
+    ) as typeof import('./schema/generated-relations');
+    _fullSchema = {
+      ...sharedTables,
+      ...generatedSchema,
+      ...generatedRelations,
+    } as FullSchema;
+  }
+  return _fullSchema;
+}
 
 // Read env at connection time so test fixtures (which set
 // HARNESS_DATABASE_URL after this module is imported) take effect.
@@ -700,7 +723,7 @@ export function maybePgbouncer(url: string): string {
 
 let _adminClient: Sql | null = null;
 let _adminDrizzle: ReturnType<typeof drizzle> | null = null;
-let _adminDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
+let _adminDb: ReturnType<typeof drizzle<FullSchema>> | null = null;
 // EI-18789855771421275: a SEPARATE, small, dedicated pool for callers that must
 // see exact bigint (int8) values — see getOrgPgLosslessBigint() below.
 let _adminLosslessBigintClient: Sql | null = null;
@@ -766,7 +789,7 @@ export function endStalePool(
 type HarnessClient = {
   sql: Sql;
   drizzle: ReturnType<typeof drizzle>;
-  db: ReturnType<typeof drizzle<typeof fullSchema>>;
+  db: ReturnType<typeof drizzle<FullSchema>>;
   lastUsed: number;
 };
 const _harnessClients = new Map<string, HarnessClient>();
@@ -1256,7 +1279,7 @@ export interface OrgPgHandle {
    *   await db.select().from(generated.projectsInHarness_shared);
    *   const rows = await db.query.projectsInHarness_shared.findMany();
    */
-  db: ReturnType<typeof drizzle<typeof fullSchema>>;
+  db: ReturnType<typeof drizzle<FullSchema>>;
   schema: typeof sharedSchema;
 }
 
@@ -1393,7 +1416,7 @@ export function getOrgPg(): OrgPgHandle {
     _adminClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-admin', pgbouncerEnabled());
     _adminClientUrl = url;
     _adminDrizzle = drizzle(_adminClient, { schema: sharedTables });
-    _adminDb = drizzle(_adminClient, { schema: fullSchema });
+    _adminDb = drizzle(_adminClient, { schema: getFullSchema() });
     // WI-5244(2): only the discovery-file source is spoofable — env-pinned managed
     // hosts are already trusted, so skip the check there (cheap, but not free).
     validateDiscoveryTargetOnce(_adminClient, 'admin', {
@@ -1716,7 +1739,7 @@ export function getOrgPgLosslessBigint(): { sql: Sql } {
 
 let _appOrgClient: Sql | null = null;
 let _appOrgDrizzle: ReturnType<typeof drizzle> | null = null;
-let _appOrgDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
+let _appOrgDb: ReturnType<typeof drizzle<FullSchema>> | null = null;
 // The URL the cached APP pool was ACTUALLY BUILT WITH — the app-side counterpart
 // of `_adminClientUrl` (connection.ts:694). See the rebind guard in getOrgPgApp().
 let _appOrgClientUrl: string | null = null;
@@ -1751,7 +1774,7 @@ export function getOrgPgApp(): OrgPgHandle {
     _appOrgClient = buildClient(url, ['harness_shared', 'papercusp_shared', 'public'], undefined, 'org-app', pgbouncerEnabled());
     _appOrgClientUrl = url;
     _appOrgDrizzle = drizzle(_appOrgClient, { schema: sharedTables });
-    _appOrgDb = drizzle(_appOrgClient, { schema: fullSchema });
+    _appOrgDb = drizzle(_appOrgClient, { schema: getFullSchema() });
     // WI-5244(2) + store identity — see the matching check in getOrgPg() above.
     validateDiscoveryTargetOnce(_appOrgClient, 'app', {
       url,
@@ -1798,7 +1821,7 @@ export function getHarnessPg(slug: string) {
   // it is the follow-up that lets even these pools route through the pooler.
   const sql = buildClient(appUrl(), [schemaName, 'harness_shared', 'papercusp_shared', 'public'], perHarnessMax, `harness:${slug}`);
   const dz = drizzle(sql, { schema: sharedTables });
-  const db = drizzle(sql, { schema: fullSchema });
+  const db = drizzle(sql, { schema: getFullSchema() });
   const handle: HarnessClient = { sql, drizzle: dz, db, lastUsed: Date.now() };
   _harnessClients.set(slug, handle);
   return handle;
