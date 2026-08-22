@@ -18,7 +18,7 @@ const MIGRATION_834 = fileURLToPath(
   new URL('../sql/834-consult-threads.sql', import.meta.url),
 );
 const MIGRATION_885 = fileURLToPath(
-  new URL('../sql/885-backfill-consult-conversation-lifecycle.sql', import.meta.url),
+  new URL('../sql/886-backfill-consult-conversation-lifecycle.sql', import.meta.url),
 );
 
 let rootSql: Sql;
@@ -113,7 +113,7 @@ async function lifecycleRows() {
   `;
 }
 
-describe('migration 885 — consult/coarse conversation lifecycle backfill', () => {
+describe('migration 886 — consult/coarse conversation lifecycle backfill', () => {
   it('repairs typed close terminals, leaves non-close states alone, and is idempotent', async () => {
     await seedConsult({
       id: 'answered-with-post',
