@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 /**
- * Build a pre-migrated PGDATA seed for the desktop first-boot fast path.
+ * Build a pre-migrated LOGICAL seed for the desktop first-boot fast path.
  *
  * Boots embedded-postgres into a throwaway data dir via the SAME
  * `startEmbeddedPostgresServer` code path the runtime uses (initdb + framework
- * roles + extensions + apply ALL migrations + publication), then cleanly stops
- * and archives the resulting data dir into a single `.tar.gz`. The desktop
- * bundle ships this archive; on a fresh install the Server extracts it INSTEAD
- * of running the ~11s "initdb + full migration replay" (see
- * `src/index.js` seedPath handling — measured ~42x faster first-boot).
+ * roles + extensions + apply ALL migrations + publication), then pg_dump's the
+ * migrated database into one custom-format `.dump`. A fresh install first runs
+ * its OWN initdb (unique system_identifier), restores this logical archive, and
+ * applies only migration deltas (see `src/index.js` seedPath handling).
  *
- * The seed is byte-compatible ONLY with the SAME embedded-postgres binary /
- * platform that built it, so this MUST run during each platform's own
- * packaging (the Mac build produces a darwin seed, etc.).
+ * The dump is PostgreSQL-major compatible rather than a physical cluster copy.
+ * It intentionally contains no pg_control / system_identifier, postmaster
+ * paths, or build-box PGDATA ownership.
  *
  * Usage:
- *   node build-seed.mjs --data <tmp-pgdata> --sql <migrations-dir> --out <seed.tar.gz> [--port 5544]
- * Env fallbacks: PAPERCUSP_PG_DATA_DIR, PAPERCUSP_PG_SQL_DIR, PAPERCUSP_PG_SEED_OUT, PAPERCUSP_PG_PORT
+ *   node build-seed.mjs --data <tmp-pgdata> --sql <migrations-dir> --out <seed.dump> [--port 5544] [--pg-dump pg_dump]
+ * Env fallbacks: PAPERCUSP_PG_DATA_DIR, PAPERCUSP_PG_SQL_DIR,
+ * PAPERCUSP_PG_SEED_OUT, PAPERCUSP_PG_PORT, PAPERCUSP_PG_DUMP_BIN
  */
 import { startEmbeddedPostgresServer, confLcNonPortable } from '../src/index.js';
 import postgres from 'postgres';
@@ -35,6 +35,7 @@ const dataDir = arg('--data', 'PAPERCUSP_PG_DATA_DIR');
 const sqlDir = arg('--sql', 'PAPERCUSP_PG_SQL_DIR');
 const outPath = arg('--out', 'PAPERCUSP_PG_SEED_OUT');
 const port = Number(arg('--port', 'PAPERCUSP_PG_PORT', '5544'));
+const pgDumpBin = arg('--pg-dump', 'PAPERCUSP_PG_DUMP_BIN', 'pg_dump');
 
 if (!dataDir || !sqlDir || !outPath) {
   console.error('build-seed: --data, --sql and --out (or their PAPERCUSP_PG_* env vars) are required');
@@ -60,9 +61,16 @@ try {
   // Sanity: the seed must have the full schema, else shipping it would mask a build break.
   const sql = postgres({ host: 'localhost', port, user: 'postgres', password: 'postgres', database: 'papercusp', max: 1, onnotice: () => {} });
   let migCount = 0;
+  let sourceSystemIdentifier = '';
   try {
-    const r = await sql.unsafe('SELECT count(*)::int AS n FROM harness_shared.schema_migrations');
+    const r = await sql.unsafe(`
+      SELECT
+        count(*)::int AS n,
+        (SELECT system_identifier::text FROM pg_control_system()) AS system_identifier
+      FROM harness_shared.schema_migrations
+    `);
     migCount = r[0].n;
+    sourceSystemIdentifier = r[0].system_identifier;
   } finally { await sql.end({ timeout: 2 }).catch(() => {}); }
   if (migCount < 100) {
     throw new Error(`seed sanity check failed: only ${migCount} migrations recorded (expected the full set)`);
@@ -84,56 +92,41 @@ try {
   }
   log('seed locale portability check passed (all lc_* portable)');
 
-  // Clean shutdown BEFORE archiving so the snapshot is consistent + carries no
-  // postmaster.pid / recovery state (a fast, quiet startup on the target).
-  log('stopping postgres cleanly ...');
-  await handle.stop();
-  handle = null;
-
-  // Archive the PGDATA contents at archive-root so `tar -x -C <dataDir>` restores
-  // PG_VERSION at <dataDir>/PG_VERSION.
-  //
-  // BOTH postmaster files are excluded because BOTH record BUILD-BOX ABSOLUTE PATHS,
-  // and this archive ships inside the public desktop bundle:
-  //   • postmaster.pid  — data-directory path (already excluded; defensive, a clean
-  //                       stop removes it).
-  //   • postmaster.opts — the full postmaster ARGV, including the absolute path to
-  //                       the binary on the machine that built the seed. Measured
-  //                       2026-08-08 in the shipping sidecar (P-012): the one
-  //                       leaking member of 3,836 was postmaster.opts, carrying
-  //                       /home/<builder>/…/src-tauri/sidecar.tmp.<pid>/node_modules/…
-  //                       — the builder's username, home layout and workspace path.
-  // Neither is needed to restore a seed: PG rewrites both on next start, and
-  // postmaster.opts only exists to let `pg_ctl restart` recall prior options.
-  // This was invisible for so long because the release identity scan used
-  // `grep -rIlE`, and -I skips binary files, so it never opened the archive at all.
+  // Dump the database LOGICALLY while the clean, migration-complete server is
+  // running. `--no-owner` prevents build-box role ownership from leaking into
+  // the target, while privileges are intentionally retained because the runtime
+  // creates the framework roles before restore. Custom format is compressed and
+  // transactional at restore time. Crucially, pg_dump cannot serialize
+  // pg_control/system_identifier: every target runs its own initdb first.
   await mkdir(dirname(outPath), { recursive: true });
   await rm(outPath, { force: true }).catch(() => {});
-  log(`archiving seed → ${outPath}`);
-  //
-  // --owner=0 --group=0 --numeric-owner is LOAD-BEARING, not tidiness (WI-39458).
-  // Without it `tar` stamps the BUILDING USER's account name into every member's
-  // uid/gid NAME fields, and this archive ships inside the public desktop bundle.
-  // Those fields are metadata — not a member's payload and not a member's path —
-  // so they were invisible to the release identity gate's content grep AND to its
-  // member-name manifest: measured 2026-08-16, a PGDATA seed whose contents were
-  // clean expanded through the gate and certified `✓ CLEAN` exit 0 while carrying
-  // the build-box username on every one of its members. The gate now reads
-  // uname/gname too (audit-release-bundle.py `_expand_tar_memberwise`), which is
-  // the backstop; this is the fix that stops producing the leak in the first
-  // place. Numeric ownership is also strictly more correct for a seed that is
-  // extracted as whatever user the target machine happens to run as.
+  log(`writing logical seed → ${outPath}`);
   execFileSync(
-    'tar',
-    ['-c', '-z', '-f', outPath,
-     '--owner=0', '--group=0', '--numeric-owner',
-     '--exclude', './postmaster.pid', '--exclude', './postmaster.opts',
-     '-C', dataDir, '.'],
-    { stdio: 'inherit' },
+    pgDumpBin,
+    [
+      '--format=custom',
+      '--no-owner',
+      '--host', 'localhost',
+      '--port', String(port),
+      '--username', 'postgres',
+      '--dbname', 'papercusp',
+      '--file', outPath,
+    ],
+    {
+      env: { ...process.env, PGPASSWORD: 'postgres' },
+      stdio: 'inherit',
+    },
   );
 
   const { size } = await stat(outPath);
-  log(`seed built: ${(size / 1024 / 1024).toFixed(1)} MB`);
+  log(
+    `logical seed built: ${(size / 1024 / 1024).toFixed(1)} MB; `
+    + `source system_identifier ${sourceSystemIdentifier} intentionally not serialized`,
+  );
+
+  log('stopping postgres cleanly ...');
+  await handle.stop();
+  handle = null;
 } catch (e) {
   console.error(`[build-seed] FAILED: ${e?.stack ?? e?.message ?? e}`);
   ok = false;

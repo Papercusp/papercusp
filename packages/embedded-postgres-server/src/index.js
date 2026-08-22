@@ -95,9 +95,10 @@ export async function ensureZeroHarnessPublication(sql) {
 
 /**
  * The initdb flags used for EVERY fresh cluster this package creates — the
- * seedless first-boot fallback AND the pre-migrated seed (build-seed.mjs boots
- * through startEmbeddedPostgresServer, so the shipped seed's postgresql.conf
- * inherits these). SINGLE SOURCE OF TRUTH — do not inline a divergent locale.
+ * build-time source database and every target install (including a logical-seed
+ * restore target). The dump itself carries no postgresql.conf; the destination
+ * cluster always inherits these flags from its own initdb. SINGLE SOURCE OF
+ * TRUTH — do not inline a divergent locale.
  *
  * Pinning an explicit UNIVERSAL locale here is load-bearing. initdb otherwise
  * derives lc_* from the build/runtime host's LANG, so a seed built on a
@@ -112,10 +113,9 @@ export async function ensureZeroHarnessPublication(sql) {
  * every Linux/WSL host but macOS's BSD libc has NO such locale, so `initdb
  * --locale=C.UTF-8` FATALs OUTRIGHT on macOS — "initdb: error: invalid locale
  * name \"C.UTF-8\"" — before any conf is even written (found live on the mac
- * build VM 2026-07-05: the seed build aborted and the DMG shipped an EMPTY
- * db-seed.tar.gz, AND the runtime seedless fallback below would identically
- * FATAL on a fresh user Mac, leaving the app unable to initialise its DB at
- * all). `C` is the ONE locale POSIX guarantees on every libc (glibc, musl,
+ * build VM 2026-07-05: seed generation aborted, AND the runtime fallback below
+ * would identically FATAL on a fresh user Mac, leaving the app unable to
+ * initialise its DB at all). `C` is the ONE locale POSIX guarantees on every libc (glibc, musl,
  * macOS, Windows) and every PG version. Its collation is byte-order (memcmp) —
  * BIT-IDENTICAL to glibc `C.UTF-8`'s collation, so sort/index order is
  * unchanged; the only delta is lc_ctype (ASCII-only upper/lower vs UTF-8-aware),
@@ -286,6 +286,18 @@ export function resolveSeedPath(opts = {}, env = process.env) {
 }
 
 /**
+ * Classify the seed representation without opening it. New bundles ship a
+ * pg_dump custom archive (`.dump` / `.backup`); older bundles may still carry
+ * a physical PGDATA directory/tar. Keeping this decision at the existing
+ * seedPath seam lets upgraded runtimes boot both formats without cloning a
+ * cluster identity in newly-built artifacts.
+ */
+export function seedKind(seedPath) {
+  if (typeof seedPath !== 'string') return null;
+  return /\.(?:dump|backup)$/i.test(seedPath) ? 'logical' : 'physical';
+}
+
+/**
  * Extract a pre-built PGDATA seed into `dataDir`. `seedPath` may be a directory
  * (raw PGDATA — recursively copied) or a `.tar`/`.tar.gz` archive whose ROOT is
  * the PGDATA contents (extracted with the system `tar`, gzip auto-detected;
@@ -308,18 +320,72 @@ export async function extractSeed(seedPath, dataDir) {
 }
 
 /**
+ * Restore a pg_dump custom archive into an ALREADY-INITIALISED fresh cluster.
+ * initdb must run before this helper: its per-cluster system_identifier is the
+ * identity boundary WI-39304 requires. `--single-transaction` makes a failed
+ * restore safe to abandon in favour of the normal migration replay; no partial
+ * schema/data is left behind. Keep privileges (the framework roles already
+ * exist), but never replay build-box ownership.
+ *
+ * @param {string} seedPath
+ * @param {object} opts
+ * @param {number} opts.port
+ * @param {string} [opts.dbName]
+ * @param {string} [opts.pgRestoreBin]
+ */
+export function restoreLogicalSeed(seedPath, {
+  port,
+  dbName = DEFAULT_DB,
+  pgRestoreBin = process.env.PAPERCUSP_PG_RESTORE_BIN ?? 'pg_restore',
+}) {
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`logical seed restore requires a valid postgres port (got ${port})`);
+  }
+  try {
+    execFileSync(
+      pgRestoreBin,
+      [
+        '--exit-on-error',
+        '--single-transaction',
+        '--no-owner',
+        '--host', 'localhost',
+        '--port', String(port),
+        '--username', DEFAULT_OWNER,
+        '--dbname', dbName,
+        seedPath,
+      ],
+      {
+        env: { ...process.env, PGPASSWORD: DEFAULT_OWNER_PWD },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+  } catch (error) {
+    const stderr = Buffer.isBuffer(error?.stderr)
+      ? error.stderr.toString('utf8').trim()
+      : String(error?.stderr ?? '').trim();
+    throw new Error(
+      `pg_restore failed for logical seed ${seedPath}${stderr ? `: ${stderr}` : ''}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
  * @param {object} opts
  * @param {string} [opts.dataDir]      Postgres data dir. Default: ~/.papercusp/embedded-pg-data
  * @param {number} [opts.port]         TCP port. Default: 5532 (avoiding 5432 collision with system PG).
  * @param {string} [opts.dbName]       Database to create + connect to. Default: papercusp.
  * @param {boolean} [opts.debug]
  * @param {string} [opts.dbSqlDir]     Directory of *.sql migration files. If set, migrations apply on every boot.
- * @param {string} [opts.seedPath]     Path to a pre-built PGDATA seed — a directory OR a .tar/.tar.gz
- *        archive of a data dir already `initdb`'d + fully migrated at package time. On a FRESH data
- *        dir it is extracted INSTEAD of running initdb + the full migration replay (desktop first-boot
- *        fast path: ~11s → ~0.3s, measured). The idempotent runner still applies any migration DELTA
- *        afterwards, so a slightly-stale seed self-heals. Falls back to PAPERCUSP_PG_SEED_PATH env, or
- *        to a clean initdb if the seed is absent/unusable. Force-disable with PAPERCUSP_PG_DISABLE_SEED=1.
+ * @param {string} [opts.seedPath]     Path to a pre-built logical `.dump` / `.backup` seed (current),
+ *        or a legacy physical PGDATA directory / .tar(.gz). A logical seed is restored only AFTER a
+ *        fresh per-install initdb, so every install keeps a distinct system_identifier while avoiding
+ *        the full migration replay. Legacy physical seeds remain readable for already-built bundles.
+ *        The idempotent runner still applies any migration DELTA afterwards. Falls back to
+ *        PAPERCUSP_PG_SEED_PATH env, or to clean initdb + replay if absent/unusable. Force-disable with
+ *        PAPERCUSP_PG_DISABLE_SEED=1.
+ * @param {string} [opts.pgRestoreBin] pg_restore executable for logical seeds. Default:
+ *        PAPERCUSP_PG_RESTORE_BIN, then `pg_restore` from PATH.
  * @param {Record<string,string>} [opts.extraPostgresSettings] Host-scaled server knobs
  *        (max_connections, shared_buffers, parallelism, …) the caller derived from
  *        resource-profile (`databaseTuningToSettings(getResourceProfile().database)`).
@@ -375,30 +441,29 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     ],
   });
 
-  // Pre-built PGDATA seed (desktop first-boot fast path). On a FRESH data dir,
-  // if a pre-migrated snapshot is available, extract it INSTEAD of running
-  // initdb + replaying the full migration set — this turns a clean install's
-  // ~11s "initdb + 375 migrations" first-boot into a ~0.3s directory extract
-  // (measured 42x). The seed is a physical snapshot produced by THIS package's
-  // own fresh-boot path at package time, so it is byte-compatible with THIS
-  // platform's embedded-postgres binary (the seed is built per-platform during
-  // that platform's packaging). After extraction we fall through to the normal
-  // "reuse existing data dir" path and applyPendingMigrations() STILL runs — it
-  // finds every shipped migration already recorded and applies only the DELTA
-  // (usually none), so a seed a few migrations behind self-heals. If the seed is
-  // absent, corrupt, or extraction fails, we wipe any partial dir and fall back
-  // to a clean initdb — never boot a half-extracted cluster.
+  // Seed fast path. Current bundles carry a LOGICAL pg_dump custom archive. It
+  // is restored later, after this install has run its own initdb, so the schema
+  // is pre-migrated without copying the build cluster's system_identifier
+  // (WI-39304). Older bundles can still carry a physical PGDATA directory/tar;
+  // preserve that extraction path strictly for backwards compatibility.
+  const dataDirWasFresh = !existsSync(join(dataDir, 'PG_VERSION'));
   const seedPath = resolveSeedPath(opts);
-  if (!existsSync(join(dataDir, 'PG_VERSION')) && seedPath && existsSync(seedPath)) {
+  const logicalSeedPath = dataDirWasFresh
+    && seedPath
+    && existsSync(seedPath)
+    && seedKind(seedPath) === 'logical'
+    ? seedPath
+    : null;
+  if (dataDirWasFresh && seedPath && existsSync(seedPath) && seedKind(seedPath) === 'physical') {
     try {
-      log(`seeding data dir from pre-built snapshot ${seedPath}`);
+      log(`seeding data dir from legacy physical snapshot ${seedPath}`);
       await extractSeed(seedPath, dataDir);
       if (!existsSync(join(dataDir, 'PG_VERSION'))) {
         throw new Error('seed extracted but PG_VERSION missing');
       }
-      log('seed applied — skipping initdb + full migration replay');
+      log('legacy physical seed applied — preserving backwards-compatible startup');
     } catch (e) {
-      log(`seed failed (${e?.message ?? e}) — falling back to clean initdb`);
+      log(`legacy physical seed failed (${e?.message ?? e}) — falling back to clean initdb`);
       await rm(dataDir, { recursive: true, force: true }).catch(() => {});
       await mkdir(dataDir, { recursive: true });
     }
@@ -494,10 +559,30 @@ export async function startEmbeddedPostgresServer(opts = {}) {
       END $body$;
     `);
 
-    // Seed-restore RETIRED (self-contained-migration-baseline-2026-06-02, D-004): the
-    // single idempotent 000-baseline.sql (+ 107+) is now the fresh-boot path, so the
-    // PAPERCUSP_PG_SEED_DUMP_PATH pg_restore branch + its migration pre-marking are gone.
-    // A fresh initdb now builds the full schema by applying migrations directly (below).
+    // The current seed format is a logical pg_dump custom archive. Restore it
+    // only into the fresh database created above, after roles/extensions exist
+    // and before migration deltas/publication setup. The physical cluster came
+    // from THIS install's initdb, so its system_identifier remains unique. A
+    // transactional restore failure leaves the database at the clean preamble
+    // state and the normal full migration replay below becomes the safe fallback.
+    if (logicalSeedPath) {
+      try {
+        log(`restoring logical seed ${logicalSeedPath} into unique per-install cluster`);
+        restoreLogicalSeed(logicalSeedPath, {
+          port,
+          dbName,
+          pgRestoreBin: opts.pgRestoreBin ?? process.env.PAPERCUSP_PG_RESTORE_BIN ?? 'pg_restore',
+        });
+        log('logical seed restored — per-install system_identifier retained; applying migration delta');
+      } catch (e) {
+        log(`logical seed failed (${e?.message ?? e}) — falling back to full migration replay`);
+      }
+    }
+
+    // This is a logical snapshot of the SAME migration-built database, not the
+    // retired seed-restore mechanism that pre-marked migrations or bypassed the
+    // self-contained baseline. Its schema_migrations ledger is restored verbatim;
+    // the ordinary idempotent runner below remains authoritative for every delta.
 
     // Apply migrations FIRST. The publication-creation block below
     // references schemas (harness_shared, papercusp_shared) that don't

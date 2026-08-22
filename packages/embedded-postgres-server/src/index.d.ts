@@ -70,6 +70,14 @@ export function normalizePortableLocaleConf(dataDir: any, log?: () => void): Pro
  */
 export function resolveSeedPath(opts?: {}, env?: NodeJS.ProcessEnv): any;
 /**
+ * Classify the seed representation without opening it. New bundles ship a
+ * pg_dump custom archive (`.dump` / `.backup`); older bundles may still carry
+ * a physical PGDATA directory/tar. Keeping this decision at the existing
+ * seedPath seam lets upgraded runtimes boot both formats without cloning a
+ * cluster identity in newly-built artifacts.
+ */
+export function seedKind(seedPath: any): "logical" | "physical" | null;
+/**
  * Extract a pre-built PGDATA seed into `dataDir`. `seedPath` may be a directory
  * (raw PGDATA — recursively copied) or a `.tar`/`.tar.gz` archive whose ROOT is
  * the PGDATA contents (extracted with the system `tar`, gzip auto-detected;
@@ -79,18 +87,40 @@ export function resolveSeedPath(opts?: {}, env?: NodeJS.ProcessEnv): any;
  */
 export function extractSeed(seedPath: any, dataDir: any): Promise<void>;
 /**
+ * Restore a pg_dump custom archive into an ALREADY-INITIALISED fresh cluster.
+ * initdb must run before this helper: its per-cluster system_identifier is the
+ * identity boundary WI-39304 requires. `--single-transaction` makes a failed
+ * restore safe to abandon in favour of the normal migration replay; no partial
+ * schema/data is left behind. Keep privileges (the framework roles already
+ * exist), but never replay build-box ownership.
+ *
+ * @param {string} seedPath
+ * @param {object} opts
+ * @param {number} opts.port
+ * @param {string} [opts.dbName]
+ * @param {string} [opts.pgRestoreBin]
+ */
+export function restoreLogicalSeed(seedPath: string, { port, dbName, pgRestoreBin, }: {
+    port: number;
+    dbName?: string | undefined;
+    pgRestoreBin?: string | undefined;
+}): void;
+/**
  * @param {object} opts
  * @param {string} [opts.dataDir]      Postgres data dir. Default: ~/.papercusp/embedded-pg-data
  * @param {number} [opts.port]         TCP port. Default: 5532 (avoiding 5432 collision with system PG).
  * @param {string} [opts.dbName]       Database to create + connect to. Default: papercusp.
  * @param {boolean} [opts.debug]
  * @param {string} [opts.dbSqlDir]     Directory of *.sql migration files. If set, migrations apply on every boot.
- * @param {string} [opts.seedPath]     Path to a pre-built PGDATA seed — a directory OR a .tar/.tar.gz
- *        archive of a data dir already `initdb`'d + fully migrated at package time. On a FRESH data
- *        dir it is extracted INSTEAD of running initdb + the full migration replay (desktop first-boot
- *        fast path: ~11s → ~0.3s, measured). The idempotent runner still applies any migration DELTA
- *        afterwards, so a slightly-stale seed self-heals. Falls back to PAPERCUSP_PG_SEED_PATH env, or
- *        to a clean initdb if the seed is absent/unusable. Force-disable with PAPERCUSP_PG_DISABLE_SEED=1.
+ * @param {string} [opts.seedPath]     Path to a pre-built logical `.dump` / `.backup` seed (current),
+ *        or a legacy physical PGDATA directory / .tar(.gz). A logical seed is restored only AFTER a
+ *        fresh per-install initdb, so every install keeps a distinct system_identifier while avoiding
+ *        the full migration replay. Legacy physical seeds remain readable for already-built bundles.
+ *        The idempotent runner still applies any migration DELTA afterwards. Falls back to
+ *        PAPERCUSP_PG_SEED_PATH env, or to clean initdb + replay if absent/unusable. Force-disable with
+ *        PAPERCUSP_PG_DISABLE_SEED=1.
+ * @param {string} [opts.pgRestoreBin] pg_restore executable for logical seeds. Default:
+ *        PAPERCUSP_PG_RESTORE_BIN, then `pg_restore` from PATH.
  * @param {Record<string,string>} [opts.extraPostgresSettings] Host-scaled server knobs
  *        (max_connections, shared_buffers, parallelism, …) the caller derived from
  *        resource-profile (`databaseTuningToSettings(getResourceProfile().database)`).
@@ -106,6 +136,7 @@ export function startEmbeddedPostgresServer(opts?: {
     debug?: boolean | undefined;
     dbSqlDir?: string | undefined;
     seedPath?: string | undefined;
+    pgRestoreBin?: string | undefined;
     extraPostgresSettings?: Record<string, string> | undefined;
     onLog?: ((m: string) => void) | undefined;
 }): Promise<{
@@ -126,9 +157,10 @@ export function startEmbeddedPostgresServer(opts?: {
 }>;
 /**
  * The initdb flags used for EVERY fresh cluster this package creates — the
- * seedless first-boot fallback AND the pre-migrated seed (build-seed.mjs boots
- * through startEmbeddedPostgresServer, so the shipped seed's postgresql.conf
- * inherits these). SINGLE SOURCE OF TRUTH — do not inline a divergent locale.
+ * build-time source database and every target install (including a logical-seed
+ * restore target). The dump itself carries no postgresql.conf; the destination
+ * cluster always inherits these flags from its own initdb. SINGLE SOURCE OF
+ * TRUTH — do not inline a divergent locale.
  *
  * Pinning an explicit UNIVERSAL locale here is load-bearing. initdb otherwise
  * derives lc_* from the build/runtime host's LANG, so a seed built on a
@@ -143,10 +175,9 @@ export function startEmbeddedPostgresServer(opts?: {
  * every Linux/WSL host but macOS's BSD libc has NO such locale, so `initdb
  * --locale=C.UTF-8` FATALs OUTRIGHT on macOS — "initdb: error: invalid locale
  * name \"C.UTF-8\"" — before any conf is even written (found live on the mac
- * build VM 2026-07-05: the seed build aborted and the DMG shipped an EMPTY
- * db-seed.tar.gz, AND the runtime seedless fallback below would identically
- * FATAL on a fresh user Mac, leaving the app unable to initialise its DB at
- * all). `C` is the ONE locale POSIX guarantees on every libc (glibc, musl,
+ * build VM 2026-07-05: seed generation aborted, AND the runtime fallback below
+ * would identically FATAL on a fresh user Mac, leaving the app unable to
+ * initialise its DB at all). `C` is the ONE locale POSIX guarantees on every libc (glibc, musl,
  * macOS, Windows) and every PG version. Its collation is byte-order (memcmp) —
  * BIT-IDENTICAL to glibc `C.UTF-8`'s collation, so sort/index order is
  * unchanged; the only delta is lc_ctype (ASCII-only upper/lower vs UTF-8-aware),

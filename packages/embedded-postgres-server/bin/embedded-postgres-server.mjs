@@ -9,6 +9,8 @@
  *   PAPERCUSP_PG_PORT            — TCP port (default: 5532)
  *   PAPERCUSP_PG_DB_NAME         — DB name (default: papercusp)
  *   PAPERCUSP_PG_SQL_DIR         — Path to *.sql migration directory (optional)
+ *   PAPERCUSP_PG_SEED_PATH       — Logical `.dump` seed (current) or legacy physical seed
+ *   PAPERCUSP_PG_RESTORE_BIN     — pg_restore executable (default: pg_restore from PATH)
  *   PAPERCUSP_PG_CREATE_USER     — '1' to create/setuid a postgres OS user (root-only hosts, e.g. cloud frames)
  *   PAPERCUSP_PG_DEBUG           — '1' for verbose logging
  */
@@ -20,18 +22,16 @@ const dataDir = process.env.PAPERCUSP_PG_DATA_DIR;
 const port = process.env.PAPERCUSP_PG_PORT ? Number(process.env.PAPERCUSP_PG_PORT) : undefined;
 const dbName = process.env.PAPERCUSP_PG_DB_NAME;
 const dbSqlDir = process.env.PAPERCUSP_PG_SQL_DIR;
+const seedPath = process.env.PAPERCUSP_PG_SEED_PATH;
+const pgRestoreBin = process.env.PAPERCUSP_PG_RESTORE_BIN;
 
-// PAPERCUSP_PG_SEED_DUMP_PATH / PAPERCUSP_PG_RESTORE_BIN were read here and passed
-// through as seedDumpPath/pgRestoreBin — but startEmbeddedPostgresServer() has not
-// accepted either since the seed-restore path was retired
-// (self-contained-migration-baseline-2026-06-02 D-004; tombstone at src/index.js:499).
-// They were silently dropped on arrival, so documenting them as working env vars was
-// actively misleading. Removed with the build-side bake (EI-19455334533123459).
 const handle = await startEmbeddedPostgresServer({
   dataDir,
   port,
   dbName,
   dbSqlDir,
+  seedPath,
+  pgRestoreBin,
   createPostgresUser: process.env.PAPERCUSP_PG_CREATE_USER === '1',
   debug,
 });
