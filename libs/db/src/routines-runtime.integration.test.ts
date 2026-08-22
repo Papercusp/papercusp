@@ -354,6 +354,20 @@ describe('fireRoutine — concurrency policies', () => {
     expect(await listUnconsumedEvents(sql, 'papercup')).toHaveLength(1);
   });
 
+  it('skip: serializes independent callers so only one event wins the read/insert race', async () => {
+    const a = postgres(db.url, { max: 1, onnotice: () => {} });
+    const b = postgres(db.url, { max: 1, onnotice: () => {} });
+    try {
+      const r = await upsertRoutine(sql, baseInput({ name: 'skip-race', concurrency: 'skip', nextFireAt: new Date(Date.now() - 1) }), nextFn);
+      const [first, second] = await Promise.all([fireRoutine(a, r, nextFn), fireRoutine(b, r, nextFn)]);
+
+      expect([first, second].filter((result) => result !== null)).toHaveLength(1);
+      expect(await listUnconsumedEvents(sql, 'papercup')).toHaveLength(1);
+    } finally {
+      await Promise.all([a.end({ timeout: 5 }), b.end({ timeout: 5 })]);
+    }
+  });
+
   it('cancel-prev: consumes the prior event and inserts a fresh one', async () => {
     const r = await upsertRoutine(sql, baseInput({ name: 'c', concurrency: 'cancel-prev', nextFireAt: new Date(Date.now() - 1) }), nextFn);
     await fireRoutine(sql, r, nextFn);

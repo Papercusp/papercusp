@@ -161,57 +161,72 @@ export async function fireRoutine(
   routine: RoutineRow,
   computeNextFireAt: (cronExpr: string, from: Date) => Date | null
 ): Promise<{ eventId: string; nextFireAt: Date | null } | null> {
-  // Concurrency check.
-  if (routine.concurrency === 'skip' || routine.concurrency === 'cancel-prev') {
-    const prior = await sql<{ id: string }[]>`
-      SELECT id FROM harness_shared.pending_events
-       WHERE source_id = ${routine.id} AND consumed_at IS NULL
-    `;
-    if (prior.length > 0) {
-      if (routine.concurrency === 'skip') {
-        const next = routine.triggerConfig.cron
-          ? computeNextFireAt(routine.triggerConfig.cron, new Date())
-          : null;
-        await sql`
-          UPDATE harness_shared.routines
-             SET last_fired_at = now(), next_fire_at = ${next ? next.toISOString() : null}::timestamptz, updated_at = now()
-           WHERE id = ${routine.id}
-        `;
-        return null;
-      }
-      // cancel-prev: consume all prior unconsumed events from this routine
-      await sql`
-        UPDATE harness_shared.pending_events
-           SET consumed_at = now(), consumed_by = 'routine-ticker:cancel-prev'
+  const fire = async (db: Sql): Promise<{ eventId: string; nextFireAt: Date | null } | null> => {
+    // The concurrency check and the insert must share a transaction-scoped lock.
+    // A plain SELECT followed by INSERT lets two hosts both observe no prior event
+    // and create duplicate `skip` fires (EI-20711970611053452). The lock is scoped
+    // to this routine only and is released automatically when the transaction ends.
+    if (routine.concurrency === 'skip' || routine.concurrency === 'cancel-prev') {
+      await db`
+        SELECT pg_advisory_xact_lock(hashtextextended(${routine.id}, 0))
+      `;
+      const prior = await db<{ id: string }[]>`
+        SELECT id FROM harness_shared.pending_events
          WHERE source_id = ${routine.id} AND consumed_at IS NULL
       `;
+      if (prior.length > 0) {
+        if (routine.concurrency === 'skip') {
+          const next = routine.triggerConfig.cron
+            ? computeNextFireAt(routine.triggerConfig.cron, new Date())
+            : null;
+          await db`
+            UPDATE harness_shared.routines
+               SET last_fired_at = now(), next_fire_at = ${next ? next.toISOString() : null}::timestamptz, updated_at = now()
+             WHERE id = ${routine.id}
+          `;
+          return null;
+        }
+        // cancel-prev: consume all prior unconsumed events from this routine
+        await db`
+          UPDATE harness_shared.pending_events
+             SET consumed_at = now(), consumed_by = 'routine-ticker:cancel-prev'
+           WHERE source_id = ${routine.id} AND consumed_at IS NULL
+        `;
+      }
     }
+
+    // Insert the pending event.
+    const event = await insertPendingEvent(db, {
+      workspaceId: routine.workspaceId,
+      installSlug: routine.installSlug,
+      kind: 'routine',
+      targetRole: routine.targetRole,
+      payload: {
+        routine_name: routine.name,
+        ...(routine.payloadTemplate ?? {}),
+      },
+      sourceId: routine.id,
+    });
+
+    // Advance next_fire_at.
+    const next = routine.triggerConfig.cron
+      ? computeNextFireAt(routine.triggerConfig.cron, new Date())
+      : null;
+    await db`
+      UPDATE harness_shared.routines
+         SET last_fired_at = now(), next_fire_at = ${next ? next.toISOString() : null}::timestamptz, updated_at = now()
+       WHERE id = ${routine.id}
+    `;
+
+    return { eventId: event.id, nextFireAt: next };
+  };
+
+  // Only policies whose decision depends on pending-event state need a transaction.
+  // Queue retains its existing behavior and avoids an unnecessary transaction.
+  if (routine.concurrency === 'skip' || routine.concurrency === 'cancel-prev') {
+    return sql.begin(async (tx) => fire(tx as unknown as Sql));
   }
-
-  // Insert the pending event.
-  const event = await insertPendingEvent(sql, {
-    workspaceId: routine.workspaceId,
-    installSlug: routine.installSlug,
-    kind: 'routine',
-    targetRole: routine.targetRole,
-    payload: {
-      routine_name: routine.name,
-      ...(routine.payloadTemplate ?? {}),
-    },
-    sourceId: routine.id,
-  });
-
-  // Advance next_fire_at.
-  const next = routine.triggerConfig.cron
-    ? computeNextFireAt(routine.triggerConfig.cron, new Date())
-    : null;
-  await sql`
-    UPDATE harness_shared.routines
-       SET last_fired_at = now(), next_fire_at = ${next ? next.toISOString() : null}::timestamptz, updated_at = now()
-     WHERE id = ${routine.id}
-  `;
-
-  return { eventId: event.id, nextFireAt: next };
+  return fire(sql);
 }
 
 export async function upsertRoutine(
