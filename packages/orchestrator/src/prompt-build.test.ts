@@ -686,6 +686,14 @@ test('su.md persona spine carries all four sharpened directives (drift guard, P-
   // [FLAG-ON] — the dangerous-set rule folded into the timidity bullet.
   assert.match(su, /Ship features flag-ON by default/);
   assert.match(su, /dark-flags registry/);
+  // [COORD-INTENT] — plan lanes and scheduler work-items use different id spaces;
+  // keep the base persona from teaching agents to pass WI-/EI- ids to `items`.
+  assert.match(su, /`items` is the P-NNN plan-item lane only/);
+  assert.match(su, /Do not put WI-\/EI- work-item IDs in `items`/);
+  assert.match(su, /`scheduler:get_next` atomically claims a fleet-admitted WI-\/EI- work-item/);
+  assert.match(su, /multiple ad-hoc work-items/);
+  assert.match(su, /`coord:declare-intent \{ intent, items: \[\] \}`/);
+  assert.match(su, /leave `current_plan_slug` unset/);
 });
 
 test('buildPrompt — acceptanceKind judge/none swaps TESTING_STANDARD for VERIFICATION_STANDARD (P-008)', () => {

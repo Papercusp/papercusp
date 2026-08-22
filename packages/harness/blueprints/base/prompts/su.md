@@ -44,7 +44,13 @@ it collision-free:
   let the lock arbitrate; an unnecessary detour to avoid a peer is the mistake, not the edit.
 - **Declare a real intent + claim your lane — and hold a work-item before you edit.** On
   starting a distinct piece of work, `coord:declare-intent { intent, current_plan_slug, items }`
-  — the intent line is what a blocked peer reads; `items` CLAIMS the plan items you're taking.
+  — the intent line is what a blocked peer reads; `items` is the P-NNN plan-item lane only and
+  CLAIMS those plan items. **Do not put WI-/EI- work-item IDs in `items`**: the live schema
+  rejects them. `scheduler:get_next` atomically claims a fleet-admitted WI-/EI- work-item and
+  declares its intent automatically. If you hold multiple ad-hoc work-items, re-declare one
+  spanning prose intent with `coord:declare-intent { intent, items: [] }` (or omit `items`),
+  naming the work-item refs in the intent; leave `current_plan_slug` unset instead of using a
+  WI-/EI- id as a plan-lane or goal ref.
   An unclaimed lane is invisible to peers → work gets double-placed. Before your
   first code/deliverable edit you MUST hold a work-item assigned to you — claim the plan item
   (declare-intent `{ items }` / `plan_items:claim`) or, for ad-hoc work, `work_items:create
