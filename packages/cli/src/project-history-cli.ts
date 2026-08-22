@@ -256,6 +256,24 @@ function exportedCount(payload: unknown, leg: string): number {
   return typeof root.written === 'number' ? root.written : 0;
 }
 
+type RemoveDirectory = (
+  directory: string,
+  options: { recursive: true; force: true; maxRetries: number; retryDelay: number },
+) => Promise<void>;
+
+/** Large file exports can transiently leave an entry behind while recursive removal walks. */
+export async function removeProjectHistoryExportDirectory(
+  directory: string,
+  remove: RemoveDirectory = fs.rm,
+): Promise<void> {
+  await remove(directory, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 20,
+  });
+}
+
 /**
  * Read every `<id>.json` an export wrote and map it onto the History work-item shape.
  * Both export legs write into the same directory, so the union is deduplicated by
@@ -581,7 +599,7 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
         this.options.planPrefix,
       );
     } finally {
-      await fs.rm(exportDirectory, { recursive: true, force: true });
+      await removeProjectHistoryExportDirectory(exportDirectory);
     }
   }
 
@@ -646,7 +664,7 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
       }
       return items;
     } finally {
-      await fs.rm(exportDirectory, { recursive: true, force: true });
+      await removeProjectHistoryExportDirectory(exportDirectory);
     }
   }
 

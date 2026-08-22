@@ -13,6 +13,7 @@ import {
   parseGitLog,
   parseProjectHistoryGenerateArgs,
   projectHistoryOutputIsCurrent,
+  removeProjectHistoryExportDirectory,
   renderProjectHistory,
   repositoryFromRemote,
   WORK_ITEMS_EXPORT_IDS_BATCH_SIZE,
@@ -209,6 +210,19 @@ test('marker-referenced work item exports stay within the public 2,000-id schema
   assert.deepEqual(batches.map((batch) => batch.length), [WORK_ITEMS_EXPORT_IDS_BATCH_SIZE, 1]);
   assert.deepEqual(batches.flat(), ids, 'deduplicated marker ids retain their first-seen order');
   assert.ok(batches.every((batch) => batch.length <= WORK_ITEMS_EXPORT_IDS_BATCH_SIZE));
+});
+
+test('large temporary exports retry transient ENOTEMPTY removal races', async () => {
+  const calls: Array<{ directory: string; options: Record<string, unknown> }> = [];
+
+  await removeProjectHistoryExportDirectory('/tmp/project-history-export', async (directory, options) => {
+    calls.push({ directory, options });
+  });
+
+  assert.deepEqual(calls, [{
+    directory: '/tmp/project-history-export',
+    options: { recursive: true, force: true, maxRetries: 5, retryDelay: 20 },
+  }]);
 });
 
 // REPLACES 'work-item ledger reads stay in timeout-resistant batches', which asserted
