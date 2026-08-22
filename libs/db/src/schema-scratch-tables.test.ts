@@ -10,6 +10,7 @@ import { stripScratchTableDeclarations } from './schema-scratch-tables.mjs';
 import {
   annotateCircularForeignKeyExtraConfigs,
   promoteGeneratedSchemaArtifacts,
+  repairCompositeForeignKeyArtifacts,
 } from './schema-generated-artifacts.mjs';
 
 // EI-18785808338338490: migration-internal scratch/backup tables (leading
@@ -131,6 +132,72 @@ describe('generated schema artifact fixes', () => {
     expect(annotateCircularForeignKeyExtraConfigs(source)).toEqual({
       schema: source,
       circularTables: [],
+    });
+  });
+
+  it('repairs composite FK order and full relation fields from PG metadata', () => {
+    const schema = `export const datatypeRegistryInHarnessShared = harnessShared.table("datatype_registry", {
+\tid: text().notNull(),
+\tworkspaceId: text("workspace_id").notNull(),
+}, (table) => [
+\tprimaryKey({ columns: [table.id, table.workspaceId], name: "datatype_registry_pkey"}),
+]);
+
+export const triggerDeliveriesInHarnessShared = harnessShared.table("trigger_deliveries", {
+\tworkspaceId: text("workspace_id").notNull(),
+\tdatatypeId: text("datatype_id").notNull(),
+}, (table) => [
+\tforeignKey({
+\t\t\tcolumns: [table.workspaceId, table.datatypeId],
+\t\t\tforeignColumns: [datatypeRegistryInHarnessShared.id, datatypeRegistryInHarnessShared.workspaceId],
+\t\t\tname: "trigger_deliveries_datatype_fk"
+\t\t}),
+]);
+`;
+    const relations = `export const triggerDeliveriesInHarnessSharedRelations = relations(triggerDeliveriesInHarnessShared, ({one}) => ({
+\tdatatypeRegistryInHarnessShared: one(datatypeRegistryInHarnessShared, {
+\t\tfields: [triggerDeliveriesInHarnessShared.workspaceId],
+\t\treferences: [datatypeRegistryInHarnessShared.id]
+\t}),
+}));
+`;
+    const foreignKeys = [
+      {
+        constraintName: 'trigger_deliveries_datatype_fk',
+        schemaName: 'harness_shared',
+        tableName: 'trigger_deliveries',
+        foreignSchemaName: 'harness_shared',
+        foreignTableName: 'datatype_registry',
+        columns: ['workspace_id', 'datatype_id'],
+        foreignColumns: ['workspace_id', 'id'],
+      },
+    ];
+
+    const repaired = repairCompositeForeignKeyArtifacts({ schema, relations, foreignKeys });
+    expect(repaired.unresolved).toEqual([]);
+    expect(repaired.schemaChanged).toBe(1);
+    expect(repaired.relationsChanged).toBe(1);
+    expect(repaired.schema).toContain(
+      'foreignColumns: [datatypeRegistryInHarnessShared.workspaceId, datatypeRegistryInHarnessShared.id]',
+    );
+    expect(repaired.relations).toContain(
+      'fields: [triggerDeliveriesInHarnessShared.workspaceId, triggerDeliveriesInHarnessShared.datatypeId]',
+    );
+    expect(repaired.relations).toContain(
+      'references: [datatypeRegistryInHarnessShared.workspaceId, datatypeRegistryInHarnessShared.id]',
+    );
+
+    const second = repairCompositeForeignKeyArtifacts({
+      schema: repaired.schema,
+      relations: repaired.relations,
+      foreignKeys,
+    });
+    expect(second).toEqual({
+      schema: repaired.schema,
+      relations: repaired.relations,
+      schemaChanged: 0,
+      relationsChanged: 0,
+      unresolved: [],
     });
   });
 

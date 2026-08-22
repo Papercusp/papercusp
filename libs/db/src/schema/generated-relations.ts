@@ -3,8 +3,8 @@ import { routineGroupsInHarnessShared, routinesInHarnessShared, usersInHarnessSh
 
 export const routinesInHarnessSharedRelations = relations(routinesInHarnessShared, ({one}) => ({
 	routineGroupsInHarnessShared: one(routineGroupsInHarnessShared, {
-		fields: [routinesInHarnessShared.workspaceId],
-		references: [routineGroupsInHarnessShared.workspaceId]
+		fields: [routinesInHarnessShared.workspaceId, routinesInHarnessShared.groupSlug],
+		references: [routineGroupsInHarnessShared.workspaceId, routineGroupsInHarnessShared.slug]
 	}),
 }));
 
@@ -268,20 +268,20 @@ export const memoryRecallStatsInHarnessSharedRelations = relations(memoryRecallS
 
 export const specEvidenceBindingsInHarnessSharedRelations = relations(specEvidenceBindingsInHarnessShared, ({one}) => ({
 	workItemSpecRevisionEdgesInHarnessShared: one(workItemSpecRevisionEdgesInHarnessShared, {
-		fields: [specEvidenceBindingsInHarnessShared.workspaceId],
-		references: [workItemSpecRevisionEdgesInHarnessShared.workspaceId]
+		fields: [specEvidenceBindingsInHarnessShared.workspaceId, specEvidenceBindingsInHarnessShared.harnessSlug, specEvidenceBindingsInHarnessShared.workItemId, specEvidenceBindingsInHarnessShared.planSlug, specEvidenceBindingsInHarnessShared.specId, specEvidenceBindingsInHarnessShared.specRevision, specEvidenceBindingsInHarnessShared.specFingerprint],
+		references: [workItemSpecRevisionEdgesInHarnessShared.workspaceId, workItemSpecRevisionEdgesInHarnessShared.harnessSlug, workItemSpecRevisionEdgesInHarnessShared.workItemId, workItemSpecRevisionEdgesInHarnessShared.planSlug, workItemSpecRevisionEdgesInHarnessShared.specId, workItemSpecRevisionEdgesInHarnessShared.specRevision, workItemSpecRevisionEdgesInHarnessShared.specFingerprint]
 	}),
 }));
 
 export const workItemSpecRevisionEdgesInHarnessSharedRelations = relations(workItemSpecRevisionEdgesInHarnessShared, ({one, many}) => ({
 	specEvidenceBindingsInHarnessShareds: many(specEvidenceBindingsInHarnessShared),
 	workItemsInHarnessShared: one(workItemsInHarnessShared, {
-		fields: [workItemSpecRevisionEdgesInHarnessShared.workspaceId],
-		references: [workItemsInHarnessShared.harnessSlug]
+		fields: [workItemSpecRevisionEdgesInHarnessShared.workspaceId, workItemSpecRevisionEdgesInHarnessShared.harnessSlug, workItemSpecRevisionEdgesInHarnessShared.workItemId],
+		references: [workItemsInHarnessShared.workspaceId, workItemsInHarnessShared.harnessSlug, workItemsInHarnessShared.featureId]
 	}),
 	planSpecClauseRevisionsInHarnessShared: one(planSpecClauseRevisionsInHarnessShared, {
-		fields: [workItemSpecRevisionEdgesInHarnessShared.workspaceId],
-		references: [planSpecClauseRevisionsInHarnessShared.workspaceId]
+		fields: [workItemSpecRevisionEdgesInHarnessShared.workspaceId, workItemSpecRevisionEdgesInHarnessShared.harnessSlug, workItemSpecRevisionEdgesInHarnessShared.planSlug, workItemSpecRevisionEdgesInHarnessShared.specId, workItemSpecRevisionEdgesInHarnessShared.specRevision, workItemSpecRevisionEdgesInHarnessShared.specFingerprint],
+		references: [planSpecClauseRevisionsInHarnessShared.workspaceId, planSpecClauseRevisionsInHarnessShared.harnessSlug, planSpecClauseRevisionsInHarnessShared.planSlug, planSpecClauseRevisionsInHarnessShared.specId, planSpecClauseRevisionsInHarnessShared.revision, planSpecClauseRevisionsInHarnessShared.contentHash]
 	}),
 }));
 
@@ -341,12 +341,12 @@ export const personalIdentitiesInHarnessSharedRelations = relations(personalIden
 
 export const planSpecClausesInHarnessSharedRelations = relations(planSpecClausesInHarnessShared, ({one, many}) => ({
 	harnessPlansInHarnessShared: one(harnessPlansInHarnessShared, {
-		fields: [planSpecClausesInHarnessShared.workspaceId],
-		references: [harnessPlansInHarnessShared.workspaceId]
+		fields: [planSpecClausesInHarnessShared.workspaceId, planSpecClausesInHarnessShared.harnessSlug, planSpecClausesInHarnessShared.planSlug],
+		references: [harnessPlansInHarnessShared.workspaceId, harnessPlansInHarnessShared.harnessSlug, harnessPlansInHarnessShared.planSlug]
 	}),
 	planSpecClauseRevisionsInHarnessShared: one(planSpecClauseRevisionsInHarnessShared, {
-		fields: [planSpecClausesInHarnessShared.workspaceId],
-		references: [planSpecClauseRevisionsInHarnessShared.workspaceId],
+		fields: [planSpecClausesInHarnessShared.workspaceId, planSpecClausesInHarnessShared.harnessSlug, planSpecClausesInHarnessShared.planSlug, planSpecClausesInHarnessShared.specId, planSpecClausesInHarnessShared.currentRevision],
+		references: [planSpecClauseRevisionsInHarnessShared.workspaceId, planSpecClauseRevisionsInHarnessShared.harnessSlug, planSpecClauseRevisionsInHarnessShared.planSlug, planSpecClauseRevisionsInHarnessShared.specId, planSpecClauseRevisionsInHarnessShared.revision],
 		relationName: "planSpecClausesInHarnessShared_workspaceId_planSpecClauseRevisionsInHarnessShared_workspaceId"
 	}),
 	planSpecClauseRevisionsInHarnessShareds: many(planSpecClauseRevisionsInHarnessShared, {
@@ -367,13 +367,13 @@ export const planSpecClauseRevisionsInHarnessSharedRelations = relations(planSpe
 	}),
 	workItemSpecRevisionEdgesInHarnessShareds: many(workItemSpecRevisionEdgesInHarnessShared),
 	planSpecClausesInHarnessShared: one(planSpecClausesInHarnessShared, {
-		fields: [planSpecClauseRevisionsInHarnessShared.workspaceId],
-		references: [planSpecClausesInHarnessShared.workspaceId],
+		fields: [planSpecClauseRevisionsInHarnessShared.workspaceId, planSpecClauseRevisionsInHarnessShared.harnessSlug, planSpecClauseRevisionsInHarnessShared.planSlug, planSpecClauseRevisionsInHarnessShared.specId],
+		references: [planSpecClausesInHarnessShared.workspaceId, planSpecClausesInHarnessShared.harnessSlug, planSpecClausesInHarnessShared.planSlug, planSpecClausesInHarnessShared.specId],
 		relationName: "planSpecClauseRevisionsInHarnessShared_workspaceId_planSpecClausesInHarnessShared_workspaceId"
 	}),
 	planSpecClauseRevisionsInHarnessShared: one(planSpecClauseRevisionsInHarnessShared, {
-		fields: [planSpecClauseRevisionsInHarnessShared.workspaceId],
-		references: [planSpecClauseRevisionsInHarnessShared.workspaceId],
+		fields: [planSpecClauseRevisionsInHarnessShared.workspaceId, planSpecClauseRevisionsInHarnessShared.harnessSlug, planSpecClauseRevisionsInHarnessShared.planSlug, planSpecClauseRevisionsInHarnessShared.supersedesSpecId, planSpecClauseRevisionsInHarnessShared.supersedesRevision],
+		references: [planSpecClauseRevisionsInHarnessShared.workspaceId, planSpecClauseRevisionsInHarnessShared.harnessSlug, planSpecClauseRevisionsInHarnessShared.planSlug, planSpecClauseRevisionsInHarnessShared.specId, planSpecClauseRevisionsInHarnessShared.revision],
 		relationName: "planSpecClauseRevisionsInHarnessShared_workspaceId_planSpecClauseRevisionsInHarnessShared_workspaceId"
 	}),
 	planSpecClauseRevisionsInHarnessShareds: many(planSpecClauseRevisionsInHarnessShared, {
@@ -387,8 +387,8 @@ export const workItemsInHarnessSharedRelations = relations(workItemsInHarnessSha
 
 export const sessionTurnChunksInHarnessSharedRelations = relations(sessionTurnChunksInHarnessShared, ({one}) => ({
 	sessionTurnsInHarnessShared: one(sessionTurnsInHarnessShared, {
-		fields: [sessionTurnChunksInHarnessShared.workspaceId],
-		references: [sessionTurnsInHarnessShared.workspaceId]
+		fields: [sessionTurnChunksInHarnessShared.workspaceId, sessionTurnChunksInHarnessShared.sourceKind, sessionTurnChunksInHarnessShared.sessionId, sessionTurnChunksInHarnessShared.turnIdx],
+		references: [sessionTurnsInHarnessShared.workspaceId, sessionTurnsInHarnessShared.sourceKind, sessionTurnsInHarnessShared.sessionId, sessionTurnsInHarnessShared.turnIdx]
 	}),
 }));
 
@@ -398,15 +398,15 @@ export const sessionTurnsInHarnessSharedRelations = relations(sessionTurnsInHarn
 
 export const planDecisionsInHarnessSharedRelations = relations(planDecisionsInHarnessShared, ({one}) => ({
 	harnessPlansInHarnessShared: one(harnessPlansInHarnessShared, {
-		fields: [planDecisionsInHarnessShared.workspaceId],
-		references: [harnessPlansInHarnessShared.workspaceId]
+		fields: [planDecisionsInHarnessShared.workspaceId, planDecisionsInHarnessShared.harnessSlug, planDecisionsInHarnessShared.planSlug],
+		references: [harnessPlansInHarnessShared.workspaceId, harnessPlansInHarnessShared.harnessSlug, harnessPlansInHarnessShared.planSlug]
 	}),
 }));
 
 export const personalIdentityAliasesInHarnessSharedRelations = relations(personalIdentityAliasesInHarnessShared, ({one}) => ({
 	personalIdentitiesInHarnessShared: one(personalIdentitiesInHarnessShared, {
-		fields: [personalIdentityAliasesInHarnessShared.workspaceId],
-		references: [personalIdentitiesInHarnessShared.id]
+		fields: [personalIdentityAliasesInHarnessShared.workspaceId, personalIdentityAliasesInHarnessShared.userId, personalIdentityAliasesInHarnessShared.identityId],
+		references: [personalIdentitiesInHarnessShared.workspaceId, personalIdentitiesInHarnessShared.userId, personalIdentitiesInHarnessShared.id]
 	}),
 }));
 
@@ -419,19 +419,19 @@ export const personalGrantsInHarnessSharedRelations = relations(personalGrantsIn
 
 export const planItemsInHarnessSharedRelations = relations(planItemsInHarnessShared, ({one}) => ({
 	harnessPlansInHarnessShared: one(harnessPlansInHarnessShared, {
-		fields: [planItemsInHarnessShared.workspaceId],
-		references: [harnessPlansInHarnessShared.workspaceId]
+		fields: [planItemsInHarnessShared.workspaceId, planItemsInHarnessShared.harnessSlug, planItemsInHarnessShared.planSlug],
+		references: [harnessPlansInHarnessShared.workspaceId, harnessPlansInHarnessShared.harnessSlug, harnessPlansInHarnessShared.planSlug]
 	}),
 }));
 
 export const triggerBindingsInHarnessSharedRelations = relations(triggerBindingsInHarnessShared, ({one, many}) => ({
 	triggerSourcesInHarnessShared: one(triggerSourcesInHarnessShared, {
-		fields: [triggerBindingsInHarnessShared.workspaceId],
-		references: [triggerSourcesInHarnessShared.workspaceId]
+		fields: [triggerBindingsInHarnessShared.workspaceId, triggerBindingsInHarnessShared.sourceId],
+		references: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id]
 	}),
 	harnessPlansInHarnessShared: one(harnessPlansInHarnessShared, {
-		fields: [triggerBindingsInHarnessShared.workspaceId],
-		references: [harnessPlansInHarnessShared.workspaceId]
+		fields: [triggerBindingsInHarnessShared.workspaceId, triggerBindingsInHarnessShared.planHarnessSlug, triggerBindingsInHarnessShared.planSlug],
+		references: [harnessPlansInHarnessShared.workspaceId, harnessPlansInHarnessShared.harnessSlug, harnessPlansInHarnessShared.planSlug]
 	}),
 	triggerRunsInHarnessShareds: many(triggerRunsInHarnessShared),
 }));
@@ -443,24 +443,24 @@ export const triggerSourcesInHarnessSharedRelations = relations(triggerSourcesIn
 
 export const triggerRunsInHarnessSharedRelations = relations(triggerRunsInHarnessShared, ({one}) => ({
 	triggerBindingsInHarnessShared: one(triggerBindingsInHarnessShared, {
-		fields: [triggerRunsInHarnessShared.workspaceId],
-		references: [triggerBindingsInHarnessShared.workspaceId]
+		fields: [triggerRunsInHarnessShared.workspaceId, triggerRunsInHarnessShared.bindingId],
+		references: [triggerBindingsInHarnessShared.workspaceId, triggerBindingsInHarnessShared.id]
 	}),
 	triggerDeliveriesInHarnessShared: one(triggerDeliveriesInHarnessShared, {
-		fields: [triggerRunsInHarnessShared.workspaceId],
-		references: [triggerDeliveriesInHarnessShared.workspaceId]
+		fields: [triggerRunsInHarnessShared.workspaceId, triggerRunsInHarnessShared.deliveryId],
+		references: [triggerDeliveriesInHarnessShared.workspaceId, triggerDeliveriesInHarnessShared.id]
 	}),
 }));
 
 export const triggerDeliveriesInHarnessSharedRelations = relations(triggerDeliveriesInHarnessShared, ({one, many}) => ({
 	triggerRunsInHarnessShareds: many(triggerRunsInHarnessShared),
 	triggerSourcesInHarnessShared: one(triggerSourcesInHarnessShared, {
-		fields: [triggerDeliveriesInHarnessShared.workspaceId],
-		references: [triggerSourcesInHarnessShared.workspaceId]
+		fields: [triggerDeliveriesInHarnessShared.workspaceId, triggerDeliveriesInHarnessShared.sourceId],
+		references: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id]
 	}),
 	datatypeRegistryInHarnessShared: one(datatypeRegistryInHarnessShared, {
-		fields: [triggerDeliveriesInHarnessShared.workspaceId],
-		references: [datatypeRegistryInHarnessShared.id]
+		fields: [triggerDeliveriesInHarnessShared.workspaceId, triggerDeliveriesInHarnessShared.datatypeId],
+		references: [datatypeRegistryInHarnessShared.workspaceId, datatypeRegistryInHarnessShared.id]
 	}),
 }));
 
@@ -498,8 +498,8 @@ export const personalDocumentsInHarnessSharedRelations = relations(personalDocum
 
 export const potMembersInHarnessSharedRelations = relations(potMembersInHarnessShared, ({one}) => ({
 	potsInHarnessShared: one(potsInHarnessShared, {
-		fields: [potMembersInHarnessShared.workspaceId],
-		references: [potsInHarnessShared.workspaceId]
+		fields: [potMembersInHarnessShared.workspaceId, potMembersInHarnessShared.potHomeSlug],
+		references: [potsInHarnessShared.workspaceId, potsInHarnessShared.canonicalPotHomeSlug]
 	}),
 }));
 

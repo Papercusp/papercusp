@@ -6388,7 +6388,7 @@ export const workItemSpecRevisionEdgesInHarnessShared = harnessShared.table("wor
 	index("work_item_spec_revision_edges_by_spec").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops"), table.specRevision.asc().nullsLast().op("int4_ops"), table.workItemId.asc().nullsLast().op("text_ops")),
 	foreignKey({
 			columns: [table.workspaceId, table.harnessSlug, table.workItemId],
-			foreignColumns: [workItemsInHarnessShared.harnessSlug, workItemsInHarnessShared.featureId, workItemsInHarnessShared.workspaceId],
+			foreignColumns: [workItemsInHarnessShared.workspaceId, workItemsInHarnessShared.harnessSlug, workItemsInHarnessShared.featureId],
 			name: "work_item_spec_revision_edges_workspace_id_harness_slug_wo_fkey"
 		}).onDelete("restrict"),
 	foreignKey({
@@ -6720,7 +6720,7 @@ export const personalIdentityAliasesInHarnessShared = harnessShared.table("perso
 	index("personal_identity_aliases_identity_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.identityId.asc().nullsLast().op("uuid_ops")),
 	foreignKey({
 			columns: [table.workspaceId, table.userId, table.identityId],
-			foreignColumns: [personalIdentitiesInHarnessShared.id, personalIdentitiesInHarnessShared.workspaceId, personalIdentitiesInHarnessShared.userId],
+			foreignColumns: [personalIdentitiesInHarnessShared.workspaceId, personalIdentitiesInHarnessShared.userId, personalIdentitiesInHarnessShared.id],
 			name: "personal_identity_aliases_workspace_id_user_id_identity_id_fkey"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.id, table.userId, table.workspaceId], name: "personal_identity_aliases_pkey"}),
@@ -7945,7 +7945,7 @@ export const triggerDeliveriesInHarnessShared = harnessShared.table("trigger_del
 		}).onDelete("restrict"),
 	foreignKey({
 			columns: [table.workspaceId, table.datatypeId],
-			foreignColumns: [datatypeRegistryInHarnessShared.id, datatypeRegistryInHarnessShared.workspaceId],
+			foreignColumns: [datatypeRegistryInHarnessShared.workspaceId, datatypeRegistryInHarnessShared.id],
 			name: "trigger_deliveries_datatype_fk"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "trigger_deliveries_pkey"}),
@@ -8567,7 +8567,7 @@ export const planSpecClauseRevisionsInHarnessShared = harnessShared.table("plan_
 		}).onDelete("restrict"),
 	foreignKey({
 			columns: [table.workspaceId, table.harnessSlug, table.planSlug, table.supersedesSpecId, table.supersedesRevision],
-			foreignColumns: [table.workspaceId, table.harnessSlug, table.planSlug, table.specId, table.revision],
+			foreignColumns: [planSpecClauseRevisionsInHarnessShared.workspaceId, planSpecClauseRevisionsInHarnessShared.harnessSlug, planSpecClauseRevisionsInHarnessShared.planSlug, planSpecClauseRevisionsInHarnessShared.specId, planSpecClauseRevisionsInHarnessShared.revision],
 			name: "plan_spec_clause_revisions_supersedes_fk"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.harnessSlug, table.planSlug, table.revision, table.specId, table.workspaceId], name: "plan_spec_clause_revisions_pkey"}),

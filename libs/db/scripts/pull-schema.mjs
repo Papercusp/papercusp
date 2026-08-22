@@ -51,6 +51,7 @@ import { repairEmptyArrayDefaults } from '../src/schema/schema-defaults.mjs';
 import {
   annotateCircularForeignKeyExtraConfigs,
   promoteGeneratedSchemaArtifacts,
+  repairCompositeForeignKeyArtifacts,
 } from '../src/schema-generated-artifacts.mjs';
 import { repairIndexOperatorClasses } from '../src/schema/schema-index-opclasses.mjs';
 import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
@@ -577,6 +578,84 @@ if (existsSync(relationsPath)) {
 // Fix 8: composite foreign keys can create a declaration-inference cycle when
 // two generated tables reference each other. Put the explicit Drizzle extra-
 // config return type at every table participating in such a cycle.
+//
+// Before that type-boundary pass, repair the ordered composite-FK pairs in BOTH
+// generated artifacts from pg_constraint. drizzle-kit can reorder only the
+// referenced side in schema.ts and collapses relations.ts to the first column;
+// neither artifact is authoritative for this order (WI-40414).
+const compositeForeignKeyQuery = [
+  "SELECT COALESCE(json_agg(row_to_json(q) ORDER BY q.schema_name, q.table_name, q.constraint_name), '[]'::json)",
+  'FROM (',
+  '  SELECT con.conname AS constraint_name,',
+  '    n.nspname AS schema_name, c.relname AS table_name,',
+  '    fn.nspname AS foreign_schema_name, fc.relname AS foreign_table_name,',
+  '    array_agg(a.attname ORDER BY u.ord) AS columns,',
+  '    array_agg(fa.attname ORDER BY u.ord) AS foreign_columns',
+  '  FROM pg_constraint con',
+  '  JOIN pg_class c ON c.oid = con.conrelid',
+  '  JOIN pg_namespace n ON n.oid = c.relnamespace',
+  '  JOIN pg_class fc ON fc.oid = con.confrelid',
+  '  JOIN pg_namespace fn ON fn.oid = fc.relnamespace',
+  '  CROSS JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY',
+  '    AS u(local_attnum, foreign_attnum, ord)',
+  '  JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = u.local_attnum',
+  '  JOIN pg_attribute fa ON fa.attrelid = con.confrelid AND fa.attnum = u.foreign_attnum',
+  "  WHERE con.contype = 'f'",
+  "    AND n.nspname IN ('harness_shared','papercusp_shared')",
+  '    AND cardinality(con.conkey) > 1',
+  '  GROUP BY con.conname, n.nspname, c.relname, fn.nspname, fc.relname',
+  ') q;',
+].join(' ');
+const compositeForeignKeysResult = spawnSync(
+  'psql',
+  [dbUrl, '-tA', '-c', compositeForeignKeyQuery],
+  { encoding: 'utf8' },
+);
+if (compositeForeignKeysResult.status !== 0) {
+  console.error(
+    'failed to read authoritative composite foreign-key metadata:',
+    compositeForeignKeysResult.stderr,
+  );
+  process.exit(1);
+}
+
+let compositeForeignKeys;
+try {
+  compositeForeignKeys = JSON.parse(compositeForeignKeysResult.stdout.trim() || '[]').map((row) => ({
+    constraintName: row.constraint_name,
+    schemaName: row.schema_name,
+    tableName: row.table_name,
+    foreignSchemaName: row.foreign_schema_name,
+    foreignTableName: row.foreign_table_name,
+    columns: row.columns,
+    foreignColumns: row.foreign_columns,
+  }));
+} catch (error) {
+  console.error(
+    'composite foreign-key metadata was not valid JSON:',
+    error instanceof Error ? error.message : String(error),
+  );
+  process.exit(1);
+}
+
+const relationsSource = existsSync(relationsPath) ? readFileSync(relationsPath, 'utf8') : '';
+const compositeForeignKeyFix = repairCompositeForeignKeyArtifacts({
+  schema,
+  relations: relationsSource,
+  foreignKeys: compositeForeignKeys,
+});
+if (compositeForeignKeyFix.unresolved.length > 0) {
+  console.error(
+    'refusing to promote generated schema with unresolved composite foreign keys:\n  - ' +
+      compositeForeignKeyFix.unresolved.join('\n  - '),
+  );
+  process.exit(1);
+}
+schema = compositeForeignKeyFix.schema;
+if (existsSync(relationsPath)) {
+  writeFileSync(relationsPath, compositeForeignKeyFix.relations);
+}
+
 const circularForeignKeyFix = annotateCircularForeignKeyExtraConfigs(schema);
 schema = circularForeignKeyFix.schema;
 
@@ -642,6 +721,10 @@ console.log(
 );
 console.log(
   `    typed ${circularForeignKeyFix.circularTables.length} circular composite-FK table callback(s)`,
+);
+console.log(
+  `    repaired ${compositeForeignKeyFix.schemaChanged} composite FK schema declaration(s) and ` +
+    `${compositeForeignKeyFix.relationsChanged} relation declaration(s) from PG`,
 );
 
 // Fix 9 / promote: copy first, then remove the ignored drizzle-kit source
