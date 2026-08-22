@@ -90,7 +90,7 @@ async function startMockMarketplace(): Promise<MockMarketplace> {
 
 /** Run the real papercusp CLI with the given env, capturing exit + output. */
 async function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string }> {
-  const childEnv = {
+  const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
     ...env,
     PATH: `${REPO_BIN}:${process.env.PATH ?? ''}`,

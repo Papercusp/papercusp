@@ -12,7 +12,7 @@ function expect(actual: unknown) {
       assert.equal(actual, expected);
     },
     toContain(expected: string) {
-      assert.equal(typeof actual, 'string');
+      if (typeof actual !== 'string') throw new TypeError('expected a string');
       assert.ok(actual.includes(expected));
     },
   };

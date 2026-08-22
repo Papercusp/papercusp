@@ -1546,7 +1546,7 @@ async function cmdPublish(args: string[] = []): Promise<void> {
   const sbomRes = await fetch(sbomUrl, {
     method: 'POST',
     headers: { ...headers, 'content-type': 'application/json' },
-    body: sbomBytes,
+    body: new Uint8Array(sbomBytes),
   }).catch((e: Error) => ({ ok: false, status: 0, text: async () => e.message }) as Response);
   if (!sbomRes.ok) {
     const text = await sbomRes.text().catch(() => '');

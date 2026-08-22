@@ -15,7 +15,7 @@ function expect(actual: unknown) {
         assert.ok(actual.includes(expected));
         return;
       }
-      assert.equal(typeof actual, 'string');
+      if (typeof actual !== 'string') throw new TypeError('expected a string');
       assert.ok(actual.includes(String(expected)));
     },
     toBeTruthy() {
