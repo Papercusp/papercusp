@@ -1,5 +1,5 @@
 /**
- * `papercusp project-history generate` — build a portable Project History v1
+ * `papercusp project-history generate` — build a portable Project History v2
  * artifact from Papercusp plan/work-item ledgers plus the project's Git repo.
  */
 import { spawnSync } from 'node:child_process';
@@ -131,7 +131,7 @@ export function parseProjectHistoryGenerateArgs(
   const harness = values.get('--harness');
   if (!harness) throw new Error('project-history generate requires --harness <slug>');
   const repoRoot = resolve(cwd, values.get('--repo') ?? '.');
-  const output = resolve(cwd, values.get('--output') ?? '.papercusp/project-history.v1.json');
+  const output = resolve(cwd, values.get('--output') ?? '.papercusp/project-history.v2.json');
   const rawFormat = values.get('--format') ?? (output.endsWith('.ts') ? 'typescript' : 'json');
   if (rawFormat !== 'json' && rawFormat !== 'typescript' && rawFormat !== 'ts') {
     throw new Error('--format must be json or typescript');
@@ -821,7 +821,7 @@ Options:
   --project-id <id>         Stable project id (default: harness slug)
   --project-name <name>     Display name (default: harness slug)
   --repo <path>             Git repository root (default: current directory)
-  --output <path>           Output artifact (default: .papercusp/project-history.v1.json)
+  --output <path>           Output artifact (default: .papercusp/project-history.v2.json)
   --format <json|typescript>  Output format (default inferred from .ts extension)
   --export-name <name>      TypeScript export name (default: PROJECT_HISTORY)
   --generated-at <iso>      Fixed generation timestamp for reproducible builds

@@ -308,7 +308,7 @@ test('git records preserve files and distinguish trailers from body references',
 
 test('TypeScript rendering is a stable generated module', () => {
   const document = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: { id: 'demo', name: 'Demo', repository: null },
     source: {
       kind: 'papercusp-plan-export',
@@ -324,13 +324,13 @@ test('TypeScript rendering is a stable generated module', () => {
 
   const rendered = renderProjectHistory(document, 'typescript', 'DEMO_HISTORY');
   assert.match(rendered, /export const DEMO_HISTORY = \{/);
-  assert.match(rendered, /"schemaVersion": 1/);
+  assert.match(rendered, /"schemaVersion": 2/);
   assert.ok(rendered.endsWith('as const;\n'));
 });
 
 test('check freshness ignores generatedAt drift but detects content drift', () => {
   const document = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: { id: 'demo', name: 'Demo', repository: null },
     source: {
       kind: 'papercusp-plan-export',

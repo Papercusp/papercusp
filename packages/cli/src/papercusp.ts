@@ -12,7 +12,7 @@
  *   doctor                            Check prerequisites (Postgres, claude, env).
  *   plugin <subcmd>                   Plugin management (install/enable/disable/...).
  *   snapshot <subcmd>                 Snapshot management (create/list/info/install).
- *   project-history generate          Generate a portable Project History v1 artifact.
+ *   project-history generate          Generate a portable Project History v2 artifact.
  *   help                              Show this help.
  *
  * Storage layout:
