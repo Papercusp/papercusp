@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { routineGroupsInHarnessShared, routinesInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecLocalInHarnessShared, memoryVecOpenaiInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, eventAwaitNodesInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, goalsInHarnessShared, goalPotsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, savedPromptsInHarnessShared, potEvalInstancesInHarnessShared, potEvalRunsInHarnessShared, memoryVecHarrierInHarnessShared, testingSurfacesInHarnessShared, coverageEvidenceInHarnessShared, testRunsInHarnessShared, coverageWaiversInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, cupKeeperInstancesInHarnessShared, cupKeeperRunsInHarnessShared, memoryRecallStatsInHarnessShared, memoryRecallQueryTextInHarnessShared, workItemSpecRevisionEdgesInHarnessShared, specEvidenceBindingsInHarnessShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, personalVaultSettingsInHarnessShared, memoryAnchorsInHarnessShared, personalSyncStateInHarnessShared, personalIdentitiesInHarnessShared, harnessPlansInHarnessShared, planSpecClausesInHarnessShared, planSpecClauseRevisionsInHarnessShared, workItemsInHarnessShared, sessionTurnsInHarnessShared, sessionTurnChunksInHarnessShared, planDecisionsInHarnessShared, personalIdentityAliasesInHarnessShared, personalGrantsInHarnessShared, planItemsInHarnessShared, triggerSourcesInHarnessShared, triggerBindingsInHarnessShared, potEvalScoresInHarnessShared, triggerRunsInHarnessShared, triggerDeliveriesInHarnessShared, datatypeRegistryInHarnessShared, cupKeeperScoresInHarnessShared, benchRunTasksInHarnessShared, personalDocumentsInHarnessShared, potsInHarnessShared, potMembersInHarnessShared } from "./generated";
+import { routineGroupsInHarnessShared, routinesInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, memoryVecLocalInHarnessShared, memoryVecOpenaiInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, eventAwaitNodesInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, goalsInHarnessShared, goalPotsInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, savedPromptsInHarnessShared, potEvalInstancesInHarnessShared, potEvalRunsInHarnessShared, memoryVecHarrierInHarnessShared, testingSurfacesInHarnessShared, coverageEvidenceInHarnessShared, testRunsInHarnessShared, coverageWaiversInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, cupKeeperInstancesInHarnessShared, cupKeeperRunsInHarnessShared, memoryRecallStatsInHarnessShared, memoryRecallQueryTextInHarnessShared, workItemSpecRevisionEdgesInHarnessShared, specEvidenceBindingsInHarnessShared, messageRecipientsInPapercuspShared, mobileDevicesInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, personalVaultSettingsInHarnessShared, memoryAnchorsInHarnessShared, personalSyncStateInHarnessShared, personalIdentitiesInHarnessShared, harnessPlansInHarnessShared, planSpecClausesInHarnessShared, planSpecClauseRevisionsInHarnessShared, workItemsInHarnessShared, sessionTurnsInHarnessShared, sessionTurnChunksInHarnessShared, planDecisionsInHarnessShared, personalIdentityAliasesInHarnessShared, workspaceHostsInHarnessShared, workspaceHostLogsInHarnessShared, workspaceHostOperationsInHarnessShared, personalGrantsInHarnessShared, workspaceHostEventsInHarnessShared, planItemsInHarnessShared, triggerSourcesInHarnessShared, triggerBindingsInHarnessShared, potEvalScoresInHarnessShared, triggerRunsInHarnessShared, triggerDeliveriesInHarnessShared, datatypeRegistryInHarnessShared, cupKeeperScoresInHarnessShared, benchRunTasksInHarnessShared, workspaceHostResourcesInHarnessShared, personalDocumentsInHarnessShared, triageSnapshotsInHarnessShared, triageLedgerInHarnessShared, potsInHarnessShared, potMembersInHarnessShared, workspaceHostConnectionsInHarnessShared } from "./generated";
 
 export const routinesInHarnessSharedRelations = relations(routinesInHarnessShared, ({one}) => ({
 	routineGroupsInHarnessShared: one(routineGroupsInHarnessShared, {
@@ -10,24 +10,6 @@ export const routinesInHarnessSharedRelations = relations(routinesInHarnessShare
 
 export const routineGroupsInHarnessSharedRelations = relations(routineGroupsInHarnessShared, ({many}) => ({
 	routinesInHarnessShareds: many(routinesInHarnessShared),
-}));
-
-export const userSessionsInHarnessSharedRelations = relations(userSessionsInHarnessShared, ({one}) => ({
-	usersInHarnessShared: one(usersInHarnessShared, {
-		fields: [userSessionsInHarnessShared.userId],
-		references: [usersInHarnessShared.id]
-	}),
-}));
-
-export const usersInHarnessSharedRelations = relations(usersInHarnessShared, ({many}) => ({
-	userSessionsInHarnessShareds: many(userSessionsInHarnessShared),
-	userPreferencesInHarnessShareds: many(userPreferencesInHarnessShared),
-	personalVaultSettingsInHarnessShareds: many(personalVaultSettingsInHarnessShared),
-	personalSyncStateInHarnessShareds: many(personalSyncStateInHarnessShared),
-	personalIdentitiesInHarnessShareds: many(personalIdentitiesInHarnessShared),
-	personalGrantsInHarnessShareds: many(personalGrantsInHarnessShared),
-	triggerSourcesInHarnessShareds: many(triggerSourcesInHarnessShared),
-	personalDocumentsInHarnessShareds: many(personalDocumentsInHarnessShared),
 }));
 
 export const llmTestFindingsInHarnessSharedRelations = relations(llmTestFindingsInHarnessShared, ({one}) => ({
@@ -162,6 +144,24 @@ export const goalsInHarnessSharedRelations = relations(goalsInHarnessShared, ({o
 	goalsInHarnessShareds: many(goalsInHarnessShared, {
 		relationName: "goalsInHarnessShared_parentId_goalsInHarnessShared_id"
 	}),
+}));
+
+export const userSessionsInHarnessSharedRelations = relations(userSessionsInHarnessShared, ({one}) => ({
+	usersInHarnessShared: one(usersInHarnessShared, {
+		fields: [userSessionsInHarnessShared.userId],
+		references: [usersInHarnessShared.id]
+	}),
+}));
+
+export const usersInHarnessSharedRelations = relations(usersInHarnessShared, ({many}) => ({
+	userSessionsInHarnessShareds: many(userSessionsInHarnessShared),
+	userPreferencesInHarnessShareds: many(userPreferencesInHarnessShared),
+	personalVaultSettingsInHarnessShareds: many(personalVaultSettingsInHarnessShared),
+	personalSyncStateInHarnessShareds: many(personalSyncStateInHarnessShared),
+	personalIdentitiesInHarnessShareds: many(personalIdentitiesInHarnessShared),
+	personalGrantsInHarnessShareds: many(personalGrantsInHarnessShared),
+	triggerSourcesInHarnessShareds: many(triggerSourcesInHarnessShared),
+	personalDocumentsInHarnessShareds: many(personalDocumentsInHarnessShared),
 }));
 
 export const benchmarkRunResultInHarnessSharedRelations = relations(benchmarkRunResultInHarnessShared, ({one}) => ({
@@ -411,10 +411,53 @@ export const personalIdentityAliasesInHarnessSharedRelations = relations(persona
 	}),
 }));
 
+export const workspaceHostLogsInHarnessSharedRelations = relations(workspaceHostLogsInHarnessShared, ({one}) => ({
+	workspaceHostsInHarnessShared: one(workspaceHostsInHarnessShared, {
+		fields: [workspaceHostLogsInHarnessShared.workspaceId, workspaceHostLogsInHarnessShared.hostId],
+		references: [workspaceHostsInHarnessShared.workspaceId, workspaceHostsInHarnessShared.id]
+	}),
+	workspaceHostOperationsInHarnessShared: one(workspaceHostOperationsInHarnessShared, {
+		fields: [workspaceHostLogsInHarnessShared.workspaceId, workspaceHostLogsInHarnessShared.operationId],
+		references: [workspaceHostOperationsInHarnessShared.workspaceId, workspaceHostOperationsInHarnessShared.id]
+	}),
+}));
+
+export const workspaceHostsInHarnessSharedRelations = relations(workspaceHostsInHarnessShared, ({one, many}) => ({
+	workspaceHostLogsInHarnessShareds: many(workspaceHostLogsInHarnessShared),
+	workspaceHostEventsInHarnessShareds: many(workspaceHostEventsInHarnessShared),
+	workspaceHostOperationsInHarnessShareds: many(workspaceHostOperationsInHarnessShared),
+	workspaceHostResourcesInHarnessShareds: many(workspaceHostResourcesInHarnessShared),
+	workspaceHostConnectionsInHarnessShared: one(workspaceHostConnectionsInHarnessShared, {
+		fields: [workspaceHostsInHarnessShared.workspaceId, workspaceHostsInHarnessShared.connectionId],
+		references: [workspaceHostConnectionsInHarnessShared.workspaceId, workspaceHostConnectionsInHarnessShared.id]
+	}),
+}));
+
+export const workspaceHostOperationsInHarnessSharedRelations = relations(workspaceHostOperationsInHarnessShared, ({one, many}) => ({
+	workspaceHostLogsInHarnessShareds: many(workspaceHostLogsInHarnessShared),
+	workspaceHostEventsInHarnessShareds: many(workspaceHostEventsInHarnessShared),
+	workspaceHostsInHarnessShared: one(workspaceHostsInHarnessShared, {
+		fields: [workspaceHostOperationsInHarnessShared.workspaceId, workspaceHostOperationsInHarnessShared.hostId],
+		references: [workspaceHostsInHarnessShared.workspaceId, workspaceHostsInHarnessShared.id]
+	}),
+	workspaceHostResourcesInHarnessShareds: many(workspaceHostResourcesInHarnessShared),
+}));
+
 export const personalGrantsInHarnessSharedRelations = relations(personalGrantsInHarnessShared, ({one}) => ({
 	usersInHarnessShared: one(usersInHarnessShared, {
 		fields: [personalGrantsInHarnessShared.userId],
 		references: [usersInHarnessShared.id]
+	}),
+}));
+
+export const workspaceHostEventsInHarnessSharedRelations = relations(workspaceHostEventsInHarnessShared, ({one}) => ({
+	workspaceHostsInHarnessShared: one(workspaceHostsInHarnessShared, {
+		fields: [workspaceHostEventsInHarnessShared.workspaceId, workspaceHostEventsInHarnessShared.hostId],
+		references: [workspaceHostsInHarnessShared.workspaceId, workspaceHostsInHarnessShared.id]
+	}),
+	workspaceHostOperationsInHarnessShared: one(workspaceHostOperationsInHarnessShared, {
+		fields: [workspaceHostEventsInHarnessShared.workspaceId, workspaceHostEventsInHarnessShared.operationId],
+		references: [workspaceHostOperationsInHarnessShared.workspaceId, workspaceHostOperationsInHarnessShared.id]
 	}),
 }));
 
@@ -494,11 +537,33 @@ export const benchRunTasksInHarnessSharedRelations = relations(benchRunTasksInHa
 	}),
 }));
 
+export const workspaceHostResourcesInHarnessSharedRelations = relations(workspaceHostResourcesInHarnessShared, ({one}) => ({
+	workspaceHostsInHarnessShared: one(workspaceHostsInHarnessShared, {
+		fields: [workspaceHostResourcesInHarnessShared.workspaceId, workspaceHostResourcesInHarnessShared.hostId],
+		references: [workspaceHostsInHarnessShared.workspaceId, workspaceHostsInHarnessShared.id]
+	}),
+	workspaceHostOperationsInHarnessShared: one(workspaceHostOperationsInHarnessShared, {
+		fields: [workspaceHostResourcesInHarnessShared.workspaceId, workspaceHostResourcesInHarnessShared.operationId],
+		references: [workspaceHostOperationsInHarnessShared.workspaceId, workspaceHostOperationsInHarnessShared.id]
+	}),
+}));
+
 export const personalDocumentsInHarnessSharedRelations = relations(personalDocumentsInHarnessShared, ({one}) => ({
 	usersInHarnessShared: one(usersInHarnessShared, {
 		fields: [personalDocumentsInHarnessShared.userId],
 		references: [usersInHarnessShared.id]
 	}),
+}));
+
+export const triageLedgerInHarnessSharedRelations = relations(triageLedgerInHarnessShared, ({one}) => ({
+	triageSnapshotsInHarnessShared: one(triageSnapshotsInHarnessShared, {
+		fields: [triageLedgerInHarnessShared.snapshotId],
+		references: [triageSnapshotsInHarnessShared.snapshotId]
+	}),
+}));
+
+export const triageSnapshotsInHarnessSharedRelations = relations(triageSnapshotsInHarnessShared, ({many}) => ({
+	triageLedgerInHarnessShareds: many(triageLedgerInHarnessShared),
 }));
 
 export const potMembersInHarnessSharedRelations = relations(potMembersInHarnessShared, ({one}) => ({
@@ -510,4 +575,8 @@ export const potMembersInHarnessSharedRelations = relations(potMembersInHarnessS
 
 export const potsInHarnessSharedRelations = relations(potsInHarnessShared, ({many}) => ({
 	potMembersInHarnessShareds: many(potMembersInHarnessShared),
+}));
+
+export const workspaceHostConnectionsInHarnessSharedRelations = relations(workspaceHostConnectionsInHarnessShared, ({many}) => ({
+	workspaceHostsInHarnessShareds: many(workspaceHostsInHarnessShared),
 }));
