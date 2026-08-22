@@ -105,11 +105,11 @@ async function lifecycleRows() {
     SELECT c.id,
            c.state,
            c.accepted_answer,
-           c.accepted_post_id,
+           c.accepted_post_id::text AS accepted_post_id,
            c.resolved_at IS NOT NULL AS has_resolved_at
       FROM harness_shared.coord_conversations c
      WHERE c.workspace_id = ${WS}
-     ORDER BY c.id
+     ORDER BY c.id COLLATE "C"
   `;
 }
 
@@ -144,7 +144,7 @@ describe('migration 885 — consult/coarse conversation lifecycle backfill', () 
 
     expect(await lifecycleRows()).toEqual([
       { id: 'already-closed', state: 'closed', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
-      { id: 'answered-with-post', state: 'resolved', accepted_answer: 'the answer', accepted_post_id: 17, has_resolved_at: true },
+      { id: 'answered-with-post', state: 'resolved', accepted_answer: 'the answer', accepted_post_id: '17', has_resolved_at: true },
       { id: 'answered-without-post', state: 'resolved', accepted_answer: 'recoverable answer', accepted_post_id: null, has_resolved_at: true },
       { id: 'cant-help', state: 'closed', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
       { id: 'graduated', state: 'closed', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
