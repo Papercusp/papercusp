@@ -630,6 +630,7 @@ if (indexOpclasses.status === 0) {
 
 writeFileSync(schemaPath, schema);
 console.log(`    fixed ${fixedDefaults} empty-string defaults`);
+console.log(`    fixed ${fixedEmptyArrayDefaults} empty-array defaults`);
 console.log(`    fixed ${fixedTimestamps} timestamptz columns (dropped invalid mode)`);
 console.log(`    fixed ${fixedFnDefaults} function-call defaults (wrapped in sql\`\`)`);
 console.log(`    typed ${fixedUnknownCols} unparsed columns via customType (bytea→Buffer, tsvector→string)`);
