@@ -7157,6 +7157,7 @@ export const triggerSourcesInHarnessShared = harnessShared.table("trigger_source
 	id: uuid().defaultRandom().notNull(),
 	kind: text().notNull(),
 	config: jsonb().default({}).notNull(),
+	ownerUserId: uuid("owner_user_id"),
 	credentialRef: text("credential_ref"),
 	status: text().default('unconfigured').notNull(),
 	cursor: jsonb().default({}).notNull(),
@@ -7166,7 +7167,13 @@ export const triggerSourcesInHarnessShared = harnessShared.table("trigger_source
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
+	index("trigger_sources_workspace_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops")).where(sql`(owner_user_id IS NOT NULL)`),
 	index("trigger_sources_ws_kind_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.ownerUserId],
+			foreignColumns: [usersInHarnessShared.id],
+			name: "trigger_sources_owner_user_id_fkey"
+		}).onDelete("set null"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "trigger_sources_pkey"}),
 	pgPolicy("trigger_sources_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("trigger_sources_kind_nonempty", sql`btrim(kind) <> ''::text`),
