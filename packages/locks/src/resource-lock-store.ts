@@ -24,6 +24,8 @@ export type ResourceLockStatus = 'held' | 'draining';
 export type ResourceEnforcement = 'advisory' | 'checked' | 'enforced';
 
 export interface ResourceHolder {
+  /** Named resource this holder row belongs to (present for scoped and unscoped reads). */
+  resource: string;
   owner: string;
   owner_label: string | null;
   mode: ResourceMode;
@@ -91,7 +93,7 @@ async function readLiveHolders(
   resource: string,
 ): Promise<ResourceHolder[]> {
   return tx<ResourceHolder[]>`
-    SELECT owner, owner_label, mode, status, lock_id::text AS lock_id, reason,
+    SELECT resource, owner, owner_label, mode, status, lock_id::text AS lock_id, reason,
            acquired_ts, expires_ts, fence_seq::int AS fence_seq
       FROM agent_resource_locks
      WHERE coordination_domain = ${coordinationDomain}
@@ -565,7 +567,7 @@ export async function readResourceQueue(
   const { coordinationDomain: cd, resource } = params;
   const holders = resource
     ? await sql<ResourceHolder[]>`
-        SELECT owner, owner_label, mode, status, lock_id::text AS lock_id, reason,
+        SELECT resource, owner, owner_label, mode, status, lock_id::text AS lock_id, reason,
                acquired_ts, expires_ts, fence_seq::int AS fence_seq
           FROM agent_resource_locks
          WHERE coordination_domain = ${cd}
@@ -574,7 +576,7 @@ export async function readResourceQueue(
          ORDER BY acquired_ts ASC
       `
     : await sql<ResourceHolder[]>`
-        SELECT owner, owner_label, mode, status, lock_id::text AS lock_id, reason,
+        SELECT resource, owner, owner_label, mode, status, lock_id::text AS lock_id, reason,
                acquired_ts, expires_ts, fence_seq::int AS fence_seq
           FROM agent_resource_locks
          WHERE coordination_domain = ${cd}
