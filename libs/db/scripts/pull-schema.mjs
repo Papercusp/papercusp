@@ -20,7 +20,9 @@
  *          it can see, including migration quarantine tables that are not
  *          application surface. EI-18785808338338490; logic + rationale in
  *          ../src/schema-scratch-tables.mjs (unit-tested).
- *   Fix 1: empty-string defaults emit `.default(')` (invalid TS).
+ *   Fix 1: empty-string defaults emit `.default(')` (invalid TS), and empty
+ *          PostgreSQL array defaults emit `.array().default([""])` (the
+ *          wrong one-element array).
  *   Fix 2: drop invalid `mode: 'number'` on timestamptz → drizzle default 'date'.
  *   Fix 3: function-call defaults wrapped in sql`` (e.g. to_char(now(), …)).
  *   Fix 4: `unknown(...)` for tsvector/bytea mapped to real customType
@@ -45,6 +47,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs';
+import { repairEmptyArrayDefaults } from '../src/schema/schema-defaults.mjs';
 import {
   annotateCircularForeignKeyExtraConfigs,
   promoteGeneratedSchemaArtifacts,
@@ -183,6 +186,14 @@ schema = schema
   .replace(/\.default\('\)\,/g, ".default(''),")
   .replace(/\.default\('\)$/gm, ".default('')");
 const fixedDefaults = (schema.match(/\.default\(''\)/g) ?? []).length;
+
+// Fix 1b: drizzle-kit renders PostgreSQL's empty array default (`'{}'`) as
+// `array().default([""])`, changing an empty array into one empty-string
+// element. Repair the generator output before promoting it to the committed
+// application schema. The pure helper is unit-tested without a live DB.
+const repairedArrayDefaults = repairEmptyArrayDefaults(schema);
+schema = repairedArrayDefaults.schema;
+const fixedEmptyArrayDefaults = repairedArrayDefaults.fixed;
 
 // Fix 2: drop the `mode` on timestamptz columns → drizzle's default 'date'
 // (returns a JS Date). drizzle-orm 0.45 only accepts mode 'date'|'string' on
