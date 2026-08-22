@@ -51,25 +51,29 @@ afterAll(async () => {
 
 describe('migration 891 — Google Gmail poll routine', () => {
   it('seeds the active one-minute durable action with bounded pull and renewal settings', async () => {
-    const rows = await sql<Array<{
-      target_role: string;
-      trigger_config: Record<string, unknown>;
-      concurrency: string;
-      catchup: string;
-      active: boolean;
-      tier: string;
-    }>>`
+    const rows = await sql<
+      Array<{
+        target_role: string;
+        trigger_config: Record<string, unknown>;
+        concurrency: string;
+        catchup: string;
+        active: boolean;
+        tier: string;
+      }>
+    >`
       SELECT target_role, trigger_config, concurrency, catchup, active, tier
         FROM harness_shared.routines
        WHERE install_slug = 'papercusp' AND name = 'google-gmail-poll'`;
-    expect(rows).toEqual([{
-      target_role: 'system:google-gmail-poll',
-      trigger_config: { cron: '15 * * * * *', max_messages: 100, renew_before_ms: 86_400_000 },
-      concurrency: 'skip',
-      catchup: 'skip-old',
-      active: true,
-      tier: 'durable',
-    }]);
+    expect(rows).toEqual([
+      {
+        target_role: 'system:google-gmail-poll',
+        trigger_config: { cron: '15 * * * * *', max_messages: 100, renew_before_ms: 86_400_000 },
+        concurrency: 'skip',
+        catchup: 'skip-old',
+        active: true,
+        tier: 'durable',
+      },
+    ]);
   });
 
   it('is idempotent and preserves an explicit operator pause', async () => {
