@@ -248,7 +248,7 @@ export async function upsertRoutine(
     /** Explicit next fire time — a ONE-SHOT routine (cron-kind, no cron expr,
      *  fires once at this instant and is deactivated on claim). Overrides the
      *  cron-derived computation when present. */
-    nextFireAt?: Date | null;
+    nextFireAt?: Date | null | 'infinity';
     /** LOOP interval in seconds (P-001) — re-fire N sec after the turn completes.
      *  Omit/NULL for a non-loop (cron/rrule/one-shot) routine. */
     rescheduleIntervalSec?: number | null;
@@ -268,7 +268,10 @@ export async function upsertRoutine(
 
   const triggerConfigStr = JSON.stringify(input.triggerConfig);
   const payloadTemplateStr = input.payloadTemplate ? JSON.stringify(input.payloadTemplate) : null;
-  const nextFireAtStr = nextFireAt ? nextFireAt.toISOString() : null;
+  // PURE loops use the timestamptz infinity sentinel while an in-flight turn is
+  // settling. The initial cold-loop arm uses the same sentinel before its first
+  // carry-note exists, so the routine ticker cannot claim it during a long arm.
+  const nextFireAtStr = nextFireAt === 'infinity' ? 'infinity' : nextFireAt ? nextFireAt.toISOString() : null;
   // EI-2019 / EI-2082 / EI-2123 / EI-2000 — the routines_pkey duplicate-key cluster.
   // `id` (the PRIMARY KEY) is derived deterministically from (install_slug, name) above, so it
   // IS the routine's canonical identity. The upsert must arbitrate on the id PK — NOT the
