@@ -1517,57 +1517,6 @@ export const operatorRateLimitConfigInHarnessShared = harnessShared.table("opera
 
 ]);
 
-export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage_samples", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.agent_usage_samples_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	workspaceId: text("workspace_id").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	ts: bigint({ mode: "number" }).notNull(),
-	bucketKey: text("bucket_key").notNull(),
-	provider: text().notNull(),
-	modelClass: text("model_class").notNull(),
-	source: text().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	inputTokens: bigint("input_tokens", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	outputTokens: bigint("output_tokens", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	cacheReadTokens: bigint("cache_read_tokens", { mode: "number" }),
-	costUsd: doublePrecision("cost_usd"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rlRequestsLimit: bigint("rl_requests_limit", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rlRequestsRemaining: bigint("rl_requests_remaining", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rlTokensLimit: bigint("rl_tokens_limit", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rlTokensRemaining: bigint("rl_tokens_remaining", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rlResetAt: bigint("rl_reset_at", { mode: "number" }),
-	model: text(),
-	costSource: text("cost_source"),
-	harnessSlug: text("harness_slug"),
-	runId: text("run_id"),
-	role: text(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	cacheCreationTokens: bigint("cache_creation_tokens", { mode: "number" }),
-	turnCount: integer("turn_count"),
-	sessionId: text("session_id"),
-	toolName: text("tool_name"),
-	turnTrigger: text("turn_trigger"),
-	accountId: text("account_id"),
-}, (table) => [
-	index("agent_usage_samples_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
-	index("agent_usage_samples_ws_account_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.accountId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(account_id IS NOT NULL)`),
-	index("agent_usage_samples_ws_bucket_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.bucketKey.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
-	index("agent_usage_samples_ws_goal_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(goal_id IS NOT NULL)`),
-	index("agent_usage_samples_ws_role_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(role IS NOT NULL)`),
-	index("agent_usage_samples_ws_session_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(session_id IS NOT NULL)`),
-	index("agent_usage_samples_ws_trigger_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.turnTrigger.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(turn_trigger IS NOT NULL)`),
-	index("agent_usage_samples_ws_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
-	pgPolicy("agent_usage_samples_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-]);
-
 export const promptCompositionsInHarnessShared = harnessShared.table("prompt_compositions", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -3902,6 +3851,58 @@ export const knowledgePackConfigInHarnessShared = harnessShared.table("knowledge
 	pgPolicy("knowledge_pack_config_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	primaryKey({ columns: [table.workspaceId], name: "knowledge_pack_config_pkey"}),
 
+]);
+
+export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage_samples", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.agent_usage_samples_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ts: bigint({ mode: "number" }).notNull(),
+	bucketKey: text("bucket_key").notNull(),
+	provider: text().notNull(),
+	modelClass: text("model_class").notNull(),
+	source: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	inputTokens: bigint("input_tokens", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	outputTokens: bigint("output_tokens", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	cacheReadTokens: bigint("cache_read_tokens", { mode: "number" }),
+	costUsd: doublePrecision("cost_usd"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rlRequestsLimit: bigint("rl_requests_limit", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rlRequestsRemaining: bigint("rl_requests_remaining", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rlTokensLimit: bigint("rl_tokens_limit", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rlTokensRemaining: bigint("rl_tokens_remaining", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rlResetAt: bigint("rl_reset_at", { mode: "number" }),
+	model: text(),
+	costSource: text("cost_source"),
+	harnessSlug: text("harness_slug"),
+	runId: text("run_id"),
+	role: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	cacheCreationTokens: bigint("cache_creation_tokens", { mode: "number" }),
+	turnCount: integer("turn_count"),
+	sessionId: text("session_id"),
+	toolName: text("tool_name"),
+	turnTrigger: text("turn_trigger"),
+	accountId: text("account_id"),
+	goalId: text("goal_id"),
+}, (table) => [
+	index("agent_usage_samples_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
+	index("agent_usage_samples_ws_account_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.accountId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(account_id IS NOT NULL)`),
+	index("agent_usage_samples_ws_bucket_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.bucketKey.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
+	index("agent_usage_samples_ws_goal_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(goal_id IS NOT NULL)`),
+	index("agent_usage_samples_ws_role_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(role IS NOT NULL)`),
+	index("agent_usage_samples_ws_session_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(session_id IS NOT NULL)`),
+	index("agent_usage_samples_ws_trigger_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.turnTrigger.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(turn_trigger IS NOT NULL)`),
+	index("agent_usage_samples_ws_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
+	pgPolicy("agent_usage_samples_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const collisionHysteresisInHarnessShared = harnessShared.table("collision_hysteresis", {
