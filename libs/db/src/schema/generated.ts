@@ -3768,6 +3768,7 @@ export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs"
 	intent: text().default('').notNull(),
 	currentPlanSlug: text("current_plan_slug"),
 	currentFiles: jsonb("current_files").default([]).notNull(),
+	ambientExcludedRefs: jsonb("ambient_excluded_refs"),
 	harnessSlug: text("harness_slug"),
 	nativeSessionId: text("native_session_id"),
 	firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
