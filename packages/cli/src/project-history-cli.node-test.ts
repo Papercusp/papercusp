@@ -196,6 +196,21 @@ test('template-carrier detection keys on frontmatter, not body prose', () => {
   assert.equal(isTemplateCarrierPlan('no frontmatter at all\n'), false);
 });
 
+test('marker-referenced work item exports stay within the public 2,000-id schema ceiling', () => {
+  const ids = Array.from({ length: WORK_ITEMS_EXPORT_IDS_BATCH_SIZE + 1 }, (_, index) => `WI-${index + 1}`);
+  const batches: string[][] = [];
+
+  const written = exportWorkItemsByIdBatches([...ids, ids[0]!], (batch) => {
+    batches.push([...batch]);
+    return batch.length;
+  });
+
+  assert.equal(written, ids.length);
+  assert.deepEqual(batches.map((batch) => batch.length), [WORK_ITEMS_EXPORT_IDS_BATCH_SIZE, 1]);
+  assert.deepEqual(batches.flat(), ids, 'deduplicated marker ids retain their first-seen order');
+  assert.ok(batches.every((batch) => batch.length <= WORK_ITEMS_EXPORT_IDS_BATCH_SIZE));
+});
+
 // REPLACES 'work-item ledger reads stay in timeout-resistant batches', which asserted
 // the 25-id chunking and passed for the entire life of WI-39831 — while every one of
 // those batches returned zero rows. The batches were not too slow, they were too BIG
