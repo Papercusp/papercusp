@@ -18,6 +18,7 @@ import {
   closeSync,
   constants as fsConstants,
   existsSync,
+  appendFileSync,
   mkdirSync,
   mkdtempSync,
   openSync,
@@ -2938,6 +2939,16 @@ export async function invoke(
   const jsonlPath = join(ctx.logDir, `${runId}.jsonl`);
   const outPath = join(ctx.logDir, `${runId}.out`);
   const errPath = join(ctx.logDir, `${runId}.err`);
+  // Release-fixers need a durable pre-turn trail: their first-turn guard can
+  // SIGTERM the child before the normal end-of-run writer executes. Keep the
+  // legacy .out/.err paths alive for this role even in PG-canonical mode so a
+  // killed attempt is diagnosable from the path recorded in its run log.
+  const retainReleaseFixerFiles = role === 'release-fixer';
+  if (retainReleaseFixerFiles) {
+    mkdirSync(ctx.logDir, { recursive: true });
+    writeFileSync(outPath, '');
+    writeFileSync(errPath, '');
+  }
 
   const finalArgv = [...argv.slice(1), ...extraFlags];
   const command = argv[0];
@@ -3530,6 +3541,9 @@ export async function invoke(
     // handler's fs.watch fallback keep the stream functional.
     child.stdout.on('data', (chunk: Buffer) => {
       echoActivityToOuterProcess();
+      if (retainReleaseFixerFiles) {
+        try { appendFileSync(outPath, chunk); } catch { /* best-effort diagnostic trail */ }
+      }
       jsonlChunks.push(chunk);
       const mySeq = chunkSeq;
       const myData = chunk.toString('utf8');
@@ -3560,7 +3574,13 @@ export async function invoke(
       }
       if (advancedSeq) chunkSeq++;
     });
-    child.stderr.on('data', (chunk: Buffer) => { echoActivityToOuterProcess(); errChunks.push(chunk); });
+    child.stderr.on('data', (chunk: Buffer) => {
+      echoActivityToOuterProcess();
+      if (retainReleaseFixerFiles) {
+        try { appendFileSync(errPath, chunk); } catch { /* best-effort diagnostic trail */ }
+      }
+      errChunks.push(chunk);
+    });
 
     // EPIPE protection: if the subprocess exits before reading our stdin
     // (e.g. `true`, or a crashed claude binary), the write would throw an
@@ -3682,7 +3702,7 @@ export async function invoke(
   // Files are still written when:
   //   - PG isn't wired (CLI fallback — user might tail -f), OR
   //   - PAPERCUSP_KEEP_FILES=1 (explicit override for debug)
-  const writeFilesForFallback = !(ctx.pg && ctx.workspaceId)
+  const writeFilesForFallback = retainReleaseFixerFiles || !(ctx.pg && ctx.workspaceId)
     || process.env.PAPERCUSP_KEEP_FILES === '1';
   if (writeFilesForFallback) {
     if (!existsSync(ctx.logDir)) mkdirSync(ctx.logDir, { recursive: true });
