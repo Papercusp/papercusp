@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import {
   commitsForWorkItems,
+  exportMissingWorkItemsByIdBatches,
   exportWorkItemsByIdBatches,
   githubWebUrl,
   isTemplateCarrierPlan,
@@ -212,6 +213,33 @@ test('marker-referenced work item exports stay within the public 2,000-id schema
   assert.deepEqual(batches.map((batch) => batch.length), [WORK_ITEMS_EXPORT_IDS_BATCH_SIZE, 1]);
   assert.deepEqual(batches.flat(), ids, 'deduplicated marker ids retain their first-seen order');
   assert.ok(batches.every((batch) => batch.length <= WORK_ITEMS_EXPORT_IDS_BATCH_SIZE));
+});
+
+test('marker-referenced export skips rows already materialized by the harness export', async () => {
+  const directory = await fs.mkdtemp(join(tmpdir(), 'project-history-missing-id-export-'));
+  try {
+    await Promise.all([
+      fs.writeFile(join(directory, 'WI-2.json'), '{"id":"WI-2"}\n', 'utf8'),
+      // A same-named directory is not a materialized row and must not suppress
+      // the ID export for WI-3.
+      fs.mkdir(join(directory, 'WI-3.json')),
+    ]);
+    const batches: string[][] = [];
+
+    const written = await exportMissingWorkItemsByIdBatches(
+      directory,
+      ['WI-1', 'WI-2', 'WI-3', 'WI-1', 'WI-4'],
+      (batch) => {
+        batches.push([...batch]);
+        return batch.length;
+      },
+    );
+
+    assert.equal(written, 3);
+    assert.deepEqual(batches, [['WI-1', 'WI-3', 'WI-4']]);
+  } finally {
+    await removeProjectHistoryExportDirectory(directory);
+  }
 });
 
 test('large temporary exports retry transient ENOTEMPTY removal races', async () => {

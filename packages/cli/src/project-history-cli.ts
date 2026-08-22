@@ -358,6 +358,29 @@ export function exportWorkItemsByIdBatches(
   return written;
 }
 
+/**
+ * The complete harness export already materializes every terminal row. Only
+ * marker-referenced rows absent from that directory need the ID export: those
+ * are typically non-terminal rows referenced by a plan's completion marker.
+ * Preserve first-seen ID order and let the shared batch helper enforce the
+ * public argument ceiling.
+ */
+export async function exportMissingWorkItemsByIdBatches(
+  directory: string,
+  ids: readonly string[],
+  exportBatch: (batch: readonly string[]) => number,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  const exportedIds = new Set(
+    entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+      .map((entry) => basename(entry.name, '.json')),
+  );
+  const missing = [...new Set(ids)].filter((id) => !exportedIds.has(id));
+  return exportWorkItemsByIdBatches(missing, exportBatch);
+}
+
 function git(runner: CommandRunner, repoRoot: string, args: readonly string[], allowFailure = false): string {
   const result = runner.run('git', args, { cwd: repoRoot });
   if (allowFailure && result.status !== 0) return '';
@@ -638,8 +661,10 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
    *   1. by HARNESS — every terminal row, which is what admits work by its own
    *      ledger linkage (`payload.plan_item.plan_slug`) rather than only by a
    *      `← WI-NNN completed` marker someone remembered to write (P-005).
-   *   2. by ID — the marker-referenced ids, which picks up anything the harness
-   *      enumeration misses (a referenced row that is not terminal).
+   *   2. by ID — only marker-referenced ids that are not already materialized by
+   *      the harness enumeration, which picks up anything that enumeration misses
+   *      (a referenced row that is not terminal) without rewriting every terminal
+   *      row a second time.
    */
   async loadWorkItems(ids: readonly string[]): Promise<readonly ProjectHistoryWorkItemInput[]> {
     const exportDirectory = await fs.mkdtemp(join(tmpdir(), 'papercusp-project-history-items-'));
@@ -649,14 +674,18 @@ class PtoolGitProjectHistoryProvider implements ProjectHistoryProvider {
         toDir: exportDirectory,
       }), 'harness');
 
-      const idExport = exportWorkItemsByIdBatches(ids, (batch) => exportedCount(
-        ptool(this.runner, this.options, 'work_items:export', {
-          ids: [...batch],
-          harness: this.options.harness,
-          toDir: exportDirectory,
-        }),
-        'ids',
-      ));
+      const idExport = await exportMissingWorkItemsByIdBatches(
+        exportDirectory,
+        ids,
+        (batch) => exportedCount(
+          ptool(this.runner, this.options, 'work_items:export', {
+            ids: [...batch],
+            harness: this.options.harness,
+            toDir: exportDirectory,
+          }),
+          'ids',
+        ),
+      );
 
       const { items, fileEvidence } = await readExportedWorkItems(exportDirectory);
       // generateProjectHistory calls loadWorkItems before loadCommits, so the file
