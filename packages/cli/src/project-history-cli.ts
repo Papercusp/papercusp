@@ -279,44 +279,58 @@ export async function removeProjectHistoryExportDirectory(
  * Both export legs write into the same directory, so the union is deduplicated by
  * filename for free.
  */
-async function readExportedWorkItems(
+export const PROJECT_HISTORY_FILE_READ_CONCURRENCY = 64;
+
+type ReadFile = (file: string, encoding: 'utf8') => Promise<string>;
+
+export async function readExportedWorkItems(
   directory: string,
+  readFile: ReadFile = fs.readFile,
 ): Promise<{ items: ProjectHistoryWorkItemInput[]; fileEvidence: WorkItemFileEvidence[] }> {
-  const entries = await fs.readdir(directory, { withFileTypes: true });
+  const entries = (await fs.readdir(directory, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.json'));
   const items: ProjectHistoryWorkItemInput[] = [];
   const fileEvidence: WorkItemFileEvidence[] = [];
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
-    const raw = await fs.readFile(join(directory, entry.name), 'utf8');
-    // A malformed row is a real export failure, not a row to skip quietly.
-    const row = object(JSON.parse(raw) as unknown);
-    if (!row) throw new Error(`work_items:export wrote a non-object row at ${entry.name}`);
-    const id = string(row.id);
-    const title = string(row.title);
-    if (!id || !title) continue;
-    const evidence = object(row.terminalCompletionEvidence)
-      ?? object(object(row.payload)?._completionEvidence);
-    const planItem = object(object(row.payload)?.plan_item);
-    const planSlug = string(planItem?.plan_slug) ?? string(row.sourcePlanSlug);
-    items.push({
-      id,
-      kind: string(row.kind) ?? 'work-item',
-      title,
-      state: string(row.state) ?? 'unknown',
-      completedAt: string(row.closedAt),
-      completionAuthority: string(row.completionAuthority) ?? 'work-item-ledger',
-      completionSummary: string(evidence?.summary),
-      completionEvidence: evidence,
-      planSlugs: planSlug ? [planSlug] : undefined,
-    });
-
-    const changed = Array.isArray(evidence?.filesChanged)
-      ? (evidence.filesChanged as unknown[]).filter((file): file is string => typeof file === 'string')
-      : [];
-    const closedAt = string(row.closedAt);
-    const closedAtMs = closedAt ? Date.parse(closedAt) : Number.NaN;
-    if (changed.length > 0 && Number.isFinite(closedAtMs)) {
-      fileEvidence.push({ id, filesChanged: changed, closedAtMs });
+  for (let offset = 0; offset < entries.length; offset += PROJECT_HISTORY_FILE_READ_CONCURRENCY) {
+    const loaded = await Promise.all(
+      entries.slice(offset, offset + PROJECT_HISTORY_FILE_READ_CONCURRENCY).map(async (entry) => {
+        const raw = await readFile(join(directory, entry.name), 'utf8');
+        // A malformed row is a real export failure, not a row to skip quietly.
+        const row = object(JSON.parse(raw) as unknown);
+        if (!row) throw new Error(`work_items:export wrote a non-object row at ${entry.name}`);
+        const id = string(row.id);
+        const title = string(row.title);
+        if (!id || !title) return null;
+        const evidence = object(row.terminalCompletionEvidence)
+          ?? object(object(row.payload)?._completionEvidence);
+        const planItem = object(object(row.payload)?.plan_item);
+        const planSlug = string(planItem?.plan_slug) ?? string(row.sourcePlanSlug);
+        const item: ProjectHistoryWorkItemInput = {
+          id,
+          kind: string(row.kind) ?? 'work-item',
+          title,
+          state: string(row.state) ?? 'unknown',
+          completedAt: string(row.closedAt),
+          completionAuthority: string(row.completionAuthority) ?? 'work-item-ledger',
+          completionSummary: string(evidence?.summary),
+          completionEvidence: evidence,
+          planSlugs: planSlug ? [planSlug] : undefined,
+        };
+        const changed = Array.isArray(evidence?.filesChanged)
+          ? (evidence.filesChanged as unknown[]).filter((file): file is string => typeof file === 'string')
+          : [];
+        const closedAt = string(row.closedAt);
+        const closedAtMs = closedAt ? Date.parse(closedAt) : Number.NaN;
+        const evidenceRow = changed.length > 0 && Number.isFinite(closedAtMs)
+          ? { id, filesChanged: changed, closedAtMs } satisfies WorkItemFileEvidence
+          : null;
+        return { item, evidenceRow };
+      }),
+    );
+    for (const result of loaded) {
+      if (!result) continue;
+      items.push(result.item);
+      if (result.evidenceRow) fileEvidence.push(result.evidenceRow);
     }
   }
   return { items, fileEvidence };

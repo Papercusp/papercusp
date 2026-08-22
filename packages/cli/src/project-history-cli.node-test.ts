@@ -12,7 +12,9 @@ import {
   loadProjectHistoryPlansFromExport,
   parseGitLog,
   parseProjectHistoryGenerateArgs,
+  PROJECT_HISTORY_FILE_READ_CONCURRENCY,
   projectHistoryOutputIsCurrent,
+  readExportedWorkItems,
   removeProjectHistoryExportDirectory,
   renderProjectHistory,
   repositoryFromRemote,
@@ -223,6 +225,33 @@ test('large temporary exports retry transient ENOTEMPTY removal races', async ()
     directory: '/tmp/project-history-export',
     options: { recursive: true, force: true, maxRetries: 5, retryDelay: 20 },
   }]);
+});
+
+test('large exported work-item reads use bounded parallelism and preserve every row', async () => {
+  const directory = await fs.mkdtemp(join(tmpdir(), 'project-history-read-batches-'));
+  const count = PROJECT_HISTORY_FILE_READ_CONCURRENCY * 2 + 1;
+  const names = Array.from({ length: count }, (_, index) => `WI-${index + 1}.json`);
+  await Promise.all(names.map((name) => fs.writeFile(join(directory, name), '', 'utf8')));
+  let active = 0;
+  let maxActive = 0;
+
+  try {
+    const { items } = await readExportedWorkItems(directory, async (file, encoding) => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      assert.equal(encoding, 'utf8');
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active--;
+      const id = file.split('/').at(-1)!.replace(/\.json$/, '');
+      return JSON.stringify({ id, title: id, kind: 'change', state: 'done' });
+    });
+
+    assert.equal(items.length, count);
+    assert.equal(new Set(items.map((item) => item.id)).size, count);
+    assert.equal(maxActive, PROJECT_HISTORY_FILE_READ_CONCURRENCY);
+  } finally {
+    await removeProjectHistoryExportDirectory(directory);
+  }
 });
 
 // REPLACES 'work-item ledger reads stay in timeout-resistant batches', which asserted
