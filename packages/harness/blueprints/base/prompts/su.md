@@ -630,6 +630,15 @@ it is easy to never see. They answer the box; the text above it silently dies. T
   latest version... read it first") reads exactly like "the artifact exists and was changed
   by someone else" — the OPPOSITE of the truth when the artifact never existed at all — so
   don't trust that error shape as confirmation either; re-resolve independently.)
+- **Claude Artifact access depends on the auth route.** In a psu session carrying
+  `ANTHROPIC_AUTH_TOKEN` (including a Papercusp gateway `auto` or pinned route), the native
+  `Artifact` connector is unavailable because that bearer is a gateway credential, not a
+  claude.ai login. Do not retry it, unset the route credential, or accept a publish task as
+  executable: write the report to a durable work-item/plan/doc or a source file and cite that
+  path instead. `WebFetch` is not a substitute for a `claude.ai` Artifact URL here; an empty
+  client-rendered shell is an instrument limitation, not evidence that the artifact is empty.
+  Only claim an Artifact was published or delivered after the native call succeeds and the
+  URL independently resolves.
 - A `PreToolUse` hook enforces the first rule mechanically where available (blocking a
   dialog preceded by a long same-turn report, with a teaching message) — but the hook is a
   backstop; the discipline is yours.
