@@ -1,10 +1,11 @@
--- 888-google-calendar-poll-routine.sql — external triggers P-019.
+-- 888-google-calendar-poll-routine.sql — external-triggers P-019 / D-010
 --
--- The Google Calendar adapter uses the existing durable routines engine as its
--- local poll/time-wheel. Calendar push channels require a public webhook, so
--- the offline-first path deliberately polls with a persisted syncToken instead.
--- Re-applying this migration updates the routine contract without undoing an
--- operator's explicit pause.
+-- Local, queue-free Calendar time-wheel. The action first advances each source's
+-- Google events.list syncToken, then performs the bounded upcoming window. The
+-- trigger_deliveries ledger dedupes repeat polls by event id + start time.
+--
+-- FORWARD-COMPAT: an older routines host fail-soft skips an unregistered
+-- system action, so arming this row before the runtime deploy mutates no cursor.
 
 INSERT INTO harness_shared.routines
   (id, install_slug, workspace_id, name, trigger_kind, trigger_config,
@@ -22,5 +23,6 @@ ON CONFLICT (install_slug, name) DO UPDATE SET
   concurrency = EXCLUDED.concurrency,
   catchup = EXCLUDED.catchup,
   tier = EXCLUDED.tier,
+  -- Preserve an operator's explicit pause on re-apply/re-seed.
   active = harness_shared.routines.active,
   updated_at = now();
