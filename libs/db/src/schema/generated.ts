@@ -1232,6 +1232,7 @@ export const coordPresenceInHarnessShared = harnessShared.table("coord_presence"
 	fleetSlug: text("fleet_slug"),
 	fleetRole: text("fleet_role"),
 	compactionLimit: integer("compaction_limit"),
+	compactionLimitExplicit: boolean("compaction_limit_explicit").default(false).notNull(),
 	contextTokens: integer("context_tokens"),
 	contextEstimatedAt: timestamp("context_estimated_at", { withTimezone: true, mode: 'string' }),
 	potSlug: text("pot_slug"),
