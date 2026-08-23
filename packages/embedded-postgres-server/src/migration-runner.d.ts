@@ -6,6 +6,9 @@ export function defaultSkipFile(f: any): any;
  * @param {(s: string) => void} [args.log]
  * @param {(file: string) => boolean} [args.skipFile]   Optional filter; defaults to skipping the per-harness template.
  * @param {(file: string, raw: string) => void | Promise<void>} [args.beforeApply] Optional fail-closed guard run after the file is read and before its SQL executes.
+ * @param {boolean} [args.dataDirWasReused] Whether embedded boot found an existing
+ *   PGDATA directory. When provided, failure diagnostics distinguish schema drift
+ *   in reused data from a broken fresh-install migration/prerequisite.
  * @param {boolean} [args.continueOnError]   Default false (fail-loud — embedded-pg
  *   boot + the fresh-migrate gate rely on a broken migration HALTING). Pass true
  *   on the shared native-:5432 operator boot (handoff-coordination-dx-followups A1):
@@ -13,12 +16,13 @@ export function defaultSkipFile(f: any): any;
  *   array and the boot CONTINUES (the bad file stays unrecorded → retried next
  *   boot), so one peer's broken migration can't wedge the dev-api for the fleet.
  */
-export function applyPendingMigrations({ client, sqlDir, log, skipFile, beforeApply, continueOnError }: {
+export function applyPendingMigrations({ client, sqlDir, log, skipFile, beforeApply, dataDirWasReused, continueOnError }: {
     client: object;
     sqlDir: string;
     log?: ((s: string) => void) | undefined;
     skipFile?: ((file: string) => boolean) | undefined;
     beforeApply?: ((file: string, raw: string) => void | Promise<void>) | undefined;
+    dataDirWasReused?: boolean | undefined;
     continueOnError?: boolean | undefined;
 }): Promise<{
     appliedCount: number;
