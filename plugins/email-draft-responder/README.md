@@ -3,7 +3,7 @@
 This is the first-party example for the `triggerPack` manifest surface. It packages:
 
 - a graph with one reusable plan target, one Gmail event binding, and no internal edges;
-- the workflow input schema plus the target's plan input schema;
+- a nonempty workflow input schema plus the target's canonical `email-message` input schema;
 - the inbound-message filter and default storm policy; and
 - explicit snapshot-safe OAuth metadata (`secret`, `shareable:false`, `snapshotPolicy:strip`, and scopes).
 

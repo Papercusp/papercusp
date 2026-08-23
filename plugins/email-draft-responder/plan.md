@@ -17,11 +17,12 @@ status: draft
 Each inbound Gmail message creates an isolated trigger run. The run carries the normalized
 message under `payload.plan_run.inputs.trigger.payload`. The draft tool resolves the recipient,
 thread, reply headers, and OAuth credential from that durable run. It creates a Gmail draft and
-has no send branch, so a person can review the response before sending it.
+has no send branch, so a person can review the response before sending it. The optional
+`responseGuidance` workflow input steers tone without changing any recipient or thread coordinate.
 
 ## Phase 1 — Draft
 
-- **P-001** `todo` Read `payload.plan_run.inputs.trigger.payload`, compose a concise response, then call `gmail:create-draft` with `planRunId=payload.plan_run.runId` and the response text. Complete only after the tool reports `created:true` or `alreadyCreated:true`.
+- **P-001** `todo` Read `payload.plan_run.inputs.trigger.payload` plus optional `payload.plan_run.inputs.responseGuidance`, compose a concise response, then call `gmail:create-draft` with `planRunId=payload.plan_run.runId` and the response text. Complete only after the tool reports `created:true` or `alreadyCreated:true`.
 
 ## Decisions
 

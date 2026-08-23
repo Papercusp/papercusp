@@ -46,7 +46,14 @@
     "inputs": {
       "type": "object",
       "additionalProperties": false,
-      "properties": {}
+      "properties": {
+        "responseGuidance": {
+          "type": "string",
+          "title": "Reply guidance",
+          "default": "Concise, helpful, and faithful to the inbound message.",
+          "maxLength": 1000
+        }
+      }
     },
     "defaultStormPolicy": {
       "maxRuns": 5,
@@ -75,6 +82,7 @@
                 "dedupeKey": { "type": "string", "minLength": 1 },
                 "payload": {
                   "type": "object",
+                  "datatype": "email-message",
                   "additionalProperties": true,
                   "required": ["id", "threadId", "from", "subject", "messageId", "direction"],
                   "properties": {
@@ -87,6 +95,11 @@
                   }
                 }
               }
+            },
+            "responseGuidance": {
+              "type": "string",
+              "maxLength": 1000,
+              "default": "Concise, helpful, and faithful to the inbound message."
             }
           }
         }
