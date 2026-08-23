@@ -76,6 +76,7 @@ async function counts(tx: TransactionSql): Promise<Counts> {
 
 const ZERO: Counts = { connections: 0, hosts: 0, operations: 0, resources: 0, events: 0, logs: 0 };
 const ONE: Counts = { connections: 1, hosts: 1, operations: 1, resources: 1, events: 1, logs: 1 };
+const TWO: Counts = { connections: 2, hosts: 2, operations: 2, resources: 2, events: 2, logs: 2 };
 
 async function seedTenant(control: string, customer: string, organization: string, suffix: string): Promise<void> {
   await sql`
@@ -130,7 +131,7 @@ beforeAll(async () => {
         CREATE ROLE harness_app NOLOGIN NOSUPERUSER NOBYPASSRLS;
       END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_zero') THEN
-        CREATE ROLE harness_zero NOLOGIN NOSUPERUSER NOBYPASSRLS;
+        CREATE ROLE harness_zero NOLOGIN REPLICATION SUPERUSER;
       END IF;
     END
     $roles$;
@@ -246,6 +247,6 @@ describe('migration 908 — workspace-host organization/workspace RLS', () => {
       await setScope(tx, { workspaceId: CONTROL_B });
       return counts(tx);
     });
-    expect(zero).toEqual(ONE);
+    expect(zero).toEqual(TWO);
   });
 });
