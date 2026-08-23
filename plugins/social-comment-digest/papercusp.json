@@ -26,12 +26,13 @@
           "default": "Anything hostile, legal, financial, a safety report, or a direct question the owner alone can answer.",
           "maxLength": 1000
         },
-        "maxCommentsPerDigest": {
+        "maxCommentsPerPlatform": {
           "type": "integer",
-          "title": "Comments summarised per digest",
+          "title": "Comments summarised per platform",
+          "description": "Passed straight to social:search as `limit`, whose documented ceiling is 50 — so this cannot promise more than one call can return.",
           "minimum": 1,
-          "maximum": 500,
-          "default": 100
+          "maximum": 50,
+          "default": 50
         }
       }
     },
@@ -88,11 +89,11 @@
               "maxLength": 1000,
               "default": "Anything hostile, legal, financial, a safety report, or a direct question the owner alone can answer."
             },
-            "maxCommentsPerDigest": {
+            "maxCommentsPerPlatform": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 500,
-              "default": 100
+              "maximum": 50,
+              "default": 50
             }
           }
         }

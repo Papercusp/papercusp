@@ -11,8 +11,22 @@ This pack ships no scheduler. Social storm policy is `coalesce-with-cap`, so wit
 first comment launches a run and the rest fold into it — which is what a digest is. Retune the
 cadence by changing the window, not by arming a timer beside it.
 
-Nothing is discarded: the cap bounds RUNS, not events. That is the difference from the binding
-engine's mail-shaped default, which skips the overflow — correct for mail, silent data loss here.
+Nothing is discarded by the policy: the cap bounds RUNS, not events. That is the difference from
+the binding engine's mail-shaped default, which skips the overflow — correct for mail, silent data
+loss here.
+
+## How the run reads a window it cannot see
+
+A run is launched by ONE event. The comments coalesced into it live in
+`harness_shared.trigger_deliveries`, which **no agent verb exposes** — `triggers:*` is
+create/bind/arm/disarm/list/status only. So the plan does not read delivery rows; it reconstructs
+the window from the launching event's timestamp and the source's storm-policy `windowSeconds`, then
+calls `social:search` once per platform with that `{ from, to }` range.
+
+That path has its own hard limit worth knowing: `social:search` returns at most **50 hits per
+call**, which is why `maxCommentsPerPlatform` is capped at 50 and why the plan reports a platform
+whose search came back exactly full as OVERFLOWED. A digest that quietly truncated would claim a
+completeness it never had.
 
 ## Per-platform caps
 
