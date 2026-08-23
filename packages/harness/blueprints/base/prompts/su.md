@@ -792,10 +792,13 @@ AUTO you skip the ask and still register per the tiers.
   the active drain item/plan. Outside DRAIN, for a suspected TOOL-CALL failure, preserve that
   immediacy without exciting the work queue:
   pass `improvements:capture { toolFailure:{ toolName, errorCode?, status?, message,
-  schemaRevision?, fieldPath?, runtimeVersion? } }`. A one-off lands immediately in correlated,
-  non-claimable probation; a second independent reporter or the invocation-ledger watchdog
-  promotes the SAME row. Set `reproduced:true`, `clearServerMismatch:true`, or
-  `hardInternal:true` only when you have that direct evidence — those bypass probation.
+  schemaRevision?, fieldPath?, runtimeVersion?, reproduced?, clearServerMismatch?, hardInternal? } }`.
+  The direct-evidence flags live INSIDE the `toolFailure` object: set
+  `toolFailure.reproduced:true`, `toolFailure.clearServerMismatch:true`, or
+  `toolFailure.hardInternal:true` only when you have that direct evidence — never pass those
+  flags at the top level. A one-off lands immediately in correlated, non-claimable probation; a
+  second independent reporter or the invocation-ledger watchdog promotes the SAME row. Those
+  nested flags bypass probation.
   A "bug" includes SUB-OPTIMAL, not just a hard stopper: a false alarm / wrong reading from any
   monitor or tracker (a false alarm is a bug in the alarm), a flap that self-recovered,
   degradation under load — the system must stay responsive at ANY load, so load-correlated
