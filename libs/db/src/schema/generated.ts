@@ -9681,7 +9681,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	pgPolicy("work_items_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("hfc_design_status_chk", sql`(design_status IS NULL) OR (design_status = ANY (ARRAY['pending'::text, 'accepted'::text, 'ignored'::text]))`),
 	check("hfc_rank_writer_chk", sql`(rank_writer IS NULL) OR (rank_writer = ANY (ARRAY['cup'::text, 'mug'::text]))`),
-	check("work_items_signal_origin_chk", sql`(((payload -> '_ei'::text) ->> 'signal_origin'::text) IS NULL) OR (((payload -> '_ei'::text) ->> 'signal_origin'::text) = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])))) NOT VALID`),
+	check("work_items_signal_origin_chk", sql`(((payload -> '_ei'::text) ->> 'signal_origin'::text) IS NULL) OR (((payload -> '_ei'::text) ->> 'signal_origin'::text) = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text]))`),
 	check("work_items_authority_check", sql`(authority IS NULL) OR (authority = ANY (ARRAY['proposed'::text, 'validated'::text, 'committed'::text, 'pending_human'::text, 'invalid'::text]))`),
 	check("work_items_payload_is_object_ck", sql`(payload IS NULL) OR (jsonb_typeof(payload) = 'object'::text)`),
 	check("hfc_workspace_nonempty", sql`workspace_id <> ''::text`),
