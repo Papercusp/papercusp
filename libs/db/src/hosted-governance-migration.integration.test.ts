@@ -54,7 +54,10 @@ describe('migration 907 — hosted governance', () => {
       INSERT INTO papercusp_auth.legal_acceptances (
         organization_id, user_id, document_kind, document_version,
         acceptance_source, evidence
-      ) VALUES (${ORG}::uuid, ${USER}::uuid, 'terms', '2026-08-23', 'hosted_ui', ${{ screen: 'signup' }})
+      ) VALUES (
+        ${ORG}::uuid, ${USER}::uuid, 'terms', '2026-08-23', 'hosted_ui',
+        ${JSON.stringify({ screen: 'signup' })}::text::jsonb
+      )
       RETURNING id`;
 
     await expect(sql`
@@ -77,7 +80,7 @@ describe('migration 907 — hosted governance', () => {
         organization_id, actor_kind, actor_id, action, purpose, metadata
       ) VALUES (
         ${ORG}::uuid, 'staff_admin', ${STAFF}, 'support.grant.created',
-        'Case 42 diagnosis', ${{ caseRef: 'case-42' }}
+        'Case 42 diagnosis', ${JSON.stringify({ caseRef: 'case-42' })}::text::jsonb
       ) RETURNING id`;
 
     await expect(sql`
@@ -89,7 +92,7 @@ describe('migration 907 — hosted governance', () => {
         organization_id, actor_kind, actor_id, action, purpose, metadata
       ) VALUES (
         ${ORG}::uuid, 'staff_admin', ${STAFF}, 'unsafe', 'unsafe payload',
-        ${{ nested: { access_token: 'do-not-store' } }}
+        ${JSON.stringify({ nested: { access_token: 'do-not-store' } })}::text::jsonb
       )
     `).rejects.toThrow(/organization_audit_events_metadata_safe_ck/);
   });
@@ -146,7 +149,8 @@ describe('migration 907 — hosted governance', () => {
         organization_id, user_id, locale, time_zone, profile, notification_preferences
       ) VALUES (
         ${ORG}::uuid, ${USER}::uuid, 'en-US', 'America/New_York',
-        ${{ displayName: 'Avi' }}, ${{ productUpdates: false, security: true }}
+        ${JSON.stringify({ displayName: 'Avi' })}::text::jsonb,
+        ${JSON.stringify({ productUpdates: false, security: true })}::text::jsonb
       )`;
     const rows = await sql<{ locale: string; time_zone: string }[]>`
       SELECT locale, time_zone FROM papercusp_auth.hosted_user_preferences
@@ -155,7 +159,8 @@ describe('migration 907 — hosted governance', () => {
 
     await expect(sql`
       UPDATE papercusp_auth.hosted_user_preferences
-         SET notification_preferences = ${{ webhookSecret: 'do-not-store' }}
+         SET notification_preferences =
+           ${JSON.stringify({ webhookSecret: 'do-not-store' })}::text::jsonb
        WHERE organization_id = ${ORG}::uuid AND user_id = ${USER}::uuid
     `).rejects.toThrow(/hosted_user_preferences_notifications_safe_ck/);
   });

@@ -135,6 +135,7 @@ beforeAll(async () => {
     END
     $roles$;
     CREATE SCHEMA harness_shared;
+    GRANT USAGE ON SCHEMA harness_shared TO harness_app, harness_zero;
     CREATE FUNCTION harness_shared.emit_change_notify()
     RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
