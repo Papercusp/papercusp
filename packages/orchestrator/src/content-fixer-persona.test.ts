@@ -5,7 +5,25 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const harnessDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'harness');
-const promptPath = join(harnessDir, 'blueprints', 'base', 'prompts', 'content-fixer.md');
+/**
+ * Defaults to the real prompt; overridable so falsifiability can be proven WITHOUT
+ * mutating the shared tree (`scripts/mutation-probe.sh` copy-out tier). git-sync sweeps
+ * the whole working tree every few minutes, so an in-tree mutation held for the length
+ * of a test run can be committed even when nothing goes wrong — this one line is what
+ * keeps the probe out of that race.
+ */
+const promptPath =
+  process.env.CONTENT_FIXER_PROMPT_PATH ??
+  join(harnessDir, 'blueprints', 'base', 'prompts', 'content-fixer.md');
+
+/**
+ * The per-detector lint scripts the persona used to prescribe as its verification step.
+ * They exist for only two of the registered content detectors, they enumerate the TRACKED
+ * tree (so an untracked quarantined file is never examined and the lint reports ✓ having
+ * measured nothing), and they can drift from the registry the guard actually consumes.
+ * `npm run content-lint` is the shim over that same registry and replaces all of them.
+ */
+const RETIRED_VERIFICATION_COMMANDS = ['lint:mdx', 'lint:smart-quotes'];
 
 test('content-fixer persona treats the dispatch extra as the sole authoritative offender list', () => {
   const prompt = readFileSync(promptPath, 'utf8');
@@ -33,4 +51,46 @@ test('content-fixer persona repairs generated docs at their canonical source', (
   assert.match(prompt, /canonical document/);
   assert.match(prompt, /projection will be rewritten/);
   assert.match(prompt, /Never alter a generated-projection header/);
+});
+
+test('content-fixer persona verifies through the shared registry probe, not a per-detector lint', () => {
+  const prompt = readFileSync(promptPath, 'utf8');
+
+  // The one command that covers EVERY registered detector, on tracked and untracked files
+  // alike, because it is a shim over the same DEFAULT_CONTENT_DETECTORS the guard consumes.
+  assert.match(prompt, /npm run content-lint -- --file=/);
+  // Exit 2 means NOTHING RAN. A persona that omits this invites a no-detector-in-scope run
+  // being read as a pass — the false-green class the probe was built to refuse.
+  assert.match(prompt, /never read a 2 as clean/i);
+
+  // A dispatch arrives for whatever the registry holds today, so the persona must not
+  // hand-maintain a second copy of that list (derived-truth-ladder).
+  assert.match(prompt, /npm run content-lint -- --list/);
+
+  for (const cmd of RETIRED_VERIFICATION_COMMANDS) {
+    assert.doesNotMatch(
+      prompt,
+      new RegExp(`npm run ${cmd.replace(':', ':')}\\b`),
+      `persona still prescribes \`npm run ${cmd}\`: it covers 2 of the registered detectors, ` +
+        'is tracked-only, and can drift from the guard. Use `npm run content-lint -- --file=<path>`.',
+    );
+  }
+});
+
+test('content-fixer persona re-detects BEFORE editing, and stops when the offender is already clean', () => {
+  const prompt = readFileSync(promptPath, 'utf8');
+
+  const reprobe = prompt.indexOf('re-run the detectors');
+  const classify = prompt.indexOf('classify it before editing it');
+  assert.ok(reprobe >= 0, 'the persona must open with a re-detect step');
+  assert.ok(
+    reprobe < classify,
+    'the re-detect step must come BEFORE any file is classified/opened for editing — ' +
+      'git-sync detects at the start of a tick and the fixer boots later, so offenders are ' +
+      'routinely already repaired by their author on arrival',
+  );
+
+  // The whole point of the step: an already-clean offender must produce NO edit.
+  assert.match(prompt, /change nothing/);
+  assert.match(prompt, /Repair only the offenders that are still failing/);
 });
