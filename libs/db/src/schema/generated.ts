@@ -1771,6 +1771,7 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	endedBy: text("ended_by"),
 	launchSpec: jsonb("launch_spec"),
 	endedSignal: text("ended_signal"),
+	shutdownAcceptedAt: timestamp("shutdown_accepted_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("adv_sessions_coord_owner_first_seen_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.firstSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("adv_sessions_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
@@ -1780,6 +1781,7 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	index("adv_sessions_plan_idx").using("btree", table.planSlug.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(plan_slug IS NOT NULL)`),
 	index("adv_sessions_port_source_idx").using("btree", table.portSourceAdvSessionId.asc().nullsLast().op("int8_ops")).where(sql`(port_source_adv_session_id IS NOT NULL)`),
 	index("adv_sessions_session_id_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")),
+	index("adv_sessions_shutdown_accepted_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((ended_at IS NULL) AND (shutdown_accepted_at IS NOT NULL))`),
 	index("adv_sessions_signal_ended_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(ended_by = 'signal'::text)`),
 	index("adv_sessions_workspace_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(ended_at IS NULL)`),
 	index("adv_sessions_workspace_first_seen_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.firstSeenAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("int8_ops")),
@@ -8323,6 +8325,7 @@ export const attentionBulkRunsInHarnessShared = harnessShared.table("attention_b
 	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("attention_bulk_runs_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.phase.asc().nullsLast().op("text_ops")).where(sql`(phase = ANY (ARRAY['pending'::text, 'running'::text, 'review'::text]))`),
+	uniqueIndex("attention_bulk_runs_one_active_per_workspace").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(phase = ANY (ARRAY['pending'::text, 'running'::text]))`),
 	index("attention_bulk_runs_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	primaryKey({ columns: [table.runId, table.workspaceId], name: "attention_bulk_runs_pkey"}),
 	pgPolicy("attention_bulk_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
@@ -8604,36 +8607,6 @@ export const potPendingJoinsInHarnessShared = harnessShared.table("pot_pending_j
 	pgPolicy("pot_pending_joins_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const datatypeRegistryInHarnessShared = harnessShared.table("datatype_registry", {
-	id: text().notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	title: text().notNull(),
-	description: text().notNull(),
-	tier: text().default('generic-kind').notNull(),
-	workItemKind: text("work_item_kind"),
-	payloadSchema: jsonb("payload_schema"),
-	authoritativeWriter: text("authoritative_writer").default('papercusp').notNull(),
-	selfImprovement: jsonb("self_improvement"),
-	status: text().default('active').notNull(),
-	published: boolean().default(false).notNull(),
-	tags: text().array().default([]).notNull(),
-	embedding: vector({ dimensions: 768 }),
-	titleTsv: tsvectorCustom("title_tsv").generatedAlwaysAs(sql`to_tsvector('english'::regconfig, ((COALESCE(title, ''::text) || ' '::text) || COALESCE(description, ''::text)))`),
-	createdBy: text("created_by"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	reviewStatus: text("review_status").default('none').notNull(),
-	potSlug: text("pot_slug"),
-}, (table) => [
-	index("datatype_registry_review_pending_idx").using("btree", table.reviewStatus.asc().nullsLast().op("text_ops")).where(sql`(review_status = 'pending'::text)`),
-	index("datatype_registry_title_tsv_idx").using("gin", table.titleTsv.asc().nullsLast().op("tsvector_ops")),
-	uniqueIndex("datatype_registry_ws_kind_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.workItemKind.asc().nullsLast().op("text_ops")).where(sql`(work_item_kind IS NOT NULL)`),
-	index("datatype_registry_ws_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.id, table.workspaceId], name: "datatype_registry_pkey"}),
-	pgPolicy("datatype_registry_approved_global_read", { as: "permissive", for: "select", to: ["public"], using: sql`(review_status = 'approved'::text)` }),
-	pgPolicy("datatype_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"] }),
-]);
-
 export const workspaceGrantsInHarnessShared = harnessShared.table("workspace_grants", {
 	workspaceId: text("workspace_id").notNull(),
 	id: text().notNull(),
@@ -8844,6 +8817,37 @@ export const agentRunsConsolidatedInHarnessShared = harnessShared.table("agent_r
 	index("arc_ts_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
 	index("arc_workspace_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
 	primaryKey({ columns: [table.harnessSlug, table.runId], name: "agent_runs_consolidated_pkey"}),
+]);
+
+export const datatypeRegistryInHarnessShared = harnessShared.table("datatype_registry", {
+	id: text().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	title: text().notNull(),
+	description: text().notNull(),
+	tier: text().default('generic-kind').notNull(),
+	workItemKind: text("work_item_kind"),
+	payloadSchema: jsonb("payload_schema"),
+	authoritativeWriter: text("authoritative_writer").default('papercusp').notNull(),
+	selfImprovement: jsonb("self_improvement"),
+	status: text().default('active').notNull(),
+	published: boolean().default(false).notNull(),
+	tags: text().array().default([]).notNull(),
+	embedding: vector({ dimensions: 768 }),
+	titleTsv: tsvectorCustom("title_tsv").generatedAlwaysAs(sql`to_tsvector('english'::regconfig, ((COALESCE(title, ''::text) || ' '::text) || COALESCE(description, ''::text)))`),
+	createdBy: text("created_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	reviewStatus: text("review_status").default('none').notNull(),
+	potSlug: text("pot_slug"),
+	display: jsonb(),
+}, (table) => [
+	index("datatype_registry_review_pending_idx").using("btree", table.reviewStatus.asc().nullsLast().op("text_ops")).where(sql`(review_status = 'pending'::text)`),
+	index("datatype_registry_title_tsv_idx").using("gin", table.titleTsv.asc().nullsLast().op("tsvector_ops")),
+	uniqueIndex("datatype_registry_ws_kind_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.workItemKind.asc().nullsLast().op("text_ops")).where(sql`(work_item_kind IS NOT NULL)`),
+	index("datatype_registry_ws_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "datatype_registry_pkey"}),
+	pgPolicy("datatype_registry_approved_global_read", { as: "permissive", for: "select", to: ["public"], using: sql`(review_status = 'approved'::text)` }),
+	pgPolicy("datatype_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"] }),
 ]);
 
 export const p2PPeerGrantsInHarnessShared = harnessShared.table("p2p_peer_grants", {
