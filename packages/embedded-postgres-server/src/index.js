@@ -599,6 +599,7 @@ export async function startEmbeddedPostgresServer(opts = {}) {
         client: sql,
         sqlDir: opts.dbSqlDir,
         log,
+        dataDirWasReused: !dataDirWasFresh,
       });
       log(`migrations: ${result.appliedCount} applied this boot (${result.totalKnown} total known)`);
 

@@ -1,6 +1,12 @@
--- 915-bulk-run-single-flight.sql
+-- 916-bulk-run-single-flight.sql
 --
 -- WI-41012 — an inbox BULK RESOLVE run must be single-flight per workspace.
+--
+-- (Numbered 916, not 915: 915 was allocated to this migration by
+-- scripts/next-migration.mjs, but 915-federation-probes-captured-only.sql was
+-- written onto the same number four minutes later without going through the
+-- allocator. Two files sharing a number is ambiguous to the runner, so this one
+-- moved rather than leaving the collision in the tree.)
 --
 -- op:'start' launches a REAL headless resolver agent holding terminal authority
 -- over the owner's attention items (plan inbox-bulk-resolve-2026-08-23, D-001).
@@ -13,14 +19,15 @@
 -- check-then-insert has a race window exactly as wide as its own round trip,
 -- which is precisely where a double-click lands. This index is the rail that
 -- makes the property true rather than likely: two concurrent inserts cannot
--- both win, and the loser surfaces as a unique violation the handler maps back
--- to the same typed refusal.
+-- both win, and the loser surfaces as a unique violation the store maps back to
+-- the same typed refusal.
 --
 -- Scope note: 'review' is deliberately NOT included. A run in review is waiting
 -- on the OWNER, not acting — blocking a new run while an old review list sits
 -- unattended would strand the feature behind a dialog the owner may never
--- return to. Only pending/running (an agent is or is about to be acting) is
--- exclusive.
+-- return to. Only pending/running (an agent is, or is about to be, acting) is
+-- exclusive. RUNNING_PHASES in bulk-run-store.ts is the same set; keep them in
+-- step.
 --
 -- FORWARD-COMPAT: the currently-deployed release cannot hit this index. The
 -- table is empty in every environment (0 rows at write time), the feature that

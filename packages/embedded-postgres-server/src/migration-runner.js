@@ -21,7 +21,10 @@
  */
 
 import { readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+
+const MIGRATION_TRANSACTION_PREFIX = 'BEGIN;\nSET LOCAL statement_timeout = 0;\n';
+const MAX_STATEMENT_EXCERPT_CHARS = 320;
 
 const SCHEMA_MIGRATIONS_DDL = `
   CREATE SCHEMA IF NOT EXISTS harness_shared;
@@ -35,6 +38,188 @@ const SCHEMA_MIGRATIONS_DDL = `
 async function sha256(text) {
   const { createHash } = await import('node:crypto');
   return createHash('sha256').update(text).digest('hex');
+}
+
+/**
+ * Return a compact excerpt of the top-level SQL statement containing `offset`.
+ * The scanner mirrors the proven quote handling in operator-core's baseline
+ * sanitizer without importing that higher-level package into this low-level
+ * embedded-PG runtime. It additionally handles double quotes + nested block
+ * comments because migration files are hand-authored, not only pg_dump output.
+ *
+ * @param {string} sql
+ * @param {number} offset Zero-based JavaScript string offset into `sql`.
+ * @returns {string | null}
+ */
+function statementExcerptAt(sql, offset) {
+  if (!Number.isInteger(offset) || offset < 0 || offset >= sql.length) return null;
+
+  let statementStart = 0;
+  let statementEnd = sql.length;
+  let inSingle = false;
+  let inDouble = false;
+  let inLineComment = false;
+  let blockCommentDepth = 0;
+  /** @type {string | null} */
+  let dollarTag = null;
+
+  for (let i = 0; i < sql.length; i += 1) {
+    const ch = sql[i];
+    const next = sql[i + 1];
+
+    if (inLineComment) {
+      if (ch === '\n') inLineComment = false;
+      continue;
+    }
+    if (blockCommentDepth > 0) {
+      if (ch === '/' && next === '*') {
+        blockCommentDepth += 1;
+        i += 1;
+      } else if (ch === '*' && next === '/') {
+        blockCommentDepth -= 1;
+        i += 1;
+      }
+      continue;
+    }
+    if (dollarTag !== null) {
+      if (ch === '$' && sql.startsWith(dollarTag, i)) {
+        i += dollarTag.length - 1;
+        dollarTag = null;
+      }
+      continue;
+    }
+    if (inSingle) {
+      if (ch === "'") {
+        if (next === "'") i += 1;
+        else inSingle = false;
+      }
+      continue;
+    }
+    if (inDouble) {
+      if (ch === '"') {
+        if (next === '"') i += 1;
+        else inDouble = false;
+      }
+      continue;
+    }
+
+    if (ch === '-' && next === '-') {
+      inLineComment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      blockCommentDepth = 1;
+      i += 1;
+      continue;
+    }
+    if (ch === '$') {
+      const match = /^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/.exec(sql.slice(i));
+      if (match) {
+        dollarTag = match[0];
+        i += dollarTag.length - 1;
+        continue;
+      }
+    }
+    if (ch === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      continue;
+    }
+    if (ch !== ';') continue;
+
+    if (offset <= i) {
+      statementEnd = i + 1;
+      break;
+    }
+    statementStart = i + 1;
+  }
+
+  let excerptStart = statementStart;
+  let excerptEnd = statementEnd;
+  if (statementEnd - statementStart > MAX_STATEMENT_EXCERPT_CHARS) {
+    excerptStart = Math.max(statementStart, offset - Math.floor(MAX_STATEMENT_EXCERPT_CHARS / 2));
+    excerptEnd = Math.min(statementEnd, excerptStart + MAX_STATEMENT_EXCERPT_CHARS);
+    excerptStart = Math.max(statementStart, excerptEnd - MAX_STATEMENT_EXCERPT_CHARS);
+  }
+
+  const leadingEllipsis = excerptStart > statementStart ? '…' : '';
+  const trailingEllipsis = excerptEnd < statementEnd ? '…' : '';
+  const excerpt = sql.slice(excerptStart, excerptEnd).replace(/\s+/g, ' ').trim();
+  return excerpt ? `${leadingEllipsis}${excerpt}${trailingEllipsis}` : null;
+}
+
+/**
+ * Translate postgres-js's one-based position in the complete transaction query
+ * into the executed migration text. PostgreSQL counts Unicode characters; the
+ * returned offset is converted back to JavaScript's UTF-16 string indexing.
+ *
+ * @param {unknown} value
+ * @param {string} ddl
+ * @returns {{ character: number, offset: number } | null}
+ */
+function migrationPosition(value, ddl) {
+  const queryCharacter = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(queryCharacter)) return null;
+
+  const character = queryCharacter - Array.from(MIGRATION_TRANSACTION_PREFIX).length;
+  const ddlCharacters = Array.from(ddl);
+  if (character < 1 || character > ddlCharacters.length) return null;
+  return {
+    character,
+    offset: ddlCharacters.slice(0, character - 1).join('').length,
+  };
+}
+
+/**
+ * Add the migration context that a raw postgres-js ErrorResponse cannot carry.
+ * This is the single diagnostic used by both fail-loud embedded boot and the
+ * shared native boot's continue-on-error path.
+ *
+ * @param {object} args
+ * @param {unknown} args.cause
+ * @param {string} args.file
+ * @param {string} args.migrationPath
+ * @param {string} args.ddl Executed SQL after psql metacommands are stripped.
+ * @param {boolean | undefined} args.dataDirWasReused
+ * @param {boolean} args.haltBoot
+ * @returns {Error}
+ */
+function wrapMigrationFailure({ cause, file, migrationPath, ddl, dataDirWasReused, haltBoot }) {
+  const details = /** @type {{ message?: unknown, code?: unknown, position?: unknown }} */ (
+    cause && typeof cause === 'object' ? cause : {}
+  );
+  const causeMessage = String(details.message ?? cause ?? 'unknown migration error');
+  const sqlState = details.code ? ` (SQLSTATE ${String(details.code)})` : '';
+  const position = migrationPosition(details.position, ddl);
+  const excerpt = position ? statementExcerptAt(ddl, position.offset) : null;
+
+  const lines = [
+    `Migration ${file} FAILED: ${causeMessage}${sqlState}`,
+    `Migration file: ${migrationPath}`,
+  ];
+  if (position && excerpt) {
+    lines.push(`Offending statement near migration character ${position.character}: ${excerpt}`);
+  } else {
+    lines.push('The underlying error did not report a usable query position; inspect the migration file directly.');
+  }
+  if (dataDirWasReused === true) {
+    lines.push('This boot reused an existing Postgres data directory; its schema may predate assumptions in this migration.');
+  } else if (dataDirWasReused === false) {
+    lines.push('This boot created a fresh Postgres data directory; the migration or one of its prerequisites is invalid.');
+  }
+  lines.push(
+    haltBoot
+      ? 'The operator cannot start until this migration applies. Inspect the migration and database schema, repair the mismatch or missing prerequisite, then restart Papercusp.'
+      : 'This migration remains pending and will retry on the next boot. Inspect the migration and database schema, then repair the mismatch or missing prerequisite.',
+  );
+
+  const wrapped = new Error(lines.join('\n'), { cause });
+  wrapped.name = 'MigrationError';
+  return wrapped;
 }
 
 // Files that the migration runner must NOT auto-apply on boot. These
@@ -70,6 +255,9 @@ export function defaultSkipFile(f) {
  * @param {(s: string) => void} [args.log]
  * @param {(file: string) => boolean} [args.skipFile]   Optional filter; defaults to skipping the per-harness template.
  * @param {(file: string, raw: string) => void | Promise<void>} [args.beforeApply] Optional fail-closed guard run after the file is read and before its SQL executes.
+ * @param {boolean} [args.dataDirWasReused] Whether embedded boot found an existing
+ *   PGDATA directory. When provided, failure diagnostics distinguish schema drift
+ *   in reused data from a broken fresh-install migration/prerequisite.
  * @param {boolean} [args.continueOnError]   Default false (fail-loud — embedded-pg
  *   boot + the fresh-migrate gate rely on a broken migration HALTING). Pass true
  *   on the shared native-:5432 operator boot (handoff-coordination-dx-followups A1):
@@ -77,7 +265,7 @@ export function defaultSkipFile(f) {
  *   array and the boot CONTINUES (the bad file stays unrecorded → retried next
  *   boot), so one peer's broken migration can't wedge the dev-api for the fleet.
  */
-export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, beforeApply, continueOnError = false }) {
+export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, beforeApply, dataDirWasReused, continueOnError = false }) {
   const skip = skipFile ?? defaultSkipFile;
   const failed = [];
 
@@ -143,9 +331,11 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     // boot, native boot-migrate, db:migrate), so the opt-out holds regardless of
     // which client/pool applies the file — even once a non-zero default is live.
     // ONLY statement_timeout: lock_timeout stays as the deliberate fail-fast guard.
+    const migrationPath = resolve(sqlDir, f);
+    const migrationSql = `${MIGRATION_TRANSACTION_PREFIX}${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`;
     try {
       await beforeApply?.(f, ddlRaw);
-      await client.unsafe(`BEGIN;\nSET LOCAL statement_timeout = 0;\n${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`);
+      await client.unsafe(migrationSql);
       appliedCount++;
     } catch (err) {
       // The failed `BEGIN…COMMIT` left the connection in an aborted
@@ -161,12 +351,20 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
       // any 42P01 (or any other error) is a genuine break that MUST fail loudly —
       // UNLESS continueOnError (the shared native-box boot), where we log + skip
       // the bad file (left unrecorded → retried next boot) instead of wedging boot.
+      const failure = wrapMigrationFailure({
+        cause: err,
+        file: f,
+        migrationPath,
+        ddl,
+        dataDirWasReused,
+        haltBoot: !continueOnError,
+      });
       if (continueOnError) {
-        log(`FAILED ${f}: ${err?.message ?? err}`);
-        failed.push({ file: f, error: String(err?.message ?? err) });
+        log(`FAILED ${failure.message}`);
+        failed.push({ file: f, error: failure.message });
         continue;
       }
-      throw err;
+      throw failure;
     }
   }
 

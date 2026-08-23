@@ -4663,6 +4663,7 @@ export const goalsInHarnessShared = harnessShared.table("goals", {
 	tripwires: jsonb(),
 	launchSettings: jsonb("launch_settings"),
 	standing: boolean().default(false).notNull(),
+	budgetWindowSec: integer("budget_window_sec"),
 }, (table) => [
 	index("goals_install_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops")),
 	index("goals_parent_idx").using("btree", table.parentId.asc().nullsLast().op("text_ops")),
@@ -4676,6 +4677,7 @@ export const goalsInHarnessShared = harnessShared.table("goals", {
 			name: "goals_parent_id_fkey"
 		}).onDelete("set null"),
 	pgPolicy("goals_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("goals_budget_window_sec_positive", sql`(budget_window_sec IS NULL) OR (budget_window_sec > 0)`),
 	check("goals_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
