@@ -43,62 +43,80 @@
     }
   },
   "triggerPack": {
-    "source": {
-      "kind": "gmail",
-      "oauthField": "googleWorkspace"
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
     },
-    "plan": {
-      "path": "plan.md",
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["trigger"],
-        "properties": {
-          "trigger": {
-            "type": "object",
-            "additionalProperties": true,
-            "required": ["key", "source", "event", "sourceId", "externalId", "dedupeKey", "payload"],
-            "properties": {
-              "key": { "const": "ext:gmail:message.received" },
-              "source": { "const": "gmail" },
-              "event": { "const": "message.received" },
-              "sourceId": { "type": "string", "minLength": 1 },
-              "externalId": { "type": "string", "minLength": 1 },
-              "dedupeKey": { "type": "string", "minLength": 1 },
-              "payload": {
-                "type": "object",
-                "additionalProperties": true,
-                "required": ["id", "threadId", "from", "subject", "messageId", "direction"],
-                "properties": {
-                  "id": { "type": "string", "minLength": 1 },
-                  "threadId": { "type": "string", "minLength": 1 },
-                  "from": { "type": "string", "minLength": 1 },
-                  "subject": { "type": "string", "minLength": 1 },
-                  "messageId": { "type": "string", "minLength": 1 },
-                  "direction": { "const": "inbound" }
+    "defaultStormPolicy": {
+      "maxRuns": 5,
+      "windowSeconds": 60
+    },
+    "targets": [
+      {
+        "id": "draft-reply",
+        "kind": "plan",
+        "path": "plan.md",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["trigger"],
+          "properties": {
+            "trigger": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["key", "source", "event", "sourceId", "externalId", "dedupeKey", "payload"],
+              "properties": {
+                "key": { "const": "ext:gmail:message.received" },
+                "source": { "const": "gmail" },
+                "event": { "const": "message.received" },
+                "sourceId": { "type": "string", "minLength": 1 },
+                "externalId": { "type": "string", "minLength": 1 },
+                "dedupeKey": { "type": "string", "minLength": 1 },
+                "payload": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": ["id", "threadId", "from", "subject", "messageId", "direction"],
+                  "properties": {
+                    "id": { "type": "string", "minLength": 1 },
+                    "threadId": { "type": "string", "minLength": 1 },
+                    "from": { "type": "string", "minLength": 1 },
+                    "subject": { "type": "string", "minLength": 1 },
+                    "messageId": { "type": "string", "minLength": 1 },
+                    "direction": { "const": "inbound" }
+                  }
                 }
               }
             }
           }
         }
       }
-    },
-    "binding": {
-      "eventPattern": "ext:gmail:message.received",
-      "filter": {
-        "all": [
-          { "direction": "inbound" },
-          { "threadId": { "exists": true } },
-          { "from": { "exists": true } },
-          { "subject": { "exists": true } },
-          { "messageId": { "exists": true } }
-        ]
-      },
-      "stormPolicy": {
-        "maxRuns": 5,
-        "windowSeconds": 60
+    ],
+    "bindings": [
+      {
+        "id": "inbound-email-to-draft",
+        "source": {
+          "kind": "external",
+          "sourceKind": "gmail",
+          "oauthField": "googleWorkspace"
+        },
+        "target": "draft-reply",
+        "eventPattern": "ext:gmail:message.received",
+        "filter": {
+          "all": [
+            { "direction": "inbound" },
+            { "threadId": { "exists": true } },
+            { "from": { "exists": true } },
+            { "subject": { "exists": true } },
+            { "messageId": { "exists": true } }
+          ]
+        },
+        "mapping": {
+          "mode": "payload-context"
+        }
       }
-    }
+    ],
+    "edges": []
   },
   "icon": "Mail"
 }
