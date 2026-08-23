@@ -130,7 +130,7 @@ describe('migration 902 — signed webhook receipts', () => {
       ) VALUES (
         'workos', 'event-a', 'session.revoked', 'account-a', 'session-a',
         '2026-08-23T06:00:00Z', '2026-08-23T06:00:00Z',
-        ${{ id: 'event-a', event: 'session.revoked' }}, ${digest},
+        ${JSON.stringify({ id: 'event-a', event: 'session.revoked' })}::text::jsonb, ${digest},
         'workos-secret-v2', now() + interval '90 days'
       )
       RETURNING event_version, status, attempt_count`;
@@ -146,7 +146,7 @@ describe('migration 902 — signed webhook receipts', () => {
         payload_sha256, retention_until
       ) VALUES (
         'workos', 'event-a', 'session.revoked', now(),
-        ${{ id: 'event-a' }}, ${digest}, now() + interval '90 days'
+        ${JSON.stringify({ id: 'event-a' })}::text::jsonb, ${digest}, now() + interval '90 days'
       )
     `).rejects.toThrow(/webhook_event_receipts_pkey/);
   });
@@ -158,7 +158,7 @@ describe('migration 902 — signed webhook receipts', () => {
         payload_sha256, retention_until
       ) VALUES (
         'workos', 'event-bad-digest', 'user.updated', now(),
-        ${{ id: 'event-bad-digest' }}, 'not-a-sha256',
+        ${JSON.stringify({ id: 'event-bad-digest' })}::text::jsonb, 'not-a-sha256',
         now() + interval '90 days'
       )
     `).rejects.toThrow(/webhook_event_receipts_payload_digest/);
@@ -169,7 +169,7 @@ describe('migration 902 — signed webhook receipts', () => {
         payload_sha256, status, retention_until
       ) VALUES (
         'workos', 'event-missing-processed-at', 'user.updated', now(),
-        ${{ id: 'event-missing-processed-at' }}, ${digest}, 'applied',
+        ${JSON.stringify({ id: 'event-missing-processed-at' })}::text::jsonb, ${digest}, 'applied',
         now() + interval '90 days'
       )
     `).rejects.toThrow(/webhook_event_receipts_terminal_timestamp/);
