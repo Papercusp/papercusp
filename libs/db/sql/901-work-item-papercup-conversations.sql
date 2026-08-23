@@ -10,8 +10,6 @@
 -- select a newly-created work-item thread as the workspace-global chat during
 -- the expand/deploy window.
 
-BEGIN;
-
 ALTER TABLE harness_shared.operator_conversations
   ADD COLUMN IF NOT EXISTS subject_kind text NOT NULL DEFAULT 'global',
   ADD COLUMN IF NOT EXISTS subject_ref text;
@@ -62,5 +60,3 @@ CREATE UNIQUE INDEX IF NOT EXISTS operator_conversations_work_item_subject_uq
   ON harness_shared.operator_conversations
     (workspace_id, harness_slug, subject_ref)
   WHERE subject_kind = 'work-item';
-
-COMMIT;

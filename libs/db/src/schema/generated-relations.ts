@@ -468,6 +468,15 @@ export const planItemsInHarnessSharedRelations = relations(planItemsInHarnessSha
 	}),
 }));
 
+export const triggerSourcesInHarnessSharedRelations = relations(triggerSourcesInHarnessShared, ({one, many}) => ({
+	usersInHarnessShared: one(usersInHarnessShared, {
+		fields: [triggerSourcesInHarnessShared.ownerUserId],
+		references: [usersInHarnessShared.id]
+	}),
+	triggerBindingsInHarnessShareds: many(triggerBindingsInHarnessShared),
+	triggerDeliveriesInHarnessShareds: many(triggerDeliveriesInHarnessShared),
+}));
+
 export const triggerBindingsInHarnessSharedRelations = relations(triggerBindingsInHarnessShared, ({one, many}) => ({
 	triggerSourcesInHarnessShared: one(triggerSourcesInHarnessShared, {
 		fields: [triggerBindingsInHarnessShared.workspaceId, triggerBindingsInHarnessShared.sourceId],
@@ -478,15 +487,6 @@ export const triggerBindingsInHarnessSharedRelations = relations(triggerBindings
 		references: [harnessPlansInHarnessShared.workspaceId, harnessPlansInHarnessShared.harnessSlug, harnessPlansInHarnessShared.planSlug]
 	}),
 	triggerRunsInHarnessShareds: many(triggerRunsInHarnessShared),
-}));
-
-export const triggerSourcesInHarnessSharedRelations = relations(triggerSourcesInHarnessShared, ({one, many}) => ({
-	triggerBindingsInHarnessShareds: many(triggerBindingsInHarnessShared),
-	usersInHarnessShared: one(usersInHarnessShared, {
-		fields: [triggerSourcesInHarnessShared.ownerUserId],
-		references: [usersInHarnessShared.id]
-	}),
-	triggerDeliveriesInHarnessShareds: many(triggerDeliveriesInHarnessShared),
 }));
 
 export const potEvalScoresInHarnessSharedRelations = relations(potEvalScoresInHarnessShared, ({one}) => ({
