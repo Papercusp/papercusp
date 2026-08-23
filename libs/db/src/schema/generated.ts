@@ -2859,7 +2859,7 @@ export const routinePoolShedEventsInHarnessShared = harnessShared.table("routine
 export const codeRecipeRunsInHarnessShared = harnessShared.table("code_recipe_runs", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.code_recipe_runs_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	recipeId: text("recipe_id").notNull(),
+	recipeId: text("recipe_id"),
 	workspaceId: text("workspace_id").notNull(),
 	agentOwner: text("agent_owner"),
 	agentRole: text("agent_role"),
@@ -2867,9 +2867,12 @@ export const codeRecipeRunsInHarnessShared = harnessShared.table("code_recipe_ru
 	reused: boolean().default(false).notNull(),
 	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
 	potSlug: text("pot_slug"),
+	executionTrace: jsonb("execution_trace"),
+	structuralFingerprint: text("structural_fingerprint"),
 }, (table) => [
 	index("code_recipe_runs_recipe_idx").using("btree", table.recipeId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
 	index("code_recipe_runs_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
+	index("code_recipe_runs_fingerprint_idx").using("btree", table.structuralFingerprint.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(structural_fingerprint IS NOT NULL)`),
 	pgPolicy("code_recipe_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
