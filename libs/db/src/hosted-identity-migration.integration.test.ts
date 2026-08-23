@@ -94,8 +94,9 @@ describe('migration 904 — hosted identity links', () => {
          AND table_name IN ('hosted_users', 'external_identities')
        ORDER BY table_name, ordinal_position`;
 
-    const byTable = Map.groupBy(rows, (row) => row.table_name);
-    expect(byTable.get('hosted_users')?.map((row) => row.column_name)).toEqual([
+    const columnNamesFor = (tableName: string): string[] =>
+      rows.filter((row) => row.table_name === tableName).map((row) => row.column_name);
+    expect(columnNamesFor('hosted_users')).toEqual([
       'id',
       'primary_email',
       'display_name',
@@ -106,7 +107,7 @@ describe('migration 904 — hosted identity links', () => {
       'deactivated_at',
       'deleted_at',
     ]);
-    expect(byTable.get('external_identities')?.map((row) => row.column_name)).toEqual([
+    expect(columnNamesFor('external_identities')).toEqual([
       'id',
       'hosted_user_id',
       'provider',
