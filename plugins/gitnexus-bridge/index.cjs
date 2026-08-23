@@ -62,6 +62,7 @@ var import_node_child_process = require("node:child_process");
 var import_node_path = require("node:path");
 var import_node_os = require("node:os");
 var import_node_fs = require("node:fs");
+var import_node_string_decoder = require("node:string_decoder");
 var IDLE_MS = 5 * 60 * 1e3;
 var REQUEST_TIMEOUT_MS = 60 * 1e3;
 var STDERR_RING_LINES = 40;
@@ -135,8 +136,10 @@ function startChild() {
     stderrRing: [],
     stderrPartial: ""
   };
+  const stdoutDecoder = new import_node_string_decoder.StringDecoder("utf8");
+  const stderrDecoder = new import_node_string_decoder.StringDecoder("utf8");
   proc.stderr.on("data", (chunk) => {
-    handle.stderrPartial += chunk.toString("utf8");
+    handle.stderrPartial += stderrDecoder.write(chunk);
     let nl = handle.stderrPartial.indexOf("\n");
     while (nl !== -1) {
       const line = handle.stderrPartial.slice(0, nl).trimEnd();
@@ -154,7 +157,7 @@ function startChild() {
     }
   });
   proc.stdout.on("data", (chunk) => {
-    handle.buf += chunk.toString("utf8");
+    handle.buf += stdoutDecoder.write(chunk);
     let nl = handle.buf.indexOf("\n");
     while (nl !== -1) {
       const line = handle.buf.slice(0, nl).trim();
@@ -171,6 +174,8 @@ function startChild() {
     }
   });
   proc.on("close", (code, signal) => {
+    handle.stderrPartial += stderrDecoder.end();
+    stdoutDecoder.end();
     const tail = [...handle.stderrRing];
     if (handle.stderrPartial.trim().length > 0) tail.push(handle.stderrPartial.trim());
     const message = describeChildExit(tail, code, signal);

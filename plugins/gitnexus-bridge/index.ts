@@ -24,6 +24,7 @@ import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from 'node:c
 import { delimiter as PATH_DELIMITER, join as joinPath } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync, readFileSync } from 'node:fs';
+import { StringDecoder } from 'node:string_decoder';
 import type {
   Capability,
   Plugin,
@@ -234,11 +235,16 @@ function startChild(): ChildHandle {
     stderrRing: [],
     stderrPartial: '',
   };
+  // Child streams can split a multi-byte UTF-8 character across data events.
+  // Decode through StringDecoder so JSON-RPC lines and diagnostics never gain
+  // replacement characters at a chunk boundary.
+  const stdoutDecoder = new StringDecoder('utf8');
+  const stderrDecoder = new StringDecoder('utf8');
   // Drain stderr into a bounded ring. This is load-bearing twice over: it
   // keeps the pipe from filling (which would block the child), and it is
   // the ONLY place the child's own diagnostics are retained.
   proc.stderr.on('data', (chunk: Buffer) => {
-    handle.stderrPartial += chunk.toString('utf8');
+    handle.stderrPartial += stderrDecoder.write(chunk);
     let nl = handle.stderrPartial.indexOf('\n');
     while (nl !== -1) {
       const line = handle.stderrPartial.slice(0, nl).trimEnd();
@@ -260,7 +266,7 @@ function startChild(): ChildHandle {
   });
   // stdout is line-delimited JSON-RPC. Accumulate, split on \n, dispatch.
   proc.stdout.on('data', (chunk: Buffer) => {
-    handle.buf += chunk.toString('utf8');
+    handle.buf += stdoutDecoder.write(chunk);
     let nl = handle.buf.indexOf('\n');
     while (nl !== -1) {
       const line = handle.buf.slice(0, nl).trim();
@@ -278,6 +284,11 @@ function startChild(): ChildHandle {
     }
   });
   proc.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
+    // Flush a trailing partial UTF-8 sequence before taking the diagnostic
+    // snapshot. Stream close can arrive after the final data event that held
+    // only part of a code point.
+    handle.stderrPartial += stderrDecoder.end();
+    stdoutDecoder.end();
     // Node hands this callback (code, signal) and the child's stderr has
     // been retained above; forward BOTH rather than constructing a generic
     // message. An error path that discards the diagnosis it was handed
