@@ -44,6 +44,7 @@ __export(index_exports, {
   decorateResult: () => decorateResult,
   default: () => index_default,
   deriveFreshness: () => deriveFreshness,
+  describeChildExit: () => describeChildExit,
   formatFreshnessNote: () => formatFreshnessNote,
   gitnexusMissingMessage: () => gitnexusMissingMessage,
   gitnexusPath: () => gitnexusPath,
@@ -63,6 +64,16 @@ var import_node_os = require("node:os");
 var import_node_fs = require("node:fs");
 var IDLE_MS = 5 * 60 * 1e3;
 var REQUEST_TIMEOUT_MS = 60 * 1e3;
+var STDERR_RING_LINES = 40;
+var STDERR_LINE_MAX = 500;
+function describeChildExit(stderrLines, code, signal) {
+  const how = signal ? `killed by signal ${signal}` : code === null ? "exited with no status" : `exited with code ${code}`;
+  const tail = stderrLines.filter((l) => l.trim().length > 0);
+  const diag = tail.length > 0 ? `
+--- last ${tail.length} stderr line(s) from gitnexus ---
+${tail.join("\n")}` : "\n(the child produced NO stderr output before exiting \u2014 an abrupt or native crash rather than a reported error)";
+  return `gitnexus mcp process ${how}${diag}`;
+}
 function gitnexusPath() {
   const parts = (process.env.PATH ?? "").split(import_node_path.delimiter).filter(Boolean);
   const fallbacks = [
@@ -120,8 +131,28 @@ function startChild() {
     buf: "",
     lastUseAt: Date.now(),
     idleTimer: setTimeout(() => {
-    }, IDLE_MS)
+    }, IDLE_MS),
+    stderrRing: [],
+    stderrPartial: ""
   };
+  proc.stderr.on("data", (chunk) => {
+    handle.stderrPartial += chunk.toString("utf8");
+    let nl = handle.stderrPartial.indexOf("\n");
+    while (nl !== -1) {
+      const line = handle.stderrPartial.slice(0, nl).trimEnd();
+      handle.stderrPartial = handle.stderrPartial.slice(nl + 1);
+      if (line.length > 0) {
+        handle.stderrRing.push(
+          line.length > STDERR_LINE_MAX ? `${line.slice(0, STDERR_LINE_MAX)}\u2026` : line
+        );
+        if (handle.stderrRing.length > STDERR_RING_LINES) handle.stderrRing.shift();
+      }
+      nl = handle.stderrPartial.indexOf("\n");
+    }
+    if (handle.stderrPartial.length > STDERR_LINE_MAX * 2) {
+      handle.stderrPartial = handle.stderrPartial.slice(-STDERR_LINE_MAX);
+    }
+  });
   proc.stdout.on("data", (chunk) => {
     handle.buf += chunk.toString("utf8");
     let nl = handle.buf.indexOf("\n");
@@ -139,8 +170,11 @@ function startChild() {
       if (h === handle) children.delete(k);
     }
   });
-  proc.on("close", () => {
-    for (const p of handle.pending.values()) p.reject(new Error("gitnexus mcp process exited"));
+  proc.on("close", (code, signal) => {
+    const tail = [...handle.stderrRing];
+    if (handle.stderrPartial.trim().length > 0) tail.push(handle.stderrPartial.trim());
+    const message = describeChildExit(tail, code, signal);
+    for (const p of handle.pending.values()) p.reject(new Error(message));
     handle.pending.clear();
     for (const [k, h] of children.entries()) {
       if (h === handle) children.delete(k);
@@ -516,6 +550,7 @@ function _resetChildrenForTests() {
   applyResponseBudget,
   decorateResult,
   deriveFreshness,
+  describeChildExit,
   formatFreshnessNote,
   gitnexusMissingMessage,
   gitnexusPath,

@@ -58,10 +58,54 @@ interface ChildHandle {
   lastUseAt: number;
   /** Tear down on idle timeout. */
   idleTimer: NodeJS.Timeout;
+  /**
+   * Bounded ring of the child's most recent stderr lines.
+   *
+   * WHY: stderr is spawned as a pipe, so SOMETHING must drain it — an
+   * unread pipe fills its ~64KB kernel buffer and then blocks the child
+   * mid-write. Draining it into a bounded ring costs nothing and turns
+   * every child death into a diagnosable event: without it, a crash
+   * rejects its pending calls with a fixed string and the child's own
+   * account of what went wrong is discarded as it is produced.
+   */
+  stderrRing: string[];
+  /** Partial trailing stderr line still awaiting its newline. */
+  stderrPartial: string;
 }
 
 const IDLE_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 60 * 1000;
+/** How many stderr lines to retain for crash diagnostics. */
+const STDERR_RING_LINES = 40;
+/** Per-line cap, so one pathological line cannot dominate the ring. */
+const STDERR_LINE_MAX = 500;
+
+/**
+ * Render a child exit as a diagnosable error message.
+ *
+ * Note the empty-stderr branch: "the child said nothing" is itself a
+ * finding (an abrupt/native death rather than a reported error), so it is
+ * stated explicitly rather than rendered as a missing section — an absent
+ * diagnostic and an unavailable one must not look alike.
+ */
+export function describeChildExit(
+  stderrLines: readonly string[],
+  code: number | null,
+  signal: NodeJS.Signals | null,
+): string {
+  const how = signal
+    ? `killed by signal ${signal}`
+    : code === null
+      ? 'exited with no status'
+      : `exited with code ${code}`;
+  const tail = stderrLines.filter((l) => l.trim().length > 0);
+  const diag =
+    tail.length > 0
+      ? `\n--- last ${tail.length} stderr line(s) from gitnexus ---\n${tail.join('\n')}`
+      : '\n(the child produced NO stderr output before exiting — an abrupt or native' +
+        ' crash rather than a reported error)';
+  return `gitnexus mcp process ${how}${diag}`;
+}
 
 /**
  * The operator host runs under a frozen PATH (systemd unit / Tauri
@@ -187,7 +231,33 @@ function startChild(): ChildHandle {
     buf: '',
     lastUseAt: Date.now(),
     idleTimer: setTimeout(() => {}, IDLE_MS),
+    stderrRing: [],
+    stderrPartial: '',
   };
+  // Drain stderr into a bounded ring. This is load-bearing twice over: it
+  // keeps the pipe from filling (which would block the child), and it is
+  // the ONLY place the child's own diagnostics are retained.
+  proc.stderr.on('data', (chunk: Buffer) => {
+    handle.stderrPartial += chunk.toString('utf8');
+    let nl = handle.stderrPartial.indexOf('\n');
+    while (nl !== -1) {
+      const line = handle.stderrPartial.slice(0, nl).trimEnd();
+      handle.stderrPartial = handle.stderrPartial.slice(nl + 1);
+      if (line.length > 0) {
+        handle.stderrRing.push(
+          line.length > STDERR_LINE_MAX ? `${line.slice(0, STDERR_LINE_MAX)}…` : line,
+        );
+        if (handle.stderrRing.length > STDERR_RING_LINES) handle.stderrRing.shift();
+      }
+      nl = handle.stderrPartial.indexOf('\n');
+    }
+    // A crash often kills the child mid-line, so the unterminated tail is
+    // exactly the part worth keeping — but bound it so a newline-free
+    // stream cannot grow without limit.
+    if (handle.stderrPartial.length > STDERR_LINE_MAX * 2) {
+      handle.stderrPartial = handle.stderrPartial.slice(-STDERR_LINE_MAX);
+    }
+  });
   // stdout is line-delimited JSON-RPC. Accumulate, split on \n, dispatch.
   proc.stdout.on('data', (chunk: Buffer) => {
     handle.buf += chunk.toString('utf8');
@@ -207,8 +277,16 @@ function startChild(): ChildHandle {
       if (h === handle) children.delete(k);
     }
   });
-  proc.on('close', () => {
-    for (const p of handle.pending.values()) p.reject(new Error('gitnexus mcp process exited'));
+  proc.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
+    // Node hands this callback (code, signal) and the child's stderr has
+    // been retained above; forward BOTH rather than constructing a generic
+    // message. An error path that discards the diagnosis it was handed
+    // converts a debuggable fault into a permanent mystery, and the cost is
+    // paid by every later investigator instead of by the author.
+    const tail = [...handle.stderrRing];
+    if (handle.stderrPartial.trim().length > 0) tail.push(handle.stderrPartial.trim());
+    const message = describeChildExit(tail, code, signal);
+    for (const p of handle.pending.values()) p.reject(new Error(message));
     handle.pending.clear();
     for (const [k, h] of children.entries()) {
       if (h === handle) children.delete(k);

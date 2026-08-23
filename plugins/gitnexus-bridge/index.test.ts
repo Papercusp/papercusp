@@ -32,6 +32,7 @@ import plugin, {
   looksLikeEmptyResult,
   repoPolicyFromEnv,
   applyRepoPolicy,
+  describeChildExit,
 } from './index';
 
 // ── Gap 1: rolesFor — the role allowlist security boundary ──────────────────
@@ -503,5 +504,81 @@ describe('applyRepoPolicy (P-004)', () => {
   it('admits a repo added to the allowlist, so the rail is configurable not hardcoded', () => {
     const wide = repoPolicyFromEnv({ PAPERCUSP_GITNEXUS_ALLOWED_REPOS: 'sidecar' });
     expect(applyRepoPolicy('query', { repo: 'sidecar' }, wide).repo).toBe('sidecar');
+  });
+});
+
+/**
+ * describeChildExit() — the crash-diagnosis path.
+ *
+ * WHY THIS EXISTS: the close handler used to read `proc.on('close', () => …)`,
+ * discarding the (code, signal) Node hands it, and nothing anywhere drained the
+ * child's stderr pipe. Every child death therefore rejected its pending calls
+ * with the fixed string 'gitnexus mcp process exited'. That is how the live
+ * graph-intent crash (EI-21275204945434743) stayed undiagnosable: the sibling
+ * `proc.on('error')` forwarded its real error, so the WORSE failure mode
+ * reported strictly less than the milder one.
+ *
+ * The CONTROL below is a deliberately-wrong implementation kept permanently in
+ * the file: it reproduces the old generic-message behaviour. Each assertion is
+ * run against BOTH, so a test that would pass for the broken implementation
+ * cannot be mistaken for a guard. (Per CLAUDE.md's falsifiability discipline —
+ * a pure helper is proven with an in-file control, never by mutating the tree.)
+ */
+const brokenControl = (
+  _lines: readonly string[],
+  _code: number | null,
+  _signal: NodeJS.Signals | null,
+) => 'gitnexus mcp process exited';
+
+describe('describeChildExit', () => {
+  it('reports a signal death by name, which the old generic message could not', () => {
+    const msg = describeChildExit([], null, 'SIGSEGV');
+    expect(msg).toContain('SIGSEGV');
+    // The control proves the assertion discriminates rather than always passing.
+    expect(brokenControl([], null, 'SIGSEGV')).not.toContain('SIGSEGV');
+  });
+
+  it('reports a non-zero exit code', () => {
+    const msg = describeChildExit([], 134, null);
+    expect(msg).toMatch(/code 134/);
+    expect(brokenControl([], 134, null)).not.toMatch(/code 134/);
+  });
+
+  it("surfaces the child's own stderr, so the diagnosis is not re-derived by hand", () => {
+    const msg = describeChildExit(
+      ['thread panicked at src/graph.rs:88', 'note: run with RUST_BACKTRACE=1'],
+      null,
+      'SIGABRT',
+    );
+    expect(msg).toContain('thread panicked at src/graph.rs:88');
+    expect(msg).toContain('RUST_BACKTRACE');
+    expect(brokenControl(['thread panicked at src/graph.rs:88'], null, 'SIGABRT')).not.toContain(
+      'panicked',
+    );
+  });
+
+  it('states an EMPTY stderr as a finding, never as a missing section', () => {
+    // "the child said nothing" distinguishes a native/abrupt death from a
+    // reported error. Rendering it as an absent section would make an
+    // informative silence indistinguishable from an unavailable diagnostic.
+    const msg = describeChildExit([], 1, null);
+    expect(msg).toMatch(/NO stderr output/);
+    expect(msg).toMatch(/abrupt or native/);
+  });
+
+  it('ignores blank stderr lines rather than reporting a phantom diagnostic', () => {
+    expect(describeChildExit(['', '   '], 1, null)).toMatch(/NO stderr output/);
+  });
+
+  it('still names the exit cause when stderr IS present', () => {
+    // Both halves must survive together: an earlier draft appended stderr but
+    // dropped the signal, which is the same information loss one level down.
+    const msg = describeChildExit(['out of memory'], null, 'SIGKILL');
+    expect(msg).toContain('SIGKILL');
+    expect(msg).toContain('out of memory');
+  });
+
+  it('handles a null code with no signal without inventing one', () => {
+    expect(describeChildExit([], null, null)).toContain('no status');
   });
 });
