@@ -80,6 +80,16 @@ export {
 export { withWorkspace, withWorkspaceQuery, withHarnessSchema, harnessQuery } from './workspace-context';
 export type { WorkspaceTxOptions } from './workspace-context';
 export {
+  TenantContextError,
+  deriveTenantContext,
+  withTenantContext,
+  type DerivedTenantContext,
+  type HostedTenantPrincipal,
+  type ResolvedTenantWorkspace,
+  type TenantContextErrorCode,
+  type VerifiedTenantServerContext,
+} from './tenant-context';
+export {
   getLegacyClient,
   withWorkspaceLegacy,
   type LegacyClient,

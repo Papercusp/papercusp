@@ -161,13 +161,17 @@ BEGIN
       -- always permitted structurally); a genuine new claim ONLY when the row is
       -- CURRENTLY unclaimed (NULL/blank/the 'unassigned' sentinel); a self-
       -- consistent re-affirm / non-claim field edit while the row is still held by
-      -- the SAME assignee (taken_by = NEW.assignee, idempotent). Anything else —
-      -- the row is currently held by someone OTHER than NEW.assignee — fails this
-      -- guard, updates 0 rows, and falls into the ROW_COUNT check below.
+      -- the SAME assignee (taken_by = NEW.assignee, idempotent). A caller-authorized
+      -- former-holder -> successor transfer is also valid while the row is still held
+      -- by the OLD assignee; the view-level claimIssue() predicate has already checked
+      -- that holder identity before this trigger takes the row lock. Anything else —
+      -- the row is currently held by someone OTHER than NEW.assignee or OLD.assignee —
+      -- fails this guard, updates 0 rows, and falls into the ROW_COUNT check below.
       AND (
         NEW.assignee IS NULL
         OR taken_by IS NULL OR btrim(taken_by) = '' OR lower(btrim(taken_by)) = 'unassigned'
         OR taken_by = NEW.assignee
+        OR taken_by = OLD.assignee
       );
     GET DIAGNOSTICS v_updated = ROW_COUNT;
     IF v_updated = 0 THEN
