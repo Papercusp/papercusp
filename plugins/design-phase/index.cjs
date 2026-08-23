@@ -519,8 +519,8 @@ const REGISTRY_REACT_TAILWIND = [
     states: ['hover', 'focus', 'active'],
     ecosystems: {
       'react-tailwind': {
-        sourcePointer: { path: 'libs/papercusp/apps/web/app/harness/Button.tsx' },
-        importHint: "import { Button } from '@papercusp/ui'",
+        sourcePointer: { path: 'apps/operator/app/harness/Button.tsx', symbol: 'Button' },
+        importHint: "import { Button } from '@/app/harness/Button'",
         propMap: { label: 'children', icon: 'leftIcon' },
       },
     },
@@ -536,8 +536,8 @@ const REGISTRY_REACT_TAILWIND = [
     variants: ['ghost', 'outline'],
     ecosystems: {
       'react-tailwind': {
-        sourcePointer: { path: 'libs/papercusp/apps/web/app/harness/Button.tsx' },
-        importHint: "import { Button } from '@papercusp/ui'",
+        sourcePointer: { path: 'apps/operator/app/harness/Button.tsx', symbol: 'Button' },
+        importHint: "import { Button } from '@/app/harness/Button'",
         propMap: { label: 'children' },
       },
     },
@@ -553,8 +553,8 @@ const REGISTRY_REACT_TAILWIND = [
     ],
     ecosystems: {
       'react-tailwind': {
-        sourcePointer: { path: 'libs/papercusp/apps/web/app/harness/Select.tsx' },
-        importHint: "import { Select } from '@papercusp/ui'",
+        sourcePointer: { path: 'apps/operator/app/harness/Select.tsx', symbol: 'Select' },
+        importHint: "import { Select } from '@/app/harness/Select'",
       },
     },
   },
@@ -568,8 +568,8 @@ const REGISTRY_REACT_TAILWIND = [
     ],
     ecosystems: {
       'react-tailwind': {
-        sourcePointer: { path: 'libs/papercusp/apps/web/app/harness/Checkbox.tsx' },
-        importHint: "import { Checkbox } from '@papercusp/ui'",
+        sourcePointer: { path: 'apps/operator/app/harness/Checkbox.tsx', symbol: 'Checkbox' },
+        importHint: "import { Checkbox } from '@/app/harness/Checkbox'",
       },
     },
   },
@@ -583,8 +583,8 @@ const REGISTRY_REACT_TAILWIND = [
     ],
     ecosystems: {
       'react-tailwind': {
-        sourcePointer: { path: 'libs/papercusp/apps/web/app/harness/Banner.tsx' },
-        importHint: "import { Banner } from '@papercusp/ui'",
+        sourcePointer: { path: 'apps/operator/app/_components/HostCheckBanner.tsx', symbol: 'HostCheckBanner' },
+        importHint: "import { HostCheckBanner } from '@/app/_components/HostCheckBanner'",
       },
     },
   },
