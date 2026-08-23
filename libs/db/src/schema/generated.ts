@@ -4662,10 +4662,12 @@ export const goalsInHarnessShared = harnessShared.table("goals", {
 	killCriterion: text("kill_criterion"),
 	tripwires: jsonb(),
 	launchSettings: jsonb("launch_settings"),
+	standing: boolean().default(false).notNull(),
 }, (table) => [
 	index("goals_install_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops")),
 	index("goals_parent_idx").using("btree", table.parentId.asc().nullsLast().op("text_ops")),
 	index("goals_search_idx").using("gin", table.search.asc().nullsLast().op("tsvector_ops")),
+	index("goals_standing_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops")).where(sql`standing`),
 	index("goals_status_idx").using("btree", table.status.asc().nullsLast().op("text_ops")),
 	index("goals_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	foreignKey({
