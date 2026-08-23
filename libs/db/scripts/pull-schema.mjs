@@ -43,6 +43,9 @@
  *          stale second schema mirror.
  *   Fix 10: drizzle-kit can attach ordered index operator classes to the wrong
  *           fields in multi-column indexes; restore the live PG catalog order.
+ *   Fix 11: drizzle-kit retains PostgreSQL's trailing `NOT VALID` clause in
+ *           check() SQL and leaves unmatched closing parentheses; remove the
+ *           unsupported clause and repair only the unmatched suffix.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -54,6 +57,7 @@ import {
   repairCompositeForeignKeyArtifacts,
 } from '../src/schema-generated-artifacts.mjs';
 import { repairIndexOperatorClasses } from '../src/schema/schema-index-opclasses.mjs';
+import { repairNotValidChecks } from '../src/schema/schema-checks.mjs';
 import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -165,6 +169,17 @@ if (!existsSync(schemaPath)) {
 
 console.log('==> applying quirk fixups');
 let schema = readFileSync(schemaPath, 'utf8');
+
+// Fix 11: PostgreSQL appends `NOT VALID` to an unvalidated check definition,
+// but drizzle-kit assumes the expression is the end of the definition. Its
+// output can therefore retain the clause and add unmatched closing parens.
+// Drizzle's check() builder cannot represent validity, so normalize this in
+// the generated mirror. The pure helper is unit-tested without a live DB.
+const repairedNotValidChecks = repairNotValidChecks(schema);
+schema = repairedNotValidChecks.source;
+if (repairedNotValidChecks.fixed > 0) {
+  console.log(`    Fix 11: repaired ${repairedNotValidChecks.fixed} NOT VALID check(s)`);
+}
 
 // Fix 0: drop MIGRATION-INTERNAL scratch/backup tables (leading underscore or
 // `bak_`) before any other fixup sees them. EI-18785808338338490. Logic +
