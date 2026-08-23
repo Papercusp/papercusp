@@ -556,6 +556,8 @@ export interface AcquireParams {
   paths: string[]; // already normalized
   intent: string;
   ttlSec: number;
+  /** Durable work-item/plan goal associated with this lock, when known. */
+  goalRef?: string | null;
   /** Automatic guards must not refresh or release paths held by a
    * deliberate same-owner claim. */
   automatic?: boolean;
@@ -604,6 +606,7 @@ export async function tryAcquire(
   params: AcquireParams,
 ): Promise<AcquireResult> {
   const { coordinationDomain, owner, ownerLabel, paths, intent, ttlSec } = params;
+  const goalRef = params.goalRef ?? null;
   const automatic = params.automatic ?? intent.startsWith('PreToolUse:');
 
   if (paths.length === 0) {
@@ -735,9 +738,9 @@ export async function tryAcquire(
   const upserted = await tx<Array<{ path: string; lock_id: string }>>`
     WITH wanted AS (SELECT unnest(${acquirePaths}::text[]) AS path)
     INSERT INTO agent_file_locks
-      (coordination_domain, path, owner, owner_label, intent, lock_id, acquired_ts, expires_ts)
+      (coordination_domain, path, owner, owner_label, intent, goal_ref, lock_id, acquired_ts, expires_ts)
     SELECT
-      ${coordinationDomain}, w.path, ${owner}, ${ownerLabel}, ${intent},
+      ${coordinationDomain}, w.path, ${owner}, ${ownerLabel}, ${intent}, ${goalRef},
       ${lockId}::uuid, clock_timestamp(), clock_timestamp() + ${ttlText}::interval
     FROM wanted w
     ON CONFLICT (coordination_domain, path) DO UPDATE
@@ -959,6 +962,8 @@ export interface ActiveLockRow {
   owner: string;
   owner_label: string | null;
   intent: string;
+  /** Durable work-item/plan goal associated with this lock, when known. */
+  goal_ref: string | null;
   acquired_ts: Date;
   expires_ts: Date;
   /** The lock namespace this row lives in — see {@link QueueParams.coordinationDomain}. */
@@ -971,6 +976,8 @@ export interface WaiterRow {
   owner_label: string | null;
   paths: string[];
   intent: string;
+  /** Durable work-item/plan goal associated with this waiter, when known. */
+  goal_ref: string | null;
   queued_ts: Date;
   wait_until: Date;
   status: 'waiting' | 'granted' | 'expired' | 'cancelled';
@@ -1105,7 +1112,7 @@ async function readQueueInner(
     : sql`coordination_domain = ${coordinationDomain}`;
 
   const active = await sql<Array<ActiveLockRow>>`
-    SELECT lock_id::text AS lock_id, path, owner, owner_label, intent, acquired_ts, expires_ts,
+    SELECT lock_id::text AS lock_id, path, owner, owner_label, intent, goal_ref, acquired_ts, expires_ts,
            coordination_domain
       FROM agent_file_locks
      WHERE ${domainFilter}
@@ -1120,7 +1127,7 @@ async function readQueueInner(
     : sql``;
 
   const waiting = await sql<Array<WaiterRow & { ahead_count: number }>>`
-    SELECT ticket_id, owner, owner_label, paths, intent, queued_ts, wait_until,
+    SELECT ticket_id, owner, owner_label, paths, intent, goal_ref, queued_ts, wait_until,
            status::text AS status,
            coordination_domain,
            (ROW_NUMBER() OVER (PARTITION BY coordination_domain
@@ -1137,7 +1144,7 @@ async function readQueueInner(
 
   if (includeCompleted) {
     result.completed = await sql<Array<WaiterRow>>`
-      SELECT ticket_id, owner, owner_label, paths, intent, queued_ts, wait_until,
+      SELECT ticket_id, owner, owner_label, paths, intent, goal_ref, queued_ts, wait_until,
              status::text AS status,
              coordination_domain
         FROM agent_lock_waiters
@@ -1178,6 +1185,8 @@ export interface InsertWaiterParams {
   intent: string;
   ttlSec: number;
   maxWaitSec: number;
+  /** Durable work-item/plan goal associated with this queued acquire. */
+  goalRef?: string | null;
   /** Apply-on-grant (EI-9033): when set, the grant bridge applies this edit
    *  instead of waking the agent to retry. Only meaningful with wake_on_grant
    *  and a single-path ticket (`paths === [pendingEdit.file]`). */
@@ -1223,6 +1232,7 @@ export async function tryInsertWaiter(
     paths: params.paths,
     intent: params.intent,
     ttlSec: params.ttlSec,
+    goalRef: params.goalRef,
   });
   if (acquired.ok) {
     return {
@@ -1252,10 +1262,10 @@ export async function tryInsertWaiter(
   const pendingEditJson = params.pendingEdit ? JSON.stringify(params.pendingEdit) : null;
   const rows = await tx<Array<{ ticket_id: string; wait_until: Date }>>`
     INSERT INTO agent_lock_waiters
-      (coordination_domain, owner, owner_label, paths, intent, ttl_sec, wait_until, pending_edit)
+      (coordination_domain, owner, owner_label, paths, intent, goal_ref, ttl_sec, wait_until, pending_edit)
     VALUES
       (${params.coordinationDomain}, ${params.owner}, ${params.ownerLabel},
-       ${params.paths}, ${params.intent}, ${params.ttlSec},
+       ${params.paths}, ${params.intent}, ${params.goalRef ?? null}, ${params.ttlSec},
        clock_timestamp() + ${waitText}::interval,
        ${pendingEditJson}::jsonb)
     RETURNING ticket_id, wait_until
