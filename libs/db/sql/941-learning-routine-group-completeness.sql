@@ -16,6 +16,10 @@ SELECT DISTINCT r.workspace_id,
        '90d'
   FROM harness_shared.routines r
  WHERE r.name LIKE 'improvement-%'
+    OR r.name LIKE 'bp-singleton-%'
+    OR r.name LIKE 'scout-%'
+    OR r.name LIKE '%prospector-cadence'
+    OR r.name IN ('gym-cycle', 'template-gym', 'pot-eval-battery', 'scan')
     OR r.name IN ('knowledge-pack-delivery', 'knowledge-pack-hygiene')
 ON CONFLICT (workspace_id, slug) DO NOTHING;
 
@@ -25,6 +29,10 @@ UPDATE harness_shared.routines AS r
  WHERE r.group_slug IS DISTINCT FROM 'self-improvement'
    AND (
      r.name LIKE 'improvement-%'
+     OR r.name LIKE 'bp-singleton-%'
+     OR r.name LIKE 'scout-%'
+     OR r.name LIKE '%prospector-cadence'
+     OR r.name IN ('gym-cycle', 'template-gym', 'pot-eval-battery', 'scan')
      OR r.name IN ('knowledge-pack-delivery', 'knowledge-pack-hygiene')
    )
    AND EXISTS (
