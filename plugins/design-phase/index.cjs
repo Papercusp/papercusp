@@ -3,7 +3,7 @@
  * @papercupai/design-phase — runtime artifact, hand-written CommonJS.
  *
  * Provides the MCP + HTTP tools the designer agent calls. Plan §15
- * (MCP surface): apps/operator/content/internal-docs/design/design-phase-plan.mdx.
+ * (MCP surface): apps/operator-docs/src/content/docs/design/design-phase-plan.mdx.
  *
  * Six tools in v0.1: validate_spec, lint_spec, submit_spec, list_memos,
  * read_memo, get_design_spec. proposeToken / searchRegistry /
@@ -432,16 +432,29 @@ function candidateOperatorRoots() {
     path.resolve(cwd, '../../apps/operator'),
   ];
 }
-async function findFirstExisting(relPath) {
-  for (const root of candidateOperatorRoots()) {
+function candidateDocsRoots() {
+  // Design memos were moved from the retired operator content tree to the
+  // Starlight source tree. The plugin still runs with either the repository
+  // root or apps/operator as its cwd, so resolve both forms explicitly.
+  const cwd = process.cwd();
+  return [...new Set([
+    path.resolve(cwd, 'apps/operator-docs'),
+    path.resolve(cwd, '../operator-docs'),
+    cwd,
+    path.resolve(cwd, '../../apps/operator-docs'),
+    path.resolve(cwd, '../../operator-docs'),
+  ])];
+}
+async function findFirstExisting(relPath, roots = candidateOperatorRoots()) {
+  for (const root of roots) {
     const full = path.join(root, relPath);
     try { await fsp.access(full); return full; } catch {}
   }
   return null;
 }
-const MEMOS_REL = 'content/docs/design';
+const MEMOS_REL = 'src/content/docs/design';
 async function listMemos(filterStatus) {
-  const dir = await findFirstExisting(MEMOS_REL);
+  const dir = await findFirstExisting(MEMOS_REL, candidateDocsRoots());
   if (!dir) return [];
   let entries = [];
   try { entries = await fsp.readdir(dir); } catch { return []; }
@@ -461,7 +474,7 @@ async function listMemos(filterStatus) {
   return out;
 }
 async function readMemo(slug) {
-  const full = await findFirstExisting(path.join(MEMOS_REL, `${slug}.mdx`));
+  const full = await findFirstExisting(path.join(MEMOS_REL, `${slug}.mdx`), candidateDocsRoots());
   if (!full) return null;
   const raw = await tryRead(full);
   if (!raw) return null;
