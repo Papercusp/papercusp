@@ -460,6 +460,7 @@ export const PlacementSchema = z.object({
 /** Per-role / default AI-backend invocation knob (mirrors HarnessConfig's
  *  `AiBackendRoleConfig`). `.passthrough` so non-secret extras survive. */
 const AiBackendRoleKnobSchema = z.object({
+  engine: z.enum(['subprocess', 'loop']).optional(),
   agentCmd: z.string().optional(),
   model: z.string().optional(),
   extraArgs: z.array(z.string()).optional(),

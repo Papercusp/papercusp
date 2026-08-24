@@ -119,6 +119,13 @@ export interface InvokeContext {
    * (omp/pi binary → 'omp', otherwise 'claude-code').
    */
   agentBackend?: AgentBackend;
+  /**
+   * Operator-owned in-process execution port. The orchestrator defines only
+   * this structural seam; operator-core injects the implementation so the
+   * dependency remains operator -> orchestrator. Presence alone does not
+   * select it: aiBackend.{default,roles.<role>}.engine must be `loop`.
+   */
+  ownedLoop?: OwnedLoopInvokePort;
   /** Optional override for the dept slug (otherwise read from config.json). */
   dept?: string;
   /**
@@ -162,6 +169,32 @@ export interface InvokeContext {
    * dark-launch parity diff can split completion-rate / outcome-distribution by path.
    */
   executionPath?: 'subprocess' | 'op';
+}
+
+/** One headless owned-loop turn, expressed without operator-core types. */
+export interface OwnedLoopInvokeRequest {
+  role: string;
+  prompt: string;
+  model: string;
+  runId: string;
+  featureId: string | null;
+  workspaceId: string;
+  harnessSlug: string;
+  projectDir: string;
+  stateDir: string;
+  cwd: string;
+  signal?: AbortSignal;
+  /** Emit one JSON-serializable native LoopEvent wire object. */
+  emit(event: unknown): void;
+}
+
+export interface OwnedLoopInvokeOutcome {
+  exitCode: number;
+  stderr?: string;
+}
+
+export interface OwnedLoopInvokePort {
+  invoke(request: OwnedLoopInvokeRequest): Promise<OwnedLoopInvokeOutcome>;
 }
 
 /** What the spawn step actually returns (richer than the public InvokeResult). */
@@ -488,12 +521,23 @@ export function resolveAgentForRole(
   return { agentCmd, extraArgs };
 }
 
+/** Resolve the execution ENGINE independently of the subprocess backend.
+ * Defaults to the existing subprocess path; a role override beats the
+ * harness-wide default. */
+export function resolveAgentExecutionEngine(
+  cfg: HarnessConfig,
+  role: string,
+): 'subprocess' | 'loop' {
+  const ai = cfg.aiBackend;
+  return ai?.roles?.[role]?.engine ?? ai?.default?.engine ?? 'subprocess';
+}
+
 /**
  * What kind of structured stream the spawned agent is emitting (or `none` for
  * plain-text / passthrough commands). Drives both the extra flag set we
  * append AND the result-extraction parser.
  */
-export type StreamFormat = 'claude-stream-json' | 'omp-json' | 'codex-json' | 'none';
+export type StreamFormat = 'claude-stream-json' | 'omp-json' | 'codex-json' | 'loop-ndjson' | 'none';
 
 /**
  * Pick the structured-output flag set for a given backend, unless the
@@ -548,6 +592,9 @@ export function streamFormatFlags(fmt: StreamFormat): string[] {
       // appended to extraFlags BEFORE the `-` stdin positional. Model (`-m`),
       // the prompt stdin `-`, and CODEX_HOME/MCP are wired in the spawn path.
       return ['exec', '--json', '--skip-git-repo-check', '--ephemeral'];
+    case 'loop-ndjson':
+      // In-process owned-loop events need no CLI flags.
+      return [];
     case 'none':
       return [];
   }
@@ -2108,6 +2155,35 @@ export function extractResult(source: string, format: StreamFormat): string {
   if (format === 'none') return data;
 
   const lines = data.trimEnd().split(/\r?\n/);
+
+  if (format === 'loop-ndjson') {
+    // The owned loop's terminal `done` event carries the final text. Walk
+    // backward so a future trailing metadata/event line cannot obscure it.
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      try {
+        const obj = JSON.parse(line);
+        if (obj && typeof obj === 'object' && obj.type === 'done' && typeof obj.finalText === 'string') {
+          return obj.finalText;
+        }
+      } catch { /* tolerate a malformed/interleaved line */ }
+    }
+    // Crash/error salvage mirrors omp-json: text_delta is already ordered and
+    // belongs to the in-flight assistant response when no terminal done exists.
+    let partial = '';
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      try {
+        const obj = JSON.parse(line);
+        if (obj && typeof obj === 'object' && obj.type === 'text_delta' && typeof obj.text === 'string') {
+          partial += obj.text;
+        }
+      } catch { /* skip malformed lines */ }
+    }
+    return partial.trim();
+  }
 
   if (format === 'claude-stream-json') {
     for (let i = lines.length - 1; i >= 0; i--) {

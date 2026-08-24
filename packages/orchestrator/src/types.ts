@@ -67,6 +67,10 @@ export interface HarnessConfig {
 
 /** Per-role or default AI backend invocation settings. */
 export interface AiBackendRoleConfig {
+  /** Execution engine. `subprocess` drives one of AGENT_BACKENDS; `loop`
+   *  delegates to the operator-injected owned-loop port. Kept separate from
+   *  AgentBackend because the owned loop is in-process, not a spawn backend. */
+  engine?: 'subprocess' | 'loop';
   /** Full agent command, e.g. `omp -p`, `claude -p`, `omp -p --model claude-sonnet-4-6`. */
   agentCmd?: string;
   /** Model passed via `--model` if `agentCmd` doesn't already include `--model `. */
