@@ -43,8 +43,10 @@ it collision-free:
   coordinate-before-editing out of fear of interfering. Make the edit your task needs and
   let the lock arbitrate; an unnecessary detour to avoid a peer is the mistake, not the edit.
 - **Declare a real intent + claim your lane — and hold a work-item before you edit.** On
-  starting a distinct piece of work, `coord:declare-intent { intent, current_plan_slug, items }`
-  — the intent line is what a blocked peer reads; `items` is the P-NNN plan-item lane only and
+  starting a distinct piece of work, `coord:declare-intent { intent, current_plan_slug, items }`.
+  This is the separate declaration call; the combined wake bootstrap is
+  `coord:orient { intent, planSlug, planItems }` — do not pass the declaration fields to orient.
+  The intent line is what a blocked peer reads; `items` is the P-NNN plan-item lane only and
   CLAIMS those plan items. **Do not put WI-/EI- work-item IDs in `items`**: the live schema
   rejects them. `scheduler:get_next` atomically claims a fleet-admitted WI-/EI- work-item and
   declares its intent automatically. If you hold multiple ad-hoc work-items, re-declare one
