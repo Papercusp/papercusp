@@ -685,6 +685,13 @@ export function summarizeInvocationStream(
   };
 }
 
+/** Stable pairing key for P-011. An inline canary prompt is hashed BEFORE
+ * buildPrompt adds the per-run id/runtime tail, so the OMP and loop arms pair.
+ * Ordinary worker runs fall back to the exact assembled prompt. */
+export function workerParityPromptHash(assembledPrompt: string, inlinePrompt?: string): string {
+  return createHash('sha256').update(inlinePrompt ?? assembledPrompt).digest('hex');
+}
+
 /**
  * The closed allow-list a headless fleet agent runs under
  * (`--permission-mode dontAsk`). `mcp__papercusp` is a *server wildcard*:
@@ -2733,6 +2740,7 @@ async function finalizeInvocation(args: {
   ctx: InvokeContext;
   role: string;
   prompt: string;
+  promptHash: string;
   runId: string;
   featureId: string | null;
   streamFormat: StreamFormat;
@@ -2775,7 +2783,7 @@ async function finalizeInvocation(args: {
             role: args.role,
             runId: args.runId,
             featureId: args.featureId,
-            promptHash: createHash('sha256').update(args.prompt).digest('hex'),
+            promptHash: args.promptHash,
             stream: streamSummary,
           },
         )}\n`;
@@ -3445,6 +3453,7 @@ export async function invoke(
       ctx,
       role,
       prompt,
+      promptHash: workerParityPromptHash(prompt, options.inlinePrompt),
       runId,
       featureId: featureId ?? null,
       streamFormat,
@@ -4209,7 +4218,7 @@ export async function invoke(
             role,
             runId,
             featureId: featureId ?? null,
-            promptHash: createHash('sha256').update(prompt).digest('hex'),
+            promptHash: workerParityPromptHash(prompt, options.inlinePrompt),
             stream: streamSummary,
           },
         )}\n`;

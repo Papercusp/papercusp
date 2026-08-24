@@ -20,6 +20,7 @@ import {
   selectStreamFormat,
   streamFormatFlags,
   summarizeInvocationStream,
+  workerParityPromptHash,
   claudeMcpArgs,
   FLEET_ALLOWED_TOOLS,
   BEE_ALLOWED_TOOLS,
@@ -1148,6 +1149,14 @@ test('summarizeInvocationStream — omp requires its agent_end terminal and non-
   assert.equal(missingTerminal.ok, false);
   assert.ok(missingTerminal.issues.some((issue) => issue.includes('terminal event')));
   assert.equal(summarizeInvocationStream(green, 'omp-json', '').ok, false);
+});
+
+test('workerParityPromptHash — inline canary prompt stays pairable across per-run prompt tails', () => {
+  const inline = 'Call capability:read once, then answer PARITY_OK.';
+  const a = workerParityPromptHash(`${inline}\nrunId=a`, inline);
+  const b = workerParityPromptHash(`${inline}\nrunId=b`, inline);
+  assert.equal(a, b);
+  assert.notEqual(workerParityPromptHash(`${inline}\nrunId=a`), workerParityPromptHash(`${inline}\nrunId=b`));
 });
 
 test('extractResult — owned loop reads terminal done and salvages deltas without it', () => {
