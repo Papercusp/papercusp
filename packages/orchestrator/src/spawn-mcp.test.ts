@@ -166,7 +166,7 @@ describe('buildSpawnMcpConfig', () => {
       const cfg = buildSpawnMcpConfig({
         harnessSlug: 'x', workspaceId: 'y', role: 'z', runId: 'r', spawnId: 's',
       });
-      expect(cfg.mcpServers.papercusp!.url.startsWith('http://env.example/api/sse?')).toBe(true);
+      expect(cfg.mcpServers.papercusp!.url.startsWith('http://env.example/api/mcp?')).toBe(true);
     } finally {
       if (prev === undefined) delete process.env.PAPERCUSP_OPERATOR_URL;
       else process.env.PAPERCUSP_OPERATOR_URL = prev;
