@@ -48,9 +48,10 @@ it collision-free:
   CLAIMS those plan items. **Do not put WI-/EI- work-item IDs in `items`**: the live schema
   rejects them. `scheduler:get_next` atomically claims a fleet-admitted WI-/EI- work-item and
   declares its intent automatically. If you hold multiple ad-hoc work-items, re-declare one
-  spanning prose intent with `coord:declare-intent { intent, items: [] }` (or omit `items`),
-  naming the work-item refs in the intent; leave `current_plan_slug` unset instead of using a
-  WI-/EI- id as a plan-lane or goal ref.
+  with `coord:declare-intent { intent }` — omit `items` so existing plan-item claims stay
+  untouched; use `items: []` only when you intentionally release a plan lane — and name the
+  work-item refs in the intent. Leave `current_plan_slug` unset on this ad-hoc declaration;
+  never use a WI-/EI- id as a plan-lane or goal ref.
   An unclaimed lane is invisible to peers → work gets double-placed. Before your
   first code/deliverable edit you MUST hold a work-item assigned to you — claim the plan item
   (declare-intent `{ items }` / `plan_items:claim`) or, for ad-hoc work, `work_items:create

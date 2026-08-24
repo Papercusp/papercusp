@@ -19,6 +19,7 @@ import {
   resolveAgentExecutionEngine,
   selectStreamFormat,
   streamFormatFlags,
+  summarizeInvocationStream,
   claudeMcpArgs,
   FLEET_ALLOWED_TOOLS,
   BEE_ALLOWED_TOOLS,
@@ -1084,6 +1085,52 @@ test('streamFormatFlags — produces backend-specific flag set', () => {
   assert.deepEqual(streamFormatFlags('omp-json'), ['--mode', 'json', '--no-session']);
   assert.deepEqual(streamFormatFlags('loop-ndjson'), []);
   assert.deepEqual(streamFormatFlags('none'), []);
+});
+
+test('summarizeInvocationStream — loop stream is green only with one terminal and balanced tools', () => {
+  const green = [
+    JSON.stringify({ type: 'step_start', stepIndex: 0 }),
+    JSON.stringify({ type: 'tool_call', stepIndex: 0, call: { id: 'c1', name: 'capability:read' } }),
+    JSON.stringify({ type: 'tool_result', stepIndex: 0, callId: 'c1', name: 'capability:read' }),
+    JSON.stringify({ type: 'done', finalText: 'DONE', usage: { inputTokens: 3, outputTokens: 1 } }),
+  ].join('\n');
+  assert.deepEqual(summarizeInvocationStream(green, 'loop-ndjson', 'DONE'), {
+    schemaVersion: 'invocation-stream-summary-v1',
+    format: 'loop-ndjson',
+    jsonLines: 4,
+    malformedLines: 0,
+    terminalEvents: 1,
+    toolCalls: 1,
+    toolResults: 1,
+    finalTextChars: 4,
+    ok: true,
+    issues: [],
+  });
+
+  const broken = `${green}\nnot-json\n${JSON.stringify({ type: 'tool_call', call: { id: 'c2' } })}`;
+  const summary = summarizeInvocationStream(broken, 'loop-ndjson', 'DONE');
+  assert.equal(summary.ok, false);
+  assert.equal(summary.malformedLines, 1);
+  assert.equal(summary.toolCalls, 2);
+  assert.equal(summary.toolResults, 1);
+  assert.ok(summary.issues.some((issue) => issue.includes('unbalanced native tool events')));
+});
+
+test('summarizeInvocationStream — omp requires its agent_end terminal and non-empty extracted text', () => {
+  const green = [
+    JSON.stringify({ type: 'message_end', message: { role: 'assistant' } }),
+    JSON.stringify({ type: 'agent_end', messages: [] }),
+  ].join('\n');
+  assert.equal(summarizeInvocationStream(green, 'omp-json', 'DONE').ok, true);
+
+  const missingTerminal = summarizeInvocationStream(
+    JSON.stringify({ type: 'message_end', message: { role: 'assistant' } }),
+    'omp-json',
+    'DONE',
+  );
+  assert.equal(missingTerminal.ok, false);
+  assert.ok(missingTerminal.issues.some((issue) => issue.includes('terminal event')));
+  assert.equal(summarizeInvocationStream(green, 'omp-json', '').ok, false);
 });
 
 test('extractResult — owned loop reads terminal done and salvages deltas without it', () => {

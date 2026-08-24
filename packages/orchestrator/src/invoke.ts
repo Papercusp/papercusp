@@ -608,6 +608,84 @@ export function streamFormatFlags(fmt: StreamFormat): string[] {
 }
 
 /**
+ * Small, persisted stream-quality summary used by the owned-loop worker parity
+ * gate (own-tui-full-divorce-2026-08-24 P-011). The raw JSONL remains canonical;
+ * this is the bounded read model appended to papercusp.run_meta so the gate does
+ * not have to pull or repeatedly parse multi-megabyte transcripts.
+ */
+export interface InvocationStreamSummary {
+  schemaVersion: 'invocation-stream-summary-v1';
+  format: StreamFormat;
+  jsonLines: number;
+  malformedLines: number;
+  terminalEvents: number;
+  toolCalls: number;
+  toolResults: number;
+  finalTextChars: number;
+  ok: boolean;
+  issues: string[];
+}
+
+export function summarizeInvocationStream(
+  source: string,
+  format: StreamFormat,
+  finalText: string,
+): InvocationStreamSummary {
+  let jsonLines = 0;
+  let malformedLines = 0;
+  let terminalEvents = 0;
+  let toolCalls = 0;
+  let toolResults = 0;
+
+  for (const raw of source.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(line) as Record<string, unknown>;
+      jsonLines += 1;
+    } catch {
+      malformedLines += 1;
+      continue;
+    }
+    if (!obj || typeof obj !== 'object') continue;
+
+    if (
+      (format === 'loop-ndjson' && obj.type === 'done') ||
+      (format === 'omp-json' && obj.type === 'agent_end') ||
+      (format === 'claude-stream-json' && obj.type === 'result') ||
+      (format === 'codex-json' && obj.type === 'turn.completed')
+    ) {
+      terminalEvents += 1;
+    }
+    if (format === 'loop-ndjson' && obj.type === 'tool_call') toolCalls += 1;
+    if (format === 'loop-ndjson' && obj.type === 'tool_result') toolResults += 1;
+  }
+
+  const issues: string[] = [];
+  if (format === 'none') issues.push('unstructured stream format');
+  if (malformedLines > 0) issues.push(`${malformedLines} malformed JSONL line(s)`);
+  if (terminalEvents !== 1) issues.push(`expected exactly 1 terminal event, observed ${terminalEvents}`);
+  if (finalText.trim().length === 0) issues.push('empty final assistant text');
+  if (format === 'loop-ndjson' && toolCalls !== toolResults) {
+    issues.push(`unbalanced native tool events: ${toolCalls} call(s), ${toolResults} result(s)`);
+  }
+
+  return {
+    schemaVersion: 'invocation-stream-summary-v1',
+    format,
+    jsonLines,
+    malformedLines,
+    terminalEvents,
+    toolCalls,
+    toolResults,
+    finalTextChars: finalText.length,
+    ok: issues.length === 0,
+    issues,
+  };
+}
+
+/**
  * The closed allow-list a headless fleet agent runs under
  * (`--permission-mode dontAsk`). `mcp__papercusp` is a *server wildcard*:
  * the per-spawn signed `.mcp.json` is already role-scoped server-side —
@@ -2656,6 +2734,7 @@ async function finalizeInvocation(args: {
   role: string;
   prompt: string;
   runId: string;
+  featureId: string | null;
   streamFormat: StreamFormat;
   runBackend: string;
   resolvedModel: string;
@@ -2682,16 +2761,22 @@ async function finalizeInvocation(args: {
     } catch { /* the tee must never fail the run */ }
   }
   const outBody = args.streamFormat !== 'none' ? `${finalText}\n` : finalText;
+  const streamSummary = summarizeInvocationStream(args.rawJsonlBody, args.streamFormat, finalText);
   const jsonlBody =
     args.streamFormat === 'none'
       ? args.rawJsonlBody
       : `${args.rawJsonlBody}${args.rawJsonlBody.length === 0 || args.rawJsonlBody.endsWith('\n') ? '' : '\n'}${JSON.stringify(
           {
             type: 'papercusp.run_meta',
+            schemaVersion: 'worker-parity-v1',
             backend: args.runBackend,
+            engine: args.runBackend === 'owned-loop' ? 'loop' : 'subprocess',
             model: args.resolvedModel,
             role: args.role,
             runId: args.runId,
+            featureId: args.featureId,
+            promptHash: createHash('sha256').update(args.prompt).digest('hex'),
+            stream: streamSummary,
           },
         )}\n`;
 
@@ -3361,6 +3446,7 @@ export async function invoke(
       role,
       prompt,
       runId,
+      featureId: featureId ?? null,
       streamFormat,
       runBackend: 'owned-loop',
       resolvedModel,
@@ -4104,6 +4190,7 @@ export async function invoke(
     }
   }
   const outBody = streamFormat !== 'none' ? `${finalText}\n` : finalText;
+  const streamSummary = summarizeInvocationStream(rawJsonlBody, streamFormat, finalText);
   // papercusp.run_meta (cross-backend-cost-capture D-005): stamp backend+model+role onto
   // the persisted stream so post-hoc scanners (scanAgentRuns, sumJsonlCost) can attribute
   // usage for EVERY backend without re-deriving spawn context — codex's stream names no
@@ -4113,7 +4200,18 @@ export async function invoke(
     streamFormat === 'none'
       ? rawJsonlBody
       : `${rawJsonlBody}${rawJsonlBody.length === 0 || rawJsonlBody.endsWith('\n') ? '' : '\n'}${JSON.stringify(
-          { type: 'papercusp.run_meta', backend: agentBackend, model: resolvedModel, role, runId },
+          {
+            type: 'papercusp.run_meta',
+            schemaVersion: 'worker-parity-v1',
+            backend: agentBackend,
+            engine: 'subprocess',
+            model: resolvedModel,
+            role,
+            runId,
+            featureId: featureId ?? null,
+            promptHash: createHash('sha256').update(prompt).digest('hex'),
+            stream: streamSummary,
+          },
         )}\n`;
 
   // 11.5. Persistence: when ctx.pg is wired, the canonical record is
