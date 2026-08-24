@@ -66,6 +66,11 @@ test('params is a RECORD that UNIONS across extends (base universal ∪ child-sp
   // Keys are config.json instance paths (the namespace the settings panel persists).
   assert.ok(blueprint.params['parallelWorkers.max'], 'base universal concurrency param inherited');
   assert.ok(blueprint.params['aiBackend.default.model'], 'base universal backend param inherited');
+  assert.equal(blueprint.params['aiBackend.default.engine'].default, 'subprocess');
+  assert.deepEqual(
+    blueprint.params['aiBackend.default.engine'].options?.map((option) => option.value),
+    ['subprocess', 'loop'],
+  );
   // the child's own param is ADDED, not a replacement
   assert.equal(blueprint.params['knobs.myKnob'].label, 'My knob');
   assert.equal(blueprint.params['knobs.myKnob'].type, 'boolean');

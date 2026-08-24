@@ -690,7 +690,7 @@ test('invoke — engine=loop uses the injected port and persists native NDJSON w
   process.env.HARNESS_CONFIG_JSON = JSON.stringify({
     aiBackend: { roles: { worker: { engine: 'loop', model: 'claude-haiku-4-5' } } },
   });
-  let seen: Record<string, unknown> | null = null;
+  const seen: Record<string, unknown>[] = [];
   try {
     const result = await invoke(
       {
@@ -704,7 +704,7 @@ test('invoke — engine=loop uses the injected port and persists native NDJSON w
         workspaceId: 'ws-test',
         ownedLoop: {
           async invoke(request) {
-            seen = request as unknown as Record<string, unknown>;
+            seen.push(request as unknown as Record<string, unknown>);
             request.emit({ type: 'step_start', stepIndex: 0 });
             request.emit({ type: 'text_delta', stepIndex: 0, text: 'owned result' });
             request.emit({
@@ -726,10 +726,12 @@ test('invoke — engine=loop uses the injected port and persists native NDJSON w
 
     assert.equal(result.exitCode, 0);
     assert.equal(result.output, 'owned result');
-    assert.equal(seen?.model, 'claude-haiku-4-5');
-    assert.equal(seen?.role, 'worker');
-    assert.equal(seen?.featureId, 'F-010');
-    assert.match(String(seen?.prompt), /# WORKER/);
+    const captured = seen[0];
+    assert.ok(captured);
+    assert.equal(captured.model, 'claude-haiku-4-5');
+    assert.equal(captured.role, 'worker');
+    assert.equal(captured.featureId, 'F-010');
+    assert.match(String(captured.prompt), /# WORKER/);
     const jsonl = readFileSync(result.jsonlPath, 'utf8');
     assert.match(jsonl, /"type":"done"/);
     assert.match(jsonl, /"backend":"owned-loop"/);

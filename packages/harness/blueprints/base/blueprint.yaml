@@ -59,6 +59,20 @@ params:
     description: >-
       Default model id for this harness's agents (a role can override). e.g.
       claude-opus-5.
+  "aiBackend.default.engine":
+    label: Agent execution engine
+    type: enum
+    default: subprocess
+    options:
+      - value: subprocess
+        label: Subprocess CLI
+      - value: loop
+        label: Papercusp owned loop
+    group: Backend
+    affects: every role's agent invocation (a role can override)
+    description: >-
+      Selects the execution engine independently of the provider/backend. The owned
+      loop is operator-hosted; subprocess keeps the Claude Code, OMP, or Codex CLI lane.
   "aiBackend.default.agentCmd":
     label: Agent command
     type: string

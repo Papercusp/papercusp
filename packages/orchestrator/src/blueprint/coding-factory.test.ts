@@ -170,6 +170,7 @@ test('coding declares params = base universal ∪ coding-specific (P-006 / D-003
   // base's UNIVERSAL params are inherited (the record unions across `extends: base`)
   assert.ok(params['parallelWorkers.max'], 'inherits base concurrency param');
   assert.ok(params['aiBackend.default.model'], 'inherits base backend-model param');
+  assert.ok(params['aiBackend.default.engine'], 'inherits base execution-engine param');
   assert.ok(params['aiBackend.default.agentCmd'], 'inherits base backend-cmd param');
   // coding-SPECIFIC params (the old hardcoded HarnessSettingsPanel knobs, now declared)
   assert.ok(params['debugger.threshold'], 'coding declares debugger.threshold param');
