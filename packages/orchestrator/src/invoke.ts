@@ -2938,7 +2938,16 @@ export async function invoke(
       : '';
   // Kept for the usage-telemetry bucket key (step 11.5) — best-effort either way.
   let resolvedModel = '';
-  if (ompGatewaySelector) {
+  if (executionEngine === 'loop') {
+    // The owned ModelPort consumes psu's public `<modelId>[:<effort>]` wire
+    // directly. Do not normalize it through whichever subprocess backend the
+    // host happens to use — that backend is irrelevant on this leg.
+    resolvedModel = resolveModel(cfg, role);
+    if (!resolvedModel) {
+      throw new Error(`invoke: aiBackend engine=loop for role=${role} requires a model`);
+    }
+    ctx.log(`  role=${role} engine=loop model=${resolvedModel}`);
+  } else if (ompGatewaySelector) {
     stripExplicitModelFlags(argv);
     extraFlags.push('--model', ompGatewaySelector);
     resolvedModel = ompGatewaySelector;
@@ -3321,13 +3330,46 @@ export async function invoke(
     writeFileSync(errPath, '');
   }
 
+  const cwd = cwdOverride || ctx.projectDir;
+  // Heal this for BOTH execution engines: the owned loop's capability tools
+  // operate in the same cwd a subprocess would receive.
+  healSandboxZeroByteManifest(cwd, ctx.log);
+
+  if (executionEngine === 'loop') {
+    const execution = await runOwnedLoopInvocation({
+      ctx,
+      port: ctx.ownedLoop!,
+      role,
+      prompt,
+      model: resolvedModel,
+      runId,
+      featureId: featureId ?? null,
+      cwd,
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    });
+    return finalizeInvocation({
+      ctx,
+      role,
+      prompt,
+      runId,
+      streamFormat,
+      runBackend: 'owned-loop',
+      resolvedModel,
+      jsonlPath,
+      outPath,
+      errPath,
+      rawJsonlBody: execution.rawJsonlBody,
+      errBody: execution.errBody,
+      outcome: execution.outcome,
+      startedAt: execution.startedAt,
+      timeoutSeconds,
+      retainReleaseFixerFiles,
+    });
+  }
+
   const finalArgv = [...argv.slice(1), ...extraFlags];
   const command = argv[0];
-  const cwd = cwdOverride || ctx.projectDir;
-  // A PRIOR sandboxed spawn may have left a 0-byte package.json in this cwd —
-  // which aborts the agent binary at boot (ERR_INVALID_PACKAGE_CONFIG). Heal it
-  // before spawning so one spawn can't brick the dir for the whole pipeline.
-  healSandboxZeroByteManifest(cwd, ctx.log);
   const startedAt = Date.now();
 
   // omp's `-p` mode reads the message from a positional arg (or `@file`),

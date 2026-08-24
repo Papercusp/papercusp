@@ -52,6 +52,9 @@ export interface CostCapResult {
  *             terminal `agent_end.messages` list when no message_end carried usage
  *             (never both — that would double-count).
  *
+ *   owned  — terminal `{"type":"done", usage:{inputTokens,…,costUsd}}` wins
+ *             (the owned loop emits cumulative totals in camelCase).
+ *
  * `model`/`backend` are attributed from the `{"type":"papercusp.run_meta"}` line invoke.ts
  * appends at subprocess exit, with stream-derived fallbacks (claude `system:init.model`,
  * omp `message.model`) for pre-existing files.
@@ -96,6 +99,8 @@ export function extractRunUsage(jsonlBody: string): RunUsage | null {
   // omp: per-assistant-turn sums + agent_end fallback
   let omp: RunUsage | null = null;
   let ompFallback: RunUsage | null = null;
+  // owned loop: terminal done carries cumulative totals
+  let ownedLoop: RunUsage | null = null;
 
   const readOmpMessage = (msg: Record<string, unknown>): RunUsage | null => {
     if (!msg || typeof msg !== 'object' || msg.role !== 'assistant') return null;
@@ -195,6 +200,29 @@ export function extractRunUsage(jsonlBody: string): RunUsage | null {
       continue;
     }
 
+    // Owned loop terminal: camelCase ModelUsage totals. Last done wins, just
+    // like Claude's cumulative result event.
+    if (obj.type === 'done') {
+      const u = obj.usage as Record<string, unknown> | undefined;
+      if (!u || typeof u !== 'object') continue;
+      const usage: RunUsage = {
+        inputTokens: num(u.inputTokens),
+        outputTokens: num(u.outputTokens),
+        cacheReadTokens: num(u.cacheReadTokens),
+        cacheCreationTokens: num(u.cacheCreationTokens),
+        costUsd: num(u.costUsd),
+        turns: num(obj.stepCount),
+      };
+      if (
+        usage.inputTokens !== undefined ||
+        usage.outputTokens !== undefined ||
+        usage.costUsd !== undefined
+      ) {
+        ownedLoop = usage;
+      }
+      continue;
+    }
+
     // omp: assistant message_end carries per-turn usage
     if (obj.type === 'message_end') {
       const turn = readOmpMessage(obj.message as Record<string, unknown>);
@@ -212,10 +240,10 @@ export function extractRunUsage(jsonlBody: string): RunUsage | null {
   }
 
   // One format per file in practice; precedence mirrors terminal-shape specificity.
-  const usage = claude ?? codex ?? omp ?? ompFallback;
+  const usage = ownedLoop ?? claude ?? codex ?? omp ?? ompFallback;
   if (!usage) return null;
   const backend =
-    metaBackend ?? (claude ? 'claude-code' : codex ? 'codex' : 'omp');
+    metaBackend ?? (ownedLoop ? 'owned-loop' : claude ? 'claude-code' : codex ? 'codex' : 'omp');
   // Stream-derived model wins (the ACTUAL model the CLI reports — claude init /
   // omp message.model); run_meta carries the *requested* model (may be an alias)
   // and covers codex, whose stream names no model.
