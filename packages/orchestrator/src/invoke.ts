@@ -2486,6 +2486,290 @@ export function codexContextConfigFromArgv(argv: readonly string[]): SpawnCodexC
   return { modelContextWindow, modelAutoCompactTokenLimit };
 }
 
+interface InvokeExecutionBodies {
+  rawJsonlBody: string;
+  errBody: string;
+  outcome: SpawnOutcome;
+  startedAt: number;
+}
+
+/** Execute one owned-loop turn and project its native events onto the SAME
+ * NDJSON chunk stream the subprocess path persists/publishes. */
+async function runOwnedLoopInvocation(args: {
+  ctx: InvokeContext;
+  port: OwnedLoopInvokePort;
+  role: string;
+  prompt: string;
+  model: string;
+  runId: string;
+  featureId: string | null;
+  cwd: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}): Promise<InvokeExecutionBodies> {
+  const { ctx } = args;
+  if (!ctx.workspaceId) {
+    throw new Error('invoke: aiBackend engine=loop requires ctx.workspaceId');
+  }
+  const harnessSlug = harnessSlugFromProjectDir(ctx.projectDir);
+  const startedAt = Date.now();
+  const jsonlChunks: Buffer[] = [];
+  const errChunks: Buffer[] = [];
+  const operatorBase = process.env.PAPERCUSP_OPERATOR_BASE ?? 'http://localhost:3055';
+  const persistChunks = process.env.PAPERCUSP_PERSIST_CHUNKS === '1';
+
+  let harnessToken: string | null = null;
+  try {
+    const cfgRaw = readFileSync(`${ctx.stateDir}/config.json`, 'utf8');
+    const cfgJson = JSON.parse(cfgRaw) as { harness_token?: string };
+    if (typeof cfgJson.harness_token === 'string' && cfgJson.harness_token.length > 0) {
+      harnessToken = cfgJson.harness_token;
+    }
+  } catch { /* tokenless CLI/test path: persistence still captures the body */ }
+
+  type ChunkPgCtx = { pg: OrchestratorPg; workspaceId: string; harnessSlug: string };
+  let chunksPgCtx: ChunkPgCtx | null = null;
+  let appendChunkPgFn:
+    | ((c: ChunkPgCtx, runId: string, seq: number, data: string) => Promise<void>)
+    | null = null;
+  if (persistChunks && ctx.pg) {
+    chunksPgCtx = { pg: ctx.pg, workspaceId: ctx.workspaceId, harnessSlug };
+    appendChunkPgFn = (await import('./run-chunks-pg')).appendChunkPg;
+  }
+
+  let chunkSeq = 0;
+  let chunkPostQueue: Promise<void> = Promise.resolve();
+  let chunkPgQueue: Promise<void> = Promise.resolve();
+  let sawErrorEvent = false;
+  const emit = (event: unknown) => {
+    let data: string;
+    try {
+      data = `${JSON.stringify(event)}\n`;
+    } catch (error) {
+      data = `${JSON.stringify({
+        type: 'error',
+        message: `owned-loop event was not JSON-serializable: ${error instanceof Error ? error.message : String(error)}`,
+      })}\n`;
+    }
+    try {
+      const parsed = JSON.parse(data) as { type?: unknown };
+      if (parsed.type === 'error') sawErrorEvent = true;
+    } catch { /* data was produced above and is valid JSON */ }
+    jsonlChunks.push(Buffer.from(data));
+    const seq = chunkSeq++;
+    if (harnessToken) {
+      chunkPostQueue = chunkPostQueue.then(async () => {
+        try {
+          await fetch(`${operatorBase}/api/internal/run-chunk`, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${harnessToken}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ runId: args.runId, seq, chunk: data }),
+          });
+        } catch { /* best-effort live delivery */ }
+      });
+    }
+    if (chunksPgCtx && appendChunkPgFn) {
+      chunkPgQueue = chunkPgQueue.then(() =>
+        appendChunkPgFn!(chunksPgCtx!, args.runId, seq, data));
+    }
+  };
+
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (args.signal) {
+    if (args.signal.aborted) controller.abort();
+    else args.signal.addEventListener('abort', onAbort, { once: true });
+  }
+  let timedOut = false;
+  const timer = args.timeoutMs
+    ? setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, args.timeoutMs)
+    : undefined;
+
+  let exitCode = 1;
+  try {
+    const result = await args.port.invoke({
+      role: args.role,
+      prompt: args.prompt,
+      model: args.model,
+      runId: args.runId,
+      featureId: args.featureId,
+      workspaceId: ctx.workspaceId,
+      harnessSlug,
+      projectDir: ctx.projectDir,
+      stateDir: ctx.stateDir,
+      cwd: args.cwd,
+      signal: controller.signal,
+      emit,
+    });
+    exitCode = timedOut ? 124 : result.exitCode;
+    if (result.stderr) errChunks.push(Buffer.from(result.stderr));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    errChunks.push(Buffer.from(message));
+    if (!sawErrorEvent) emit({ type: 'error', message });
+    exitCode = timedOut ? 124 : 1;
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (args.signal) args.signal.removeEventListener('abort', onAbort);
+  }
+
+  await chunkPostQueue.catch(() => {});
+  if (harnessToken) {
+    try {
+      await fetch(`${operatorBase}/api/internal/run-chunk`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${harnessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ runId: args.runId, seq: chunkSeq, chunk: '', done: true }),
+      });
+    } catch { /* best-effort close */ }
+  }
+  await chunkPgQueue.catch(() => {});
+
+  return {
+    rawJsonlBody: Buffer.concat(jsonlChunks).toString('utf8'),
+    errBody: Buffer.concat(errChunks).toString('utf8'),
+    outcome: { exitCode, durationMs: Date.now() - startedAt },
+    startedAt,
+  };
+}
+
+/** Shared result extraction, run-output persistence, usage capture, and
+ * artifact fallback for subprocess and owned-loop executions. */
+async function finalizeInvocation(args: {
+  ctx: InvokeContext;
+  role: string;
+  prompt: string;
+  runId: string;
+  streamFormat: StreamFormat;
+  runBackend: string;
+  resolvedModel: string;
+  jsonlPath: string;
+  outPath: string;
+  errPath: string;
+  rawJsonlBody: string;
+  errBody: string;
+  outcome: SpawnOutcome;
+  startedAt: number;
+  timeoutSeconds: number;
+  retainReleaseFixerFiles: boolean;
+}): Promise<InvokeResult> {
+  const finalText = extractResult(args.rawJsonlBody, args.streamFormat);
+  if (args.runBackend === 'codex' && args.streamFormat === 'codex-json') {
+    try {
+      const { writeCodexTranscript } = await import('./codex-transcript');
+      const teePath = writeCodexTranscript({
+        sessionId: process.env.PAPERCUSP_NATIVE_SESSION_ID,
+        prompt: args.prompt,
+        rawJsonl: args.rawJsonlBody,
+      });
+      if (teePath) args.ctx.log(`  codex transcript → ${teePath}`);
+    } catch { /* the tee must never fail the run */ }
+  }
+  const outBody = args.streamFormat !== 'none' ? `${finalText}\n` : finalText;
+  const jsonlBody =
+    args.streamFormat === 'none'
+      ? args.rawJsonlBody
+      : `${args.rawJsonlBody}${args.rawJsonlBody.length === 0 || args.rawJsonlBody.endsWith('\n') ? '' : '\n'}${JSON.stringify(
+          {
+            type: 'papercusp.run_meta',
+            backend: args.runBackend,
+            model: args.resolvedModel,
+            role: args.role,
+            runId: args.runId,
+          },
+        )}\n`;
+
+  const writeFilesForFallback = args.retainReleaseFixerFiles || !(args.ctx.pg && args.ctx.workspaceId)
+    || process.env.PAPERCUSP_KEEP_FILES === '1';
+  if (writeFilesForFallback) {
+    if (!existsSync(args.ctx.logDir)) mkdirSync(args.ctx.logDir, { recursive: true });
+    writeFileSync(args.jsonlPath, jsonlBody);
+    writeFileSync(args.errPath, args.errBody);
+    writeFileSync(args.outPath, outBody);
+  }
+
+  if (args.ctx.pg && args.ctx.workspaceId) {
+    try {
+      const { recordRunOutputPg } = await import('./run-output-pg');
+      const { harnessSlug: getSlug } = await import('./state');
+      await recordRunOutputPg(
+        { pg: args.ctx.pg, workspaceId: args.ctx.workspaceId, harnessSlug: getSlug(args.ctx.projectDir) },
+        {
+          runId: args.runId,
+          role: args.role,
+          promptBody: args.prompt,
+          jsonlBody,
+          outBody,
+          errBody: args.errBody,
+          exitCode: args.outcome.exitCode,
+          durationMs: args.outcome.durationMs,
+          startedAt: args.startedAt,
+          endedAt: Date.now(),
+        },
+      );
+    } catch (error) {
+      args.ctx.log(`  PG ingest failed (non-fatal): ${(error as Error).message}`);
+    }
+    try {
+      const { extractRunUsage } = await import('./cost-cap');
+      const usage = extractRunUsage(jsonlBody);
+      if (usage) {
+        const { recordUsageSamplePg } = await import('./usage-sample-pg');
+        const { harnessSlug: getSlug } = await import('./state');
+        await recordUsageSamplePg(
+          { pg: args.ctx.pg, workspaceId: args.ctx.workspaceId },
+          {
+            backend: args.runBackend,
+            model: args.resolvedModel,
+            usage,
+            harnessSlug: getSlug(args.ctx.projectDir),
+            runId: args.runId,
+            role: args.role,
+            sessionId: args.runBackend === 'owned-loop'
+              ? undefined
+              : process.env.PAPERCUSP_NATIVE_SESSION_ID,
+            turnTrigger: process.env.PAPERCUSP_TURN_TRIGGER,
+            accountId: process.env.PAPERCUSP_ACCOUNT_ID,
+          },
+        );
+      }
+    } catch (error) {
+      args.ctx.log(`  usage-sample ingest failed (non-fatal): ${(error as Error).message}`);
+    }
+  }
+
+  args.ctx.log(`invoke ${args.role} rc=${args.outcome.exitCode} (stdout: ${args.outPath})`);
+  if (args.outcome.exitCode === 124) {
+    args.ctx.log(`  role=${args.role} TIMED OUT after ${args.timeoutSeconds}s (rc=124)`);
+  }
+  if (args.outcome.exitCode !== 0) {
+    const errSnippet = args.errBody.split(/\r?\n/).slice(0, 5);
+    if (errSnippet.some((line) => line.length > 0)) {
+      args.ctx.log('  stderr (first 5 lines):');
+      for (const line of errSnippet) {
+        if (line.length > 0) args.ctx.log(`    ${line}`);
+      }
+    }
+  }
+
+  return {
+    output: finalText,
+    jsonlPath: args.jsonlPath,
+    outPath: args.outPath,
+    exitCode: args.outcome.exitCode,
+    durationMs: args.outcome.durationMs,
+  };
+}
+
 export async function invoke(
   ctx: InvokeContext,
   role: string,
@@ -2494,6 +2778,7 @@ export async function invoke(
 ): Promise<InvokeResult> {
   const cfg = readEffectiveConfig(ctx.stateDir);
   const dept = ctx.dept ?? configGet<string>(cfg, 'dept', '');
+  const executionEngine = resolveAgentExecutionEngine(cfg, role);
 
   // 1. Resolve prompt file (with phase + dept fallback chain), unless
   //    the caller supplied an inlinePrompt — in which case we skip the
@@ -2571,7 +2856,14 @@ export async function invoke(
   }
   const agentBackend: AgentBackend = ctx.agentBackend ?? resolveAgentBackend(roleAgentCmd);
   const argv = normalizeExplicitModelFlagsForBackend(splitCommand(roleAgentCmd), agentBackend);
-  const streamFormat = selectStreamFormat(agentBackend, roleAgentCmd);
+  const streamFormat: StreamFormat = executionEngine === 'loop'
+    ? 'loop-ndjson'
+    : selectStreamFormat(agentBackend, roleAgentCmd);
+  if (executionEngine === 'loop' && !ctx.ownedLoop) {
+    throw new Error(
+      `invoke: aiBackend engine=loop for role=${role} requires an operator-injected ownedLoop port`,
+    );
+  }
   const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
   if (agentBackend === 'codex' && streamFormat === 'codex-json' && argv.includes('exec')) {
     const execIdx = extraFlags.indexOf('exec');
@@ -2673,7 +2965,8 @@ export async function invoke(
   //     fallback), which is why no other spawn shape gets an endpoint. Overlay
   //     file removed with the other handles on close.
   let ompCompactionOverlay: SpawnOmpConfigOverlayHandle | null = null;
-  const ompLocalModel = agentBackend === 'omp' && isLocalOmpModel(resolvedModel);
+  const ompLocalModel =
+    executionEngine === 'subprocess' && agentBackend === 'omp' && isLocalOmpModel(resolvedModel);
   if (ompLocalModel || ompGatewaySelector) {
     try {
       const remoteEndpoint = ompRemoteCompactionEndpoint(process.env.PAPERCUSP_OMP_MODELS_YML);
