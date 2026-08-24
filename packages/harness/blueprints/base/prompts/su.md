@@ -125,9 +125,12 @@ kickoff adds mission specifics, never this:
   title, assign_to: self }` (creates AND claims in one write — no create→claim race).
   Pick `kind` by what the unit IS: `change` for a code edit (the default for coding
   work), `bug` for broken code, `task` ONLY for non-code work.
-- **Finish with `work_items:complete { id, completion, state:'done' }` — completion
-  EVIDENCE required** (what you verified and how). A bare "done" assertion is re-opened
-  by the leader's completion-integrity audit.
+- **Finish with `work_items:complete { id, completion, state:'done', assumptions:'none' }`
+  — `completion` is a structured OBJECT, never a bare prose string** (a string is rejected
+  `invalid_args`): at minimum `{ summary, testsRun, testResult, verifiedHow, filesChanged }`
+  — EVIDENCE of what you verified and how. `assumptions` is required on a terminal close
+  (`'none'` or fact keys). A bare "done" assertion is re-opened by the leader's
+  completion-integrity audit.
 - **Persist with `loop:arm`; each wake pull + advance one unit. Lane drained? Park ONE
   `events:await { event: 'work-item:claimable', payload_filter: <your claim spec's
   view>, timeout_sec: 1800 }`, then `loop:end`** — the pool refilling re-wakes you

@@ -1,6 +1,6 @@
 import { test, beforeEach, afterEach } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -683,6 +683,93 @@ test('invoke — end-to-end logs invoke message, returns rc + paths', async () =
     assert.match(outBody, /## Runtime context/);
     assert.match(outBody, /MODE=fresh/);
   } finally {
+    fx.cleanup();
+  }
+});
+
+test('invoke — standalone OMP ignores inherited fleet sandbox flag without srt', async () => {
+  const fx = makeFixture(({ harnessDir, projectDir }) => {
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
+    const binDir = join(projectDir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(
+      join(binDir, 'omp'),
+      "#!/bin/sh\nprintf '%s\\n' '" +
+        JSON.stringify({
+          type: 'message_end',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'standalone ok' }] },
+        }) +
+        "' '" +
+        JSON.stringify({ type: 'agent_end', messages: [] }) +
+        "'\n",
+      { mode: 0o755 },
+    );
+  });
+  const previousPath = process.env.PATH;
+  process.env.PAPERCUSP_FLEET_SANDBOX = '1';
+  process.env.PATH = join(fx.projectDir, 'bin');
+  try {
+    const result = await invoke(
+      {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: join(fx.projectDir, 'bin', 'omp'),
+        agentBackend: 'omp',
+        log: () => {},
+        nowSeconds: () => 1700000007,
+      },
+      'worker',
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.output, 'standalone ok');
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    fx.cleanup();
+  }
+});
+
+test('invoke — workspace-scoped fleet preflights missing srt before spawning', async () => {
+  const fx = makeFixture(({ harnessDir, projectDir }) => {
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
+    const binDir = join(projectDir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(
+      join(binDir, 'omp'),
+      `#!/bin/sh\nprintf spawned > ${join(projectDir, 'spawned')}`,
+      { mode: 0o755 },
+    );
+  });
+  const previousPath = process.env.PATH;
+  process.env.PAPERCUSP_FLEET_SANDBOX = '1';
+  process.env.PATH = join(fx.projectDir, 'bin');
+  try {
+    await assert.rejects(
+      () => invoke(
+        {
+          harnessDir: fx.harnessDir,
+          projectDir: fx.projectDir,
+          stateDir: fx.stateDir,
+          logDir: fx.logDir,
+          phase: 'staging',
+          claudeCmd: join(fx.projectDir, 'bin', 'omp'),
+          agentBackend: 'omp',
+          workspaceId: 'ws-test',
+          log: () => {},
+          nowSeconds: () => 1700000008,
+        },
+        'worker',
+      ),
+      /PAPERCUSP_FLEET_SANDBOX is set.*srt.*not on PATH/,
+    );
+    assert.equal(existsSync(join(fx.projectDir, 'spawned')), false);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
     fx.cleanup();
   }
 });

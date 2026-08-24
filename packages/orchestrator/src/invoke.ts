@@ -3018,6 +3018,24 @@ export async function invoke(
   const streamFormat: StreamFormat = executionEngine === 'loop'
     ? 'loop-ndjson'
     : selectStreamFormat(agentBackend, roleAgentCmd);
+  // Fleet sandboxing is an operator/workspace boundary, not a process-wide
+  // default that standalone CLI callers should inherit. Resolve it once for
+  // this subprocess invocation so every sandbox leg agrees on the same scope.
+  // Owned-loop calls do not spawn a child and therefore do not need srt.
+  const fleetSandboxForSpawn =
+    executionEngine === 'subprocess' && Boolean(ctx.workspaceId) && fleetSandboxEnabled();
+  const fleetSrtBin =
+    fleetSandboxForSpawn && backendUsesSrt(agentBackend) ? srtBinOnPath() : null;
+  if (fleetSandboxForSpawn && backendUsesSrt(agentBackend) && !fleetSrtBin) {
+    // Keep this rejection outside the async spawn executor. A throw inside
+    // `new Promise(async (resolve) => ...)` becomes an unhandled rejection
+    // instead of the invoke() promise's failure result.
+    throw new Error(
+      `PAPERCUSP_FLEET_SANDBOX is set for a ${agentBackend} spawn but \`srt\` is not on PATH. ` +
+        'Install @anthropic-ai/sandbox-runtime (npm i -g @anthropic-ai/sandbox-runtime) ' +
+        'or set PAPERCUSP_FLEET_SANDBOX=0.',
+    );
+  }
   const ownedLoopPort = ctx.ownedLoop;
   const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
   if (agentBackend === 'codex' && streamFormat === 'codex-json' && argv.includes('exec')) {
@@ -3028,7 +3046,7 @@ export async function invoke(
   // codex sandbox policy (plan fleet-spawn-sandbox Phase 2) — flag-gated
   // workspace-write vs the prior danger-full-access default. Goes in extraFlags
   // (before the `-` stdin positional) because codex wants options before the prompt.
-  extraFlags.push(...codexSandboxArgs(agentBackend, streamFormat, roleAgentCmd, fleetSandboxEnabled()));
+  extraFlags.push(...codexSandboxArgs(agentBackend, streamFormat, roleAgentCmd, fleetSandboxForSpawn));
 
   // omp leg of the B-18 capability-only cutover (P-034): under the cutover, restrict
   // omp to its read-only native built-ins via `--tools`, so native execution /
@@ -3665,7 +3683,7 @@ export async function invoke(
       streamFormat,
       roleAgentCmd,
       Boolean(ctx.workspaceId),
-      fleetSandboxEnabled(),
+      fleetSandboxForSpawn,
       role,
     ),
   );
@@ -3835,7 +3853,7 @@ export async function invoke(
     // When the OS sandbox is on, also strip provider/cloud creds from the
     // sandboxed Bash subprocess env (verified: =1 strips e.g. AWS_SECRET_ACCESS_KEY
     // from a Bash subprocess). Complements the sandbox's denyRead + egress block.
-    if (fleetSandboxEnabled()) {
+    if (fleetSandboxForSpawn) {
       spawnEnv.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1';
       // Redirect package-manager caches into the allow-listed cache root: the
       // sandbox makes $HOME read-only, so npm/pip/cargo (which cache under
@@ -3968,15 +3986,7 @@ export async function invoke(
     // its own --settings sandbox, not srt.
     let spawnCommand = command;
     let spawnArgv = finalArgv;
-    if (fleetSandboxEnabled() && backendUsesSrt(agentBackend)) {
-      const srtBin = srtBinOnPath();
-      if (!srtBin) {
-        throw new Error(
-          `PAPERCUSP_FLEET_SANDBOX is set for a ${agentBackend} spawn but \`srt\` is not on PATH. ` +
-            'Install @anthropic-ai/sandbox-runtime (npm i -g @anthropic-ai/sandbox-runtime) ' +
-            'or set PAPERCUSP_FLEET_SANDBOX=0.',
-        );
-      }
+    if (fleetSandboxForSpawn && backendUsesSrt(agentBackend)) {
       // The backend's own writable agent/state dirs (its config/auth/session DBs):
       // codex → the per-spawn CODEX_HOME; claude → the per-spawn isolated
       // CLAUDE_CONFIG_DIR (claude writes session/project state under it, and the
@@ -3995,7 +4005,7 @@ export async function invoke(
       ({ command: spawnCommand, argv: spawnArgv } = wrapSpawnWithSrt(command, finalArgv, {
         enabled: true,
         backend: agentBackend,
-        srtBin,
+        srtBin: fleetSrtBin,
         settingsPath,
       }));
     }

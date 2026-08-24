@@ -113,7 +113,7 @@
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:legacy": "node --test --import tsx src/**/*.test.ts",
-    "typecheck": "bash ../../../../scripts/pc-heavy.sh node ../../../../scripts/lint-tsc-orchestrator.mjs"
+    "typecheck": "node ../../../../scripts/lint-tsc-orchestrator.mjs"
   },
   "dependencies": {
     "@papercusp/file-claim": "*",
