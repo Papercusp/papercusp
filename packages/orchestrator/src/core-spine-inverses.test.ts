@@ -11,6 +11,7 @@
  *   EI-8597  loop:end / loop:status     — worker couldn't stop its own loop
  *   EI-9012  events:await / emit        — built a blind poll loop the persona forbids
  *   EI-9034  events:catalog             — same
+ *   EI-21345492095209440 events:cancel  — a seeded await could not be retracted directly
  *   EI-10946 work_items:comment/update, facts:retract — agent abused work_items:checkpoint
  *            as an erratum channel, and abandoned retracting a stale fact that kept telling
  *            every future orient to redo finished work
@@ -34,6 +35,7 @@ const REQUIRED_INVERSES: ReadonlyArray<readonly [string, string, string]> = [
   ['work_items:create', 'work_items:update', 'correcting a wrong BODY — what every future reader and brief inherits'],
   ['work_items:create', 'work_items:comment', 'annotating an item without rewriting it'],
   ['loop:arm', 'loop:end', 'an armed loop that cannot be stopped burns wakes forever'],
+  ['events:await', 'events:cancel', 'a registered await must be retractable before it fires'],
 ];
 
 describe('core spine — every seeded write verb has its correction verb seeded too (EI-10946)', () => {
