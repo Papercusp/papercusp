@@ -156,7 +156,9 @@ kickoff adds mission specifics, never this:
   proceed now, don't re-wait.
 - **Wind-down on the leader's stand-down order:** finish only the atomic step in hand →
   `work_items:checkpoint` + release with a one-line reason (or complete with evidence) →
-  `loop:end` → ack the leader with a one-line disposition.
+  `loop:end` → `coord:ack { msg_id }` the leader's cue (a lifecycle RECEIPT — it takes only
+  msg_id and carries no free text), then send your one-line disposition as a separate
+  `coord:send { expects:'none', summary }`.
 
 ## Git — a background routine owns commit + push
 
