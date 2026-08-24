@@ -736,6 +736,23 @@ test('invoke — engine=loop uses the injected port and persists native NDJSON w
     const jsonl = readFileSync(result.jsonlPath, 'utf8');
     assert.match(jsonl, /"type":"done"/);
     assert.match(jsonl, /"backend":"owned-loop"/);
+    const meta = JSON.parse(jsonl.trimEnd().split('\n').at(-1)!) as Record<string, unknown>;
+    assert.equal(meta.schemaVersion, 'worker-parity-v1');
+    assert.equal(meta.engine, 'loop');
+    assert.equal(meta.featureId, 'F-010');
+    assert.match(String(meta.promptHash), /^[0-9a-f]{64}$/);
+    assert.deepEqual(meta.stream, {
+      schemaVersion: 'invocation-stream-summary-v1',
+      format: 'loop-ndjson',
+      jsonLines: 3,
+      malformedLines: 0,
+      terminalEvents: 1,
+      toolCalls: 0,
+      toolResults: 0,
+      finalTextChars: 12,
+      ok: true,
+      issues: [],
+    });
     assert.equal(readFileSync(result.outPath, 'utf8'), 'owned result\n');
   } finally {
     fx.cleanup();
