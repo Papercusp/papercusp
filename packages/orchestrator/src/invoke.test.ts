@@ -829,6 +829,7 @@ test('invoke — engine=loop uses the injected port and persists native NDJSON w
     const meta = JSON.parse(jsonl.trimEnd().split('\n').at(-1)!) as Record<string, unknown>;
     assert.equal(meta.schemaVersion, 'worker-parity-v1');
     assert.equal(meta.engine, 'loop');
+    assert.equal(meta.requestedModel, 'claude-haiku-4-5');
     assert.equal(meta.featureId, 'F-010');
     assert.match(String(meta.promptHash), /^[0-9a-f]{64}$/);
     assert.deepEqual(meta.stream, {

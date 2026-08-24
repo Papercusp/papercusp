@@ -2800,6 +2800,7 @@ async function finalizeInvocation(args: {
   streamFormat: StreamFormat;
   runBackend: string;
   resolvedModel: string;
+  requestedModel: string;
   jsonlPath: string;
   outPath: string;
   errPath: string;
@@ -2839,6 +2840,7 @@ async function finalizeInvocation(args: {
             backend: args.runBackend,
             engine: args.runBackend === 'owned-loop' ? 'loop' : 'subprocess',
             model: args.resolvedModel,
+            requestedModel: args.requestedModel,
             role: args.role,
             runId: args.runId,
             featureId: args.featureId,
@@ -3135,6 +3137,14 @@ export async function invoke(
   } else {
     resolvedModel = explicitModelFromArgv(argv);
   }
+  // `resolvedModel` is the transport model used for invocation and cost
+  // attribution. OMP gateway routing wraps the public model in a dedicated
+  // provider selector (`papercusp-gateway/<model>`), which must not make a
+  // same-model parity pair look mismatched. Keep the requested model as a
+  // separate wire field while preserving `model` for existing usage readers.
+  const requestedModel = ompGatewaySelector
+    ? ompGatewaySelector.replace(/^papercusp-gateway\//, '')
+    : resolvedModel;
 
   // 5a. omp spawns get compaction settings via omp's repeatable `--config <file>` overlay
   //     (deterministic-context-carry P-001/P-002; unified by P-022 2026-07-18:
@@ -3536,6 +3546,7 @@ export async function invoke(
       streamFormat,
       runBackend: 'owned-loop',
       resolvedModel,
+      requestedModel,
       jsonlPath,
       outPath,
       errPath,
@@ -4285,6 +4296,7 @@ export async function invoke(
             backend: agentBackend,
             engine: 'subprocess',
             model: resolvedModel,
+            requestedModel,
             role,
             runId,
             featureId: featureId ?? null,
