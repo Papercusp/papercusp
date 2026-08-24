@@ -2,7 +2,7 @@
 --
 -- `started_at` is not a birth. Four paths deliberately bump it in place on the
 -- SAME row so a resumed/re-anchored session reads as freshly-live for the
--- roster's recency window (adv-sessions.ts claimAdvSessionResume,
+-- roster's recency window (adv-sessions.ts reactivateAdvSession,
 -- reactivateAdvSessionByOwner, reanchorAdvSessionNativeId,
 -- reanchorAdvSessionNativeIdByOwner). A coord owner id outlives any one of those
 -- legs, and `recordAdvSession` only ever INSERTs for a genuinely new session
