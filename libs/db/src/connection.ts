@@ -73,12 +73,16 @@ import {
   PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES,
   restoreRawDateSerializers,
   restoreRawJsonbSerializer,
+  seedBuiltinArrayTypes,
 } from './raw-serializers';
 export {
   PG_BIGINT_AS_NUMBER_TYPES,
   PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES,
   restoreRawDateSerializers,
   restoreRawJsonbSerializer,
+  // WI-41207: hand-rolled clients that must BEHAVE like the canonical ones (test fixtures,
+  // conformance suites, one-off scripts) call this for the same reason they call the two above.
+  seedBuiltinArrayTypes,
 };
 
 // The `./schema` barrel re-exports `generated` + `generatedRelations` as nested
@@ -1238,6 +1242,12 @@ function buildClient(
   // `${JSON.stringify(v)}::jsonb` doesn't match drizzle's mutated state
   // silently double-encodes (or throws).
   restoreRawJsonbSerializer(client);
+  // WI-41207: seed postgres-js's array-type map with the built-in element->array OIDs so
+  // `sql.array(...)` is correctly typed on the FIRST query of this pool. Without it that query
+  // is built against an empty map, the array parameter silently degrades to its ELEMENT type,
+  // and the server rejects it with "op ANY/ALL (array) requires array on right side" — while the
+  // identical call a moment later succeeds. See seedBuiltinArrayTypes for the full mechanism.
+  seedBuiltinArrayTypes(client);
   return client;
 }
 

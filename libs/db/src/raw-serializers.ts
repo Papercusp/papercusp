@@ -181,3 +181,79 @@ export function restoreRawJsonbSerializer(client: Sql): void {
     });
   }
 }
+
+/**
+ * WI-41207: element OID -> array OID for Postgres BUILT-IN types. These are fixed catalog
+ * constants (pg_type.oid / pg_type.typarray for built-ins never change across versions or
+ * installs), which is what makes seeding them statically sound.
+ */
+const BUILTIN_ARRAY_TYPE_OIDS: Readonly<Record<number, number>> = {
+  16: 1000, // bool
+  20: 1016, // int8
+  21: 1005, // int2
+  23: 1007, // int4
+  25: 1009, // text
+  114: 199, // json
+  700: 1021, // float4
+  701: 1022, // float8
+  1042: 1014, // bpchar
+  1043: 1015, // varchar
+  1082: 1182, // date
+  1083: 1183, // time
+  1114: 1115, // timestamp
+  1184: 1185, // timestamptz
+  2950: 2951, // uuid
+  3802: 3807, // jsonb
+};
+
+/**
+ * WI-41207: make `sql.array(...)` correct on the FIRST query of a cold pool.
+ *
+ * THE DEFECT. postgres-js resolves an array parameter's OID at query-BUILD time
+ * (`types.js:89`):
+ *
+ *     x.array[x.type || inferType(x.value)] || x.type || firstIsString(x.value)
+ *
+ * where `x.array` is `options.shared.typeArrayMap`, populated ONLY by the connection's
+ * `fetchArrayTypes()` handshake (`connection.js:770`). The first query on a cold pool is built
+ * before that completes, so the lookup misses and the expression falls through to `x.type` —
+ * the ELEMENT oid (25/text), not the ARRAY oid (1009/text[]). The parameter is then declared
+ * `text` while its value is an array, and the server answers:
+ *
+ *     op ANY/ALL (array) requires array on right side
+ *
+ * The identical call succeeds moments later, once the map is populated, which is why this reads
+ * as an argument-shape bug and is not one. It is a SILENT TYPE DEGRADATION, not a missing-type
+ * error. Measured on postgres-js 3.4.9: 3/3 cold pools fail, 3/3 seeded pools succeed.
+ *
+ * WHY HERE AND NOT AT THE CALL SITES. 54 non-test `sql.array(` sites share the hazard, and a
+ * caller that treats an error as "no rows" reads the failure as an empty result — the
+ * false-clean direction, most likely right after an operator restart when ledger reads matter
+ * most. Fixing it per-site (`sql.array(x, 1009)`) would have to be remembered by site 55; this
+ * is correct for every present and future caller.
+ *
+ * WHY A STATIC SEED RATHER THAN A WARM-UP QUERY. Firing `SELECT 1` at construction also works
+ * (verified), but it forces an EAGER CONNECT where these clients connect lazily today — a
+ * lifecycle change every test fixture and import-time handle would inherit. Seeding costs no
+ * I/O, cannot race, and leaves the connection lifecycle untouched.
+ *
+ * SCOPE, STATED HONESTLY: built-ins only. A custom/extension element type (e.g. pgvector) still
+ * depends on `fetchArrayTypes()`, so it remains wrong for exactly one query on a cold pool. That
+ * is a strict improvement, not a complete fix, and the real fetch overwrites these entries with
+ * the catalog's own values on connect (verified to agree: typeArrayMap[25] === 1009 after).
+ *
+ * NOT FIXED HERE (separate defect, filed separately): `sql.array([1,2,3])` types a NUMBER array
+ * as text[] regardless of this map, because postgres-js's `inferType` has no `number` case. That
+ * fails against an integer column on a warmed pool too ("operator does not exist: integer =
+ * text") and needs an explicit OID at the call site.
+ */
+export function seedBuiltinArrayTypes(client: Sql): void {
+  const map = (client as any)?.options?.shared?.typeArrayMap as Record<number, number> | undefined;
+  if (!map) return; // postgres-js internals moved — the guard test reports this loudly
+  for (const [elementOid, arrayOid] of Object.entries(BUILTIN_ARRAY_TYPE_OIDS)) {
+    // Never clobber: a real fetchArrayTypes() result is authoritative over our constants.
+    if (map[elementOid as unknown as number] === undefined) {
+      map[elementOid as unknown as number] = arrayOid;
+    }
+  }
+}
