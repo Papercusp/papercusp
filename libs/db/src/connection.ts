@@ -74,6 +74,7 @@ import {
   restoreRawDateSerializers,
   restoreRawJsonbSerializer,
   seedBuiltinArrayTypes,
+  installNumericArrayTyping,
 } from './raw-serializers';
 export {
   PG_BIGINT_AS_NUMBER_TYPES,
@@ -83,6 +84,8 @@ export {
   // WI-41207: hand-rolled clients that must BEHAVE like the canonical ones (test fixtures,
   // conformance suites, one-off scripts) call this for the same reason they call the two above.
   seedBuiltinArrayTypes,
+  // EI-21301868186403490: same reason — a hand-rolled client otherwise sends number arrays as text[].
+  installNumericArrayTyping,
 };
 
 // The `./schema` barrel re-exports `generated` + `generatedRelations` as nested
@@ -1248,6 +1251,11 @@ function buildClient(
   // and the server rejects it with "op ANY/ALL (array) requires array on right side" — while the
   // identical call a moment later succeeds. See seedBuiltinArrayTypes for the full mechanism.
   seedBuiltinArrayTypes(client);
+  // EI-21301868186403490: postgres-js has no `number` case in inferType and coerces the miss to
+  // TEXT, so `sql.array([1, 2, 3])` is declared text[] and the server rejects it with "operator
+  // does not exist: integer = text" — on a WARMED pool too, which is why the seeding above cannot
+  // help. This types number arrays as int8[] (float8[] when a value is not a safe integer).
+  installNumericArrayTyping(client);
   return client;
 }
 

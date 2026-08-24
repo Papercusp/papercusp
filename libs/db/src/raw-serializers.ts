@@ -242,10 +242,9 @@ const BUILTIN_ARRAY_TYPE_OIDS: Readonly<Record<number, number>> = {
  * is a strict improvement, not a complete fix, and the real fetch overwrites these entries with
  * the catalog's own values on connect (verified to agree: typeArrayMap[25] === 1009 after).
  *
- * NOT FIXED HERE (separate defect, filed separately): `sql.array([1,2,3])` types a NUMBER array
- * as text[] regardless of this map, because postgres-js's `inferType` has no `number` case. That
- * fails against an integer column on a warmed pool too ("operator does not exist: integer =
- * text") and needs an explicit OID at the call site.
+ * NUMBER ARRAYS ARE FIXED SEPARATELY, BELOW: `sql.array([1,2,3])` types a NUMBER array as text[]
+ * regardless of this map, because the element OID is already 25 before the map is consulted.
+ * Seeding cannot help there — see installNumericArrayTyping (EI-21301868186403490).
  */
 export function seedBuiltinArrayTypes(client: Sql): void {
   const map = (client as any)?.options?.shared?.typeArrayMap as Record<number, number> | undefined;
@@ -256,4 +255,94 @@ export function seedBuiltinArrayTypes(client: Sql): void {
       map[elementOid as unknown as number] = arrayOid;
     }
   }
+}
+
+/** Element OIDs a JS number array can be sent as. */
+export const PG_ELEMENT_OID_INT8 = 20;
+export const PG_ELEMENT_OID_FLOAT8 = 701;
+
+/** Marks an already-wrapped `array` so re-wrapping a client cannot nest the patch. */
+const NUMERIC_ARRAY_TYPING = Symbol.for('papercusp.db.numericArrayTyping');
+
+/**
+ * The element OID a numeric array should be declared as, or `undefined` to leave postgres-js's
+ * own inference untouched. Exported so the guard test can pin the classification with no DB.
+ *
+ * `undefined` is returned for anything that is not an all-number array (including an empty one,
+ * and one holding only NULLs) — those carry no numeric type information and are not ours to type.
+ */
+export function numericArrayElementOid(elements: readonly unknown[]): number | undefined {
+  let sawNumber = false;
+  let needsFloat = false;
+  for (const el of elements) {
+    if (el === null || el === undefined) continue; // NULL carries no type information
+    if (typeof el !== 'number') return undefined; // not a numeric array — leave it alone
+    sawNumber = true;
+    if (!Number.isSafeInteger(el)) needsFloat = true;
+  }
+  if (!sawNumber) return undefined;
+  return needsFloat ? PG_ELEMENT_OID_FLOAT8 : PG_ELEMENT_OID_INT8;
+}
+
+/**
+ * EI-21301868186403490: make `sql.array([1, 2, 3])` reach Postgres as an INTEGER array.
+ *
+ * THE DEFECT — a COERCION, not a missing case. postgres-js's `inferType` (`types.js:221`) has
+ * cases for Date, Uint8Array, boolean and bigint but NONE for `number`, so it returns 0 for a
+ * numeric array. `array()` (`index.js:326`) then coerces that 0 to TEXT outright:
+ *
+ *     new Parameter(x, type || (x.length ? inferType(x) || 25 : 0), options.shared.typeArrayMap)
+ *                                                       ^^^^^^^^ 25 = text
+ *
+ * The parameter is declared `text[]` (typeArrayMap[25] → 1009) and the server answers:
+ *
+ *     operator does not exist: integer = text
+ *
+ * Measured on postgres-js 3.4.9 against a WARMED pool — which is exactly what separates this
+ * from WI-41207. seedBuiltinArrayTypes cannot help: the element OID is already 25 before the
+ * map is consulted. `sql.array([1n, 2n])` is unaffected (inferType HAS a bigint case), so the
+ * defect is specific to JS `number`.
+ *
+ * LATENT, NOT LIVE — stated plainly so nobody re-reads this as an outage. Of 59 non-test
+ * `sql.array(` sites, 23 carry no explicit `::type[]` cast and every one of those passes
+ * STRINGS, which text[] types correctly. The 36 cast sites are rescued by the cast itself
+ * (`text[]::bigint[]` is a valid Postgres conversion, verified). So nothing is broken today;
+ * this makes site 60 safe, and it fails LOUD (a query error) rather than silently wrong.
+ *
+ * WHY HERE AND NOT AT THE CALL SITES. The same argument as seedBuiltinArrayTypes above, at the
+ * same seam: a per-site `sql.array(x, 20)` has to be remembered by every future caller.
+ *
+ * WHY int8 RATHER THAN int4. A JS number can exceed int4 range, and Postgres has an
+ * `integer = bigint` operator, so int8 compares correctly against int2/int4/int8 columns while
+ * int4 would overflow. A value that is not a SAFE integer is typed float8 rather than silently
+ * claiming precision int8 does not have.
+ *
+ * SCOPE, STATED HONESTLY: this patches the client THIS factory returns. A hand-rolled
+ * `postgres(getHarnessAdminUrl(), …)` pool that bypasses the factory keeps the old behaviour
+ * (those pools are tracked separately as EI-19306394439939264).
+ */
+export function installNumericArrayTyping(client: Sql): void {
+  const original = (client as any)?.array;
+  if (typeof original !== 'function') return; // internals moved — the guard test reports this loudly
+  if (original[NUMERIC_ARRAY_TYPING] === true) return; // idempotent
+
+  const patched = function (this: unknown, ...args: unknown[]) {
+    // postgres-js resolves its two call shapes by Array.isArray(args[0]):
+    //   array(values, type?) — the first argument IS the array
+    //   array(a, b, c)       — variadic; EVERY argument is an element
+    if (Array.isArray(args[0])) {
+      if (args.length < 2 || args[1] === undefined) {
+        const oid = numericArrayElementOid(args[0]);
+        if (oid !== undefined) return original.call(this, args[0], oid);
+      }
+    } else if (args.length > 0) {
+      const oid = numericArrayElementOid(args);
+      if (oid !== undefined) return original.call(this, args, oid);
+    }
+    // Preserve arity EXACTLY: original() re-reads `arguments` for its variadic form, so passing
+    // an explicit `undefined` type would be captured as a second element.
+    return original.apply(this, args);
+  };
+  (patched as any)[NUMERIC_ARRAY_TYPING] = true;
+  (client as any).array = patched;
 }

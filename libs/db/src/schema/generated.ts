@@ -316,6 +316,7 @@ export const routinesInHarnessShared = harnessShared.table("routines", {
 	targetOwnerId: text("target_owner_id"),
 	tier: text().default('durable').notNull(),
 	groupSlug: text("group_slug"),
+	activeChangedAt: timestamp("active_changed_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
 	index("routines_active_due_idx").using("btree", table.active.asc().nullsLast().op("bool_ops"), table.nextFireAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(active = true)`),
 	index("routines_group_slug_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.groupSlug.asc().nullsLast().op("text_ops")).where(sql`(group_slug IS NOT NULL)`),
@@ -9004,58 +9005,6 @@ export const triageLedgerInHarnessShared = harnessShared.table("triage_ledger", 
 	check("triage_ledger_discard_needs_verified_falsifier", sql`(merit !~~ 'M1-%'::text) OR ((falsifier IS NOT NULL) AND (length(btrim(falsifier)) > 0) AND (provenance = 'verified'::text))`),
 ]);
 
-export const planSpecClauseRevisionsInHarnessShared = harnessShared.table("plan_spec_clause_revisions", {
-	workspaceId: text("workspace_id").notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	planSlug: text("plan_slug").notNull(),
-	specId: text("spec_id").notNull(),
-	revision: integer().notNull(),
-	planItemId: text("plan_item_id").notNull(),
-	behavior: text().notNull(),
-	behaviorClass: text("behavior_class").notNull(),
-	requiredEvidence: text("required_evidence").array().default(["RAY"]).notNull(),
-	requiredTestLayers: text("required_test_layers").array().default(["RAY"]).notNull(),
-	mutationRequired: boolean("mutation_required").default(false).notNull(),
-	lifecycleStatus: text("lifecycle_status").notNull(),
-	supersedesSpecId: text("supersedes_spec_id"),
-	supersedesRevision: integer("supersedes_revision"),
-	exemption: jsonb(),
-	contentHash: text("content_hash").notNull(),
-	createdBy: text("created_by").notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	acceptedBy: text("accepted_by"),
-	acceptedAt: timestamp("accepted_at", { withTimezone: true, mode: 'string' }),
-	acceptanceRef: text("acceptance_ref"),
-}, (table): PgTableExtraConfigValue[] => [
-	index("plan_spec_clause_revisions_by_item").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.planItemId.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops"), table.revision.desc().nullsFirst().op("int4_ops")),
-	index("plan_spec_clause_revisions_by_status").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.lifecycleStatus.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.workspaceId, table.harnessSlug, table.planSlug, table.specId],
-			foreignColumns: [planSpecClausesInHarnessShared.workspaceId, planSpecClausesInHarnessShared.harnessSlug, planSpecClausesInHarnessShared.planSlug, planSpecClausesInHarnessShared.specId],
-			name: "plan_spec_clause_revisions_workspace_id_harness_slug_plan__fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.workspaceId, table.harnessSlug, table.planSlug, table.supersedesSpecId, table.supersedesRevision],
-			foreignColumns: [planSpecClauseRevisionsInHarnessShared.workspaceId, planSpecClauseRevisionsInHarnessShared.harnessSlug, planSpecClauseRevisionsInHarnessShared.planSlug, planSpecClauseRevisionsInHarnessShared.specId, planSpecClauseRevisionsInHarnessShared.revision],
-			name: "plan_spec_clause_revisions_supersedes_fk"
-		}).onDelete("restrict"),
-	primaryKey({ columns: [table.harnessSlug, table.planSlug, table.revision, table.specId, table.workspaceId], name: "plan_spec_clause_revisions_pkey"}),
-	pgPolicy("plan_spec_clause_revisions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("plan_spec_clause_revisions_revision_check", sql`revision > 0`),
-	check("plan_spec_clause_revisions_plan_item_id_check", sql`plan_item_id ~ '^P-[0-9]{3,}$'::text`),
-	check("plan_spec_clause_revisions_behavior_check", sql`length(btrim(behavior)) > 0`),
-	check("plan_spec_clause_revisions_behavior_class_check", sql`behavior_class = ANY (ARRAY['happy-path'::text, 'boundary'::text, 'failure'::text, 'authorization'::text, 'concurrency'::text, 'lifecycle'::text, 'observability'::text, 'migration-data-integrity'::text, 'non-automated'::text])`),
-	check("plan_spec_clause_revisions_lifecycle_status_check", sql`lifecycle_status = ANY (ARRAY['draft'::text, 'accepted'::text, 'active'::text, 'superseded'::text, 'exempt'::text, 'retired'::text])`),
-	check("plan_spec_clause_revisions_content_hash_check", sql`content_hash ~ '^[0-9a-f]{64}$'::text`),
-	check("plan_spec_clause_revisions_check", sql`(supersedes_spec_id IS NULL) = (supersedes_revision IS NULL)`),
-	check("plan_spec_clause_revisions_supersedes_revision_check", sql`(supersedes_revision IS NULL) OR (supersedes_revision > 0)`),
-	check("plan_spec_clause_revisions_check1", sql`(accepted_by IS NULL) = (accepted_at IS NULL)`),
-	check("plan_spec_clause_revisions_check2", sql`(lifecycle_status <> ALL (ARRAY['accepted'::text, 'active'::text])) OR (accepted_by IS NOT NULL)`),
-	check("plan_spec_clause_revisions_check3", sql`(lifecycle_status <> 'exempt'::text) OR (exemption IS NOT NULL)`),
-	check("plan_spec_clause_revisions_exemption_exact", sql`(lifecycle_status = 'exempt'::text) = (exemption IS NOT NULL)`),
-	check("plan_spec_clause_revisions_acceptance_exact", sql`(lifecycle_status = ANY (ARRAY['accepted'::text, 'active'::text])) = (accepted_by IS NOT NULL)`),
-]);
-
 export const p2PReceiptsInHarnessShared = harnessShared.table("p2p_receipts", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -9239,6 +9188,61 @@ export const potMembersInHarnessShared = harnessShared.table("pot_members", {
 	primaryKey({ columns: [table.githubUserId, table.potHomeSlug, table.workspaceId], name: "pot_members_pkey"}),
 	pgPolicy("pot_members_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("hive_members_workspace_id_concrete", sql`(workspace_id <> '*'::text) AND (workspace_id <> ''::text)`),
+]);
+
+export const planSpecClauseRevisionsInHarnessShared = harnessShared.table("plan_spec_clause_revisions", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	planSlug: text("plan_slug").notNull(),
+	specId: text("spec_id").notNull(),
+	revision: integer().notNull(),
+	planItemId: text("plan_item_id").notNull(),
+	behavior: text().notNull(),
+	behaviorClass: text("behavior_class").notNull(),
+	requiredEvidence: text("required_evidence").array().default(["RAY"]).notNull(),
+	requiredTestLayers: text("required_test_layers").array().default(["RAY"]).notNull(),
+	mutationRequired: boolean("mutation_required").default(false).notNull(),
+	lifecycleStatus: text("lifecycle_status").notNull(),
+	supersedesSpecId: text("supersedes_spec_id"),
+	supersedesRevision: integer("supersedes_revision"),
+	exemption: jsonb(),
+	contentHash: text("content_hash").notNull(),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	acceptedBy: text("accepted_by"),
+	acceptedAt: timestamp("accepted_at", { withTimezone: true, mode: 'string' }),
+	acceptanceRef: text("acceptance_ref"),
+	falsifier: jsonb(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("plan_spec_clause_revisions_by_item").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.planItemId.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops"), table.revision.desc().nullsFirst().op("int4_ops")),
+	index("plan_spec_clause_revisions_by_status").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.lifecycleStatus.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops")),
+	index("plan_spec_clause_revisions_falsifier_declared").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops"), table.revision.desc().nullsFirst().op("int4_ops")).where(sql`(falsifier IS NOT NULL)`),
+	foreignKey({
+			columns: [table.workspaceId, table.harnessSlug, table.planSlug, table.specId],
+			foreignColumns: [planSpecClausesInHarnessShared.workspaceId, planSpecClausesInHarnessShared.harnessSlug, planSpecClausesInHarnessShared.planSlug, planSpecClausesInHarnessShared.specId],
+			name: "plan_spec_clause_revisions_workspace_id_harness_slug_plan__fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.workspaceId, table.harnessSlug, table.planSlug, table.supersedesSpecId, table.supersedesRevision],
+			foreignColumns: [planSpecClauseRevisionsInHarnessShared.workspaceId, planSpecClauseRevisionsInHarnessShared.harnessSlug, planSpecClauseRevisionsInHarnessShared.planSlug, planSpecClauseRevisionsInHarnessShared.specId, planSpecClauseRevisionsInHarnessShared.revision],
+			name: "plan_spec_clause_revisions_supersedes_fk"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.harnessSlug, table.planSlug, table.revision, table.specId, table.workspaceId], name: "plan_spec_clause_revisions_pkey"}),
+	pgPolicy("plan_spec_clause_revisions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("plan_spec_clause_revisions_revision_check", sql`revision > 0`),
+	check("plan_spec_clause_revisions_plan_item_id_check", sql`plan_item_id ~ '^P-[0-9]{3,}$'::text`),
+	check("plan_spec_clause_revisions_behavior_check", sql`length(btrim(behavior)) > 0`),
+	check("plan_spec_clause_revisions_behavior_class_check", sql`behavior_class = ANY (ARRAY['happy-path'::text, 'boundary'::text, 'failure'::text, 'authorization'::text, 'concurrency'::text, 'lifecycle'::text, 'observability'::text, 'migration-data-integrity'::text, 'non-automated'::text])`),
+	check("plan_spec_clause_revisions_lifecycle_status_check", sql`lifecycle_status = ANY (ARRAY['draft'::text, 'accepted'::text, 'active'::text, 'superseded'::text, 'exempt'::text, 'retired'::text])`),
+	check("plan_spec_clause_revisions_content_hash_check", sql`content_hash ~ '^[0-9a-f]{64}$'::text`),
+	check("plan_spec_clause_revisions_check", sql`(supersedes_spec_id IS NULL) = (supersedes_revision IS NULL)`),
+	check("plan_spec_clause_revisions_supersedes_revision_check", sql`(supersedes_revision IS NULL) OR (supersedes_revision > 0)`),
+	check("plan_spec_clause_revisions_check1", sql`(accepted_by IS NULL) = (accepted_at IS NULL)`),
+	check("plan_spec_clause_revisions_check2", sql`(lifecycle_status <> ALL (ARRAY['accepted'::text, 'active'::text])) OR (accepted_by IS NOT NULL)`),
+	check("plan_spec_clause_revisions_check3", sql`(lifecycle_status <> 'exempt'::text) OR (exemption IS NOT NULL)`),
+	check("plan_spec_clause_revisions_exemption_exact", sql`(lifecycle_status = 'exempt'::text) = (exemption IS NOT NULL)`),
+	check("plan_spec_clause_revisions_acceptance_exact", sql`(lifecycle_status = ANY (ARRAY['accepted'::text, 'active'::text])) = (accepted_by IS NOT NULL)`),
+	check("plan_spec_clause_revisions_falsifier_shape", sql`(falsifier IS NULL) OR ((jsonb_typeof(falsifier) = 'object'::text) AND (falsifier ? 'observation'::text) AND (jsonb_typeof((falsifier -> 'observation'::text)) = 'string'::text) AND (length(btrim((falsifier ->> 'observation'::text))) > 0) AND ((NOT (falsifier ? 'probeMethod'::text)) OR ((jsonb_typeof((falsifier -> 'probeMethod'::text)) = 'string'::text) AND (length(btrim((falsifier ->> 'probeMethod'::text))) > 0))))`),
 ]);
 
 export const replayRunsInHarnessShared = harnessShared.table("replay_runs", {
