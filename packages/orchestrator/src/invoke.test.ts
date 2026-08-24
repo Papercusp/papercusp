@@ -812,7 +812,7 @@ test('invoke — engine=loop uses the injected port and persists native NDJSON w
         nowSeconds: () => 1700000005,
       },
       'worker',
-      ['FEATURE_ID=F-010'],
+      ['FEATURE_ID=F-010', 'CHUNK_ID=ck-parity-010'],
     );
 
     assert.equal(result.exitCode, 0);
@@ -822,6 +822,7 @@ test('invoke — engine=loop uses the injected port and persists native NDJSON w
     assert.equal(captured.model, 'claude-haiku-4-5');
     assert.equal(captured.role, 'worker');
     assert.equal(captured.featureId, 'F-010');
+    assert.equal(captured.chunkId, 'ck-parity-010');
     assert.match(String(captured.prompt), /# WORKER/);
     const jsonl = readFileSync(result.jsonlPath, 'utf8');
     assert.match(jsonl, /"type":"done"/);

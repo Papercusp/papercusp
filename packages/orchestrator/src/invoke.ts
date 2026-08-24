@@ -178,6 +178,8 @@ export interface OwnedLoopInvokeRequest {
   model: string;
   runId: string;
   featureId: string | null;
+  /** Quota/telemetry window carried by the matching subprocess MCP envelope. */
+  chunkId: string | null;
   workspaceId: string;
   harnessSlug: string;
   projectDir: string;
@@ -2653,6 +2655,7 @@ async function runOwnedLoopInvocation(args: {
   model: string;
   runId: string;
   featureId: string | null;
+  chunkId: string | null;
   cwd: string;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -2749,6 +2752,7 @@ async function runOwnedLoopInvocation(args: {
       model: args.model,
       runId: args.runId,
       featureId: args.featureId,
+      chunkId: args.chunkId,
       workspaceId: ctx.workspaceId,
       harnessSlug,
       projectDir: ctx.projectDir,
@@ -2980,6 +2984,7 @@ export async function invoke(
   //    the record is keyed deterministically across re-invocations; without it
   //    the run ID stays timestamped (every current caller).
   const featureId = extractFeatureId(extras);
+  const invocationChunkId = extractChunkId(extras);
   const featureTag = featureId ? `-${featureId}` : '';
   const nowSec = (ctx.nowSeconds ?? (() => Math.floor(Date.now() / 1000)))();
   const runId = options.idempotencyKey ?? makeRunId(role, featureId, nowSec);
@@ -3536,6 +3541,7 @@ export async function invoke(
       model: resolvedModel,
       runId,
       featureId: featureId ?? null,
+      chunkId: invocationChunkId,
       cwd,
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
