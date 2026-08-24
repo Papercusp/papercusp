@@ -692,8 +692,9 @@ test('su.md persona spine carries all four sharpened directives (drift guard, P-
   assert.match(su, /Do not put WI-\/EI- work-item IDs in `items`/);
   assert.match(su, /`scheduler:get_next` atomically claims a fleet-admitted WI-\/EI- work-item/);
   assert.match(su, /multiple ad-hoc work-items/);
-  assert.match(su, /`coord:declare-intent \{ intent, items: \[\] \}`/);
-  assert.match(su, /leave `current_plan_slug` unset/);
+  assert.match(su, /`coord:declare-intent \{ intent \}` — omit `items` so existing plan-item claims stay/);
+  assert.match(su, /use `items: \[\]` only when you intentionally release a plan lane/);
+  assert.match(su, /Leave `current_plan_slug` unset/);
 });
 
 test('buildPrompt — acceptanceKind judge/none swaps TESTING_STANDARD for VERIFICATION_STANDARD (P-008)', () => {
