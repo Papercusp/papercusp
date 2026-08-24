@@ -134,7 +134,13 @@ export {
   // later one with ERR_INVALID_PACKAGE_CONFIG (measured 2026-08-09, P-010 canary).
   healSandboxZeroByteManifest,
 } from './invoke';
-export type { InvokeContext, OrchestratorPg } from './invoke';
+export type {
+  InvokeContext,
+  OrchestratorPg,
+  OwnedLoopInvokePort,
+  OwnedLoopInvokeRequest,
+  OwnedLoopInvokeOutcome,
+} from './invoke';
 export { parseDecision, parseDecisionFor, DECISION_VERBS } from './decision-parse';
 export type { DecisionVerb, ParsedDecision, ParsedSpineDecision } from './decision-parse';
 // Harness Blueprint engine (harness-blueprint-orchestration-2026-06-03 Phase A).

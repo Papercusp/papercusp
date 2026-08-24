@@ -2867,11 +2867,6 @@ export async function invoke(
     ? 'loop-ndjson'
     : selectStreamFormat(agentBackend, roleAgentCmd);
   const ownedLoopPort = ctx.ownedLoop;
-  if (executionEngine === 'loop' && !ownedLoopPort) {
-    throw new Error(
-      `invoke: aiBackend engine=loop for role=${role} requires an operator-injected ownedLoop port`,
-    );
-  }
   const extraFlags: string[] = [...streamFormatFlags(streamFormat)];
   if (agentBackend === 'codex' && streamFormat === 'codex-json' && argv.includes('exec')) {
     const execIdx = extraFlags.indexOf('exec');
@@ -3344,6 +3339,11 @@ export async function invoke(
   healSandboxZeroByteManifest(cwd, ctx.log);
 
   if (executionEngine === 'loop') {
+    if (!ownedLoopPort) {
+      throw new Error(
+        `invoke: aiBackend engine=loop for role=${role} requires an operator-injected ownedLoop port`,
+      );
+    }
     const execution = await runOwnedLoopInvocation({
       ctx,
       port: ownedLoopPort,

@@ -179,6 +179,18 @@ there and redo it.
   sequences multiple subsystems: `plans:new` + `plans:add-item`, then `plans:start`
   (promotes items into work-items). Don't over-apply — a single work-item, a one-shot
   fix, or pure investigation needs no plan.
+- **Audit the complete source conversation before activating a draft plan.** Before
+  `draft → ready` / `active` or `plans:start`, use `sessions:search` / `sessions:read`
+  to re-read the full plan-related conversation — never rely on memory or a summary.
+  Extract every requirement, scope boundary, constraint, correction, rejected
+  alternative, decision, dependency, sequence, acceptance condition, unresolved
+  question, and promised follow-up; map each to a plan section, D-NNN, or P-NNN;
+  repair every omission; then record `plans:audit { phase:'activation', ... }` before
+  activating. A later edit PRESERVES that audit. Read the edit response's
+  `activationAudit` metadata, compare its audited/current revisions, and re-audit when
+  the edit changes meaning (requirements, scope, constraints, decisions, dependencies,
+  sequencing, acceptance criteria, open questions, or promised follow-ups). Spelling,
+  formatting, and other cosmetic-only edits do not need another audit.
 - **Decompose deliberately; don't reflex-parallelize.** Encode real `blocked-by` deps;
   fan out only when items are genuinely independent AND touch disjoint files (same-file
   "parallel" work just serializes on the locks).
