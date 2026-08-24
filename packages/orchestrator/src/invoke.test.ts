@@ -16,6 +16,7 @@ import {
   resolveTimeout,
   resolveModel,
   resolveAgentForRole,
+  resolveAgentExecutionEngine,
   selectStreamFormat,
   streamFormatFlags,
   claudeMcpArgs,
@@ -97,6 +98,7 @@ const SESSION_ENV_KEYS = [
   'PAPERCUSP_INTEGRATION_ROOT',
   'PAPERCUSP_SPAWN_BACKEND',
   'PAPERCUSP_SPAWN_MODEL',
+  'HARNESS_CONFIG_JSON',
   'PAPERCUSP_FLEET_CAPABILITY_ONLY',
   'PAPERCUSP_REPLACE_CLAUDE_BASE',
   'PAPERCUSP_FLEET_SANDBOX',
@@ -681,6 +683,88 @@ test('invoke — end-to-end logs invoke message, returns rc + paths', async () =
   }
 });
 
+test('invoke — engine=loop uses the injected port and persists native NDJSON without spawning', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
+  });
+  process.env.HARNESS_CONFIG_JSON = JSON.stringify({
+    aiBackend: { roles: { worker: { engine: 'loop', model: 'claude-haiku-4-5' } } },
+  });
+  let seen: Record<string, unknown> | null = null;
+  try {
+    const result = await invoke(
+      {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        // Deliberately nonexistent: reaching spawn() would fail the test.
+        claudeCmd: '/definitely/not/a/real-agent-binary',
+        workspaceId: 'ws-test',
+        ownedLoop: {
+          async invoke(request) {
+            seen = request as unknown as Record<string, unknown>;
+            request.emit({ type: 'step_start', stepIndex: 0 });
+            request.emit({ type: 'text_delta', stepIndex: 0, text: 'owned result' });
+            request.emit({
+              type: 'done',
+              stopReason: 'complete',
+              finalText: 'owned result',
+              usage: { inputTokens: 12, outputTokens: 3, costUsd: 0.001 },
+              stepCount: 1,
+            });
+            return { exitCode: 0 };
+          },
+        },
+        log: () => {},
+        nowSeconds: () => 1700000005,
+      },
+      'worker',
+      ['FEATURE_ID=F-010'],
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.output, 'owned result');
+    assert.equal(seen?.model, 'claude-haiku-4-5');
+    assert.equal(seen?.role, 'worker');
+    assert.equal(seen?.featureId, 'F-010');
+    assert.match(String(seen?.prompt), /# WORKER/);
+    const jsonl = readFileSync(result.jsonlPath, 'utf8');
+    assert.match(jsonl, /"type":"done"/);
+    assert.match(jsonl, /"backend":"owned-loop"/);
+    assert.equal(readFileSync(result.outPath, 'utf8'), 'owned result\n');
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('invoke — engine=loop fails loud when the operator did not inject a port', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
+  });
+  process.env.HARNESS_CONFIG_JSON = JSON.stringify({
+    aiBackend: { roles: { worker: { engine: 'loop', model: 'claude-haiku-4-5' } } },
+  });
+  try {
+    await assert.rejects(
+      () => invoke({
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: 'true',
+        workspaceId: 'ws-test',
+        log: () => {},
+      }, 'worker'),
+      /requires an operator-injected ownedLoop port/,
+    );
+  } finally {
+    fx.cleanup();
+  }
+});
+
 test('invoke — throws when no prompt file exists for role', async () => {
   const fx = makeFixture(() => {
     /* no prompt file written */
@@ -996,13 +1080,47 @@ test('selectStreamFormat — omp with caller-supplied --mode → none', () => {
 test('streamFormatFlags — produces backend-specific flag set', () => {
   assert.deepEqual(streamFormatFlags('claude-stream-json'), ['--output-format', 'stream-json', '--verbose', '--include-partial-messages']);
   assert.deepEqual(streamFormatFlags('omp-json'), ['--mode', 'json', '--no-session']);
+  assert.deepEqual(streamFormatFlags('loop-ndjson'), []);
   assert.deepEqual(streamFormatFlags('none'), []);
+});
+
+test('extractResult — owned loop reads terminal done and salvages deltas without it', () => {
+  const terminal = [
+    JSON.stringify({ type: 'text_delta', stepIndex: 0, text: 'partial' }),
+    JSON.stringify({ type: 'done', finalText: 'NEXT_WORKER F-010', usage: {} }),
+    JSON.stringify({ type: 'papercusp.run_meta', backend: 'owned-loop' }),
+  ].join('\n');
+  assert.equal(extractResult(terminal, 'loop-ndjson'), 'NEXT_WORKER F-010');
+
+  const truncated = [
+    JSON.stringify({ type: 'text_delta', stepIndex: 0, text: 'working ' }),
+    'malformed',
+    JSON.stringify({ type: 'text_delta', stepIndex: 0, text: 'state' }),
+  ].join('\n');
+  assert.equal(extractResult(truncated, 'loop-ndjson'), 'working state');
 });
 
 test('resolveAgentForRole — empty config falls through to fallbackCmd', () => {
   const out = resolveAgentForRole({}, 'worker', 'omp -p');
   assert.equal(out.agentCmd, 'omp -p');
   assert.deepEqual(out.extraArgs, []);
+});
+
+test('resolveAgentExecutionEngine — defaults subprocess; role loop beats default', () => {
+  assert.equal(resolveAgentExecutionEngine({}, 'worker'), 'subprocess');
+  assert.equal(
+    resolveAgentExecutionEngine({ aiBackend: { default: { engine: 'loop' } } }, 'validator'),
+    'loop',
+  );
+  assert.equal(
+    resolveAgentExecutionEngine({
+      aiBackend: {
+        default: { engine: 'subprocess' },
+        roles: { worker: { engine: 'loop' } },
+      },
+    }, 'worker'),
+    'loop',
+  );
 });
 
 test('resolveAgentForRole — default applies to every role', () => {

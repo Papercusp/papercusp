@@ -235,6 +235,39 @@ test('extractRunUsage — codex turn.completed: sums turns, subtracts cached sub
   assert.equal(u?.backend, 'codex');
 });
 
+test('extractRunUsage — owned-loop done reads cumulative camelCase usage + cost', () => {
+  const jsonl = [
+    JSON.stringify({ type: 'step_end', usage: { inputTokens: 99, outputTokens: 99 } }),
+    JSON.stringify({
+      type: 'done',
+      usage: {
+        inputTokens: 21,
+        outputTokens: 8,
+        cacheReadTokens: 5,
+        cacheCreationTokens: 2,
+        costUsd: 0.0042,
+      },
+      stepCount: 2,
+    }),
+    JSON.stringify({
+      type: 'papercusp.run_meta',
+      backend: 'owned-loop',
+      model: 'claude-sonnet-4-6',
+      role: 'worker',
+    }),
+  ].join('\n');
+  assert.deepEqual(extractRunUsage(jsonl), {
+    inputTokens: 21,
+    outputTokens: 8,
+    cacheReadTokens: 5,
+    cacheCreationTokens: 2,
+    costUsd: 0.0042,
+    turns: 2,
+    model: 'claude-sonnet-4-6',
+    backend: 'owned-loop',
+  });
+});
+
 test('extractRunUsage — omp message_end: sums assistant turns, reads cost.total + model', () => {
   const jsonl = [
     JSON.stringify({
