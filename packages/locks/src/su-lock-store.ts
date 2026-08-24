@@ -829,6 +829,7 @@ export interface ReleaseParams {
   coordinationDomain: string;
   owner: string;
   lockId?: string;
+  /** Omit to read every path; an explicit empty array intentionally matches no paths. */
   paths?: string[];
   allMine?: boolean;
 }
@@ -1117,13 +1118,18 @@ async function readQueueInner(
 ): Promise<QueueResult> {
   const { coordinationDomain, paths, owner, includeCompleted } = params;
 
-  const lockFilter = paths && paths.length > 0
-    ? sql`AND EXISTS (
-        SELECT 1
-          FROM unnest(${paths}::text[]) AS requested(path)
-         WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
-      )`
-    : sql``;
+  // `undefined` means "no filter"; an explicit [] means the caller requested no
+  // paths and must fail closed. Treating both as the same is a dangerous broadening
+  // for diagnostic callers that build an optional path list programmatically.
+  const lockFilter = paths === undefined
+    ? sql``
+    : paths.length === 0
+      ? sql`AND FALSE`
+      : sql`AND EXISTS (
+          SELECT 1
+            FROM unnest(${paths}::text[]) AS requested(path)
+           WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
+        )`;
   const ownerFilter = owner ? sql`AND owner = ${owner}` : sql``;
   // WI-5979: `null` = read every domain (diagnostic reads). `TRUE` rather than an
   // empty fragment so the surrounding `WHERE ... AND` chain stays well-formed.
@@ -1142,9 +1148,11 @@ async function readQueueInner(
      ORDER BY acquired_ts ASC
   `;
 
-  const pathOverlap = paths && paths.length > 0
-    ? sql`AND lock_paths_overlap(paths, ${paths}::text[])`
-    : sql``;
+  const pathOverlap = paths === undefined
+    ? sql``
+    : paths.length === 0
+      ? sql`AND FALSE`
+      : sql`AND lock_paths_overlap(paths, ${paths}::text[])`;
 
   const waiting = await sql<Array<WaiterRow & { ahead_count: number }>>`
     SELECT ticket_id, owner, owner_label, paths, intent, goal_ref, queued_ts, wait_until,
