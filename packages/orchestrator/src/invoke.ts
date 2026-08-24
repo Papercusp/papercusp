@@ -626,6 +626,57 @@ export interface InvocationStreamSummary {
   issues: string[];
 }
 
+/**
+ * OMP reports provider failures inside its otherwise-terminal JSON stream. A
+ * provider/auth failure can therefore leave the CLI process with exit code 0
+ * even though the invocation did not produce an assistant result. Keep this
+ * detector scoped to OMP's message-bearing event shapes so an unrelated
+ * `stopReason` in a tool payload cannot turn a successful invocation red.
+ */
+export function hasOmpTerminalProviderError(source: string, format: StreamFormat): boolean {
+  if (format !== 'omp-json') return false;
+
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  const isErrorMessage = (value: unknown): boolean =>
+    isRecord(value) && value.stopReason === 'error';
+
+  for (const raw of source.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    let event: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(line);
+      if (!isRecord(parsed)) continue;
+      event = parsed;
+    } catch {
+      continue;
+    }
+
+    const assistantMessageEvent = isRecord(event.assistantMessageEvent)
+      ? event.assistantMessageEvent
+      : null;
+    const messageCandidates: unknown[] = [
+      event.message,
+      assistantMessageEvent,
+      assistantMessageEvent?.message,
+      ...(Array.isArray(event.messages) ? event.messages : []),
+    ];
+    if (messageCandidates.some(isErrorMessage)) return true;
+  }
+  return false;
+}
+
+/** Map a structured provider failure onto the process-level result contract. */
+export function resolveInvocationExitCode(
+  exitCode: number,
+  source: string,
+  format: StreamFormat,
+): number {
+  if (exitCode !== 0) return exitCode;
+  return hasOmpTerminalProviderError(source, format) ? 1 : exitCode;
+}
+
 export function summarizeInvocationStream(
   source: string,
   format: StreamFormat,
@@ -667,6 +718,9 @@ export function summarizeInvocationStream(
   if (malformedLines > 0) issues.push(`${malformedLines} malformed JSONL line(s)`);
   if (terminalEvents !== 1) issues.push(`expected exactly 1 terminal event, observed ${terminalEvents}`);
   if (finalText.trim().length === 0) issues.push('empty final assistant text');
+  if (hasOmpTerminalProviderError(source, format)) {
+    issues.push('terminal provider error');
+  }
   if (format === 'loop-ndjson' && toolCalls !== toolResults) {
     issues.push(`unbalanced native tool events: ${toolCalls} call(s), ${toolResults} result(s)`);
   }
@@ -2757,6 +2811,11 @@ async function finalizeInvocation(args: {
   retainReleaseFixerFiles: boolean;
 }): Promise<InvokeResult> {
   const finalText = extractResult(args.rawJsonlBody, args.streamFormat);
+  const effectiveExitCode = resolveInvocationExitCode(
+    args.outcome.exitCode,
+    args.rawJsonlBody,
+    args.streamFormat,
+  );
   if (args.runBackend === 'codex' && args.streamFormat === 'codex-json') {
     try {
       const { writeCodexTranscript } = await import('./codex-transcript');
@@ -2810,7 +2869,7 @@ async function finalizeInvocation(args: {
           jsonlBody,
           outBody,
           errBody: args.errBody,
-          exitCode: args.outcome.exitCode,
+          exitCode: effectiveExitCode,
           durationMs: args.outcome.durationMs,
           startedAt: args.startedAt,
           endedAt: Date.now(),
@@ -2847,11 +2906,11 @@ async function finalizeInvocation(args: {
     }
   }
 
-  args.ctx.log(`invoke ${args.role} rc=${args.outcome.exitCode} (stdout: ${args.outPath})`);
-  if (args.outcome.exitCode === 124) {
+  args.ctx.log(`invoke ${args.role} rc=${effectiveExitCode} (stdout: ${args.outPath})`);
+  if (effectiveExitCode === 124) {
     args.ctx.log(`  role=${args.role} TIMED OUT after ${args.timeoutSeconds}s (rc=124)`);
   }
-  if (args.outcome.exitCode !== 0) {
+  if (effectiveExitCode !== 0) {
     const errSnippet = args.errBody.split(/\r?\n/).slice(0, 5);
     if (errSnippet.some((line) => line.length > 0)) {
       args.ctx.log('  stderr (first 5 lines):');
@@ -2865,7 +2924,7 @@ async function finalizeInvocation(args: {
     output: finalText,
     jsonlPath: args.jsonlPath,
     outPath: args.outPath,
-    exitCode: args.outcome.exitCode,
+    exitCode: effectiveExitCode,
     durationMs: args.outcome.durationMs,
   };
 }
@@ -4180,6 +4239,7 @@ export async function invoke(
   // 11. Extract result text from the in-memory accumulator.
   const rawJsonlBody = Buffer.concat(jsonlChunks).toString('utf8');
   const errBody = Buffer.concat(errChunks).toString('utf8');
+  const effectiveExitCode = resolveInvocationExitCode(outcome.exitCode, rawJsonlBody, streamFormat);
   const finalText = extractResult(rawJsonlBody, streamFormat);
   // Codex transcript tee (2026-07-01): synthesize the claude-shaped wake
   // transcript the hive-tabs mirror panes tail — codex records nothing itself
@@ -4252,7 +4312,7 @@ export async function invoke(
           jsonlBody,
           outBody,
           errBody,
-          exitCode: outcome.exitCode,
+          exitCode: effectiveExitCode,
           durationMs: outcome.durationMs,
           startedAt,
           endedAt: Date.now(),
@@ -4298,11 +4358,11 @@ export async function invoke(
     }
   }
 
-  ctx.log(`invoke ${role} rc=${outcome.exitCode} (stdout: ${outPath})`);
-  if (outcome.exitCode === 124) {
+  ctx.log(`invoke ${role} rc=${effectiveExitCode} (stdout: ${outPath})`);
+  if (effectiveExitCode === 124) {
     ctx.log(`  role=${role} TIMED OUT after ${timeoutSeconds}s (rc=124)`);
   }
-  if (outcome.exitCode !== 0) {
+  if (effectiveExitCode !== 0) {
     const errSnippet = errBody.split(/\r?\n/).slice(0, 5);
     if (errSnippet.some((l) => l.length > 0)) {
       ctx.log('  stderr (first 5 lines):');
@@ -4329,7 +4389,7 @@ export async function invoke(
     output: finalText,
     jsonlPath,
     outPath,
-    exitCode: outcome.exitCode,
+    exitCode: effectiveExitCode,
     durationMs: outcome.durationMs,
   };
 }

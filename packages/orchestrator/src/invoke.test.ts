@@ -19,6 +19,8 @@ import {
   resolveAgentExecutionEngine,
   selectStreamFormat,
   streamFormatFlags,
+  hasOmpTerminalProviderError,
+  resolveInvocationExitCode,
   summarizeInvocationStream,
   workerParityPromptHash,
   claudeMcpArgs,
@@ -1149,6 +1151,83 @@ test('summarizeInvocationStream — omp requires its agent_end terminal and non-
   assert.equal(missingTerminal.ok, false);
   assert.ok(missingTerminal.issues.some((issue) => issue.includes('terminal event')));
   assert.equal(summarizeInvocationStream(green, 'omp-json', '').ok, false);
+});
+
+test('resolveInvocationExitCode — terminal OMP provider errors override a zero child exit', () => {
+  const errorMessage = {
+    role: 'assistant',
+    stopReason: 'error',
+    errorMessage: 'invalid x-api-key',
+    errorStatus: 401,
+    content: [],
+  };
+  const stream = [
+    JSON.stringify({ type: 'message_end', message: errorMessage }),
+    JSON.stringify({ type: 'agent_end', messages: [errorMessage] }),
+  ].join('\n');
+
+  assert.equal(hasOmpTerminalProviderError(stream, 'omp-json'), true);
+  assert.equal(resolveInvocationExitCode(0, stream, 'omp-json'), 1);
+  assert.equal(resolveInvocationExitCode(17, stream, 'omp-json'), 17);
+  assert.equal(resolveInvocationExitCode(0, stream, 'claude-stream-json'), 0);
+  assert.ok(summarizeInvocationStream(stream, 'omp-json', '').issues.includes('terminal provider error'));
+});
+
+test('invoke — OMP terminal provider error is returned as a failed invocation', async () => {
+  const fx = makeFixture(({ harnessDir, projectDir }) => {
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
+    const binDir = join(projectDir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(
+      join(binDir, 'omp'),
+      "#!/bin/sh\nprintf '%s\\n' '" +
+        JSON.stringify({
+          type: 'message_end',
+          message: {
+            role: 'assistant',
+            stopReason: 'error',
+            errorMessage: 'invalid x-api-key',
+            errorStatus: 401,
+            content: [],
+          },
+        }) +
+        "' '" +
+        JSON.stringify({
+          type: 'agent_end',
+          messages: [{
+            role: 'assistant',
+            stopReason: 'error',
+            errorMessage: 'invalid x-api-key',
+            errorStatus: 401,
+            content: [],
+          }],
+        }) +
+        "'\n",
+      { mode: 0o755 },
+    );
+  });
+  try {
+    const result = await invoke(
+      {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: join(fx.projectDir, 'bin', 'omp'),
+        agentBackend: 'omp',
+        log: () => {},
+        nowSeconds: () => 1700000006,
+      },
+      'worker',
+    );
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.output, '');
+    assert.match(readFileSync(result.jsonlPath, 'utf8'), /invalid x-api-key/);
+  } finally {
+    fx.cleanup();
+  }
 });
 
 test('workerParityPromptHash — inline canary prompt stays pairable across per-run prompt tails', () => {
