@@ -426,7 +426,11 @@ export async function sweepPathsExpired(
   const expiredLocks = await tx<Array<{ path: string }>>`
     DELETE FROM agent_file_locks
      WHERE coordination_domain = ${coordinationDomain}
-       AND path = ANY(${paths}::text[])
+       AND EXISTS (
+         SELECT 1
+           FROM unnest(${paths}::text[]) AS requested(path)
+          WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
+       )
        AND expires_ts <= clock_timestamp()
     RETURNING path
   `;
@@ -436,7 +440,7 @@ export async function sweepPathsExpired(
      WHERE coordination_domain = ${coordinationDomain}
        AND status = 'waiting'
        AND wait_until <= clock_timestamp()
-       AND paths && ${paths}::text[]
+       AND lock_paths_overlap(paths, ${paths}::text[])
     RETURNING ticket_id
   `;
   return expiredLocks.length > 0 || orphanWaiters.length > 0;
@@ -642,7 +646,11 @@ export async function tryAcquire(
     SELECT path, lock_id::text AS lock_id, expires_ts FROM agent_file_locks
      WHERE coordination_domain = ${coordinationDomain}
        AND owner = ${owner}
-       AND path = ANY(${paths}::text[])
+       AND EXISTS (
+         SELECT 1
+           FROM unnest(${paths}::text[]) AS requested(path)
+          WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
+       )
        AND expires_ts > clock_timestamp()
   `;
   const ownedSet = new Set(ownedRows.map((r) => r.path));
@@ -687,7 +695,7 @@ export async function tryAcquire(
            -- acquire even if the janitor hasn't swept it yet
            -- (file-locking #4 — robust regardless of sweep timing).
            AND wait_until > clock_timestamp()
-           AND paths && ${newPaths}::text[]
+           AND lock_paths_overlap(paths, ${newPaths}::text[])
            AND queued_ts < clock_timestamp()
          LIMIT 1
       `;
@@ -705,7 +713,11 @@ export async function tryAcquire(
     const blockedRows = await tx<Array<{ path: string }>>`
       SELECT path FROM agent_file_locks
        WHERE coordination_domain = ${coordinationDomain}
-         AND path = ANY(${newPaths}::text[])
+         AND EXISTS (
+           SELECT 1
+             FROM unnest(${newPaths}::text[]) AS requested(path)
+            WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
+         )
          AND expires_ts > clock_timestamp()
          AND owner != ${owner}
     `;
@@ -800,7 +812,11 @@ async function readBusySnapshot(
     SELECT path, owner, owner_label, intent, expires_ts
       FROM agent_file_locks
      WHERE coordination_domain = ${coordinationDomain}
-       AND path = ANY(${paths}::text[])
+       AND EXISTS (
+         SELECT 1
+           FROM unnest(${paths}::text[]) AS requested(path)
+          WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
+       )
        AND expires_ts > clock_timestamp()
        ${ownerFilter}
   `;
@@ -1102,7 +1118,11 @@ async function readQueueInner(
   const { coordinationDomain, paths, owner, includeCompleted } = params;
 
   const lockFilter = paths && paths.length > 0
-    ? sql`AND path = ANY(${paths}::text[])`
+    ? sql`AND EXISTS (
+        SELECT 1
+          FROM unnest(${paths}::text[]) AS requested(path)
+         WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
+      )`
     : sql``;
   const ownerFilter = owner ? sql`AND owner = ${owner}` : sql``;
   // WI-5979: `null` = read every domain (diagnostic reads). `TRUE` rather than an
@@ -1123,7 +1143,7 @@ async function readQueueInner(
   `;
 
   const pathOverlap = paths && paths.length > 0
-    ? sql`AND paths && ${paths}::text[]`
+    ? sql`AND lock_paths_overlap(paths, ${paths}::text[])`
     : sql``;
 
   const waiting = await sql<Array<WaiterRow & { ahead_count: number }>>`

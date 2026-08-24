@@ -53,15 +53,23 @@ export interface WorkspaceTxnOptions {
   /**
    * Canonical file-lock paths touched by this transaction. When present,
    * acquire the shared workspace gate and one exclusive advisory lock per
-   * path hash, in sorted order. An omitted/empty set keeps the historical
-   * exclusive workspace scope for resource, granular, and housekeeping work.
+   * canonical path prefix, in sorted order. A request for `a/b/c.ts` therefore
+   * serializes with requests for `a` and `a/b`, while `a-old` remains
+   * independent. An omitted/empty set keeps the historical exclusive
+   * workspace scope for resource, granular, and housekeeping work.
    */
   paths?: readonly string[];
 }
 
+function pathPrefixes(path: string): string[] {
+  if (path.length === 0) return [];
+  const parts = path.split('/');
+  return parts.map((_, index) => parts.slice(0, index + 1).join('/'));
+}
+
 function uniqueSortedPaths(paths: readonly string[] | undefined): string[] {
   if (!paths || paths.length === 0) return [];
-  return Array.from(new Set(paths)).sort();
+  return Array.from(new Set(paths.flatMap(pathPrefixes))).sort();
 }
 
 async function acquireAdvisoryScope(
@@ -88,8 +96,9 @@ async function acquireAdvisoryScope(
     hashtext(${'su:' + coordinationDomain})
   )`;
 
-  // Lock every requested path in a stable order. This preserves atomic
-  // multi-path claims without making unrelated paths wait on one another.
+  // Lock every requested path prefix in a stable order. This preserves atomic
+  // multi-path claims and makes parent/descendant requests serialize without
+  // making unrelated paths wait on one another.
   for (const path of scopedPaths) {
     await tx`SELECT pg_advisory_xact_lock(
       ${SU_LOCKS_FEATURE_KEY}::int,
