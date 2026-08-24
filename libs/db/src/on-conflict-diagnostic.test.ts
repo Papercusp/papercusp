@@ -149,14 +149,16 @@ describe('explainOnConflictSkew', () => {
  * assertions above can actually tell them apart from the real subject.
  */
 describe('falsifiability controls', () => {
-  it("a GREEDY conflict-target regex would capture the SET body — the real one does not", () => {
+  it('a GREEDY conflict-target regex can consume the SET body — the real one does not', () => {
     const sql =
-      'INSERT INTO t (x) VALUES (1) ON CONFLICT (a) DO UPDATE SET x = coalesce(excluded.x, t.x)';
-    // The deliberately-wrong variant: greedy `[\s\S]*` runs to the LAST match.
+      "INSERT INTO t (x) VALUES (1) ON CONFLICT (a) DO UPDATE SET x = 'DO UPDATE'";
+    // The deliberately-wrong variant: greedy `[\s\S]*` runs to the LAST
+    // action-looking token, including one inside the SET expression.
     const GREEDY = /\bon\s+conflict\b([\s\S]*)\bdo\s+(?:nothing|update)\b/i;
     const wrong = GREEDY.exec(sql)?.[1].trim();
     const right = parseConflictTarget(sql);
     expect(right).toBe('(a)');
+    expect(wrong).toContain('DO UPDATE SET');
     // If these were equal the non-greedy choice would be untested.
     expect(wrong).not.toBe(right);
   });

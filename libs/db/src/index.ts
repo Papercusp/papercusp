@@ -41,6 +41,13 @@ export {
   endStalePool,
   type OrgPgHandle,
 } from './connection';
+export {
+  ON_CONFLICT_NO_MATCHING_INDEX_SQLSTATE,
+  explainOnConflictSkew,
+  isOnConflictSkewError,
+  parseConflictTarget,
+  parseInsertTarget,
+} from './on-conflict-diagnostic';
 // EI-19485014132257783 — this process's own acquisition counters, the MEASURED
 // discriminator behind the two deadline errors' "dead endpoint vs saturated client
 // pool" fork. Re-exported for the same reason `endStalePool` is (EI-19306394439939264):
