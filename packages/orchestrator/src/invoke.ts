@@ -2931,7 +2931,9 @@ export async function invoke(
   // from argv and append ONLY the gateway selector. Empty (dormant) unless the omp seeder
   // is active — the matching `<HOME>/.omp/agent/models.yml` is written by the seeder block below.
   const ompGatewaySelector =
-    harnessSupports(agentBackend, 'gateway-models-yml') && (process.env.PAPERCUSP_OMP_MODELS_YML ?? '').trim()
+    executionEngine === 'subprocess'
+    && harnessSupports(agentBackend, 'gateway-models-yml')
+    && (process.env.PAPERCUSP_OMP_MODELS_YML ?? '').trim()
       ? (process.env.PAPERCUSP_OMP_MODEL_SELECTOR ?? '').trim()
       : '';
   // Kept for the usage-telemetry bucket key (step 11.5) — best-effort either way.
