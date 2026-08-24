@@ -3947,6 +3947,11 @@ export async function invoke(
           // select a bounded catalog before OMP serializes tool schemas.
           mcpToolNames: invokeMcpToolNamesForRole(role),
         };
+        // Standalone orchestrator callers (including the parity runner) can
+        // hold a fully-authorized PG client without exporting its DSN. Reuse
+        // that handle for the spawn-signing-key read so a signing failure can
+        // never restore an unrelated cwd .mcp.json and silently change role.
+        const signingPg = ctx.pg ? { pg: ctx.pg } : {};
         // codex: no `.mcp.json` discovery — its MCP servers live in
         // $CODEX_HOME/config.toml. Mint a per-spawn CODEX_HOME with the
         // same signed, role-scoped URL + the ChatGPT auth symlink, and
@@ -3959,8 +3964,8 @@ export async function invoke(
           const trackedCodexKey = (process.env.PAPERCUSP_CODEX_SESSION_KEY ?? '').trim();
           const contextConfig = codexContextConfigFromArgv(argv);
           codexHomeHandle = await writeSignedSpawnCodexHome(signedInput, trackedCodexKey
-            ? { codexHome: codexHomeForSessionKey(trackedCodexKey), cleanup: false, contextConfig }
-            : { contextConfig });
+            ? { codexHome: codexHomeForSessionKey(trackedCodexKey), cleanup: false, contextConfig, ...signingPg }
+            : { contextConfig, ...signingPg });
           spawnEnv.CODEX_HOME = codexHomeHandle.codexHome;
         } else {
           // writeSignedSpawnMcp signs the URL params. In strict mode
@@ -3974,7 +3979,7 @@ export async function invoke(
           // unset PAPERCUSP_REQUIRE_SPAWN_SIG on the operator.
           // No await-time risk: signing is a single PG round-trip against
           // a 32-byte row + an HMAC; total < 50ms in normal operation.
-          mcpHandle = await writeSignedSpawnMcp(mcpConfigDir, signedInput);
+          mcpHandle = await writeSignedSpawnMcp(mcpConfigDir, signedInput, signingPg);
         }
       } catch (err) {
         ctx.log(`  spawn-mcp write failed: ${err instanceof Error ? err.message : String(err)}`);

@@ -20,6 +20,7 @@ import {
   writeOmpCompactionOverlay,
   ompRemoteCompactionEndpoint,
   OMP_MAINTENANCE_SUMMARIZE_PATH,
+  type SpawnMcpSigningPg,
 } from './spawn-mcp';
 
 const ROOT = join(tmpdir(), `papercusp-spawn-mcp-test-${process.pid}`);
@@ -389,6 +390,72 @@ describe('writeSignedSpawnMcp — superuser-spawn door (EI-1547 regression guard
     const content = JSON.parse(readFileSync(handle.path, 'utf8'));
     const url = new URL(content.mcpServers.papercusp.url);
     expect(url.searchParams.get('tools')).toBe('pot:survey,cup:spawn');
+  });
+});
+
+describe('writeSignedSpawnMcp — existing PG signing path', () => {
+  it('mints the requested worker principal without a DSN instead of falling back to an unrelated cwd principal', async () => {
+    const saved = {
+      databaseUrl: process.env.DATABASE_URL,
+      papercuspDsn: process.env.PAPERCUSP_PG_DSN,
+      suBearer: process.env.PAPERCUSP_SPAWN_SU_BEARER,
+    };
+    delete process.env.DATABASE_URL;
+    delete process.env.PAPERCUSP_PG_DSN;
+    delete process.env.PAPERCUSP_SPAWN_SU_BEARER;
+
+    const prior = JSON.stringify({
+      mcpServers: {
+        papercusp: {
+          type: 'http',
+          url: 'http://localhost:3170/api/mcp?workspace=ws&harness=demo&role=judge&run=old&spawn=old',
+        },
+      },
+    }, null, 2);
+    writeFileSync(join(ROOT, '.mcp.json'), prior, 'utf8');
+    let keyReads = 0;
+    const pg = (async (template: TemplateStringsArray) => {
+      keyReads += 1;
+      expect(template.join(' ')).toContain('harness_shared.operator_secrets');
+      return [{
+        value_b64: Buffer.alloc(32, 7).toString('base64'),
+        rotated_at: new Date('2026-08-24T00:00:00Z'),
+      }];
+    }) as SpawnMcpSigningPg;
+
+    try {
+      const handle = await writeSignedSpawnMcp(ROOT, {
+        harnessSlug: 'demo',
+        workspaceId: 'ws',
+        role: 'worker',
+        runId: 'worker-parity-canary-omp',
+        spawnId: 'spawn-worker-parity-canary-omp',
+        chunkId: 'worker-parity-canary',
+        mcpToolNames: ['capability:git'],
+      }, { pg });
+      try {
+        const content = JSON.parse(readFileSync(handle.path, 'utf8'));
+        const url = new URL(content.mcpServers.papercusp.url);
+        expect(url.searchParams.get('role')).toBe('worker');
+        expect(url.searchParams.get('run')).toBe('worker-parity-canary-omp');
+        expect(url.searchParams.get('chunk')).toBe('worker-parity-canary');
+        expect(url.searchParams.get('tools')).toBe('capability:git');
+        expect(url.searchParams.get('sig')).toBeTruthy();
+        expect(url.searchParams.get('superuser')).toBeNull();
+        expect(handle.prior).toBe(prior);
+        expect(keyReads).toBe(1);
+      } finally {
+        restoreSpawnMcp(handle);
+      }
+      expect(readFileSync(join(ROOT, '.mcp.json'), 'utf8')).toBe(prior);
+    } finally {
+      if (saved.databaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = saved.databaseUrl;
+      if (saved.papercuspDsn === undefined) delete process.env.PAPERCUSP_PG_DSN;
+      else process.env.PAPERCUSP_PG_DSN = saved.papercuspDsn;
+      if (saved.suBearer === undefined) delete process.env.PAPERCUSP_SPAWN_SU_BEARER;
+      else process.env.PAPERCUSP_SPAWN_SU_BEARER = saved.suBearer;
+    }
   });
 });
 

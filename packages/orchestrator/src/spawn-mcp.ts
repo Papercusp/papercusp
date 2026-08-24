@@ -79,6 +79,16 @@ export interface SpawnMcpConfigInput {
   clientId?: string | null;
 }
 
+/**
+ * Existing Postgres handle the orchestrator may reuse while minting a signed
+ * spawn URL. Kept structural so operator-core can pass its already-open
+ * postgres-js client without introducing an orchestrator -> operator import.
+ */
+export interface SpawnMcpSigningPg {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  <T = any[]>(template: TemplateStringsArray, ...values: unknown[]): Promise<T>;
+}
+
 // Default port flips on NODE_ENV: dev operator runs on :3055, prod on :3070.
 // Override with PAPERCUSP_OPERATOR_URL when neither default applies (CI,
 // Tauri sidecar with custom port, etc).
@@ -221,6 +231,8 @@ export async function writeSignedSpawnMcp(
   input: SpawnMcpConfigInput,
   opts: {
     ttlSec?: number;
+    /** Reuse the caller's already-open PG handle instead of requiring a DSN env. */
+    pg?: SpawnMcpSigningPg;
     /**
      * If true, emit an unsigned URL with a console warning instead of
      * throwing when signing fails. Only safe when the operator is
@@ -277,7 +289,7 @@ export async function writeSignedSpawnMcp(
 
   const params = buildSpawnUrlParams(input);
   try {
-    await signSpawnParams(params, opts.ttlSec ?? 0);
+    await signSpawnParams(params, opts.ttlSec ?? 0, opts.pg);
   } catch (err) {
     // Restore the prior .mcp.json (if any) so a half-written file
     // doesn't trip the next spawn's read-then-sign cycle.
@@ -382,11 +394,13 @@ export async function writeSignedSpawnCodexHome(
     codexHome?: string;
     cleanup?: boolean;
     contextConfig?: SpawnCodexContextConfig | null;
+    /** Reuse the caller's already-open PG handle instead of requiring a DSN env. */
+    pg?: SpawnMcpSigningPg;
   } = {},
 ): Promise<SpawnCodexHomeHandle> {
   const base = resolveSpawnOperatorBase(input.operatorUrl);
   const params = buildSpawnUrlParams(input);
-  await signSpawnParams(params, opts.ttlSec ?? 0);
+  await signSpawnParams(params, opts.ttlSec ?? 0, opts.pg);
   const mcpUrl = `${base}?${params.toString()}`;
 
   const codexHome = opts.codexHome?.trim() || mkdtempSync(join(tmpdir(), 'codex-spawn-'));
@@ -729,45 +743,60 @@ let __keyCache: KeyCache | null = null;
 // path). Only on a cache miss/expiry do we open the pool and re-read; PG's
 // authoritative rotated_at still wins there, so a rotate on the operator
 // invalidates this process's cache on its next read after the TTL lapses.
-async function loadSigningKey(): Promise<Buffer> {
+interface SigningKeyRow { value_b64: string; rotated_at: Date | string; }
+
+async function querySigningKey(pg: SpawnMcpSigningPg): Promise<SigningKeyRow[]> {
+  return pg<SigningKeyRow[]>`
+    SELECT value_b64, rotated_at FROM harness_shared.operator_secrets
+    WHERE name = 'spawn-signing-key' LIMIT 1
+  `;
+}
+
+async function loadSigningKey(existingPg?: SpawnMcpSigningPg): Promise<Buffer> {
   if (__keyCache && Date.now() - __keyCache.loadedAt < 5 * 60 * 1000) {
     return __keyCache.buf;
   }
-  const dsn = process.env.DATABASE_URL ?? process.env.PAPERCUSP_PG_DSN;
-  if (!dsn) throw new Error('no PG DSN in env (DATABASE_URL/PAPERCUSP_PG_DSN)');
-  const sql = postgres(dsn);
-  try {
-    const rows = await sql<{ value_b64: string; rotated_at: Date }[]>`
-      SELECT value_b64, rotated_at FROM harness_shared.operator_secrets
-      WHERE name = 'spawn-signing-key' LIMIT 1
-    `;
-    if (rows.length === 0) {
-      throw new Error('spawn-signing-key row missing — operator boots mint it on first verify call');
+  let rows: SigningKeyRow[];
+  if (existingPg) {
+    rows = await querySigningKey(existingPg);
+  } else {
+    const dsn = process.env.DATABASE_URL ?? process.env.PAPERCUSP_PG_DSN;
+    if (!dsn) throw new Error('no PG DSN in env (DATABASE_URL/PAPERCUSP_PG_DSN)');
+    const sql = postgres(dsn);
+    try {
+      rows = await querySigningKey(sql as unknown as SpawnMcpSigningPg);
+    } finally {
+      try { await sql.end({ timeout: 1 }); } catch { /* ignore */ }
     }
-    const rotatedAt = new Date(rows[0].rotated_at).getTime();
-    // PG's rotated_at is authoritative on a re-read: if the key hasn't rotated,
-    // refresh the cache's loadedAt window and reuse the buffer; otherwise adopt
-    // the rotated key.
-    if (__keyCache && __keyCache.rotatedAt === rotatedAt) {
-      __keyCache = { ...__keyCache, loadedAt: Date.now() };
-      return __keyCache.buf;
-    }
-    const buf = Buffer.from(rows[0].value_b64, 'base64');
-    __keyCache = { buf, rotatedAt, loadedAt: Date.now() };
-    return buf;
-  } finally {
-    try { await sql.end({ timeout: 1 }); } catch { /* ignore */ }
   }
+  if (rows.length === 0) {
+    throw new Error('spawn-signing-key row missing — operator boots mint it on first verify call');
+  }
+  const rotatedAt = new Date(rows[0].rotated_at).getTime();
+  // PG's rotated_at is authoritative on a re-read: if the key hasn't rotated,
+  // refresh the cache's loadedAt window and reuse the buffer; otherwise adopt
+  // the rotated key.
+  if (__keyCache && __keyCache.rotatedAt === rotatedAt) {
+    __keyCache = { ...__keyCache, loadedAt: Date.now() };
+    return __keyCache.buf;
+  }
+  const buf = Buffer.from(rows[0].value_b64, 'base64');
+  __keyCache = { buf, rotatedAt, loadedAt: Date.now() };
+  return buf;
 }
 
-async function signSpawnParams(params: URLSearchParams, ttlSec: number): Promise<void> {
+async function signSpawnParams(
+  params: URLSearchParams,
+  ttlSec: number,
+  pg?: SpawnMcpSigningPg,
+): Promise<void> {
   // ttlSec <= 0 ⇒ PERMANENT (exp=0 sentinel); the operator's verifySpawnParams skips the time
   // check for exp=0. No time-based re-minting (owner directive 2026-07-01) — kept byte-identical
   // to the operator-side signer in packages/operator-core/lib/spawn-signing.ts.
   const exp = ttlSec > 0 ? Math.floor(Date.now() / 1000) + ttlSec : 0;
   params.set('exp', String(exp));
   params.delete('sig');
-  const key = await loadSigningKey();
+  const key = await loadSigningKey(pg);
   const c = canonicalizeSpawnParams(params);
   if (!c.ok) throw new Error(c.reason);
   const sig = hmacSpawnBytes(key, c.canonical).toString('base64url');
