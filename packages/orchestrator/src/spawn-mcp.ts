@@ -94,8 +94,31 @@ export interface SpawnMcpSigningPg {
 // Tauri sidecar with custom port, etc).
 const DEFAULT_OPERATOR_URL =
   process.env.NODE_ENV === 'development'
-    ? 'http://localhost:3055/api/sse'
-    : 'http://localhost:3070/api/sse';
+    ? 'http://localhost:3055/api/mcp'
+    : 'http://localhost:3070/api/mcp';
+
+/**
+ * PAPERCUSP_OPERATOR_URL is historically overloaded: some launchers export a
+ * bare operator/proxy origin while others export the complete MCP endpoint.
+ * A spawn config needs the endpoint form. Preserve explicit nonstandard paths,
+ * normalize the retired `/api/sse` spelling, and append `/api/mcp` to origins.
+ */
+function inheritedOperatorMcpEndpoint(raw: string): string {
+  const normalized = raw.trim().replace(/\/+$/, '');
+  if (/\/api\/mcp$/i.test(normalized)) return normalized;
+  if (/\/api\/sse$/i.test(normalized)) return normalized.replace(/\/api\/sse$/i, '/api/mcp');
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.pathname === '/' || parsed.pathname === '') {
+      parsed.pathname = '/api/mcp';
+      return parsed.toString().replace(/\/$/, '');
+    }
+  } catch {
+    // Preserve the prior behavior for an invalid/custom value; the MCP client
+    // will surface the malformed URL rather than this helper guessing at it.
+  }
+  return normalized;
+}
 
 /**
  * Resolve the operator MCP base URL a spawned agent connects to, in priority
@@ -136,7 +159,8 @@ export function resolveSpawnOperatorBase(operatorUrl?: string | null): string {
   if (proxyBase) return `${proxyBase.replace(/\/+$/, '')}/api/mcp`;
   const selfPort = process.env.PAPERCUSP_HONO_PORT;
   if (selfPort) return `http://127.0.0.1:${selfPort}/api/mcp`;
-  return process.env.PAPERCUSP_OPERATOR_URL ?? DEFAULT_OPERATOR_URL;
+  const inherited = process.env.PAPERCUSP_OPERATOR_URL?.trim();
+  return inherited ? inheritedOperatorMcpEndpoint(inherited) : DEFAULT_OPERATOR_URL;
 }
 
 /** Build the JSON-serializable mcp.json contents for a spawn. */

@@ -261,11 +261,21 @@ describe('resolveSpawnOperatorBase', () => {
     expect(resolveSpawnOperatorBase()).toBe('http://env.example/api/mcp');
   });
 
+  it('appends /api/mcp when PAPERCUSP_OPERATOR_URL is a bare proxy origin', () => {
+    process.env.PAPERCUSP_OPERATOR_URL = 'http://127.0.0.1:9071';
+    expect(resolveSpawnOperatorBase()).toBe('http://127.0.0.1:9071/api/mcp');
+  });
+
+  it('repairs the retired /api/sse inherited endpoint', () => {
+    process.env.PAPERCUSP_OPERATOR_URL = 'http://env.example/api/sse';
+    expect(resolveSpawnOperatorBase()).toBe('http://env.example/api/mcp');
+  });
+
   it('falls back to the hardcoded localhost default when neither env is set', () => {
     // The module-level default is frozen at import from NODE_ENV (:3055 dev /
     // :3070 otherwise) — assert the shape, not a port, to stay env-agnostic.
     const base = resolveSpawnOperatorBase();
-    expect(base).toMatch(/^http:\/\/localhost:30(55|70)\/api\/sse$/);
+    expect(base).toMatch(/^http:\/\/localhost:30(55|70)\/api\/mcp$/);
   });
 
   it('treats null/empty operatorUrl as unset (env resolution applies)', () => {
