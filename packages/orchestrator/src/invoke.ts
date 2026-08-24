@@ -1010,6 +1010,19 @@ export const OVERWATCH_MCP_TOOL_NAMES: readonly string[] = [
 ];
 
 /**
+ * Role-scoped MCP catalogs for headless invoke() children. Pipeline `worker`
+ * and fleet `cup` are the same implementation role at different orchestration
+ * tiers; both need the compact bee kit. Leaving worker unscoped loaded the full
+ * ~550-tool catalog and made OMP reject a haiku canary at 615k prompt tokens.
+ */
+export function invokeMcpToolNamesForRole(role: string): readonly string[] | null {
+  if (role === 'mug') return QUEEN_MCP_TOOL_NAMES;
+  if (role === 'cup' || role === 'worker') return BEE_MCP_TOOL_NAMES;
+  if (role === 'kettle') return OVERWATCH_MCP_TOOL_NAMES;
+  return null;
+}
+
+/**
  * The UNIVERSAL core MCP tool set — the small, always-advertised catalog for omp
  * (and any small-context client) so the bootstrap + coordination + work spine is
  * callable WITHOUT the discovery/search dance. ~19 tools / ~7k tokens vs the full
@@ -1476,7 +1489,11 @@ export function resolveRoleToolScope(cfg: HarnessConfig, role: string | undefine
  * Owner-tunable: re-add a built-in here if a confined bee genuinely needs it.
  */
 export const FLEET_OMP_CAPABILITY_ALLOWED_TOOLS: readonly string[] = [
-  'read', 'find', 'grep', 'ast_grep', 'calc', 'todo_write', 'poll', 'web_search',
+  // Keep this to names accepted by the installed OMP `--tools` validator.
+  // OMP 0.0.0-20260821 removed ast_grep/calc/todo_write/poll; naming even one
+  // unknown tool aborts before inference, so a stale allowlist hard-downs every
+  // capability-only OMP worker instead of merely omitting that tool.
+  'read', 'find', 'glob', 'grep', 'web_search',
 ];
 
 /**
@@ -3926,16 +3943,9 @@ export async function invoke(
           // durable operator-assigned spawnId — a bare random UUID would not be a real
           // coord owner, so omit it there (the legacy pipeline-role path is unchanged).
           clientId: stableSpawnId || null,
-          // pot-rename dual-accept: mug/cup/kettle are the additive twins of
-          // queen/bee/overwatch — select the SAME role-scoped tool group.
-          mcpToolNames:
-            role === 'mug'
-              ? QUEEN_MCP_TOOL_NAMES
-              : role === 'cup'
-                ? BEE_MCP_TOOL_NAMES
-                : role === 'kettle'
-                  ? OVERWATCH_MCP_TOOL_NAMES
-                  : null,
+          // pot-rename dual-accept plus the pipeline worker↔cup equivalence:
+          // select a bounded catalog before OMP serializes tool schemas.
+          mcpToolNames: invokeMcpToolNamesForRole(role),
         };
         // codex: no `.mcp.json` discovery — its MCP servers live in
         // $CODEX_HOME/config.toml. Mint a per-spawn CODEX_HOME with the

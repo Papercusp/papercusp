@@ -49,6 +49,7 @@ import {
   codexSandboxArgs,
   fleetOmpToolsArgs,
   FLEET_OMP_CAPABILITY_ALLOWED_TOOLS,
+  invokeMcpToolNamesForRole,
   fleetSandboxEnabled,
   fleetSandboxSettingsForRole,
   resolveFleetAllowedDomains,
@@ -1627,6 +1628,14 @@ test('fleetAllowedToolsForRole — cup uses a compact worker MCP subset, not the
   assert.ok(!BEE_MCP_TOOL_NAMES.includes('cup:spawn'), 'bee must not receive placement-only fleet spawn tools');
 });
 
+test('invokeMcpToolNamesForRole — pipeline worker uses the bounded bee kit', () => {
+  assert.equal(invokeMcpToolNamesForRole('worker'), BEE_MCP_TOOL_NAMES);
+  assert.equal(invokeMcpToolNamesForRole('cup'), BEE_MCP_TOOL_NAMES);
+  assert.equal(invokeMcpToolNamesForRole('mug'), QUEEN_MCP_TOOL_NAMES);
+  assert.equal(invokeMcpToolNamesForRole('kettle'), OVERWATCH_MCP_TOOL_NAMES);
+  assert.equal(invokeMcpToolNamesForRole('validator'), null);
+});
+
 test('OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-loop-full-flow-reliability: unscoped null → "Prompt is too long")', () => {
   // The overwatch launch MUST be scoped: an unscoped (null) mcpToolNames loaded the full
   // ~550-tool / ~141k-token surface onto its sonnet ~200k window, so the agent died
@@ -2491,6 +2500,11 @@ test('fleetOmpToolsArgs — cutover ON for a capability role → --tools restric
   // Read-only natives are kept (the omp analog of claude's kept Read/Glob/Grep/WebSearch).
   for (const kept of ['read', 'grep', 'find', 'web_search']) {
     assert.ok(FLEET_OMP_CAPABILITY_ALLOWED_TOOLS.includes(kept), `${kept} must be kept`);
+  }
+  // Live OMP 0.0.0-20260821 rejects the entire invocation when any of these
+  // retired names appears in --tools (the parity canary caught the boot abort).
+  for (const unsupported of ['ast_grep', 'calc', 'todo_write', 'poll']) {
+    assert.ok(!FLEET_OMP_CAPABILITY_ALLOWED_TOOLS.includes(unsupported), `${unsupported} is not a current OMP built-in`);
   }
 });
 
