@@ -850,6 +850,69 @@ test('invoke — engine=loop uses the injected port and persists native NDJSON w
   }
 });
 
+test('invoke — omp gateway selector stamps requestedModel without the provider prefix (EI-21332047585299058)', async () => {
+  const fx = makeFixture(({ harnessDir, projectDir }) => {
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
+    const binDir = join(projectDir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(
+      join(binDir, 'omp'),
+      "#!/bin/sh\nprintf '%s\\n' '" +
+        JSON.stringify({
+          type: 'message_end',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'gateway ok' }] },
+        }) +
+        "' '" +
+        JSON.stringify({ type: 'agent_end', messages: [] }) +
+        "'\n",
+      { mode: 0o755 },
+    );
+  });
+  const previousPath = process.env.PATH;
+  const previousModelsYml = process.env.PAPERCUSP_OMP_MODELS_YML;
+  const previousModelSelector = process.env.PAPERCUSP_OMP_MODEL_SELECTOR;
+  process.env.PATH = join(fx.projectDir, 'bin');
+  process.env.PAPERCUSP_OMP_MODELS_YML = join(fx.projectDir, 'models.yml');
+  process.env.PAPERCUSP_OMP_MODEL_SELECTOR = 'papercusp-gateway/claude-haiku-4-5';
+  try {
+    const result = await invoke(
+      {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: join(fx.projectDir, 'bin', 'omp'),
+        agentBackend: 'omp',
+        workspaceId: 'ws-test',
+        log: () => {},
+        nowSeconds: () => 1700000009,
+      },
+      'worker',
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.output, 'gateway ok');
+    // Pairing reads the terminal papercusp.run_meta event: `model` keeps the
+    // transport selector for cost attribution while `requestedModel` carries
+    // the PUBLIC model, so a same-prompt/same-model omp-vs-loop pair is not
+    // excluded just because the omp leg routed through the gateway provider.
+    const jsonl = readFileSync(result.jsonlPath, 'utf8');
+    const meta = JSON.parse(jsonl.trimEnd().split('\n').at(-1)!) as Record<string, unknown>;
+    assert.equal(meta.schemaVersion, 'worker-parity-v1');
+    assert.equal(meta.model, 'papercusp-gateway/claude-haiku-4-5');
+    assert.equal(meta.requestedModel, 'claude-haiku-4-5');
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousModelsYml === undefined) delete process.env.PAPERCUSP_OMP_MODELS_YML;
+    else process.env.PAPERCUSP_OMP_MODELS_YML = previousModelsYml;
+    if (previousModelSelector === undefined) delete process.env.PAPERCUSP_OMP_MODEL_SELECTOR;
+    else process.env.PAPERCUSP_OMP_MODEL_SELECTOR = previousModelSelector;
+    fx.cleanup();
+  }
+});
+
 test('invoke — engine=loop fails loud when the operator did not inject a port', async () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
