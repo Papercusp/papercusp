@@ -20,6 +20,11 @@
 ALTER TABLE harness_shared.agent_facts
   ADD COLUMN IF NOT EXISTS recheck jsonb;
 
+-- FORWARD-COMPAT: this DROP targets only the constraint introduced by THIS
+-- migration. The currently deployed release predates migration 940 and cannot
+-- depend on a column/constraint it has never seen; first apply is a no-op DROP,
+-- and an idempotent re-run replaces the same definition inside the migration
+-- runner's single transaction.
 ALTER TABLE harness_shared.agent_facts
   DROP CONSTRAINT IF EXISTS agent_facts_recheck_contract_check;
 
