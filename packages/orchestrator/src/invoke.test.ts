@@ -871,7 +871,11 @@ test('invoke — omp gateway selector stamps requestedModel without the provider
   const previousPath = process.env.PATH;
   const previousModelsYml = process.env.PAPERCUSP_OMP_MODELS_YML;
   const previousModelSelector = process.env.PAPERCUSP_OMP_MODEL_SELECTOR;
+  const previousFleetSandbox = process.env.PAPERCUSP_FLEET_SANDBOX;
   process.env.PATH = join(fx.projectDir, 'bin');
+  // Hermetic against hosts that export PAPERCUSP_FLEET_SANDBOX=1: this stub
+  // spawn ships no `srt` shim and asserts run_meta stamping, not sandboxing.
+  process.env.PAPERCUSP_FLEET_SANDBOX = '0';
   process.env.PAPERCUSP_OMP_MODELS_YML = join(fx.projectDir, 'models.yml');
   process.env.PAPERCUSP_OMP_MODEL_SELECTOR = 'papercusp-gateway/claude-haiku-4-5';
   try {
@@ -884,7 +888,6 @@ test('invoke — omp gateway selector stamps requestedModel without the provider
         phase: 'staging',
         claudeCmd: join(fx.projectDir, 'bin', 'omp'),
         agentBackend: 'omp',
-        workspaceId: 'ws-test',
         log: () => {},
         nowSeconds: () => 1700000009,
       },
@@ -909,6 +912,8 @@ test('invoke — omp gateway selector stamps requestedModel without the provider
     else process.env.PAPERCUSP_OMP_MODELS_YML = previousModelsYml;
     if (previousModelSelector === undefined) delete process.env.PAPERCUSP_OMP_MODEL_SELECTOR;
     else process.env.PAPERCUSP_OMP_MODEL_SELECTOR = previousModelSelector;
+    if (previousFleetSandbox === undefined) delete process.env.PAPERCUSP_FLEET_SANDBOX;
+    else process.env.PAPERCUSP_FLEET_SANDBOX = previousFleetSandbox;
     fx.cleanup();
   }
 });
