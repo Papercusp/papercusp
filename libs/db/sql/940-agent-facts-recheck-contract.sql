@@ -32,14 +32,15 @@ ALTER TABLE harness_shared.agent_facts
   ADD CONSTRAINT agent_facts_recheck_contract_check
   CHECK (
     recheck IS NULL
-    OR (
-      jsonb_typeof(recheck) = 'object'
-      AND jsonb_typeof(recheck -> 'probe') = 'string'
-      AND char_length(btrim(recheck ->> 'probe')) BETWEEN 1 AND 500
-      AND jsonb_typeof(recheck -> 'falsifier') = 'string'
-      AND char_length(btrim(recheck ->> 'falsifier')) BETWEEN 1 AND 500
-      AND recheck - 'probe' - 'falsifier' = '{}'::jsonb
-    )
+    OR ((
+        jsonb_typeof(recheck) = 'object'
+        AND recheck ?& ARRAY['probe', 'falsifier']
+        AND jsonb_typeof(recheck -> 'probe') = 'string'
+        AND char_length(btrim(recheck ->> 'probe')) BETWEEN 1 AND 500
+        AND jsonb_typeof(recheck -> 'falsifier') = 'string'
+        AND char_length(btrim(recheck ->> 'falsifier')) BETWEEN 1 AND 500
+        AND recheck - 'probe' - 'falsifier' = '{}'::jsonb
+      ) IS TRUE)
   );
 
 COMMENT ON COLUMN harness_shared.agent_facts.recheck IS
