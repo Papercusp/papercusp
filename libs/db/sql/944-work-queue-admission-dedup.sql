@@ -26,10 +26,26 @@ ALTER TABLE harness_shared.work_items
 COMMENT ON COLUMN harness_shared.work_items.admission IS
   'Admission-gate state (plan work-queue-admission-and-bulk-dedup-2026-08-24): NULL=pre-gate legacy (admitted), pending=born-pending invisible to claim/place, admitted=promoter-judged, auto=filing-time bypass (plan-promoted/critical), unreviewed=fail-open auto-promotion. Enforced via work-items-admission.ts predicates, never ad-hoc WHERE clauses.';
 
-ALTER TABLE harness_shared.work_items
-  ADD CONSTRAINT work_items_admission_chk
-  CHECK (admission IS NULL OR admission IN ('pending','admitted','auto','unreviewed'))
-  NOT VALID;
+-- Guarded because ADD CONSTRAINT has no IF NOT EXISTS: this file runs with no
+-- BEGIN/COMMIT wrapper (psql autocommits per statement), so a mid-file failure
+-- -- e.g. lock_timeout waiting on work_items behind the host pg_dump's
+-- AccessShareLock -- commits the statements above and leaves this one to re-run.
+-- Without the guard that retry aborts on "constraint already exists", which
+-- would wedge boot auto-apply on every subsequent boot. Every other statement
+-- here is already IF NOT EXISTS; this makes the whole migration re-runnable.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'harness_shared.work_items'::regclass
+       AND conname  = 'work_items_admission_chk'
+  ) THEN
+    ALTER TABLE harness_shared.work_items
+      ADD CONSTRAINT work_items_admission_chk
+      CHECK (admission IS NULL OR admission IN ('pending','admitted','auto','unreviewed'))
+      NOT VALID;
+  END IF;
+END $$;
 -- NOT VALID: constraint applies to new writes only; no full-table scan at apply
 -- time on a 100k+-row table, and no legacy row can violate it (all NULL).
 
