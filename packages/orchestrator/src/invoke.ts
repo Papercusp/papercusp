@@ -528,8 +528,15 @@ export function resolveAgentExecutionEngine(
   cfg: HarnessConfig,
   role: string,
 ): 'subprocess' | 'loop' {
-  const ai = cfg.aiBackend;
-  return ai?.roles?.[role]?.engine ?? ai?.default?.engine ?? 'subprocess';
+  const ai = cfg.aiBackend as
+    | { default?: { engine?: unknown }; roles?: Record<string, { engine?: unknown }> }
+    | undefined;
+  const value = ai?.roles?.[role]?.engine ?? ai?.default?.engine;
+  if (value === undefined) return 'subprocess';
+  if (value === 'subprocess' || value === 'loop') return value;
+  throw new Error(
+    `invoke: invalid aiBackend engine for role=${role}: ${JSON.stringify(value)} (expected subprocess|loop)`,
+  );
 }
 
 /**
@@ -2859,7 +2866,8 @@ export async function invoke(
   const streamFormat: StreamFormat = executionEngine === 'loop'
     ? 'loop-ndjson'
     : selectStreamFormat(agentBackend, roleAgentCmd);
-  if (executionEngine === 'loop' && !ctx.ownedLoop) {
+  const ownedLoopPort = ctx.ownedLoop;
+  if (executionEngine === 'loop' && !ownedLoopPort) {
     throw new Error(
       `invoke: aiBackend engine=loop for role=${role} requires an operator-injected ownedLoop port`,
     );
@@ -3338,7 +3346,7 @@ export async function invoke(
   if (executionEngine === 'loop') {
     const execution = await runOwnedLoopInvocation({
       ctx,
-      port: ctx.ownedLoop!,
+      port: ownedLoopPort,
       role,
       prompt,
       model: resolvedModel,

@@ -1123,6 +1123,10 @@ test('resolveAgentExecutionEngine — defaults subprocess; role loop beats defau
     }, 'worker'),
     'loop',
   );
+  assert.throws(
+    () => resolveAgentExecutionEngine({ aiBackend: { default: { engine: 'bogus' as never } } }, 'worker'),
+    /expected subprocess\|loop/,
+  );
 });
 
 test('resolveAgentForRole — default applies to every role', () => {
