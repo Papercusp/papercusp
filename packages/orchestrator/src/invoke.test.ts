@@ -1715,7 +1715,7 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // existed, but it was never seeded (only docs:search was), so every trimmed session
   // needed a discovery round trip to reach it. 22 tools:invoke fallback-reaches/11
   // distinct callers in 14d — comparable demand to other additions above.
-  // Then +1 with NO cap change → the array is now EXACTLY 43 (psu-seed-prompt-mandate-
+  // Then +1 with NO cap change → the array reached EXACTLY 43 (psu-seed-prompt-mandate-
   // alignment-2026-08-09 P-006 / D-006): plans:add-decision, 622 tools:invoke fallback-
   // reaches/65 distinct callers in 14d — the highest demand in the whole ledger — and the
   // verb root CLAUDE.md MANDATES for recording a cross-lane ruling, so the one call an
@@ -1727,8 +1727,10 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // and recipes:run were both removed in the 2026-07-05 rebalance — decrementing the array
   // without decrementing this tally. Stated as the likely cause, not a verified one.)
   // The net effect is that cap and size now AGREE at 43, which is this ratchet's intended
-  // invariant; the next addition genuinely does have to raise it, with justification.
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 43, 'core stays small');
+  // invariant. Then +1 → 44: events:cancel is the correction half of the seeded
+  // events:await lifecycle (EI-21345492095209440). Keep this ratchet explicit so
+  // another addition cannot hide behind a stale size ceiling.
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 44, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)
@@ -1747,7 +1749,7 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // fleet-member-dx P-008 (EI-9012/EI-9034): the bench-wait verbs must be directly
   // reachable — "don't poll, await the key" is a persona mandate, and a seeded session
   // whose client-side search misses a deferred verb concludes it doesn't exist.
-  for (const required of ['events:await', 'events:catalog']) {
+  for (const required of ['events:await', 'events:catalog', 'events:cancel']) {
     assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core (fleet-member-dx P-008 bench-wait)`);
   }
   // events:emit was deliberately cut from the spine (2026-07-19 rebalance): 29 calls/14d

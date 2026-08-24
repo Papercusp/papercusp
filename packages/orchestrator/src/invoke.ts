@@ -1145,15 +1145,17 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // sleep", but the verbs were NOT in the spine, so a seeded/trimmed session whose
   // client-side search missed them concluded the capability didn't exist and built a
   // strictly-worse blind poll loop instead (the exact thing the bench directive
-  // forbids). await = register the sleep; emit = the counterpart a leader/peer fires;
-  // catalog = "what CAN I wait on" (the check-before-polling step the persona
-  // mandates). cancel/status stay reachable via tools:find/invoke (inspection verbs,
-  // not the hot path). events:emit cut 2026-07-19: 29 calls/14d while SEEDED (true
+  // forbids). await = register the sleep; catalog = "what CAN I wait on" (the
+  // check-before-polling step the persona mandates); cancel = retract a registered
+  // await before it fires; emit = the counterpart a leader/peer fires. events:cancel
+  // is seeded as the correction half of events:await (EI-21345492095209440), while
+  // status stays reachable via tools:find/invoke. events:emit cut 2026-07-19: 29 calls/14d while SEEDED (true
   // rarity, not a discoverability artifact — members await; leaders/peers emit, and
   // the system fires most emits from lifecycle events) and no fallback-reach demand;
   // reachable via tools:find/invoke, natural member of a future leader-overlay seed.
   'events:await',
   'events:catalog',
+  'events:cancel',
   // Session hygiene — EI-6770: without this in the spine, an agent nearing its
   // compaction limit has no way to compact cleanly and self-halts instead
   // ("no compaction tool available") mid-task, losing in-flight work.
@@ -1197,16 +1199,18 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'plans:add-decision',
   // STILL NOT HERE, on purpose: mode:set (124 reaches/56 callers, 1,732 B) and
   // work_items:claimable (135/55, 2,198 B) stay in CLAUDE_SEED_EXTRA_TOOL_NAMES. With
-  // plans:add-decision admitted the array is now EXACTLY 43 = the ratchet, so admitting
-  // either would mean raising a cap in the very change that fills it — how the DARK_FLAGS
+  // plans:add-decision admitted the array at EXACTLY 43 = the ratchet. events:cancel was
+  // then admitted as the documented correction half of events:await (EI-21345492095209440),
+  // bringing the deliberate ratchet to 44. mode:set and work_items:claimable stay out of
+  // the core, so admitting either would mean raising a cap beyond the current 44 — how the DARK_FLAGS
   // watermark got walked 22->24->25->26 for one bug class, and what P-003 already
   // correctly refused. Both stay reachable via tools:find/invoke. Admitting them is a
   // separate deliberate budget decision, and D-001 argues it should be priced in WIRE
   // BYTES rather than by count (coord:send 30,512 B vs locks:list 383 B is an 80x spread
   // that a count prices identically).
   // NOTE for whoever adds the next verb: the two guards on this array are NOT rival caps.
-  // invoke.test.ts (<=43) is a RATCHET pinned to the current size, carrying the per-
-  // increment changelog above (25->32->33->38->41->42->43) so no addition is unreviewed;
+  // invoke.test.ts (<=44) is a RATCHET pinned to the current size, carrying the per-
+  // increment changelog above (25->32->33->38->41->42->43->44) so no addition is unreviewed;
   // core-spine-inverses.test.ts (<=45) is a separate BLOAT ceiling ("a seed, not a
   // catalog"). Ratchet + ceiling is one design, not a discrepancy — do not "reconcile"
   // them into a single constant, which would destroy either the review forcing-function
