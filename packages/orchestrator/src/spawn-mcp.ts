@@ -441,7 +441,6 @@ export const OMP_SEEDED_AGENT_ESSENTIALS = [
   'auth.json',
   'agent.db',
   'config.yml',
-  'mcp.json',
   'extensions',
 ] as const;
 
@@ -451,7 +450,8 @@ export const OMP_SEEDED_AGENT_ESSENTIALS = [
  * agent-dir env var, so HOME is the ONLY lever; omp-account-pinning-gateway
  * D-002), so a per-session gateway routing override is delivered by minting a
  * fresh HOME, SEEDING it from the source omp agent dir (symlinking auth/config/
- * session DBs — NO credential copy; the gateway strips+reinjects OAuth), AUTHORING
+ * session DBs — NO credential copy; deliberately NOT mcp.json, because invoke()
+ * authors the role-scoped signed MCP config in the cwd), AUTHORING
  * the gateway `models.yml` into it, and pointing the omp child at it via `HOME`.
  * The spawn then force-selects `papercusp-gateway/<model>` via `--model` so omp
  * POSTs `/v1/messages` (or `/v1/responses`) to the gateway with the account-pin

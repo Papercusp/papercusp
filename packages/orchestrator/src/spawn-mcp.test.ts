@@ -583,14 +583,16 @@ describe('writeSpawnOmpHome (omp-account-pinning-gateway-2026-06-29 P-006/D-008 
   const MODELS_YML =
     '# BEGIN PAPERCUSP_OMP_GATEWAY\nproviders:\n  papercusp-gateway:\n    baseUrl: "http://127.0.0.1:8788"\n# END PAPERCUSP_OMP_GATEWAY\n';
 
-  // A stand-in source `~/.omp/agent` with the real essentials present (+ `mcp.json` absent,
-  // to exercise the graceful skip) and a SOURCE models.yml the seeded one must shadow.
+  // A stand-in source `~/.omp/agent` with the real essentials present, a full
+  // superuser mcp.json that MUST NOT leak into a scoped child, and a SOURCE
+  // models.yml the seeded one must shadow.
   function makeSource(): string {
     const src = join(ROOT, 'src-home', '.omp', 'agent');
     mkdirSync(src, { recursive: true });
     writeFileSync(join(src, 'auth.json'), '{"token":"x"}');
     writeFileSync(join(src, 'agent.db'), 'SQLITEDB');
     writeFileSync(join(src, 'config.yml'), 'modelRoles: {}');
+    writeFileSync(join(src, 'mcp.json'), '{"mcpServers":{"papercusp-su":{"url":"full-superuser"}}}');
     writeFileSync(join(src, 'models.yml'), '# the SOURCE models.yml (must be shadowed)');
     mkdirSync(join(src, 'extensions'), { recursive: true });
     return src;
@@ -614,7 +616,9 @@ describe('writeSpawnOmpHome (omp-account-pinning-gateway-2026-06-29 P-006/D-008 
       expect(lstatSync(link).isSymbolicLink()).toBe(true);
       expect(readlinkSync(link)).toBe(join(src, entry));
     }
-    // an absent essential (mcp.json) is skipped, never created.
+    // The source's full superuser MCP config is NOT an auth/config essential.
+    // invoke() writes a signed role-scoped .mcp.json in the child cwd; seeding
+    // this file loaded both catalogs and produced a 615k-token OMP prompt.
     expect(existsSync(join(agentDir, 'mcp.json'))).toBe(false);
 
     handle.cleanup();
