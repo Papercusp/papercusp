@@ -39,6 +39,13 @@ COMMENT ON COLUMN harness_shared.plan_spec_clause_revisions.falsifier IS
   'Covered by content_hash, so revising a falsifier appends a NEW revision rather than mutating a '
   'standing promise in place. NULL means undeclared, which is a gradeable gap, not a passing clause.';
 
+-- FORWARD-COMPAT: the DROP CONSTRAINT below is safe because the constraint it drops is
+-- created by THIS migration, on a column THIS migration adds. No deployed release can
+-- depend on `plan_spec_clause_revisions_falsifier_shape` — before this file runs, neither
+-- the constraint nor `falsifier` exists anywhere. The DROP is only here so the file is
+-- re-runnable (ADD CONSTRAINT is not idempotent on its own); it can never remove a
+-- constraint the live :3070 release checkout is validating against.
+--
 -- Shape guard. Deliberately NOT a presence guard (see EXPAND note above): this fires
 -- only when a falsifier IS supplied, and rejects the two shapes that would make the
 -- field decorative rather than load-bearing — a non-object, and an object whose
