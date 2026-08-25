@@ -4,6 +4,14 @@
 -- provider-account identity is deliberately separate from credential_ref: a
 -- reconnect may rotate the opaque token field without replacing the source row
 -- (and therefore without replacing its cursor, bindings, or delivery history).
+--
+-- FORWARD-COMPAT: this already-applied migration was not safe in isolation:
+-- the deployed writer still targets the legacy owner+kind ON CONFLICT arbiter.
+-- Migration 960 restores that exact index for the deploy window before this
+-- account-aware tree may ship; a later CONTRACT migration may remove it only
+-- after the new writer is deployed. This is an incident acknowledgment and
+-- expand/contract repair record, not a claim that the deployed release ignored
+-- the dropped index.
 
 ALTER TABLE harness_shared.trigger_sources
   ADD COLUMN IF NOT EXISTS provider_account_id text;
