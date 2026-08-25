@@ -74,3 +74,29 @@ CREATE INDEX IF NOT EXISTS workspace_host_initialization_steps_host_idx
 CREATE INDEX IF NOT EXISTS workspace_host_initialization_steps_stale_lease_idx
   ON harness_shared.workspace_host_initialization_steps (lease_expires_at)
   WHERE status = 'running';
+
+-- Same workspace-isolation posture as the six tables created by migration 887. The store runs
+-- through withWorkspace(), i.e. as the RLS-SUBJECT harness_app role, so without this block every
+-- read and write on the replay path fails with permission denied.
+DO $workspace_host_init_security$
+DECLARE
+  table_name TEXT := 'workspace_host_initialization_steps';
+  policy_name TEXT := 'workspace_host_initialization_steps_workspace_isolation';
+BEGIN
+  EXECUTE format('ALTER TABLE harness_shared.%I ENABLE ROW LEVEL SECURITY', table_name);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'harness_shared' AND tablename = table_name AND policyname = policy_name
+  ) THEN
+    EXECUTE format(
+      'CREATE POLICY %I ON harness_shared.%I USING (workspace_id = current_setting(''app.workspace_id'', true)) WITH CHECK (workspace_id = current_setting(''app.workspace_id'', true))',
+      policy_name, table_name
+    );
+  END IF;
+  EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.%I TO harness_app', table_name);
+  BEGIN
+    EXECUTE format('GRANT SELECT ON harness_shared.%I TO harness_zero', table_name);
+  EXCEPTION WHEN undefined_object THEN NULL;
+  END;
+END
+$workspace_host_init_security$;
