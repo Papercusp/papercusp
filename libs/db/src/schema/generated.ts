@@ -4887,6 +4887,7 @@ export const cupClaimSpecRevisionsInHarnessShared = harnessShared.table("cup_cla
 	check("cup_claim_spec_revisions_ws_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
+
 export const agentFactsInHarnessShared = harnessShared.table("agent_facts", {
 	workspaceId: text("workspace_id").notNull(),
 	scope: text().notNull(),
@@ -6453,25 +6454,6 @@ export const agentModesInHarnessShared = harnessShared.table("agent_modes", {
 	primaryKey({ columns: [table.axisKey, table.ownerId, table.workspaceId], name: "agent_modes_pkey"}),
 ]);
 
-export const agentCouplingsInHarnessShared = harnessShared.table("agent_couplings", {
-	workspaceId: text("workspace_id").notNull(),
-	agentA: text("agent_a").notNull(),
-	agentB: text("agent_b").notNull(),
-	state: text().default('coupled').notNull(),
-	declaredBy: text("declared_by").notNull(),
-	reason: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("agent_couplings_by_a").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.agentA.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
-	index("agent_couplings_by_b").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.agentB.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
-	primaryKey({ columns: [table.agentA, table.agentB, table.workspaceId], name: "agent_couplings_pkey"}),
-	check("agent_couplings_pair_normalized", sql`agent_a < agent_b`),
-	check("agent_couplings_state_check", sql`state = ANY (ARRAY['coupled'::text, 'suppressed'::text])`),
-	check("agent_couplings_reason_len", sql`(reason IS NULL) OR (char_length(reason) <= 500)`),
-]);
-
 export const potsInHarnessShared = harnessShared.table("pots", {
 	workspaceId: text("workspace_id").notNull(),
 	potHomeSlug: text("pot_home_slug").notNull(),
@@ -6796,6 +6778,26 @@ export const planDecisionsInHarnessShared = harnessShared.table("plan_decisions"
 			name: "plan_decisions_plan_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.decisionId, table.harnessSlug, table.planSlug, table.workspaceId], name: "plan_decisions_pkey"}),
+]);
+
+export const agentCouplingsInHarnessShared = harnessShared.table("agent_couplings", {
+	workspaceId: text("workspace_id").notNull(),
+	agentA: text("agent_a").notNull(),
+	agentB: text("agent_b").notNull(),
+	state: text().default('coupled').notNull(),
+	declaredBy: text("declared_by").notNull(),
+	reason: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	relation: text(),
+}, (table) => [
+	index("agent_couplings_by_a").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.agentA.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
+	index("agent_couplings_by_b").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.agentB.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.agentA, table.agentB, table.workspaceId], name: "agent_couplings_pkey"}),
+	check("agent_couplings_pair_normalized", sql`agent_a < agent_b`),
+	check("agent_couplings_state_check", sql`state = ANY (ARRAY['coupled'::text, 'suppressed'::text])`),
+	check("agent_couplings_reason_len", sql`(reason IS NULL) OR (char_length(reason) <= 500)`),
 ]);
 
 export const coordQuarantineInHarnessShared = harnessShared.table("coord_quarantine", {
