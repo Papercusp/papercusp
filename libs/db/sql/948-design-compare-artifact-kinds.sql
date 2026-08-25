@@ -23,15 +23,13 @@
 -- no code in the currently-deployed release, so the running :3070 checkout
 -- cannot observe a row it fails to understand and cannot write a row this
 -- constraint would now reject. The DROP is unavoidable because PostgreSQL has
--- no ALTER CONSTRAINT for a CHECK expression; it is immediately replaced in the
--- same transaction, so no window exists in which the column is unconstrained.
-
-BEGIN;
-
-ALTER TABLE harness_shared.harness_design_artifacts
-  DROP CONSTRAINT IF EXISTS hda_kind_chk;
+-- no ALTER CONSTRAINT for a CHECK expression. Keep the drop + replacement in ONE
+-- ALTER TABLE statement: PostgreSQL applies that statement atomically, so there
+-- is no window in which the column is unconstrained and no migration-owned
+-- BEGIN/COMMIT wrapper that can conflict with the migrator's transaction policy.
 
 ALTER TABLE harness_shared.harness_design_artifacts
+  DROP CONSTRAINT IF EXISTS hda_kind_chk,
   ADD CONSTRAINT hda_kind_chk CHECK (
     kind = ANY (ARRAY[
       'spec'::text,
@@ -47,5 +45,3 @@ ALTER TABLE harness_shared.harness_design_artifacts
 
 COMMENT ON CONSTRAINT hda_kind_chk ON harness_shared.harness_design_artifacts IS
   'Artifact kinds. ratified_reference and compare_result were added by migration 948 for the mockup-to-implementation validation contract; widen here rather than adding a parallel table (plan ratified-mockup-implementation-validation-2026-08-24, D-003).';
-
-COMMIT;
