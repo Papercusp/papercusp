@@ -7627,6 +7627,7 @@ export const triggerSourcesInHarnessShared = harnessShared.table("trigger_source
 	kind: text().notNull(),
 	config: jsonb().default({}).notNull(),
 	credentialRef: text("credential_ref"),
+	providerAccountId: text("provider_account_id"),
 	status: text().default('unconfigured').notNull(),
 	cursor: jsonb().default({}).notNull(),
 	lastConnectedAt: timestamp("last_connected_at", { withTimezone: true, mode: 'string' }),
@@ -7636,7 +7637,8 @@ export const triggerSourcesInHarnessShared = harnessShared.table("trigger_source
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	ownerUserId: uuid("owner_user_id"),
 }, (table) => [
-	uniqueIndex("trigger_sources_owned_user_kind_uidx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops")).where(sql`(owner_user_id IS NOT NULL)`),
+	uniqueIndex("trigger_sources_owned_account_kind_uidx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops"), table.providerAccountId.asc().nullsLast().op("text_ops")).where(sql`((owner_user_id IS NOT NULL) AND (provider_account_id IS NOT NULL))`),
+	index("trigger_sources_workspace_owner_account_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops"), table.providerAccountId.asc().nullsLast().op("text_ops")).where(sql`((owner_user_id IS NOT NULL) AND (provider_account_id IS NOT NULL))`),
 	index("trigger_sources_workspace_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops")).where(sql`(owner_user_id IS NOT NULL)`),
 	index("trigger_sources_ws_kind_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
 	foreignKey({
@@ -7648,6 +7650,7 @@ export const triggerSourcesInHarnessShared = harnessShared.table("trigger_source
 	pgPolicy("trigger_sources_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("trigger_sources_kind_nonempty", sql`btrim(kind) <> ''::text`),
 	check("trigger_sources_credential_ref_nonempty", sql`(credential_ref IS NULL) OR (btrim(credential_ref) <> ''::text)`),
+	check("trigger_sources_provider_account_nonempty", sql`(owner_user_id IS NULL) OR ((provider_account_id IS NOT NULL) AND (btrim(provider_account_id) <> ''::text))`),
 	check("trigger_sources_status_check", sql`status = ANY (ARRAY['unconfigured'::text, 'ready'::text, 'connecting'::text, 'connected'::text, 'degraded'::text, 'error'::text, 'disabled'::text])`),
 	check("trigger_sources_config_object_check", sql`jsonb_typeof(config) = 'object'::text`),
 	check("trigger_sources_cursor_object_check", sql`jsonb_typeof(cursor) = 'object'::text`),
