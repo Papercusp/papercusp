@@ -5735,7 +5735,9 @@ export const dedupShardMapInHarnessShared = harnessShared.table("dedup_shard_map
 	itemId: text("item_id").notNull(),
 	role: text().notNull(),
 }, (table) => [
-	primaryKey({ columns: [table.itemId, table.role, table.runId], name: "dedup_shard_map_pkey"}),
+	uniqueIndex("dedup_shard_map_one_member_uq").using("btree", table.runId.asc().nullsLast().op("text_ops"), table.itemId.asc().nullsLast().op("text_ops")).where(sql`(role = 'member'::text)`),
+	index("dedup_shard_map_run_shard_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.runId.asc().nullsLast().op("text_ops"), table.shardId.asc().nullsLast().op("int4_ops"), table.role.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.itemId, table.role, table.runId, table.shardId], name: "dedup_shard_map_pkey"}),
 	check("dedup_shard_map_role_check", sql`role = ANY (ARRAY['member'::text, 'ghost'::text])`),
 ]);
 
@@ -9869,6 +9871,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	admission: text(),
 	admittedAt: timestamp("admitted_at", { withTimezone: true, mode: 'string' }),
 	admittedBy: text("admitted_by"),
+	firstClaimedAt: timestamp("first_claimed_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("harness_features_consolidated_claimed_progress_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.lastProgressAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((taken_by IS NOT NULL) AND (taken_by <> ''::text))`),
 	index("hfc_audit_pending_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((origin = 'remote'::text) AND ((audit_verdict IS NULL) OR (audit_verdict = 'pending'::text)))`),
@@ -9888,6 +9891,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	index("hfc_taken_by_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.takenBy.asc().nullsLast().op("text_ops")).where(sql`(taken_by IS NOT NULL)`),
 	index("hfc_updated_idx").using("btree", table.updatedTs.desc().nullsFirst().op("int8_ops")),
 	index("hfc_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
+	index("wi_admission_first_claim_latency_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.admittedAt.asc().nullsLast().op("timestamptz_ops"), table.firstClaimedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(admitted_at IS NOT NULL)`),
 	index("wi_admission_pending_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdTs.asc().nullsLast().op("int8_ops")).where(sql`(admission = 'pending'::text)`),
 	index("work_items_author_pubkey_local_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.authorPubkey.asc().nullsLast().op("text_ops")).where(sql`((author_pubkey IS NOT NULL) AND (author_pubkey <> ''::text) AND (item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
 	index("work_items_authority_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.authority.asc().nullsLast().op("text_ops")).where(sql`(authority IS NOT NULL)`),

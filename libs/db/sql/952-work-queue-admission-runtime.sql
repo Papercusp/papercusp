@@ -7,6 +7,12 @@
 -- in several other shards.  It also preserves the first-claim timestamp needed
 -- for the promoted-to-first-claim distribution metric (D-003); taken_at is not
 -- sufficient because release clears the current claim.
+--
+-- FORWARD-COMPAT: the currently deployed release has no dedup_shard_map writer
+-- or ON CONFLICT consumer at all (P-001 is its first runtime writer), and the
+-- live admission_runs ledger is empty.  Changing the unused migration-944 key
+-- therefore cannot strand an old writer between migration apply and code deploy.
+-- lint-migrations: allow-index-swap dedup_shard_map is an unused pre-runtime table; P-001 introduces the first writer only after this migration is applied
 
 DO $$
 DECLARE
