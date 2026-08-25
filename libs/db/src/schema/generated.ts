@@ -337,12 +337,6 @@ export const routinesInHarnessShared = harnessShared.table("routines", {
 	check("routines_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
-export const schemaMigrationsInHarnessShared = harnessShared.table("schema_migrations", {
-	filename: text().primaryKey().notNull(),
-	appliedAt: timestamp("applied_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	sha256: text().notNull(),
-});
-
 export const scoutRoutedIdeasInHarnessShared = harnessShared.table("scout_routed_ideas", {
 	ideaId: text("idea_id").primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -366,11 +360,14 @@ export const scoutRoutedIdeasInHarnessShared = harnessShared.table("scout_routed
 	targetHive: text("target_hive"),
 	origin: text().default('scout').notNull(),
 	createdBy: text("created_by"),
+	modelSpec: text("model_spec"),
+	modelConfig: jsonb("model_config"),
 }, (table) => [
 	index("scout_routed_ideas_routed_ref_idx").using("btree", table.routedRef.asc().nullsLast().op("text_ops")),
 	index("scout_routed_ideas_su_creator_idx").using("btree", table.origin.asc().nullsLast().op("text_ops"), table.createdBy.asc().nullsLast().op("text_ops")).where(sql`(origin = 'su-ideate'::text)`),
 	index("scout_routed_ideas_ws_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")),
 	index("scout_routed_ideas_ws_harness_lens_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.lens.asc().nullsLast().op("text_ops")),
+	index("scout_routed_ideas_ws_model_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.modelSpec.asc().nullsLast().op("text_ops")).where(sql`(model_spec IS NOT NULL)`),
 	index("scout_routed_ideas_ws_origin_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.origin.asc().nullsLast().op("text_ops")),
 	index("scout_routed_ideas_ws_source_hive_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sourceHive.asc().nullsLast().op("text_ops")),
 	pgPolicy("scout_routed_ideas_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
@@ -378,6 +375,12 @@ export const scoutRoutedIdeasInHarnessShared = harnessShared.table("scout_routed
 	primaryKey({ columns: [table.ideaId], name: "scout_routed_ideas_pkey"}),
 
 ]);
+
+export const schemaMigrationsInHarnessShared = harnessShared.table("schema_migrations", {
+	filename: text().primaryKey().notNull(),
+	appliedAt: timestamp("applied_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	sha256: text().notNull(),
+});
 
 export const potDirectoryCacheInHarnessShared = harnessShared.table("pot_directory_cache", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
@@ -5894,23 +5897,6 @@ export const tuiLayoutsInHarnessShared = harnessShared.table("tui_layouts", {
 	pgPolicy("tui_layouts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const harnessDesignArtifactsInHarnessShared = harnessShared.table("harness_design_artifacts", {
-	id: text().notNull(),
-	harnessSlug: text("harness_slug").notNull(),
-	featureId: text("feature_id").notNull(),
-	kind: text().notNull(),
-	payload: jsonb().notNull(),
-	metadata: jsonb(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
-}, (table) => [
-	index("hda_created_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdTs.desc().nullsFirst().op("int8_ops")),
-	index("hda_feature_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops")),
-	index("hda_kind_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.harnessSlug, table.id], name: "harness_design_artifacts_pkey"}),
-	check("hda_kind_chk", sql`kind = ANY (ARRAY['spec'::text, 'sketch'::text, 'screenshot'::text, 'annotation'::text, 'rejected_candidate'::text, 'review'::text])`),
-]);
-
 export const p2PMeteringSpendInHarnessShared = harnessShared.table("p2p_metering_spend", {
 	workspaceId: text("workspace_id").notNull(),
 	hostRef: text("host_ref").notNull(),
@@ -6048,6 +6034,23 @@ export const eventKeyFiresInHarnessShared = harnessShared.table("event_key_fires
 	fireCount: bigint("fire_count", { mode: "number" }).default(1).notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.eventKey, table.workspaceId], name: "event_key_fires_pkey"}),
+]);
+
+export const harnessDesignArtifactsInHarnessShared = harnessShared.table("harness_design_artifacts", {
+	id: text().notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	featureId: text("feature_id").notNull(),
+	kind: text().notNull(),
+	payload: jsonb().notNull(),
+	metadata: jsonb(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdTs: bigint("created_ts", { mode: "number" }).notNull(),
+}, (table) => [
+	index("hda_created_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdTs.desc().nullsFirst().op("int8_ops")),
+	index("hda_feature_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops")),
+	index("hda_kind_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.harnessSlug, table.id], name: "harness_design_artifacts_pkey"}),
+	check("hda_kind_chk", sql`kind = ANY (ARRAY['spec'::text, 'sketch'::text, 'screenshot'::text, 'annotation'::text, 'rejected_candidate'::text, 'review'::text, 'ratified_reference'::text, 'compare_result'::text])`),
 ]);
 
 export const harnessLanesInHarnessShared = harnessShared.table("harness_lanes", {
@@ -8849,36 +8852,6 @@ export const attentionBulkRunItemsInHarnessShared = harnessShared.table("attenti
 	check("attention_bulk_run_items_confidence_check", sql`(confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'high'::text]))`),
 ]);
 
-export const attentionBulkRunsInHarnessShared = harnessShared.table("attention_bulk_runs", {
-	workspaceId: text("workspace_id").notNull(),
-	runId: text("run_id").notNull(),
-	harnessSlug: text("harness_slug"),
-	requestedBy: text("requested_by"),
-	resolverOwner: text("resolver_owner"),
-	phase: text().default('pending').notNull(),
-	filterSnapshot: jsonb("filter_snapshot").default({}).notNull(),
-	totalItems: integer("total_items").default(0).notNull(),
-	autoResolved: integer("auto_resolved").default(0).notNull(),
-	recommended: integer().default(0).notNull(),
-	skipped: integer().default(0).notNull(),
-	failed: integer().default(0).notNull(),
-	error: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }),
-	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
-	runKind: text("run_kind").default('inbox-resolve').notNull(),
-	seedRefs: jsonb("seed_refs").default([]).notNull(),
-}, (table) => [
-	index("attention_bulk_runs_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.phase.asc().nullsLast().op("text_ops")).where(sql`(phase = ANY (ARRAY['pending'::text, 'running'::text, 'review'::text]))`),
-	uniqueIndex("attention_bulk_runs_one_active_per_workspace_kind").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.runKind.asc().nullsLast().op("text_ops")).where(sql`(phase = ANY (ARRAY['pending'::text, 'running'::text]))`),
-	index("attention_bulk_runs_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	primaryKey({ columns: [table.runId, table.workspaceId], name: "attention_bulk_runs_pkey"}),
-	pgPolicy("attention_bulk_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("attention_bulk_runs_phase_check", sql`phase = ANY (ARRAY['pending'::text, 'running'::text, 'review'::text, 'complete'::text, 'failed'::text])`),
-	check("attention_bulk_runs_run_kind_check", sql`run_kind = ANY (ARRAY['inbox-resolve'::text, 'plan-cleanup'::text])`),
-]);
-
 export const harnessDocPartsInHarnessShared = harnessShared.table("harness_doc_parts", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -9273,6 +9246,39 @@ export const transferLessonsInHarnessShared = harnessShared.table("transfer_less
 	check("transfer_lessons_tier_check", sql`tier = ANY (ARRAY['probationary'::text, 'validated'::text, 'retired'::text])`),
 	check("transfer_lessons_status_check", sql`status = ANY (ARRAY['candidate'::text, 'passed'::text, 'failed'::text, 'error'::text])`),
 	check("transfer_lessons_signal_origin_check", sql`signal_origin = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text])`),
+]);
+
+export const attentionBulkRunsInHarnessShared = harnessShared.table("attention_bulk_runs", {
+	workspaceId: text("workspace_id").notNull(),
+	runId: text("run_id").notNull(),
+	harnessSlug: text("harness_slug"),
+	requestedBy: text("requested_by"),
+	resolverOwner: text("resolver_owner"),
+	phase: text().default('pending').notNull(),
+	filterSnapshot: jsonb("filter_snapshot").default({}).notNull(),
+	totalItems: integer("total_items").default(0).notNull(),
+	autoResolved: integer("auto_resolved").default(0).notNull(),
+	recommended: integer().default(0).notNull(),
+	skipped: integer().default(0).notNull(),
+	failed: integer().default(0).notNull(),
+	error: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }),
+	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
+	runKind: text("run_kind").default('inbox-resolve').notNull(),
+	seedRefs: jsonb("seed_refs").default([]).notNull(),
+	launchSnapshot: jsonb("launch_snapshot").default({}).notNull(),
+	heartbeatAt: timestamp("heartbeat_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("attention_bulk_runs_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.phase.asc().nullsLast().op("text_ops")).where(sql`(phase = ANY (ARRAY['pending'::text, 'running'::text, 'review'::text]))`),
+	index("attention_bulk_runs_executing_heartbeat_idx").using("btree", table.heartbeatAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(phase = ANY (ARRAY['pending'::text, 'running'::text]))`),
+	uniqueIndex("attention_bulk_runs_one_active_per_workspace_kind").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.runKind.asc().nullsLast().op("text_ops")).where(sql`(phase = ANY (ARRAY['pending'::text, 'running'::text]))`),
+	index("attention_bulk_runs_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	primaryKey({ columns: [table.runId, table.workspaceId], name: "attention_bulk_runs_pkey"}),
+	pgPolicy("attention_bulk_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("attention_bulk_runs_phase_check", sql`phase = ANY (ARRAY['pending'::text, 'running'::text, 'review'::text, 'complete'::text, 'failed'::text])`),
+	check("attention_bulk_runs_run_kind_check", sql`run_kind = ANY (ARRAY['inbox-resolve'::text, 'plan-cleanup'::text])`),
 ]);
 
 export const coordConversationsInHarnessShared = harnessShared.table("coord_conversations", {
