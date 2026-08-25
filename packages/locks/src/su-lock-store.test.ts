@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { resolveLocksSqlDir } from './su-lock-store';
+import { resolveLocksSqlDir, tryAcquire } from './su-lock-store';
 
 const roots: string[] = [];
 
@@ -49,5 +49,36 @@ describe('resolveLocksSqlDir', () => {
     mkdirSync(moduleDir, { recursive: true });
 
     expect(resolveLocksSqlDir(moduleDir)).toBe(join(moduleDir, 'sql'));
+  });
+});
+
+describe('tryAcquire', () => {
+  it('marks a short upsert result as an explicit retryable race, even with no busy snapshot', async () => {
+    const tx = ((strings: TemplateStringsArray) => {
+      const text = strings.join(' ');
+      if (text.includes('WITH wanted')) {
+        // Simulate a competing row winning one path after the pre-check. The
+        // competing row is then gone before readBusySnapshot, so the snapshot
+        // is intentionally empty.
+        return [{ path: 'first.ts', lock_id: '00000000-0000-0000-0000-000000000001' }];
+      }
+      return [];
+    }) as unknown as Parameters<typeof tryAcquire>[0];
+
+    const result = await tryAcquire(tx, {
+      coordinationDomain: 'test-domain',
+      owner: 'requester',
+      ownerLabel: 'Requester',
+      paths: ['first.ts', 'second.ts'],
+      intent: 'race regression',
+      ttlSec: 60,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      busy: [],
+      reason: 'upsert_race',
+      retryable: true,
+    });
   });
 });

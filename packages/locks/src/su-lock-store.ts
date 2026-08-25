@@ -576,6 +576,12 @@ export interface AcquireBusy {
   expires_ts: Date;
 }
 
+/** A failed acquire whose state changed during the final write. Callers must
+ * retry the acquire from scratch; `busy` is only a best-effort snapshot and
+ * may legitimately be empty because the competing row can disappear before
+ * the snapshot is read. */
+export type AcquireRetryReason = 'upsert_race';
+
 export type AcquireResult =
   | {
       ok: true;
@@ -591,6 +597,8 @@ export type AcquireResult =
   | {
       ok: false;
       busy: AcquireBusy[];
+      reason: AcquireRetryReason;
+      retryable: true;
     };
 
 /**
@@ -773,12 +781,14 @@ export async function tryAcquire(
 
   // Defense in depth: if the upsert returned fewer rows than requested
   // a race slipped past Step 2b (e.g. another tx inserted between our
-  // pre-check and the upsert). Surface as busy with no partial state
-  // — the upsert never partially commits because we run inside a
-  // single transaction.
+  // pre-check and the upsert). This is not ordinary holder contention:
+  // the competing row may disappear before the snapshot below, leaving
+  // busy=[] even though this acquire did not win. Mark it explicitly so
+  // callers retry from scratch instead of rendering an unexplained denial
+  // or queueing behind a holder that is no longer confirmed.
   if (upserted.length !== acquirePaths.length) {
     const busy = await readBusySnapshot(tx, coordinationDomain, paths, owner);
-    return { ok: false, busy };
+    return { ok: false, busy, reason: 'upsert_race', retryable: true };
   }
 
   const effectiveLockId = upserted[0].lock_id;
