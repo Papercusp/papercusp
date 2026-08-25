@@ -411,21 +411,6 @@
             },
             "required": ["width", "height"]
           },
-          "ignoredRegions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "x": { "type": "integer", "minimum": 0 },
-                "y": { "type": "integer", "minimum": 0 },
-                "width": { "type": "integer", "exclusiveMinimum": 0 },
-                "height": { "type": "integer", "exclusiveMinimum": 0 },
-                "justification": { "type": "string", "minLength": 1 },
-                "authorizedBy": { "type": "string", "minLength": 1 }
-              },
-              "required": ["x", "y", "width", "height", "justification", "authorizedBy"]
-            }
-          },
           "timeoutMs": { "type": "integer", "exclusiveMinimum": 0 },
           "advisoryNotes": { "type": "string", "description": "Explanatory prose. Recorded beside the evidence and never able to change a verdict." }
         },
