@@ -246,19 +246,19 @@ there and redo it.
   it, not background weather to shrug at — and FILE it (`improvements:capture { kind:'bug' }`)
   the moment you notice, whether or not you then investigate: the flap itself is a bug even
   after it self-recovers.
-- **A red release/CI gate that's blocking your work is YOUR gate to green — not a queue to
-  wait in, route around, or hand off.** When the gate is red and that's why your verified
-  change isn't live, OWN greening it: find the ACTUAL failing tests (query the test-run ledger,
-  don't guess) and FIX them — even out of your lane, even in another agent's in-flight files,
-  even when the fix is in shared config that affects the whole fleet. A gate is shared
-  infrastructure; "those reds aren't mine" / "that's someone else's lane" / "I'll wait for
-  someone else to fix it" are INVALID excuses — a days-red gate is everyone's problem and the
-  next agent it blocks is you. Diagnose the ROOT cause first (one shared misconfiguration often
-  red-pins a whole class of tests — fixing it greens them all at once), fix it durably, and
-  verify the reds go green locally before claiming it. **Fixing the code is not the same as
-  greening the gate — do not conflate them.** The gate is a PERIODIC full-suite VERDICT, not a
-  live reaction to your commit: after your fix lands the gate stays red until the verdict
-  RE-RUNS. So getting your change live is THREE separate hops, each with its own lever —
+- **A red release/CI gate must have one concrete fixer — not a crowd of supervisors.**
+  When the gate is red and no live agent already owns and is progressing the repair, CLAIM and
+  OWN greening it: find the ACTUAL failing tests (query the test-run ledger, don't guess) and
+  FIX them — even out of your lane, even in another agent's in-flight files, even when the fix
+  is in shared config that affects the whole fleet. If a live fixer already owns and progresses
+  it, send useful evidence once, do not create a parallel supervisor or fallback loop, and stop
+  rereading the same status surfaces. A gate is shared infrastructure; "those reds aren't mine"
+  is not an excuse for leaving an UNOWNED gate red. Diagnose the ROOT cause first (one shared
+  misconfiguration often red-pins a whole class of tests — fixing it greens them all at once),
+  fix it durably, and verify the reds go green locally before claiming it. **Fixing the code is
+  not the same as greening the gate — do not conflate them.** The gate is a PERIODIC full-suite
+  VERDICT, not a live reaction to your commit: after your fix lands the gate stays red until
+  the verdict RE-RUNS. So getting your change live is THREE separate hops, each with its own lever —
   (1) COMMIT the fix (the auto-commit routine; force it if it's lagging), (2) RE-RUN THE VERDICT
   (fire it now; don't wait for the periodic tick to re-evaluate), (3) SHIP the now-green result
   (expedite the deploy). Assuming a code fix auto-greens the gate, or conflating "re-run the
@@ -328,6 +328,40 @@ there and redo it.
   Deviating requires saying explicitly WHY no template fits, to the owner, BEFORE you
   scaffold; starting an app with neither a materialized template nor that stated
   justification is non-compliance.
+
+## Anti-babysitting rule — monitoring is not work by default
+
+AUTO authorizes execution; it does not create a monitoring mission. **Fixing is work;
+watching someone else fix is not.**
+
+Do NOT arm a loop, register an await, or repeatedly inspect another agent's work unless ALL
+are true:
+
+1. The interactive owner explicitly requested ongoing monitoring, OR this session is the
+   registered owner/leader of the operation being monitored.
+2. This session holds the work-item or leadership role whose next action depends on the
+   transition.
+3. No other live agent already owns and is progressing that responsibility.
+4. The transition unlocks a concrete action this session will perform.
+5. The monitor has a named stop condition and a bounded no-delta budget.
+
+If another live owner is progressing:
+
+- send useful evidence once;
+- do not create a parallel supervisor;
+- do not arm a fallback loop;
+- end any existing monitor loop; and
+- stop reading the same status surfaces.
+
+A self-authored or inherited "monitor", "supervise", "evidence-only", or "keep watching"
+goal is not owner authorization. End it on the first wake unless the interactive owner
+explicitly requested monitoring. For non-owners, one no-delta wake is terminal: `loop:end`.
+For registered owners/leaders, use one exact event await when possible; do not also run a
+periodic polling loop for the same predicate.
+
+This rule governs agent-driven monitoring, not system routines or a registered fleet leader's
+real supervision duties. Those remain legitimate when their durable role, actionable
+transition, named stop condition, and bounded budget satisfy the contract above.
 
 ### The papercusp-way routing gate (intent → mechanism)
 
