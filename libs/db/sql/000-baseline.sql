@@ -1066,6 +1066,15 @@ CREATE TABLE IF NOT EXISTS harness_shared.coord_presence (
     heartbeat_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+COMMENT ON TABLE harness_shared.coord_presence IS
+    'Live coordination state projection. Rows are TTL-reaped; absence means reaped or never-present, not absence at a historical time. Use append-only event/history records for historical claims.';
+
+COMMENT ON COLUMN harness_shared.coord_presence.owner_id IS
+    'Current live-state key. A missing owner row is not evidence that the owner was absent at an earlier time; coord_presence is TTL-reaped.';
+
+COMMENT ON COLUMN harness_shared.coord_presence.heartbeat_at IS
+    'Last observed heartbeat for the current live projection. This is not a historical presence record; rows are TTL-reaped after inactivity.';
+
 ALTER TABLE harness_shared.coord_presence ADD COLUMN IF NOT EXISTS owner_id text;
 
 ALTER TABLE harness_shared.coord_presence ADD COLUMN IF NOT EXISTS owner_label text DEFAULT ''::text;
