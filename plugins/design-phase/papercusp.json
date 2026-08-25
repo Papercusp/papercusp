@@ -19,6 +19,9 @@
     "tools:design:read_token",
     "tools:design:get_accepted_spec",
     "tools:design:record_review",
+    "tools:design:ratify_reference",
+    "tools:design:compare_render",
+    "tools:design:get_design_evidence",
     "fs:read:design_memos",
     "fs:read:design_tokens",
     "db:write:harness_design_artifacts",
@@ -260,6 +263,207 @@
         "operator": { "perRun": 50 }
       },
       "timeoutSec": 10
+    },
+    {
+      "name": "ratify_reference",
+      "description": "Ratify an approved design image as the immutable visual reference for a feature, or revise one. Records source provenance plus the contracted capture environment and the cases that must pass; a new revision invalidates evidence bound to the previous one. Submit the revision number you believe you are creating — a stale number is refused rather than reallocated. Who ratified is taken from your session, not from input.",
+      "inputSchema": {
+        "type": "object",
+        "$defs": {
+          "environment": {
+            "type": "object",
+            "properties": {
+              "viewport": {
+                "type": "object",
+                "properties": {
+                  "width": { "type": "integer", "exclusiveMinimum": 0 },
+                  "height": { "type": "integer", "exclusiveMinimum": 0 }
+                },
+                "required": ["width", "height"]
+              },
+              "deviceScaleFactor": { "type": "number", "exclusiveMinimum": 0 },
+              "browser": { "type": "string", "minLength": 1 },
+              "theme": { "type": "string", "minLength": 1 },
+              "fontSet": { "type": "string", "minLength": 1 },
+              "fixture": { "type": "string" },
+              "state": { "type": "string" }
+            },
+            "required": ["viewport", "deviceScaleFactor", "browser", "theme", "fontSet"]
+          }
+        },
+        "properties": {
+          "featureId": { "type": "string", "minLength": 1 },
+          "referenceId": { "type": "string", "minLength": 1 },
+          "revision": { "type": "integer", "exclusiveMinimum": 0 },
+          "referenceClass": {
+            "enum": ["artifact-capture", "figma-export", "raster-mockup", "derived-reference"],
+            "description": "How the image was produced. Only some classes can carry a deterministic gate; a model-painted raster is advisory-only."
+          },
+          "contentSha256": { "type": "string", "minLength": 1 },
+          "image": {
+            "type": "object",
+            "properties": {
+              "mediaType": { "enum": ["image/png", "image/jpeg"] },
+              "locator": { "type": "string", "minLength": 1 },
+              "byteLength": { "type": "integer", "minimum": 0 },
+              "width": { "type": "integer", "exclusiveMinimum": 0 },
+              "height": { "type": "integer", "exclusiveMinimum": 0 }
+            },
+            "required": ["mediaType", "locator", "byteLength", "width", "height"]
+          },
+          "referenceEnvironment": { "$ref": "#/$defs/environment" },
+          "requiredCases": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "caseId": { "type": "string", "minLength": 1 },
+                "environment": { "$ref": "#/$defs/environment" },
+                "rationale": { "type": "string", "minLength": 1 }
+              },
+              "required": ["caseId", "environment", "rationale"]
+            }
+          },
+          "provenance": {
+            "type": "object",
+            "properties": {
+              "source": { "type": "string", "minLength": 1 },
+              "sourceRef": { "type": "string", "minLength": 1 },
+              "derivedFrom": { "type": "string", "description": "Required when referenceClass is derived-reference: the incommensurable reference this came from." }
+            },
+            "required": ["source", "sourceRef"]
+          }
+        },
+        "required": [
+          "featureId", "referenceId", "revision", "referenceClass",
+          "contentSha256", "image", "referenceEnvironment", "requiredCases", "provenance"
+        ]
+      },
+      "capabilities": ["tools:design:ratify_reference", "db:write:harness_design_artifacts"],
+      "roles": ["reviewer", "architect", "operator"],
+      "rolesQuota": {
+        "reviewer": { "perRun": 20 },
+        "architect": { "perRun": 10 },
+        "operator": { "perRun": 50 }
+      },
+      "timeoutSec": 20
+    },
+    {
+      "name": "compare_render",
+      "description": "Compare one captured implementation render against the active ratified reference and store the normalized result as evidence. Refuses before invoking any engine when the capture environment is not the one the reference is contracted at, or when geometry disagrees. A verdict of 'invalid' is a real outcome, never a silent pass. Capture the image first; this verb compares, it does not render.",
+      "inputSchema": {
+        "type": "object",
+        "$defs": {
+          "environment": {
+            "type": "object",
+            "properties": {
+              "viewport": {
+                "type": "object",
+                "properties": {
+                  "width": { "type": "integer", "exclusiveMinimum": 0 },
+                  "height": { "type": "integer", "exclusiveMinimum": 0 }
+                },
+                "required": ["width", "height"]
+              },
+              "deviceScaleFactor": { "type": "number", "exclusiveMinimum": 0 },
+              "browser": { "type": "string", "minLength": 1 },
+              "theme": { "type": "string", "minLength": 1 },
+              "fontSet": { "type": "string", "minLength": 1 },
+              "fixture": { "type": "string" },
+              "state": { "type": "string" }
+            },
+            "required": ["viewport", "deviceScaleFactor", "browser", "theme", "fontSet"]
+          }
+        },
+        "properties": {
+          "featureId": { "type": "string", "minLength": 1 },
+          "referenceId": { "type": "string", "minLength": 1 },
+          "target": {
+            "type": "object",
+            "properties": {
+              "targetId": { "type": "string", "minLength": 1 },
+              "targetKind": { "enum": ["storybook-story", "page-route", "component"] },
+              "implementationRevision": { "type": "string", "minLength": 1 }
+            },
+            "required": ["targetId", "targetKind", "implementationRevision"]
+          },
+          "environment": { "$ref": "#/$defs/environment" },
+          "policy": {
+            "type": "object",
+            "description": "The versioned threshold policy to judge under. There is no default: the build-regression threshold is not a design-fidelity threshold.",
+            "properties": {
+              "policyVersion": { "type": "string", "minLength": 1 },
+              "referenceClass": { "enum": ["artifact-capture", "figma-export", "raster-mockup", "derived-reference"] },
+              "eligibility": { "enum": ["gateable", "advisory-only"] },
+              "maxDiffRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "derivedFrom": { "type": "string", "minLength": 1 }
+            },
+            "required": ["policyVersion", "referenceClass", "eligibility", "maxDiffRatio", "derivedFrom"]
+          },
+          "actualImagePath": { "type": "string", "minLength": 1 },
+          "diffImagePath": { "type": "string", "minLength": 1, "description": "Required. The engine returns a vacuous pass when invoked without somewhere to write the difference." },
+          "expectedDimensions": {
+            "type": "object",
+            "properties": {
+              "width": { "type": "integer", "exclusiveMinimum": 0 },
+              "height": { "type": "integer", "exclusiveMinimum": 0 }
+            },
+            "required": ["width", "height"]
+          },
+          "ignoredRegions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "x": { "type": "integer", "minimum": 0 },
+                "y": { "type": "integer", "minimum": 0 },
+                "width": { "type": "integer", "exclusiveMinimum": 0 },
+                "height": { "type": "integer", "exclusiveMinimum": 0 },
+                "justification": { "type": "string", "minLength": 1 },
+                "authorizedBy": { "type": "string", "minLength": 1 }
+              },
+              "required": ["x", "y", "width", "height", "justification", "authorizedBy"]
+            }
+          },
+          "timeoutMs": { "type": "integer", "exclusiveMinimum": 0 },
+          "advisoryNotes": { "type": "string", "description": "Explanatory prose. Recorded beside the evidence and never able to change a verdict." }
+        },
+        "required": [
+          "featureId", "referenceId", "target", "environment",
+          "policy", "actualImagePath", "diffImagePath"
+        ]
+      },
+      "capabilities": ["tools:design:compare_render", "db:write:harness_design_artifacts"],
+      "roles": ["designer", "reviewer", "architect", "operator", "worker"],
+      "rolesQuota": {
+        "designer": { "perRun": 30 },
+        "reviewer": { "perRun": 30 },
+        "worker": { "perRun": 50 },
+        "operator": { "perRun": 100 }
+      },
+      "timeoutSec": 120
+    },
+    {
+      "name": "get_design_evidence",
+      "description": "Read the current visual-fidelity evidence for a feature's reference: its active revision and revision history, every stored comparison split into deterministic result and advisory prose, which required cases have current evidence, and how much stored evidence is stale. Use this instead of re-running a comparison to find out where a design stands.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "featureId": { "type": "string", "minLength": 1 },
+          "referenceId": { "type": "string", "minLength": 1 }
+        },
+        "required": ["featureId", "referenceId"]
+      },
+      "capabilities": ["tools:design:get_design_evidence"],
+      "roles": ["designer", "reviewer", "architect", "operator", "worker"],
+      "rolesQuota": {
+        "designer": { "perRun": 30 },
+        "reviewer": { "perRun": 50 },
+        "worker": { "perRun": 30 },
+        "operator": { "perRun": 100 }
+      },
+      "timeoutSec": 15
     }
   ]
 }

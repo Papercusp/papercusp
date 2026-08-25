@@ -851,6 +851,118 @@ async function get_registry_component(input) {
   return { content: [{ type: 'text', text: JSON.stringify(entry, null, 2) }] };
 }
 
+// ─── design-compare bridge (plan P-006, D-017) ──────────────────────────────
+//
+// The mockup-to-implementation comparison engine lives in the OPERATOR
+// (packages/operator-core/lib/design-compare/*.ts), not here. This plugin does
+// not — and must not — require it: D-017 measured that a CommonJS require of
+// those modules fails under plain node (constructor parameter properties;
+// extensionless relative specifiers) and succeeds only because the operator
+// host happens to run under tsx. Depending on that would make the production
+// path untestable and one refactor away from breaking.
+//
+// So the host PUBLISHES its verb surface into a slot pinned on `globalThis`,
+// and this reads it. The only thing crossing the boundary is
+// `@papercusp/module-singleton`, which requires cleanly under both runtimes.
+//
+// The KEY IS DUPLICATED between here and host-registry.ts's
+// DESIGN_COMPARE_HOST_SLOT — unavoidably, since the whole point is that neither
+// side imports the other. `design-compare-plugin-bridge.test.ts` asserts the two
+// literals are equal, so they cannot drift apart into a silent no-rendezvous.
+const DESIGN_COMPARE_HOST_SLOT = '@papercusp/design-compare.host';
+
+/**
+ * Read the installed verb surface for a harness, or null.
+ *
+ * Null is a real answer: a standalone papercusp install has no operator, so
+ * there is no engine and these verbs cannot run. Every caller below turns that
+ * into a loud refusal and NEVER into a comparison verdict — an absent engine is
+ * a host misconfiguration, not evidence about a render.
+ */
+function readDesignCompareVerbs(harnessSlug) {
+  let pinModuleState;
+  try {
+    ({ pinModuleState } = require('@papercusp/module-singleton'));
+  } catch {
+    return null;
+  }
+  if (typeof pinModuleState !== 'function') return null;
+  const slot = pinModuleState(DESIGN_COMPARE_HOST_SLOT, () => ({ verbs: new Map() }));
+  if (!slot || !(slot.verbs instanceof Map)) return null;
+  return slot.verbs.get(harnessSlug) || null;
+}
+
+function engineUnavailable(verb, harnessSlug) {
+  return {
+    isError: true,
+    content: [{
+      type: 'text',
+      text: JSON.stringify({
+        ok: false,
+        code: 'engine-unavailable',
+        detail:
+          `${verb}: no design-compare engine is installed for harness '${harnessSlug}'. This verb is ` +
+          'backed by the operator\'s comparison adapter, which publishes itself at boot; a standalone ' +
+          'papercusp install does not have one. No comparison was attempted, so no verdict is reported.',
+      }, null, 2),
+    }],
+  };
+}
+
+/**
+ * Who the host says is calling.
+ *
+ * Read from `ctx`, never from tool input. `ratify_reference` writes this into
+ * immutable provenance, and a principal a caller can name for itself is not a
+ * principal. There is deliberately no input field to override it.
+ */
+function callerFrom(ctx) {
+  return { actorId: (ctx && ctx.spawnId) || '', role: (ctx && ctx.role) || 'unknown' };
+}
+
+function requireStrings(verb, input, keys) {
+  for (const k of keys) {
+    if (!input || typeof input[k] !== 'string' || input[k].length === 0) {
+      return `${verb}: input.${k} (non-empty string) is required`;
+    }
+  }
+  return null;
+}
+
+/** Shape a verb outcome as a tool result. A refusal is an error; an `invalid` verdict is not. */
+function verbResult(outcome) {
+  return {
+    ...(outcome && outcome.ok === false ? { isError: true } : {}),
+    content: [{ type: 'text', text: JSON.stringify(outcome, null, 2) }],
+  };
+}
+
+async function ratify_reference(input, ctx) {
+  const bad = requireStrings('ratify_reference', input, ['featureId', 'referenceId', 'contentSha256']);
+  if (bad) return { isError: true, content: [{ type: 'text', text: bad }] };
+  const verbs = readDesignCompareVerbs(ctx.harnessSlug);
+  if (!verbs) return engineUnavailable('ratify_reference', ctx.harnessSlug);
+  return verbResult(await verbs.ratifyReference(input, callerFrom(ctx)));
+}
+
+async function compare_render(input, ctx) {
+  const bad = requireStrings('compare_render', input, [
+    'featureId', 'referenceId', 'actualImagePath', 'diffImagePath',
+  ]);
+  if (bad) return { isError: true, content: [{ type: 'text', text: bad }] };
+  const verbs = readDesignCompareVerbs(ctx.harnessSlug);
+  if (!verbs) return engineUnavailable('compare_render', ctx.harnessSlug);
+  return verbResult(await verbs.compareRender(input, callerFrom(ctx)));
+}
+
+async function get_design_evidence(input, ctx) {
+  const bad = requireStrings('get_design_evidence', input, ['featureId', 'referenceId']);
+  if (bad) return { isError: true, content: [{ type: 'text', text: bad }] };
+  const verbs = readDesignCompareVerbs(ctx.harnessSlug);
+  if (!verbs) return engineUnavailable('get_design_evidence', ctx.harnessSlug);
+  return verbResult(await verbs.getDesignEvidence(input, callerFrom(ctx)));
+}
+
 const tools = {
   validate_spec,
   lint_spec,
@@ -864,6 +976,9 @@ const tools = {
   read_token,
   get_accepted_spec,
   record_review,
+  ratify_reference,
+  compare_render,
+  get_design_evidence,
 };
 
 const plugin = {
@@ -884,6 +999,9 @@ const plugin = {
     'tools:design:read_token',
     'tools:design:get_accepted_spec',
     'tools:design:record_review',
+    'tools:design:ratify_reference',
+    'tools:design:compare_render',
+    'tools:design:get_design_evidence',
     'fs:read:design_memos',
     'fs:read:design_tokens',
     'db:write:harness_design_artifacts',
@@ -903,4 +1021,9 @@ module.exports._internal = {
   listMemos,
   readMemo,
   resolveAdminPgUrl,
+  // P-006 bridge. Exposed so a test can assert the KEY matches the host's
+  // constant and that resolution actually reaches the pinned slot — the
+  // rendezvous is the part that fails silently if it is wrong.
+  DESIGN_COMPARE_HOST_SLOT,
+  readDesignCompareVerbs,
 };
