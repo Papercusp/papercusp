@@ -597,6 +597,10 @@ export type AcquireResult =
   | {
       ok: false;
       busy: AcquireBusy[];
+    }
+  | {
+      ok: false;
+      busy: AcquireBusy[];
       reason: AcquireRetryReason;
       retryable: true;
     };
