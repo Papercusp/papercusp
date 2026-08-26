@@ -1,4 +1,5 @@
--- Migration 907 — hosted customer FORCE RLS boundary
+-- Migration 978 — hosted customer FORCE RLS boundary
+-- EI-21540187496878597: armed at a freshly reserved number after 907 was consumed.
 -- (byoc-cloud-workspaces-gcp-aws-azure-2026-08-22 P-082 / WI-40858;
 -- decisions D-064, D-067, D-068, D-076).
 --

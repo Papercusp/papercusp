@@ -1,7 +1,7 @@
-/** Real-Postgres coverage for migration 908's existing workspace-host graph. */
+/** Real-Postgres coverage for migration 979's existing workspace-host graph. */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql, type TransactionSql } from 'postgres';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
@@ -9,11 +9,9 @@ import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/p
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 function migrationSql(name: string): string {
-  const armed = path.join(HERE, '..', 'sql', name);
-  if (existsSync(armed)) return readFileSync(armed, 'utf8');
-  const draft = `${armed}.DRAFT`;
-  if (existsSync(draft)) return readFileSync(draft, 'utf8');
-  throw new Error(`migration not found at ${armed}[.DRAFT]`);
+  // EI-21540187496878597: an integration test must never make an inert .DRAFT
+  // look shipped. Requiring the armed path is the regression guard.
+  return readFileSync(path.join(HERE, '..', 'sql', name), 'utf8');
 }
 
 const migrations = [
@@ -21,8 +19,8 @@ const migrations = [
   migrationSql('903-customer-organization-boundary.sql'),
   migrationSql('904-hosted-identity-links.sql'),
   migrationSql('906-customer-workspace-directory.sql'),
-  migrationSql('907-hosted-customer-rls.sql'),
-  migrationSql('908-workspace-host-tenant-rls.sql'),
+  migrationSql('978-hosted-customer-rls.sql'),
+  migrationSql('979-workspace-host-tenant-rls.sql'),
 ];
 
 const ORG_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -155,7 +153,7 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
-describe('migration 908 — workspace-host organization/workspace RLS', () => {
+describe('migration 979 — workspace-host organization/workspace RLS', () => {
   it('is idempotent and forces every table under a safe non-runtime owner', async () => {
     await sql.unsafe(migrations[5]);
     const tables = await sql<{

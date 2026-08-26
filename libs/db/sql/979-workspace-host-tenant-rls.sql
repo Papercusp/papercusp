@@ -1,4 +1,5 @@
--- Migration 908 — organization/workspace RLS for the existing workspace-host graph.
+-- Migration 979 — organization/workspace RLS for the existing workspace-host graph.
+-- EI-21540187496878597: armed at a freshly reserved number after 908 was consumed.
 -- (byoc-cloud-workspaces-gcp-aws-azure-2026-08-22 P-083 / WI-40859;
 -- decision D-068).
 --

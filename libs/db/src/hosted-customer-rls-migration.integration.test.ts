@@ -1,5 +1,5 @@
 /**
- * Migration 907 — hosted customer FORCE RLS boundary.
+ * Migration 978 — hosted customer FORCE RLS boundary.
  *
  * Applies the real 903/904/906 leaf migrations followed by 907 against fresh
  * Postgres. These direct-query tests prove that the database fails closed when
@@ -9,7 +9,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql, type TransactionSql } from 'postgres';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
@@ -17,18 +17,16 @@ import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/p
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 function migrationSql(name: string): string {
-  const armed = path.join(HERE, '..', 'sql', name);
-  if (existsSync(armed)) return readFileSync(armed, 'utf8');
-  const draft = `${armed}.DRAFT`;
-  if (existsSync(draft)) return readFileSync(draft, 'utf8');
-  throw new Error(`migration not found at ${armed}[.DRAFT]`);
+  // EI-21540187496878597: an integration test must never make an inert .DRAFT
+  // look shipped. Requiring the armed path is the regression guard.
+  return readFileSync(path.join(HERE, '..', 'sql', name), 'utf8');
 }
 
 const migrations = [
   migrationSql('903-customer-organization-boundary.sql'),
   migrationSql('904-hosted-identity-links.sql'),
   migrationSql('906-customer-workspace-directory.sql'),
-  migrationSql('907-hosted-customer-rls.sql'),
+  migrationSql('978-hosted-customer-rls.sql'),
 ];
 
 const USER_A = '11111111-1111-4111-8111-111111111111';
@@ -192,7 +190,7 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
-describe('migration 907 — hosted customer FORCE RLS', () => {
+describe('migration 978 — hosted customer FORCE RLS', () => {
   it('is idempotent and leaves every hosted role non-login, non-superuser, and non-bypass', async () => {
     await sql.unsafe(migrations[3]);
 
