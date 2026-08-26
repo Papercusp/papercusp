@@ -1,4 +1,4 @@
--- 984-p2p-foreign-workspaces-change-notify.sql — WI-42230 / P-510.
+-- 985-p2p-foreign-workspaces-change-notify.sql — WI-42230 / P-510.
 --
 -- The host-local foreign-work registry was created by migration 467 before it
 -- had a public sync consumer. The Settings surface now reads a path-redacted
