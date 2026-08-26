@@ -135,6 +135,7 @@ beforeAll(async () => {
   });
   await sql.unsafe('CREATE SCHEMA harness_shared');
   await createWorkItemsFixture();
+  await applyMigrationFile(migration972Sql);
   // A silently-absent or disabled trigger would make every keep-case below pass
   // vacuously, so the definition itself is part of the precondition. The probe
   // dumps unqualified ground truth so a mis-targeted DDL cannot hide behind an
