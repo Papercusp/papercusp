@@ -87,18 +87,18 @@ async function seedOpenItem(id: string, payload: Record<string, unknown> = {}): 
 
 /** Simulate the close write a frozen pre-guard build performs. */
 async function closeAsCommitted(id: string, evidence: Record<string, unknown>): Promise<'committed' | 'proposed'> {
-  await sql.unsafe(
-    `UPDATE harness_shared.work_items
-        SET status = 'done',
-            authority = 'committed',
-            payload = COALESCE(payload, '{}'::jsonb) || jsonb_build_object('_completionEvidence', $2)
-      WHERE feature_id = $1`,
+  const rows = await sql.unsafe<{ authority: string; matched: number }[]>(
+    `WITH updated AS (
+       UPDATE harness_shared.work_items
+          SET status = 'done',
+              authority = 'committed',
+              payload = COALESCE(payload, '{}'::jsonb) || jsonb_build_object('_completionEvidence', $2)
+         WHERE feature_id = $1
+       RETURNING authority
+     ) SELECT authority, count(*) OVER () AS matched FROM updated`,
     [id, sql.json(evidence)],
   );
-  const rows = await sql.unsafe<{ authority: string }>(
-    `SELECT authority FROM harness_shared.work_items WHERE feature_id = $1`,
-    [id],
-  );
+  if (!rows.length) throw new Error(`closeAsCommitted(${id}): UPDATE matched 0 rows — seed missing`);
   return rows[0].authority as 'committed' | 'proposed';
 }
 
