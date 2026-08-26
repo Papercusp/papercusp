@@ -8163,45 +8163,6 @@ export const planAuditsInHarnessShared = harnessShared.table("plan_audits", {
 	check("plan_audits_activation_shape_check", sql`(audit_kind = 'completion'::text) OR ((jsonb_typeof(activation) = 'object'::text) AND (audited_plan_revision_id IS NOT NULL) AND (audited_plan_revision_seq IS NOT NULL) AND (audited_plan_revision_seq > 0) AND (audited_plan_content_hash ~ '^[0-9a-f]{64}$'::text))`),
 ]);
 
-export const triggerRunsInHarnessShared = harnessShared.table("trigger_runs", {
-	workspaceId: text("workspace_id").notNull(),
-	id: uuid().defaultRandom().notNull(),
-	bindingId: uuid("binding_id").notNull(),
-	deliveryId: uuid("delivery_id"),
-	dedupeKey: text("dedupe_key").notNull(),
-	status: text().default('pending').notNull(),
-	args: jsonb().default({}).notNull(),
-	planRunRef: text("plan_run_ref"),
-	outcome: jsonb().default({}).notNull(),
-	error: text(),
-	triggeredAt: timestamp("triggered_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }),
-	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	attempts: integer().default(0).notNull(),
-}, (table) => [
-	index("trigger_runs_ws_binding_triggered_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.bindingId.asc().nullsLast().op("uuid_ops"), table.triggeredAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("trigger_runs_ws_status_triggered_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops"), table.triggeredAt.desc().nullsFirst().op("timestamptz_ops")),
-	foreignKey({
-			columns: [table.workspaceId, table.bindingId],
-			foreignColumns: [triggerBindingsInHarnessShared.workspaceId, triggerBindingsInHarnessShared.id],
-			name: "trigger_runs_binding_fk"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.workspaceId, table.deliveryId],
-			foreignColumns: [triggerDeliveriesInHarnessShared.workspaceId, triggerDeliveriesInHarnessShared.id],
-			name: "trigger_runs_delivery_fk"
-		}).onDelete("restrict"),
-	primaryKey({ columns: [table.id, table.workspaceId], name: "trigger_runs_pkey"}),
-	unique("trigger_runs_binding_dedupe_key").on(table.bindingId, table.dedupeKey, table.workspaceId),
-	pgPolicy("trigger_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("trigger_runs_dedupe_key_nonempty", sql`btrim(dedupe_key) <> ''::text`),
-	check("trigger_runs_status_check", sql`status = ANY (ARRAY['pending'::text, 'running'::text, 'succeeded'::text, 'failed'::text, 'skipped'::text, 'cancelled'::text])`),
-	check("trigger_runs_args_object_check", sql`jsonb_typeof(args) = 'object'::text`),
-	check("trigger_runs_outcome_object_check", sql`jsonb_typeof(outcome) = 'object'::text`),
-	check("trigger_runs_attempts_nonnegative_check", sql`attempts >= 0`),
-]);
-
 export const triggerBindingsInHarnessShared = harnessShared.table("trigger_bindings", {
 	workspaceId: text("workspace_id").notNull(),
 	id: uuid().defaultRandom().notNull(),
@@ -8398,6 +8359,47 @@ export const triggerDeliveriesInHarnessShared = harnessShared.table("trigger_del
 	check("trigger_deliveries_outcome_check", sql`outcome = ANY (ARRAY['pending'::text, 'delivered'::text, 'failed'::text, 'skipped'::text])`),
 	check("trigger_deliveries_payload_object_check", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("trigger_deliveries_attempts_nonnegative_check", sql`attempts >= 0`),
+]);
+
+export const triggerRunsInHarnessShared = harnessShared.table("trigger_runs", {
+	workspaceId: text("workspace_id").notNull(),
+	id: uuid().defaultRandom().notNull(),
+	bindingId: uuid("binding_id").notNull(),
+	deliveryId: uuid("delivery_id"),
+	dedupeKey: text("dedupe_key").notNull(),
+	status: text().default('pending').notNull(),
+	args: jsonb().default({}).notNull(),
+	planRunRef: text("plan_run_ref"),
+	outcome: jsonb().default({}).notNull(),
+	error: text(),
+	triggeredAt: timestamp("triggered_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }),
+	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	attempts: integer().default(0).notNull(),
+	nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("trigger_runs_ws_binding_triggered_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.bindingId.asc().nullsLast().op("uuid_ops"), table.triggeredAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("trigger_runs_ws_due_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.triggeredAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("uuid_ops")).where(sql`(status = ANY (ARRAY['pending'::text, 'failed'::text, 'running'::text]))`),
+	index("trigger_runs_ws_status_triggered_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops"), table.triggeredAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.bindingId],
+			foreignColumns: [triggerBindingsInHarnessShared.workspaceId, triggerBindingsInHarnessShared.id],
+			name: "trigger_runs_binding_fk"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.workspaceId, table.deliveryId],
+			foreignColumns: [triggerDeliveriesInHarnessShared.workspaceId, triggerDeliveriesInHarnessShared.id],
+			name: "trigger_runs_delivery_fk"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "trigger_runs_pkey"}),
+	unique("trigger_runs_binding_dedupe_key").on(table.bindingId, table.dedupeKey, table.workspaceId),
+	pgPolicy("trigger_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("trigger_runs_dedupe_key_nonempty", sql`btrim(dedupe_key) <> ''::text`),
+	check("trigger_runs_status_check", sql`status = ANY (ARRAY['pending'::text, 'running'::text, 'succeeded'::text, 'failed'::text, 'skipped'::text, 'cancelled'::text])`),
+	check("trigger_runs_args_object_check", sql`jsonb_typeof(args) = 'object'::text`),
+	check("trigger_runs_outcome_object_check", sql`jsonb_typeof(outcome) = 'object'::text`),
+	check("trigger_runs_attempts_nonnegative_check", sql`attempts >= 0`),
 ]);
 
 export const planItemAssignmentsInHarnessShared = harnessShared.table("plan_item_assignments", {
