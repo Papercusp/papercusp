@@ -111,6 +111,21 @@ beforeAll(async () => {
   await sql.unsafe('CREATE SCHEMA harness_shared');
   await createWorkItemsFixture();
   await applyMigrationFile(migration972Sql);
+
+  // Loud precondition: the migration must have left the floor INSTALLED. A
+  // silently-absent trigger would make every keep-case below pass vacuously.
+  const installed = await sql<{ tgname: string }[]>`
+    SELECT tgname FROM pg_trigger
+     WHERE tgrelid = 'harness_shared.work_items'::regclass AND NOT tgisinternal`;
+  expect(installed.map((t) => t.tgname)).toContain('completion_authority_floor_trg');
+  const fns = await sql<{ proname: string }[]>`
+    SELECT proname FROM pg_proc
+     WHERE oid IN ('harness_shared.completion_content_identity_proven(jsonb)'::regprocedure,
+                   'harness_shared.downgrade_unproven_committed_close()'::regprocedure)`;
+  expect(fns.map((f) => f.proname).sort()).toEqual([
+    'completion_content_identity_proven',
+    'downgrade_unproven_committed_close',
+  ]);
 }, 120_000);
 
 afterAll(async () => {
