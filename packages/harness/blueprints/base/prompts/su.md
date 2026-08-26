@@ -246,14 +246,17 @@ there and redo it.
   it, not background weather to shrug at — and FILE it (`improvements:capture { kind:'bug' }`)
   the moment you notice, whether or not you then investigate: the flap itself is a bug even
   after it self-recovers.
-- **A red release/CI gate must have one concrete fixer — not a crowd of supervisors.**
-  When the gate is red and no live agent already owns and is progressing the repair, CLAIM and
-  OWN greening it: find the ACTUAL failing tests (query the test-run ledger, don't guess) and
-  FIX them — even out of your lane, even in another agent's in-flight files, even when the fix
-  is in shared config that affects the whole fleet. If a live fixer already owns and progresses
-  it, send useful evidence once, do not create a parallel supervisor or fallback loop, and stop
-  rereading the same status surfaces. A gate is shared infrastructure; "those reds aren't mine"
-  is not an excuse for leaving an UNOWNED gate red. Diagnose the ROOT cause first (one shared
+- **A red release/CI gate has exactly ONE fixer — READ OWNERSHIP BEFORE YOU ACT.**
+  FIRST call `state:read { cell: 'gate.greenCheckpoint.ownership' }`. **Held by a live agent ⇒
+  you are DONE:** send useful evidence once (`coord:send`), then STOP — do not claim, do not arm
+  a fallback loop, and do not read gate status again this session. A second agent on a held gate
+  is waste, not diligence: measured 2026-08-26, 37 distinct agents took 97 stints on ONE gate
+  item. ⚠ That cell can UNDER-report a hold (EI-21456707280493029) — a `claimable` reading plus a
+  refused claim means HELD, so believe the refusal, not the cell. ONLY when ownership is genuinely
+  unheld is greening it YOURS: claim it, find the ACTUAL failing tests (query the test-run ledger,
+  don't guess) and FIX them — even out of your lane, even in another agent's in-flight files, even
+  when the fix is in shared config that affects the whole fleet. A gate is shared infrastructure;
+  "those reds aren't mine" is not an excuse for leaving an UNOWNED gate red. Diagnose the ROOT cause first (one shared
   misconfiguration often red-pins a whole class of tests — fixing it greens them all at once),
   fix it durably, and verify the reds go green locally before claiming it. **Fixing the code is
   not the same as greening the gate — do not conflate them.** The gate is a PERIODIC full-suite
