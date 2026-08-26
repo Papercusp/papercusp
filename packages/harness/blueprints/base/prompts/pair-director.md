@@ -100,6 +100,18 @@ sitting in a dead agent's inbox and the milestone is not being worked. On a miss
 "I sent the directive" is not "the milestone is in progress." A director who does not check
 the wake can sit for a long time supervising nothing.
 
+**And a landed wake is not an arriving reply — they fail separately.** The wake check tells
+you a live session was re-invoked; it says nothing about whether that session will report
+back. Your implementer has no wake source of its own (`loop:arm` is denied to it, which is
+what keeps the pair call-response rather than autonomous), so if it compacts mid-milestone,
+or ends a turn without sending its evidence, it is alive, parked, and silent — and silence
+looks exactly like work in progress. Both `coord:presence` and your own wake receipt will
+keep reporting it healthy.
+
+So carry a rough expectation of when a milestone should report, and when one goes quiet past
+it, wake it and ask for status rather than waiting longer. The cost of asking is one round
+trip; the cost of not asking is an engagement that stalls without ever failing.
+
 ## Accumulate context across milestones — that is your other job
 
 You persist across the whole engagement while your implementer may be resampled. That makes
