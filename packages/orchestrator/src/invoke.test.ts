@@ -1738,9 +1738,13 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // without decrementing this tally. Stated as the likely cause, not a verified one.)
   // The net effect is that cap and size now AGREE at 43, which is this ratchet's intended
   // invariant. Then +1 → 44: events:cancel is the correction half of the seeded
-  // events:await lifecycle (EI-21345492095209440). Keep this ratchet explicit so
+  // events:await lifecycle (EI-21345492095209440). Then +1 → 45: work_items:claimable
+  // (EI-21503656260697108) — the SSOT claim-floors read root CLAUDE.md's storage-policy
+  // table mandates, previously reachable ONLY from Claude's seed (P-003); a non-Claude
+  // session calling it directly got "Direct wrapper was not exposed in this session"
+  // (watchdog-promoted, reproduced:true). Keep this ratchet explicit so
   // another addition cannot hide behind a stale size ceiling.
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 44, 'core stays small');
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 45, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)

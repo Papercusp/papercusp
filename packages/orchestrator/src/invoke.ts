@@ -1212,20 +1212,26 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // non-Claude client. P-003 tried to add this verb here as part of a set of three,
   // which overshot the ratchet; admitted alone, it fits.
   'plans:add-decision',
-  // STILL NOT HERE, on purpose: mode:set (124 reaches/56 callers, 1,732 B) and
-  // work_items:claimable (135/55, 2,198 B) stay in CLAUDE_SEED_EXTRA_TOOL_NAMES. With
-  // plans:add-decision admitted the array at EXACTLY 43 = the ratchet. events:cancel was
-  // then admitted as the documented correction half of events:await (EI-21345492095209440),
-  // bringing the deliberate ratchet to 44. mode:set and work_items:claimable stay out of
-  // the core, so admitting either would mean raising a cap beyond the current 44 — how the DARK_FLAGS
-  // watermark got walked 22->24->25->26 for one bug class, and what P-003 already
-  // correctly refused. Both stay reachable via tools:find/invoke. Admitting them is a
-  // separate deliberate budget decision, and D-001 argues it should be priced in WIRE
-  // BYTES rather than by count (coord:send 30,512 B vs locks:list 383 B is an 80x spread
-  // that a count prices identically).
+  // ADMITTED 2026-08-26 (EI-21503656260697108), raising the deliberate ratchet 44->45:
+  // work_items:claimable is THE claim-floors SSOT read ("what can I actually claim") —
+  // root CLAUDE.md's storage-policy table mandates it over raw status='open' (which
+  // overcounts ~13x), orient/scheduler:get_next/fleet:leader-brief all point members at
+  // it, yet it lived ONLY in Claude's seed (P-003): a non-Claude session calling it
+  // directly got "Direct wrapper was not exposed in this session", promoted by the
+  // watchdog with reproduced:true. Priced per D-001 in WIRE BYTES: 135 fallback-reaches
+  // / 55 distinct callers / 14d at 2,198 B = 62.9 reach/KB — above coord:presence's own
+  // admit bar (36.0).
+  'work_items:claimable',
+  // STILL NOT HERE, on purpose: mode:set (124 reaches/56 callers, 1,732 B) — the last
+  // survivor of the P-003 trio — stays in CLAUDE_SEED_EXTRA_TOOL_NAMES. Admitting it
+  // means raising this cap again — how the DARK_FLAGS watermark got walked
+  // 22->24->25->26 for one bug class, and what P-003 already correctly refused. It stays
+  // reachable via tools:find/invoke; admission is a separate deliberate budget decision,
+  // and D-001 argues it should be priced in WIRE BYTES rather than by count (coord:send
+  // 30,512 B vs locks:list 383 B is an 80x spread that a count prices identically).
   // NOTE for whoever adds the next verb: the two guards on this array are NOT rival caps.
-  // invoke.test.ts (<=44) is a RATCHET pinned to the current size, carrying the per-
-  // increment changelog above (25->32->33->38->41->42->43->44) so no addition is unreviewed;
+  // invoke.test.ts (<=45) is a RATCHET pinned to the current size, carrying the per-
+  // increment changelog above (25->32->33->38->41->42->43->44->45) so no addition is unreviewed;
   // core-spine-inverses.test.ts (<=45) is a separate BLOAT ceiling ("a seed, not a
   // catalog"). Ratchet + ceiling is one design, not a discrepancy — do not "reconcile"
   // them into a single constant, which would destroy either the review forcing-function
