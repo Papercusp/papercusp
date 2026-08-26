@@ -179,20 +179,11 @@ afterAll(async () => {
 describe('migration 972 — completion authority content-identity floor', () => {
   it('downgrades a frozen-build close whose evidence has NO contentIdentity (the WI-41491 shape)', async () => {
     notices.length = 0;
-  const census = await sql<{ id: string | null; n: number; pid: number; db: string }[]>`
-    SELECT feature_id AS id,
-           count(*) OVER () AS n,
-           pg_backend_pid() AS pid,
-           current_database() AS db
-      FROM harness_shared.work_items ORDER BY feature_id`;
-  expect(
-    census.map((r) => r.id),
-    `census=${JSON.stringify(census)} seedPid=${lastSeedPid} readerPid=${census[0]?.pid} db=${census[0]?.db}`,
-  ).toContain('WI-CASE-MISSING');
-    const [diag] = await sql<{ has_ev: boolean; pt: string; ev: string | null }[]>`
+    await seedOpenItem('WI-CASE-MISSING');
+    const observed = await closeAsCommitted('WI-CASE-MISSING', evidenceWith(undefined));
+    const [diag] = await sql<{ has_ev: boolean; pt: string }[]>`
       SELECT payload->'_completionEvidence' IS NOT NULL AS has_ev,
-             jsonb_typeof(payload) AS pt,
-             payload->'_completionEvidence'::text AS ev
+             jsonb_typeof(payload) AS pt
         FROM harness_shared.work_items WHERE feature_id = 'WI-CASE-MISSING'`;
     expect(
       { observed, notices, diag },
@@ -200,7 +191,7 @@ describe('migration 972 — completion authority content-identity floor', () => 
     ).toEqual({
       observed: 'proposed',
       notices: [expect.stringMatching(/downgraded committed->proposed/)],
-      diag: { has_ev: true, pt: 'object', ev: expect.any(String) },
+      diag: { has_ev: true, pt: 'object' },
     });
     // The SQL mirror must agree with the TS truth table on canonical shapes.
     const [p] = await sql<{ p_null: boolean; p_ok: boolean; p_mismatch: boolean }[]>`
@@ -210,7 +201,6 @@ describe('migration 972 — completion authority content-identity floor', () => 
         harness_shared.completion_content_identity_proven(
           ${sql.json([{ path: 'a', workingTreeBlobSha: SHA_B, headBlobSha: SHA_A }])}) AS p_mismatch`;
     expect(p, `proven()=${JSON.stringify(p)}`).toEqual({ p_null: false, p_ok: true, p_mismatch: false });
-    expect(observed).toBe('proposed');
   });
 
   it('downgrades null-blob, mismatched-blob, and empty-array identities', async () => {
