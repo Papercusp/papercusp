@@ -14,7 +14,7 @@
  * through the real `getOrgPgApp()` path, and proves the leaked advisory lock
  * self-heals.
  *
- * Run: npx vitest run --config vitest.integration.config.ts src/idle-in-tx-timeout.integration.test.ts
+ * Run: cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/idle-in-tx-timeout.integration.test.ts
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';

@@ -10,7 +10,7 @@
  * (NULL budget) early-out, schema-name validation, and a two-connection
  * concurrent accept where the project-row lock must let exactly one win.
  *
- * Run: npx vitest run --config vitest.integration.config.ts src/budget-enforcement.integration.test.ts
+ * Run: cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/budget-enforcement.integration.test.ts
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';

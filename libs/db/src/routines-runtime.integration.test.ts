@@ -4,7 +4,7 @@
  * update), the due-query, the fire concurrency policies (queue/skip/cancel-prev),
  * and activate/delete.
  *
- * Run: npx vitest run --config vitest.integration.config.ts src/routines-runtime.integration.test.ts
+ * Run: cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/routines-runtime.integration.test.ts
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';

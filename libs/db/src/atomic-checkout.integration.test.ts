@@ -4,7 +4,7 @@
  * Covers claim ordering, the taken_by exclusion (two claims never collide),
  * lease-expiry recovery, scoped release, and the schema-name guard.
  *
- * Run: npx vitest run --config vitest.integration.config.ts src/atomic-checkout.integration.test.ts
+ * Run: cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/atomic-checkout.integration.test.ts
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';

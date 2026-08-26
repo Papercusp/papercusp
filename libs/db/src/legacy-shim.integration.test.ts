@@ -4,7 +4,7 @@
  * placeholder translation (`?` → `$1`, `@name` → `$N` reordered), exercised here
  * end-to-end through .get/.all/.run plus the transaction wrapper.
  *
- * Run: npx vitest run --config vitest.integration.config.ts src/legacy-shim.integration.test.ts
+ * Run: cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/legacy-shim.integration.test.ts
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import postgres, { type Sql } from 'postgres';

@@ -4,7 +4,7 @@
  * property: `app.workspace_id` is set INSIDE the tx and is transaction-local,
  * the admin-bypass skips it, and a throwing callback rolls the tx back.
  *
- * Run: npx vitest run --config vitest.integration.config.ts src/workspace-context.integration.test.ts
+ * Run: cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/workspace-context.integration.test.ts
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import postgres, { type Sql } from 'postgres';

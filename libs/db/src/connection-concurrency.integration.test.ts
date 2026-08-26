@@ -17,7 +17,7 @@
  * samples `pg_stat_activity` to prove the number of backends THIS process's app
  * pool opens stays bounded while 300 logical queries are in flight.
  *
- * Run: npx vitest run --config vitest.integration.config.ts src/connection-concurrency.integration.test.ts
+ * Run: cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/connection-concurrency.integration.test.ts
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';

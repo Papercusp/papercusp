@@ -13,7 +13,7 @@
  * none), verbatim key binding, workspace scoping via the RLS GUC + WHERE,
  * payload filtering, and every graceful return-{} failure path.
  *
- * Run: npx vitest run src/spawn-env-from-pg.test.ts
+ * Run: cd libs/papercusp/packages/orchestrator && npx vitest run src/spawn-env-from-pg.test.ts
  */
 import { describe, test, beforeEach, afterEach, afterAll } from 'vitest';
 import assert from 'node:assert/strict';

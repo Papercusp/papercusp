@@ -3,7 +3,7 @@
  * (testcontainer; Docker required). Covers insert → list (ordering, due-filter,
  * workspace-scope) → consume (single/batch, idempotent, workspace defense).
  *
- * Run: npx vitest run --config vitest.integration.config.ts src/pending-events.integration.test.ts
+ * Run: cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/pending-events.integration.test.ts
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
