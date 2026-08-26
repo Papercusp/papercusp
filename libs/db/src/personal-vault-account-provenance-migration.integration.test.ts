@@ -24,10 +24,7 @@ function migrationPath(filename: string): string {
 }
 
 const personalVaultSql = readFileSync(migrationPath('874-personal-vault.sql'), 'utf8');
-const provenanceSql = readFileSync(
-  migrationPath('980-personal-vault-account-provenance.sql'),
-  'utf8',
-);
+const provenanceSql = readFileSync(migrationPath('980-personal-vault-account-provenance.sql'), 'utf8');
 
 const OWNER_A = '11111111-1111-4111-8111-111111111111';
 const OWNER_B = '22222222-2222-4222-8222-222222222222';
@@ -101,12 +98,14 @@ afterAll(async () => {
 
 describe('migration 980 — Personal Vault account provenance', () => {
   it('backfills only the unambiguous source for the same workspace and owner', async () => {
-    const rows = await sql<Array<{
-      title: string;
-      source_id: string | null;
-      provider_account_id: string | null;
-      dedupe_key: string;
-    }>>`
+    const rows = await sql<
+      Array<{
+        title: string;
+        source_id: string | null;
+        provider_account_id: string | null;
+        dedupe_key: string;
+      }>
+    >`
       SELECT title, source_id::text, provider_account_id, dedupe_key
         FROM harness_shared.personal_documents
        ORDER BY title`;
@@ -149,8 +148,7 @@ describe('migration 980 — Personal Vault account provenance', () => {
     await expect(sql`
       UPDATE harness_shared.personal_documents
          SET provider_account_id = ' '
-       WHERE title = 'ambiguous-calendar'`
-    ).rejects.toThrow(/personal_documents_provider_account_nonempty/);
+       WHERE title = 'ambiguous-calendar'`).rejects.toThrow(/personal_documents_provider_account_nonempty/);
   });
 
   it('is idempotent without double-prefixing dedupe keys and installs both lookup indexes', async () => {
