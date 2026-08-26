@@ -4,6 +4,7 @@
 -- items. A task may relate to any number of work-items, but exactly one `for`
 -- edge may carry checkpoint synchronization. Completion deliberately remains
 -- independent on both sides.
+-- FORWARD-COMPAT: This migration creates the table and its uniqueness contracts together; the deployed release has no reference to the new table, so it cannot depend on a pre-existing non-partial arbiter.
 --
 -- No top-level BEGIN/COMMIT: the migration runner wraps each file.
 
