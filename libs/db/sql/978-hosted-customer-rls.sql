@@ -90,6 +90,14 @@ $hosted_roles$;
 GRANT USAGE ON SCHEMA papercusp_auth, harness_shared
   TO hosted_owner, hosted_app, hosted_service;
 
+-- EI-21547015064885986: hosted_owner OWNS relations in both schemas below, and
+-- PostgreSQL requires the INCOMING owner to hold CREATE on a relation's schema
+-- before `ALTER TABLE ... OWNER TO` will accept it. A USAGE-only grant makes
+-- every ownership transfer that follows fail with "permission denied for schema
+-- papercusp_auth". Superusers bypass that check entirely, which is why this
+-- stayed invisible until the migration ran as the ordinary migration user.
+GRANT CREATE ON SCHEMA papercusp_auth, harness_shared TO hosted_owner;
+
 -- Make the actual owner non-superuser/non-BYPASSRLS. FORCE RLS therefore binds
 -- the owner too; hosted_app and hosted_service own no protected relation.
 ALTER TABLE papercusp_auth.hosted_users OWNER TO hosted_owner;
