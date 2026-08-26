@@ -1,51 +1,39 @@
 import { createFreshTestDb } from '@papercusp/test-config/pg';
 import postgres from 'postgres';
-import { readFileSync } from 'node:fs';
 
-const mig = readFileSync('sql/972-completion-authority-content-identity-floor.sql.DRAFT', 'utf8');
-const serverSql = mig.split('\n').filter((l) => !l.trim().startsWith('\\')).join('\n');
+const db = await createFreshTestDb({ prefix: 'micro' });
+const sql = postgres(db.url, { max: 1, onnotice: () => {} });
 
-const db = await createFreshTestDb({ prefix: 'flow' });
-const notices: string[] = [];
-const sql = postgres(db.url, { max: 1, onnotice: (n: any) => notices.push(n?.message ?? String(n)) });
+await sql.unsafe('CREATE TABLE public.p(k int primary key, v jsonb)');
+await sql.unsafe("INSERT INTO public.p VALUES (1,'{}'::jsonb)");
 
-await sql.unsafe('CREATE SCHEMA harness_shared');
-await sql.unsafe(`CREATE TABLE harness_shared.work_items (
-  workspace_id text NOT NULL DEFAULT 'papercusp-workspace',
-  harness_slug text NOT NULL DEFAULT 'papercusp',
-  feature_id   text,
-  item_kind    text NOT NULL DEFAULT 'feature',
-  status       text,
-  taken_by     text,
-  authority    text,
-  payload      jsonb,
-  updated_ts   bigint)`);
-
-await sql.unsafe(serverSql).simple();
-console.log('installed:', JSON.stringify(await sql`
-  SELECT tgname, tgenabled FROM pg_trigger
-   WHERE tgrelid='harness_shared.work_items'::regclass AND NOT tgisinternal`));
-
-const SHA_A = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+// A: param with explicit ::jsonb cast inside jsonb_build_object
 await sql.unsafe(
-  `INSERT INTO harness_shared.work_items (feature_id, status, authority, payload)
-   VALUES ($1, 'wip', NULL, $2::jsonb)`,
-  ['WI-X', '{}'],
+  "UPDATE public.p SET v = COALESCE(v,'{}'::jsonb) || jsonb_build_object('_ce', $1::jsonb) WHERE k=1",
+  [JSON.stringify({ a: 1 })],
 );
-console.log('after seed:', JSON.stringify(await sql`SELECT feature_id, authority FROM harness_shared.work_items`));
+console.log('A:', JSON.stringify(await sql`SELECT v, jsonb_typeof(v) AS t FROM public.p`));
 
+// C: fully literal
 await sql.unsafe(
-  `UPDATE harness_shared.work_items
-      SET status='done', authority='committed',
-          payload = COALESCE(payload,'{}'::jsonb) || jsonb_build_object('_completionEvidence', $2::jsonb)
-    WHERE feature_id=$1`,
-  ['WI-X', JSON.stringify({
-    summary: 'v', filesChanged: ['src/fix.ts'],
-    treeStamp: { repositoryRoot: '/repo', headSha: SHA_A },
-  })],
+  `UPDATE public.p SET v = '{}'::jsonb || jsonb_build_object('_ce', '{"a":3}'::jsonb) WHERE k=1`,
 );
-console.log('notices after update:', JSON.stringify(notices));
-console.log('after close:', JSON.stringify(await sql`SELECT feature_id, status, authority, payload FROM harness_shared.work_items`));
+console.log('C:', JSON.stringify(await sql`SELECT v FROM public.p`));
+
+// D: param cast outside build_object, merged with ||
+await sql.unsafe(
+  `UPDATE public.p SET v = COALESCE(v,'{}'::jsonb) || ($1::jsonb || jsonb_build_object('_ce2', 'x')) WHERE k=1`,
+  [JSON.stringify({ b: 2 })],
+);
+console.log('D:', JSON.stringify(await sql`SELECT v FROM public.p`));
+
+// E: EXACT closeAsCommitted shape with two params ($1 where, $2 evidence)
+await sql.unsafe(
+  `UPDATE public.p SET v = COALESCE(v,'{}'::jsonb) || jsonb_build_object('_completionEvidence', $2::jsonb) WHERE k=$1`,
+  [1, JSON.stringify({ summary: 'v', filesChanged: ['src/fix.ts'] })],
+);
+console.log('E:', JSON.stringify(await sql`SELECT v FROM public.p`));
+console.log('E typeof:', JSON.stringify(await sql`SELECT jsonb_typeof(v) AS t, v->'_completionEvidence' IS NOT NULL AS has_ev FROM public.p`));
 
 await sql.end({ timeout: 5 });
 await db.drop();

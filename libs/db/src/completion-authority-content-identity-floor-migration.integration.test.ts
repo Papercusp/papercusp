@@ -80,8 +80,8 @@ async function createWorkItemsFixture(): Promise<void> {
 async function seedOpenItem(id: string, payload: Record<string, unknown> = {}): Promise<void> {
   await sql.unsafe(
     `INSERT INTO harness_shared.work_items (feature_id, status, authority, payload)
-     VALUES ($1, 'wip', NULL, $2::jsonb)`,
-    [id, JSON.stringify(payload)],
+     VALUES ($1, 'wip', NULL, $2)`,
+    [id, sql.json(payload)],
   );
 }
 
@@ -91,9 +91,9 @@ async function closeAsCommitted(id: string, evidence: Record<string, unknown>): 
     `UPDATE harness_shared.work_items
         SET status = 'done',
             authority = 'committed',
-            payload = COALESCE(payload, '{}'::jsonb) || jsonb_build_object('_completionEvidence', $2::jsonb)
+            payload = COALESCE(payload, '{}'::jsonb) || jsonb_build_object('_completionEvidence', $2)
       WHERE feature_id = $1`,
-    [id, JSON.stringify(evidence)],
+    [id, sql.json(evidence)],
   );
   const rows = await sql.unsafe<{ authority: string }>(
     `SELECT authority FROM harness_shared.work_items WHERE feature_id = $1`,
@@ -190,9 +190,9 @@ describe('migration 972 — completion authority content-identity floor', () => 
     const [p] = await sql<{ p_null: boolean; p_ok: boolean; p_mismatch: boolean }[]>`
       SELECT harness_shared.completion_content_identity_proven(NULL::jsonb) AS p_null,
         harness_shared.completion_content_identity_proven(
-          ${JSON.stringify([{ path: 'a', workingTreeBlobSha: SHA_A, headBlobSha: SHA_A }])}::jsonb) AS p_ok,
+          ${sql.json([{ path: 'a', workingTreeBlobSha: SHA_A, headBlobSha: SHA_A }])}) AS p_ok,
         harness_shared.completion_content_identity_proven(
-          ${JSON.stringify([{ path: 'a', workingTreeBlobSha: SHA_B, headBlobSha: SHA_A }])}::jsonb) AS p_mismatch`;
+          ${sql.json([{ path: 'a', workingTreeBlobSha: SHA_B, headBlobSha: SHA_A }])}) AS p_mismatch`;
     expect(p, `proven()=${JSON.stringify(p)}`).toEqual({ p_null: false, p_ok: true, p_mismatch: false });
     expect(observed).toBe('proposed');
   });
@@ -252,9 +252,9 @@ describe('migration 972 — completion authority content-identity floor', () => 
     // to the floor even though authority itself did not transition.
     await sql.unsafe(
       `UPDATE harness_shared.work_items
-          SET payload = jsonb_build_object('_completionEvidence', $1::jsonb)
+          SET payload = jsonb_build_object('_completionEvidence', $1)
         WHERE feature_id = 'WI-CASE-LEGACY'`,
-      [JSON.stringify(evidenceWith(undefined))],
+      [sql.json(evidenceWith(undefined))],
     );
     const after = await sql.unsafe<{ authority: string }>(
       `SELECT authority FROM harness_shared.work_items WHERE feature_id = 'WI-CASE-LEGACY'`,
@@ -265,8 +265,8 @@ describe('migration 972 — completion authority content-identity floor', () => 
   it('polices direct INSERTs claiming committed too', async () => {
     await sql.unsafe(
       `INSERT INTO harness_shared.work_items (feature_id, status, authority, payload)
-       VALUES ('WI-CASE-INSERT', 'done', 'committed', jsonb_build_object('_completionEvidence', $1::jsonb))`,
-      [JSON.stringify(evidenceWith(undefined))],
+       VALUES ('WI-CASE-INSERT', 'done', 'committed', jsonb_build_object('_completionEvidence', $1))`,
+      [sql.json(evidenceWith(undefined))],
     );
     const rows = await sql.unsafe<{ authority: string }>(
       `SELECT authority FROM harness_shared.work_items WHERE feature_id = 'WI-CASE-INSERT'`,
@@ -275,6 +275,12 @@ describe('migration 972 — completion authority content-identity floor', () => 
   });
 
   it('re-applies idempotently', async () => {
-    await expect(applyMigrationFile(migration972Sql)).resolves.toBeDefined();
+    await applyMigrationFile(migration972Sql);
+    // The floor must survive its own re-application unchanged and enabled.
+    const rows = await sql<{ tgenabled: string }[]>`
+      SELECT tgenabled FROM pg_trigger
+       WHERE tgrelid = 'harness_shared.work_items'::regclass
+         AND tgname = 'completion_authority_floor_trg' AND NOT tgisinternal`;
+    expect(rows[0]?.tgenabled).toBe('O');
   });
 });
