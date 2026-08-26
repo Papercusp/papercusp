@@ -7200,6 +7200,7 @@ export const sessionTurnPartsInHarnessShared = harnessShared.table("session_turn
 	ingestedAt: timestamp("ingested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("session_turn_parts_ingested_idx").using("btree", table.ingestedAt.asc().nullsLast().op("timestamptz_ops")),
+	index("session_turn_parts_owner_ts_tool_use_idx").using("btree", table.owner.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(part_kind = 'tool_use'::text)`),
 	primaryKey({ columns: [table.partIdx, table.sessionId, table.sourceKind, table.workspaceId], name: "session_turn_parts_pkey"}),
 ]);
 
