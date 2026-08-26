@@ -55,6 +55,32 @@ CREATE TABLE IF NOT EXISTS harness_shared.personal_vault_import_jobs (
   )
 );
 
+-- An upload does not have its content digest/idempotency identity until the
+-- request body has finished streaming. Reserve aggregate capacity first so a
+-- crash (or concurrent requests) cannot consume unaccounted disk before the
+-- durable import-job row exists.
+CREATE TABLE IF NOT EXISTS harness_shared.personal_vault_import_uploads (
+  id                    uuid        NOT NULL DEFAULT gen_random_uuid(),
+  workspace_id          text        NOT NULL,
+  user_id               uuid        NOT NULL REFERENCES harness_shared.users(id) ON DELETE CASCADE,
+  filename              text        NOT NULL CHECK (length(btrim(filename)) BETWEEN 1 AND 1024),
+  storage_path          text        NOT NULL,
+  declared_size_bytes   bigint      CHECK (declared_size_bytes > 0),
+  reserved_bytes        bigint      NOT NULL CHECK (reserved_bytes > 0),
+  received_bytes        bigint      NOT NULL DEFAULT 0 CHECK (received_bytes >= 0),
+  expires_at            timestamptz NOT NULL,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  updated_at            timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (workspace_id, user_id, id),
+  UNIQUE (workspace_id, storage_path),
+  CONSTRAINT personal_vault_import_upload_declared_reservation CHECK (
+    declared_size_bytes IS NULL OR declared_size_bytes <= reserved_bytes
+  ),
+  CONSTRAINT personal_vault_import_upload_received_reservation CHECK (
+    received_bytes <= reserved_bytes
+  )
+);
+
 CREATE INDEX IF NOT EXISTS personal_vault_import_jobs_claim_idx
   ON harness_shared.personal_vault_import_jobs
     (workspace_id, status, next_attempt_at, created_at)
@@ -65,23 +91,42 @@ CREATE INDEX IF NOT EXISTS personal_vault_import_jobs_owner_idx
 CREATE INDEX IF NOT EXISTS personal_vault_import_jobs_retention_idx
   ON harness_shared.personal_vault_import_jobs (workspace_id, retained_until)
   WHERE storage_path IS NOT NULL;
+CREATE INDEX IF NOT EXISTS personal_vault_import_uploads_expiry_idx
+  ON harness_shared.personal_vault_import_uploads (workspace_id, expires_at);
+CREATE INDEX IF NOT EXISTS personal_vault_import_uploads_owner_idx
+  ON harness_shared.personal_vault_import_uploads
+    (workspace_id, user_id, created_at DESC);
 
 ALTER TABLE harness_shared.personal_vault_import_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harness_shared.personal_vault_import_uploads ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS personal_vault_import_jobs_workspace_isolation
   ON harness_shared.personal_vault_import_jobs;
 CREATE POLICY personal_vault_import_jobs_workspace_isolation
   ON harness_shared.personal_vault_import_jobs FOR ALL TO public
   USING (workspace_id = current_setting('app.workspace_id', true))
   WITH CHECK (workspace_id = current_setting('app.workspace_id', true));
+DROP POLICY IF EXISTS personal_vault_import_uploads_workspace_isolation
+  ON harness_shared.personal_vault_import_uploads;
+CREATE POLICY personal_vault_import_uploads_workspace_isolation
+  ON harness_shared.personal_vault_import_uploads FOR ALL TO public
+  USING (workspace_id = current_setting('app.workspace_id', true))
+  WITH CHECK (workspace_id = current_setting('app.workspace_id', true));
 
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON harness_shared.personal_vault_import_jobs TO harness_app, harness_admin;
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON harness_shared.personal_vault_import_uploads TO harness_app, harness_admin;
 
 COMMENT ON TABLE harness_shared.personal_vault_import_jobs IS
   'Owner/workspace/account-scoped Personal Vault archive jobs. Raw archives are deleted on completion/cancellation and after bounded failed-job retention.';
+COMMENT ON TABLE harness_shared.personal_vault_import_uploads IS
+  'Short-lived pre-job capacity reservations for partial encrypted Personal Vault uploads; promoted atomically into import jobs after finalization.';
 
 CREATE OR REPLACE TRIGGER emit_change_notify_trg
   AFTER INSERT OR UPDATE OR DELETE ON harness_shared.personal_vault_import_jobs
+  FOR EACH ROW EXECUTE FUNCTION harness_shared.emit_change_notify();
+CREATE OR REPLACE TRIGGER emit_change_notify_trg
+  AFTER INSERT OR UPDATE OR DELETE ON harness_shared.personal_vault_import_uploads
   FOR EACH ROW EXECUTE FUNCTION harness_shared.emit_change_notify();
 
 -- Ten-second cadence: one replay-safe worker claims at most one job per fire.
