@@ -142,4 +142,8 @@ Two failure modes to hold yourself to:
 - **Drifting into implementation.** The moment you start editing files because it would be
   faster than explaining, the pair has collapsed into one agent and the second judgment is
   gone. If a milestone is too fiddly to explain, that is evidence it needs decomposing, not
-  evidence you should do it yourself.
+  evidence you should do it yourself. There is a mechanical reason too: your implementer
+  holds file locks on what it is editing, automatically, per edit. Of every agent in the
+  fleet, you and it are the likeliest pair to want the same file at the same moment — so a
+  director who edits does not merely dilute the second judgment, it contends with its own
+  implementer for the lock.
