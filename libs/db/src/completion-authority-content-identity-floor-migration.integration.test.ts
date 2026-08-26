@@ -47,25 +47,22 @@ async function applyMigrationFile(raw: string): Promise<unknown> {
     .split('\n')
     .filter((line) => !line.trim().startsWith('\\'))
     .join('\n');
-  const before = notices.length;
   const results = (await sql.unsafe(serverSql).simple()) as { command?: string }[];
-  const commands = results.map((r) => r?.command ?? '<none>');
+  lastBatchCommands = JSON.stringify(results.map((r) => r?.command ?? '?'));
   // The simple protocol returns ONE result per top-level statement: BEGIN,
   // 2×CREATE FUNCTION, 2×COMMENT, DROP TRIGGER, CREATE TRIGGER, COMMIT.
-  expect(
-    commands,
-    `migration batch commands=${JSON.stringify(commands)} ` +
-      `notices=${JSON.stringify(notices.slice(before))}`,
-  ).toEqual([
-    'BEGIN',
-    'CREATE FUNCTION',
-    'COMMENT',
-    'CREATE FUNCTION',
-    'COMMENT',
-    'DROP TRIGGER',
-    'CREATE TRIGGER',
-    'COMMIT',
-  ]);
+  expect(lastBatchCommands).toEqual(
+    JSON.stringify([
+      'BEGIN',
+      'CREATE FUNCTION',
+      'COMMENT',
+      'CREATE FUNCTION',
+      'COMMENT',
+      'DROP TRIGGER',
+      'CREATE TRIGGER',
+      'COMMIT',
+    ]),
+  );
   return results;
 }
 
@@ -73,6 +70,8 @@ let db: MigratedTestDb;
 let sql: Sql;
 /** Server NOTICE/WARNING lines — the floor trigger announces every downgrade. */
 let notices: string[] = [];
+/** Command tags the migration batch reported — surfaced in precondition failures. */
+let lastBatchCommands = '[]';
 
 /** Minimal stand-in for harness_shared.work_items: just the columns the trigger reads/writes. */
 async function createWorkItemsFixture(): Promise<void> {
@@ -138,8 +137,8 @@ beforeAll(async () => {
   await createWorkItemsFixture();
   // A silently-absent or disabled trigger would make every keep-case below pass
   // vacuously, so the definition itself is part of the precondition. The probe
-  // dumps unqualified ground truth (any schema, any table, current db) so a
-  // mis-targeted DDL cannot hide behind an empty filtered result.
+  // dumps unqualified ground truth so a mis-targeted DDL cannot hide behind an
+  // empty filtered result, and carries the batch's own command tags.
   const [probe] = await sql<{
     db: string;
     triggers: { tgname: string; tbl: string; sch: string; tgenabled: string }[];
@@ -165,7 +164,7 @@ beforeAll(async () => {
         WHERE oid = 'harness_shared.work_items'::regclass) AS relkind`;
   expect(
     probe.triggers.map((t) => t.tgname),
-    `db=${probe.db} relkind=${probe.relkind} probes=${JSON.stringify(probe)} notices=${JSON.stringify(notices)}`,
+    `db=${probe.db} relkind=${probe.relkind} probes=${JSON.stringify(probe)} notices=${JSON.stringify(notices)} lastBatchCommands=${lastBatchCommands}`,
   ).toContain('completion_authority_floor_trg');
   expect(probe.fns.sort()).toEqual([
     'completion_content_identity_proven',
