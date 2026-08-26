@@ -48,15 +48,24 @@ async function applyMigrationFile(raw: string): Promise<unknown> {
     .filter((line) => !line.trim().startsWith('\\'))
     .join('\n');
   const before = notices.length;
-  const results = await sql.unsafe(serverSql).simple();
-  // The simple protocol returns ONE result per top-level statement. A short
-  // batch means the server stopped early — surface it instead of absorbing it.
+  const results = (await sql.unsafe(serverSql).simple()) as { command?: string }[];
+  const commands = results.map((r) => r?.command ?? '<none>');
+  // The simple protocol returns ONE result per top-level statement: BEGIN,
+  // 2×CREATE FUNCTION, 2×COMMENT, DROP TRIGGER, CREATE TRIGGER, COMMIT.
   expect(
-    Array.isArray(results) ? results.length : -1,
-    `migration batch produced ${JSON.stringify(results?.length)} results; ` +
-      `expected ≥6 (BEGIN, 2×CREATE FUNCTION, COMMENT×2, DROP TRIGGER, CREATE TRIGGER, COMMIT); ` +
-      `notices during apply: ${JSON.stringify(notices.slice(before))}`,
-  ).toBeGreaterThanOrEqual(8);
+    commands,
+    `migration batch commands=${JSON.stringify(commands)} ` +
+      `notices=${JSON.stringify(notices.slice(before))}`,
+  ).toEqual([
+    'BEGIN',
+    'CREATE FUNCTION',
+    'COMMENT',
+    'CREATE FUNCTION',
+    'COMMENT',
+    'DROP TRIGGER',
+    'CREATE TRIGGER',
+    'COMMIT',
+  ]);
   return results;
 }
 
@@ -127,23 +136,42 @@ beforeAll(async () => {
   });
   await sql.unsafe('CREATE SCHEMA harness_shared');
   await createWorkItemsFixture();
-  const installed = await sql<{ tgname: string; tgenabled: string; def: string }[]>`
-    SELECT tgname, tgenabled, pg_get_triggerdef(oid) AS def FROM pg_trigger
-     WHERE tgrelid = 'harness_shared.work_items'::regclass AND NOT tgisinternal`;
-  expect(
-    installed.map((t) => t.tgname),
-    `triggers present: ${JSON.stringify(installed)}`,
-  ).toContain('completion_authority_floor_trg');
   // A silently-absent or disabled trigger would make every keep-case below pass
-  // vacuously, so the definition itself is part of the precondition.
-  const fns = await sql<{ proname: string }[]>`
-    SELECT proname FROM pg_proc
-     WHERE oid IN ('harness_shared.completion_content_identity_proven(jsonb)'::regprocedure,
-                   'harness_shared.downgrade_unproven_committed_close()'::regprocedure)`;
-  expect(fns.map((f) => f.proname).sort()).toEqual([
+  // vacuously, so the definition itself is part of the precondition. The probe
+  // dumps unqualified ground truth (any schema, any table, current db) so a
+  // mis-targeted DDL cannot hide behind an empty filtered result.
+  const [probe] = await sql<{
+    db: string;
+    triggers: { tgname: string; tbl: string; sch: string; tgenabled: string }[];
+    fns: string[];
+    relkind: string;
+  }[]>`
+    SELECT current_database() AS db,
+      COALESCE(
+        (SELECT jsonb_agg(jsonb_build_object('tgname', t.tgname,
+                                             'tbl', c.relname,
+                                             'sch', n.nspname,
+                                             'tgenabled', t.tgenabled))
+           FROM pg_trigger t
+           JOIN pg_class c ON c.oid = t.tgrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE t.tgname LIKE 'completion%'),
+        '[]'::jsonb) AS triggers,
+      COALESCE(
+        (SELECT jsonb_agg(proname::text) FROM pg_proc
+          WHERE proname LIKE '%content_identity%' OR proname LIKE '%unproven%'),
+        '[]'::jsonb) AS fns,
+      (SELECT relkind::text FROM pg_class
+        WHERE oid = 'harness_shared.work_items'::regclass) AS relkind`;
+  expect(
+    probe.triggers.map((t) => t.tgname),
+    `db=${probe.db} relkind=${probe.relkind} probes=${JSON.stringify(probe)} notices=${JSON.stringify(notices)}`,
+  ).toContain('completion_authority_floor_trg');
+  expect(probe.fns.sort()).toEqual([
     'completion_content_identity_proven',
     'downgrade_unproven_committed_close',
   ]);
+  expect(probe.relkind).toBe('r');
 }, 120_000);
 
 afterAll(async () => {
