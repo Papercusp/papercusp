@@ -42,16 +42,28 @@ const migration972Sql = readFileSync(
  * query protocol — sends text to the server verbatim and `\` is a syntax
  * error there. Strip meta-command lines; BEGIN/COMMIT are real SQL and stay.
  */
-function applyMigrationFile(raw: string): Promise<unknown> {
+async function applyMigrationFile(raw: string): Promise<unknown> {
   const serverSql = raw
     .split('\n')
     .filter((line) => !line.trim().startsWith('\\'))
     .join('\n');
-  return sql.unsafe(serverSql).simple();
+  const before = notices.length;
+  const results = await sql.unsafe(serverSql).simple();
+  // The simple protocol returns ONE result per top-level statement. A short
+  // batch means the server stopped early — surface it instead of absorbing it.
+  expect(
+    Array.isArray(results) ? results.length : -1,
+    `migration batch produced ${JSON.stringify(results?.length)} results; ` +
+      `expected ≥6 (BEGIN, 2×CREATE FUNCTION, COMMENT×2, DROP TRIGGER, CREATE TRIGGER, COMMIT); ` +
+      `notices during apply: ${JSON.stringify(notices.slice(before))}`,
+  ).toBeGreaterThanOrEqual(8);
+  return results;
 }
 
 let db: MigratedTestDb;
 let sql: Sql;
+/** Server NOTICE/WARNING lines — the floor trigger announces every downgrade. */
+let notices: string[] = [];
 
 /** Minimal stand-in for harness_shared.work_items: just the columns the trigger reads/writes. */
 async function createWorkItemsFixture(): Promise<void> {
@@ -107,17 +119,23 @@ function evidenceWith(identity: unknown, filesChanged: string[] = ['src/fix.ts']
 
 beforeAll(async () => {
   db = await createFreshTestDb({ prefix: 'floor972' });
-  sql = postgres(db.url, { max: 1, onnotice: () => {} });
+  sql = postgres(db.url, {
+    max: 1,
+    onnotice: (n) => {
+      notices.push(typeof n === 'string' ? n : (n.message ?? String(n)));
+    },
+  });
   await sql.unsafe('CREATE SCHEMA harness_shared');
   await createWorkItemsFixture();
-  await applyMigrationFile(migration972Sql);
-
-  // Loud precondition: the migration must have left the floor INSTALLED. A
-  // silently-absent trigger would make every keep-case below pass vacuously.
-  const installed = await sql<{ tgname: string }[]>`
-    SELECT tgname FROM pg_trigger
+  const installed = await sql<{ tgname: string; tgenabled: string; def: string }[]>`
+    SELECT tgname, tgenabled, pg_get_triggerdef(oid) AS def FROM pg_trigger
      WHERE tgrelid = 'harness_shared.work_items'::regclass AND NOT tgisinternal`;
-  expect(installed.map((t) => t.tgname)).toContain('completion_authority_floor_trg');
+  expect(
+    installed.map((t) => t.tgname),
+    `triggers present: ${JSON.stringify(installed)}`,
+  ).toContain('completion_authority_floor_trg');
+  // A silently-absent or disabled trigger would make every keep-case below pass
+  // vacuously, so the definition itself is part of the precondition.
   const fns = await sql<{ proname: string }[]>`
     SELECT proname FROM pg_proc
      WHERE oid IN ('harness_shared.completion_content_identity_proven(jsonb)'::regprocedure,
@@ -135,8 +153,15 @@ afterAll(async () => {
 
 describe('migration 972 — completion authority content-identity floor', () => {
   it('downgrades a frozen-build close whose evidence has NO contentIdentity (the WI-41491 shape)', async () => {
+    notices.length = 0;
     await seedOpenItem('WI-CASE-MISSING');
-    expect(await closeAsCommitted('WI-CASE-MISSING', evidenceWith(undefined))).toBe('proposed');
+    const observed = await closeAsCommitted('WI-CASE-MISSING', evidenceWith(undefined));
+    // The trigger announces every downgrade; assert the announcement FIRST so a
+    // silent pass-through ("never fired") is distinguishable from a lost write.
+    expect(notices.join('\n'), `server notices: ${JSON.stringify(notices)}`).toMatch(
+      /downgraded committed->proposed/,
+    );
+    expect(observed).toBe('proposed');
   });
 
   it('downgrades null-blob, mismatched-blob, and empty-array identities', async () => {
