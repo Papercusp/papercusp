@@ -172,13 +172,28 @@ afterAll(async () => {
 describe('migration 972 — completion authority content-identity floor', () => {
   it('downgrades a frozen-build close whose evidence has NO contentIdentity (the WI-41491 shape)', async () => {
     notices.length = 0;
-    await seedOpenItem('WI-CASE-MISSING');
     const observed = await closeAsCommitted('WI-CASE-MISSING', evidenceWith(undefined));
-    // The trigger announces every downgrade; assert the announcement FIRST so a
-    // silent pass-through ("never fired") is distinguishable from a lost write.
-    expect(notices.join('\n'), `server notices: ${JSON.stringify(notices)}`).toMatch(
-      /downgraded committed->proposed/,
-    );
+    const [diag] = await sql<{ has_ev: boolean; pt: string; ev: string | null }[]>`
+      SELECT payload->'_completionEvidence' IS NOT NULL AS has_ev,
+             jsonb_typeof(payload) AS pt,
+             payload->'_completionEvidence'::text AS ev
+        FROM harness_shared.work_items WHERE feature_id = 'WI-CASE-MISSING'`;
+    expect(
+      { observed, notices, diag },
+      `diag=${JSON.stringify(diag)} notices=${JSON.stringify(notices)} observed=${observed}`,
+    ).toEqual({
+      observed: 'proposed',
+      notices: [expect.stringMatching(/downgraded committed->proposed/)],
+      diag: { has_ev: true, pt: 'object', ev: expect.any(String) },
+    });
+    // The SQL mirror must agree with the TS truth table on canonical shapes.
+    const [p] = await sql<{ p_null: boolean; p_ok: boolean; p_mismatch: boolean }[]>`
+      SELECT harness_shared.completion_content_identity_proven(NULL::jsonb) AS p_null,
+        harness_shared.completion_content_identity_proven(
+          ${JSON.stringify([{ path: 'a', workingTreeBlobSha: SHA_A, headBlobSha: SHA_A }])}::jsonb) AS p_ok,
+        harness_shared.completion_content_identity_proven(
+          ${JSON.stringify([{ path: 'a', workingTreeBlobSha: SHA_B, headBlobSha: SHA_A }])}::jsonb) AS p_mismatch`;
+    expect(p, `proven()=${JSON.stringify(p)}`).toEqual({ p_null: false, p_ok: true, p_mismatch: false });
     expect(observed).toBe('proposed');
   });
 
