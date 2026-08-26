@@ -24,6 +24,14 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 const MIGRATION_TRANSACTION_PREFIX = 'BEGIN;\nSET LOCAL statement_timeout = 0;\n';
+// WI-41781: a fresh-schema replay applies hundreds of migrations while many
+// integration forks share one Postgres container. Parallel SELECT/aggregate
+// plans buy nothing on that empty schema but each can request a dynamic shared-
+// memory segment; a fleet burst exhausted /dev/shm and aborted migration 859
+// before any test ran. Transaction-local keeps the production session default
+// untouched and scopes the guard to bulk (fresh-install/template) replay only.
+const BULK_MIGRATION_TRANSACTION_PREFIX =
+  `${MIGRATION_TRANSACTION_PREFIX}SET LOCAL max_parallel_workers_per_gather = 0;\n`;
 const MAX_STATEMENT_EXCERPT_CHARS = 320;
 
 const SCHEMA_MIGRATIONS_DDL = `
@@ -159,13 +167,14 @@ function statementExcerptAt(sql, offset) {
  *
  * @param {unknown} value
  * @param {string} ddl
+ * @param {string} [queryPrefix]
  * @returns {{ character: number, offset: number } | null}
  */
-function migrationPosition(value, ddl) {
+function migrationPosition(value, ddl, queryPrefix = MIGRATION_TRANSACTION_PREFIX) {
   const queryCharacter = Number.parseInt(String(value ?? ''), 10);
   if (!Number.isFinite(queryCharacter)) return null;
 
-  const character = queryCharacter - Array.from(MIGRATION_TRANSACTION_PREFIX).length;
+  const character = queryCharacter - Array.from(queryPrefix).length;
   const ddlCharacters = Array.from(ddl);
   if (character < 1 || character > ddlCharacters.length) return null;
   return {
@@ -186,15 +195,24 @@ function migrationPosition(value, ddl) {
  * @param {string} args.ddl Executed SQL after psql metacommands are stripped.
  * @param {boolean | undefined} args.dataDirWasReused
  * @param {boolean} args.haltBoot
+ * @param {string} [args.queryPrefix]
  * @returns {Error}
  */
-function wrapMigrationFailure({ cause, file, migrationPath, ddl, dataDirWasReused, haltBoot }) {
+function wrapMigrationFailure({
+  cause,
+  file,
+  migrationPath,
+  ddl,
+  dataDirWasReused,
+  haltBoot,
+  queryPrefix = MIGRATION_TRANSACTION_PREFIX,
+}) {
   const details = /** @type {{ message?: unknown, code?: unknown, position?: unknown }} */ (
     cause && typeof cause === 'object' ? cause : {}
   );
   const causeMessage = String(details.message ?? cause ?? 'unknown migration error');
   const sqlState = details.code ? ` (SQLSTATE ${String(details.code)})` : '';
-  const position = migrationPosition(details.position, ddl);
+  const position = migrationPosition(details.position, ddl, queryPrefix);
   const excerpt = position ? statementExcerptAt(ddl, position.offset) : null;
 
   const lines = [
@@ -332,7 +350,8 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     // which client/pool applies the file — even once a non-zero default is live.
     // ONLY statement_timeout: lock_timeout stays as the deliberate fail-fast guard.
     const migrationPath = resolve(sqlDir, f);
-    const migrationSql = `${MIGRATION_TRANSACTION_PREFIX}${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`;
+    const queryPrefix = bulkApply ? BULK_MIGRATION_TRANSACTION_PREFIX : MIGRATION_TRANSACTION_PREFIX;
+    const migrationSql = `${queryPrefix}${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`;
     try {
       await beforeApply?.(f, ddlRaw);
       await client.unsafe(migrationSql);
@@ -358,6 +377,7 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
         ddl,
         dataDirWasReused,
         haltBoot: !continueOnError,
+        queryPrefix,
       });
       if (continueOnError) {
         log(`FAILED ${failure.message}`);
