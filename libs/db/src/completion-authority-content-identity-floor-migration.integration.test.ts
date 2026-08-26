@@ -47,23 +47,11 @@ async function applyMigrationFile(raw: string): Promise<unknown> {
     .split('\n')
     .filter((line) => !line.trim().startsWith('\\'))
     .join('\n');
-  const results = (await sql.unsafe(serverSql).simple()) as { command?: string }[];
-  lastBatchCommands = JSON.stringify(results.map((r) => r?.command ?? '?'));
-  // The simple protocol returns ONE result per top-level statement: BEGIN,
-  // 2×CREATE FUNCTION, 2×COMMENT, DROP TRIGGER, CREATE TRIGGER, COMMIT.
-  expect(lastBatchCommands).toEqual(
-    JSON.stringify([
-      'BEGIN',
-      'CREATE FUNCTION',
-      'COMMENT',
-      'CREATE FUNCTION',
-      'COMMENT',
-      'DROP TRIGGER',
-      'CREATE TRIGGER',
-      'COMMIT',
-    ]),
-  );
-  return results;
+  await sql.unsafe(serverSql).simple();
+  // postgres.js .simple() does not surface per-statement tags here, so the
+  // batch's effect is proven by the catalog probe in beforeAll below, not by
+  // this call's return value.
+  lastBatchCommands = 'applied';
 }
 
 let db: MigratedTestDb;
@@ -163,10 +151,12 @@ beforeAll(async () => {
         '[]'::jsonb) AS fns,
       (SELECT relkind::text FROM pg_class
         WHERE oid = 'harness_shared.work_items'::regclass) AS relkind`;
+  const floor = probe.triggers.find((t) => t.tgname === 'completion_authority_floor_trg');
   expect(
-    probe.triggers.map((t) => t.tgname),
-    `db=${probe.db} relkind=${probe.relkind} probes=${JSON.stringify(probe)} notices=${JSON.stringify(notices)} lastBatchCommands=${lastBatchCommands}`,
-  ).toContain('completion_authority_floor_trg');
+    floor,
+    `triggers=${JSON.stringify(probe.triggers)} notices=${JSON.stringify(notices)} lastBatchCommands=${lastBatchCommands} db=${probe.db}`,
+  ).toBeDefined();
+  expect(floor?.tgenabled, `floor trigger state: ${JSON.stringify(floor)}`).toBe('O');
   expect(probe.fns.sort()).toEqual([
     'completion_content_identity_proven',
     'downgrade_unproven_committed_close',
