@@ -60,6 +60,8 @@ let sql: Sql;
 let notices: string[] = [];
 /** Command tags the migration batch reported — surfaced in precondition failures. */
 let lastBatchCommands = '[]';
+/** Backend pid that executed the most recent seed INSERT — pairs with the reader pid. */
+let lastSeedPid = -1;
 
 /** Minimal stand-in for harness_shared.work_items: just the columns the trigger reads/writes. */
 async function createWorkItemsFixture(): Promise<void> {
@@ -77,13 +79,17 @@ async function createWorkItemsFixture(): Promise<void> {
     )`);
 }
 
+
+
 async function seedOpenItem(id: string, payload: Record<string, unknown> = {}): Promise<void> {
-  const inserted = await sql.unsafe<{ feature_id: string }[]>(
+  const inserted = await sql.unsafe<{ feature_id: string; pid: number }[]>(
     `INSERT INTO harness_shared.work_items (feature_id, status, authority, payload)
-     VALUES ($1, 'wip', NULL, $2) RETURNING feature_id`,
+     VALUES ($1, 'wip', NULL, $2)
+     RETURNING feature_id, pg_backend_pid() AS pid`,
     [id, sql.json(payload)],
   );
   if (!inserted.length) throw new Error(`seedOpenItem(${id}): INSERT returned no row`);
+  lastSeedPid = inserted[0].pid;
 }
 
 /** Simulate the close write a frozen pre-guard build performs. */
@@ -173,13 +179,16 @@ afterAll(async () => {
 describe('migration 972 — completion authority content-identity floor', () => {
   it('downgrades a frozen-build close whose evidence has NO contentIdentity (the WI-41491 shape)', async () => {
     notices.length = 0;
-  const census = await sql<{ id: string | null }[]>`
-    SELECT feature_id AS id FROM harness_shared.work_items ORDER BY feature_id`;
+  const census = await sql<{ id: string | null; n: number; pid: number; db: string }[]>`
+    SELECT feature_id AS id,
+           count(*) OVER () AS n,
+           pg_backend_pid() AS pid,
+           current_database() AS db
+      FROM harness_shared.work_items ORDER BY feature_id`;
   expect(
     census.map((r) => r.id),
-    `pre-close census (looking for WI-CASE-MISSING)`,
+    `census=${JSON.stringify(census)} seedPid=${lastSeedPid} readerPid=${census[0]?.pid} db=${census[0]?.db}`,
   ).toContain('WI-CASE-MISSING');
-  const observed = await closeAsCommitted('WI-CASE-MISSING', evidenceWith(undefined));
     const [diag] = await sql<{ has_ev: boolean; pt: string; ev: string | null }[]>`
       SELECT payload->'_completionEvidence' IS NOT NULL AS has_ev,
              jsonb_typeof(payload) AS pt,
