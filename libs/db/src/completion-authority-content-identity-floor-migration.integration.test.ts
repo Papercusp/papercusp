@@ -36,6 +36,20 @@ const migration972Sql = readFileSync(
   'utf8',
 );
 
+/**
+ * The real migration runner speaks psql, so migration files may carry psql
+ * meta-commands (`\set ON_ERROR_STOP on`). postgres.js — even via the simple
+ * query protocol — sends text to the server verbatim and `\` is a syntax
+ * error there. Strip meta-command lines; BEGIN/COMMIT are real SQL and stay.
+ */
+function applyMigrationFile(raw: string): Promise<unknown> {
+  const serverSql = raw
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('\\'))
+    .join('\n');
+  return sql.unsafe(serverSql).simple();
+}
+
 let db: MigratedTestDb;
 let sql: Sql;
 
@@ -96,7 +110,7 @@ beforeAll(async () => {
   sql = postgres(db.url, { max: 1, onnotice: () => {} });
   await sql.unsafe('CREATE SCHEMA harness_shared');
   await createWorkItemsFixture();
-  await sql.unsafe(migration972Sql);
+  await applyMigrationFile(migration972Sql);
 }, 120_000);
 
 afterAll(async () => {
@@ -188,6 +202,6 @@ describe('migration 972 — completion authority content-identity floor', () => 
   });
 
   it('re-applies idempotently', async () => {
-    await expect(sql.unsafe(migration972Sql)).resolves.toBeDefined();
+    await expect(applyMigrationFile(migration972Sql)).resolves.toBeDefined();
   });
 });
