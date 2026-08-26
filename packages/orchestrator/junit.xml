@@ -1,481 +1,343 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<testsuites name="vitest tests" tests="159" failures="0" errors="0" time="1.313247909">
-    <testsuite name="src/invoke.test.ts" timestamp="2026-08-24T11:25:35.830Z" hostname="main-server-Precision-7865-Tower" tests="159" failures="0" errors="0" skipped="158" time="1.313247909">
-        <testcase classname="src/invoke.test.ts" name="splitCommand — whitespace-splits like bash unquoted" time="0">
-            <skipped/>
+<testsuites name="vitest tests" tests="168" failures="0" errors="0" time="14.164441716">
+    <testsuite name="src/core-spine-inverses.test.ts" timestamp="2026-08-26T08:56:11.221Z" hostname="main-server-Precision-7865-Tower" tests="8" failures="0" errors="0" skipped="0" time="0.013328806">
+        <testcase classname="src/core-spine-inverses.test.ts" name="core spine — every seeded write verb has its correction verb seeded too (EI-10946) &gt; seeding facts:assert requires seeding facts:retract (a standing fact folds VERBATIM into every orient forever; retract is its only exit)" time="0.002851517">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="codexContextConfigFromArgv — copies only a complete valid window pair" time="0">
-            <skipped/>
+        <testcase classname="src/core-spine-inverses.test.ts" name="core spine — every seeded write verb has its correction verb seeded too (EI-10946) &gt; seeding work_items:create requires seeding work_items:update (correcting a wrong BODY — what every future reader and brief inherits)" time="0.000661205">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="nextOuterActivityEchoAt — fires on the very first call (lastEchoAt=null)" time="0">
-            <skipped/>
+        <testcase classname="src/core-spine-inverses.test.ts" name="core spine — every seeded write verb has its correction verb seeded too (EI-10946) &gt; seeding work_items:create requires seeding work_items:comment (annotating an item without rewriting it)" time="0.000378094">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="nextOuterActivityEchoAt — suppressed within the throttle window" time="0">
-            <skipped/>
+        <testcase classname="src/core-spine-inverses.test.ts" name="core spine — every seeded write verb has its correction verb seeded too (EI-10946) &gt; seeding loop:arm requires seeding loop:end (an armed loop that cannot be stopped burns wakes forever)" time="0.000347455">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="nextOuterActivityEchoAt — fires again once the throttle window elapses" time="0">
-            <skipped/>
+        <testcase classname="src/core-spine-inverses.test.ts" name="core spine — every seeded write verb has its correction verb seeded too (EI-10946) &gt; seeding events:await requires seeding events:cancel (a registered await must be retractable before it fires)" time="0.000384295">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="nextOuterActivityEchoAt — respects a custom throttle window" time="0">
-            <skipped/>
+        <testcase classname="src/core-spine-inverses.test.ts" name="core spine — every seeded write verb has its correction verb seeded too (EI-10946) &gt; the specific verbs whose absence caused EI-10946 are in the spine" time="0.000474728">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveSpawnHome — shared-operator model returns the workspace HOME dir" time="0">
-            <skipped/>
+        <testcase classname="src/core-spine-inverses.test.ts" name="core spine — every seeded write verb has its correction verb seeded too (EI-10946) &gt; the spine stays SMALL — it is a seed, not a catalog (the whole point of trimming)" time="0.000445293">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveSpawnHome — null unless the shared-operator flag is set (dev / legacy inherit process HOME)" time="0">
-            <skipped/>
+        <testcase classname="src/core-spine-inverses.test.ts" name="core spine — every seeded write verb has its correction verb seeded too (EI-10946) &gt; has no duplicate entries (a hand-maintained list that has been edited many times)" time="0.000390197">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveSpawnHome — null when no workspace, when the dir is absent, or when the caller pinned HOME" time="0">
-            <skipped/>
+    </testsuite>
+    <testsuite name="src/invoke.test.ts" timestamp="2026-08-26T08:56:11.228Z" hostname="main-server-Precision-7865-Tower" tests="160" failures="0" errors="0" skipped="0" time="14.15111291">
+        <testcase classname="src/invoke.test.ts" name="splitCommand — whitespace-splits like bash unquoted" time="0.003420737">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="findPriorRunForIdempotency — reconstructs InvokeResult from a prior run (no re-spawn)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="codexContextConfigFromArgv — copies only a complete valid window pair" time="0.00082048">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="findPriorRunForIdempotency — returns null when no prior run (→ caller spawns)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="nextOuterActivityEchoAt — fires on the very first call (lastEchoAt=null)" time="0.000533982">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="findPriorRunForIdempotency — does NOT reuse an empty-output prior run (→ re-spawn so a transient empty recovers)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="nextOuterActivityEchoAt — suppressed within the throttle window" time="0.000460782">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="findPriorRunForIdempotency — whitespace-only output is also treated as empty (re-spawn)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="nextOuterActivityEchoAt — fires again once the throttle window elapses" time="0.000374347">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="findPriorRunForIdempotency — non-zero-exit prior run with salvaged output re-spawns" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="nextOuterActivityEchoAt — respects a custom throttle window" time="0.000382031">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — pulls &quot;result&quot; event from stream-json log" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveSpawnHome — shared-operator model returns the workspace HOME dir" time="0.00084659">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — salvages last assistant message when no result event (truncated stream)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveSpawnHome — null unless the shared-operator flag is set (dev / legacy inherit process HOME)" time="0.000631088">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — salvage appends trailing in-flight text deltas after the last complete message" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveSpawnHome — null when no workspace, when the dir is absent, or when the caller pinned HOME" time="0.000760345">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — deltas folded into a completed message are not double-counted" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="findPriorRunForIdempotency — reconstructs InvokeResult from a prior run (no re-spawn)" time="0.011437988">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — returns &quot;&quot; when the truncated stream carries no assistant text at all" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="findPriorRunForIdempotency — returns null when no prior run (→ caller spawns)" time="0.000495579">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — plain-text mode returns file as-is" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="findPriorRunForIdempotency — does NOT reuse an empty-output prior run (→ re-spawn so a transient empty recovers)" time="0.000394766">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — handles malformed lines mixed with valid result" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="findPriorRunForIdempotency — whitespace-only output is also treated as empty (re-spawn)" time="0.000417228">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolvePromptOverride — empty when nothing set" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="findPriorRunForIdempotency — non-zero-exit prior run with salvaged output re-spawns" time="0.000379776">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolvePromptOverride — inline string returned literally" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — pulls &quot;result&quot; event from stream-json log" time="0.001300188">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolvePromptOverrideWithStore — PG store value wins" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — salvages last assistant message when no result event (truncated stream)" time="0.000788299">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolvePromptOverrideWithStore — falls back to file when store empty" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — salvage appends trailing in-flight text deltas after the last complete message" time="0.000692556">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolvePromptOverrideWithStore — PG error degrades to file (no throw)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — deltas folded into a completed message are not double-counted" time="0.000683357">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolvePromptOverrideWithStore — no pg/ws/slug uses file resolver (CLI mode)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — returns &quot;&quot; when the truncated stream carries no assistant text at all" time="0.000609386">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolvePromptOverride — relative path read from stateDir" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — plain-text mode returns file as-is" time="0.000607763">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveTimeout — 0 when not set or invalid" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — handles malformed lines mixed with valid result" time="0.000663079">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveTimeout — positive integer passes through" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolvePromptOverride — empty when nothing set" time="0.000586983">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveSubstrateSelfSlug — prefers $HARNESS_SLUG (the registry slug) over the config slug (EI-787)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolvePromptOverride — inline string returned literally" time="0.000529363">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveSubstrateSelfSlug — falls back to the config slug when no env/registry slug resolves to it" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolvePromptOverrideWithStore — PG store value wins" time="0.000594248">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveModel — returns empty when missing (role without a committed tier default)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolvePromptOverrideWithStore — falls back to file when store empty" time="0.000442326">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveModel — returns named model" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolvePromptOverrideWithStore — PG error degrades to file (no throw)" time="0.000403072">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI-7)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolvePromptOverrideWithStore — no pg/ws/slug uses file resolver (CLI mode)" time="0.000409564">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveModel — per-spawn PAPERCUSP_SPAWN_MODEL outranks config AND env (queen-model-tier-selection P-001)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolvePromptOverride — relative path read from stateDir" time="0.000552087">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveModel — AGENT_MODELS / config OVERRIDE the committed default" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveTimeout — 0 when not set or invalid" time="0.000401458">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — end-to-end logs invoke message, returns rc + paths" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveTimeout — positive integer passes through" time="0.000228478">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — standalone OMP ignores inherited fleet sandbox flag without srt" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveSubstrateSelfSlug — prefers $HARNESS_SLUG (the registry slug) over the config slug (EI-787)" time="0.000375178">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — workspace-scoped fleet preflights missing srt before spawning" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveSubstrateSelfSlug — falls back to the config slug when no env/registry slug resolves to it" time="0.044603036">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — engine=loop uses the injected port and persists native NDJSON without spawning" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveModel — returns empty when missing (role without a committed tier default)" time="0.000410766">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — omp gateway selector stamps requestedModel without the provider prefix (EI-21332047585299058)" time="1.306619269">
+        <testcase classname="src/invoke.test.ts" name="resolveModel — returns named model" time="0.000293342">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — engine=loop fails loud when the operator did not inject a port" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI-7)" time="0.00052233">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — throws when no prompt file exists for role" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveModel — per-spawn PAPERCUSP_SPAWN_MODEL outranks config AND env (queen-model-tier-selection P-001)" time="0.000369988">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — produces .jsonl, .out, .err artifacts" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveModel — AGENT_MODELS / config OVERRIDE the committed default" time="0.000352765">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — a claude agent spawn carries the native-scheduler lockout in its argv" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — end-to-end logs invoke message, returns rc + paths" time="1.906384731">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="replaceClaudeBaseEnabled — off by default, on for 1/true/on (env parsing)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — standalone OMP ignores inherited fleet sandbox flag without srt" time="1.968074024">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — REPLACE_CLAUDE_BASE OFF (default): NO --system-prompt-file in the spawned argv (byte-identical)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — workspace-scoped fleet preflights missing srt before spawning" time="0.002891123">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — REPLACE_CLAUDE_BASE ON: claude spawn gets --system-prompt-file pointing at the replacement base" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — engine=loop uses the injected port and persists native NDJSON without spawning" time="1.40510378">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — omp message_end with assistant text" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — omp gateway selector stamps requestedModel without the provider prefix (EI-21332047585299058)" time="0.847605139">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — omp falls back to assistantMessageEvent.done" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — engine=loop fails loud when the operator did not inject a port" time="1.368016135">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — omp returns &quot;&quot; on no terminal event" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — throws when no prompt file exists for role" time="0.002346701">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — omp salvages text deltas when the stream died mid-message" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — produces .jsonl, .out, .err artifacts" time="1.218444803">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — claude-code with `claude -p` → claude-stream-json" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — a claude agent spawn carries the native-scheduler lockout in its argv" time="1.438973263">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — claude-code with override containing stream-json → none" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="replaceClaudeBaseEnabled — off by default, on for 1/true/on (env parsing)" time="0.001077793">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — claude-code with non-claude binary → none" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — REPLACE_CLAUDE_BASE OFF (default): NO --system-prompt-file in the spawned argv (byte-identical)" time="1.274404631">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — omp with `omp -p` → omp-json" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — REPLACE_CLAUDE_BASE ON: claude spawn gets --system-prompt-file pointing at the replacement base" time="1.217026845">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — omp with caller-supplied --mode → none" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — omp message_end with assistant text" time="0.001009271">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="streamFormatFlags — produces backend-specific flag set" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — omp falls back to assistantMessageEvent.done" time="0.000599147">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="summarizeInvocationStream — loop stream is green only with one terminal and balanced tools" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — omp returns &quot;&quot; on no terminal event" time="0.000567336">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="summarizeInvocationStream — omp requires its agent_end terminal and non-empty extracted text" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — omp salvages text deltas when the stream died mid-message" time="0.000534162">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveInvocationExitCode — terminal OMP provider errors override a zero child exit" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — claude-code with `claude -p` → claude-stream-json" time="0.000267231">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="invoke — OMP terminal provider error is returned as a failed invocation" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — claude-code with override containing stream-json → none" time="0.000289113">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="workerParityPromptHash — inline canary prompt stays pairable across per-run prompt tails" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — claude-code with non-claude binary → none" time="0.000237274">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — owned loop reads terminal done and salvages deltas without it" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — omp with `omp -p` → omp-json" time="0.000810632">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — empty config falls through to fallbackCmd" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — omp with caller-supplied --mode → none" time="0.000249828">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveAgentExecutionEngine — defaults subprocess; role loop beats default" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="streamFormatFlags — produces backend-specific flag set" time="0.000476181">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — default applies to every role" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="summarizeInvocationStream — loop stream is green only with one terminal and balanced tools" time="0.000601111">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — role override beats default" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="summarizeInvocationStream — omp requires its agent_end terminal and non-empty extracted text" time="0.000398212">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — extraArgs concatenate (default first, then role)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveInvocationExitCode — terminal OMP provider errors override a zero child exit" time="0.000438709">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — non-role uses only default extraArgs" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invoke — OMP terminal provider error is returned as a failed invocation" time="1.368290701">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — empty/whitespace agentCmd in role falls through" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="workerParityPromptHash — inline canary prompt stays pairable across per-run prompt tails" time="0.000662658">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveModel — aiBackend.roles.&lt;role&gt;.model wins over models.&lt;role&gt;" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="extractResult — owned loop reads terminal done and salvages deltas without it" time="0.000874093">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveModel — aiBackend.default.model used when no role override" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — empty config falls through to fallbackCmd" time="0.000285577">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveModel — legacy models.&lt;role&gt; still works when aiBackend absent" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveAgentExecutionEngine — defaults subprocess; role loop beats default" time="0.000460932">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="normalizeExplicitModelFlagsForBackend — codex command model flags accept chatgpt aliases" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — default applies to every role" time="0.000302619">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — claude-code + claude-stream + workspace → mcp-load + closed whitelist" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — role override beats default" time="0.00041259">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — allow-list is the safe dev kit + mcp__papercusp wildcard, no dangerous built-ins" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — extraArgs concatenate (default first, then role)" time="0.000350141">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — mug uses a compact explicit MCP subset, not the server wildcard" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — non-role uses only default extraArgs" time="0.000263754">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — cup uses a compact worker MCP subset, not the server wildcard" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveAgentForRole — empty/whitespace agentCmd in role falls through" time="0.00021974">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-loop-full-flow-reliability: unscoped null → &quot;Prompt is too long&quot;)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveModel — aiBackend.roles.&lt;role&gt;.model wins over models.&lt;role&gt;" time="0.000403943">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-weak-models WS1)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveModel — aiBackend.default.model used when no role override" time="0.000327467">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — the dedicated acceptance judge cannot edit; normal roles keep the full kit" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveModel — legacy models.&lt;role&gt; still works when aiBackend absent" time="0.000286067">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="P-005 — RoleToolScope narrows a role kit (allow replaces base, deny adds, composes w/ cutover)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="normalizeExplicitModelFlagsForBackend — codex command model flags accept chatgpt aliases" time="0.000651588">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — deny-list hard-removes the dangerous EXEMPT tools (dontAsk gating is non-uniform) + dangerous Bash" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — claude-code + claude-stream + workspace → mcp-load + closed whitelist" time="0.000518423">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — subagent-fanout deny carries BOTH tool names (Task pre-rename, Agent current — 2026-07-01)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — allow-list is the safe dev kit + mcp__papercusp wildcard, no dangerous built-ins" time="0.000331314">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — omp backend → [] (omp path-discovers .mcp.json)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — mug uses a compact explicit MCP subset, not the server wildcard" time="0.0004286">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — claude-code but no workspace → [] (no .mcp.json is written)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — cup uses a compact worker MCP subset, not the server wildcard" time="0.000379346">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — non-claude stream (stub binary) → []" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="invokeMcpToolNamesForRole — pipeline worker uses the bounded bee kit" time="0.000302499">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — user already passed --mcp-config → we do not double-add it (posture still applied)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-loop-full-flow-reliability: unscoped null → &quot;Prompt is too long&quot;)" time="0.000729747">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — user passed --dangerously-skip-permissions → they manage perms, we add none of the posture" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-weak-models WS1)" time="0.000712774">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — user set --permission-mode → we do not impose ours (whole posture deferred)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — the dedicated acceptance judge cannot edit; normal roles keep the full kit" time="0.000398743">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — user set --allowed-tools → we defer the whole posture to them" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="P-005 — RoleToolScope narrows a role kit (allow replaces base, deny adds, composes w/ cutover)" time="0.000646467">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetCapabilityOnlyEnabled — DEFAULT-OFF: only 1/true/on enable it" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — deny-list hard-removes the dangerous EXEMPT tools (dontAsk gating is non-uniform) + dangerous Bash" time="0.000240801">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="FLEET_CAPABILITY_REPLACED_TOOLS — exactly the native write/exec/fetch tools that have a capability:* replacement" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — subagent-fanout deny carries BOTH tool names (Task pre-rename, Agent current — 2026-07-01)" time="0.000216715">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — cutover OFF (default) leaves the full kit for a capability role" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — omp backend → [] (omp path-discovers .mcp.json)" time="0.000239909">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — cutover ON drops native write/exec/fetch for a capability role, keeps reads + wildcard" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — claude-code but no workspace → [] (no .mcp.json is written)" time="0.00024024">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — cutover ON does NOT strand a role without capability:* (keeps native tools)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — non-claude stream (stub binary) → []" time="0.000223117">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetDisallowedToolsForRole — cutover ON hard-denies the native write/exec/fetch tools (airtight, beyond the allow-list omission)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — user already passed --mcp-config → we do not double-add it (posture still applied)" time="0.000240701">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetDisallowedToolsForRole — acceptance judge always hard-denies Bash" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — user passed --dangerously-skip-permissions → they manage perms, we add none of the posture" time="0.000204061">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — under the cutover env, a confined role gets dontAsk + no native write/exec in allow-list + hard-deny (P-021 binding proof)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — user set --permission-mode → we do not impose ours (whole posture deferred)" time="0.000232875">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — cutover OFF (env unset) is byte-identical to today (no native tool removed)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — user set --allowed-tools → we defer the whole posture to them" time="0.000219229">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — cutover is CLAUDE-ONLY (P-032): omp/codex backends ignore it (their confinement is the server-side gate + their own sandbox)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetCapabilityOnlyEnabled — DEFAULT-OFF: only 1/true/on enable it" time="0.000447636">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — cutover hard-deny is a SECURITY INVARIANT: applied even when AGENT_CMD already manages the permission posture (review fix)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="FLEET_CAPABILITY_REPLACED_TOOLS — exactly the native write/exec/fetch tools that have a capability:* replacement" time="0.000296287">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — AGENT_CMD manages perms + cutover OFF → we add nothing (no spurious deny)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — cutover OFF (default) leaves the full kit for a capability role" time="0.000230321">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — AGENT_CMD manages perms + cutover ON but NON-capability role → no deny (not stranded, not confined)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — cutover ON drops native write/exec/fetch for a capability role, keeps reads + wildcard" time="0.000288152">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — SU carve-out (P-023/D-002): the cutover env is the gate, and ONLY spawnInvokeOnce (the fleet chokepoint) sets it — an SU session (no env) keeps native tools" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetAllowedToolsForRole — cutover ON does NOT strand a role without capability:* (keeps native tools)" time="0.00024036">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="ensureFleetGitHooksDir — writes an executable pre-push that exits non-zero" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetDisallowedToolsForRole — cutover ON hard-denies the native write/exec/fetch tools (airtight, beyond the allow-list omission)" time="0.00030795">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="gitConfigNoPushEnv — points git at the hooks dir via GIT_CONFIG (fresh env → index 0)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetDisallowedToolsForRole — acceptance judge always hard-denies Bash" time="0.000246793">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="gitConfigNoPushEnv — composes with a pre-existing GIT_CONFIG_COUNT (no clobber)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — under the cutover env, a confined role gets dontAsk + no native write/exec in allow-list + hard-deny (P-021 binding proof)" time="0.000422889">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="gitConfigNoPushEnv — junk GIT_CONFIG_COUNT falls back to index 0" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — cutover OFF (env unset) is byte-identical to today (no native tool removed)" time="0.000726791">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeSpawnEnvHardening — secondary env defense for claude-code (marketplace autoinstall off; autoupdater off)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — cutover is CLAUDE-ONLY (P-032): omp/codex backends ignore it (their confinement is the server-side gate + their own sandbox)" time="0.00030837">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeSpawnEnvHardening — no-op for non-claude backends (no plugin marketplace)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — cutover hard-deny is a SECURITY INVARIANT: applied even when AGENT_CMD already manages the permission posture (review fix)" time="0.000328339">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="writeSpawnClaudeConfig — isolated CLAUDE_CONFIG_DIR carries creds but NO plugins/marketplaces (P-012 leak fix)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — AGENT_CMD manages perms + cutover OFF → we add nothing (no spurious deny)" time="0.000286929">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="writeSpawnClaudeConfig — no creds in source home → unauthenticated config, no crash" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — AGENT_CMD manages perms + cutover ON but NON-capability role → no deny (not stranded, not confined)" time="0.000294995">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="writeSpawnClaudeConfig — cleanup preserves session transcripts to the flight recorder (mute-bee evidence)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeMcpArgs — SU carve-out (P-023/D-002): the cutover env is the gate, and ONLY spawnInvokeOnce (the fleet chokepoint) sets it — an SU session (no env) keeps native tools" time="0.000269285">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetSandboxSettingsForRole — cred reads + egress closed uniformly; Read/Edit deny rules present" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="ensureFleetGitHooksDir — writes an executable pre-push that exits non-zero" time="0.000407571">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetSandboxSettingsForRole — cwd-write is uniform (P-004: sandbox cwd is always writable, per-role write tightening not achievable here)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="gitConfigNoPushEnv — points git at the hooks dir via GIT_CONFIG (fresh env → index 0)" time="0.000233707">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveFleetAllowedDomains — base list (registries + common toolchain CDNs) by default (no env)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="gitConfigNoPushEnv — composes with a pre-existing GIT_CONFIG_COUNT (no clobber)" time="0.000265749">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveFleetAllowedDomains — APPEND var adds deployment hosts (comma/space-separated, trimmed, deduped, base kept)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="gitConfigNoPushEnv — junk GIT_CONFIG_COUNT falls back to index 0" time="0.000197358">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="resolveFleetAllowedDomains — DENY_ALL_EGRESS lockdown → [] and wins over the append var" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeSpawnEnvHardening — secondary env defense for claude-code (marketplace autoinstall off; autoupdater off)" time="0.000218458">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetSandboxSettingsForRole — emits the env-resolved allowlist (deployment extension flows through)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeSpawnEnvHardening — no-op for non-claude backends (no plugin marketplace)" time="0.000197448">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetSandboxEnabled — DEFAULT-ON (P-013): on when unset, opt out only with 0/false/off" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="writeSpawnClaudeConfig — isolated CLAUDE_CONFIG_DIR carries creds but NO plugins/marketplaces (P-012 leak fix)" time="0.001571738">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetSandboxCacheEnv — redirects pkg-manager caches under the allow-listed cache root (D-013/P-014: $HOME is RO under the sandbox)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="writeSpawnClaudeConfig — no creds in source home → unauthenticated config, no crash" time="0.000631038">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetSandboxCacheEnv — per-project keying: different cwds get distinct cache dirs (no cross-project poisoning)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="writeSpawnClaudeConfig — cleanup preserves session transcripts to the flight recorder (mute-bee evidence)" time="0.002535283">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetSandboxSettingsForRole — allowWrite includes cwd AND the cache root (so a real install can write its cache)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetSandboxSettingsForRole — cred reads + egress closed uniformly; Read/Edit deny rules present" time="0.000568648">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="backendUsesSrt — codex + omp wrapped; claude-code uses its own sandbox" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetSandboxSettingsForRole — cwd-write is uniform (P-004: sandbox cwd is always writable, per-role write tightening not achievable here)" time="0.00043901">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetSrtModelDomains — codex gets the OpenAI hosts; omp relies on loopback (cloud via env)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveFleetAllowedDomains — base list (registries + common toolchain CDNs) by default (no env)" time="0.000296077">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="buildFleetSrtSettings — codex: egress allowlist covers operator + model + registries; writes confined; creds hidden" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveFleetAllowedDomains — APPEND var adds deployment hosts (comma/space-separated, trimmed, deduped, base kept)" time="0.000631399">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="buildFleetSrtSettings — omp: ~/.omp + PI_CODING_AGENT_DIR writable; loopback model reachable; no allowRead (dirs outside denyRead)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="resolveFleetAllowedDomains — DENY_ALL_EGRESS lockdown → [] and wins over the append var" time="0.000270137">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="buildFleetSrtSettings — multiple agentHomes; no allowRead when none under a denied dir" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetSandboxSettingsForRole — emits the env-resolved allowlist (deployment extension flows through)" time="0.00026677">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="wrapSpawnWithSrt — codex+enabled+srt → srt -s … -c with no_proxy cleared + exec codex; prompt still on stdin" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetSandboxEnabled — DEFAULT-ON (P-013): on when unset, opt out only with 0/false/off" time="0.000298482">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="wrapSpawnWithSrt — omp+enabled+srt → wrapped (no_proxy cleared + exec omp; @promptfile arg preserved)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetSandboxCacheEnv — redirects pkg-manager caches under the allow-listed cache root (D-013/P-014: $HOME is RO under the sandbox)" time="0.000403963">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="wrapSpawnWithSrt — passthrough for claude / disabled / missing srt" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetSandboxCacheEnv — per-project keying: different cwds get distinct cache dirs (no cross-project poisoning)" time="0.00031869">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeSandboxArgs — enabled + claude-code → --settings with the per-role sandbox block" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetSandboxSettingsForRole — allowWrite includes cwd AND the cache root (so a real install can write its cache)" time="0.000239318">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeSandboxArgs — disabled flag → [] (off by default)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="backendUsesSrt — codex + omp wrapped; claude-code uses its own sandbox" time="0.000300305">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeSandboxArgs — non-claude backend → [] (no-op for omp/codex)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetSrtModelDomains — codex gets the OpenAI hosts; omp relies on loopback (cloud via env)" time="0.000284544">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeSandboxArgs — no workspace → []" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="buildFleetSrtSettings — codex: egress allowlist covers operator + model + registries; writes confined; creds hidden" time="0.000567687">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="claudeSandboxArgs — user already passed --settings → defer to them" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="buildFleetSrtSettings — omp: ~/.omp + PI_CODING_AGENT_DIR writable; loopback model reachable; no allowRead (dirs outside denyRead)" time="0.000328319">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — codex with `codex` → codex-json" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="buildFleetSrtSettings — multiple agentHomes; no allowRead when none under a denied dir" time="0.000274966">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — codex with bare `exec` subcommand remains managed" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="wrapSpawnWithSrt — codex+enabled+srt → srt -s … -c with no_proxy cleared + exec codex; prompt still on stdin" time="0.000439001">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — codex with explicit `exec --json` subcommand → none (user-driven stream)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="wrapSpawnWithSrt — omp+enabled+srt → wrapped (no_proxy cleared + exec omp; @promptfile arg preserved)" time="0.000300686">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="streamFormatFlags — codex-json carries exec + json only (sandbox decided by codexSandboxArgs)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="wrapSpawnWithSrt — passthrough for claude / disabled / missing srt" time="0.00028707">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="codexSandboxArgs — always danger-full-access; the flag does NOT switch codex (workspace-write cancels MCP — P-012/D-009)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeSandboxArgs — enabled + claude-code → --settings with the per-role sandbox block" time="0.000908749">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="codexSandboxArgs — non-codex → [] (no-op for claude/omp)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeSandboxArgs — disabled flag → [] (off by default)" time="0.000229139">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="codexSandboxArgs — user set their own -s/--sandbox/bypass → defer to them" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeSandboxArgs — non-claude backend → [] (no-op for omp/codex)" time="0.000205333">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetOmpToolsArgs — cutover ON for a capability role → --tools restricts omp to read-only natives" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeSandboxArgs — no workspace → []" time="0.000199913">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetOmpToolsArgs — cutover OFF (default) → [] (omp keeps all native tools)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="claudeSandboxArgs — user already passed --settings → defer to them" time="0.000222135">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetOmpToolsArgs — non-omp backend → [] (claude/codex unaffected)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — codex with `codex` → codex-json" time="0.000367233">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetOmpToolsArgs — cutover ON but role has no capability:* → [] (never strand an auxiliary role)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — codex with bare `exec` subcommand remains managed" time="0.000284395">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="fleetOmpToolsArgs — user set --tools / --no-tools in AGENT_CMD → defer to them" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="selectStreamFormat — codex with explicit `exec --json` subcommand → none (user-driven stream)" time="0.000205704">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — codex-json concatenates agent_message item.completed text" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="streamFormatFlags — codex-json carries exec + json only (sandbox decided by codexSandboxArgs)" time="0.000222866">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="extractResult — codex-json returns &quot;&quot; when no agent_message present" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="codexSandboxArgs — always danger-full-access; the flag does NOT switch codex (workspace-write cancels MCP — P-012/D-009)" time="0.000369527">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="scopeSpawnEnvForRole — all roles drop operator PG/DB secrets, keep PATH/HOME" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="codexSandboxArgs — non-codex → [] (no-op for claude/omp)" time="0.000232305">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="scopeSpawnEnvForRole — auditor additionally strips ALL search-provider keys, keeps PATH/HOME" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="codexSandboxArgs — user set their own -s/--sandbox/bypass → defer to them" time="0.000220141">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="scopeSpawnEnvForRole — returns a COPY; never mutates the input" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetOmpToolsArgs — cutover ON for a capability role → --tools restricts omp to read-only natives" time="0.00043908">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="scopeSpawnEnvForRole — non-auditor review roles behave like worker (keep search keys, strip PG/DB)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetOmpToolsArgs — cutover OFF (default) → [] (omp keeps all native tools)" time="0.000199001">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="SEARCH_PROVIDER_ENV_KEYS — mirrors the apps/operator SEARCH_PROVIDERS canonical names" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetOmpToolsArgs — non-omp backend → [] (claude/codex unaffected)" time="0.000242925">
         </testcase>
-        <testcase classname="src/invoke.test.ts" name="healSandboxZeroByteManifest — repairs ONLY an existing 0-byte package.json (the sandbox mask artifact)" time="0">
-            <skipped/>
+        <testcase classname="src/invoke.test.ts" name="fleetOmpToolsArgs — cutover ON but role has no capability:* → [] (never strand an auxiliary role)" time="0.00024055">
+        </testcase>
+        <testcase classname="src/invoke.test.ts" name="fleetOmpToolsArgs — user set --tools / --no-tools in AGENT_CMD → defer to them" time="0.000286178">
+        </testcase>
+        <testcase classname="src/invoke.test.ts" name="extractResult — codex-json concatenates agent_message item.completed text" time="0.000865136">
+        </testcase>
+        <testcase classname="src/invoke.test.ts" name="extractResult — codex-json returns &quot;&quot; when no agent_message present" time="0.000578668">
+        </testcase>
+        <testcase classname="src/invoke.test.ts" name="scopeSpawnEnvForRole — all roles drop operator PG/DB secrets, keep PATH/HOME" time="0.000263604">
+        </testcase>
+        <testcase classname="src/invoke.test.ts" name="scopeSpawnEnvForRole — auditor additionally strips ALL search-provider keys, keeps PATH/HOME" time="0.00044445">
+        </testcase>
+        <testcase classname="src/invoke.test.ts" name="scopeSpawnEnvForRole — returns a COPY; never mutates the input" time="0.000361852">
+        </testcase>
+        <testcase classname="src/invoke.test.ts" name="scopeSpawnEnvForRole — non-auditor review roles behave like worker (keep search keys, strip PG/DB)" time="0.000342996">
+        </testcase>
+        <testcase classname="src/invoke.test.ts" name="SEARCH_PROVIDER_ENV_KEYS — mirrors the apps/operator SEARCH_PROVIDERS canonical names" time="0.000297049">
+        </testcase>
+        <testcase classname="src/invoke.test.ts" name="healSandboxZeroByteManifest — repairs ONLY an existing 0-byte package.json (the sandbox mask artifact)" time="0.002317235">
         </testcase>
     </testsuite>
 </testsuites>
