@@ -18,42 +18,74 @@
 -- Idempotent: roles are normalized, policies/triggers are replaced, grants are
 -- re-stamped, and all table/role post-conditions are re-checked on every run.
 
+-- Role provisioning + attribute normalization.
+--
+-- EI-21547015064885986: both halves below are privilege-sensitive in ways that
+-- made the original form unrunnable by ANY non-superuser migration user, so it
+-- failed identically on every boot and blocked the migration ledger behind it:
+--   * CREATE ROLE requires CREATEROLE, and PostgreSQL checks that privilege
+--     BEFORE the duplicate-name check. An unprivileged user therefore fails here
+--     even when the role already exists -- `EXCEPTION WHEN duplicate_object`
+--     never runs, so pre-creating the roles does NOT rescue it.
+--   * ALTER ROLE ... NOSUPERUSER / NOREPLICATION / NOBYPASSRLS requires
+--     SUPERUSER unconditionally, even when the attribute is already correct.
+--
+-- So this block creates what it may, re-stamps what it may, and otherwise
+-- VERIFIES the safety post-condition and fails loudly. The security intent is
+-- unchanged -- an unsafe hosted_* role is still never silently tolerated; only
+-- the enforcement mechanism degrades from writing to checking.
 DO $hosted_roles$
+DECLARE
+  target_role text;
+  attrs       constant text :=
+    'NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT '
+    'NOREPLICATION NOBYPASSRLS';
+  is_super    boolean;
+  can_create  boolean;
+  unsafe      text;
 BEGIN
-  BEGIN
-    CREATE ROLE hosted_owner
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
-      NOREPLICATION NOBYPASSRLS;
-  EXCEPTION WHEN duplicate_object THEN NULL;
-  END;
+  SELECT rolsuper, rolsuper OR rolcreaterole
+    INTO is_super, can_create
+    FROM pg_roles
+   WHERE rolname = current_user;
 
-  BEGIN
-    CREATE ROLE hosted_app
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
-      NOREPLICATION NOBYPASSRLS;
-  EXCEPTION WHEN duplicate_object THEN NULL;
-  END;
+  FOREACH target_role IN ARRAY
+    ARRAY['hosted_owner', 'hosted_app', 'hosted_service']
+  LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = target_role) THEN
+      IF NOT can_create THEN
+        RAISE EXCEPTION
+          'migration 978: role % does not exist and migration user % lacks CREATEROLE',
+          target_role, current_user
+          USING HINT =
+            'Provision it once as a superuser: CREATE ROLE '
+            || quote_ident(target_role) || ' ' || attrs || ';';
+      END IF;
+      EXECUTE format('CREATE ROLE %I %s', target_role, attrs);
+    ELSIF is_super THEN
+      -- Existing roles are not trusted to retain safe attributes. Re-stamp them
+      -- every run so a prior manual grant cannot silently defeat FORCE RLS.
+      EXECUTE format('ALTER ROLE %I %s', target_role, attrs);
+    END IF;
+  END LOOP;
 
-  BEGIN
-    CREATE ROLE hosted_service
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
-      NOREPLICATION NOBYPASSRLS;
-  EXCEPTION WHEN duplicate_object THEN NULL;
-  END;
+  -- Post-condition, checked on EVERY run at EVERY privilege level: a hosted_*
+  -- role that can log in, bypass RLS, replicate, or self-elevate would defeat
+  -- the FORCE RLS boundary this migration exists to establish.
+  SELECT string_agg(rolname, ', ' ORDER BY rolname)
+    INTO unsafe
+    FROM pg_roles
+   WHERE rolname IN ('hosted_owner', 'hosted_app', 'hosted_service')
+     AND (rolsuper OR rolbypassrls OR rolreplication OR rolcanlogin
+          OR rolcreatedb OR rolcreaterole OR rolinherit);
+  IF unsafe IS NOT NULL THEN
+    RAISE EXCEPTION
+      'migration 978: hosted_* role(s) carry unsafe attributes: %', unsafe
+      USING HINT =
+        'Re-stamp as a superuser: ALTER ROLE <role> ' || attrs || ';';
+  END IF;
 END
 $hosted_roles$;
-
--- Existing roles are not trusted to retain safe attributes. Normalize every
--- migration run so a prior manual grant cannot silently defeat FORCE RLS.
-ALTER ROLE hosted_owner
-  NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
-  NOREPLICATION NOBYPASSRLS;
-ALTER ROLE hosted_app
-  NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
-  NOREPLICATION NOBYPASSRLS;
-ALTER ROLE hosted_service
-  NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
-  NOREPLICATION NOBYPASSRLS;
 
 GRANT USAGE ON SCHEMA papercusp_auth, harness_shared
   TO hosted_owner, hosted_app, hosted_service;
