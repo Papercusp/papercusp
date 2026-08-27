@@ -59,6 +59,21 @@ export interface ResourceAcquireParams {
   ttlSec: number;
 }
 
+/** A pending exclusive request. Queue rows are requests, not leases. */
+export interface ResourceExclusiveQueueEntry {
+  ticket_id: string;
+  resource: string;
+  owner: string;
+  owner_label: string | null;
+  reason: string;
+  ttl_sec: number;
+  queued_ts: Date;
+  expires_ts: Date;
+}
+
+/** How long an exclusive request may remain queued before it is abandoned. */
+const EXCLUSIVE_QUEUE_TTL_SEC = 30 * 60;
+
 export type ResourceAcquireResult =
   | {
       ok: true;
@@ -85,7 +100,114 @@ export type ResourceAcquireResult =
         | 'held_exclusive' // exclusive held by another owner (or caller already holds exclusive)
         | 'at_capacity'; // shared blocked: the resource's max_holders semaphore is full (D-008)
       holders: ResourceHolder[];
+      /** Stable request ticket when this exclusive was queued behind another. */
+      queue_ticket?: string;
+      /** One-based position among the live requests for this resource. */
+      queue_position?: number;
     };
+
+async function readLiveExclusiveQueue(
+  sql: Sql,
+  coordinationDomain: string,
+  resource?: string,
+): Promise<ResourceExclusiveQueueEntry[]> {
+  return resource
+    ? sql<ResourceExclusiveQueueEntry[]>`
+        SELECT ticket_id::text AS ticket_id, resource, owner, owner_label, reason,
+               ttl_sec, queued_ts, expires_ts
+          FROM agent_resource_exclusive_queue
+         WHERE coordination_domain = ${coordinationDomain}
+           AND resource = ${resource}
+           AND expires_ts > clock_timestamp()
+         ORDER BY queued_ts ASC, ticket_id ASC
+      `
+    : sql<ResourceExclusiveQueueEntry[]>`
+        SELECT ticket_id::text AS ticket_id, resource, owner, owner_label, reason,
+               ttl_sec, queued_ts, expires_ts
+          FROM agent_resource_exclusive_queue
+         WHERE coordination_domain = ${coordinationDomain}
+           AND expires_ts > clock_timestamp()
+         ORDER BY resource ASC, queued_ts ASC, ticket_id ASC
+      `;
+}
+
+/**
+ * Enqueue (or refresh) an exclusive request without moving it to the back of
+ * the line. The unique owner key makes retries idempotent; queued_ts remains
+ * the original admission time while the lease metadata and abandonment TTL
+ * are refreshed.
+ */
+export async function enqueueResourceExclusive(
+  tx: Sql,
+  params: {
+    coordinationDomain: string;
+    resource: string;
+    owner: string;
+    ownerLabel: string | null;
+    reason: string;
+    ttlSec: number;
+  },
+): Promise<ResourceExclusiveQueueEntry> {
+  const { coordinationDomain, resource, owner, ownerLabel, reason, ttlSec } = params;
+  const queueTtlText = `${EXCLUSIVE_QUEUE_TTL_SEC} seconds`;
+  const rows = await tx<ResourceExclusiveQueueEntry[]>`
+    INSERT INTO agent_resource_exclusive_queue
+      (coordination_domain, resource, owner, owner_label, reason, ttl_sec, expires_ts)
+    VALUES
+      (${coordinationDomain}, ${resource}, ${owner}, ${ownerLabel}, ${reason}, ${ttlSec},
+       clock_timestamp() + ${queueTtlText}::interval)
+    ON CONFLICT (coordination_domain, resource, owner) DO UPDATE
+      SET owner_label = EXCLUDED.owner_label,
+          reason      = EXCLUDED.reason,
+          ttl_sec     = EXCLUDED.ttl_sec,
+          expires_ts  = EXCLUDED.expires_ts
+    RETURNING ticket_id::text AS ticket_id, resource, owner, owner_label, reason,
+              ttl_sec, queued_ts, expires_ts
+  `;
+  return rows[0];
+}
+
+/** Remove a caller's pending request after it has been admitted. */
+export async function clearResourceExclusiveQueue(
+  tx: Sql,
+  coordinationDomain: string,
+  resource: string,
+  owner: string,
+): Promise<void> {
+  await tx`
+    DELETE FROM agent_resource_exclusive_queue
+     WHERE coordination_domain = ${coordinationDomain}
+       AND resource = ${resource}
+       AND owner = ${owner}
+  `;
+}
+
+/** Remove abandoned requests and return how many queue tickets were collected. */
+export async function sweepResourceExclusiveQueue(
+  tx: Sql,
+  coordinationDomain: string,
+): Promise<number> {
+  const rows = await tx<Array<{ ticket_id: string }>>`
+    DELETE FROM agent_resource_exclusive_queue
+     WHERE coordination_domain = ${coordinationDomain}
+       AND expires_ts <= clock_timestamp()
+    RETURNING ticket_id::text AS ticket_id
+  `;
+  return rows.length;
+}
+
+/** Run the SQL head-admission cascade for this coordination domain. */
+export async function promoteResourceExclusiveQueue(
+  tx: Sql,
+  coordinationDomain: string,
+): Promise<void> {
+  await tx`SELECT resource_grant_cascade(${coordinationDomain}, clock_timestamp())`;
+}
+
+function queuePosition(queue: ResourceExclusiveQueueEntry[], ticketId: string): number | undefined {
+  const index = queue.findIndex((entry) => entry.ticket_id === ticketId);
+  return index < 0 ? undefined : index + 1;
+}
 
 async function readLiveHolders(
   tx: Sql,
@@ -119,13 +241,14 @@ export async function sweepResourceExpired(
        AND expires_ts <= clock_timestamp()
     RETURNING resource
   `;
+  const queueRows = await sweepResourceExclusiveQueue(tx, coordinationDomain);
   // Also GC abandoned waiters (an agent that was refused and never retried).
   await tx`
     DELETE FROM agent_resource_waiters
      WHERE coordination_domain = ${coordinationDomain}
        AND expires_ts <= clock_timestamp()
   `;
-  return rows.length > 0;
+  return rows.length > 0 || queueRows > 0;
 }
 
 // ───────── Waiter ledger (A4 — targeted "resource back up" broadcast) ─────────
@@ -193,7 +316,7 @@ export async function readAndClearResourceWaiters(
 export async function pokeResource(tx: Sql, coordinationDomain: string): Promise<void> {
   await tx`SET LOCAL statement_timeout = '500ms'`;
   await sweepResourceExpired(tx, coordinationDomain);
-  await tx`SELECT resource_grant_cascade(${coordinationDomain}, clock_timestamp())`;
+  await promoteResourceExclusiveQueue(tx, coordinationDomain);
 }
 
 /**
@@ -224,17 +347,24 @@ export async function tryAcquireResource(
   const maxHolders = reg[0].max_holders;
 
   // Clean expired holders first so conflict + drain checks see live state.
-  const swept = await sweepResourceExpired(tx, cd);
-  if (swept) await tx`SELECT resource_grant_cascade(${cd}, clock_timestamp())`;
+  await sweepResourceExpired(tx, cd);
+  // Queue rows may have been left by a prior refused acquire, and a release
+  // may have happened before this retry reached the transaction. Re-run the
+  // idempotent cascade so the current FIFO head is visible before gating.
+  await promoteResourceExclusiveQueue(tx, cd);
 
   const holders = await readLiveHolders(tx, cd, resource);
+  const queue = await readLiveExclusiveQueue(tx, cd, resource);
   const ttlText = `${ttlSec} seconds`;
 
   if (mode === 'shared') {
     // Writer-priority: a pending/held exclusive by ANOTHER owner refuses
     // new shared acquisitions (the "don't start new things" rule).
     const excl = holders.find((h) => h.mode === 'exclusive');
-    if (excl && excl.owner !== owner) {
+    const callerHoldsShared = holders.some((h) => h.owner === owner && h.mode === 'shared');
+    const queuedExclusiveBlocks =
+      queue.length > 0 && !callerHoldsShared && !(excl && excl.owner === owner);
+    if ((excl && excl.owner !== owner) || queuedExclusiveBlocks) {
       // Refused by another owner's exclusive — record as a waiter so the
       // back-up broadcast on release reaches us (not the whole fleet).
       await recordResourceWaiter(tx, { coordinationDomain: cd, resource, owner, ownerLabel });
@@ -290,10 +420,52 @@ export async function tryAcquireResource(
   if (holders.some((h) => h.owner === owner && h.mode === 'shared')) {
     return { ok: false, reason: 'holds_shared', holders };
   }
+  const callerOwnsExclusive = holders.some((h) => h.owner === owner && h.mode === 'exclusive');
   // Another owner's exclusive (held or draining) blocks.
   if (holders.some((h) => h.mode === 'exclusive' && h.owner !== owner)) {
+    const queued = await enqueueResourceExclusive(tx, {
+      coordinationDomain: cd,
+      resource,
+      owner,
+      ownerLabel,
+      reason,
+      ttlSec,
+    });
+    const queuedNow = await readLiveExclusiveQueue(tx, cd, resource);
     await recordResourceWaiter(tx, { coordinationDomain: cd, resource, owner, ownerLabel });
-    return { ok: false, reason: 'held_exclusive', holders };
+    return {
+      ok: false,
+      reason: 'held_exclusive',
+      holders,
+      queue_ticket: queued.ticket_id,
+      queue_position: queuePosition(queuedNow, queued.ticket_id),
+    };
+  }
+
+  // A request already ahead of this caller owns the FIFO head even when the
+  // live holder query is momentarily empty (for example while a prior grant is
+  // being retried). Do not let a new exclusive jump that ticket.
+  const head = queue[0];
+  if (!callerOwnsExclusive && head && head.owner !== owner) {
+    const queued = await enqueueResourceExclusive(tx, {
+      coordinationDomain: cd,
+      resource,
+      owner,
+      ownerLabel,
+      reason,
+      ttlSec,
+    });
+    const queuedNow = await readLiveExclusiveQueue(tx, cd, resource);
+    await recordResourceWaiter(tx, { coordinationDomain: cd, resource, owner, ownerLabel });
+    return {
+      ok: false,
+      // Preserve the established conflict vocabulary for existing callers;
+      // the ticket fields carry the new FIFO state without breaking consumers.
+      reason: 'held_exclusive',
+      holders,
+      queue_ticket: queued.ticket_id,
+      queue_position: queuePosition(queuedNow, queued.ticket_id),
+    };
   }
 
   const sharedHolders = holders.filter((h) => h.mode === 'shared');
@@ -312,7 +484,30 @@ export async function tryAcquireResource(
           acquired_ts = clock_timestamp(),
           expires_ts  = EXCLUDED.expires_ts
     RETURNING lock_id::text AS lock_id, expires_ts, status
-  `;
+    `;
+  if (rows.length === 0) {
+    // A stale exclusive row or a concurrent queue promotion won the unique
+    // constraint between the read and insert. Preserve the existing structured
+    // conflict result rather than dereferencing an absent RETURNING row.
+    const current = await readLiveHolders(tx, cd, resource);
+    const queued = await enqueueResourceExclusive(tx, {
+      coordinationDomain: cd,
+      resource,
+      owner,
+      ownerLabel,
+      reason,
+      ttlSec,
+    });
+    const queuedNow = await readLiveExclusiveQueue(tx, cd, resource);
+    await recordResourceWaiter(tx, { coordinationDomain: cd, resource, owner, ownerLabel });
+    return {
+      ok: false,
+      reason: 'held_exclusive',
+      holders: current,
+      queue_ticket: queued.ticket_id,
+      queue_position: queuePosition(queuedNow, queued.ticket_id),
+    };
+  }
   // D-001: an exclusive that is effective NOW ('held', no shared holders to
   // drain) mints its fence here — the monotonic token the destructive action
   // re-checks before running. A 'draining' exclusive gets its fence later, from
@@ -329,6 +524,7 @@ export async function tryAcquireResource(
     fenceSeq = fr[0]?.fence_seq ?? 0;
   }
   // Granted (or accepted as draining) — we're no longer waiting on this resource.
+  await clearResourceExclusiveQueue(tx, cd, resource, owner);
   await clearResourceWaiter(tx, cd, resource, owner);
   return {
     ok: true,
@@ -428,7 +624,7 @@ export async function tryReleaseResource(
     throw new Error('tryReleaseResource requires lockId or resource');
   }
 
-  await tx`SELECT resource_grant_cascade(${cd}, clock_timestamp())`;
+  await promoteResourceExclusiveQueue(tx, cd);
   // Resources whose EXCLUSIVE hold was just released — the back-up broadcast
   // audience (P-010). Distinct; empty when only shared rows were released.
   const exclusiveResources = [
@@ -469,7 +665,8 @@ export async function releaseAllResourcesForOwner(
   `;
   // The departing owner is no longer waiting on anything either.
   await tx`DELETE FROM agent_resource_waiters WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}`;
-  await tx`SELECT resource_grant_cascade(${coordinationDomain}, clock_timestamp())`;
+  await tx`DELETE FROM agent_resource_exclusive_queue WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}`;
+  await promoteResourceExclusiveQueue(tx, coordinationDomain);
   const exclusiveResources = [
     ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
   ];
@@ -491,8 +688,8 @@ export async function tryHeartbeatResource(
   ttlSec: number,
 ): Promise<{ expires_ts: Date | null; extended: boolean }> {
   await tx`SET LOCAL statement_timeout = '500ms'`;
-  const swept = await sweepResourceExpired(tx, coordinationDomain);
-  if (swept) await tx`SELECT resource_grant_cascade(${coordinationDomain}, clock_timestamp())`;
+  await sweepResourceExpired(tx, coordinationDomain);
+  await promoteResourceExclusiveQueue(tx, coordinationDomain);
 
   const ttlText = `${ttlSec} seconds`;
   const rows = await tx<Array<{ expires_ts: Date }>>`
@@ -554,6 +751,8 @@ export interface ResourceQueueResult {
   holders: ResourceHolder[];
   /** True when any live exclusive on the queried set is still draining. */
   draining: boolean;
+  /** Live pending exclusive requests in FIFO order (per resource). */
+  queue?: ResourceExclusiveQueueEntry[];
 }
 
 /**
@@ -583,8 +782,9 @@ export async function readResourceQueue(
            AND expires_ts > clock_timestamp()
          ORDER BY acquired_ts ASC
       `;
+  const queue = await readLiveExclusiveQueue(sql, cd, resource);
   const draining = holders.some((h) => h.mode === 'exclusive' && h.status === 'draining');
-  return { holders, draining };
+  return { holders, draining, queue };
 }
 
 // ───────── Fencing (D-001) ─────────
