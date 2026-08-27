@@ -258,6 +258,31 @@ export function defaultSkipFile(f) {
   return f.includes('per-harness-template') || MANUAL_ONLY.has(f);
 }
 
+/**
+ * Order numbered migrations by numeric prefix, then by complete filename for
+ * deterministic ties. Plain string sorting breaks at four digits: `1003-*`
+ * sorts before `374-*`, so a fresh database can run a dependent migration
+ * before the table it targets exists. Unnumbered SQL files sort last.
+ *
+ * @param {string} a
+ * @param {string} b
+ */
+export function compareMigrationFilenames(a, b) {
+  const aMatch = a.match(/^(\d+)(?:-|$)/);
+  const bMatch = b.match(/^(\d+)(?:-|$)/);
+  if (aMatch && bMatch) {
+    const aNumber = BigInt(aMatch[1]);
+    const bNumber = BigInt(bMatch[1]);
+    if (aNumber < bNumber) return -1;
+    if (aNumber > bNumber) return 1;
+  } else if (aMatch) {
+    return -1;
+  } else if (bMatch) {
+    return 1;
+  }
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 // ⚠ KEEP THE JSDOC BLOCK BELOW ADJACENT TO THE FUNCTION. It used to sit ABOVE
 // `MANUAL_ONLY`, so TypeScript bound it to that const instead of to
 // `applyPendingMigrations` — every `@param` was silently inert and all four
@@ -294,7 +319,7 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
   const allFiles = (await readdir(sqlDir))
     .filter((f) => f.endsWith('.sql'))
     .filter((f) => !skip(f))
-    .sort();
+    .sort(compareMigrationFilenames);
 
   // Read applied set.
   const appliedRows = await client.unsafe(
