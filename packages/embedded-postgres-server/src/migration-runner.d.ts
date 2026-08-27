@@ -1,5 +1,15 @@
 export function defaultSkipFile(f: any): any;
 /**
+ * Order numbered migrations by numeric prefix, then by complete filename for
+ * deterministic ties. Plain string sorting breaks at four digits: `1003-*`
+ * sorts before `374-*`, so a fresh database can run a dependent migration
+ * before the table it targets exists. Unnumbered SQL files sort last.
+ *
+ * @param {string} a
+ * @param {string} b
+ */
+export function compareMigrationFilenames(a: string, b: string): 0 | 1 | -1;
+/**
  * @param {object} args
  * @param {object} args.client    postgres-js client (sql tag) OR object with `.unsafe(text)` method.
  * @param {string} args.sqlDir    Directory of *.sql files.
