@@ -1,4 +1,6 @@
 -- 983-personal-vault-import-jobs.sql — Gmail/Facebook history readiness P-009
+-- Armed under gmail-facebook-history-production-readiness-2026-08-25#D-016
+-- after real-PG admission/cleanup coverage and migration lints passed.
 --
 -- Durable, account-scoped jobs replace request-bound archive parsing. The HTTP
 -- route only streams the owner-selected archive into private workspace storage;
