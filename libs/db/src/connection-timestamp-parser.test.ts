@@ -21,6 +21,7 @@ import postgres from 'postgres';
 import {
   PG_BIGINT_AS_NUMBER_TYPES,
   PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES,
+  PG_TIMESTAMPTZ_AS_STRING_TYPES,
 } from './connection';
 
 const FAKE_URL = 'postgres://user:pass@127.0.0.1:1/never-connects';
@@ -91,5 +92,23 @@ describe('PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES (EI-19331550321709126)', () => {
     expect(parserFor(withFix, DATE_OID)(dateInput).toISOString()).toBe(
       parserFor(withoutFix, DATE_OID)(dateInput).toISOString(),
     );
+  });
+});
+
+describe('PG_TIMESTAMPTZ_AS_STRING_TYPES (EI-21569018799980044)', () => {
+  it('preserves all fractional-second digits from an OID-1184 wire value', () => {
+    const client = postgres(FAKE_URL, {
+      max: 1,
+      types: { ...PG_BIGINT_AS_NUMBER_TYPES, ...PG_TIMESTAMPTZ_AS_STRING_TYPES },
+    });
+    const wireValue = '2026-08-23 00:04:32.646995+00';
+    expect(parserFor(client, TIMESTAMPTZ_OID)(wireValue)).toBe(wireValue);
+  });
+
+  it('is opt-in: the default parser demonstrates the millisecond-loss bug', () => {
+    const client = postgres(FAKE_URL, { max: 1, types: PG_BIGINT_AS_NUMBER_TYPES });
+    const parsed = parserFor(client, TIMESTAMPTZ_OID)('2026-08-23 00:04:32.646995+00');
+    expect(parsed).toBeInstanceOf(Date);
+    expect(parsed.toISOString()).toBe('2026-08-23T00:04:32.646Z');
   });
 });

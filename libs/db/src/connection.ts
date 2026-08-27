@@ -71,6 +71,7 @@ import * as generatedRelations from './schema/generated-relations';
 import {
   PG_BIGINT_AS_NUMBER_TYPES,
   PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES,
+  PG_TIMESTAMPTZ_AS_STRING_TYPES,
   restoreRawDateSerializers,
   restoreRawJsonbSerializer,
   seedBuiltinArrayTypes,
@@ -79,6 +80,7 @@ import {
 export {
   PG_BIGINT_AS_NUMBER_TYPES,
   PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES,
+  PG_TIMESTAMPTZ_AS_STRING_TYPES,
   restoreRawDateSerializers,
   restoreRawJsonbSerializer,
   // WI-41207: hand-rolled clients that must BEHAVE like the canonical ones (test fixtures,
@@ -1129,7 +1131,8 @@ function buildClient(
   // EI-18789855771421275: override the bigint (oid 20) type parser. Defaults to
   // PG_BIGINT_AS_NUMBER_TYPES (every existing caller's byte-identical behavior);
   // pass `{}` for a client that must NOT silently round a bigint outside
-  // Number's safe range — see getOrgPgLosslessBigint().
+  // Number's safe range — see getOrgPgLosslessBigint(). Other opt-in parsers,
+  // such as PG_TIMESTAMPTZ_AS_STRING_TYPES, can be supplied through this map.
   // `any` mirrors PG_BIGINT_AS_NUMBER_TYPES's own typing below — postgres-js's
   // `types` option is generic over the exact custom-type shape, which isn't
   // worth threading through this internal helper's signature.
@@ -1725,7 +1728,10 @@ export function getOrgPgLosslessBigint(): { sql: Sql } {
       2,
       'org-admin-lossless-bigint',
       pgbouncerEnabled(),
-      {}, // no bigint override — postgres-js's own default (exact string) applies
+      // No bigint override — postgres-js's own default (exact string) applies.
+      // Preserve OID-1184 text too; Date would discard microseconds from an
+      // arbitrary agent-authored SQL result (EI-21569018799980044).
+      PG_TIMESTAMPTZ_AS_STRING_TYPES,
     );
     _adminLosslessBigintClientUrl = url;
   }

@@ -75,6 +75,28 @@ export const PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES = {
 };
 
 /**
+ * EI-21569018799980044: postgres-js's default parser for OID 1184
+ * (`timestamptz`) returns a JS `Date`. `Date` only retains milliseconds, so
+ * arbitrary SQL reads silently turn a wire value such as
+ * `2026-08-23 00:04:32.646995+00` into `2026-08-23T00:04:32.646Z`.
+ *
+ * The ad-hoc read pool opts into this parser so the raw PostgreSQL text —
+ * including all six fractional-second digits — reaches the JSON result
+ * unchanged. This is deliberately NOT merged into ordinary application pools:
+ * their existing `Date` behavior is part of their API, while `dev:pg_query`
+ * must not corrupt values an agent may write back. The serializer handles the
+ * rare parameter use without changing the read-side string contract.
+ */
+export const PG_TIMESTAMPTZ_AS_STRING_TYPES = {
+  timestamptzAsString: {
+    to: 1184,
+    from: [1184],
+    serialize: (x: any) => (x instanceof Date ? x.toISOString() : String(x)),
+    parse: (x: string) => x,
+  } as any,
+};
+
+/**
  * EI-13076: drizzle-orm's postgres-js driver MUTATES the client it wraps —
  * `drizzle(client)` overwrites `client.options.serializers[<date OIDs>]` with a
  * transparent passthrough (`(val) => val`) so its OWN pre-stringified params
