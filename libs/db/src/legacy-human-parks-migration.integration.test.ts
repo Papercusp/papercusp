@@ -30,17 +30,22 @@ const RUNNER = path.join(
   'migration-runner.js',
 );
 
-function resolveMigrationPath(): string {
-  const override = process.env.LEGACY_HUMAN_PARKS_MIGRATION_SQL;
-  if (override) return override;
-  const armed = path.join(SQL_DIR, '864-migrate-legacy-human-parks-to-agent-review.sql');
-  if (existsSync(armed)) return armed;
+function readMigration(name: string, override?: string): string {
+  if (override) return readFileSync(override, 'utf8');
+  const armed = path.join(SQL_DIR, name);
+  if (existsSync(armed)) return readFileSync(armed, 'utf8');
   const draft = `${armed}.DRAFT`;
-  if (existsSync(draft)) return draft;
-  throw new Error(`migration 864 not found at ${armed}[.DRAFT]`);
+  if (existsSync(draft)) return readFileSync(draft, 'utf8');
+  throw new Error(`migration ${name} not found at ${armed}[.DRAFT]`);
 }
 
-const MIGRATION_SQL = readFileSync(resolveMigrationPath(), 'utf8');
+const MIGRATION_SQL = readMigration(
+  '864-migrate-legacy-human-parks-to-agent-review.sql',
+  process.env.LEGACY_HUMAN_PARKS_MIGRATION_SQL,
+);
+const MIGRATION_867_SQL = readMigration('867-repair-post-864-legacy-human-park-recurrence.sql');
+const MIGRATION_870_SQL = readMigration('870-retire-post-868-legacy-human-park-recurrence.sql');
+const MIGRATION_950_SQL = readMigration('950-retire-post-870-legacy-needs-human-recurrence-wave2.sql');
 const BOOT_PREREQS_DDL = `
   DO $pg$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='harness_app')   THEN CREATE ROLE harness_app   LOGIN PASSWORD 'harness_app_pwd'; END IF;
@@ -76,12 +81,12 @@ async function provision(url: string): Promise<void> {
 let db: MigratedTestDb;
 let sql: Sql;
 
-async function applyMigration(): Promise<void> {
+async function applyMigration(migrationSql = MIGRATION_SQL, label = '864'): Promise<void> {
   try {
-    await sql.unsafe(`BEGIN;\nSET LOCAL statement_timeout = 0;\n${MIGRATION_SQL}\nCOMMIT;`);
+    await sql.unsafe(`BEGIN;\nSET LOCAL statement_timeout = 0;\n${migrationSql}\nCOMMIT;`);
   } catch (error) {
     await sql.unsafe('ROLLBACK').catch(() => {});
-    throw error;
+    throw new Error(`${label}: ${(error as Error).message}`, { cause: error });
   }
 }
 
@@ -90,6 +95,14 @@ beforeAll(async () => {
   sql = postgres(db.url, { max: 1, onnotice: () => {} });
 
   await sql.unsafe(`
+    -- The provision step applies the whole current migration chain. Later
+    -- migrations may add work_items columns after 864 created its LIKE-based
+    -- backup table; raw 864 replay would then compare current wi.* to that
+    -- historical column shape. This isolated fixture models a database where
+    -- 864 is still pending, so reset only the two artifacts 864 itself owns.
+    DROP TABLE IF EXISTS harness_shared.bak_20260821_legacy_human_park_manifest;
+    DROP TABLE IF EXISTS harness_shared.bak_20260821_legacy_human_parks;
+
     INSERT INTO harness_shared.work_items
       (workspace_id, harness_slug, feature_id, title, status, item_kind, origin,
        created_ts, updated_ts, payload)
@@ -338,5 +351,92 @@ describe('migration 864 — guarded execution', () => {
         (SELECT count(*)::int FROM harness_shared.scout_routed_ideas WHERE origin = 'agent-review') AS authorities
     `)[0] as typeof before;
     expect(after).toEqual(before);
+  });
+
+  it('keeps owner census guards strict but admits a variable remote_hive peer through the repair chain', async () => {
+    await sql.unsafe(`
+      INSERT INTO harness_shared.harness_registry (workspace_id, payload, updated_at)
+      VALUES (
+        'papercusp-workspace',
+        '{"projects":[{"slug":"papercusp","harness_kind":"hive","remote_hive":true,"self_repo":true}]}'::jsonb,
+        1
+      )
+      ON CONFLICT (workspace_id) DO UPDATE
+        SET payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at;
+
+      INSERT INTO harness_shared.work_items
+        (workspace_id, harness_slug, feature_id, title, status, item_kind, origin,
+         created_ts, updated_ts, payload)
+      VALUES
+        ('papercusp-workspace', 'papercusp', 'PEER-REMOTE-001',
+         'Remote peer legacy row', 'needs-human', 'bug', 'remote', 1001, 1001,
+         '{}'::jsonb),
+        ('papercusp-workspace', 'papercusp', 'PEER-REVIEW-001',
+         'Peer-local review row', 'open', 'bug', 'local', 1002, 1002,
+         '{"needsHuman":true,"ideaLifecycle":{"triageDecision":"gate"}}'::jsonb);
+    `);
+
+    // Before this regression fix, 864 compared this legitimate two-row peer
+    // cohort to the owner's 759-row historical census and aborted. The later
+    // recurrence migrations repeated the same mistake even on a zero-row peer
+    // cohort once an earlier backup witness existed.
+    await applyMigration();
+    await sql.unsafe(`
+      -- Model an install where these sibling migrations are still pending.
+      -- The provisioned test DB has historical backup tables created before
+      -- later work_items columns; a real pending migration creates them from
+      -- the current shape, so reset only the artifacts each replay owns.
+      DROP TABLE IF EXISTS harness_shared.bak_20260821_legacy_human_recurrence_867;
+      DROP TABLE IF EXISTS harness_shared.bak_20260821_legacy_human_recurrence_870;
+      DROP TABLE IF EXISTS harness_shared.bak_20260825_legacy_needs_human_recurrence_950;
+    `);
+    await applyMigration(MIGRATION_867_SQL, '867');
+    await applyMigration(MIGRATION_870_SQL, '870');
+
+    // Make 950's owner-census branch structurally reachable without creating a
+    // new active legacy row. A remote install must still skip only the count;
+    // all of 950's row-level guards and postconditions execute normally.
+    await sql.unsafe(`
+      INSERT INTO harness_shared.bak_20260821_legacy_human_recurrence_870
+        (workspace_id, harness_slug, feature_id)
+      VALUES ('papercusp-workspace', 'papercusp', 'PEER-REMOTE-001')
+      ON CONFLICT (workspace_id, harness_slug, feature_id) DO NOTHING;
+    `);
+    await applyMigration(MIGRATION_950_SQL, '950');
+
+    const rows = (await sql`
+      SELECT feature_id, status, origin,
+             payload->>'needsHuman' AS needs_human,
+             payload->'_legacyHumanParkMigration'->>'destination' AS destination,
+             payload->'agentReview'->>'status' AS review_status
+        FROM harness_shared.work_items
+       WHERE feature_id IN ('PEER-REMOTE-001', 'PEER-REVIEW-001')
+       ORDER BY feature_id
+    `) as Array<{
+      feature_id: string;
+      status: string;
+      origin: string;
+      needs_human: string | null;
+      destination: string;
+      review_status: string | null;
+    }>;
+    expect(rows).toEqual([
+      {
+        feature_id: 'PEER-REMOTE-001',
+        status: 'open',
+        origin: 'remote',
+        needs_human: null,
+        destination: 'remote-reconciliation',
+        review_status: null,
+      },
+      {
+        feature_id: 'PEER-REVIEW-001',
+        status: 'open',
+        origin: 'local',
+        needs_human: null,
+        destination: 'agent-review',
+        review_status: 'pending',
+      },
+    ]);
   });
 });
