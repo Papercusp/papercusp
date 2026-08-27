@@ -419,13 +419,15 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
     fleet and auto-STARTS on the plan** with no manual wake. It ALSO takes
     `perMemberLaunchContext: [path1, path2, …]` (EI-8985, index-aligned to member number) when
     different members need DISTINCT briefs — a member beyond the array, or an unreadable entry,
-    falls back to the shared `launchContext`/baseline rather than failing the launch. This closes
-    the one remaining reason to hand-roll `fleet:create` → `capability:terminal { terminals:[…] }`
-    — prefer `fleet:launch-on-plan` even for per-member briefs now. (`capability:terminal`'s
-    `fleet` arg auto-injects `--fleet=<slug>` into any `psu …` command it detects — EI-5835 is
-    fixed at that layer too — but you still don't need to hand-roll: `fleet:launch-on-plan`
-    covers this.) ⚠️ `capability:terminal` / `fleet:launch-on-plan` are the ONLY tools that open
-    real desktop terminals — `cup:spawn` / `fleet:place_batch` spawn HEADLESS nursery cups (no
+    falls back to the shared `launchContext`/baseline rather than failing the launch. There is no
+    supported reason to hand-roll `fleet:create` plus a `psu …` command: `capability:terminal` is
+    command-only and refuses actual `psu` agent launches with `Wrong door`. If the work is an
+    ad-hoc brief, resume, fork, or raw multi-agent launch rather than an N-agents-on-a-plan fleet,
+    use `capability:launch-agent` and pass its `fleet` / `plan` / `count` / `members` fields as
+    needed. Do not wrap `psu` in `capability:terminal`. ⚠️ `capability:launch-agent` /
+    `fleet:launch-on-plan` are the supported tools that open real desktop agent terminals;
+    `capability:terminal` opens arbitrary-command terminals only. `cup:spawn` /
+    `fleet:place_batch` spawn HEADLESS nursery cups (no
     window on the owner's desktop, Mug-supervised — NOT the same as option D's headless su
     FLEET), so NEVER use them for a "desktop fleet." ⚠️ And they are not a fallback either: the
     Mug-supervised nursery tier is **RETIRED** permanently — the gate flag was DELETED, so
@@ -515,7 +517,7 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
   posture: if members die, stall, or wedge, only a *running* leader detects and recovers it
   — a leaderless OR unmonitored fleet is how silent mass-failure happens (the whole fleet can
   die and no one notices). So the moment you `fleet:create` / `fleet:take-leadership` /
-  `capability:terminal` a desktop fleet (or the owner makes you a fleet's leader), treat
+  `fleet:launch-on-plan` a desktop fleet (or the owner makes you a fleet's leader), treat
   **AUTO mode as ON for the rest of the session** and TELL the owner you're switching to AUTO
   mode (a notice, not a question — you cannot drive a fleet from AUTO-OFF). Then set up your
   watch — **PUSH FIRST, exactly as your members are told to.** The fleet EMITS transition
@@ -582,8 +584,8 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
 - **Spawning a fleet/agent? ANNOUNCE the account + model + carry you're using and offer the
   alternatives — even under AUTO (it's a disclosure, not a question).** Three launch knobs carry a
   default the owner rarely states, so name the default AND the alternatives in one breath every
-  time you spawn (psu / `fleet:create`+`capability:terminal` / `cup:spawn` /
-  `fleet:launch-on-plan`), so the owner can redirect in one line — never silently pick any of them
+  time you spawn (psu / `capability:launch-agent` / `fleet:launch-on-plan`), so the owner can
+  redirect in one line — never silently pick any of them
   (and when you launch a HEADLESS fleet, say so too — the members run with no desktop window):
   - **Account routing** — unless the owner chose one, default to the **system account (the
     inference gateway skipped entirely)** and say so: *"Spawning on the default system account —

@@ -516,7 +516,7 @@ async function persistSpec(workspaceId, harnessSlug, featureId, ir, metadata) {
   }
 }
 
-// ─── component registry (mirror of apps/operator/lib/design-adapter-react-tailwind) ─
+// ─── component registry (mirror of packages/operator-core/lib/design-adapter-react-tailwind/registry.ts) ─
 const REGISTRY_REACT_TAILWIND = [
   {
     id: 'action.primary',
@@ -575,6 +575,7 @@ const REGISTRY_REACT_TAILWIND = [
     id: 'control.checkbox',
     kind: 'component',
     summary: 'Checkbox',
+    searchTerms: ['task', 'task-list', 'list', 'sidebar', 'completion', 'toggle'],
     inputs: [
       { name: 'checked', type: 'boolean', required: true },
       { name: 'label', type: 'string' },
@@ -583,6 +584,83 @@ const REGISTRY_REACT_TAILWIND = [
       'react-tailwind': {
         sourcePointer: { path: 'apps/operator/app/harness/Checkbox.tsx', symbol: 'Checkbox' },
         importHint: "import { Checkbox } from '@/app/harness/Checkbox'",
+      },
+    },
+  },
+  {
+    id: 'control.text',
+    kind: 'component',
+    summary: 'Text input with optional leading and trailing slots',
+    searchTerms: ['task', 'task-list', 'list', 'sidebar', 'search', 'filter'],
+    inputs: [
+      { name: 'value', type: 'string', required: true },
+      { name: 'placeholder', type: 'string' },
+      { name: 'leading', type: 'ReactNode' },
+      { name: 'trailing', type: 'ReactNode' },
+    ],
+    variants: ['plain', 'leading-slot', 'trailing-slot'],
+    states: ['focus', 'disabled'],
+    ecosystems: {
+      'react-tailwind': {
+        sourcePointer: { path: 'apps/operator/app/harness/TextInput.tsx', symbol: 'TextInput' },
+        importHint: "import { TextInput } from '@/app/harness/TextInput'",
+      },
+    },
+  },
+  {
+    id: 'feedback.tooltip',
+    kind: 'component',
+    summary: 'Hover/focus tooltip for buttons, labels, and compact controls',
+    searchTerms: ['task', 'task-list', 'list', 'sidebar', 'compact', 'action'],
+    inputs: [
+      { name: 'label', type: 'ReactNode', required: true },
+      { name: 'children', type: 'ReactNode', required: true },
+      { name: 'side', type: '"top"|"right"|"bottom"|"left"' },
+    ],
+    states: ['hover', 'focus'],
+    ecosystems: {
+      'react-tailwind': {
+        sourcePointer: { path: 'apps/operator/app/harness/Tooltip.tsx', symbol: 'Tooltip' },
+        importHint: "import { Tooltip } from '@/app/harness/Tooltip'",
+      },
+    },
+  },
+  {
+    id: 'overlay.modal',
+    kind: 'component',
+    summary: 'Centered modal dialog with Radix focus and escape handling',
+    inputs: [
+      { name: 'open', type: 'boolean', required: true },
+      { name: 'onOpenChange', type: '(open:boolean)=>void', required: true },
+      { name: 'title', type: 'string', required: true },
+      { name: 'children', type: 'ReactNode', required: true },
+    ],
+    variants: ['default', 'srOnlyTitle', 'custom-z-index'],
+    states: ['open', 'closed'],
+    ecosystems: {
+      'react-tailwind': {
+        sourcePointer: { path: 'apps/operator/app/harness/Modal.tsx', symbol: 'Modal' },
+        importHint: "import { Modal } from '@/app/harness/Modal'",
+      },
+    },
+  },
+  {
+    id: 'overlay.popover',
+    kind: 'component',
+    summary: 'Anchored popover panel for stable React trigger-owned dropdowns',
+    searchTerms: ['task', 'task-list', 'list', 'sidebar', 'menu', 'actions'],
+    inputs: [
+      { name: 'open', type: 'boolean', required: true },
+      { name: 'onOpenChange', type: '(open:boolean)=>void', required: true },
+      { name: 'trigger', type: 'ReactNode', required: true },
+      { name: 'ariaLabel', type: 'string', required: true },
+    ],
+    variants: ['bottom-end', 'with-tooltip', 'no-autofocus'],
+    states: ['open', 'closed'],
+    ecosystems: {
+      'react-tailwind': {
+        sourcePointer: { path: 'apps/operator/app/harness/Popover.tsx', symbol: 'Popover' },
+        importHint: "import { Popover } from '@/app/harness/Popover'",
       },
     },
   },
@@ -598,6 +676,24 @@ const REGISTRY_REACT_TAILWIND = [
       'react-tailwind': {
         sourcePointer: { path: 'apps/operator/app/_components/HostCheckBanner.tsx', symbol: 'HostCheckBanner' },
         importHint: "import { HostCheckBanner } from '@/app/_components/HostCheckBanner'",
+      },
+    },
+  },
+  {
+    id: 'data.rich-grid',
+    kind: 'component',
+    summary: 'Virtualizable React grid for rows with JSX cells, status pills, actions, and expansion',
+    searchTerms: ['task', 'task-list', 'list', 'sidebar', 'rows'],
+    inputs: [
+      { name: 'rows', type: 'Row[]', required: true },
+      { name: 'columns', type: 'ColumnDef<Row>[]', required: true },
+      { name: 'getRowId', type: '(row: Row) => string', required: true },
+    ],
+    variants: ['default', 'virtual', 'expandable'],
+    ecosystems: {
+      'react-tailwind': {
+        sourcePointer: { path: 'libs/generic/papergrid/grid-core/src/RichGrid.tsx', symbol: 'RichGrid' },
+        importHint: "import { RichGrid } from '@papercusp/grid-core'",
       },
     },
   },
@@ -624,6 +720,7 @@ function searchRegistryEntries(ecosystem, query) {
   const entryTokens = (e) => tokenize([
     e.id,
     e.summary,
+    ...(e.searchTerms || []),
     ...(e.inputs || []).map((input) => input.name),
   ].join(' '));
   const entriesWithTokens = list.map((entry) => ({ entry, tokens: entryTokens(entry) }));
