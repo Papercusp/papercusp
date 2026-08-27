@@ -1776,26 +1776,6 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	check("adv_sessions_ended_signal_check", sql`(ended_signal IS NULL) OR (ended_by = 'signal'::text)`),
 ]);
 
-export const workItemDepsInHarnessShared = harnessShared.table("work_item_deps", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.work_item_deps_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	workspaceId: text("workspace_id").default('default').notNull(),
-	blockedKind: text("blocked_kind").notNull(),
-	blockedRef: text("blocked_ref").notNull(),
-	blockerKind: text("blocker_kind").notNull(),
-	blockerRef: text("blocker_ref").notNull(),
-	depType: text("dep_type").default('blocks').notNull(),
-	createdBy: text("created_by"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("work_item_deps_blocked_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.blockedKind.asc().nullsLast().op("text_ops"), table.blockedRef.asc().nullsLast().op("text_ops")),
-	index("work_item_deps_blocker_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.blockerKind.asc().nullsLast().op("text_ops"), table.blockerRef.asc().nullsLast().op("text_ops")),
-	uniqueIndex("work_item_deps_edge_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.blockedKind.asc().nullsLast().op("text_ops"), table.blockedRef.asc().nullsLast().op("text_ops"), table.blockerKind.asc().nullsLast().op("text_ops"), table.blockerRef.asc().nullsLast().op("text_ops"), table.depType.asc().nullsLast().op("text_ops")),
-	check("work_item_deps_endpoints_nonempty", sql`(blocked_kind <> ''::text) AND (blocked_ref <> ''::text) AND (blocker_kind <> ''::text) AND (blocker_ref <> ''::text)`),
-	check("work_item_deps_workspace_nonempty", sql`workspace_id <> ''::text`),
-	check("work_item_deps_no_self", sql`NOT ((blocked_kind = blocker_kind) AND (blocked_ref = blocker_ref))`),
-]);
-
 export const planRunTurnsInHarnessShared = harnessShared.table("plan_run_turns", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -4974,6 +4954,28 @@ export const operatorSessionConfinementsInHarnessShared = harnessShared.table("o
 
 ]);
 
+
+export const workItemDepsInHarnessShared = harnessShared.table("work_item_deps", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.work_item_deps_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	blockedKind: text("blocked_kind").notNull(),
+	blockedRef: text("blocked_ref").notNull(),
+	blockerKind: text("blocker_kind").notNull(),
+	blockerRef: text("blocker_ref").notNull(),
+	depType: text("dep_type").default('blocks').notNull(),
+	createdBy: text("created_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	satisfaction: text().default('settled').notNull(),
+}, (table) => [
+	index("work_item_deps_blocked_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.blockedKind.asc().nullsLast().op("text_ops"), table.blockedRef.asc().nullsLast().op("text_ops")),
+	index("work_item_deps_blocker_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.blockerKind.asc().nullsLast().op("text_ops"), table.blockerRef.asc().nullsLast().op("text_ops")),
+	uniqueIndex("work_item_deps_edge_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.blockedKind.asc().nullsLast().op("text_ops"), table.blockedRef.asc().nullsLast().op("text_ops"), table.blockerKind.asc().nullsLast().op("text_ops"), table.blockerRef.asc().nullsLast().op("text_ops"), table.depType.asc().nullsLast().op("text_ops")),
+	check("work_item_deps_endpoints_nonempty", sql`(blocked_kind <> ''::text) AND (blocked_ref <> ''::text) AND (blocker_kind <> ''::text) AND (blocker_ref <> ''::text)`),
+	check("work_item_deps_workspace_nonempty", sql`workspace_id <> ''::text`),
+	check("work_item_deps_no_self", sql`NOT ((blocked_kind = blocker_kind) AND (blocked_ref = blocker_ref))`),
+	check("work_item_deps_satisfaction_check", sql`satisfaction = ANY (ARRAY['settled'::text, 'success'::text])`),
+]);
 
 
 
