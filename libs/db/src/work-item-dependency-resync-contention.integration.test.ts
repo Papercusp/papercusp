@@ -148,10 +148,13 @@ describe('migration 994 — set-based readiness resync', () => {
   });
 
   it('contains no DDL or procedural per-row resync loop', () => {
-    expect(MIGRATION_SQL).not.toMatch(/\bALTER\s+TABLE\b/i);
-    expect(MIGRATION_SQL).not.toMatch(/\bDO\s+\$resync\$/i);
-    expect(MIGRATION_SQL).not.toMatch(/\bFOR\s+r\s+IN\b/i);
-    expect(MIGRATION_SQL).toMatch(/INSERT\s+INTO\s+harness_shared\.work_item_blocked[\s\S]*SELECT/i);
-    expect(MIGRATION_SQL).toMatch(/DELETE\s+FROM\s+harness_shared\.work_item_blocked[\s\S]*NOT\s+EXISTS/i);
+    // Inspect executable SQL rather than the explanatory comments, which
+    // intentionally name the old ALTER TABLE + DO shape.
+    const executableSql = MIGRATION_SQL.replace(/--[^\r\n]*/g, '');
+    expect(executableSql).not.toMatch(/\bALTER\s+TABLE\b/i);
+    expect(executableSql).not.toMatch(/\bDO\s+\$resync\$/i);
+    expect(executableSql).not.toMatch(/\bFOR\s+r\s+IN\b/i);
+    expect(executableSql).toMatch(/INSERT\s+INTO\s+harness_shared\.work_item_blocked[\s\S]*SELECT/i);
+    expect(executableSql).toMatch(/DELETE\s+FROM\s+harness_shared\.work_item_blocked[\s\S]*NOT\s+EXISTS/i);
   });
 });
