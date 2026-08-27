@@ -19,6 +19,7 @@ export {
   _resetForTests,
   PG_BIGINT_AS_NUMBER_TYPES,
   PG_TIMESTAMP_NO_TZ_AS_UTC_TYPES,
+  PG_TIMESTAMPTZ_AS_STRING_TYPES,
   restoreRawDateSerializers,
   restoreRawJsonbSerializer,
   longLivedPoolConnectionOptions,
