@@ -213,6 +213,13 @@ dependencies:
     - memory:forget
     - memory:search
     - memory:update
+    # mug.base.md PRESCRIBES the call, twice: "use `plans:start` for a policy-free
+    # Scout draft" and "start a policy-free Scout draft with `plans:start`". It is
+    # the approval route for a policy-free draft — plans:promote explicitly is not
+    # (it needs a `## Promote` policy), which is why that sibling stays a
+    # mention-not-call entry while this one is granted. Was a dark tool:
+    # blueprint-prompt-dark-tools guard.
+    - plans:start
     - pot:declare-wake
     - pot:wake
     # Owner steering controls (queen-steering-panel B-01): read what the owner has
