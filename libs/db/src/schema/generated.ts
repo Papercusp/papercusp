@@ -3767,6 +3767,7 @@ export const eventAwaitsInHarnessShared = harnessShared.table("event_awaits", {
 	index("event_awaits_bound_to_active").using("btree", sql`((bound_to ->> 'kind'::text))`, sql`((bound_to ->> 'ref'::text))`).where(sql`((bound_to IS NOT NULL) AND (cancelled_at IS NULL))`),
 	index("event_awaits_composed_node_idx").using("btree", table.nodeId.asc().nullsLast().op("int8_ops")).where(sql`(node_id IS NOT NULL)`),
 	index("event_awaits_composed_root_idx").using("btree", table.rootId.asc().nullsLast().op("int8_ops")).where(sql`(root_id IS NOT NULL)`),
+	uniqueIndex("event_awaits_exact_one_shot_one_per_subscriber_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((policy <> 'announce'::text) AND (once = true) AND (root_id IS NULL) AND (payload_filter IS NULL) AND ((note IS NULL) OR (note !~~ '[fleet:bench] %'::text)) AND (event_key !~~ '%*%'::text) AND (event_key !~~ '@%'::text) AND (fired_at IS NULL) AND (cancelled_at IS NULL) AND (superseded_at IS NULL))`),
 	uniqueIndex("event_awaits_inbox_wake_one_per_agent").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((policy = 'wake'::text) AND (once = false) AND (cancelled_at IS NULL) AND (event_key ~~ 'coord:inbox-wake:%'::text))`),
 	index("event_awaits_operator_cancelled_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((cancelled_at IS NOT NULL) AND (cancel_reason = 'operator'::text))`),
 	index("event_awaits_pattern_active").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`((event_key ~~ '%*%'::text) AND (fired_at IS NULL) AND (cancelled_at IS NULL))`),
@@ -9867,6 +9868,8 @@ export const personalVaultImportJobsInHarnessShared = harnessShared.table("perso
 	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	entriesFailed: bigint("entries_failed", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("personal_vault_import_jobs_claim_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops"), table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['queued'::text, 'running'::text]))`),
 	index("personal_vault_import_jobs_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
@@ -9893,6 +9896,7 @@ export const personalVaultImportJobsInHarnessShared = harnessShared.table("perso
 	check("personal_vault_import_source_account_pair", sql`(source_id IS NULL) OR (provider_account_id IS NOT NULL)`),
 	check("personal_vault_import_storage_lifecycle", sql`(storage_path IS NOT NULL) OR (status = ANY (ARRAY['completed'::text, 'cancelled'::text]))`),
 	check("personal_vault_import_lease_shape", sql`((status = 'running'::text) AND (lease_owner IS NOT NULL) AND (lease_expires_at IS NOT NULL)) OR ((status <> 'running'::text) AND (lease_owner IS NULL) AND (lease_expires_at IS NULL))`),
+	check("personal_vault_import_entries_failed_nonnegative", sql`entries_failed >= 0`),
 ]);
 
 export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
