@@ -88,10 +88,15 @@ export {
 export { withWorkspace, withWorkspaceQuery, withHarnessSchema, harnessQuery } from './workspace-context';
 export type { WorkspaceTxOptions } from './workspace-context';
 export {
+  HostedServiceContextError,
   TenantContextError,
   deriveTenantContext,
+  withHostedServiceContext,
   withTenantContext,
+  HOSTED_SERVICE_ROLE,
+  HOSTED_TENANT_ROLE,
   type DerivedTenantContext,
+  type HostedServiceContextErrorCode,
   type HostedTenantPrincipal,
   type ResolvedTenantWorkspace,
   type TenantContextErrorCode,

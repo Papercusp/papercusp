@@ -72,6 +72,19 @@ export type TenantContextErrorCode =
    */
   | 'tenant_context_hosted_role_unavailable';
 
+export type HostedServiceContextErrorCode = 'hosted_service_role_unavailable';
+
+export class HostedServiceContextError extends Error {
+  override readonly name = 'HostedServiceContextError';
+
+  constructor(
+    readonly code: HostedServiceContextErrorCode,
+    options?: { readonly cause?: unknown },
+  ) {
+    super(code, options);
+  }
+}
+
 export class TenantContextError extends Error {
   override readonly name = 'TenantContextError';
 
@@ -192,6 +205,34 @@ export async function withTenantContext<T>(
 export const HOSTED_TENANT_ROLE = 'hosted_app';
 
 /**
+ * Database role for provider lifecycle, session, and webhook work.
+ *
+ * Like hosted_app, this is a NOLOGIN role and must only be reached through a
+ * transaction-local switch. Migration 1005 grants harness_app SET permission
+ * with INHERIT FALSE, so ordinary application queries never receive these
+ * global service privileges ambiently.
+ */
+export const HOSTED_SERVICE_ROLE = 'hosted_service';
+
+/**
+ * Run provider lifecycle work as hosted_service on the bounded application
+ * pool. The fixed workspace sentinel is intentionally not customer authority:
+ * hosted_service policies are global service policies and consult no tenant
+ * GUC. Reusing withWorkspace keeps the canonical acquisition deadline,
+ * connection retry, PgBouncer search_path repair, and transaction cleanup.
+ */
+export async function withHostedServiceContext<T>(fn: (tx: Sql) => Promise<T>): Promise<T> {
+  return withWorkspace('hosted-control-plane-service', async (tx) => {
+    try {
+      await enterHostedRole(tx, HOSTED_SERVICE_ROLE);
+    } catch (cause) {
+      throw new HostedServiceContextError('hosted_service_role_unavailable', { cause });
+    }
+    return fn(tx);
+  });
+}
+
+/**
  * Switch the transaction into the hosted role.
  *
  * This is the step that makes the FORCE RLS policies of migrations 978/979
@@ -206,9 +247,7 @@ export const HOSTED_TENANT_ROLE = 'hosted_app';
  */
 async function enterHostedAppRole(tx: Sql): Promise<void> {
   try {
-    // The role is a module constant, never caller input, so `.unsafe` carries no
-    // injection surface — and SET ROLE cannot take a bind parameter.
-    await tx.unsafe(`SET LOCAL ROLE ${HOSTED_TENANT_ROLE}`);
+    await enterHostedRole(tx, HOSTED_TENANT_ROLE);
   } catch (cause) {
     // Fail CLOSED and legibly. The common cause is migration 997's grant not
     // having been applied — it degrades to a warning precisely because it needs
@@ -216,6 +255,13 @@ async function enterHostedAppRole(tx: Sql): Promise<void> {
     // does not say which grant is missing.
     throw new TenantContextError('tenant_context_hosted_role_unavailable', { cause });
   }
+}
+
+async function enterHostedRole(tx: Sql, role: typeof HOSTED_TENANT_ROLE | typeof HOSTED_SERVICE_ROLE): Promise<void> {
+  // `role` is a closed union of module constants, never caller input, so
+  // `.unsafe` carries no injection surface — and SET ROLE cannot take a bind
+  // parameter.
+  await tx.unsafe(`SET LOCAL ROLE ${role}`);
 }
 
 function requireIdentifier(value: unknown): string | null {

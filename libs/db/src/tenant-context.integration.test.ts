@@ -29,7 +29,12 @@ vi.mock('./connection', async (importOriginal) => ({
   pgbouncerEnabled: () => false,
 }));
 
-import { withTenantContext, type HostedTenantPrincipal, type VerifiedTenantServerContext } from './tenant-context';
+import {
+  withHostedServiceContext,
+  withTenantContext,
+  type HostedTenantPrincipal,
+  type VerifiedTenantServerContext,
+} from './tenant-context';
 
 let db: MigratedTestDb;
 let sql: Sql;
@@ -54,8 +59,21 @@ beforeAll(async () => {
         // arriving ambiently on every ordinary query.
         await setup.unsafe(`GRANT hosted_app TO CURRENT_USER WITH INHERIT FALSE`);
 
+        await setup.unsafe(`
+          DO $$
+          BEGIN
+            CREATE ROLE hosted_service NOLOGIN NOINHERIT;
+          EXCEPTION WHEN duplicate_object THEN NULL;
+          END $$;
+        `);
+        // Mirrors migration 1005: service privileges are reachable only after
+        // an explicit transaction-local role switch.
+        await setup.unsafe(`GRANT hosted_service TO CURRENT_USER WITH INHERIT FALSE`);
+
         await setup`CREATE TABLE scratch (id int)`;
         await setup.unsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON scratch TO hosted_app`);
+        await setup`CREATE TABLE service_scratch (id int)`;
+        await setup.unsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON service_scratch TO hosted_service`);
 
         // A tenant-owned table shaped like the real hosted tables: FORCE RLS so
         // even the owner is subject to policy, and every policy keyed on the
@@ -109,6 +127,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await sql`TRUNCATE scratch`;
+  await sql`TRUNCATE service_scratch`;
   await sql`TRUNCATE tenant_rows`;
   await sql`
     INSERT INTO tenant_rows (id, organization_id, secret) VALUES
@@ -278,6 +297,49 @@ describe('withTenantContext hosted role', () => {
   });
 });
 
+describe('withHostedServiceContext', () => {
+  it('runs the callback as hosted_service and reaches service-only state', async () => {
+    const [role] = await withHostedServiceContext(async (tx) => {
+      await tx`INSERT INTO service_scratch (id) VALUES (1)`;
+      return readRole(tx);
+    });
+
+    expect(role.current_user).toBe('hosted_service');
+    expect(role.session_user).not.toBe('hosted_service');
+    const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM service_scratch`;
+    expect(n).toBe(1);
+  });
+
+  it('does not leak hosted_service onto the pooled connection', async () => {
+    await withHostedServiceContext(readRole);
+    const [after] = await readRole(sql);
+
+    expect(after.current_user).toBe(after.session_user);
+    expect(after.current_user).not.toBe('hosted_service');
+  });
+
+  it('rolls service writes and the role frame back when the callback fails', async () => {
+    await expect(
+      withHostedServiceContext(async (tx) => {
+        await tx`INSERT INTO service_scratch (id) VALUES (2)`;
+        throw new Error('service callback failed');
+      }),
+    ).rejects.toThrow('service callback failed');
+
+    const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM service_scratch`;
+    expect(n).toBe(0);
+    const [after] = await readRole(sql);
+    expect(after.current_user).not.toBe('hosted_service');
+  });
+
+  it('keeps hosted_app unable to read service-only state', async () => {
+    await withHostedServiceContext((tx) => tx`INSERT INTO service_scratch (id) VALUES (3)`);
+    await expect(
+      withTenantContext(serverContext('service-denied'), (tx) => tx`SELECT id FROM service_scratch`),
+    ).rejects.toThrow(/permission denied/);
+  });
+});
+
 describe('withTenantContext tenant isolation', () => {
   const readTenantRows = (tx: Sql) => tx<{ id: string; secret: string }[]>`
     SELECT id, secret FROM tenant_rows ORDER BY id
@@ -303,7 +365,7 @@ describe('withTenantContext tenant isolation', () => {
     expect(rows).toEqual([]);
   });
 
-  it('cannot count another tenant\'s rows', async () => {
+  it("cannot count another tenant's rows", async () => {
     const [{ n }] = await withTenantContext(
       serverContext('a'),
       (tx) => tx<{ n: number }[]>`SELECT count(*)::int AS n FROM tenant_rows`,
@@ -311,7 +373,7 @@ describe('withTenantContext tenant isolation', () => {
     expect(n).toBe(1);
   });
 
-  it('cannot update another tenant\'s row', async () => {
+  it("cannot update another tenant's row", async () => {
     await withTenantContext(
       serverContext('a'),
       (tx) => tx`UPDATE tenant_rows SET secret = 'stolen' WHERE id = 'row-b'`,
@@ -323,11 +385,8 @@ describe('withTenantContext tenant isolation', () => {
     expect(row.secret).toBe('tenant-b-secret');
   });
 
-  it('cannot delete another tenant\'s row', async () => {
-    await withTenantContext(
-      serverContext('a'),
-      (tx) => tx`DELETE FROM tenant_rows WHERE id = 'row-b'`,
-    );
+  it("cannot delete another tenant's row", async () => {
+    await withTenantContext(serverContext('a'), (tx) => tx`DELETE FROM tenant_rows WHERE id = 'row-b'`);
 
     const [{ n }] = await sql<{ n: number }[]>`
       SELECT count(*)::int AS n FROM tenant_rows WHERE id = 'row-b'
