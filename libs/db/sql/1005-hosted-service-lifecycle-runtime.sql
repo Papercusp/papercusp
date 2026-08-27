@@ -1,4 +1,4 @@
--- Migration 1005 — hosted-service lifecycle runtime boundary
+-- Migration 1005 — hosted-service lifecycle runtime boundary (armed)
 -- (byoc-cloud-workspaces-gcp-aws-azure-2026-08-22 P-037 / WI-40505)
 --
 -- Reuses the hosted_service role and the verified webhook receipt ledger from
