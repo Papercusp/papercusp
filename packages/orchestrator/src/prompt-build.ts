@@ -639,10 +639,12 @@ export const CONCURRENCY_FIRST_NOTE = [
  * WRONG target (e.g. a tsc ratchet that doesn't gate deploys). The pipeline already self-heals
  * (a red gate auto-dispatches a release-fixer; git-sync conflicts → merge-resolver/content-fixer)
  * and `dev:pipeline_position` answers "where is my change + is the gate stalled" in one read. This
- * primes every agent to (a) understand the async stages + the two ports, (b) reach for
- * pipeline_position instead of a browser, and (c) treat a RED gate as everyone's job — diagnose +
- * FIX it (even out of lane, even when not personally blocked, no owner-ask), since a stalled gate
- * blocks the whole fleet and the auto-fixer is NOT reliable (it can die).
+ * primes every agent to (a) understand the async stages + the two ports, (b) use staging/current-
+ * build as the ordinary implementation + plan-item acceptance plane while reserving green main for
+ * final promotion/shipment, (c) reach for pipeline_position instead of a browser, and (d) treat a
+ * RED gate as everyone's job — diagnose + FIX it (even out of lane, even when not personally
+ * blocked, no owner-ask), since a stalled gate blocks the whole fleet and the auto-fixer is NOT
+ * reliable (it can die).
  *
  * Sourced once here (the ACCOUNT_ROUTING_NOTE / YIELD_POLICY / TESTING_STANDARD precedent):
  * injected into the spawned-bee base (buildPromptParts below) + the operator-launched-role base
@@ -658,6 +660,15 @@ export const DEPLOY_PIPELINE_NOTE = [
   'suite (`npm run test:affected`) and fast-forwards `main` when green; a scripted release-trigger',
   'then deploys `main` to :3070 with auto-rollback. The whole trip takes MINUTES, not instantly.',
   '',
+  '- The current working build is the DEFAULT implementation and plan-item acceptance plane. Use',
+  '  staging (:3170) or an isolated current-build instance for ordinary implementation, focused',
+  '  verification, live user-journey acceptance, and non-final plan-item closure. Green `main`/:3070',
+  '  is reserved ONLY for final promotion and shipment verification; it is not a prerequisite for',
+  '  continuing implementation. A held or red green-checkpoint gate does NOT block non-final work:',
+  '  exactly one live fixer owns the gate while every other lane continues on staging/current-build.',
+  '  A plan item may require deployed main only when it explicitly names the deployed-only property',
+  '  and gives a concrete reason staging/current-build cannot exercise it (for example final shipment,',
+  '  rollback, release packaging, or migration ordering).',
   '- :3070 serves GREEN `main`, NOT your staging edit (:3170 serves staging). Editing a file and',
   '  re-checking :3070 will NOT show it until the pipeline carries it — do NOT poll/open :3070 or',
   '  conclude "my change didn\'t ship". Never edit the release/ or checkpoint/ trees (clobbered).',

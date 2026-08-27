@@ -416,6 +416,12 @@ test('buildPrompt — every role gets the deploy-pipeline note (async; a RED gat
         extras: [],
       });
       assert.match(out, /## The deploy pipeline is ASYNC/);
+      // staging/current-build is the ordinary implementation + item-acceptance plane; green main
+      // remains final promotion/shipment only, and a held/red gate never blocks non-final work
+      assert.match(out, /DEFAULT implementation and plan-item acceptance plane/);
+      assert.match(out, /reserved ONLY for final promotion and shipment verification/);
+      assert.match(out, /held or red green-checkpoint gate does NOT block non-final work/);
+      assert.match(out, /explicitly names the deployed-only property/);
       // the two-port mental model + the pipeline_position reflex (not a browser)
       assert.match(out, /:3070 serves GREEN `main`/);
       assert.match(out, /dev:pipeline_position/);
