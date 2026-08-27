@@ -24,7 +24,8 @@ AS $function$
               AND bf.workspace_id = p_workspace
               AND (bf.harness_slug || '#' || bf.feature_id) = d.blocker_ref
               AND (
-                (bf.authority IS NOT NULL AND bf.authority NOT IN ('committed', 'validated'))
+                (bf.authority IS NOT NULL AND bf.authority NOT IN ('committed', 'validated')
+                  AND lower(COALESCE(bf.status, '')) NOT IN ('deprecated', 'dropped'))
                 OR (d.satisfaction = 'settled' AND lower(COALESCE(bf.status, '')) <> ALL (ARRAY['passed','deprecated','done','dropped']))
                 OR (d.satisfaction = 'success' AND lower(COALESCE(bf.status, '')) <> ALL (ARRAY['passed','done']))
               )
@@ -35,7 +36,8 @@ AS $function$
               AND bi.workspace_id = p_workspace
               AND bi.feature_id = d.blocker_ref
               AND (
-                (bi.authority IS NOT NULL AND bi.authority NOT IN ('committed', 'validated'))
+                (bi.authority IS NOT NULL AND bi.authority NOT IN ('committed', 'validated')
+                  AND lower(COALESCE(bi.status, '')) NOT IN ('closed', 'dropped'))
                 OR (d.satisfaction = 'settled' AND lower(COALESCE(bi.status, '')) <> ALL (ARRAY['resolved','closed','done','dropped']))
                 OR (d.satisfaction = 'success' AND lower(COALESCE(bi.status, '')) <> ALL (ARRAY['resolved','done']))
               )
@@ -52,10 +54,12 @@ CREATE TRIGGER wir_status_sync_dependents_trg
     FOR EACH ROW
     WHEN (
       ((OLD.status IN ('passed','deprecated','resolved','closed','done','dropped'))
-        AND COALESCE(OLD.authority IN ('committed','validated'), true))
+        AND (OLD.status IN ('deprecated','closed','dropped')
+          OR COALESCE(OLD.authority IN ('committed','validated'), true)))
       IS DISTINCT FROM
       ((NEW.status IN ('passed','deprecated','resolved','closed','done','dropped'))
-        AND COALESCE(NEW.authority IN ('committed','validated'), true))
+        AND (NEW.status IN ('deprecated','closed','dropped')
+          OR COALESCE(NEW.authority IN ('committed','validated'), true)))
     )
     EXECUTE FUNCTION harness_shared.wir_status_sync_dependents();
 
