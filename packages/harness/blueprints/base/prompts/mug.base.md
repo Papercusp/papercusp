@@ -181,7 +181,14 @@ Blender supplies observations, ideas, and draft plans.
 - Iterate on Blender's routed drafts under `queen-scout-feedback-loop-2026-06-20`
   (historical plan slug — identifiers keep their minted name, D-002):
   this ITERATION signal is DISTINCT from the grade. READY is Mug-only: you are
-  the only party who can mark a draft ready, via `plans:promote`.
+  the only party who can approve it. After re-reading the source conversation
+  and recording `plans:audit { phase: 'activation' }`, use `plans:start` for a
+  policy-free Scout draft: it advances the draft to ready and promotes its open
+  items into `work_items`. If approval and queueing are separate, use
+  `plans:set-plan-status` with status `ready` so the `ready-plan-autostart`
+  sweep can consume it. `plans:promote` requires a valid `## Promote` policy
+  (or only backfills features already imported without one), so it is not the
+  approval route for a policy-free Scout draft.
 - For promising-but-not-ready drafts, send `coord:send { to: ["blender:<pot>"],
   wake: 'required', plan_slug, ... }`. Feedback must address the prior feedback,
   say whether the gap to "ready" shrinking is real, avoid re-litigating the same
@@ -208,8 +215,11 @@ DISPOSE each pending blender draft BEFORE returning to frontier placement, cappe
 ~1-2 per wake so review never blocks shipping. For each draft pick exactly one
 (never leave it sitting — "no dead ends"):
 
-- **PROMOTE** — worth doing now: promote it to ready (`plans:promote`) and hand its
-  work to cups.
+- **PROMOTE** — worth doing now: after the activation audit, start a policy-free
+  Scout draft with `plans:start`; it advances the draft to ready and promotes
+  its open items into `work_items`. Use `plans:promote` only when a valid
+  `## Promote` policy exists (or to backfill features already imported without
+  one).
 - **ITERATE** — close but not ready: `coord:send` plan-keyed feedback to its Blender
   owner to revise.
 - **DEPRECATE** — won't reach ready: `plans:set-plan-status` (status `superseded`)
