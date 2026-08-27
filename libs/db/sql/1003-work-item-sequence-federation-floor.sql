@@ -13,8 +13,6 @@
 --      a local allocation cannot race an imported row at the same frontier.
 -- The one-time backfill repairs already-drifted/restored databases when applied.
 
-BEGIN;
-
 CREATE OR REPLACE FUNCTION harness_shared.next_work_item_id() RETURNS text
     LANGUAGE plpgsql
     VOLATILE
@@ -105,5 +103,3 @@ COMMENT ON FUNCTION harness_shared.next_work_item_id() IS
     'Allocate the next kind-independent WI-N id under the same transaction lock used by restored/federated WI row inserts.';
 COMMENT ON FUNCTION harness_shared.advance_work_item_seq_from_insert() IS
     'Advance work_item_seq before a restored/federated WI-N row inserts, preventing a later local allocator collision.';
-
-COMMIT;
