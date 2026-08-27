@@ -4,6 +4,11 @@
 -- template_data, so the plan slug primary key alone cannot prevent two different
 -- rubric ids from competing to define the same plan's definition of done. Keep the
 -- newest live contract and retire older duplicates before installing the invariant.
+-- FORWARD-COMPAT: this migration does not replace an existing arbiter. The deployed
+-- release writes harness_plans through its existing (workspace_id, harness_slug,
+-- plan_slug) upsert and never targets the new subjectPlan index with ON CONFLICT;
+-- archiving duplicate acceptance rows leaves its existing single-row lookup valid
+-- while the stricter proposal and ambiguity checks roll out with this change.
 
 WITH ranked AS (
   SELECT
