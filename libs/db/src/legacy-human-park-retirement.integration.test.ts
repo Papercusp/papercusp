@@ -78,6 +78,10 @@ beforeAll(async () => {
   sql = postgres(db.url, { max: 1, onnotice: () => {} });
 
   await sql.unsafe(`
+    -- Provision applies the full chain; reset 870's LIKE-based backup so this
+    -- raw replay models the migration as pending against the current schema.
+    DROP TABLE IF EXISTS harness_shared.bak_20260821_legacy_human_recurrence_870;
+
     INSERT INTO harness_shared.work_items
       (workspace_id, harness_slug, feature_id, title, status, item_kind, origin,
        created_ts, updated_ts, payload)

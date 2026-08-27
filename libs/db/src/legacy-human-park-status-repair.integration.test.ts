@@ -80,6 +80,12 @@ beforeAll(async () => {
   sql = postgres(db.url, { max: 1, onnotice: () => {} });
 
   await sql.unsafe(`
+    -- Provision applies the full chain, so these LIKE-based historical backup
+    -- tables can predate later work_items columns. Raw replay models 867/868
+    -- still pending and must create their own artifacts from the current shape.
+    DROP TABLE IF EXISTS harness_shared.bak_20260821_legacy_human_recurrence_867;
+    DROP TABLE IF EXISTS harness_shared.bak_20260821_legacy_human_park_status_repair_868;
+
     INSERT INTO harness_shared.work_items
       (workspace_id, harness_slug, feature_id, title, status, item_kind, origin,
        created_ts, updated_ts, payload)
