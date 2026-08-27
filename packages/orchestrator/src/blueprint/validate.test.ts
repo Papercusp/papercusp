@@ -251,7 +251,7 @@ test('tier defaults to durable; a durable cron schedule has no trigger errors', 
 });
 
 test('tier:ephemeral with a deterministic action + intervalSec validates (no trigger errors)', () => {
-  const bp = withSchedule([{ tier: 'ephemeral', action: 'system:hive-watchdog-sweep', intervalSec: 5 }]);
+  const bp = withSchedule([{ tier: 'ephemeral', action: 'system:pot-watchdog-sweep', intervalSec: 5 }]);
   const v = validateBlueprint(bp);
   assert.equal(v.errors.filter((e) => e.code.startsWith('ephemeral-')).length, 0, JSON.stringify(v.errors));
 });
