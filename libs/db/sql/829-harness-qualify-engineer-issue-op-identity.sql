@@ -172,14 +172,25 @@ BEGIN
     RAISE EXCEPTION '829: unexpected live survivor shape for %', bad;
   END IF;
 
-  -- Copy every non-generated work_items column so the backup remains the
-  -- authority even as this wide table evolves.  _search/lane are regenerated.
-  SELECT string_agg(format('%I', a.attname), ', ' ORDER BY a.attnum),
-         string_agg(format('b.%I', a.attname), ', ' ORDER BY a.attnum)
+  -- Copy every non-generated column shared by the frozen migration-826 backup
+  -- and the current work_items table.  Later migrations may add nullable or
+  -- defaulted columns to work_items; those columns were never present in the
+  -- incident snapshot and must take their current defaults on restore.
+  -- _search/lane are regenerated.
+  SELECT string_agg(format('%I', current_col.attname), ', ' ORDER BY current_col.attnum),
+         string_agg(format('b.%I', current_col.attname), ', ' ORDER BY current_col.attnum)
     INTO cols, backup_cols
-  FROM pg_attribute a
-  WHERE a.attrelid = 'harness_shared.work_items'::regclass
-    AND a.attnum > 0 AND NOT a.attisdropped AND a.attgenerated = '';
+  FROM pg_attribute current_col
+  JOIN pg_attribute backup_col
+    ON backup_col.attrelid = 'harness_shared.bak_20260813_work_item_physical_twins'::regclass
+   AND backup_col.attname = current_col.attname
+   AND backup_col.attnum > 0
+   AND NOT backup_col.attisdropped
+   AND backup_col.attgenerated = ''
+  WHERE current_col.attrelid = 'harness_shared.work_items'::regclass
+    AND current_col.attnum > 0
+    AND NOT current_col.attisdropped
+    AND current_col.attgenerated = '';
 
   EXECUTE format(
     'INSERT INTO harness_shared.work_items (%s) '
