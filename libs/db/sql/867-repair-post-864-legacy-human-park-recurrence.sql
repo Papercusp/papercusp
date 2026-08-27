@@ -81,6 +81,7 @@ SELECT p.workspace_id, p.harness_slug, p.feature_id, p.item_kind, p.title,
 DO $guard867$
 DECLARE total_rows int; remote_rows int; review_rows int; owner_rows int;
         operational_rows int; claimed_nonoperational int; collisions text;
+        remote_hive_install boolean;
 BEGIN
   SELECT count(*)::int,
          count(*) FILTER (WHERE destination = 'remote-reconciliation')::int,
@@ -89,7 +90,26 @@ BEGIN
          count(*) FILTER (WHERE destination = 'operational')::int
     INTO total_rows, remote_rows, review_rows, owner_rows, operational_rows
     FROM migration_867_manifest;
-  IF EXISTS (SELECT 1 FROM harness_shared.bak_20260821_legacy_human_park_manifest)
+
+  -- The 84-row recurrence census was measured on the owner installation.
+  -- Joined remote_hive peers have a different federated subset; they still run
+  -- the classification, claim, collision, typed-capability and postcondition
+  -- guards, but must not be compared to the owner's one-time count.
+  SELECT EXISTS (
+    SELECT 1
+      FROM harness_shared.harness_registry r
+      CROSS JOIN LATERAL jsonb_array_elements(CASE
+        WHEN jsonb_typeof(r.payload -> 'projects') = 'array'
+          THEN r.payload -> 'projects'
+        ELSE '[]'::jsonb
+      END) project
+     WHERE r.workspace_id = 'papercusp-workspace'
+       AND project ->> 'slug' = 'papercusp'
+       AND COALESCE((project ->> 'remote_hive')::boolean, false)
+  ) INTO remote_hive_install;
+
+  IF NOT remote_hive_install
+     AND EXISTS (SELECT 1 FROM harness_shared.bak_20260821_legacy_human_park_manifest)
      AND (total_rows, remote_rows, review_rows, owner_rows, operational_rows)
            IS DISTINCT FROM (84, 31, 37, 0, 16) THEN
     RAISE EXCEPTION

@@ -168,6 +168,7 @@ DECLARE
   backup_rows int;
   claimed_rows text;
   collisions text;
+  remote_hive_install boolean;
 BEGIN
   SELECT count(*)::int,
          count(*) FILTER (WHERE destination = 'remote-reconciliation')::int,
@@ -182,7 +183,24 @@ BEGIN
 
   -- A populated 870 backup witness marks the live papercusp database; a pristine
   -- bootstrap DB has the table empty and takes the zero-row path below.
-  IF EXISTS (
+  -- The 44-row census is owner-install evidence. A joined remote_hive has an
+  -- independently-evolving replica, so it skips only that count comparison;
+  -- claims, collisions, typed capabilities, backups and postconditions remain
+  -- mandatory on both installation shapes.
+  SELECT EXISTS (
+    SELECT 1
+      FROM harness_shared.harness_registry r
+      CROSS JOIN LATERAL jsonb_array_elements(CASE
+        WHEN jsonb_typeof(r.payload -> 'projects') = 'array'
+          THEN r.payload -> 'projects'
+        ELSE '[]'::jsonb
+      END) project
+     WHERE r.workspace_id = 'papercusp-workspace'
+       AND project ->> 'slug' = 'papercusp'
+       AND COALESCE((project ->> 'remote_hive')::boolean, false)
+  ) INTO remote_hive_install;
+
+  IF NOT remote_hive_install AND EXISTS (
        SELECT 1 FROM harness_shared.bak_20260821_legacy_human_recurrence_870
      ) AND NOT (total_rows = 0 AND backup_rows = 44)
      AND (total_rows, remote_rows, review_rows, owner_rows, operational_rows)

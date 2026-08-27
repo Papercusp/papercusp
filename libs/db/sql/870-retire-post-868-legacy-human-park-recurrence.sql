@@ -148,6 +148,7 @@ DECLARE
   backup_rows int;
   claimed_rows text;
   collisions text;
+  remote_hive_install boolean;
 BEGIN
   SELECT count(*)::int,
          count(*) FILTER (WHERE destination = 'remote-reconciliation')::int,
@@ -160,7 +161,23 @@ BEGIN
   SELECT count(*)::int INTO backup_rows
     FROM harness_shared.bak_20260821_legacy_human_recurrence_870;
 
-  IF EXISTS (
+  -- The exact 30-row recurrence geometry belongs to the owner installation.
+  -- A registry-proved remote_hive peer owns a different federated subset, so
+  -- preserve every row-level safety guard while skipping only this census.
+  SELECT EXISTS (
+    SELECT 1
+      FROM harness_shared.harness_registry r
+      CROSS JOIN LATERAL jsonb_array_elements(CASE
+        WHEN jsonb_typeof(r.payload -> 'projects') = 'array'
+          THEN r.payload -> 'projects'
+        ELSE '[]'::jsonb
+      END) project
+     WHERE r.workspace_id = 'papercusp-workspace'
+       AND project ->> 'slug' = 'papercusp'
+       AND COALESCE((project ->> 'remote_hive')::boolean, false)
+  ) INTO remote_hive_install;
+
+  IF NOT remote_hive_install AND EXISTS (
        SELECT 1 FROM harness_shared.bak_20260821_legacy_human_park_manifest
      ) AND NOT (total_rows = 0 AND backup_rows = 30)
      AND (total_rows, remote_rows, review_rows, owner_rows, operational_rows)

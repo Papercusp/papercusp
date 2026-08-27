@@ -115,6 +115,7 @@ DECLARE
   operational_rows int;
   claimed_rows int;
   collision_rows text;
+  remote_hive_install boolean;
 BEGIN
   SELECT count(*)::int,
          count(*) FILTER (WHERE destination = 'remote-reconciliation')::int,
@@ -124,7 +125,27 @@ BEGIN
     INTO total_rows, remote_rows, review_rows, owner_rows, operational_rows
     FROM migration_864_manifest;
 
-  IF total_rows <> 0 AND
+  -- The exact 759-row census is an OWNER-INSTALL snapshot, not a portable
+  -- invariant of the federated table. A joined remote_hive carries only the
+  -- subset it has received plus its own local rows (the mac VM legitimately
+  -- had 727 = 720 remote + 7 local). Enforce the historical census on the
+  -- owner exactly as before; on a proved remote_hive peer, retain every
+  -- per-row/claim/backup/postcondition guard below but do not compare its
+  -- independently-evolving replica to the owner's one-time count.
+  SELECT EXISTS (
+    SELECT 1
+      FROM harness_shared.harness_registry r
+      CROSS JOIN LATERAL jsonb_array_elements(CASE
+        WHEN jsonb_typeof(r.payload -> 'projects') = 'array'
+          THEN r.payload -> 'projects'
+        ELSE '[]'::jsonb
+      END) project
+     WHERE r.workspace_id = 'papercusp-workspace'
+       AND project ->> 'slug' = 'papercusp'
+       AND COALESCE((project ->> 'remote_hive')::boolean, false)
+  ) INTO remote_hive_install;
+
+  IF NOT remote_hive_install AND total_rows <> 0 AND
      (total_rows, remote_rows, review_rows, owner_rows, operational_rows)
        IS DISTINCT FROM (759, 357, 371, 8, 23) THEN
     RAISE EXCEPTION
@@ -135,7 +156,8 @@ BEGIN
   -- A zero-row first execution is valid only for a pristine/bootstrap DB. A
   -- populated live DB must either present the exact census above or already
   -- carry the installed v16 wrapper from a successful earlier execution.
-  IF total_rows = 0
+  IF NOT remote_hive_install
+     AND total_rows = 0
      AND to_regprocedure(
        'harness_shared.work_item_claim_floors_v16(text,text,text,text,text,text,text,jsonb,text)'
      ) IS NULL
