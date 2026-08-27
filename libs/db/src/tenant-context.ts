@@ -63,13 +63,23 @@ export type TenantContextErrorCode =
   | 'tenant_context_workspace_binding_missing'
   | 'tenant_context_workspace_binding_unexpected'
   | 'tenant_context_workspace_binding_mismatch'
-  | 'tenant_context_foreign_workspace';
+  | 'tenant_context_foreign_workspace'
+  /**
+   * The transaction could not assume {@link HOSTED_TENANT_ROLE}. Distinct from
+   * the validation codes above: the Principal was fine and the refusal came from
+   * the database, almost always because migration 997's membership grant has not
+   * been applied by a superuser. Fail-closed, never a leak.
+   */
+  | 'tenant_context_hosted_role_unavailable';
 
 export class TenantContextError extends Error {
   override readonly name = 'TenantContextError';
 
-  constructor(readonly code: TenantContextErrorCode) {
-    super(code);
+  constructor(
+    readonly code: TenantContextErrorCode,
+    options?: { readonly cause?: unknown },
+  ) {
+    super(code, options);
   }
 }
 
@@ -165,8 +175,47 @@ export async function withTenantContext<T>(
         set_config('app.organization_id', ${tenant.organizationId}, true),
         set_config('app.workspace_id', ${tenant.workspaceId ?? ''}, true)
     `;
+    await enterHostedAppRole(tx);
     return fn(tx);
   });
+}
+
+/**
+ * The database role the hosted request path runs as.
+ *
+ * Migration 978 creates it `NOLOGIN`, and re-verifies on every run that no
+ * hosted_* role can log in — so this role is reachable ONLY by assumption, never
+ * by connecting as it. Migration 997 grants `harness_app` (the application pool
+ * role) membership `WITH INHERIT FALSE`, which is what makes the switch below
+ * both possible and non-ambient.
+ */
+export const HOSTED_TENANT_ROLE = 'hosted_app';
+
+/**
+ * Switch the transaction into the hosted role.
+ *
+ * This is the step that makes the FORCE RLS policies of migrations 978/979
+ * apply at all: every one of them is granted `TO hosted_app`, and the pool
+ * connects as `harness_app`, which those same migrations REVOKE from the hosted
+ * tables. Without this switch the hosted path is not "unprotected" — it is
+ * inert, failing closed with `permission denied for table`.
+ *
+ * `SET LOCAL` is required rather than `SET`: it is reverted when the
+ * transaction commits or rolls back, so a pooled connection can never be handed
+ * to the next caller still wearing the hosted role.
+ */
+async function enterHostedAppRole(tx: Sql): Promise<void> {
+  try {
+    // The role is a module constant, never caller input, so `.unsafe` carries no
+    // injection surface — and SET ROLE cannot take a bind parameter.
+    await tx.unsafe(`SET LOCAL ROLE ${HOSTED_TENANT_ROLE}`);
+  } catch (cause) {
+    // Fail CLOSED and legibly. The common cause is migration 997's grant not
+    // having been applied — it degrades to a warning precisely because it needs
+    // a superuser — and the raw driver error ("permission denied to set role")
+    // does not say which grant is missing.
+    throw new TenantContextError('tenant_context_hosted_role_unavailable', { cause });
+  }
 }
 
 function requireIdentifier(value: unknown): string | null {
