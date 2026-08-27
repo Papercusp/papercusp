@@ -129,7 +129,7 @@ beforeAll(async () => {
         CREATE ROLE harness_app NOLOGIN NOSUPERUSER NOBYPASSRLS;
       END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_zero') THEN
-        CREATE ROLE harness_zero NOLOGIN REPLICATION SUPERUSER;
+        CREATE ROLE harness_zero LOGIN REPLICATION NOSUPERUSER BYPASSRLS;
       END IF;
     END
     $roles$;
