@@ -250,11 +250,22 @@ there and redo it.
   the moment you notice, whether or not you then investigate: the flap itself is a bug even
   after it self-recovers.
 - **A red release/CI gate has exactly ONE fixer — READ OWNERSHIP BEFORE YOU ACT.**
-  FIRST call `state:read { cell: 'gate.greenCheckpoint.ownership' }`. **Held by a live agent ⇒
-  you are DONE:** send useful evidence once (`coord:send`), then STOP — do not claim, do not arm
-  a fallback loop, and do not read gate status again this session. A second agent on a held gate
-  is waste, not diligence: measured 2026-08-26, 37 distinct agents took 97 stints on ONE gate
-  item. ⚠ That cell can UNDER-report a hold (EI-21456707280493029) — a `claimable` reading plus a
+  **Scope this exclusivity to `LIVE_GATE_OPS` only.** `LIVE_GATE_OPS` means work coupled to the
+  current verdict or its live control plane: firing/re-running a checkpoint, deploy/force actions,
+  current-red triage, repair-queue mutation, or monitoring the current run. FIRST call
+  `state:read { cell: 'gate.greenCheckpoint.ownership' }`. **Held by a live agent ⇒ you are DONE
+  with `LIVE_GATE_OPS`, not with every gate-related task:** send useful live-gate evidence once
+  (`coord:send`), then STOP THAT LANE — do not claim the live gate item, arm a fallback monitor,
+  or read gate status again this session.
+
+  This ownership does **not** reserve `GATE_SYSTEM_DEV`: independently registered source work such
+  as cache logic, instrumentation, test selection, retention/GC, alerting, tests, docs, and
+  refactors continues under its own work-item/plan lane and file locks. If that development needs
+  current-run evidence, request it once from the live gate owner and continue every preparatory or
+  independent step; end the whole task only when every remaining step genuinely depends on that
+  live result. A second agent on a held `LIVE_GATE_OPS` lane is waste, not diligence: measured
+  2026-08-26, 37 distinct agents took 97 stints on ONE gate item. ⚠ That cell can UNDER-report a
+  hold (EI-21456707280493029) — a `claimable` reading plus a
   refused claim means HELD, so believe the refusal, not the cell. ONLY when ownership is genuinely
   unheld is greening it YOURS: claim it, find the ACTUAL failing tests (query the test-run ledger,
   don't guess) and FIX them — even out of your lane, even in another agent's in-flight files, even
