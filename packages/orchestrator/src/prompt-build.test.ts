@@ -416,6 +416,11 @@ test('buildPrompt — every role gets the deploy-pipeline note (async; a RED gat
         extras: [],
       });
       assert.match(out, /## The deploy pipeline is ASYNC/);
+      assert.equal(
+        (out.match(/## The deploy pipeline is ASYNC/g) ?? []).length,
+        1,
+        `${role} prompt must project the shared deploy-pipeline note exactly once`,
+      );
       // staging/current-build is the ordinary implementation + item-acceptance plane; green main
       // remains final promotion/shipment only, and a held/red gate never blocks non-final work
       assert.match(out, /DEFAULT implementation and plan-item acceptance plane/);
