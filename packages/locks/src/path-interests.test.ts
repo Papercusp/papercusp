@@ -104,6 +104,18 @@ describe('readPathInterestsByOwner — the source must be able to produce two ow
     expect(text).not.toMatch(/agent_lock_waiters/i);
   });
 
+  it('includeIntents:false retains the authoritative release handle and lease evidence', async () => {
+    const cap = captureSql();
+    await readPathInterestsByOwner(cap.sql, OWNERS, { includeIntents: false });
+    const text = cap.text();
+    // A path-only projection lets a holder see the blocker but not release the
+    // exact row that still owns it. These are the columns locks:queue already
+    // reads from the same authoritative table.
+    expect(text).toMatch(/lock_id::text\s+AS\s+lock_id/i);
+    expect(text).toMatch(/coordination_domain/i);
+    expect(text).toMatch(/expires_ts/i);
+  });
+
   it('short-circuits on an empty owner set without touching the DB', async () => {
     const cap = captureSql();
     const rows = await readPathInterestsByOwner(cap.sql, []);

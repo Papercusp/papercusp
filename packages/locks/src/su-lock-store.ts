@@ -1045,10 +1045,19 @@ export async function readQueue(
   }) as Promise<QueueResult>;
 }
 
-/** One owner's live interest in one path — held OR intended. Shaped for `groupHeldFilesByOwner`. */
+/** One owner's live interest in one path — held OR intended. Shaped for the
+ * coordination coupling path. Holds-only reads also carry the optional
+ * authoritative lock metadata used by coord:presence's include_detail lane;
+ * waiter rows do not have a lock id and therefore leave those fields absent. */
 export interface PathInterestRow {
   owner: string;
   node: string;
+  /** The release handle, present only for an active held-lock row. */
+  lock_id?: string;
+  /** The lock namespace, present only for an active held-lock row. */
+  coordination_domain?: string;
+  /** The authoritative lease expiry, present only for an active held-lock row. */
+  expires_ts?: Date;
 }
 
 /**
@@ -1111,7 +1120,7 @@ export async function readPathInterestsByOwner(
   // branch would risk issuing a second, pointless round-trip against the lock DB.
   if (opts?.includeIntents === false) {
     return sql<PathInterestRow[]>`
-      SELECT owner, path AS node
+      SELECT owner, path AS node, lock_id::text AS lock_id, coordination_domain, expires_ts
         FROM agent_file_locks
        WHERE ${heldDomain}
          AND expires_ts > clock_timestamp()
