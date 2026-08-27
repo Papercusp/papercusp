@@ -1040,6 +1040,7 @@ export function invokeMcpToolNamesForRole(role: string): readonly string[] | nul
 export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // Bootstrap — one call returns assignments + backlog + inbox + plan-events + mem0.
   'coord:orient',
+  'coord:declare-intent',
   // Coordinate. (coord:ack was cut in the 2026-07-05 demand-evidence rebalance — 47
   // calls/7d; a coord:send reply covers the ack. coord:ask cut 2026-07-19 by the same
   // bar: 16 calls/14d SEEDED — true rarity, not a discoverability artifact — and zero

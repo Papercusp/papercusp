@@ -65,7 +65,7 @@ describe('core spine — every seeded write verb has its correction verb seeded 
   it('the spine stays SMALL — it is a seed, not a catalog (the whole point of trimming)', () => {
     // Guard against the opposite failure: "just seed everything" would restore the ~165k-token
     // load the trim exists to avoid. If this trips, justify the growth or use tools:find.
-    expect(CORE_MCP_TOOL_NAMES.length).toBeLessThanOrEqual(45);
+    expect(CORE_MCP_TOOL_NAMES.length).toBeLessThanOrEqual(46);
   });
 
   it('has no duplicate entries (a hand-maintained list that has been edited many times)', () => {

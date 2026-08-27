@@ -1681,7 +1681,7 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // comment beside CORE_MCP_TOOL_NAMES. It stays reachable via tools:find/invoke, and
   // still lives in the bee kit — this assertion was never updated for that cut.)
   for (const required of [
-    'coord:orient', 'coord:inbox', 'plans:get', 'work_items:list', 'work_items:claim',
+    'coord:orient', 'coord:declare-intent', 'coord:inbox', 'plans:get', 'work_items:list', 'work_items:claim',
     'docs:search', 'memory:search', 'fleet:launch-on-plan', 'tools:find',
   ]) {
     assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core`);
@@ -1743,8 +1743,11 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // table mandates, previously reachable ONLY from Claude's seed (P-003); a non-Claude
   // session calling it directly got "Direct wrapper was not exposed in this session"
   // (watchdog-promoted, reproduced:true). Keep this ratchet explicit so
-  // another addition cannot hide behind a stale size ceiling.
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 45, 'core stays small');
+  // another addition cannot hide behind a stale size ceiling. Then +1 → 46:
+  // coord:declare-intent — post-bootstrap lane declaration is the required direct
+  // Codex wrapper after coord:orient, so every trimmed client can claim its active intent
+  // without an extra tools:find/tools:invoke round trip (EI-21575682931056453).
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 46, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)
