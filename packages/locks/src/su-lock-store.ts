@@ -1013,6 +1013,14 @@ export interface WaiterRow {
   wait_until: Date;
   status: 'waiting' | 'granted' | 'expired' | 'cancelled';
   ahead_count?: number;
+  /** Latest expiry among live, overlapping locks held by another owner. */
+  holder_expires_ts?: Date | null;
+  /**
+   * True when this ticket's deadline precedes the current holder window. The
+   * ticket remains queued because its holder may release early, but it cannot
+   * be granted before expiry on the observed state.
+   */
+  cannot_be_granted_before_expiry?: boolean;
   /** The lock namespace this row lives in — see {@link QueueParams.coordinationDomain}. */
   coordination_domain: string;
 }
@@ -1167,19 +1175,46 @@ async function readQueueInner(
     : paths.length === 0
       ? sql`AND FALSE`
       : sql`AND lock_paths_overlap(paths, ${paths}::text[])`;
+  const waitingOwnerFilter = owner ? sql`AND w.owner = ${owner}` : sql``;
+  const waitingDomainFilter = coordinationDomain === null
+    ? sql`TRUE`
+    : sql`w.coordination_domain = ${coordinationDomain}`;
+  const waitingPathOverlap = paths === undefined
+    ? sql``
+    : paths.length === 0
+      ? sql`AND FALSE`
+      : sql`AND lock_paths_overlap(w.paths, ${paths}::text[])`;
 
   const waiting = await sql<Array<WaiterRow & { ahead_count: number }>>`
-    SELECT ticket_id, owner, owner_label, paths, intent, goal_ref, queued_ts, wait_until,
-           status::text AS status,
-           coordination_domain,
-           (ROW_NUMBER() OVER (PARTITION BY coordination_domain
+    SELECT w.ticket_id, w.owner, w.owner_label, w.paths, w.intent, w.goal_ref,
+           w.queued_ts, w.wait_until,
+           w.status::text AS status,
+           w.coordination_domain,
+           holder.holder_expires_ts,
+           (
+             holder.holder_expires_ts IS NOT NULL
+             AND w.wait_until < holder.holder_expires_ts
+           ) AS cannot_be_granted_before_expiry,
+           (ROW_NUMBER() OVER (PARTITION BY w.coordination_domain
                                    ORDER BY queued_ts ASC, ticket_id ASC) - 1)::int AS ahead_count
-      FROM agent_lock_waiters
-     WHERE ${domainFilter}
-       AND status = 'waiting'
-       ${pathOverlap}
-       ${ownerFilter}
-     ORDER BY queued_ts ASC, ticket_id ASC
+      FROM agent_lock_waiters w
+      LEFT JOIN LATERAL (
+        SELECT max(lock.expires_ts) AS holder_expires_ts
+          FROM agent_file_locks lock
+         WHERE lock.coordination_domain = w.coordination_domain
+           AND lock.owner <> w.owner
+           AND lock.expires_ts > clock_timestamp()
+           AND EXISTS (
+             SELECT 1
+               FROM unnest(w.paths) AS requested(path)
+              WHERE lock_path_overlaps(lock.path, requested.path)
+           )
+      ) AS holder ON TRUE
+     WHERE ${waitingDomainFilter}
+       AND w.status = 'waiting'
+       ${waitingPathOverlap}
+       ${waitingOwnerFilter}
+     ORDER BY w.queued_ts ASC, w.ticket_id ASC
   `;
 
   const result: QueueResult = { active_locks: active, waiting };
