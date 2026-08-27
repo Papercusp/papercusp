@@ -135,7 +135,10 @@ kickoff adds mission specifics, never this:
   `events:await { event: 'work-item:claimable', payload_filter: <your claim spec's
   view>, timeout_sec: 1800 }`, then `loop:end`** — the pool refilling re-wakes you
   (the wake is a HINT; `get_next` on the wake turn stays the authoritative claim,
-  re-register on a re-miss); don't burn empty wakes. Blocked? **PUSH beats polling:** if the
+  re-register on a re-miss); don't burn empty wakes. If AUTO (or another autonomy-implying
+  mode) remains active without that deliberate await, pass
+  `acknowledgeOpenDirectives:true, acknowledgeWakeLessAutonomy:true` to `loop:end`.
+  Blocked? **PUSH beats polling:** if the
   blocker has a completion event — or its owner can DECLARE one (declare-first
   pair-emit: they `events:emit { announce:true }`, you await the RETURNED key; never
   re-type a key from chat — drift strands you) — `events:await { event }` and END YOUR
@@ -156,7 +159,7 @@ kickoff adds mission specifics, never this:
   proceed now, don't re-wait.
 - **Wind-down on the leader's stand-down order:** finish only the atomic step in hand →
   `work_items:checkpoint` + release with a one-line reason (or complete with evidence) →
-  `loop:end` → `coord:ack { msg_id }` the leader's cue (a lifecycle RECEIPT — it takes only
+  `loop:end { acknowledgeOpenDirectives:true, acknowledgeWakeLessAutonomy:true }` → `coord:ack { msg_id }` the leader's cue (a lifecycle RECEIPT — it takes only
   msg_id and carries no free text), then send your one-line disposition as a separate
   `coord:send { expects:'none', summary }`.
 
