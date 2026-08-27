@@ -594,15 +594,26 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
     `cup:spawn` / `fleet:launch-on-plan`) takes one of three: a **pool id** → pin via the
     gateway (hard, no failover); **`auto`** → the gateway auto-routes the pool + fails over;
     **`default`** (or omitted) → the system credential, gateway skipped (**the default**).
-    **Do NOT substitute your own capacity read for this default.** A tight/near-walled pool is
-    NOT a reason to preemptively pick `auto` "to get failover" — that is the owner's call, not
-    yours. The default stays the **system account** even when a preflight looks scarce; switching
-    to `auto` or any non-default routing requires the owner's EXPLICIT choice. If you believe
-    auto's failover would genuinely help, SURFACE it as a one-line suggestion in your spawn
-    disclosure (*"…the pool is tight — say `auto` if you want gateway failover"*) and let the
-    owner decide — never silently launch on `auto` because your own capacity check looked tight.
-    (This is the research-desk 2026-07-08 miss: a capacity preflight looked scarce, so the leader
-    self-switched to `auto` the owner never asked for.)
+    **Do NOT substitute your own capacity read for this default — at SPAWN time, on a
+    PREDICTED shortage.** A tight/near-walled pool is NOT a reason to preemptively pick `auto`
+    "to get failover" — that is the owner's call, not yours. The default stays the **system
+    account** even when a preflight looks scarce; switching to `auto` or any non-default routing
+    *because you expect trouble* requires the owner's EXPLICIT choice. SURFACE it instead as a
+    one-line suggestion in your spawn disclosure (*"…the pool is tight — say `auto` if you want
+    gateway failover"*) and let the owner decide — never silently launch on `auto` because your
+    own capacity check looked tight. (The research-desk 2026-07-08 miss: a capacity preflight
+    looked scarce, so the leader self-switched to `auto` the owner never asked for.)
+    ⚠ **This rail governs PREDICTION, never REMEDIATION — never let it stop you FIXING a
+    measured failure.** The moment routing is the CONFIRMED cause of work that is already dead
+    or dying — a holder wedged on repeated 429s, `accounts:status` showing the pinned pool
+    walled — re-routing is a FIX, not a preemptive bet, and making it is your job: do it and
+    DISCLOSE it, exactly like any other outage remediation. The two cases are opposites, and
+    only the first is the owner's call: 2026-07-08 was a GUESS about the future where nothing
+    was broken and not acting cost nothing; an outage is a MEASUREMENT of the present where not
+    acting costs the work and leaves it dead until a human happens to answer. Reading this rail
+    as "ask the owner before fixing a live outage" turns it into the failure this playbook names
+    everywhere else — stopping short and handing the work back. Report what you measured, what
+    you re-routed to, and why.
   - **Model** — name what you're spawning with: *"using model `<the default>` — let me know if
     you want a different one."* Override with the `model` (`<modelId>[:<effort>]` spec) or
     `tier` (the named menu) arg.
@@ -610,8 +621,8 @@ Launch-tool routing reference: [Launching agents — which tool for which door](
     resumes its live context on every wake; say `cold` if you'd rather each wake start from a
     fresh context rebuilt from the agent's last checkpoint."* Set via the `carry` arg on
     `fleet:launch-on-plan` (`warm` | `cold`, default `warm`); it is INDEPENDENT of
-    visible-vs-headless. Warm stays the default — like account routing, do NOT self-switch to
-    `cold` on your own cost/capacity read; cold is the owner's explicit call.
+    visible-vs-headless. Warm stays the default — like account routing's spawn-time default, do
+    NOT self-switch to `cold` on your own cost/capacity read; cold is the owner's explicit call.
   The announcement is required even under AUTO — where everything else becomes act-don't-ask —
   because it costs the owner nothing and a wrong account/model is expensive to discover late.
 
