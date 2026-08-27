@@ -4,12 +4,22 @@
  */
 import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { promises as fs } from 'node:fs';
+import { promises as fs, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { resolveRequires, resolveLockfile } from './lock-resolve.ts';
+import { _resetPapercuspRootForTests, papercuspPath } from './papercusp-root.ts';
 
-import { papercuspPath } from './papercusp-root.ts';
+// lock-resolve.ts captures its root-derived directories at module load time.
+// Set an isolated root before importing it so an interrupted test process can
+// never leave lockresolve-* fixtures in the operator's real global-plugins dir.
+const previousPapercuspHome = process.env.PAPERCUSP_HOME;
+const testHome = mkdtempSync(join(tmpdir(), `lock-resolve-test-${process.pid}-`));
+process.env.PAPERCUSP_HOME = testHome;
+_resetPapercuspRootForTests();
+
+const { resolveRequires, resolveLockfile } = await import('./lock-resolve.ts');
+
 const PREFIX = `lockresolve-${process.pid}`;
 const GLOBAL_DIR = papercuspPath('global-plugins');
 
@@ -35,8 +45,12 @@ async function makePlugin(suffix: string, requires: string[] = [], recommends: s
 }
 
 after(async () => {
-  for (const s of allSlugs) {
-    await fs.rm(join(GLOBAL_DIR, s), { recursive: true, force: true });
+  try {
+    await fs.rm(testHome, { recursive: true, force: true });
+  } finally {
+    if (previousPapercuspHome === undefined) delete process.env.PAPERCUSP_HOME;
+    else process.env.PAPERCUSP_HOME = previousPapercuspHome;
+    _resetPapercuspRootForTests();
   }
 });
 
