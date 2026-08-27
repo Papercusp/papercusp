@@ -1,7 +1,7 @@
--- 993-work-item-completion-settlement-manifest.sql
+-- 995-work-item-completion-settlement-manifest.sql
 --
 -- Backfill only terminal proposed rows whose persisted, server-stamped evidence
--- already contains an exact repository root and per-path blob identities.  The
+-- already contains an exact repository root and per-path blob identities. The
 -- migration deliberately does not change authority and does not manufacture a
 -- receipt for legacy/pathless evidence.
 
