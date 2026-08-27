@@ -57,6 +57,12 @@ export interface ResourceAcquireParams {
   ownerLabel: string | null;
   reason: string;
   ttlSec: number;
+  /**
+   * Keep a refused exclusive request in the durable FIFO queue. Callers that
+   * return a terminal conflict must leave this false; otherwise the cascade
+   * can grant a lease after the caller has already stopped waiting.
+   */
+  queueOnConflict?: boolean;
 }
 
 /** A pending exclusive request. Queue rows are requests, not leases. */
@@ -334,7 +340,16 @@ export async function tryAcquireResource(
   tx: Sql,
   params: ResourceAcquireParams,
 ): Promise<ResourceAcquireResult> {
-  const { coordinationDomain: cd, resource, mode, owner, ownerLabel, reason, ttlSec } = params;
+  const {
+    coordinationDomain: cd,
+    resource,
+    mode,
+    owner,
+    ownerLabel,
+    reason,
+    ttlSec,
+    queueOnConflict = false,
+  } = params;
   await tx`SET LOCAL statement_timeout = '500ms'`;
 
   // D-010: registered names only. Also fetch the D-008 semaphore capacity.
@@ -423,6 +438,11 @@ export async function tryAcquireResource(
   const callerOwnsExclusive = holders.some((h) => h.owner === owner && h.mode === 'exclusive');
   // Another owner's exclusive (held or draining) blocks.
   if (holders.some((h) => h.mode === 'exclusive' && h.owner !== owner)) {
+    if (!queueOnConflict) {
+      await clearResourceExclusiveQueue(tx, cd, resource, owner);
+      await clearResourceWaiter(tx, cd, resource, owner);
+      return { ok: false, reason: 'held_exclusive', holders };
+    }
     const queued = await enqueueResourceExclusive(tx, {
       coordinationDomain: cd,
       resource,
@@ -447,6 +467,11 @@ export async function tryAcquireResource(
   // being retried). Do not let a new exclusive jump that ticket.
   const head = queue[0];
   if (!callerOwnsExclusive && head && head.owner !== owner) {
+    if (!queueOnConflict) {
+      await clearResourceExclusiveQueue(tx, cd, resource, owner);
+      await clearResourceWaiter(tx, cd, resource, owner);
+      return { ok: false, reason: 'held_exclusive', holders };
+    }
     const queued = await enqueueResourceExclusive(tx, {
       coordinationDomain: cd,
       resource,
@@ -490,6 +515,11 @@ export async function tryAcquireResource(
     // constraint between the read and insert. Preserve the existing structured
     // conflict result rather than dereferencing an absent RETURNING row.
     const current = await readLiveHolders(tx, cd, resource);
+    if (!queueOnConflict) {
+      await clearResourceExclusiveQueue(tx, cd, resource, owner);
+      await clearResourceWaiter(tx, cd, resource, owner);
+      return { ok: false, reason: 'held_exclusive', holders: current };
+    }
     const queued = await enqueueResourceExclusive(tx, {
       coordinationDomain: cd,
       resource,
