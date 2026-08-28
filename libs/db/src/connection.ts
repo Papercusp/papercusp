@@ -16,6 +16,11 @@
  *   - `.sql`        — the postgres-js template tag (raw SQL, async)
  *   - `.drizzle`    — Drizzle ORM instance bound to the same client
  *
+ * `getOrgPgListener()` exposes a separate direct admin connection for LISTEN-only
+ * consumers. It must not be routed through the transaction pooler: PgBouncer can
+ * discard asynchronous NotificationResponse packets when a transaction-pooled
+ * server connection is no longer linked to its client.
+ *
  * Connection URL:
  *   $HARNESS_DATABASE_URL  (defaults to harness_app role on localhost)
  */
@@ -710,6 +715,13 @@ export function maybePgbouncer(url: string): string {
 let _adminClient: Sql | null = null;
 let _adminDrizzle: ReturnType<typeof drizzle> | null = null;
 let _adminDb: ReturnType<typeof drizzle<typeof fullSchema>> | null = null;
+// Dedicated direct LISTEN client for cross-workspace consumers that cannot use
+// the transaction-pooled getOrgPg() client. This is intentionally separate from
+// the query pool: postgres-js's listen state is session-bound and PgBouncer's
+// transaction mode may discard NotificationResponse packets on an unlinked
+// server connection.
+let _orgListenerClient: Sql | null = null;
+let _orgListenerClientUrl: string | null = null;
 // EI-18789855771421275: a SEPARATE, small, dedicated pool for callers that must
 // see exact bigint (int8) values — see getOrgPgLosslessBigint() below.
 let _adminLosslessBigintClient: Sql | null = null;
@@ -1431,6 +1443,40 @@ export function getOrgPg(): OrgPgHandle {
 }
 
 /**
+ * Direct admin LISTEN client for cross-workspace invalidation consumers.
+ *
+ * `getOrgPg()` deliberately routes its query pool through PgBouncer's
+ * transaction mode on server-class hosts. That mode is correct for ordinary
+ * request/response queries but not for LISTEN: a session-bound subscription
+ * cannot survive transaction-pool reassignment, and PgBouncer logs/discards
+ * NotificationResponse packets arriving on an unlinked server connection.
+ * Keep this client on the resolved admin URL without `maybePgbouncer()` and
+ * keep it alive while idle because idleness is the subscription's purpose.
+ *
+ * The URL is resolved on every call so discovery-file endpoint changes rebind
+ * this client through the same built-with-vs-resolved guard as the query pools.
+ */
+export function getOrgPgListener(): { sql: Sql } {
+  const url = adminUrl();
+  if (endStalePool(_orgListenerClient, _orgListenerClientUrl, url, 'org-admin-listener')) {
+    _orgListenerClient = null;
+    _orgListenerClientUrl = null;
+  }
+  if (!_orgListenerClient) {
+    assertRealPgAllowed('org-admin-listener', url);
+    _orgListenerClient = postgres(url, {
+      ...longLivedPoolConnectionOptions('org-admin-listener'),
+      max: 1,
+      // LISTEN is idle by design; an idle timeout would silently drop the subscription.
+      idle_timeout: 0,
+      prepare: false,
+    });
+    _orgListenerClientUrl = url;
+  }
+  return { sql: _orgListenerClient };
+}
+
+/**
  * Default ceiling for {@link withDbCallDeadline} — comfortably under the ~300s
  * generic "no response or progress" idle-timeout an MCP client transport
  * imposes on a stuck call, so a deadline-wrapped call fails fast with a clear
@@ -1836,10 +1882,11 @@ export function getHarnessPg(slug: string) {
  * explicit so a boot-time guard can catch the next such regression loudly.
  *
  * `fixedOverhead` covers the admin-pg-cache (ADMIN_PG_CACHE_MAX=8, in
- * packages/operator-core) + the 5 long-lived LISTEN connections (sync-sse,
- * coord-inbox, pending-events, fleet-assignment, agent-activity) — both live in
- * other packages, so they're a documented constant here — + the small (max 2)
- * dedicated `getOrgPgLosslessBigint()` pool (EI-18789855771421275).
+ * packages/operator-core) + the 6 long-lived LISTEN connections (sync-sse,
+ * coord-inbox, pending-events, fleet-assignment, agent-activity, and the
+ * agent-mcp principal-invalidation listener) — both live in other packages, so
+ * they're a documented constant here — + the small (max 2) dedicated
+ * `getOrgPgLosslessBigint()` pool (EI-18789855771421275).
  */
 export function processConnectionCeiling(): {
   poolMax: number;
@@ -1852,7 +1899,10 @@ export function processConnectionCeiling(): {
   const orgPools = poolMax * 2; // getOrgPg (admin) + getOrgPgApp (app/RLS)
   const perHarnessMax = Math.max(1, Number(process.env.PAPERCUSP_HARNESS_DB_POOL_MAX) || 1);
   const harnessPools = HARNESS_POOL_CAP * perHarnessMax;
-  const fixedOverhead = 8 /* admin-pg-cache */ + 5 /* LISTEN buses */ + 2 /* org-admin-lossless-bigint pool */;
+  const fixedOverhead =
+    8 /* admin-pg-cache */ +
+    6 /* LISTEN buses, incl. agent-mcp principal invalidation */ +
+    2 /* org-admin-lossless-bigint pool */;
   return { poolMax, orgPools, harnessPools, fixedOverhead, total: orgPools + harnessPools + fixedOverhead };
 }
 
@@ -1982,6 +2032,11 @@ export async function _resetForTests() {
   _adminDrizzle = null;
   _adminDb = null;
   _adminClientUrl = null;
+  if (_orgListenerClient) {
+    await _orgListenerClient.end({ timeout: 1 }).catch(() => {});
+  }
+  _orgListenerClient = null;
+  _orgListenerClientUrl = null;
   if (_adminLosslessBigintClient) {
     await _adminLosslessBigintClient.end({ timeout: 1 }).catch(() => {});
   }

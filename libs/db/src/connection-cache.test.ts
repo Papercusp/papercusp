@@ -180,6 +180,19 @@ describe('connection cache invalidation source contract (bug #33)', () => {
     ).not.toMatch(/PG_BIGINT_AS_NUMBER_TYPES/);
   });
 
+  it('getOrgPgListener() stays on the direct admin URL with an idle-safe dedicated client', () => {
+    const m = SRC.match(/export function getOrgPgListener\(\)[^{]*\{([\s\S]+?)^\}/m);
+    expect(m, 'getOrgPgListener() must be exported as a function').toBeTruthy();
+    const body = m![1];
+    expect(body, 'LISTEN client must resolve adminUrl()').toMatch(/adminUrl\(\)/);
+    expect(body, 'LISTEN client must not route through the transaction pooler').not.toMatch(/maybePgbouncer/);
+    expect(body, 'LISTEN client must use the shared long-lived connection options').toMatch(
+      /longLivedPoolConnectionOptions\(['"]org-admin-listener['"]\)/,
+    );
+    expect(body, 'LISTEN client must never idle-timeout its subscription').toMatch(/idle_timeout:\s*0/);
+    expect(body, 'LISTEN client must be capped at one direct backend').toMatch(/max:\s*1/);
+  });
+
   it("processConnectionCeiling()'s fixedOverhead accounts for the lossless-bigint pool", () => {
     expect(
       SRC,
