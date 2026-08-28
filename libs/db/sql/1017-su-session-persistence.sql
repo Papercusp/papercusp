@@ -1,4 +1,4 @@
--- 1016 — durable PUI SU-session binding and runtime reconciliation (P-004).
+-- 1017 — durable PUI SU-session binding and runtime reconciliation (P-004).
 --
 -- `adv_sessions` already owns the stable numeric launch identity, native
 -- backend handle, pid, workspace, and archive lifecycle.  Keep that one row
@@ -6,6 +6,11 @@
 -- The JSON descriptor is a restart-safe snapshot of the typed SU-session
 -- contract; the scalar columns keep duplicate suppression and reconciliation
 -- queries indexable.
+-- FORWARD-COMPAT: this migration only adds nullable SU-session columns plus a
+-- partial unique index over the new `su_agent_chat_id` column. The currently
+-- deployed release neither reads nor writes these columns and cannot target
+-- this index as an ON CONFLICT arbiter; existing rows therefore remain
+-- outside the predicate and no deployed write path is narrowed.
 
 ALTER TABLE harness_shared.adv_sessions
   ADD COLUMN IF NOT EXISTS su_agent_chat_id text,
