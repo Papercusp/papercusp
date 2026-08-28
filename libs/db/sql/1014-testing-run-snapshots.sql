@@ -42,3 +42,11 @@ CREATE INDEX IF NOT EXISTS testing_run_snapshots_finished_idx
 COMMENT ON TABLE harness_shared.testing_run_snapshots IS
   'EI-21460735281159215: shared live snapshots for detached testing:run process groups; local operator maps remain the process-control cache and this table is the cross-worker status source.';
 
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.testing_run_snapshots TO harness_app;
+DO $grant$
+BEGIN
+  GRANT SELECT ON harness_shared.testing_run_snapshots TO harness_zero;
+EXCEPTION
+  WHEN undefined_object THEN NULL;
+END
+$grant$;
