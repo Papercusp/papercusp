@@ -43,9 +43,12 @@ function readMigration(name: string): string {
   throw new Error(`migration ${name} not found at ${armed}[.DRAFT]`);
 }
 
-const MIGRATION_1020_SQL = readMigration(
-  '1020-retire-cross-harness-legacy-needs-human-residue.sql',
-);
+// PROBE_MIGRATION_1020_PATH lets scripts/mutation-probe.sh point this suite at a
+// COPY of the migration outside the tree, so falsifiability can be proven without
+// ever mutating the shared checkout (see "Proving a guard is falsifiable").
+const MIGRATION_1020_SQL = process.env.PROBE_MIGRATION_1020_PATH
+  ? readFileSync(process.env.PROBE_MIGRATION_1020_PATH, 'utf8')
+  : readMigration('1020-retire-cross-harness-legacy-needs-human-residue.sql');
 
 async function provision(url: string): Promise<void> {
   const client = postgres(url, { max: 1, onnotice: () => {} });
@@ -118,7 +121,7 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
-describe('migration 1020 — retire the payper-harness needsHuman residue the papercusp-scoped waves missed', () => {
+describe('migration 1020 — retire the needsHuman residue the papercusp-scoped waves missed', () => {
   it('clears the retired key everywhere, with no tenant predicate', async () => {
     await applyMigration();
 

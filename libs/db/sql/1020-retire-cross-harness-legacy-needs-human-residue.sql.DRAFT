@@ -86,7 +86,16 @@ BEGIN
   END IF;
 END $backup_guard1020$;
 
-ALTER TABLE harness_shared.work_items DISABLE TRIGGER USER;
+-- NOTE: deliberately NO `ALTER TABLE ... DISABLE TRIGGER USER`, unlike 868.
+-- That statement needs ACCESS EXCLUSIVE on harness_shared.work_items -- the
+-- hottest table in the system -- and a pending exclusive request queues every
+-- reader behind it. Attempted once here under live fleet load and it exhausted
+-- all 5 lock_timeout retries; left armed, it could fail the migration at boot.
+-- 868 needed the silence because it rewrote status. This migration is
+-- payload-only, so the triggers are not merely tolerable but WANTED:
+-- emit_change_notify_trg is the sync invalidation that makes the attention feed
+-- reflect the repair, and the outbox triggers federate it. Row locks on 9 rows
+-- are all this needs.
 
 -- Drop the retired key. A row already parked at status='needs-human' additionally
 -- gains the strict typed gate, which is precisely what the live needs-human
@@ -120,8 +129,6 @@ UPDATE harness_shared.work_items wi
  WHERE wi.workspace_id = m.workspace_id
    AND wi.harness_slug = m.harness_slug
    AND wi.feature_id = m.feature_id;
-
-ALTER TABLE harness_shared.work_items ENABLE TRIGGER USER;
 
 DO $post1020$
 DECLARE
