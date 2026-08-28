@@ -6,6 +6,10 @@
 -- datatype registry by the canonical work_items writer, so this migration does
 -- not duplicate a datatype foreign key that cannot be represented as a single
 -- global relation.
+-- FORWARD-COMPAT: the currently deployed release writes only the existing
+-- plan/goal target columns.  The new direct-work-item columns are nullable, and
+-- the replacement exactly-one check preserves the legacy plan/goal cases under
+-- the runner-owned transaction while adding the third target form.
 
 ALTER TABLE harness_shared.trigger_bindings
   ADD COLUMN IF NOT EXISTS work_item_harness_slug text,
@@ -72,4 +76,3 @@ $$;
 CREATE INDEX IF NOT EXISTS trigger_bindings_ws_work_item_idx
   ON harness_shared.trigger_bindings (workspace_id, work_item_harness_slug, work_item_kind)
   WHERE work_item_kind IS NOT NULL AND detached_at IS NULL;
-
