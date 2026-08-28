@@ -3,6 +3,11 @@
 -- Expand-only and idempotent. The canonical customer_workspaces directory remains the tenant
 -- policy boundary and workspace_host_operations remains the only durable lifecycle-job ledger.
 -- DBOS executes/replays jobs but does not become a second source of queue truth.
+--
+-- FORWARD-COMPAT: every constraint dropped below is net-new to this still-unapplied migration
+-- and is recreated under the same name in the same runner-owned transaction, so the deployed
+-- release can never observe a constraint-free schema. Existing writers omit all new columns;
+-- their nullable definitions or legacy-safe defaults satisfy the new foreign-key/check shapes.
 
 ALTER TABLE harness_shared.customer_workspaces
   ADD COLUMN IF NOT EXISTS tenant_concurrency_limit INTEGER NOT NULL DEFAULT 2,
@@ -173,4 +178,3 @@ COMMENT ON COLUMN harness_shared.workspace_host_operations.recovery_state IS
   'Controller classification derived from heartbeat age; DBOS recovery acts on this canonical ledger state.';
 COMMENT ON COLUMN harness_shared.workspace_host_operations.owner_notification_dedupe_key IS
   'Stable key in the existing attention_notifications ledger for owner-visible lifecycle notices.';
-
