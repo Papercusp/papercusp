@@ -143,6 +143,13 @@ const UNGUARDED_BY_DESIGN: Record<string, string> = {
     'already recomputed every call and the comparison is free. These pools are ' +
     'LRU-capped (HARNESS_POOL_CAP) and are being migrated onto harnessQuery() over ' +
     'the pooled org-app pool, which IS guarded. Filed separately, not fixed here.',
+  createDedicatedOrgPg:
+    'WI-638180: it CACHES NOTHING. Every call resolves the URL fresh and builds a ' +
+    'new caller-owned pool from that same resolution, so there is no previously ' +
+    'built-with URL that could have gone stale — the staleness this guard exists ' +
+    'to catch is only reachable through a module-scoped pool that outlives a ' +
+    'discovery-file rewrite. Its client is closed by its owner when the work ' +
+    'settles, so it cannot survive one either.',
 };
 
 const isCommentLine = (line: string) => /^\s*(\*|\/\/|\/\*)/.test(line);
@@ -190,7 +197,7 @@ describe('the rebind guard is WIRED INTO every pool getter, not merely exported'
     // reports clean. If the source shape drifts so the scan stops finding getters,
     // that must be a RED here rather than a silent green everywhere else.
     expect(getters.map((g) => g.name).sort()).toEqual(
-      ['getHarnessPg', 'getOrgPg', 'getOrgPgApp', 'getOrgPgLosslessBigint'].sort(),
+      ['createDedicatedOrgPg', 'getHarnessPg', 'getOrgPg', 'getOrgPgApp', 'getOrgPgLosslessBigint'].sort(),
     );
   });
 

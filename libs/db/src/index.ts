@@ -7,6 +7,9 @@ export {
 } from './schema/zod';
 export {
   getOrgPg,
+  // WI-638180: a caller-OWNED org pool for a one-shot process, so a library
+  // seam can close its own connections without ending the shared singleton.
+  createDedicatedOrgPg,
   getOrgPgListener,
   getOrgPgApp,
   getOrgPgLosslessBigint,

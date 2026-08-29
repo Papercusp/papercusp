@@ -1443,6 +1443,43 @@ export function getOrgPg(): OrgPgHandle {
 }
 
 /**
+ * A DEDICATED, caller-owned org-admin client for a short-lived process.
+ *
+ * WI-638180: `getOrgPg()` hands back a process-wide singleton, so a library
+ * that opens it can never close it — ending that pool would sever the operator
+ * host's own database access. A one-shot CLI (the test runners' governed
+ * admission seam) needs the opposite lifetime: its own pool, closed the moment
+ * its last operation settles, so the process can exit on an empty event loop
+ * instead of being pinned open by idle PgBouncer sockets.
+ *
+ * This is built through the same `buildClient` chokepoint as `getOrgPg()` —
+ * same URL resolution, pgbouncer routing, type parsers, serializer repairs and
+ * store-identity validation — so a dedicated client behaves identically to the
+ * shared one. It is deliberately NOT cached: the caller owns it and MUST
+ * `await sql.end(...)` it. Default pool `max` is small because a short-lived
+ * process wants the fewest sockets that still allow its concurrent work.
+ */
+export function createDedicatedOrgPg(
+  label: string,
+  options: { readonly max?: number } = {},
+): { sql: Sql; url: string } {
+  const url = maybePgbouncer(adminUrl());
+  const poolLabel = `org-admin-${label}`;
+  const sql = buildClient(
+    url,
+    ['harness_shared', 'papercusp_shared', 'public'],
+    Math.max(1, Math.floor(options.max ?? 2)),
+    poolLabel,
+    pgbouncerEnabled(),
+  );
+  validateDiscoveryTargetOnce(sql, poolLabel, {
+    url,
+    checkSchema: _resolvedAdminUrlSource === 'discovery',
+  });
+  return { sql, url };
+}
+
+/**
  * Direct admin LISTEN client for cross-workspace invalidation consumers.
  *
  * `getOrgPg()` deliberately routes its query pool through PgBouncer's
