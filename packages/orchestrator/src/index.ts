@@ -150,7 +150,12 @@ export * from './blueprint/index.js';
 export { runHook } from './hooks';
 export type { RunHookOptions, RunHookResult } from './hooks';
 export { checkFleetSandboxHostDeps } from './sandbox-deps';
-export type { SandboxDepCheck, SandboxDepsReport, SandboxDepProbes } from './sandbox-deps';
+export type {
+  SandboxDepCheck,
+  SandboxDepsReport,
+  SandboxDepProbes,
+  SandboxDepOptions,
+} from './sandbox-deps';
 export { evaluateCostCap, extractRunUsage, sumJsonlCost } from './cost-cap';
 export type { CostCapResult, RunUsage } from './cost-cap';
 export { postCuratorOutputs, postArchiveEvent } from './bus-posts';

@@ -53,6 +53,18 @@ export interface SandboxDepsReport {
   checks: SandboxDepCheck[];
 }
 
+export interface SandboxDepOptions {
+  /**
+   * Whether this host may spawn CODEX-backed agents. Defaults to true.
+   *
+   * srt's requiredness is DERIVED from this plus `enabled`, mirroring the
+   * runtime guard in invoke.ts exactly; it is never hand-asserted. Pass false
+   * only for a host you know spawns claude-code exclusively — claude-code
+   * sandboxes without srt, so the check is genuinely advisory there.
+   */
+  codexSpawns?: boolean;
+}
+
 /** Injectable probe seam (tests cover platforms/shapes without real installs). */
 export interface SandboxDepProbes {
   platform: () => NodeJS.Platform;
@@ -104,6 +116,7 @@ function inContainer(probes: SandboxDepProbes): boolean {
  */
 export function checkFleetSandboxHostDeps(
   probes: SandboxDepProbes = realProbes,
+  options: SandboxDepOptions = {},
 ): SandboxDepsReport {
   const platform = probes.platform();
   const enabled = sandboxEnabled(probes);
@@ -218,17 +231,31 @@ export function checkFleetSandboxHostDeps(
     });
   }
 
-  // srt — the external wrapper that contains codex spawns (P-015). Advisory:
-  // claude-code spawns sandbox without it; codex containment fails loudly
-  // without it (wrapSpawnWithSrt is fail-loud).
+  // srt — the external wrapper that contains codex spawns (P-015).
+  //
+  // Requiredness is DERIVED from the same condition invoke.ts's guard uses
+  // (`fleetSandboxEnabled() && backendUsesSrt(agentBackend)` -> throw, with no
+  // fallback), never hand-asserted. It used to be a flat `required: false`,
+  // which kept this report at `ok: true` on a host where EVERY codex fleet
+  // spawn was guaranteed to throw before producing a turn — the release-fixer
+  // arm died at ~1.7s for hours behind exactly that false-healthy verdict
+  // (WI-600814). "Advisory" is true only when no codex spawn can happen.
+  const codexSpawns = options.codexSpawns ?? true;
+  const srtRequired = enabled && codexSpawns;
   const srt = binOnPath('srt', probes);
   checks.push({
     name: 'srt',
     ok: srt !== null,
-    required: false,
+    required: srtRequired,
     detail: srt
       ? `srt found at ${srt}`
-      : 'srt (@anthropic-ai/sandbox-runtime) not on PATH — codex fleet spawns cannot be contained (their srt-wrap is fail-loud); claude-code spawns are unaffected.',
+      : srtRequired
+        ? 'srt (@anthropic-ai/sandbox-runtime) not on PATH — every codex fleet spawn on this host THROWS before producing a turn (the invoke.ts srt guard is fail-loud, no fallback). claude-code spawns are unaffected.'
+        : `srt (@anthropic-ai/sandbox-runtime) not on PATH — advisory here because ${
+            enabled
+              ? 'this host declares it does not spawn codex agents'
+              : 'the fleet sandbox is off (PAPERCUSP_FLEET_SANDBOX=0)'
+          }; codex spawns would fail loudly if that changed.`,
     ...(srt ? {} : { remedy: 'npm install -g @anthropic-ai/sandbox-runtime' }),
   });
 

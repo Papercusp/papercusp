@@ -47,21 +47,52 @@ describe('checkFleetSandboxHostDeps', () => {
     expect(r.checks.find((c) => c.name === 'socat')?.remedy).toMatch(/socat/);
   });
 
-  it('missing srt is advisory, not gating', () => {
+  // WI-600814: a flat `required: false` here reported ok:true on a host where
+  // every codex fleet spawn threw at the invoke.ts srt guard. Requiredness is
+  // now derived from the same condition that guard uses.
+  it('missing srt GATES a sandboxed host that can spawn codex', () => {
     const r = checkFleetSandboxHostDeps(
       probes({ platform: 'linux', bins: ['bwrap', 'socat'] }),
+    );
+    expect(r.ok).toBe(false);
+    const srt = r.checks.find((c) => c.name === 'srt');
+    expect(srt?.ok).toBe(false);
+    expect(srt?.required).toBe(true);
+    expect(srt?.detail).toMatch(/THROWS before producing a turn/);
+    expect(srt?.remedy).toMatch(/sandbox-runtime/);
+  });
+
+  it('missing srt is advisory when the host declares no codex spawns', () => {
+    const r = checkFleetSandboxHostDeps(
+      probes({ platform: 'linux', bins: ['bwrap', 'socat'] }),
+      { codexSpawns: false },
     );
     expect(r.ok).toBe(true);
     const srt = r.checks.find((c) => c.name === 'srt');
     expect(srt?.ok).toBe(false);
     expect(srt?.required).toBe(false);
+    expect(srt?.detail).toMatch(/does not spawn codex agents/);
+  });
+
+  it('missing srt is advisory when the fleet sandbox is switched off', () => {
+    const r = checkFleetSandboxHostDeps(
+      probes({
+        platform: 'linux',
+        bins: ['bwrap', 'socat'],
+        env: { PAPERCUSP_FLEET_SANDBOX: '0' },
+      }),
+    );
+    expect(r.ok).toBe(true);
+    const srt = r.checks.find((c) => c.name === 'srt');
+    expect(srt?.required).toBe(false);
+    expect(srt?.detail).toMatch(/PAPERCUSP_FLEET_SANDBOX=0/);
   });
 
   it('AppArmor userns restriction without a bwrap profile is a gating failure', () => {
     const r = checkFleetSandboxHostDeps(
       probes({
         platform: 'linux',
-        bins: ['bwrap', 'socat'],
+        bins: ['bwrap', 'socat', 'srt'],
         contents: { '/proc/sys/kernel/apparmor_restrict_unprivileged_userns': '1\n' },
       }),
     );
@@ -76,7 +107,7 @@ describe('checkFleetSandboxHostDeps', () => {
     const r = checkFleetSandboxHostDeps(
       probes({
         platform: 'linux',
-        bins: ['bwrap', 'socat'],
+        bins: ['bwrap', 'socat', 'srt'],
         files: ['/etc/apparmor.d/bwrap'],
         contents: { '/proc/sys/kernel/apparmor_restrict_unprivileged_userns': '1' },
       }),
@@ -87,7 +118,11 @@ describe('checkFleetSandboxHostDeps', () => {
 
   it('container detection adds the advisory enableWeakerNestedSandbox check', () => {
     const r = checkFleetSandboxHostDeps(
-      probes({ platform: 'linux', bins: ['bwrap', 'socat'], files: ['/.dockerenv'] }),
+      probes({
+        platform: 'linux',
+        bins: ['bwrap', 'socat', 'srt'],
+        files: ['/.dockerenv'],
+      }),
     );
     expect(r.container).toBe(true);
     const c = r.checks.find((ch) => ch.name === 'container');
@@ -99,7 +134,11 @@ describe('checkFleetSandboxHostDeps', () => {
 
   it('macOS relies on built-in Seatbelt', () => {
     const r = checkFleetSandboxHostDeps(
-      probes({ platform: 'darwin', files: ['/usr/bin/sandbox-exec'] }),
+      probes({
+        platform: 'darwin',
+        bins: ['srt'],
+        files: ['/usr/bin/sandbox-exec'],
+      }),
     );
     expect(r.supported).toBe(true);
     expect(r.ok).toBe(true);
