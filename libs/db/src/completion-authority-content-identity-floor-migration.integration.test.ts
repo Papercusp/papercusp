@@ -31,10 +31,7 @@ function migrationPath(filename: string): string {
   throw new Error(`migration not found at ${armed}[.DRAFT]`);
 }
 
-const migration972Sql = readFileSync(
-  migrationPath('972-completion-authority-content-identity-floor.sql'),
-  'utf8',
-);
+const migration972Sql = readFileSync(migrationPath('972-completion-authority-content-identity-floor.sql'), 'utf8');
 
 /**
  * The real migration runner speaks psql, so migration files may carry psql
@@ -79,8 +76,6 @@ async function createWorkItemsFixture(): Promise<void> {
     )`);
 }
 
-
-
 async function seedOpenItem(id: string, payload: Record<string, unknown> = {}): Promise<void> {
   const inserted = await sql.unsafe<{ feature_id: string; pid: number }[]>(
     `INSERT INTO harness_shared.work_items (feature_id, status, authority, payload)
@@ -118,7 +113,11 @@ function evidenceWith(identity: unknown, filesChanged: string[] = ['src/fix.ts']
   return {
     summary: 'verified',
     filesChanged,
-    treeStamp: { repositoryRoot: '/repo', headSha: SHA_A, ...(identity === undefined ? {} : { contentIdentity: identity }) },
+    treeStamp: {
+      repositoryRoot: '/repo',
+      headSha: SHA_A,
+      ...(identity === undefined ? {} : { contentIdentity: identity }),
+    },
   };
 }
 
@@ -137,12 +136,14 @@ beforeAll(async () => {
   // vacuously, so the definition itself is part of the precondition. The probe
   // dumps unqualified ground truth so a mis-targeted DDL cannot hide behind an
   // empty filtered result, and carries the batch's own command tags.
-  const [probe] = await sql<{
-    db: string;
-    triggers: { tgname: string; tbl: string; sch: string; tgenabled: string }[];
-    fns: string[];
-    relkind: string;
-  }[]>`
+  const [probe] = await sql<
+    {
+      db: string;
+      triggers: { tgname: string; tbl: string; sch: string; tgenabled: string }[];
+      fns: string[];
+      relkind: string;
+    }[]
+  >`
     SELECT current_database() AS db,
       COALESCE(
         (SELECT jsonb_agg(jsonb_build_object('tgname', t.tgname,
@@ -166,10 +167,7 @@ beforeAll(async () => {
     `triggers=${JSON.stringify(probe.triggers)} notices=${JSON.stringify(notices)} lastBatchCommands=${lastBatchCommands} db=${probe.db}`,
   ).toBeDefined();
   expect(floor?.tgenabled, `floor trigger state: ${JSON.stringify(floor)}`).toBe('O');
-  expect(probe.fns.sort()).toEqual([
-    'completion_content_identity_proven',
-    'downgrade_unproven_committed_close',
-  ]);
+  expect(probe.fns.sort()).toEqual(['completion_content_identity_proven', 'downgrade_unproven_committed_close']);
   expect(probe.relkind).toBe('r');
 }, 120_000);
 
@@ -207,14 +205,20 @@ describe('migration 972 — completion authority content-identity floor', () => 
 
   it('downgrades null-blob, mismatched-blob, and empty-array identities', async () => {
     await seedOpenItem('WI-CASE-NULLBLOB');
-    expect(await closeAsCommitted('WI-CASE-NULLBLOB', evidenceWith([
-      { path: 'src/fix.ts', workingTreeBlobSha: SHA_A, headBlobSha: null },
-    ]))).toBe('proposed');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-NULLBLOB',
+        evidenceWith([{ path: 'src/fix.ts', workingTreeBlobSha: SHA_A, headBlobSha: null }]),
+      ),
+    ).toBe('proposed');
 
     await seedOpenItem('WI-CASE-MISMATCH');
-    expect(await closeAsCommitted('WI-CASE-MISMATCH', evidenceWith([
-      { path: 'src/fix.ts', workingTreeBlobSha: SHA_B, headBlobSha: SHA_A },
-    ]))).toBe('proposed');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-MISMATCH',
+        evidenceWith([{ path: 'src/fix.ts', workingTreeBlobSha: SHA_B, headBlobSha: SHA_A }]),
+      ),
+    ).toBe('proposed');
 
     await seedOpenItem('WI-CASE-EMPTY');
     expect(await closeAsCommitted('WI-CASE-EMPTY', evidenceWith([]))).toBe('proposed');
@@ -222,10 +226,18 @@ describe('migration 972 — completion authority content-identity floor', () => 
 
   it('keeps committed when every declared path proves blob equality', async () => {
     await seedOpenItem('WI-CASE-PROVEN');
-    expect(await closeAsCommitted('WI-CASE-PROVEN', evidenceWith([
-      { path: 'src/fix.ts', workingTreeBlobSha: SHA_A, headBlobSha: SHA_A },
-      { path: 'src/other.ts', workingTreeBlobSha: SHA_B, headBlobSha: SHA_B },
-    ], ['src/fix.ts', 'src/other.ts']))).toBe('committed');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-PROVEN',
+        evidenceWith(
+          [
+            { path: 'src/fix.ts', workingTreeBlobSha: SHA_A, headBlobSha: SHA_A },
+            { path: 'src/other.ts', workingTreeBlobSha: SHA_B, headBlobSha: SHA_B },
+          ],
+          ['src/fix.ts', 'src/other.ts'],
+        ),
+      ),
+    ).toBe('committed');
   });
 
   it('leaves closes without the done-route evidence surface or with no declared paths alone', async () => {
