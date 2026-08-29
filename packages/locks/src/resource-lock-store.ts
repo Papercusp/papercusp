@@ -1050,3 +1050,69 @@ export async function registerResource(
   if (!existing) throw new Error(`resource registration race lost without a row: ${row.resource}`);
   return { created: false, resource: existing };
 }
+
+/**
+ * WI-562584: which coordination domain a named resource's holders live in —
+ * declared ON the registry row (sql/027) instead of inferred from the resource
+ * NAME by every reader independently.
+ *
+ * `tree` is the default and means UNDECLARED: readers fall through to their own
+ * name inference for it, so this value can promote a resource out of the
+ * caller-tree domain but never demote one into it.
+ */
+export type ResourceCoordinationDomainKind = 'tree' | 'workspace' | 'host-global';
+
+/**
+ * Every resource whose declared domain kind is NOT the `tree` default.
+ *
+ * Deliberately returns only the non-default rows: the caller's fallback for an
+ * absent entry is identical to its fallback for an explicit `tree`, so shipping
+ * the (large, all-default) remainder would buy nothing and grow with the
+ * registry. Read through the plain pool — no advisory lock: this is a cache
+ * refresh, not part of any acquire's transaction.
+ */
+export async function readResourceCoordinationDomainKinds(
+  sql: Sql,
+): Promise<Map<string, ResourceCoordinationDomainKind>> {
+  const rows = await sql<Array<{ resource: string; coordination_domain_kind: string }>>`
+    SELECT resource, coordination_domain_kind
+      FROM agent_resource_registry
+     WHERE coordination_domain_kind <> 'tree'
+  `;
+  const kinds = new Map<string, ResourceCoordinationDomainKind>();
+  for (const r of rows) {
+    if (r.coordination_domain_kind === 'workspace' || r.coordination_domain_kind === 'host-global') {
+      kinds.set(r.resource, r.coordination_domain_kind);
+    }
+  }
+  return kinds;
+}
+
+/**
+ * Stamp the domain kind an ACQUIRER resolves for `resource` onto its existing
+ * registry row, so every other reader resolves the same one.
+ *
+ * An UPDATE, never an upsert: the rows that need this most are the human-created
+ * `extra_lock_resources` names (git-sync auto-registers ONLY its own
+ * `git-sync:<slug>`), and inserting a placeholder row for an unregistered name
+ * would turn today's loud `unknown_resource` refusal into a silent grant.
+ * Returns whether a row was updated — `false` means the name is not registered.
+ */
+export async function stampResourceCoordinationDomainKind(
+  tx: Sql,
+  resource: string,
+  kind: ResourceCoordinationDomainKind,
+): Promise<boolean> {
+  const rows = await tx<Array<{ resource: string }>>`
+    UPDATE agent_resource_registry
+       SET coordination_domain_kind = ${kind}, updated_ts = clock_timestamp()
+     WHERE resource = ${resource}
+       AND coordination_domain_kind IS DISTINCT FROM ${kind}
+    RETURNING resource
+  `;
+  if (rows.length > 0) return true;
+  const existing = await tx<Array<{ resource: string }>>`
+    SELECT resource FROM agent_resource_registry WHERE resource = ${resource} LIMIT 1
+  `;
+  return existing.length > 0;
+}
