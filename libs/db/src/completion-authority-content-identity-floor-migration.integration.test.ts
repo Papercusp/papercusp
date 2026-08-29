@@ -42,7 +42,7 @@ const migration972Sql = readFileSync(
  * query protocol — sends text to the server verbatim and `\` is a syntax
  * error there. Strip meta-command lines; BEGIN/COMMIT are real SQL and stay.
  */
-async function applyMigrationFile(raw: string): Promise<unknown> {
+async function applyMigrationFile(raw: string): Promise<void> {
   const serverSql = raw
     .split('\n')
     .filter((line) => !line.trim().startsWith('\\'))
@@ -86,7 +86,9 @@ async function seedOpenItem(id: string, payload: Record<string, unknown> = {}): 
     `INSERT INTO harness_shared.work_items (feature_id, status, authority, payload)
      VALUES ($1, 'wip', NULL, $2)
      RETURNING feature_id, pg_backend_pid() AS pid`,
-    [id, sql.json(payload)],
+    // postgres.js types json() as its strict JSONValue; these fixtures are plain JSON
+    // whose INFERRED type (Record<string, unknown>) TS cannot prove is JSONValue.
+    [id, sql.json(payload as Parameters<typeof sql.json>[0])],
   );
   if (!inserted.length) throw new Error(`seedOpenItem(${id}): INSERT returned no row`);
   lastSeedPid = inserted[0].pid;
@@ -103,7 +105,7 @@ async function closeAsCommitted(id: string, evidence: Record<string, unknown>): 
          WHERE feature_id = $1
        RETURNING authority
      ) SELECT authority, count(*) OVER () AS matched FROM updated`,
-    [id, sql.json(evidence)],
+    [id, sql.json(evidence as Parameters<typeof sql.json>[0])],
   );
   if (!rows.length) throw new Error(`closeAsCommitted(${id}): UPDATE matched 0 rows — seed missing`);
   return rows[0].authority as 'committed' | 'proposed';
@@ -249,7 +251,7 @@ describe('migration 972 — completion authority content-identity floor', () => 
     await sql.unsafe(
       `UPDATE harness_shared.work_items SET taken_by = 'su-someone' WHERE feature_id = 'WI-CASE-LEGACY'`,
     );
-    const rows = await sql.unsafe<{ authority: string }>(
+    const rows = await sql.unsafe<{ authority: string }[]>(
       `SELECT authority FROM harness_shared.work_items WHERE feature_id = 'WI-CASE-LEGACY'`,
     );
     expect(rows[0].authority).toBe('committed');
@@ -260,9 +262,9 @@ describe('migration 972 — completion authority content-identity floor', () => 
       `UPDATE harness_shared.work_items
           SET payload = jsonb_build_object('_completionEvidence', $1)
         WHERE feature_id = 'WI-CASE-LEGACY'`,
-      [sql.json(evidenceWith(undefined))],
+      [sql.json(evidenceWith(undefined) as Parameters<typeof sql.json>[0])],
     );
-    const after = await sql.unsafe<{ authority: string }>(
+    const after = await sql.unsafe<{ authority: string }[]>(
       `SELECT authority FROM harness_shared.work_items WHERE feature_id = 'WI-CASE-LEGACY'`,
     );
     expect(after[0].authority).toBe('proposed');
@@ -272,9 +274,9 @@ describe('migration 972 — completion authority content-identity floor', () => 
     await sql.unsafe(
       `INSERT INTO harness_shared.work_items (feature_id, status, authority, payload)
        VALUES ('WI-CASE-INSERT', 'done', 'committed', jsonb_build_object('_completionEvidence', $1))`,
-      [sql.json(evidenceWith(undefined))],
+      [sql.json(evidenceWith(undefined) as Parameters<typeof sql.json>[0])],
     );
-    const rows = await sql.unsafe<{ authority: string }>(
+    const rows = await sql.unsafe<{ authority: string }[]>(
       `SELECT authority FROM harness_shared.work_items WHERE feature_id = 'WI-CASE-INSERT'`,
     );
     expect(rows[0].authority).toBe('proposed');
