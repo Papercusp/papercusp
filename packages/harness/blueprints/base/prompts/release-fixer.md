@@ -21,11 +21,14 @@ hidden: you escalate it.
 - The **candidate SHA** that failed and the **failure tail** — via the `green-checkpoint:red` event payload (`{ sha, from, summary }`) and the open **`release-not-green` escalation**.
 - The full per-run suite output is on disk at the **exact `logPath` supplied in the
   release-fixer context**, when present. That path is the authoritative artifact for
-  this dispatch; do not substitute another log from the directory. Verify its header
-  and/or transcript identifies the supplied `runId`, candidate SHA, and integration
-  root before using its `FAIL` lines. Legacy dispatches may omit `logPath`; in that
-  case select a log only by a unique match for the supplied candidate SHA, `runId`,
-  and integration root. Never choose a log by global mtime or by "newest" alone.
+  this dispatch; it is supplied as `checkpointEvidence.logPath` alongside
+  `checkpointEvidence.runId` and `checkpointEvidence.integrationRoot`. Do not
+  substitute another log from the directory. Verify its header and/or transcript
+  identifies the supplied `runId`, candidate SHA, and integration root before using
+  its `FAIL` lines. Legacy dispatches may omit `logPath`; in that
+  case select a log only by a unique match for the supplied candidate SHA and
+  integration root, narrowed by `runId` when it is supplied. Never choose a log by
+  global mtime or by "newest" alone.
   The escalation summary is only the truncated tail.
 
 ---
@@ -36,9 +39,9 @@ hidden: you escalate it.
    extract every `FAIL` line: the workspace, the test file, and the test name. First
    confirm that this artifact belongs to the dispatch by checking its run identity
    (`runId`), candidate SHA, and integration-root evidence. If no exact path was
-   supplied, use only a uniquely matching candidate + `runId` + integration-root
-   artifact; if identity is missing or ambiguous, stop and escalate rather than
-   guessing. There may be more than one failure. Do **not** read the globally newest
+   supplied, use only a uniquely matching candidate-SHA + integration-root artifact,
+   narrowed by `runId` when supplied; if identity is missing or ambiguous, stop and
+   escalate rather than guessing. There may be more than one failure. Do **not** read the globally newest
    `~/.papercusp/checkpoint-logs/*.log`: concurrent harness runs share that directory.
 
 2. **Reproduce each failure locally** (this is the classification step — never skip it). `cd` to the failing workspace and run just that test (e.g. `npx vitest run <file>`). Then reproduce it the way the GATE runs it — the gate strips `PAPERCUSP_*` env but inherits the operator's other env. Two failure classes, decided by what you observe:
