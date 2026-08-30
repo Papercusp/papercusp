@@ -1285,6 +1285,24 @@ export const CORE_ALLOWED_TOOLS: readonly string[] = [
  *     network egress (the allow-listed `WebFetch`) are NOT closed here;
  *     true containment of those needs a network/fs sandbox — tracked as a
  *     follow-up, not solved by a deny-list.
+ *   - ⚠ **NEVER put an `mcp__*` tool in this list expecting it to be
+ *     withheld.** Everything above about `--disallowed-tools` being airtight
+ *     is true only for a NATIVE tool, which the client alone can run. An MCP
+ *     tool is executed SERVER-side, and `tools:invoke { name, args }` — a
+ *     permitted client tool — dispatches to it BY NAME. The server never sees
+ *     the client's deny list, so one call re-reaches the "denied" verb. That
+ *     hatch is documented behaviour (`tools:find`'s own `howToCall` tells
+ *     agents to use it), not an exploit. Withholding an MCP tool needs
+ *     server-side enforcement, or denying `tools:invoke` AND `tools:find` too
+ *     — which removes the general reachability hatch for every tool. Note
+ *     this file DOES build `mcp__` name lists elsewhere (the `mcp__papercusp`
+ *     server wildcard in FLEET_ALLOWED_TOOLS, and the `':' -> '_'` role-kit
+ *     mapping), so this is a realistic mistake, not a hypothetical.
+ *     Second trap: a deny is OBSERVABLY IDENTICAL to a never-seeded tool
+ *     (both = absent from discovery + "No such tool available"), so any deny
+ *     probe without a same-server, same-tier control can record a false
+ *     confirmation. Full write-up + provenance:
+ *     /internal/docs/agent-insights/disallowed-tools-cannot-withhold-an-mcp-tool
  */
 export const FLEET_DISALLOWED_TOOLS: readonly string[] = [
   // Dangerous built-ins that bypass the allow-list under dontAsk.
