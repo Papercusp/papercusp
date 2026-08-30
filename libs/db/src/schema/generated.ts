@@ -6553,21 +6553,6 @@ export const autonomyPolicyInHarnessShared = harnessShared.table("autonomy_polic
 	check("autonomy_policy_graduated_level_check", sql`graduated_level = ANY (ARRAY['never-auto'::text, 'trivial'::text, 'low'::text, 'moderate'::text, 'high'::text, 'critical'::text])`),
 ]);
 
-export const agentModesInHarnessShared = harnessShared.table("agent_modes", {
-	workspaceId: text("workspace_id").default('default').notNull(),
-	ownerId: text("owner_id").notNull(),
-	axisKey: text("axis_key").notNull(),
-	mode: text().notNull(),
-	reason: text().default('').notNull(),
-	setBy: text("set_by").notNull(),
-	ownerDirected: boolean("owner_directed").default(false).notNull(),
-	setAt: timestamp("set_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	subject: text(),
-}, (table) => [
-	index("agent_modes_owner_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops")),
-	primaryKey({ columns: [table.axisKey, table.ownerId, table.workspaceId], name: "agent_modes_pkey"}),
-]);
-
 export const gatewayPayloadBlobsInHarnessShared = harnessShared.table("gateway_payload_blobs", {
 	blobKey: text("blob_key").notNull(),
 	workspaceId: text("workspace_id").default('').notNull(),
@@ -7552,6 +7537,26 @@ export const potEpochKeysInHarnessShared = harnessShared.table("pot_epoch_keys",
 	index("hive_epoch_keys_by_member").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.memberDevicePubkey.asc().nullsLast().op("text_ops"), table.epoch.asc().nullsLast().op("int4_ops")),
 	primaryKey({ columns: [table.epoch, table.harnessSlug, table.memberDevicePubkey, table.workspaceId], name: "pot_epoch_keys_pkey"}),
 	pgPolicy("hive_epoch_keys_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const agentModesInHarnessShared = harnessShared.table("agent_modes", {
+	workspaceId: text("workspace_id").default('default').notNull(),
+	ownerId: text("owner_id").notNull(),
+	axisKey: text("axis_key").notNull(),
+	mode: text().notNull(),
+	reason: text().default('').notNull(),
+	setBy: text("set_by").notNull(),
+	ownerDirected: boolean("owner_directed").default(false).notNull(),
+	setAt: timestamp("set_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	subject: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	goalLeaseEpoch: bigint("goal_lease_epoch", { mode: "number" }),
+	goalHandoffFromOwnerId: text("goal_handoff_from_owner_id"),
+	goalHandoffExpiresAt: timestamp("goal_handoff_expires_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("agent_modes_goal_election_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subject.asc().nullsLast().op("text_ops"), table.goalLeaseEpoch.desc().nullsFirst().op("int8_ops")).where(sql`((mode = 'goal'::text) AND (subject IS NOT NULL))`),
+	index("agent_modes_owner_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.axisKey, table.ownerId, table.workspaceId], name: "agent_modes_pkey"}),
 ]);
 
 export const planItemsInHarnessShared = harnessShared.table("plan_items", {
@@ -10320,6 +10325,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	index("work_items_obs_supersedes_idx").using("btree", sql`((((payload - '_ei'::text) -> 'observation'::text) ->> 'superse`).where(sql`((((payload - '_ei'::text) -> 'observation'::text) ->> 'supersedes'::text) IS NOT NULL)`),
 	index("work_items_plan_item_stamp_idx").using("btree", sql`(((payload -> 'plan_item'::text) ->> 'plan_slug'::text))`, sql`(((payload -> 'plan_item'::text) ->> 'item_id'::text))`).where(sql`((payload -> 'plan_item'::text) IS NOT NULL)`),
 	uniqueIndex("work_items_resource_governor_identity_uq").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text)`, sql`(((payload -> 'resource_governor'::text) ->> 'idempotencyKey'::`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
+	uniqueIndex("work_items_resource_governor_identity_uq_ccold").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text)`, sql`(((payload -> 'resource_governor'::text) ->> 'idempotencyKey'::`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
 	index("work_items_resource_governor_queue_idx").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text)`, sql`(((payload -> 'resource_governor'::text) ->> 'state'::text))`, sql`created_ts`, sql`feature_id`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
 	uniqueIndex("work_items_watchdog_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload ->> 'watchdogKey'::text))`, sql`COALESCE(((payload -> '_ei'::text) ->> 'signal_origin'::text), `, sql`COALESCE((payload ->> 'lane'::text), 'improvement'::text)`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND ((payload ->> 'watchdogKey'::text) IS NOT NULL))`),
 	primaryKey({ columns: [table.featureId, table.harnessSlug], name: "work_items_pkey"}),
