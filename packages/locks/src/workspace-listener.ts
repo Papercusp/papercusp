@@ -27,6 +27,7 @@
 
 import { createHash } from 'node:crypto';
 import { getListenerPool, resetListenerPoolAfterTimeout, runBackgroundJanitorOnce } from './su-lock-store';
+import { managedSetInterval } from '@papercusp/scheduled-registry';
 
 const MAX_ACTIVE_WORKSPACES = 20;
 
@@ -206,7 +207,7 @@ export async function subscribeWorkspace(
 /** Period of the background expiry sweep. */
 const BACKGROUND_JANITOR_INTERVAL_MS = 30_000;
 
-let janitorTimer: ReturnType<typeof setInterval> | null = null;
+let janitorTimer: ReturnType<typeof managedSetInterval> | null = null;
 let janitorPassInFlight = false;
 
 /**
@@ -223,7 +224,10 @@ let janitorPassInFlight = false;
  */
 export function startBackgroundJanitor(): void {
   if (janitorTimer) return;
-  janitorTimer = setInterval(() => {
+  janitorTimer = managedSetInterval(
+    'su-locks:background-janitor',
+    BACKGROUND_JANITOR_INTERVAL_MS,
+    () => {
     if (janitorPassInFlight) return;
     janitorPassInFlight = true;
     void runBackgroundJanitorOnce()
@@ -233,14 +237,15 @@ export function startBackgroundJanitor(): void {
       .finally(() => {
         janitorPassInFlight = false;
       });
-  }, BACKGROUND_JANITOR_INTERVAL_MS);
-  janitorTimer.unref?.();
+    },
+    { category: 'global-sweep', classification: 'timeout-reaper' },
+  );
 }
 
 /** Stop the background janitor. Idempotent. */
 export function stopBackgroundJanitor(): void {
   if (janitorTimer) {
-    clearInterval(janitorTimer);
+    janitorTimer.stop();
     janitorTimer = null;
   }
 }

@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@papercusp/file-claim": "*",
+    "@papercusp/scheduled-registry": "*",
     "@papercusp/locks-core": "*"
   },
   "devDependencies": {
