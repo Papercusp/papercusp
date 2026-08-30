@@ -1335,6 +1335,7 @@ export const backupSnapshotsInHarnessShared = harnessShared.table("backup_snapsh
 	bytesTotal: bigint("bytes_total", { mode: "number" }),
 	sourcesJson: jsonb("sources_json").default([]).notNull(),
 	errorText: text("error_text"),
+	dbDumpOk: boolean("db_dump_ok"),
 }, (table) => [
 	index("backup_snapshots_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("timestamptz_ops")),
 	pgPolicy("backup_snapshots_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
