@@ -19,6 +19,15 @@ export {
   logConnectionBudget,
   explicitOrgPoolOverrideWarning,
   maybePgbouncer,
+  // EI-21866253550551759: the pooling predicate + the function that decides which
+  // startup GUCs are actually sent. Exported for the same reason `endStalePool` was
+  // (EI-19306394439939264): a caller that must report whether a connect-time cap
+  // REALLY applies had no way to ask, so db:txn-timeouts reported a stored
+  // adminPoolStatementTimeoutMs as if it were in force. Derive that answer from
+  // buildConnectionOptions itself — never restate its `!pooled` branch at the call
+  // site, or the report drifts the next time the branch changes.
+  pgbouncerEnabled,
+  buildConnectionOptions,
   setAdminPoolStatementTimeoutProvider,
   _resetForTests,
   PG_BIGINT_AS_NUMBER_TYPES,
