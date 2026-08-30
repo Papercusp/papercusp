@@ -1759,7 +1759,15 @@ export function withAcquisitionDeadline<T>(
     // Never hold the process open on this timer alone.
     timer.unref?.();
   });
-  return Promise.race([run({ disarm, expired: () => expired }), deadline]).finally(() => {
+  let work: Promise<T>;
+  try {
+    work = Promise.resolve(run({ disarm, expired: () => expired }));
+  } catch (error) {
+    clearDeadlineTimer();
+    ticket?.release();
+    return Promise.reject(error);
+  }
+  return Promise.race([work, deadline]).finally(() => {
     clearDeadlineTimer();
     // Must run on EVERY exit path — a ticket that is never released leaks a
     // waiter and inflates every later snapshot, which would make this

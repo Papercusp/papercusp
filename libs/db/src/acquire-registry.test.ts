@@ -327,6 +327,23 @@ describe('withAcquisitionDeadline — registry wiring', () => {
     expect(acquireSnapshot('org-app').waiting).toBe(0);
   });
 
+  it('cleans up when the acquisition runner THROWS synchronously', async () => {
+    vi.useFakeTimers();
+    recordPoolMax('org-app', 20);
+    const error = new Error('runner blew up synchronously');
+    await expect(
+      withAcquisitionDeadline<string>(
+        () => {
+          throw error;
+        },
+        { label: 'withWorkspace:acquire(app)', pool: 'org-app', ms: 1_000 },
+      ),
+    ).rejects.toBe(error);
+    expect(acquireSnapshot('org-app').waiting).toBe(0);
+    expect(acquireSnapshot('org-app').held).toBe(0);
+    await vi.advanceTimersByTimeAsync(1_001);
+  });
+
   it('omitting `pool` keeps the guard working and registers nothing', async () => {
     // (see the vitest pool-budget block below — same defect, opposite end: this
     // file measures the SYMPTOM, that one bounds the CAUSE.)
