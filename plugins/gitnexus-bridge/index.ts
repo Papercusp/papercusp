@@ -396,7 +396,7 @@ export function rolesFor(toolName: string): ToolDefinition['roles'] {
   if (toolName === 'rename' || toolName === 'group_sync') {
     return ['operator', 'architect'];
   }
-  return ['operator', 'architect', 'reviewer', 'debugger', 'scoper', 'worker', 'validator'];
+  return ['operator', 'architect', 'reviewer', 'debugger', 'scoper', 'worker', 'validator', 'judge'];
 }
 
 export function quotaFor(toolName: string): ToolDefinition['rolesQuota'] {

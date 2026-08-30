@@ -53,15 +53,16 @@ describe('rolesFor — destructive-tool role gating (Gap 1, P1)', () => {
   it('does NOT grant worker/reviewer/etc to destructive tools', () => {
     for (const tool of ['rename', 'group_sync']) {
       const roles = rolesFor(tool)!;
-      for (const forbidden of ['worker', 'reviewer', 'debugger', 'scoper', 'validator']) {
+      for (const forbidden of ['worker', 'reviewer', 'debugger', 'scoper', 'validator', 'judge']) {
         expect(roles).not.toContain(forbidden);
       }
     }
   });
 
-  it('grants `query` (a read) the wide allowlist including worker', () => {
+  it('grants `query` (a read) the wide allowlist including worker and judge', () => {
     const roles = rolesFor('query')!;
     expect(roles).toContain('worker');
+    expect(roles).toContain('judge');
     // The wide set is the 7-role read allowlist; worker must be in it.
     expect(roles).toContain('operator');
     expect(roles).toContain('architect');
