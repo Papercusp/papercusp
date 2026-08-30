@@ -44,11 +44,17 @@ async function provision(url: string): Promise<void> {
     }
     // 797 is intentionally parked pending its code companion; mirror the live
     // database shape used by the adjacent engineer-issues DML integration test.
+    // ORDER IS LOAD-BEARING: 806 re-applies `CREATE OR REPLACE FUNCTION
+    // record_work_item_worked_by_history`, which would silently revert the
+    // first_claimed_at stamp that 1037 adds to that same function. Replaying 1037
+    // after it restores the production end state; drop it and this file would
+    // green against the PRE-FIX function while claiming to test the fixed one.
     for (const file of [
       '797-guard-engineer-issues-terminal-state.sql.PENDING-CODE-DEPLOY',
       '799-guard-797-message-self-diagnosis.sql',
       '804-fix-terminal-close-staging-remedy.sql',
       '806-work-item-worked-history.sql',
+      '1037-work-item-first-claim-stamp.sql',
     ]) {
       await client.unsafe(await readFile(join(SQL_DIR, file), 'utf8'));
     }
@@ -132,5 +138,125 @@ describe('migration 806 — shared-base worked_by_history writer', () => {
          SET taken_by = 'peer-agent', fed_ts = 1
        WHERE workspace_id = 'default' AND feature_id = 'WI-history-remote'`;
     expect(await history('WI-history-remote')).toEqual([]);
+  });
+});
+
+async function firstClaimedAt(id: string): Promise<string | null> {
+  const rows = await sql<{ first_claimed_at: string | null }[]>`
+    SELECT first_claimed_at FROM harness_shared.work_items
+     WHERE workspace_id = 'default' AND feature_id = ${id}`;
+  return rows[0]?.first_claimed_at ?? null;
+}
+
+const claim = (id: string, holder: string | null) => sql`
+  UPDATE harness_shared.work_items
+     SET taken_by = ${holder}
+   WHERE workspace_id = 'default' AND feature_id = ${id}`;
+
+/**
+ * Migration 1037 — the first_claimed_at writer (work-queue-admission-and-bulk-dedup
+ * D-003).
+ *
+ * The column shipped in 952 with two readers and NO writer, so it was NULL on every
+ * row and both readers reported an empty sample forever — which reads exactly like a
+ * healthy system rather than a broken one. These cases pin the writer's semantics at
+ * the base table, where one trigger covers all four claim call sites (three of which
+ * write through the harness_features_consolidated view, which does not even expose
+ * this column).
+ */
+describe('migration 1037 — first_claimed_at stamp', () => {
+  it('stamps on the first real claim', async () => {
+    await seed('WI-fc-basic', 'feature');
+    expect(await firstClaimedAt('WI-fc-basic')).toBeNull();
+
+    await claim('WI-fc-basic', 'su-first');
+    expect(await firstClaimedAt('WI-fc-basic')).not.toBeNull();
+  });
+
+  it('is SET-ONCE: a release and re-claim keeps the original stamp', async () => {
+    await seed('WI-fc-setonce', 'feature');
+    await claim('WI-fc-setonce', 'su-one');
+    const original = await firstClaimedAt('WI-fc-setonce');
+    expect(original).not.toBeNull();
+
+    // taken_at is cleared by release; first_claimed_at must NOT be. That divergence
+    // is the entire reason the column exists rather than reusing taken_at.
+    await claim('WI-fc-setonce', null);
+    expect(await firstClaimedAt('WI-fc-setonce')).toEqual(original);
+
+    await claim('WI-fc-setonce', 'su-two');
+    expect(await firstClaimedAt('WI-fc-setonce')).toEqual(original);
+
+    const rows = await sql<{ taken_at: string | null }[]>`
+      SELECT taken_at FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND feature_id = 'WI-fc-setonce'`;
+    expect(rows[0]?.taken_at).toBeNull();
+  });
+
+  it('never stamps on a release-only transition', async () => {
+    await seed('WI-fc-release', 'feature');
+    // A real holder transition (history records it) that is NOT a claim.
+    await claim('WI-fc-release', null);
+    expect(await firstClaimedAt('WI-fc-release')).toBeNull();
+  });
+
+  it('ignores the legacy unassigned sentinel', async () => {
+    await seed('WI-fc-sentinel', 'feature');
+    await claim('WI-fc-sentinel', 'unassigned');
+    expect(await firstClaimedAt('WI-fc-sentinel')).toBeNull();
+  });
+
+  it('does not stamp remote projection churn', async () => {
+    await seed('WI-fc-remote', 'bug', 'remote');
+    await sql`
+      UPDATE harness_shared.work_items
+         SET taken_by = 'peer-agent', fed_ts = 1
+       WHERE workspace_id = 'default' AND feature_id = 'WI-fc-remote'`;
+    expect(await firstClaimedAt('WI-fc-remote')).toBeNull();
+  });
+
+  it('covers view writes, because three of the four claim sites are view writes', async () => {
+    await seed('EI-fc-issue', 'bug');
+    await sql`
+      UPDATE harness_shared.engineer_issues
+         SET assignee = 'su-via-view'
+       WHERE workspace_id = 'default' AND issue_id = 'EI-fc-issue'`;
+    expect(await firstClaimedAt('EI-fc-issue')).not.toBeNull();
+  });
+});
+
+/**
+ * FALSIFIABILITY CONTROL for the block above.
+ *
+ * A guard that has only ever been green is not evidence: every assertion above
+ * would pass identically against a trigger that stamped the column unconditionally,
+ * or against some OTHER migration having done the work. This drives the function
+ * both ways on the disposable test database — never the shared tree, where a
+ * git-sync sweep can commit a mutation even when nothing goes wrong.
+ *
+ * It also pins the specific regression this file is most exposed to: 806 and 1037
+ * define the SAME function, so replaying 806 after 1037 silently reverts the stamp.
+ * That is not hypothetical — 806 was itself edited on disk after applying and never
+ * re-ran, which is why migration 1036 had to exist.
+ */
+describe('migration 1037 — the control that makes the cases above discriminating', () => {
+  it('PRE-FIX (806 body) does not stamp, and restoring 1037 makes it stamp again', async () => {
+    // 1. Revert to the pre-fix function by replaying 806 alone.
+    await sql.unsafe(await readFile(join(SQL_DIR, '806-work-item-worked-history.sql'), 'utf8'));
+
+    await seed('WI-fc-control-pre', 'feature');
+    await claim('WI-fc-control-pre', 'su-control');
+    // The claim genuinely happened — history proves the trigger ran at all, so a
+    // null stamp here is the ABSENT WRITER, not an inert or missing trigger.
+    expect(await history('WI-fc-control-pre')).toHaveLength(1);
+    expect(await firstClaimedAt('WI-fc-control-pre')).toBeNull();
+
+    // 2. Restore the fix and prove the same claim now stamps.
+    await sql.unsafe(await readFile(join(SQL_DIR, '1037-work-item-first-claim-stamp.sql'), 'utf8'));
+
+    await seed('WI-fc-control-post', 'feature');
+    await claim('WI-fc-control-post', 'su-control');
+    expect(await history('WI-fc-control-post')).toHaveLength(1);
+    expect(await firstClaimedAt('WI-fc-control-post')).not.toBeNull();
   });
 });
