@@ -125,7 +125,22 @@ BEGIN
               ELSE CASE WHEN NEW.item_kind=ANY(ARRAY['bug','change','task']) THEN v_new_status=ANY(ARRAY['resolved','closed','done','dropped']) ELSE v_new_status=ANY(ARRAY['passed','deprecated','done','dropped']) END END
        )
      )
-     AND lower(COALESCE(dependant.status,'')) <> ALL(ARRAY['passed','deprecated','resolved','closed','done','dropped'])
+     AND (
+       (
+         NULLIF(btrim(dependant.taken_by), '') IS NOT NULL
+         AND lower(btrim(dependant.taken_by)) <> 'unassigned'
+       )
+       OR lower(COALESCE(dependant.status, '')) = ANY (ARRAY['wip', 'in_progress', 'validating'])
+       OR dependant.last_progress_at IS NOT NULL
+       OR (
+         dependant.item_kind = ANY (ARRAY['bug', 'change', 'task'])
+         AND lower(COALESCE(dependant.status, '')) = ANY (ARRAY['resolved', 'closed', 'done', 'dropped'])
+       )
+       OR (
+         dependant.item_kind <> ALL (ARRAY['bug', 'change', 'task'])
+         AND lower(COALESCE(dependant.status, '')) = ANY (ARRAY['passed', 'deprecated', 'done', 'dropped'])
+       )
+     )
    ORDER BY d.workspace_id,d.blocked_kind,d.blocked_ref LIMIT 1 FOR KEY SHARE OF d,dependant;
   IF FOUND THEN
     RAISE EXCEPTION USING ERRCODE='23514',
