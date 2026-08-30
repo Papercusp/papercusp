@@ -1,8 +1,9 @@
--- 1031-agent-mode-goal-holder-election.sql
+-- 1032-agent-mode-goal-holder-election.sql
+-- Number reserved via db:next-migration (harness_shared.migration_reservations).
 --
 -- P-002 (work-on-everything-stewardship-remediation-2026-08-30): GOAL
 -- mode rows remain the historical holder candidates, but only one row is the
--- effective lease at a time.  The mode writer serializes elections per
+-- effective lease at a time. The mode writer serializes elections per
 -- workspace+goal and stamps the successor row with a monotonically increasing
 -- epoch plus the bounded predecessor handoff it displaced.
 
@@ -18,7 +19,7 @@ COMMENT ON COLUMN harness_shared.agent_modes.goal_handoff_from_owner_id IS
 COMMENT ON COLUMN harness_shared.agent_modes.goal_handoff_expires_at IS
   'GOAL-only bounded overlap deadline; overlap after this instant is a health failure.';
 
--- Deterministic one-time adoption of historical rows.  Newer set_at wins; an
+-- Deterministic one-time adoption of historical rows. Newer set_at wins; an
 -- owner-id tie-break makes simultaneous legacy rows converge everywhere.
 WITH ranked AS (
   SELECT workspace_id, owner_id, axis_key,
