@@ -111,6 +111,33 @@ describe('D-021 — goal meters DO NOT SUM', () => {
     expect(rollup.samples).toBe(1);
   });
 
+  it('never charges a goal for pot spend from before that pot was linked', async () => {
+    await makeGoal('goal-a');
+    const link = await linkPot(sql, {
+      workspaceId: WS,
+      goalId: 'goal-a',
+      harnessSlug: 'existing-pot',
+    });
+    const linkedAt = Date.parse(link.addedAt);
+    const goalCreatedAt = linkedAt - 120_000;
+    await sql`
+      UPDATE harness_shared.goals
+         SET created_at = to_timestamp(${goalCreatedAt}::double precision / 1000)
+       WHERE workspace_id = ${WS}
+         AND id = 'goal-a'
+    `;
+
+    // Both samples are inside the goal lifetime. Only the second is inside
+    // this pot's contribution lifetime, and its exact-boundary timestamp must
+    // remain included at the usage stream's integer-millisecond precision.
+    await spend('existing-pot', 1000, linkedAt - 60_000);
+    await spend('existing-pot', 4, linkedAt);
+
+    const rollup = await goalSpend(sql, { workspaceId: WS, goalId: 'goal-a' });
+    expect(rollup.costUsd).toBeCloseTo(4, 6);
+    expect(rollup.samples).toBe(1);
+  });
+
   it('lets an explicit sinceMs narrow, but never widen, the goal-lifetime window', async () => {
     const goalCreatedAt = Date.now();
     await makeGoal('goal-a');
