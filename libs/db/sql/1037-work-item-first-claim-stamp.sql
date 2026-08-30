@@ -109,12 +109,36 @@ $worked_history$;
 COMMENT ON FUNCTION harness_shared.record_work_item_worked_by_history() IS
   'Records the two durable facts a real work-item holder transition produces: the append-only worked_by_history entry (806) and the immutable first_claimed_at stamp (work-queue-admission-and-bulk-dedup D-003). Lives on the shared base table so it covers every claim path, including writes through the harness_features_consolidated and engineer_issues compatibility views.';
 
--- The 806/1036 trigger already fires BEFORE UPDATE OF taken_by and is unchanged;
--- replacing the function above is enough to make the stamp live. Re-assert it
--- idempotently so a database that somehow lost it converges here.
-DROP TRIGGER IF EXISTS work_items_worked_by_history_trg ON harness_shared.work_items;
-DROP TRIGGER IF EXISTS record_work_item_worked_by_history_trg ON harness_shared.work_items;
-CREATE TRIGGER record_work_item_worked_by_history_trg
-  BEFORE UPDATE OF taken_by ON harness_shared.work_items
-  FOR EACH ROW
-  EXECUTE FUNCTION harness_shared.record_work_item_worked_by_history();
+-- The 806/1036 trigger already fires BEFORE UPDATE OF taken_by and needs no
+-- change: replacing the function above is by itself enough to make the stamp
+-- live, and CREATE OR REPLACE FUNCTION takes no lock on work_items at all.
+--
+-- So the trigger is re-asserted ONLY when it is genuinely missing. An
+-- unconditional DROP+CREATE TRIGGER would take an ACCESS EXCLUSIVE lock on
+-- work_items every time this file is applied -- on a table taking ~19 holder
+-- transitions an hour under ~100 concurrent agents, that lock is both hard to
+-- acquire and harmful to wait for. Measured: the unconditional form failed here
+-- with `canceling statement due to lock timeout` against the live database while
+-- the function replacement it was guarding needed no table lock whatsoever.
+-- The guarded form converges a database that somehow lost the trigger without
+-- making every other application of this migration contend for the table.
+DO $ensure_history_trigger$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'harness_shared'
+       AND c.relname = 'work_items'
+       AND t.tgname = 'record_work_item_worked_by_history_trg'
+       AND NOT t.tgisinternal
+  ) THEN
+    DROP TRIGGER IF EXISTS work_items_worked_by_history_trg ON harness_shared.work_items;
+    CREATE TRIGGER record_work_item_worked_by_history_trg
+      BEFORE UPDATE OF taken_by ON harness_shared.work_items
+      FOR EACH ROW
+      EXECUTE FUNCTION harness_shared.record_work_item_worked_by_history();
+  END IF;
+END
+$ensure_history_trigger$;

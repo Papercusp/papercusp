@@ -163,6 +163,18 @@ const claim = (id: string, holder: string | null) => sql`
  * the base table, where one trigger covers all four claim call sites (three of which
  * write through the harness_features_consolidated view, which does not even expose
  * this column).
+ *
+ * CORRECTION TO 1037'S OWN HEADER (that file is applied, so the migration-immutability
+ * guard refuses an edit to it; this is the live copy of the reasoning). 1037 justifies
+ * skipping the backfill partly by "~19 holder transitions/hour on admitted rows, so the
+ * readers populate within the hour". The RATE is real but the inference is wrong: those
+ * transitions are overwhelmingly RE-claims of rows whose first claim predates this
+ * writer, and set-once means a re-claim stamps nothing. Measured minutes after 1037 went
+ * live: 142 rows stamped and climbing, while admitted-AND-stamped was still exactly 0 —
+ * the populations are disjoint. What actually populates the readers is the standing pool
+ * of admitted-but-never-claimed rows (331 of 830 at the time), each yielding one sample
+ * on its first claim, replenished at ~12 admissions/hour. The backfill-skip decision
+ * stands on that; it does not stand on the claim-churn rate.
  */
 describe('migration 1037 — first_claimed_at stamp', () => {
   it('stamps on the first real claim', async () => {
@@ -213,6 +225,29 @@ describe('migration 1037 — first_claimed_at stamp', () => {
          SET taken_by = 'peer-agent', fed_ts = 1
        WHERE workspace_id = 'default' AND feature_id = 'WI-fc-remote'`;
     expect(await firstClaimedAt('WI-fc-remote')).toBeNull();
+  });
+
+  it('the TRIGGER owns the column on a claim: an explicit value in the same UPDATE loses', async () => {
+    // Deliberate, not accidental. On the transaction that actually performs the
+    // claim, the observed stamp beats a caller-supplied one — a caller passing a
+    // different first_claimed_at *while claiming* is describing an event this
+    // trigger is watching happen. Nothing in the tree does this today (the one
+    // fixture that writes the column never touches taken_by, so it never fires
+    // this path), and the legitimate replay case — a peer's row carrying its own
+    // history — is already excluded by the remote/fed_ts guard above.
+    // If an import path ever needs to supply a true historical value, the change
+    // is COALESCE(OLD.first_claimed_at, NEW.first_claimed_at, clock_timestamp())
+    // in a NEW migration; 1037 is applied and immutable.
+    await seed('WI-fc-explicit', 'feature');
+    const supplied = '2020-01-02T03:04:05Z';
+    await sql`
+      UPDATE harness_shared.work_items
+         SET taken_by = 'su-explicit', first_claimed_at = ${supplied}::timestamptz
+       WHERE workspace_id = 'default' AND feature_id = 'WI-fc-explicit'`;
+
+    const actual = await firstClaimedAt('WI-fc-explicit');
+    expect(actual).not.toBeNull();
+    expect(new Date(actual as string).getUTCFullYear()).toBeGreaterThan(2020);
   });
 
   it('covers view writes, because three of the four claim sites are view writes', async () => {
