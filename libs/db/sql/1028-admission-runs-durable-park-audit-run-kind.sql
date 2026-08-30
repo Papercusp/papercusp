@@ -21,8 +21,6 @@
 -- That is a history-only read change to a report whose job is to describe
 -- CURRENT park state, and no code branches on their presence.
 
-BEGIN;
-
 -- 1. Widen the constraint FIRST — the backfill below writes the new value, so
 --    the reverse order would fail the CHECK mid-transaction.
 ALTER TABLE harness_shared.admission_runs
@@ -51,5 +49,3 @@ UPDATE harness_shared.admission_runs
    SET run_kind = 'durable-park-audit'
  WHERE run_kind = 'daily-digest'
    AND detail->>'mode' IN ('durable-park-audit', 'durable-park-reconcile');
-
-COMMIT;
