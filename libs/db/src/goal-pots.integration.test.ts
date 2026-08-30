@@ -18,7 +18,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
-import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
+import {
+  createFreshTestDb,
+  TESTCONTAINER_START_LOCK_TIMEOUT_MS,
+  type MigratedTestDb,
+} from '@papercusp/test-config/pg';
 import {
   goalSpend,
   goalsForPot,
@@ -64,6 +68,13 @@ const WS = 'test-ws';
 let db: MigratedTestDb;
 let sql: Sql;
 
+// This suite replays the full migration chain, whose bulk path ends with a
+// durable CHECKPOINT. Keep Vitest's outer hook deadline above the shared
+// Testcontainers startup-lock budget: equal 180s deadlines let Vitest cancel
+// before the migration runner can surface the actionable inner stage (the
+// checkpoint/fsync wait or a real lock-holder diagnostic) — EI-21864623595580605.
+const GOAL_POTS_SETUP_TIMEOUT_MS = TESTCONTAINER_START_LOCK_TIMEOUT_MS + 60_000;
+
 async function makeGoal(id: string, title = id): Promise<void> {
   await sql`
     INSERT INTO harness_shared.goals (id, install_slug, workspace_id, title, status)
@@ -85,7 +96,7 @@ beforeAll(async () => {
   sql = postgres(db.url, { max: 1, onnotice: () => {} });
   await sql.unsafe(`SELECT set_config('app.workspace_id', '${WS}', false)`);
   await sql.unsafe(`SELECT set_config('papercusp.workspace_id', '${WS}', false)`);
-}, 180_000);
+}, GOAL_POTS_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await sql?.end({ timeout: 5 });
@@ -99,6 +110,10 @@ beforeEach(async () => {
 });
 
 describe('D-021 — goal meters DO NOT SUM', () => {
+  it('keeps setup diagnostics outside the startup-lock deadline', () => {
+    expect(GOAL_POTS_SETUP_TIMEOUT_MS).toBeGreaterThan(TESTCONTAINER_START_LOCK_TIMEOUT_MS);
+  });
+
   it('never charges a goal for pot spend from before the goal existed', async () => {
     const goalCreatedAt = Date.now();
     await makeGoal('goal-a');
