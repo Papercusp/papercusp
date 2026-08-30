@@ -1066,6 +1066,7 @@ export const coordEventLogInHarnessShared = harnessShared.table("coord_event_log
 	index("coord_event_log_conditions_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`((surface = 'messages'::text) AND ((body ? 'condition_key'::text) OR (body ? 'resolves_condition'::text)))`),
 	uniqueIndex("coord_event_log_event_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`(surface = ANY (ARRAY['handoffs'::text, 'escalations'::text]))`),
 	uniqueIndex("coord_event_log_fanout_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'notify_kind'::text) IS NOT NULL))`),
+	index("coord_event_log_fed_event_key_idx").using("btree", sql`workspace_id`, sql`harness_slug`, sql`(((body -> 'fed_event'::text) ->> 'key'::text))`, sql`id`, sql`(((body -> 'fed_event'::text) ->> 'repo_key'::text))`).where(sql`((surface = 'messages'::text) AND (((body -> 'fed_event'::text) ->> 'key'::text) IS NOT NULL))`),
 	uniqueIndex("coord_event_log_fed_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.msgId.asc().nullsLast().op("text_ops")).where(sql`((harness_slug IS NOT NULL) AND ((body ->> 'notify_kind'::text) IS NULL))`),
 	index("coord_event_log_hindsight_notify_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.id.desc().nullsFirst().op("int8_ops")).where(sql`((surface = 'messages'::text) AND ((body ->> 'notify_kind'::text) = 'operator_hindsight'::text))`),
 	index("coord_event_log_messages_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(surface = 'messages'::text)`),
@@ -4571,6 +4572,35 @@ export const userActionsInHarnessShared = harnessShared.table("user_actions", {
 	index("user_actions_slug_started_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("int8_ops")),
 	index("user_actions_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	pgPolicy("user_actions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const cloudResourceObligationsInHarnessShared = harnessShared.table("cloud_resource_obligations", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	provider: text().notNull(),
+	resourceKind: text("resource_kind").notNull(),
+	resourceId: text("resource_id").notNull(),
+	projectId: text("project_id").default('').notNull(),
+	purpose: text().default('').notNull(),
+	createdByOwnerId: text("created_by_owner_id").default('').notNull(),
+	sourceWorkItemId: text("source_work_item_id").default('').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	graceMs: bigint("grace_ms", { mode: "number" }).default(21600000).notNull(),
+	teardownOwed: boolean("teardown_owed").default(true).notNull(),
+	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
+	closedReason: text("closed_reason").default('').notNull(),
+	lastEscalatedAt: timestamp("last_escalated_at", { withTimezone: true, mode: 'string' }),
+	escalationWorkItemId: text("escalation_work_item_id").default('').notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("cloud_resource_obligations_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((closed_at IS NULL) AND teardown_owed)`),
+	unique("cloud_resource_obligations_workspace_id_provider_resource_k_key").on(table.provider, table.resourceId, table.resourceKind, table.workspaceId),
+	pgPolicy("cloud_resource_obligations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("cloud_resource_obligations_provider_check", sql`provider = 'gcp'::text`),
+	check("cloud_resource_obligations_resource_kind_check", sql`(length(btrim(resource_kind)) >= 1) AND (length(btrim(resource_kind)) <= 80)`),
+	check("cloud_resource_obligations_resource_id_check", sql`(length(btrim(resource_id)) >= 1) AND (length(btrim(resource_id)) <= 300)`),
+	check("cloud_resource_obligations_grace_ms_check", sql`grace_ms >= 0`),
 ]);
 
 export const elConvCallsInHarnessShared = harnessShared.table("el_conv_calls", {
@@ -10853,7 +10883,9 @@ export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues
 	admission: text(),
 	admittedAt: timestamp("admitted_at", { withTimezone: true, mode: 'string' }),
 	admittedBy: text("admitted_by"),
-}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason, authority, closed_ts, lane, embedding, embedding_mode, goal_id, parent_id, tags, source_plan_slug, source_plan_item_ids, redundancy, expected_cost_cents, state_changed_at, admission, admitted_at, admitted_by FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+	lastReleasedAt: timestamp("last_released_at", { withTimezone: true, mode: 'string' }),
+	lastReleasedBy: text("last_released_by"),
+}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload - '_ei'::text AS payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason, authority, closed_ts, lane, embedding, embedding_mode, goal_id, parent_id, tags, source_plan_slug, source_plan_item_ids, redundancy, expected_cost_cents, state_changed_at, admission, admitted_at, admitted_by, last_released_at, last_released_by FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
 
 export const eventAwaitsEffectiveInHarnessShared = harnessShared.view("event_awaits_effective", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),
