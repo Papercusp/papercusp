@@ -266,7 +266,7 @@ function rolesFor(toolName) {
   if (toolName === "rename" || toolName === "group_sync") {
     return ["operator", "architect"];
   }
-  return ["operator", "architect", "reviewer", "debugger", "scoper", "worker", "validator"];
+  return ["operator", "architect", "reviewer", "debugger", "scoper", "worker", "validator", "judge"];
 }
 function quotaFor(toolName) {
   const heavy = /* @__PURE__ */ new Set(["query", "cypher", "impact", "detect_changes", "api_impact"]);
