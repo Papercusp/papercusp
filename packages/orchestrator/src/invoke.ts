@@ -1455,7 +1455,14 @@ export function fleetAllowedToolsForRole(
 /** The hard-deny list for a given fleet role: the standing `FLEET_DISALLOWED_TOOLS`
  *  plus, under the cutover, the native write/exec/fetch tools — `--disallowed-tools`
  *  removes a tool ENTIRELY and wins even over the dontAsk allow-list exemption
- *  (verified vs claude 2.1.158), so the removal is airtight, not just an omission. */
+ *  (verified vs claude 2.1.158), so the removal is airtight, not just an omission.
+ *
+ *  ⚠ "Airtight" scopes to NATIVE tools ONLY. Every entry this function returns today is
+ *  native, which is what keeps the claim true as written. It would NOT hold for an
+ *  `mcp__*` entry: those execute server-side and `tools:invoke` re-reaches them by name
+ *  in one call, so adding one here buys discovery friction, not confinement. See the
+ *  caveat on FLEET_DISALLOWED_TOOLS above and
+ *  /internal/docs/agent-insights/disallowed-tools-cannot-withhold-an-mcp-tool */
 export function fleetDisallowedToolsForRole(
   role: string | undefined,
   capabilityOnly = false,
