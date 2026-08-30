@@ -1,0 +1,89 @@
+-- Migration 1038 — index the git-sync ref-announce watermark reader
+-- (EI-21893070865750886).
+--
+-- WHY. `receiveRefAnnouncements` (git-sync-action.ts:4298, same shape at :3519) runs
+-- on every git-sync tick:
+--
+--     SELECT id, body FROM harness_shared.coord_event_log
+--      WHERE workspace_id = $1 AND harness_slug = $2 AND surface = 'messages'
+--        AND id > $3 AND body->'fed_event'->>'key' = $4
+--      ORDER BY id ASC LIMIT 200
+--
+-- The query is well-formed — watermark cursor, ordered, bounded — but no index
+-- supported the `body->'fed_event'->>'key'` predicate, so it degraded to a full
+-- parallel seq scan of a 409,908-row / 371 MB table. The `Sort` sits BELOW the
+-- `Limit`, so `LIMIT 200` cannot short-circuit either: every execution is O(table).
+--
+-- The zero-row path is the WORST case, and it is the COMMON case. Line 4309 reads
+-- `if (feRows.length === 0) return; // fast no-op`. That comment is backwards — zero
+-- matching rows is precisely the case where the scan runs to completion having found
+-- nothing. Ref announcements are rare relative to total surface='messages' traffic,
+-- so the expensive path runs on git-sync's cadence, forever.
+--
+-- MEASURED (isolated replica of the live tenant: 82,599 rows, 9,642 of them carrying
+-- a fed_event key, post-ANALYZE; body trimmed to just fed_event, which makes the seq
+-- scan CHEAPER than production and therefore biases the planner AWAY from the index —
+-- a conservative bias). The no-match case, which is the one that matters:
+--
+--   no index                     Seq Scan        1,408 buffers    25.878 ms
+--   (workspace_id, harness_slug, id)             7,786 buffers    21.889 ms   <- WORSE
+--   THIS INDEX                   Index Scan          3 buffers     0.074 ms   <- 469x
+--
+-- ⚠ THE OBVIOUS INDEX IS A TRAP, which is why the middle row is recorded here. The
+-- original filing proposed exactly that shape — leading columns only, key left out —
+-- reasoning from the planner's `rows=90` estimate. That estimate is the count of rows
+-- matching ALL predicates INCLUDING `key = $4`; it is not the index's population. The
+-- real fed_event population is 9,641 rows across 2,983 distinct keys (~3.2 rows per
+-- key). Without the key as an indexed column the scan walks all 9,642 index entries in
+-- id order and heap-fetches each one to recheck the key, never fills LIMIT 200, and so
+-- reads 5.5x MORE buffers than doing nothing at all. It would have shipped as a
+-- measurable regression that looked like an optimization.
+--
+-- Putting the key IN the index turns the recheck into an index condition: equality on
+-- the key lands directly on that key's ~3 entries, already ordered by id, with `id > $3`
+-- as a range on the trailing column. The match case confirms the short-circuit works —
+-- hottest real key ('pot-git:ref-announce', 4,442 rows): 173 buffers, 2.514 ms,
+-- LIMIT 200 satisfied with no Sort node.
+--
+-- PARTIAL-INDEX ALIGNMENT (scripts/check-partial-index-alignment.mjs). A partial index
+-- is usable only if the planner can PROVE the query's predicates imply the index's WHERE
+-- clause. Both halves hold here and neither is accidental:
+--   * `surface = 'messages'` — stated verbatim by the query.
+--   * `(body->'fed_event'->>'key') IS NOT NULL` — implied by `... = $4`, because `=` is
+--     strict, so a NULL input cannot satisfy it. This is why the predicate is written as
+--     IS NOT NULL and NOT as a `body ? 'fed_event'` presence test: PostgreSQL's
+--     implication prover CANNOT derive `col ? 'k'` from `col ->> 'k' = $1` (different
+--     operators over different expressions), which is the exact trap that guard exists to
+--     catch and that has bitten this repo three times. Do not "simplify" the predicate to
+--     a presence test; it is load-bearing for the PLAN, not for the RESULT.
+--
+-- NOT CONCURRENTLY, deliberately. The migration runner wraps each file in its own
+-- transaction and CREATE INDEX CONCURRENTLY cannot run inside one (same tradeoff as
+-- migrations 753 / 792 and every other index in this tree). The build therefore takes a
+-- ShareLock, blocking INSERTs to coord_event_log for its duration. MEASURED against the
+-- live table by running this exact statement inside a rolled-back transaction:
+-- 0.456 s, producing a 1,328 kB index. A sub-second stall on a hot table needs no
+-- maintenance window; the index stays tiny because the partial predicate admits only the
+-- ~9.6k fed_event rows out of 409,908.
+--
+-- FORWARD-COMPAT / DEPLOY ORDER: safe in both directions. This migration is purely
+-- ADDITIVE — it creates one new index and drops, renames and narrows nothing, so there is
+-- no destructive DDL for the currently-deployed release to trip over.
+--   DB ahead of code (the normal order): the running :3070 release issues the same query
+--     and simply starts being served by the new index. No code change is required to
+--     benefit, and none is required to keep working.
+--   Code ahead of DB: impossible to break — nothing in the tree references this index by
+--     name; without it the query falls back to the seq scan it already does today.
+--
+-- ⚠ Do NOT verify this by EXPLAINing inside the same transaction that builds the index: a
+-- freshly built index in an uncommitted transaction has no statistics, so the planner
+-- falls back to a seq scan and it reads as "the index does not work". That is an artifact
+-- of the probe. Verify on a committed index, or on an ANALYZEd replica as done above.
+--
+-- The migration runner wraps each file in its own transaction, so this file carries NO
+-- top-level BEGIN;/COMMIT; (migration-runner contract; files >=215).
+
+CREATE INDEX IF NOT EXISTS coord_event_log_fed_event_key_idx
+  ON harness_shared.coord_event_log
+  USING btree (workspace_id, harness_slug, ((body -> 'fed_event'::text) ->> 'key'::text), id)
+  WHERE surface = 'messages' AND ((body -> 'fed_event'::text) ->> 'key'::text) IS NOT NULL;
