@@ -32,6 +32,20 @@
 -- depends on. Rows carrying the new value only begin to exist once the new
 -- release is deployed, and the old release reads `status` as free text.
 
+-- LOCK DISCIPLINE. `harness_plans` is one of the hottest tables in the system
+-- (every agent's plan read/write touches it), and the first version of this
+-- migration — a plain DROP + ADD — exhausted all five lock_timeout retries
+-- without ever acquiring ACCESS EXCLUSIVE. A plain ADD CONSTRAINT also SCANS
+-- the whole table to validate, holding that lock for the duration.
+--
+-- `NOT VALID` splits it: the DROP and the ADD are catalog-only updates that
+-- hold ACCESS EXCLUSIVE for microseconds, and VALIDATE CONSTRAINT then does the
+-- scan under SHARE UPDATE EXCLUSIVE, which does NOT block reads or writes.
+-- `NOT VALID` never weakens the constraint for NEW rows — it only skips the
+-- initial check of existing ones, and here that check cannot fail anyway: this
+-- is a pure widening, so every row satisfying the old constraint satisfies the
+-- new one by construction. VALIDATE is run in the same migration so the
+-- constraint does not linger in the not-validated state.
 ALTER TABLE harness_shared.harness_plans
   DROP CONSTRAINT IF EXISTS harness_plans_status_check;
 
@@ -47,7 +61,10 @@ ALTER TABLE harness_shared.harness_plans
       'shipped'::text,
       'superseded'::text
     ]))
-  );
+  ) NOT VALID;
+
+ALTER TABLE harness_shared.harness_plans
+  VALIDATE CONSTRAINT harness_plans_status_check;
 
 COMMENT ON CONSTRAINT harness_plans_status_check ON harness_shared.harness_plans IS
   'Plan lifecycle vocabulary. Mirrors PLAN_STATUSES in libs/generic/plan-parser/src/parser.ts — '
