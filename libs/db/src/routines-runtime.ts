@@ -59,8 +59,13 @@ export interface RoutineRow {
    * 'durable' (default) fires via the DBOS `routinesTick`; 'ephemeral' is a frequent,
    * non-DBOS cadence that rides the in-process scheduled-registry (P-012) and is
    * EXCLUDED from `listDueCronRoutines`/`routinesTick` (durable-only).
+   *
+   * 'in-process' (EI-19294826146331487, migration 1046) is fired by NEITHER — both list
+   * queries below filter tier by equality, so a third value matches no executor. It is an
+   * ARM-STATE-ONLY row standing for a sweep DECLARED IN CODE (`buildDefaultChecks()`), whose
+   * `active` column is that sweep's durable on/off switch. See `listInProcessSweepRoutines`.
    */
-  tier: 'durable' | 'ephemeral';
+  tier: 'durable' | 'ephemeral' | 'in-process';
   active: boolean;
   lastFiredAt: Date | null;
   nextFireAt: Date | null;
@@ -125,6 +130,27 @@ export async function listActiveEphemeralRoutines(sql: Sql): Promise<RoutineRow[
      WHERE active = TRUE
        AND tier = 'ephemeral'
      ORDER BY id ASC
+  `;
+  return rows.map(rowToRoutine);
+}
+
+/**
+ * The ARM-STATE rows for code-declared in-process sweeps (`tier='in-process'`, EI-19294826146331487).
+ *
+ * Deliberately NOT filtered on `active`: a DISABLED sweep is exactly the row the caller needs to
+ * find, because absence of a row means "no operator has ever touched this sweep" and must read as
+ * ARMED (fail-open). Filtering on active here would make a disabled sweep indistinguishable from an
+ * unmanaged one and silently re-arm it on every reconcile.
+ *
+ * Nothing fires these rows — `listDueCronRoutines` requires `tier='durable'` and
+ * `listActiveEphemeralRoutines` requires `tier='ephemeral'`. The row exists so the Automation pane's
+ * existing `routines:set` toggle has something to write, and so the reconciler has something to read.
+ */
+export async function listInProcessSweepRoutines(sql: Sql): Promise<RoutineRow[]> {
+  const rows = await sql<any[]>`
+    SELECT * FROM harness_shared.routines
+     WHERE tier = 'in-process'
+     ORDER BY name ASC, id ASC
   `;
   return rows.map(rowToRoutine);
 }

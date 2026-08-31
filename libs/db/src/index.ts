@@ -158,6 +158,7 @@ export {
 export {
   listDueCronRoutines,
   listActiveEphemeralRoutines,
+  listInProcessSweepRoutines,
   recordEphemeralFire,
   fireRoutine,
   upsertRoutine,
