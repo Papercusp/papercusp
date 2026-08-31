@@ -73,6 +73,25 @@ const TERMINAL = new Set(['done', 'escalate', 'idle']);
 /** Ephemeral-tier cadence floor (seconds) + the coarseness above which durable cron is the better fit (P-010 / D-006). */
 const EPHEMERAL_MIN_INTERVAL_SEC = 1;
 const EPHEMERAL_SUGGEST_DURABLE_SEC = 60;
+/**
+ * WI-1406487: the cadence above which an ephemeral schedule is not merely coarse but
+ * STRUCTURALLY UNFIREABLE, so it is an ERROR rather than the advisory warning above.
+ *
+ * The ephemeral executor arms an in-process `managedSetInterval` (ephemeral-executor.ts
+ * `armOne`), which accrues NO progress across a process restart — it re-arms from zero on
+ * every bg-host boot. So an ephemeral routine can only ever fire if its period is shorter
+ * than the host's mean time between restarts. `corpus-term-df` sat at 21600s (360 min)
+ * against a measured maximum bg-host uptime of 336 min and therefore never fired ONCE in
+ * 35.7h — while reporting `active:true` and logging an "armed" line on every boot, with no
+ * error anywhere. The soft `ephemeral-interval-coarse` warning below already covered it and
+ * was not enough, because a warning ships.
+ *
+ * 3600s is chosen against evidence, not taste: the longest surviving ephemeral cadence is
+ * `pot-git-gc` at exactly 3600s (so `>` keeps it legal), and that leaves ~5.6x margin under
+ * the 336-min observed uptime ceiling. Anything coarser belongs on the durable tier, whose
+ * `next_fire_at` is a Postgres column and therefore survives the restart.
+ */
+const EPHEMERAL_MAX_INTERVAL_SEC = 3600;
 /** The default schedule action — a whole blueprint RUN; forbidden for the deterministic ephemeral tier. */
 const BLUEPRINT_RUN_ACTION = 'system:blueprint-run';
 /** Finalize-recipe entries that are pipeline STEPS, not dispatchable roles. */
