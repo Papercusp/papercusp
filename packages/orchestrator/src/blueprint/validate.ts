@@ -213,6 +213,11 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
         err('ephemeral-no-interval', 'tier:ephemeral schedule requires intervalSec (the cadence in seconds)');
       } else if (s.intervalSec < EPHEMERAL_MIN_INTERVAL_SEC) {
         err('ephemeral-interval-floor', `tier:ephemeral intervalSec must be ≥ ${EPHEMERAL_MIN_INTERVAL_SEC}s (got ${s.intervalSec})`);
+      } else if (s.intervalSec > EPHEMERAL_MAX_INTERVAL_SEC) {
+        err(
+          'ephemeral-interval-ceiling',
+          `tier:ephemeral intervalSec ${s.intervalSec}s > ${EPHEMERAL_MAX_INTERVAL_SEC}s is STRUCTURALLY UNFIREABLE: the ephemeral tier arms an in-process timer that restarts from zero on every host restart, so a period longer than the host's uptime never reaches its own deadline (WI-1406487 — corpus-term-df at 21600s did not fire once in 35.7h while reporting active:true). Declare it as tier:durable with a cron, whose next_fire_at survives the restart`,
+        );
       } else if (s.intervalSec >= EPHEMERAL_SUGGEST_DURABLE_SEC) {
         warn(
           'ephemeral-interval-coarse',

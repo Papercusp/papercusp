@@ -279,6 +279,26 @@ test('tier:ephemeral coarse intervalSec (≥60s) + a stray cron → warnings, no
   assert.ok(v.warnings.some((w) => w.code === 'ephemeral-cron-ignored'), JSON.stringify(v.warnings));
 });
 
+test('WI-1406487: tier:ephemeral intervalSec above the ceiling → ephemeral-interval-ceiling ERROR, not just the coarse warning', () => {
+  // 21600s is corpus-term-df's real value: it reported active:true, logged "armed" on
+  // every boot, and fired ZERO times in 35.7h because the in-process timer restarts from
+  // zero on each host restart and the host never stayed up the required 360 min.
+  const bp = withSchedule([{ tier: 'ephemeral', action: 'system:foo', intervalSec: 21600 }]);
+  const v = validateBlueprint(bp);
+  assert.ok(v.errors.some((e) => e.code === 'ephemeral-interval-ceiling'), JSON.stringify(v.errors));
+});
+
+test('WI-1406487: the ceiling does NOT fire at exactly 3600s — pot-git-gc, the longest legitimate ephemeral cadence, stays valid', () => {
+  // The control that keeps the guard honest. A ceiling that also rejected the real
+  // maximum-cadence routine would read as "the class is fixed" while breaking production
+  // scheduling, so the boundary is asserted as explicitly as the violation.
+  const bp = withSchedule([{ tier: 'ephemeral', action: 'system:foo', intervalSec: 3600 }]);
+  const v = validateBlueprint(bp);
+  assert.equal(v.errors.filter((e) => e.code === 'ephemeral-interval-ceiling').length, 0, JSON.stringify(v.errors));
+  // It is still coarse enough to deserve the pre-existing advisory, which we did not disturb.
+  assert.ok(v.warnings.some((w) => w.code === 'ephemeral-interval-coarse'), JSON.stringify(v.warnings));
+});
+
 test('tier:durable missing a cron → durable-no-cron (raw/out-of-band path)', () => {
   const bp = withSchedule([{ cron: '*/5 * * * *' }]);
   delete (bp.triggers!.schedule[0] as { cron?: string }).cron; // simulate a raw blueprint
