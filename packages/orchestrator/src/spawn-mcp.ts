@@ -128,13 +128,17 @@ function inheritedOperatorMcpEndpoint(raw: string): string {
  *   2. `PAPERCUSP_HONO_PORT` — the SPAWNING host's own serving port, set at
  *      boot. A spawned agent must handshake the operator that spawned it
  *      (its code version + role catalog), so the host's own port takes
- *      precedence over an inherited env default. (EI-51.)
- *   3. `PAPERCUSP_OPERATOR_URL` — an env override used only when the host
+ *      precedence over an inherited env default AND over a proxy for another
+ *      host. When the configured proxy fronts this exact port, the proxy is
+ *      still used for restart resilience. (EI-51 / WI-212675.)
+ *   3. `PAPERCUSP_MCP_PROXY_BASE` — used when the spawning host is the proxy's
+ *      target (default `:3070`) or when this process has no serving-port identity.
+ *   4. `PAPERCUSP_OPERATOR_URL` — an env override used only when the host
  *      port is unknown. `apps/operator/.env.local` pins this to green :3070,
  *      which is why it must NOT win over the host's own port: a non-green host
  *      (staging :3170, a per-harness embedded host) inherits that value and
  *      would otherwise point every child it spawns back at green.
- *   4. The hardcoded dev/prod default.
+ *   5. The hardcoded dev/prod default.
  *
  * This mirrors the design the orchestrator-runner already applies at the
  * child-env layer (EI-286 leg b: "when this host knows its serving port it
@@ -145,20 +149,28 @@ function inheritedOperatorMcpEndpoint(raw: string): string {
  */
 export function resolveSpawnOperatorBase(operatorUrl?: string | null): string {
   if (operatorUrl) return operatorUrl;
-  // Deploy-restart resilience (mcp-host-availability-resilience-2026-06-22 P-005): when the
-  // always-up local MCP proxy is configured (PAPERCUSP_MCP_PROXY_BASE, e.g.
-  // "http://127.0.0.1:9071"), point the spawned agent's `.mcp.json` at the PROXY instead of
-  // directly at :3070. The proxy fronts :3070 and retries a refused upstream, so a deploy that
-  // restarts :3070 is invisible to the bee's MCP client — no dark, tool-less session. Opt-in +
-  // safe-by-construction: unset ⇒ unchanged (direct operator base), so a proxy-less env
-  // (CI / tests / a fresh deploy with no proxy) is never affected. The console + role launch
-  // paths already do this via resolveAgentMcpBaseUrl; this closes the SPAWN-path gap so fleet
-  // bees are covered too. Auth is unaffected — the signed query params ride through the pure
-  // passthrough unchanged. Explicit `operatorUrl` still wins (the documented override contract).
   const proxyBase = process.env.PAPERCUSP_MCP_PROXY_BASE?.trim();
-  if (proxyBase) return `${proxyBase.replace(/\/+$/, '')}/api/mcp`;
-  const selfPort = process.env.PAPERCUSP_HONO_PORT;
-  if (selfPort) return `http://127.0.0.1:${selfPort}/api/mcp`;
+  const proxyEndpoint = proxyBase ? `${proxyBase.replace(/\/+$/, '')}/api/mcp` : null;
+  const selfPort = process.env.PAPERCUSP_HONO_PORT?.trim();
+  if (selfPort) {
+    // WI-212675: the proxy on the dev box fronts GREEN :3070. Background :3271
+    // and staging :3170 inherit its env setting too, but they serve CURRENT
+    // staging code and launch roles whose very purpose may be repairing a gate
+    // that prevents :3070 from updating. Sending those children through :9071
+    // silently hands them the old role/capability catalog and creates a bootstrap
+    // deadlock: the fixer needed to deploy the permission fix cannot use it.
+    //
+    // Use the proxy only when it fronts THIS host. The target is explicit when a
+    // nonstandard proxy is configured; otherwise :3070 is the platform default.
+    // This preserves deploy-restart resilience for green while keeping every
+    // non-green host's child on the same code/control plane as its spawner.
+    const proxyTargetPort = (process.env.PAPERCUSP_MCP_PROXY_TARGET_PORT ?? '3070').trim();
+    if (proxyEndpoint && selfPort === proxyTargetPort) return proxyEndpoint;
+    return `http://127.0.0.1:${selfPort}/api/mcp`;
+  }
+  // A bare client/process has no self-host identity. In that case the configured
+  // proxy remains the resilient default, exactly as before.
+  if (proxyEndpoint) return proxyEndpoint;
   const inherited = process.env.PAPERCUSP_OPERATOR_URL?.trim();
   return inherited ? inheritedOperatorMcpEndpoint(inherited) : DEFAULT_OPERATOR_URL;
 }
