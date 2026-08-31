@@ -224,6 +224,66 @@ describe('migration 972 — completion authority content-identity floor', () => 
     expect(await closeAsCommitted('WI-CASE-EMPTY', evidenceWith([]))).toBe('proposed');
   });
 
+  /**
+   * EI-21937921955988010 (migration 1044) — a completion may span SEVERAL repositories
+   * and cite artifacts that belong to NONE. `verifiedHow: 'live-drove-ui'` requires
+   * citing screenshots under ~/.papercusp/evidence/, which have no blob identity to
+   * prove; counting them unproven made every UI-verified suite-app close ineligible for
+   * 'committed' (measured on WI-1409555).
+   *
+   * The two CONTROLs are the point of this test: excluding artifacts from the floor must
+   * not loosen it in the direction that matters. An implementation that simply ignored
+   * unprovable entries would pass the first assertion and fail both controls.
+   */
+  it('excludes out-of-repo artifacts from the floor, but never lets them stand alone or excuse drift', async () => {
+    const artifact = (path: string) => ({
+      path,
+      workingTreeBlobSha: null,
+      headBlobSha: null,
+      outOfRepoArtifact: true,
+    });
+
+    // Mixed close: a papercusp path, a SECOND checkout's path carrying its own root, and
+    // a screenshot artifact. Every repo-backed path proves out, so this qualifies.
+    await seedOpenItem('WI-CASE-MULTIREPO');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-MULTIREPO',
+        evidenceWith([
+          { path: 'infra/phone-app/deploy.sh', workingTreeBlobSha: SHA_A, headBlobSha: SHA_A },
+          {
+            path: 'apps/sidecar/src/api.ts',
+            workingTreeBlobSha: SHA_B,
+            headBlobSha: SHA_B,
+            repositoryRoot: '/suite/phone-app',
+          },
+          artifact('/home/u/.papercusp/evidence/WI-CASE-MULTIREPO/phone-dialer.png'),
+        ]),
+      ),
+    ).toBe('committed');
+
+    // CONTROL: artifacts alone are no provable code evidence at all.
+    await seedOpenItem('WI-CASE-ARTIFACT-ONLY');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-ARTIFACT-ONLY',
+        evidenceWith([artifact('/home/u/.papercusp/evidence/WI-CASE-ARTIFACT-ONLY/ui.png')]),
+      ),
+    ).toBe('proposed');
+
+    // CONTROL: an artifact citation never excuses a genuine mismatch beside it.
+    await seedOpenItem('WI-CASE-ARTIFACT-PLUS-DRIFT');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-ARTIFACT-PLUS-DRIFT',
+        evidenceWith([
+          { path: 'src/fix.ts', workingTreeBlobSha: SHA_B, headBlobSha: SHA_A },
+          artifact('/home/u/.papercusp/evidence/WI-CASE-ARTIFACT-PLUS-DRIFT/ui.png'),
+        ]),
+      ),
+    ).toBe('proposed');
+  });
+
   it('keeps committed when every declared path proves blob equality', async () => {
     await seedOpenItem('WI-CASE-PROVEN');
     expect(
