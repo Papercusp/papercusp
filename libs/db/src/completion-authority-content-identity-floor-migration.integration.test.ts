@@ -32,6 +32,16 @@ function migrationPath(filename: string): string {
 }
 
 const migration972Sql = readFileSync(migrationPath('972-completion-authority-content-identity-floor.sql'), 'utf8');
+/**
+ * EI-21937921955988010: 1044 replaces completion_content_identity_proven() so the floor
+ * understands multi-repository completions and out-of-repo artifact citations. It is
+ * applied ON TOP of 972 (never instead of it) so this suite keeps proving the ORIGINAL
+ * contract survives the replacement, not just the new cases.
+ */
+const migration1044Sql = readFileSync(
+  migrationPath('1044-completion-identity-multi-repo-artifact-floor.sql'),
+  'utf8',
+);
 
 /**
  * The real migration runner speaks psql, so migration files may carry psql
@@ -132,6 +142,7 @@ beforeAll(async () => {
   await sql.unsafe('CREATE SCHEMA harness_shared');
   await createWorkItemsFixture();
   await applyMigrationFile(migration972Sql);
+  await applyMigrationFile(migration1044Sql);
   // A silently-absent or disabled trigger would make every keep-case below pass
   // vacuously, so the definition itself is part of the precondition. The probe
   // dumps unqualified ground truth so a mis-targeted DDL cannot hide behind an
@@ -356,6 +367,7 @@ describe('migration 972 — completion authority content-identity floor', () => 
 
   it('re-applies idempotently', async () => {
     await applyMigrationFile(migration972Sql);
+  await applyMigrationFile(migration1044Sql);
     // The floor must survive its own re-application unchanged and enabled.
     const rows = await sql<{ tgenabled: string }[]>`
       SELECT tgenabled FROM pg_trigger
