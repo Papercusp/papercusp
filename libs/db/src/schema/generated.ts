@@ -1,4 +1,4 @@
-import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, uuid, timestamp, bigserial, boolean, integer, check, doublePrecision, uniqueIndex, unique, foreignKey, smallint, numeric, vector, real, date, primaryKey, type AnyPgColumn, type PgTableExtraConfigValue } from "drizzle-orm/pg-core"
+import { customType, pgTable, pgSchema, pgPolicy, text, jsonb, bigint, index, uuid, timestamp, bigserial, boolean, integer, check, doublePrecision, uniqueIndex, unique, smallint, foreignKey, numeric, vector, real, date, primaryKey, type AnyPgColumn, type PgTableExtraConfigValue } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 // Custom column types for PG types drizzle-kit can't introspect
@@ -295,48 +295,6 @@ export const telemetryReportsArchiveInHarnessShared = harnessShared.table("telem
 	pgPolicy("telemetry_reports_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
-export const routinesInHarnessShared = harnessShared.table("routines", {
-	id: text().primaryKey().notNull(),
-	installSlug: text("install_slug").notNull(),
-	name: text().notNull(),
-	triggerKind: text("trigger_kind").notNull(),
-	triggerConfig: jsonb("trigger_config").notNull(),
-	targetRole: text("target_role").notNull(),
-	payloadTemplate: jsonb("payload_template"),
-	concurrency: text().default('queue').notNull(),
-	catchup: text().default('skip-old').notNull(),
-	active: boolean().default(true).notNull(),
-	lastFiredAt: timestamp("last_fired_at", { precision: 3, withTimezone: true, mode: 'string' }),
-	nextFireAt: timestamp("next_fire_at", { precision: 3, withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	metadata: jsonb(),
-	workspaceId: text("workspace_id").notNull(),
-	rescheduleIntervalSec: integer("reschedule_interval_sec"),
-	targetOwnerId: text("target_owner_id"),
-	tier: text().default('durable').notNull(),
-	groupSlug: text("group_slug"),
-	activeChangedAt: timestamp("active_changed_at", { withTimezone: true, mode: 'string' }).defaultNow(),
-}, (table) => [
-	index("routines_active_due_idx").using("btree", table.active.asc().nullsLast().op("bool_ops"), table.nextFireAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(active = true)`),
-	index("routines_group_slug_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.groupSlug.asc().nullsLast().op("text_ops")).where(sql`(group_slug IS NOT NULL)`),
-	index("routines_install_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops")),
-	index("routines_loop_interval_idx").using("btree", table.rescheduleIntervalSec.asc().nullsLast().op("int4_ops")).where(sql`(reschedule_interval_sec IS NOT NULL)`),
-	index("routines_tier_active_idx").using("btree", table.tier.asc().nullsLast().op("text_ops"), table.active.asc().nullsLast().op("bool_ops")).where(sql`(active = true)`),
-	index("routines_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
-	uniqueIndex("routines_workspace_install_slug_name_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.name.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.workspaceId, table.groupSlug],
-			foreignColumns: [routineGroupsInHarnessShared.workspaceId, routineGroupsInHarnessShared.slug],
-			name: "routines_group_slug_fkey"
-		}).onDelete("set null"),
-	unique("routines_install_slug_name_key").on(table.installSlug, table.name),
-	pgPolicy("routines_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("routines_tier_check", sql`tier = ANY (ARRAY['durable'::text, 'ephemeral'::text])`),
-	check("routines_reschedule_interval_positive", sql`(reschedule_interval_sec IS NULL) OR (reschedule_interval_sec > 0)`),
-	check("routines_workspace_nonempty", sql`workspace_id <> ''::text`),
-]);
-
 export const scoutRoutedIdeasInHarnessShared = harnessShared.table("scout_routed_ideas", {
 	ideaId: text("idea_id").primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -381,6 +339,49 @@ export const schemaMigrationsInHarnessShared = harnessShared.table("schema_migra
 	appliedAt: timestamp("applied_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	sha256: text().notNull(),
 });
+
+export const routinesInHarnessShared = harnessShared.table("routines", {
+	id: text().primaryKey().notNull(),
+	installSlug: text("install_slug").notNull(),
+	name: text().notNull(),
+	triggerKind: text("trigger_kind").notNull(),
+	triggerConfig: jsonb("trigger_config").notNull(),
+	targetRole: text("target_role").notNull(),
+	payloadTemplate: jsonb("payload_template"),
+	concurrency: text().default('queue').notNull(),
+	catchup: text().default('skip-old').notNull(),
+	active: boolean().default(true).notNull(),
+	lastFiredAt: timestamp("last_fired_at", { precision: 3, withTimezone: true, mode: 'string' }),
+	nextFireAt: timestamp("next_fire_at", { precision: 3, withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	metadata: jsonb(),
+	workspaceId: text("workspace_id").notNull(),
+	rescheduleIntervalSec: integer("reschedule_interval_sec"),
+	targetOwnerId: text("target_owner_id"),
+	tier: text().default('durable').notNull(),
+	groupSlug: text("group_slug"),
+	activeChangedAt: timestamp("active_changed_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+	index("routines_active_due_idx").using("btree", table.active.asc().nullsLast().op("bool_ops"), table.nextFireAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(active = true)`),
+	index("routines_group_slug_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.groupSlug.asc().nullsLast().op("text_ops")).where(sql`(group_slug IS NOT NULL)`),
+	index("routines_in_process_tier_idx").using("btree", table.tier.asc().nullsLast().op("text_ops"), table.name.asc().nullsLast().op("text_ops")).where(sql`(tier = 'in-process'::text)`),
+	index("routines_install_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops")),
+	index("routines_loop_interval_idx").using("btree", table.rescheduleIntervalSec.asc().nullsLast().op("int4_ops")).where(sql`(reschedule_interval_sec IS NOT NULL)`),
+	index("routines_tier_active_idx").using("btree", table.tier.asc().nullsLast().op("text_ops"), table.active.asc().nullsLast().op("bool_ops")).where(sql`(active = true)`),
+	index("routines_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
+	uniqueIndex("routines_workspace_install_slug_name_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.name.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.groupSlug],
+			foreignColumns: [routineGroupsInHarnessShared.workspaceId, routineGroupsInHarnessShared.slug],
+			name: "routines_group_slug_fkey"
+		}).onDelete("set null"),
+	unique("routines_install_slug_name_key").on(table.installSlug, table.name),
+	pgPolicy("routines_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("routines_reschedule_interval_positive", sql`(reschedule_interval_sec IS NULL) OR (reschedule_interval_sec > 0)`),
+	check("routines_tier_check", sql`tier = ANY (ARRAY['durable'::text, 'ephemeral'::text, 'in-process'::text])`),
+	check("routines_workspace_nonempty", sql`workspace_id <> ''::text`),
+]);
 
 export const potDirectoryCacheInHarnessShared = harnessShared.table("pot_directory_cache", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
