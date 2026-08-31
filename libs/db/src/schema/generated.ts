@@ -5399,6 +5399,17 @@ export const agentNameSessionsInHarnessShared = harnessShared.table("agent_name_
 	check("agent_name_sessions_name_nonempty", sql`agent_name <> ''::text`),
 ]);
 
+export const agentDisplayNamesInHarnessShared = harnessShared.table("agent_display_names", {
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	displayName: text("display_name").notNull(),
+	setBy: text("set_by"),
+	setAt: timestamp("set_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.ownerId, table.workspaceId], name: "agent_display_names_pkey"}),
+	check("agent_display_names_display_name_nonempty", sql`length(btrim(display_name)) > 0`),
+]);
+
 export const harnessPhaseLastUsedInHarnessShared = harnessShared.table("harness_phase_last_used", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -10371,7 +10382,6 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	index("work_items_obs_supersedes_idx").using("btree", sql`((((payload - '_ei'::text) -> 'observation'::text) ->> 'superse`).where(sql`((((payload - '_ei'::text) -> 'observation'::text) ->> 'supersedes'::text) IS NOT NULL)`),
 	index("work_items_plan_item_stamp_idx").using("btree", sql`(((payload -> 'plan_item'::text) ->> 'plan_slug'::text))`, sql`(((payload -> 'plan_item'::text) ->> 'item_id'::text))`).where(sql`((payload -> 'plan_item'::text) IS NOT NULL)`),
 	uniqueIndex("work_items_resource_governor_identity_uq").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text)`, sql`(((payload -> 'resource_governor'::text) ->> 'idempotencyKey'::`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
-	uniqueIndex("work_items_resource_governor_identity_uq_ccold").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text)`, sql`(((payload -> 'resource_governor'::text) ->> 'idempotencyKey'::`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
 	index("work_items_resource_governor_queue_idx").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text)`, sql`(((payload -> 'resource_governor'::text) ->> 'state'::text))`, sql`created_ts`, sql`feature_id`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
 	uniqueIndex("work_items_watchdog_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload ->> 'watchdogKey'::text))`, sql`COALESCE(((payload -> '_ei'::text) ->> 'signal_origin'::text), `, sql`COALESCE((payload ->> 'lane'::text), 'improvement'::text)`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND ((payload ->> 'watchdogKey'::text) IS NOT NULL))`),
 	primaryKey({ columns: [table.featureId, table.harnessSlug], name: "work_items_pkey"}),
