@@ -5,10 +5,18 @@
 -- compensation handle on the immutable per-item audit row; a successful undo
 -- records compensation metadata instead of rewriting the original decision.
 --
+-- FORWARD-COMPAT: this migration is the EXPAND half only.  The currently
+-- deployed release can still write outcome='auto_resolved' without these new
+-- columns, so constraint replacement must wait for a later CONTRACT migration
+-- after the compatible writer is deployed.  The current writer validates the
+-- handle/window before its UPDATE; the database CHECK is deliberately deferred
+-- until that writer is live.
+--
 -- Historical auto_resolved rows predate this contract and cannot be assigned a
--- truthful executable handle after the fact.  The NOT VALID constraint keeps
--- those rows readable while PostgreSQL enforces the invariant for every new or
--- subsequently updated auto_resolved row.
+-- truthful executable handle after the fact.  They remain readable with these
+-- nullable columns; the later CONTRACT migration will use a NOT VALID
+-- constraint so PostgreSQL enforces the invariant for new or updated rows
+-- without pretending historical rows had an executable handle.
 
 ALTER TABLE harness_shared.attention_bulk_run_items
   ADD COLUMN IF NOT EXISTS revert_handle JSONB,
@@ -31,37 +39,6 @@ COMMENT ON COLUMN harness_shared.attention_bulk_run_items.reverted_at IS
 
 COMMENT ON COLUMN harness_shared.attention_bulk_run_items.revert_note IS
   'Non-empty compensation result recorded when reverted_at is set.';
-
-ALTER TABLE harness_shared.attention_bulk_run_items
-  DROP CONSTRAINT IF EXISTS attention_bulk_run_items_auto_resolved_reversal_check;
-
-ALTER TABLE harness_shared.attention_bulk_run_items
-  ADD CONSTRAINT attention_bulk_run_items_auto_resolved_reversal_check
-  CHECK (
-    outcome <> 'auto_resolved'
-    OR (
-      revert_handle IS NOT NULL
-      AND jsonb_typeof(revert_handle) = 'object'
-      AND COALESCE(NULLIF(btrim(revert_handle ->> 'kind'), ''), '') <> ''
-      AND decided_at IS NOT NULL
-      AND reversal_window_until IS NOT NULL
-      AND reversal_window_until > decided_at
-    )
-  ) NOT VALID;
-
-ALTER TABLE harness_shared.attention_bulk_run_items
-  DROP CONSTRAINT IF EXISTS attention_bulk_run_items_compensation_record_check;
-
-ALTER TABLE harness_shared.attention_bulk_run_items
-  ADD CONSTRAINT attention_bulk_run_items_compensation_record_check
-  CHECK (
-    (reverted_at IS NULL AND revert_note IS NULL)
-    OR (
-      reverted_at IS NOT NULL
-      AND revert_handle IS NOT NULL
-      AND COALESCE(NULLIF(btrim(revert_note), ''), '') <> ''
-    )
-  );
 
 CREATE INDEX IF NOT EXISTS attention_bulk_run_items_open_reversal_idx
   ON harness_shared.attention_bulk_run_items
