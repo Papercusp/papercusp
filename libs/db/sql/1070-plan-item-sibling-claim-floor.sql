@@ -1,4 +1,5 @@
--- 1068-plan-item-sibling-claim-floor.sql — EI-22040898205841125
+-- 1070-plan-item-sibling-claim-floor.sql — EI-22040898205841125
+-- Reserved via db:next-migration before arming.
 --
 -- Extend the issue-family claim-floor SSOT with the live work-item sibling axis.
 -- guardPlanItemSiblingClaim already serializes concurrent implementations of one
@@ -15,12 +16,7 @@
 -- when those source columns are incomplete. The transaction guard remains the
 -- concurrency/source-only backstop.
 
-\set ON_ERROR_STOP on
-BEGIN;
-
-DROP VIEW IF EXISTS harness_shared.work_items_claimable;
-
-DO $function_guard1068$
+DO $function_guard1070$
 BEGIN
   IF to_regprocedure(
        'harness_shared.work_item_claim_floors_v19(text,text,text,text,text,text,text,jsonb,text)'
@@ -28,14 +24,14 @@ BEGIN
     IF to_regprocedure(
          'harness_shared.work_item_claim_floors(text,text,text,text,text,text,text,jsonb,text)'
        ) IS NULL THEN
-      RAISE EXCEPTION '1068: public work_item_claim_floors function is missing';
+      RAISE EXCEPTION '1070: public work_item_claim_floors function is missing';
     END IF;
     ALTER FUNCTION harness_shared.work_item_claim_floors(
       text, text, text, text, text, text, text, jsonb, text
     ) RENAME TO work_item_claim_floors_v19;
   END IF;
 END
-$function_guard1068$;
+$function_guard1070$;
 
 CREATE OR REPLACE FUNCTION harness_shared.work_item_claim_floors(
   p_workspace_id            text,
@@ -112,7 +108,7 @@ COMMENT ON FUNCTION harness_shared.work_item_claim_floors(
 ) IS
   'P-001/P-002 claim-floor SSOT. Mirrors claimNextIssueWorkItem unconditional floors; EI-22040898205841125 adds active-plan-item-sibling so an already-claimed canonical sibling is excluded before the selector UPDATE and cannot masquerade as claim/read divergence.';
 
-CREATE VIEW harness_shared.work_items_claimable AS
+CREATE OR REPLACE VIEW harness_shared.work_items_claimable AS
   SELECT wi.*
     FROM harness_shared.work_items wi
    WHERE wi.item_kind IN ('bug', 'change', 'task')
@@ -126,5 +122,3 @@ CREATE VIEW harness_shared.work_items_claimable AS
 
 COMMENT ON VIEW harness_shared.work_items_claimable IS
   'P-001/P-002 issue-family rows passing every unconditional claim floor. EI-22040898205841125 excludes an unclaimed duplicate implementation while a nonterminal canonical plan-item sibling carries a live work-item claim.';
-
-COMMIT;
