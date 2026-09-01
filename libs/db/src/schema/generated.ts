@@ -7637,6 +7637,7 @@ export const agentModesInHarnessShared = harnessShared.table("agent_modes", {
 	ownerDirected: boolean("owner_directed").default(false).notNull(),
 	setAt: timestamp("set_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	subject: text(),
+	impliedBy: jsonb("implied_by"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	goalLeaseEpoch: bigint("goal_lease_epoch", { mode: "number" }),
 	goalHandoffFromOwnerId: text("goal_handoff_from_owner_id"),
