@@ -33,6 +33,12 @@ export {
 export { createLogger } from './log';
 export { resolvePaths, resolveEnv, resolveAgentCmd, resolveAgentBackend } from './env';
 export { AGENT_BACKENDS } from './types';
+export { allHarnessProfiles, harnessProfile, harnessSupports } from './harness-profile';
+export type {
+  HarnessAdapterProfile,
+  HarnessCapability,
+  HarnessProvider,
+} from './harness-profile';
 // worker-chunk-loop-operator-hosted-2026-06-14 (D-005): additive exports so the
 // operator-hosted `worker:chunk-loop` op (a near-PORT) reuses the SHIPPED worker
 // loop + its chunk file-claim coordinator instead of re-porting them.
