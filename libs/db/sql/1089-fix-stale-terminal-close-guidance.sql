@@ -26,6 +26,7 @@ DECLARE
 
   new_raise CONSTANT text := $new1089$RAISE EXCEPTION 'engineer_issues terminal transition refused for issue % — and RE-CALLING work_items:complete / work_items:set_state CANNOT FIX IT. This UPDATE arrived on operator connection "%", which still routes terminal state through the engineer_issues compatibility view; a CURRENT operator writes harness_shared.work_items directly and never reaches this trigger. So that process is running code older than issues-engineer.ts EI-20092514168581881, the REQUIRES-DEPLOYED half of migration 797. FIX: re-post the same unmodified work_items:complete / work_items:set_state payload to the staging operator. With ptool, pass --url=http://127.0.0.1:3170 explicitly — unsetting PAPERCUSP_OPERATOR_URL leaves ptool on its default :3070. Direct MCP clients may use the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1. The staging writer updates harness_shared.work_items directly. Redeploying or restarting the release operator is not required. Any completion record you already submitted is stored — only the state flip is outstanding.', NEW.issue_id, COALESCE(current_setting('application_name', true), '?')$new1089$;
   new_hint  CONSTANT text := $new1089hint$Re-post the same payload to the staging operator on this host. For ptool, pass --url=http://127.0.0.1:3170 explicitly; unsetting PAPERCUSP_OPERATOR_URL still leaves ptool''s default at :3070. Direct MCP clients may use the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1. Do not keep retrying this release connection. Redeploying or restarting the release operator is optional, not required.$new1089hint$;
+  new_hint_marker CONSTANT text := 'For ptool, pass --url=http://127.0.0.1:3170 explicitly';
 BEGIN
   SELECT pg_get_functiondef(p.oid)
     INTO def
@@ -39,7 +40,11 @@ BEGIN
   END IF;
 
   n_new_raise := (length(def) - length(replace(def, new_raise, ''))) / length(new_raise);
-  n_new_hint := (length(def) - length(replace(def, new_hint, ''))) / length(new_hint);
+  -- The hint is a SQL string literal inside the stored PL/pgSQL source, so
+  -- pg_get_functiondef may choose a different quote spelling for apostrophes.
+  -- Count a quote-free semantic marker instead of treating that serialization
+  -- detail as a different behavior.
+  n_new_hint := (length(def) - length(replace(def, new_hint_marker, ''))) / length(new_hint_marker);
   IF n_new_raise = 1 AND n_new_hint = 1 THEN
     RAISE NOTICE '1089: engineer_issues_view_dml already carries ptool --url staging guidance — no-op';
     RETURN;
@@ -85,7 +90,7 @@ BEGIN
      AND p.proname = 'engineer_issues_view_dml';
 
   n_new_raise := (length(def) - length(replace(def, new_raise, ''))) / length(new_raise);
-  n_new_hint := (length(def) - length(replace(def, new_hint, ''))) / length(new_hint);
+  n_new_hint := (length(def) - length(replace(def, new_hint_marker, ''))) / length(new_hint_marker);
   n_old_raise := (length(def) - length(replace(def, old_raise, ''))) / length(old_raise);
   n_old_hint := (length(def) - length(replace(def, old_hint, ''))) / length(old_hint);
 

@@ -300,13 +300,15 @@ describe('engineer_issues terminal lifecycle boundary', () => {
     // trigger guard and write-path change untouched.
     const correctedRaise = `RAISE EXCEPTION 'engineer_issues terminal transition refused for issue % — and RE-CALLING work_items:complete / work_items:set_state CANNOT FIX IT. This UPDATE arrived on operator connection "%", which still routes terminal state through the engineer_issues compatibility view; a CURRENT operator writes harness_shared.work_items directly and never reaches this trigger. So that process is running code older than issues-engineer.ts EI-20092514168581881, the REQUIRES-DEPLOYED half of migration 797. FIX: re-post the same unmodified work_items:complete / work_items:set_state payload to the staging operator. With ptool, pass --url=http://127.0.0.1:3170 explicitly — unsetting PAPERCUSP_OPERATOR_URL leaves ptool on its default :3070. Direct MCP clients may use the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1. The staging writer updates harness_shared.work_items directly. Redeploying or restarting the release operator is not required. Any completion record you already submitted is stored — only the state flip is outstanding.', NEW.issue_id, COALESCE(current_setting('application_name', true), '?')`;
     const staleRaise = `RAISE EXCEPTION 'engineer_issues terminal transition refused for issue % — and RE-CALLING work_items:complete / work_items:set_state CANNOT FIX IT. This UPDATE arrived on operator connection "%", which still routes terminal state through the engineer_issues compatibility view; a CURRENT operator writes harness_shared.work_items directly and never reaches this trigger. So that process is running code older than issues-engineer.ts EI-20092514168581881, the REQUIRES-DEPLOYED half of migration 797. FIX: re-post the same unmodified work_items:complete / work_items:set_state payload to the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1; it writes harness_shared.work_items directly. Redeploying or restarting the release operator is not required. Any completion record you already submitted is stored — only the state flip is outstanding.', NEW.issue_id, COALESCE(current_setting('application_name', true), '?')`;
-    const correctedHint = `Re-post the same payload to the staging operator on this host. For ptool, pass --url=http://127.0.0.1:3170 explicitly; unsetting PAPERCUSP_OPERATOR_URL still leaves ptool''s default at :3070. Direct MCP clients may use the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1. Do not keep retrying this release connection. Redeploying or restarting the release operator is optional, not required.`;
+    const correctedHintMarker = 'For ptool, pass --url=http://127.0.0.1:3170 explicitly';
     const staleHint = `Re-post the same payload to the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1 on this host; it writes harness_shared.work_items directly. Do not keep retrying this release connection. Redeploying or restarting the release operator is optional, not required.`;
     expect(currentDef).toContain(correctedRaise);
-    expect(currentDef).toContain(correctedHint);
+    expect(currentDef).toContain(correctedHintMarker);
 
     try {
-      const staleDef = currentDef.replace(correctedRaise, staleRaise).replace(correctedHint, staleHint);
+      const staleDef = currentDef
+        .replace(correctedRaise, staleRaise)
+        .replace(/USING HINT = 'Re-post the same payload to the staging operator on this host\..*?';/, `USING HINT = '${staleHint}';`);
       expect(staleDef).toContain(staleRaise);
       expect(staleDef).toContain(staleHint);
       expect(staleDef).not.toContain('--url=http://127.0.0.1:3170 explicitly');
@@ -318,7 +320,7 @@ describe('engineer_issues terminal lifecycle boundary', () => {
           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'harness_shared' AND p.proname = 'engineer_issues_view_dml'`;
       expect(repairedDef).toContain(correctedRaise);
-      expect(repairedDef).toContain(correctedHint);
+      expect(repairedDef).toContain(correctedHintMarker);
       expect(repairedDef).not.toContain(staleRaise);
       expect(repairedDef).not.toContain(staleHint);
       expect(repairedDef).not.toContain('--port 3170');
