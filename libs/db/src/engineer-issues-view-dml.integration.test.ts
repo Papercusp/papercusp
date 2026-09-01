@@ -11,6 +11,7 @@
  *     src/engineer-issues-view-dml.integration.test.ts
  */
 import { readFile } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -20,6 +21,17 @@ import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/p
 const here = dirname(fileURLToPath(import.meta.url));
 const SQL_DIR = join(here, '..', 'sql');
 const RUNNER = join(here, '..', '..', '..', 'packages', 'embedded-postgres-server', 'src', 'migration-runner.js');
+const GUIDANCE_MIGRATION = '1089-fix-stale-terminal-close-guidance.sql';
+
+function migrationPath(name: string): string {
+  const armed = join(SQL_DIR, name);
+  if (existsSync(armed)) return armed;
+  const draft = `${armed}.DRAFT`;
+  if (existsSync(draft)) return draft;
+  throw new Error(`migration ${name} not found at ${armed}[.DRAFT]`);
+}
+
+const GUIDANCE_MIGRATION_SQL = readFileSync(migrationPath(GUIDANCE_MIGRATION), 'utf8');
 
 const BOOT_PREREQS_DDL = `
   DO $pg$ BEGIN
@@ -66,6 +78,11 @@ async function provision(url: string): Promise<void> {
     ]) {
       await client.unsafe(await readFile(join(SQL_DIR, file), 'utf8'));
     }
+    // 1089 is kept parked while it is authored. Apply the real draft/final
+    // migration explicitly so this suite exercises its idempotent fresh-DB path
+    // before the live-body regression below rewrites the function to the older
+    // already-applied-804 shape.
+    await client.unsafe(GUIDANCE_MIGRATION_SQL);
   } finally {
     await client.end({ timeout: 5 });
   }
@@ -269,6 +286,74 @@ describe('engineer_issues terminal lifecycle boundary', () => {
     // misdiagnosis in the other direction.
     expect(err!.message).not.toMatch(/RE-CALLING work_items:complete/);
     expect(err!.hint ?? '').toMatch(/not a lifecycle writer/);
+  });
+
+  it('repairs the already-applied 804 direct-URL body with ptool-safe guidance', async () => {
+    const issueId = 'EI-900024';
+    const [{ def: currentDef }] = await sql<{ def: string }[]>`
+      SELECT pg_get_functiondef(p.oid) AS def
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'harness_shared' AND p.proname = 'engineer_issues_view_dml'`;
+
+    // This is the exact older function shape observed on the live database:
+    // make only the two 804 message literals stale, leaving every accumulated
+    // trigger guard and write-path change untouched.
+    const correctedRaise = `RAISE EXCEPTION 'engineer_issues terminal transition refused for issue % — and RE-CALLING work_items:complete / work_items:set_state CANNOT FIX IT. This UPDATE arrived on operator connection "%", which still routes terminal state through the engineer_issues compatibility view; a CURRENT operator writes harness_shared.work_items directly and never reaches this trigger. So that process is running code older than issues-engineer.ts EI-20092514168581881, the REQUIRES-DEPLOYED half of migration 797. FIX: re-post the same unmodified work_items:complete / work_items:set_state payload to the staging operator. With ptool, pass --url=http://127.0.0.1:3170 explicitly — unsetting PAPERCUSP_OPERATOR_URL leaves ptool on its default :3070. Direct MCP clients may use the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1. The staging writer updates harness_shared.work_items directly. Redeploying or restarting the release operator is not required. Any completion record you already submitted is stored — only the state flip is outstanding.', NEW.issue_id, COALESCE(current_setting('application_name', true), '?')`;
+    const staleRaise = `RAISE EXCEPTION 'engineer_issues terminal transition refused for issue % — and RE-CALLING work_items:complete / work_items:set_state CANNOT FIX IT. This UPDATE arrived on operator connection "%", which still routes terminal state through the engineer_issues compatibility view; a CURRENT operator writes harness_shared.work_items directly and never reaches this trigger. So that process is running code older than issues-engineer.ts EI-20092514168581881, the REQUIRES-DEPLOYED half of migration 797. FIX: re-post the same unmodified work_items:complete / work_items:set_state payload to the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1; it writes harness_shared.work_items directly. Redeploying or restarting the release operator is not required. Any completion record you already submitted is stored — only the state flip is outstanding.', NEW.issue_id, COALESCE(current_setting('application_name', true), '?')`;
+    const correctedHint = `Re-post the same payload to the staging operator on this host. For ptool, pass --url=http://127.0.0.1:3170 explicitly; unsetting PAPERCUSP_OPERATOR_URL still leaves ptool''s default at :3070. Direct MCP clients may use the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1. Do not keep retrying this release connection. Redeploying or restarting the release operator is optional, not required.`;
+    const staleHint = `Re-post the same payload to the staging operator at http://127.0.0.1:3170/api/mcp?superuser=1 on this host; it writes harness_shared.work_items directly. Do not keep retrying this release connection. Redeploying or restarting the release operator is optional, not required.`;
+    expect(currentDef).toContain(correctedRaise);
+    expect(currentDef).toContain(correctedHint);
+
+    try {
+      const staleDef = currentDef.replace(correctedRaise, staleRaise).replace(correctedHint, staleHint);
+      expect(staleDef).toContain(staleRaise);
+      expect(staleDef).toContain(staleHint);
+      expect(staleDef).not.toContain('--url=http://127.0.0.1:3170 explicitly');
+      await sql.unsafe(staleDef);
+
+      await sql.unsafe(GUIDANCE_MIGRATION_SQL);
+      const [{ def: repairedDef }] = await sql<{ def: string }[]>`
+        SELECT pg_get_functiondef(p.oid) AS def
+          FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'harness_shared' AND p.proname = 'engineer_issues_view_dml'`;
+      expect(repairedDef).toContain(correctedRaise);
+      expect(repairedDef).toContain(correctedHint);
+      expect(repairedDef).not.toContain(staleRaise);
+      expect(repairedDef).not.toContain(staleHint);
+      expect(repairedDef).not.toContain('--port 3170');
+      expect(repairedDef).toContain("NEW.state IN ('resolved', 'closed', 'done', 'dropped')");
+
+      await sql`
+        INSERT INTO harness_shared.engineer_issues
+          (workspace_id, issue_id, title, body, state, kind, scope, severity)
+        VALUES ('ws1', ${issueId}, 'ptool guidance regression', 'body', 'open', 'bug', 'harness:hx', 'minor')`;
+      const operatorish = postgres(db.url, {
+        max: 1,
+        onnotice: () => {},
+        connection: { application_name: 'pcusp:org-app:p424244' },
+      });
+      try {
+        const err = await operatorish`
+          UPDATE harness_shared.engineer_issues
+             SET state = 'done'
+           WHERE workspace_id = 'ws1' AND issue_id = ${issueId}`.then(
+          () => null,
+          (e: unknown) => e as { message: string; hint?: string },
+        );
+        expect(err).not.toBeNull();
+        expect(err!.message).toContain('--url=http://127.0.0.1:3170 explicitly');
+        expect(err!.message).not.toContain('--port 3170');
+        expect(err!.hint ?? '').toContain('--url=http://127.0.0.1:3170 explicitly');
+        expect(err!.hint ?? '').not.toContain('--port 3170');
+      } finally {
+        await operatorish.end({ timeout: 5 }).catch(() => {});
+      }
+    } finally {
+      // Keep the remaining tests on the checked-in/current 804 definition even
+      // if the migration or the behavioural probe fails.
+      await sql.unsafe(currentDef);
+    }
   });
 });
 
