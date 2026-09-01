@@ -149,9 +149,30 @@ beforeAll(async () => {
     INSERT INTO harness_shared.work_items
       (workspace_id, feature_id, payload, status, created_ts, updated_ts)
     VALUES
-      ('ws-retirement', 'WI-terminal', ${{ resource_governor: legacyRecord('completed') }}::jsonb, 'done', 1000, 1500),
-      ('ws-retirement', 'WI-active', ${{ resource_governor: legacyRecord('running') }}::jsonb, 'wip', 1500, 1500),
-      ('ws-retirement', 'WI-ordinary', ${{ title: 'ordinary work survives' }}::jsonb, 'open', 1000, 1000)`;
+      (
+        'ws-retirement',
+        'WI-terminal',
+        ${JSON.stringify({ resource_governor: legacyRecord('completed') })}::text::jsonb,
+        'done',
+        1000,
+        1500
+      ),
+      (
+        'ws-retirement',
+        'WI-active',
+        ${JSON.stringify({ resource_governor: legacyRecord('running') })}::text::jsonb,
+        'wip',
+        1500,
+        1500
+      ),
+      (
+        'ws-retirement',
+        'WI-ordinary',
+        ${JSON.stringify({ title: 'ordinary work survives' })}::text::jsonb,
+        'open',
+        1000,
+        1000
+      )`;
 
   await sql`
     INSERT INTO harness_shared.resource_governor_admissions (workspace_id, record)
@@ -247,13 +268,15 @@ describe('migration 1077 — resource-governor work-item receipt retirement', ()
     await applyRetirement();
 
     expect(await legacyCount()).toBe(0);
-    const [result] = await sql<{
-      ordinary: number;
-      ledger: number;
-      old_indexes: number;
-      old_triggers: number;
-      old_functions: number;
-    }[]>`
+    const [result] = await sql<
+      {
+        ordinary: number;
+        ledger: number;
+        old_indexes: number;
+        old_triggers: number;
+        old_functions: number;
+      }[]
+    >`
       SELECT
         (SELECT count(*)::int FROM harness_shared.work_items
           WHERE workspace_id = 'ws-retirement' AND feature_id = 'WI-ordinary') AS ordinary,
