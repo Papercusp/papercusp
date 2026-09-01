@@ -6,6 +6,8 @@
 -- migration, a route-owning plan session between claim leases left its linked
 -- work-item visible to generic self-select. WI-1801547 reproduced the resulting
 -- claim -> inspect D-006 -> release -> immediately re-serve loop twice.
+-- FORWARD-COMPAT: the versioned function rename is transactional and immediately
+-- recreates the stable public function signature and view used by old readers.
 --
 -- This wrapper keeps the public signature stable, preserves every prior floor,
 -- removes only the old combined reserved-plan-lane label, and rebuilds that label
