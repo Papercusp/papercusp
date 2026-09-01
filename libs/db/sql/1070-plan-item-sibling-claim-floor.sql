@@ -9,6 +9,10 @@
 -- saw NULL while the oracle counted the same row and falsely diagnosed an internal
 -- claim/read divergence. The TypeScript reservedPlanLaneExclusionSql now excludes
 -- this shape before UPDATE; this migration keeps the SQL SSOT view in agreement.
+-- FORWARD-COMPAT: the versioned-function rename and stable public-function
+-- recreation commit atomically, so deployed readers never observe a committed
+-- state without the existing nine-argument public signature; v19 retains the
+-- prior implementation while the recreated wrapper adds the sibling floor.
 --
 -- The stable nine-argument function signature is preserved. Candidate identity is
 -- its established payload.plan_item back-pointer; a sibling prefers canonical

@@ -1,4 +1,4 @@
--- 1073-resource-governor-retired-writer-guard.sql
+-- 1076-resource-governor-retired-writer-guard.sql
 --
 -- resource-governor-admission-ledger-2026-09-01 P-005 / D-007.
 --
