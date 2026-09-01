@@ -1,4 +1,5 @@
 -- 1072-plan-assignment-claim-floor.sql — EI-22040912157347872
+-- Reserved via db:next-migration before arming.
 --
 -- Extend the existing reserved-plan-lane floor with the durable ASSIGNMENT axis.
 -- A plan_item_claims lease is only the live grip; plan_item_assignments is the
