@@ -121,16 +121,19 @@ test('applyParamPatch: writes overrides; a value equal to the default is dropped
 
 test('integration: the real coding blueprint params resolve over a config.json (P-006 ⨯ P-007)', () => {
   const { blueprint: bp } = loadBuiltinBlueprint('coding-factory');
-  // a realistic per-harness config.json the settings panel would have written
-  const cfg = { parallelWorkers: { max: 4, useChunkLoop: true }, debugger: { threshold: 5 } };
+  // Stale chunk-loop keys remain readable in old config files but are no longer
+  // declared, rendered, or patchable through the blueprint parameter surface.
+  const cfg = {
+    parallelWorkers: { max: 4, useChunkLoop: true, workingStateCheck: 'pnpm typecheck' },
+    debugger: { threshold: 5 },
+  };
   const views = resolveParamViews(bp.params, cfg);
   const byKey = Object.fromEntries(views.map((v) => [v.key, v]));
   // base universal + coding-specific params all present + reading the right config paths
   assert.equal(byKey['parallelWorkers.max'].value, 4);
   assert.equal(byKey['debugger.threshold'].value, 5);
-  assert.equal(byKey['parallelWorkers.useChunkLoop'].value, true);
-  // an unset coding param falls back to its declared default
-  assert.equal(byKey['parallelWorkers.workingStateCheck'].value, 'pnpm typecheck');
+  assert.equal(byKey['parallelWorkers.useChunkLoop'], undefined);
+  assert.equal(byKey['parallelWorkers.workingStateCheck'], undefined);
   // a patch validates + applies against the real declared params
   const res = validateParamPatch(bp.params, { 'parallelWorkers.max': '6', 'debugger.threshold': 2 });
   assert.equal(res.ok, true, JSON.stringify(res.errors));

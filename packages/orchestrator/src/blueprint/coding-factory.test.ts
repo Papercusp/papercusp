@@ -172,12 +172,13 @@ test('coding declares params = base universal ∪ coding-specific (P-006 / D-003
   assert.ok(params['aiBackend.default.model'], 'inherits base backend-model param');
   assert.ok(params['aiBackend.default.engine'], 'inherits base execution-engine param');
   assert.ok(params['aiBackend.default.agentCmd'], 'inherits base backend-cmd param');
-  // coding-SPECIFIC params (the old hardcoded HarnessSettingsPanel knobs, now declared)
+  // Coding-specific active params remain, while the retired chunk-loop controls
+  // are absent from the public blueprint surface.
   assert.ok(params['debugger.threshold'], 'coding declares debugger.threshold param');
-  assert.ok(params['parallelWorkers.useChunkLoop'], 'coding declares useChunkLoop param');
-  assert.ok(params['parallelWorkers.workingStateCheck'], 'coding declares workingStateCheck param');
-  assert.ok(params['parallelWorkers.replanStrikes'], 'coding declares replanStrikes param');
-  assert.ok(params['parallelWorkers.escalateToRole'], 'coding declares escalateToRole param');
+  assert.equal(params['parallelWorkers.useChunkLoop'], undefined);
+  assert.equal(params['parallelWorkers.workingStateCheck'], undefined);
+  assert.equal(params['parallelWorkers.replanStrikes'], undefined);
+  assert.equal(params['parallelWorkers.escalateToRole'], undefined);
   // ParamSpec shape carried through (type / group / number range / default)
   assert.equal(params['parallelWorkers.max'].type, 'number');
   assert.equal(params['parallelWorkers.max'].group, 'Dispatch');
@@ -186,6 +187,4 @@ test('coding declares params = base universal ∪ coding-specific (P-006 / D-003
   assert.equal(params['parallelWorkers.max'].default, 1);
   assert.equal(params['debugger.threshold'].group, 'Workers');
   assert.equal(params['debugger.threshold'].default, 3);
-  assert.equal(params['parallelWorkers.useChunkLoop'].type, 'boolean');
-  assert.equal(params['parallelWorkers.useChunkLoop'].default, true);
 });
