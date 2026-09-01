@@ -36,9 +36,10 @@ export { AGENT_BACKENDS } from './types';
 // worker-chunk-loop-operator-hosted-2026-06-14 (D-005): additive exports so the
 // operator-hosted `worker:chunk-loop` op (a near-PORT) reuses the SHIPPED worker
 // loop + its chunk file-claim coordinator instead of re-porting them.
-// The worker chunk-loop remains importable only from its historical module for
-// migration/forensics. It is intentionally absent from the public orchestrator
-// barrel: invoke-once and the DBOS runner now always use ordinary worker invoke.
+// The operator-hosted runner is a live consumer, so keep the loop entry point on
+// the public barrel until that op is retired as well. Removing only this export
+// leaves the source file present but makes the operator bundle fail at link time.
+export { runWorkerChunkLoop } from './run-worker-chunk-loop';
 export { FileLockQueueCoordinator } from './file-lock-queue-coordinator';
 export type { ChunkLoopOutcome, ChunkLoopFeature, ChunkLoopDeps } from './worker-chunk-loop';
 // P-020 monitoring metrics: per-run outcome persistence + the completion-rate /
