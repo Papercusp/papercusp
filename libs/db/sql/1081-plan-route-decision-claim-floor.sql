@@ -14,6 +14,11 @@
 -- "Direct execution route" plus affirmative direct/no-fleet body language. Item
 -- refs scope the reservation; an empty set is plan-wide. By-id claims bypass this
 -- generic SSOT floor, preserving the explicit route owner's deliberate pickup.
+--
+-- FORWARD-COMPAT: the deployed release calls only the stable public
+-- work_item_claim_floors(text, ...) signature. Renaming its current implementation
+-- and recreating that same signature in this transaction leaves the old release
+-- callable before commit and routes it to the compatible replacement after commit.
 
 DO $function_guard1081$
 BEGIN
