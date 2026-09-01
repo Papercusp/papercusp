@@ -18,29 +18,36 @@
  *
  * Best-effort: telemetry must never fail a run.
  *
- * The provider/model-class derivation mirrors `@papercusp/papercusp-shared/agent`'s
- * `BACKEND_PROFILES` + `modelClassOf` — duplicated as tiny pure helpers because this
- * package does not (and should not) depend on papercusp-shared.
+ * Provider + self-pacing come from this package's canonical `harnessProfile` adapter
+ * contract. A cross-package conformance test pins those facts to
+ * `@papercusp/papercusp-shared/agent`'s governor profile without inverting the package
+ * dependency. Model-family bucketing remains a tiny pure helper at this boundary.
  */
 import { costFromTokens } from '@papercusp/model-pricing';
 import type { OrchestratorPg } from './invoke';
 import type { RunUsage } from './cost-cap';
+import { harnessProfile } from './harness-profile';
+import { AGENT_BACKENDS, type AgentBackend } from './types';
 
 export interface UsageSamplePgContext {
   pg: OrchestratorPg;
   workspaceId: string;
 }
 
-/** Backend → provider, mirroring papercusp-shared's BACKEND_PROFILES. */
-export function providerForBackend(backend: string): string {
-  if (backend === 'claude-code' || backend === 'anthropic-direct') return 'anthropic';
-  if (backend === 'codex') return 'openai';
-  return 'unknown'; // omp is model-agnostic / multi-provider
+function profileForBackend(backend: string) {
+  return (AGENT_BACKENDS as readonly string[]).includes(backend)
+    ? harnessProfile(backend as AgentBackend)
+    : null;
 }
 
-/** Model string → bucket class, mirroring papercusp-shared's modelClassOf (omp → 'self'). */
+/** Backend → provider, derived from the runtime adapter profile. */
+export function providerForBackend(backend: string): string {
+  return profileForBackend(backend)?.provider ?? 'unknown';
+}
+
+/** Model string → bucket class; the adapter decides whether the backend is self-pacing. */
 export function modelClassForRun(backend: string, model: string): string {
-  if (backend === 'omp') return 'self'; // self-pacing backends collapse to one bucket
+  if (profileForBackend(backend)?.selfPacing) return 'self';
   const m = model.toLowerCase();
   if (/opus/.test(m)) return 'opus';
   if (/sonnet/.test(m)) return 'sonnet';
@@ -49,6 +56,7 @@ export function modelClassForRun(backend: string, model: string): string {
 }
 
 export interface UsageSampleRun {
+  /** Runtime backend label; unknown values remain safely attributed to `unknown`. */
   backend: string;
   /** The model the spawn requested (resolvedModel). `usage.model` — the stream-reported actual — wins when present. */
   model: string;

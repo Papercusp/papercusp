@@ -52,6 +52,21 @@ describe('harness adapter profiles', () => {
     expect(harnessProfile('omp').modelFlag).toBe('--model');
   });
 
+  it('declares provider + pacing facts on the adapter profile used by runtime consumers', () => {
+    expect(
+      Object.fromEntries(
+        AGENT_BACKENDS.map((backend) => {
+          const adapter = harnessProfile(backend);
+          return [backend, { provider: adapter.provider, selfPacing: adapter.selfPacing }];
+        }),
+      ),
+    ).toEqual({
+      'claude-code': { provider: 'anthropic', selfPacing: false },
+      omp: { provider: 'unknown', selfPacing: true },
+      codex: { provider: 'openai', selfPacing: false },
+    });
+  });
+
   it('pins the full capability matrix', () => {
     const matrix = Object.fromEntries(
       AGENT_BACKENDS.map((b) => [b, [...harnessProfile(b).capabilities].sort()]),

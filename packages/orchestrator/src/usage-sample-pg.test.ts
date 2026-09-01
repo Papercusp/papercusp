@@ -9,6 +9,8 @@ import {
   recordUsageSamplePg,
   type UsageSamplePgContext,
 } from './usage-sample-pg';
+import { AGENT_BACKENDS } from './types';
+import { harnessProfile } from './harness-profile';
 
 /** A fake `pg` tagged-template that captures the interpolated VALUES of the one
  *  INSERT recordUsageSamplePg issues, so we can assert what gets persisted
@@ -23,25 +25,24 @@ function capturingPg(): { pg: UsageSamplePgContext['pg']; values: () => unknown[
 }
 
 describe('providerForBackend', () => {
-  it('maps claude-code and anthropic-direct to anthropic', () => {
-    expect(providerForBackend('claude-code')).toBe('anthropic');
-    expect(providerForBackend('anthropic-direct')).toBe('anthropic');
+  it('derives every declared backend from its runtime adapter profile', () => {
+    for (const backend of AGENT_BACKENDS) {
+      expect(providerForBackend(backend)).toBe(harnessProfile(backend).provider);
+    }
   });
 
-  it('maps codex to openai', () => {
-    expect(providerForBackend('codex')).toBe('openai');
-  });
-
-  it('maps omp and unknown backends to "unknown" (model-agnostic)', () => {
-    expect(providerForBackend('omp')).toBe('unknown');
+  it('fails closed to "unknown" for an undeclared backend', () => {
     expect(providerForBackend('something-else')).toBe('unknown');
   });
 });
 
 describe('modelClassForRun', () => {
-  it('collapses self-pacing omp to the "self" bucket regardless of model', () => {
-    expect(modelClassForRun('omp', 'claude-opus-4-8')).toBe('self');
-    expect(modelClassForRun('omp', '')).toBe('self');
+  it('derives self-pacing collapse from the runtime adapter profile', () => {
+    for (const backend of AGENT_BACKENDS) {
+      expect(modelClassForRun(backend, 'claude-opus-4-8')).toBe(
+        harnessProfile(backend).selfPacing ? 'self' : 'opus',
+      );
+    }
   });
 
   it('buckets by model family (case-insensitive)', () => {

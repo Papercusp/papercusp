@@ -30,6 +30,9 @@ import { AGENT_BACKENDS, type AgentBackend } from './types';
 /** How the backend's structured event stream is framed. */
 export type HarnessStreamFormat = 'claude-stream-json' | 'omp-json' | 'codex-json';
 
+/** Provider bucket used for subprocess usage attribution + shared rate-limit pacing. */
+export type HarnessProvider = 'anthropic' | 'openai' | 'unknown';
+
 /** How the prompt text reaches the child process. */
 export type HarnessPromptDelivery =
   /** Written to the child's stdin (claude-code). */
@@ -59,6 +62,10 @@ export type HarnessCapability =
 
 export interface HarnessAdapterProfile {
   readonly id: AgentBackend;
+  /** Provider the backend deterministically targets; `unknown` means multi-provider. */
+  readonly provider: HarnessProvider;
+  /** True when the backend owns provider pacing/fallback and the host only caps concurrency. */
+  readonly selfPacing: boolean;
   readonly streamFormat: HarnessStreamFormat;
   readonly promptDelivery: HarnessPromptDelivery;
   /** Flag spelling for the model id — codex takes a bare `-m <id>`. */
@@ -70,6 +77,8 @@ export interface HarnessAdapterProfile {
 
 const profile = (
   id: AgentBackend,
+  provider: HarnessProvider,
+  selfPacing: boolean,
   streamFormat: HarnessStreamFormat,
   promptDelivery: HarnessPromptDelivery,
   modelFlag: '--model' | '-m',
@@ -77,6 +86,8 @@ const profile = (
   capabilities: readonly HarnessCapability[],
 ): HarnessAdapterProfile => ({
   id,
+  provider,
+  selfPacing,
   streamFormat,
   promptDelivery,
   modelFlag,
@@ -85,16 +96,18 @@ const profile = (
 });
 
 const PROFILES: Readonly<Record<AgentBackend, HarnessAdapterProfile>> = {
-  'claude-code': profile('claude-code', 'claude-stream-json', 'stdin', '--model', [], [
+  'claude-code': profile('claude-code', 'anthropic', false, 'claude-stream-json', 'stdin', '--model', [], [
     'native-sandbox',
     'native-session-id',
     'resumable-config-dir',
     'subagent-tools',
     'system-prompt-override',
   ]),
-  omp: profile('omp', 'omp-json', 'argv-file', '--model', [], ['gateway-models-yml']),
+  omp: profile('omp', 'unknown', true, 'omp-json', 'argv-file', '--model', [], ['gateway-models-yml']),
   codex: profile(
     'codex',
+    'openai',
+    false,
     'codex-json',
     'stdin-dash',
     '-m',
