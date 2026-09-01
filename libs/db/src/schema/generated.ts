@@ -2802,6 +2802,17 @@ export const benchmarkCoordEventInHarnessShared = harnessShared.table("benchmark
 
 ]);
 
+export const operatorAttentionAutomationPolicyInHarnessShared = harnessShared.table("operator_attention_automation_policy", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({"level":"L0","minConfidence":"high"}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_attention_automation_policy_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_attention_automation_policy_pkey"}),
+
+]);
+
 export const operatorLivenessFlapStateInHarnessShared = harnessShared.table("operator_liveness_flap_state", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -5602,6 +5613,18 @@ export const harnessTextArtifactsInHarnessShared = harnessShared.table("harness_
 	index("hta_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.harnessSlug, table.relPath], name: "harness_text_artifacts_pkey"}),
 	pgPolicy("harness_text_artifacts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const workItemReleaseCooldownsInHarnessShared = harnessShared.table("work_item_release_cooldowns", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	featureId: text("feature_id").notNull(),
+	agentId: text("agent_id").notNull(),
+	releasedAt: timestamp("released_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("work_item_release_cooldowns_expiry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops"), table.releasedAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.agentId, table.featureId, table.harnessSlug, table.workspaceId], name: "work_item_release_cooldowns_pkey"}),
+	pgPolicy("work_item_release_cooldowns_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const secretsGuardPathExemptionsInHarnessShared = harnessShared.table("secrets_guard_path_exemptions", {
