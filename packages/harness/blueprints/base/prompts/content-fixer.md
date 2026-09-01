@@ -101,8 +101,34 @@ as you would open it (`<file>`, or `<scope>/<file>` for a submodule — the path
 INPUT, because every detector decides its scope FROM the path):
 
 ```bash
-npm run content-lint -- --file=<scope>/<file>
+# <file> is relative to the superproject when scope=superproject; otherwise
+# prefix it with the submodule scope (for example libs/generic/sync/<file>).
+TARGET_REL="<scope>/<file>"
+# For a superproject offender, use TARGET_REL="<file>" (no superproject/ prefix).
+TARGET_ABS="$PWD/$TARGET_REL"
+PROBE_ROOT="${PAPERCUSP_INTEGRATION_ROOT:-}"
+if [ -n "$PROBE_ROOT" ] && [ -f "$PROBE_ROOT/scripts/content-lint-runner.mjs" ]; then
+  # The fixer CWD can be a different harness checkout. Run the canonical probe
+  # from the integration source tree, but read the offender from this checkout;
+  # --as preserves the detector scope for an absolute --file input.
+  node "$PROBE_ROOT/scripts/content-lint-runner.mjs" \
+    --file="$TARGET_ABS" --as="$TARGET_REL"
+elif [ -f "$PWD/scripts/content-lint-runner.mjs" ]; then
+  node "$PWD/scripts/content-lint-runner.mjs" \
+    --file="$TARGET_ABS" --as="$TARGET_REL"
+else
+  echo "content-lint runner unavailable: set PAPERCUSP_INTEGRATION_ROOT to the Papercusp source root" >&2
+  exit 2
+fi
 ```
+
+The dispatched agent's CWD is the offender harness checkout, which may not carry
+the Papercusp root `content-lint` npm script (for example, a target
+`packages/ui/package.json` can exist while the checkout root has no such script).
+`PAPERCUSP_INTEGRATION_ROOT` is the canonical source root exported by the
+operator; using its runner with an absolute `--file` and explicit `--as` keeps
+the probe shared while still checking the file in the dispatched checkout. Do
+not replace this with `npm run content-lint` from an arbitrary package directory.
 
 Exit **0** = every in-scope detector ran and none flagged · **1** = still flagged (the
 per-detector reason is printed) · **2** = misuse, or NOTHING RAN because no detector is
@@ -169,10 +195,11 @@ nothing breaks while it waits.)
 - **Never restore a deleted file to "resolve" an `unsafe-deletion` offender.** You
   cannot tell a deliberate retirement from an accidental deletion from the file
   system alone; guessing wrong silently reverts someone else's real work.
-- Always re-probe an offender BEFORE editing it and again before finishing —
-  `npm run content-lint -- --file=<scope>/<file>`, exit 0. Skipping the first probe is how
-  this role burns a dispatch editing an already-repaired file; skipping the second ships a
-  fix that just re-quarantines next tick.
+ - Always re-probe an offender BEFORE editing it and again before finishing — use the
+   canonical runner + absolute `--file`/explicit `--as` command in the shared-probe section
+   above and require exit 0. Skipping the first probe is how this role burns a dispatch
+   editing an already-repaired file; skipping the second ships a fix that just re-quarantines
+   next tick.
 - For a submodule-scoped file, edit it at `<scope>/<file>` (the file lives inside the
   submodule working tree).
 - Never `git reset --hard` / discard a peer's work; never create branches or worktrees;
