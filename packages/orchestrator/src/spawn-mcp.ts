@@ -29,6 +29,7 @@ import {
   tomlEscape,
   type CodexGatewayConfigOpts,
 } from './codex-gateway-config';
+import { codexModelConfigToml } from '../../../../../packages/operator-core/lib/model-context-budget.mjs';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -384,6 +385,10 @@ export interface SpawnCodexContextConfig {
 }
 
 export interface SpawnCodexConfigOpts extends CodexGatewayConfigOpts {
+  /** Effective model written at the CODEX_HOME root so model-less resumes
+   * cannot fall through to the installed models cache. Omitted resolves to the
+   * canonical safe default. */
+  model?: string | null;
   contextConfig?: SpawnCodexContextConfig | null;
 }
 
@@ -401,6 +406,7 @@ export function buildSpawnCodexConfigToml(
           `model_auto_compact_token_limit = ${contextConfig.modelAutoCompactTokenLimit}`,
         ]
       : []),
+    ...codexModelConfigToml(opts.model),
     ...gatewayConfig.root,
     ...codexManagedFeaturesToml({ disableMemories: false }),
     '# Per-spawn codex MCP config (managed by spawn-mcp.ts writeSignedSpawnCodexHome).',
@@ -429,6 +435,7 @@ export async function writeSignedSpawnCodexHome(
     ttlSec?: number;
     codexHome?: string;
     cleanup?: boolean;
+    model?: string | null;
     contextConfig?: SpawnCodexContextConfig | null;
     /** Reuse the caller's already-open PG handle instead of requiring a DSN env. */
     pg?: SpawnMcpSigningPg;
@@ -452,6 +459,7 @@ export async function writeSignedSpawnCodexHome(
   // (incl. the sig), so no bearer_token_env_var is needed (unlike the
   // superuser codex-su home, which uses ?superuser=1 + a bearer).
   const toml = buildSpawnCodexConfigToml(mcpUrl, process.env.PAPERCUSP_ACCOUNT_ID, {
+    model: opts.model,
     ownerId: input.clientId || input.spawnId,
     priority: input.role,
     // WI-3645: PAPERCUSP_ACCOUNT_ID alone used to be the only "route through the gateway" signal —
