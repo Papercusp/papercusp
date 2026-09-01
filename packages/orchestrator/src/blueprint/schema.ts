@@ -558,14 +558,13 @@ export const KnobsSchema = z
       })
       .optional(),
     /** Worker-lane config WITHIN a feature (distinct from `dispatch.concurrency`,
-     *  which is cross-feature pipeline concurrency). `.loose` so adaptive/mode/
-     *  workersPerFeature/escalateToRole/replanStrikes/workingStateCheck survive. */
+     *  which is cross-feature pipeline concurrency). `.loose` preserves stale
+     *  config keys while the retired chunk-loop knobs are ignored. */
     parallelWorkers: z
       .looseObject({
         max: z.number().int().positive().optional(),
         maxFeaturesInFlight: z.number().int().positive().optional(),
         synthesizeSingle: z.boolean().optional(),
-        useChunkLoop: z.boolean().optional(),
         mode: z.string().optional(),
       })
       .optional(),

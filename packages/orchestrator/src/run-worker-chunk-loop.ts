@@ -22,7 +22,6 @@ import type { FileClaimCoordinator } from '@papercusp/file-claim';
 import { invoke } from './invoke.js';
 import { readFeatures, stateCtx, setFeatureStatus, harnessSlug } from './state.js';
 import { configGet } from './config.js';
-import { useChunkLoop } from './lanes.js';
 import { CACHE_SYMLINKS } from './scratch-env.js';
 import { driveChunkLoop } from './chunk-loop-driver.js';
 import { planChunksUpfrontPrompt, replanChunkPrompt } from './chunk-plan.js';
@@ -33,13 +32,12 @@ import type {
 } from './worker-chunk-loop.js';
 
 /**
- * Whether a given role invocation should run the chunk loop rather than a bare
- * single-shot `invoke()`. Only the `worker` role drives the chunk loop, and only
- * when the harness opts in via `parallelWorkers.useChunkLoop` (the default).
- * `useChunkLoop:false` opts back into the legacy single-shot worker.
+ * Deprecated compatibility shim. Normal invoke paths no longer route through
+ * the internal chunk loop; this always selects ordinary single-shot worker
+ * invocation even when a stale harness config still carries the old knob.
  */
-export function shouldUseWorkerChunkLoop(role: string, cfg: HarnessConfig): boolean {
-  return role === 'worker' && useChunkLoop(cfg);
+export function shouldUseWorkerChunkLoop(_role: string, _cfg: HarnessConfig): boolean {
+  return false;
 }
 
 /** Resolve the harness slug for chunk-plan PG persistence: explicit config.slug
