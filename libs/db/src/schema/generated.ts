@@ -10389,7 +10389,6 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	index("hfc_plan_wave_idx").using("btree", table.sourcePlanSlug.asc().nullsLast().op("text_ops"), table.wave.asc().nullsLast().op("text_ops")).where(sql`(source_plan_slug IS NOT NULL)`),
 	index("hfc_review_idx").using("btree", table.needsHumanReview.asc().nullsLast().op("bool_ops")),
 	index("hfc_search_idx").using("gin", table.search.asc().nullsLast().op("tsvector_ops")),
-	index("hfc_see_also_gin").using("gin", table.seeAlso.asc().nullsLast().op("array_ops")),
 	index("hfc_slug_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops")),
 	index("hfc_source_plan_run_idx").using("btree", sql`(((payload -> 'plan_run'::text) ->> 'runId'::text))`).where(sql`(((payload -> 'plan_run'::text) ->> 'runId'::text) IS NOT NULL)`),
 	index("hfc_source_plan_slug_idx").using("btree", table.sourcePlanSlug.asc().nullsLast().op("text_ops")).where(sql`(source_plan_slug IS NOT NULL)`),
