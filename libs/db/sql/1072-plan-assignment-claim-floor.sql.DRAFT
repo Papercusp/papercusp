@@ -1,4 +1,4 @@
--- 1059-plan-assignment-claim-floor.sql — EI-22040912157347872
+-- 1072-plan-assignment-claim-floor.sql — EI-22040912157347872
 --
 -- Extend the existing reserved-plan-lane floor with the durable ASSIGNMENT axis.
 -- A plan_item_claims lease is only the live grip; plan_item_assignments is the
@@ -16,28 +16,26 @@
 -- has no claimant identity, so every active assignment is correctly reserved;
 -- the TypeScript claim path carries the caller-relative assignee exemption.
 
-DROP VIEW IF EXISTS harness_shared.work_items_claimable;
-
 -- FORWARD-COMPAT + rerun safety: deployed code calls the stable public signature.
--- Snapshot whichever implementation is current (v16 on the shipped chain, or the
--- v17 draft experiment in focused tests) once, then recreate the public name
--- inside this same transaction.
-DO $function_guard1059$
+-- Migration 1070 snapshots the prior implementation as v19. Snapshot its stable
+-- public wrapper as v20 once, then recreate the public name without dropping the
+-- dependent work_items_claimable view.
+DO $function_guard1072$
 BEGIN
   IF to_regprocedure(
-       'harness_shared.work_item_claim_floors_v18(text,text,text,text,text,text,text,jsonb,text)'
+       'harness_shared.work_item_claim_floors_v20(text,text,text,text,text,text,text,jsonb,text)'
      ) IS NULL THEN
     IF to_regprocedure(
          'harness_shared.work_item_claim_floors(text,text,text,text,text,text,text,jsonb,text)'
        ) IS NULL THEN
-      RAISE EXCEPTION '1059: public work_item_claim_floors function is missing';
+      RAISE EXCEPTION '1072: public work_item_claim_floors function is missing';
     END IF;
     ALTER FUNCTION harness_shared.work_item_claim_floors(
       text, text, text, text, text, text, text, jsonb, text
-    ) RENAME TO work_item_claim_floors_v18;
+    ) RENAME TO work_item_claim_floors_v20;
   END IF;
 END
-$function_guard1059$;
+$function_guard1072$;
 
 CREATE OR REPLACE FUNCTION harness_shared.work_item_claim_floors(
   p_workspace_id            text,
@@ -59,7 +57,7 @@ AS $$
       -- focused tests. Remove the label and rebuild it once from the SHIPPED TS
       -- predicate: ordinary draft remains free; paused/active remains reserved.
       array_remove(
-        harness_shared.work_item_claim_floors_v18(
+        harness_shared.work_item_claim_floors_v20(
           p_workspace_id,
           p_status,
           p_taken_by,
@@ -112,7 +110,8 @@ COMMENT ON FUNCTION harness_shared.work_item_claim_floors(
 ) IS
   'P-001/P-002 claim-floor SSOT. Mirrors claimNextIssueWorkItem unconditional floors; per-claim rig/swarm/redundancy/cooldown, claimant identity, and own-node origin context remain outside the generic view. EI-22040912157347872 extends reserved-plan-lane to active durable plan-item assignments, preventing generic claim/release churn while the assigned owner is between claim leases; operational/lifecycle plan and live-lease semantics remain aligned with reservedPlanLaneExclusionSql.';
 
-CREATE VIEW harness_shared.work_items_claimable AS
+-- Keep the view OID and every dependent object intact; the column list is unchanged.
+CREATE OR REPLACE VIEW harness_shared.work_items_claimable AS
   SELECT wi.*
     FROM harness_shared.work_items wi
    WHERE wi.item_kind IN ('bug', 'change', 'task')
