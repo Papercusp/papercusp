@@ -18,7 +18,7 @@ DROP VIEW IF EXISTS harness_shared.work_items_claimable;
 
 -- FORWARD-COMPAT + rerun safety: deployed code calls the stable public signature.
 -- Snapshot whichever implementation is current (v16 on the shipped chain, or the
--- v17 draft/paused wrapper in focused tests) once, then recreate the public name
+-- v17 draft experiment in focused tests) once, then recreate the public name
 -- inside this same transaction.
 DO $function_guard1059$
 BEGIN
@@ -53,9 +53,9 @@ STABLE
 AS $$
   SELECT array_remove(
     array_append(
-      -- The prior public function may already include draft/paused semantics
-      -- (focused tests apply migration 920). Remove the label and rebuild it once
-      -- so both migration histories converge on this exact predicate.
+      -- The prior public function may include migration 920's draft experiment in
+      -- focused tests. Remove the label and rebuild it once from the SHIPPED TS
+      -- predicate: ordinary draft remains free; paused/active remains reserved.
       array_remove(
         harness_shared.work_item_claim_floors_v18(
           p_workspace_id,
@@ -78,7 +78,7 @@ AS $$
                   AND hp.plan_slug = p_payload->'plan_item'->>'plan_slug'
                   AND (
                     hp.op_status IN ('started', 'paused')
-                    OR (hp.status IN ('draft', 'paused', 'active') AND hp.template_slug IS NULL)
+                    OR (hp.status IN ('paused', 'active') AND hp.template_slug IS NULL)
                   )
              )
              OR EXISTS (
