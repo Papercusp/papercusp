@@ -9,6 +9,13 @@ import { harnessRoot } from '@papercusp/harness/paths';
 import { resolvePhase } from './config';
 import { readEffectiveConfig } from './effective-config';
 import type { AgentBackend, OrchestratorEnv } from './types';
+// This leaf module is dependency-free and is also consumed by the bare-node
+// psu launcher. Keeping the Codex policy in one place prevents the orchestrator
+// from reintroducing a model-less or Spark-bearing command before it reaches
+// the operator-side writers.
+import { resolveCodexModel } from '../../../../../packages/operator-core/lib/model-context-budget.mjs';
+
+export { resolveCodexModel };
 
 /**
  * Resolve which agent backend to drive. Reads `AGENT_BACKEND` directly,
@@ -44,13 +51,18 @@ export function resolveAgentBackend(agentCmd: string): AgentBackend {
  * Empty in → empty out.
  */
 export function normalizeModelForBackend(model: string, backend: AgentBackend): string {
-  if (!model) return '';
+  if (!model && backend !== 'codex') return '';
   if (backend !== 'claude-code' && backend !== 'codex') return model;
   const slash = model.indexOf('/');
   const bare = slash > 0 ? model.slice(slash + 1) : model;
   if (backend !== 'codex') return bare;
   const chatgpt = /^chatgpt:(.+?)(?::(?:low|medium|high|xhigh|max))?$/i.exec(bare);
-  return chatgpt ? `gpt-${chatgpt[1]}` : bare;
+  const normalized = chatgpt ? `gpt-${chatgpt[1]}` : bare;
+  // Resolve/validate through the canonical policy even when the caller supplied
+  // a model explicitly. Codex's CLI takes a bare id; strip only the recognized
+  // effort suffix after the policy has inspected the complete spec.
+  const resolved = resolveCodexModel(normalized);
+  return resolved.replace(/:(?:low|medium|high|xhigh|max)$/i, '');
 }
 
 /**

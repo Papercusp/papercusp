@@ -60,7 +60,7 @@ import {
 } from './spawn-mcp';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AgentBackend, HarnessConfig, InvokeResult } from './types';
-import { resolveAgentBackend, normalizeModelForBackend } from './env';
+import { resolveAgentBackend, normalizeModelForBackend, resolveCodexModel } from './env';
 import { hasExplicitDisallowedTools, nativeSchedulerDenyFlag } from './native-scheduler-deny';
 import { NO_SUBAGENT_TOOLS_DENY, noSubagentToolsDenyFlag } from './no-subagent-deny';
 import { ownerDesktopNotifyDenyFlag } from './owner-desktop-notify-deny';
@@ -3996,8 +3996,14 @@ export async function invoke(
           const trackedCodexKey = (process.env.PAPERCUSP_CODEX_SESSION_KEY ?? '').trim();
           const contextConfig = codexContextConfigFromArgv(argv);
           codexHomeHandle = await writeSignedSpawnCodexHome(signedInput, trackedCodexKey
-            ? { codexHome: codexHomeForSessionKey(trackedCodexKey), cleanup: false, contextConfig, ...signingPg }
-            : { contextConfig, ...signingPg });
+            ? {
+                codexHome: codexHomeForSessionKey(trackedCodexKey),
+                cleanup: false,
+                model: resolveCodexModel(resolvedModel),
+                contextConfig,
+                ...signingPg,
+              }
+            : { model: resolveCodexModel(resolvedModel), contextConfig, ...signingPg });
           spawnEnv.CODEX_HOME = codexHomeHandle.codexHome;
         } else {
           // writeSignedSpawnMcp signs the URL params. In strict mode
