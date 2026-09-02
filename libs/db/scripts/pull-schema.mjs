@@ -57,6 +57,10 @@ import {
   repairCompositeForeignKeyArtifacts,
 } from '../src/schema-generated-artifacts.mjs';
 import { repairIndexOperatorClasses } from '../src/schema/schema-index-opclasses.mjs';
+import {
+  sortTopLevelDeclarations,
+  sortPgCoreImportSpecifiers,
+} from '../src/schema/schema-declaration-order.mjs';
 import { repairNotValidChecks } from '../src/schema/schema-checks.mjs';
 import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
 import { join, dirname, resolve } from 'node:path';
@@ -721,6 +725,22 @@ if (indexOpclasses.status === 0) {
 } else {
   console.warn('    skipped Fix 10 (psql failed):', indexOpclasses.stderr);
 }
+
+// Fix 12 (EI-22145279419639902): drizzle-kit emits table/sequence/view
+// declarations in PG catalog order, which shifts as unrelated tables are
+// created elsewhere, burying real schema changes in a reorder-only diff of
+// hundreds of declarations. Re-sort into a stable, name-derived order and
+// alphabetize the pg-core import list so re-running this script against an
+// unchanged schema is idempotent and a real change produces a minimal diff.
+const declarationOrderFix = sortTopLevelDeclarations(schema);
+schema = declarationOrderFix.source;
+const importOrderFix = sortPgCoreImportSpecifiers(schema);
+schema = importOrderFix.source;
+console.log(
+  `    Fix 12: stabilized declaration order (${declarationOrderFix.declarationCount} declarations` +
+    `${declarationOrderFix.changed ? ', reordered' : ', already stable'}); ` +
+    `pg-core import list ${importOrderFix.changed ? 'sorted' : 'already sorted'}`,
+);
 
 writeFileSync(schemaPath, schema);
 console.log(`    fixed ${fixedDefaults} empty-string defaults`);
