@@ -58,7 +58,12 @@ test('content-fixer persona verifies through the shared registry probe, not a pe
 
   // The one command that covers EVERY registered detector, on tracked and untracked files
   // alike, because it is a shim over the same DEFAULT_CONTENT_DETECTORS the guard consumes.
-  assert.match(prompt, /npm run content-lint -- --file=/);
+  // The persona invokes the runner script directly (resolved from PAPERCUSP_INTEGRATION_ROOT,
+  // then the CWD) rather than `npm run content-lint`: the dispatched fixer's CWD is the
+  // offender harness checkout, which need not carry the Papercusp root npm script at all.
+  assert.match(prompt, /scripts\/content-lint-runner\.mjs"\s*\\\s*\n\s*--file="\$TARGET_ABS" --as="\$TARGET_REL"/);
+  assert.match(prompt, /PAPERCUSP_INTEGRATION_ROOT/);
+  assert.match(prompt, /Do\s+not replace this with `npm run content-lint` from an arbitrary package directory/);
   // Exit 2 means NOTHING RAN. A persona that omits this invites a no-detector-in-scope run
   // being read as a pass — the false-green class the probe was built to refuse.
   assert.match(prompt, /never read a 2 as clean/i);
@@ -72,7 +77,8 @@ test('content-fixer persona verifies through the shared registry probe, not a pe
       prompt,
       new RegExp(`npm run ${cmd.replace(':', ':')}\\b`),
       `persona still prescribes \`npm run ${cmd}\`: it covers 2 of the registered detectors, ` +
-        'is tracked-only, and can drift from the guard. Use `npm run content-lint -- --file=<path>`.',
+        'is tracked-only, and can drift from the guard. Use the shared probe ' +
+        '(`scripts/content-lint-runner.mjs --file=<abs> --as=<rel>`).',
     );
   }
 });
