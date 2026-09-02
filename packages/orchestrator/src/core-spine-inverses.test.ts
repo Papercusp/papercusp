@@ -65,7 +65,12 @@ describe('core spine — every seeded write verb has its correction verb seeded 
   it('the spine stays SMALL — it is a seed, not a catalog (the whole point of trimming)', () => {
     // Guard against the opposite failure: "just seed everything" would restore the ~165k-token
     // load the trim exists to avoid. If this trips, justify the growth or use tools:find.
-    expect(CORE_MCP_TOOL_NAMES.length).toBeLessThanOrEqual(46);
+    //
+    // 46 -> 47 on 2026-09-02: coord:dispatch (WI-2142095 / P-011). Justification and the
+    // full ratchet history live on the twin assertion in invoke.test.ts — keep the two
+    // numbers in step. Its correction half is already seeded (work_items:release), so this
+    // addition does not create the EI-10946 asymmetry the rest of this file guards.
+    expect(CORE_MCP_TOOL_NAMES.length).toBeLessThanOrEqual(47);
   });
 
   it('has no duplicate entries (a hand-maintained list that has been edited many times)', () => {

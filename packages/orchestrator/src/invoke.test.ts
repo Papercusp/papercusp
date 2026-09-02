@@ -1747,7 +1747,15 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // coord:declare-intent — post-bootstrap lane declaration is the required direct
   // Codex wrapper after coord:orient, so every trimmed client can claim its active intent
   // without an extra tools:find/tools:invoke round trip (EI-21575682931056453).
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 46, 'core stays small');
+  // Then +1 → 47: coord:dispatch (WI-2142095, coordination-spec-adoption-2026-08-03
+  // P-011). This one is unusual in that the seeding IS the experiment: the P-013
+  // falsifier retires the verb on a low call rate, and until 2026-09-02 it sat only in
+  // QUEEN_MCP_TOOL_NAMES (the retired mug tier), so no live agent could reach it and the
+  // rate measured absence rather than demand. Seeding it is what makes that verdict
+  // mean anything. Note this slot is EXPLICITLY temporary in a way the others are not:
+  // if the 2026-09-16 read returns `retire`, coord:dispatch leaves the spine and this
+  // ratchet goes back to 46 — so do not treat 47 as the new floor.
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 47, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)
