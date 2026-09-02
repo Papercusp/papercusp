@@ -111,15 +111,23 @@ BEGIN
       old_proj;
   END IF;
 
-  -- POST-CONDITION — assert the thing that actually changed, not a tautology.
+  -- POST-CONDITION — assert the thing that actually changed.
   --
-  -- The obvious check is "severity agrees with payload->'_ei'->>'severity'",
-  -- and it is VACUOUS: the view defines severity as
-  -- COALESCE(payload->'_ei'->>'severity','minor'), so when `_ei` is missing BOTH
-  -- sides collapse to 'minor' and the comparison passes on a view that is still
-  -- broken. (Written that way first; it passed against the unpatched shape.)
-  -- Assert the presence of the blob instead: every base row carrying `_ei` must
-  -- surface it through the view.
+  -- The obvious check is "severity agrees with payload->'_ei'->>'severity'".
+  -- It was written that way first, then MEASURED against a deliberately
+  -- unpatched view (transaction, rolled back, 2026-09-02): it flagged 122,196
+  -- of 166,626 rows. So it is falsifiable — but only PARTIALLY, and the blind
+  -- spot is structural rather than incidental. The view defines severity as
+  -- COALESCE(payload->'_ei'->>'severity','minor'), so for any row whose true
+  -- severity IS the default, both sides collapse to 'minor' and the row passes
+  -- on a fully broken view. That was 44,430 rows (27%) here, and on a corpus
+  -- that happened to be all-'minor' the assertion would report a clean pass
+  -- against a view that exposes nothing — a guard with the same failure mode as
+  -- the bug it guards.
+  --
+  -- Assert the presence of the blob instead. Measured against the same
+  -- unpatched control: base_with_ei 166,626 vs view_with_ei 0 — it separates
+  -- the two states completely and has no default to hide behind.
   SELECT count(*) INTO n_base
     FROM harness_shared.work_items
    WHERE item_kind = ANY (ARRAY['bug','change','task']) AND payload ? '_ei';
