@@ -67,7 +67,14 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // re-passes), it fires more often than the gate fixers (any quarantined .mdx/.ts), and a
   // wrong fix is self-correcting (re-quarantined, low blast radius). Not haiku: a file-
   // editing role needs reliable tool-calling (EI-286: haiku drifts into bash).
-  'content-fixer': 'sonnet',
+  //
+  // ⚠ OVERRIDDEN 2026-09-02 — owner directive (interactive): "change them to
+  // opus 5 xhigh agents" + "edit the workspace defaults as well". The sonnet
+  // rationale above is the ORIGINAL reasoning and is kept for context; it is NO
+  // LONGER the policy. The owner was shown explicitly that this pin was deliberate
+  // and documented, and chose to override it anyway. Do not "restore" it as a
+  // drift fix — revert only on a new owner decision.
+  'content-fixer': 'opus:xhigh',
   // The DOC-STEWARD (docs-corpus-audit WS2 / P-008) — the auto doc-freshness fixer, the
   // launch-fixer family's fourth member alongside merge-resolver / release-fixer / content-fixer.
   // sonnet, not opus: like content-fixer its work is bounded (re-verify prose against the anchored
@@ -80,7 +87,14 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // thrashed autocompact → "Prompt is too long" (context_overflow) — 6+ failed spawns/day. Pinning
   // `sonnet` here routes it through normalizeModelSpec → `sonnet[1m]` (the 967k window) at launch,
   // the same fix every sibling fixer already had. Cheap, high-frequency, spec-bounded ⇒ sonnet tier.
-  'doc-steward': 'sonnet',
+  //
+  // ⚠ OVERRIDDEN 2026-09-02 — owner directive (interactive), same call as
+  // content-fixer above. NOTE what carries over from the EI-8164 story: the reason
+  // that bug existed was a MISSING `[1m]` window, and `opus` is in DEFAULT_1M_FAMILY_RE
+  // exactly like `sonnet`, so normalizeModelSpec still yields `opus[1m]:xhigh` and the
+  // big window this role needs for multi-file reads is preserved. The change is the
+  // TIER, not the window — EI-8164 does not regress.
+  'doc-steward': 'opus:xhigh',
   // P-012 execution tier — spec-bounded, high-frequency pipeline roles.
   worker: 'sonnet',
   validator: 'sonnet',
@@ -146,11 +160,19 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // `papercup` and `blender` are entries that were previously absent (those
   // roles fell through to the bare CLI default with no committed floor at
   // all, the exact EI-7 gap this file exists to close).
+  // ⚠ 2026-09-02 — owner directive (interactive): "change them to opus 5 xhigh
+  // agents" + "edit the workspace defaults as well". mug / kettle / scanner are the
+  // three members of this autonomous-loop group that ALSO carry an
+  // operator_agent_config roleBackends entry, so they moved to opus:xhigh with the
+  // rest of that 8-role set. Every other role in this block stays on the sonnet
+  // tier — they were not in the scope the owner named. The [1m] window is NOT lost:
+  // `opus` matches DEFAULT_1M_FAMILY_RE, so normalizeModelSpec yields
+  // `opus[1m]:xhigh`. What changed is the TIER, not the window.
   queen: 'sonnet[1m]:high',
   bee: 'sonnet[1m]:high',
-  mug: 'sonnet[1m]:high',
+  mug: 'opus:xhigh',
   cup: 'sonnet[1m]:high',
-  kettle: 'sonnet[1m]:high',
+  kettle: 'opus:xhigh',
   overwatch: 'sonnet[1m]:high',
   sentinel: 'sonnet[1m]:high',
   papercup: 'sonnet[1m]:high',
@@ -170,7 +192,8 @@ export const ROLE_MODEL_DEFAULTS: Readonly<Record<string, string>> = {
   // blender's negative-space-scan execution role (AGENT_ROLES: "the
   // negative-space/scout scanner") — moves with blender.
   judge: 'sonnet[1m]:high',
-  scanner: 'sonnet[1m]:high',
+  // Moved to opus:xhigh with mug/kettle — see the 2026-09-02 owner-directive note above.
+  scanner: 'opus:xhigh',
 };
 
 /**
