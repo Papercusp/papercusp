@@ -581,18 +581,22 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
     assert.equal(resolveModel({}, 'worker'), 'sonnet');
     assert.equal(resolveModel({}, 'validator'), 'sonnet');
     assert.equal(resolveModel({}, 'documenter'), 'sonnet');
-    // Autonomous-loop floor (WI-4623, owner decision 2026-07-16): cup, scanner, judge
+    // Autonomous-loop floor (WI-4623, owner decision 2026-07-16): cup and judge
     // sit on sonnet-5 trimmed-mode ([1m] window) at high effort. This REVERTS the P-020
     // gpt-5.6-luna:high migration (WI-4640), which handed claude-backend roles a codex-only
     // id and hard-downed kettle@papercusp — see ROLE_MODEL_DEFAULTS' history comment.
     assert.equal(resolveModel({}, 'cup'), 'sonnet[1m]:high');
-    assert.equal(resolveModel({}, 'scanner'), 'sonnet[1m]:high');
     assert.equal(resolveModel({}, 'judge'), 'sonnet[1m]:high');
+    // ⚠ `scanner` left that floor on 2026-09-02 (owner directive, interactive) — it carries
+    // an operator_agent_config roleBackends entry, so it moved to opus:xhigh with mug/kettle.
+    // opus is claude-shaped, so the WI-4623 backend invariant above is preserved.
+    assert.equal(resolveModel({}, 'scanner'), 'opus:xhigh');
     // The launch-fixer family's committed floors (D-008 follow-up): the two
-    // fleet-blast-radius fixers pin opus:xhigh, the bounded content repairer pins sonnet.
+    // fleet-blast-radius fixers pin opus:xhigh, and as of the same 2026-09-02 directive the
+    // bounded content repairer joined them rather than staying on the sonnet execution tier.
     assert.equal(resolveModel({}, 'merge-resolver'), 'opus:xhigh');
     assert.equal(resolveModel({}, 'release-fixer'), 'opus:xhigh');
-    assert.equal(resolveModel({}, 'content-fixer'), 'sonnet');
+    assert.equal(resolveModel({}, 'content-fixer'), 'opus:xhigh');
     // The pot's judgment/control-loop layer (queen/bee/mug/kettle/overwatch/sentinel) sits on
     // the same sonnet[1m]:high floor (WI-4623). A trimmed sonnet spec infers the
     // claude/anthropic backend, keeping the spawn binary correct — the inverse of the luna
@@ -600,11 +604,15 @@ test('resolveModel — falls back to the committed ROLE_MODEL_DEFAULTS floor (EI
     // fails with that role's name in the assertion.
     assert.equal(resolveModel({}, 'queen'), 'sonnet[1m]:high');
     assert.equal(resolveModel({}, 'bee'), 'sonnet[1m]:high');
-    assert.equal(resolveModel({}, 'mug'), 'sonnet[1m]:high');
-    // Kettle (overwatch) and sentinel sit on the same autonomous-loop floor.
-    assert.equal(resolveModel({}, 'kettle'), 'sonnet[1m]:high');
     assert.equal(resolveModel({}, 'overwatch'), 'sonnet[1m]:high');
     assert.equal(resolveModel({}, 'sentinel'), 'sonnet[1m]:high');
+    // ⚠ mug and kettle left this floor on 2026-09-02 (owner directive, interactive): both
+    // carry operator_agent_config roleBackends entries, so they moved to opus:xhigh. The
+    // WI-4623 invariant that actually matters is UNCHANGED and still covered by the
+    // claude-backend assertions elsewhere — opus is claude-shaped, so neither role can
+    // reacquire the codex-only spec that hard-downed kettle@papercusp under P-020.
+    assert.equal(resolveModel({}, 'mug'), 'opus:xhigh');
+    assert.equal(resolveModel({}, 'kettle'), 'opus:xhigh');
     // operator has no committed default in ROLE_MODEL_DEFAULTS (interactive surface, not autonomous-loop).
     assert.equal(resolveModel({}, 'operator'), '');
   } finally {
