@@ -1,0 +1,25 @@
+-- 1095-substrate-outbox-table-drain-idx.sql
+--
+-- EI-22138988923269437 (durable fix, WI-2141185's mitigation follow-up):
+-- substrate_outbox drains strict-FIFO with no priority lane, so a bulk
+-- backfill of one table's rows can head-of-line-block EVERY other table
+-- (coordination included) for as long as the bulk table's backlog takes to
+-- clear. The fix (outbox-drain.ts) replaces the flat `ORDER BY id LIMIT
+-- batch` SELECT with a per-table_name bounded LATERAL scan: each known
+-- table_name gets its own `ORDER BY id LIMIT <its cap>` sub-scan (coord_*
+-- tables get a generous cap; every other table shares the remaining batch
+-- capacity fairly), so no single table can consume the whole batch and every
+-- table with backlog gets serviced every pass.
+--
+-- That per-table sub-scan needs table_name as a LEADING index column ahead of
+-- id — the existing substrate_outbox_drain_idx (workspace_id, harness_slug,
+-- drained_at, id) has no table_name column, so a table_name-filtered scan
+-- against it would have to walk (and heap-fetch) every undrained row in id
+-- order until it collects enough matches, which is exactly the O(backlog)
+-- cost this fix exists to avoid for a sparse/late table like coord_event_log
+-- sitting behind a large bulk backfill.
+--
+-- Purely additive (new index only) — no FORWARD-COMPAT note needed.
+CREATE INDEX IF NOT EXISTS substrate_outbox_table_drain_idx
+  ON harness_shared.substrate_outbox
+  USING btree (workspace_id, harness_slug, table_name, drained_at, id);
