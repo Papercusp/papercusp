@@ -206,7 +206,7 @@ describe('migration 1062 — resource-governor admission ledger', () => {
   it('keeps the legacy insert guard dormant until cutover, then blocks only new governor receipts', async () => {
     await sql`
       INSERT INTO harness_shared.work_items (workspace_id, feature_id, payload, status)
-      VALUES ('ws-cutover', 'WI-legacy-before', ${{ resource_governor: { schemaVersion: 1, state: 'running' } }}::jsonb, 'wip')`;
+      VALUES ('ws-cutover', 'WI-legacy-before', ${sql.json({ resource_governor: { schemaVersion: 1, state: 'running' } })}::jsonb, 'wip')`;
 
     await sql`
       INSERT INTO harness_shared.operator_settings (key, value, description, updated_at, workspace_id)
@@ -220,7 +220,7 @@ describe('migration 1062 — resource-governor admission ledger', () => {
 
     await expect(sql`
       INSERT INTO harness_shared.work_items (workspace_id, feature_id, payload, status)
-      VALUES ('ws-cutover', 'WI-legacy-after', ${{ resource_governor: { schemaVersion: 1 } }}::jsonb, 'open')
+      VALUES ('ws-cutover', 'WI-legacy-after', ${sql.json({ resource_governor: { schemaVersion: 1 } })}::jsonb, 'open')
     `).rejects.toMatchObject({
       code: '23514',
       constraint_name: 'work_items_resource_governor_post_cutover_guard',
@@ -229,12 +229,12 @@ describe('migration 1062 — resource-governor admission ledger', () => {
 
     await expect(sql`
       INSERT INTO harness_shared.work_items (workspace_id, feature_id, payload, status)
-      VALUES ('ws-cutover', 'WI-real-work', ${{ title: 'ordinary work' }}::jsonb, 'open')
+      VALUES ('ws-cutover', 'WI-real-work', ${sql.json({ title: 'ordinary work' })}::jsonb, 'open')
     `).resolves.toBeDefined();
 
     await expect(sql`
       UPDATE harness_shared.work_items
-         SET payload = ${{ resource_governor: { schemaVersion: 1, state: 'completed' } }}::jsonb,
+         SET payload = ${sql.json({ resource_governor: { schemaVersion: 1, state: 'completed' } })}::jsonb,
              status = 'done'
        WHERE workspace_id = 'ws-cutover'
          AND feature_id = 'WI-legacy-before'

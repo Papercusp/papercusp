@@ -110,7 +110,7 @@ describe('migration 1063 — attention bulk item reversal window', () => {
 
     await sql`
       UPDATE harness_shared.attention_bulk_run_items
-         SET revert_handle = ${{ kind: 'attention-bulk-item', version: 1 }}::jsonb,
+         SET revert_handle = ${sql.json({ kind: 'attention-bulk-item', version: 1 })}::jsonb,
              reversal_window_until = now() + interval '24 hours'
        WHERE workspace_id = 'ws-old-writer'
     `;
@@ -134,7 +134,7 @@ describe('migration 1063 — attention bulk item reversal window', () => {
          SET outcome = 'auto_resolved',
              action_id = 'resolve',
              decided_at = now(),
-             revert_handle = ${{ kind: 'attention-bulk-item', version: 1 }}::jsonb,
+             revert_handle = ${sql.json({ kind: 'attention-bulk-item', version: 1 })}::jsonb,
              reversal_window_until = now() + interval '24 hours'
        WHERE workspace_id = 'ws-new'
     `;

@@ -44,7 +44,7 @@ async function append(msgId: string, kind: string, related: string | null, gener
       'escalations',
       ${msgId},
       now(),
-      ${body}::jsonb
+      ${sql.json(body)}::jsonb
     )`;
 }
 
