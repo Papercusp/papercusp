@@ -1049,6 +1049,19 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'coord:inbox',
   'coord:send',
   'coord:glance',
+  // coord:dispatch is the WORK-HANDOFF atom (assign a lane + deliver + wake + report
+  // pickup); coord:send only delivers a message. It is seeded rather than left to
+  // tools:find because its adoption is actively being MEASURED: the P-013 falsifier
+  // (dispatch-adoption-falsifier.ts) returns `retire` on a low call rate once its
+  // `reEvaluateAfter` date passes, and its stated premise is that dispatch "was seeded
+  // onto the live surface
+  // AND handed to agents pre-addressed ... and still was not reached for". Until
+  // 2026-09-02 that first conjunct was FALSE — the verb sat only in QUEEN_MCP_TOOL_NAMES
+  // (role==='mug', a retired tier), so no live session ever had it. Seeding it here is
+  // what makes that verdict measure demand instead of absence; without it a zero rate
+  // would retire a verb agents were never offered. coordination-spec-adoption-2026-08-03
+  // P-011 (delivery half) / WI-2142095.
+  'coord:dispatch',
   // Plans & work — plans:new authors an ENTIRE plan in ONE call (P-001 `body` arg), so an
   // agent never has to hunt for a create verb: the Mac-app plan-authoring fumble that
   // motivated this (create-template → get-version → set-content, plus a "plans need a
