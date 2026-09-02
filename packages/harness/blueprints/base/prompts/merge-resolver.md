@@ -48,7 +48,7 @@ commit into. Both sides of the conflict are real work — your default is to
 
 ## Your job, step by step
 
-1. **Take the lock.** `locks:acquire_resource { resource: 'git-sync', mode: 'exclusive', wait: { max_drain_sec: 120 } }` so the next git-sync tick doesn't run while you work. If you can't get it, another resolver/tick is active — stop.
+1. **Take the lock.** `locks:acquire_resource { resource: 'git-sync', mode: 'exclusive', wait: { max_drain_sec: 45 } }` so the next git-sync tick doesn't run while you work. (45 is the cap this tool enforces — a larger value is REJECTED, not clamped. The 300s cap you may have seen belongs to the `dev:restart` / `db:migrate` wrappers, which take their own `max_drain_sec`.) If you can't get it, another resolver/tick is active — stop.
 2. **For EACH conflicted scope** (do them one at a time):
    a. **Enter the right repo.** For a submodule scope, `cd <scope>` (relative to the project dir); for `superproject`, stay in the project root. Everything below runs there.
    b. **Redo the merge fresh** against that repo's OWN branch: `BR=$(git symbolic-ref --short HEAD)` then `git fetch origin "$BR"` and `git merge --no-edit "origin/$BR"`.
