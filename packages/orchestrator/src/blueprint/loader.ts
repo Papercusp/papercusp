@@ -17,6 +17,15 @@
  * through `BlueprintSchema` (so `.default`s apply once, not per-file). Merge
  * rule: objects deep-merge (child wins on leaf keys); arrays + scalars are
  * replaced wholesale by the child.
+ *
+ * identities-v1-2026-08-30 P-001: the walk also records every LAYER it merged
+ * (`resolveLayers` → `LoadedBlueprint.layers`, parent-first) with a per-layer
+ * content hash, and `resolveBlueprint` fails the load on a layer whose
+ * `attestation.contentHash` disagrees with its content or on two distinct layers
+ * claiming one EXCLUSIVE slot (D-007). The per-field composition rules are
+ * DECLARED in `merge-rules.ts`; P-019 replaces `mergeRaw` with the merger that
+ * honours them (this file's last-writer-wins is byte-identical to `replace` for
+ * scalars/arrays and `union` for records — the registry's default assignment).
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -26,6 +35,7 @@ import { harnessPath, harnessRootCandidates } from '@papercusp/harness/paths';
 import { BlueprintSchema, BlueprintHeaderSchema, type Blueprint } from './schema.js';
 import { validateBlueprint, type BlueprintValidation, type ValidateOptions } from './validate.js';
 import { canonicalBlueprintId } from '../blueprint-aliases.js';
+import { findExclusiveSlotConflicts, type SlotClaim } from './slots.js';
 
 /**
  * The registry sets the operator passes so the load path enforces the op/role
@@ -94,32 +104,89 @@ function readRaw(path: string): RawBlueprint {
 }
 
 /**
- * Resolve a raw blueprint's `extends` chain into a single merged raw object.
- * Walks parents depth-first (so a grandparent merges before a parent), guarding
- * against cycles. The returned object still needs `BlueprintSchema.parse`.
+ * One document of a resolved stack (identities-v1 P-001). `layers` is the
+ * merge order — parents first, the loaded document last — so a renderer that
+ * walks it sees precedence ascending.
  */
-export function resolveExtends(
+export interface BlueprintLayer {
+  id: string;
+  /** The file this layer was read from (null for the in-memory root raw). */
+  sourcePath: string | null;
+  /** sha256 over the layer's OWN raw document, `attestation` excluded (`layerContentHash`). */
+  contentHash: string;
+  /** The layer's declared attestation, if any — `resolveBlueprint` verifies it against `contentHash`. */
+  attestation: { contentHash: string; signedBy: string } | null;
+  /** The slot ids this layer declares (raw `slots[].slot`; validated per document by `validateBlueprint`). */
+  slots: string[];
+}
+
+/**
+ * The per-LAYER content hash: sha256 over the raw document with `attestation`
+ * removed — so a publisher can sign a document that then carries its own
+ * attestation without the signature invalidating itself. Sorted-key stable, like
+ * `blueprintHash`, which remains the hash of the RESOLVED document.
+ */
+export function layerContentHash(raw: RawBlueprint): string {
+  const { attestation: _omit, ...content } = raw;
+  return createHash('sha256').update(stableStringify(content)).digest('hex');
+}
+
+function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
+  const att = isPlainObject(raw.attestation) ? raw.attestation : null;
+  const attestation =
+    att && typeof att.contentHash === 'string' && typeof att.signedBy === 'string'
+      ? { contentHash: att.contentHash, signedBy: att.signedBy }
+      : null;
+  const slots = Array.isArray(raw.slots)
+    ? raw.slots.flatMap((s) => (isPlainObject(s) && typeof s.slot === 'string' ? [s.slot] : []))
+    : [];
+  return { id: String(raw.id), sourcePath, contentHash: layerContentHash(raw), attestation, slots };
+}
+
+/**
+ * Resolve a raw blueprint's `extends` chain into a single merged raw object AND
+ * the ordered list of layers it merged. Walks parents depth-first (so a
+ * grandparent merges before a parent), guarding against cycles. `merged` still
+ * needs `BlueprintSchema.parse`; `layers` is parent-first with `raw` last.
+ */
+export function resolveLayers(
   raw: RawBlueprint,
   resolve: ResolveExtendsPath = resolveBuiltinExtends,
+  sourcePath: string | null = null,
   seen: Set<string> = new Set(),
-): RawBlueprint {
+): { merged: RawBlueprint; layers: BlueprintLayer[] } {
   const ext = raw.extends;
-  if (ext == null) return raw;
+  if (ext == null) return { merged: raw, layers: [layerOf(raw, sourcePath)] };
   const parentIds = Array.isArray(ext) ? ext : [String(ext)];
 
   let merged: RawBlueprint = {};
+  const layers: BlueprintLayer[] = [];
   for (const pid of parentIds) {
     if (seen.has(pid)) {
       throw new Error(`blueprint extends cycle detected at "${pid}"`);
     }
     const path = resolve(pid);
     if (!path) throw new Error(`cannot resolve extended blueprint "${pid}"`);
-    const parentRaw = resolveExtends(readRaw(path), resolve, new Set([...seen, pid]));
-    merged = mergeRaw(merged, parentRaw);
+    const parent = resolveLayers(readRaw(path), resolve, path, new Set([...seen, pid]));
+    merged = mergeRaw(merged, parent.merged);
+    layers.push(...parent.layers);
   }
   // Child wins; drop the now-consumed `extends` from the resolved result.
   const { extends: _drop, ...childOwn } = mergeRaw(merged, raw);
-  return childOwn;
+  layers.push(layerOf(raw, sourcePath));
+  return { merged: childOwn, layers };
+}
+
+/**
+ * Resolve a raw blueprint's `extends` chain into a single merged raw object
+ * (the pre-P-001 signature; `resolveLayers` is the same walk keeping the layers).
+ */
+export function resolveExtends(
+  raw: RawBlueprint,
+  resolve: ResolveExtendsPath = resolveBuiltinExtends,
+  seen: Set<string> = new Set(),
+): RawBlueprint {
+  return resolveLayers(raw, resolve, null, seen).merged;
 }
 
 export interface LoadedBlueprint {
@@ -129,6 +196,8 @@ export interface LoadedBlueprint {
   contentHash: string;
   /** The file the blueprint was read from (null for an in-memory raw). */
   sourcePath: string | null;
+  /** The stack that was merged, parent-first, each with its own content hash (P-001). */
+  layers: BlueprintLayer[];
 }
 
 /** Stable sha256 over the resolved blueprint (sorted keys → order-independent). */
@@ -161,14 +230,34 @@ export function resolveBlueprint(
     registry?: BlueprintValidateRegistry;
   } = {},
 ): LoadedBlueprint {
-  const merged = resolveExtends(raw, opts.resolve ?? resolveBuiltinExtends);
+  const sourcePath = opts.sourcePath ?? null;
+  const { merged, layers } = resolveLayers(raw, opts.resolve ?? resolveBuiltinExtends, sourcePath);
   const blueprint = BlueprintSchema.parse(merged);
   const validation = validateBlueprint(blueprint, opts.registry ?? {});
+  // ── stack-level checks (identities-v1 P-001) — need the layers, not the merged doc ──
+  for (const layer of layers) {
+    if (layer.attestation && layer.attestation.contentHash !== layer.contentHash) {
+      validation.errors.push({
+        level: 'error',
+        code: 'attestation-hash-mismatch',
+        message: `layer "${layer.id}" attests contentHash ${layer.attestation.contentHash.slice(0, 12)}… but its content hashes to ${layer.contentHash.slice(0, 12)}… — the document changed after signing, or the attestation was copied from another revision`,
+      });
+    }
+  }
+  const claims: SlotClaim[] = layers.flatMap((l) => l.slots.map((slot) => ({ id: l.id, slot })));
+  for (const c of findExclusiveSlotConflicts(claims)) {
+    validation.errors.push({
+      level: 'error',
+      code: 'slot-exclusive-conflict',
+      message: `exclusive slot "${c.slot}" is claimed by ${c.claimants.length} layers (${c.claimants.join(', ')}) — an exclusive slot admits exactly one document per stack (D-007)`,
+    });
+  }
+  validation.ok = validation.errors.length === 0;
   if (!validation.ok) {
     const msg = validation.errors.map((e) => `${e.code}: ${e.message}`).join('; ');
     throw new Error(`invalid blueprint "${blueprint.id}": ${msg}`);
   }
-  return { blueprint, validation, contentHash: blueprintHash(blueprint), sourcePath: opts.sourcePath ?? null };
+  return { blueprint, validation, contentHash: blueprintHash(blueprint), sourcePath, layers };
 }
 
 /** Load + resolve a blueprint from a YAML file path (e.g. `.papercusp/blueprint.yaml`). */
