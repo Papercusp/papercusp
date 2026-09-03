@@ -23,6 +23,7 @@ import type { Blueprint } from './schema.js';
 import { finalizeEntryRole } from './schema.js';
 import { dataConditionSchema } from '@papercusp/rules';
 import { CHILD_BLUEPRINT_PARAM_RE, isChildBlueprintParam } from './resolve-child.js';
+import { RESERVED_LAYERS, SLOT_IDS, slotSpec } from './slots.js';
 
 /** A step/gate `when` is valid iff it's a serializable `@papercusp/rules` DataCondition. */
 function isValidWhen(when: unknown): boolean {
@@ -120,6 +121,9 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
   if (!Number.isFinite(bp.spine.maxTurns) || bp.spine.maxTurns < 1) {
     err('bad-max-turns', `spine.maxTurns must be a finite positive integer (got ${bp.spine.maxTurns})`);
   }
+
+  // ── identity extension: slots / bundles / grants (identities-v1 P-001) ─────
+  validateIdentityDeclarations(bp, err);
 
   // ── spine mode: a spine declares EXACTLY ONE model (D-002) ──────────────────
   const hasEdges = bp.spine.edges != null && Object.keys(bp.spine.edges).length > 0;
@@ -348,6 +352,68 @@ function validateProgramSpine(
     if (known && !known.has(b.op)) err('unknown-op', `gate branch ${i} fires unknown op "${b.op}"`);
     if (b.when != null && !isValidWhen(b.when)) {
       err('bad-gate-when', `gate branch ${i} has an invalid when (not a DataCondition): ${JSON.stringify(b.when)}`);
+    }
+  }
+}
+
+/**
+ * The identity extension's semantic checks (`identities-v1-2026-08-30` P-001):
+ *   - `slots[]` — every slot is a registry slot (`slot-unknown`), not a reserved
+ *     layer (`slot-reserved-layer`: the kernel is sealed, the instance tier is the
+ *     per-pot override), declared once (`slot-duplicate`), and a restated
+ *     cardinality agrees with the registry (`slot-cardinality-mismatch`, D-007 —
+ *     the registry is authoritative).
+ *   - `bundles[]` — a `(kind, ref)` pair is referenced once (`bundle-duplicate`).
+ *   - `grants` — RESERVED: any non-empty grants section is an error
+ *     (`grants-reserved`, D-004 sequenced by D-014 — until capability classes
+ *     land in M3 an identity carries no grants and its toolset is the pot/role
+ *     ceiling; refusing here is what keeps an interim grant vocabulary from
+ *     appearing).
+ * Cross-LAYER checks (two documents on one exclusive slot, attestation vs layer
+ * hash) need the stack and live in the loader (`resolveBlueprint`).
+ * Guards every field: this fn is also the author-time secondary net over RAW
+ * (un-parsed) documents.
+ */
+function validateIdentityDeclarations(bp: Blueprint, err: Reporter): void {
+  const seenSlots = new Set<string>();
+  for (const d of bp.slots ?? []) {
+    if (seenSlots.has(d.slot)) err('slot-duplicate', `slot "${d.slot}" is declared more than once in slots[]`);
+    seenSlots.add(d.slot);
+    if (RESERVED_LAYERS.has(d.slot)) {
+      err(
+        'slot-reserved-layer',
+        `"${d.slot}" is a reserved LAYER, not a declarable slot — the kernel is sealed (D-009) and the instance tier is the per-pot override; declarable slots: ${SLOT_IDS.join(', ')}`,
+      );
+      continue;
+    }
+    const spec = slotSpec(d.slot);
+    if (!spec) {
+      err('slot-unknown', `slot "${d.slot}" is not in the slot registry (known: ${SLOT_IDS.join(', ')})`);
+      continue;
+    }
+    if (d.cardinality != null && d.cardinality !== spec.cardinality) {
+      err(
+        'slot-cardinality-mismatch',
+        `slot "${d.slot}" restates cardinality "${d.cardinality}" but the registry rules it "${spec.cardinality}" (${spec.decision}) — the registry is authoritative: omit cardinality or match it`,
+      );
+    }
+  }
+
+  const seenBundles = new Set<string>();
+  for (const b of bp.bundles ?? []) {
+    const k = `${b.kind}:${b.ref}`;
+    if (seenBundles.has(k)) err('bundle-duplicate', `bundle ${k} is referenced more than once in bundles[]`);
+    seenBundles.add(k);
+  }
+
+  const g = bp.grants;
+  if (g) {
+    const declared = (g.requires?.length ?? 0) + (g.optional?.length ?? 0) + Object.keys(g.suggestedProviders ?? {}).length;
+    if (declared > 0) {
+      err(
+        'grants-reserved',
+        `grants are RESERVED until capability classes land (identities-v1 M3 / D-004, D-014): an identity carries no grants and its toolset is the pot/role ceiling — remove grants.requires / grants.optional / grants.suggestedProviders (${declared} declared)`,
+      );
     }
   }
 }

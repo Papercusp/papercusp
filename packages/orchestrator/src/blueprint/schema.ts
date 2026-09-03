@@ -24,6 +24,7 @@
  */
 import { z } from 'zod';
 import { dataConditionSchema } from '@papercusp/rules';
+import { BUNDLE_KINDS } from './slots.js';
 
 /**
  * The work unit the director schedules/executes. Maps onto the canonical
@@ -906,6 +907,79 @@ export const OpManifestEntrySchema = z.object({
   handler: z.object({ kind: z.literal('dispatch').default('dispatch') }).prefault({}),
 });
 
+// ── identities-v1-2026-08-30 P-001: the identity extension of the blueprint document ──
+//
+// An identity IS a blueprint document (D-013 — no parallel store, no new Cupboard
+// kind): the same schema, loader, extends-walk and projection. The five sections
+// below are what P-001 ADDS so a document can be an identity. `slots:` is the
+// discriminator — present (even empty) ⇒ identity; absent ⇒ ordinary blueprint —
+// so it stays `.optional()` with NO default (a default would erase the distinction).
+
+/**
+ * One slot the document fills (D-007). `slot` is an OPEN string validated
+ * against the slot registry by `validateBlueprint` (`slot-unknown`), mirroring
+ * `unknown-op`: a new axis is a registry row (`slots.ts`), never a document-
+ * format change, and an installed identity naming a slot this platform does not
+ * know fails with a diagnosable validation issue rather than a parse throw.
+ * `cardinality` is OPTIONAL and, when present, must AGREE with the registry
+ * (`slot-cardinality-mismatch`) — the registry is authoritative; the restatement
+ * is for the reader.
+ */
+export const SlotDeclarationSchema = z.object({
+  slot: z.string().min(1),
+  cardinality: z.enum(['exclusive', 'additive']).optional(),
+});
+
+/**
+ * A Cupboard item bundled BY REFERENCE (D-011: ONE uniform list for every
+ * distributable layer — recipes, rubrics, knowledge packs, datatypes, event
+ * vocabularies and rules — never a bespoke field per layer, never a by-value
+ * copy). `kind` is the CLOSED D-011 vocabulary (`BUNDLE_KINDS`; no `skill`).
+ * `ref` is the listing id; `version` pins a listing version when the stack must.
+ */
+export const BundleRefSchema = z.object({
+  kind: z.enum(BUNDLE_KINDS),
+  ref: z.string().min(1),
+  version: z.string().optional(),
+});
+
+/**
+ * RESERVED (D-004, sequenced by D-014): grants name registered capability
+ * CLASSES, split into `requires` (blocks install until satisfied) and `optional`
+ * (installs with a visible gap), with publisher `suggestedProviders` hints
+ * (class → provider). The SHAPE lands now so the document format is final; until
+ * capability classes ship (M3, P-016) an identity carries NO grants and its
+ * toolset is the pot/role ceiling — `validateBlueprint` REFUSES a non-empty
+ * grants section (`grants-reserved`) so no interim grant vocabulary can appear.
+ */
+export const GrantsSchema = z.object({
+  requires: z.array(z.string().min(1)).default([]),
+  optional: z.array(z.string().min(1)).default([]),
+  suggestedProviders: z.record(z.string(), z.string()).default({}),
+});
+
+/** Who publishes this layer (the publisher/author of P-001's manifest). */
+export const PublisherSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().optional(),
+  url: z.string().optional(),
+});
+
+/**
+ * Publisher attestation over THIS layer's content: `contentHash` must equal the
+ * layer's own content hash (`layerContentHash` — sha256 over the raw document
+ * with `attestation` itself excluded; the loader checks it,
+ * `attestation-hash-mismatch`). `signature` / `signedBy` bind it to a publisher
+ * key (M2 reuses `lib/identity/attest.ts` + `hive-keypair.ts`); the format check
+ * is the schema's, the signature check is the installer's.
+ */
+export const AttestationSchema = z.object({
+  contentHash: z.string().regex(/^[0-9a-f]{64}$/, 'sha256 hex'),
+  signedBy: z.string().min(1),
+  signature: z.string().optional(),
+  signedAt: z.string().optional(),
+});
+
 export const BlueprintSchema = z.object({
   id: z.string().min(1),
   /** Parent blueprint id(s); resolved local → installed → built-in. */
@@ -1012,7 +1086,27 @@ export const BlueprintSchema = z.object({
    *  record unions across `extends`). Default {} ⇒ no declared params (the schema-driven
    *  settings panel renders nothing extra for this blueprint). */
   params: ParamsSchema.default({}),
+  // ── identities-v1 P-001 (D-007 / D-011 / D-013 / D-004) ────────────────────
+  /** The slots this document fills — PRESENT ⇒ the document is an identity. No default. */
+  slots: z.array(SlotDeclarationSchema).optional(),
+  /** Cupboard items bundled by reference (D-011). Uniform across kinds; composes by union. */
+  bundles: z.array(BundleRefSchema).default([]),
+  /** RESERVED capability-class grants (D-004; refused non-empty until M3 — D-014). */
+  grants: GrantsSchema.optional(),
+  /** The layer's publisher/author. */
+  publisher: PublisherSchema.optional(),
+  /** Publisher attestation over this layer's content (checked by the loader). */
+  attestation: AttestationSchema.optional(),
 });
+
+/**
+ * D-013's discriminator: a document WITH a `slots:` declaration is an identity;
+ * without one it is an ordinary blueprint. An empty `slots: []` still counts —
+ * it declares the intent to be an identity while filling nothing yet.
+ */
+export function isIdentityDocument(bp: Pick<Blueprint, 'slots'>): boolean {
+  return bp.slots != null;
+}
 
 /**
  * The on-disk header — just enough to read `id` + `extends` from a raw file
@@ -1056,3 +1150,12 @@ export type ParamSpec = z.infer<typeof ParamSpecSchema>;
 export type ParamOption = z.infer<typeof ParamOptionSchema>;
 /** The blueprint's declared params, keyed by dot-path into the resolved config. */
 export type BlueprintParams = z.infer<typeof ParamsSchema>;
+// identities-v1 P-001 — the identity extension's types.
+/** One `slots[]` entry: the slot filled + an optional (registry-agreeing) cardinality restatement. */
+export type SlotDeclaration = z.infer<typeof SlotDeclarationSchema>;
+/** One `bundles[]` entry: a Cupboard item by reference (D-011). */
+export type BundleRef = z.infer<typeof BundleRefSchema>;
+/** The RESERVED grants section (D-004 / D-014). */
+export type BlueprintGrants = z.infer<typeof GrantsSchema>;
+export type BlueprintPublisher = z.infer<typeof PublisherSchema>;
+export type BlueprintAttestation = z.infer<typeof AttestationSchema>;
