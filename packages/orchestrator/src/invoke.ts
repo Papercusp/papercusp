@@ -1407,8 +1407,11 @@ export function fleetCapabilityOnlyEnabled(): boolean {
 /** True when REPLACE_CLAUDE_BASE is armed for this spawn (domain-generic-agent-personas
  *  -2026-06-17 P-013). The operator resolves the `papercusp-replace-claude-base` flag
  *  per-spawn and threads it as this env var into the invoke-once child (mirrors
- *  `fleetCapabilityOnlyEnabled`). DEFAULT-OFF: unset / `0` / `false` / `off` ⇒ the Claude
- *  Code coding base stands and the prompt is delivered via stdin exactly as today. */
+ *  `fleetCapabilityOnlyEnabled`). Unset / `0` / `false` / `off` ⇒ the Claude Code coding base
+ *  stands and the prompt is delivered via stdin as before the flag. The flag's DEFAULT is
+ *  FLAG_DEFAULTS in libs/flags/src/types.ts (ON since 2026-06-18) — never restate it here; the
+ *  restated "default-off" drifted (identities-v1 D-018, which also retires the off branch once
+ *  P-003's slot renderer reproduces resolveReplacementSystemPrompt byte-for-byte). */
 export function replaceClaudeBaseEnabled(): boolean {
   const v = (process.env.PAPERCUSP_REPLACE_CLAUDE_BASE ?? '').trim().toLowerCase();
   return v === '1' || v === 'true' || v === 'on';
