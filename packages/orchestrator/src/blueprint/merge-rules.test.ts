@@ -46,7 +46,7 @@ test('the schema has the identity extension leaves (P-001) and the enumeration i
 test('enumerateSchemaLeaves — descends objects through wrappers; arrays/records/unions/lazy are ONE leaf; catchall keys are <path>.*', () => {
   const s = z.object({
     a: z.string().optional(),
-    b: z.object({ c: z.number().default(1), d: z.array(z.string()) }).prefault({}),
+    b: z.object({ c: z.number().default(1), d: z.array(z.string()).default([]) }).prefault({}),
     e: z.record(z.string(), z.string()),
     f: z.union([z.string(), z.number()]),
     g: z.looseObject({ h: z.boolean() }),
