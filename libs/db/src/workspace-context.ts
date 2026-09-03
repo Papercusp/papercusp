@@ -18,7 +18,7 @@
  * that, because a fresh checkout would have no GUC and bypass RLS.
  */
 
-import type { Sql } from 'postgres';
+import type { Sql, TransactionSql } from 'postgres';
 import {
   getOrgPg,
   getOrgPgApp,
@@ -255,6 +255,15 @@ export function harnessQuery<T>(slug: string, fn: (q: Sql) => Promise<T>): Promi
  * conversations-store.ts / slack-flagship.ts / gmail-flagship.ts /
  * learning-governor/store.ts / modes/store.ts / plan-dependency-admission-transaction.ts.
  */
-export function harnessTransaction<T>(slug: string, fn: (tx: Sql) => Promise<T>): Promise<T> {
-  return harnessQuery(slug, (sql) => ('begin' in sql && typeof sql.begin === 'function' ? sql.begin(fn) : fn(sql)));
+export function harnessTransaction<T>(slug: string, fn: (tx: TransactionSql) => Promise<T>): Promise<T> {
+  return harnessQuery(slug, (sql) => {
+    // harnessQuery's own signature says `sql: Sql`, but under PgBouncer it is
+    // ALREADY a TransactionSql (withHarnessSchema opened the transaction) —
+    // the exact mismatch this function exists to paper over at runtime. Cast
+    // to the honest union so 'begin' in s narrows properly in BOTH branches
+    // (mirrors conversations-store.ts / gmail-flagship.ts / slack-flagship.ts,
+    // whose getSql() is typed Sql | TransactionSql to begin with).
+    const s = sql as unknown as Sql | TransactionSql;
+    return ('begin' in s ? s.begin(fn) : fn(s)) as Promise<T>;
+  });
 }
