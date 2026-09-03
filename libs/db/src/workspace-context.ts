@@ -223,9 +223,38 @@ export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promis
  *
  * Multiple statements that must share the harness search_path (e.g. an upsert loop
  * + a reconcile DELETE) MUST go in ONE harnessQuery() callback so they run in the
- * same transaction.
+ * same transaction under PgBouncer. That alone is NOT sufficient for true
+ * atomicity (a TOCTOU-sensitive SELECT-then-INSERT, say) across BOTH connection
+ * modes — direct mode hands you the bare pool, not a transaction — so for that
+ * shape use {@link harnessTransaction} instead of calling `sql.begin()` yourself.
  */
 export function harnessQuery<T>(slug: string, fn: (q: Sql) => Promise<T>): Promise<T> {
   if (pgbouncerEnabled()) return withHarnessSchema(slug, fn);
   return fn(getHarnessPg(slug).sql);
+}
+
+/**
+ * Multi-statement ATOMIC write against a harness's per-schema tables, correct in
+ * BOTH connection modes — the transactional counterpart of {@link harnessQuery}.
+ *
+ * Do NOT wrap `harnessQuery`'s callback in your own `sql.begin(...)` — under
+ * PgBouncer (pooled mode) the handle `harnessQuery` hands you is ALREADY a
+ * postgres.js transaction handle (`withHarnessSchema` opened it to set the
+ * per-transaction search_path), and a transaction handle exposes `savepoint`,
+ * not `begin`: nesting `.begin()` on it throws
+ * `TypeError: sql.begin is not a function` at runtime, not at compile time — the
+ * exact trap `withCensusStatementTimeout` documents hitting in
+ * work-items-admission-census.ts (WI-1194246). Under direct connection the
+ * handle is the bare pool, which DOES need an explicit `.begin()` for the
+ * statements to share one transaction.
+ *
+ * `harnessTransaction` picks the right one for you: call `.begin()` only when
+ * the handle offers it (direct mode); otherwise it is already transaction-scoped
+ * (pooled mode) and `fn`'s statements share that transaction for free. Same
+ * `'begin' in sql ? sql.begin(fn) : fn(sql)` idiom already used in
+ * conversations-store.ts / slack-flagship.ts / gmail-flagship.ts /
+ * learning-governor/store.ts / modes/store.ts / plan-dependency-admission-transaction.ts.
+ */
+export function harnessTransaction<T>(slug: string, fn: (tx: Sql) => Promise<T>): Promise<T> {
+  return harnessQuery(slug, (sql) => ('begin' in sql && typeof sql.begin === 'function' ? sql.begin(fn) : fn(sql)));
 }

@@ -98,7 +98,7 @@ export {
   type ObservedStoreIdentity,
   type StoreIdentityVerdict,
 } from './store-identity';
-export { withWorkspace, withWorkspaceQuery, withHarnessSchema, harnessQuery } from './workspace-context';
+export { withWorkspace, withWorkspaceQuery, withHarnessSchema, harnessQuery, harnessTransaction } from './workspace-context';
 export type { WorkspaceTxOptions } from './workspace-context';
 export {
   HostedServiceContextError,
