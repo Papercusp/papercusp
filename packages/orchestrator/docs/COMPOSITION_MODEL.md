@@ -4,7 +4,8 @@
 > WI-2143731 · written 2026-09-03 by su-27188c44. Authority: D-006 (one composition system),
 > D-013 (an identity IS a blueprint document), D-007 as amended (slots, not tiers), the D-008
 > amendment (one exclusive slot per mode axis), D-011 (one bundling model), D-004 / D-014
-> (grants reserved until M3), D-016 (Phase 3 scope), and P-001's own **D-017**.
+> (grants reserved until M3), D-016 (Phase 3 scope), P-001's own **D-017**, and P-032's
+> **D-018** (§8 — the `REPLACE_CLAUDE_BASE` composer is SUBSUMED, not a third path).
 >
 > This document describes `src/blueprint/{schema,slots,merge-rules,loader,validate}.ts` as
 > built. The slot table below is **pinned** to `slots.ts` by `slots.test.ts` (it must equal
@@ -156,5 +157,38 @@ identities read the same projection; no new store.
   order-dependent by design), unions `slots` across layers, and decides whether `roles`,
   `reactive`, `gym.signals`, `dependencies.*` move from `replace` to keyed union.
 - **P-002** assigns su.md's sections to these slots; **P-003** seals the kernel and renders the
-  stack; **P-012** attaches/detaches layers at runtime; **P-032** subsumes the second composer.
+  stack; **P-012** attaches/detaches layers at runtime; **P-032** subsumed the second composer
+  (§8, D-018).
 - **P-016 (M3)** lifts the `grants-reserved` refusal when capability classes exist.
+
+## 8. The second composer (`REPLACE_CLAUDE_BASE`) — subsumed, not a third path (P-032 / D-018)
+
+`src/prompt-resolve.ts` `resolveReplacementSystemPrompt` already composes a REPLACEMENT system
+prompt for a spawn: the neutral base preamble, then the SINGLE most-specific blueprint overlay
+walking the `extends` chain leaf-first (`base` excluded; first hit wins), joined
+`trim + "\n\n" + trim + "\n"`. That is D-002's kernel + overlay model on the spawn tier,
+shipped under domain-generic-agent-personas P-009/P-010/P-013, and it maps onto the stack
+without remainder:
+
+| file (live read path, under `libs/papercusp/packages/harness/`) | layer / slot | notes |
+|---|---|---|
+| `blueprints/base/prompts/agent-base-preamble.md` | **kernel** — the kernel's BASE text | domain- and tier-neutral ring-0 topics (Harness · Tools+MCP startup · Blockers · Diagnose-from-evidence · Mitigation≠fix · Context · Environment · Memory). Rendered on EVERY tier; su.md's ring-0 sections are kernel EXTENSIONS of the interactive tier and P-002 keeps an overlapping paragraph once, here. |
+| `blueprints/<id>/prompts/agent-base-overlay.md` | **`domain`** — the slot's LEAF document | exclusive; the chain walk's first-hit rule IS the exclusive-slot resolution. Today only `blueprints/coding-factory/prompts/agent-base-overlay.md` exists — the coding HIVE (`blueprints/coding`) has no domain leaf (EI-22285277325728666); P-002's papercusp-engineer identity becomes it. |
+
+**What the flag is.** `REPLACE_CLAUDE_BASE` (`libs/flags/src/types.ts`, default = `FLAG_DEFAULTS`
+= not in `DARK_FLAGS` ⇒ **ON**; no workspace override carries the key) is not a composer — it is
+the claude-CLI DELIVERY switch: replace the Claude Code default coding prompt
+(`--system-prompt-file` for bees in `invoke.ts`; `--system-prompt-file` +
+`--exclude-dynamic-system-prompt-sections` for psu sessions in `apps/operator/scripts/psu-launcher.mjs`)
+versus append to it. Only REPLACE is coherent under the seal: the append branch places Claude's
+unsealed coding prose ABOVE the kernel.
+
+**Retirement (P-003-gated).** P-003's renderer produces the spawn-tier system prompt from the
+stack `[kernel(preamble), domain(overlay)]`; `resolveReplacementSystemPrompt` becomes a thin call
+into it and the flag, its `PAPERCUSP_REPLACE_CLAUDE_BASE` env threading (bootstrap-su,
+bootstrap-role, dbos/orchestrator-runner, `invoke.replaceClaudeBaseEnabled`) and the launcher's
+`--append-system-prompt-file` branch are deleted — only after a golden test shows the renderer's
+output byte-equal to today's for the base-only and coding-factory chains. The byte formula is
+pinned now by `prompt-resolve.test.ts` ("P-032/D-018 …"), which also asserts this section names
+the two live paths above. `apps/operator/dist-*/**`, `papercusp-desktop/src-tauri/**/harness/**`
+and `.materialized/**` copies of both files are projections, never the live read path.

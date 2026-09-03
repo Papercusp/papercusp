@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -155,6 +155,42 @@ test('resolveReplacementSystemPrompt — the REAL base preamble carries the MCP-
   // The genuine-deferral recovery path (ToolSearch → the sanctioned mcp-call.mjs fallback).
   assert.match(out!, /ToolSearch/);
   assert.match(out!, /mcp-call\.mjs/);
+});
+
+// identities-v1-2026-08-30 P-032 / D-018 — the second composer is SUBSUMED by the slot stack:
+// agent-base-preamble.md is the KERNEL layer's base text, agent-base-overlay.md the `domain`
+// slot's leaf. P-003's renderer must reproduce THIS byte shape for the spawn tier before
+// REPLACE_CLAUDE_BASE (the claude delivery switch) can be retired. Pinned over the REAL harness
+// tree and against docs/COMPOSITION_MODEL.md §8, so a rename of either file — or a doc that names
+// paths the resolver does not read — fails here rather than drifting silently.
+test('P-032/D-018 — preamble (kernel) + coding-factory overlay (domain) compose in the pinned byte shape over the REAL tree, at the paths COMPOSITION_MODEL.md §8 names', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const harnessDir = join(here, '..', '..', 'harness'); // libs/papercusp/packages/harness
+  const preambleRel = 'blueprints/base/prompts/agent-base-preamble.md';
+  const overlayRel = 'blueprints/coding-factory/prompts/agent-base-overlay.md';
+  const preamblePath = join(harnessDir, preambleRel);
+  const overlayPath = join(harnessDir, overlayRel);
+  assert.ok(existsSync(preamblePath), `kernel base text missing: ${preamblePath}`);
+  assert.ok(existsSync(overlayPath), `domain leaf missing: ${overlayPath}`);
+  const preamble = readFileSync(preamblePath, 'utf8').trim();
+  const overlay = readFileSync(overlayPath, 'utf8').trim();
+  assert.ok(preamble.length > 0 && overlay.length > 0, 'both documents must carry text');
+
+  // Base-only chain ⇒ the kernel base text alone, one trailing newline.
+  assert.equal(resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '' }), `${preamble}\n`);
+  // coding-factory ⇒ kernel base text, blank line, the single domain leaf, one trailing newline.
+  assert.equal(
+    resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '', blueprintId: 'coding-factory' }),
+    `${preamble}\n\n${overlay}\n`,
+  );
+
+  // The design doc's §8 must name exactly these live read paths (relative to the harness pkg).
+  const doc = readFileSync(join(here, '..', 'docs', 'COMPOSITION_MODEL.md'), 'utf8');
+  const section = doc.split(/^## 8\. /m)[1];
+  assert.ok(section, 'COMPOSITION_MODEL.md must carry a "## 8." section for the subsumed composer');
+  assert.ok(section.includes(`\`${preambleRel}\``), `§8 must name ${preambleRel}`);
+  assert.ok(section.includes(`\`${overlayRel}\``), `§8 must name ${overlayRel}`);
+  assert.match(section, /REPLACE_CLAUDE_BASE/);
 });
 
 test('promptCandidates — bare role resolves to base only (the universal library; no global tiers)', () => {
