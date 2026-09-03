@@ -55,12 +55,26 @@ export {
   loadBlueprintFromFile,
   resolveBlueprint,
   resolveExtends,
+  resolveLayers,
+  layerContentHash,
   mergeRaw,
   blueprintHash,
   builtinBlueprintPath,
   resolveBuiltinExtends,
 } from './loader.js';
-export type { LoadedBlueprint, ResolveExtendsPath, BlueprintValidateRegistry } from './loader.js';
+export type { LoadedBlueprint, BlueprintLayer, ResolveExtendsPath, BlueprintValidateRegistry } from './loader.js';
+// identities-v1-2026-08-30 P-001: the slot registry (D-007 / D-008 amendments), the
+// D-011 bundle kinds, and the MERGE_RULES registry the P-019 merger consumes.
+export * from './slots.js';
+export {
+  MERGE_RULES,
+  mergeRuleFor,
+  enumerateSchemaLeaves,
+  enumerateBlueprintLeaves,
+  missingMergeRules,
+  danglingMergeRules,
+} from './merge-rules.js';
+export type { MergeRule, MergeRuleKind, SchemaLeaf } from './merge-rules.js';
 // Launch-eligibility guard (WI-5645): read a resolved blueprint's inherited
 // `retired` marker, and the assert-form for a launch/spend chokepoint.
 export {
