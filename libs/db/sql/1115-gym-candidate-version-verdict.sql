@@ -8,7 +8,15 @@
 BEGIN;
 
 ALTER TABLE harness_shared.gym_proposals
+  ADD COLUMN IF NOT EXISTS task_corpus text NOT NULL DEFAULT 'synthetic',
   ADD COLUMN IF NOT EXISTS candidate_verdict jsonb;
+
+DO $constraints$ BEGIN
+  ALTER TABLE harness_shared.gym_proposals
+    ADD CONSTRAINT gym_proposals_task_corpus_check
+    CHECK (task_corpus IN ('synthetic', 'real', 'mixed'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $constraints$;
 
 COMMENT ON COLUMN harness_shared.gym_proposals.candidate_verdict IS
   'Immutable candidate-version envelope: complete variant/parent overlays, pinned evaluator/rubric/task/code hashes, gate results, and the single promotion verdict. NULL is historical and not auto-promotable.';
