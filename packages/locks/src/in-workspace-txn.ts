@@ -59,6 +59,20 @@ export interface WorkspaceTxnOptions {
    * workspace scope for resource, granular, and housekeeping work.
    */
   paths?: readonly string[];
+  /**
+   * Per-operation timeout floors. A drain-capable caller has already declared
+   * how long it is prepared to wait; forcing its advisory-lock statement back
+   * to the global 5s default makes PostgreSQL cancel it, lose its FIFO queue
+   * position, and re-enter at the tail on every retry. Floors preserve any
+   * wider live db:txn-timeouts setting while letting that caller keep its place.
+   */
+  minLockTimeoutMs?: number;
+  minStatementTimeoutMs?: number;
+}
+
+function timeoutWithFloor(configuredMs: number, floorMs: number | undefined): number {
+  if (floorMs == null || !Number.isFinite(floorMs) || floorMs <= 0) return configuredMs;
+  return Math.max(configuredMs, Math.trunc(floorMs));
 }
 
 function pathPrefixes(path: string): string[] {
@@ -132,7 +146,12 @@ export async function inWorkspaceTxn<T>(
     // set_config(name, value, is_local=true) == SET LOCAL, but takes the value as a BOUND PARAMETER
     // (a bare `SET` does not) — same form as the application_name line above. Per-op overrides still
     // come from the tool handler. txnTimeouts() is fail-safe to 5s/5s on any host/read error.
-    const { lockTimeoutMs, statementTimeoutMs } = txnTimeouts();
+    const configuredTimeouts = txnTimeouts();
+    const lockTimeoutMs = timeoutWithFloor(configuredTimeouts.lockTimeoutMs, options.minLockTimeoutMs);
+    const statementTimeoutMs = timeoutWithFloor(
+      configuredTimeouts.statementTimeoutMs,
+      options.minStatementTimeoutMs,
+    );
     await tx`SELECT set_config('lock_timeout', ${`${Math.trunc(lockTimeoutMs)}ms`}, true)`;
     await tx`SELECT set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`;
     await acquireAdvisoryScope(tx as unknown as Sql, coordinationDomain, options.paths);
