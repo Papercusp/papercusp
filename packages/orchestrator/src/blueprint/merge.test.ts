@@ -275,7 +275,10 @@ test('property — union by value is commutative and idempotent as a set, and []
 });
 
 test('property — keyed union: the key set is commutative + idempotent, and the child’s fields win on a colliding key', () => {
-  const bundle = fc.record({ kind: fc.constantFrom('recipe', 'rubric'), ref: fc.stringMatching(/^[a-z]{1,3}$/), version: fc.nat(9) });
+  // fast-check 4 generates null-prototype objects by default; the merger normalizes a merged
+  // element to a plain object, so idempotence is compared STRUCTURALLY (stableStringify), not
+  // by prototype — which is the identity the algebra is about.
+  const bundle = fc.record({ kind: fc.constantFrom('recipe', 'rubric'), ref: fc.stringMatching(/^[a-z]{1,3}$/), version: fc.nat(9) }, { noNullPrototype: true });
   const key = ['kind', 'ref'] as const;
   const keysOf = (xs: readonly unknown[]) => asSet(xs.map((e) => [(e as RawDocument).kind, (e as RawDocument).ref]));
   fc.assert(
@@ -284,7 +287,7 @@ test('property — keyed union: the key set is commutative + idempotent, and the
       assert.deepEqual(keysOf(ab), keysOf(unionArrays(b, a, key)), 'commutative key set');
       assert.deepEqual(keysOf(ab), keysOf([...a, ...b]), 'every key from both sides, once');
       assert.equal(new Set(ab.map((e) => `${e.kind}/${e.ref}`)).size, ab.length, 'no duplicate keys');
-      assert.deepEqual(unionArrays(a, a, key), unionArrays(a, [], key), 'idempotent');
+      assert.equal(stableStringify(unionArrays(a, a, key)), stableStringify(unionArrays(a, [], key)), 'idempotent');
       for (const e of b) {
         const got = ab.find((x) => x.kind === e.kind && x.ref === e.ref);
         assert.deepEqual(got?.version, e.version, 'the child’s (later) version wins on its key');
@@ -321,11 +324,12 @@ test('property — replace is order-dependent by design: the later layer wins, a
 });
 
 test('property — {} is the identity of mergeByRules on both sides, and an absent child key inherits under every rule', () => {
-  const doc = fc.dictionary(fc.stringMatching(/^[a-z][a-zA-Z0-9]{0,6}$/), fc.jsonValue(), { maxKeys: 6 });
+  const doc = fc.dictionary(fc.stringMatching(/^[a-z][a-zA-Z0-9]{0,6}$/), fc.jsonValue(), { maxKeys: 6, noNullPrototype: true });
   fc.assert(
     fc.property(doc, (d) => {
-      assert.deepEqual(mergeByRules(d, {}), d);
-      assert.deepEqual(mergeByRules({}, d), d);
+      // Structural identity (see the keyed-union property for why not prototype identity).
+      assert.equal(stableStringify(mergeByRules(d, {})), stableStringify(d));
+      assert.equal(stableStringify(mergeByRules({}, d)), stableStringify(d));
     }),
   );
   for (const rule of [REPLACE, UNION, CAP, { rule: 'hard-error', key: 'slot' } as MergeRule]) {
