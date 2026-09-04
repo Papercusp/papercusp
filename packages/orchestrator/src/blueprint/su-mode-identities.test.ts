@@ -27,7 +27,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { builtinBlueprintPath, resolveBuiltinExtends, resolveLayers } from './loader.js';
-import { isIdentityDocument } from './schema.js';
+import { isIdentitySourceDocument } from './schema.js';
 import { lintStackLayers } from './identity-lint.js';
 import { MODE_AXES } from './slots.js';
 import {
@@ -74,7 +74,7 @@ test('P-021 — the four mode-axis identities + the four audience identities are
     assert.equal(raw.extends, 'base', `${d.id} extends base`);
     const merged = resolveLayers(raw, resolveBuiltinExtends, path).merged as Record<string, unknown>;
     assert.equal(merged.id, d.id);
-    assert.equal(isIdentityDocument(merged as { slots?: Array<{ slot: string }> }), true, `${d.id} carries slots: (D-013)`);
+    assert.equal(isIdentitySourceDocument(raw), true, `${d.id} declares its identity kind in its own source (D-028)`);
     assert.deepEqual(((merged.slots ?? []) as Array<{ slot: string }>).map((s) => s.slot), [d.slot], `${d.id} declares EXACTLY its axis`);
     assert.equal(merged.spine ?? null, null, `${d.id} is abstract`);
     assert.equal(merged.workItem ?? null, null, `${d.id} is abstract`);

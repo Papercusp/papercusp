@@ -1107,13 +1107,217 @@ export const BlueprintSchema = z.object({
   attestation: AttestationSchema.optional(),
 });
 
+// ── identities-v1 P-037: source / runnable / resolved / activation contracts ──
+
 /**
- * D-013's discriminator: a document WITH a `slots:` declaration is an identity;
- * without one it is an ordinary blueprint. An empty `slots: []` still counts —
- * it declares the intent to be an identity while filling nothing yet.
+ * A git-authored blueprint source before inheritance/default resolution.  Every
+ * top-level field must belong to the one Blueprint envelope, but runnable-only
+ * fields may be absent because abstract parents and identity modules are valid
+ * source documents.  Parsing this schema is validation only; callers that need
+ * the author's exact bytes/field presence should retain their original object.
  */
-export function isIdentityDocument(bp: Pick<Blueprint, 'slots'>): boolean {
-  return bp.slots != null;
+export const BlueprintSourceDocumentSchema = BlueprintSchema.partial()
+  .extend({ id: BlueprintSchema.shape.id })
+  .strict();
+
+/**
+ * The fields an identity SOURCE may contribute.  This deliberately excludes
+ * runnable workflow, fleet, environment and policy-bearing configuration.  An
+ * identity can inherit those fields when it is resolved for execution, but its
+ * own document never acquires authority merely because a parent supplied them.
+ */
+export const IdentitySourceDocumentSchema = z
+  .object({
+    id: BlueprintSchema.shape.id,
+    extends: BlueprintSchema.shape.extends,
+    version: z.string().optional(),
+    description: BlueprintSchema.shape.description,
+    retired: BlueprintSchema.shape.retired,
+    slots: z.array(SlotDeclarationSchema),
+    bundles: z.array(BundleRefSchema).optional(),
+    grants: GrantsSchema.optional(),
+    publisher: PublisherSchema.optional(),
+    attestation: AttestationSchema.optional(),
+  })
+  .strict();
+
+export const BlueprintSourceKindSchema = z.enum(['blueprint', 'identity']);
+export type BlueprintSourceKind = z.infer<typeof BlueprintSourceKindSchema>;
+export type BlueprintSourceDocument = z.input<typeof BlueprintSourceDocumentSchema>;
+export type IdentitySourceDocument = z.input<typeof IdentitySourceDocumentSchema>;
+
+export type ParsedBlueprintSourceDocument =
+  | { readonly kind: 'blueprint'; readonly document: BlueprintSourceDocument }
+  | { readonly kind: 'identity'; readonly document: IdentitySourceDocument };
+
+function hasOwnSlots(value: unknown): value is Record<string, unknown> & { slots: unknown } {
+  return typeof value === 'object' && value !== null && Object.prototype.hasOwnProperty.call(value, 'slots');
+}
+
+/**
+ * Validate and classify one authored layer BEFORE inheritance.  The returned
+ * document is the caller's original object, not a default-filled Zod clone, so
+ * own-field presence and the signed source content remain authoritative.
+ */
+export function parseBlueprintSourceDocument(value: unknown): ParsedBlueprintSourceDocument {
+  if (hasOwnSlots(value)) {
+    IdentitySourceDocumentSchema.parse(value);
+    return { kind: 'identity', document: value as IdentitySourceDocument };
+  }
+  BlueprintSourceDocumentSchema.parse(value);
+  return { kind: 'blueprint', document: value as BlueprintSourceDocument };
+}
+
+/** Source-only type guard; inherited slots on a resolved runnable do not count. */
+export function isIdentitySourceDocument(value: unknown): value is IdentitySourceDocument {
+  return hasOwnSlots(value) && IdentitySourceDocumentSchema.safeParse(value).success;
+}
+
+/**
+ * A fully inherited/defaulted executable blueprint.  The brand prevents APIs
+ * from accidentally accepting an authored fragment where execution requires a
+ * resolved runnable configuration.
+ */
+export const RunnableBlueprintSchema = BlueprintSchema.brand<'RunnableBlueprint'>();
+export type RunnableBlueprint = z.infer<typeof RunnableBlueprintSchema>;
+
+const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/, 'sha256 hex');
+
+export const ResolvedAgentInputSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('blueprint-layer'),
+      ref: z.string().min(1),
+      revision: z.string().min(1),
+      contentHash: Sha256Schema,
+      sourceKind: BlueprintSourceKindSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('prompt-file'),
+      ref: z.string().min(1),
+      contentHash: Sha256Schema,
+      bytes: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('addressed-document'),
+      ref: z.string().min(1),
+      revision: z.string().min(1),
+      contentHash: Sha256Schema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('setting'),
+      ref: z.string().min(1),
+      revision: z.string().min(1),
+      value: z.unknown(),
+    })
+    .strict(),
+]);
+
+export const ResolvedAgentProvenanceSchema = z
+  .object({
+    path: z.string().min(1),
+    sourceRef: z.string().min(1),
+    sourceRevision: z.string().min(1),
+  })
+  .strict();
+
+type DeepReadonly<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly (infer U)[]
+    ? readonly DeepReadonly<U>[]
+    : T extends object
+      ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+      : T;
+
+function deepFreeze<T>(value: T): DeepReadonly<T> {
+  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value as DeepReadonly<T>;
+}
+
+export const RESOLVED_AGENT_SPECIFICATION_SCHEMA_VERSION = 1 as const;
+
+/**
+ * Immutable output contract for the P-038 composition compiler.  It requires
+ * the exact runnable configuration, complete versioned input closure, prompt
+ * bytes, addressed-document revisions and path-level provenance; P-038 owns
+ * producing it, while P-037 establishes the validated boundary.
+ */
+export const ResolvedAgentSpecificationSchema = z
+  .object({
+    schemaVersion: z.literal(RESOLVED_AGENT_SPECIFICATION_SCHEMA_VERSION),
+    specificationRevision: Sha256Schema,
+    compilerVersion: z.string().min(1),
+    source: z
+      .object({
+        id: z.string().min(1),
+        kind: BlueprintSourceKindSchema,
+        contentHash: Sha256Schema,
+      })
+      .strict(),
+    configuration: RunnableBlueprintSchema,
+    inputs: z.array(ResolvedAgentInputSchema),
+    provenance: z.array(ResolvedAgentProvenanceSchema),
+  })
+  .strict()
+  .transform(deepFreeze);
+
+export type ResolvedAgentSpecification = z.output<typeof ResolvedAgentSpecificationSchema>;
+
+/** Accountable actor/session authority, deliberately independent of worn identity. */
+export const ActorPrincipalSchema = z
+  .object({
+    actorId: z.string().min(1),
+    principalId: z.string().min(1),
+    sessionId: z.string().min(1),
+  })
+  .strict();
+
+const ActivationRevisionSchema = z
+  .object({
+    specificationRevision: Sha256Schema,
+    stateRevision: z.string().min(1),
+  })
+  .strict();
+
+export const SESSION_ACTIVATION_SCHEMA_VERSION = 1 as const;
+
+/**
+ * Structural desired/prepared/applied contract.  P-040 owns acknowledgement,
+ * retry and enforcement behavior; this type makes those states explicit now.
+ */
+export const SessionActivationSchema = z
+  .object({
+    schemaVersion: z.literal(SESSION_ACTIVATION_SCHEMA_VERSION),
+    attribution: ActorPrincipalSchema,
+    desired: ActivationRevisionSchema,
+    prepared: ActivationRevisionSchema.nullable(),
+    applied: ActivationRevisionSchema.nullable(),
+    status: z.enum(['desired', 'prepared', 'applied', 'failed']),
+    failure: z.string().min(1).optional(),
+  })
+  .strict()
+  .transform(deepFreeze);
+
+export type ActorPrincipal = z.infer<typeof ActorPrincipalSchema>;
+export type SessionActivation = z.output<typeof SessionActivationSchema>;
+
+/**
+ * Compatibility name for pre-P-037 callers.  It now classifies authored source
+ * documents only; a resolved runnable that inherited `slots` is intentionally
+ * false.  Remove after all call sites use `isIdentitySourceDocument` and the
+ * P-038 compiler is the sole resolved-specification producer (CONTRACTS.md).
+ */
+export function isIdentityDocument(value: unknown): value is IdentitySourceDocument {
+  return isIdentitySourceDocument(value);
 }
 
 /**

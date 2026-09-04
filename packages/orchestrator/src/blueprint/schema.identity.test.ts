@@ -5,12 +5,21 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { BlueprintSchema, isIdentityDocument, SlotDeclarationSchema, BundleRefSchema, AttestationSchema } from './schema.js';
+import {
+  AttestationSchema,
+  BlueprintSchema,
+  BundleRefSchema,
+  IdentitySourceDocumentSchema,
+  RunnableBlueprintSchema,
+  SlotDeclarationSchema,
+  isIdentityDocument,
+  isIdentitySourceDocument,
+} from './schema.js';
 import { BUNDLE_KINDS } from './slots.js';
 
 const minimal = { id: 'mini', workItem: { kind: 'feature' }, spine: { edges: { DONE: { to: 'done' } } } };
 
-test('slots: is the identity discriminator — absent stays undefined (a blueprint), present even when empty marks an identity (D-013)', () => {
+test('identity classification is source-only — inherited/resolved slots never change the authored document kind (D-028)', () => {
   const bp = BlueprintSchema.parse(minimal);
   assert.equal(bp.slots, undefined, 'no default may be applied to slots — it would erase the discriminator');
   assert.equal(isIdentityDocument(bp), false);
@@ -18,17 +27,18 @@ test('slots: is the identity discriminator — absent stays undefined (a bluepri
   assert.equal(bp.grants, undefined);
   assert.equal(bp.publisher, undefined);
   assert.equal(bp.attestation, undefined);
-  const ident = BlueprintSchema.parse({ ...minimal, slots: [] });
-  assert.deepEqual(ident.slots, []);
-  assert.equal(isIdentityDocument(ident), true);
-  // Round-trip idempotence (the validator-of-record property) holds for the extension too.
-  assert.deepEqual(BlueprintSchema.parse(ident), ident);
+  const source = { id: 'identity', extends: 'base', slots: [] };
+  assert.equal(isIdentitySourceDocument(source), true);
+  assert.equal(isIdentityDocument(source), true, 'compatibility name delegates to the source-only guard');
+  const runnable = RunnableBlueprintSchema.parse({ ...minimal, slots: [] });
+  assert.deepEqual(runnable.slots, []);
+  assert.equal(isIdentitySourceDocument(runnable), false, 'a runnable is not reclassified as an authored identity');
 });
 
 test('a full identity document parses: slots, bundles, the reserved grants shape, publisher, attestation', () => {
   const doc = {
-    ...minimal,
     id: 'papercusp-engineer',
+    extends: 'base',
     version: '1.0.0',
     slots: [{ slot: 'domain', cardinality: 'exclusive' }, { slot: 'practice' }],
     bundles: [
@@ -39,14 +49,17 @@ test('a full identity document parses: slots, bundles, the reserved grants shape
     publisher: { id: 'papercusp', name: 'Papercusp', url: 'https://papercusp.dev' },
     attestation: { contentHash: 'a'.repeat(64), signedBy: 'papercusp' },
   };
-  const bp = BlueprintSchema.parse(doc);
+  const source = IdentitySourceDocumentSchema.parse(doc);
+  const bp = BlueprintSchema.parse({ ...minimal, ...doc });
+  assert.equal(isIdentitySourceDocument(doc), true);
   assert.deepEqual(bp.slots, [{ slot: 'domain', cardinality: 'exclusive' }, { slot: 'practice' }]);
   assert.equal(bp.bundles.length, 2);
   assert.equal(bp.bundles[1]!.version, undefined);
   assert.deepEqual(bp.grants, { requires: [], optional: [], suggestedProviders: {} }, 'grants fills to the empty reserved shape');
   assert.equal(bp.publisher?.id, 'papercusp');
   assert.equal(bp.attestation?.signedBy, 'papercusp');
-  assert.equal(isIdentityDocument(bp), true);
+  assert.equal(isIdentityDocument(source), true);
+  assert.equal(isIdentityDocument(bp), false, 'resolved runnable fields make this a different contract');
   assert.deepEqual(BlueprintSchema.parse(bp), bp);
 });
 

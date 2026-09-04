@@ -36,7 +36,14 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { parse as parseYaml } from 'yaml';
 import { harnessPath, harnessRootCandidates } from '@papercusp/harness/paths';
-import { BlueprintSchema, BlueprintHeaderSchema, type Blueprint } from './schema.js';
+import {
+  BlueprintHeaderSchema,
+  RunnableBlueprintSchema,
+  parseBlueprintSourceDocument,
+  type Blueprint,
+  type BlueprintSourceKind,
+  type RunnableBlueprint,
+} from './schema.js';
 import { validateBlueprint, type BlueprintValidation, type ValidateOptions } from './validate.js';
 import { canonicalBlueprintId } from '../blueprint-aliases.js';
 import { findExclusiveSlotConflicts, type SlotClaim } from './slots.js';
@@ -104,6 +111,8 @@ function readRaw(path: string): RawBlueprint {
  */
 export interface BlueprintLayer {
   id: string;
+  /** Classification of THIS authored layer, before inherited fields are merged. */
+  sourceKind: BlueprintSourceKind;
   /** The file this layer was read from (null for the in-memory root raw). */
   sourcePath: string | null;
   /** sha256 over the layer's OWN raw document, `attestation` excluded (`layerContentHash`). */
@@ -152,6 +161,7 @@ export function layerContentHash(raw: RawBlueprint): string {
 }
 
 function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
+  const sourceKind = parseBlueprintSourceDocument(raw).kind;
   const att = isPlainObject(raw.attestation) ? raw.attestation : null;
   const attestation =
     att && typeof att.contentHash === 'string' && typeof att.signedBy === 'string'
@@ -163,7 +173,17 @@ function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
   const fields = Object.keys(raw).filter((k) => k !== 'extends');
   const g = isPlainObject(raw.grants) ? raw.grants : null;
   const grants = g ? { requires: stringList(g.requires), optional: stringList(g.optional) } : null;
-  return { id: String(raw.id), sourcePath, contentHash: layerContentHash(raw), attestation, slots, fields, grants, trust: layerTrust(sourcePath) };
+  return {
+    id: String(raw.id),
+    sourceKind,
+    sourcePath,
+    contentHash: layerContentHash(raw),
+    attestation,
+    slots,
+    fields,
+    grants,
+    trust: layerTrust(sourcePath),
+  };
 }
 
 /**
@@ -213,7 +233,10 @@ export function resolveExtends(
 }
 
 export interface LoadedBlueprint {
-  blueprint: Blueprint;
+  /** Resolved, executable configuration; never an authored source fragment. */
+  blueprint: RunnableBlueprint;
+  /** Kind of the ROOT authored document, unaffected by inherited slots. */
+  sourceKind: BlueprintSourceKind;
   validation: BlueprintValidation;
   /** sha256 of the resolved blueprint — the PG cache key / drift signal. */
   contentHash: string;
@@ -246,7 +269,7 @@ export function resolveBlueprint(
 ): LoadedBlueprint {
   const sourcePath = opts.sourcePath ?? null;
   const { merged, layers } = resolveLayers(raw, opts.resolve ?? resolveBuiltinExtends, sourcePath);
-  const blueprint = BlueprintSchema.parse(merged);
+  const blueprint = RunnableBlueprintSchema.parse(merged);
   const validation = validateBlueprint(blueprint, opts.registry ?? {});
   // ── stack-level checks (identities-v1 P-001) — need the layers, not the merged doc ──
   for (const layer of layers) {
@@ -280,7 +303,14 @@ export function resolveBlueprint(
     const msg = validation.errors.map((e) => `${e.code}: ${e.message}`).join('; ');
     throw new Error(`invalid blueprint "${blueprint.id}": ${msg}`);
   }
-  return { blueprint, validation, contentHash: blueprintHash(blueprint), sourcePath, layers };
+  return {
+    blueprint,
+    sourceKind: layers[layers.length - 1]!.sourceKind,
+    validation,
+    contentHash: blueprintHash(blueprint),
+    sourcePath,
+    layers,
+  };
 }
 
 /** Load + resolve a blueprint from a YAML file path (e.g. `.papercusp/blueprint.yaml`). */

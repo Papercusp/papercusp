@@ -8,9 +8,10 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { stringify as toYaml } from 'yaml';
-import { resolveBlueprint, resolveLayers, resolveExtends, layerContentHash, loadBuiltinBlueprint } from './loader.js';
+import { resolveBlueprint, resolveLayers, resolveExtends, layerContentHash, loadBlueprintFromFile, loadBuiltinBlueprint } from './loader.js';
 
 /** Materialize a set of blueprint documents on disk + a resolver over them. */
 function chain(docs: Record<string, Record<string, unknown>>) {
@@ -33,6 +34,7 @@ test('resolveLayers — layers come back parent-first with the loaded document l
     const root = { id: 'me', extends: 'eng', ...runnable };
     const { merged, layers } = resolveLayers(root, resolve, '/virtual/me.yaml');
     assert.deepEqual(layers.map((l) => l.id), ['kernel', 'eng', 'me']);
+    assert.deepEqual(layers.map((l) => l.sourceKind), ['blueprint', 'identity', 'blueprint']);
     assert.deepEqual(layers.map((l) => l.slots), [[], ['domain'], []]);
     assert.equal(layers[2]!.sourcePath, '/virtual/me.yaml');
     assert.ok(layers[0]!.sourcePath?.endsWith(join('kernel', 'blueprint.yaml')));
@@ -58,13 +60,29 @@ test('layerContentHash — excludes the attestation itself and is key-order inde
 });
 
 test('resolveBlueprint — a layer whose attestation disagrees with its content fails the load (attestation-hash-mismatch)', () => {
-  const doc = { id: 'signed', ...runnable, slots: [{ slot: 'practice' }] };
+  const doc = { id: 'signed', slots: [{ slot: 'practice' }] };
   const good = { ...doc, attestation: { contentHash: layerContentHash(doc), signedBy: 'p' } };
-  const loaded = resolveBlueprint(good);
-  assert.equal(loaded.validation.ok, true, JSON.stringify(loaded.validation.errors));
-  assert.deepEqual(loaded.layers.map((l) => l.attestation), [{ contentHash: layerContentHash(doc), signedBy: 'p' }]);
   const bad = { ...doc, attestation: { contentHash: 'a'.repeat(64), signedBy: 'p' } };
-  assert.throws(() => resolveBlueprint(bad), /attestation-hash-mismatch: layer "signed"/);
+  const goodChain = chain({ signed: good });
+  try {
+    const loaded = resolveBlueprint({ id: 'runtime', extends: 'signed', ...runnable }, { resolve: goodChain.resolve });
+    assert.equal(loaded.validation.ok, true, JSON.stringify(loaded.validation.errors));
+    assert.deepEqual(loaded.layers.map((l) => l.attestation), [
+      { contentHash: layerContentHash(doc), signedBy: 'p' },
+      null,
+    ]);
+  } finally {
+    goodChain.cleanup();
+  }
+  const badChain = chain({ signed: bad });
+  try {
+    assert.throws(
+      () => resolveBlueprint({ id: 'runtime', extends: 'signed', ...runnable }, { resolve: badChain.resolve }),
+      /attestation-hash-mismatch: layer "signed"/,
+    );
+  } finally {
+    badChain.cleanup();
+  }
 });
 
 test('resolveBlueprint — two DISTINCT layers on one exclusive slot fail the load; additive slots stack; a diamond re-visit is one claimant (D-007)', () => {
@@ -91,12 +109,24 @@ test('resolveBlueprint — two DISTINCT layers on one exclusive slot fail the lo
   }
 });
 
-test('built-ins are unchanged by the extension: coding-factory still loads, stays a non-identity, and its layers start at base', () => {
-  const { layers, blueprint, validation } = loadBuiltinBlueprint('coding-factory');
+test('built-ins are unchanged by the extension: coding-factory still loads, stays a blueprint source, and its layers start at base', () => {
+  const { layers, blueprint, sourceKind, validation } = loadBuiltinBlueprint('coding-factory');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
+  assert.equal(sourceKind, 'blueprint');
   assert.equal(blueprint.slots, undefined, 'a plain blueprint stays a non-identity');
   assert.deepEqual(blueprint.bundles, []);
   assert.equal(layers[0]!.id, 'base');
   assert.equal(layers[layers.length - 1]!.id, 'coding-factory');
   assert.ok(layers.length >= 2);
+});
+
+test('the real Papercusp pot stays a pot source when it inherits the papercusp-engineer identity (P-037)', () => {
+  const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '../../../../../..');
+  const loaded = loadBlueprintFromFile(join(repositoryRoot, '.papercusp', 'blueprint.yaml'));
+  assert.equal(loaded.blueprint.kind, 'pot');
+  assert.equal(loaded.sourceKind, 'blueprint', 'root kind comes from its own document, not inherited slots');
+  assert.equal(loaded.layers.at(-1)?.id, 'papercusp');
+  assert.equal(loaded.layers.at(-1)?.sourceKind, 'blueprint');
+  assert.equal(loaded.layers.some((layer) => layer.id === 'papercusp-engineer' && layer.sourceKind === 'identity'), true);
+  assert.deepEqual(loaded.blueprint.slots?.map((slot) => slot.slot), ['domain'], 'resolved runnable still carries the inherited domain slot');
 });
