@@ -116,10 +116,35 @@ export function loadHarnessAcceptanceKind(
  * replaced. Fail-safe: a bad/absent blueprint ⇒ undefined ⇒ neutral preamble only.
  */
 export function loadHarnessBlueprintId(stateDir: string): string | undefined {
+  return loadHarnessBlueprintPromptContext(stateDir)?.blueprintId;
+}
+
+/**
+ * The harness-local blueprint identity plus its RESOLVED inheritance chain for
+ * prompt lookup.  The harness document lives at `<stateDir>/blueprint.yaml`, not
+ * under a prompt root's `blueprints/<id>/` directory, so resolving from the id
+ * alone silently loses every parent declared by that document.  Reuse the
+ * loader's already-resolved raw layers instead: it is the authority that found
+ * local → installed → built-in parents and validated the composition.
+ *
+ * `layers` are returned base-first by the loader; prompt resolution consumes a
+ * leaf-first, base-terminated chain.  Invalid/absent files remain fail-safe and
+ * preserve the pre-blueprint neutral/base-only behavior.
+ */
+export function loadHarnessBlueprintPromptContext(
+  stateDir: string,
+): { blueprintId: string; extendsChain: string[] } | undefined {
   try {
     const f = join(stateDir, 'blueprint.yaml');
     if (!existsSync(f)) return undefined;
-    return loadBlueprintFromFile(f).blueprint.id || undefined;
+    const loaded = loadBlueprintFromFile(f);
+    const blueprintId = loaded.blueprint.id || undefined;
+    if (!blueprintId) return undefined;
+    const extendsChain = Array.from(
+      new Set(loaded.layers.map((layer) => layer.id).reverse()),
+    );
+    if (extendsChain[0] !== blueprintId) extendsChain.unshift(blueprintId);
+    return { blueprintId, extendsChain };
   } catch {
     return undefined;
   }

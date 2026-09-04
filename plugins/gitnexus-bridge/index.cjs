@@ -281,8 +281,11 @@ function quotaFor(toolName) {
 }
 var TOOL_OVERRIDES = {
   query: {
-    // WI-35557 (2026-08-09): BROKEN on this install — returns 0 results for
-    // EVERY input, always. Both retrieval legs are structurally dead: BM25
+    // WI-35557 (2026-08-09): BROKEN on this install. Historical builds returned
+    // either zero results or unranked noise. D-065 / EI-22342766996012704
+    // (2026-09-04) measured a worse current outcome: a real-symbol query
+    // SIGSEGVs the shared MCP child, taking the otherwise-working context / impact
+    // tools down with it. Both retrieval legs are structurally dead: BM25
     // because upstream 1.6.3 defers `CREATE_FTS_INDEX` to the first query,
     // but every query path here (CLI and MCP) opens LadybugDB read-only, so
     // that write can never succeed (logs "Cannot execute write operations in
@@ -292,15 +295,13 @@ var TOOL_OVERRIDES = {
     // exceeds regardless. A local fix was attempted (eagerly creating FTS
     // indexes during `analyze`, while the DB is genuinely writable) and
     // CONFIRMED to segfault the native LadybugDB binding — reverted, not
-    // shipped. Until fixed upstream, do not advertise this as working:
-    // description/guidance say so plainly rather than promising a search
-    // that silently returns empty (the worst shape — reads as "no match"
-    // rather than "broken tool").
-    description: "BROKEN as of WI-35557 (2026-08-09) \u2014 returns 0 results for every input, on every repo, always (upstream read-only-DB defect; a local fix was tried and confirmed to segfault the native binding, so it was reverted rather than shipped). Do NOT use for code search. Use `gitnexus.context` for an exact symbol you already have a name/uid for, or `grep -r`/`rg` for keyword search, until this is fixed.",
+    // shipped. The bridge therefore refuses query BEFORE ensureChild()/rpc(),
+    // isolating the native crash instead of merely documenting it.
+    description: "UNAVAILABLE (WI-35557, D-065) \u2014 historical builds returned zero results or unranked noise; current real-symbol probes SIGSEGV the shared GitNexus MCP process. This bridge now refuses the call before child dispatch so the broken query cannot take down working sibling tools. Do NOT use for code search. Use `gitnexus.context` for an exact symbol already known by name/uid, `graph:query` for callers/callees/topology, or `rg` for keyword search.",
     guidance: {
-      when: "Nothing right now \u2014 this tool is confirmed non-functional (WI-35557). Do not call it expecting real results.",
-      notWhen: "Always, until WI-35557 is resolved. Use gitnexus.context (exact symbol) or grep -r/rg (keyword search) instead.",
-      chaining: "N/A \u2014 see gitnexus.context for the working symbol-lookup path."
+      when: "Nothing right now \u2014 this tool is fail-closed before dispatch because the upstream query path is unsafe (WI-35557, D-065).",
+      notWhen: "Always, until a current live reproduction proves the native crash and false-result paths fixed. Use gitnexus.context (exact symbol), graph:query (topology), or rg (keyword search) instead.",
+      chaining: "N/A \u2014 this bridge deliberately does not dispatch gitnexus.query."
     }
   },
   cypher: {
@@ -449,6 +450,11 @@ function makeHandler(toolName, acceptsRepo) {
     if (!isReadOnlyTool(toolName)) {
       throw new Error(
         `gitnexus.${toolName} is a MUTATING tool and is disabled on this bridge (P-004, read-only MCP). It writes files directly, bypassing the PreToolUse lock arbitration that keeps this shared tree safe. Use Edit/Write for file changes.`
+      );
+    }
+    if (toolName === "query") {
+      throw new Error(
+        "gitnexus.query is unavailable and was not dispatched (WI-35557, D-065): current live probes SIGSEGV the shared GitNexus MCP process; historical builds returned empty or unranked noise. Use gitnexus.context for a known symbol, graph:query for callers/callees/topology, or rg for keywords."
       );
     }
     const rawArgs = input ?? {};

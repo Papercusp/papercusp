@@ -8,6 +8,7 @@ import {
   readEffectiveConfig,
   readInstanceConfig,
   loadHarnessBlueprintId,
+  loadHarnessBlueprintPromptContext,
 } from './effective-config';
 
 describe('deepMergeConfig', () => {
@@ -154,6 +155,26 @@ describe('loadHarnessBlueprintId (domain-generic-agent-personas P-013 — coding
     expect(loadHarnessBlueprintId(dir)).toBe('coding');
   });
 
+  it('returns the loader-resolved leaf-first chain for a harness-local child', () => {
+    writeFileSync(
+      join(dir, 'blueprint.yaml'),
+      [
+        'id: papercusp',
+        'extends: papercusp-engineer',
+        'kind: pot',
+        'version: 0.1.0',
+        'workItem: { kind: feature, idPrefix: WI }',
+        'roles: [{ id: su }]',
+        'spine: { decider: su, edges: { DONE: { to: done } }, default: { to: idle } }',
+      ].join('\n'),
+      'utf8',
+    );
+    expect(loadHarnessBlueprintPromptContext(dir)).toEqual({
+      blueprintId: 'papercusp',
+      extendsChain: ['papercusp', 'papercusp-engineer', 'base'],
+    });
+  });
+
   it('undefined when no blueprint.yaml (non-blueprint harness ⇒ neutral preamble only)', () => {
     expect(loadHarnessBlueprintId(dir)).toBeUndefined();
   });
@@ -161,6 +182,7 @@ describe('loadHarnessBlueprintId (domain-generic-agent-personas P-013 — coding
   it('undefined on an unreadable/invalid blueprint.yaml (fail-safe)', () => {
     writeFileSync(join(dir, 'blueprint.yaml'), 'id: : : not valid yaml {[', 'utf8');
     expect(loadHarnessBlueprintId(dir)).toBeUndefined();
+    expect(loadHarnessBlueprintPromptContext(dir)).toBeUndefined();
   });
 });
 
