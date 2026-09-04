@@ -285,8 +285,8 @@ Part documents (each is BYTE-EQUAL to the concatenation of its tiles — `npm ru
 | `su.kernel` | `kernel` | `blueprints/base/prompts/su.kernel.md` | the interactive tier’s KERNEL EXTENSION — composed after agent-base-preamble.md (the kernel base text) by P-003’s seal; its dedupe tiles are dropped there |
 | `papercusp-engineer` | `domain` | `blueprints/papercusp-engineer/prompts/agent-base-overlay.md` | identity #1 — the `domain` leaf of blueprints/papercusp-engineer (D-018 §5: the coding hive’s missing domain document; attached by P-023, not here) |
 | `su-collaborator` | `collaboration-stance` | `blueprints/su-collaborator/prompts/collaboration-stance.md` | identity #2 — the `collaboration-stance` document of blueprints/su-collaborator (exclusive per D-017) |
-| `su.fleet-member` | `fleet-posture` (member) | `blueprints/base/prompts/su.fleet-member.md` | fleet-member posture CANDIDATE (text only) — P-020 makes it an identity; attached at fleet:launch-on-plan / fleet:join |
-| `su.fleet-leader` | `fleet-posture` (leader) | `blueprints/base/prompts/su.fleet-leader.md` | fleet-leader posture CANDIDATE (text only) — P-020 makes it an identity; attached at fleet:take-leadership |
+| `su.fleet-member` | `fleet-posture` (member) | `blueprints/su.fleet-member/prompts/fleet-posture.md` | identity #3 — the `fleet-posture` document of blueprints/su.fleet-member (P-020; exclusive per D-003/D-007): attached at fleet:launch-on-plan / fleet:join, resolved through the prompt chain |
+| `su.fleet-leader` | `fleet-posture` (leader) | `blueprints/su.fleet-leader/prompts/fleet-posture.md` | identity #4 — the `fleet-posture` document of blueprints/su.fleet-leader (P-020; exclusive per D-003/D-007): attached at fleet:take-leadership (a swap that voids su.fleet-member), resolved through the prompt chain |
 | `su.practice` | `practice` | `blueprints/base/prompts/su.practice.md` | the one additive `practice` document su.md carries today (anti-babysitting); more practices stack beside it |
 | `su.instance` | `instance` | `blueprints/base/prompts/su.instance.md` | INSTANCE-layer candidate — belongs in the papercusp project guide / pot override, not in any identity; P-003 moves it |
 
@@ -450,3 +450,44 @@ mode axis from `mode:set`; the M2 profession-swap UI (P-011) drives a `domain` s
 relaunch-with-carry by construction. `stack-mutation.test.ts` pins the semantics, the payload
 shape, the kernel-safety refusal and this table; `su-stack.test.ts` proves attach → swap →
 detach over the real tree restores the default order.
+
+## 12. The fleet postures are identities, resolved through the prompt chain (P-020)
+
+**The two identities.** `blueprints/su.fleet-member` and `blueprints/su.fleet-leader` are
+identity blueprints in the exact shape of `su-collaborator` (§9): abstract (`extends: base`,
+no spine / work item — a layer, never runnable alone), `slots: [{ slot: fleet-posture }]`
+(exclusive — D-003 as narrowed by D-007: member and leader never co-bind, a leader attach on a
+member session is a SWAP, §11), text in `prompts/fleet-posture.md`. The text is still the
+VERBATIM extraction of su.md's posture tiles (§9 rows 6, 8 / 26, 27) that `gen:su-decomposition`
+writes and `su-decomposition.test.ts` drift-checks — su.md remains the derivation source and the
+`llm-test --target su` subject is byte-identical. The fleet PROTOCOL (claims honoured, gate
+events, stand-down obeyed, completion evidence) stays kernel; only the operating CRAFT moved.
+
+**Resolution through the chain.** `suStackDocuments` no longer re-concatenates an
+identity-homed part document from tiles: `suPartDocumentHome(doc) === 'identity'` (derived from
+the path — `blueprints/<identity>/prompts/…`, never restated) routes it to
+`resolveSuIdentityDocument(part, identityRoots)` — the first root, most specific tier first,
+that holds `<root>/<part.path>` wins, the same walk `resolveReplacementSystemPromptStack` does
+for the domain overlay. `identityRoots` defaults to `[harnessDir]` (the built-in tier); a hive's
+local / installed tiers go in front of it, so an installed override of an identity wins over the
+built-in copy. A bound identity installed in NO tier REFUSES the render — the tiles are the
+derivation of those files, not a second source, so there is no silent fallback. The kernel
+extension, the practice and the instance tile still render from su.md's tiles. The ⟦stack⟧
+inject-now payload (`composeSuStackMutation`) is fed by the same resolution, so an installed
+posture override is what a fleet:join / take-leadership delivers.
+
+**Attach points (P-012 seams, verified — not rebuilt).** `fleet:launch-on-plan` launches members
+with `--fleet=<slug>`; `bootstrap-su` resolves the requested role (`fleet_name` ⇒ leader,
+`fleet` ⇒ `fleet_role || member`) into `BuildSuLaunchSpecInput.fleetRole`, and
+`role-launch-spec` binds `suSessionBinding({ fleetRole })` into the FIRST render.
+`fleet:take-leadership` → `setPresenceFleet(…, 'leader')` → `refreshControlAnchorAfterMutation`
+(source `fleet:membership`) → the anchor's `stack` moves `fleet-posture:su.fleet-member` →
+`fleet-posture:su.fleet-leader` → the turn-start channel renders ONE swap payload that names and
+voids the member posture (`stack-binding-channel.test.ts`).
+
+**Measured (P-018 fixture baseline, `su-posture-render.test.ts`).** Each single-posture render
+is a STRICT line-subset of the baseline render (the seal's own lines are the only admitted
+additions), carries none of the other posture's tile anchors, and renders strictly fewer bytes;
+the test prints the whole-render byte delta per posture and dumps the per-section table under
+`SU_RENDER_BASELINE_DUMP`. `su-identities.test.ts` pins the blueprint shape, the chain
+precedence (installed tier > built-in), the refusal, and the tile/identity byte-equality.

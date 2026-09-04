@@ -23,6 +23,18 @@
  *
  * LOSSLESS by construction otherwise: every tile of su.md that is not a dropped
  * dedupe tile renders exactly once — `su-stack.test.ts` proves it over the real tree.
+ *
+ * P-020 — IDENTITY DOCUMENTS RESOLVE THROUGH THE PROMPT CHAIN. The four identity-homed
+ * part documents (papercusp-engineer's domain leaf, su-collaborator's stance, and the
+ * two fleet postures `su.fleet-member` / `su.fleet-leader`) are read from
+ * `blueprints/<identity>/prompts/…` under `identityRoots` (most specific tier first,
+ * built-in harness last — the walk `resolveReplacementSystemPromptStack` does for the
+ * domain overlay), NOT re-concatenated from su.md's tiles; the tiles are the DERIVATION
+ * those files are regenerated from (`gen:su-decomposition`) and stay byte-equal by test,
+ * which is what keeps the render above lossless. So an installed override of an identity
+ * wins over the built-in copy, and a bound identity installed in no tier refuses the
+ * render instead of rendering stale text. Kernel, practice and instance still render
+ * from their tiles.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

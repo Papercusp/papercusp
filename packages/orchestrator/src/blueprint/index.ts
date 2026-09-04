@@ -95,6 +95,8 @@ export {
   locateSuTiles,
   extractSuPart,
   suPartDocumentDrift,
+  suPartDocumentHome,
+  suPartDocumentBlueprintId,
   writeSuPartDocuments,
   renderSuDecompositionMarkdown,
 } from './su-decomposition.js';
@@ -121,12 +123,15 @@ export {
   composeSuStackSource,
   composeSuStackMutation,
   suBoundLayerDocument,
+  suIdentityRoots,
+  resolveSuIdentityDocument,
   suEffectiveBinding,
   suPostureBinding,
   suPostureLayer,
   suSessionBinding,
   SU_STATIC_LAYERS,
 } from './su-stack.js';
+export type { SuIdentityDocumentHit } from './su-stack.js';
 export type { SuStackComposeOptions, ComposedSuStack, SuStackDocuments } from './su-stack.js';
 // identities-v1 P-012 — the STACK-MUTATION PRIMITIVE: attach / detach a slot layer on a live
 // session (exclusive ⇒ swap, additive ⇒ stack), the per-slot delivery rule (inject-now vs
