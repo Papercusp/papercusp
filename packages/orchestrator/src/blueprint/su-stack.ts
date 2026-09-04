@@ -52,6 +52,7 @@ import {
   attachLayer,
   normalizeStackBinding,
   type AppliedStackMutation,
+  type ApplyStackMutationInput,
   type BoundLayer,
   type StackBinding,
   type StackMutationOp,
@@ -355,6 +356,8 @@ export interface SuStackMutationOptions extends Omit<SuStackComposeOptions, 'pos
   binding?: StackBinding | null;
   op: StackMutationOp;
   layer: { slot: SlotId; id?: string | null };
+  /** Optional desired specification/state revision for acknowledged delivery. */
+  activation?: ApplyStackMutationInput['activation'];
 }
 
 export interface ComposedSuStackMutation extends AppliedStackMutation {
@@ -392,6 +395,7 @@ export function composeSuStackMutation(opts: SuStackMutationOptions): ComposedSu
     binding: effective,
     op,
     layer,
+    activation: opts.activation,
     documents: (next) => suStackDocuments({ ...compose, binding: next }).docs,
     compose,
   });
