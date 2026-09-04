@@ -60,11 +60,11 @@
 import type { z } from 'zod';
 import { BlueprintSchema } from './schema.js';
 
-export type MergeRuleKind = 'union' | 'replace' | 'most-restrictive' | 'hard-error';
+export type MergeRuleKind = 'set-union' | 'keyed-overlay' | 'explicit-replacement' | 'constraint-intersection' | 'hard-conflict';
 
 export interface MergeRule {
   rule: MergeRuleKind;
-  /** For an ARRAY under `union` / `hard-error`: the element field(s) that identify an element. */
+  /** For an ARRAY under `keyed-overlay` / `hard-conflict`: the field(s) that identify an element. */
   key?: string | readonly string[];
   /** Why this leaf composes this way — the decision, or "today's behaviour". */
   note?: string;
@@ -129,12 +129,13 @@ export function enumerateBlueprintLeaves(): SchemaLeaf[] {
   return enumerateSchemaLeaves(BlueprintSchema);
 }
 
-const replace = (note?: string): MergeRule => (note ? { rule: 'replace', note } : { rule: 'replace' });
-const union = (note?: string, key?: MergeRule['key']): MergeRule => ({ rule: 'union', ...(key ? { key } : {}), ...(note ? { note } : {}) });
-const cap = (note: string): MergeRule => ({ rule: 'most-restrictive', note });
+const replace = (note?: string): MergeRule => (note ? { rule: 'explicit-replacement', note } : { rule: 'explicit-replacement' });
+const setUnion = (note?: string): MergeRule => ({ rule: 'set-union', ...(note ? { note } : {}) });
+const overlay = (note?: string, key?: MergeRule['key']): MergeRule => ({ rule: 'keyed-overlay', ...(key ? { key } : {}), ...(note ? { note } : {}) });
+const cap = (note: string): MergeRule => ({ rule: 'constraint-intersection', note });
 
-const TODAY_RECORD = 'record: key-union, child wins per key (today’s mergeRaw deep-merge)';
-const CAP = 'safety cap — the TIGHTER layer wins regardless of order (D-003 most-restrictive; a parent template carries the LOOSEST bound and children tighten — D-020)';
+const TODAY_RECORD = 'record: keyed overlay, child wins per key (today’s mergeRaw deep-merge)';
+const CAP = 'numeric upper-bound constraint intersection — the smaller value wins; non-comparable values conflict (D-029)';
 const DECLARATION_SET = 'a declaration set: each layer CONTRIBUTES entries, none wipes a sibling’s (D-020; was array-replace before P-019 — no builtin set it on two layers)';
 const LAYER_META = 'layer metadata: the resolved document carries the leaf’s; per-layer values survive in LoadedBlueprint.layers';
 const RUBRIC = {
@@ -142,8 +143,8 @@ const RUBRIC = {
   model: replace(),
   temperature: replace(),
   thinkingBudgetTokens: replace(),
-  weights: union(TODAY_RECORD),
-  dimensions: union(TODAY_RECORD),
+  weights: overlay(TODAY_RECORD),
+  dimensions: overlay(TODAY_RECORD),
 } as const;
 const prefixed = (prefix: string, rules: Readonly<Record<string, MergeRule>>): Record<string, MergeRule> =>
   Object.fromEntries(Object.entries(rules).map(([k, v]) => [`${prefix}.${k}`, v]));
@@ -164,14 +165,14 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
 
   // ── identities-v1 P-001: slots / bundles / grants / publisher / attestation ──
   slots: {
-    rule: 'hard-error',
+    rule: 'hard-conflict',
     key: 'slot',
     note: 'per-slot, cardinality-aware: additive slots union; a second DISTINCT layer on an exclusive slot fails the load (D-007; findExclusiveSlotConflicts)',
   },
-  bundles: union('bundled Cupboard refs compose by union across the stack (D-011)', ['kind', 'ref']),
-  'grants.requires': union('grants compose by UNION, each layer independently vetted (D-003) — RESERVED until M3 (D-004/D-014)'),
-  'grants.optional': union('grants compose by UNION (D-003) — RESERVED until M3 (D-004/D-014)'),
-  'grants.suggestedProviders': union(`${TODAY_RECORD}; publisher hints — RESERVED until M3`),
+  bundles: overlay('keyed overlay by kind/ref; incompatible exact versions fail with layer provenance unless versionOverride validates (D-029)', ['kind', 'ref']),
+  'grants.requires': setUnion('grant declaration set; each layer independently vetted (D-003) — RESERVED until M3 (D-004/D-014)'),
+  'grants.optional': setUnion('grant declaration set (D-003) — RESERVED until M3 (D-004/D-014)'),
+  'grants.suggestedProviders': overlay(`${TODAY_RECORD}; publisher hints — RESERVED until M3`),
   'publisher.id': replace(LAYER_META),
   'publisher.name': replace(LAYER_META),
   'publisher.url': replace(LAYER_META),
@@ -183,23 +184,23 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   // ── work unit ──────────────────────────────────────────────────────────────
   'workItem.kind': replace(),
   'workItem.idPrefix': replace(),
-  'workItem.payload': union(TODAY_RECORD),
+  'workItem.payload': overlay(TODAY_RECORD),
 
   // ── roles + spine ──────────────────────────────────────────────────────────
-  roles: union(`${DECLARATION_SET}; keyed by role id — a child restating a role overrides the fields it names and inherits the rest`, 'id'),
+  roles: overlay(`${DECLARATION_SET}; keyed by role id — a child restating a role overrides the fields it names and inherits the rest`, 'id'),
   'spine.decider': replace(),
   'spine.deciderAlternatives': replace(),
   'spine.claimModel': replace(),
   'spine.maxTurns': cap(CAP),
-  'spine.edges': union(`${TODAY_RECORD} — verb → action`),
+  'spine.edges': overlay(`${TODAY_RECORD} — verb → action`),
   'spine.default': replace(),
   'spine.steps': replace('a program is authored whole'),
   'spine.gate': replace('a gate is authored whole'),
 
   // ── planner / reactive / gates / recursion ─────────────────────────────────
   'planner.kind': replace(),
-  'planner.config': union(TODAY_RECORD),
-  reactive: union(`${DECLARATION_SET}; by structural value — a rule has no natural key, and two rules for one role are two rules`),
+  'planner.config': overlay(TODAY_RECORD),
+  reactive: setUnion(`${DECLARATION_SET}; by structural value — a rule has no natural key, and two rules for one role are two rules`),
   'gates.finalize.onDone': replace(),
   'gates.finalize.onEscalate': replace(),
   'gates.approvals': replace(),
@@ -213,7 +214,7 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
 
   // ── gym / acceptance / output / affinity ───────────────────────────────────
   'gym.collectTrace': replace(),
-  'gym.signals': union(`${DECLARATION_SET}; guardrails only ever accumulate down a stack`),
+  'gym.signals': setUnion(`${DECLARATION_SET}; guardrails only ever accumulate down a stack`),
   ...prefixed('gym.rubric', RUBRIC),
   'acceptance.kind': replace(),
   ...prefixed('acceptance.rubric', RUBRIC),
@@ -221,7 +222,7 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   'affinity.kind': replace(),
 
   // ── hive domain profile ────────────────────────────────────────────────────
-  lexicon: union(TODAY_RECORD),
+  lexicon: overlay(TODAY_RECORD),
   'fleet.workerRoles': replace(),
   'fleet.watcher': replace(),
   'wake.subscriptions': replace(),
@@ -257,7 +258,7 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   'knobs.promotion.smokeBuild.enabled': replace(),
   'knobs.promotion.smokeBuild.*': replace('loose keys'),
   'knobs.promotion.*': replace('dynamic `<from>_to_<to>` edge keys'),
-  'knobs.models': union(TODAY_RECORD),
+  'knobs.models': overlay(TODAY_RECORD),
   'knobs.debuggerThreshold': replace(),
   'knobs.testCommand': replace(),
   'knobs.uiQa.enabled': replace(),
@@ -269,12 +270,12 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   'knobs.releaseGate.spaBuildWorkspace': replace(),
   'knobs.releaseGate.deploy.systemdUnit': replace(),
   'knobs.releaseGate.deploy.healthUrl': replace(),
-  'knobs.promptOverrides': union(`${TODAY_RECORD} — per-role prompt specialization`),
+  'knobs.promptOverrides': overlay(`${TODAY_RECORD} — per-role prompt specialization`),
   'knobs.aiBackend.default.engine': replace(),
   'knobs.aiBackend.default.agentCmd': replace(),
   'knobs.aiBackend.default.model': replace(),
   'knobs.aiBackend.default.extraArgs': replace(),
-  'knobs.aiBackend.roles': union(TODAY_RECORD),
+  'knobs.aiBackend.roles': overlay(TODAY_RECORD),
   'knobs.parallelWorkers.max': cap(CAP),
   'knobs.parallelWorkers.maxFeaturesInFlight': cap(CAP),
   'knobs.parallelWorkers.synthesizeSingle': replace(),
@@ -294,11 +295,11 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   'dispatch.readiness': replace(),
   'dispatch.costCapUsd': cap(CAP),
   'dispatch.safetyCeiling': cap(`${CAP}; tighten-only by design`),
-  'dependencies.tools': union(`${DECLARATION_SET}; the pre-M3 grant vocabulary, so it composes like grants (D-003) — folds into capability classes in M3 (D5 → P-016)`),
-  'dependencies.packs': union(DECLARATION_SET),
-  'dependencies.plugins': union(DECLARATION_SET),
-  'dependencies.blueprints': union(DECLARATION_SET),
-  'dependencies.datatypes': union(DECLARATION_SET),
+  'dependencies.tools': setUnion(`${DECLARATION_SET}; the pre-M3 grant vocabulary, so it composes like grants (D-003) — folds into capability classes in M3 (D5 → P-016)`),
+  'dependencies.packs': setUnion(DECLARATION_SET),
+  'dependencies.plugins': setUnion(DECLARATION_SET),
+  'dependencies.blueprints': setUnion(DECLARATION_SET),
+  'dependencies.datatypes': setUnion(DECLARATION_SET),
   ops: replace(),
   'environment.setup': replace(),
   'environment.install': replace(),
@@ -307,8 +308,8 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   'environment.run': replace(),
   'environment.services': replace(),
   'environment.ports': replace(),
-  'environment.env': union(TODAY_RECORD),
-  params: union(`${TODAY_RECORD} — base ∪ child. STAYS a record (D-020): its keys ARE the config.json dot-paths the settings panel reads and writes, unique by construction, so key-union is the declared rule, not a workaround for array-replace`),
+  'environment.env': overlay(TODAY_RECORD),
+  params: overlay(`${TODAY_RECORD} — base ∪ child. STAYS a record (D-020): its keys ARE the config.json dot-paths the settings panel reads and writes, unique by construction, so keyed overlay is the declared rule, not a workaround for array replacement`),
 };
 
 /**

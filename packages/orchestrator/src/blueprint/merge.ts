@@ -56,6 +56,28 @@ import { mergeRuleFor, enumerateBlueprintLeaves, type MergeRule } from './merge-
 /** A raw, pre-parse blueprint object (straight off disk, or an already-merged subtree). */
 export type RawDocument = Record<string, unknown>;
 
+export interface MergeContext {
+  mode?: 'inheritance' | 'peer-assembly';
+  baseSources?: readonly string[];
+  childSources?: readonly string[];
+}
+
+export class MergeConflictError extends Error {
+  constructor(
+    readonly path: string,
+    readonly rule: MergeRule['rule'],
+    readonly base: unknown,
+    readonly child: unknown,
+    readonly context: MergeContext = {},
+  ) {
+    const sources = [...(context.baseSources ?? []), ...(context.childSources ?? [])];
+    super(
+      `merge conflict at "${path}" under ${rule}${context.mode ? ` during ${context.mode}` : ''}${sources.length ? ` (sources: ${sources.join(', ')})` : ''}: ${stableStringify(base)} versus ${stableStringify(child)}`,
+    );
+    this.name = 'MergeConflictError';
+  }
+}
+
 export function isPlainObject(v: unknown): v is RawDocument {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -126,7 +148,7 @@ function elementIdentity(el: unknown, key: MergeRule['key']): string {
  * `unionArrays(a, a)` is the deduplicated `a` (idempotent) and the identity SET is
  * commutative — `merge.test.ts` holds both as fast-check properties.
  */
-export function unionArrays(base: readonly unknown[], child: readonly unknown[], key?: MergeRule['key']): unknown[] {
+export function keyedOverlayArrays(base: readonly unknown[], child: readonly unknown[], key: MergeRule['key']): unknown[] {
   const out: unknown[] = [];
   const at = new Map<string, number>();
   for (const el of [...base, ...child]) {
@@ -143,9 +165,24 @@ export function unionArrays(base: readonly unknown[], child: readonly unknown[],
   return out;
 }
 
+/** Structural set union: equal values dedupe, unequal values never overwrite one another. */
+export function setUnionArrays(base: readonly unknown[], child: readonly unknown[]): unknown[] {
+  const out: unknown[] = [];
+  const seen = new Set<string>();
+  for (const value of [...base, ...child]) {
+    const identity = stableStringify(value);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    out.push(value);
+  }
+  return out;
+}
+
 /** The tighter of two caps. Non-numeric pairings are not comparable: the child's value goes through. */
-export function mostRestrictive(base: unknown, child: unknown): unknown {
-  return typeof base === 'number' && typeof child === 'number' ? Math.min(base, child) : child;
+export function intersectConstraint(base: unknown, child: unknown, path = '<unknown>', context: MergeContext = {}): unknown {
+  if (typeof base === 'number' && typeof child === 'number') return Math.min(base, child);
+  if (stableStringify(base) === stableStringify(child)) return base;
+  throw new MergeConflictError(path, 'constraint-intersection', base, child, context);
 }
 
 /**
@@ -153,22 +190,28 @@ export function mostRestrictive(base: unknown, child: unknown): unknown {
  * side short-circuits to the child (an absent base has nothing to compose with;
  * an explicitly-undefined child key is carried as `mergeRaw` carries it).
  */
-export function applyMergeRule(rule: MergeRule, base: unknown, child: unknown): unknown {
+export function applyMergeRule(rule: MergeRule, base: unknown, child: unknown, path = '<unknown>', context: MergeContext = {}): unknown {
   if (base === undefined || child === undefined) return child;
   switch (rule.rule) {
-    case 'replace':
+    case 'explicit-replacement':
       return child;
-    case 'most-restrictive':
-      return mostRestrictive(base, child);
-    case 'union':
-    case 'hard-error':
-      if (Array.isArray(base) && Array.isArray(child)) return unionArrays(base, child, rule.key);
+    case 'constraint-intersection':
+      return intersectConstraint(base, child, path, context);
+    case 'set-union':
+      if (Array.isArray(base) && Array.isArray(child)) return setUnionArrays(base, child);
+      throw new MergeConflictError(path, rule.rule, base, child, context);
+    case 'keyed-overlay':
+      if (Array.isArray(base) && Array.isArray(child)) return keyedOverlayArrays(base, child, rule.key);
       if (isPlainObject(base) && isPlainObject(child)) return mergeRaw(base, child);
       return child;
+    case 'hard-conflict':
+      if (Array.isArray(base) && Array.isArray(child)) return keyedOverlayArrays(base, child, rule.key);
+      if (stableStringify(base) === stableStringify(child)) return base;
+      throw new MergeConflictError(path, rule.rule, base, child, context);
   }
 }
 
-function mergeNode(base: RawDocument, child: RawDocument, path: string, interior: ReadonlySet<string>): RawDocument {
+function mergeNode(base: RawDocument, child: RawDocument, path: string, interior: ReadonlySet<string>, context: MergeContext): RawDocument {
   const out: RawDocument = { ...base };
   for (const [k, cv] of Object.entries(child)) {
     const p = path ? `${path}.${k}` : k;
@@ -177,11 +220,11 @@ function mergeNode(base: RawDocument, child: RawDocument, path: string, interior
       // An object node of the schema: descend field by field. A non-object on either
       // side (a child's `retired: null`, say) cannot be descended — the child's value
       // replaces, as it always has.
-      out[k] = isPlainObject(bv) && isPlainObject(cv) ? mergeNode(bv, cv, p, interior) : cv;
+      out[k] = isPlainObject(bv) && isPlainObject(cv) ? mergeNode(bv, cv, p, interior, context) : cv;
       continue;
     }
     const rule = mergeRuleFor(p);
-    out[k] = rule ? applyMergeRule(rule, bv, cv) : isPlainObject(bv) && isPlainObject(cv) ? mergeRaw(bv, cv) : cv;
+    out[k] = rule ? applyMergeRule(rule, bv, cv, p, context) : isPlainObject(bv) && isPlainObject(cv) ? mergeRaw(bv, cv) : cv;
   }
   return out;
 }
@@ -191,6 +234,6 @@ function mergeNode(base: RawDocument, child: RawDocument, path: string, interior
  * neither input is mutated). The loader calls this pairwise along the `extends`
  * walk; `mergeByRules(doc, {})` and `mergeByRules({}, doc)` are both `doc`.
  */
-export function mergeByRules(base: RawDocument, child: RawDocument): RawDocument {
-  return mergeNode(base, child, '', schemaInteriorPaths());
+export function mergeByRules(base: RawDocument, child: RawDocument, context: MergeContext = {}): RawDocument {
+  return mergeNode(base, child, '', schemaInteriorPaths(), context);
 }

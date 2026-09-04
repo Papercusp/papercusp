@@ -38,12 +38,14 @@ import { parse as parseYaml } from 'yaml';
 import { harnessPath, harnessRootCandidates } from '@papercusp/harness/paths';
 import {
   BlueprintHeaderSchema,
+  BundleRefSchema,
   RunnableBlueprintSchema,
   isBlueprintContributionField,
   parseBlueprintSourceDocument,
   type Blueprint,
   type BlueprintContributionField,
   type BlueprintSourceKind,
+  type BundleRef,
   type RunnableBlueprint,
 } from './schema.js';
 import { validateBlueprint, type BlueprintValidation, type ValidateOptions } from './validate.js';
@@ -127,6 +129,8 @@ export interface BlueprintLayer {
   fields: BlueprintContributionField[];
   /** The layer's own declared grants (raw `grants.requires` / `grants.optional`), null when it declares none (P-003, D-005 ceiling check). */
   grants: { requires: string[]; optional: string[] } | null;
+  /** Exact bundle declarations retained per source layer for D-029 conflict provenance. */
+  bundles: BundleRef[];
   /** Where the layer was read from: the built-in harness tree, the per-hive local tier, or the installed (`~/.papercusp/blueprints`) tier — an INSTALLED layer must attest (P-003). */
   trust: LayerTrust;
 }
@@ -175,6 +179,7 @@ function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
   const fields = Object.keys(raw).filter(isBlueprintContributionField);
   const g = isPlainObject(raw.grants) ? raw.grants : null;
   const grants = g ? { requires: stringList(g.requires), optional: stringList(g.optional) } : null;
+  const bundles = Array.isArray(raw.bundles) ? raw.bundles.map((bundle) => BundleRefSchema.parse(bundle)) : [];
   return {
     id: String(raw.id),
     sourceKind,
@@ -184,8 +189,54 @@ function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
     slots,
     fields,
     grants,
+    bundles,
     trust: layerTrust(sourcePath),
   };
+}
+
+interface ExactBundleClaim {
+  layerId: string;
+  layerContentHash: string;
+  version: string;
+}
+
+/**
+ * D-029 exact-pin consistency over the SOURCE layers. The merged document has
+ * already lost the losing value and cannot name its author, so this check must
+ * run here, beside the exclusive-slot check, while layer provenance survives.
+ */
+function exactBundleVersionConflicts(layers: readonly BlueprintLayer[]): string[] {
+  const effective = new Map<string, ExactBundleClaim[]>();
+  const conflicts: string[] = [];
+  for (const layer of layers) {
+    for (const bundle of layer.bundles) {
+      if (!bundle.version) continue;
+      const key = `${bundle.kind}/${bundle.ref}`;
+      const previous = effective.get(key) ?? [];
+      const duplicateLayer = previous.some(
+        (claim) => claim.layerId === layer.id && claim.layerContentHash === layer.contentHash && claim.version === bundle.version,
+      );
+      if (duplicateLayer) continue;
+      const incompatible = previous.filter((claim) => claim.version !== bundle.version);
+      if (incompatible.length === 0) {
+        effective.set(key, [...previous, { layerId: layer.id, layerContentHash: layer.contentHash, version: bundle.version }]);
+        continue;
+      }
+      const replaces = new Set(bundle.versionOverride?.replaces ?? []);
+      const unresolved = incompatible.filter((claim) => !replaces.has(claim.version));
+      if (unresolved.length > 0) {
+        const prior = unresolved.map((claim) => `layer "${claim.layerId}" pins "${claim.version}"`).join(', ');
+        conflicts.push(
+          `bundle "${key}" has incompatible exact versions: ${prior}; layer "${layer.id}" pins "${bundle.version}" without a validated versionOverride.replaces entry for every prior version`,
+        );
+        continue;
+      }
+      // A validated higher-precedence override makes its replacement the sole
+      // effective pin. The declaration itself remains in the resolved bundle.
+      effective.set(key, [{ layerId: layer.id, layerContentHash: layer.contentHash, version: bundle.version }]);
+    }
+  }
+  return conflicts;
 }
 
 /**
@@ -213,11 +264,19 @@ export function resolveLayers(
     const path = resolve(pid);
     if (!path) throw new Error(`cannot resolve extended blueprint "${pid}"`);
     const parent = resolveLayers(readRaw(path), resolve, path, new Set([...seen, pid]));
-    merged = mergeByRules(merged, parent.merged);
+    merged = mergeByRules(merged, parent.merged, {
+      mode: 'peer-assembly',
+      baseSources: layers.map((layer) => layer.id),
+      childSources: parent.layers.map((layer) => layer.id),
+    });
     layers.push(...parent.layers);
   }
   // The child is the last layer; drop the now-consumed `extends` from the resolved result.
-  const { extends: _drop, ...childOwn } = mergeByRules(merged, raw);
+  const { extends: _drop, ...childOwn } = mergeByRules(merged, raw, {
+    mode: 'inheritance',
+    baseSources: layers.map((layer) => layer.id),
+    childSources: [String(raw.id)],
+  });
   layers.push(layerOf(raw, sourcePath));
   return { merged: childOwn, layers };
 }
@@ -290,6 +349,9 @@ export function resolveBlueprint(
       code: 'slot-exclusive-conflict',
       message: `exclusive slot "${c.slot}" is claimed by ${c.claimants.length} layers (${c.claimants.join(', ')}) — an exclusive slot admits exactly one document per stack (D-007)`,
     });
+  }
+  for (const message of exactBundleVersionConflicts(layers)) {
+    validation.errors.push({ level: 'error', code: 'bundle-version-conflict', message });
   }
   // ── identity-lint, structural BLOCK tier over the composed stack (P-003 / D-009 as amended):
   //    a kernel-slot claim, a grant past the D-005 ceiling, authority on a mode-axis document, a

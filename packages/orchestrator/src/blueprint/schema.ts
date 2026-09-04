@@ -945,11 +945,37 @@ export const SlotDeclarationSchema = z.object({
  * copy). `kind` is the CLOSED D-011 vocabulary (`BUNDLE_KINDS`; no `skill`).
  * `ref` is the listing id; `version` pins a listing version when the stack must.
  */
-export const BundleRefSchema = z.object({
-  kind: z.enum(BUNDLE_KINDS),
-  ref: z.string().min(1),
-  version: z.string().optional(),
-});
+export const BundleRefSchema = z
+  .object({
+    kind: z.enum(BUNDLE_KINDS),
+    ref: z.string().min(1),
+    version: z.string().min(1).optional(),
+    /**
+     * An intentional exact-pin override (D-029). The higher-precedence layer
+     * names every exact version it replaces and records why. Merely restating a
+     * keyed bundle at a different version is a conflict, never an implicit win.
+     */
+    versionOverride: z
+      .object({
+        replaces: z.array(z.string().min(1)).min(1),
+        reason: z.string().trim().min(1),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .superRefine((bundle, ctx) => {
+    if (!bundle.versionOverride) return;
+    if (!bundle.version) {
+      ctx.addIssue({ code: 'custom', path: ['version'], message: 'versionOverride requires the replacement version' });
+    }
+    if (bundle.version && bundle.versionOverride.replaces.includes(bundle.version)) {
+      ctx.addIssue({ code: 'custom', path: ['versionOverride', 'replaces'], message: 'an override cannot replace its own version' });
+    }
+    if (new Set(bundle.versionOverride.replaces).size !== bundle.versionOverride.replaces.length) {
+      ctx.addIssue({ code: 'custom', path: ['versionOverride', 'replaces'], message: 'replaced versions must be unique' });
+    }
+  });
 
 /**
  * RESERVED (D-004, sequenced by D-014): grants name registered capability

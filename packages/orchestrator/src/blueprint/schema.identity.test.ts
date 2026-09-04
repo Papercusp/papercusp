@@ -72,6 +72,13 @@ test('a slot id is an OPEN string at the schema (the registry check is validateB
   for (const kind of BUNDLE_KINDS) assert.equal(BundleRefSchema.safeParse({ kind, ref: 'x' }).success, true, kind);
   assert.equal(BundleRefSchema.safeParse({ kind: 'skill', ref: 'x' }).success, false, 'no skill kind — owner ruling 2026-09-02');
   assert.equal(BundleRefSchema.safeParse({ kind: 'recipe', ref: '' }).success, false);
+  assert.equal(
+    BundleRefSchema.safeParse({ kind: 'recipe', ref: 'x', version: '2', versionOverride: { replaces: ['1'], reason: 'approved migration' } }).success,
+    true,
+  );
+  assert.equal(BundleRefSchema.safeParse({ kind: 'recipe', ref: 'x', versionOverride: { replaces: ['1'], reason: 'missing target' } }).success, false);
+  assert.equal(BundleRefSchema.safeParse({ kind: 'recipe', ref: 'x', version: '2', versionOverride: { replaces: ['2'], reason: 'self' } }).success, false);
+  assert.equal(BundleRefSchema.safeParse({ kind: 'recipe', ref: 'x', version: '2', versionOverride: { replaces: ['1'], reason: '' } }).success, false);
 });
 
 test('attestation.contentHash must be a lowercase sha256 hex; signedBy is required', () => {
