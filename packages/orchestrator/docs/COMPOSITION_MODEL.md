@@ -173,7 +173,7 @@ without remainder:
 | file (live read path, under `libs/papercusp/packages/harness/`) | layer / slot | notes |
 |---|---|---|
 | `blueprints/base/prompts/agent-base-preamble.md` | **kernel** — the kernel's BASE text | domain- and tier-neutral ring-0 topics (Harness · Tools+MCP startup · Blockers · Diagnose-from-evidence · Mitigation≠fix · Context · Environment · Memory). Rendered on EVERY tier; su.md's ring-0 sections are kernel EXTENSIONS of the interactive tier and P-002 keeps an overlapping paragraph once, here. |
-| `blueprints/<id>/prompts/agent-base-overlay.md` | **`domain`** — the slot's LEAF document | exclusive; the chain walk's first-hit rule IS the exclusive-slot resolution. Today only `blueprints/coding-factory/prompts/agent-base-overlay.md` exists — the coding HIVE (`blueprints/coding`) has no domain leaf (EI-22285277325728666); P-002's papercusp-engineer identity becomes it. |
+| `blueprints/<id>/prompts/agent-base-overlay.md` | **`domain`** — the slot's LEAF document | exclusive; the chain walk's first-hit rule IS the exclusive-slot resolution. Two exist: `blueprints/coding-factory/prompts/agent-base-overlay.md` (the retired factory's) and, since P-002, `blueprints/papercusp-engineer/prompts/agent-base-overlay.md` (§9 — the identity's verbatim extraction). The coding HIVE (`blueprints/coding`) still has no domain leaf (EI-22285277325728666): attaching the papercusp-engineer identity to it is P-003 / P-023, not P-002. |
 
 **What the flag is.** `REPLACE_CLAUDE_BASE` (`libs/flags/src/types.ts`, default = `FLAG_DEFAULTS`
 = not in `DARK_FLAGS` ⇒ **ON**; no workspace override carries the key) is not a composer — it is
@@ -192,3 +192,104 @@ output byte-equal to today's for the base-only and coding-factory chains. The by
 pinned now by `prompt-resolve.test.ts` ("P-032/D-018 …"), which also asserts this section names
 the two live paths above. `apps/operator/dist-*/**`, `papercusp-desktop/src-tauri/**/harness/**`
 and `.materialized/**` copies of both files are projections, never the live read path.
+
+## 9. The su decomposition — kernel / identity / instance boundary as slot assignments (P-002)
+
+`src/blueprint/su-decomposition.ts` classifies EVERY line of `blueprints/base/prompts/su.md`
+(the LIVE su render source — P-002 does not cut it; P-003 switches the render) into TILES,
+each assigned to one PART: the sealed `kernel`, the reserved `instance` layer, or a declarable
+slot from §2. A tile is addressed by its ANCHOR — the exact text of its first line — and runs to
+the line before the next anchor, so the tiling is complete by construction, an edit inside a
+tile moves nothing, and a NEW `##`/`###` section or splice marker fails
+`su-decomposition.test.ts` until it is classified (a new bullet inside an existing tile
+inherits that tile's part — the granularity limit, and the one place a reviewer still looks).
+D-003 as narrowed by D-007 decides the fleet split: claims honoured, gate events, stand-down
+obeyed and completion evidence stay kernel; the member pull-loop and the leader's
+monitoring / benching / kickoff / spawn-announcement craft become the two `fleet-posture`
+candidates. D-018 §4 decides the overlap with `agent-base-preamble.md`: a tile that duplicates
+a preamble section is marked as a dedupe row — kept in su.md while it is the live render,
+kept ONCE (in the preamble) by P-003's seal. The part documents are DERIVED, byte-equal to the
+concatenation of their tiles, and committed only so an identity has a file on disk — the
+`papercusp-engineer` domain leaf is the coding hive's future domain document (§8, D-018 §5).
+
+<!-- SU-DECOMPOSITION:BEGIN -->
+Source: `blueprints/base/prompts/su.md` — tiled by ANCHOR (the exact first line of each tile; every `##`/`###` heading and every `<!-- PAPERCUSP-SU:… -->` splice marker must be one). 40 tiles → 7 verbatim part documents + the `client` seam.
+
+| # | part | tile | anchor | preamble dedupe (D-018 §4) | why |
+|---|---|---|---|---|---|
+| 1 | `kernel` | title + provenance blockquote | `# Superuser engineer-collaborator (su) — domain-neutral base persona` | — | The document’s own framing — "the universal how-we-work-together spine … for ANY pot" — is the kernel’s self-description; P-003’s seal restates it for the composed stack. |
+| 2 | `kernel` | authority grant (operator + admin) · "the domain comes from the pot" | `## Who you are` | — | The su tier’s authority level is a safety rail every layer inherits, and "the domain of that work comes from the pot" is the composition statement itself (D-002 kernel + overlay). |
+| 3 | `collaboration-stance` | address the owner by name | `**Address the owner by name.** When you speak TO the owner — a report…` | — | D-017 names "address by name" as the collaboration-stance slot’s content. |
+| 4 | `client` | ⟨seam `CLIENT-TOOLING-OVERLAY`⟩ client-overlay splice seam | `<!-- PAPERCUSP-SU:CLIENT-TOOLING-OVERLAY -->` | — | su.md carries only the seam; the `client` slot’s documents are the per-client overlays `apps/operator/prompts/papercusp-su.{claude,codex,omp}.md` that `renderSuPlaybook` splices here (D-007 amendment; audit S2). |
+| 5 | `kernel` | locks · claim-before-edit · await-don’t-poll · wake the owner · yield · directed messages outrank | `## Working in a shared environment — coordination is enforced` | — | Lock discipline, claims, event/wake semantics and the directed-message priority are D-003’s protocol invariants — everything whose violation harms OTHER agents. |
+| 6 | `fleet-posture` (member) | member loop: wake bootstrap · pull via scheduler:get_next · claim via wip-flip | `## Working as a fleet MEMBER — the member operating loop` | — | D-003: the member PULL-LOOP operating style leaves the kernel and becomes the member posture (P-020). |
+| 7 | `kernel` | completion evidence is a structured object; assumptions required | `- **Finish with work_items:complete { id, completion, state:'done', …` | — | D-007’s narrowed kernel: "completion evidence required" is an invariant, not member style. |
+| 8 | `fleet-posture` (member) | member loop: persist with loop:arm · park on the pool refill · push beats polling · report exceptions to the leader | `- **Persist with loop:arm; each wake pull + advance one unit. Lane …` | — | Member operating style (D-003); the await/emit PROTOCOL it uses is already kernel in the shared-environment section. |
+| 9 | `kernel` | claims honoured · a gate opens on the leader’s event (latch) · wind-down on stand-down | `- **Never contest a live peer's claim** — a claim_conflict means co…` | — | D-007’s kernel invariants verbatim: claims honoured, gate events, stand-down obeyed. Phrased for members, binding for every agent. |
+| 10 | `domain` | git-sync owns commit + push · edit only the canonical staging tree | `## Git — a background routine owns commit + push` | — | Source-control convention of the software-engineering profession (D-007: the domain slot = "what the work IS and how it is judged"); the named worktrees are instance colour the project guide already carries. |
+| 11 | `domain` | section heading | `## Engineering discipline` | — | The domain document’s own heading; its kernel-classified bullets are tiled out individually below. |
+| 12 | `kernel` | plan-store lifecycle: plan-before-work tiers · activation audit · encode real deps | `- **Plan before non-trivial work.** Durable plans live in the plan st…` | — | Registration + plan-lifecycle discipline holds for ANY domain (a potato-salesman pot plans too); it is the "Registering work" tier rule stated at plan scope. |
+| 13 | `domain` | tests ship with the feature | `- **Tests ship WITH the feature**, in the project's testing framework…` | — | How engineering work is judged (D-007 domain). |
+| 14 | `kernel` | raw forensic output never enters agent context | `- **Raw forensic output (journalctl, psql dumps, proc scans) never en…` | — | Context hygiene is a ring-0 concern (the preamble’s "Context management" family), domain-neutral. |
+| 15 | `kernel` | a blocker is work, not a stop sign | `- **A blocker is work, not a stop sign — resolve it, don't relay it.*…` | `# Blockers` | Ring-0; near-verbatim in the preamble — kept once there (D-018 §4). |
+| 16 | `kernel` | read the writer before reporting a number · a retraction is owed fast | `- **Before you report a number, find the code that WRITES it.** A met…` | — | Faithful reporting is the interactive tier’s EXTENSION of the preamble’s "Diagnose from evidence" — not duplicated there, so it stays a kernel extension. |
+| 17 | `kernel` | never blame high load without the mechanism | `- **Never blame "high load" without the mechanism.** Even when load i…` | `# Diagnose from evidence, not a plausible story` | Near-verbatim in the preamble’s diagnose section — kept once there (D-018 §4). |
+| 18 | `domain` | a red gate has one fixer · LIVE_GATE_OPS vs GATE_SYSTEM_DEV · three hops to green | `- **A red release/CI gate has exactly ONE fixer — READ OWNERSHIP BEFO…` | — | Release-gate craft of the engineering profession; the single-fixer claim it rests on is kernel already (claims honoured). |
+| 19 | `kernel` | a mitigation is not a fix | `- **A mitigation is not a fix — don't stop at the band-aid.** Discove…` | `# Fixing what you find — a mitigation is not a fix` | Near-verbatim in the preamble — kept once there (D-018 §4). |
+| 20 | `kernel` | confirm before hard-to-reverse actions · report outcomes faithfully | `- **Confirm before hard-to-reverse or outward-facing actions** unless…` | `# Tools and MCP startup` | The preamble carries this paragraph (at the end of its "Tools and MCP startup" section) — kept once there (D-018 §4); the stance document’s confirm-before-execute posture is the Default-posture gate, not this line. |
+| 21 | `domain` | alpha bias · flags default ON · reuse-first · app templates mandate | `- **In alpha, timidity is the failure mode, not breakage** — but this…` | — | Engineering execution bias, feature-flag policy, reuse-first and the template mandate are how THIS profession builds (D-007 domain). |
+| 22 | `practice` | anti-babysitting: monitoring is not work by default | `## Anti-babysitting rule — monitoring is not work by default` | — | A stackable working practice (D-007: "practices stack because their slot is additive") — the wait-loop / monitor discipline family. |
+| 23 | `domain` | the papercusp-way routing gate (intent → mechanism table) | `### The papercusp-way routing gate (intent → mechanism)` | — | Reuse-first applied to platform mechanisms — the engineer’s "name the mechanism before hand-rolling" discipline; its rows are engineering asks. |
+| 24 | `collaboration-stance` | a plan is a proposal, not authorization | `## Default posture (AUTO mode OFF) — plan, then confirm before you ex…` | — | D-017: the confirm-before-execute posture toward the owner is the stance slot. |
+| 25 | `collaboration-stance` | the WHO/route ask (A–D) · never offer an unconfirmed route · ask even if obvious · batch the asks · fleet-knob disclosure · confirm write-side calls · sticky route | `- **Confirm the execution route BEFORE executing — always offer these…` | — | The authorization gate is stance (the owner chooses WHO runs the work). The fleet-launch mechanics inside options C/D ride along at this granularity; P-020 may lift them into the leader posture with a cross-reference. |
+| 26 | `fleet-posture` (leader) | leader craft: claim leadership first · leading ⇒ AUTO + monitor (push first) · fleet:invariant · bench · re-read the ledger · kickoff = mission delta · declare the gate | `- **When the owner designates you a fleet's leader, CLAIM it as your …` | — | D-003: leader monitoring / benching / claim-spec / kickoff craft leaves the kernel. Should "leading ⇒ AUTO" become a registry implication it moves to the kernel’s modes table (D-008); the craft stays posture. |
+| 27 | `fleet-posture` (leader) | spawn announcement: account routing · model · carry (prediction vs remediation rail) | `- **Spawning a fleet/agent? ANNOUNCE the account + model + carry you'…` | — | Spawn-time disclosure is leader craft; the one hard rail inside it (fix a MEASURED outage) is stated as posture, not kernel, because only a spawner exercises it. |
+| 28 | `collaboration-stance` | the AUTO boundary of the ask gate · client mirrors are projections of this section | `These asks are exactly what AUTO mode suspends — and the boundary is …` | — | Closes the stance section: what AUTO suspends is kernel STATE (D-008), but which asks it suspends is this stance’s own boundary. |
+| 29 | `collaboration-stance` | delivery discipline: park content then ask · never announce a future question · rendered ≠ delivered · artifact URLs | `## Delivery discipline — a dialog ECLIPSES same-turn text; rendered ≠…` | — | D-017 names "delivery discipline" as stance content. The Claude-Artifact bullets are client colour a client overlay may absorb in P-003. |
+| 30 | `kernel` | ⟨seam `AUTO-MODE`⟩ mode-sections splice seam (AUTO / IDEATE / DRAIN) | `<!-- PAPERCUSP-SU:AUTO-MODE -->` | — | The spliced text is generated from `operating-modes-policy.ts` / `modes/registry.ts` — mode state, the implication table and what AUTO suspends are kernel (D-008); the five `modes` slots supply domain flavour rendered after it. |
+| 31 | `kernel` | registering work: trivial / substantive / big-scope tiers | `## Registering work is a SEPARATE discipline from asking approval — A…` | — | Work-item registration discipline is D-007’s "completion evidence required" seen from the front — kernel. |
+| 32 | `kernel` | ⟨seam `RESULT-DOOR`⟩ result-door splice seam (tool results are capped) | `<!-- PAPERCUSP-SU:RESULT-DOOR -->` | — | Tool-result envelope semantics (`projection`) are platform protocol — kernel. |
+| 33 | `kernel` | verbs are MCP tools, never curl · docs-first | `## Tools, docs, memory` | `# Tools and MCP startup` | Platform tool protocol; the preamble’s MCP-startup section already forbids hand-rolled HTTP — kept once there (D-018 §4). |
+| 34 | `instance` | editing a persona: read the su render/edit-path runbook | `- **Editing an agent prompt/persona? Read the runbook BEFORE you grep…` | — | A papercusp-REPO runbook (this prompt tree’s layering); the project guide is the instance layer and already carries "Prompts are auto-generated — edit the source". |
+| 35 | `kernel` | memory layers (memory:remember · facts:assert · checkpoints · coord) · push, don’t poll | `- **Memory has layers — route by DELIVERY, not habit.** A durable but…` | `# Memory` | Ring-0 memory routing; the preamble’s Memory section carries the shared-store rule — kept once there (D-018 §4). |
+| 36 | `kernel` | coord protocol: decisions · coord verbs · @-selectors · read surfaces · state vs history · file what you discover | `## Coordination: subscribe → ask → file` | — | Coordination protocol (D-003 invariants + the D-007 completion/decision substrate) — kernel. |
+| 37 | `kernel` | glyph legend heading | `## Coordination glyph legend` | — | The coord injection protocol is kernel. |
+| 38 | `kernel` | ⟨seam `COORD-LEGEND`⟩ coord-legend splice seam | `<!-- PAPERCUSP-SU:COORD-LEGEND -->` | — | Generated glyph key — kernel protocol. |
+| 39 | `kernel` | wire schemas heading | `## Wire schemas` | — | Prompt-declared column schemas are tool protocol — kernel. |
+| 40 | `kernel` | ⟨seam `WIRE-SCHEMAS`⟩ wire-schemas splice seam | `<!-- PAPERCUSP-SU:WIRE-SCHEMAS -->` | — | Generated wire schemas — kernel protocol. |
+
+Part documents (each is BYTE-EQUAL to the concatenation of its tiles — `npm run gen:su-decomposition` rewrites them from su.md, `:check` and the test refuse drift):
+
+| document | part | path (under `libs/papercusp/packages/harness/`) | role in the model |
+|---|---|---|---|
+| `su.kernel` | `kernel` | `blueprints/base/prompts/su.kernel.md` | the interactive tier’s KERNEL EXTENSION — composed after agent-base-preamble.md (the kernel base text) by P-003’s seal; its dedupe tiles are dropped there |
+| `papercusp-engineer` | `domain` | `blueprints/papercusp-engineer/prompts/agent-base-overlay.md` | identity #1 — the `domain` leaf of blueprints/papercusp-engineer (D-018 §5: the coding hive’s missing domain document; attached by P-023, not here) |
+| `su-collaborator` | `collaboration-stance` | `blueprints/su-collaborator/prompts/collaboration-stance.md` | identity #2 — the `collaboration-stance` document of blueprints/su-collaborator (exclusive per D-017) |
+| `su.fleet-member` | `fleet-posture` (member) | `blueprints/base/prompts/su.fleet-member.md` | fleet-member posture CANDIDATE (text only) — P-020 makes it an identity; attached at fleet:launch-on-plan / fleet:join |
+| `su.fleet-leader` | `fleet-posture` (leader) | `blueprints/base/prompts/su.fleet-leader.md` | fleet-leader posture CANDIDATE (text only) — P-020 makes it an identity; attached at fleet:take-leadership |
+| `su.practice` | `practice` | `blueprints/base/prompts/su.practice.md` | the one additive `practice` document su.md carries today (anti-babysitting); more practices stack beside it |
+| `su.instance` | `instance` | `blueprints/base/prompts/su.instance.md` | INSTANCE-layer candidate — belongs in the papercusp project guide / pot override, not in any identity; P-003 moves it |
+
+The interactive su’s DEFAULT stack (P-013 fixtures), in `LAYER_ORDER`:
+
+| layer | slot | document | bound | note |
+|---|---|---|---|---|
+| `kernel` | — | `blueprints/base/prompts/agent-base-preamble.md` | static | the kernel base text (D-018), rendered on every tier |
+| `kernel` | — | `blueprints/base/prompts/su.kernel.md` | static | the interactive tier’s kernel extension (this decomposition); the seal renders the kernel last |
+| `client` | `client` | `apps/operator/prompts/papercusp-su.<client>.md` | launch | chosen by the launching client (claude / codex / omp) — exclusive |
+| `domain` | `domain` | `papercusp-engineer` | static | the software-engineering profession — exclusive |
+| `fleet-posture` | `fleet-posture` | — | runtime | NONE by default — fleet:launch-on-plan / fleet:join attach su.fleet-member, fleet:take-leadership attaches su.fleet-leader |
+| `modes` | — | — | runtime | no mode-flavour documents in v1 — the AUTO / IDEATE / DRAIN text spliced at PAPERCUSP-SU:AUTO-MODE is kernel (D-008) |
+| `practices` | `collaboration-stance` | `su-collaborator` | static | how the su works WITH the owner — exclusive (D-017) |
+| `practices` | `practice` | `su.practice` | static | anti-babysitting — additive; further practices stack beside it |
+| `instance` | — | `pot_settings.promptOverride.su + the project guide` | launch | the per-pot override (audit S5) and the spliced project guide |
+
+Base role library (`blueprints/base/prompts`, 63 files): 1 `decomposed-v1` · 1 `kernel-base` · 2 `later` · 57 `role` · 2 `sidecar`. An identity is what an agent IS across pots; a role is WHERE it sits in a spine — choreography stays a role. The non-role rows:
+
+| file | disposition | target | note |
+|---|---|---|---|
+| `su.md` | decomposed-v1 | — | tiled by SU_TILES into kernel / client / domain / fleet-posture / collaboration-stance / practice / instance (this item) |
+| `agent-base-preamble.md` | kernel-base | — | the kernel’s BASE text rendered on every tier (D-018) — not a role |
+| `papercup.md` | later | `collaboration-stance` (P-021) | the owner-facing chat collaborator — a second stance document, exclusive with su-collaborator on one stack |
+| `papercup-deep.md` | later | `collaboration-stance` (P-021) | the deep-work variant of the chat collaborator — same stance family as papercup.md |
+<!-- SU-DECOMPOSITION:END -->
