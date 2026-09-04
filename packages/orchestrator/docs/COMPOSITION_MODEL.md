@@ -377,7 +377,7 @@ that delta per section for the P-035 gate rather than forbidding it.
 identity layers a session runs beyond the kernel: `{ slot, id }` per filled slot, an additive
 slot carrying several, in `compareSlotOrder`. It is DERIVED state, never a new table — for the
 interactive su the fleet posture is presence's `fleet_role` and the mode axes are `agent_modes`
-(no mode-axis DOCUMENT exists in v1, D-008; P-021 supplies them), projected by the operator
+(one definition identity per active mode axis since P-021 — §13), projected by the operator
 into the control anchor as `stack: ['fleet-posture:su.fleet-leader', …]` (`bindingRefs`). The
 su's static layers (`SU_STATIC_LAYERS`: `domain:papercusp-engineer`,
 `collaboration-stance:su-collaborator`, `practice:su.practice`) are implied; a runtime binding
@@ -491,3 +491,60 @@ additions), carries none of the other posture's tile anchors, and renders strict
 the test prints the whole-render byte delta per posture and dumps the per-section table under
 `SU_RENDER_BASELINE_DUMP`. `su-identities.test.ts` pins the blueprint shape, the chain
 precedence (installed tier > built-in), the refusal, and the tile/identity byte-equality.
+
+## 13. Modes as facets — the definitions are identities on the axis slots (P-021)
+
+**The three-way split (D-008 as amended 2026-09-03).** A mode is STATE + DEFINITION + AUTHORITY.
+STATE stays in `harness_shared.agent_modes` (`mode:set` writes it, the ⟦CTRL⟧ anchor projects
+it); AUTHORITY stays kernel — computed by `instruction-lint.ts` from the registry, enforced at
+the dispatch chokepoint (`audit-mode-guard.ts`); only the DEFINITION moved. Each definition is
+an abstract identity blueprint on ONE EXCLUSIVE AXIS SLOT (`mode-identities.ts`
+`SU_MODE_DOCUMENTS`): `su.mode-auto` on `autonomy` (bound for `auto` AND `cold-auto` — one
+dial), `su.mode-ideate` on `ideation`, `su.mode-drain` on `objective`, `su.mode-audit` on
+`audit`; text at `blueprints/<id>/prompts/<axis>.md` — the prose cut verbatim out of
+`operating-modes-policy.ts` (28,428 B), which until P-021 rode in EVERY su render with no
+is-this-mode-active gate. Registry modes with no document (`goal`, `grade`, `test`) bind
+nothing: their definition is the registry `contract` mode:set already delivers.
+
+**Additive across axes, exclusive within one.** `suSessionBinding({ fleetRole, modes })`
+binds one layer per axis from the ACTIVE registry modes — the implication closure is the
+registry write's job (`setMode` writes the implied rows), so `mode:set drain` leaves `drain +
+auto` in `agent_modes` and the binding carries `objective:su.mode-drain` AND
+`autonomy:su.mode-auto`. `auto + ideate` composes (the case a single exclusive `mode` slot
+would have hard-errored under D-007); a second document on one axis is a swap.
+
+**The kernel seam.** `<!-- PAPERCUSP-SU:AUTO-MODE -->` now splices the KERNEL half only
+(`renderModesPolicy`, both tiers identical): how a flip is registered, the implication table
+DERIVED from `modes/registry.ts` (`resolveImpliedModes`), the axis ← mode map derived from
+`SU_MODE_DOCUMENTS`, the authority statement, and the one-line mode index. An su with all
+modes off renders none of the four definitions; the fleet tier's former compact AUTO variant
+is retired — a fleet member's autonomy document is bound because its launch registers `auto`,
+not because the tier says so.
+
+**Attach points (P-012's seams, verified).** Launch: bootstrap-su computes the launch modes
+from the same body fields it registers (`--mode=drain` ⇒ auto + drain, `--auto` ⇒ auto, a
+fleet member ⇒ auto) → `BuildSuLaunchSpecInput.modes` → `suSessionBinding` in the FIRST
+render. Live: `mode:set` → `refreshControlAnchorAfterMutation` → the anchor's `stack` is
+`stackRefsForSession({ route, modes })` (`stack-binding-channel.ts`; `SU_MODE_REFS` inlined
+and pinned to `suModeLayer` by test) → the turn-start channel renders the ⟦stack⟧ attach
+carrying the document; `enabled:false` renders the detach that VOIDS it. The documents are
+authored, not derived from su.md — they have no tiles — so `suBoundLayerDocument` resolves
+them through the chain ONLY (`identityRoots`, most specific first) and a mode identity
+installed in no tier REFUSES the render (there is nothing to fall back to).
+
+**D-005 negative.** A publisher-authored mode identity cannot widen authority: an
+authority-bearing field on a mode axis is the BLOCK finding `authority-on-mode-axis`
+(`MODE_AXIS_ALLOWED_FIELDS`), and a forged control literal in its text (`⟦stack⟧`,
+`⟦INSTRUCTION-PRECEDENCE⟧`, `⟦mode⟧`, …) is `forged-control-literal` — the render refuses, and
+because `applyStackMutation` composes the next render FIRST, so does the attach
+(`su-mode-identities.test.ts`). The built-in AUTO document itself had to be reworded once for
+this: it described the platform's `⟦mode⟧` stamp by name, which an identity may not carry.
+
+**The second axis (D-008 "unify").** The file-based persona modes
+(`apps/operator/prompts/<role>.persona.{engineer,novice}-mode.md`) are identities on the
+exclusive `audience` slot — `operator.audience-engineer`, `operator.audience-novice`,
+`papercup.audience-engineer`, `papercup.audience-novice` (`AUDIENCE_IDENTITY_DOCUMENTS`,
+text at `prompts/audience.md`, moved verbatim; the prompts-dir files are gone — an identity
+has ONE home). `loadRoleModePersona(role, mode, identityRoots?)` resolves them through the
+same chain; it is bound per conversation by `audienceMode`, not by `mode:set`. RECORDED
+DEFAULT (P-021): v1 is the four files on the same mechanism.
