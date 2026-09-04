@@ -116,8 +116,49 @@ export {
   CLIENT_SEAM_MARKER,
 } from './identity-lint.js';
 export type { IdentityLintFinding, IdentityLintOptions, IdentityLintTier, StackLayerInput, LayerTrust } from './identity-lint.js';
-export { suStackDocuments, composeSuStackSource } from './su-stack.js';
+export {
+  suStackDocuments,
+  composeSuStackSource,
+  composeSuStackMutation,
+  suBoundLayerDocument,
+  suEffectiveBinding,
+  suPostureBinding,
+  suPostureLayer,
+  suSessionBinding,
+  SU_STATIC_LAYERS,
+} from './su-stack.js';
 export type { SuStackComposeOptions, ComposedSuStack, SuStackDocuments } from './su-stack.js';
+// identities-v1 P-012 — the STACK-MUTATION PRIMITIVE: attach / detach a slot layer on a live
+// session (exclusive ⇒ swap, additive ⇒ stack), the per-slot delivery rule (inject-now vs
+// relaunch-with-carry), the kernel-safe apply (next render composed under the seal BEFORE the
+// injection renders), and the `⟦stack⟧`-stamped inject-now payload.
+export {
+  attachLayer,
+  detachLayer,
+  applyStackMutation,
+  diffStackBindings,
+  normalizeStackBinding,
+  emptyStackBinding,
+  bindingRef,
+  bindingRefs,
+  parseBindingRef,
+  stackBindingFromRefs,
+  mutationDelivery,
+  renderStackInjection,
+  renderStackMutationMarkdown,
+  SLOT_MUTATION_DELIVERY,
+  STACK_INJECTION_STAMP,
+} from './stack-mutation.js';
+export type {
+  BoundLayer,
+  StackBinding,
+  StackMutation,
+  StackMutationOp,
+  MutationDelivery,
+  MutationDeliverySpec,
+  ApplyStackMutationInput,
+  AppliedStackMutation,
+} from './stack-mutation.js';
 export { layerTrust } from './loader.js';
 // Launch-eligibility guard (WI-5645): read a resolved blueprint's inherited
 // `retired` marker, and the assert-form for a launch/spend chokepoint.

@@ -29,6 +29,16 @@ import { join } from 'node:path';
 import { harnessPath } from '@papercusp/harness/paths';
 import { composeStack, type ComposeStackOptions, type ComposedStack, type StackDocument } from './render-stack.js';
 import {
+  applyStackMutation,
+  attachLayer,
+  normalizeStackBinding,
+  type AppliedStackMutation,
+  type BoundLayer,
+  type StackBinding,
+  type StackMutationOp,
+} from './stack-mutation.js';
+import type { SlotId } from './slots.js';
+import {
   SU_PART_DOCUMENTS,
   SU_PREAMBLE_REL,
   locateSuTiles,
@@ -46,8 +56,25 @@ export interface SuStackComposeOptions extends ComposeStackOptions {
   suText?: string;
   /** Preamble text override (tests); default: read from the harness. */
   preambleText?: string;
-  /** Bind a fleet posture (attached at fleet:launch-on-plan / fleet:join / fleet:take-leadership); default none. */
+  /**
+   * Bind a fleet posture (attached at fleet:launch-on-plan / fleet:join / fleet:take-leadership);
+   * default none. Sugar for `binding: suPostureBinding(posture)` — disagreeing with an
+   * explicit `binding` on the `fleet-posture` slot is an error, not a silent precedence.
+   */
   posture?: FleetPostureRole | null;
+  /**
+   * P-012: the layers bound on the LIVE session beyond the static su stack — the fleet
+   * posture, mode-axis documents (P-021), further practices. Applied over
+   * `SU_STATIC_LAYERS` with attach semantics, so an exclusive layer here REPLACES the
+   * static one (a different `domain` document swaps the profession).
+   */
+  binding?: StackBinding | null;
+  /**
+   * Resolve a bound layer that is NOT one of su.md's part documents (a Cupboard
+   * identity, a P-021 mode document). Called only for ids `suBoundLayerDocument`
+   * cannot serve; returning null refuses the binding loudly.
+   */
+  resolveLayer?: (layer: BoundLayer, located: readonly LocatedSuTile[]) => StackDocument | null;
 }
 
 export interface SuStackDocuments {
@@ -57,6 +84,57 @@ export interface SuStackDocuments {
   droppedTiles: LocatedSuTile[];
   /** Dedupe-marked tiles KEPT because the preamble does NOT carry the named heading. */
   keptDedupeTiles: LocatedSuTile[];
+  /** The effective binding the documents were built from (static layers + the runtime binding). */
+  binding: StackBinding;
+}
+
+/**
+ * The layers the interactive su ALWAYS carries (SU_DEFAULT_STACK's `binding: 'static'`
+ * rows that are slot documents). A runtime binding is applied OVER these with attach
+ * semantics. The client seam, the instance tile and the kernel are not layers of the
+ * binding — the seam is a splice point, the other two are reserved layers.
+ */
+export const SU_STATIC_LAYERS: readonly BoundLayer[] = [
+  { slot: 'domain', id: 'papercusp-engineer' },
+  { slot: 'collaboration-stance', id: 'su-collaborator' },
+  { slot: 'practice', id: 'su.practice' },
+];
+
+/** The fleet-posture layer for a role — what fleet:join / take-leadership attach. */
+export function suPostureLayer(role: FleetPostureRole): BoundLayer {
+  return { slot: 'fleet-posture', id: role === 'leader' ? 'su.fleet-leader' : 'su.fleet-member' };
+}
+
+export function suPostureBinding(role: FleetPostureRole | null | undefined): StackBinding {
+  return normalizeStackBinding(role ? [suPostureLayer(role)] : []);
+}
+
+/**
+ * The binding a live session's EXISTING facts imply — presence's `fleet_role` today,
+ * the mode axes once P-021 supplies documents for them. This is the whole "no new
+ * table" of P-012: the binding is derived, and the control anchor projects it.
+ */
+export function suSessionBinding(session: { fleetRole?: string | null; modes?: readonly string[] | null }): StackBinding {
+  const layers: BoundLayer[] = [];
+  const role = (session.fleetRole ?? '').trim().toLowerCase();
+  if (role === 'leader' || role === 'member') layers.push(suPostureLayer(role));
+  // `modes` is accepted for the P-021 seam: no mode-axis document exists in v1 (D-008 —
+  // the AUTO / IDEATE / DRAIN text is kernel), so a mode binds no layer yet.
+  return normalizeStackBinding(layers);
+}
+
+/** Static layers + the runtime binding (attach semantics — exclusive layers replace). */
+export function suEffectiveBinding(runtime: StackBinding | null | undefined, posture?: FleetPostureRole | null): StackBinding {
+  let binding = normalizeStackBinding([...SU_STATIC_LAYERS]);
+  const runtimeLayers = runtime ? normalizeStackBinding(runtime).layers : [];
+  if (posture) {
+    const wanted = suPostureLayer(posture);
+    const bound = runtimeLayers.find((l) => l.slot === 'fleet-posture');
+    if (bound && bound.id !== wanted.id) throw new Error(`su-stack: posture "${posture}" disagrees with the binding's fleet-posture layer "${bound.id}"`);
+    if (!bound) runtimeLayers.push(wanted);
+  }
+  for (const layer of runtimeLayers) binding = attachLayer(binding, layer).after;
+  return binding;
 }
 
 export interface ComposedSuStack extends ComposedStack {

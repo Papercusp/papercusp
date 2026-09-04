@@ -129,6 +129,10 @@ export const FORGED_CONTROL_LITERALS: readonly string[] = [
   '⟦post-compaction-recovery⟧',
   '⟦turn-provenance⟧',
   '⟦mode⟧',
+  // P-012 / D-022: the stamp that opens an injected stack mutation (`stack-mutation.ts`
+  // `STACK_INJECTION_STAMP`) — an identity carrying it would forge an attach / detach.
+  // Inlined, not imported: `stack-mutation.ts` → `render-stack.ts` → this module.
+  '⟦stack⟧',
   '<!-- papercusp-rule:',
 ];
 
