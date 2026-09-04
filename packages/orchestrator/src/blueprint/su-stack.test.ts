@@ -89,7 +89,11 @@ test('composeSuStackSource — binding a fleet posture renders it between domain
 test('suSessionBinding / suEffectiveBinding — presence fleet_role derives the posture layer; the static layers are implied; posture sugar and an explicit binding must agree', () => {
   assert.deepEqual(bindingRefs(suSessionBinding({ fleetRole: null })), []);
   assert.deepEqual(bindingRefs(suSessionBinding({ fleetRole: 'Leader' })), ['fleet-posture:su.fleet-leader']);
-  assert.deepEqual(bindingRefs(suSessionBinding({ fleetRole: 'member', modes: ['auto'] })), ['fleet-posture:su.fleet-member'], 'no mode-axis document in v1 (D-008)');
+  assert.deepEqual(
+    bindingRefs(suSessionBinding({ fleetRole: 'member', modes: ['auto'] })),
+    ['fleet-posture:su.fleet-member', 'autonomy:su.mode-auto'],
+    'P-021: an active mode binds its axis identity beside the posture (D-008 as amended)',
+  );
   assert.deepEqual(bindingRefs(suEffectiveBinding(null)), ['domain:papercusp-engineer', 'collaboration-stance:su-collaborator', 'practice:su.practice']);
   assert.deepEqual(bindingRefs(suEffectiveBinding(suPostureBinding('member'))), [
     'domain:papercusp-engineer',

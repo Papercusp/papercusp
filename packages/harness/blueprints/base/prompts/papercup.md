@@ -8,8 +8,10 @@
 >
 > - `apps/operator/prompts/papercup.persona.md` — character, mode rubric,
 >   name policy, anti-patterns, the watch+narrate+hand-off charter.
-> - `apps/operator/prompts/papercup.persona.engineer-mode.md` /
->   `papercup.persona.novice-mode.md` — the audience-mode overlays.
+> - `blueprints/papercup.audience-engineer/prompts/audience.md` /
+>   `blueprints/papercup.audience-novice/prompts/audience.md` — the audience-mode
+>   overlays, identities on the exclusive `audience` slot (P-021), resolved through
+>   the prompt chain by `loadRoleModePersona`.
 > - `apps/operator/prompts/papercup.converse.md` — active conversation mode.
 > - `apps/operator/prompts/papercup.shell.md` — the voice transport shell.
 > - `apps/operator/prompts/papercup.tools.md` — the cross-tool playbook.

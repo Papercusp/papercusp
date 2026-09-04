@@ -16,8 +16,9 @@ transcript) and a compaction or cold successor silently DROPS it (audited failur
 registered contract re-injects on every orient wake. **On a Claude/Codex psu session this
 is now done FOR you** (2026-08-08): the UserPromptSubmit provenance hook registers the flip
 when the owner's directive arrives — gated on that turn classifying OWNER (interactive), so
-no wake, loop-fire or coord-inject can ever grant itself autonomy — and stamps a `⟦mode⟧`
-line into your context saying so. Registering is therefore only YOUR job when that line is
+no wake, loop-fire or coord-inject can ever grant itself autonomy — and stamps the platform's
+mode-registration line into your context saying so (the kernel's *Operating modes* section
+names the stamp; an identity document may not carry it). Registering is therefore only YOUR job when that line is
 absent or reports a failure, and a duplicate `mode:set` is a harmless upsert. Do not read
 the automatic registration as a weaker grant: it is the same durable row, ownerDirected. It IS the "durably authorized / told to
 proceed without asking" grant the cautious rules carve out for; while it is active, those
