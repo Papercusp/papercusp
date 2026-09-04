@@ -444,10 +444,14 @@ export interface SuPartDocument {
 
 /**
  * One document per prose-bearing part (the `client` part is seam-only — its
- * documents already exist under `apps/operator/prompts/`). Paths: the two
- * identity documents live in their own blueprint dir (`prompts/agent-base-overlay.md`
- * is the `domain` leaf name D-018 fixed); the rest sit beside the source as
- * `su.<part>.md` candidates until P-003 / P-020 give them a home.
+ * documents already exist under `apps/operator/prompts/`). Paths: the four
+ * IDENTITY documents live in their own blueprint dir (`prompts/agent-base-overlay.md`
+ * is the `domain` leaf name D-018 fixed; `prompts/<slot>.md` for every other slot —
+ * the su-collaborator stance and, since P-020, the two fleet postures); the kernel,
+ * practice and instance texts sit beside the source as `su.<part>.md`.
+ * `suPartDocumentHome` tells the two apart — an identity-homed document is what the
+ * su stack composer resolves THROUGH THE PROMPT CHAIN (P-020), the base-homed ones
+ * render from their tiles.
  */
 export const SU_PART_DOCUMENTS: readonly SuPartDocument[] = [
   {
@@ -472,15 +476,15 @@ export const SU_PART_DOCUMENTS: readonly SuPartDocument[] = [
     id: 'su.fleet-member',
     part: 'fleet-posture',
     posture: 'member',
-    path: 'blueprints/base/prompts/su.fleet-member.md',
-    role: 'fleet-member posture CANDIDATE (text only) — P-020 makes it an identity; attached at fleet:launch-on-plan / fleet:join',
+    path: 'blueprints/su.fleet-member/prompts/fleet-posture.md',
+    role: 'identity #3 — the `fleet-posture` document of blueprints/su.fleet-member (P-020; exclusive per D-003/D-007): attached at fleet:launch-on-plan / fleet:join, resolved through the prompt chain',
   },
   {
     id: 'su.fleet-leader',
     part: 'fleet-posture',
     posture: 'leader',
-    path: 'blueprints/base/prompts/su.fleet-leader.md',
-    role: 'fleet-leader posture CANDIDATE (text only) — P-020 makes it an identity; attached at fleet:take-leadership',
+    path: 'blueprints/su.fleet-leader/prompts/fleet-posture.md',
+    role: 'identity #4 — the `fleet-posture` document of blueprints/su.fleet-leader (P-020; exclusive per D-003/D-007): attached at fleet:take-leadership (a swap that voids su.fleet-member), resolved through the prompt chain',
   },
   {
     id: 'su.practice',
@@ -495,6 +499,22 @@ export const SU_PART_DOCUMENTS: readonly SuPartDocument[] = [
     role: 'INSTANCE-layer candidate — belongs in the papercusp project guide / pot override, not in any identity; P-003 moves it',
   },
 ];
+
+/**
+ * Where a part document LIVES — derived from its path, never restated (derived-truth
+ * ladder rung 1). `identity` = under `blueprints/<identity-id>/prompts/`, the document
+ * of an identity blueprint whose `slots:` names the part (P-020 resolves these through
+ * the prompt chain); `base` = beside su.md under `blueprints/base/prompts/`.
+ */
+export function suPartDocumentHome(doc: Pick<SuPartDocument, 'path'>): 'identity' | 'base' {
+  return doc.path.startsWith(`${BASE_ROLE_LIBRARY_REL}/`) ? 'base' : 'identity';
+}
+
+/** The identity blueprint id an identity-homed part document belongs to (`blueprints/<id>/…`). */
+export function suPartDocumentBlueprintId(doc: Pick<SuPartDocument, 'path'>): string | null {
+  const m = /^blueprints\/([^/]+)\/prompts\//.exec(doc.path);
+  return suPartDocumentHome(doc) === 'identity' && m ? m[1]! : null;
+}
 
 export function suPartDocument(id: SuPartDocId): SuPartDocument {
   const d = SU_PART_DOCUMENTS.find((x) => x.id === id);
