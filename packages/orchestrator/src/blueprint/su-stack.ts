@@ -24,9 +24,9 @@
  * LOSSLESS by construction otherwise: every tile of su.md that is not a dropped
  * dedupe tile renders exactly once — `su-stack.test.ts` proves it over the real tree.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { harnessPath } from '@papercusp/harness/paths';
+import { harnessPath, harnessRoot } from '@papercusp/harness/paths';
 import { composeStack, type ComposeStackOptions, type ComposedStack, type StackDocument } from './render-stack.js';
 import {
   applyStackMutation,
@@ -43,6 +43,7 @@ import {
   SU_PREAMBLE_REL,
   locateSuTiles,
   readSuSource,
+  suPartDocumentHome,
   tilesOfDocument,
   type FleetPostureRole,
   type LocatedSuTile,
@@ -75,6 +76,17 @@ export interface SuStackComposeOptions extends ComposeStackOptions {
    * cannot serve; returning null refuses the binding loudly.
    */
   resolveLayer?: (layer: BoundLayer, located: readonly LocatedSuTile[]) => StackDocument | null;
+  /**
+   * P-020: the roots an IDENTITY-HOMED part document (`blueprints/<identity>/prompts/…` —
+   * the domain leaf, the stance, the two fleet postures) is resolved from, most-specific
+   * FIRST — the prompt chain's tiers (a hive's local / installed blueprints, then the
+   * built-in harness), the same walk `resolveReplacementSystemPromptStack` does for the
+   * domain overlay. Default `[harnessDir]` (the built-in tier alone). The first root that
+   * holds the document wins; a bound identity whose document exists in NO root REFUSES
+   * the render rather than falling back to su.md's tiles — the tiles are the DERIVATION
+   * of these files (`gen:su-decomposition`), not a second source.
+   */
+  identityRoots?: readonly string[];
 }
 
 export interface SuStackDocuments {
@@ -201,8 +213,9 @@ export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocum
   if (seam.length) docs.push({ id: 'client-seam', layer: 'client', slot: 'client', text: seam.map((t) => t.text).join(''), sourcePath: null });
   // The slot layers: the static su layers with the runtime binding applied over them (P-012).
   const binding = suEffectiveBinding(opts.binding, opts.posture);
+  const identityRoots = suIdentityRoots(opts);
   for (const layer of binding.layers) {
-    const doc = suBoundLayerDocument(located, layer) ?? opts.resolveLayer?.(layer, located) ?? null;
+    const doc = suBoundLayerDocument(located, layer, { identityRoots }) ?? opts.resolveLayer?.(layer, located) ?? null;
     if (!doc) throw new Error(`su-stack: bound layer "${layer.slot}:${layer.id}" is neither an su.md part document nor resolvable by the caller`);
     docs.push(doc);
   }
@@ -211,15 +224,63 @@ export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocum
   return { docs, located, droppedTiles, keptDedupeTiles, binding };
 }
 
+/** The identity-document roots a compose call resolves against (`identityRoots`, else the harness dir, else the built-in harness). */
+export function suIdentityRoots(opts: Pick<SuStackComposeOptions, 'identityRoots' | 'harnessDir'>): string[] {
+  if (opts.identityRoots && opts.identityRoots.length) return [...opts.identityRoots];
+  return [opts.harnessDir ?? harnessRoot()];
+}
+
+export interface SuIdentityDocumentHit {
+  /** The root the document was found under (the most specific tier that carries it). */
+  root: string;
+  /** Absolute path of the resolved document. */
+  path: string;
+  text: string;
+}
+
 /**
- * The `StackDocument` for a bound layer served by su.md's own tiles — the part
+ * P-020: resolve an identity-homed part document THROUGH THE PROMPT CHAIN — the first
+ * root (most specific first) that holds `<root>/<part.path>` wins. Null when no root
+ * holds it; the caller decides whether that refuses.
+ */
+export function resolveSuIdentityDocument(part: SuPartDocument, roots: readonly string[]): SuIdentityDocumentHit | null {
+  for (const root of roots) {
+    const p = join(root, part.path);
+    if (existsSync(p)) return { root, path: p, text: readFileSync(p, 'utf8') };
+  }
+  return null;
+}
+
+/**
+ * The `StackDocument` for a bound layer that is one of su.md's part documents — the part
  * document whose id matches AND whose part IS the bound slot (a `su.fleet-leader` bound
  * on `practice` is refused, not rendered in the wrong place). Null for any other id.
+ *
+ * WHERE THE TEXT COMES FROM (P-020): an IDENTITY-homed document (the domain leaf, the
+ * stance, the two fleet postures — `suPartDocumentHome === 'identity'`) is resolved
+ * through the prompt chain (`resolve.identityRoots`, most specific first); the tiles of
+ * su.md are its DERIVATION (byte-equal by `su-decomposition.test.ts`), not the source,
+ * so a missing identity document REFUSES rather than silently rendering the tiles. A
+ * base-homed document (`su.practice`) renders from its tiles. With no `resolve` given
+ * (a caller that only has the located tiles) every document renders from its tiles.
  */
-export function suBoundLayerDocument(located: readonly LocatedSuTile[], layer: BoundLayer): StackDocument | null {
+export function suBoundLayerDocument(
+  located: readonly LocatedSuTile[],
+  layer: BoundLayer,
+  resolve?: { identityRoots: readonly string[] },
+): StackDocument | null {
   const part = SU_PART_DOCUMENTS.find((d) => d.id === layer.id);
   if (!part || part.part !== layer.slot) return null;
   const slot: SlotId = layer.slot;
+  if (resolve && suPartDocumentHome(part) === 'identity') {
+    const hit = resolveSuIdentityDocument(part, resolve.identityRoots);
+    if (!hit) {
+      throw new Error(
+        `su-stack: identity document for "${layer.slot}:${layer.id}" (${part.path}) exists in none of the identity roots [${resolve.identityRoots.join(', ')}] — the identity is not installed in any tier (regenerate the built-in copy with \`npm run gen:su-decomposition\`)`,
+      );
+    }
+    return { id: part.id, layer: slotLayer(slot), slot, text: hit.text, sourcePath: hit.path } satisfies StackDocument;
+  }
   const spec = { id: part.id, layer: slotLayer(slot), slot, text: textOf(located, part), sourcePath: part.path } satisfies StackDocument;
   return spec;
 }
