@@ -53,6 +53,94 @@ export interface StackBinding {
 export type MutationDelivery = 'inject-now' | 'relaunch-with-carry';
 export type StackMutationOp = 'attach' | 'detach';
 
+/** Explicit delivery boundary for an acknowledged activation (D-030/P-040). */
+export interface StackActivationContext {
+  delivery: 'soft' | 'fresh-context';
+  carry: 'warm' | 'cold';
+  privateMemory: 'preserve' | 'reset';
+}
+
+export interface StackActivationRevision {
+  specificationRevision: string;
+  stateRevision: string;
+}
+
+export interface StackMutationActivation {
+  desired: StackActivationRevision;
+  prepared: StackActivationRevision | null;
+  applied: StackActivationRevision | null;
+  status: 'desired' | 'prepared' | 'applied' | 'failed';
+  /** Stable retry key; replays are safe and must not apply stale revisions. */
+  idempotencyKey: string;
+  context: StackActivationContext;
+  failure?: string;
+}
+
+export function activationContextForDelivery(
+  delivery: MutationDelivery,
+  overrides: Partial<StackActivationContext> = {},
+): StackActivationContext {
+  return {
+    delivery: delivery === 'relaunch-with-carry' ? 'fresh-context' : 'soft',
+    carry: 'warm',
+    privateMemory: 'preserve',
+    ...overrides,
+  };
+}
+
+function sameActivationRevision(a: StackActivationRevision | null | undefined, b: StackActivationRevision): boolean {
+  return Boolean(a && a.specificationRevision === b.specificationRevision && a.stateRevision === b.stateRevision);
+}
+
+function assertActivationRevision(revision: StackActivationRevision): StackActivationRevision {
+  if (!/^[0-9a-f]{64}$/.test(String(revision?.specificationRevision ?? ''))) {
+    throw new Error('stack activation requires a lowercase sha256 specificationRevision');
+  }
+  if (!String(revision?.stateRevision ?? '').trim()) throw new Error('stack activation requires a non-empty stateRevision');
+  return { specificationRevision: revision.specificationRevision, stateRevision: String(revision.stateRevision) };
+}
+
+/** Mark a successfully rendered mutation as prepared; host acknowledgement is separate. */
+export function prepareStackMutationActivation(
+  input: Omit<StackMutationActivation, 'prepared' | 'status'> & { prepared?: StackActivationRevision | null; status?: StackMutationActivation['status'] },
+): StackMutationActivation {
+  const desired = assertActivationRevision(input.desired);
+  if (input.prepared && !sameActivationRevision(input.prepared, desired)) throw new Error('stale stack activation cannot be prepared');
+  return {
+    ...input,
+    desired,
+    prepared: desired,
+    status: 'prepared',
+    applied: input.applied ? assertActivationRevision(input.applied) : null,
+  };
+}
+
+/** Acknowledge only the prepared revision. Repeated acknowledgement is idempotent. */
+export function acknowledgeStackMutationActivation(
+  current: StackMutationActivation,
+  revision: StackActivationRevision,
+): StackMutationActivation {
+  const applied = assertActivationRevision(revision);
+  if (sameActivationRevision(current.applied, applied)) return current;
+  if (!sameActivationRevision(current.desired, applied) || !sameActivationRevision(current.prepared, applied)) {
+    throw new Error('stack activation acknowledgement does not match the prepared revision');
+  }
+  return { ...current, prepared: null, applied, status: 'applied', failure: undefined };
+}
+
+/** Record a failed render/delivery while preserving the prior applied revision. */
+export function failStackMutationActivation(
+  current: StackMutationActivation,
+  revision: StackActivationRevision,
+  failure: string,
+): StackMutationActivation {
+  const failed = assertActivationRevision(revision);
+  if (sameActivationRevision(current.applied, failed)) return current;
+  if (!sameActivationRevision(current.desired, failed)) throw new Error('stale stack activation failure');
+  if (!failure.trim()) throw new Error('stack activation failure requires a reason');
+  return { ...current, prepared: null, status: 'failed', failure: failure.trim() };
+}
+
 export interface MutationDeliverySpec {
   delivery: MutationDelivery;
   /** Why this slot delivers the way it does — the P-012 clause it applies. */
@@ -117,6 +205,8 @@ export interface StackMutation {
   before: StackBinding;
   after: StackBinding;
   reason: string;
+  /** Present when a caller supplied a revisioned activation envelope. */
+  activation?: StackMutationActivation;
 }
 
 function assertSlot(slot: string): asserts slot is SlotId {
@@ -331,9 +421,19 @@ function layerLabel(m: StackMutation): string {
  * `doc` is the attached document (required for an inject-now attach; ignored
  * otherwise). Deterministic — `stack-mutation.test.ts` pins the shape.
  */
-export function renderStackInjection(m: StackMutation, doc: StackDocument | null): string {
+export function renderStackInjection(
+  m: StackMutation,
+  doc: StackDocument | null,
+  activation?: StackMutationActivation,
+): string {
   if (!m.changed) return '';
-  const lines: string[] = [stampLine(m), ''];
+  const stamped = activation
+    ? `${STACK_INJECTION_STAMP} ${JSON.stringify({
+        ...JSON.parse(stampLine(m).slice(STACK_INJECTION_STAMP.length + 1)),
+        activation,
+      })}`
+    : stampLine(m);
+  const lines: string[] = [stamped, ''];
   if (m.delivery === 'relaunch-with-carry') {
     lines.push(`## Stack mutation — ${layerLabel(m)} ${m.op === 'attach' ? 'ATTACHED' : 'DETACHED'} (relaunch-with-carry)`);
     lines.push('');
@@ -388,6 +488,13 @@ export interface ApplyStackMutationInput {
    */
   documents: (binding: StackBinding) => readonly StackDocument[];
   compose?: ComposeStackOptions;
+  /** Optional desired revision; successful composition marks it prepared. */
+  activation?: {
+    specificationRevision: string;
+    stateRevision: string;
+    idempotencyKey?: string;
+    context?: Partial<StackActivationContext>;
+  };
 }
 
 export interface AppliedStackMutation {
@@ -398,6 +505,8 @@ export interface AppliedStackMutation {
   nextRender: ComposedStack;
   /** The text to deliver now, or null (no-op, or relaunch-with-carry carries no document). */
   injection: string | null;
+  /** Prepared activation; acknowledge it only after the host accepts the payload. */
+  activation?: StackMutationActivation;
 }
 
 export function applyStackMutation(input: ApplyStackMutationInput): AppliedStackMutation {
@@ -413,8 +522,21 @@ export function applyStackMutation(input: ApplyStackMutationInput): AppliedStack
   // Kernel-safe: the seal + identity-lint over the WHOLE next render, before one byte is injected.
   const nextRender = composeStack(docs, input.compose);
   const doc = m.op === 'attach' ? (docs.find((d) => d.id === m.id && d.slot === m.slot) ?? null) : null;
-  const injection = m.changed ? renderStackInjection(m, doc) : '';
-  return { mutation: m, binding: m.after, nextRender, injection: injection || null };
+  const activation = m.changed && input.activation
+    ? prepareStackMutationActivation({
+        desired: {
+          specificationRevision: input.activation.specificationRevision,
+          stateRevision: input.activation.stateRevision,
+        },
+        prepared: null,
+        applied: null,
+        status: 'desired',
+        idempotencyKey: input.activation.idempotencyKey ?? `stack-activation:${input.activation.specificationRevision}:${input.activation.stateRevision}`,
+        context: activationContextForDelivery(SLOT_MUTATION_DELIVERY[m.slot].delivery, input.activation.context),
+      })
+    : undefined;
+  const injection = m.changed ? renderStackInjection(m, doc, activation) : '';
+  return { mutation: activation ? { ...m, activation } : m, binding: m.after, nextRender, injection: injection || null, ...(activation ? { activation } : {}) };
 }
 
 // ── the pinned doc rendering (COMPOSITION_MODEL.md §11) ──────────────────────
