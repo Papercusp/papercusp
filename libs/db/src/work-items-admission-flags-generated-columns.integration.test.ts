@@ -31,7 +31,9 @@ let sql: Sql;
 beforeAll(async () => {
   db = await createFreshTestDb({ prefix: 'workitemflags1110' });
   sql = postgres(db.url, { max: 1, onnotice: () => {} });
-  await sql.unsafe(`
+  await sql
+    .unsafe(
+      `
     CREATE SCHEMA harness_shared;
     CREATE TABLE harness_shared.work_items (
       workspace_id text NOT NULL DEFAULT 'default',
@@ -62,7 +64,9 @@ beforeAll(async () => {
       ('WI-OWNER-TEXT', '{"needsOwnerAction": "true"}'::jsonb),
       ('WI-FALSE', '{"_claimHold": false, "needsOwnerAction": false}'::jsonb),
       ('WI-LEGACY', '{"needsHuman": true}'::jsonb);
-  `).simple();
+  `,
+    )
+    .simple();
   await sql.unsafe(migrationSql).simple();
 }, 120_000);
 
@@ -73,12 +77,14 @@ afterAll(async () => {
 
 describe('migration 1110 — work-item admission generated columns', () => {
   it('adds two boolean ALWAYS-generated columns with the intended payload expressions', async () => {
-    const columns = await sql<{
-      column_name: string;
-      data_type: string;
-      is_generated: string;
-      generation_expression: string | null;
-    }[]>`
+    const columns = await sql<
+      {
+        column_name: string;
+        data_type: string;
+        is_generated: string;
+        generation_expression: string | null;
+      }[]
+    >`
       SELECT column_name, data_type, is_generated, generation_expression
         FROM information_schema.columns
        WHERE table_schema = 'harness_shared'
@@ -89,18 +95,22 @@ describe('migration 1110 — work-item admission generated columns', () => {
     expect(columns).toHaveLength(2);
     expect(columns.every((column) => column.data_type === 'boolean')).toBe(true);
     expect(columns.every((column) => column.is_generated === 'ALWAYS')).toBe(true);
-    expect(columns.find((column) => column.column_name === 'claim_hold')?.generation_expression)
-      .toContain('_claimHold');
-    expect(columns.find((column) => column.column_name === 'needs_owner_action')?.generation_expression)
-      .toContain('needsOwnerAction');
+    expect(columns.find((column) => column.column_name === 'claim_hold')?.generation_expression).toContain(
+      '_claimHold',
+    );
+    expect(columns.find((column) => column.column_name === 'needs_owner_action')?.generation_expression).toContain(
+      'needsOwnerAction',
+    );
   });
 
   it('preserves the old text-comparison semantics and exposes them through engineer_issues', async () => {
-    const rows = await sql<{
-      issue_id: string;
-      claim_hold: boolean | null;
-      needs_owner_action: boolean | null;
-    }[]>`
+    const rows = await sql<
+      {
+        issue_id: string;
+        claim_hold: boolean | null;
+        needs_owner_action: boolean | null;
+      }[]
+    >`
       SELECT issue_id, claim_hold, needs_owner_action
         FROM harness_shared.engineer_issues
        ORDER BY issue_id`;
