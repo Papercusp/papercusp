@@ -63,6 +63,31 @@ export {
   resolveBuiltinExtends,
 } from './loader.js';
 export type { LoadedBlueprint, BlueprintLayer, ResolveExtendsPath, BlueprintValidateRegistry } from './loader.js';
+// identities-v1 P-038 / D-028: one immutable composition boundary over the
+// existing loader, prompt resolver, addressed-document inputs and sealed render.
+export {
+  COMPOSITION_COMPILER_VERSION,
+  COMPOSITION_COMPILER_REVISION,
+  CompositionCompilerError,
+  compileAgentSpecification,
+  compileResolvedAgentSpecification,
+  compileResolvedSpecification,
+  compileComposition,
+  compileReplacementSystemPromptSpecification,
+  compileStackSpecification,
+  specificationPrompt,
+  promptBytesFromSpecification,
+} from './composition-compiler.js';
+export type {
+  CompositionCompilerErrorCode,
+  CompositionCompilerInput,
+  CompositionPromptInput,
+  CompositionPromptFileInput,
+  CompositionAddressedDocumentInput,
+  CompositionAddressedDocumentSet,
+  CompositionSettingInput,
+  CompiledAgentSpecification,
+} from './composition-compiler.js';
 // identities-v1-2026-08-30 P-001: the slot registry (D-007 / D-008 amendments), the
 // D-011 bundle kinds, and the MERGE_RULES registry the P-019 merger consumes.
 export * from './slots.js';

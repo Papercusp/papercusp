@@ -1253,13 +1253,27 @@ export const ResolvedAgentInputSchema = z.discriminatedUnion('kind', [
     .strict(),
 ]);
 
+const ResolvedAgentProvenanceSourceSchema = z
+  .object({
+    sourceRef: z.string().min(1),
+    sourceRevision: z.string().min(1),
+  })
+  .strict();
+
 export const ResolvedAgentProvenanceSchema = z
   .object({
     path: z.string().min(1),
     sourceRef: z.string().min(1),
     sourceRevision: z.string().min(1),
+    /** How the effective value was selected (declared/default/override/input). */
+    decision: z.string().min(1).optional(),
+    /** Every contributing source, retained when a value was overridden or unioned. */
+    sources: z.array(ResolvedAgentProvenanceSourceSchema).min(1).optional(),
   })
   .strict();
+
+export type ResolvedAgentInput = z.infer<typeof ResolvedAgentInputSchema>;
+export type ResolvedAgentProvenance = z.infer<typeof ResolvedAgentProvenanceSchema>;
 
 type DeepReadonly<T> = T extends (...args: never[]) => unknown
   ? T
