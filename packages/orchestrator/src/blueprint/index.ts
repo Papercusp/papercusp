@@ -178,6 +178,19 @@ export {
   KERNEL_SEAL_MARKER,
   KERNEL_SEAL_HEADING,
 } from './render-stack.js';
+// identities-v1 P-040 / D-030: revisioned stack activation and explicit
+// soft/fresh-context delivery boundaries.
+export {
+  activationContextForDelivery,
+  acknowledgeStackMutationActivation,
+  failStackMutationActivation,
+  prepareStackMutationActivation,
+} from './stack-mutation.js';
+export type {
+  StackActivationContext,
+  StackActivationRevision,
+  StackMutationActivation,
+} from './stack-mutation.js';
 export type { StackDocument, ComposedStack, ComposedStackEntry, ComposeStackOptions } from './render-stack.js';
 export {
   lintStackLayers,
