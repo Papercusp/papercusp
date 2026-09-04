@@ -78,7 +78,14 @@ export type { MergeRule, MergeRuleKind, SchemaLeaf } from './merge-rules.js';
 // identities-v1-2026-08-30 P-019: the merger that consumes MERGE_RULES (resolveLayers
 // composes a stack with mergeByRules; the per-leaf primitives are exported for tests
 // and for a renderer that composes a single leaf).
-export { mergeByRules, applyMergeRule, unionArrays, mostRestrictive, schemaInteriorPaths } from './merge.js';
+export {
+  mergeByRules,
+  applyMergeRule,
+  setUnionArrays,
+  keyedOverlayArrays,
+  intersectConstraint,
+  schemaInteriorPaths,
+} from './merge.js';
 export type { RawDocument } from './merge.js';
 // identities-v1-2026-08-30 P-002: the su.md decomposition — anchor tiling into
 // kernel / slot / instance parts, the verbatim part documents, the base role
@@ -100,7 +107,17 @@ export {
   writeSuPartDocuments,
   renderSuDecompositionMarkdown,
 } from './su-decomposition.js';
-export type { SuPart, SuTile, LocatedSuTile, SuPartDocument, SuPartDocId, FleetPostureRole, RoleLibraryRow, RoleLibraryDisposition, SuStackEntry } from './su-decomposition.js';
+export type {
+  SuPart,
+  SuTile,
+  LocatedSuTile,
+  SuPartDocument,
+  SuPartDocId,
+  FleetPostureRole,
+  RoleLibraryRow,
+  RoleLibraryDisposition,
+  SuStackEntry,
+} from './su-decomposition.js';
 // identities-v1 P-021 — MODES AS FACETS: the mode-axis identities (one exclusive axis slot per
 // mode definition, bound from the registry's active modes) and the `audience` identities
 // (the former file-based persona modes), both resolved through the prompt chain.
@@ -116,11 +133,24 @@ export {
   audienceIdentityId,
   audienceIdentityDocument,
 } from './mode-identities.js';
-export type { SuModeDocument, SuModeDocId, AudienceIdentityDocument, AudienceRole, AudienceMode } from './mode-identities.js';
+export type {
+  SuModeDocument,
+  SuModeDocId,
+  AudienceIdentityDocument,
+  AudienceRole,
+  AudienceMode,
+} from './mode-identities.js';
 // identities-v1 P-003 — the kernel seal: slot-based prompt assembly (the kernel renders
 // LAST under an explicit precedence statement), the composed-stack identity-lint (structural
 // BLOCK tier + heuristic WARN tier, D-009 as amended), and the interactive su's composed source.
-export { composeStack, orderStackDocuments, renderKernelSeal, isIdentityLayer, KERNEL_SEAL_MARKER, KERNEL_SEAL_HEADING } from './render-stack.js';
+export {
+  composeStack,
+  orderStackDocuments,
+  renderKernelSeal,
+  isIdentityLayer,
+  KERNEL_SEAL_MARKER,
+  KERNEL_SEAL_HEADING,
+} from './render-stack.js';
 export type { StackDocument, ComposedStack, ComposedStackEntry, ComposeStackOptions } from './render-stack.js';
 export {
   lintStackLayers,
@@ -133,7 +163,13 @@ export {
   GENERATED_MARKER,
   CLIENT_SEAM_MARKER,
 } from './identity-lint.js';
-export type { IdentityLintFinding, IdentityLintOptions, IdentityLintTier, StackLayerInput, LayerTrust } from './identity-lint.js';
+export type {
+  IdentityLintFinding,
+  IdentityLintOptions,
+  IdentityLintTier,
+  StackLayerInput,
+  LayerTrust,
+} from './identity-lint.js';
 export {
   suStackDocuments,
   composeSuStackSource,
