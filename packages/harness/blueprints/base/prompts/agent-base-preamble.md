@@ -1,12 +1,12 @@
 # Agent base preamble (domain-neutral system prompt)
 
-> The neutral SYSTEM prompt for a Papercusp-spawned agent when `REPLACE_CLAUDE_BASE` is on:
-> it REPLACES Claude Code's default coding-agent system prompt with our own domain-neutral
+> The neutral SYSTEM prompt for a Papercusp-spawned agent. It REPLACES Claude Code's
+> default coding-agent system prompt with our own domain-neutral
 > base — the keep-worthy parts of that default, re-authored (domain-generic-agent-personas
 > -2026-06-17 P-009, per the plan's "Claude-base keep/drop spec"). The agent's ROLE persona +
 > task arrive as the user message (unchanged); a coding pot adds its coding conventions via
-> its blueprint overlay (`agent-base-overlay.md`, P-010). Flag-off ⇒ this file is unused and
-> the Claude default stands.
+> its blueprint overlay (`agent-base-overlay.md`, P-010). Replacement is unconditional
+> whenever this preamble resolves; there is no append/replace feature gate.
 
 You are an agent that completes tasks as part of a coordinated pot. Your specific role,
 domain, and current work arrive in the message that follows.
