@@ -119,15 +119,29 @@ async function closeAsCommitted(id: string, evidence: Record<string, unknown>): 
 const SHA_A = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 const SHA_B = '0000111122223333444455556666777788889999';
 
-function evidenceWith(identity: unknown, filesChanged: string[] = ['src/fix.ts']) {
+function evidenceWith(
+  identity: unknown,
+  filesChanged: string[] = ['src/fix.ts'],
+  filesDeleted: string[] = [],
+) {
   return {
     summary: 'verified',
     filesChanged,
+    ...(filesDeleted.length ? { filesDeleted } : {}),
     treeStamp: {
       repositoryRoot: '/repo',
       headSha: SHA_A,
       ...(identity === undefined ? {} : { contentIdentity: identity }),
     },
+  };
+}
+
+function outOfRepoArtifact(path: string) {
+  return {
+    path,
+    workingTreeBlobSha: null,
+    headBlobSha: null,
+    outOfRepoArtifact: true,
   };
 }
 
@@ -142,6 +156,17 @@ beforeAll(async () => {
   await sql.unsafe('CREATE SCHEMA harness_shared');
   await createWorkItemsFixture();
   await applyMigrationFile(migration972Sql);
+  // Prove the base migration already understands intentional deletions before
+  // migration 1044 replaces the function for multi-repository/artifact cases.
+  const [baseDeletionFloor] = await sql<{ valid: boolean; presentInTree: boolean }[]>`
+    SELECT
+      harness_shared.completion_content_identity_proven(
+        ${sql.json([{ path: 'src/deleted.ts', deletion: true, workingTreeBlobSha: null, headBlobSha: null }])}
+      ) AS valid,
+      harness_shared.completion_content_identity_proven(
+        ${sql.json([{ path: 'src/deleted.ts', deletion: true, workingTreeBlobSha: SHA_A, headBlobSha: null }])}
+      ) AS "presentInTree"`;
+  expect(baseDeletionFloor).toEqual({ valid: true, presentInTree: false });
   await applyMigrationFile(migration1044Sql);
   // A silently-absent or disabled trigger would make every keep-case below pass
   // vacuously, so the definition itself is part of the precondition. The probe
@@ -235,6 +260,55 @@ describe('migration 972 — completion authority content-identity floor', () => 
     expect(await closeAsCommitted('WI-CASE-EMPTY', evidenceWith([]))).toBe('proposed');
   });
 
+  it('keeps committed for a filesDeleted path absent from both the working tree and HEAD', async () => {
+    await seedOpenItem('WI-CASE-DELETION');
+    const observed = await closeAsCommitted(
+      'WI-CASE-DELETION',
+      evidenceWith(
+        [{ path: 'src/deleted.ts', workingTreeBlobSha: null, headBlobSha: null, deletion: true }],
+        [],
+        ['src/deleted.ts'],
+      ),
+    );
+    expect(observed).toBe('committed');
+
+    const [p] = await sql<{ deletion_ok: boolean; deletion_missing_sha: boolean }[]>`
+      SELECT
+        harness_shared.completion_content_identity_proven(
+          ${sql.json([{ path: 'src/deleted.ts', deletion: true, workingTreeBlobSha: null, headBlobSha: null }])}
+        ) AS deletion_ok,
+        harness_shared.completion_content_identity_proven(
+          ${sql.json([{ path: 'src/deleted.ts', deletion: true, workingTreeBlobSha: SHA_A, headBlobSha: null }])}
+        ) AS deletion_missing_sha`;
+    expect(p).toEqual({ deletion_ok: true, deletion_missing_sha: false });
+  });
+
+  it('downgrades a deletion claim when the path is still present in the working tree or in HEAD', async () => {
+    await seedOpenItem('WI-CASE-DELETION-WORKTREE');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-DELETION-WORKTREE',
+        evidenceWith(
+          [{ path: 'src/deleted.ts', workingTreeBlobSha: SHA_A, headBlobSha: null, deletion: true }],
+          [],
+          ['src/deleted.ts'],
+        ),
+      ),
+    ).toBe('proposed');
+
+    await seedOpenItem('WI-CASE-DELETION-COMMIT');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-DELETION-COMMIT',
+        evidenceWith(
+          [{ path: 'src/deleted.ts', workingTreeBlobSha: null, headBlobSha: SHA_A, deletion: true }],
+          [],
+          ['src/deleted.ts'],
+        ),
+      ),
+    ).toBe('proposed');
+  });
+
   /**
    * EI-21937921955988010 (migration 1044) — a completion may span SEVERAL repositories
    * and cite artifacts that belong to NONE. `verifiedHow: 'live-drove-ui'` requires
@@ -247,13 +321,6 @@ describe('migration 972 — completion authority content-identity floor', () => 
    * unprovable entries would pass the first assertion and fail both controls.
    */
   it('excludes out-of-repo artifacts from the floor, but never lets them stand alone or excuse drift', async () => {
-    const artifact = (path: string) => ({
-      path,
-      workingTreeBlobSha: null,
-      headBlobSha: null,
-      outOfRepoArtifact: true,
-    });
-
     // Mixed close: a papercusp path, a SECOND checkout's path carrying its own root, and
     // a screenshot artifact. Every repo-backed path proves out, so this qualifies.
     await seedOpenItem('WI-CASE-MULTIREPO');
@@ -268,7 +335,7 @@ describe('migration 972 — completion authority content-identity floor', () => 
             headBlobSha: SHA_B,
             repositoryRoot: '/suite/phone-app',
           },
-          artifact('/home/u/.papercusp/evidence/WI-CASE-MULTIREPO/phone-dialer.png'),
+          outOfRepoArtifact('/home/u/.papercusp/evidence/WI-CASE-MULTIREPO/phone-dialer.png'),
         ]),
       ),
     ).toBe('committed');
@@ -278,7 +345,7 @@ describe('migration 972 — completion authority content-identity floor', () => 
     expect(
       await closeAsCommitted(
         'WI-CASE-ARTIFACT-ONLY',
-        evidenceWith([artifact('/home/u/.papercusp/evidence/WI-CASE-ARTIFACT-ONLY/ui.png')]),
+        evidenceWith([outOfRepoArtifact('/home/u/.papercusp/evidence/WI-CASE-ARTIFACT-ONLY/ui.png')]),
       ),
     ).toBe('proposed');
 
@@ -289,10 +356,27 @@ describe('migration 972 — completion authority content-identity floor', () => 
         'WI-CASE-ARTIFACT-PLUS-DRIFT',
         evidenceWith([
           { path: 'src/fix.ts', workingTreeBlobSha: SHA_B, headBlobSha: SHA_A },
-          artifact('/home/u/.papercusp/evidence/WI-CASE-ARTIFACT-PLUS-DRIFT/ui.png'),
+          outOfRepoArtifact('/home/u/.papercusp/evidence/WI-CASE-ARTIFACT-PLUS-DRIFT/ui.png'),
         ]),
       ),
     ).toBe('proposed');
+  });
+
+  it('keeps a mixed filesDeleted + outOfRepoArtifact completion committed', async () => {
+    await seedOpenItem('WI-CASE-DELETION-ARTIFACT');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-DELETION-ARTIFACT',
+        evidenceWith(
+          [
+            { path: 'src/deleted.ts', workingTreeBlobSha: null, headBlobSha: null, deletion: true },
+            outOfRepoArtifact('/home/u/.papercusp/evidence/WI-CASE-DELETION-ARTIFACT/ui.png'),
+          ],
+          [],
+          ['src/deleted.ts'],
+        ),
+      ),
+    ).toBe('committed');
   });
 
   it('keeps committed when every declared path proves blob equality', async () => {
@@ -367,12 +451,41 @@ describe('migration 972 — completion authority content-identity floor', () => 
 
   it('re-applies idempotently', async () => {
     await applyMigrationFile(migration972Sql);
-  await applyMigrationFile(migration1044Sql);
+    await applyMigrationFile(migration1044Sql);
     // The floor must survive its own re-application unchanged and enabled.
     const rows = await sql<{ tgenabled: string }[]>`
       SELECT tgenabled FROM pg_trigger
        WHERE tgrelid = 'harness_shared.work_items'::regclass
-         AND tgname = 'completion_authority_floor_trg' AND NOT tgisinternal`;
+        AND tgname = 'completion_authority_floor_trg' AND NOT tgisinternal`;
     expect(rows[0]?.tgenabled).toBe('O');
+
+    // Re-applying both migrations must preserve the final deletion/artifact
+    // semantics, not merely leave an enabled trigger behind.
+    await seedOpenItem('WI-CASE-REAPPLY-DELETION');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-REAPPLY-DELETION',
+        evidenceWith(
+          [
+            { path: 'src/deleted.ts', workingTreeBlobSha: null, headBlobSha: null, deletion: true },
+            outOfRepoArtifact('/home/u/.papercusp/evidence/WI-CASE-REAPPLY-DELETION/ui.png'),
+          ],
+          [],
+          ['src/deleted.ts'],
+        ),
+      ),
+    ).toBe('committed');
+
+    await seedOpenItem('WI-CASE-REAPPLY-DELETION-DRIFT');
+    expect(
+      await closeAsCommitted(
+        'WI-CASE-REAPPLY-DELETION-DRIFT',
+        evidenceWith(
+          [{ path: 'src/deleted.ts', workingTreeBlobSha: SHA_A, headBlobSha: null, deletion: true }],
+          [],
+          ['src/deleted.ts'],
+        ),
+      ),
+    ).toBe('proposed');
   });
 });

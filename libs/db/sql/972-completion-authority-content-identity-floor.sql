@@ -33,8 +33,8 @@
 -- - Only the done-route evidence surface (payload->_completionEvidence);
 --   dropped-route closes write terminal_completion_ref and carry no
 --   completion authority claim of this kind.
--- - filesChanged must be non-empty, mirroring the TS condition exactly: with
---   no declared paths there is nothing to prove.
+-- - filesChanged + filesDeleted must be non-empty, mirroring the TS condition
+--   exactly: with no declared paths there is nothing to prove.
 --
 -- FEDERATION NOTE: a remotely-projected close is held to the same floor as a
 -- local one — every peer enforcing the identical invariant converges instead
@@ -49,8 +49,10 @@ BEGIN;
 -- Exact SQL mirror of completionTreeContentIdentityMatches()
 -- (packages/operator-core/lib/agent-tools/work_items/completion-freshness.ts):
 --   Boolean(identity?.length && identity.every(e =>
---     e.workingTreeBlobSha !== null && e.headBlobSha !== null &&
---     e.workingTreeBlobSha === e.headBlobSha))
+--     e.deletion === true
+--       ? e.workingTreeBlobSha == null && e.headBlobSha == null
+--       : e.workingTreeBlobSha != null && e.headBlobSha != null &&
+--         e.workingTreeBlobSha === e.headBlobSha))
 CREATE OR REPLACE FUNCTION harness_shared.completion_content_identity_proven(
   p_identity jsonb
 ) RETURNS boolean
@@ -61,9 +63,21 @@ LANGUAGE sql IMMUTABLE AS $fn$
      AND NOT EXISTS (
            SELECT 1
              FROM jsonb_array_elements(p_identity) AS e
-            WHERE e->>'workingTreeBlobSha' IS NULL
-               OR e->>'headBlobSha' IS NULL
-               OR e->>'workingTreeBlobSha' <> e->>'headBlobSha'
+            WHERE (
+                    e->'deletion' = 'true'::jsonb
+                AND (
+                      e->>'workingTreeBlobSha' IS NOT NULL
+                   OR e->>'headBlobSha' IS NOT NULL
+                )
+              )
+               OR (
+                    e->'deletion' IS DISTINCT FROM 'true'::jsonb
+                AND (
+                      e->>'workingTreeBlobSha' IS NULL
+                   OR e->>'headBlobSha' IS NULL
+                   OR e->>'workingTreeBlobSha' <> e->>'headBlobSha'
+                )
+              )
          )
 $fn$;
 
@@ -75,7 +89,7 @@ RETURNS trigger
 LANGUAGE plpgsql AS $fn$
 DECLARE
   v_evidence      jsonb;
-  v_files_changed jsonb;
+  v_declared_count integer;
 BEGIN
   -- Fast path: only police closes claiming the strongest authority.
   IF NEW.authority IS DISTINCT FROM 'committed' THEN
@@ -96,10 +110,16 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Mirror `Boolean(completionEvidenceForGate?.filesChanged?.length)`.
-  v_files_changed := v_evidence->'filesChanged';
-  IF jsonb_typeof(v_files_changed) IS DISTINCT FROM 'array'
-     OR jsonb_array_length(v_files_changed) = 0 THEN
+  -- Mirror `Boolean(filesChanged?.length || filesDeleted?.length)`.
+  -- Deletions are caller-owned evidence and therefore count as declared paths
+  -- even though their identity entries intentionally carry null blob SHAs.
+  v_declared_count :=
+    CASE WHEN jsonb_typeof(v_evidence->'filesChanged') = 'array'
+      THEN jsonb_array_length(v_evidence->'filesChanged') ELSE 0 END
+    +
+    CASE WHEN jsonb_typeof(v_evidence->'filesDeleted') = 'array'
+      THEN jsonb_array_length(v_evidence->'filesDeleted') ELSE 0 END;
+  IF v_declared_count = 0 THEN
     RETURN NEW;
   END IF;
 
@@ -112,7 +132,7 @@ BEGIN
 
   NEW.authority := 'proposed';
   RAISE WARNING 'work_items %: completion authority downgraded committed->proposed (content identity unproven over % declared path(s))',
-    COALESCE(NEW.feature_id, '?'), jsonb_array_length(v_files_changed);
+    COALESCE(NEW.feature_id, '?'), v_declared_count;
   RETURN NEW;
 END;
 $fn$;

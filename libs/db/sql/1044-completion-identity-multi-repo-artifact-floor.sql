@@ -25,7 +25,8 @@
 -- preserved deliberately, and the integration test asserts both:
 --   1. at least one REPO-BACKED entry must exist — a close citing only artifacts has no
 --      provable code evidence and must never mint 'committed'; and
---   2. every repo-backed entry must still match exactly, so an artifact citation can
+--   2. every repo-backed entry must still match exactly, or be an intentional
+--      deletion with both blob identities absent, so an artifact citation can
 --      never excuse a genuine content mismatch elsewhere in the same close.
 --
 -- Non-destructive: CREATE OR REPLACE of one IMMUTABLE sql function. The trigger
@@ -46,18 +47,32 @@ LANGUAGE sql IMMUTABLE AS $fn$
              FROM jsonb_array_elements(p_identity) AS e
             WHERE COALESCE((e->>'outOfRepoArtifact')::boolean, false) = false
          )
-     -- (2) every repo-backed entry matches exactly; artifact entries are not judged.
+     -- (2) every repo-backed entry matches exactly, or is a deletion whose
+     --     absence is proven on both sides; artifact entries are not judged.
      AND NOT EXISTS (
            SELECT 1
              FROM jsonb_array_elements(p_identity) AS e
-            WHERE COALESCE((e->>'outOfRepoArtifact')::boolean, false) = false
+            WHERE e->'outOfRepoArtifact' IS DISTINCT FROM 'true'::jsonb
               AND (
-                    e->>'workingTreeBlobSha' IS NULL
-                 OR e->>'headBlobSha' IS NULL
-                 OR e->>'workingTreeBlobSha' <> e->>'headBlobSha'
+                (
+                  e->'deletion' = 'true'::jsonb
+                  AND (
+                        e->>'workingTreeBlobSha' IS NOT NULL
+                     OR e->>'headBlobSha' IS NOT NULL
+                  )
+                )
+                OR
+                (
+                  e->'deletion' IS DISTINCT FROM 'true'::jsonb
+                  AND (
+                        e->>'workingTreeBlobSha' IS NULL
+                     OR e->>'headBlobSha' IS NULL
+                     OR e->>'workingTreeBlobSha' <> e->>'headBlobSha'
+                  )
+                )
               )
          )
 $fn$;
 
 COMMENT ON FUNCTION harness_shared.completion_content_identity_proven(jsonb) IS
-  'SQL mirror of completionTreeContentIdentityMatches() — keep in sync with packages/operator-core/lib/agent-tools/work_items/completion-freshness.ts (EI-21502635666260946; multi-repo + outOfRepoArtifact exclusion added by EI-21937921955988010).';
+  'SQL mirror of completionTreeContentIdentityMatches() — keep in sync with packages/operator-core/lib/agent-tools/work_items/completion-freshness.ts (EI-21502635666260946; multi-repo + deletion + outOfRepoArtifact exclusion added by EI-21937921955988010).';
