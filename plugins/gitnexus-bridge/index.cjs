@@ -46,6 +46,7 @@ __export(index_exports, {
   deriveFreshness: () => deriveFreshness,
   describeChildExit: () => describeChildExit,
   formatFreshnessNote: () => formatFreshnessNote,
+  gitnexusChildCwd: () => gitnexusChildCwd,
   gitnexusMissingMessage: () => gitnexusMissingMessage,
   gitnexusPath: () => gitnexusPath,
   isReadOnlyTool: () => isReadOnlyTool,
@@ -53,6 +54,7 @@ __export(index_exports, {
   pinnedGitnexusBin: () => pinnedGitnexusBin,
   quotaFor: () => quotaFor,
   repoPolicyFromEnv: () => repoPolicyFromEnv,
+  resolveGitnexusChildCwd: () => resolveGitnexusChildCwd,
   resolveGitnexusExecutable: () => resolveGitnexusExecutable,
   rolesFor: () => rolesFor,
   tools: () => tools
@@ -123,7 +125,14 @@ function startChild() {
   if (!resolved) throw new Error(gitnexusMissingMessage());
   const proc = (0, import_node_child_process.spawn)(resolved.path, ["mcp"], {
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, PATH: gitnexusPath() }
+    env: { ...process.env, PATH: gitnexusPath() },
+    // D-066: the operator service runs from the release checkout, while the
+    // registered GitNexus index belongs to the canonical staging checkout.
+    // Inheriting process.cwd() makes GitNexus open a sibling clone against an
+    // index built elsewhere; current context/impact/query probes then SIGSEGV.
+    // Run the child in the registry's indexed root so the database, HEAD and
+    // repository identity are one coherent tuple.
+    cwd: gitnexusChildCwd()
   });
   const handle = {
     proc,
@@ -415,6 +424,14 @@ function readRegistryEntrySync(repoName) {
     return null;
   }
 }
+function resolveGitnexusChildCwd(entry, fallback, pathExists = import_node_fs.existsSync) {
+  const indexedRoot = entry?.path;
+  return indexedRoot && pathExists(indexedRoot) ? indexedRoot : fallback;
+}
+function gitnexusChildCwd() {
+  const repoName = repoPolicyFromEnv().defaultRepo;
+  return resolveGitnexusChildCwd(readRegistryEntrySync(repoName), process.cwd());
+}
 function headShaSync(cwd) {
   try {
     return (0, import_node_child_process.execFileSync)("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8", timeout: 5e3 }).trim() || null;
@@ -563,6 +580,7 @@ function _resetChildrenForTests() {
   deriveFreshness,
   describeChildExit,
   formatFreshnessNote,
+  gitnexusChildCwd,
   gitnexusMissingMessage,
   gitnexusPath,
   isReadOnlyTool,
@@ -570,6 +588,7 @@ function _resetChildrenForTests() {
   pinnedGitnexusBin,
   quotaFor,
   repoPolicyFromEnv,
+  resolveGitnexusChildCwd,
   resolveGitnexusExecutable,
   rolesFor,
   tools

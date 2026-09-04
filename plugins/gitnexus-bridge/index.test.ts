@@ -34,6 +34,7 @@ import plugin, {
   repoPolicyFromEnv,
   applyRepoPolicy,
   describeChildExit,
+  resolveGitnexusChildCwd,
 } from './index';
 
 // ── Gap 1: rolesFor — the role allowlist security boundary ──────────────────
@@ -187,6 +188,29 @@ describe('gitnexusPath — PATH fallback augmentation (Gap 3, P3)', () => {
     process.env.PATH = once;
     const twice = gitnexusPath();
     expect(twice).toEqual(once);
+  });
+});
+
+describe('resolveGitnexusChildCwd — index and process identity stay aligned (D-066)', () => {
+  it('uses the registered indexed root when it exists', () => {
+    expect(
+      resolveGitnexusChildCwd(
+        { name: 'papercusp', path: '/work/staging' },
+        '/work/release',
+        (path) => path === '/work/staging',
+      ),
+    ).toBe('/work/staging');
+  });
+
+  it('falls back to the host cwd when the registry path is missing or stale', () => {
+    expect(resolveGitnexusChildCwd(null, '/work/release', () => false)).toBe('/work/release');
+    expect(
+      resolveGitnexusChildCwd(
+        { name: 'papercusp', path: '/work/missing' },
+        '/work/release',
+        () => false,
+      ),
+    ).toBe('/work/release');
   });
 });
 

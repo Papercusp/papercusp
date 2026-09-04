@@ -224,6 +224,13 @@ function startChild(): ChildHandle {
   const proc = spawn(resolved.path, ['mcp'], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, PATH: gitnexusPath() },
+    // D-066: the operator service runs from the release checkout, while the
+    // registered GitNexus index belongs to the canonical staging checkout.
+    // Inheriting process.cwd() makes GitNexus open a sibling clone against an
+    // index built elsewhere; current context/impact/query probes then SIGSEGV.
+    // Run the child in the registry's indexed root so the database, HEAD and
+    // repository identity are one coherent tuple.
+    cwd: gitnexusChildCwd(),
   });
   const handle: ChildHandle = {
     proc,
@@ -601,6 +608,7 @@ export function applyRepoPolicy(
 /** One `~/.gitnexus/registry.json` entry, as gitnexus writes it. */
 export interface GitnexusRegistryStats {
   name?: string;
+  path?: string;
   indexedAt?: string;
   lastCommit?: string;
   stats?: { files?: number };
@@ -756,6 +764,22 @@ function readRegistryEntrySync(repoName: string): GitnexusRegistryStats | null {
     // honestly. It must never read as "fresh".
     return null;
   }
+}
+
+/** PURE — pick the indexed repository root, falling back only when it is unusable. */
+export function resolveGitnexusChildCwd(
+  entry: GitnexusRegistryStats | null,
+  fallback: string,
+  pathExists: (path: string) => boolean = existsSync,
+): string {
+  const indexedRoot = entry?.path;
+  return indexedRoot && pathExists(indexedRoot) ? indexedRoot : fallback;
+}
+
+/** Resolve the cwd for a real GitNexus MCP child from the same registry entry it queries. */
+export function gitnexusChildCwd(): string {
+  const repoName = repoPolicyFromEnv().defaultRepo;
+  return resolveGitnexusChildCwd(readRegistryEntrySync(repoName), process.cwd());
 }
 
 function headShaSync(cwd: string): string | null {
