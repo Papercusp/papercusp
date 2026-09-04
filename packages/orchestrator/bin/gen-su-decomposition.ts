@@ -3,13 +3,14 @@
  * COMPOSITION_MODEL.md §9 from `src/blueprint/su-decomposition.ts` + the live
  * `blueprints/base/prompts/su.md` (identities-v1-2026-08-30 P-002).
  *
- *   npx tsx libs/papercusp/packages/orchestrator/scripts/gen-su-decomposition.ts          # write
- *   npx tsx libs/papercusp/packages/orchestrator/scripts/gen-su-decomposition.ts --check  # exit 1 on drift
+ *   npm run gen:su-decomposition          # write (root package.json → this file)
+ *   npm run gen:su-decomposition:check    # exit 1 on drift
  *
  * The part documents are VERBATIM extractions (byte-equal to the concatenation of
  * their tiles) — never edit one by hand; edit su.md (or the tiling) and re-run.
  * `su-decomposition.test.ts` refuses drift, so a forgotten re-run fails the gate
- * with this command in the message.
+ * with this command in the message. Lives under `bin/` (not `scripts/`) so the
+ * package tsconfig compiles it — `lint:tsc:orchestrator` includes `bin/**`.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
