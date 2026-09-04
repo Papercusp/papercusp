@@ -235,7 +235,7 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
   const dept = configGet<string>(cfg, 'dept', '');
 
   // work-item-chat-context-modernize P-002: resolve blueprint-aware, mirroring
-  // invoke.ts's REPLACE_CLAUDE_BASE fallback (`extras.BLUEPRINT_ID= || loadHarnessBlueprintId`) —
+  // invoke.ts's replacement-system-prompt fallback (`extras.BLUEPRINT_ID= || loadHarnessBlueprintId`) —
   // a "normal pipeline" autonomous spawn carries no BLUEPRINT_ID extra either, so
   // `loadHarnessBlueprintId(stateDir)` (this harness's OWN `blueprint.yaml` id) is the
   // correct default chat should walk too. Previously this call passed no blueprintId at

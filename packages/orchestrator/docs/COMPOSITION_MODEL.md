@@ -5,7 +5,7 @@
 > D-013 (an identity IS a blueprint document), D-007 as amended (slots, not tiers), the D-008
 > amendment (one exclusive slot per mode axis), D-011 (one bundling model), D-004 / D-014
 > (grants reserved until M3), D-016 (Phase 3 scope), P-001's own **D-017**, and P-032's
-> **D-018** (§8 — the `REPLACE_CLAUDE_BASE` composer is SUBSUMED, not a third path).
+> **D-018** (§8 — the legacy replacement-system-prompt composer is SUBSUMED, not a third path).
 >
 > This document describes `src/blueprint/{schema,slots,merge-rules,loader,validate}.ts` as
 > built. The slot table below is **pinned** to `slots.ts` by `slots.test.ts` (it must equal
@@ -174,7 +174,7 @@ identities read the same projection; no new store.
   (§8, D-018).
 - **P-016 (M3)** lifts the `grants-reserved` refusal when capability classes exist.
 
-## 8. The second composer (`REPLACE_CLAUDE_BASE`) — subsumed, not a third path (P-032 / D-018)
+## 8. The spawn replacement composer — subsumed, not a third path (P-032 / D-018)
 
 `src/prompt-resolve.ts` `resolveReplacementSystemPrompt` already composes a REPLACEMENT system
 prompt for a spawn: the neutral base preamble, then the SINGLE most-specific blueprint overlay
@@ -188,13 +188,13 @@ without remainder:
 | `blueprints/base/prompts/agent-base-preamble.md` | **kernel** — the kernel's BASE text | domain- and tier-neutral ring-0 topics (Harness · Tools+MCP startup · Blockers · Diagnose-from-evidence · Mitigation≠fix · Context · Environment · Memory). Rendered on EVERY tier; su.md's ring-0 sections are kernel EXTENSIONS of the interactive tier and P-002 keeps an overlapping paragraph once, here. |
 | `blueprints/<id>/prompts/agent-base-overlay.md` | **`domain`** — the slot's LEAF document | exclusive; the chain walk's first-hit rule IS the exclusive-slot resolution. Two exist: `blueprints/coding-factory/prompts/agent-base-overlay.md` (the retired factory's) and, since P-002, `blueprints/papercusp-engineer/prompts/agent-base-overlay.md` (§9 — the identity's verbatim extraction). The coding HIVE (`blueprints/coding`) still has no domain leaf (EI-22285277325728666): attaching the papercusp-engineer identity to it is P-003 / P-023, not P-002. |
 
-**What the flag is.** `REPLACE_CLAUDE_BASE` (`libs/flags/src/types.ts`, default = `FLAG_DEFAULTS`
-= not in `DARK_FLAGS` ⇒ **ON**; no workspace override carries the key) is not a composer — it is
-the claude-CLI DELIVERY switch: replace the Claude Code default coding prompt
-(`--system-prompt-file` for bees in `invoke.ts`; `--system-prompt-file` +
-`--exclude-dynamic-system-prompt-sections` for psu sessions in `apps/operator/scripts/psu-launcher.mjs`)
-versus append to it. Only REPLACE is coherent under the seal: the append branch places Claude's
-unsealed coding prose ABOVE the kernel.
+**Delivery is unconditional (P-035 / WI-2143907).** Claude spawns always replace the Claude Code
+default coding prompt: `--system-prompt-file` for bees in `invoke.ts`, and
+`--system-prompt-file` plus `--exclude-dynamic-system-prompt-sections` for psu sessions in
+`apps/operator/scripts/psu-launcher.mjs`. OMP uses its corresponding `--system-prompt` form;
+Codex already takes the per-session `CODEX_HOME/AGENTS.md` as its whole prompt. There is no
+append/replace feature flag or env thread. An append branch would put unsealed client prose ABOVE
+the kernel and contradict the seal.
 
 **Subsumed (P-003, landed).** `resolveReplacementSystemPrompt` IS now a thin call into the
 renderer: `resolveReplacementSystemPromptStack` selects the stack `[domain(overlay)?, kernel(preamble)]`
@@ -205,13 +205,11 @@ newline — the old formula's bytes); only their ORDER changed, because "kernel 
 authoritatively and last" is the seal. `prompt-resolve.test.ts` ("P-032/D-018 …") pins the
 selection over the REAL tree and that this section names the two live paths above.
 
-**Retirement of the flag (follow-up, gated on the pin above).** The flag, its
-`PAPERCUSP_REPLACE_CLAUDE_BASE` env threading (bootstrap-su, bootstrap-role,
-dbos/orchestrator-runner, `invoke.replaceClaudeBaseEnabled`) and the launcher's
-`--append-system-prompt-file` branch are to be deleted, making REPLACE unconditional — the append
-branch is incoherent under the seal. That deletion is tracked as its own work-item on this plan
-rather than folded into P-003's render switch. `apps/operator/dist-*/**`, `papercusp-desktop/src-tauri/**/harness/**`
-and `.materialized/**` copies of both files are projections, never the live read path.
+The retired flag was only a DELIVERY switch, never a second composer. WI-2143907 removed its
+legacy env threading and both launchers' append branches after the sealed
+selection/order golden above turned green. `apps/operator/dist-*/**`,
+`papercusp-desktop/src-tauri/**/harness/**` and `.materialized/**` copies of both prompt files are
+projections, never the live read path.
 
 ## 9. The su decomposition — kernel / identity / instance boundary as slot assignments (P-002)
 
