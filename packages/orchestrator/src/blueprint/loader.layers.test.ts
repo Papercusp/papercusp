@@ -240,6 +240,33 @@ test('D-029 — a validated higher-precedence override can replace every prior v
   }
 });
 
+test('D-029 — a forbidden mode-axis authority contribution cannot be hidden by a later replacement', () => {
+  const { resolve, cleanup } = chain({
+    flavour: {
+      id: 'mode-flavour',
+      slots: [{ slot: 'autonomy' }],
+      knobs: { logRetention: 5 },
+    },
+  });
+  try {
+    assert.throws(
+      () =>
+        resolveBlueprint(
+          {
+            id: 'mode-root',
+            extends: 'flavour',
+            knobs: { logRetention: 1 },
+            ...runnable,
+          },
+          { resolve },
+        ),
+      /authority-on-mode-axis.*`knobs`/,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
 test('built-ins are unchanged by the extension: coding-factory still loads, stays a blueprint source, and its layers start at base', () => {
   const { layers, blueprint, sourceKind, validation } = loadBuiltinBlueprint('coding-factory');
   assert.equal(validation.ok, true, JSON.stringify(validation.errors));
