@@ -3365,9 +3365,11 @@ export const gymProposalsInHarnessShared = harnessShared.table("gym_proposals", 
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	decidedAt: bigint("decided_at", { mode: "number" }),
 	taskCorpus: text("task_corpus").default('synthetic').notNull(),
+	candidateVerdict: jsonb("candidate_verdict"),
 }, (table) => [
 	index("gym_proposals_ws_harness_cycle_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.cycle.asc().nullsLast().op("int4_ops")),
 	index("gym_proposals_ws_harness_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	index("gym_proposals_candidate_verdict_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`(candidate_verdict IS NOT NULL)`),
 	pgPolicy("gym_proposals_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("gym_proposals_task_corpus_check", sql`task_corpus = ANY (ARRAY['synthetic'::text, 'real'::text, 'mixed'::text])`),
 ]);
