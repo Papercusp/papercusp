@@ -73,8 +73,8 @@ A **stack** is the existing ordered multi-parent `extends` array (`schema.ts`
 `extends: z.union([z.string(), z.array(z.string())])`); `resolveLayers` walks it depth-first,
 parents before children, and returns every merged document as a `BlueprintLayer` (id,
 sourcePath, contentHash, attestation, slots) in merge order. Precedence ascends along that
-list; a renderer walks layers in layering order (§2) and renders the kernel LAST with an
-explicit precedence statement (the seal — P-003).
+list; the renderer (`render-stack.ts` `composeStack`, P-003 — §10) walks layers in layering
+order (§2) and renders the kernel LAST under an explicit precedence statement (the seal).
 
 **Merge algebra (`merge-rules.ts`, consumed by `merge.ts` — P-019).** Every leaf of `BlueprintSchema`
 (145 as of 2026-09-03; a LEAF is a scalar field, a whole array, a whole record, a union, a lazy
@@ -195,14 +195,21 @@ the claude-CLI DELIVERY switch: replace the Claude Code default coding prompt
 versus append to it. Only REPLACE is coherent under the seal: the append branch places Claude's
 unsealed coding prose ABOVE the kernel.
 
-**Retirement (P-003-gated).** P-003's renderer produces the spawn-tier system prompt from the
-stack `[kernel(preamble), domain(overlay)]`; `resolveReplacementSystemPrompt` becomes a thin call
-into it and the flag, its `PAPERCUSP_REPLACE_CLAUDE_BASE` env threading (bootstrap-su,
-bootstrap-role, dbos/orchestrator-runner, `invoke.replaceClaudeBaseEnabled`) and the launcher's
-`--append-system-prompt-file` branch are deleted — only after a golden test shows the renderer's
-output byte-equal to today's for the base-only and coding-factory chains. The byte formula is
-pinned now by `prompt-resolve.test.ts` ("P-032/D-018 …"), which also asserts this section names
-the two live paths above. `apps/operator/dist-*/**`, `papercusp-desktop/src-tauri/**/harness/**`
+**Subsumed (P-003, landed).** `resolveReplacementSystemPrompt` IS now a thin call into the
+renderer: `resolveReplacementSystemPromptStack` selects the stack `[domain(overlay)?, kernel(preamble)]`
+(the same preamble tier-walk and the same first-hit overlay rule as before) and `composeStack`
+renders it under the SEAL (§10) — the overlay ABOVE the precedence statement, the kernel base text
+LAST. The documents are byte-verbatim (trimmed, one blank line between blocks, one trailing
+newline — the old formula's bytes); only their ORDER changed, because "kernel renders
+authoritatively and last" is the seal. `prompt-resolve.test.ts` ("P-032/D-018 …") pins the
+selection over the REAL tree and that this section names the two live paths above.
+
+**Retirement of the flag (follow-up, gated on the pin above).** The flag, its
+`PAPERCUSP_REPLACE_CLAUDE_BASE` env threading (bootstrap-su, bootstrap-role,
+dbos/orchestrator-runner, `invoke.replaceClaudeBaseEnabled`) and the launcher's
+`--append-system-prompt-file` branch are to be deleted, making REPLACE unconditional — the append
+branch is incoherent under the seal. That deletion is tracked as its own work-item on this plan
+rather than folded into P-003's render switch. `apps/operator/dist-*/**`, `papercusp-desktop/src-tauri/**/harness/**`
 and `.materialized/**` copies of both files are projections, never the live read path.
 
 ## 9. The su decomposition — kernel / identity / instance boundary as slot assignments (P-002)
@@ -305,3 +312,60 @@ Base role library (`blueprints/base/prompts`, 63 files): 1 `decomposed-v1` · 1 
 | `papercup.md` | later | `collaboration-stance` (P-021) | the owner-facing chat collaborator — a second stance document, exclusive with su-collaborator on one stack |
 | `papercup-deep.md` | later | `collaboration-stance` (P-021) | the deep-work variant of the chat collaborator — same stance family as papercup.md |
 <!-- SU-DECOMPOSITION:END -->
+
+## 10. The kernel seal — slot-based prompt assembly and the composed-stack identity-lint (P-003)
+
+**The render (`src/blueprint/render-stack.ts`).** `composeStack(docs)` takes `StackDocument`s —
+each bound to a layer of `LAYER_ORDER` and, on a declarable layer, to the slot it fills — and
+renders: every non-kernel document in layering order (client → domain → fleet-posture → modes →
+practices → instance; within a layer by `compareSlotOrder`, ties by input order), then the
+**seal**, then the kernel documents last (base text first, extensions after). The seal is one
+block: the marker `<!-- PAPERCUSP-KERNEL:SEAL -->`, the heading `## Kernel precedence — the seal`,
+and a precedence statement that names every section above it, says the kernel below OUTRANKS
+them, enumerates the invariants D-009 protects (work-items registered, locks respected, claims
+honoured, completion evidence, stand-down, the D-005 ceiling, mode authority) and states that
+authority is computed and enforced in code at the dispatch seat, never by prose. Documents are
+trimmed and joined by one blank line; the render ends with one newline. A `block` lint finding
+refuses the render (no override path — D-009). `render-stack.test.ts` pins the order, the byte
+shape and the two D-009 fixtures.
+
+**Why the kernel is LAST.** The most recent instruction text is the one a model weights most,
+so the sealed base is the last thing read, and a hostile identity can only ever render at LOWER
+precedence than the seal — "renders below the kernel" in D-009 is a precedence claim, and in the
+text it means *above the seal line*. The seal is prose; the defense is that kernel authority is
+enforced as CODE (`capability-envelope/audit-mode-guard.ts`, `goal-mode-edit-guard.ts`, the
+file-lock PreToolUse hook, `NO_SUBAGENT_TOOLS_DENY`).
+
+**The lint (`src/blueprint/identity-lint.ts`) — two tiers, the line between them is the design.**
+
+| tier | code | what fires it | where it runs |
+|---|---|---|---|
+| BLOCK (structural) | `kernel-slot-claim` | a document claims `kernel` / `instance` as a slot | loader (`resolveBlueprint`, alongside validation's `slot-reserved-layer`) |
+| BLOCK | `exclusive-double-claim` | two DISTINCT documents on one exclusive slot | loader (reported as `slot-exclusive-conflict`), standalone lint |
+| BLOCK | `grant-outside-ceiling` | a grant names a class outside the D-005 ceiling (`opts.ceiling`; absent ⇒ empty — grants are reserved pre-M3) | loader |
+| BLOCK | `authority-on-mode-axis` | a mode-axis document carries a field outside `MODE_AXIS_ALLOWED_FIELDS` (id, extends, version, description, slots, bundles, publisher, attestation) | loader (`BlueprintLayer.fields`) |
+| BLOCK | `attestation-missing` / `attestation-failed` | a layer that must attest (default: `trust === 'installed'`, from `layerTrust(sourcePath)`) does not, or fails | loader (`attestation-hash-mismatch` for the failed case) |
+| BLOCK (enumerated literals) | `forged-control-literal` | an identity/instance document contains one of `FORGED_CONTROL_LITERALS` — the seal marker/heading, `⟦INSTRUCTION-PRECEDENCE⟧`, `⟦CTRL:`, `⟦post-compaction-recovery⟧`, `⟦turn-provenance⟧`, `⟦mode⟧`, `<!-- papercusp-rule:` | renderer (`lintStackDocuments`) |
+| WARN (heuristic) | `kernel-heading-restated` | a `## ` heading a kernel document in the stack owns, re-stated (derived, exact match; an explicit list matches substrings — the instance-override guard's mode) | renderer |
+| WARN | `generated-marker` | a `PAPERCUSP-SU:` splice marker in an identity (the client seam on the `client` slot excepted) | renderer |
+| WARN | `kernel-contradiction-phrasing` | "skip work-items" / "bypass locks" / "ignore a claim conflict" / "suppress completion evidence" / "evade a stand-down" phrasing — paraphrase-blind, false-positive on legitimate text, hence WARN | renderer |
+| WARN → BLOCK | `text-grant-inconsistency` | text instructs use of a capability class the document does not grant (`opts.capabilityClasses`; skipped without a vocabulary; `textGrantTier: 'block'` after M3) | renderer |
+
+`packages/operator-core/lib/hive-override-additive-guard.ts` (the 2026-06-24 warn-only guard) is
+the WARN tier's seed and now calls the same `detectHeadingOverlap` — one heuristic, two callers.
+
+**The interactive su source (`src/blueprint/su-stack.ts`).** `composeSuStackSource()` builds the
+SU_DEFAULT_STACK (§9) from su.md's tiles: the client seam renders AS the `client` layer (so
+`renderSuPlaybook` step 1 still splices the per-client overlay there), `papercusp-engineer` on
+`domain`, an optional fleet posture, `su-collaborator` + `su.practice` on `practices`,
+`su.instance` on `instance`, then the seal, then the kernel: `agent-base-preamble.md` followed by
+su.md's kernel tiles with the D-018 §4 dedupe tiles DROPPED (guarded — a tile whose named
+preamble heading is missing is kept and reported). The AUTO-MODE / RESULT-DOOR / COORD-LEGEND /
+WIRE-SCHEMAS seams live in kernel tiles and render under the seal, so every generated section
+still splices. `role-launch-spec.ts` feeds this text to `renderSuPlaybook` as `baseText` on the
+`SU_BLUEPRINT_PERSONA` path (a compose failure falls back to su.md, with a warning).
+`su-stack.test.ts` proves the render LOSSLESS over the real tree (every non-dropped tile exactly
+once; identity tiles above the seal, kernel tiles under it; no seam lost or duplicated). The
+interactive golden is lossless-tile + order, NOT byte-equality with the pre-P-003 render: the
+seal necessarily reorders the file, and the P-018 baseline (`su-render-baseline.ts`) measures
+that delta per section for the P-035 gate rather than forbidding it.

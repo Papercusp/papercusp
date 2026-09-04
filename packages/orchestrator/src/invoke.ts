@@ -1410,8 +1410,11 @@ export function fleetCapabilityOnlyEnabled(): boolean {
  *  `fleetCapabilityOnlyEnabled`). Unset / `0` / `false` / `off` ⇒ the Claude Code coding base
  *  stands and the prompt is delivered via stdin as before the flag. The flag's DEFAULT is
  *  FLAG_DEFAULTS in libs/flags/src/types.ts (ON since 2026-06-18) — never restate it here; the
- *  restated "default-off" drifted (identities-v1 D-018, which also retires the off branch once
- *  P-003's slot renderer reproduces resolveReplacementSystemPrompt byte-for-byte). */
+ *  restated "default-off" drifted (identities-v1 D-018). P-003 landed the slot renderer:
+ *  `resolveReplacementSystemPrompt` IS `composeStack` over [domain(overlay), kernel(preamble)]
+ *  under the seal (prompt-resolve.test.ts pins it), which is D-018 §3's gate for retiring this
+ *  flag + the append branch (tracked as a follow-up work-item; the off branch is incoherent
+ *  under the seal — it puts Claude's unsealed coding prose ABOVE the kernel). */
 export function replaceClaudeBaseEnabled(): boolean {
   const v = (process.env.PAPERCUSP_REPLACE_CLAUDE_BASE ?? '').trim().toLowerCase();
   return v === '1' || v === 'true' || v === 'on';
