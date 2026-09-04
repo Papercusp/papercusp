@@ -288,8 +288,11 @@ test('property — keyed union: the key set is commutative + idempotent, and the
       assert.deepEqual(keysOf(ab), keysOf([...a, ...b]), 'every key from both sides, once');
       assert.equal(new Set(ab.map((e) => `${e.kind}/${e.ref}`)).size, ab.length, 'no duplicate keys');
       assert.equal(stableStringify(unionArrays(a, a, key)), stableStringify(unionArrays(a, [], key)), 'idempotent');
-      for (const e of b) {
-        const got = ab.find((x) => x.kind === e.kind && x.ref === e.ref);
+      // The LAST child element for a key wins (a duplicate key inside `b` collapses to its later entry).
+      const lastByKey = new Map<string, RawDocument>();
+      for (const e of b) lastByKey.set(`${e.kind}/${e.ref}`, e);
+      for (const [k, e] of lastByKey) {
+        const got = ab.find((x) => `${x.kind}/${x.ref}` === k);
         assert.deepEqual(got?.version, e.version, 'the child’s (later) version wins on its key');
       }
     }),
