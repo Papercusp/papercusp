@@ -3,8 +3,11 @@
 `identities-v1-2026-08-30` P-037 separates five concepts without creating a
 second package, store, loader, or marketplace:
 
-1. `IdentitySourceDocumentSchema` validates an authored identity layer and the
-   fields that layer may contribute.
+1. `IdentitySourceDocumentSchema` validates an authored identity layer. Source
+   kind is orthogonal to runnable capability: a source may be both. Its fields
+   are constrained to package metadata plus the vocabulary derived directly
+   from `BlueprintSchema`; slot-specific authority remains enforced by the
+   existing identity lint.
 2. `RunnableBlueprintSchema` validates the inherited/defaulted executable
    configuration.
 3. `ResolvedAgentSpecificationSchema` is the immutable, versioned compiler
@@ -36,9 +39,10 @@ unchanged. Unknown schema versions fail closed; they are not coerced to v1.
 - `LoadedBlueprint.blueprint` remains the historical result property. Remove it
   after all call sites consume the P-038 specification output and an LSP
   reference query reports no production consumers.
-- `isIdentityDocument` remains a source-only alias for
-  `isIdentitySourceDocument`. Remove it when an LSP reference query finds no
-  callers outside its compatibility test.
+- `isIdentityDocument` remains the historical shape-only helper and is never
+  used for new classification. Remove it when an LSP reference query finds no
+  callers outside its compatibility test; new code uses the discriminated
+  wrapper returned by `parseBlueprintSourceDocument`.
 
 These are removal conditions, not permanent deprecation aliases. The alpha
 implementation should delete each adapter as soon as its stated condition is

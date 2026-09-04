@@ -18,7 +18,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { builtinBlueprintPath, resolveBuiltinExtends, resolveLayers } from './loader.js';
-import { isIdentitySourceDocument } from './schema.js';
+import { isIdentitySourceDocument, parseBlueprintSourceDocument } from './schema.js';
 import {
   SU_PART_DOCUMENTS,
   locateSuTiles,
@@ -61,7 +61,7 @@ test('P-020 — the identity-homed part documents are exactly the four identitie
     assert.equal(raw.extends, 'base', `${id} extends base (a layer in an extends stack)`);
     const merged = resolveLayers(raw, resolveBuiltinExtends, path).merged as Record<string, unknown>;
     assert.equal(merged.id, id);
-    assert.equal(isIdentitySourceDocument(raw), true, `${id} declares its identity kind in its own source (D-028)`);
+    assert.equal(isIdentitySourceDocument(parseBlueprintSourceDocument(raw)), true, `${id} declares its identity kind in its own source (D-028)`);
     assert.deepEqual(
       ((merged.slots ?? []) as Array<{ slot: string }>).map((s) => s.slot),
       [d.part],

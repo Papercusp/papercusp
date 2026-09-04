@@ -14,12 +14,13 @@ import {
   SlotDeclarationSchema,
   isIdentityDocument,
   isIdentitySourceDocument,
+  parseBlueprintSourceDocument,
 } from './schema.js';
 import { BUNDLE_KINDS } from './slots.js';
 
 const minimal = { id: 'mini', workItem: { kind: 'feature' }, spine: { edges: { DONE: { to: 'done' } } } };
 
-test('identity classification is source-only — inherited/resolved slots never change the authored document kind (D-028)', () => {
+test('new identity classification is source-wrapper-only; the old shape helper remains a finite compatibility adapter (D-028)', () => {
   const bp = BlueprintSchema.parse(minimal);
   assert.equal(bp.slots, undefined, 'no default may be applied to slots — it would erase the discriminator');
   assert.equal(isIdentityDocument(bp), false);
@@ -28,11 +29,12 @@ test('identity classification is source-only — inherited/resolved slots never 
   assert.equal(bp.publisher, undefined);
   assert.equal(bp.attestation, undefined);
   const source = { id: 'identity', extends: 'base', slots: [] };
-  assert.equal(isIdentitySourceDocument(source), true);
-  assert.equal(isIdentityDocument(source), true, 'compatibility name delegates to the source-only guard');
+  const parsedSource = parseBlueprintSourceDocument(source);
+  assert.equal(isIdentitySourceDocument(parsedSource), true);
+  assert.equal(isIdentityDocument(source), true, 'legacy helper still reads the raw slots shape');
   const runnable = RunnableBlueprintSchema.parse({ ...minimal, slots: [] });
   assert.deepEqual(runnable.slots, []);
-  assert.equal(isIdentitySourceDocument(runnable), false, 'a runnable is not reclassified as an authored identity');
+  assert.equal(isIdentityDocument(runnable), true, 'legacy helper remains shape-only until its documented removal');
 });
 
 test('a full identity document parses: slots, bundles, the reserved grants shape, publisher, attestation', () => {
@@ -51,7 +53,7 @@ test('a full identity document parses: slots, bundles, the reserved grants shape
   };
   const source = IdentitySourceDocumentSchema.parse(doc);
   const bp = BlueprintSchema.parse({ ...minimal, ...doc });
-  assert.equal(isIdentitySourceDocument(doc), true);
+  assert.equal(isIdentitySourceDocument(parseBlueprintSourceDocument(doc)), true);
   assert.deepEqual(bp.slots, [{ slot: 'domain', cardinality: 'exclusive' }, { slot: 'practice' }]);
   assert.equal(bp.bundles.length, 2);
   assert.equal(bp.bundles[1]!.version, undefined);
@@ -59,7 +61,7 @@ test('a full identity document parses: slots, bundles, the reserved grants shape
   assert.equal(bp.publisher?.id, 'papercusp');
   assert.equal(bp.attestation?.signedBy, 'papercusp');
   assert.equal(isIdentityDocument(source), true);
-  assert.equal(isIdentityDocument(bp), false, 'resolved runnable fields make this a different contract');
+  assert.equal(isIdentityDocument(bp), true, 'legacy helper cannot tell source from resolved; loader sourceKind can');
   assert.deepEqual(BlueprintSchema.parse(bp), bp);
 });
 

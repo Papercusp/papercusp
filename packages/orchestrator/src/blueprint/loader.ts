@@ -39,8 +39,10 @@ import { harnessPath, harnessRootCandidates } from '@papercusp/harness/paths';
 import {
   BlueprintHeaderSchema,
   RunnableBlueprintSchema,
+  isBlueprintContributionField,
   parseBlueprintSourceDocument,
   type Blueprint,
+  type BlueprintContributionField,
   type BlueprintSourceKind,
   type RunnableBlueprint,
 } from './schema.js';
@@ -122,7 +124,7 @@ export interface BlueprintLayer {
   /** The slot ids this layer declares (raw `slots[].slot`; validated per document by `validateBlueprint`). */
   slots: string[];
   /** Top-level keys of the layer's OWN raw document, `extends` excluded — what `identity-lint` reads for the mode-axis authority check (P-003). */
-  fields: string[];
+  fields: BlueprintContributionField[];
   /** The layer's own declared grants (raw `grants.requires` / `grants.optional`), null when it declares none (P-003, D-005 ceiling check). */
   grants: { requires: string[]; optional: string[] } | null;
   /** Where the layer was read from: the built-in harness tree, the per-hive local tier, or the installed (`~/.papercusp/blueprints`) tier — an INSTALLED layer must attest (P-003). */
@@ -170,7 +172,7 @@ function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
   const slots = Array.isArray(raw.slots)
     ? raw.slots.flatMap((s) => (isPlainObject(s) && typeof s.slot === 'string' ? [s.slot] : []))
     : [];
-  const fields = Object.keys(raw).filter((k) => k !== 'extends');
+  const fields = Object.keys(raw).filter(isBlueprintContributionField);
   const g = isPlainObject(raw.grants) ? raw.grants : null;
   const grants = g ? { requires: stringList(g.requires), optional: stringList(g.optional) } : null;
   return {

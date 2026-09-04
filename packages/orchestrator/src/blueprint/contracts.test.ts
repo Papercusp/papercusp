@@ -23,13 +23,14 @@ test('authored source schemas separate identity contributions from runnable blue
   assert.equal(BlueprintSourceDocumentSchema.safeParse({ id: 'abstract', knobs: { maxDepth: 2 } }).success, true);
   assert.equal(parseBlueprintSourceDocument({ id: 'abstract', knobs: { maxDepth: 2 } }).kind, 'blueprint');
   assert.equal(
-    IdentitySourceDocumentSchema.safeParse({ ...identity, workItem: { kind: 'feature' } }).success,
-    false,
-    'identity source modules cannot contribute runnable workflow fields',
+    IdentitySourceDocumentSchema.safeParse({ ...identity, ...runnableInput }).success,
+    true,
+    'identity source kind and runnable capability are orthogonal',
   );
   assert.throws(
-    () => parseBlueprintSourceDocument({ ...identity, spine: { edges: {} } }),
-    /Unrecognized key.*spine/,
+    () => parseBlueprintSourceDocument({ ...identity, undeclaredAuthority: true }),
+    /Unrecognized key.*undeclaredAuthority/,
+    'a contribution outside the schema-derived field vocabulary fails instead of disappearing',
   );
 });
 

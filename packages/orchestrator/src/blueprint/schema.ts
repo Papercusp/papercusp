@@ -1117,32 +1117,38 @@ export const BlueprintSchema = z.object({
  * the author's exact bytes/field presence should retain their original object.
  */
 export const BlueprintSourceDocumentSchema = BlueprintSchema.partial()
-  .extend({ id: BlueprintSchema.shape.id })
-  .strict();
-
-/**
- * The fields an identity SOURCE may contribute.  This deliberately excludes
- * runnable workflow, fleet, environment and policy-bearing configuration.  An
- * identity can inherit those fields when it is resolved for execution, but its
- * own document never acquires authority merely because a parent supplied them.
- */
-export const IdentitySourceDocumentSchema = z
-  .object({
+  .extend({
     id: BlueprintSchema.shape.id,
-    extends: BlueprintSchema.shape.extends,
-    version: z.string().optional(),
-    description: BlueprintSchema.shape.description,
-    retired: BlueprintSchema.shape.retired,
-    slots: z.array(SlotDeclarationSchema),
-    bundles: z.array(BundleRefSchema).optional(),
-    grants: GrantsSchema.optional(),
-    publisher: PublisherSchema.optional(),
-    attestation: AttestationSchema.optional(),
+    /** Package-catalog metadata consumed before resolution, not runtime configuration. */
+    visibility: z.enum(['public', 'private']).optional(),
   })
   .strict();
 
+/**
+ * An identity SOURCE is a blueprint-envelope source with its own `slots:`
+ * declaration. It may also be runnable (several adversarial and standalone
+ * fixtures intentionally are); source kind and runnable capability are
+ * orthogonal contracts rather than two mutually exclusive shapes.
+ *
+ * Contribution fields are nevertheless constrained: the strict parent schema
+ * permits only package metadata plus fields derived from `BlueprintSchema`, and
+ * slot-specific authority is enforced by `identity-lint` over those typed
+ * fields. Unknown fields never disappear silently during resolution.
+ */
+export const IdentitySourceDocumentSchema = BlueprintSourceDocumentSchema.extend({
+  slots: z.array(SlotDeclarationSchema),
+});
+
 export const BlueprintSourceKindSchema = z.enum(['blueprint', 'identity']);
 export type BlueprintSourceKind = z.infer<typeof BlueprintSourceKindSchema>;
+/** Schema-derived top-level contribution vocabulary; never a parallel hand-maintained list. */
+export const BlueprintContributionFieldSchema = BlueprintSchema.keyof();
+export type BlueprintContributionField = z.infer<typeof BlueprintContributionFieldSchema>;
+const BLUEPRINT_CONTRIBUTION_FIELDS = new Set<string>(BlueprintContributionFieldSchema.options);
+
+export function isBlueprintContributionField(value: string): value is BlueprintContributionField {
+  return BLUEPRINT_CONTRIBUTION_FIELDS.has(value);
+}
 export type BlueprintSourceDocument = z.input<typeof BlueprintSourceDocumentSchema>;
 export type IdentitySourceDocument = z.input<typeof IdentitySourceDocumentSchema>;
 
@@ -1168,9 +1174,11 @@ export function parseBlueprintSourceDocument(value: unknown): ParsedBlueprintSou
   return { kind: 'blueprint', document: value as BlueprintSourceDocument };
 }
 
-/** Source-only type guard; inherited slots on a resolved runnable do not count. */
-export function isIdentitySourceDocument(value: unknown): value is IdentitySourceDocument {
-  return hasOwnSlots(value) && IdentitySourceDocumentSchema.safeParse(value).success;
+/** Type guard over an already-parsed SOURCE wrapper, never over a merged result. */
+export function isIdentitySourceDocument(
+  value: ParsedBlueprintSourceDocument,
+): value is Extract<ParsedBlueprintSourceDocument, { kind: 'identity' }> {
+  return value.kind === 'identity';
 }
 
 /**
@@ -1311,13 +1319,13 @@ export type ActorPrincipal = z.infer<typeof ActorPrincipalSchema>;
 export type SessionActivation = z.output<typeof SessionActivationSchema>;
 
 /**
- * Compatibility name for pre-P-037 callers.  It now classifies authored source
- * documents only; a resolved runnable that inherited `slots` is intentionally
- * false.  Remove after all call sites use `isIdentitySourceDocument` and the
- * P-038 compiler is the sole resolved-specification producer (CONTRACTS.md).
+ * Shape-only compatibility name for pre-P-037 callers. It cannot distinguish a
+ * raw source from a resolved runnable and therefore MUST NOT drive new source
+ * classification. Remove after all call sites use the parsed source wrapper and
+ * the P-038 compiler is the sole resolved-specification producer (CONTRACTS.md).
  */
-export function isIdentityDocument(value: unknown): value is IdentitySourceDocument {
-  return isIdentitySourceDocument(value);
+export function isIdentityDocument(value: Pick<Blueprint, 'slots'>): boolean {
+  return value.slots != null;
 }
 
 /**
