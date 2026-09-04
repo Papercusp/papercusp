@@ -1,0 +1,148 @@
+/**
+ * identities-v1-2026-08-30 P-002 — the su.md decomposition: the anchor tiling is
+ * sound over the LIVE su.md, every part document on disk is byte-equal to its
+ * derivation (lossless), the base role library and its disposition table agree
+ * both ways, the default stack is well-formed, and COMPOSITION_MODEL.md §9 is
+ * pinned to `renderSuDecompositionMarkdown()`.
+ */
+import { test } from 'vitest';
+import assert from 'node:assert/strict';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { LAYER_ORDER, SLOT_IDS, isSlotId, slotSpec } from './slots.js';
+import {
+  BASE_ROLE_LIBRARY_DISPOSITION,
+  BASE_ROLE_LIBRARY_REL,
+  SU_DEFAULT_STACK,
+  SU_PART_DOCUMENTS,
+  SU_PREAMBLE_REL,
+  SU_SOURCE_REL,
+  SU_TILES,
+  extractSuPart,
+  isSuPart,
+  locateSuTiles,
+  renderSuDecompositionMarkdown,
+  suPartDocumentDrift,
+  suTilingProblems,
+  tilesOfDocument,
+} from './su-decomposition.js';
+
+/** The real shipped harness package dir (…/orchestrator/src/blueprint → …/harness). */
+const HARNESS_PKG = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'harness');
+const su = () => readFileSync(join(HARNESS_PKG, SU_SOURCE_REL), 'utf8');
+
+test('the tiling is SOUND over the live su.md — every anchor unique + in order, first tile on line 1, every heading and splice marker classified', () => {
+  const problems = suTilingProblems(su());
+  assert.deepEqual(problems, [], `su.md changed under the tiling — re-classify:\n  - ${problems.join('\n  - ')}`);
+});
+
+test('the tiling is LOSSLESS — the tiles concatenate back to su.md byte-for-byte, with no gap or overlap', () => {
+  const text = su();
+  const located = locateSuTiles(text);
+  assert.equal(located[0]!.startLine, 1);
+  for (let i = 1; i < located.length; i++) assert.equal(located[i]!.startLine, located[i - 1]!.endLine + 1, `gap/overlap before tile ${i}`);
+  assert.equal(located.map((t) => t.text).join(''), text);
+  // The union of every part document + the seam-only tiles is the whole file.
+  const seamOnly = located.filter((t) => t.part === 'client');
+  const docs = SU_PART_DOCUMENTS.map((d) => extractSuPart(text, d.id)).join('').length + seamOnly.map((t) => t.text).join('').length;
+  assert.equal(docs, text.length, 'every tile lands in exactly one part document or is the client seam');
+  assert.ok(seamOnly.every((t) => t.seam === 'CLIENT-TOOLING-OVERLAY'), 'the client part is seam-only in su.md');
+});
+
+test('every tile names a registry slot or a reserved layer; fleet-posture tiles name a v1 posture; dedupe rows name a REAL preamble heading', () => {
+  const preamble = readFileSync(join(HARNESS_PKG, SU_PREAMBLE_REL), 'utf8');
+  const headings = new Set(preamble.split('\n').filter((l) => l.startsWith('# ')).map((l) => l.slice(2)));
+  for (const t of SU_TILES) {
+    assert.ok(isSuPart(t.part), t.anchor);
+    assert.ok(t.part === 'kernel' || t.part === 'instance' || isSlotId(t.part), t.anchor);
+    if (t.part === 'fleet-posture') assert.ok(t.posture === 'member' || t.posture === 'leader', t.anchor);
+    if (t.dedupeWithPreamble) {
+      assert.ok(headings.has(t.dedupeWithPreamble), `dedupe row names a preamble heading that no longer exists: "${t.dedupeWithPreamble}" (${t.anchor})`);
+      assert.equal(t.part, 'kernel', `a D-018 §4 dedupe row is by definition kernel text: ${t.anchor}`);
+    }
+    assert.ok(t.label.length > 0 && t.rationale.length > 0, t.anchor);
+  }
+  // D-018 §4 named the overlapping paragraphs — each is tiled as a dedupe row.
+  const dedupes = new Set(SU_TILES.filter((t) => t.dedupeWithPreamble).map((t) => t.dedupeWithPreamble));
+  for (const h of ['Blockers', 'Fixing what you find — a mitigation is not a fix', 'Memory', 'Tools and MCP startup', 'Diagnose from evidence, not a plausible story']) {
+    assert.ok(dedupes.has(h), `D-018 §4 overlap not recorded as a dedupe row: ${h}`);
+  }
+  // The five prose parts D-007 requires all receive text; the client part is the seam.
+  const partsWithText = new Set(locateSuTiles(su()).filter((t) => !t.seam).map((t) => t.part));
+  for (const p of ['kernel', 'domain', 'fleet-posture', 'collaboration-stance', 'practice'] as const) assert.ok(partsWithText.has(p), p);
+  assert.ok(!partsWithText.has('client'));
+});
+
+test('part documents on disk are BYTE-EQUAL to their derivation from su.md (regenerate: npm run gen:su-decomposition)', () => {
+  const drift = suPartDocumentDrift(HARNESS_PKG);
+  const bad = drift.filter((d) => d.status !== 'ok');
+  assert.deepEqual(bad, [], `part documents drifted from su.md — run \`npm run gen:su-decomposition\` (never edit a part document by hand; edit su.md):\n  ${bad.map((d) => `${d.status}: ${d.path}`).join('\n  ')}`);
+  const text = su();
+  for (const d of SU_PART_DOCUMENTS) {
+    const body = extractSuPart(text, d.id);
+    assert.ok(body.length > 0, `${d.id} extracts no text`);
+    assert.equal(body, tilesOfDocument(locateSuTiles(text), d).map((t) => t.text).join(''));
+    if (d.part !== 'fleet-posture') assert.equal(d.posture, undefined, d.id);
+  }
+  // Both identity documents have a blueprint.yaml beside their prompts/ dir declaring the slot they fill.
+  for (const [id, slot] of [
+    ['papercusp-engineer', 'domain'],
+    ['su-collaborator', 'collaboration-stance'],
+  ] as const) {
+    const y = readFileSync(join(HARNESS_PKG, 'blueprints', id, 'blueprint.yaml'), 'utf8');
+    assert.match(y, new RegExp(`^id: ${id}$`, 'm'));
+    assert.match(y, new RegExp(`- slot: ${slot}`), `${id} must declare slots: [{ slot: ${slot} }]`);
+    assert.ok(existsSync(join(HARNESS_PKG, 'blueprints', id, 'prompts')), id);
+  }
+});
+
+test('the base role library and BASE_ROLE_LIBRARY_DISPOSITION agree both ways; only `su` decomposes in v1', () => {
+  const onDisk = readdirSync(join(HARNESS_PKG, BASE_ROLE_LIBRARY_REL)).filter((f) => !f.startsWith('su.') || f === 'su.md');
+  const table = BASE_ROLE_LIBRARY_DISPOSITION.map((r) => r.file);
+  assert.equal(new Set(table).size, table.length, 'duplicate rows');
+  assert.deepEqual([...table].sort(), [...onDisk].sort(), 'a prompt was added to / removed from blueprints/base/prompts/ without a disposition row (su.* part documents are excluded — they are derived)');
+  assert.deepEqual(BASE_ROLE_LIBRARY_DISPOSITION.filter((r) => r.disposition === 'decomposed-v1').map((r) => r.file), ['su.md']);
+  assert.deepEqual(BASE_ROLE_LIBRARY_DISPOSITION.filter((r) => r.disposition === 'kernel-base').map((r) => r.file), ['agent-base-preamble.md']);
+  for (const r of BASE_ROLE_LIBRARY_DISPOSITION) {
+    if (r.disposition === 'later') assert.ok(r.target && isSlotId(r.target.slot) && /^P-\d{3}$/.test(r.target.item), r.file);
+    else assert.equal(r.target, undefined, r.file);
+    if (r.disposition === 'sidecar') assert.ok(r.file.endsWith('.role.json'), r.file);
+    else assert.ok(r.file.endsWith('.md'), r.file);
+  }
+});
+
+test('SU_DEFAULT_STACK is in LAYER_ORDER, every slot it names is exclusive-or-additive per the registry, and it carries NO fleet posture by default', () => {
+  const idx = SU_DEFAULT_STACK.map((e) => LAYER_ORDER.indexOf(e.layer));
+  for (let i = 1; i < idx.length; i++) assert.ok(idx[i]! >= idx[i - 1]!, `${SU_DEFAULT_STACK[i]!.layer} out of order`);
+  for (const e of SU_DEFAULT_STACK) {
+    if (e.slot) {
+      assert.ok(SLOT_IDS.includes(e.slot), e.slot);
+      assert.equal(slotSpec(e.slot)!.layer, e.layer, `${e.slot} sits on ${slotSpec(e.slot)!.layer}, not ${e.layer}`);
+    }
+  }
+  const posture = SU_DEFAULT_STACK.find((e) => e.layer === 'fleet-posture')!;
+  assert.equal(posture.ref, null, 'a fleet posture is attached by a stack mutation, never by default');
+  assert.equal(posture.binding, 'runtime');
+  assert.deepEqual(
+    SU_DEFAULT_STACK.filter((e) => e.binding === 'static' && e.slot).map((e) => [e.slot, e.ref]),
+    [
+      ['domain', 'papercusp-engineer'],
+      ['collaboration-stance', 'su-collaborator'],
+      ['practice', 'su.practice'],
+    ],
+    'engineer + collaborator stance + the anti-babysitting practice',
+  );
+  // Every static identity ref is a part document.
+  const docIds = new Set(SU_PART_DOCUMENTS.map((d) => d.id));
+  for (const e of SU_DEFAULT_STACK) if (e.binding === 'static' && e.slot) assert.ok(docIds.has(e.ref as never), e.ref!);
+});
+
+test('docs/COMPOSITION_MODEL.md §9 embeds EXACTLY renderSuDecompositionMarkdown() (pinned prose)', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const doc = readFileSync(join(here, '..', '..', 'docs', 'COMPOSITION_MODEL.md'), 'utf8');
+  const m = /<!-- SU-DECOMPOSITION:BEGIN -->\n([\s\S]*?)\n<!-- SU-DECOMPOSITION:END -->/.exec(doc);
+  assert.ok(m, 'the doc carries the SU-DECOMPOSITION:BEGIN/END markers');
+  assert.equal(m![1], renderSuDecompositionMarkdown(), 'the embedded decomposition drifted from su-decomposition.ts — re-paste renderSuDecompositionMarkdown() between the markers (npm run gen:su-decomposition does it)');
+  assert.ok(!/\bline \d+\b/i.test(m![1]), 'the pinned prose must not carry line numbers (anchors only)');
+});

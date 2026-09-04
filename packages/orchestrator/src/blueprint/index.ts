@@ -75,6 +75,25 @@ export {
   danglingMergeRules,
 } from './merge-rules.js';
 export type { MergeRule, MergeRuleKind, SchemaLeaf } from './merge-rules.js';
+// identities-v1-2026-08-30 P-002: the su.md decomposition — anchor tiling into
+// kernel / slot / instance parts, the verbatim part documents, the base role
+// library disposition, and the interactive su's default stack.
+export {
+  SU_TILES,
+  SU_PART_DOCUMENTS,
+  SU_DEFAULT_STACK,
+  BASE_ROLE_LIBRARY_DISPOSITION,
+  SU_SOURCE_REL,
+  SU_PREAMBLE_REL,
+  isSuPart,
+  suTilingProblems,
+  locateSuTiles,
+  extractSuPart,
+  suPartDocumentDrift,
+  writeSuPartDocuments,
+  renderSuDecompositionMarkdown,
+} from './su-decomposition.js';
+export type { SuPart, SuTile, LocatedSuTile, SuPartDocument, SuPartDocId, FleetPostureRole, RoleLibraryRow, RoleLibraryDisposition, SuStackEntry } from './su-decomposition.js';
 // Launch-eligibility guard (WI-5645): read a resolved blueprint's inherited
 // `retired` marker, and the assert-form for a launch/spend chokepoint.
 export {
