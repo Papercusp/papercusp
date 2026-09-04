@@ -75,6 +75,11 @@ export {
   danglingMergeRules,
 } from './merge-rules.js';
 export type { MergeRule, MergeRuleKind, SchemaLeaf } from './merge-rules.js';
+// identities-v1-2026-08-30 P-019: the merger that consumes MERGE_RULES (resolveLayers
+// composes a stack with mergeByRules; the per-leaf primitives are exported for tests
+// and for a renderer that composes a single leaf).
+export { mergeByRules, applyMergeRule, unionArrays, mostRestrictive, schemaInteriorPaths } from './merge.js';
+export type { RawDocument } from './merge.js';
 // identities-v1-2026-08-30 P-002: the su.md decomposition — anchor tiling into
 // kernel / slot / instance parts, the verbatim part documents, the base role
 // library disposition, and the interactive su's default stack.

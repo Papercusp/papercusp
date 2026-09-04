@@ -93,8 +93,16 @@ test('the decided deviations from last-writer-wins are declared exactly, and eve
     'recursion.maxDepth',
     'spine.maxTurns',
   ]);
-  // Everything else = today's mergeRaw: records key-union, arrays / scalars / unions / lazy / catchall replace.
-  const unionArrays = new Set(['bundles', 'grants.requires', 'grants.optional']);
+  // D-020 (P-019): declaration-set arrays compose by union — roles keyed by id, the rest by value.
+  assert.equal(MERGE_RULES.roles?.rule, 'union');
+  assert.equal(MERGE_RULES.roles?.key, 'id');
+  const declarationSets = ['reactive', 'gym.signals', 'dependencies.tools', 'dependencies.packs', 'dependencies.plugins', 'dependencies.blueprints', 'dependencies.datatypes'];
+  for (const p of declarationSets) {
+    assert.equal(MERGE_RULES[p]?.rule, 'union', `${p} composes by union (D-020)`);
+    assert.equal(MERGE_RULES[p]?.key, undefined, `${p} unions by structural value`);
+  }
+  // Everything else = the pre-P-019 mergeRaw: records key-union, arrays / scalars / unions / lazy / catchall replace.
+  const unionArrays = new Set(['bundles', 'grants.requires', 'grants.optional', 'roles', ...declarationSets]);
   for (const leaf of enumerateBlueprintLeaves()) {
     const rule = MERGE_RULES[leaf.path];
     assert.ok(rule, `no rule for ${leaf.path}`);

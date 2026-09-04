@@ -6,8 +6,13 @@
 # parent in an `extends` merge). Concrete blueprints (`coding`, `research`, …)
 # `extends: base` and supply the runnable shape.
 #
-# Inheritance/merge semantics (the loader): objects deep-merge (child wins on
-# leaf keys); arrays and scalars are replaced wholesale by the child.
+# Inheritance/merge semantics (the loader, identities-v1-2026-08-30 P-019): each
+# schema leaf composes by the rule `merge-rules.ts` declares for it — by default
+# objects deep-merge and arrays/scalars are replaced by the child; declaration
+# sets (roles, slots, bundles, grants, reactive, gym.signals, dependencies.*)
+# UNION across the stack, and the safety caps (spine.maxTurns, knobs.maxCostUsd,
+# parallelWorkers.max/maxFeaturesInFlight, dispatch.costCapUsd/safetyCeiling,
+# recursion.maxDepth) take the TIGHTER value regardless of order.
 id: base
 version: 0.1.0
 description: >-
