@@ -12,24 +12,26 @@
  *
  * Inheritance: a child names parent blueprint id(s) via `extends`; the loader
  * resolves each (built-in by default; the distribution plan widens this to
- * local → installed → built-in via `resolveExtendsPath`), merges them
- * parent-first with the child on top, then parses the merged plain object once
- * through `BlueprintSchema` (so `.default`s apply once, not per-file).
+ * local → installed → built-in via `resolveExtendsPath`), assembles parent
+ * modules first, merges the child through a separately-labelled inheritance
+ * step, then parses the merged plain object once through `BlueprintSchema` (so
+ * `.default`s apply once, not per-file).
  *
  * THE MERGE ALGEBRA IS DECLARED, NOT HARDCODED (identities-v1-2026-08-30 P-019).
  * Each pairwise merge is `mergeByRules` (`merge.ts`), which applies the per-leaf
- * rule `merge-rules.ts` declares — `replace` / `union` / `most-restrictive` /
- * `hard-error` — so a new field states how it composes. The pre-P-019 algebra
- * (`mergeRaw`: objects deep-merge, arrays + scalars replaced by the child) is the
- * registry's DEFAULT assignment, so every blueprint that declared no deviation
- * resolves byte-identically (`merge.test.ts` proves it over every builtin).
+ * rule `merge-rules.ts` declares — `set-union` / `keyed-overlay` /
+ * `explicit-replacement` / `constraint-intersection` / `hard-conflict` — so a
+ * new field states how it composes. D-029 names peer assembly versus inheritance
+ * in conflict provenance instead of letting merge order masquerade as policy.
  *
  * identities-v1-2026-08-30 P-001: the walk also records every LAYER it merged
  * (`resolveLayers` → `LoadedBlueprint.layers`, parent-first) with a per-layer
  * content hash, and `resolveBlueprint` fails the load on a layer whose
  * `attestation.contentHash` disagrees with its content or on two distinct layers
- * claiming one EXCLUSIVE slot (D-007) — the `hard-error` rule's refusal, which
- * needs the layers, not the merged document.
+ * claiming one EXCLUSIVE slot (D-007) — the `hard-conflict` rule's refusal, which
+ * needs the layers, not the merged document. Exact bundle pins are checked over
+ * those same source layers: incompatible versions fail with their authors named
+ * unless a later validated `versionOverride` replaces every competing version.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -207,34 +209,36 @@ interface ExactBundleClaim {
  */
 function exactBundleVersionConflicts(layers: readonly BlueprintLayer[]): string[] {
   const effective = new Map<string, ExactBundleClaim[]>();
-  const conflicts: string[] = [];
   for (const layer of layers) {
     for (const bundle of layer.bundles) {
       if (!bundle.version) continue;
       const key = `${bundle.kind}/${bundle.ref}`;
       const previous = effective.get(key) ?? [];
       const duplicateLayer = previous.some(
-        (claim) => claim.layerId === layer.id && claim.layerContentHash === layer.contentHash && claim.version === bundle.version,
+        (claim) =>
+          claim.layerId === layer.id &&
+          claim.layerContentHash === layer.contentHash &&
+          claim.version === bundle.version,
       );
       if (duplicateLayer) continue;
-      const incompatible = previous.filter((claim) => claim.version !== bundle.version);
-      if (incompatible.length === 0) {
-        effective.set(key, [...previous, { layerId: layer.id, layerContentHash: layer.contentHash, version: bundle.version }]);
-        continue;
-      }
+
+      const claim = { layerId: layer.id, layerContentHash: layer.contentHash, version: bundle.version };
       const replaces = new Set(bundle.versionOverride?.replaces ?? []);
-      const unresolved = incompatible.filter((claim) => !replaces.has(claim.version));
-      if (unresolved.length > 0) {
-        const prior = unresolved.map((claim) => `layer "${claim.layerId}" pins "${claim.version}"`).join(', ');
-        conflicts.push(
-          `bundle "${key}" has incompatible exact versions: ${prior}; layer "${layer.id}" pins "${bundle.version}" without a validated versionOverride.replaces entry for every prior version`,
-        );
-        continue;
-      }
-      // A validated higher-precedence override makes its replacement the sole
-      // effective pin. The declaration itself remains in the resolved bundle.
-      effective.set(key, [{ layerId: layer.id, layerContentHash: layer.contentHash, version: bundle.version }]);
+      const survivors = previous.filter((prior) => !replaces.has(prior.version));
+      // Defer the diagnostic: a still-higher-precedence declaration may carry a
+      // validated override covering every active version. Keeping unresolved
+      // claims here also gives an incomplete override a complete provenance list.
+      effective.set(key, [...survivors, claim]);
     }
+  }
+
+  const conflicts: string[] = [];
+  for (const [key, claims] of effective) {
+    if (new Set(claims.map((claim) => claim.version)).size <= 1) continue;
+    const sources = claims.map((claim) => `layer "${claim.layerId}" pins "${claim.version}"`).join(', ');
+    conflicts.push(
+      `bundle "${key}" has incompatible exact versions: ${sources}; no later validated versionOverride replaces every competing version`,
+    );
   }
   return conflicts;
 }

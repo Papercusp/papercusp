@@ -89,8 +89,18 @@ test('mergeRuleFor — exact entry, else the nearest enclosing catchall, else nu
   assert.equal(mergeRuleFor('id')?.rule, 'explicit-replacement');
 });
 
+test('the registry exercises all five D-029 operations (the vocabulary cannot collapse back to ambiguous union/replace labels)', () => {
+  assert.deepEqual([...new Set(Object.values(MERGE_RULES).map((rule) => rule.rule))].sort(), [
+    'constraint-intersection',
+    'explicit-replacement',
+    'hard-conflict',
+    'keyed-overlay',
+    'set-union',
+  ]);
+});
+
 test('the decided deviations from last-writer-wins are declared exactly, and everything else reproduces today’s mergeRaw (byte-equivalence default)', () => {
-  // D-007: a second distinct layer on an exclusive slot is a hard error — the ONLY hard-error leaf.
+  // D-007: a second distinct layer on an exclusive slot is a hard conflict — the only such leaf.
   assert.deepEqual(MERGE_RULES.slots, { rule: 'hard-conflict', key: 'slot', note: MERGE_RULES.slots?.note });
   assert.deepEqual(
     Object.entries(MERGE_RULES)
@@ -98,12 +108,12 @@ test('the decided deviations from last-writer-wins are declared exactly, and eve
       .map(([p]) => p),
     ['slots'],
   );
-  // D-011 / D-003: bundles + grants compose by union.
+  // D-011 / D-003: bundles overlay by identity; grant declarations use structural set union.
   assert.equal(MERGE_RULES.bundles?.rule, 'keyed-overlay');
   assert.deepEqual(MERGE_RULES.bundles?.key, ['kind', 'ref']);
   assert.equal(MERGE_RULES['grants.requires']?.rule, 'set-union');
   assert.equal(MERGE_RULES['grants.optional']?.rule, 'set-union');
-  // D-003: safety caps compose most-restrictive.
+  // D-003 / D-029: safety caps compose by constraint intersection.
   const caps = Object.entries(MERGE_RULES)
     .filter(([, r]) => r.rule === 'constraint-intersection')
     .map(([p]) => p)
@@ -117,7 +127,7 @@ test('the decided deviations from last-writer-wins are declared exactly, and eve
     'recursion.maxDepth',
     'spine.maxTurns',
   ]);
-  // D-020 (P-019): declaration-set arrays compose by union — roles keyed by id, the rest by value.
+  // D-020 (P-019): roles overlay by id; the other declaration arrays use structural set union.
   assert.equal(MERGE_RULES.roles?.rule, 'keyed-overlay');
   assert.equal(MERGE_RULES.roles?.key, 'id');
   const declarationSets = [
@@ -133,14 +143,14 @@ test('the decided deviations from last-writer-wins are declared exactly, and eve
     assert.equal(MERGE_RULES[p]?.rule, 'set-union', `${p} composes by set union (D-020)`);
     assert.equal(MERGE_RULES[p]?.key, undefined, `${p} unions by structural value`);
   }
-  // Everything else = the pre-P-019 mergeRaw: records key-union, arrays / scalars / unions / lazy / catchall replace.
-  const unionArrays = new Set(['bundles', 'grants.requires', 'grants.optional', 'roles', ...declarationSets]);
+  // Everything else = the pre-P-019 mergeRaw: records key-overlay; arrays / scalars / unions / lazy / catchall replace.
+  const nonReplacementArrays = new Set(['bundles', 'grants.requires', 'grants.optional', 'roles', ...declarationSets]);
   for (const leaf of enumerateBlueprintLeaves()) {
     const rule = MERGE_RULES[leaf.path];
     assert.ok(rule, `no rule for ${leaf.path}`);
     if (leaf.kind === 'record')
       assert.equal(rule.rule, 'keyed-overlay', `${leaf.path}: a record composes by keyed overlay (today's deep-merge)`);
-    else if (leaf.path === 'slots' || unionArrays.has(leaf.path) || caps.includes(leaf.path)) continue;
+    else if (leaf.path === 'slots' || nonReplacementArrays.has(leaf.path) || caps.includes(leaf.path)) continue;
     else assert.equal(rule.rule, 'explicit-replacement', `${leaf.path}: undeclared deviation from last-writer-wins`);
   }
 });

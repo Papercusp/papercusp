@@ -81,12 +81,13 @@ export type { MergeRule, MergeRuleKind, SchemaLeaf } from './merge-rules.js';
 export {
   mergeByRules,
   applyMergeRule,
+  MergeConflictError,
   setUnionArrays,
   keyedOverlayArrays,
   intersectConstraint,
   schemaInteriorPaths,
 } from './merge.js';
-export type { RawDocument } from './merge.js';
+export type { RawDocument, MergeContext } from './merge.js';
 // identities-v1-2026-08-30 P-002: the su.md decomposition — anchor tiling into
 // kernel / slot / instance parts, the verbatim part documents, the base role
 // library disposition, and the interactive su's default stack.

@@ -1,8 +1,8 @@
 /**
- * The MERGE_RULES-driven merger — `identities-v1-2026-08-30` P-019 (rulings D-003 /
- * D-007 / D-017 §4 / D-020). `resolveLayers` composes an `extends` stack with
- * `mergeByRules`; the per-leaf algebra it applies is DECLARED in `merge-rules.ts`,
- * never hardcoded here.
+ * The MERGE_RULES-driven merger — `identities-v1-2026-08-30` P-019, revised by
+ * P-039 / D-029. `resolveLayers` composes an `extends` stack with `mergeByRules`;
+ * the per-leaf algebra it applies is DECLARED in `merge-rules.ts`, never
+ * hardcoded here.
  *
  * HOW A DOCUMENT IS WALKED. `BlueprintSchema` is a tree of OBJECT nodes whose
  * leaves are the merge-units `enumerateBlueprintLeaves` lists (a scalar, a whole
@@ -10,37 +10,21 @@
  * The merger descends every INTERIOR node (`schemaInteriorPaths` — each proper
  * prefix of a leaf path) field by field, and at a LEAF applies `mergeRuleFor(path)`:
  *
- *   - `replace`          — the child's value, taken whole, when the child sets the
- *                          key; an absent child key inherits. For an object-valued
- *                          CATCHALL key (`knobs.someUnknownKnob: {…}`) this is the
- *                          one place the algebra is stricter than `mergeRaw`, which
- *                          would deep-merge it: the schema knows nothing below a
- *                          catchall, so the child's value is opaque and wins whole
- *                          (no builtin blueprint sets such a key on two layers —
- *                          `merge.test.ts`'s golden proves it).
- *   - `union`            — set-union. Records: key-union, and a key present on both
- *                          sides composes its VALUES by last-writer-wins deep-merge
- *                          (`mergeRaw`, below) — byte-identical to today, because a
- *                          record is ONE leaf and nothing below it is enumerated.
- *                          Arrays: elements identified by `rule.key` (a field or a
- *                          tuple of fields; an element missing the key falls back to
- *                          value identity) or by structural value; a colliding
- *                          element likewise deep-merges, so a child restating a
- *                          role / slot / bundle overrides the fields it names and
- *                          inherits the rest. Base order, then the child's new
- *                          elements in the child's order.
- *   - `most-restrictive` — two numbers: the smaller. Any other pairing is not
- *                          comparable, so the child's value goes through to the
- *                          schema, which refuses a non-number where a cap belongs.
- *   - `hard-error`       — in the DOCUMENT, a keyed union (the resolved `slots` lists
- *                          every slot the stack fills — the renderer needs that). The
- *                          "two DISTINCT layers claim one exclusive key" refusal needs
- *                          layer identity a merged document no longer carries, so it
- *                          runs over `LoadedBlueprint.layers` in `resolveBlueprint`
- *                          (`findExclusiveSlotConflicts`, `slot-exclusive-conflict`),
- *                          where a diamond re-visit of the same document is one
- *                          claimant. `merge-rules.test.ts` pins `slots` as the only
- *                          hard-error leaf; `loader.layers.test.ts` proves the refusal.
+ *   - `explicit-replacement` — the child's whole value when it sets the key; an
+ *                          absent child key inherits. An opaque catchall is replaced,
+ *                          never guessed at below the schema boundary.
+ *   - `set-union`        — structural array values accumulate and deduplicate;
+ *                          unequal values never overwrite one another.
+ *   - `keyed-overlay`    — records overlay by key; keyed arrays retain every key
+ *                          and deep-merge a restatement's fields. Value precedence
+ *                          is intentionally ordered and therefore not commutative.
+ *   - `constraint-intersection` — equal values agree; numeric upper bounds take
+ *                          the minimum. Non-comparable values fail closed with the
+ *                          path, merge phase, and contributing sources.
+ *   - `hard-conflict`    — the document retains keyed slot declarations, while
+ *                          `resolveBlueprint` rejects distinct exclusive claimants
+ *                          using the source layers whose identity the merged value
+ *                          no longer carries.
  *
  * A key the registry does not govern at all — outside `BlueprintSchema`, which
  * strips it at parse — composes by `mergeRaw`, exactly as before.
@@ -97,9 +81,9 @@ export function stableStringify(v: unknown): string {
 /**
  * Last-writer-wins deep-merge: plain objects merge recursively; arrays and scalars
  * are replaced by the child's value. Pure. This was the WHOLE algebra before P-019;
- * it survives as (a) the composition of a record's values and of colliding keyed
- * elements under `union`, (b) the rule for a key outside the schema, and (c) the
- * reference the golden test compares the rule-driven merger against.
+ * it survives as (a) the value overlay within a record or colliding keyed-array
+ * element, (b) the rule for a key outside the schema, and (c) the reference the
+ * golden test compares the rule-driven merger against.
  */
 export function mergeRaw(base: RawDocument, child: RawDocument): RawDocument {
   const out: RawDocument = { ...base };
@@ -141,14 +125,17 @@ function elementIdentity(el: unknown, key: MergeRule['key']): string {
 }
 
 /**
- * Set-union of two arrays. Identity is `key` (a field or tuple of fields on a plain
- * object element) or structural value. Base order first; a child element whose
- * identity already exists deep-merges INTO that position (child fields win); new
- * elements append in the child's order. Duplicates within one side collapse too, so
- * `unionArrays(a, a)` is the deduplicated `a` (idempotent) and the identity SET is
- * commutative — `merge.test.ts` holds both as fast-check properties.
+ * Keyed overlay of two arrays. Identity is `key` (a field or tuple of fields on a
+ * plain object element), with structural value as the fallback. Base order comes
+ * first; a child element whose identity already exists deep-merges into that
+ * position (child fields win), while new elements append in child order. The key
+ * population is commutative; colliding values deliberately are not.
  */
-export function keyedOverlayArrays(base: readonly unknown[], child: readonly unknown[], key: MergeRule['key']): unknown[] {
+export function keyedOverlayArrays(
+  base: readonly unknown[],
+  child: readonly unknown[],
+  key: MergeRule['key'],
+): unknown[] {
   const out: unknown[] = [];
   const at = new Map<string, number>();
   for (const el of [...base, ...child]) {
@@ -178,8 +165,13 @@ export function setUnionArrays(base: readonly unknown[], child: readonly unknown
   return out;
 }
 
-/** The tighter of two caps. Non-numeric pairings are not comparable: the child's value goes through. */
-export function intersectConstraint(base: unknown, child: unknown, path = '<unknown>', context: MergeContext = {}): unknown {
+/** Intersect two upper-bound constraints. Unequal non-numeric values fail closed. */
+export function intersectConstraint(
+  base: unknown,
+  child: unknown,
+  path = '<unknown>',
+  context: MergeContext = {},
+): unknown {
   if (typeof base === 'number' && typeof child === 'number') return Math.min(base, child);
   if (stableStringify(base) === stableStringify(child)) return base;
   throw new MergeConflictError(path, 'constraint-intersection', base, child, context);
@@ -190,7 +182,13 @@ export function intersectConstraint(base: unknown, child: unknown, path = '<unkn
  * side short-circuits to the child (an absent base has nothing to compose with;
  * an explicitly-undefined child key is carried as `mergeRaw` carries it).
  */
-export function applyMergeRule(rule: MergeRule, base: unknown, child: unknown, path = '<unknown>', context: MergeContext = {}): unknown {
+export function applyMergeRule(
+  rule: MergeRule,
+  base: unknown,
+  child: unknown,
+  path = '<unknown>',
+  context: MergeContext = {},
+): unknown {
   if (base === undefined || child === undefined) return child;
   switch (rule.rule) {
     case 'explicit-replacement':
@@ -211,7 +209,13 @@ export function applyMergeRule(rule: MergeRule, base: unknown, child: unknown, p
   }
 }
 
-function mergeNode(base: RawDocument, child: RawDocument, path: string, interior: ReadonlySet<string>, context: MergeContext): RawDocument {
+function mergeNode(
+  base: RawDocument,
+  child: RawDocument,
+  path: string,
+  interior: ReadonlySet<string>,
+  context: MergeContext,
+): RawDocument {
   const out: RawDocument = { ...base };
   for (const [k, cv] of Object.entries(child)) {
     const p = path ? `${path}.${k}` : k;
@@ -224,7 +228,11 @@ function mergeNode(base: RawDocument, child: RawDocument, path: string, interior
       continue;
     }
     const rule = mergeRuleFor(p);
-    out[k] = rule ? applyMergeRule(rule, bv, cv, p, context) : isPlainObject(bv) && isPlainObject(cv) ? mergeRaw(bv, cv) : cv;
+    out[k] = rule
+      ? applyMergeRule(rule, bv, cv, p, context)
+      : isPlainObject(bv) && isPlainObject(cv)
+        ? mergeRaw(bv, cv)
+        : cv;
   }
   return out;
 }

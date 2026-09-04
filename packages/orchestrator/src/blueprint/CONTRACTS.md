@@ -21,6 +21,32 @@ All five remain inside the existing blueprint package envelope and file → PG
 projection path. `slots:` is still the identity declaration, but it is read from
 the source document itself. Inherited slots never reclassify the root source.
 
+## Merge and conflict algebra
+
+Every `BlueprintSchema` leaf declares exactly one D-029 operation in
+`MERGE_RULES`: structural `set-union`, identity-based `keyed-overlay`, whole-value
+`explicit-replacement`, fail-closed `constraint-intersection`, or source-aware
+`hard-conflict`. Set and keyed operations preserve prior declarations when a
+later layer authors an empty array; only an explicit-replacement field can use an
+authored empty value to remove inherited content. Keyed overlays preserve the
+full key population while resolving a colliding value in layer order, so tests
+assert the resulting values rather than treating key-set commutativity as value
+commutativity.
+
+`resolveLayers` labels merges between parent modules as `peer-assembly` and the
+root-on-parent step as `inheritance`. A non-comparable constraint fails with that
+phase and every contributing layer id. Per-layer validation remains source-aware:
+a later overlay cannot hide a forbidden contribution or an exclusive-slot claim.
+Diamond revisits of the identical source are idempotent; distinct sources pinning
+the same bundle version agree.
+
+Exact bundle pins are evaluated over `LoadedBlueprint.layers`, before losing the
+authors behind a keyed overlay. Conflicting versions fail in either parent order.
+A higher-precedence bundle may proceed only with a schema-validated
+`versionOverride` whose `replaces` list covers every active competing version and
+whose reason is retained in the resolved bundle; partial overrides fail with the
+remaining source ids and versions named.
+
 ## Version migration
 
 Resolved specifications and session activations begin at schema version 1.

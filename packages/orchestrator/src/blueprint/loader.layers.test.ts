@@ -1,8 +1,9 @@
 /**
  * identities-v1-2026-08-30 P-001 — the loader's per-LAYER surface: `resolveLayers`
  * (the extends walk keeping every merged document), `layerContentHash`
- * (attestation-excluded sha256 per layer), and the two stack-level load
- * refusals — `attestation-hash-mismatch` and the D-007 `slot-exclusive-conflict`.
+ * (attestation-excluded sha256 per layer), plus source-aware stack refusals:
+ * attestation mismatch, exclusive-slot conflict, and D-029 exact bundle-pin
+ * conflict.
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
@@ -11,7 +12,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stringify as toYaml } from 'yaml';
-import { resolveBlueprint, resolveLayers, resolveExtends, layerContentHash, loadBlueprintFromFile, loadBuiltinBlueprint } from './loader.js';
+import {
+  resolveBlueprint,
+  resolveLayers,
+  resolveExtends,
+  layerContentHash,
+  loadBlueprintFromFile,
+  loadBuiltinBlueprint,
+} from './loader.js';
 
 /** Materialize a set of blueprint documents on disk + a resolver over them. */
 function chain(docs: Record<string, Record<string, unknown>>) {
@@ -33,12 +41,24 @@ test('resolveLayers — layers come back parent-first with the loaded document l
   try {
     const root = { id: 'me', extends: 'eng', ...runnable };
     const { merged, layers } = resolveLayers(root, resolve, '/virtual/me.yaml');
-    assert.deepEqual(layers.map((l) => l.id), ['kernel', 'eng', 'me']);
-    assert.deepEqual(layers.map((l) => l.sourceKind), ['blueprint', 'identity', 'blueprint']);
-    assert.deepEqual(layers.map((l) => l.slots), [[], ['domain'], []]);
+    assert.deepEqual(
+      layers.map((l) => l.id),
+      ['kernel', 'eng', 'me'],
+    );
+    assert.deepEqual(
+      layers.map((l) => l.sourceKind),
+      ['blueprint', 'identity', 'blueprint'],
+    );
+    assert.deepEqual(
+      layers.map((l) => l.slots),
+      [[], ['domain'], []],
+    );
     assert.equal(layers[2]!.sourcePath, '/virtual/me.yaml');
     assert.ok(layers[0]!.sourcePath?.endsWith(join('kernel', 'blueprint.yaml')));
-    assert.deepEqual(layers.map((l) => l.attestation), [null, null, null]);
+    assert.deepEqual(
+      layers.map((l) => l.attestation),
+      [null, null, null],
+    );
     assert.equal(merged.extends, undefined, 'extends is consumed');
     assert.equal((merged.knobs as { logRetention: number }).logRetention, 5, 'grandparent knobs inherited');
     assert.equal(new Set(layers.map((l) => l.contentHash)).size, 3, 'three distinct 64-hex hashes');
@@ -67,10 +87,10 @@ test('resolveBlueprint — a layer whose attestation disagrees with its content 
   try {
     const loaded = resolveBlueprint({ id: 'runtime', extends: 'signed', ...runnable }, { resolve: goodChain.resolve });
     assert.equal(loaded.validation.ok, true, JSON.stringify(loaded.validation.errors));
-    assert.deepEqual(loaded.layers.map((l) => l.attestation), [
-      { contentHash: layerContentHash(doc), signedBy: 'p' },
-      null,
-    ]);
+    assert.deepEqual(
+      loaded.layers.map((l) => l.attestation),
+      [{ contentHash: layerContentHash(doc), signedBy: 'p' }, null],
+    );
   } finally {
     goodChain.cleanup();
   }
@@ -98,12 +118,123 @@ test('resolveBlueprint — two DISTINCT layers on one exclusive slot fail the lo
       /slot-exclusive-conflict: exclusive slot "domain" is claimed by 2 layers \(engA, engB\)/,
     );
     const ok = resolveBlueprint({ id: 'stack', extends: ['engA', 'pracB'], ...runnable }, { resolve });
-    assert.deepEqual(ok.layers.map((l) => l.id), ['engA', 'pracA', 'pracB', 'stack']);
+    assert.deepEqual(
+      ok.layers.map((l) => l.id),
+      ['engA', 'pracA', 'pracB', 'stack'],
+    );
     assert.equal(ok.validation.ok, true);
     const diamond = resolveBlueprint({ id: 'diamond', extends: ['pracA', 'pracB'], ...runnable }, { resolve });
-    assert.deepEqual(diamond.layers.map((l) => l.id), ['pracA', 'pracA', 'pracB', 'diamond'], 'a diamond lists the shared ancestor twice');
+    assert.deepEqual(
+      diamond.layers.map((l) => l.id),
+      ['pracA', 'pracA', 'pracB', 'diamond'],
+      'a diamond lists the shared ancestor twice',
+    );
     const same = resolveBlueprint({ id: 'same', extends: ['engA', 'engA'], ...runnable }, { resolve });
     assert.equal(same.validation.ok, true, 'the same exclusive document reached twice is ONE claimant');
+  } finally {
+    cleanup();
+  }
+});
+
+test('D-029 — incompatible exact bundle pins fail in both parent orders and name every contributing source', () => {
+  const { resolve, cleanup } = chain({
+    v1: { id: 'bundle-v1', bundles: [{ kind: 'recipe', ref: 'shared', version: '1.0.0' }] },
+    v2: { id: 'bundle-v2', bundles: [{ kind: 'recipe', ref: 'shared', version: '2.0.0' }] },
+  });
+  try {
+    for (const parents of [
+      ['v1', 'v2'],
+      ['v2', 'v1'],
+    ] as const) {
+      assert.throws(
+        () => resolveBlueprint({ id: `root-${parents.join('-')}`, extends: parents, ...runnable }, { resolve }),
+        (error: unknown) =>
+          error instanceof Error &&
+          error.message.includes('bundle-version-conflict') &&
+          error.message.includes('bundle "recipe/shared"') &&
+          error.message.includes('layer "bundle-v1" pins "1.0.0"') &&
+          error.message.includes('layer "bundle-v2" pins "2.0.0"'),
+      );
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test('D-029 — same-version peer declarations and a duplicated diamond source resolve to one effective bundle', () => {
+  const { resolve, cleanup } = chain({
+    shared: { id: 'shared-source', bundles: [{ kind: 'recipe', ref: 'shared', version: '1.0.0' }] },
+    left: { id: 'left', extends: 'shared' },
+    right: { id: 'right', extends: 'shared' },
+    peer: { id: 'same-version-peer', bundles: [{ kind: 'recipe', ref: 'shared', version: '1.0.0' }] },
+  });
+  try {
+    const loaded = resolveBlueprint(
+      { id: 'diamond-root', extends: ['left', 'right', 'peer'], ...runnable },
+      { resolve },
+    );
+    assert.equal(loaded.validation.ok, true);
+    assert.deepEqual(
+      loaded.layers.map((layer) => layer.id),
+      ['shared-source', 'left', 'shared-source', 'right', 'same-version-peer', 'diamond-root'],
+    );
+    assert.deepEqual(loaded.blueprint.bundles, [{ kind: 'recipe', ref: 'shared', version: '1.0.0' }]);
+  } finally {
+    cleanup();
+  }
+});
+
+test('D-029 — a validated higher-precedence override can replace every prior version; an incomplete override still fails', () => {
+  const { resolve, cleanup } = chain({
+    v1: { id: 'bundle-v1', bundles: [{ kind: 'recipe', ref: 'shared', version: '1.0.0' }] },
+    v2: { id: 'bundle-v2', bundles: [{ kind: 'recipe', ref: 'shared', version: '2.0.0' }] },
+  });
+  try {
+    const versionOverride = { replaces: ['1.0.0', '2.0.0'], reason: 'tested migration to v3' };
+    const loaded = resolveBlueprint(
+      {
+        id: 'complete-override',
+        extends: ['v1', 'v2'],
+        bundles: [{ kind: 'recipe', ref: 'shared', version: '3.0.0', versionOverride }],
+        ...runnable,
+      },
+      { resolve },
+    );
+    assert.deepEqual(loaded.blueprint.bundles, [{ kind: 'recipe', ref: 'shared', version: '3.0.0', versionOverride }]);
+    assert.deepEqual(
+      loaded.layers.flatMap((layer) => layer.bundles.map((bundle) => [layer.id, bundle.version])),
+      [
+        ['bundle-v1', '1.0.0'],
+        ['bundle-v2', '2.0.0'],
+        ['complete-override', '3.0.0'],
+      ],
+      'source provenance survives alongside the resolved override',
+    );
+
+    assert.throws(
+      () =>
+        resolveBlueprint(
+          {
+            id: 'incomplete-override',
+            extends: ['v1', 'v2'],
+            bundles: [
+              {
+                kind: 'recipe',
+                ref: 'shared',
+                version: '3.0.0',
+                versionOverride: { replaces: ['1.0.0'], reason: 'forgot the v2 peer' },
+              },
+            ],
+            ...runnable,
+          },
+          { resolve },
+        ),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message.includes('bundle-version-conflict') &&
+        error.message.includes('layer "bundle-v2" pins "2.0.0"') &&
+        error.message.includes('layer "incomplete-override" pins "3.0.0"'),
+    );
   } finally {
     cleanup();
   }
@@ -127,6 +258,13 @@ test('the real Papercusp pot stays a pot source when it inherits the papercusp-e
   assert.equal(loaded.sourceKind, 'blueprint', 'root kind comes from its own document, not inherited slots');
   assert.equal(loaded.layers.at(-1)?.id, 'papercusp');
   assert.equal(loaded.layers.at(-1)?.sourceKind, 'blueprint');
-  assert.equal(loaded.layers.some((layer) => layer.id === 'papercusp-engineer' && layer.sourceKind === 'identity'), true);
-  assert.deepEqual(loaded.blueprint.slots?.map((slot) => slot.slot), ['domain'], 'resolved runnable still carries the inherited domain slot');
+  assert.equal(
+    loaded.layers.some((layer) => layer.id === 'papercusp-engineer' && layer.sourceKind === 'identity'),
+    true,
+  );
+  assert.deepEqual(
+    loaded.blueprint.slots?.map((slot) => slot.slot),
+    ['domain'],
+    'resolved runnable still carries the inherited domain slot',
+  );
 });

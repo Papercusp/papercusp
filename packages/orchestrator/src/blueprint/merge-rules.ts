@@ -1,38 +1,32 @@
 /**
  * MERGE_RULES — the composition algebra DECLARED beside the schema, one rule per
- * `BlueprintSchema` leaf (`identities-v1-2026-08-30` P-001 landed the registry +
- * the leaf enumeration; P-019 landed `merge.ts` — `mergeByRules`, the merger
- * `resolveLayers` runs — which CONSUMES it; rulings D-003 / D-007 / D-017 / D-020).
+ * `BlueprintSchema` leaf (`identities-v1-2026-08-30` P-001/P-019, revised by
+ * P-039 / D-029). `merge.ts` consumes this registry and `resolveLayers` labels
+ * each call as peer-module assembly or inheritance for conflict provenance.
  *
  * WHY. `mergeRaw` is last-writer-wins ("objects deep-merge, child wins on leaf
  * keys; arrays and scalars are replaced wholesale") — which cannot express any of
- * the composition rules an identity stack needs: grants and bundles compose by
- * UNION, spend caps by MOST-RESTRICTIVE, a second claim on an exclusive slot is a
- * HARD ERROR. Hardcoding those into the merger would make every new field compose
- * by an unstated rule; declaring them here, keyed by schema path, makes "no field
- * composes by an unstated rule" EXECUTABLE — `merge-rules.test.ts` enumerates
- * every schema leaf and fails on a leaf with no rule AND on a rule naming no leaf.
+ * the composition rules an identity stack needs. Hardcoding those into the merger
+ * would make every new field compose by an unstated rule; declaring them here,
+ * keyed by schema path, makes "no field composes by an unstated rule" executable —
+ * `merge-rules.test.ts` fails on both a leaf with no rule and a rule with no leaf.
  *
- * THE FOUR RULES (applied per leaf, parent-first, over the ordered stack):
- *   - `replace`          — the child's value wins WHEN SET; an absent child value
- *                          inherits (what `mergeRaw` does for scalars/arrays today).
- *   - `union`            — set-union. Arrays: by `key` (an object field, or a tuple
- *                          of fields) or by structural value; records: key-union.
- *                          A key (or keyed element) present on BOTH sides composes
- *                          its values by last-writer-wins deep-merge (`mergeRaw`) —
- *                          for a record that is exactly today's behaviour; for a
- *                          keyed array the child overrides the fields it names and
- *                          inherits the rest. The identity set is commutative +
- *                          idempotent — `merge.test.ts`'s fast-check property.
- *   - `most-restrictive` — the TIGHTER value wins regardless of order (numeric caps:
- *                          min). Commutative — `merge.test.ts`'s fast-check property.
- *   - `hard-error`       — keyed union in the DOCUMENT (the resolved `slots` lists
- *                          every slot the stack fills) PLUS a stack-level refusal: a
- *                          key claimed by two DISTINCT layers FAILS the load. For
- *                          `slots` it is cardinality-aware — only an `exclusive`
- *                          slot collides (`findExclusiveSlotConflicts`, run over
- *                          `LoadedBlueprint.layers` by `resolveBlueprint`, which is
- *                          where layer identity still exists).
+ * THE FIVE RULES (applied per leaf, parent-first, over the ordered stack):
+ *   - `set-union`              — structural array values accumulate; equal values
+ *                                deduplicate and an empty array never removes prior
+ *                                declarations.
+ *   - `keyed-overlay`          — records or keyed arrays retain every key; a later
+ *                                restatement deep-merges the fields it names. Keys
+ *                                commute, colliding values do not.
+ *   - `explicit-replacement`   — a present child value replaces the prior whole
+ *                                value; absence inherits. This is the operation that
+ *                                permits an authored empty value to remove content.
+ *   - `constraint-intersection` — numeric upper bounds take the minimum; equal policy
+ *                                values agree; non-comparable values conflict rather
+ *                                than silently becoming a permissive replacement.
+ *   - `hard-conflict`           — the document retains keyed declarations while a
+ *                                source-aware loader check rejects incompatible
+ *                                claimants (exclusive `slots` today).
  *
  * LEAF = the unit a rule applies to. Objects are descended (a rule per field);
  * an ARRAY, a RECORD, a UNION and a LAZY schema are each ONE leaf (the rule
@@ -42,25 +36,28 @@
  *
  * BYTE-EQUIVALENCE CONSTRAINT. Every pre-existing blueprint must resolve to the
  * same document under the rule-driven merger — `merge.test.ts`'s GOLDEN walks
- * every builtin under both algebras and fails on the first differing path. So
- * the default assignment REPRODUCES the pre-P-019 behaviour — scalars / arrays /
- * unions `replace`, records `union` — and deviates ONLY where a plan decision
- * rules otherwise: `slots` (hard-error, D-007), `bundles` + `grants.*` (union,
- * D-003 / D-011), the declaration sets `roles` / `reactive` / `gym.signals` /
- * `dependencies.*` (union, D-020 — a layer CONTRIBUTES declarations, it never
- * wipes a sibling's; measured 2026-09-04: no builtin sets any of them on two
- * layers, so the flip moved no resolved document), and the safety caps
- * (most-restrictive, D-003). Each deviation says so in its note. A merger that
+ * every builtin under both algebras and fails on the first differing path. The
+ * default assignment reproduces pre-P-019 behaviour — scalars / arrays / unions
+ * use explicit replacement and records use keyed overlay — with declared changes
+ * for `slots` (hard conflict), bundles/roles (keyed overlay), grants and declaration
+ * sets (set union), and safety caps (constraint intersection). A merger that
  * honours the cap rule turns a parent-200 / child-500 `maxTurns` into 200 — the
  * intended fix, asserted explicitly by `merge.test.ts`; the one builtin parent
  * whose children RAISED a cap under last-writer-wins (`single-agent`,
  * `spine.maxTurns` 40) was re-authored to the loosest bound (200) so the rule
- * clamped no live blueprint (D-020).
+ * clamped no live blueprint (D-020). D-029 intentionally adds source-aware exact
+ * bundle-pin conflicts and fail-closed non-comparable constraints beyond that
+ * historical byte-equivalence evidence.
  */
 import type { z } from 'zod';
 import { BlueprintSchema } from './schema.js';
 
-export type MergeRuleKind = 'set-union' | 'keyed-overlay' | 'explicit-replacement' | 'constraint-intersection' | 'hard-conflict';
+export type MergeRuleKind =
+  | 'set-union'
+  | 'keyed-overlay'
+  | 'explicit-replacement'
+  | 'constraint-intersection'
+  | 'hard-conflict';
 
 export interface MergeRule {
   rule: MergeRuleKind;
@@ -79,7 +76,15 @@ export interface SchemaLeaf {
   type: string;
 }
 
-const WRAPPERS: ReadonlySet<string> = new Set(['optional', 'nullable', 'default', 'prefault', 'nonoptional', 'readonly', 'catch']);
+const WRAPPERS: ReadonlySet<string> = new Set([
+  'optional',
+  'nullable',
+  'default',
+  'prefault',
+  'nonoptional',
+  'readonly',
+  'catch',
+]);
 
 // zod 4 exposes a schema's shape on `def` (`type`, `shape`, `element`, `valueType`,
 // `innerType`, `catchall`) — the introspection surface `enumerateSchemaLeaves` walks.
@@ -129,15 +134,23 @@ export function enumerateBlueprintLeaves(): SchemaLeaf[] {
   return enumerateSchemaLeaves(BlueprintSchema);
 }
 
-const replace = (note?: string): MergeRule => (note ? { rule: 'explicit-replacement', note } : { rule: 'explicit-replacement' });
+const replace = (note?: string): MergeRule =>
+  note ? { rule: 'explicit-replacement', note } : { rule: 'explicit-replacement' };
 const setUnion = (note?: string): MergeRule => ({ rule: 'set-union', ...(note ? { note } : {}) });
-const overlay = (note?: string, key?: MergeRule['key']): MergeRule => ({ rule: 'keyed-overlay', ...(key ? { key } : {}), ...(note ? { note } : {}) });
+const overlay = (note?: string, key?: MergeRule['key']): MergeRule => ({
+  rule: 'keyed-overlay',
+  ...(key ? { key } : {}),
+  ...(note ? { note } : {}),
+});
 const cap = (note: string): MergeRule => ({ rule: 'constraint-intersection', note });
 
 const TODAY_RECORD = 'record: keyed overlay, child wins per key (today’s mergeRaw deep-merge)';
-const CAP = 'numeric upper-bound constraint intersection — the smaller value wins; non-comparable values conflict (D-029)';
-const DECLARATION_SET = 'a declaration set: each layer CONTRIBUTES entries, none wipes a sibling’s (D-020; was array-replace before P-019 — no builtin set it on two layers)';
-const LAYER_META = 'layer metadata: the resolved document carries the leaf’s; per-layer values survive in LoadedBlueprint.layers';
+const CAP =
+  'numeric upper-bound constraint intersection — the smaller value wins; non-comparable values conflict (D-029)';
+const DECLARATION_SET =
+  'a declaration set: each layer CONTRIBUTES entries, none wipes a sibling’s (D-020; was array-replace before P-019 — no builtin set it on two layers)';
+const LAYER_META =
+  'layer metadata: the resolved document carries the leaf’s; per-layer values survive in LoadedBlueprint.layers';
 const RUBRIC = {
   version: replace(),
   model: replace(),
@@ -169,8 +182,13 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
     key: 'slot',
     note: 'per-slot, cardinality-aware: additive slots union; a second DISTINCT layer on an exclusive slot fails the load (D-007; findExclusiveSlotConflicts)',
   },
-  bundles: overlay('keyed overlay by kind/ref; incompatible exact versions fail with layer provenance unless versionOverride validates (D-029)', ['kind', 'ref']),
-  'grants.requires': setUnion('grant declaration set; each layer independently vetted (D-003) — RESERVED until M3 (D-004/D-014)'),
+  bundles: overlay(
+    'keyed overlay by kind/ref; incompatible exact versions fail with layer provenance unless versionOverride validates (D-029)',
+    ['kind', 'ref'],
+  ),
+  'grants.requires': setUnion(
+    'grant declaration set; each layer independently vetted (D-003) — RESERVED until M3 (D-004/D-014)',
+  ),
   'grants.optional': setUnion('grant declaration set (D-003) — RESERVED until M3 (D-004/D-014)'),
   'grants.suggestedProviders': overlay(`${TODAY_RECORD}; publisher hints — RESERVED until M3`),
   'publisher.id': replace(LAYER_META),
@@ -187,7 +205,10 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   'workItem.payload': overlay(TODAY_RECORD),
 
   // ── roles + spine ──────────────────────────────────────────────────────────
-  roles: overlay(`${DECLARATION_SET}; keyed by role id — a child restating a role overrides the fields it names and inherits the rest`, 'id'),
+  roles: overlay(
+    `${DECLARATION_SET}; keyed by role id — a child restating a role overrides the fields it names and inherits the rest`,
+    'id',
+  ),
   'spine.decider': replace(),
   'spine.deciderAlternatives': replace(),
   'spine.claimModel': replace(),
@@ -200,7 +221,9 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   // ── planner / reactive / gates / recursion ─────────────────────────────────
   'planner.kind': replace(),
   'planner.config': overlay(TODAY_RECORD),
-  reactive: setUnion(`${DECLARATION_SET}; by structural value — a rule has no natural key, and two rules for one role are two rules`),
+  reactive: setUnion(
+    `${DECLARATION_SET}; by structural value — a rule has no natural key, and two rules for one role are two rules`,
+  ),
   'gates.finalize.onDone': replace(),
   'gates.finalize.onEscalate': replace(),
   'gates.approvals': replace(),
@@ -295,7 +318,9 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   'dispatch.readiness': replace(),
   'dispatch.costCapUsd': cap(CAP),
   'dispatch.safetyCeiling': cap(`${CAP}; tighten-only by design`),
-  'dependencies.tools': setUnion(`${DECLARATION_SET}; the pre-M3 grant vocabulary, so it composes like grants (D-003) — folds into capability classes in M3 (D5 → P-016)`),
+  'dependencies.tools': setUnion(
+    `${DECLARATION_SET}; the pre-M3 grant vocabulary, so it composes like grants (D-003) — folds into capability classes in M3 (D5 → P-016)`,
+  ),
   'dependencies.packs': setUnion(DECLARATION_SET),
   'dependencies.plugins': setUnion(DECLARATION_SET),
   'dependencies.blueprints': setUnion(DECLARATION_SET),
@@ -309,7 +334,9 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   'environment.services': replace(),
   'environment.ports': replace(),
   'environment.env': overlay(TODAY_RECORD),
-  params: overlay(`${TODAY_RECORD} — base ∪ child. STAYS a record (D-020): its keys ARE the config.json dot-paths the settings panel reads and writes, unique by construction, so keyed overlay is the declared rule, not a workaround for array replacement`),
+  params: overlay(
+    `${TODAY_RECORD} — base ∪ child. STAYS a record (D-020): its keys ARE the config.json dot-paths the settings panel reads and writes, unique by construction, so keyed overlay is the declared rule, not a workaround for array replacement`,
+  ),
 };
 
 /**

@@ -57,7 +57,11 @@ test('a full identity document parses: slots, bundles, the reserved grants shape
   assert.deepEqual(bp.slots, [{ slot: 'domain', cardinality: 'exclusive' }, { slot: 'practice' }]);
   assert.equal(bp.bundles.length, 2);
   assert.equal(bp.bundles[1]!.version, undefined);
-  assert.deepEqual(bp.grants, { requires: [], optional: [], suggestedProviders: {} }, 'grants fills to the empty reserved shape');
+  assert.deepEqual(
+    bp.grants,
+    { requires: [], optional: [], suggestedProviders: {} },
+    'grants fills to the empty reserved shape',
+  );
   assert.equal(bp.publisher?.id, 'papercusp');
   assert.equal(bp.attestation?.signedBy, 'papercusp');
   assert.equal(isIdentityDocument(source), true);
@@ -66,24 +70,86 @@ test('a full identity document parses: slots, bundles, the reserved grants shape
 });
 
 test('a slot id is an OPEN string at the schema (the registry check is validateBlueprint’s); a bundle kind is the CLOSED D-011 vocabulary', () => {
-  assert.equal(SlotDeclarationSchema.safeParse({ slot: 'risk-posture' }).success, true, 'unknown slot parses — validate.ts reports slot-unknown');
+  assert.equal(
+    SlotDeclarationSchema.safeParse({ slot: 'risk-posture' }).success,
+    true,
+    'unknown slot parses — validate.ts reports slot-unknown',
+  );
   assert.equal(SlotDeclarationSchema.safeParse({ slot: '' }).success, false);
   assert.equal(SlotDeclarationSchema.safeParse({ slot: 'domain', cardinality: 'sometimes' }).success, false);
   for (const kind of BUNDLE_KINDS) assert.equal(BundleRefSchema.safeParse({ kind, ref: 'x' }).success, true, kind);
-  assert.equal(BundleRefSchema.safeParse({ kind: 'skill', ref: 'x' }).success, false, 'no skill kind — owner ruling 2026-09-02');
+  assert.equal(
+    BundleRefSchema.safeParse({ kind: 'skill', ref: 'x' }).success,
+    false,
+    'no skill kind — owner ruling 2026-09-02',
+  );
   assert.equal(BundleRefSchema.safeParse({ kind: 'recipe', ref: '' }).success, false);
   assert.equal(
-    BundleRefSchema.safeParse({ kind: 'recipe', ref: 'x', version: '2', versionOverride: { replaces: ['1'], reason: 'approved migration' } }).success,
+    BundleRefSchema.safeParse({
+      kind: 'recipe',
+      ref: 'x',
+      version: '2',
+      versionOverride: { replaces: ['1'], reason: 'approved migration' },
+    }).success,
     true,
   );
-  assert.equal(BundleRefSchema.safeParse({ kind: 'recipe', ref: 'x', versionOverride: { replaces: ['1'], reason: 'missing target' } }).success, false);
-  assert.equal(BundleRefSchema.safeParse({ kind: 'recipe', ref: 'x', version: '2', versionOverride: { replaces: ['2'], reason: 'self' } }).success, false);
-  assert.equal(BundleRefSchema.safeParse({ kind: 'recipe', ref: 'x', version: '2', versionOverride: { replaces: ['1'], reason: '' } }).success, false);
+  assert.equal(
+    BundleRefSchema.safeParse({
+      kind: 'recipe',
+      ref: 'x',
+      versionOverride: { replaces: ['1'], reason: 'missing target' },
+    }).success,
+    false,
+  );
+  assert.equal(
+    BundleRefSchema.safeParse({
+      kind: 'recipe',
+      ref: 'x',
+      version: '2',
+      versionOverride: { replaces: ['2'], reason: 'self' },
+    }).success,
+    false,
+  );
+  assert.equal(
+    BundleRefSchema.safeParse({
+      kind: 'recipe',
+      ref: 'x',
+      version: '2',
+      versionOverride: { replaces: ['1', '1'], reason: 'duplicate' },
+    }).success,
+    false,
+  );
+  assert.equal(
+    BundleRefSchema.safeParse({
+      kind: 'recipe',
+      ref: 'x',
+      version: '2',
+      versionOverride: { replaces: ['1'], reason: '' },
+    }).success,
+    false,
+  );
+  assert.equal(
+    BundleRefSchema.safeParse({
+      kind: 'recipe',
+      ref: 'x',
+      version: '2',
+      versionOverride: { replaces: ['1'], reason: 'ok', untracked: true },
+    }).success,
+    false,
+  );
 });
 
 test('attestation.contentHash must be a lowercase sha256 hex; signedBy is required', () => {
   assert.equal(AttestationSchema.safeParse({ contentHash: 'f'.repeat(64), signedBy: 'p' }).success, true);
-  assert.equal(AttestationSchema.safeParse({ contentHash: 'F'.repeat(64), signedBy: 'p' }).success, false, 'lowercase only');
-  assert.equal(AttestationSchema.safeParse({ contentHash: 'f'.repeat(40), signedBy: 'p' }).success, false, 'sha256 length');
+  assert.equal(
+    AttestationSchema.safeParse({ contentHash: 'F'.repeat(64), signedBy: 'p' }).success,
+    false,
+    'lowercase only',
+  );
+  assert.equal(
+    AttestationSchema.safeParse({ contentHash: 'f'.repeat(40), signedBy: 'p' }).success,
+    false,
+    'sha256 length',
+  );
   assert.equal(AttestationSchema.safeParse({ contentHash: 'f'.repeat(64) }).success, false, 'signedBy required');
 });

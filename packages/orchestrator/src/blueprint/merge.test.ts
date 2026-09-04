@@ -1,18 +1,18 @@
 /**
- * identities-v1-2026-08-30 P-019 — the MERGE_RULES-driven merger (`merge.ts`) and
- * its wiring into `resolveLayers`. Three evidence families:
+ * identities-v1-2026-08-30 P-019/P-039 — the MERGE_RULES-driven merger
+ * (`merge.ts`) and its wiring into `resolveLayers`. Three evidence families:
  *
  *   1. GOLDEN — every builtin blueprint resolves to the SAME document under the
  *      rule-driven walk and under the pre-P-019 `mergeRaw` walk (same graph shape),
  *      so the registry's default assignment really is byte-equivalent, and the
- *      declared deviations (caps, unions) moved no builtin (D-020 re-authored the
+ *      declared deviations moved no builtin (D-020 re-authored the
  *      one template whose children raised a cap rather than clamp them).
  *   2. FIXTURES for each declared deviation — the cap flip a parent-200 / child-500
- *      `maxTurns` → 200 asserted explicitly; slots / bundles / roles / dependencies
- *      union across layers; the exclusive-slot refusal survives the new merger.
- *   3. fast-check PROPERTIES where the rule is algebraic: union is commutative +
- *      idempotent (as an identity set); most-restrictive is commutative; replace is
- *      order-dependent by design.
+ *      `maxTurns` → 200 asserted explicitly; set union, keyed overlay, replacement,
+ *      intersection, and hard conflict each have resolved-value assertions.
+ *   3. fast-check PROPERTIES where the rule is algebraic: set union is commutative
+ *      + idempotent; constraint intersection is commutative; keyed-overlay values
+ *      and explicit replacement are order-dependent by design.
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
@@ -27,6 +27,7 @@ import {
   mergeByRules,
   mergeRaw,
   applyMergeRule,
+  MergeConflictError,
   setUnionArrays,
   keyedOverlayArrays,
   intersectConstraint,
@@ -96,7 +97,7 @@ const runnable = { workItem: { kind: 'feature' }, spine: { edges: { DONE: { to: 
 const BP_DIR = harnessPath('blueprints');
 const builtinIds = (): string[] => readdirSync(BP_DIR).filter((d) => existsSync(join(BP_DIR, d, 'blueprint.yaml')));
 const CAP_LEAVES = Object.entries(MERGE_RULES)
-  .filter(([, r]) => r.rule === 'most-restrictive')
+  .filter(([, r]) => r.rule === 'constraint-intersection')
   .map(([p]) => p);
 const getPath = (doc: unknown, path: string): unknown =>
   path
@@ -155,7 +156,7 @@ test('GOLDEN — no builtin child is clamped by a parent cap: every resolved cap
 
 // ── 2. fixtures ─────────────────────────────────────────────────────────────
 
-test('most-restrictive — a parent-200 / child-500 maxTurns resolves to 200 either way round, and a child may still tighten (the intended flip, D-003)', () => {
+test('constraint intersection — a parent-200 / child-500 maxTurns resolves to 200 either way round, and a child may still tighten (D-003/D-029)', () => {
   const { resolve, cleanup } = chain({
     loose: { id: 'loose', spine: { maxTurns: 500 }, knobs: { maxCostUsd: 9, parallelWorkers: { max: 8 } } },
     tight: { id: 'tight', spine: { maxTurns: 200 }, knobs: { maxCostUsd: 2, parallelWorkers: { max: 3 } } },
@@ -193,7 +194,40 @@ test('most-restrictive — a parent-200 / child-500 maxTurns resolves to 200 eit
   }
 });
 
-test('slots — union across layers keyed by slot (the resolved document lists every slot the stack fills); a diamond deep-merges the restatement; two DISTINCT exclusive claimants still fail the load (D-007)', () => {
+test('constraint intersection — non-comparable policies fail closed and distinguish peer assembly from inheritance with source provenance (D-029)', () => {
+  const rejects =
+    (mode: 'peer-assembly' | 'inheritance', sources: readonly string[]) =>
+    (error: unknown): boolean => {
+      assert.ok(error instanceof MergeConflictError);
+      assert.equal(error.path, 'knobs.maxCostUsd');
+      assert.equal(error.rule, 'constraint-intersection');
+      assert.equal(error.context.mode, mode);
+      assert.deepEqual([...(error.context.baseSources ?? []), ...(error.context.childSources ?? [])], sources);
+      assert.match(error.message, new RegExp(`during ${mode}`));
+      for (const source of sources) assert.match(error.message, new RegExp(source));
+      return true;
+    };
+  assert.throws(
+    () =>
+      mergeByRules(
+        { knobs: { maxCostUsd: 'bounded' } },
+        { knobs: { maxCostUsd: 'unlimited' } },
+        { mode: 'peer-assembly', baseSources: ['policy-a'], childSources: ['policy-b'] },
+      ),
+    rejects('peer-assembly', ['policy-a', 'policy-b']),
+  );
+  assert.throws(
+    () =>
+      mergeByRules(
+        { knobs: { maxCostUsd: 'bounded' } },
+        { knobs: { maxCostUsd: 'unlimited' } },
+        { mode: 'inheritance', baseSources: ['policy-a'], childSources: ['child-root'] },
+      ),
+    rejects('inheritance', ['policy-a', 'child-root']),
+  );
+});
+
+test('slots — keyed declarations retain every slot; a diamond deep-merges the restatement; two DISTINCT exclusive claimants still fail the load (D-007)', () => {
   const { resolve, cleanup } = chain({
     engA: { id: 'engA', slots: [{ slot: 'domain' }] },
     engB: { id: 'engB', slots: [{ slot: 'domain' }] },
@@ -222,17 +256,17 @@ test('slots — union across layers keyed by slot (the resolved document lists e
         .filter(([, r]) => r.rule === 'hard-conflict')
         .map(([p]) => p),
       ['slots'],
-      'slots is the only hard-error leaf, and its refusal is the stack-level check above',
+      'slots is the only hard-conflict leaf, and its refusal is the stack-level check above',
     );
   } finally {
     cleanup();
   }
 });
 
-test('bundles — keyed union on [kind, ref]: a restated bundle takes the child’s fields, new bundles append (D-011)', () => {
+test('bundles — keyed overlay on [kind, ref]: a restated bundle overlays fields and new bundles append; exact-pin acceptance remains loader-level (D-029)', () => {
   const base = {
     bundles: [
-      { kind: 'recipe', ref: 'a', version: '1' },
+      { kind: 'recipe', ref: 'a' },
       { kind: 'rubric', ref: 'r' },
     ],
   };
@@ -282,7 +316,21 @@ test('declaration sets (D-020) — roles union by id with field-level override; 
   assert.deepEqual(m.grants, { requires: ['fs', 'net'] });
 });
 
-test('params — a record unions by key and deep-merges a colliding key: byte-identical to mergeRaw (the record stays a record, D-020)', () => {
+test('removals are operation-specific — empty set/keyed arrays cannot erase contributors, while explicit replacement can author an empty value', () => {
+  const merged = mergeByRules(
+    {
+      roles: [{ id: 'worker', tools: ['read'] }],
+      dependencies: { tools: ['search'] },
+      ops: ['deploy'],
+    },
+    { roles: [], dependencies: { tools: [] }, ops: [] },
+  );
+  assert.deepEqual(merged.roles, [{ id: 'worker', tools: ['read'] }], 'empty keyed overlay is not a deletion');
+  assert.deepEqual(merged.dependencies, { tools: ['search'] }, 'empty set union is not a deletion');
+  assert.deepEqual(merged.ops, [], 'an explicitly replaced array can be emptied');
+});
+
+test('keyed record overlays preserve nested sibling fields and replace only authored leaves (actual resolved values, D-029)', () => {
   const base = { params: { 'a.b': { label: 'x', type: 'number', min: 1 }, c: { label: 'c' } } };
   const child = { params: { 'a.b': { default: 5, min: 2 }, d: { label: 'd' } } };
   assert.deepEqual(mergeByRules(base, child).params, mergeRaw(base, child).params);
@@ -291,6 +339,21 @@ test('params — a record unions by key and deep-merges a colliding key: byte-id
     c: { label: 'c' },
     d: { label: 'd' },
   });
+  assert.deepEqual(
+    mergeByRules(
+      { spine: { edges: { RUN: { to: 'role', role: 'worker', extras: ['base'] }, DONE: { to: 'done' } } } },
+      { spine: { edges: { RUN: { extras: ['child'] }, REVIEW: { to: 'role', role: 'reviewer' } } } },
+    ),
+    {
+      spine: {
+        edges: {
+          RUN: { to: 'role', role: 'worker', extras: ['child'] },
+          DONE: { to: 'done' },
+          REVIEW: { to: 'role', role: 'reviewer' },
+        },
+      },
+    },
+  );
 });
 
 test('interior nodes descend; a non-object child value replaces (retired: null revives); an ungoverned key composes by mergeRaw; an object-valued catchall knob replaces whole (the one declared divergence)', () => {
@@ -312,7 +375,7 @@ test('interior nodes descend; a non-object child value replaces (retired: null r
   // A key outside the schema entirely composes as it always did.
   assert.equal(mergeRuleFor('visibility'), null);
   assert.deepEqual(mergeByRules({ visibility: { a: 1 } }, { visibility: { b: 2 } }), { visibility: { a: 1, b: 2 } });
-  // A forward-unknown knob is opaque to the schema: `knobs.*` is `replace`, so the child's object wins whole.
+  // A forward-unknown knob is opaque to the schema: `knobs.*` is explicit replacement, so the child's object wins whole.
   assert.equal(mergeRuleFor('knobs.someUnknownKnob')?.rule, 'explicit-replacement');
   assert.deepEqual(mergeByRules({ knobs: { someUnknownKnob: { a: 1 } } }, { knobs: { someUnknownKnob: { b: 2 } } }), {
     knobs: { someUnknownKnob: { b: 2 } },
@@ -332,7 +395,7 @@ const UNION: MergeRule = { rule: 'set-union' };
 const OVERLAY: MergeRule = { rule: 'keyed-overlay' };
 const CAP: MergeRule = { rule: 'constraint-intersection' };
 
-test('property — union by value is commutative and idempotent as a set, and [] is its identity', () => {
+test('property — set union is commutative and idempotent as a set, and [] is its identity', () => {
   fc.assert(
     fc.property(fc.array(fc.string()), fc.array(fc.string()), (a, b) => {
       assert.deepEqual(asSet(setUnionArrays(a, b)), asSet(setUnionArrays(b, a)), 'commutative');
@@ -344,7 +407,7 @@ test('property — union by value is commutative and idempotent as a set, and []
   );
 });
 
-test('property — keyed union: the key set is commutative + idempotent, and the child’s fields win on a colliding key', () => {
+test('property — keyed overlay retains every key and resolves every colliding value by ordered deep overlay', () => {
   // fast-check 4 generates null-prototype objects by default; the merger normalizes a merged
   // element to a plain object, so idempotence is compared STRUCTURALLY (stableStringify), not
   // by prototype — which is the identity the algebra is about.
@@ -372,11 +435,21 @@ test('property — keyed union: the key set is commutative + idempotent, and the
         const got = ab.find((x) => `${x.kind}/${x.ref}` === k);
         assert.deepEqual(got?.version, e.version, 'the child’s (later) version wins on its key');
       }
+      const expectedByKey = new Map<string, RawDocument>();
+      for (const e of [...a, ...b]) {
+        const k = `${e.kind}/${e.ref}`;
+        const previous = expectedByKey.get(k);
+        expectedByKey.set(k, previous ? mergeRaw(previous, e) : e);
+      }
+      for (const [k, expected] of expectedByKey) {
+        const got = ab.find((value) => `${value.kind}/${value.ref}` === k);
+        assert.equal(stableStringify(got), stableStringify(expected), `${k}: actual resolved value`);
+      }
     }),
   );
 });
 
-test('property — most-restrictive is commutative, idempotent, and equals min; through the full document merger too', () => {
+test('property — numeric constraint intersection is commutative, idempotent, and equals min; through the full merger too', () => {
   fc.assert(
     fc.property(fc.integer({ min: 1, max: 100_000 }), fc.integer({ min: 1, max: 100_000 }), (a, b) => {
       assert.equal(intersectConstraint(a, b), Math.min(a, b));
