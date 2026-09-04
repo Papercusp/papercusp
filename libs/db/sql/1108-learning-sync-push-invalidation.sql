@@ -1,4 +1,4 @@
--- 1000-learning-sync-push-invalidation.sql — WI-6182.
+-- 1108-learning-sync-push-invalidation.sql — WI-6182.
 --
 -- The eight Learning-tab sync reads audited in WI-6182 had no change event:
 -- they refreshed on mount/manual action only. Attach the established generic
