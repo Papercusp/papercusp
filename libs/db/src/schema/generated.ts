@@ -3566,14 +3566,18 @@ export const harnessDocPartsInHarnessShared = harnessShared.table("harness_doc_p
 	projectRank: integer("project_rank").default(1000).notNull(),
 	targetSection: text("target_section"),
 	rationalePartKey: text("rationale_part_key"),
+	stackScope: text("stack_scope").array().default([]).notNull(),
 }, (table) => [
 	index("harness_doc_parts_by_doc").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.docId.asc().nullsLast().op("text_ops"), table.ordinal.asc().nullsLast().op("int4_ops")),
 	index("harness_doc_parts_projection_idx").using("gin", table.clientScope.asc().nullsLast().op("array_ops")).where(sql`((tombstone = false) AND (cardinality(client_scope) > 0))`),
+	index("harness_doc_parts_stack_scope_idx").using("gin", table.stackScope.asc().nullsLast().op("array_ops")).where(sql`((tombstone = false) AND (cardinality(stack_scope) > 0))`),
 	primaryKey({ columns: [table.docId, table.harnessSlug, table.partKey, table.workspaceId], name: "harness_doc_parts_pkey"}),
+	check("harness_doc_parts_addressed_must_project", sql`(cardinality(stack_scope) = 0) OR (cardinality(client_scope) > 0)`),
 	check("harness_doc_parts_kind_check", sql`kind = ANY (ARRAY['invariant'::text, 'pointer'::text, 'recipe'::text, 'prose'::text])`),
 	check("harness_doc_parts_projected_needs_section", sql`(cardinality(client_scope) = 0) OR (target_section IS NOT NULL)`),
 	check("harness_doc_parts_prose_never_projects", sql`(kind <> 'prose'::text) OR (cardinality(client_scope) = 0)`),
 	check("harness_doc_parts_rationale_only_on_recipe", sql`(rationale_part_key IS NULL) OR (kind = 'recipe'::text)`),
+	check("harness_doc_parts_stack_scope_shape", sql`(cardinality(stack_scope) = 0) OR (array_to_string(stack_scope, ' '::text) ~ '^(blueprint|slot|role):[^[:space:]:]+( (blueprint|slot|role):[^[:space:]:]+)*$'::text)`),
 ]);
 
 export const harnessDockLayoutsInHarnessShared = harnessShared.table("harness_dock_layouts", {
