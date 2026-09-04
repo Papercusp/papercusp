@@ -8,7 +8,8 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { composeSuStackSource, suStackDocuments } from './su-stack.js';
+import { composeSuStackSource, composeSuStackMutation, suEffectiveBinding, suPostureBinding, suSessionBinding, suStackDocuments } from './su-stack.js';
+import { bindingRefs, STACK_INJECTION_STAMP } from './stack-mutation.js';
 import { KERNEL_SEAL_MARKER } from './render-stack.js';
 import { CLIENT_SEAM_MARKER } from './identity-lint.js';
 import { SU_TILES } from './su-decomposition.js';
@@ -81,4 +82,64 @@ test('composeSuStackSource — binding a fleet posture renders it between domain
   assert.ok(member.text.includes('## Working as a fleet MEMBER'));
   const leader = composeSuStackSource({ harnessDir, posture: 'leader' });
   assert.ok(leader.order.some((e) => e.id === 'su.fleet-leader') && !leader.order.some((e) => e.id === 'su.fleet-member'));
+});
+
+// ── P-012: the binding + the stack-mutation primitive over the real tree ──────
+
+test('suSessionBinding / suEffectiveBinding — presence fleet_role derives the posture layer; the static layers are implied; posture sugar and an explicit binding must agree', () => {
+  assert.deepEqual(bindingRefs(suSessionBinding({ fleetRole: null })), []);
+  assert.deepEqual(bindingRefs(suSessionBinding({ fleetRole: 'Leader' })), ['fleet-posture:su.fleet-leader']);
+  assert.deepEqual(bindingRefs(suSessionBinding({ fleetRole: 'member', modes: ['auto'] })), ['fleet-posture:su.fleet-member'], 'no mode-axis document in v1 (D-008)');
+  assert.deepEqual(bindingRefs(suEffectiveBinding(null)), ['domain:papercusp-engineer', 'collaboration-stance:su-collaborator', 'practice:su.practice']);
+  assert.deepEqual(bindingRefs(suEffectiveBinding(suPostureBinding('member'))), [
+    'domain:papercusp-engineer',
+    'fleet-posture:su.fleet-member',
+    'collaboration-stance:su-collaborator',
+    'practice:su.practice',
+  ]);
+  assert.throws(() => suEffectiveBinding(suPostureBinding('member'), 'leader'), /posture "leader" disagrees/);
+  // `binding` and `posture` are the same seam: identical renders.
+  const viaBinding = composeSuStackSource({ harnessDir, binding: suSessionBinding({ fleetRole: 'leader' }) });
+  const viaPosture = composeSuStackSource({ harnessDir, posture: 'leader' });
+  assert.equal(viaBinding.text, viaPosture.text);
+  assert.deepEqual(viaBinding.order, viaPosture.order);
+});
+
+test('composeSuStackMutation — attach member, swap to leader (one attach, `replaced`), detach restores the default order; the injection carries the real posture text and the next render composes clean', () => {
+  const joined = composeSuStackMutation({ harnessDir, binding: null, op: 'attach', layer: { slot: 'fleet-posture', id: 'su.fleet-member' } });
+  assert.equal(joined.mutation.changed, true);
+  assert.equal(joined.mutation.replaced, null);
+  assert.deepEqual(bindingRefs(joined.runtimeBinding), ['fleet-posture:su.fleet-member']);
+  assert.deepEqual(joined.nextRender.order.map((e) => e.id).slice(0, 4), ['client-seam', 'papercusp-engineer', 'su.fleet-member', 'su-collaborator']);
+  assert.ok(joined.injection!.startsWith(`${STACK_INJECTION_STAMP} {"op":"attach","slot":"fleet-posture","id":"su.fleet-member"`));
+  assert.ok(joined.injection!.includes('## Working as a fleet MEMBER'), 'the injected text IS the posture tile');
+  assert.equal(joined.injection!.includes(KERNEL_SEAL_MARKER), false);
+  assert.equal(joined.nextRender.findings.filter((f) => f.tier === 'block').length, 0);
+
+  const led = composeSuStackMutation({ harnessDir, binding: joined.runtimeBinding, op: 'attach', layer: { slot: 'fleet-posture', id: 'su.fleet-leader' } });
+  assert.deepEqual(led.mutation.replaced, { slot: 'fleet-posture', id: 'su.fleet-member' });
+  assert.deepEqual(bindingRefs(led.runtimeBinding), ['fleet-posture:su.fleet-leader']);
+  assert.ok(led.injection!.includes('It REPLACES `su.fleet-member` on the exclusive `fleet-posture` slot'));
+  assert.ok(led.nextRender.order.some((e) => e.id === 'su.fleet-leader') && !led.nextRender.order.some((e) => e.id === 'su.fleet-member'));
+
+  const left = composeSuStackMutation({ harnessDir, binding: led.runtimeBinding, op: 'detach', layer: { slot: 'fleet-posture' } });
+  assert.equal(left.mutation.id, 'su.fleet-leader');
+  assert.deepEqual(bindingRefs(left.runtimeBinding), []);
+  assert.deepEqual(left.nextRender.order, composeSuStackSource({ harnessDir }).order, 'detach restores the default stack');
+  assert.ok(left.injection!.includes('DETACHED'));
+
+  // A static su layer cannot be detached at runtime; an unknown bound document is refused, not rendered without.
+  assert.throws(() => composeSuStackMutation({ harnessDir, binding: null, op: 'detach', layer: { slot: 'practice', id: 'su.practice' } }), /static layer of the su stack/);
+  assert.throws(() => composeSuStackMutation({ harnessDir, binding: null, op: 'attach', layer: { slot: 'practice', id: 'no-such-practice' } }), /neither an su.md part document nor resolvable/);
+  // A caller-resolved practice stacks beside su.practice and is injected.
+  const extra = composeSuStackMutation({
+    harnessDir,
+    binding: null,
+    op: 'attach',
+    layer: { slot: 'practice', id: 'wait-loop-discipline' },
+    resolveLayer: (l) => (l.id === 'wait-loop-discipline' ? { id: l.id, layer: 'practices', slot: 'practice', text: '## Waiting well\n\nre-check, then re-arm.' } : null),
+  });
+  assert.deepEqual(bindingRefs(extra.runtimeBinding), ['practice:wait-loop-discipline']);
+  assert.deepEqual(extra.nextRender.order.filter((e) => e.slot === 'practice').map((e) => e.id), ['su.practice', 'wait-loop-discipline']);
+  assert.ok(extra.injection!.includes('## Waiting well'));
 });

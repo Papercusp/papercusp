@@ -144,7 +144,8 @@ list with no mirror.
 **Runtime attach / detach (P-012).** Additive and mode-axis layers attach inject-now through
 the existing mode-flip channel and appear in the next full render; a `domain` swap is a
 relaunch-with-carry; a `fleet-posture` swap follows inject-now under the exclusive-slot rule.
-Only mode PROSE moves; state and implications stay in the registry.
+Only mode PROSE moves; state and implications stay in the registry. The primitive, the delivery
+table and the channel are §11.
 
 ## 6. The projection: `harness_shared.blueprints` is POPULATED, not dropped (D-016 §3 → D-017)
 
@@ -369,3 +370,70 @@ once; identity tiles above the seal, kernel tiles under it; no seam lost or dupl
 interactive golden is lossless-tile + order, NOT byte-equality with the pre-P-003 render: the
 seal necessarily reorders the file, and the P-018 baseline (`su-render-baseline.ts`) measures
 that delta per section for the P-035 gate rather than forbidding it.
+
+## 11. The stack-mutation primitive — attach / detach a layer on a LIVE session (P-012)
+
+**What a binding is (`src/blueprint/stack-mutation.ts`).** A `StackBinding` is the set of
+identity layers a session runs beyond the kernel: `{ slot, id }` per filled slot, an additive
+slot carrying several, in `compareSlotOrder`. It is DERIVED state, never a new table — for the
+interactive su the fleet posture is presence's `fleet_role` and the mode axes are `agent_modes`
+(no mode-axis DOCUMENT exists in v1, D-008; P-021 supplies them), projected by the operator
+into the control anchor as `stack: ['fleet-posture:su.fleet-leader', …]` (`bindingRefs`). The
+su's static layers (`SU_STATIC_LAYERS`: `domain:papercusp-engineer`,
+`collaboration-stance:su-collaborator`, `practice:su.practice`) are implied; a runtime binding
+is applied over them with attach semantics (`suEffectiveBinding`), so an exclusive layer in
+the binding REPLACES the static one and a static layer can be swapped but never detached.
+
+**What a mutation is.** `attachLayer` / `detachLayer` are pure functions over a binding. On an
+exclusive slot an attach onto a DIFFERENT holder is a SWAP — the mutation carries `replaced` —
+because D-007's "exactly one document per exclusive slot" is a property of the STACK, which a
+mutation preserves; the hard-error is for a stack that declares two claims at once
+(`normalizeStackBinding` still refuses that). On an additive slot documents stack in attach
+order and a detach must name the document. A repeat attach or a detach of an unbound layer is a
+no-op (`changed: false`) that delivers nothing. `diffStackBindings(before, after)` turns two
+anchor states into the mutation list (detaches first, then attaches; a swapped exclusive holder
+is ONE attach), which is how the turn-start channel reconstructs what to deliver.
+
+**Delivery — the slot's LAYER decides, and the table below is the rule (pinned).**
+
+<!-- STACK-MUTATION:BEGIN -->
+STACK_MUTATION_TABLE
+<!-- STACK-MUTATION:END -->
+
+**Kernel-safe handoff.** `applyStackMutation` (and its su form `composeSuStackMutation`)
+composes the NEXT FULL RENDER on the new binding FIRST — `composeStack`: the seal, the
+composed-stack identity-lint, the D-009 "no override path", so a BLOCK finding THROWS — and
+only then renders the inject-now payload. A layer that cannot render under the seal is never
+injected past it; a bound document the stack cannot resolve refuses the attach rather than
+rendering without it. The inject-now payload opens with the `⟦stack⟧` stamp (in
+`FORGED_CONTROL_LITERALS`, so no identity can forge an attach / detach), a
+`## Stack mutation — …` heading, and a precedence preface in the seal's own terms: the section
+sits ABOVE the seal, exactly where a full render places it; the sealed kernel already in context
+OUTRANKS it; it grants no authority; it renders in position on the next full render; a swap says
+which document it REPLACES and voids it. A detach delivers a void notice; a
+relaunch-with-carry delivers no document at all — only the instruction that the new stack
+arrives by carry-respawn (`session:request-compaction { autoContinue: true }`) and that the
+current session's stack is unchanged until then.
+
+**The channel (operator).** The binding rides the SAME channel as a mode flip. The control
+anchor (`agent-tools/coordination/control-anchor.ts`) carries `stack` (bound refs, present when
+non-empty) beside `modes`; `persistControlAnchor` bumps the generation when it changes and
+stamps `stackBefore` (the previous row's refs) onto the transition; the turn-start hook
+(`turn-start-memory.ts`) consumes the pending transition, renders the `⟦CTRL:transition⟧` line
+under its own 384-token budget, and appends — as a SEPARATE context block, outside that budget —
+the inject-now payloads `renderStackTransitionContext` derives from `diffStackBindings(stackBefore,
+state.stack)` over the real su stack (`stack-binding-channel.ts`). A full-resync (no
+`stackBefore`) re-delivers every bound layer, matching the anchor's
+replace-full-never-merge-behind rule. Every mutation source is therefore an anchor refresh:
+`fleet:join` / `fleet:take-leadership` already refresh with `source: 'fleet:membership'`
+(presence.ts), `mode:set` with `source: 'mode:set'`. The launch tier includes the binding in the
+first render: `role-launch-spec.ts` passes `suSessionBinding({ fleetRole })` to
+`composeSuStackSource`, so a `psu --fleet=…` member's first prompt already carries the member
+posture (before P-012 the P-003 render left the posture UNBOUND on every launch).
+
+**What consumes it.** P-020 (fleet playbooks as identities) attaches `su.fleet-member` /
+`su.fleet-leader` through this primitive; P-021 (modes as identities) binds one document per
+mode axis from `mode:set`; the M2 profession-swap UI (P-011) drives a `domain` swap, which is
+relaunch-with-carry by construction. `stack-mutation.test.ts` pins the semantics, the payload
+shape, the kernel-safety refusal and this table; `su-stack.test.ts` proves attach → swap →
+detach over the real tree restores the default order.

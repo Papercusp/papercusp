@@ -199,19 +199,49 @@ export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocum
   // The client seam tile renders AS the client layer — the per-client overlay is spliced there.
   const seam = located.filter((t) => t.part === 'client');
   if (seam.length) docs.push({ id: 'client-seam', layer: 'client', slot: 'client', text: seam.map((t) => t.text).join(''), sourcePath: null });
-  const domain = partDoc('papercusp-engineer');
-  docs.push({ id: domain.id, layer: 'domain', slot: 'domain', text: textOf(located, domain), sourcePath: domain.path });
-  if (opts.posture) {
-    const posture = partDoc(opts.posture === 'leader' ? 'su.fleet-leader' : 'su.fleet-member');
-    docs.push({ id: posture.id, layer: 'fleet-posture', slot: 'fleet-posture', text: textOf(located, posture), sourcePath: posture.path });
+  // The slot layers: the static su layers with the runtime binding applied over them (P-012).
+  const binding = suEffectiveBinding(opts.binding, opts.posture);
+  for (const layer of binding.layers) {
+    const doc = suBoundLayerDocument(located, layer) ?? opts.resolveLayer?.(layer, located) ?? null;
+    if (!doc) throw new Error(`su-stack: bound layer "${layer.slot}:${layer.id}" is neither an su.md part document nor resolvable by the caller`);
+    docs.push(doc);
   }
-  const stance = partDoc('su-collaborator');
-  docs.push({ id: stance.id, layer: 'practices', slot: 'collaboration-stance', text: textOf(located, stance), sourcePath: stance.path });
-  const practice = partDoc('su.practice');
-  docs.push({ id: practice.id, layer: 'practices', slot: 'practice', text: textOf(located, practice), sourcePath: practice.path });
   const instance = partDoc('su.instance');
   docs.push({ id: instance.id, layer: 'instance', text: textOf(located, instance), sourcePath: instance.path });
-  return { docs, located, droppedTiles, keptDedupeTiles };
+  return { docs, located, droppedTiles, keptDedupeTiles, binding };
+}
+
+/**
+ * The `StackDocument` for a bound layer served by su.md's own tiles — the part
+ * document whose id matches AND whose part IS the bound slot (a `su.fleet-leader` bound
+ * on `practice` is refused, not rendered in the wrong place). Null for any other id.
+ */
+export function suBoundLayerDocument(located: readonly LocatedSuTile[], layer: BoundLayer): StackDocument | null {
+  const part = SU_PART_DOCUMENTS.find((d) => d.id === layer.id);
+  if (!part || part.part !== layer.slot) return null;
+  const slot: SlotId = layer.slot;
+  const spec = { id: part.id, layer: slotLayer(slot), slot, text: textOf(located, part), sourcePath: part.path } satisfies StackDocument;
+  return spec;
+}
+
+function slotLayer(slot: SlotId): StackDocument['layer'] {
+  switch (slot) {
+    case 'client':
+      return 'client';
+    case 'domain':
+      return 'domain';
+    case 'fleet-posture':
+      return 'fleet-posture';
+    case 'autonomy':
+    case 'ideation':
+    case 'objective':
+    case 'audit':
+    case 'audience':
+      return 'modes';
+    case 'collaboration-stance':
+    case 'practice':
+      return 'practices';
+  }
 }
 
 /** Compose the interactive su's source text under the seal. Throws on a block finding (D-009). */
@@ -219,4 +249,53 @@ export function composeSuStackSource(opts: SuStackComposeOptions = {}): Composed
   const { docs, droppedTiles, keptDedupeTiles } = suStackDocuments(opts);
   const composed = composeStack(docs, opts);
   return { ...composed, droppedTiles, keptDedupeTiles };
+}
+
+export interface SuStackMutationOptions extends Omit<SuStackComposeOptions, 'posture'> {
+  /** The session's CURRENT runtime binding (not the effective one — the static layers are implied). */
+  binding?: StackBinding | null;
+  op: StackMutationOp;
+  layer: { slot: SlotId; id?: string | null };
+}
+
+export interface ComposedSuStackMutation extends AppliedStackMutation {
+  /**
+   * The RUNTIME binding after the mutation — the effective binding minus the static su
+   * layers — i.e. what the control anchor should now carry as `stack`.
+   */
+  runtimeBinding: StackBinding;
+}
+
+function isStaticSuLayer(layer: BoundLayer): boolean {
+  return SU_STATIC_LAYERS.some((s) => s.slot === layer.slot && s.id === layer.id);
+}
+
+/**
+ * Apply a stack mutation to the interactive su's stack: mutate the EFFECTIVE binding
+ * (static layers + the runtime binding — so an exclusive attach truthfully reports
+ * which document it `replaced`), compose the next full render under the seal (a BLOCK
+ * refuses the whole mutation), then render the inject-now payload. A static su layer
+ * cannot be DETACHED at runtime — it is `binding: 'static'` in SU_DEFAULT_STACK for
+ * that reason — and the attempt is refused loudly; it CAN be replaced by an exclusive
+ * attach, and detaching that replacement restores the static layer.
+ */
+export function composeSuStackMutation(opts: SuStackMutationOptions): ComposedSuStackMutation {
+  const { op, layer, binding, ...compose } = opts;
+  const effective = suEffectiveBinding(binding);
+  if (op === 'detach') {
+    const id = String(layer.id ?? '').trim() || null;
+    const holder = effective.layers.find((l) => l.slot === layer.slot && (id == null || l.id === id));
+    if (holder && isStaticSuLayer(holder)) {
+      throw new Error(`su-stack: "${holder.slot}:${holder.id}" is a static layer of the su stack and cannot be detached at runtime (replace it with an exclusive attach instead)`);
+    }
+  }
+  const applied = applyStackMutation({
+    binding: effective,
+    op,
+    layer,
+    documents: (next) => suStackDocuments({ ...compose, binding: next }).docs,
+    compose,
+  });
+  const runtimeBinding = normalizeStackBinding(applied.binding.layers.filter((l) => !isStaticSuLayer(l)));
+  return { ...applied, runtimeBinding };
 }
