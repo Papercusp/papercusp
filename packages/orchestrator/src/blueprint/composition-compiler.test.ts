@@ -82,6 +82,15 @@ test('P-038 compiler snapshots the resolved blueprint, prompt bytes, closure and
     assert.ok(a.inputs.some((entry) => entry.kind === 'addressed-document' && entry.ref === 'worker-guide'));
     assert.ok(a.inputs.some((entry) => entry.kind === 'setting' && entry.ref === 'mode'));
     assert.ok(a.provenance.some((entry) => entry.path === 'configuration.knobs.maxCostUsd'));
+    assert.equal(
+      a.provenance.find((entry) => entry.path === 'configuration.knobs.logRetention')?.sourceRef,
+      'base',
+      'nested inherited values retain the parent origin even when the child restates the knobs object',
+    );
+    assert.equal(
+      a.provenance.find((entry) => entry.path === 'configuration.knobs.maxCostUsd')?.sourceRef,
+      'runtime',
+    );
     assert.ok(a.provenance.some((entry) => entry.path === 'addressed.worker-guide'));
     assert.ok(a.provenance.some((entry) => entry.path === 'setting.mode'));
     assert.equal(specificationPrompt(a), 'Base worker prompt.\n\n## Addressed guidance — for this session’s stack\n\n> These sections are pinned to the addressed-document revisions in the effective agent specification.\n\n## Runtime\n\nUse the fixture safely.\n');
@@ -180,4 +189,3 @@ test('the existing sealed render seam can feed the same compiler artifact consum
     f.cleanup();
   }
 });
-

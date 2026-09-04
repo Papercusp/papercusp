@@ -61,8 +61,9 @@ export {
   blueprintHash,
   builtinBlueprintPath,
   resolveBuiltinExtends,
+  layerSourceDocument,
 } from './loader.js';
-export type { LoadedBlueprint, BlueprintLayer, ResolveExtendsPath, BlueprintValidateRegistry } from './loader.js';
+export type { LoadedBlueprint, BlueprintLayer, ResolveExtendsPath, BlueprintValidateRegistry, RawBlueprint } from './loader.js';
 // identities-v1 P-038 / D-028: one immutable composition boundary over the
 // existing loader, prompt resolver, addressed-document inputs and sealed render.
 export {

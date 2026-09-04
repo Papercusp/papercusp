@@ -37,6 +37,7 @@ import {
 } from './schema.js';
 import {
   loadBlueprintFromFile,
+  layerSourceDocument,
   resolveBlueprint,
   type BlueprintValidateRegistry,
   type LoadedBlueprint,
@@ -215,7 +216,11 @@ function assertSha(value: string, what: string, ref?: string): string {
 
 /** Canonical JSON-ish clone.  It both prevents caller mutation and omits undefined object keys. */
 function cloneJson(value: unknown): unknown {
-  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) fail('input-invalid', `non-finite number ${String(value)} is not JSON-serializable`);
+    return value;
+  }
   if (Array.isArray(value)) return value.map(cloneJson);
   if (isRecord(value)) {
     const out: Record<string, unknown> = {};
@@ -316,8 +321,8 @@ function normalizePromptDescriptors(input: CompositionCompilerInput): Compositio
   return descriptors;
 }
 
-function promptFileFromPath(path: string, expectedHash?: string, ref?: string): CompositionPromptFileInput {
-  const resolved = isAbsolute(path) ? path : resolvePath(path);
+function promptFileFromPath(path: string, expectedHash?: string, ref?: string, baseDir?: string): CompositionPromptFileInput {
+  const resolved = isAbsolute(path) ? path : resolvePath(baseDir ?? process.cwd(), path);
   if (!existsSync(resolved)) fail('prompt-missing', 'prompt file does not exist', ref ?? path);
   try {
     if (!statSync(resolved).isFile()) fail('prompt-read-failed', 'prompt path is not a regular file', ref ?? path);
@@ -337,10 +342,17 @@ function promptFileFromPath(path: string, expectedHash?: string, ref?: string): 
 function normalizePromptFile(
   value: string | CompositionPromptFileInput,
   descriptorRef: string,
+  baseDir?: string,
 ): CompositionPromptFileInput {
-  if (typeof value === 'string') return promptFileFromPath(value, undefined, value);
+  if (typeof value === 'string') {
+    return promptFileFromPath(value, undefined, value, baseDir);
+  }
   if (!isRecord(value)) fail('prompt-read-failed', 'prompt file descriptor must be a path or mapping', descriptorRef);
-  const path = typeof value.path === 'string' ? value.path : undefined;
+  const path = typeof value.path === 'string'
+    ? isAbsolute(value.path) || !baseDir
+      ? value.path
+      : resolvePath(baseDir, value.path)
+    : undefined;
   const ref = typeof value.ref === 'string' && value.ref.trim() ? value.ref : path;
   const bytes = typeof value.bytes === 'string' ? value.bytes : undefined;
   const expectedHash = value.contentHash;
@@ -362,7 +374,7 @@ function normalizePromptFile(
     return { ref: ref ?? `inline:${descriptorRef}`, ...(path ? { path: resolvePath(path) } : {}), bytes, contentHash: actual };
   }
   if (!path) fail('prompt-missing', 'prompt descriptor needs path or bytes', descriptorRef);
-  return promptFileFromPath(path, expectedHash, ref);
+  return promptFileFromPath(path, expectedHash, ref, baseDir);
 }
 
 function promptDescriptorFiles(
@@ -388,15 +400,6 @@ function promptDescriptorFiles(
         key,
       ),
     );
-    // Keep the final sealed bytes as an explicit input as well as the source
-    // documents.  This lets every adapter consume the same ready-to-use text
-    // without reimplementing render-stack's seal/order rules.
-    sourceFiles.push(
-      normalizePromptFile(
-        { ref: `rendered:${key}`, bytes: composed.text },
-        key,
-      ),
-    );
     return { files: sourceFiles, rendered: composed.text, key };
   }
   if (descriptor.text !== undefined) {
@@ -418,7 +421,7 @@ function promptDescriptorFiles(
       key,
     );
   }
-  const files = resolvedPaths.map((entry) => normalizePromptFile(entry, key));
+  const files = resolvedPaths.map((entry) => normalizePromptFile(entry, key, context.harnessDir));
   return {
     files,
     rendered: files.map((file) => file.bytes).join(PROMPT_SEPARATOR),
@@ -579,25 +582,43 @@ function leafPaths(value: unknown, prefix: string): string[] {
   return [prefix];
 }
 
+/** Whether an authored source snapshot owns the complete dotted path. */
+function hasOwnPath(value: Record<string, unknown>, path: string): boolean {
+  if (!path) return true;
+  let cursor: unknown = value;
+  for (const segment of path.split('.')) {
+    if (!isRecord(cursor) || !Object.prototype.hasOwnProperty.call(cursor, segment)) return false;
+    cursor = cursor[segment];
+  }
+  return true;
+}
+
 function configProvenance(
   loaded: LoadedBlueprint,
   compilerVersion: string,
 ): ResolvedAgentProvenance[] {
   const out: ResolvedAgentProvenance[] = [];
   for (const path of leafPaths(loaded.blueprint, 'configuration')) {
-    const relative = path.slice('configuration.'.length);
-    const top = relative.split('.')[0]!;
-    const contributors = loaded.layers.filter((layer) => layer.fields.includes(top as never));
-    const effective = contributors.at(-1);
+    const relative = path === 'configuration' ? '' : path.slice('configuration.'.length);
+    const top = relative.split('.')[0] ?? '';
+    const contributors = loaded.layers.filter((layer) => {
+      const snapshot = layerSourceDocument(layer);
+      if (snapshot) return relative ? hasOwnPath(snapshot, relative) : true;
+      return top ? layer.fields.includes(top as never) : false;
+    });
+    const uniqueContributors = [
+      ...new Map(contributors.map((layer) => [`${layer.id}\u0000${layer.contentHash}`, layer])).values(),
+    ];
+    const effective = uniqueContributors.at(-1);
     const sourceRef = effective?.id ?? 'schema:default';
     const sourceRevision = effective?.contentHash ?? compilerVersion;
     out.push({
       path,
       sourceRef,
       sourceRevision,
-      ...(contributors.length > 1
-        ? { decision: 'override', sources: contributors.map((layer) => ({ sourceRef: layer.id, sourceRevision: layer.contentHash })) }
-        : { decision: contributors.length === 1 ? 'declared' : 'default' }),
+      ...(uniqueContributors.length > 1
+        ? { decision: 'override', sources: uniqueContributors.map((layer) => ({ sourceRef: layer.id, sourceRevision: layer.contentHash })) }
+        : { decision: uniqueContributors.length === 1 ? 'declared' : 'default' }),
     } as ResolvedAgentProvenance);
   }
   return out;
@@ -605,14 +626,14 @@ function configProvenance(
 
 function inputProvenance(
   inputs: readonly ResolvedAgentInput[],
-  promptKeys: readonly string[],
+  promptKeys: ReadonlyMap<string, string>,
 ): ResolvedAgentProvenance[] {
   const out: ResolvedAgentProvenance[] = [];
   let promptOrdinal = 0;
   for (const input of inputs) {
     if (input.kind === 'blueprint-layer') continue; // configuration paths carry layer origins
     let prefix: string;
-    if (input.kind === 'prompt-file') prefix = `prompt.${promptKeys[promptOrdinal++] ?? 'default'}`;
+    if (input.kind === 'prompt-file') prefix = `prompt.${promptKeys.get(input.ref) ?? 'default'}`;
     else if (input.kind === 'addressed-document') prefix = `addressed.${input.ref}`;
     else prefix = `setting.${input.ref}`;
     const sourceRevision = input.kind === 'prompt-file' ? input.contentHash : input.revision;
@@ -649,7 +670,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
   if (!compilerVersion.trim()) fail('input-invalid', 'compilerVersion must be non-empty');
 
   const inputs: ResolvedAgentInput[] = loaded.layers.map((_, i) => layerInput(loaded, i, input.layerRevisions));
-  const promptKeys: string[] = [];
+  const promptKeys = new Map<string, string>();
   const descriptors = normalizePromptDescriptors(input);
   const promptSegments: string[] = [];
   for (let i = 0; i < descriptors.length; i += 1) {
@@ -659,10 +680,11 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
       fail('source-invalid', `prompt context selects blueprint ${context.blueprintId}, but source is ${loaded.blueprint.id}`);
     }
     const resolved = promptDescriptorFiles(descriptor, context, i);
-    promptKeys.push(...resolved.files.map(() => resolved.key));
     for (const file of resolved.files) {
       const hash = file.contentHash ?? sha256(file.bytes ?? '');
-      inputs.push({ kind: 'prompt-file', ref: file.ref ?? file.path ?? `prompt:${resolved.key}`, contentHash: hash, bytes: file.bytes ?? '' });
+      const ref = file.ref ?? file.path ?? `prompt:${resolved.key}`;
+      promptKeys.set(ref, resolved.key);
+      inputs.push({ kind: 'prompt-file', ref, contentHash: hash, bytes: file.bytes ?? '' });
     }
     promptSegments.push(resolved.rendered);
   }
@@ -696,7 +718,9 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
         contentHash: sha256(promptText),
       };
     } else {
-      closure.push({ kind: 'prompt-file', ref: 'rendered:effective', bytes: promptText, contentHash: sha256(promptText) });
+      const renderedRef = 'rendered:effective';
+      closure.push({ kind: 'prompt-file', ref: renderedRef, bytes: promptText, contentHash: sha256(promptText) });
+      promptKeys.set(renderedRef, 'effective');
     }
   }
 
