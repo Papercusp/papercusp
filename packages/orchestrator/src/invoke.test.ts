@@ -1171,6 +1171,66 @@ test('invoke — REPLACE_CLAUDE_BASE ON: claude spawn gets --system-prompt-file 
   }
 });
 
+test('invoke — a harness-local blueprint carries its resolved domain parent into the replacement system prompt (P-024)', async () => {
+  const fx = makeFixture(({ harnessDir, stateDir }) => {
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
+    writeFileSync(
+      join(harnessDir, 'blueprints', 'base', 'prompts', 'agent-base-preamble.md'),
+      '# NEUTRAL BASE',
+    );
+    mkdirSync(join(harnessDir, 'blueprints', 'papercusp-engineer', 'prompts'), { recursive: true });
+    writeFileSync(
+      join(harnessDir, 'blueprints', 'papercusp-engineer', 'prompts', 'agent-base-overlay.md'),
+      '# PAPERCUSP ENGINEERING DOMAIN',
+    );
+    writeFileSync(
+      join(stateDir, 'blueprint.yaml'),
+      [
+        'id: papercusp',
+        'extends: papercusp-engineer',
+        'kind: pot',
+        'version: 0.1.0',
+        'workItem: { kind: feature, idPrefix: WI }',
+        'roles: [{ id: su }]',
+        'spine: { decider: su, edges: { DONE: { to: done } }, default: { to: idle } }',
+      ].join('\n'),
+      'utf8',
+    );
+  });
+  try {
+    const binDir = join(fx.projectDir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    const stub = join(binDir, 'claude');
+    writeFileSync(
+      stub,
+      '#!/bin/sh\nprintf "%s\\n" "$@"\nprev=""\nfor a in "$@"; do if [ "$prev" = "--system-prompt-file" ]; then echo "SYSFILE_CONTENT:"; cat "$a"; fi; prev="$a"; done\ncat >/dev/null\n',
+      { mode: 0o755 },
+    );
+    process.env.PAPERCUSP_REPLACE_CLAUDE_BASE = '1';
+    const result = await invoke(
+      {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: stub,
+        dept: '',
+        log: () => {},
+        nowSeconds: () => 1700000005,
+      },
+      'worker',
+      [],
+    );
+    assert.equal(result.exitCode, 0);
+    const argvDump = readFileSync(result.jsonlPath, 'utf8');
+    assert.match(argvDump, /SYSFILE_CONTENT:[\s\S]*# PAPERCUSP ENGINEERING DOMAIN/);
+    assert.match(argvDump, /# PAPERCUSP ENGINEERING DOMAIN[\s\S]*# NEUTRAL BASE/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 test('extractResult — omp message_end with assistant text', () => {
   const dir = mkdtempSync(join(tmpdir(), 'orch-'));
   const path = join(dir, 'log.jsonl');

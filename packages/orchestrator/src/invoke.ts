@@ -34,7 +34,12 @@ import { codexHomeForSessionKey, sessionClaudeConfigDir, sessionMcpDir } from '.
 import { harnessProfile, harnessSupports } from './harness-profile';
 import { readFleetClaudeToken } from './fleet-claude-token';
 import { configGet } from './config';
-import { readEffectiveConfig, loadHarnessAcceptanceKind, loadHarnessLexicon, loadHarnessBlueprintId } from './effective-config';
+import {
+  readEffectiveConfig,
+  loadHarnessAcceptanceKind,
+  loadHarnessLexicon,
+  loadHarnessBlueprintPromptContext,
+} from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
 import { resolvePromptFiles, resolveReplacementSystemPrompt } from './prompt-resolve';
@@ -3016,6 +3021,19 @@ export async function invoke(
   const cfg = readEffectiveConfig(ctx.stateDir);
   const dept = ctx.dept ?? configGet<string>(cfg, 'dept', '');
   const executionEngine = resolveAgentExecutionEngine(cfg, role);
+  // A program launch names a blueprint already addressable below a prompt root.
+  // A normal harness launch instead names its own `.papercusp/blueprint.yaml`;
+  // preserve that file's resolved parent chain because the file itself is NOT at
+  // `blueprints/<id>/blueprint.yaml` and cannot be rediscovered from id alone.
+  const explicitBlueprintId =
+    extras.find((e) => e.startsWith('BLUEPRINT_ID='))?.slice('BLUEPRINT_ID='.length) || undefined;
+  const harnessBlueprintPrompt = explicitBlueprintId
+    ? undefined
+    : loadHarnessBlueprintPromptContext(ctx.stateDir);
+  const promptBlueprintId = explicitBlueprintId ?? harnessBlueprintPrompt?.blueprintId;
+  const promptExtendsChain = explicitBlueprintId
+    ? undefined
+    : harnessBlueprintPrompt?.extendsChain;
 
   // 1. Resolve prompt file (with phase + dept fallback chain), unless
   //    the caller supplied an inlinePrompt — in which case we skip the
@@ -3027,20 +3045,25 @@ export async function invoke(
     // A program-blueprint spawn (coordination-ops-as-blueprint-primitives) passes
     // BLUEPRINT_ID=<id> so a program role (voter/advocate) resolves its prompt from
     // blueprints/<id>/prompts/<role>.md. Absent for the normal pipeline.
-    const blueprintId =
-      extras.find((e) => e.startsWith('BLUEPRINT_ID='))?.slice('BLUEPRINT_ID='.length) || undefined;
     // Per-hive local-tier roots (P-012/P-014): a hive's materialized override prompts
     // win over the built-in blueprint. Absent ⇒ [] ⇒ built-in-only (unchanged).
     const blueprintRoots = parseBlueprintLocalRoots(extras);
     // Layered list (base/<role>.md first when present — audit P-019), the
     // concrete most-specific prompt last.
     promptFiles = resolvePromptFiles(
-      { harnessDir: ctx.harnessDir, phase: ctx.phase, dept, blueprintId, blueprintRoots },
+      {
+        harnessDir: ctx.harnessDir,
+        phase: ctx.phase,
+        dept,
+        blueprintId: promptBlueprintId,
+        extendsChain: promptExtendsChain,
+        blueprintRoots,
+      },
       role,
     );
     if (promptFiles.length === 0) {
-      const where = blueprintId
-        ? `${ctx.harnessDir}/blueprints/${blueprintId}/prompts or ${ctx.harnessDir}/blueprints/base/prompts`
+      const where = promptBlueprintId
+        ? `${ctx.harnessDir}/blueprints/${promptBlueprintId}/prompts or ${ctx.harnessDir}/blueprints/base/prompts`
         : `${ctx.harnessDir}/blueprints/base/prompts`;
       throw new Error(`invoke: no prompt file for role=${role} (looked under ${where})`);
     }
@@ -3680,14 +3703,12 @@ export async function invoke(
     // Effective blueprint: a program-blueprint spawn's BLUEPRINT_ID extra, else the harness's
     // own blueprint id (so a normal coding-pipeline spawn — which carries no BLUEPRINT_ID —
     // still resolves the coding overlay). Absent/non-blueprint ⇒ neutral preamble only.
-    const replaceBaseBlueprintId =
-      extras.find((e) => e.startsWith('BLUEPRINT_ID='))?.slice('BLUEPRINT_ID='.length) ||
-      loadHarnessBlueprintId(ctx.stateDir);
     const sysText = resolveReplacementSystemPrompt({
       harnessDir: ctx.harnessDir,
       phase: '',
       dept: '',
-      blueprintId: replaceBaseBlueprintId,
+      blueprintId: promptBlueprintId,
+      extendsChain: promptExtendsChain,
       // Per-hive local-tier overlay override (P-012/P-014): a hive may ship its own
       // agent-base-overlay in the materialized local tier. Absent ⇒ built-in.
       blueprintRoots: parseBlueprintLocalRoots(extras),
