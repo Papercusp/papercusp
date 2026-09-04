@@ -548,3 +548,50 @@ text at `prompts/audience.md`, moved verbatim; the prompts-dir files are gone �
 has ONE home). `loadRoleModePersona(role, mode, identityRoots?)` resolves them through the
 same chain; it is bound per conversation by `audienceMode`, not by `mode:set`. RECORDED
 DEFAULT (P-021): v1 is the four files on the same mechanism.
+
+## 14. The chat-surface roles resolve through the chain — one prompt-resolution path, file tier last (P-023)
+
+**One resolver.** Until P-023 the system had two prompt-resolution paths: the spawn tier
+resolved `blueprints/<id>/prompts/<role>.md` through `resolvePromptFile` (`prompt-resolve.ts`:
+the blueprint extends-chain leaf-first with `base` last; within one id the tiers local →
+installed → built-in, `rootsFor`), and the su's identity documents resolved through
+`identityRoots` (§12) — while the CHAT-SURFACE roles (`PROMPT_ROLES` in
+`packages/operator-core/lib/prompt-assembly.ts`: operator, oracle, auditor, papercup,
+papercup-deep, …) read `apps/operator/prompts/<role>.{persona,converse,tools}.md` by direct
+file read (`promptsDir()`), with no chain, no tiers and no override seam. P-023 puts the
+chat-surface documents on the spawn tier's resolver: `loadChatRoleDocument(role, kind, ctx?)`
+calls `resolvePromptFile(ctx, '<role>.<kind>')`, so the chain form of a document is
+`blueprints/<id>/prompts/<role>.<kind>.md` — the same dotted-suffix naming as the generic
+prefix `<role>.base.md`, and the same candidate order (`chatRoleDocumentCandidates`) the spawn
+tier lists. `ctx` is `ChatRoleResolveContext` — the spawn tier's `PromptResolveContext` minus
+the retired phase/dept axis: `blueprintId` / `extendsChain` (the chain walked) and
+`blueprintRoots` (local → installed, before the built-in `harnessDir`). Omitted, it is the
+`base` chain over the built-in harness — what every workspace-level chat surface resolves with;
+a pot-scoped role session passes its blueprint through `assembleRolePrompt({ resolve })`.
+
+**The file tier is retained, LAST.** The prompts dir (`apps/operator/prompts/<role>.<kind>.md`)
+is the lowest-precedence tier: consulted only when no root of the chain holds the document.
+Two consequences the item asked for. (1) BYTE-EQUIVALENCE: the built-in harness ships no chain
+copy of any chat-surface document (pinned by `prompt-assembly-chat-role-chain.test.ts`), so
+every `PROMPT_ROLE` renders byte-identical to the pre-P-023 direct read — asserted per role
+and per kind by `it.each(PROMPT_ROLES)`, at the loader (`tier:'file'`, the file's bytes
+verbatim) and at the assembled prompt (opens with the persona bytes, carries the tools
+playbook verbatim); a role that had no document before still has none (the same refusal for
+persona / converse, `null` for tools). The integration-root redirect survives on both tiers:
+`promptsDir()` prefers `PAPERCUSP_INTEGRATION_ROOT/apps/operator/prompts` and `rootsFor`
+resolves the built-in tier through `promptHarnessRoot`, so a chat-surface prompt edit still
+goes live without a code-release promotion. (2) OVERRIDE WITHOUT A CODE CHANGE: a `base` copy in
+any tier wins over the file; a leaf blueprint's copy (or its non-base ancestor's, read from
+`blueprint.yaml` `extends` exactly like a spawn) wins over `base`; within one id a local tier
+wins over the built-in — but a leaf in ANY tier still beats an ancestor in the local tier
+(specificity is the primary axis, tier the tiebreaker, unchanged from D-006 of the
+hive-architecture plan). Memoization is keyed by (role, kind, ctx, prompts dir), so two
+chains never share a cache row.
+
+**Not moved.** Unlike the audience identities (§13, one home), the chat-surface documents
+stay in the prompts dir: the packaged desktop ships that dir as `PAPERCUSP_PROMPTS_DIR`, the
+decouple-agent-prompts pipeline redirects it, and `llm-test` / `lint:tool-prompts` read it —
+moving five documents into `blueprints/base/prompts/` would ripple through packaging for no
+precedence gain (the file tier is already the lowest). `<role>.shell.md` / `.examples.md` are
+not role documents of this assembler (the voice dashboard and the examples reader hold their
+own paths) and are outside P-023.
