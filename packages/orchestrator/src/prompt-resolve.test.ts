@@ -11,7 +11,22 @@ import {
   resolvePromptFile,
   resolvePromptFiles,
   resolveReplacementSystemPrompt,
+  resolveReplacementSystemPromptStack,
 } from './prompt-resolve.js';
+import { composeStack, KERNEL_SEAL_MARKER, type StackDocument } from './blueprint/render-stack.js';
+
+/**
+ * P-003: the spawn tier renders under the seal — `[domain(overlay)?, kernel(preamble)]`
+ * through `composeStack`. These fixtures pin WHICH preamble and WHICH overlay were
+ * selected (the resolver's job); the byte shape of the seal itself is pinned by
+ * `blueprint/render-stack.test.ts`.
+ */
+function sealed(preamble: string, overlay?: { id: string; text: string }): string {
+  const docs: StackDocument[] = [];
+  if (overlay) docs.push({ id: overlay.id, layer: 'domain', slot: 'domain', text: overlay.text });
+  docs.push({ id: 'agent-base-preamble', layer: 'kernel', text: preamble });
+  return composeStack(docs).text;
+}
 
 /** Write a blueprints/<id>/blueprint.yaml with an optional `extends`. */
 function writeBlueprintYaml(root: string, id: string, ext?: string): void {
@@ -74,7 +89,7 @@ test('resolveReplacementSystemPrompt — neutral preamble only when the blueprin
       dept: '',
       blueprintId: 'research',
     });
-    assert.equal(out, '# NEUTRAL BASE\n');
+    assert.equal(out, sealed('# NEUTRAL BASE\n'));
   } finally {
     cleanup();
   }
@@ -94,7 +109,7 @@ test('resolveReplacementSystemPrompt — coding blueprint appends its overlay AF
       dept: '',
       blueprintId: 'coding',
     });
-    assert.equal(out, '# NEUTRAL BASE\n\n# CODING OVERLAY\n');
+    assert.equal(out, sealed('# NEUTRAL BASE\n', { id: 'coding', text: '# CODING OVERLAY\n' }));
   } finally {
     cleanup();
   }
@@ -108,7 +123,7 @@ test('resolveReplacementSystemPrompt — no blueprintId → neutral preamble onl
   });
   try {
     const out = resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '' });
-    assert.equal(out, '# NEUTRAL BASE\n');
+    assert.equal(out, sealed('# NEUTRAL BASE\n'));
   } finally {
     cleanup();
   }
@@ -131,7 +146,7 @@ test('resolveReplacementSystemPrompt — picks the MOST-SPECIFIC overlay walking
       dept: '',
       blueprintId: 'implement',
     });
-    assert.equal(out, '# NEUTRAL BASE\n\n# IMPLEMENT OVERLAY\n');
+    assert.equal(out, sealed('# NEUTRAL BASE\n', { id: 'implement', text: '# IMPLEMENT OVERLAY\n' }));
   } finally {
     cleanup();
   }
@@ -176,13 +191,29 @@ test('P-032/D-018 — preamble (kernel) + coding-factory overlay (domain) compos
   const overlay = readFileSync(overlayPath, 'utf8').trim();
   assert.ok(preamble.length > 0 && overlay.length > 0, 'both documents must carry text');
 
-  // Base-only chain ⇒ the kernel base text alone, one trailing newline.
-  assert.equal(resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '' }), `${preamble}\n`);
-  // coding-factory ⇒ kernel base text, blank line, the single domain leaf, one trailing newline.
-  assert.equal(
-    resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '', blueprintId: 'coding-factory' }),
-    `${preamble}\n\n${overlay}\n`,
+  // P-003: the spawn tier is the slot stack rendered under the SEAL — the `domain` leaf ABOVE the
+  // precedence statement, the kernel base text LAST. The documents are byte-verbatim (trimmed,
+  // one blank line between blocks, one trailing newline — the D-018 §1 formula); only their ORDER
+  // changed, because "kernel renders authoritatively and last" is the seal.
+  const baseOnly = resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '' });
+  assert.ok(baseOnly, 'preamble present ⇒ a system prompt');
+  assert.ok(baseOnly.startsWith(`${KERNEL_SEAL_MARKER}\n`), 'base-only: the seal opens the render');
+  assert.ok(baseOnly.endsWith(`\n\n${preamble}\n`), 'base-only: the kernel base text is last');
+  assert.equal(baseOnly.split(preamble).length, 2, 'the preamble renders exactly once');
+  const factory = resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '', blueprintId: 'coding-factory' });
+  assert.ok(factory);
+  assert.ok(factory.startsWith(`${overlay}\n\n${KERNEL_SEAL_MARKER}\n`), 'coding-factory: the single domain leaf, then the seal');
+  assert.ok(factory.endsWith(`\n\n${preamble}\n`), 'coding-factory: the kernel base text last');
+  assert.equal(factory.split(overlay).length, 2, 'the overlay renders exactly once');
+  assert.deepEqual(
+    resolveReplacementSystemPromptStack({ harnessDir, phase: '', dept: '', blueprintId: 'coding-factory' })!.map((d) => [d.layer, d.slot ?? null, d.id]),
+    [
+      ['domain', 'domain', 'coding-factory'],
+      ['kernel', null, 'agent-base-preamble'],
+    ],
   );
+  // The render IS composeStack over that stack — one composer, no third path (D-018 §1).
+  assert.equal(factory, composeStack(resolveReplacementSystemPromptStack({ harnessDir, phase: '', dept: '', blueprintId: 'coding-factory' })!).text);
 
   // The design doc's §8 must name exactly these live read paths (relative to the harness pkg).
   const doc = readFileSync(join(here, '..', 'docs', 'COMPOSITION_MODEL.md'), 'utf8');
@@ -593,7 +624,7 @@ test('tier-aware — resolveReplacementSystemPrompt prefers a local overlay over
       blueprintId: 'coding',
       blueprintRoots: [local],
     });
-    assert.equal(out, 'NEUTRAL BASE\n\nLOCAL SWE OVERLAY\n');
+    assert.equal(out, sealed('NEUTRAL BASE\n', { id: 'coding', text: 'LOCAL SWE OVERLAY\n' }));
   } finally {
     cleanup();
   }
@@ -809,7 +840,7 @@ test('P-002 — resolveReplacementSystemPrompt also honors the prompt root (REPL
   try {
     withEnv({ PAPERCUSP_PROMPT_ROOT: promptRoot.harnessDir, PAPERCUSP_INTEGRATION_ROOT: undefined }, () => {
       const out = resolveReplacementSystemPrompt({ harnessDir: running.harnessDir, phase: '', dept: '', blueprintId: 'coding' });
-      assert.equal(out, '# INTEGRATION PREAMBLE\n');
+      assert.equal(out, sealed('# INTEGRATION PREAMBLE\n'));
     });
   } finally {
     running.cleanup();

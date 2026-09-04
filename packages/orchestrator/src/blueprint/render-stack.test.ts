@@ -38,8 +38,10 @@ test('orderStackDocuments — refuses a slotless declarable document, a slotted 
 });
 
 test('composeStack — byte shape: trimmed documents joined by one blank line, the seal, the kernel last, one trailing newline', () => {
-  const out = composeStack([kernel, domain, client, { id: 'empty', layer: 'practices', slot: 'practice', text: '   \n' }]);
-  const seal = renderKernelSeal(orderStackDocuments([kernel, domain, client]));
+  const empty: StackDocument = { id: 'empty', layer: 'practices', slot: 'practice', text: '   \n' };
+  const out = composeStack([kernel, domain, client, empty]);
+  // An empty document contributes no text but is still a member of the stack the seal names.
+  const seal = renderKernelSeal(orderStackDocuments([kernel, domain, client, empty]));
   assert.equal(out.text, `${client.text}\n\n${domain.text.trim()}\n\n${seal}\n\n${kernel.text.trim()}\n`);
   assert.equal(out.seal, seal);
   assert.deepEqual(

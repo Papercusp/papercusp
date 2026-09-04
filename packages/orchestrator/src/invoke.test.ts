@@ -1162,7 +1162,10 @@ test('invoke — REPLACE_CLAUDE_BASE ON: claude spawn gets --system-prompt-file 
       `flag ON must inject --system-prompt-file:\n${argvDump}`,
     );
     // The file the flag points at carries our neutral preamble (not the Claude default).
-    assert.match(argvDump, /SYSFILE_CONTENT:\n# NEUTRAL BASE/);
+    // P-003: the replacement system prompt renders under the kernel SEAL — the precedence
+    // statement opens the file and the kernel base text is LAST (identities, when any, above).
+    assert.match(argvDump, /SYSFILE_CONTENT:\n<!-- PAPERCUSP-KERNEL:SEAL -->\n## Kernel precedence — the seal\n/);
+    assert.match(argvDump, /\n\n# NEUTRAL BASE\n/);
   } finally {
     fx.cleanup();
   }
