@@ -24,6 +24,13 @@
  * LOSSLESS by construction otherwise: every tile of su.md that is not a dropped
  * dedupe tile renders exactly once — `su-stack.test.ts` proves it over the real tree.
  *
+ * P-021 — MODES AS FACETS. The ACTIVE registry modes bind one mode-axis identity per axis
+ * (`mode-identities.ts`: `su.mode-auto` on `autonomy`, `su.mode-ideate` on `ideation`,
+ * `su.mode-drain` on `objective`, `su.mode-audit` on `audit`), rendered in the `modes`
+ * layer ONLY while the mode is on — `suSessionBinding({ modes })` at launch, the ⟦stack⟧
+ * channel mid-session. Their documents are authored (no su.md tiles) and resolve through
+ * the chain only. Mode STATE, the implication table and AUTHORITY stay kernel (D-008).
+ *
  * P-020 — IDENTITY DOCUMENTS RESOLVE THROUGH THE PROMPT CHAIN. The four identity-homed
  * part documents (papercusp-engineer's domain leaf, su-collaborator's stance, and the
  * two fleet postures `su.fleet-member` / `su.fleet-leader`) are read from
@@ -50,6 +57,7 @@ import {
   type StackMutationOp,
 } from './stack-mutation.js';
 import type { SlotId } from './slots.js';
+import { suModeDocument, suModeLayers } from './mode-identities.js';
 import {
   SU_PART_DOCUMENTS,
   SU_PREAMBLE_REL,
@@ -142,8 +150,11 @@ export function suSessionBinding(session: { fleetRole?: string | null; modes?: r
   const layers: BoundLayer[] = [];
   const role = (session.fleetRole ?? '').trim().toLowerCase();
   if (role === 'leader' || role === 'member') layers.push(suPostureLayer(role));
-  // `modes` is accepted for the P-021 seam: no mode-axis document exists in v1 (D-008 —
-  // the AUTO / IDEATE / DRAIN text is kernel), so a mode binds no layer yet.
+  // P-021: the ACTIVE registry modes (`agent_modes`, implication closure already applied by
+  // the registry write) bind one mode-axis identity per axis — `su.mode-auto` on
+  // `autonomy`, … — additive ACROSS axes, exclusive WITHIN one (D-008 amendment). Modes
+  // with no definition document (goal / grade / test) bind nothing.
+  layers.push(...suModeLayers(session.modes));
   return normalizeStackBinding(layers);
 }
 
@@ -255,7 +266,7 @@ export interface SuIdentityDocumentHit {
  * root (most specific first) that holds `<root>/<part.path>` wins. Null when no root
  * holds it; the caller decides whether that refuses.
  */
-export function resolveSuIdentityDocument(part: SuPartDocument, roots: readonly string[]): SuIdentityDocumentHit | null {
+export function resolveSuIdentityDocument(part: Pick<SuPartDocument, 'path'>, roots: readonly string[]): SuIdentityDocumentHit | null {
   for (const root of roots) {
     const p = join(root, part.path);
     if (existsSync(p)) return { root, path: p, text: readFileSync(p, 'utf8') };
@@ -281,6 +292,21 @@ export function suBoundLayerDocument(
   layer: BoundLayer,
   resolve?: { identityRoots: readonly string[] },
 ): StackDocument | null {
+  // P-021: a MODE-AXIS identity (`su.mode-auto`, …) is AUTHORED, not derived from su.md —
+  // it has no tiles, so it resolves through the chain ONLY; a missing document refuses
+  // (nothing to fall back to). With no `resolve` the built-in harness is the one root.
+  const mode = suModeDocument(layer.id);
+  if (mode) {
+    if (mode.slot !== layer.slot) return null;
+    const roots = resolve?.identityRoots ?? [harnessRoot()];
+    const hit = resolveSuIdentityDocument(mode, roots);
+    if (!hit) {
+      throw new Error(
+        `su-stack: mode identity document for "${layer.slot}:${layer.id}" (${mode.path}) exists in none of the identity roots [${roots.join(', ')}] — the identity is not installed in any tier`,
+      );
+    }
+    return { id: mode.id, layer: slotLayer(mode.slot), slot: mode.slot, text: hit.text, sourcePath: hit.path } satisfies StackDocument;
+  }
   const part = SU_PART_DOCUMENTS.find((d) => d.id === layer.id);
   if (!part || part.part !== layer.slot) return null;
   const slot: SlotId = layer.slot;

@@ -101,6 +101,22 @@ export {
   renderSuDecompositionMarkdown,
 } from './su-decomposition.js';
 export type { SuPart, SuTile, LocatedSuTile, SuPartDocument, SuPartDocId, FleetPostureRole, RoleLibraryRow, RoleLibraryDisposition, SuStackEntry } from './su-decomposition.js';
+// identities-v1 P-021 — MODES AS FACETS: the mode-axis identities (one exclusive axis slot per
+// mode definition, bound from the registry's active modes) and the `audience` identities
+// (the former file-based persona modes), both resolved through the prompt chain.
+export {
+  SU_MODE_DOCUMENTS,
+  AUDIENCE_IDENTITY_DOCUMENTS,
+  AUDIENCE_ROLES,
+  AUDIENCE_MODES,
+  suModeDocument,
+  suModeLayer,
+  suModeLayers,
+  isSuModeDocId,
+  audienceIdentityId,
+  audienceIdentityDocument,
+} from './mode-identities.js';
+export type { SuModeDocument, SuModeDocId, AudienceIdentityDocument, AudienceRole, AudienceMode } from './mode-identities.js';
 // identities-v1 P-003 — the kernel seal: slot-based prompt assembly (the kernel renders
 // LAST under an explicit precedence statement), the composed-stack identity-lint (structural
 // BLOCK tier + heuristic WARN tier, D-009 as amended), and the interactive su's composed source.

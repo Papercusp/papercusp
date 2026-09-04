@@ -286,9 +286,9 @@ export const SU_TILES: readonly SuTile[] = [
     anchor: '<!-- PAPERCUSP-SU:AUTO-MODE -->',
     part: 'kernel',
     seam: 'AUTO-MODE',
-    label: 'mode-sections splice seam (AUTO / IDEATE / DRAIN)',
+    label: 'modes KERNEL splice seam (state · registration · implication table · authority)',
     rationale:
-      'The spliced text is generated from `operating-modes-policy.ts` / `modes/registry.ts` — mode state, the implication table and what AUTO suspends are kernel (D-008); the five `modes` slots supply domain flavour rendered after it.',
+      'P-021: the splice renders the KERNEL half of the modes from `modes/registry.ts` — state, how a flip is registered, the implication table, authority computed by instruction-lint (D-008). The mode DEFINITIONS are identities on the axis slots (`su.mode-*`, `mode-identities.ts`) rendered in the `modes` layer only while the mode is ON.',
   },
   {
     anchor: '## Registering work is a SEPARATE discipline from asking approval — AUTO waives the ask, NOT the register',
@@ -709,7 +709,7 @@ export const SU_DEFAULT_STACK: readonly SuStackEntry[] = [
   { layer: 'client', slot: 'client', ref: 'apps/operator/prompts/papercusp-su.<client>.md', binding: 'launch', note: 'chosen by the launching client (claude / codex / omp) — exclusive' },
   { layer: 'domain', slot: 'domain', ref: 'papercusp-engineer', binding: 'static', note: 'the software-engineering profession — exclusive' },
   { layer: 'fleet-posture', slot: 'fleet-posture', ref: null, binding: 'runtime', note: 'NONE by default — fleet:launch-on-plan / fleet:join attach su.fleet-member, fleet:take-leadership attaches su.fleet-leader' },
-  { layer: 'modes', ref: null, binding: 'runtime', note: 'no mode-flavour documents in v1 — the AUTO / IDEATE / DRAIN text spliced at PAPERCUSP-SU:AUTO-MODE is kernel (D-008)' },
+  { layer: 'modes', ref: null, binding: 'runtime', note: 'NONE by default — mode:set binds one identity per active axis (su.mode-auto on autonomy, su.mode-ideate on ideation, su.mode-drain on objective, su.mode-audit on audit; P-021); the kernel seam at PAPERCUSP-SU:AUTO-MODE carries only state / implications / authority (D-008)' },
   { layer: 'practices', slot: 'collaboration-stance', ref: 'su-collaborator', binding: 'static', note: 'how the su works WITH the owner — exclusive (D-017)' },
   { layer: 'practices', slot: 'practice', ref: 'su.practice', binding: 'static', note: 'anti-babysitting — additive; further practices stack beside it' },
   { layer: 'instance', ref: 'pot_settings.promptOverride.su + the project guide', binding: 'launch', note: 'the per-pot override (audit S5) and the spliced project guide' },
