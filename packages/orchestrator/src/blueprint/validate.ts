@@ -118,6 +118,13 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
     seen.add(r.id);
   }
 
+  // One authored fact must have one authority. These blueprint fields grew at
+  // different times and several pairs look interchangeable in YAML even though
+  // their consumers give them different force (P-033). Reject the ambiguous
+  // combinations at the authoring/load chokepoint instead of letting whichever
+  // reader happens to run first decide which declaration wins.
+  validateDeclarationAuthorities(bp, err, warn);
+
   if (!Number.isFinite(bp.spine.maxTurns) || bp.spine.maxTurns < 1) {
     err('bad-max-turns', `spine.maxTurns must be a finite positive integer (got ${bp.spine.maxTurns})`);
   }
@@ -262,6 +269,76 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
 }
 
 type Reporter = (code: string, message: string) => void;
+
+/**
+ * P-033 — collapse duplicate blueprint declaration sites.
+ *
+ * The canonical sites are:
+ *   - persona document: `roles[].prompt` (or its conventional prompt path);
+ *     `knobs.promptOverrides` is an instance/experiment specialization only;
+ *   - import dependencies: top-level `dependencies.*`; role-local
+ *     `tools`/`capabilities` are legacy advisory hints;
+ *   - enforced role ceiling: `fleet.workerRoles[].capabilities`;
+ *   - seed pack: `knowledge.pack`; `learning.pack` is read-side legacy compat;
+ *   - completion rubric: `acceptance.rubric`; `gym.rubric` scores optimizer
+ *     trials and is not a second completion rubric.
+ *
+ * The legacy knowledge key remains valid on its own because installed blueprint
+ * YAML is a compatibility boundary. Its consumer (`resolveSeedPackKey`) derives
+ * the canonical seed choice and reports the deprecation. All other ambiguous
+ * pairs fail validation so a blueprint cannot silently drift between readers.
+ */
+function validateDeclarationAuthorities(bp: Blueprint, err: Reporter, warn: Reporter): void {
+  const roles = bp.roles ?? [];
+  const promptOverrides = bp.knobs?.promptOverrides ?? {};
+  for (const role of roles) {
+    if (Object.prototype.hasOwnProperty.call(promptOverrides, role.id)) {
+      err(
+        'duplicate-persona-authority',
+        `role "${role.id}" declares its persona through roles[].prompt (or the conventional prompts/${role.id}.md path) AND knobs.promptOverrides.${role.id}; roles[].prompt is the authored persona authority, while knobs.promptOverrides is only an instance/experiment specialization — keep the stable persona at the role prompt and remove the blueprint override`,
+      );
+    }
+
+    const roleTools = role.tools ?? [];
+    const roleCapabilities = role.capabilities ?? [];
+    if (roleTools.length === 0 && roleCapabilities.length === 0) continue;
+
+    const enforced = bp.fleet?.workerRoles?.find((worker) => worker.id === role.id)?.capabilities ?? [];
+    if (roleCapabilities.length > 0 && enforced.length > 0) {
+      err(
+        'duplicate-capability-authority',
+        `role "${role.id}" declares capabilities in BOTH roles[].capabilities and fleet.workerRoles[].capabilities; the former is only a legacy import hint, while fleet.workerRoles[].capabilities is the ENFORCED allow-list — declare import requirements once in dependencies.tools and keep only the enforced fleet ceiling`,
+      );
+      continue;
+    }
+
+    err(
+      'role-dependency-authority',
+      `role "${role.id}" declares ${roleTools.length > 0 ? 'roles[].tools' : 'roles[].capabilities'}, a legacy advisory dependency site; dependencies.tools is the single import-time authority, while fleet.workerRoles[].capabilities is reserved for the ENFORCED allow-list — move these requirements to dependencies.tools`,
+    );
+  }
+
+  const knowledgePack = bp.knowledge?.pack?.trim();
+  const learningPack = bp.learning?.pack?.trim();
+  if (knowledgePack && learningPack) {
+    err(
+      'duplicate-knowledge-pack-authority',
+      `seed pack is declared in BOTH knowledge.pack ("${knowledgePack}") and deprecated learning.pack ("${learningPack}"); knowledge.pack is authoritative — remove learning.pack`,
+    );
+  } else if (learningPack) {
+    warn(
+      'deprecated-learning-pack',
+      `learning.pack is a read-side compatibility key; its value "${learningPack}" is derived as the seed choice today, but new authoring must use the single authority knowledge.pack`,
+    );
+  }
+
+  if (bp.gym?.rubric && bp.acceptance?.rubric) {
+    err(
+      'duplicate-rubric-authority',
+      'blueprint declares BOTH gym.rubric and acceptance.rubric; acceptance.rubric ENFORCES completion for acceptance.kind=judge, while gym.rubric scores optimizer trials — do not duplicate one rubric across both sites; keep only the authority for the lifecycle this blueprint runs',
+    );
+  }
+}
 
 /** Decider-model spine checks (edges + termination + reachability). */
 function validateDeciderSpine(
