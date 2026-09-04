@@ -12,20 +12,24 @@
  *
  * Inheritance: a child names parent blueprint id(s) via `extends`; the loader
  * resolves each (built-in by default; the distribution plan widens this to
- * local → installed → built-in via `resolveExtendsPath`), deep-merges them
+ * local → installed → built-in via `resolveExtendsPath`), merges them
  * parent-first with the child on top, then parses the merged plain object once
- * through `BlueprintSchema` (so `.default`s apply once, not per-file). Merge
- * rule: objects deep-merge (child wins on leaf keys); arrays + scalars are
- * replaced wholesale by the child.
+ * through `BlueprintSchema` (so `.default`s apply once, not per-file).
+ *
+ * THE MERGE ALGEBRA IS DECLARED, NOT HARDCODED (identities-v1-2026-08-30 P-019).
+ * Each pairwise merge is `mergeByRules` (`merge.ts`), which applies the per-leaf
+ * rule `merge-rules.ts` declares — `replace` / `union` / `most-restrictive` /
+ * `hard-error` — so a new field states how it composes. The pre-P-019 algebra
+ * (`mergeRaw`: objects deep-merge, arrays + scalars replaced by the child) is the
+ * registry's DEFAULT assignment, so every blueprint that declared no deviation
+ * resolves byte-identically (`merge.test.ts` proves it over every builtin).
  *
  * identities-v1-2026-08-30 P-001: the walk also records every LAYER it merged
  * (`resolveLayers` → `LoadedBlueprint.layers`, parent-first) with a per-layer
  * content hash, and `resolveBlueprint` fails the load on a layer whose
  * `attestation.contentHash` disagrees with its content or on two distinct layers
- * claiming one EXCLUSIVE slot (D-007). The per-field composition rules are
- * DECLARED in `merge-rules.ts`; P-019 replaces `mergeRaw` with the merger that
- * honours them (this file's last-writer-wins is byte-identical to `replace` for
- * scalars/arrays and `union` for records — the registry's default assignment).
+ * claiming one EXCLUSIVE slot (D-007) — the `hard-error` rule's refusal, which
+ * needs the layers, not the merged document.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,6 +40,11 @@ import { BlueprintSchema, BlueprintHeaderSchema, type Blueprint } from './schema
 import { validateBlueprint, type BlueprintValidation, type ValidateOptions } from './validate.js';
 import { canonicalBlueprintId } from '../blueprint-aliases.js';
 import { findExclusiveSlotConflicts, type SlotClaim } from './slots.js';
+import { mergeByRules, isPlainObject, stableStringify } from './merge.js';
+
+// The pre-P-019 last-writer-wins merge, kept as the reference algebra + the rule
+// for a record's values (see merge.ts); re-exported here for its historical callers.
+export { mergeRaw } from './merge.js';
 
 /**
  * The registry sets the operator passes so the load path enforces the op/role
@@ -75,23 +84,6 @@ export const resolveBuiltinExtends: ResolveExtendsPath = (id) => {
   const p = builtinBlueprintPath(id);
   return existsSync(p) ? p : null;
 };
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
-/**
- * Deep-merge `child` over `base`: plain objects merge recursively; arrays and
- * scalars are replaced by the child's value. Pure (returns a new object).
- */
-export function mergeRaw(base: RawBlueprint, child: RawBlueprint): RawBlueprint {
-  const out: Record<string, unknown> = { ...base };
-  for (const [k, cv] of Object.entries(child)) {
-    const bv = out[k];
-    out[k] = isPlainObject(bv) && isPlainObject(cv) ? mergeRaw(bv, cv) : cv;
-  }
-  return out;
-}
 
 function readRaw(path: string): RawBlueprint {
   const parsed = parseYaml(readFileSync(path, 'utf8'));
@@ -168,11 +160,11 @@ export function resolveLayers(
     const path = resolve(pid);
     if (!path) throw new Error(`cannot resolve extended blueprint "${pid}"`);
     const parent = resolveLayers(readRaw(path), resolve, path, new Set([...seen, pid]));
-    merged = mergeRaw(merged, parent.merged);
+    merged = mergeByRules(merged, parent.merged);
     layers.push(...parent.layers);
   }
-  // Child wins; drop the now-consumed `extends` from the resolved result.
-  const { extends: _drop, ...childOwn } = mergeRaw(merged, raw);
+  // The child is the last layer; drop the now-consumed `extends` from the resolved result.
+  const { extends: _drop, ...childOwn } = mergeByRules(merged, raw);
   layers.push(layerOf(raw, sourcePath));
   return { merged: childOwn, layers };
 }
@@ -203,17 +195,6 @@ export interface LoadedBlueprint {
 /** Stable sha256 over the resolved blueprint (sorted keys → order-independent). */
 export function blueprintHash(bp: Blueprint): string {
   return createHash('sha256').update(stableStringify(bp)).digest('hex');
-}
-
-function stableStringify(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
-  if (isPlainObject(v)) {
-    return `{${Object.keys(v)
-      .sort()
-      .map((k) => `${JSON.stringify(k)}:${stableStringify((v as Record<string, unknown>)[k])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(v);
 }
 
 /**
