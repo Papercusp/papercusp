@@ -42,10 +42,13 @@ export const WorkItemSchema = z.object({
 /**
  * A role in the blueprint. `id` resolves a prompt via the tiered `prompt-resolve`
  * lookup (`prompts/<id>.md` by default; `prompt` overrides with an explicit path
- * relative to the blueprint dir). `tools`/`capabilities` are generous hints the
- * distribution plan's import-time dep-manifest (su-4b6ce E2, distribution
- * P-003/P-004) resolves against the catalog + Cupboard. `reactive: true` marks a
- * role that belongs to the condition-triggered overlay, not the spine.
+ * relative to the blueprint dir). `tools`/`capabilities` are retained only so a
+ * legacy blueprint receives the semantic validator's targeted P-033 error
+ * instead of having an unknown key stripped silently. New authoring declares
+ * import requirements once in top-level `dependencies.*`; the distinct,
+ * enforced role ceiling lives in `fleet.workerRoles[].capabilities`.
+ * `reactive: true` marks a role that belongs to the condition-triggered overlay,
+ * not the spine.
  *
  * `isolation` declares the filesystem-isolation a dispatch of this role wants —
  * `worktree` runs it in its own git worktree so parallel dispatches of the same
@@ -61,7 +64,9 @@ export const BlueprintRoleSchema = z.object({
   id: z.string().min(1),
   prompt: z.string().optional(),
   model: z.string().optional(),
+  /** @deprecated use top-level dependencies.tools (kept for a targeted validation error). */
   tools: z.array(z.string()).optional(),
+  /** @deprecated use dependencies.tools; enforced ceilings use fleet.workerRoles[].capabilities. */
   capabilities: z.array(z.string()).optional(),
   reactive: z.boolean().default(false),
   isolation: z.enum(['none', 'worktree']).optional(),
@@ -547,8 +552,11 @@ export const KnobsSchema = z
     // ── Residual config.json → knobs migration (cloud-deployment-layer P-006) ──
     // These five had no declared blueprint home; they now do. config.json keeps
     // instance-override precedence (resolved by readEffectiveConfig's overlay).
-    /** Per-role prompt specialization (config `promptOverrides.<role>` = a full
-     *  replacement / specialization string for that role's prompt). */
+    /** Per-role INSTANCE/experiment specialization (config
+     *  `promptOverrides.<role>` = a full replacement / specialization string).
+     *  A blueprint may use this for a live/global role it does not author; P-033
+     *  validation rejects restating one of this blueprint's own `roles[]`, whose
+     *  persona authority is `roles[].prompt` / its conventional prompt path. */
     promptOverrides: z.record(z.string(), z.string()).optional(),
     /** Per-harness AI backend: a `default` invocation + per-role overrides
      *  (agentCmd / model / extraArgs). Secrets never go here — see HarnessConfig. */
