@@ -97,6 +97,8 @@ export const ROLE_ALIASES: Record<string, string> = {
 
 /** The universal role library — every `extends` chain terminates here. */
 const BASE_BLUEPRINT_ID = 'base';
+/** The coding hive uses the shared engineering identity without inheriting it. */
+const CODING_DOMAIN_IDENTITY_ID = 'papercusp-engineer';
 
 /**
  * The ordered blueprint roots a context resolves against: the tier-aware
@@ -180,6 +182,37 @@ function chainForCtx(ctx: PromptResolveContext): string[] {
   if (ctx.extendsChain && ctx.extendsChain.length > 0) return base(ctx.extendsChain);
   if (ctx.blueprintId) return base([ctx.blueprintId]);
   return [BASE_BLUEPRINT_ID];
+}
+
+/**
+ * Resolve the replacement-prompt chain, including the coding hive's domain
+ * identity as a selective attachment rather than a blueprint inheritance edge.
+ *
+ * `coding` is the hive blueprint and intentionally extends only `base`; adding
+ * `papercusp-engineer` to that YAML would make the identity part of the merged
+ * blueprint and would also leak it through `work`, which extends `coding`.
+ * The attachment is therefore applied only when `coding` (or its legacy `hive`
+ * alias) is the leaf being rendered. A real leaf identity already present in a
+ * loader-resolved chain is left untouched.
+ */
+function replacementPromptChainForCtx(ctx: PromptResolveContext): string[] {
+  const chain = chainForCtx(withResolvedChain(ctx));
+  const leafId = chain[0];
+  if (
+    !leafId ||
+    canonicalBlueprintId(leafId) !== 'coding' ||
+    chain.some((id) => canonicalBlueprintId(id) === CODING_DOMAIN_IDENTITY_ID)
+  ) {
+    return chain;
+  }
+
+  const baseIndex = chain.indexOf(BASE_BLUEPRINT_ID);
+  if (baseIndex < 0) return [...chain, CODING_DOMAIN_IDENTITY_ID];
+  return [
+    ...chain.slice(0, baseIndex),
+    CODING_DOMAIN_IDENTITY_ID,
+    ...chain.slice(baseIndex),
+  ];
 }
 
 function candidatesFor(ctx: PromptResolveContext, role: string): string[] {
@@ -333,7 +366,7 @@ export function resolveReplacementSystemPromptStack(ctx: PromptResolveContext): 
   const docs: StackDocument[] = [];
   // The MOST-SPECIFIC blueprint overlay, leaf-first; within one id, local → installed →
   // built-in. The first overlay found across the chain wins (single, not cumulative).
-  outer: for (const id of chainForCtx(withResolvedChain(ctx))) {
+  outer: for (const id of replacementPromptChainForCtx(ctx)) {
     if (id === BASE_BLUEPRINT_ID) continue;
     for (const root of roots) {
       const overlay = join(root, 'blueprints', canonicalBlueprintId(id), 'prompts', 'agent-base-overlay.md');

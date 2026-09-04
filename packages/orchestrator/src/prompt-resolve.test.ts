@@ -224,6 +224,99 @@ test('P-032/D-018 — preamble (kernel) + coding-factory overlay (domain) compos
   assert.match(section, /Delivery is unconditional/);
 });
 
+test('EI-22285277325728666 — the real coding hive attaches papercusp-engineer only at the coding leaf', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const harnessDir = join(here, '..', '..', 'harness'); // libs/papercusp/packages/harness
+  const codingYaml = readFileSync(join(harnessDir, 'blueprints', 'coding', 'blueprint.yaml'), 'utf8');
+  const workYaml = readFileSync(join(harnessDir, 'blueprints', 'work', 'blueprint.yaml'), 'utf8');
+  const engineeringOverlay = join(
+    harnessDir,
+    'blueprints',
+    'papercusp-engineer',
+    'prompts',
+    'agent-base-overlay.md',
+  );
+
+  // The selective attachment must not be implemented as inheritance or as a
+  // copied overlay. The real tree remains structurally neutral for `coding`
+  // and `work`, while the identity keeps its one canonical document.
+  assert.match(codingYaml, /^extends:\s+base\s*$/m);
+  assert.doesNotMatch(codingYaml, /extends:\s+papercusp-engineer/);
+  assert.match(workYaml, /^extends:\s+coding\s*$/m);
+  assert.ok(existsSync(engineeringOverlay), 'papercusp-engineer must keep its canonical domain document');
+  assert.equal(
+    existsSync(join(harnessDir, 'blueprints', 'coding', 'prompts', 'agent-base-overlay.md')),
+    false,
+    'coding must not duplicate the identity overlay',
+  );
+
+  assert.deepEqual(resolveBlueprintChain(harnessDir, 'coding'), ['coding', 'base']);
+  assert.deepEqual(resolveBlueprintChain(harnessDir, 'work'), ['work', 'coding', 'base']);
+
+  const codingStack = resolveReplacementSystemPromptStack({
+    harnessDir,
+    phase: '',
+    dept: '',
+    blueprintId: 'coding',
+  });
+  assert.deepEqual(
+    codingStack!.map((d) => [d.layer, d.slot ?? null, d.id]),
+    [
+      ['domain', 'domain', 'papercusp-engineer'],
+      ['kernel', null, 'agent-base-preamble'],
+    ],
+  );
+  const codingPrompt = resolveReplacementSystemPrompt({
+    harnessDir,
+    phase: '',
+    dept: '',
+    blueprintId: 'coding',
+  });
+  assert.ok(codingPrompt);
+  const overlay = readFileSync(engineeringOverlay, 'utf8').trim();
+  assert.equal(codingPrompt!.split(overlay).length, 2, 'coding renders the identity exactly once');
+
+  // `work` inherits coding's operational blueprint, not its engineering domain;
+  // the selective leaf rule prevents a domain leak through the ancestor chain.
+  const workStack = resolveReplacementSystemPromptStack({
+    harnessDir,
+    phase: '',
+    dept: '',
+    blueprintId: 'work',
+  });
+  assert.deepEqual(
+    workStack!.map((d) => [d.layer, d.slot ?? null, d.id]),
+    [['kernel', null, 'agent-base-preamble']],
+  );
+
+  // Keep the retired strict factory's own overlay and the legacy hive alias
+  // behavior intact while proving there is no coding → coding-factory alias.
+  assert.deepEqual(
+    resolveReplacementSystemPromptStack({
+      harnessDir,
+      phase: '',
+      dept: '',
+      blueprintId: 'coding-factory',
+    })!.map((d) => [d.layer, d.slot ?? null, d.id]),
+    [
+      ['domain', 'domain', 'coding-factory'],
+      ['kernel', null, 'agent-base-preamble'],
+    ],
+  );
+  assert.deepEqual(
+    resolveReplacementSystemPromptStack({
+      harnessDir,
+      phase: '',
+      dept: '',
+      blueprintId: 'hive',
+    })!.map((d) => [d.layer, d.slot ?? null, d.id]),
+    [
+      ['domain', 'domain', 'papercusp-engineer'],
+      ['kernel', null, 'agent-base-preamble'],
+    ],
+  );
+});
+
 test('promptCandidates — bare role resolves to base only (the universal library; no global tiers)', () => {
   // K-1 + Phase 5 (D-012): with no blueprintId, base is the ONLY candidate — the global
   // phase/dept tiers + the bare global default were deleted; `phase` is no longer consulted.
