@@ -3,9 +3,10 @@
  *
  * Run: cd libs/papercusp/packages/locks && npx vitest run src/su-lock-store.test.ts
  */
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveLocksSqlDir, tryAcquire } from './su-lock-store';
 
@@ -49,6 +50,24 @@ describe('resolveLocksSqlDir', () => {
     mkdirSync(moduleDir, { recursive: true });
 
     expect(resolveLocksSqlDir(moduleDir)).toBe(join(moduleDir, 'sql'));
+  });
+});
+
+describe('git-sync registry prose migration', () => {
+  it('keeps the bare resource description aligned with the workspace barrier', () => {
+    const migration = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'sql', '028-git-sync-registry-prose.sql'),
+      'utf8',
+    );
+
+    expect(migration).toContain("UPDATE agent_resource_registry");
+    expect(migration).toContain("WHERE resource = 'git-sync'");
+    expect(migration).toContain('workspace-wide git-sync restart barrier shared by every automated git-sync fire');
+    expect(migration).toContain('shared(git-sync)');
+    expect(migration).toContain('exclusive(git-sync:<slug>)');
+    expect(migration).toContain('dev:restart');
+    expect(migration).toContain('updated_ts = clock_timestamp()');
+    expect(migration).not.toContain('papercup-only legacy back-off');
   });
 });
 
