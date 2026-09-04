@@ -297,8 +297,8 @@ export function resolvePromptFiles(
 }
 
 /**
- * domain-generic-agent-personas-2026-06-17 P-009/P-010/P-013 — compose the REPLACEMENT
- * SYSTEM prompt for a spawn when `REPLACE_CLAUDE_BASE` is armed: the neutral base preamble
+ * domain-generic-agent-personas-2026-06-17 P-009/P-010/P-013 — compose the replacement
+ * SYSTEM prompt for a spawn: the neutral base preamble
  * (`blueprints/base/prompts/agent-base-preamble.md`, P-009) + the MOST-SPECIFIC blueprint
  * overlay (`blueprints/<id>/prompts/agent-base-overlay.md`, walking the extends-chain
  * leaf-first; `base` excluded — P-010 authors the `coding` overlay), so a coding hive keeps
@@ -306,8 +306,8 @@ export function resolvePromptFiles(
  *
  * The agent's ROLE persona + task ride the spawn's stdin/user message UNCHANGED (resolved by
  * `resolvePromptFiles` → `buildPrompt`); this replaces only the SYSTEM prompt. Returns `null`
- * when the base preamble file is absent — the caller treats `null` as "leave the Claude
- * default in place" (a byte-identical no-op). PURE / read-only (testable).
+ * when the base preamble file is absent — the caller cannot replace a system prompt it
+ * cannot resolve and leaves the backend default in place. PURE / read-only (testable).
  */
 export function resolveReplacementSystemPrompt(ctx: PromptResolveContext): string | null {
   const docs = resolveReplacementSystemPromptStack(ctx);

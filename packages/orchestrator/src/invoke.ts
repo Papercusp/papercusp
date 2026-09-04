@@ -1409,22 +1409,6 @@ export function fleetCapabilityOnlyEnabled(): boolean {
   return v === '1' || v === 'true' || v === 'on';
 }
 
-/** True when REPLACE_CLAUDE_BASE is armed for this spawn (domain-generic-agent-personas
- *  -2026-06-17 P-013). The operator resolves the `papercusp-replace-claude-base` flag
- *  per-spawn and threads it as this env var into the invoke-once child (mirrors
- *  `fleetCapabilityOnlyEnabled`). Unset / `0` / `false` / `off` ⇒ the Claude Code coding base
- *  stands and the prompt is delivered via stdin as before the flag. The flag's DEFAULT is
- *  FLAG_DEFAULTS in libs/flags/src/types.ts (ON since 2026-06-18) — never restate it here; the
- *  restated "default-off" drifted (identities-v1 D-018). P-003 landed the slot renderer:
- *  `resolveReplacementSystemPrompt` IS `composeStack` over [domain(overlay), kernel(preamble)]
- *  under the seal (prompt-resolve.test.ts pins it), which is D-018 §3's gate for retiring this
- *  flag + the append branch (tracked as a follow-up work-item; the off branch is incoherent
- *  under the seal — it puts Claude's unsealed coding prose ABOVE the kernel). */
-export function replaceClaudeBaseEnabled(): boolean {
-  const v = (process.env.PAPERCUSP_REPLACE_CLAUDE_BASE ?? '').trim().toLowerCase();
-  return v === '1' || v === 'true' || v === 'on';
-}
-
 /** Whether the cutover applies to `role` for this spawn (armed AND the role has the
  *  capability:* replacements). */
 function fleetCutoverApplies(role: string | undefined, capabilityOnly: boolean): boolean {
@@ -3687,18 +3671,15 @@ export async function invoke(
     finalArgv.push('-');
   }
 
-  // domain-generic-agent-personas-2026-06-17 P-013 (REPLACE_CLAUDE_BASE, default-off): when
-  // armed, REPLACE the Claude Code coding base with OUR neutral preamble (+ the blueprint's
-  // coding overlay) via `--system-prompt-file`, instead of letting Claude's default coding
-  // system prompt stand. The assembled prompt stays the stdin USER message (the stdin.write
-  // block below is UNCHANGED), so the agent is still driven by it — only the SYSTEM prompt
-  // changes. claude-code only (the replace mechanism is claude-specific; omp/codex carry
-  // their own base). Flag-OFF ⇒ no arg, no temp file — byte-identical to today.
+  // identities-v1 D-018 / D-021 / WI-2143907: Claude system-prompt replacement is
+  // unconditional. The slot composer supplies the neutral kernel plus the blueprint's
+  // domain overlay under the seal; retaining an append branch would put Claude's
+  // unsealed coding prose above that kernel. The assembled role/task prompt still rides
+  // stdin unchanged. OMP/Codex carry their own base and never enter this branch.
   let sysPromptDir: string | undefined;
   if (
     harnessSupports(agentBackend, 'system-prompt-override') &&
-    streamFormat === 'claude-stream-json' &&
-    replaceClaudeBaseEnabled()
+    streamFormat === 'claude-stream-json'
   ) {
     // Effective blueprint: a program-blueprint spawn's BLUEPRINT_ID extra, else the harness's
     // own blueprint id (so a normal coding-pipeline spawn — which carries no BLUEPRINT_ID —
@@ -4504,7 +4485,7 @@ export async function invoke(
   if (ompPromptDir) {
     try { rmSync(ompPromptDir, { recursive: true, force: true }); } catch { /* best-effort */ }
   }
-  // P-013: clean up the ephemeral REPLACE_CLAUDE_BASE system-prompt tmpdir (same lifecycle
+  // P-013: clean up the ephemeral replacement system-prompt tmpdir (same lifecycle
   // as the omp prompt dir — always runs, OS sweeper reaps a SIGKILL leak).
   if (sysPromptDir) {
     try { rmSync(sysPromptDir, { recursive: true, force: true }); } catch { /* best-effort */ }

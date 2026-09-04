@@ -58,7 +58,7 @@ function writeBlueprintPrompt(root: string, id: string, file: string, body: stri
 }
 
 // ── domain-generic-agent-personas-2026-06-17 P-009/P-010/P-013 ───────────────
-// resolveReplacementSystemPrompt composes the REPLACE_CLAUDE_BASE system prompt:
+// resolveReplacementSystemPrompt composes the replacement system prompt:
 // the neutral base preamble + the most-specific blueprint overlay (coding's SWE framing).
 
 test('resolveReplacementSystemPrompt — null when the base preamble is absent (no-op → Claude default stands)', () => {
@@ -152,7 +152,7 @@ test('resolveReplacementSystemPrompt — picks the MOST-SPECIFIC overlay walking
   }
 });
 
-// EI-1758 mode-1 (bee fire-path zombie): under REPLACE_CLAUDE_BASE the base preamble IS the
+// EI-1758 mode-1 (bee fire-path zombie): the base preamble IS the
 // system prompt fed to a claude bee (invoke.ts:2280-2294 → --system-prompt-file). If it drops
 // Claude Code's MCP-startup grounding, the model reverts to its Claude-Code prior, opens with the
 // `WaitForMcpServers` startup-probe reflex, concludes tools are unavailable → 0 tool calls →
@@ -162,7 +162,7 @@ test('resolveReplacementSystemPrompt — the REAL base preamble carries the MCP-
   const here = dirname(fileURLToPath(import.meta.url));
   const harnessDir = join(here, '..', '..', 'harness'); // libs/papercusp/packages/harness
   const out = resolveReplacementSystemPrompt({ harnessDir, phase: '', dept: '' });
-  assert.ok(out, 'the built-in base preamble must resolve (REPLACE_CLAUDE_BASE feeds this to claude bees)');
+  assert.ok(out, 'the built-in base preamble must resolve (sealed replacement feeds this to claude bees)');
   // The anti-reflex grounding: tools are connected + ready, and do NOT open with a startup probe.
   assert.match(out!, /Tools and MCP startup/);
   assert.match(out!, /WaitForMcpServers/);
@@ -175,7 +175,7 @@ test('resolveReplacementSystemPrompt — the REAL base preamble carries the MCP-
 // identities-v1-2026-08-30 P-032 / D-018 — the second composer is SUBSUMED by the slot stack:
 // agent-base-preamble.md is the KERNEL layer's base text, agent-base-overlay.md the `domain`
 // slot's leaf. P-003's renderer must reproduce THIS byte shape for the spawn tier before
-// REPLACE_CLAUDE_BASE (the claude delivery switch) can be retired. Pinned over the REAL harness
+// the legacy replace/append delivery switch can be retired. Pinned over the REAL harness
 // tree and against docs/COMPOSITION_MODEL.md §8, so a rename of either file — or a doc that names
 // paths the resolver does not read — fails here rather than drifting silently.
 test('P-032/D-018 — preamble (kernel) + coding-factory overlay (domain) compose in the pinned byte shape over the REAL tree, at the paths COMPOSITION_MODEL.md §8 names', () => {
@@ -221,7 +221,7 @@ test('P-032/D-018 — preamble (kernel) + coding-factory overlay (domain) compos
   assert.ok(section, 'COMPOSITION_MODEL.md must carry a "## 8." section for the subsumed composer');
   assert.ok(section.includes(`\`${preambleRel}\``), `§8 must name ${preambleRel}`);
   assert.ok(section.includes(`\`${overlayRel}\``), `§8 must name ${overlayRel}`);
-  assert.match(section, /REPLACE_CLAUDE_BASE/);
+  assert.match(section, /Delivery is unconditional/);
 });
 
 test('promptCandidates — bare role resolves to base only (the universal library; no global tiers)', () => {
@@ -829,7 +829,7 @@ test('P-002 — UNSET env ⇒ byte-identical (resolves entirely from ctx.harness
   }
 });
 
-test('P-002 — resolveReplacementSystemPrompt also honors the prompt root (REPLACE_CLAUDE_BASE preamble from integration tree)', () => {
+test('P-002 — resolveReplacementSystemPrompt also honors the prompt root (replacement preamble from integration tree)', () => {
   const running = withHarness(() => {
     /* running tree has NO base preamble — only the integration tree does */
   });

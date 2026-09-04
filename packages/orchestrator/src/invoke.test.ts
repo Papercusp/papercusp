@@ -38,7 +38,6 @@ import {
   fleetDisallowedToolsForRole,
   resolveRoleToolScope,
   fleetCapabilityOnlyEnabled,
-  replaceClaudeBaseEnabled,
   FLEET_CAPABILITY_REPLACED_TOOLS,
   FLEET_CAPABILITY_ROLES,
   ensureFleetGitHooksDir,
@@ -105,7 +104,6 @@ const SESSION_ENV_KEYS = [
   'PAPERCUSP_SPAWN_MODEL',
   'HARNESS_CONFIG_JSON',
   'PAPERCUSP_FLEET_CAPABILITY_ONLY',
-  'PAPERCUSP_REPLACE_CLAUDE_BASE',
   'PAPERCUSP_FLEET_SANDBOX',
   'PAPERCUSP_FLEET_SANDBOX_ALLOWED_DOMAINS',
   'PAPERCUSP_FLEET_SANDBOX_DENY_ALL_EGRESS',
@@ -1062,65 +1060,8 @@ test('invoke — a claude agent spawn carries the native-scheduler lockout in it
   }
 });
 
-// ── domain-generic-agent-personas-2026-06-17 P-013: REPLACE_CLAUDE_BASE ──────
-// Flag-gated (default-off) replacement of the Claude coding base with our neutral
-// preamble via --system-prompt-file; the assembled prompt still rides stdin.
-
-test('replaceClaudeBaseEnabled — off by default, on for 1/true/on (env parsing)', () => {
-  delete process.env.PAPERCUSP_REPLACE_CLAUDE_BASE;
-  assert.equal(replaceClaudeBaseEnabled(), false);
-  for (const v of ['1', 'true', 'on', 'TRUE', 'On']) {
-    process.env.PAPERCUSP_REPLACE_CLAUDE_BASE = v;
-    assert.equal(replaceClaudeBaseEnabled(), true, `"${v}" should arm`);
-  }
-  for (const v of ['0', 'false', 'off', '', 'nope']) {
-    process.env.PAPERCUSP_REPLACE_CLAUDE_BASE = v;
-    assert.equal(replaceClaudeBaseEnabled(), false, `"${v}" should NOT arm`);
-  }
-});
-
-test('invoke — REPLACE_CLAUDE_BASE OFF (default): NO --system-prompt-file in the spawned argv (byte-identical)', async () => {
-  const fx = makeFixture(({ harnessDir }) => {
-    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
-    // The preamble EXISTS in the tree, so the only thing keeping the flag inert is the gate.
-    writeFileSync(
-      join(harnessDir, 'blueprints', 'base', 'prompts', 'agent-base-preamble.md'),
-      '# NEUTRAL BASE',
-    );
-  });
-  try {
-    const binDir = join(fx.projectDir, 'bin');
-    mkdirSync(binDir, { recursive: true });
-    const stub = join(binDir, 'claude');
-    writeFileSync(stub, '#!/bin/sh\nprintf "%s\\n" "$@"\ncat >/dev/null\n', { mode: 0o755 });
-    // env unset by beforeEach → flag off.
-    const result = await invoke(
-      {
-        harnessDir: fx.harnessDir,
-        projectDir: fx.projectDir,
-        stateDir: fx.stateDir,
-        logDir: fx.logDir,
-        phase: 'staging',
-        claudeCmd: stub,
-        dept: '',
-        log: () => {},
-        nowSeconds: () => 1700000003,
-      },
-      'worker',
-      [],
-    );
-    assert.equal(result.exitCode, 0);
-    const argvDump = readFileSync(result.jsonlPath, 'utf8');
-    assert.ok(
-      !argvDump.split('\n').some((l) => l === '--system-prompt-file'),
-      `flag OFF must NOT inject --system-prompt-file:\n${argvDump}`,
-    );
-  } finally {
-    fx.cleanup();
-  }
-});
-
-test('invoke — REPLACE_CLAUDE_BASE ON: claude spawn gets --system-prompt-file pointing at the replacement base', async () => {
+// ── identities-v1 D-018 / D-021: sealed replacement is unconditional ────────
+test('invoke — claude spawn always gets --system-prompt-file pointing at the sealed replacement base', async () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
     writeFileSync(
@@ -1139,7 +1080,6 @@ test('invoke — REPLACE_CLAUDE_BASE ON: claude spawn gets --system-prompt-file 
       '#!/bin/sh\nprintf "%s\\n" "$@"\nprev=""\nfor a in "$@"; do if [ "$prev" = "--system-prompt-file" ]; then echo "SYSFILE_CONTENT:"; cat "$a"; fi; prev="$a"; done\ncat >/dev/null\n',
       { mode: 0o755 },
     );
-    process.env.PAPERCUSP_REPLACE_CLAUDE_BASE = '1';
     const result = await invoke(
       {
         harnessDir: fx.harnessDir,
@@ -1161,7 +1101,7 @@ test('invoke — REPLACE_CLAUDE_BASE ON: claude spawn gets --system-prompt-file 
       argvDump.split('\n').some((l) => l === '--system-prompt-file'),
       `flag ON must inject --system-prompt-file:\n${argvDump}`,
     );
-    // The file the flag points at carries our neutral preamble (not the Claude default).
+    // The replacement file carries our neutral preamble (not the Claude default).
     // P-003: the replacement system prompt renders under the kernel SEAL — the precedence
     // statement opens the file and the kernel base text is LAST (identities, when any, above).
     assert.match(argvDump, /SYSFILE_CONTENT:\n<!-- PAPERCUSP-KERNEL:SEAL -->\n## Kernel precedence — the seal\n/);
@@ -1206,7 +1146,6 @@ test('invoke — a harness-local blueprint carries its resolved domain parent in
       '#!/bin/sh\nprintf "%s\\n" "$@"\nprev=""\nfor a in "$@"; do if [ "$prev" = "--system-prompt-file" ]; then echo "SYSFILE_CONTENT:"; cat "$a"; fi; prev="$a"; done\ncat >/dev/null\n',
       { mode: 0o755 },
     );
-    process.env.PAPERCUSP_REPLACE_CLAUDE_BASE = '1';
     const result = await invoke(
       {
         harnessDir: fx.harnessDir,
