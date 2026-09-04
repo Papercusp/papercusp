@@ -16,6 +16,7 @@
  */
 import { homedir } from 'node:os';
 import nodePath from 'node:path';
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import plugin, {
   rolesFor,
@@ -210,19 +211,25 @@ describe('TOOL_OVERRIDES — agent-vocabulary description/guidance for code-sear
     expect(o.guidance.when).toBeTruthy();
   });
 
-  // WI-35557 (2026-08-09): query was found to return 0 results for EVERY
-  // input on this install (an upstream read-only-DB defect; a local fix was
-  // tried and confirmed to segfault the native binding, so it was reverted
-  // rather than shipped). The override was rewritten to warn plainly instead
-  // of promising a working grep-replacement — these tests were updated to
-  // match. See gitnexus-bridge/README.md and WI-35557 for the full story.
-  it('query\'s override plainly warns it is broken and points at a working alternative', () => {
+  // WI-35557 / D-065: historical query paths returned empty or unranked noise;
+  // current real-symbol probes SIGSEGV the shared MCP child. The bridge fails
+  // closed before dispatch, and the override must say so plainly.
+  it('query\'s override plainly says it is fail-closed and points at safe alternatives', () => {
     const o = TOOL_OVERRIDES.query;
     const combined = `${o.description} ${o.guidance.when} ${o.guidance.notWhen ?? ''}`.toLowerCase();
-    expect(combined).toContain('grep');
+    expect(combined).toContain('sigsegv');
     expect(combined).toContain('wi-35557');
-    // Must not silently claim to work — that's the exact defect this warning replaced.
-    expect(combined).toMatch(/broken|non-functional|do not/);
+    expect(combined).toContain('graph:query');
+    expect(combined).toMatch(/unavailable|fail-closed|do not/);
+  });
+
+  it('query is refused before the handler can spawn or RPC the shared child', () => {
+    const source = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+    const handler = source.slice(source.indexOf('function makeHandler'), source.indexOf('const plugin: Plugin'));
+    const refusal = handler.indexOf("if (toolName === 'query')");
+    expect(refusal).toBeGreaterThan(0);
+    expect(refusal).toBeLessThan(handler.indexOf('ensureChild(workspaceId)'));
+    expect(refusal).toBeLessThan(handler.indexOf("rpc(handle, 'tools/call'"));
   });
 
   it('impact\'s override targets the "what would break" pre-refactor use case', () => {

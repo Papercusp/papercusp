@@ -7,3 +7,4 @@
   gotcha; and how to VERIFY a change reached a live `~/.papercusp/launch-context/session-*.md`
   render — NOT the materialized copy). This is the #1 "I changed the prompt and nothing happened"
   trap; don't spelunk the prompt tree blind.
+<!-- PAPERCUSP-SU:PROJECT-GUIDE -->
