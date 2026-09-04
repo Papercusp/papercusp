@@ -78,7 +78,8 @@ export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDAR
 // (hive-agent-tabs P-003) without importing the heavy orchestrator root.
 // resolvePromptFiles is the layered variant (base/<role>.md + concrete —
 // audit P-019); prefer it wherever the CONTENT is being assembled.
-export { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
+export { resolvePromptFile, resolvePromptFiles, promptCandidates } from './prompt-resolve';
+export type { PromptResolveContext } from './prompt-resolve';
 
 export type RolePromptMode = 'autonomous' | 'chat' | 'discuss';
 
