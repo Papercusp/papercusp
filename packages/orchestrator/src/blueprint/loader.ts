@@ -72,7 +72,7 @@ export { mergeRaw } from './merge.js';
 export type BlueprintValidateRegistry = Pick<ValidateOptions, 'knownOps' | 'knownRoles'>;
 
 /** A raw, pre-merge blueprint object straight off disk. */
-type RawBlueprint = Record<string, unknown>;
+export type RawBlueprint = Record<string, unknown>;
 
 /** Resolve a blueprint `extends` id → an absolute file path, or null if absent. */
 export type ResolveExtendsPath = (id: string) => string | null;
@@ -137,6 +137,34 @@ export interface BlueprintLayer {
   trust: LayerTrust;
 }
 
+/**
+ * Source snapshots are kept out of the public layer shape (and out of the PG
+ * projection) but remain available to the composition compiler.  The merged
+ * blueprint necessarily loses which layer supplied a nested value; retaining a
+ * private snapshot lets P-038 report exact per-field origins without creating a
+ * second source representation.  A WeakMap also means legacy callers that
+ * serialize `BlueprintLayer` keep their byte shape unchanged.
+ */
+const layerSourceSnapshots = new WeakMap<BlueprintLayer, Readonly<RawBlueprint>>();
+
+function snapshotRaw(value: RawBlueprint): Readonly<RawBlueprint> {
+  const clone = (input: unknown): unknown => {
+    if (Array.isArray(input)) return input.map(clone);
+    if (isPlainObject(input)) {
+      const out: RawBlueprint = {};
+      for (const key of Object.keys(input)) out[key] = clone(input[key]);
+      return out;
+    }
+    return input;
+  };
+  return clone(value) as Readonly<RawBlueprint>;
+}
+
+/** Return the immutable authored source snapshot for one live loader layer. */
+export function layerSourceDocument(layer: BlueprintLayer): Readonly<RawBlueprint> | null {
+  return layerSourceSnapshots.get(layer) ?? null;
+}
+
 /** Roots of the built-in and installed blueprint tiers, for `layerTrust`. */
 const BUILTIN_BLUEPRINTS_ROOT = join(builtinBlueprintPath('base'), '..', '..');
 const INSTALLED_BLUEPRINTS_ROOT = join(homedir(), '.papercusp', 'blueprints');
@@ -182,7 +210,7 @@ function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
   const g = isPlainObject(raw.grants) ? raw.grants : null;
   const grants = g ? { requires: stringList(g.requires), optional: stringList(g.optional) } : null;
   const bundles = Array.isArray(raw.bundles) ? raw.bundles.map((bundle) => BundleRefSchema.parse(bundle)) : [];
-  return {
+  const layer: BlueprintLayer = {
     id: String(raw.id),
     sourceKind,
     sourcePath,
@@ -194,6 +222,8 @@ function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
     bundles,
     trust: layerTrust(sourcePath),
   };
+  layerSourceSnapshots.set(layer, snapshotRaw(raw));
+  return layer;
 }
 
 interface ExactBundleClaim {
