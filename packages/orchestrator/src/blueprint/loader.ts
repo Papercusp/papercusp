@@ -41,6 +41,8 @@ import { validateBlueprint, type BlueprintValidation, type ValidateOptions } fro
 import { canonicalBlueprintId } from '../blueprint-aliases.js';
 import { findExclusiveSlotConflicts, type SlotClaim } from './slots.js';
 import { mergeByRules, isPlainObject, stableStringify } from './merge.js';
+import { lintStackLayers, type IdentityLintOptions, type LayerTrust } from './identity-lint.js';
+import { homedir } from 'node:os';
 
 // The pre-P-019 last-writer-wins merge, kept as the reference algebra + the rule
 // for a record's values (see merge.ts); re-exported here for its historical callers.
@@ -110,6 +112,32 @@ export interface BlueprintLayer {
   attestation: { contentHash: string; signedBy: string } | null;
   /** The slot ids this layer declares (raw `slots[].slot`; validated per document by `validateBlueprint`). */
   slots: string[];
+  /** Top-level keys of the layer's OWN raw document, `extends` excluded — what `identity-lint` reads for the mode-axis authority check (P-003). */
+  fields: string[];
+  /** The layer's own declared grants (raw `grants.requires` / `grants.optional`), null when it declares none (P-003, D-005 ceiling check). */
+  grants: { requires: string[]; optional: string[] } | null;
+  /** Where the layer was read from: the built-in harness tree, the per-hive local tier, or the installed (`~/.papercusp/blueprints`) tier — an INSTALLED layer must attest (P-003). */
+  trust: LayerTrust;
+}
+
+/** Roots of the built-in and installed blueprint tiers, for `layerTrust`. */
+const BUILTIN_BLUEPRINTS_ROOT = join(builtinBlueprintPath('base'), '..', '..');
+const INSTALLED_BLUEPRINTS_ROOT = join(homedir(), '.papercusp', 'blueprints');
+
+/**
+ * The trust tier of a layer by where it was read from. An in-memory root (null path)
+ * is the caller's own document — local. Only the installed tier is third-party by
+ * construction, so only it is required to attest (`identity-lint` default).
+ */
+export function layerTrust(sourcePath: string | null): LayerTrust {
+  if (!sourcePath) return 'local';
+  if (sourcePath.startsWith(BUILTIN_BLUEPRINTS_ROOT)) return 'builtin';
+  if (sourcePath.startsWith(INSTALLED_BLUEPRINTS_ROOT)) return 'installed';
+  return 'local';
+}
+
+function stringList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
 
 /**
@@ -132,7 +160,10 @@ function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
   const slots = Array.isArray(raw.slots)
     ? raw.slots.flatMap((s) => (isPlainObject(s) && typeof s.slot === 'string' ? [s.slot] : []))
     : [];
-  return { id: String(raw.id), sourcePath, contentHash: layerContentHash(raw), attestation, slots };
+  const fields = Object.keys(raw).filter((k) => k !== 'extends');
+  const g = isPlainObject(raw.grants) ? raw.grants : null;
+  const grants = g ? { requires: stringList(g.requires), optional: stringList(g.optional) } : null;
+  return { id: String(raw.id), sourcePath, contentHash: layerContentHash(raw), attestation, slots, fields, grants, trust: layerTrust(sourcePath) };
 }
 
 /**
@@ -209,6 +240,8 @@ export function resolveBlueprint(
     sourcePath?: string | null;
     /** Operator-injected registries → op/role liveness enforcement (P-001). */
     registry?: BlueprintValidateRegistry;
+    /** identity-lint options for the structural BLOCK tier over the stack (P-003): the D-005 ceiling, which layers must attest. */
+    lint?: IdentityLintOptions;
   } = {},
 ): LoadedBlueprint {
   const sourcePath = opts.sourcePath ?? null;
@@ -232,6 +265,15 @@ export function resolveBlueprint(
       code: 'slot-exclusive-conflict',
       message: `exclusive slot "${c.slot}" is claimed by ${c.claimants.length} layers (${c.claimants.join(', ')}) — an exclusive slot admits exactly one document per stack (D-007)`,
     });
+  }
+  // ── identity-lint, structural BLOCK tier over the composed stack (P-003 / D-009 as amended):
+  //    a kernel-slot claim, a grant past the D-005 ceiling, authority on a mode-axis document, a
+  //    missing attestation on an installed layer. The two findings the loops above already report
+  //    under their pinned codes (`slot-exclusive-conflict`, `attestation-hash-mismatch`) are not
+  //    reported twice. Every finding fails the load — there is no override path.
+  for (const f of lintStackLayers(layers, opts.lint)) {
+    if (f.code === 'exclusive-double-claim' || f.code === 'attestation-failed') continue;
+    validation.errors.push({ level: 'error', code: f.code, message: f.message });
   }
   validation.ok = validation.errors.length === 0;
   if (!validation.ok) {

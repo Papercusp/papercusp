@@ -99,6 +99,26 @@ export {
   renderSuDecompositionMarkdown,
 } from './su-decomposition.js';
 export type { SuPart, SuTile, LocatedSuTile, SuPartDocument, SuPartDocId, FleetPostureRole, RoleLibraryRow, RoleLibraryDisposition, SuStackEntry } from './su-decomposition.js';
+// identities-v1 P-003 — the kernel seal: slot-based prompt assembly (the kernel renders
+// LAST under an explicit precedence statement), the composed-stack identity-lint (structural
+// BLOCK tier + heuristic WARN tier, D-009 as amended), and the interactive su's composed source.
+export { composeStack, orderStackDocuments, renderKernelSeal, isIdentityLayer, KERNEL_SEAL_MARKER, KERNEL_SEAL_HEADING } from './render-stack.js';
+export type { StackDocument, ComposedStack, ComposedStackEntry, ComposeStackOptions } from './render-stack.js';
+export {
+  lintStackLayers,
+  lintStackDocuments,
+  detectHeadingOverlap,
+  headingLines,
+  FORGED_CONTROL_LITERALS,
+  MODE_AXIS_ALLOWED_FIELDS,
+  KERNEL_CONTRADICTION_PATTERNS,
+  GENERATED_MARKER,
+  CLIENT_SEAM_MARKER,
+} from './identity-lint.js';
+export type { IdentityLintFinding, IdentityLintOptions, IdentityLintTier, StackLayerInput, LayerTrust } from './identity-lint.js';
+export { suStackDocuments, composeSuStackSource } from './su-stack.js';
+export type { SuStackComposeOptions, ComposedSuStack, SuStackDocuments } from './su-stack.js';
+export { layerTrust } from './loader.js';
 // Launch-eligibility guard (WI-5645): read a resolved blueprint's inherited
 // `retired` marker, and the assert-form for a launch/spend chokepoint.
 export {

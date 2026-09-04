@@ -32,6 +32,7 @@ import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { promptHarnessRoot } from '@papercusp/harness/paths';
 import { canonicalBlueprintId } from './blueprint-aliases.js';
+import { composeStack, type StackDocument } from './blueprint/render-stack.js';
 
 export interface PromptResolveContext {
   /** Absolute path to the harness install (containing prompts/ + blueprints/). */
@@ -309,14 +310,27 @@ export function resolvePromptFiles(
  * default in place" (a byte-identical no-op). PURE / read-only (testable).
  */
 export function resolveReplacementSystemPrompt(ctx: PromptResolveContext): string | null {
+  const docs = resolveReplacementSystemPromptStack(ctx);
+  if (!docs) return null;
+  // identities-v1 P-003 / D-018 §1: the spawn tier IS the slot stack [domain(overlay), kernel(preamble)]
+  // rendered by the seal — the overlay above the precedence statement, the kernel base text LAST.
+  return composeStack(docs).text;
+}
+
+/**
+ * The spawn tier's stack, unrendered: the `domain` leaf (`agent-base-overlay.md`,
+ * the FIRST hit walking the extends chain leaf-first — the exclusive-slot
+ * resolution, D-018 §1) when one exists, and the kernel base text
+ * (`agent-base-preamble.md`, tier-aware, built-in last). `null` when the preamble
+ * is absent in every tier — the caller leaves the Claude default in place.
+ */
+export function resolveReplacementSystemPromptStack(ctx: PromptResolveContext): StackDocument[] | null {
   const roots = rootsFor(ctx);
-  // The neutral base preamble — tier-aware (a local/installed `base` may override it),
-  // built-in last. Absent in every tier ⇒ null (leave the Claude default in place).
   const basePreamble = roots
     .map((root) => join(root, 'blueprints', BASE_BLUEPRINT_ID, 'prompts', 'agent-base-preamble.md'))
     .find((p) => existsSync(p));
   if (!basePreamble) return null;
-  let text = readFileSync(basePreamble, 'utf8').trim();
+  const docs: StackDocument[] = [];
   // The MOST-SPECIFIC blueprint overlay, leaf-first; within one id, local → installed →
   // built-in. The first overlay found across the chain wins (single, not cumulative).
   outer: for (const id of chainForCtx(withResolvedChain(ctx))) {
@@ -324,10 +338,11 @@ export function resolveReplacementSystemPrompt(ctx: PromptResolveContext): strin
     for (const root of roots) {
       const overlay = join(root, 'blueprints', canonicalBlueprintId(id), 'prompts', 'agent-base-overlay.md');
       if (existsSync(overlay)) {
-        text = `${text}\n\n${readFileSync(overlay, 'utf8').trim()}`;
+        docs.push({ id: canonicalBlueprintId(id), layer: 'domain', slot: 'domain', text: readFileSync(overlay, 'utf8'), sourcePath: overlay });
         break outer;
       }
     }
   }
-  return text ? `${text}\n` : null;
+  docs.push({ id: 'agent-base-preamble', layer: 'kernel', text: readFileSync(basePreamble, 'utf8'), sourcePath: basePreamble });
+  return docs;
 }
