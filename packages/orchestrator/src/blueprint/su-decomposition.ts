@@ -158,6 +158,20 @@ export const SU_TILES: readonly SuTile[] = [
       'Source-control convention of the software-engineering profession (D-007: the domain slot = "what the work IS and how it is judged"); the named worktrees are instance colour the project guide already carries.',
   },
   {
+    anchor: '<!-- PAPERCUSP-SU:WORKSPACE-MAP -->',
+    part: 'kernel',
+    seam: 'WORKSPACE-MAP',
+    label: 'workspace-map splice seam',
+    rationale: 'The map is derived from the live workspace-path contract; the marker is kernel addressing, never copied domain prose.',
+  },
+  {
+    anchor: '<!-- PAPERCUSP-SU:PROMOTION-MODEL -->',
+    part: 'kernel',
+    seam: 'PROMOTION-MODEL',
+    label: 'promotion-model splice seam',
+    rationale: 'The promotion section is derived from release configuration; its seam stays in the kernel so the domain identity remains marker-free when used as a standalone system-prompt overlay.',
+  },
+  {
     anchor: '## Engineering discipline',
     part: 'domain',
     label: 'section heading',
@@ -291,6 +305,13 @@ export const SU_TILES: readonly SuTile[] = [
       'P-021: the splice renders the KERNEL half of the modes from `modes/registry.ts` — state, how a flip is registered, the implication table, authority computed by instruction-lint (D-008). The mode DEFINITIONS are identities on the axis slots (`su.mode-*`, `mode-identities.ts`) rendered in the `modes` layer only while the mode is ON.',
   },
   {
+    anchor: '<!-- PAPERCUSP-SU:COMPACTION -->',
+    part: 'practice',
+    seam: 'COMPACTION',
+    label: 'agent-managed compaction practice splice seam',
+    rationale: 'Compaction is a stackable context-management practice; the generated protocol is spliced after the stack is composed.',
+  },
+  {
     anchor: '## Registering work is a SEPARATE discipline from asking approval — AUTO waives the ask, NOT the register',
     part: 'kernel',
     label: 'registering work: trivial / substantive / big-scope tiers',
@@ -355,6 +376,20 @@ export const SU_TILES: readonly SuTile[] = [
     seam: 'WIRE-SCHEMAS',
     label: 'wire-schemas splice seam',
     rationale: 'Generated wire schemas — kernel protocol.',
+  },
+  {
+    anchor: '<!-- PAPERCUSP-SU:SHARED-BASE-NOTES -->',
+    part: 'kernel',
+    seam: 'SHARED-BASE-NOTES',
+    label: 'shared base notes splice seam',
+    rationale: 'The explicit anchor for the shared deploy/wait/wake/coupling/state protocol bundle; it replaces the silent append fallback.',
+  },
+  {
+    anchor: '<!-- PAPERCUSP-SU:PROJECT-GUIDE -->',
+    part: 'instance',
+    seam: 'PROJECT-GUIDE',
+    label: 'addressed project-guide splice seam',
+    rationale: 'The project guide is the pot-specific instance layer selected for the wearer’s stack, not an identity document.',
   },
 ];
 
