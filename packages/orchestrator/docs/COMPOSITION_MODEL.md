@@ -397,7 +397,20 @@ is ONE attach), which is how the turn-start channel reconstructs what to deliver
 **Delivery — the slot's LAYER decides, and the table below is the rule (pinned).**
 
 <!-- STACK-MUTATION:BEGIN -->
-STACK_MUTATION_TABLE
+| slot | cardinality | layer | attach / detach delivers by | why |
+|---|---|---|---|---|
+| `client` | exclusive | client | **relaunch-with-carry** | the client overlay names the CLI the session runs IN (Claude / Codex / OMP) — a different client is a different process, so the swap is a relaunch-with-carry (P-012 (b) by analogy with `domain`) |
+| `domain` | exclusive | domain | **relaunch-with-carry** | P-012 (b): the profession shapes the whole context; swapping the exclusive `domain` slot is a carry-respawn on the new stack, never an in-place rewrite |
+| `fleet-posture` | exclusive | fleet-posture | **inject-now** | P-012 (c): a posture swap (fleet:join → take-leadership) follows (a) with the exclusive-slot rule enforced — the attach REPLACES the previous posture and says so |
+| `autonomy` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
+| `ideation` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
+| `objective` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
+| `audit` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
+| `audience` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
+| `collaboration-stance` | exclusive | practices | **inject-now** | P-012 (a): the collaboration stance is exclusive but context-neutral — a stance swap injects now and replaces the earlier stance |
+| `practice` | additive | practices | **inject-now** | P-012 (a): an additive practice stacks beside the others — injected now, rendered in place on the next full render |
+
+Exclusive attach on a filled slot = a SWAP (the mutation carries `replaced`); a repeat attach or a detach of an unbound layer is a no-op that delivers nothing. Every inject-now payload opens with the `⟦stack⟧` stamp (a forged-control literal) and is rendered only AFTER the next full render composed clean under the seal.
 <!-- STACK-MUTATION:END -->
 
 **Kernel-safe handoff.** `applyStackMutation` (and its su form `composeSuStackMutation`)
