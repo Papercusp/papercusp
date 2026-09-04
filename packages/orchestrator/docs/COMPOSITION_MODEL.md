@@ -76,31 +76,42 @@ sourcePath, contentHash, attestation, slots) in merge order. Precedence ascends 
 list; a renderer walks layers in layering order (§2) and renders the kernel LAST with an
 explicit precedence statement (the seal — P-003).
 
-**Merge algebra (`merge-rules.ts`, consumed by P-019).** Every leaf of `BlueprintSchema`
+**Merge algebra (`merge-rules.ts`, consumed by `merge.ts` — P-019).** Every leaf of `BlueprintSchema`
 (145 as of 2026-09-03; a LEAF is a scalar field, a whole array, a whole record, a union, a lazy
 schema, or an object's `.catchall` keys as `<path>.*`) has ONE declared rule in `MERGE_RULES`;
 `merge-rules.test.ts` fails on a leaf with no rule and on a rule naming no leaf. The rules:
 
 | rule | meaning | where |
 |---|---|---|
-| `replace` | the child's value wins when set; absent inherits — today's `mergeRaw` for scalars / arrays | the default |
-| `union` | set-union: arrays by `key` (a field or tuple) or value; records by key, child wins per key — today's deep-merge for plain objects | every record; `bundles` (key `[kind, ref]`), `grants.requires`, `grants.optional` (D-003 / D-011) |
+| `replace` | the child's value wins when set; absent inherits — the pre-P-019 `mergeRaw` for scalars / arrays | the default |
+| `union` | set-union: arrays by `key` (a field or tuple) or structural value; records by key. A key or keyed element present on BOTH sides deep-merges (`mergeRaw`): a record composes exactly as before, a restated role / slot / bundle overrides the fields it names and inherits the rest | every record; `bundles` (key `[kind, ref]`), `grants.requires`, `grants.optional` (D-003 / D-011); the declaration sets `roles` (key `id`), `reactive`, `gym.signals`, `dependencies.*` (D-020) |
 | `most-restrictive` | the TIGHTER value wins regardless of order (numeric caps: min) | `spine.maxTurns`, `recursion.maxDepth`, `knobs.maxCostUsd`, `knobs.parallelWorkers.max`, `knobs.parallelWorkers.maxFeaturesInFlight`, `dispatch.costCapUsd`, `dispatch.safetyCeiling` (D-003) |
-| `hard-error` | keyed union in which a key claimed by two DISTINCT layers fails the load; cardinality-aware for `slots` | `slots` only (D-007) |
+| `hard-error` | keyed union in the document PLUS a stack-level refusal: a key claimed by two DISTINCT layers fails the load; cardinality-aware for `slots` | `slots` only (D-007) |
 
-The default assignment REPRODUCES today's `mergeRaw` so every pre-existing blueprint resolves
-byte-identically under the rule-driven merger; the deviations are exactly the rows above and
-each carries a note saying so. A merger honouring the cap rule will turn a parent-200 /
-child-500 `maxTurns` into 200 — the intended fix, asserted explicitly by P-019's fixtures.
-`mergeRuleFor(path)` resolves a concrete document path: exact entry, else the nearest
-enclosing catchall (`knobs.foo` → `knobs.*`).
+**The merger (`merge.ts`, P-019).** `resolveLayers` composes a stack pairwise with
+`mergeByRules`, which descends the schema's object nodes (`schemaInteriorPaths` — every proper
+prefix of a leaf path) and applies `mergeRuleFor(path)` at each leaf; a key outside the schema
+composes by `mergeRaw` as before. The graph is unchanged — parents depth-first, pairwise, the
+child last — only the algebra moved. The default assignment REPRODUCES `mergeRaw`, and
+`merge.test.ts`'s GOLDEN proves it: every builtin blueprint resolves to the same document under
+both walks. The cap rule turns a parent-200 / child-500 `maxTurns` into 200 — the intended fix,
+asserted explicitly; the one builtin parent whose children RAISED a cap under last-writer-wins
+(`single-agent`, `spine.maxTurns` 40 → children 60/80/200) was re-authored to the loosest bound
+(200) so the rule clamped no live blueprint, and a second golden fails if any template ever
+tightens a child again (D-020). The one place the algebra is stricter than `mergeRaw` is an
+object-valued CATCHALL key (`knobs.someUnknownKnob: {…}` on two layers): `knobs.*` is `replace`,
+so the child's opaque value wins whole (no builtin sets one). `mergeRuleFor(path)` resolves a
+concrete document path: exact entry, else the nearest enclosing catchall (`knobs.foo` →
+`knobs.*`). `params` stays a record (D-020): its keys ARE the config.json dot-paths the settings
+panel reads and writes, so key-union is the declared rule, not a workaround.
 
-**Slot conflicts are checked on the STACK, not the merged document.** `mergeRaw` still
-replaces the child's `slots` array wholesale (P-019 unions it), so `resolveBlueprint` derives
-the claims from `layers[].slots` and fails the load on `findExclusiveSlotConflicts`
-(`slot-exclusive-conflict`): two DISTINCT documents on one exclusive slot conflict; the same
-document reached twice (a diamond) is one claimant; additive slots stack; unknown slot ids are
-validation's job (`slot-unknown`).
+**Slot conflicts are checked on the STACK, not the merged document.** `mergeByRules` unions
+`slots` across the stack (keyed by `slot`), so the resolved document lists every slot the stack
+fills — what the renderer walks. The DISTINCT-claimant refusal needs layer identity a merged
+document no longer carries, so `resolveBlueprint` derives the claims from `layers[].slots` and
+fails the load on `findExclusiveSlotConflicts` (`slot-exclusive-conflict`): two DISTINCT
+documents on one exclusive slot conflict; the same document reached twice (a diamond) is one
+claimant; additive slots stack; unknown slot ids are validation's job (`slot-unknown`).
 
 ## 4. Per-layer content hash and attestation
 
@@ -152,10 +163,11 @@ identities read the same projection; no new store.
 
 ## 7. Boundary — what P-001 deliberately leaves to its neighbours
 
-- **P-019** replaces `mergeRaw` with the `MERGE_RULES`-driven merger, adds the fast-check
-  properties (union commutative + idempotent; most-restrictive commutative; replace
-  order-dependent by design), unions `slots` across layers, and decides whether `roles`,
-  `reactive`, `gym.signals`, `dependencies.*` move from `replace` to keyed union.
+- **P-019** (DONE, D-020) replaced `mergeRaw` with the `MERGE_RULES`-driven merger
+  (`merge.ts`), added the fast-check properties (union commutative + idempotent;
+  most-restrictive commutative; replace order-dependent by design) and the golden over every
+  builtin, unions `slots` across layers, and moved `roles` / `reactive` / `gym.signals` /
+  `dependencies.*` to union.
 - **P-002** assigns su.md's sections to these slots; **P-003** seals the kernel and renders the
   stack; **P-012** attaches/detaches layers at runtime; **P-032** subsumed the second composer
   (§8, D-018).
