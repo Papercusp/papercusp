@@ -27,13 +27,20 @@ import {
   mergeByRules,
   mergeRaw,
   applyMergeRule,
-  unionArrays,
-  mostRestrictive,
+  setUnionArrays,
+  keyedOverlayArrays,
+  intersectConstraint,
   schemaInteriorPaths,
   stableStringify,
   type RawDocument,
 } from './merge.js';
-import { resolveLayers, resolveBlueprint, resolveBuiltinExtends, builtinBlueprintPath, type ResolveExtendsPath } from './loader.js';
+import {
+  resolveLayers,
+  resolveBlueprint,
+  resolveBuiltinExtends,
+  builtinBlueprintPath,
+  type ResolveExtendsPath,
+} from './loader.js';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -92,7 +99,12 @@ const CAP_LEAVES = Object.entries(MERGE_RULES)
   .filter(([, r]) => r.rule === 'most-restrictive')
   .map(([p]) => p);
 const getPath = (doc: unknown, path: string): unknown =>
-  path.split('.').reduce<unknown>((cur, seg) => (typeof cur === 'object' && cur !== null ? (cur as RawDocument)[seg] : undefined), doc);
+  path
+    .split('.')
+    .reduce<unknown>(
+      (cur, seg) => (typeof cur === 'object' && cur !== null ? (cur as RawDocument)[seg] : undefined),
+      doc,
+    );
 
 // ── 1. golden ───────────────────────────────────────────────────────────────
 
@@ -110,7 +122,11 @@ test('GOLDEN — every builtin blueprint resolves to the same document under the
     const d = firstDiff(byRules, byRaw);
     if (d) diffs.push(`${id} @ ${d}`);
   }
-  assert.deepEqual(diffs, [], `builtin blueprints whose resolved document CHANGED under MERGE_RULES:\n  ${diffs.join('\n  ')}`);
+  assert.deepEqual(
+    diffs,
+    [],
+    `builtin blueprints whose resolved document CHANGED under MERGE_RULES:\n  ${diffs.join('\n  ')}`,
+  );
 });
 
 test('GOLDEN — no builtin child is clamped by a parent cap: every resolved cap equals the LEAF-MOST layer that sets it (templates carry the loosest bound, D-020)', () => {
@@ -126,10 +142,15 @@ test('GOLDEN — no builtin child is clamped by a parent cap: every resolved cap
         .reverse()
         .map((l) => getPath(readYaml(l.sourcePath!), cap))
         .find((v) => v !== undefined);
-      if (resolved !== authored) clamped.push(`${id} ${cap}: authored ${String(authored)} → resolved ${String(resolved)}`);
+      if (resolved !== authored)
+        clamped.push(`${id} ${cap}: authored ${String(authored)} → resolved ${String(resolved)}`);
     }
   }
-  assert.deepEqual(clamped, [], `a parent template tightened a child's cap — re-author the template to the loosest bound:\n  ${clamped.join('\n  ')}`);
+  assert.deepEqual(
+    clamped,
+    [],
+    `a parent template tightened a child's cap — re-author the template to the loosest bound:\n  ${clamped.join('\n  ')}`,
+  );
 });
 
 // ── 2. fixtures ─────────────────────────────────────────────────────────────
@@ -149,10 +170,22 @@ test('most-restrictive — a parent-200 / child-500 maxTurns resolves to 200 eit
       assert.equal(getPath(merged, 'knobs.parallelWorkers.max'), 3, `${id} parallelWorkers.max`);
     }
     // A child that sets a LOOSER cap than its parent does not get it.
-    const raised = resolveBlueprint({ id: 'raised', extends: 'tight', ...runnable, spine: { maxTurns: 500, edges: { DONE: { to: 'done' } } } }, { resolve });
+    const raised = resolveBlueprint(
+      { id: 'raised', extends: 'tight', ...runnable, spine: { maxTurns: 500, edges: { DONE: { to: 'done' } } } },
+      { resolve },
+    );
     assert.equal(raised.blueprint.spine.maxTurns, 200, 'child cannot loosen a parent cap');
     // A child that TIGHTENS is honoured, and a cap the parent never set is the child's alone.
-    const lowered = resolveBlueprint({ id: 'lowered', extends: 'tight', ...runnable, spine: { maxTurns: 30, edges: { DONE: { to: 'done' } } }, recursion: { maxDepth: 4 } }, { resolve });
+    const lowered = resolveBlueprint(
+      {
+        id: 'lowered',
+        extends: 'tight',
+        ...runnable,
+        spine: { maxTurns: 30, edges: { DONE: { to: 'done' } } },
+        recursion: { maxDepth: 4 },
+      },
+      { resolve },
+    );
     assert.equal(lowered.blueprint.spine.maxTurns, 30);
     assert.equal(lowered.blueprint.recursion?.maxDepth, 4);
   } finally {
@@ -170,15 +203,24 @@ test('slots — union across layers keyed by slot (the resolved document lists e
   try {
     const stack = resolveBlueprint({ id: 'stack', extends: ['engA', 'pracB'], ...runnable }, { resolve });
     assert.deepEqual(stack.blueprint.slots, [{ slot: 'domain' }, { slot: 'practice', cardinality: 'additive' }]);
-    assert.deepEqual(stack.layers.map((l) => l.id), ['engA', 'pracA', 'pracB', 'stack']);
+    assert.deepEqual(
+      stack.layers.map((l) => l.id),
+      ['engA', 'pracA', 'pracB', 'stack'],
+    );
     const diamond = resolveBlueprint({ id: 'diamond', extends: ['pracA', 'pracB'], ...runnable }, { resolve });
-    assert.deepEqual(diamond.blueprint.slots, [{ slot: 'practice', cardinality: 'additive' }], 'one slot entry, the restatement merged in');
+    assert.deepEqual(
+      diamond.blueprint.slots,
+      [{ slot: 'practice', cardinality: 'additive' }],
+      'one slot entry, the restatement merged in',
+    );
     assert.throws(
       () => resolveBlueprint({ id: 'two-domains', extends: ['engA', 'engB'], ...runnable }, { resolve }),
       /slot-exclusive-conflict: exclusive slot "domain" is claimed by 2 layers \(engA, engB\)/,
     );
     assert.deepEqual(
-      Object.entries(MERGE_RULES).filter(([, r]) => r.rule === 'hard-error').map(([p]) => p),
+      Object.entries(MERGE_RULES)
+        .filter(([, r]) => r.rule === 'hard-conflict')
+        .map(([p]) => p),
       ['slots'],
       'slots is the only hard-error leaf, and its refusal is the stack-level check above',
     );
@@ -188,8 +230,18 @@ test('slots — union across layers keyed by slot (the resolved document lists e
 });
 
 test('bundles — keyed union on [kind, ref]: a restated bundle takes the child’s fields, new bundles append (D-011)', () => {
-  const base = { bundles: [{ kind: 'recipe', ref: 'a', version: '1' }, { kind: 'rubric', ref: 'r' }] };
-  const child = { bundles: [{ kind: 'recipe', ref: 'a', version: '2' }, { kind: 'knowledge-pack', ref: 'k' }] };
+  const base = {
+    bundles: [
+      { kind: 'recipe', ref: 'a', version: '1' },
+      { kind: 'rubric', ref: 'r' },
+    ],
+  };
+  const child = {
+    bundles: [
+      { kind: 'recipe', ref: 'a', version: '2' },
+      { kind: 'knowledge-pack', ref: 'k' },
+    ],
+  };
   assert.deepEqual(mergeByRules(base, child).bundles, [
     { kind: 'recipe', ref: 'a', version: '2' },
     { kind: 'rubric', ref: 'r' },
@@ -207,22 +259,32 @@ test('declaration sets (D-020) — roles union by id with field-level override; 
   };
   const child = {
     roles: [{ id: 'worker', tools: ['b'] }, { id: 'reviewer' }],
-    reactive: [{ role: 'worker', when: { afterRole: 'lead' } }, { role: 'reviewer', when: { afterRole: 'worker' } }],
+    reactive: [
+      { role: 'worker', when: { afterRole: 'lead' } },
+      { role: 'reviewer', when: { afterRole: 'worker' } },
+    ],
     gym: { signals: ['plantedBugCaught', 'regressionsFromTests'] },
     dependencies: { tools: ['t2', 't3'] },
     grants: { requires: ['net', 'fs'] },
   };
   const m = mergeByRules(base, child);
-  assert.deepEqual(m.roles, [{ id: 'worker', model: 'm', tools: ['b'] }, { id: 'lead' }, { id: 'reviewer' }], 'worker keeps model, takes the child tools; lead survives; reviewer appends');
-  assert.deepEqual(m.reactive, [{ role: 'worker', when: { afterRole: 'lead' } }, { role: 'reviewer', when: { afterRole: 'worker' } }]);
+  assert.deepEqual(
+    m.roles,
+    [{ id: 'worker', model: 'm', tools: ['b'] }, { id: 'lead' }, { id: 'reviewer' }],
+    'worker keeps model, takes the child tools; lead survives; reviewer appends',
+  );
+  assert.deepEqual(m.reactive, [
+    { role: 'worker', when: { afterRole: 'lead' } },
+    { role: 'reviewer', when: { afterRole: 'worker' } },
+  ]);
   assert.deepEqual(m.gym, { signals: ['regressionsFromTests', 'plantedBugCaught'] });
   assert.deepEqual(m.dependencies, { tools: ['t1', 't2', 't3'], packs: ['p'] });
   assert.deepEqual(m.grants, { requires: ['fs', 'net'] });
 });
 
 test('params — a record unions by key and deep-merges a colliding key: byte-identical to mergeRaw (the record stays a record, D-020)', () => {
-  const base = { params: { 'a.b': { label: 'x', type: 'number', min: 1 }, 'c': { label: 'c' } } };
-  const child = { params: { 'a.b': { default: 5, min: 2 }, 'd': { label: 'd' } } };
+  const base = { params: { 'a.b': { label: 'x', type: 'number', min: 1 }, c: { label: 'c' } } };
+  const child = { params: { 'a.b': { default: 5, min: 2 }, d: { label: 'd' } } };
   assert.deepEqual(mergeByRules(base, child).params, mergeRaw(base, child).params);
   assert.deepEqual(mergeByRules(base, child).params, {
     'a.b': { label: 'x', type: 'number', min: 2, default: 5 },
@@ -233,21 +295,28 @@ test('params — a record unions by key and deep-merges a colliding key: byte-id
 
 test('interior nodes descend; a non-object child value replaces (retired: null revives); an ungoverned key composes by mergeRaw; an object-valued catchall knob replaces whole (the one declared divergence)', () => {
   const interior = schemaInteriorPaths();
-  for (const p of ['knobs', 'knobs.promotion', 'knobs.promotion.smokeBuild', 'spine', 'gym.rubric', 'retired']) assert.ok(interior.has(p), `${p} is an object node`);
-  for (const p of ['slots', 'knobs.maxCostUsd', 'params', 'spine.edges', 'roles']) assert.ok(!interior.has(p), `${p} is a leaf`);
+  for (const p of ['knobs', 'knobs.promotion', 'knobs.promotion.smokeBuild', 'spine', 'gym.rubric', 'retired'])
+    assert.ok(interior.has(p), `${p} is an object node`);
+  for (const p of ['slots', 'knobs.maxCostUsd', 'params', 'spine.edges', 'roles'])
+    assert.ok(!interior.has(p), `${p} is a leaf`);
   // retired: null revives — the interior node cannot be descended into null, so the child's null replaces.
   assert.deepEqual(mergeByRules({ retired: { at: '2026-01-01', reason: 'r' } }, { retired: null }), { retired: null });
   // knobs.promotion is an object node even though `knobs.*` is a catchall rule: its own leaves descend.
   assert.deepEqual(
-    mergeByRules({ knobs: { promotion: { smokeBuild: { enabled: true }, a_to_b: 'x' } } }, { knobs: { promotion: { c_to_d: 'y' } } }),
+    mergeByRules(
+      { knobs: { promotion: { smokeBuild: { enabled: true }, a_to_b: 'x' } } },
+      { knobs: { promotion: { c_to_d: 'y' } } },
+    ),
     { knobs: { promotion: { smokeBuild: { enabled: true }, a_to_b: 'x', c_to_d: 'y' } } },
   );
   // A key outside the schema entirely composes as it always did.
   assert.equal(mergeRuleFor('visibility'), null);
   assert.deepEqual(mergeByRules({ visibility: { a: 1 } }, { visibility: { b: 2 } }), { visibility: { a: 1, b: 2 } });
   // A forward-unknown knob is opaque to the schema: `knobs.*` is `replace`, so the child's object wins whole.
-  assert.equal(mergeRuleFor('knobs.someUnknownKnob')?.rule, 'replace');
-  assert.deepEqual(mergeByRules({ knobs: { someUnknownKnob: { a: 1 } } }, { knobs: { someUnknownKnob: { b: 2 } } }), { knobs: { someUnknownKnob: { b: 2 } } });
+  assert.equal(mergeRuleFor('knobs.someUnknownKnob')?.rule, 'explicit-replacement');
+  assert.deepEqual(mergeByRules({ knobs: { someUnknownKnob: { a: 1 } } }, { knobs: { someUnknownKnob: { b: 2 } } }), {
+    knobs: { someUnknownKnob: { b: 2 } },
+  });
   // Inputs are never mutated.
   const base = { roles: [{ id: 'w' }], knobs: { logRetention: 1 } };
   const snapshot = stableStringify(base);
@@ -258,18 +327,19 @@ test('interior nodes descend; a non-object child value replaces (retired: null r
 // ── 3. properties ───────────────────────────────────────────────────────────
 
 const asSet = (xs: readonly unknown[]): string[] => [...new Set(xs.map(stableStringify))].sort();
-const REPLACE: MergeRule = { rule: 'replace' };
-const UNION: MergeRule = { rule: 'union' };
-const CAP: MergeRule = { rule: 'most-restrictive' };
+const REPLACE: MergeRule = { rule: 'explicit-replacement' };
+const UNION: MergeRule = { rule: 'set-union' };
+const OVERLAY: MergeRule = { rule: 'keyed-overlay' };
+const CAP: MergeRule = { rule: 'constraint-intersection' };
 
 test('property — union by value is commutative and idempotent as a set, and [] is its identity', () => {
   fc.assert(
     fc.property(fc.array(fc.string()), fc.array(fc.string()), (a, b) => {
-      assert.deepEqual(asSet(unionArrays(a, b)), asSet(unionArrays(b, a)), 'commutative');
-      assert.deepEqual(asSet(unionArrays(a, b)), asSet([...a, ...b]), 'it IS the set union, not the last writer');
-      assert.deepEqual(unionArrays(a, a), unionArrays(a, []), 'idempotent');
-      assert.deepEqual(asSet(unionArrays(a, [])), asSet(a), 'identity');
-      assert.deepEqual(applyMergeRule(UNION, a, b), unionArrays(a, b), 'the rule dispatches to the array union');
+      assert.deepEqual(asSet(setUnionArrays(a, b)), asSet(setUnionArrays(b, a)), 'commutative');
+      assert.deepEqual(asSet(setUnionArrays(a, b)), asSet([...a, ...b]), 'it IS the set union, not the last writer');
+      assert.deepEqual(setUnionArrays(a, a), setUnionArrays(a, []), 'idempotent');
+      assert.deepEqual(asSet(setUnionArrays(a, [])), asSet(a), 'identity');
+      assert.deepEqual(applyMergeRule(UNION, a, b), setUnionArrays(a, b), 'the rule dispatches to the array union');
     }),
   );
 });
@@ -278,16 +348,23 @@ test('property — keyed union: the key set is commutative + idempotent, and the
   // fast-check 4 generates null-prototype objects by default; the merger normalizes a merged
   // element to a plain object, so idempotence is compared STRUCTURALLY (stableStringify), not
   // by prototype — which is the identity the algebra is about.
-  const bundle = fc.record({ kind: fc.constantFrom('recipe', 'rubric'), ref: fc.stringMatching(/^[a-z]{1,3}$/), version: fc.nat(9) }, { noNullPrototype: true });
+  const bundle = fc.record(
+    { kind: fc.constantFrom('recipe', 'rubric'), ref: fc.stringMatching(/^[a-z]{1,3}$/), version: fc.nat(9) },
+    { noNullPrototype: true },
+  );
   const key = ['kind', 'ref'] as const;
   const keysOf = (xs: readonly unknown[]) => asSet(xs.map((e) => [(e as RawDocument).kind, (e as RawDocument).ref]));
   fc.assert(
     fc.property(fc.array(bundle), fc.array(bundle), (a, b) => {
-      const ab = unionArrays(a, b, key) as RawDocument[];
-      assert.deepEqual(keysOf(ab), keysOf(unionArrays(b, a, key)), 'commutative key set');
+      const ab = keyedOverlayArrays(a, b, key) as RawDocument[];
+      assert.deepEqual(keysOf(ab), keysOf(keyedOverlayArrays(b, a, key)), 'commutative key set');
       assert.deepEqual(keysOf(ab), keysOf([...a, ...b]), 'every key from both sides, once');
       assert.equal(new Set(ab.map((e) => `${e.kind}/${e.ref}`)).size, ab.length, 'no duplicate keys');
-      assert.equal(stableStringify(unionArrays(a, a, key)), stableStringify(unionArrays(a, [], key)), 'idempotent');
+      assert.equal(
+        stableStringify(keyedOverlayArrays(a, a, key)),
+        stableStringify(keyedOverlayArrays(a, [], key)),
+        'idempotent',
+      );
       // The LAST child element for a key wins (a duplicate key inside `b` collapses to its later entry).
       const lastByKey = new Map<string, RawDocument>();
       for (const e of b) lastByKey.set(`${e.kind}/${e.ref}`, e);
@@ -302,12 +379,18 @@ test('property — keyed union: the key set is commutative + idempotent, and the
 test('property — most-restrictive is commutative, idempotent, and equals min; through the full document merger too', () => {
   fc.assert(
     fc.property(fc.integer({ min: 1, max: 100_000 }), fc.integer({ min: 1, max: 100_000 }), (a, b) => {
-      assert.equal(mostRestrictive(a, b), Math.min(a, b));
-      assert.equal(mostRestrictive(a, b), mostRestrictive(b, a), 'commutative');
-      assert.equal(mostRestrictive(a, a), a, 'idempotent');
+      assert.equal(intersectConstraint(a, b), Math.min(a, b));
+      assert.equal(intersectConstraint(a, b), intersectConstraint(b, a), 'commutative');
+      assert.equal(intersectConstraint(a, a), a, 'idempotent');
       assert.equal(applyMergeRule(CAP, a, b), Math.min(a, b));
-      const ab = mergeByRules({ spine: { maxTurns: a }, dispatch: { safetyCeiling: a } }, { spine: { maxTurns: b }, dispatch: { safetyCeiling: b } });
-      const ba = mergeByRules({ spine: { maxTurns: b }, dispatch: { safetyCeiling: b } }, { spine: { maxTurns: a }, dispatch: { safetyCeiling: a } });
+      const ab = mergeByRules(
+        { spine: { maxTurns: a }, dispatch: { safetyCeiling: a } },
+        { spine: { maxTurns: b }, dispatch: { safetyCeiling: b } },
+      );
+      const ba = mergeByRules(
+        { spine: { maxTurns: b }, dispatch: { safetyCeiling: b } },
+        { spine: { maxTurns: a }, dispatch: { safetyCeiling: a } },
+      );
       assert.deepEqual(ab, ba);
       assert.deepEqual(ab, { spine: { maxTurns: Math.min(a, b) }, dispatch: { safetyCeiling: Math.min(a, b) } });
     }),
@@ -320,14 +403,24 @@ test('property — replace is order-dependent by design: the later layer wins, a
       fc.pre(a !== b);
       assert.equal(applyMergeRule(REPLACE, a, b), b);
       assert.equal(applyMergeRule(REPLACE, b, a), a);
-      assert.equal(mergeByRules({ knobs: { logRetention: a } }, { knobs: { logRetention: b } }).knobs && getPath(mergeByRules({ knobs: { logRetention: a } }, { knobs: { logRetention: b } }), 'knobs.logRetention'), b);
-      assert.equal(getPath(mergeByRules({ knobs: { logRetention: b } }, { knobs: { logRetention: a } }), 'knobs.logRetention'), a);
+      assert.equal(
+        mergeByRules({ knobs: { logRetention: a } }, { knobs: { logRetention: b } }).knobs &&
+          getPath(mergeByRules({ knobs: { logRetention: a } }, { knobs: { logRetention: b } }), 'knobs.logRetention'),
+        b,
+      );
+      assert.equal(
+        getPath(mergeByRules({ knobs: { logRetention: b } }, { knobs: { logRetention: a } }), 'knobs.logRetention'),
+        a,
+      );
     }),
   );
 });
 
 test('property — {} is the identity of mergeByRules on both sides, and an absent child key inherits under every rule', () => {
-  const doc = fc.dictionary(fc.stringMatching(/^[a-z][a-zA-Z0-9]{0,6}$/), fc.jsonValue(), { maxKeys: 6, noNullPrototype: true });
+  const doc = fc.dictionary(fc.stringMatching(/^[a-z][a-zA-Z0-9]{0,6}$/), fc.jsonValue(), {
+    maxKeys: 6,
+    noNullPrototype: true,
+  });
   fc.assert(
     fc.property(doc, (d) => {
       // Structural identity (see the keyed-union property for why not prototype identity).
@@ -335,8 +428,12 @@ test('property — {} is the identity of mergeByRules on both sides, and an abse
       assert.equal(stableStringify(mergeByRules({}, d)), stableStringify(d));
     }),
   );
-  for (const rule of [REPLACE, UNION, CAP, { rule: 'hard-error', key: 'slot' } as MergeRule]) {
-    assert.equal(applyMergeRule(rule, 7, undefined), undefined, `${rule.rule}: an explicitly-undefined child is carried as mergeRaw carries it`);
+  for (const rule of [REPLACE, UNION, OVERLAY, CAP, { rule: 'hard-conflict', key: 'slot' } as MergeRule]) {
+    assert.equal(
+      applyMergeRule(rule, 7, undefined),
+      undefined,
+      `${rule.rule}: an explicitly-undefined child is carried as mergeRaw carries it`,
+    );
     assert.equal(applyMergeRule(rule, undefined, 7), 7, `${rule.rule}: an absent base takes the child`);
   }
 });
