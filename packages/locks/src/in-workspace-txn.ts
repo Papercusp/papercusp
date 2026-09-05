@@ -52,10 +52,11 @@ function isTestEnv(): boolean {
 export interface WorkspaceTxnOptions {
   /**
    * Canonical file-lock paths touched by this transaction. When present,
-   * acquire the shared workspace gate and one exclusive advisory lock per
-   * canonical path prefix, in sorted order. A request for `a/b/c.ts` therefore
-   * serializes with requests for `a` and `a/b`, while `a-old` remains
-   * independent. An omitted/empty set keeps the historical exclusive
+   * acquire the shared workspace gate, shared advisory locks for each strict
+   * ancestor, and one exclusive advisory lock per requested path, all in
+   * sorted order. A request for `a/b/c.ts` therefore serializes with requests
+   * for `a` and `a/b`, while sibling paths such as `a/b.ts` and `a/c.ts`
+   * remain independent. An omitted/empty set keeps the historical exclusive
    * workspace scope for resource, granular, and housekeeping work.
    */
   paths?: readonly string[];
@@ -75,15 +76,30 @@ function timeoutWithFloor(configuredMs: number, floorMs: number | undefined): nu
   return Math.max(configuredMs, Math.trunc(floorMs));
 }
 
-function pathPrefixes(path: string): string[] {
+function pathAncestors(path: string): string[] {
   if (path.length === 0) return [];
   const parts = path.split('/');
-  return parts.map((_, index) => parts.slice(0, index + 1).join('/'));
+  return parts
+    .slice(0, -1)
+    .map((_, index) => parts.slice(0, index + 1).join('/'));
 }
 
+/**
+ * Keep only the shallowest requested path when a transaction includes both a
+ * directory/subtree and one of its descendants. The shallow path's exclusive
+ * advisory lock already covers the descendant, and dropping the descendant
+ * avoids trying to upgrade a shared ancestor lock to exclusive on the same
+ * transaction.
+ */
 function uniqueSortedPaths(paths: readonly string[] | undefined): string[] {
   if (!paths || paths.length === 0) return [];
-  return Array.from(new Set(paths.flatMap(pathPrefixes))).sort();
+  const requested = Array.from(new Set(paths.filter((path) => path.length > 0))).sort();
+  return requested.filter(
+    (path) =>
+      !requested.some(
+        (ancestor) => ancestor !== path && path.startsWith(`${ancestor}/`),
+      ),
+  );
 }
 
 async function acquireAdvisoryScope(
@@ -110,9 +126,20 @@ async function acquireAdvisoryScope(
     hashtext(${'su:' + coordinationDomain})
   )`;
 
-  // Lock every requested path prefix in a stable order. This preserves atomic
-  // multi-path claims and makes parent/descendant requests serialize without
-  // making unrelated paths wait on one another.
+  // Shared locks on strict ancestors make a subtree/exact-path exclusive lock
+  // conflict with descendants, while siblings can share the same directory
+  // ancestor. Lock all shared ancestors before any exclusive leaves, then all
+  // leaves in a stable order, so overlapping multi-path requests cannot form a
+  // lock-order cycle.
+  const ancestors = Array.from(
+    new Set(scopedPaths.flatMap(pathAncestors)),
+  ).sort();
+  for (const path of ancestors) {
+    await tx`SELECT pg_advisory_xact_lock_shared(
+      ${SU_LOCKS_FEATURE_KEY}::int,
+      hashtext(${'su:' + coordinationDomain + ':' + path})
+    )`;
+  }
   for (const path of scopedPaths) {
     await tx`SELECT pg_advisory_xact_lock(
       ${SU_LOCKS_FEATURE_KEY}::int,
