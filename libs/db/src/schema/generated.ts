@@ -3107,6 +3107,36 @@ export const flushGateRefusalsInHarnessShared = harnessShared.table("flush_gate_
 	primaryKey({ columns: [table.boundary, table.ownerId], name: "flush_gate_refusals_pkey"}),
 ]);
 
+export const frozenRepairEditLedgerInHarnessShared = harnessShared.table("frozen_repair_edit_ledger", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	installSlug: text("install_slug").notNull(),
+	candidate: text().notNull(),
+	agent: text().notNull(),
+	path: text().notNull(),
+	hunk: jsonb().notNull(),
+	hunkKind: text("hunk_kind").notNull(),
+	hunkSha256: text("hunk_sha256").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	atMs: bigint("at_ms", { mode: "number" }).notNull(),
+	toolUseId: text("tool_use_id").notNull(),
+	editIndex: integer("edit_index").default(0).notNull(),
+	workItem: text("work_item"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("frozen_repair_edit_ledger_agent_idx").using("btree", table.candidate.asc().nullsLast().op("text_ops"), table.agent.asc().nullsLast().op("text_ops"), table.atMs.asc().nullsLast().op("int8_ops")),
+	index("frozen_repair_edit_ledger_lineage_path_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.installSlug.asc().nullsLast().op("text_ops"), table.candidate.asc().nullsLast().op("text_ops"), table.path.asc().nullsLast().op("text_ops"), table.atMs.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	unique("frozen_repair_edit_ledger_idempotent").on(table.agent, table.candidate, table.editIndex, table.installSlug, table.path, table.toolUseId, table.workspaceId),
+	check("frozen_repair_edit_ledger_agent_check", sql`(length(btrim(agent)) >= 1) AND (length(btrim(agent)) <= 200)`),
+	check("frozen_repair_edit_ledger_at_ms_check", sql`at_ms > 0`),
+	check("frozen_repair_edit_ledger_candidate_check", sql`candidate ~ '^[0-9a-f]{40,64}$'::text`),
+	check("frozen_repair_edit_ledger_edit_index_check", sql`edit_index >= 0`),
+	check("frozen_repair_edit_ledger_hunk_kind_check", sql`hunk_kind = ANY (ARRAY['edit'::text, 'write'::text, 'oversize'::text])`),
+	check("frozen_repair_edit_ledger_hunk_sha256_check", sql`hunk_sha256 ~ '^[0-9a-f]{64}$'::text`),
+	check("frozen_repair_edit_ledger_path_check", sql`(length(path) >= 1) AND (length(path) <= 1024)`),
+	check("frozen_repair_edit_ledger_tool_use_id_check", sql`(length(tool_use_id) >= 1) AND (length(tool_use_id) <= 200)`),
+]);
+
 export const gateDecisionsInHarnessShared = harnessShared.table("gate_decisions", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.gate_decisions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
