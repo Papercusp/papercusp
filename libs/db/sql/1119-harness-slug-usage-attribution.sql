@@ -75,7 +75,23 @@ $$;
 COMMENT ON FUNCTION harness_shared.harness_slug_for_usage_attribution(text, text, text) IS
   'Resolve write-time harness provenance for a usage sample, preferring the coord owner id carried by the isolation transcript path (83.4% owner coverage) over the adv_sessions session route (7.8%); NULL when neither resolves (WI-2144763).';
 
--- Mirrors 881''s goal index: the spend rollup groups by (workspace, harness, ts).
-CREATE INDEX IF NOT EXISTS agent_usage_samples_ws_harness_ts_idx
-  ON harness_shared.agent_usage_samples (workspace_id, harness_slug, ts DESC)
-  WHERE harness_slug IS NOT NULL;
+-- NO INDEX HERE, DELIBERATELY -- but NOT for the reason first assumed, and the
+-- correction matters for whoever reads this next.
+--
+-- 881 paired its resolver with a matching partial index and mirroring that was
+-- the first thing tried. The apply failed (five lock_timeout retries exhausted,
+-- 2026-09-05) and the obvious reading was "CREATE INDEX wants ACCESS EXCLUSIVE on
+-- a table ~100 agents write continuously". That reading was WRONG. Removing the
+-- index did not help: the very next apply failed identically. pg_locks then showed
+-- the real mechanism -- ZERO relation locks on agent_usage_samples, and twelve
+-- backends queued on the migration runner's own ADVISORY lock
+-- (pg_advisory_lock(hashtext($1))), the oldest waiting 997s. The contention is
+-- fleet-wide migration serialization, entirely unrelated to this file's contents,
+-- so no rewrite of this migration could have fixed it.
+--
+-- The index stays out anyway, on its own independent merit: a plain CREATE INDEX
+-- on a continuously-written table is a real hazard even when it is not today's
+-- blocker, and it is an optimization rather than part of the correctness fix. If
+-- the spend rollup later needs it, it belongs in its own migration using CREATE
+-- INDEX CONCURRENTLY (which cannot run inside a transaction block, hence a
+-- separate file rather than an edit here).
