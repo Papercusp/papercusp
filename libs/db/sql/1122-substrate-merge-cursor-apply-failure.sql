@@ -15,7 +15,7 @@ BEGIN
         AND (apply_failure->>'position')::bigint >= position
         AND (apply_failure->>'attempts')::bigint > 0
         AND apply_failure->>'kind' IN ('rejected', 'dependency-waiting', 'retryable')
-      )
+      ) IS TRUE
     );
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
