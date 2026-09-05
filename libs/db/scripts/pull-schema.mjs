@@ -48,7 +48,7 @@
  *           unsupported clause and repair only the unmatched suffix.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs';
 import { repairEmptyArrayDefaults } from '../src/schema/schema-defaults.mjs';
 import {
@@ -761,6 +761,71 @@ console.log(
   `    repaired ${compositeForeignKeyFix.schemaChanged} composite FK schema declaration(s) and ` +
     `${compositeForeignKeyFix.relationsChanged} relation declaration(s) from PG`,
 );
+
+// EI-20012634773877104 — CLOSE THE CROSS-REPO ATOMICITY WINDOW BEFORE PROMOTING.
+//
+// generated.ts (this submodule) and the ALLOWLIST that classifies its
+// identity-keyed columns (the SUPERPROJECT's
+// identity-keyed-state-inventory.test.ts) can never land in one commit:
+// git-sync commits the submodule and the superproject as separate commits and
+// sweeps the whole tree on a schedule. So the moment we promote a schema
+// carrying a NEW identity-keyed column, the tree is internally INCONSISTENT
+// until someone adds the classification minutes later — and any gate candidate
+// cut inside that window reds for the whole fleet (measured 2026-08-09: main
+// held ~1h for work that was already correct 4m21s later; the class recurred
+// for 10 more columns through 2026-08-31).
+//
+// Promotion is the ONLY way that inconsistent state reaches disk, so it is the
+// one place the window can actually be closed. Refuse to promote, leave
+// generated.ts untouched, and tell the author NOW — while the fix is one
+// ALLOWLIST entry in their own working tree — rather than letting the fleet
+// discover it as a gate red a quarter of an hour later.
+//
+// This does not weaken the census test's contract: it is that same assertion,
+// run earlier, against the candidate schema.
+const REPO_ROOT_FOR_GUARD = resolve(DB_ROOT, '../../../..');
+const identityKeyedGuard = join(
+  REPO_ROOT_FOR_GUARD,
+  'scripts/check-identity-keyed-classification.mjs',
+);
+if (process.env.PAPERCUSP_SKIP_IDENTITY_KEYED_GATE === '1') {
+  console.warn(
+    '    ⚠ identity-keyed classification gate SKIPPED (PAPERCUSP_SKIP_IDENTITY_KEYED_GATE=1)',
+  );
+} else if (!existsSync(identityKeyedGuard)) {
+  // Standalone submodule checkout: no superproject, so no ALLOWLIST to be
+  // inconsistent with. Nothing to enforce.
+  console.log('    identity-keyed classification gate: skipped (no superproject checkout)');
+} else {
+  const { checkIdentityKeyedClassification } = await import(
+    pathToFileURL(identityKeyedGuard).href
+  );
+  const verdict = checkIdentityKeyedClassification({
+    schemaPath,
+    repoRoot: REPO_ROOT_FOR_GUARD,
+  });
+  if (verdict.code === 'unclassified') {
+    // Remove drizzle-kit's ignored source names exactly as promotion would, so
+    // aborting here cannot leave schema.ts behind for tsc to compile as a
+    // stale second mirror.
+    rmSync(schemaPath, { force: true });
+    rmSync(relationsPath, { force: true });
+    console.error(`\n${verdict.output.trim()}`);
+    console.error(`\n==> REFUSING TO PROMOTE: ${verdict.message}`);
+    console.error('    generated.ts is UNCHANGED — nothing inconsistent can be committed.');
+    process.exit(1);
+  }
+  if (!verdict.ok) {
+    // The check could not run, so we learned nothing. Do not claim a pass, but
+    // do not wedge the fleet's migration flow either — the census test remains
+    // the downstream backstop.
+    console.warn(
+      `    ⚠ identity-keyed classification gate UNVERIFIED (${verdict.code}): ${verdict.message}`,
+    );
+  } else {
+    console.log('    identity-keyed classification gate: all columns classified');
+  }
+}
 
 // Fix 9 / promote: copy first, then remove the ignored drizzle-kit source
 // names. Leaving schema.ts behind makes tsc compile a stale second mirror.
