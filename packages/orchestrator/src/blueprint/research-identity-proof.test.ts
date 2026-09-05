@@ -8,8 +8,11 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import { harnessPath } from '@papercusp/harness/paths';
-import { loadBuiltinBlueprint } from './loader.js';
+import { builtinBlueprintPath, loadBuiltinBlueprint, resolveBuiltinExtends, resolveLayers } from './loader.js';
 import { deriveNext, type ParsedDecisionLike } from './derive-next.js';
 import {
   compileAgentSpecification,
@@ -93,11 +96,18 @@ test('P-042 compiles addressed research guidance through the immutable artifact 
 
 test('P-042 activation proof preserves actor/session idempotency and explicit carry boundaries', () => {
   const loaded = loadBuiltinBlueprint('research');
+  const identityPath = builtinBlueprintPath('research-steward');
+  const identityRaw = parseYaml(readFileSync(identityPath, 'utf8')) as Record<string, unknown>;
+  const identityResolved = resolveLayers(identityRaw, resolveBuiltinExtends, identityPath).merged as Record<string, unknown>;
+  assert.equal(identityResolved.id, 'research-steward');
+  assert.deepEqual(identityResolved.slots, [{ slot: 'domain' }]);
+  const identityText = readFileSync(join(dirname(identityPath), 'prompts/domain.md'), 'utf8');
+  assert.ok(!/\b(?:git|worker|deploy|merge)\b/i.test(identityText), 'the authored identity stays non-engineering');
   const identity: StackDocument = {
     id: 'research-steward',
     layer: 'domain',
     slot: 'domain',
-    text: '## Research stewardship\n\nAnswer the scoped question, cite sources, and state uncertainty.',
+    text: identityText,
   };
   const kernel: StackDocument = {
     id: 'research-kernel',
