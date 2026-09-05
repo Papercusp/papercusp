@@ -1765,7 +1765,24 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // mean anything. Note this slot is EXPLICITLY temporary in a way the others are not:
   // if the 2026-09-16 read returns `retire`, coord:dispatch leaves the spine and this
   // ratchet goes back to 46 — so do not treat 47 as the new floor.
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 47, 'core stays small');
+  // Then +1 → 48: mode:set (WI-37550), the last survivor of the P-003 trio and the
+  // deliberate wire-byte budget decision that refusal asked for. Re-measured 14d demand
+  // 656 tools:invoke fallback-reaches / 443 distinct callers @ 3,028 B = 216.6 reach/KB —
+  // the HIGHEST admission-time reach/KB in this whole changelog (cf. plans:add-decision
+  // 149.9, work_items:claimable 62.9) — and the su playbook MANDATES the call on every
+  // AUTO/DRAIN/IDEATE flip, since a mode honoured from directive text alone is invisible
+  // session state a compaction silently drops. Claude already had it via
+  // CLAUDE_SEED_EXTRA_TOOL_NAMES, so this is a relocation there (Claude seed byte-identical)
+  // and an addition only for OMP/codex.
+  // ⚠ AND THE FINDING THAT OUTRANKS THE COUNT: measured 2026-09-05 by a real tools/list
+  // call, the 47-entry spine was ALREADY 345,140 B (337 KB) and the Claude seed 395,879 B
+  // (387 KB) against D-001's 256 KB wire ceiling — 32% and 51% over, crossed silently
+  // because this count is the only guard that runs in CI. Since D-001 measured 190,885 B
+  // on 2026-08-09 the seed has more than DOUBLED in bytes while this number moved 43->47.
+  // Do not read a passing ratchet as a seed within budget: it cannot see bytes, and the
+  // bytes live in schemas (coord:send 39,067 B; work_items:complete 35,093;
+  // work_items:checkpoint 31,000), not in the length of this list.
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 48, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)

@@ -67,10 +67,25 @@ describe('core spine — every seeded write verb has its correction verb seeded 
     // load the trim exists to avoid. If this trips, justify the growth or use tools:find.
     //
     // 46 -> 47 on 2026-09-02: coord:dispatch (WI-2142095 / P-011). Justification and the
-    // full ratchet history live on the twin assertion in invoke.test.ts — keep the two
-    // numbers in step. Its correction half is already seeded (work_items:release), so this
-    // addition does not create the EI-10946 asymmetry the rest of this file guards.
-    expect(CORE_MCP_TOOL_NAMES.length).toBeLessThanOrEqual(47);
+    // full ratchet history live on the twin assertion in invoke.test.ts. Its correction
+    // half is already seeded (work_items:release), so that addition does not create the
+    // EI-10946 asymmetry the rest of this file guards.
+    // 47 -> 48 on 2026-09-05: mode:set (WI-37550) — its correction half is the same verb
+    // (mode:set { enabled:false } clears a mode), so no asymmetry here either.
+    //
+    // ⚠ THIS CEILING IS CURRENTLY A RUBBER STAMP, and that is a known defect, not the
+    // design. D-006 of psu-seed-prompt-mandate-alignment-2026-08-09 states the intent: the
+    // invoke.test.ts number is a RATCHET that forces review of each addition, and THIS one
+    // is a separate BLOAT CEILING that "bounds how far the ratchet may ever be walked".
+    // A ceiling equal to the ratchet bounds nothing — every addition moves both, so this
+    // assertion can no longer refuse anything the ratchet already allowed. It held 45 when
+    // the ratchet held 43; the gap has since been closed by walking them in step. The fix
+    // is NOT to walk this number further ahead as a fresh rubber stamp: D-001 shows the
+    // COUNT is the wrong instrument entirely (measured 2026-09-05, a 47-entry spine is
+    // 345,140 B against D-001's 256 KB wire ceiling), so re-separating the two layers
+    // means re-expressing THIS one in wire bytes. Tracked on WI-37550, deliberately not
+    // done as a side-effect of an admission.
+    expect(CORE_MCP_TOOL_NAMES.length).toBeLessThanOrEqual(48);
   });
 
   it('has no duplicate entries (a hand-maintained list that has been edited many times)', () => {

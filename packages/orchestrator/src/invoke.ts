@@ -1241,20 +1241,48 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // / 55 distinct callers / 14d at 2,198 B = 62.9 reach/KB — above coord:presence's own
   // admit bar (36.0).
   'work_items:claimable',
-  // STILL NOT HERE, on purpose: mode:set (124 reaches/56 callers, 1,732 B) — the last
-  // survivor of the P-003 trio — stays in CLAUDE_SEED_EXTRA_TOOL_NAMES. Admitting it
-  // means raising this cap again — how the DARK_FLAGS watermark got walked
-  // 22->24->25->26 for one bug class, and what P-003 already correctly refused. It stays
-  // reachable via tools:find/invoke; admission is a separate deliberate budget decision,
-  // and D-001 argues it should be priced in WIRE BYTES rather than by count (coord:send
-  // 30,512 B vs locks:list 383 B is an 80x spread that a count prices identically).
-  // NOTE for whoever adds the next verb: the two guards on this array are NOT rival caps.
-  // invoke.test.ts (<=45) is a RATCHET pinned to the current size, carrying the per-
-  // increment changelog above (25->32->33->38->41->42->43->44->45) so no addition is unreviewed;
-  // core-spine-inverses.test.ts (<=45) is a separate BLOAT ceiling ("a seed, not a
+  // ADMITTED 2026-09-05 (WI-37550), raising the deliberate ratchet 47->48. This is the
+  // last survivor of the P-003 trio, and the DELIBERATE budget decision the P-003 refusal
+  // asked for — not another quiet append. P-003 refused to admit it as a SIDE-EFFECT of
+  // another change; that refusal was about the side-effect, not the verb.
+  // DEMAND, re-measured 2026-09-05 over 14d (it grew 5.3x in reaches and 7.9x in distinct
+  // callers since the 124/56 reading this comment used to carry): 656 tools:invoke
+  // fallback-reaches / 443 distinct callers, against 1,991 direct calls / 950 callers on
+  // the clients that already have it seeded.
+  // PRICED IN WIRE BYTES per D-001, by a real tools/list call, never a source scan:
+  // 3,028 B => 216.6 reach/KB. That is the highest admission-time reach/KB in this whole
+  // changelog (plans:add-decision 149.9, work_items:claimable 62.9, coord:presence 36.0),
+  // and it is well under D-001's ">8 KB needs stated justification" bar.
+  // It also discharges a MANDATORY obligation, the same shape that carried
+  // plans:add-decision in: the su playbook requires mode:set on every AUTO/DRAIN/IDEATE
+  // flip, because a mode honoured from directive text alone is invisible session state
+  // that a compaction silently drops — so the one call an agent must make to comply cost
+  // a discovery round-trip on every non-Claude client.
+  // COST IS OMP/CODEX-ONLY: mode:set was already in CLAUDE_SEED_EXTRA_TOOL_NAMES, so for
+  // Claude this is a RELOCATION (extras -> spine) and the Claude seed is byte-identical
+  // at 64 tools. It is removed from that extras list in the same change, or the
+  // "every Claude-only extra stays OUT of the weak-model OMP spine" guard fails.
+  'mode:set',
+  // ⚠ READ BEFORE THE NEXT ADDITION — the count is now a MEASURED-WRONG instrument, not
+  // merely a suspected-wrong one. D-001 set a 256 KB wire ceiling and said crossing it
+  // "requires an explicit owner decision". Measured 2026-09-05 by real tools/list:
+  // this 47-entry spine was already 345,140 B (337 KB) and the Claude seed 395,879 B
+  // (387 KB) — 32% and 51% OVER that ceiling, crossed silently, because the only guard
+  // that runs in CI is this count. Since D-001 measured 190,885 B on 2026-08-09 the seed
+  // has more than DOUBLED in bytes while this ratchet moved 43->47 (+9%). The bytes are
+  // in schemas, not in this list: coord:send alone is 39,067 B — 13x the verb admitted
+  // above — and work_items:complete 35,093 B and work_items:checkpoint 31,000 B each
+  // inline their full nested payload schema TWICE (single shorthand + items[] batch).
+  // The lever is therefore schema slimming on the whales, NOT refusing 3 KB verbs here.
+  // NOTE the two guards on this array are NOT rival caps. invoke.test.ts (<=48) is a
+  // RATCHET pinned to the current size, carrying the per-increment changelog above
+  // (25->32->33->38->41->42->43->44->45->46->47->48) so no addition is unreviewed;
+  // core-spine-inverses.test.ts (<=48) is a separate BLOAT ceiling ("a seed, not a
   // catalog"). Ratchet + ceiling is one design, not a discrepancy — do not "reconcile"
   // them into a single constant, which would destroy either the review forcing-function
-  // or the backstop.
+  // or the backstop. They currently hold the SAME number, which makes the ceiling a
+  // rubber stamp rather than a second line; re-separating them is real work, tracked
+  // rather than done here (see WI-37550's completion).
   // Discovery — load anything else by intent (tools:find — WS3), or call it
   // directly without loading (tools:invoke — the universal reachability hatch,
   // dynamic-tool-surface-2026-07-01 D-003).
