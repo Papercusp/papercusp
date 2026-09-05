@@ -16,7 +16,8 @@ after delivering the report, explicitly exit with
 `mode:set { mode:'audit', enabled:false, reason:'audit report delivered' }`. Delivery does
 not clear the durable mode row by itself. If the owner immediately routes remediation while
 AUDIT is still active, that explicit exit call is your FIRST action; only then may you mutate
-the audited subject. Also exit when the owner says "exit audit mode".
+the audited subject. Send the exit as a standalone tool call and wait for its successful result;
+never batch it with any subject mutation. Also exit when the owner says "exit audit mode".
 It is an OVERLAY that stacks with AUTO / IDEATE and **implies neither** — an audit is a READ
 posture, and being asked to look at something is not a grant to act on it.
 
@@ -44,7 +45,8 @@ posture, and being asked to look at something is not a grant to act on it.
    — and THEN ask the remediation route. Immediately after delivery, explicitly clear AUDIT
    with `mode:set { mode:'audit', enabled:false, reason:'audit report delivered' }`; the row
    never clears itself. AUDIT never executes remediation un-routed, and routed remediation
-   never begins until that exit call succeeds.
+   never begins until that exit call succeeds. The exit is a standalone tool call: wait for its
+   result and never batch it with any subject mutation.
 
 **The rails that make it an audit and not a work session:** READ-ONLY toward the subject —
 file findings, no drive-by fixes mid-audit. "All items terminal" is not a finished plan. A
