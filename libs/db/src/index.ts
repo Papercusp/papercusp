@@ -77,6 +77,18 @@ export {
   type AcquireSnapshot,
   type AcquireTicket,
 } from './acquire-registry';
+// Build-stamp SEAM — the host registers which build is emitting these diagnostics
+// (EI-19484133375867605). Re-exported here for the same reason the acquire registry
+// is: the registration has to be reachable from operator-core, which is the only
+// layer that owns the build identity, and a seam only reachable inside this package
+// gets zero adoption. Unregistered is the default and renders tags unchanged.
+export {
+  setBuildStampResolver,
+  resetBuildStampResolver,
+  readBuildStamp,
+  stampedTag,
+  type BuildStampResolver,
+} from './build-stamp';
 // Store IDENTITY — the generation-3 connection guard (plan
 // outage-must-not-be-silent-2026-08-02, D-001). Re-exported HERE deliberately, learning
 // from EI-19306394439939264 above: a guard only reachable inside connection.ts gets zero

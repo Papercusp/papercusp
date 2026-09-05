@@ -47,6 +47,7 @@ import {
   describeAcquirePressure,
   recordPoolMax,
 } from './acquire-registry';
+import { stampedTag } from './build-stamp';
 
 // This package is `"type": "module"`, so ESM has no ambient `require`.
 // `createRequire` gives us a synchronous loader for the lazy node-builtin
@@ -1633,7 +1634,8 @@ export class DbCallDeadlineError extends Error {
         `check this process's own pcusp:${pool ?? '<pool>'}:p<pid> rows and ` +
         `PAPERCUSP_DB_POOL_MAX before the endpoint (WI-7097).`;
     super(
-      `[db-call-deadline] "${label}" did not resolve within ${deadlineMs}ms ` +
+      // Stamped with the emitting BUILD — see build-stamp.ts (EI-19484133375867605).
+      `${stampedTag('db-call-deadline')} "${label}" did not resolve within ${deadlineMs}ms ` +
         `(waited ${elapsedMs}ms). ` +
         (measured
           ? `${measured.text} `

@@ -74,6 +74,7 @@
 // which wraps this module on both withWorkspace paths, so registering again here
 // would double-count every waiter.
 import { ACQUIRE_QUEUE_LOCATION_RESIDUAL, describeAcquirePressure } from './acquire-registry';
+import { stampedTag } from './build-stamp';
 
 /** Connect-phase ceiling (ms) — the wait before `markStarted()` proves a connection
  *  was obtained. Chosen to sit comfortably under the ~300s blanket "no response or
@@ -180,7 +181,11 @@ export class ConnectPhaseDeadlineError extends Error {
         `(3) only if both look healthy is (a) worth chasing. Note a per-statement timeout does ` +
         `not protect this path: it bounds how long each slot is HELD, not the wait to acquire one.`;
     super(
-      `[connect-phase-deadline] could not obtain a database connection within ${deadlineMs}ms. ` +
+      // Stamped with the emitting BUILD (EI-19484133375867605): this message was
+      // corrected once and then re-filed as a live defect four times by agents whose
+      // long-lived host still served the pre-fix bytes. The stamp travels with the
+      // pasted string, so a reader can tell "still broken" from "old process".
+      `${stampedTag('connect-phase-deadline')} could not obtain a database connection within ${deadlineMs}ms. ` +
         (measured ? `${measured.text} ` : '') +
         callerSafety +
         causes,
