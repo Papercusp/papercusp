@@ -72,11 +72,25 @@ export interface PotSpend {
 export const GOAL_SPEND_SNAPSHOT_SOURCE = 'goal-pots-rollup' as const;
 
 /** Provenance marker for the PLATFORM spend-rollup tick's snapshot
- *  (goal-mode-design-intent-hardening-2026-08-16 P-005 / D-003). Distinct from
- *  GOAL_SPEND_SNAPSHOT_SOURCE because the tick's value is a SUPERSET of the pots
- *  rollup (it adds the goal subject/descendant SESSION leg), so writing it under
- *  the pots marker would break goals:update's exact-match verification. Writer:
- *  operator-core lib/goals/spend-rollup.ts; readers accept either marker. */
+ *  (goal-mode-design-intent-hardening-2026-08-16 P-005 / D-003).
+ *
+ *  ⚠ CURRENTLY WRITTEN BY NOTHING. Readers still accept it (sync-resolver/goals.ts),
+ *  but no code path persists it: measured 2026-09-05, the only writers of
+ *  `spentCentsSource` are operator-core lib/goals/spend-rollup.ts and goals:update,
+ *  and BOTH write GOAL_SPEND_SNAPSHOT_SOURCE.
+ *
+ *  ⚠ AND ITS ORIGINAL RATIONALE NO LONGER HOLDS — do not restore it. This comment
+ *  used to say the tick's value is "a SUPERSET of the pots rollup (it adds the goal
+ *  subject/descendant SESSION leg)". It is not: `writeGoalSpendSnapshot` persists
+ *  `spentCents: rollup.potCents` — the POT leg alone — and keeps the session leg in
+ *  the separately-labelled diagnostic breakdown, which is exactly why writing it
+ *  under the pots marker does NOT break goals:update's exact-match verification.
+ *
+ *  That stale sentence mattered: `goals.metadata.spentCents` is the number the
+ *  budget ceiling refuses launches on, and a reader who came here to learn what it
+ *  measures was told it included spend it does not include — the misreading
+ *  spend-attribution…-2026-09-04 exists to eliminate, sitting in the field's own
+ *  documentation. Corrected under that plan's P-004. */
 export const GOAL_SPEND_TICK_SOURCE = 'goal-spend-tick' as const;
 
 export interface GoalSpend {
