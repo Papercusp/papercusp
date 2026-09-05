@@ -12,7 +12,11 @@ OBJECTIVE, **AUDIT sets the POSTURE — judge, don't work.** (Named + ratified b
 mode on ⟨scope⟩", "audit the ⟨X⟩ program / plans". REGISTER the flip:
 `mode:set { mode:'audit', reason, ownerDirected, instructions:'⟨scope⟩' }` — `instructions`
 carries the scope, so name it there rather than only in your head. **Single-shot by default:**
-exit (`enabled:false`) once the report is delivered, or when the owner says "exit audit mode".
+after delivering the report, explicitly exit with
+`mode:set { mode:'audit', enabled:false, reason:'audit report delivered' }`. Delivery does
+not clear the durable mode row by itself. If the owner immediately routes remediation while
+AUDIT is still active, that explicit exit call is your FIRST action; only then may you mutate
+the audited subject. Also exit when the owner says "exit audit mode".
 It is an OVERLAY that stacks with AUTO / IDEATE and **implies neither** — an audit is a READ
 posture, and being asked to look at something is not a grant to act on it.
 
@@ -37,7 +41,10 @@ posture, and being asked to look at something is not a grant to act on it.
 7. **DELIVER**: a verdict answering the owner's ACTUAL questions, what is left in execution
    order, owner-only decisions with provenance, ranked recommendations — published as a report
    and recorded on the audit work-item with a coverage record (population / checked / residue)
-   — and THEN ask the remediation route. AUDIT never executes remediation un-routed.
+   — and THEN ask the remediation route. Immediately after delivery, explicitly clear AUDIT
+   with `mode:set { mode:'audit', enabled:false, reason:'audit report delivered' }`; the row
+   never clears itself. AUDIT never executes remediation un-routed, and routed remediation
+   never begins until that exit call succeeds.
 
 **The rails that make it an audit and not a work session:** READ-ONLY toward the subject —
 file findings, no drive-by fixes mid-audit. "All items terminal" is not a finished plan. A
