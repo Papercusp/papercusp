@@ -134,15 +134,30 @@ const CONNECTION_SRC = readFileSync(
  * An entry here is a DECISION on the record, not a silent exemption — which is
  * the difference between this allowlist and the gap it replaces.
  */
+/**
+ * EI-19462929205805752 — pools whose rebind guard is REAL but does not live in the
+ * getter's own body, so the `endStalePool(` scan below would wrongly read them as
+ * unguarded. `getHarnessPg` is guarded at the point the URL CHANGES (inside
+ * `appUrl()`) rather than at the point it is USED, precisely because its cache-hit
+ * path must not pay `readDiscoveryFile()`'s readFileSync.
+ *
+ * The `centralGuard` name is asserted to be both DEFINED and CALLED below. Without
+ * that, this map would be strictly worse than the allowlist it replaced: an entry
+ * asserting "guarded elsewhere" that nothing checks is how a deleted guard keeps a
+ * green test.
+ */
+const GUARDED_CENTRALLY: Record<string, { centralGuard: string; reason: string }> = {
+  getHarnessPg: {
+    centralGuard: 'endHarnessPoolsOnAppUrlRebind',
+    reason:
+      'Its LRU cache-hit path returns the cached handle WITHOUT recomputing appUrl(), ' +
+      'so there is no fresh URL to compare against at the point of use. The guard ' +
+      'therefore sits in appUrl() itself, which has already computed both sides by the ' +
+      'time it returns — free there, a synchronous readFileSync on the hit path here.',
+  },
+};
+
 const UNGUARDED_BY_DESIGN: Record<string, string> = {
-  getHarnessPg:
-    'Its LRU cache-hit path returns the cached handle WITHOUT recomputing appUrl(), ' +
-    'so there is no fresh URL to compare against. Adding one would put ' +
-    "readDiscoveryFile()'s synchronous readFileSync on a hot path that currently " +
-    'avoids it entirely — a real cost, unlike the org getters where the URL is ' +
-    'already recomputed every call and the comparison is free. These pools are ' +
-    'LRU-capped (HARNESS_POOL_CAP) and are being migrated onto harnessQuery() over ' +
-    'the pooled org-app pool, which IS guarded. Filed separately, not fixed here.',
   createDedicatedOrgPg:
     'WI-638180: it CACHES NOTHING. Every call resolves the URL fresh and builds a ' +
     'new caller-owned pool from that same resolution, so there is no previously ' +
@@ -202,8 +217,20 @@ describe('the rebind guard is WIRED INTO every pool getter, not merely exported'
   });
 
   it.each(poolBuildingFunctions())(
-    '$name either calls endStalePool or is allowlisted with a reason',
+    '$name calls endStalePool, is guarded centrally, or is allowlisted with a reason',
     ({ name, body }) => {
+      const central = GUARDED_CENTRALLY[name];
+      if (central) {
+        expect(central.reason.length).toBeGreaterThan(40);
+        // The named guard must EXIST and be CALLED. An entry asserting "guarded
+        // elsewhere" that nothing verifies is worse than no entry at all: it turns a
+        // deleted guard into a green test, which is the exact shape of the bug this
+        // whole file exists to prevent.
+        expect(CONNECTION_SRC).toContain(`function ${central.centralGuard}(`);
+        const mentions = CONNECTION_SRC.split(`${central.centralGuard}(`).length - 1;
+        expect(mentions).toBeGreaterThan(1); // the definition, PLUS at least one call site
+        return;
+      }
       if (name in UNGUARDED_BY_DESIGN) {
         expect(UNGUARDED_BY_DESIGN[name]!.length).toBeGreaterThan(40);
         expect(body).not.toContain('endStalePool');
@@ -213,7 +240,11 @@ describe('the rebind guard is WIRED INTO every pool getter, not merely exported'
     },
   );
 
-  it.each(poolBuildingFunctions().filter((g) => !(g.name in UNGUARDED_BY_DESIGN)))(
+  it.each(
+    poolBuildingFunctions().filter(
+      (g) => !(g.name in UNGUARDED_BY_DESIGN) && !(g.name in GUARDED_CENTRALLY),
+    ),
+  )(
     '$name compares against the URL IT records — not a sibling pool’s',
     ({ name, body }) => {
       // Passing the wrong module var typechecks perfectly (they are all

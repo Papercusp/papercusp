@@ -458,7 +458,72 @@ function readDiscoveryFile(opts?: { applyQuarantine?: boolean }): DiscoveryEndpo
   }
   return null;
 }
+/** The last URL `appUrl()` actually served — the baseline the harness-pool rebind compares against. */
+let _servedAppUrl: string | null = null;
+
+/**
+ * EI-19462929205805752 — the per-harness pools were the last cached pools with no
+ * stale-rebind guard. They are built with `appUrl()` (see `getHarnessPg`), but
+ * nothing evicted them when that URL moved: `_harnessClients` was touched only by
+ * LRU pressure and `_resetForTests`, so a discovery rebind left every harness pool
+ * bound to the dead endpoint until the process exited. Same shape as
+ * EI-19285027465993737, which the org pools were guarded against and these were not.
+ *
+ * WHY THE GUARD LIVES HERE and not on `getHarnessPg`'s cache-hit path — this is the
+ * whole design point, and the reason the filed asymmetry dissolves. That hit path
+ * deliberately returns the cached handle WITHOUT recomputing `appUrl()`, so a
+ * comparison there would have to manufacture a fresh URL, dragging
+ * `readDiscoveryFile()`'s synchronous `readFileSync` onto a path that currently
+ * avoids it entirely. `appUrl()` has already computed both sides by the time it
+ * returns, so detecting the change where it HAPPENS is free, where detecting it
+ * where it is USED is not.
+ *
+ * LIVENESS (the honest limit): this fires only when something calls `appUrl()`.
+ * A process whose only DB traffic is repeated `getHarnessPg` cache HITS would not
+ * notice a rebind. That is not the real shape — `withWorkspace()` takes
+ * `getOrgPgApp()` on every workspace-scoped call, and a harness cache MISS calls
+ * `appUrl()` itself — but it is a condition, not a proof, so it is stated rather
+ * than papered over. Closing it completely requires paying the readFileSync above.
+ */
+function endHarnessPoolsOnAppUrlRebind(): void {
+  if (_harnessClients.size === 0) return;
+  const n = _harnessClients.size;
+  for (const h of _harnessClients.values()) {
+    try {
+      void h.sql.end({ timeout: 1 }).catch(() => {});
+    } catch {
+      /* best-effort: a failed drain must not block the rebind */
+    }
+  }
+  _harnessClients.clear();
+  // Deliberately noisy, and deliberately WITHOUT the URL: these DSNs carry
+  // passwords, and `endStalePool` logs the label alone for the same reason.
+  console.warn(`[db] app URL changed — ended ${n} per-harness pool(s) bound to the old endpoint`);
+}
+
+/**
+ * Records the URL `appUrl()` is about to return and evicts the per-harness pools
+ * whenever it differs from the previous one. Wrapping every return point (rather
+ * than only the discovery branch) is what makes the cover total: it catches
+ * discovery→discovery, discovery→ABSENT/native, native→discovery and env→* alike.
+ * The discovery branch's own `_resolvedAppUrl` compare cannot do this job, because
+ * the native fallback is returned WITHOUT being cached there — which is exactly the
+ * discovery→ABSENT transition that caused the original incident.
+ */
+function noteServedAppUrl(url: string): string {
+  if (_servedAppUrl !== null && _servedAppUrl !== url) endHarnessPoolsOnAppUrlRebind();
+  _servedAppUrl = url;
+  return url;
+}
+
 function appUrl(): string {
+  // Single funnel: every resolution path returns through here, so a future branch
+  // added to resolveAppUrl() inherits the rebind guard instead of having to
+  // remember its own teardown — the failure mode this whole class came from.
+  return noteServedAppUrl(resolveAppUrl());
+}
+
+function resolveAppUrl(): string {
   if (_resolvedAppUrl && _resolvedAppUrlSource === 'env') return _resolvedAppUrl;
   if (process.env.HARNESS_DATABASE_URL) {
     _resolvedAppUrl = process.env.HARNESS_DATABASE_URL;
@@ -2102,4 +2167,9 @@ export async function _resetForTests() {
     await h.sql.end({ timeout: 1 }).catch(() => {});
   }
   _harnessClients.clear();
+  // Same rule the block above states for `_appOrgClientUrl`: a var that records what
+  // a pool was built with must die with the pool. Leaving `_servedAppUrl` set across
+  // a reset would make the FIRST appUrl() of the next test compare against the
+  // previous test's endpoint and evict a pool nothing was wrong with.
+  _servedAppUrl = null;
 }
