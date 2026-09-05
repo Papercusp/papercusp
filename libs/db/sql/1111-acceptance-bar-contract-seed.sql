@@ -7,7 +7,7 @@
 -- metadata on the existing plan and plan_spec_clause revision spines.
 
 \set ON_ERROR_STOP on
-BEGIN;
+-- The migration runner supplies the transaction and ON_ERROR_STOP behavior.
 
 ALTER TABLE harness_shared.harness_plans
   ADD COLUMN IF NOT EXISTS acceptance_bar_epoch integer,
@@ -122,5 +122,3 @@ COMMENT ON COLUMN harness_shared.harness_plans.acceptance_bar_set_hash IS
   'Exact sorted (barKey,barHash) set pinned by the last successful transactional seed/amendment.';
 COMMENT ON COLUMN harness_shared.plan_spec_clause_revisions.source_bar_hash IS
   'Immutable canonical acceptance BAR hash that this spec-clause projection was derived from.';
-
-COMMIT;

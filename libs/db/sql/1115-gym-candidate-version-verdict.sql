@@ -5,7 +5,7 @@
 -- intentionally NULL and are never eligible for autonomous promotion.
 
 \set ON_ERROR_STOP on
-BEGIN;
+-- The migration runner supplies the transaction and ON_ERROR_STOP behavior.
 
 ALTER TABLE harness_shared.gym_proposals
   ADD COLUMN IF NOT EXISTS task_corpus text NOT NULL DEFAULT 'synthetic',
@@ -24,5 +24,3 @@ COMMENT ON COLUMN harness_shared.gym_proposals.candidate_verdict IS
 CREATE INDEX IF NOT EXISTS gym_proposals_candidate_verdict_idx
   ON harness_shared.gym_proposals (workspace_id, harness_slug)
   WHERE candidate_verdict IS NOT NULL;
-
-COMMIT;
