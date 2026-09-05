@@ -18,7 +18,7 @@
  * for OMP — single mcpServers entry, seven URL query params).
  */
 
-import { canonicalizeSpawnParams, hmacSpawnBytes } from './spawn-signing-core';
+import { canonicalizeSpawnParams, hmacSpawnBytes, decodeOperatorSecretKey } from './spawn-signing-core';
 // The gateway config builder + tomlEscape live in the SHARED module (WI-3645): operator-core's
 // role-codex-home.ts (the interactive psu path) renders the SAME blocks via the package's
 // `./codex-gateway-config` subpath export — one builder, one behavior, no drift. Model-specific
@@ -824,7 +824,7 @@ async function loadSigningKey(existingPg?: SpawnMcpSigningPg): Promise<Buffer> {
     __keyCache = { ...__keyCache, loadedAt: Date.now() };
     return __keyCache.buf;
   }
-  const buf = Buffer.from(rows[0].value_b64, 'base64');
+  const buf = decodeOperatorSecretKey(rows[0].value_b64, 'spawn-signing-key');
   __keyCache = { buf, rotatedAt, loadedAt: Date.now() };
   return buf;
 }

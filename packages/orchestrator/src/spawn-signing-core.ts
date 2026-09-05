@@ -74,3 +74,64 @@ export function canonicalizeSpawnParams(params: URLSearchParams): CanonicalizeRe
 export function hmacSpawnBytes(key: Buffer, canonical: string): Buffer {
   return createHmac('sha256', key).update(canonical).digest();
 }
+
+/* ─── Key DECODING (pure) ────────────────────────────────────────────────────
+ * Per-process key LOADING stays in each file (different PG clients + caches, as
+ * the header says). The pure decode-and-validate rule lives HERE for the same
+ * reason the canonicalization does: all three loaders of the `spawn-signing-key`
+ * row must agree, and a validator that exists in only some of them is a drift
+ * hazard of exactly the kind this module was created to remove.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** Every `operator_secrets` HMAC key on this path is 32 random bytes. */
+export const OPERATOR_SECRET_KEY_BYTES = 32;
+
+/** Greppable marker leading every corruption failure, so a log line alone names
+ *  the cause instead of leaving a downstream signature error to be traced back. */
+export const OPERATOR_SECRET_KEY_CORRUPT = 'OPERATOR_SECRET_KEY_CORRUPT';
+
+/**
+ * Decode a base64 `operator_secrets` value and assert it is the size it was minted at.
+ *
+ * WHY: `Buffer.from(value, 'base64')` NEVER THROWS. Given an empty string, whitespace,
+ * a truncated value, or non-base64 garbage it silently returns a SHORTER (often
+ * zero-length) buffer, and `createHmac` then accepts that degenerate key without
+ * complaint. Because the signing and verifying paths load the SAME degenerate key,
+ * every signature still verifies and every probe stays green — while the security
+ * property (an unguessable 32-byte secret) is gone. A silent downgrade that is
+ * indistinguishable from health, which is why it needs an explicit assertion.
+ *
+ * Measured: `''`→0 bytes · `'   '`→0 · `'!!!!not base64!!!!'`→6 · `'AAAA'`→3.
+ *
+ * FAILS LOUD, DOES NOT SELF-HEAL: re-minting on read would silently invalidate every
+ * live signed URL/token — precisely the blast radius a deliberate rotation exists to
+ * report BEFORE it happens. Restoring vs rotating is an operator decision.
+ */
+export function decodeOperatorSecretKey(
+  valueB64: string | null | undefined,
+  keyName: string,
+  expectedBytes: number = OPERATOR_SECRET_KEY_BYTES,
+): Buffer {
+  if (typeof valueB64 !== 'string' || valueB64.length === 0) {
+    throw new Error(
+      `${OPERATOR_SECRET_KEY_CORRUPT}: operator_secrets row '${keyName}' has an empty or missing ` +
+        `value_b64. Buffer.from() would have silently produced a 0-byte key that still signs and ` +
+        `verifies, so this fails instead. Restore the row from backup, or rotate the key ` +
+        `deliberately (which invalidates live spawns/tokens).`,
+    );
+  }
+
+  const buf = Buffer.from(valueB64, 'base64');
+
+  if (buf.length !== expectedBytes) {
+    throw new Error(
+      `${OPERATOR_SECRET_KEY_CORRUPT}: operator_secrets row '${keyName}' decoded to ${buf.length} ` +
+        `byte(s), expected ${expectedBytes}. base64 decoding does not throw on corrupt input — it ` +
+        `truncates — so this row would otherwise have yielded a short, guessable key that signs and ` +
+        `verifies normally. Restore the row from backup, or rotate the key deliberately ` +
+        `(which invalidates live spawns/tokens).`,
+    );
+  }
+
+  return buf;
+}
