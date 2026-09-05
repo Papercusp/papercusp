@@ -21,8 +21,8 @@ import {
   applyStackMutation,
   bindingRefs,
   emptyStackBinding,
-  type StackDocument,
 } from './stack-mutation.js';
+import type { StackDocument } from './render-stack.js';
 
 const HARNESS_DIR = harnessPath();
 const RESEARCH_TASK = 'R-LOCAL-001';
@@ -132,10 +132,11 @@ test('P-042 activation proof preserves actor/session idempotency and explicit ca
   assert.equal(applied.activation?.context.carry, 'cold');
   assert.equal(applied.activation?.context.privateMemory, 'reset');
   assert.equal(applied.activation?.idempotencyKey.startsWith('session-activation:session-a:'), true);
-  // Domain changes deliberately relaunch with carry: no identity text is
-  // injected into the old context before the host acknowledges the prepared
-  // revision and starts the fresh context.
-  assert.equal(applied.injection, null);
+  // Domain changes deliberately relaunch with carry: the old context receives
+  // only a control notice, never the new identity text, before the host
+  // acknowledges the prepared revision and starts the fresh context.
+  assert.ok(applied.injection?.includes('relaunch-with-carry'));
+  assert.ok(!applied.injection?.includes(identity.text));
 
   const acknowledged = acknowledgeStackMutationActivation(applied.activation!, revision);
   assert.equal(acknowledged.status, 'applied');
