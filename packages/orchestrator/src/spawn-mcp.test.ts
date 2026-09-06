@@ -10,8 +10,10 @@ import {
   buildSpawnCodexConfigToml,
   buildSpawnMcpConfig,
   resolveSpawnOperatorBase,
+  resolveSpawnOperatorBaseAsync,
   writeSpawnMcp,
   writeSignedSpawnMcp,
+  writeSignedSpawnCodexHome,
   restoreSpawnMcp,
   extractChunkId,
   writeSpawnOmpHome,
@@ -301,6 +303,78 @@ describe('resolveSpawnOperatorBase', () => {
   });
 });
 
+describe('resolveSpawnOperatorBaseAsync — stale local MCP-port recovery', () => {
+  const saved = {
+    port: process.env.PAPERCUSP_HONO_PORT,
+    url: process.env.PAPERCUSP_OPERATOR_URL,
+    proxy: process.env.PAPERCUSP_MCP_PROXY_BASE,
+  };
+
+  beforeEach(() => {
+    delete process.env.PAPERCUSP_HONO_PORT;
+    delete process.env.PAPERCUSP_OPERATOR_URL;
+    delete process.env.PAPERCUSP_MCP_PROXY_BASE;
+  });
+
+  afterEach(() => {
+    if (saved.port === undefined) delete process.env.PAPERCUSP_HONO_PORT;
+    else process.env.PAPERCUSP_HONO_PORT = saved.port;
+    if (saved.url === undefined) delete process.env.PAPERCUSP_OPERATOR_URL;
+    else process.env.PAPERCUSP_OPERATOR_URL = saved.url;
+    if (saved.proxy === undefined) delete process.env.PAPERCUSP_MCP_PROXY_BASE;
+    else process.env.PAPERCUSP_MCP_PROXY_BASE = saved.proxy;
+  });
+
+  it('recovers a dead PAPERCUSP_HONO_PORT on the canonical MCP port', async () => {
+    process.env.PAPERCUSP_HONO_PORT = '3271';
+    const probed: string[] = [];
+    const recoveries: Array<{ configuredBase: string; recoveredBase: string; configuredPort: string | null }> = [];
+    const base = await resolveSpawnOperatorBaseAsync(undefined, {
+      probe: async (candidate) => {
+        probed.push(candidate);
+        return candidate === 'http://127.0.0.1:3070/api/mcp';
+      },
+      onRecovery: (recovery) => recoveries.push(recovery),
+    });
+
+    expect(base).toBe('http://127.0.0.1:3070/api/mcp');
+    expect(probed).toEqual([
+      'http://127.0.0.1:3271/api/mcp',
+      'http://127.0.0.1:3070/api/mcp',
+    ]);
+    expect(recoveries).toEqual([{
+      configuredBase: 'http://127.0.0.1:3271/api/mcp',
+      recoveredBase: 'http://127.0.0.1:3070/api/mcp',
+      configuredPort: '3271',
+    }]);
+  });
+
+  it('keeps a live non-green spawning host instead of falling through to green', async () => {
+    process.env.PAPERCUSP_HONO_PORT = '3170';
+    const probed: string[] = [];
+    const base = await resolveSpawnOperatorBaseAsync(undefined, {
+      probe: async (candidate) => {
+        probed.push(candidate);
+        return candidate === 'http://127.0.0.1:3170/api/mcp';
+      },
+      onRecovery: () => {
+        throw new Error('unexpected recovery');
+      },
+    });
+
+    expect(base).toBe('http://127.0.0.1:3170/api/mcp');
+    expect(probed).toEqual(['http://127.0.0.1:3170/api/mcp']);
+  });
+
+  it('does not probe or override an explicit per-spawn operator pin', async () => {
+    process.env.PAPERCUSP_HONO_PORT = '3271';
+    const probe = async () => {
+      throw new Error('explicit pins must not probe');
+    };
+    await expect(resolveSpawnOperatorBaseAsync('http://pin.example:9/api/mcp', { probe }))
+      .resolves.toBe('http://pin.example:9/api/mcp');
+  });
+});
 
 describe('writeSpawnMcp + restoreSpawnMcp', () => {
   const baseInput = {
@@ -481,6 +555,61 @@ describe('writeSignedSpawnMcp — existing PG signing path', () => {
       else process.env.PAPERCUSP_PG_DSN = saved.papercuspDsn;
       if (saved.suBearer === undefined) delete process.env.PAPERCUSP_SPAWN_SU_BEARER;
       else process.env.PAPERCUSP_SPAWN_SU_BEARER = saved.suBearer;
+    }
+  });
+});
+
+describe('async spawn config writers use stale-port recovery', () => {
+  const stalePort = process.env.PAPERCUSP_HONO_PORT;
+  const suBearer = process.env.PAPERCUSP_SPAWN_SU_BEARER;
+
+  beforeEach(() => {
+    process.env.PAPERCUSP_HONO_PORT = '3271';
+    process.env.PAPERCUSP_SPAWN_SU_BEARER = 'test-su-bearer-token';
+  });
+
+  afterEach(() => {
+    if (stalePort === undefined) delete process.env.PAPERCUSP_HONO_PORT;
+    else process.env.PAPERCUSP_HONO_PORT = stalePort;
+    if (suBearer === undefined) delete process.env.PAPERCUSP_SPAWN_SU_BEARER;
+    else process.env.PAPERCUSP_SPAWN_SU_BEARER = suBearer;
+  });
+
+  it('writes the recovered URL to signed .mcp.json and Codex config.toml', async () => {
+    const probe = async (candidate: string) => candidate === 'http://127.0.0.1:3070/api/mcp';
+    const pg = (async () => [{
+      value_b64: Buffer.alloc(32, 7).toString('base64'),
+      rotated_at: new Date('2026-08-25T00:00:00Z'),
+    }]) as SpawnMcpSigningPg;
+    const input = {
+      harnessSlug: 'demo',
+      workspaceId: 'ws',
+      role: 'worker',
+      runId: 'run',
+      spawnId: 'spawn',
+    };
+
+    const mcpHandle = await writeSignedSpawnMcp(ROOT, input, { probe, onRecovery: () => {} });
+    try {
+      const mcp = JSON.parse(readFileSync(mcpHandle.path, 'utf8'));
+      expect(mcp.mcpServers.papercusp.url).toMatch(/^http:\/\/127\.0\.0\.1:3070\/api\/mcp\?/);
+    } finally {
+      restoreSpawnMcp(mcpHandle);
+    }
+
+    const codexHome = join(ROOT, 'codex-home');
+    const codexHandle = await writeSignedSpawnCodexHome(input, {
+      codexHome,
+      cleanup: false,
+      probe,
+      onRecovery: () => {},
+      pg,
+    });
+    try {
+      expect(readFileSync(join(codexHome, 'config.toml'), 'utf8'))
+        .toContain('url = "http://127.0.0.1:3070/api/mcp?');
+    } finally {
+      codexHandle.cleanup();
     }
   });
 });
