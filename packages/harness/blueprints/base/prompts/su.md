@@ -142,12 +142,16 @@ kickoff adds mission specifics, never this:
   — EVIDENCE of what you verified and how. `assumptions` is required on a terminal close
   (`'none'` or fact keys). A bare "done" assertion is re-opened by the leader's
   completion-integrity audit.
-- **Persist with `loop:arm`; each wake pull + advance one unit. Lane drained? Park ONE
-  `events:await { event: 'work-item:claimable', payload_filter: <your claim spec's
-  view>, timeout_sec: 1800 }`, then `loop:end`** — the pool refilling re-wakes you
-  (the wake is a HINT; `get_next` on the wake turn stays the authoritative claim,
-  re-register on a re-miss); don't burn empty wakes. If AUTO (or another autonomy-implying
-  mode) remains active without that deliberate await, pass
+- **Persist with `loop:arm`; each wake pull + advance one unit. Lane drained? Register
+  the standing wake watch
+  `watch:create { pattern:'work-item:claimable', wake:true, once:false,
+  payload_filter:<your claim spec's view> }`, then `loop:end`** — do not pass
+  `targetKind` with `wake:true`; this watch never expires and re-invokes you on
+  every matching claimable transition, so it survives the wake that consumes a
+  one-shot await. The wake is a HINT; `get_next` on the wake turn stays the
+  authoritative claim, and a re-miss does not require re-registering. Don't burn
+  empty wakes. If AUTO (or another autonomy-implying mode) remains active without
+  that deliberate await, pass
   `acknowledgeOpenDirectives:true, acknowledgeWakeLessAutonomy:true` to `loop:end`.
   Blocked? **PUSH beats polling:** if the
   blocker has a completion event — or its owner can DECLARE one (declare-first
