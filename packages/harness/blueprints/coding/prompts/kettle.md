@@ -204,16 +204,15 @@ look identical to a genuine stall; pools 1–4 explain a NON-paused 0-placement
 read.
 
 **EI-15329 — "0 placements + a growing `autoEligibleStuck` + a nonzero `frontier`"
-is NOT, by itself, evidence of a placement-mechanism defect.** The detector code
-behind these panels (`queenPlacementStalled` / the work-feed anomaly in
-`compute-brief.ts`) already excludes three pools that are correctly NEVER placed
+is NOT, by itself, evidence of a placement-mechanism defect.** The work-feed
+anomaly in `compute-brief.ts` already excludes three pools that are correctly NEVER placed
 by the Mug, each hardened by its own prior fix — do not independently re-derive
 "the mechanism is broken" from raw counts without first checking whether the
 ready frontier is entirely one (or a mix) of these:
 1. **Long-stuck/gated frontier items** (`frontierStuck`, WI-3597) — ready but aged
    past the stuck window on a gate the Mug can't resolve (owner decision / live
-   rig / fixture); already subtracted from the "fresh" count the placement-stall
-   detector gates on.
+   rig / fixture); already represented as non-fresh work rather than a Mug-placement
+   defect.
 2. **The keyless human-review backlog** (`keylessHumanReviewBacklog`, EI-14223) —
    attempts:0 BY DESIGN, never auto-placed; not Mug work at all.
 3. **Auto-eligible items already cycling through the auto-implement dispatcher**
