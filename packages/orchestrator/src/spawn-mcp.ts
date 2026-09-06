@@ -176,6 +176,114 @@ export function resolveSpawnOperatorBase(operatorUrl?: string | null): string {
   return inherited ? inheritedOperatorMcpEndpoint(inherited) : DEFAULT_OPERATOR_URL;
 }
 
+export interface SpawnMcpRouteRecovery {
+  configuredBase: string;
+  recoveredBase: string;
+  configuredPort: string | null;
+}
+
+export type SpawnMcpRouteProbe = (operatorMcpBase: string, timeoutMs: number) => Promise<boolean>;
+export type SpawnMcpRouteRecoveryHandler = (recovery: SpawnMcpRouteRecovery) => void;
+
+export interface SpawnMcpRouteProbeOptions {
+  /** Injectable for deterministic tests and alternate local transports. */
+  probe?: SpawnMcpRouteProbe;
+  /** Called when a stale local route recovers through another local endpoint. */
+  onRecovery?: SpawnMcpRouteRecoveryHandler;
+  /** Bound the default HTTP probe; injected probes may ignore it. */
+  probeTimeoutMs?: number;
+}
+
+const DEFAULT_MCP_ROUTE_PROBE_TIMEOUT_MS = 1_500;
+
+/**
+ * Probe the MCP HTTP route without requiring authentication or a valid MCP
+ * request. Any HTTP response (including 404/405) proves that a listener is
+ * serving the endpoint; only connection/timeout failures count as unavailable.
+ */
+export async function probeSpawnOperatorMcp(
+  operatorMcpBase: string,
+  timeoutMs = DEFAULT_MCP_ROUTE_PROBE_TIMEOUT_MS,
+): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    await fetch(operatorMcpBase, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function localMcpBase(port: string): string {
+  return `http://127.0.0.1:${port}/api/mcp`;
+}
+
+function isLoopbackMcpBase(operatorMcpBase: string): boolean {
+  try {
+    const hostname = new URL(operatorMcpBase).hostname;
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Async counterpart to {@link resolveSpawnOperatorBase}. The synchronous
+ * builder stays pure/deterministic because callers use it in config-shape
+ * tests and in paths that cannot await. Native spawn writers can await this
+ * seam to recover when a copied PAPERCUSP_HONO_PORT outlives its operator.
+ */
+export async function resolveSpawnOperatorBaseAsync(
+  operatorUrl?: string | null,
+  options: SpawnMcpRouteProbeOptions = {},
+): Promise<string> {
+  // A caller-supplied pin is authoritative; never silently route it elsewhere.
+  if (operatorUrl) return operatorUrl;
+
+  const configuredPort = process.env.PAPERCUSP_HONO_PORT?.trim() || null;
+  const hasRuntimeHint = Boolean(configuredPort);
+  const configuredBase = resolveSpawnOperatorBase();
+  // With no runtime hint, preserve the cheap deterministic default and avoid a
+  // network request for every ordinary spawn.
+  if (!hasRuntimeHint || !isLoopbackMcpBase(configuredBase)) return configuredBase;
+
+  const probe = options.probe ?? probeSpawnOperatorMcp;
+  const timeoutMs = options.probeTimeoutMs ?? DEFAULT_MCP_ROUTE_PROBE_TIMEOUT_MS;
+  if (await probe(configuredBase, timeoutMs)) return configuredBase;
+
+  const candidates = [
+    ...(configuredPort ? [localMcpBase(configuredPort)] : []),
+    localMcpBase('3070'),
+  ].filter((candidate, index, all) => candidate !== configuredBase && all.indexOf(candidate) === index);
+
+  for (const recoveredBase of candidates) {
+    if (!(await probe(recoveredBase, timeoutMs))) continue;
+    const recovery = { configuredBase, recoveredBase, configuredPort };
+    if (options.onRecovery) {
+      options.onRecovery(recovery);
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[spawn-mcp] local MCP route ${configuredBase} was unavailable; ` +
+          `recovered on ${recoveredBase}` +
+          (configuredPort ? ` (PAPERCUSP_HONO_PORT=${configuredPort} is stale)` : ''),
+      );
+    }
+    return recoveredBase;
+  }
+
+  // Preserve the original URL when no recovery route is reachable. The child
+  // then receives the same actionable endpoint instead of a surprising third
+  // destination, and the caller's normal MCP error remains authoritative.
+  return configuredBase;
+}
+
 /** Build the JSON-serializable mcp.json contents for a spawn. */
 export function buildSpawnMcpConfig(input: SpawnMcpConfigInput): {
   mcpServers: Record<string, { type: 'http'; url: string }>;
@@ -274,10 +382,10 @@ export async function writeSignedSpawnMcp(
      * If true, emit an unsigned URL with a console warning instead of
      * throwing when signing fails. Only safe when the operator is
      * running with PAPERCUSP_REQUIRE_SPAWN_SIG != '1' (soft-warn).
-     * Default: false (strict — signing failure = spawn failure).
+    * Default: false (strict — signing failure = spawn failure).
      */
     allowUnsigned?: boolean;
-  } = {},
+  } & SpawnMcpRouteProbeOptions = {},
 ): Promise<SpawnMcpHandle> {
   const path = join(cwd, FILENAME);
   let prior: string | null = null;
@@ -287,7 +395,7 @@ export async function writeSignedSpawnMcp(
     backupPath = `${path}${BACKUP_SUFFIX}`;
     renameSync(path, backupPath);
   }
-  const base = resolveSpawnOperatorBase(input.operatorUrl);
+  const base = await resolveSpawnOperatorBaseAsync(input.operatorUrl, opts);
 
   // ── Superuser-spawn mode ──────────────────────────────────────────────
   // An operator-initiated, loopback spawn (the /harness/:slug/invoke route)
@@ -439,9 +547,9 @@ export async function writeSignedSpawnCodexHome(
     contextConfig?: SpawnCodexContextConfig | null;
     /** Reuse the caller's already-open PG handle instead of requiring a DSN env. */
     pg?: SpawnMcpSigningPg;
-  } = {},
+  } & SpawnMcpRouteProbeOptions = {},
 ): Promise<SpawnCodexHomeHandle> {
-  const base = resolveSpawnOperatorBase(input.operatorUrl);
+  const base = await resolveSpawnOperatorBaseAsync(input.operatorUrl, opts);
   const params = buildSpawnUrlParams(input);
   await signSpawnParams(params, opts.ttlSec ?? 0, opts.pg);
   const mcpUrl = `${base}?${params.toString()}`;
