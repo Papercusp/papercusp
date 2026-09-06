@@ -2228,6 +2228,7 @@ export const customerWorkspacesInHarnessShared = harnessShared.table("customer_w
 	primaryKey({ columns: [table.id, table.workspaceId], name: "customer_workspaces_pkey"}),
 	unique("customer_workspaces_host_identity_uq").on(table.workspaceHostId, table.workspaceId),
 	unique("customer_workspaces_org_identity_uq").on(table.id, table.organizationId, table.workspaceId),
+	unique("customer_workspaces_connector_binding_uq").on(table.id, table.organizationId, table.workspaceHostId, table.workspaceId),
 	pgPolicy("customer_workspaces_app_scope", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`((organization_id = NULLIF(current_setting('app.organization_id'::text, true), ''::text)) AND (id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text)))`, withCheck: sql`((organization_id = NULLIF(current_setting('app.organization_id'::text, true), ''::text)) AND (id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text)))`  }),
 	check("customer_workspaces_billing_owner_ck", sql`((billing_owner_kind IS NULL) AND (billing_owner_id IS NULL)) OR ((billing_owner_kind = ANY (ARRAY['organization'::text, 'customer'::text, 'platform'::text])) AND (btrim(billing_owner_id) <> ''::text))`),
 	check("customer_workspaces_creator_ck", sql`(btrim(created_by_principal_kind) <> ''::text) AND (btrim(created_by_principal_id) <> ''::text)`),
@@ -8915,13 +8916,13 @@ export const substrateOutboxInHarnessShared = harnessShared.table("substrate_out
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	ts: bigint({ mode: "number" }).notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	enqueuedAtMs: bigint("enqueued_at_ms", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	drainedAt: bigint("drained_at", { mode: "number" }),
 	opHlc: text("op_hlc"),
 	drainedLogKey: text("drained_log_key"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	quarantinedAt: bigint("quarantined_at", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	enqueuedAtMs: bigint("enqueued_at_ms", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
 }, (table) => [
 	index("substrate_outbox_drain_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.drainedAt.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
 	index("substrate_outbox_table_drain_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.tableName.asc().nullsLast().op("text_ops"), table.drainedAt.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
@@ -10227,11 +10228,13 @@ export const workspaceHostConnectionsInHarnessShared = harnessShared.table("work
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	providerConfig: jsonb("provider_config").default({}).notNull(),
+	authenticatedIdentity: text("authenticated_identity"),
 }, (table) => [
 	primaryKey({ columns: [table.id, table.workspaceId], name: "workspace_host_connections_pkey"}),
 	pgPolicy("workspace_host_connections_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_connection_scope_allows(workspace_id, id)`, withCheck: sql`harness_shared.workspace_host_connection_scope_allows(workspace_id, id)`  }),
 	pgPolicy("workspace_host_connections_local_read_isolation", { as: "permissive", for: "select", to: ["harness_zero"] }),
 	pgPolicy("workspace_host_connections_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"] }),
+	check("workspace_host_connections_authenticated_identity_ck", sql`(authenticated_identity IS NULL) OR (btrim(authenticated_identity) <> ''::text)`),
 	check("workspace_host_connections_images_check", sql`jsonb_typeof(images) = 'array'::text`),
 	check("workspace_host_connections_networks_check", sql`jsonb_typeof(networks) = 'array'::text`),
 	check("workspace_host_connections_provider_config_check", sql`jsonb_typeof(provider_config) = 'object'::text`),
@@ -10370,6 +10373,11 @@ export const workspaceHostOperationsInHarnessShared = harnessShared.table("works
 	emergencyTeardown: boolean("emergency_teardown").default(false).notNull(),
 	teardownReason: text("teardown_reason"),
 	ownerNotificationDedupeKey: text("owner_notification_dedupe_key"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	desiredRevision: bigint("desired_revision", { mode: "number" }),
+	controllerId: text("controller_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	controllerFence: bigint("controller_fence", { mode: "number" }),
 }, (table) => [
 	index("workspace_host_operations_budget_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.customerWorkspaceId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops"), table.estimatedCostCents.asc().nullsLast().op("int8_ops")).where(sql`((customer_workspace_id IS NOT NULL) AND (estimated_cost_cents IS NOT NULL))`),
 	index("workspace_host_operations_host_updated_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.hostId.asc().nullsLast().op("text_ops"), table.updatedAt.desc().nullsFirst().op("timestamptz_ops"), table.id.asc().nullsLast().op("text_ops")),
@@ -10393,7 +10401,9 @@ export const workspaceHostOperationsInHarnessShared = harnessShared.table("works
 	check("workspace_host_operations_action_check", sql`action = ANY (ARRAY['provision'::text, 'start'::text, 'stop'::text, 'restart'::text, 'snapshot'::text, 'restore'::text, 'upgrade'::text, 'repair'::text, 'destroy'::text, 'initialize'::text])`),
 	check("workspace_host_operations_approval_ck", sql`(approval_status IS NULL) OR ((approval_status = ANY (ARRAY['not-required'::text, 'pending'::text, 'approved'::text, 'rejected'::text])) AND (((approval_status = 'approved'::text) AND (approved_by_principal_id IS NOT NULL) AND (approved_at IS NOT NULL)) OR ((approval_status <> 'approved'::text) AND (approved_by_principal_id IS NULL) AND (approved_at IS NULL))))`),
 	check("workspace_host_operations_billing_owner_ck", sql`((billing_owner_kind IS NULL) AND (billing_owner_id IS NULL)) OR ((billing_owner_kind = ANY (ARRAY['organization'::text, 'customer'::text, 'platform'::text])) AND (btrim(billing_owner_id) <> ''::text))`),
+	check("workspace_host_operations_controller_authority_ck", sql`((controller_id IS NULL) AND (controller_fence IS NULL)) OR ((controller_id IS NOT NULL) AND (controller_fence IS NOT NULL) AND (btrim(controller_id) <> ''::text) AND (controller_fence > 0) AND (desired_revision IS NOT NULL) AND (desired_revision > 0))`),
 	check("workspace_host_operations_cost_provenance_ck", sql`((estimated_cost_cents IS NULL) AND (cost_currency IS NULL) AND (cost_estimate_source IS NULL) AND (cost_estimate_ref IS NULL) AND (cost_estimated_at IS NULL)) OR ((estimated_cost_cents >= 0) AND (cost_currency ~ '^[A-Z]{3}$'::text) AND (btrim(cost_estimate_source) <> ''::text) AND (btrim(cost_estimate_ref) <> ''::text) AND (cost_estimated_at IS NOT NULL))`),
+	check("workspace_host_operations_domain_revision_ck", sql`(desired_revision IS NULL) OR (desired_revision > 0)`),
 	check("workspace_host_operations_emergency_teardown_ck", sql`(NOT emergency_teardown) OR ((action = 'destroy'::text) AND (btrim(teardown_reason) <> ''::text) AND (organization_id IS NOT NULL) AND (customer_workspace_id IS NOT NULL) AND (billing_owner_kind IS NOT NULL) AND (billing_owner_id IS NOT NULL))`),
 	check("workspace_host_operations_percent_check", sql`(percent >= 0) AND (percent <= 100)`),
 	check("workspace_host_operations_recovery_ck", sql`(recovery_state = ANY (ARRAY['none'::text, 'stuck'::text, 'recovery-pending'::text, 'recovering'::text, 'orphaned'::text, 'exhausted'::text])) AND (recovery_attempts >= 0) AND ((recovery_state = 'orphaned'::text) = (orphaned_at IS NOT NULL))`),
@@ -10474,6 +10484,16 @@ export const workspaceHostsInHarnessShared = harnessShared.table("workspace_host
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	desiredSpec: jsonb("desired_spec"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	hostGeneration: bigint("host_generation", { mode: "number" }).default(1).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	desiredRevision: bigint("desired_revision", { mode: "number" }).default(1).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	observedRevision: bigint("observed_revision", { mode: "number" }).default(0).notNull(),
+	runtimeRelease: jsonb("runtime_release"),
+	controllerId: text("controller_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	controllerFence: bigint("controller_fence", { mode: "number" }).default(0).notNull(),
 }, (table) => [
 	index("workspace_hosts_workspace_updated_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.updatedAt.desc().nullsFirst().op("timestamptz_ops"), table.id.asc().nullsLast().op("text_ops")),
 	foreignKey({
@@ -10485,15 +10505,19 @@ export const workspaceHostsInHarnessShared = harnessShared.table("workspace_host
 	pgPolicy("workspace_hosts_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, id)`  }),
 	pgPolicy("workspace_hosts_local_read_isolation", { as: "permissive", for: "select", to: ["harness_zero"] }),
 	pgPolicy("workspace_hosts_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"] }),
+	check("workspace_hosts_controller_authority_ck", sql`((controller_id IS NULL) AND (controller_fence = 0)) OR ((controller_id IS NOT NULL) AND (btrim(controller_id) <> ''::text) AND (controller_fence > 0))`),
 	check("workspace_hosts_cost_signals_check", sql`jsonb_typeof(cost_signals) = 'array'::text`),
 	check("workspace_hosts_desired_spec_object", sql`(desired_spec IS NULL) OR (jsonb_typeof(desired_spec) = 'object'::text)`),
 	check("workspace_hosts_desired_state_check", sql`desired_state = ANY (ARRAY['provisioning'::text, 'running'::text, 'stopped'::text, 'degraded'::text, 'repairing'::text, 'destroying'::text, 'absent'::text])`),
 	check("workspace_hosts_disk_gib_check", sql`disk_gib > 0`),
 	check("workspace_hosts_health_checks_check", sql`jsonb_typeof(health_checks) = 'array'::text`),
 	check("workspace_hosts_health_status_check", sql`(health_status IS NULL) OR (health_status = ANY (ARRAY['healthy'::text, 'degraded'::text, 'unreachable'::text, 'unknown'::text]))`),
+	check("workspace_hosts_host_generation_ck", sql`host_generation > 0`),
 	check("workspace_hosts_observed_state_check", sql`observed_state = ANY (ARRAY['provisioning'::text, 'running'::text, 'stopped'::text, 'degraded'::text, 'repairing'::text, 'destroying'::text, 'absent'::text])`),
 	check("workspace_hosts_quota_signals_check", sql`jsonb_typeof(quota_signals) = 'array'::text`),
 	check("workspace_hosts_recoverability_kind_check", sql`recoverability_kind = ANY (ARRAY['snapshot'::text, 'backup'::text, 'none'::text])`),
+	check("workspace_hosts_revision_ck", sql`(desired_revision > 0) AND (observed_revision >= 0) AND (observed_revision <= desired_revision)`),
+	check("workspace_hosts_runtime_release_ck", sql`(runtime_release IS NULL) OR ((jsonb_typeof(runtime_release) = 'object'::text) AND (runtime_release ?& ARRAY['version'::text, 'bundleSha256'::text, 'signingKeySha256'::text, 'protocolVersion'::text, 'schemaVersion'::text]) AND ((runtime_release - ARRAY['version'::text, 'bundleSha256'::text, 'signingKeySha256'::text, 'protocolVersion'::text, 'schemaVersion'::text]) = '{}'::jsonb) AND (jsonb_typeof((runtime_release -> 'version'::text)) = 'string'::text) AND (btrim((runtime_release ->> 'version'::text)) <> ''::text) AND (jsonb_typeof((runtime_release -> 'bundleSha256'::text)) = 'string'::text) AND ((runtime_release ->> 'bundleSha256'::text) ~ '^[0-9a-f]{64}$'::text) AND (jsonb_typeof((runtime_release -> 'signingKeySha256'::text)) = 'string'::text) AND ((runtime_release ->> 'signingKeySha256'::text) ~ '^[0-9a-f]{64}$'::text) AND (jsonb_typeof((runtime_release -> 'protocolVersion'::text)) = 'string'::text) AND (btrim((runtime_release ->> 'protocolVersion'::text)) <> ''::text) AND (jsonb_typeof((runtime_release -> 'schemaVersion'::text)) = 'string'::text) AND (btrim((runtime_release ->> 'schemaVersion'::text)) <> ''::text))`),
 	check("workspace_hosts_tunnel_status_check", sql`jsonb_typeof(tunnel_status) = 'object'::text`),
 	check("workspace_hosts_version_drift_check", sql`jsonb_typeof(version_drift) = 'array'::text`),
 ]);
