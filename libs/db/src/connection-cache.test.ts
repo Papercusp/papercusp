@@ -48,9 +48,12 @@ describe('connection cache invalidation source contract (bug #33)', () => {
   });
 
   it('appUrl() invalidates _appOrgClient when discovery URL changes', () => {
-    // The fix added a sibling invalidation block to appUrl() that
-    // mirrors adminUrl()'s. Lock the contract.
-    const fn = SRC.match(/function appUrl\(\)[^{]*\{([\s\S]+?)^\}/m);
+    // appUrl funnels resolution through resolveAppUrl; the discovery-specific
+    // invalidation remains there, alongside the admin-side equivalent.
+    const entry = SRC.match(/function appUrl\(\)[^{]*\{([\s\S]+?)^\}/m);
+    expect(entry, 'appUrl() must remain connected to discovery resolution').toBeTruthy();
+    expect(entry![1]).toMatch(/\bresolveAppUrl\(\)/);
+    const fn = SRC.match(/function resolveAppUrl\(\)[^{]*\{([\s\S]+?)^\}/m);
     expect(fn).toBeTruthy();
     const body = fn![1];
     expect(body, 'appUrl() must clear _appOrgClient when discovery URL changes (bug #33 — sibling of adminUrl invalidation)').toMatch(/_appOrgClient\s*=\s*null/);
