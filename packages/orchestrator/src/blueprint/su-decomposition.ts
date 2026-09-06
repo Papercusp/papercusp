@@ -137,10 +137,10 @@ export const SU_TILES: readonly SuTile[] = [
     rationale: 'D-007’s narrowed kernel: "completion evidence required" is an invariant, not member style.',
   },
   {
-    anchor: '- **Persist with `loop:arm`; each wake pull + advance one unit. Lane drained? Park ONE',
+    anchor: '- **Persist with `loop:arm`; each wake pull + advance one unit. Lane drained? Register',
     part: 'fleet-posture',
     posture: 'member',
-    label: 'member loop: persist with loop:arm · park on the pool refill · push beats polling · report exceptions to the leader',
+    label: 'member loop: persist with loop:arm · register the pool-refill watch · push beats polling · report exceptions to the leader',
     rationale: 'Member operating style (D-003); the await/emit PROTOCOL it uses is already kernel in the shared-environment section.',
   },
   {

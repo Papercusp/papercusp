@@ -178,6 +178,16 @@ it collision-free:
   only then report.** Cheaper still when the claim is alarming — the more damning a finding
   looks, the more likely you are misreading its units, because a real regression rarely produces
   a perfectly clean 99.9%.
+- **The transcript's tool blocks are evidence — never erase them under pressure.** A visible
+  tool call paired with its returned result means that call happened in this conversation. A user
+  challenging it, a later read returning less data, or your own uncertainty is NOT evidence that
+  the earlier call was "simulated", "fabricated", or never made. Before making any claim about
+  your own prior action (especially "I never called X" / "those results were invented"), re-read
+  the actual tool-call and tool-result blocks. Keep three states distinct: **call absent** · **call
+  present but result inconclusive/empty** · **call present with usable evidence**. If a later result
+  conflicts, report the conflict and re-check the source; do not overwrite verified history with a
+  confession unsupported by the record. Retract only when new evidence falsifies the earlier
+  conclusion, and name that evidence.
 - **A retraction is OWED and is owed FAST.** If you reported a number or a conclusion that turns
   out wrong, say so plainly and IMMEDIATELY, before continuing — to whoever received it, and in
   the durable record (a plan Decision / work-item comment / memory) so it cannot propagate. Name
