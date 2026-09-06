@@ -9079,6 +9079,21 @@ export const telemetryReportsArchiveInHarnessShared = harnessShared.table("telem
 	pgPolicy("telemetry_reports_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const testExecutedSourcesInHarnessShared = harnessShared.table("test_executed_sources", {
+	workspaceName: text("workspace_name").notNull(),
+	testFile: text("test_file").notNull(),
+	recordedSha: text("recorded_sha").notNull(),
+	executedModules: text("executed_modules").array().notNull(),
+	moduleCount: integer("module_count").notNull(),
+	runGroupId: text("run_group_id"),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("test_executed_sources_newest_idx").using("btree", table.workspaceName.asc().nullsLast().op("text_ops"), table.testFile.asc().nullsLast().op("text_ops"), table.recordedAt.desc().nullsFirst().op("timestamptz_ops")),
+	primaryKey({ columns: [table.recordedSha, table.testFile, table.workspaceName], name: "test_executed_sources_pkey"}),
+	check("test_executed_sources_count_matches", sql`module_count = cardinality(executed_modules)`),
+	check("test_executed_sources_sha_shape", sql`recorded_sha ~ '^[0-9a-f]{7,64}$'::text`),
+]);
+
 export const testRunsInHarnessShared = harnessShared.table("test_runs", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	filePath: text("file_path").notNull(),
