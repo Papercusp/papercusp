@@ -16,6 +16,10 @@ import {
   acquireSnapshot,
   beginAcquire,
   describeAcquirePressure,
+  PG_RESULT_DIAGNOSTIC_LIMIT,
+  pgQueryFamily,
+  pgResultDiagnosticSnapshot,
+  recordPgResult,
   recordPoolMax,
   resetAcquireRegistryForTest,
 } from './acquire-registry';
@@ -99,6 +103,106 @@ describe('acquireSnapshot', () => {
     expect(acquireSnapshot('org-app').held).toBe(1);
     expect(acquireSnapshot('org-admin').held).toBe(0);
     a.release();
+  });
+});
+
+describe('bounded PostgreSQL result diagnostics', () => {
+  it('classifies an operation/relation without retaining literals, comments, or parameters', () => {
+    const family = pgQueryFamily(`
+      /* token=do-not-retain */ SELECT payload
+      FROM harness_shared.substrate_outbox
+      WHERE workspace_id = 'secret-workspace' AND id = $1
+    `);
+    expect(family).toBe('select:harness_shared.substrate_outbox');
+    expect(family).not.toContain('secret');
+    expect(family).not.toContain('$1');
+  });
+
+  it('retains source identity and result volume but no raw SQL or rows', () => {
+    vi.setSystemTime(new Date('2026-09-06T22:00:00.000Z'));
+    recordPgResult('org-app', {
+      connectionId: 7,
+      backendPid: 4123,
+      query: `SELECT payload FROM harness_shared.substrate_outbox WHERE token = 'private'`,
+      command: 'SELECT',
+      rowCount: 200,
+      wireBytes: 1_048_576,
+      elapsedMs: 83.9,
+      status: 'ok',
+    });
+
+    const snapshot = pgResultDiagnosticSnapshot('org-app');
+    expect(snapshot).toMatchObject({
+      pool: 'org-app',
+      totalRecorded: 1,
+      dropped: 0,
+      capacity: PG_RESULT_DIAGNOSTIC_LIMIT,
+    });
+    expect(snapshot.results).toEqual([
+      {
+        pool: 'org-app',
+        connectionId: 7,
+        backendPid: 4123,
+        queryFamily: 'select:harness_shared.substrate_outbox',
+        command: 'select',
+        rowCount: 200,
+        wireBytes: 1_048_576,
+        elapsedMs: 83,
+        status: 'ok',
+        errorCode: null,
+        recordedAt: Date.now(),
+      },
+    ]);
+    expect(JSON.stringify(snapshot)).not.toContain('private');
+    expect(JSON.stringify(snapshot)).not.toContain('SELECT payload');
+  });
+
+  it('bounds the FIFO and reports how much older evidence was dropped', () => {
+    for (let i = 0; i < PG_RESULT_DIAGNOSTIC_LIMIT + 5; i++) {
+      recordPgResult('org-admin', {
+        connectionId: i,
+        backendPid: null,
+        query: 'select 1',
+        rowCount: i,
+        wireBytes: i * 10,
+        status: 'ok',
+      });
+    }
+
+    const snapshot = pgResultDiagnosticSnapshot('org-admin', 3);
+    expect(snapshot.totalRecorded).toBe(PG_RESULT_DIAGNOSTIC_LIMIT + 5);
+    expect(snapshot.dropped).toBe(5);
+    expect(snapshot.results.map((r) => r.connectionId)).toEqual([
+      PG_RESULT_DIAGNOSTIC_LIMIT + 2,
+      PG_RESULT_DIAGNOSTIC_LIMIT + 3,
+      PG_RESULT_DIAGNOSTIC_LIMIT + 4,
+    ]);
+  });
+
+  it('keeps failure-path evidence bounded and normalizes malformed counters', () => {
+    recordPgResult('org-app', {
+      connectionId: -4,
+      backendPid: Number.NaN,
+      query: 'vacuum',
+      command: 'VACUUM (ANALYZE); DROP TABLE should_not_survive',
+      rowCount: -1,
+      wireBytes: Number.POSITIVE_INFINITY,
+      elapsedMs: -10,
+      status: 'error',
+      errorCode: '42P01 leaked detail',
+    });
+
+    expect(pgResultDiagnosticSnapshot('org-app').results[0]).toMatchObject({
+      connectionId: 0,
+      backendPid: null,
+      queryFamily: 'other',
+      command: 'vacuumanalyzedroptableshould_not',
+      rowCount: 0,
+      wireBytes: 0,
+      elapsedMs: 0,
+      status: 'error',
+      errorCode: '42p01leakeddetai',
+    });
   });
 });
 

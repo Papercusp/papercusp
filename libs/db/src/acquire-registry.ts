@@ -56,6 +56,13 @@ import { pinModuleState } from '@papercusp/module-singleton';
 /** A successful acquisition at most this long ago proves the endpoint answers. */
 export const ACQUIRE_RECENT_SUCCESS_MS = 60_000;
 
+/**
+ * Keep only the newest completed-query records per pool. This is diagnostic
+ * state, not telemetry storage: the bound must stay small enough to inspect on
+ * a failed epoch without turning a busy query path into a new memory leak.
+ */
+export const PG_RESULT_DIAGNOSTIC_LIMIT = 32;
+
 export interface AcquireSnapshot {
   /** The pool's `buildClient` label, e.g. `org-app` / `org-admin`. */
   pool: string;
@@ -88,6 +95,9 @@ interface PoolState {
   max: number | null;
   totalAcquired: number;
   lastAcquiredAt: number | null;
+  /** Optional for in-place upgrade of a PoolState pinned by older live code. */
+  pgResults?: PgResultDiagnostic[];
+  totalPgResults?: number;
 }
 
 interface RegistryState {
@@ -107,6 +117,134 @@ function poolState(pool: string): PoolState {
     STATE.pools.set(pool, s);
   }
   return s;
+}
+
+export interface PgResultDiagnosticInput {
+  connectionId: number;
+  backendPid: number | null;
+  query: string;
+  command?: string | null;
+  rowCount: number;
+  wireBytes: number;
+  elapsedMs?: number | null;
+  status: 'ok' | 'error';
+  errorCode?: string | null;
+}
+
+/**
+ * The bounded, safe-to-render record retained for a completed postgres-js
+ * query. It deliberately contains no SQL text, values, parameters, or rows.
+ */
+export interface PgResultDiagnostic {
+  pool: string;
+  connectionId: number;
+  backendPid: number | null;
+  queryFamily: string;
+  command: string | null;
+  rowCount: number;
+  wireBytes: number;
+  elapsedMs: number | null;
+  status: 'ok' | 'error';
+  errorCode: string | null;
+  recordedAt: number;
+}
+
+export interface PgResultDiagnosticSnapshot {
+  pool: string;
+  capacity: number;
+  totalRecorded: number;
+  dropped: number;
+  results: PgResultDiagnostic[];
+}
+
+function boundedWholeNumber(value: number, nullable = false): number | null {
+  if (!Number.isFinite(value)) return nullable ? null : 0;
+  return Math.max(0, Math.floor(value));
+}
+
+function safeToken(value: string | null | undefined, max: number): string | null {
+  if (!value) return null;
+  const token = value.toLowerCase().replace(/[^a-z0-9_.-]+/g, '').slice(0, max);
+  return token || null;
+}
+
+/**
+ * Reduce arbitrary SQL to a stable operation/relation family without retaining
+ * literals or parameter values. This is intentionally a classifier, not a SQL
+ * parser: an unknown shape becomes "other", never a clipped copy of the query.
+ */
+export function pgQueryFamily(query: string): string {
+  const scrubbed = String(query)
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--[^\r\n]*/g, ' ')
+    .replace(/\$\w*\$[\s\S]*?\$\w*\$/g, ' ')
+    .replace(/'(?:''|[^'])*'/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  const operation =
+    scrubbed.match(/\b(select|insert|update|delete|merge|copy|call|show|set|begin|commit|rollback)\b/)?.[1] ??
+    'other';
+  const relationMatch =
+    operation === 'insert'
+      ? scrubbed.match(/\binsert\s+into\s+("?[\w.-]+"?)/)
+      : operation === 'update'
+        ? scrubbed.match(/\bupdate\s+("?[\w.-]+"?)/)
+        : scrubbed.match(/\b(?:from|copy|call)\s+("?[\w.-]+"?)/);
+  const relation = safeToken(relationMatch?.[1]?.replace(/"/g, ''), 72);
+  return relation ? `${operation}:${relation}` : operation;
+}
+
+/**
+ * Record one terminal result from postgres-js. All fields are normalized and
+ * the retained FIFO is bounded. This function is intentionally synchronous and
+ * allocation-small because it runs on the protocol result path.
+ */
+export function recordPgResult(pool: string, input: PgResultDiagnosticInput): void {
+  if (!pool) return;
+  const s = poolState(pool);
+  const results = (s.pgResults ??= []);
+  const diagnostic: PgResultDiagnostic = {
+    pool,
+    connectionId: boundedWholeNumber(input.connectionId) ?? 0,
+    backendPid:
+      input.backendPid === null ? null : boundedWholeNumber(input.backendPid, true),
+    queryFamily: pgQueryFamily(input.query),
+    command: safeToken(input.command, 32),
+    rowCount: boundedWholeNumber(input.rowCount) ?? 0,
+    wireBytes: boundedWholeNumber(input.wireBytes) ?? 0,
+    elapsedMs:
+      input.elapsedMs === null || input.elapsedMs === undefined
+        ? null
+        : boundedWholeNumber(input.elapsedMs, true),
+    status: input.status === 'error' ? 'error' : 'ok',
+    errorCode: safeToken(input.errorCode, 16),
+    recordedAt: Date.now(),
+  };
+  results.push(diagnostic);
+  s.totalPgResults = (s.totalPgResults ?? 0) + 1;
+  if (results.length > PG_RESULT_DIAGNOSTIC_LIMIT) {
+    results.splice(0, results.length - PG_RESULT_DIAGNOSTIC_LIMIT);
+  }
+}
+
+/** Read newest retained results for one pool without exposing mutable state. */
+export function pgResultDiagnosticSnapshot(
+  pool: string,
+  limit = PG_RESULT_DIAGNOSTIC_LIMIT,
+): PgResultDiagnosticSnapshot {
+  const s = STATE.pools.get(pool);
+  const all = s?.pgResults ?? [];
+  const totalRecorded = s?.totalPgResults ?? 0;
+  const appliedLimit = Math.max(0, Math.min(PG_RESULT_DIAGNOSTIC_LIMIT, Math.floor(limit)));
+  const results = appliedLimit === 0 ? [] : all.slice(-appliedLimit).map((item) => ({ ...item }));
+  return {
+    pool,
+    capacity: PG_RESULT_DIAGNOSTIC_LIMIT,
+    totalRecorded,
+    dropped: Math.max(0, totalRecorded - all.length),
+    results,
+  };
 }
 
 /**
