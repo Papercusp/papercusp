@@ -23,6 +23,10 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres, { type Sql, type TransactionSql } from 'postgres';
 import { locksHost } from './config';
+import {
+  sweepResourceExpired,
+  sweepResourceWaitersExpired,
+} from './resource-lock-store';
 
 /**
  * Tx type re-export. Store helpers take `Sql`; callers inside
@@ -480,8 +484,8 @@ export async function pokeWorkspace(tx: Sql, coordinationDomain: string): Promis
 
 /**
  * One background sweep pass:
- *   1. Discover workspaces carrying expired locks or orphaned waiters
- *      (one index-bounded read).
+ *   1. Discover workspaces carrying expired file/resource locks, queue
+ *      tickets, or orphaned waiters (one index-bounded read).
  *   2. For each, take that workspace's advisory lock NON-blockingly
  *      (pg_try_advisory_xact_lock — if a tool txn already holds it,
  *      that txn sweeps+cascades itself, or we catch it next tick),
@@ -506,6 +510,15 @@ export async function runBackgroundJanitorOnce(): Promise<void> {
     UNION
     SELECT coordination_domain FROM agent_lock_waiters
       WHERE status = 'waiting' AND wait_until <= clock_timestamp()
+    UNION
+    SELECT coordination_domain FROM agent_resource_locks
+      WHERE expires_ts <= clock_timestamp()
+    UNION
+    SELECT coordination_domain FROM agent_resource_exclusive_queue
+      WHERE expires_ts <= clock_timestamp()
+    UNION
+    SELECT coordination_domain FROM agent_resource_waiters
+      WHERE expires_ts <= clock_timestamp()
   `;
 
   for (const { coordination_domain } of dirty) {
@@ -523,6 +536,11 @@ export async function runBackgroundJanitorOnce(): Promise<void> {
         const swept = await sweepWorkspaceExpired(tx, coordination_domain);
         if (swept) {
           await tx`SELECT grant_cascade(${coordination_domain}, clock_timestamp())`;
+        }
+        const resourceSwept = await sweepResourceExpired(tx, coordination_domain);
+        await sweepResourceWaitersExpired(tx, coordination_domain);
+        if (resourceSwept) {
+          await tx`SELECT resource_grant_cascade(${coordination_domain}, clock_timestamp())`;
         }
       });
     } catch (err) {

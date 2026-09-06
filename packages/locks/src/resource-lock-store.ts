@@ -232,10 +232,17 @@ async function readLiveHolders(
 }
 
 /**
- * Delete this workspace's expired resource-lock rows. Mirrors
- * sweepWorkspaceExpired for the file locks — drain-to-zero relies on
- * expired shared holders being removed so resource_grant_cascade can fire.
- * Returns true if anything was swept (so the caller can run the cascade).
+ * Delete this workspace's expired resource-lock rows and queue tickets.
+ * Mirrors sweepWorkspaceExpired for the file locks — drain-to-zero relies
+ * on expired shared holders being removed so resource_grant_cascade can fire.
+ *
+ * Resource waiters are deliberately not swept here. They are a notification
+ * ledger, not an admission input, so deleting them from acquire/release/
+ * heartbeat transactions adds avoidable write contention to the hot path.
+ * The background janitor owns their expiry GC instead.
+ *
+ * Returns true if anything affecting admission was swept (so the caller can
+ * run the cascade).
  */
 export async function sweepResourceExpired(
   tx: Sql,
@@ -248,13 +255,24 @@ export async function sweepResourceExpired(
     RETURNING resource
   `;
   const queueRows = await sweepResourceExclusiveQueue(tx, coordinationDomain);
-  // Also GC abandoned waiters (an agent that was refused and never retried).
-  await tx`
+  return rows.length > 0 || queueRows > 0;
+}
+
+/** Delete abandoned resource waiter rows for one coordination domain.
+ * This is background-maintenance work only; waiter rows do not affect
+ * resource admission and must not be deleted by the hot-path sweep above.
+ */
+export async function sweepResourceWaitersExpired(
+  tx: Sql,
+  coordinationDomain: string,
+): Promise<number> {
+  const rows = await tx<Array<{ owner: string }>>`
     DELETE FROM agent_resource_waiters
      WHERE coordination_domain = ${coordinationDomain}
        AND expires_ts <= clock_timestamp()
+    RETURNING owner
   `;
-  return rows.length > 0 || queueRows > 0;
+  return rows.length;
 }
 
 // ───────── Waiter ledger (A4 — targeted "resource back up" broadcast) ─────────
