@@ -8915,6 +8915,8 @@ export const substrateOutboxInHarnessShared = harnessShared.table("substrate_out
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	ts: bigint({ mode: "number" }).notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	enqueuedAtMs: bigint("enqueued_at_ms", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	drainedAt: bigint("drained_at", { mode: "number" }),
 	opHlc: text("op_hlc"),
 	drainedLogKey: text("drained_log_key"),
