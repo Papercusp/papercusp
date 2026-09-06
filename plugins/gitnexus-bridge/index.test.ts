@@ -226,7 +226,7 @@ describe('resolveGitnexusChildCwd — index and process identity stay aligned (D
 // original defect: "Complements grep/IDE search" read as permission to keep
 // grepping alongside it).
 describe('TOOL_OVERRIDES — agent-vocabulary description/guidance for code-search tools', () => {
-  const CODE_SEARCH_TOOLS = ['query', 'cypher', 'context', 'impact'];
+  const CODE_SEARCH_TOOLS = ['query', 'cypher', 'context', 'impact', 'explain', 'trace', 'pdg_query'];
 
   it.each(CODE_SEARCH_TOOLS)('%s has an override with a non-empty description and guidance.when', (tool) => {
     const o = TOOL_OVERRIDES[tool];
@@ -259,6 +259,32 @@ describe('TOOL_OVERRIDES — agent-vocabulary description/guidance for code-sear
   it('impact\'s override targets the "what would break" pre-refactor use case', () => {
     const text = `${TOOL_OVERRIDES.impact.description} ${TOOL_OVERRIDES.impact.guidance.when}`.toLowerCase();
     expect(text).toMatch(/break|rename|refactor|depend/);
+  });
+
+  it.each(['explain', 'trace', 'pdg_query'])('%s override stays within the prompt-weight hard cap', (tool) => {
+    const o = TOOL_OVERRIDES[tool];
+    const weight = [o.description, o.guidance.when, o.guidance.notWhen, o.guidance.chaining].reduce(
+      (total, text) => total + (text?.length ?? 0),
+      0,
+    );
+    expect(weight).toBeLessThanOrEqual(1600);
+  });
+
+  it('pdg_query override preserves the anchored controls/flows contract and safe alternatives', () => {
+    const text = `${TOOL_OVERRIDES.pdg_query.description} ${TOOL_OVERRIDES.pdg_query.guidance.when} ${TOOL_OVERRIDES.pdg_query.guidance.notWhen} ${TOOL_OVERRIDES.pdg_query.guidance.chaining}`.toLowerCase();
+    expect(text).toContain('controls');
+    expect(text).toContain('flows');
+    expect(text).toContain('target');
+    expect(text).toContain('analyze --pdg');
+    expect(text).toContain('graph:query');
+    expect(text).toContain('explain');
+  });
+
+  it('trace\'s override names the shortest directed symbol-path use case', () => {
+    const text = `${TOOL_OVERRIDES.trace.description} ${TOOL_OVERRIDES.trace.guidance.when}`.toLowerCase();
+    expect(text).toContain('shortest');
+    expect(text).toContain('symbol');
+    expect(text).toContain('path');
   });
 
   it('a tool with no override entry is simply absent from the map (upstream description falls through unchanged)', () => {

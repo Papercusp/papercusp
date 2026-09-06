@@ -504,6 +504,43 @@ export const TOOL_OVERRIDES: Record<string, { description: string; guidance: Non
       notWhen: 'Not for exploring code you haven\'t decided to change yet — start with gitnexus.query.',
     },
   },
+  explain: {
+    description:
+      'Explain persisted GitNexus taint findings from `gitnexus analyze --pdg`: source-to-sink flows, ' +
+      'including interprocedural paths. Use it to inspect a known security finding or sink; omit `target` ' +
+      'to enumerate findings.',
+    guidance: {
+      when: 'When you need to inspect a known GitNexus taint finding or trace data into a security sink.',
+      notWhen:
+        'Not for keyword search or general navigation; use rg for text, gitnexus.context for a known symbol, ' +
+        'or graph:query for callers/callees.',
+      chaining: 'Follow a finding from a security review or gitnexus.pdg_query into this tool.',
+    },
+  },
+  trace: {
+    description:
+      'Find the shortest directed symbol path between known code symbols. Use it for a focused execution ' +
+      'flow; use `gitnexus.context` for source or `graph:query` for custom topology.',
+    guidance: {
+      when: 'When you need the shortest caller/callee path between known symbols.',
+      notWhen: 'Not for keyword search or broad discovery; use rg for text or gitnexus.context for source.',
+      chaining: 'Start with known symbols returned by gitnexus.context or graph:query.',
+    },
+  },
+  pdg_query: {
+    description:
+      'Query the persisted Program Dependence Graph from `gitnexus analyze --pdg`: `controls` returns ' +
+      'CDG edges (what condition gates an anchored target); `flows` returns intra-procedural REACHING_DEF ' +
+      'edges (where a variable flows; optional `variable` filter). Requires `target` (file path or symbol); ' +
+      'there is no whole-repo scan. Without a PDG layer, it returns a clear note. Basic-block granularity; ' +
+      'use `gitnexus.explain` for cross-function taint and `gitnexus.cypher` for raw edges. Full caveats: ' +
+      '.claude/skills/gitnexus/gitnexus-guide/SKILL.md.',
+    guidance: {
+      when: 'Use for guard/comprehension questions or tracing a binding inside one function after `analyze --pdg`.',
+      notWhen: 'Not for keyword search, callers/callees, or cross-function flow; use rg, graph:query, or gitnexus.explain.',
+      chaining: 'Anchor with a file/symbol target; add `variable` only in `flows` mode.',
+    },
+  },
 };
 
 // ===========================================================================
