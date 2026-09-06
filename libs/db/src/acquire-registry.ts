@@ -121,6 +121,7 @@ function poolState(pool: string): PoolState {
 
 export interface PgResultDiagnosticInput {
   connectionId: number;
+  queryId: number;
   backendPid: number | null;
   query: string;
   command?: string | null;
@@ -138,6 +139,7 @@ export interface PgResultDiagnosticInput {
 export interface PgResultDiagnostic {
   pool: string;
   connectionId: number;
+  queryId: number;
   backendPid: number | null;
   queryFamily: string;
   command: string | null;
@@ -207,6 +209,7 @@ export function recordPgResult(pool: string, input: PgResultDiagnosticInput): vo
   const diagnostic: PgResultDiagnostic = {
     pool,
     connectionId: boundedWholeNumber(input.connectionId) ?? 0,
+    queryId: boundedWholeNumber(input.queryId) ?? 0,
     backendPid:
       input.backendPid === null ? null : boundedWholeNumber(input.backendPid, true),
     queryFamily: pgQueryFamily(input.query),

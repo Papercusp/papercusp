@@ -122,6 +122,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
     vi.setSystemTime(new Date('2026-09-06T22:00:00.000Z'));
     recordPgResult('org-app', {
       connectionId: 7,
+      queryId: 19,
       backendPid: 4123,
       query: `SELECT payload FROM harness_shared.substrate_outbox WHERE token = 'private'`,
       command: 'SELECT',
@@ -142,6 +143,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
       {
         pool: 'org-app',
         connectionId: 7,
+        queryId: 19,
         backendPid: 4123,
         queryFamily: 'select:harness_shared.substrate_outbox',
         command: 'select',
@@ -161,6 +163,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
     for (let i = 0; i < PG_RESULT_DIAGNOSTIC_LIMIT + 5; i++) {
       recordPgResult('org-admin', {
         connectionId: i,
+        queryId: i + 100,
         backendPid: null,
         query: 'select 1',
         rowCount: i,
@@ -182,6 +185,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
   it('keeps failure-path evidence bounded and normalizes malformed counters', () => {
     recordPgResult('org-app', {
       connectionId: -4,
+      queryId: -9,
       backendPid: Number.NaN,
       query: 'vacuum',
       command: 'VACUUM (ANALYZE); DROP TABLE should_not_survive',
@@ -194,6 +198,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
 
     expect(pgResultDiagnosticSnapshot('org-app').results[0]).toMatchObject({
       connectionId: 0,
+      queryId: 0,
       backendPid: null,
       queryFamily: 'other',
       command: 'vacuumanalyzedroptableshould_not',
