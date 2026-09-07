@@ -58,7 +58,7 @@ import { composeStack, type StackDocument } from './render-stack.js';
 import type { IdentityLintOptions } from './identity-lint.js';
 
 /** Compiler implementation version.  A semantic change requires a new value. */
-export const COMPOSITION_COMPILER_VERSION = '1.1.0';
+export const COMPOSITION_COMPILER_VERSION = '1.2.0';
 /** Alias used by callers that call the value a compiler revision. */
 export const COMPOSITION_COMPILER_REVISION = COMPOSITION_COMPILER_VERSION;
 
