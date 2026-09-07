@@ -79,6 +79,12 @@ export {
   compileStackSpecification,
   specificationPrompt,
   promptBytesFromSpecification,
+  pinPackageInput,
+  packageContentHash,
+  snapshotPackageDirectory,
+  validateAgentInputClosure,
+  validateSpecificationBundles,
+  replayAgentSpecification,
 } from './composition-compiler.js';
 export type {
   CompositionCompilerErrorCode,
@@ -89,6 +95,7 @@ export type {
   CompositionAddressedDocumentSet,
   CompositionSettingInput,
   CompiledAgentSpecification,
+  CompositionPackageInput,
 } from './composition-compiler.js';
 // identities-v1-2026-08-30 P-001: the slot registry (D-007 / D-008 amendments), the
 // D-011 bundle kinds, and the MERGE_RULES registry the P-019 merger consumes.

@@ -24,8 +24,8 @@
  * adapters consume the same artifact.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { isAbsolute, resolve as resolvePath } from 'node:path';
+import { existsSync, readFileSync, readdirSync, lstatSync, statSync } from 'node:fs';
+import { dirname, join, isAbsolute, resolve as resolvePath } from 'node:path';
 import { harnessRoot } from '@papercusp/harness/paths';
 import {
   ResolvedAgentSpecificationSchema,
@@ -34,10 +34,13 @@ import {
   type BlueprintSourceKind,
   type ResolvedAgentInput,
   type ResolvedAgentProvenance,
+  type ResolvedPackageInput,
+  type ResolvedPackageReference,
 } from './schema.js';
 import {
   loadBlueprintFromFile,
   layerSourceDocument,
+  layerContentHash,
   resolveBlueprint,
   type BlueprintValidateRegistry,
   type LoadedBlueprint,
@@ -53,7 +56,7 @@ import { composeStack, type StackDocument } from './render-stack.js';
 import type { IdentityLintOptions } from './identity-lint.js';
 
 /** Compiler implementation version.  A semantic change requires a new value. */
-export const COMPOSITION_COMPILER_VERSION = '1.0.0';
+export const COMPOSITION_COMPILER_VERSION = '1.1.0';
 /** Alias used by callers that call the value a compiler revision. */
 export const COMPOSITION_COMPILER_REVISION = COMPOSITION_COMPILER_VERSION;
 
@@ -74,7 +77,12 @@ export type CompositionCompilerErrorCode =
   | 'addressed-document-hash-mismatch'
   | 'setting-invalid'
   | 'input-invalid'
-  | 'input-conflict';
+  | 'input-conflict'
+  | 'package-missing'
+  | 'package-read-failed'
+  | 'package-hash-mismatch'
+  | 'package-pin-conflict'
+  | 'specification-hash-mismatch';
 
 /** A diagnosable, machine-classifiable compiler refusal. */
 export class CompositionCompilerError extends Error {
@@ -551,10 +559,101 @@ function layerInput(loaded: LoadedBlueprint, layerIndex: number, revisions?: Rea
     revision,
     contentHash: layer.contentHash,
     sourceKind: layer.sourceKind as BlueprintSourceKind,
+    document: layerSourceDocument(layer),
   };
 }
 
-function validateClosure(entries: readonly ResolvedAgentInput[]): ResolvedAgentInput[] {
+/** Canonical package content identity includes every file and exact dependency. */
+export function packageContentHash(input: Omit<ResolvedPackageInput, 'contentHash'>): string {
+  return canonicalHash(input);
+}
+
+export interface CompositionPackageInput {
+  packageKind: ResolvedPackageReference['packageKind'];
+  ref: string;
+  revision: string;
+  files: readonly { path: string; bytes: string | Uint8Array }[];
+  dependencies?: readonly ResolvedPackageReference[];
+  value?: unknown;
+}
+
+/** Seal bytes already read by a package adapter into the specification's pin record. */
+export function pinPackageInput(input: CompositionPackageInput): ResolvedPackageInput {
+  const files = input.files.map((file) => {
+    const bytes = Buffer.from(file.bytes);
+    return {
+      path: file.path,
+      encoding: 'base64' as const,
+      bytes: bytes.toString('base64'),
+      contentHash: createHash('sha256').update(bytes).digest('hex'),
+    };
+  }).sort((a, b) => a.path.localeCompare(b.path));
+  const candidate = {
+    kind: 'package' as const,
+    packageKind: input.packageKind,
+    ref: input.ref,
+    revision: input.revision,
+    files,
+    dependencies: [...(input.dependencies ?? [])].sort((a, b) => packageKey(a).localeCompare(packageKey(b))),
+    ...(input.value !== undefined ? { value: cloneJson(input.value) } : {}),
+  };
+  const pinned = { ...candidate, contentHash: packageContentHash(candidate) };
+  validatePackageContent(pinned);
+  return pinned;
+}
+
+function packageKey(input: Pick<ResolvedPackageReference, 'packageKind' | 'ref'>): string {
+  return input.packageKind + ':' + input.ref;
+}
+
+function readPackageFiles(dir: string, prefix = ''): { path: string; bytes: Uint8Array }[] {
+  try {
+    if (!lstatSync(dir).isDirectory()) fail('package-read-failed', 'package is not a directory', dir);
+    return readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap((entry) => {
+      const path = prefix + entry.name;
+      const absolute = join(dir, entry.name);
+      // Never follow links out of a package, or snapshot mutable VCS metadata.
+      if (entry.name === '.git') return [];
+      if (entry.isSymbolicLink()) fail('package-read-failed', 'package contains a symbolic link', path);
+      if (entry.isDirectory()) return readPackageFiles(absolute, path + '/');
+      if (!entry.isFile()) fail('package-read-failed', 'package contains a non-regular file', path);
+      return [{ path, bytes: readFileSync(absolute) }];
+    });
+  } catch (error) {
+    if (error instanceof CompositionCompilerError) throw error;
+    fail('package-read-failed', error instanceof Error ? error.message : String(error), dir);
+  }
+}
+
+/** Snapshot a locally resolved distribution directory; root paths never enter the pin. */
+export function snapshotPackageDirectory(
+  input: Omit<CompositionPackageInput, 'files'> & { dir: string },
+): ResolvedPackageInput {
+  if (!existsSync(input.dir)) fail('package-missing', 'package directory does not exist', packageKey(input));
+  return pinPackageInput({ ...input, files: readPackageFiles(input.dir) });
+}
+
+function validatePackageContent(input: ResolvedPackageInput): void {
+  const seen = new Set<string>();
+  for (const file of input.files) {
+    if (file.path.includes('\\') || file.path.split('/').some((part) => !part || part === '.' || part === '..')) {
+      fail('input-invalid', 'package file path must be relative and normalized', file.path);
+    }
+    if (seen.has(file.path)) fail('input-conflict', 'duplicate package file', file.path);
+    seen.add(file.path);
+    const bytes = Buffer.from(file.bytes, 'base64');
+    if (bytes.toString('base64') !== file.bytes || createHash('sha256').update(bytes).digest('hex') !== file.contentHash) {
+      fail('package-hash-mismatch', 'package file bytes disagree with the pin', packageKey(input) + '/' + file.path);
+    }
+  }
+  const { contentHash, ...content } = input;
+  if (packageContentHash(content) !== contentHash) {
+    fail('package-hash-mismatch', 'package content or dependency pins changed', packageKey(input));
+  }
+}
+
+/** Shared by compilation, replay and the existing distribution dependency validator. */
+export function validateAgentInputClosure(entries: readonly ResolvedAgentInput[]): ResolvedAgentInput[] {
   const byKey = new Map<string, ResolvedAgentInput>();
   for (const raw of entries) {
     const parsed = ResolvedAgentInputSchema.safeParse(cloneJson(raw));
@@ -562,14 +661,87 @@ function validateClosure(entries: readonly ResolvedAgentInput[]): ResolvedAgentI
       fail('input-invalid', parsed.error.issues.map((issue) => issue.message).join('; '));
     }
     const entry = parsed.data as ResolvedAgentInput;
-    const key = `${entry.kind}\u0000${entry.ref}`;
+    const key = entry.kind === 'package' ? 'package:' + packageKey(entry) : entry.kind + ':' + entry.ref;
     const prior = byKey.get(key);
     if (prior && stableStringify(prior) !== stableStringify(entry)) {
-      fail('input-conflict', `two closure entries disagree for ${entry.kind}:${entry.ref}`, entry.ref);
+      fail(entry.kind === 'package' ? 'package-pin-conflict' : 'input-conflict',
+        'two closure entries disagree for ' + key, entry.ref);
+    }
+    if (entry.kind === 'package') validatePackageContent(entry);
+    else if (entry.kind === 'prompt-file' && sha256(entry.bytes) !== entry.contentHash) {
+      fail('prompt-hash-mismatch', 'closure prompt bytes disagree with the pin', entry.ref);
+    } else if (entry.kind === 'addressed-document' && entry.bytes !== undefined && sha256(entry.bytes) !== entry.contentHash) {
+      fail('addressed-document-hash-mismatch', 'closure document bytes disagree with the pin', entry.ref);
+    } else if (entry.kind === 'blueprint-layer' && entry.document && layerContentHash(entry.document) !== entry.contentHash) {
+      fail('source-invalid', 'closure source document disagrees with the pin', entry.ref);
     }
     if (!prior) byKey.set(key, entry);
   }
-  return [...byKey.values()];
+  const values = [...byKey.values()];
+  const packages = values.filter((entry): entry is ResolvedPackageInput => entry.kind === 'package');
+  const byPackage = new Map(packages.map((entry) => [packageKey(entry), entry]));
+  for (const entry of packages) {
+    for (const dependency of entry.dependencies) {
+      const actual = byPackage.get(packageKey(dependency));
+      if (!actual) fail('package-missing', 'required by ' + packageKey(entry), packageKey(dependency));
+      if (actual.revision !== dependency.revision || actual.contentHash !== dependency.contentHash) {
+        fail('package-pin-conflict',
+          packageKey(entry) + ' requires ' + dependency.revision + '@' + dependency.contentHash +
+          ', selected ' + actual.revision + '@' + actual.contentHash, packageKey(dependency));
+      }
+    }
+  }
+  return values;
+}
+
+/** Resolve declared bundles using the same exact pins carried by the compiler. */
+export function validateSpecificationBundles(
+  bundles: readonly { kind: string; ref: string; version?: string }[],
+  inputs: readonly ResolvedAgentInput[],
+): ResolvedPackageInput[] {
+  const pins = validateAgentInputClosure(inputs).filter((entry): entry is ResolvedPackageInput => entry.kind === 'package');
+  for (const bundle of bundles) {
+    const pin = pins.find((entry) => entry.packageKind === bundle.kind && entry.ref === bundle.ref);
+    if (!pin) fail('package-missing', 'declared bundle has no resolved content', bundle.kind + ':' + bundle.ref);
+    if (bundle.version && bundle.version !== pin.revision) {
+      fail('package-pin-conflict', 'requires ' + bundle.version + ', selected ' + pin.revision, packageKey(pin));
+    }
+  }
+  return pins;
+}
+
+function blueprintPackageInputs(loaded: LoadedBlueprint): ResolvedPackageInput[] {
+  return loaded.layers.map((layer) => {
+    const document = layerSourceDocument(layer);
+    if (!document) fail('source-invalid', 'source snapshot is unavailable', layer.id);
+    const promptDir = layer.sourcePath ? join(dirname(layer.sourcePath), 'prompts') : null;
+    return pinPackageInput({
+      packageKind: 'blueprint',
+      ref: layer.id,
+      revision: typeof document.version === 'string' ? document.version : layer.contentHash,
+      value: document,
+      files: promptDir && existsSync(promptDir) ? readPackageFiles(promptDir, 'prompts/') : [],
+    });
+  });
+}
+
+/** Replay the exact saved artifact, without consulting a mutable file or registry. */
+export function replayAgentSpecification(value: unknown): CompiledAgentSpecification {
+  const parsed = ResolvedAgentSpecificationSchema.safeParse(value);
+  if (!parsed.success) fail('input-invalid', parsed.error.issues.map((issue) => issue.message).join('; '));
+  const specification = parsed.data;
+  validateSpecificationBundles(specification.configuration.bundles, specification.inputs as ResolvedAgentInput[]);
+  for (const entry of specification.inputs) {
+    if (entry.kind === 'blueprint-layer' && !entry.document) fail('source-invalid', 'replay needs the source document', entry.ref);
+    if (entry.kind === 'addressed-document' && entry.bytes === undefined) {
+      fail('addressed-document-missing-content', 'replay needs the addressed document bytes', entry.ref);
+    }
+  }
+  const { specificationRevision, ...content } = specification;
+  if (canonicalHash(content) !== specificationRevision) {
+    fail('specification-hash-mismatch', 'saved configuration, provenance or input closure changed');
+  }
+  return specification;
 }
 
 function leafPaths(value: unknown, prefix: string): string[] {
@@ -635,6 +807,7 @@ function inputProvenance(
     let prefix: string;
     if (input.kind === 'prompt-file') prefix = `prompt.${promptKeys.get(input.ref) ?? 'default'}`;
     else if (input.kind === 'addressed-document') prefix = `addressed.${input.ref}`;
+    else if (input.kind === 'package') prefix = 'package.' + packageKey(input);
     else prefix = `setting.${input.ref}`;
     const sourceRevision = input.kind === 'prompt-file' ? input.contentHash : input.revision;
     out.push({
@@ -670,6 +843,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
   if (!compilerVersion.trim()) fail('input-invalid', 'compilerVersion must be non-empty');
 
   const inputs: ResolvedAgentInput[] = loaded.layers.map((_, i) => layerInput(loaded, i, input.layerRevisions));
+  inputs.push(...blueprintPackageInputs(loaded));
   const promptKeys = new Map<string, string>();
   const descriptors = normalizePromptDescriptors(input);
   const promptSegments: string[] = [];
@@ -695,9 +869,11 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
   for (const setting of settings) {
     inputs.push({ kind: 'setting', ref: setting.ref, revision: String(setting.revision), value: setting.value });
   }
-  if (input.inputClosure) inputs.push(...input.inputClosure.map((entry) => cloneJson(entry) as ResolvedAgentInput));
+  if (input.inputClosure) inputs.push(...input.inputClosure.map((entry) => cloneJson(entry) as ResolvedAgentInput)
+    .sort((a, b) => (a.kind + ':' + a.ref).localeCompare(b.kind + ':' + b.ref)));
 
-  const closure = validateClosure(inputs);
+  const closure = validateAgentInputClosure(inputs);
+  validateSpecificationBundles(loaded.blueprint.bundles, closure);
   const addressedText = input.includeAddressedDocuments === false ? '' : renderAddressedRows(addressedRows);
   const joinedPromptText = promptSegments.join(PROMPT_SEPARATOR);
   const promptText = promptSegments.length

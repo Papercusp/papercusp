@@ -1217,6 +1217,30 @@ export type RunnableBlueprint = z.infer<typeof RunnableBlueprintSchema>;
 
 const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/, 'sha256 hex');
 
+/** Package pins live in the existing specification closure, never a second lockfile. */
+export const ResolvedPackageReferenceSchema = z.object({
+  packageKind: z.enum(['blueprint', 'pack', 'plugin', ...BUNDLE_KINDS]),
+  ref: z.string().min(1),
+  revision: z.string().min(1),
+  contentHash: Sha256Schema,
+}).strict();
+
+export const ResolvedPackageInputSchema = ResolvedPackageReferenceSchema.extend({
+  kind: z.literal('package'),
+  files: z.array(z.object({
+    path: z.string().min(1),
+    encoding: z.literal('base64'),
+    bytes: z.string(),
+    contentHash: Sha256Schema,
+  }).strict()),
+  dependencies: z.array(ResolvedPackageReferenceSchema),
+  /** Parsed asset consumed by the existing seed/registration adapter, also hashed. */
+  value: z.unknown().optional(),
+}).strict();
+
+export type ResolvedPackageReference = z.infer<typeof ResolvedPackageReferenceSchema>;
+export type ResolvedPackageInput = z.infer<typeof ResolvedPackageInputSchema>;
+
 export const ResolvedAgentInputSchema = z.discriminatedUnion('kind', [
   z
     .object({
@@ -1225,6 +1249,8 @@ export const ResolvedAgentInputSchema = z.discriminatedUnion('kind', [
       revision: z.string().min(1),
       contentHash: Sha256Schema,
       sourceKind: BlueprintSourceKindSchema,
+      /** Authored source snapshot for offline replay; older artifacts may lack it. */
+      document: z.record(z.string(), z.unknown()).optional(),
     })
     .strict(),
   z
@@ -1241,6 +1267,7 @@ export const ResolvedAgentInputSchema = z.discriminatedUnion('kind', [
       ref: z.string().min(1),
       revision: z.string().min(1),
       contentHash: Sha256Schema,
+      bytes: z.string().optional(),
     })
     .strict(),
   z
@@ -1251,6 +1278,7 @@ export const ResolvedAgentInputSchema = z.discriminatedUnion('kind', [
       value: z.unknown(),
     })
     .strict(),
+  ResolvedPackageInputSchema,
 ]);
 
 const ResolvedAgentProvenanceSourceSchema = z
