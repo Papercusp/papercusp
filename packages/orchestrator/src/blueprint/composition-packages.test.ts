@@ -92,6 +92,46 @@ describe('P-006 complete package closure and replay', () => {
       .toThrow(/addressed-document-hash-mismatch/);
   });
 
+  it('pins an exact capability provider in the same immutable closure', () => {
+    const provider = {
+      kind: 'capability-provider' as const,
+      ref: 'crm.email@1.0.0',
+      providerPackage: 'acme-crm',
+      providerVersion: '2.0.0',
+      conformanceRunId: 'run-1',
+      registryRevision: 'registry-r1',
+      verbBindings: { send: 'acme:send-email' },
+    };
+    const first = compileAgentSpecification({
+      source: {
+        ...source,
+        grants: { requires: ['crm.email@1.0.0'] },
+      },
+      inputClosure: [provider],
+    });
+    expect(first.inputs).toContainEqual(provider);
+    const rebound = compileAgentSpecification({
+      source: {
+        ...source,
+        grants: { requires: ['crm.email@1.0.0'] },
+      },
+      inputClosure: [{
+        ...provider,
+        providerVersion: '2.1.0',
+        conformanceRunId: 'run-2',
+      }],
+    });
+    expect(rebound.specificationRevision).not.toBe(first.specificationRevision);
+    expect(() => validateAgentInputClosure([
+      provider,
+      { ...provider, providerVersion: '2.1.0' },
+    ])).toThrow(/input-conflict/);
+    const tampered = JSON.parse(JSON.stringify(first));
+    tampered.inputs.find((entry: { kind: string }) =>
+      entry.kind === 'capability-provider').providerVersion = '9.0.0';
+    expect(() => replayAgentSpecification(tampered)).toThrow(/specification-hash-mismatch/);
+  });
+
   it.each(['prompt-file', 'addressed-document', 'package', 'blueprint-layer'])('refuses corrupted %s snapshots', (kind) => {
     const artifact = JSON.parse(JSON.stringify(compile()));
     const entry = artifact.inputs.find((value: { kind: string }) => value.kind === kind);
