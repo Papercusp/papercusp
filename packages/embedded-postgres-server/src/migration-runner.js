@@ -332,7 +332,7 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
   // per file, and those ~370 serial fsyncs dominate the desktop's ~10s first-boot wait
   // (measured: cold 13s vs warm 3s — the ~10s delta is initdb + this apply). For a large
   // batch (a fresh initdb) drop synchronous_commit so those commits don't each fsync,
-  // then restore it + CHECKPOINT after the loop so the applied schema is durable before
+  // then synchronously commit a ledger write after the loop so the applied schema is durable before
   // the operator touches the DB. SAFE: `client` is a dedicated, short-lived boot-setup
   // connection (embedded-postgres-server postgres({ max: 1 })), and a crash mid-apply
   // leaves an INCOMPLETE data dir that first-boot discards + re-initdb's — nothing durable
@@ -342,6 +342,7 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
   if (bulkApply) await client.unsafe('SET synchronous_commit = off').catch(() => {});
 
   let appliedCount = 0;
+  let lastAppliedFile = null;
   for (const f of allFiles) {
     if (applied.has(f)) continue;
     const ddlRaw = await readFile(join(sqlDir, f), 'utf8');
@@ -381,6 +382,7 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
       await beforeApply?.(f, ddlRaw);
       await client.unsafe(migrationSql);
       appliedCount++;
+      lastAppliedFile = f;
     } catch (err) {
       // The failed `BEGIN…COMMIT` left the connection in an aborted
       // transaction; reset it so error reporting isn't masked by
@@ -413,11 +415,24 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     }
   }
 
-  // Restore durable commits and flush everything the bulk apply wrote, so the schema
-  // is fsync'd before boot proceeds (closes the crash-window that async commit opens).
+  // A synchronous commit flushes its WAL and all preceding migration commits.
+  // Reuse one existing tracker row without changing its values; unlike CHECKPOINT,
+  // this does not flush unrelated databases across a shared Postgres cluster.
+  // In particular, a cold test template must not wait for that cluster-wide work
+  // before it can be published. PostgreSQL's commit-order recovery guarantee:
+  // https://www.postgresql.org/docs/18/wal-async-commit.html
+  // Use the last SUCCESSFUL file, including when continueOnError skipped the tail.
+  // A missing row or failed flush must fail boot, never silently report durability.
   if (bulkApply) {
-    await client.unsafe('SET synchronous_commit = on').catch(() => {});
-    await client.unsafe('CHECKPOINT').catch(() => {});
+    await client.unsafe('SET synchronous_commit = on');
+    if (lastAppliedFile !== null) {
+      const flushed = await client.unsafe(
+        `UPDATE harness_shared.schema_migrations SET sha256 = sha256 WHERE filename = '${lastAppliedFile.replace(/'/g, "''")}' RETURNING filename`,
+      );
+      if (!Array.isArray(flushed) || !flushed.some((row) => row.filename === lastAppliedFile)) {
+        throw new Error(`Migration durability barrier could not find recorded file ${lastAppliedFile}`);
+      }
+    }
   }
 
   return { appliedCount, totalKnown: allFiles.length, failed };
