@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, lstatSync, statSync } from 'node:fs';
 import { dirname, join, isAbsolute, resolve as resolvePath } from 'node:path';
 import { harnessRoot } from '@papercusp/harness/paths';
+import { parse as parseYaml } from 'yaml';
 import {
   ResolvedAgentSpecificationSchema,
   ResolvedAgentInputSchema,
@@ -230,7 +231,7 @@ function cloneJson(value: unknown): unknown {
     return value;
   }
   if (Array.isArray(value)) return value.map(cloneJson);
-  if (isRecord(value)) {
+  if (isRecord(value) && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
     const out: Record<string, unknown> = {};
     for (const key of Object.keys(value).sort()) {
       if (value[key] === undefined) continue;
@@ -717,6 +718,17 @@ function blueprintPackageInputs(loaded: LoadedBlueprint, additional: readonly Re
     const document = layerSourceDocument(layer);
     if (!document) fail('source-invalid', 'source snapshot is unavailable', layer.id);
     const promptDir = layer.sourcePath ? join(dirname(layer.sourcePath), 'prompts') : null;
+    const files = promptDir && existsSync(promptDir) ? readPackageFiles(promptDir, 'prompts/') : [];
+    if (layer.sourcePath) {
+      let bytes: Buffer;
+      try { bytes = readFileSync(layer.sourcePath); }
+      catch (error) { fail('package-read-failed', String(error), layer.sourcePath); }
+      const raw: unknown = parseYaml(bytes.toString('utf8'));
+      if (!isRecord(raw) || layerContentHash(raw) !== layer.contentHash) {
+        fail('source-invalid', 'source file changed after resolution', layer.id);
+      }
+      files.push({ path: 'blueprint.yaml', bytes });
+    }
     const parents = typeof document.extends === 'string' ? [document.extends]
       : Array.isArray(document.extends) ? document.extends : [];
     const dependencies = [...packages, ...additional.filter((entry): entry is ResolvedPackageInput => entry.kind === 'package')]
@@ -728,7 +740,7 @@ function blueprintPackageInputs(loaded: LoadedBlueprint, additional: readonly Re
       ref: layer.id,
       revision: typeof document.version === 'string' ? document.version : layer.contentHash,
       value: document,
-      files: promptDir && existsSync(promptDir) ? readPackageFiles(promptDir, 'prompts/') : [],
+      files,
       dependencies,
     }));
   }
