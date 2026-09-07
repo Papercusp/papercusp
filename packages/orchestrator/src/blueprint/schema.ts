@@ -62,6 +62,12 @@ export const WorkItemSchema = z.object({
  */
 export const BlueprintRoleSchema = z.object({
   id: z.string().min(1),
+  /**
+   * Default identity binding for this launch role. Entries use the same
+   * `slot:document-id` wire form as the live stack/control anchor; launch-time
+   * validation resolves the slot registry and rejects conflicts before render.
+   */
+  stack: z.array(z.string().min(3)).max(40).optional(),
   prompt: z.string().optional(),
   model: z.string().optional(),
   /** @deprecated use top-level dependencies.tools (kept for a targeted validation error). */
