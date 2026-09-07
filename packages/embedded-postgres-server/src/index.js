@@ -69,28 +69,49 @@ const DEFAULT_OWNER_PWD = 'postgres';
  * container and any non-PG18 server). See that migration for the full root cause.
  */
 export async function ensureZeroHarnessPublication(sql) {
-  await sql.unsafe(`
-    DO $pg$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'zero_harness') THEN
-        CREATE PUBLICATION zero_harness FOR TABLES IN SCHEMA harness_shared, papercusp_shared;
-      END IF;
-    END $pg$;
-  `);
-  // Add per-harness schemas to the publication. Idempotent — duplicates raise a
-  // notice we ignore.
-  const perHarnessSchemas = await sql.unsafe(`
-    SELECT schema_name FROM information_schema.schemata
-    WHERE schema_name LIKE 'harness\\_%' ESCAPE '\\'
-      AND schema_name <> 'harness_shared'
-  `);
-  for (const { schema_name } of perHarnessSchemas) {
-    if (!/^harness_[a-z0-9_]+$/i.test(schema_name)) continue;
-    try {
-      await sql.unsafe(`ALTER PUBLICATION zero_harness ADD TABLES IN SCHEMA ${schema_name}`);
-    } catch {
-      // Already in publication — ignore.
+  await sql.begin(async (tx) => {
+    // Serialize the membership read + ALTER pair across concurrent boot callers. Without
+    // this, two workspace-host boots can both observe a missing schema membership and one
+    // emits PostgreSQL's duplicate-object ERROR before the other commits it.
+    await tx.unsafe(`
+      SELECT pg_advisory_xact_lock(hashtextextended('papercusp.zero_harness.membership', 0))
+    `);
+    await tx.unsafe(`
+      DO $pg$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'zero_harness') THEN
+          CREATE PUBLICATION zero_harness FOR TABLES IN SCHEMA harness_shared, papercusp_shared;
+        END IF;
+      END $pg$;
+    `);
+    // Add per-harness schemas to the publication only when they are not already members.
+    // Checking pg_publication_namespace avoids a noisy duplicate ALTER on every reused-cluster
+    // boot; the advisory transaction lock also closes the check/ALTER race between boot callers.
+    const perHarnessSchemas = await tx.unsafe(`
+      SELECT schema_name FROM information_schema.schemata
+      WHERE schema_name LIKE 'harness\\_%' ESCAPE '\\'
+        AND schema_name <> 'harness_shared'
+    `);
+    const publishedSchemas = await tx.unsafe(`
+      SELECT n.nspname AS schema_name
+      FROM pg_publication p
+      JOIN pg_publication_namespace pn ON pn.pnpubid = p.oid
+      JOIN pg_namespace n ON n.oid = pn.pnnspid
+      WHERE p.pubname = 'zero_harness'
+    `);
+    const publishedSchemaNames = new Set(publishedSchemas.map(({ schema_name }) => schema_name));
+    for (const { schema_name } of perHarnessSchemas) {
+      if (!/^harness_[a-z0-9_]+$/i.test(schema_name)) continue;
+      if (publishedSchemaNames.has(schema_name)) continue;
+      try {
+        await tx.unsafe(`ALTER PUBLICATION zero_harness ADD TABLES IN SCHEMA ${schema_name}`);
+      } catch (error) {
+        // A legacy caller that does not take the advisory lock can still race us. Preserve
+        // the prior idempotent behavior for PostgreSQL's duplicate-object code, but surface
+        // every other DDL failure instead of hiding a broken publication setup.
+        if (error?.code !== '42710') throw error;
+      }
     }
-  }
+  });
 }
 
 /**

@@ -31,6 +31,7 @@ import { parse as parseYaml } from 'yaml';
 import {
   ResolvedAgentSpecificationSchema,
   ResolvedAgentInputSchema,
+  ResolvedPackageInputSchema,
   RESOLVED_AGENT_SPECIFICATION_SCHEMA_VERSION,
   type BlueprintSourceKind,
   type ResolvedAgentInput,
@@ -254,6 +255,10 @@ function sha256(value: string): string {
 
 function canonicalHash(value: unknown): string {
   return sha256(stableStringify(cloneJson(value)));
+}
+
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function asRevision(value: string | number | undefined, what: string, ref?: string): string {
@@ -494,7 +499,7 @@ function normalizeAddressedRows(input: CompositionCompilerInput): CompositionAdd
   normalized.sort((a, b) =>
     (typeof a.ordinal === 'number' ? a.ordinal : Number.MAX_SAFE_INTEGER) -
       (typeof b.ordinal === 'number' ? b.ordinal : Number.MAX_SAFE_INTEGER) ||
-    String(a.ref).localeCompare(String(b.ref)),
+    compareText(String(a.ref), String(b.ref)),
   );
   return normalized;
 }
@@ -547,7 +552,7 @@ function normalizeSettings(input: CompositionCompilerInput): CompositionSettingI
       seen.add(key);
       return { ref, revision, value: cloneJson(setting.value) };
     })
-    .sort((a, b) => a.ref.localeCompare(b.ref) || String(a.revision).localeCompare(String(b.revision)));
+    .sort((a, b) => compareText(a.ref, b.ref) || compareText(String(a.revision), String(b.revision)));
 }
 
 function layerInput(loaded: LoadedBlueprint, layerIndex: number, revisions?: Readonly<Record<string, string>>): ResolvedAgentInput {
@@ -591,19 +596,21 @@ export function pinPackageInput(input: CompositionPackageInput): ResolvedPackage
       bytes: bytes.toString('base64'),
       contentHash: createHash('sha256').update(bytes).digest('hex'),
     };
-  }).sort((a, b) => a.path.localeCompare(b.path));
+  }).sort((a, b) => compareText(a.path, b.path));
   const candidate = {
     kind: 'package' as const,
     packageKind: input.packageKind,
     ref: input.ref,
     revision: input.revision,
     files,
-    dependencies: [...(input.dependencies ?? [])].sort((a, b) => packageKey(a).localeCompare(packageKey(b))),
+    dependencies: [...(input.dependencies ?? [])].sort((a, b) => compareText(packageKey(a), packageKey(b))),
     ...(input.value !== undefined ? { value: cloneJson(input.value) } : {}),
   };
   const pinned = { ...candidate, contentHash: packageContentHash(candidate) };
-  validatePackageContent(pinned);
-  return pinned;
+  const parsed = ResolvedPackageInputSchema.safeParse(pinned);
+  if (!parsed.success) fail('input-invalid', parsed.error.issues.map((issue) => issue.message).join('; '), input.ref);
+  validatePackageContent(parsed.data);
+  return parsed.data;
 }
 
 function packageKey(input: Pick<ResolvedPackageReference, 'packageKind' | 'ref'>): string {
@@ -613,7 +620,7 @@ function packageKey(input: Pick<ResolvedPackageReference, 'packageKind' | 'ref'>
 function readPackageFiles(dir: string, prefix = ''): { path: string; bytes: Uint8Array }[] {
   try {
     if (!lstatSync(dir).isDirectory()) fail('package-read-failed', 'package is not a directory', dir);
-    return readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap((entry) => {
+    return readdirSync(dir, { withFileTypes: true }).sort((a, b) => compareText(a.name, b.name)).flatMap((entry) => {
       const path = prefix + entry.name;
       const absolute = join(dir, entry.name);
       // Never follow links out of a package, or snapshot mutable VCS metadata.
@@ -728,7 +735,7 @@ function blueprintPackageInputs(loaded: LoadedBlueprint, additional: readonly Re
       let raw: unknown;
       try { raw = parseYaml(bytes.toString('utf8')); }
       catch (error) { fail('source-invalid', String(error), layer.id); }
-      if (!isRecord(raw) || layerContentHash(raw) !== layer.contentHash) {
+      if (!isRecord(raw) || layerContentHash(raw) !== layer.contentHash || canonicalHash(raw) !== canonicalHash(document)) {
         fail('source-invalid', 'source file changed after resolution', layer.id);
       }
       files.push({ path: 'blueprint.yaml', bytes });
@@ -896,7 +903,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
     inputs.push({ kind: 'setting', ref: setting.ref, revision: String(setting.revision), value: setting.value });
   }
   if (input.inputClosure) inputs.push(...input.inputClosure.map((entry) => cloneJson(entry) as ResolvedAgentInput)
-    .sort((a, b) => (a.kind + ':' + a.ref).localeCompare(b.kind + ':' + b.ref)));
+    .sort((a, b) => compareText(a.kind + ':' + a.ref, b.kind + ':' + b.ref)));
 
   const closure = validateAgentInputClosure(inputs);
   validateSpecificationBundles(loaded.blueprint.bundles, closure);
@@ -929,7 +936,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
   const provenance = [
     ...configProvenance(loaded, compilerVersion),
     ...inputProvenance(closure, promptKeys),
-  ].sort((a, b) => a.path.localeCompare(b.path) || a.sourceRef.localeCompare(b.sourceRef));
+  ].sort((a, b) => compareText(a.path, b.path) || compareText(a.sourceRef, b.sourceRef));
   const sourceLayer = loaded.layers.at(-1)!;
   const source = {
     id: sourceLayer.id,

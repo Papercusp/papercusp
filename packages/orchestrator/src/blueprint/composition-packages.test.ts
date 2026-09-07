@@ -32,6 +32,12 @@ const compile = (pins = [recipe()]) => compileAgentSpecification({
 });
 
 describe('P-006 complete package closure and replay', () => {
+  it('uses locale-independent package file ordering and validates the pin envelope', () => {
+    const result = pinPackageInput({ packageKind: 'recipe', ref: 'r', revision: '1',
+      files: [{ path: 'ä.md', bytes: 'accent' }, { path: 'z.md', bytes: 'ascii' }] });
+    expect(result.files.map((file) => file.path)).toEqual(['z.md', 'ä.md']);
+    expect(() => pinPackageInput({ packageKind: 'recipe', ref: 'r', revision: '', files: [] })).toThrow(/input-invalid/);
+  });
   it('accepts sourcePath envelopes through the same compiler boundary', () => {
     const dir = mkdtempSync(join(tmpdir(), 'source-envelope-'));
     try {
