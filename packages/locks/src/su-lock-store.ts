@@ -1363,6 +1363,11 @@ export async function tryInsertWaiter(
   }
 
   const waitText = `${params.maxWaitSec} seconds`;
+  // Keep the explicit text cast: postgres-js's default jsonb serializer
+  // JSON.stringify()s string parameters, so casting an already-stringified
+  // value directly to jsonb stores a JSON scalar string instead of the edit
+  // object. The text cast preserves the serialized JSON as-is (and remains
+  // correct when a drizzle wrapper has installed a transparent serializer).
   const pendingEditJson = params.pendingEdit ? JSON.stringify(params.pendingEdit) : null;
   const rows = await tx<Array<{ ticket_id: string; wait_until: Date }>>`
     INSERT INTO agent_lock_waiters
@@ -1371,7 +1376,7 @@ export async function tryInsertWaiter(
       (${params.coordinationDomain}, ${params.owner}, ${params.ownerLabel},
        ${params.paths}, ${params.intent}, ${params.goalRef ?? null}, ${params.ttlSec},
        clock_timestamp() + ${waitText}::interval,
-       ${pendingEditJson}::jsonb)
+       ${pendingEditJson}::text::jsonb)
     RETURNING ticket_id, wait_until
   `;
   return { ok: true, ticket_id: rows[0].ticket_id, wait_until: rows[0].wait_until };

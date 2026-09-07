@@ -82,6 +82,7 @@ export {
   pinPackageInput,
   packageContentHash,
   snapshotPackageDirectory,
+  blueprintPackageInputs,
   validateAgentInputClosure,
   validateSpecificationBundles,
   replayAgentSpecification,

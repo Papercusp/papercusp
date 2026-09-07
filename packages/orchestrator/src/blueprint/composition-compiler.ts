@@ -721,7 +721,7 @@ export function validateSpecificationBundles(
   return pins;
 }
 
-function blueprintPackageInputs(loaded: LoadedBlueprint, additional: readonly ResolvedAgentInput[]): ResolvedPackageInput[] {
+export function blueprintPackageInputs(loaded: Pick<LoadedBlueprint, 'layers'>, additional: readonly ResolvedAgentInput[]): ResolvedPackageInput[] {
   const packages: ResolvedPackageInput[] = [];
   for (const layer of loaded.layers) {
     const document = layerSourceDocument(layer);
@@ -743,8 +743,8 @@ function blueprintPackageInputs(loaded: LoadedBlueprint, additional: readonly Re
     const parents = typeof document.extends === 'string' ? [document.extends]
       : Array.isArray(document.extends) ? document.extends : [];
     const dependencies = [...packages, ...additional.filter((entry): entry is ResolvedPackageInput => entry.kind === 'package')]
-      .filter((entry) => entry.packageKind === 'blueprint' ? (layer === loaded.layers.at(-1) || parents.includes(entry.ref))
-        : layer.bundles.some((bundle) => bundle.kind === entry.packageKind && bundle.ref === entry.ref))
+      .filter((entry) => layer === loaded.layers.at(-1) || (entry.packageKind === 'blueprint' ? parents.includes(entry.ref)
+        : layer.bundles.some((bundle) => bundle.kind === entry.packageKind && bundle.ref === entry.ref)))
       .map(({ packageKind, ref, revision, contentHash }) => ({ packageKind, ref, revision, contentHash }));
     packages.push(pinPackageInput({
       packageKind: 'blueprint',
