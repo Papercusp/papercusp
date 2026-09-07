@@ -41,6 +41,12 @@
  * D-004) and is layered on by the install step, not duplicated here.
  */
 
+import {
+  validateSpecificationBundles,
+  type ResolvedAgentInput,
+  type ResolvedPackageInput,
+} from '@papercusp/orchestrator/blueprint';
+
 /** The dependency block a blueprint declares (mirrors the engine's `DependenciesSchema`). */
 export interface BlueprintDependencyInput {
   tools?: string[];
@@ -91,6 +97,8 @@ export interface DependencyHostSets {
 }
 
 export interface BlueprintDependencyValidation {
+  /** Exact complete-content pins from the existing compiled input closure, when supplied. */
+  pins?: ResolvedPackageInput[];
   /** True iff no declared tool/pack/plugin is unresolvable (installable deps do NOT block). */
   ok: boolean;
   /** Unresolvable declared deps — the dep strings as written (with any `@range`). */
@@ -123,6 +131,10 @@ export function parseDepSpec(spec: string): { name: string; range: string | null
 export function validateBlueprintDependencies(
   deps: BlueprintDependencyInput | undefined | null,
   host: DependencyHostSets,
+  closure?: {
+    bundles: readonly { kind: string; ref: string; version?: string }[];
+    inputs: readonly ResolvedAgentInput[];
+  },
 ): BlueprintDependencyValidation {
   const missingTools: string[] = [];
   const missingPacks: string[] = [];
@@ -135,6 +147,15 @@ export function validateBlueprintDependencies(
   const missingDatatypes: string[] = [];
   const installableDatatypes: string[] = [];
   const messages: string[] = [];
+  let pins: ResolvedPackageInput[] | undefined;
+  let pinsValid = true;
+  if (closure) {
+    try { pins = validateSpecificationBundles(closure.bundles, closure.inputs); }
+    catch (error) {
+      pinsValid = false;
+      messages.push(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   const cupboardPlugins = host.cupboardPlugins ?? new Set<string>();
   const installedPacks = host.installedPacks ?? new Set<string>();
@@ -221,7 +242,7 @@ export function validateBlueprintDependencies(
   }
 
   return {
-    ok:
+    ok: pinsValid &&
       missingTools.length === 0 &&
       missingPacks.length === 0 &&
       missingPlugins.length === 0 &&
@@ -242,5 +263,6 @@ export function validateBlueprintDependencies(
       datatypes: installableDatatypes,
     },
     messages,
+    ...(closure ? { pins: pins ?? [] } : {}),
   };
 }

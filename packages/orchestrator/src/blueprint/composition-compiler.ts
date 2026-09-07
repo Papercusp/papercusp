@@ -555,13 +555,15 @@ function layerInput(loaded: LoadedBlueprint, layerIndex: number, revisions?: Rea
   const revision = revisions?.[layer.id] ?? layer.contentHash;
   assertSha(layer.contentHash, `layer ${layer.id} contentHash`, layer.id);
   if (revision.trim() === '') fail('input-invalid', `layer ${layer.id} revision is empty`, layer.id);
+  const document = layerSourceDocument(layer);
+  if (!document) fail('source-invalid', 'source snapshot is unavailable', layer.id);
   return {
     kind: 'blueprint-layer',
     ref: layer.id,
     revision,
     contentHash: layer.contentHash,
     sourceKind: layer.sourceKind as BlueprintSourceKind,
-    document: layerSourceDocument(layer),
+    document,
   };
 }
 
@@ -723,7 +725,9 @@ function blueprintPackageInputs(loaded: LoadedBlueprint, additional: readonly Re
       let bytes: Buffer;
       try { bytes = readFileSync(layer.sourcePath); }
       catch (error) { fail('package-read-failed', String(error), layer.sourcePath); }
-      const raw: unknown = parseYaml(bytes.toString('utf8'));
+      let raw: unknown;
+      try { raw = parseYaml(bytes.toString('utf8')); }
+      catch (error) { fail('source-invalid', String(error), layer.id); }
       if (!isRecord(raw) || layerContentHash(raw) !== layer.contentHash) {
         fail('source-invalid', 'source file changed after resolution', layer.id);
       }
@@ -732,7 +736,7 @@ function blueprintPackageInputs(loaded: LoadedBlueprint, additional: readonly Re
     const parents = typeof document.extends === 'string' ? [document.extends]
       : Array.isArray(document.extends) ? document.extends : [];
     const dependencies = [...packages, ...additional.filter((entry): entry is ResolvedPackageInput => entry.kind === 'package')]
-      .filter((entry) => entry.packageKind === 'blueprint' ? parents.includes(entry.ref)
+      .filter((entry) => entry.packageKind === 'blueprint' ? (layer === loaded.layers.at(-1) || parents.includes(entry.ref))
         : layer.bundles.some((bundle) => bundle.kind === entry.packageKind && bundle.ref === entry.ref))
       .map(({ packageKind, ref, revision, contentHash }) => ({ packageKind, ref, revision, contentHash }));
     packages.push(pinPackageInput({
@@ -842,7 +846,7 @@ function inputProvenance(
   return out;
 }
 
-function promptTextFromInputs(inputs: readonly ResolvedAgentInput[]): string {
+function promptTextFromInputs(inputs: CompiledAgentSpecification['inputs']): string {
   const rendered = inputs.find((input) => input.kind === 'prompt-file' && input.ref.startsWith('rendered:'));
   if (rendered && rendered.kind === 'prompt-file') return rendered.bytes;
   return inputs
@@ -905,7 +909,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
     : addressedText;
   // If addressed rows were added after a stack's synthetic rendered entry,
   // replace that entry with the final bytes so adapters never see stale text.
-  if (promptText && closure.some((entry) => entry.kind === 'prompt-file')) {
+  if (promptText) {
     const renderedIndex = closure.findIndex((entry) => entry.kind === 'prompt-file' && entry.ref.startsWith('rendered:'));
     if (renderedIndex >= 0) {
       const existing = closure[renderedIndex]!;
@@ -955,6 +959,7 @@ export function compileAgentSpecification(
   options: Omit<CompositionCompilerInput, 'source' | 'blueprint' | 'loaded'> = {},
 ): CompiledAgentSpecification {
   const input = isLoadedBlueprint(inputOrSource) || isRecord(inputOrSource) && !('source' in inputOrSource)
+    && 'id' in inputOrSource
     ? { ...options, source: inputOrSource as LoadedBlueprint | Record<string, unknown> }
     : inputOrSource as CompositionCompilerInput;
   return compileFromInput(input);

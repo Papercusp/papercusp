@@ -4,6 +4,7 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { pinPackageInput } from '@papercusp/orchestrator/blueprint';
 import {
   validateBlueprintDependencies,
   parseDepSpec,
@@ -15,6 +16,21 @@ const host = (over: Partial<DependencyHostSets> = {}): DependencyHostSets => ({
   installedPlugins: new Set(),
   cupboardPlugins: new Set(),
   ...over,
+});
+
+test('P-006 dependency validation returns compiler pins and refuses content/version conflicts', () => {
+  const recipe = pinPackageInput({ packageKind: 'recipe', ref: 'job', revision: '1', files: [{ path: 'recipe.json', bytes: 'body' }] });
+  const bundles = [{ kind: 'recipe', ref: 'job', version: '1' }];
+  const result = validateBlueprintDependencies({}, host(), { bundles, inputs: [recipe] });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.pins, [recipe]);
+  const missing = validateBlueprintDependencies({}, host(), { bundles, inputs: [] });
+  assert.equal(missing.ok, false);
+  assert.match(missing.messages.join(), /package-missing/);
+  const conflict = validateBlueprintDependencies({}, host(), { bundles: [{ ...bundles[0]!, version: '2' }], inputs: [recipe] });
+  assert.equal(conflict.ok, false);
+  assert.deepEqual(conflict.pins, []);
+  assert.match(conflict.messages.join(), /package-pin-conflict/);
 });
 
 test('parseDepSpec — plain, versioned, scoped, scoped+versioned', () => {

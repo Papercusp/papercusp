@@ -32,6 +32,22 @@ const compile = (pins = [recipe()]) => compileAgentSpecification({
 });
 
 describe('P-006 complete package closure and replay', () => {
+  it('accepts sourcePath envelopes through the same compiler boundary', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'source-envelope-'));
+    try {
+      const sourcePath = join(dir, 'blueprint.yaml');
+      writeFileSync(sourcePath, 'id: file-source\nworkItem: { kind: feature }\nspine: { edges: { DONE: { to: done } } }\n');
+      expect(compileAgentSpecification({ sourcePath }).source.id).toBe('file-source');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('keeps a document-only prompt replayable and rejects non-JSON setting values', () => {
+    const artifact = compileAgentSpecification({
+      source, addressedDocuments: [{ ref: 'only', revision: 1, body: 'The entire prompt.' }],
+    });
+    expect(specificationPrompt(replayAgentSpecification(artifact))).toContain('The entire prompt.');
+    expect(() => compileAgentSpecification({ source, settings: [{ ref: 'bad', revision: 1, value: new Date() }] }))
+      .toThrow(/not JSON-serializable/);
+  });
   it('replays a serialized artifact with the exact prompt, source and addressed bytes', () => {
     const artifact = compile();
     const replayed = replayAgentSpecification(JSON.parse(JSON.stringify(artifact)));
