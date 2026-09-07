@@ -46,6 +46,9 @@
  *   Fix 11: drizzle-kit retains PostgreSQL's trailing `NOT VALID` clause in
  *           check() SQL and leaves unmatched closing parentheses; remove the
  *           unsupported clause and repair only the unmatched suffix.
+ *   Fix 13: drizzle-kit can attach a table's policy predicates to only one
+ *           pgPolicy entry when policy introspection order changes; restore
+ *           each USING / WITH CHECK expression from pg_policies by identity.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
@@ -62,6 +65,7 @@ import {
   sortPgCoreImportSpecifiers,
 } from '../src/schema/schema-declaration-order.mjs';
 import { repairNotValidChecks } from '../src/schema/schema-checks.mjs';
+import { repairPgPolicyPredicates } from '../src/schema/schema-policies.mjs';
 import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -199,6 +203,45 @@ if (strippedScratchTables.length > 0) {
     `    Fix 0: stripped ${strippedScratchTables.length} migration-internal table(s): ${strippedScratchTables.join(', ')}`,
   );
 }
+
+// Fix 13: pg_policies is the authoritative source for policy predicates.
+// drizzle-kit can preserve policy names, roles, and commands while dropping
+// or moving USING / WITH CHECK expressions between sibling policies on the
+// same table. Match by schema + table + policy name, never by the order
+// drizzle-kit happened to emit its entries.
+const policyQuery = [
+  "SELECT COALESCE(json_agg(row_to_json(q) ORDER BY q.schemaname, q.tablename, q.policyname), '[]'::json)",
+  'FROM (',
+  '  SELECT schemaname, tablename, policyname, qual, with_check',
+  '  FROM pg_policies',
+  "  WHERE schemaname IN ('harness_shared','papercusp_shared')",
+  ') q;',
+].join(' ');
+const policyResult = spawnSync('psql', [dbUrl, '-tA', '-c', policyQuery], { encoding: 'utf8' });
+if (policyResult.status !== 0) {
+  console.error('failed to read authoritative pg_policy metadata:', policyResult.stderr);
+  process.exit(1);
+}
+let policyRows;
+try {
+  policyRows = JSON.parse(policyResult.stdout.trim() || '[]');
+} catch (error) {
+  console.error(
+    'authoritative pg_policy metadata was not valid JSON:',
+    error instanceof Error ? error.message : String(error),
+  );
+  process.exit(1);
+}
+const policyFix = repairPgPolicyPredicates({ source: schema, policies: policyRows });
+if (policyFix.unresolved.length > 0) {
+  console.error(
+    'refusing to promote generated schema with unresolved pgPolicy predicates:\n  - ' +
+      policyFix.unresolved.join('\n  - '),
+  );
+  process.exit(1);
+}
+schema = policyFix.source;
+console.log(`    Fix 13: repaired ${policyFix.repaired} pgPolicy declaration(s) from pg_policies`);
 
 // Fix 1: empty-string default rendering bug.
 schema = schema
