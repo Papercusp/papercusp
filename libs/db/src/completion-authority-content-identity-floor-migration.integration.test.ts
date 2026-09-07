@@ -38,10 +38,78 @@ const migration972Sql = readFileSync(migrationPath('972-completion-authority-con
  * applied ON TOP of 972 (never instead of it) so this suite keeps proving the ORIGINAL
  * contract survives the replacement, not just the new cases.
  */
-const migration1044Sql = readFileSync(
-  migrationPath('1044-completion-identity-multi-repo-artifact-floor.sql'),
-  'utf8',
-);
+const migration1044Sql = readFileSync(migrationPath('1044-completion-identity-multi-repo-artifact-floor.sql'), 'utf8');
+/**
+ * EI-22381221975733348: 1144 is the forward repair for already-applied 972/1044
+ * definitions. Those migration files were later edited to understand deletions,
+ * but production had already recorded them and therefore never re-ran the edits.
+ */
+const migration1144Sql = readFileSync(migrationPath('1144-completion-identity-deletion-artifact-floor.sql'), 'utf8');
+
+/**
+ * Exact semantic shape observed in production before migration 1144: 1044's
+ * artifact exclusion knew nothing about deletions, while 972's trigger scoped
+ * the floor to filesChanged only. Recreating it here makes the forward migration
+ * necessary; reading today's edited 972/1044 files alone would hide the defect.
+ */
+const historicalLiveFloorSql = String.raw`
+CREATE OR REPLACE FUNCTION harness_shared.completion_content_identity_proven(
+  p_identity jsonb
+) RETURNS boolean
+LANGUAGE sql IMMUTABLE AS $fn$
+  SELECT p_identity IS NOT NULL
+     AND jsonb_typeof(p_identity) = 'array'
+     AND jsonb_array_length(p_identity) > 0
+     AND EXISTS (
+           SELECT 1
+             FROM jsonb_array_elements(p_identity) AS e
+            WHERE COALESCE((e->>'outOfRepoArtifact')::boolean, false) = false
+         )
+     AND NOT EXISTS (
+           SELECT 1
+             FROM jsonb_array_elements(p_identity) AS e
+            WHERE COALESCE((e->>'outOfRepoArtifact')::boolean, false) = false
+              AND (
+                    e->>'workingTreeBlobSha' IS NULL
+                 OR e->>'headBlobSha' IS NULL
+                 OR e->>'workingTreeBlobSha' <> e->>'headBlobSha'
+              )
+         )
+$fn$;
+
+CREATE OR REPLACE FUNCTION harness_shared.downgrade_unproven_committed_close()
+RETURNS trigger
+LANGUAGE plpgsql AS $fn$
+DECLARE
+  v_evidence      jsonb;
+  v_files_changed jsonb;
+BEGIN
+  IF NEW.authority IS DISTINCT FROM 'committed' THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE'
+     AND OLD.authority = 'committed'
+     AND OLD.payload IS NOT DISTINCT FROM NEW.payload THEN
+    RETURN NEW;
+  END IF;
+  v_evidence := NEW.payload->'_completionEvidence';
+  IF v_evidence IS NULL THEN
+    RETURN NEW;
+  END IF;
+  v_files_changed := v_evidence->'filesChanged';
+  IF jsonb_typeof(v_files_changed) IS DISTINCT FROM 'array'
+     OR jsonb_array_length(v_files_changed) = 0 THEN
+    RETURN NEW;
+  END IF;
+  IF harness_shared.completion_content_identity_proven(
+       v_evidence->'treeStamp'->'contentIdentity') THEN
+    RETURN NEW;
+  END IF;
+  NEW.authority := 'proposed';
+  RETURN NEW;
+END;
+$fn$;
+`;
 
 /**
  * The real migration runner speaks psql, so migration files may carry psql
@@ -69,6 +137,8 @@ let notices: string[] = [];
 let lastBatchCommands = '[]';
 /** Backend pid that executed the most recent seed INSERT — pairs with the reader pid. */
 let lastSeedPid = -1;
+/** The production-shaped failure must be present before 1144 repairs it. */
+let historicalPre1144Probe: { deletionOk: boolean; artifactMixOk: boolean } | undefined;
 
 /** Minimal stand-in for harness_shared.work_items: just the columns the trigger reads/writes. */
 async function createWorkItemsFixture(): Promise<void> {
@@ -119,11 +189,7 @@ async function closeAsCommitted(id: string, evidence: Record<string, unknown>): 
 const SHA_A = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 const SHA_B = '0000111122223333444455556666777788889999';
 
-function evidenceWith(
-  identity: unknown,
-  filesChanged: string[] = ['src/fix.ts'],
-  filesDeleted: string[] = [],
-) {
+function evidenceWith(identity: unknown, filesChanged: string[] = ['src/fix.ts'], filesDeleted: string[] = []) {
   return {
     summary: 'verified',
     filesChanged,
@@ -168,6 +234,22 @@ beforeAll(async () => {
       ) AS "presentInTree"`;
   expect(baseDeletionFloor).toEqual({ valid: true, presentInTree: false });
   await applyMigrationFile(migration1044Sql);
+  // Recreate the definitions that were actually installed before the source
+  // files were edited in place, then prove the live failure exists.
+  await sql.unsafe(historicalLiveFloorSql).simple();
+  [historicalPre1144Probe] = await sql<{ deletionOk: boolean; artifactMixOk: boolean }[]>`
+    SELECT
+      harness_shared.completion_content_identity_proven(
+        ${sql.json([{ path: 'src/deleted.ts', deletion: true, workingTreeBlobSha: null, headBlobSha: null }])}
+      ) AS "deletionOk",
+      harness_shared.completion_content_identity_proven(
+        ${sql.json([
+          { path: 'src/fix.ts', workingTreeBlobSha: SHA_A, headBlobSha: SHA_A },
+          outOfRepoArtifact('/tmp/proof.png'),
+        ])}
+      ) AS "artifactMixOk"`;
+  expect(historicalPre1144Probe).toEqual({ deletionOk: false, artifactMixOk: true });
+  await applyMigrationFile(migration1144Sql);
   // A silently-absent or disabled trigger would make every keep-case below pass
   // vacuously, so the definition itself is part of the precondition. The probe
   // dumps unqualified ground truth so a mis-targeted DDL cannot hide behind an
@@ -212,7 +294,11 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
-describe('migration 972 — completion authority content-identity floor', () => {
+describe('migrations 972 + 1044 + 1144 — completion authority content-identity floor', () => {
+  it('reproduces the historical live deletion rejection before the 1144 forward repair', () => {
+    expect(historicalPre1144Probe).toEqual({ deletionOk: false, artifactMixOk: true });
+  });
+
   it('downgrades a frozen-build close whose evidence has NO contentIdentity (the WI-41491 shape)', async () => {
     notices.length = 0;
     await seedOpenItem('WI-CASE-MISSING');
