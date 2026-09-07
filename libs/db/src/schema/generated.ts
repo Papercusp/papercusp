@@ -1366,6 +1366,93 @@ export const calibrationPredictionsInHarnessShared = harnessShared.table("calibr
 	check("calibration_predictions_ws_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
+export const capabilityClassConformanceRunsInHarnessShared = harnessShared.table("capability_class_conformance_runs", {
+	id: text().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	classId: text("class_id").notNull(),
+	classVersion: text("class_version").notNull(),
+	providerPackage: text("provider_package").notNull(),
+	providerVersion: text("provider_version").notNull(),
+	registryRevision: text("registry_revision").notNull(),
+	verbBindings: jsonb("verb_bindings").notNull(),
+	structuralPassed: boolean("structural_passed").notNull(),
+	behavioralStatus: text("behavioral_status").default('not-required').notNull(),
+	behavioralRunRef: text("behavioral_run_ref"),
+	report: jsonb().notNull(),
+	performedBy: text("performed_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("capability_class_conformance_lookup_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.classId.asc().nullsLast().op("text_ops"), table.classVersion.asc().nullsLast().op("text_ops"), table.providerPackage.asc().nullsLast().op("text_ops"), table.providerVersion.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.classId, table.classVersion],
+			foreignColumns: [capabilityClassRegistryInHarnessShared.workspaceId, capabilityClassRegistryInHarnessShared.id, capabilityClassRegistryInHarnessShared.version],
+			name: "capability_class_conformance_class_fk"
+		}),
+	unique("capability_class_conformance_binding_identity_uq").on(table.classId, table.classVersion, table.id, table.providerPackage, table.providerVersion, table.structuralPassed, table.workspaceId),
+	pgPolicy("capability_class_conformance_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("capability_class_conformance_behavior_ck", sql`behavioral_status = ANY (ARRAY['not-required'::text, 'not-run'::text, 'passed'::text, 'failed'::text])`),
+	check("capability_class_conformance_report_ck", sql`jsonb_typeof(report) = 'object'::text`),
+	check("capability_class_conformance_verbs_ck", sql`jsonb_typeof(verb_bindings) = 'object'::text`),
+]);
+
+export const capabilityClassProviderBindingsInHarnessShared = harnessShared.table("capability_class_provider_bindings", {
+	workspaceId: text("workspace_id").notNull(),
+	classId: text("class_id").notNull(),
+	classVersion: text("class_version").notNull(),
+	providerPackage: text("provider_package").notNull(),
+	providerVersion: text("provider_version").notNull(),
+	conformanceRunId: text("conformance_run_id").notNull(),
+	status: text().default('active').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	bindingEligible: boolean("binding_eligible").generatedAlwaysAs(sql`true`),
+}, (table) => [
+	index("capability_class_provider_discovery_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.classId.asc().nullsLast().op("text_ops"), table.classVersion.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.classId, table.classVersion],
+			foreignColumns: [capabilityClassRegistryInHarnessShared.workspaceId, capabilityClassRegistryInHarnessShared.id, capabilityClassRegistryInHarnessShared.version],
+			name: "capability_class_provider_class_fk"
+		}),
+	foreignKey({
+			columns: [table.workspaceId, table.classId, table.classVersion, table.providerPackage, table.providerVersion, table.conformanceRunId, table.bindingEligible],
+			foreignColumns: [capabilityClassConformanceRunsInHarnessShared.workspaceId, capabilityClassConformanceRunsInHarnessShared.classId, capabilityClassConformanceRunsInHarnessShared.classVersion, capabilityClassConformanceRunsInHarnessShared.providerPackage, capabilityClassConformanceRunsInHarnessShared.providerVersion, capabilityClassConformanceRunsInHarnessShared.id, capabilityClassConformanceRunsInHarnessShared.structuralPassed],
+			name: "capability_class_provider_run_fk"
+		}),
+	primaryKey({ columns: [table.classId, table.classVersion, table.providerPackage, table.providerVersion, table.workspaceId], name: "capability_class_provider_bindings_pkey"}),
+	pgPolicy("capability_class_provider_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("capability_class_provider_status_ck", sql`status = ANY (ARRAY['active'::text, 'retired'::text])`),
+]);
+
+export const capabilityClassRegistryInHarnessShared = harnessShared.table("capability_class_registry", {
+	workspaceId: text("workspace_id").notNull(),
+	id: text().notNull(),
+	version: text().notNull(),
+	title: text().notNull(),
+	description: text().notNull(),
+	interfaceVerbs: jsonb("interface_verbs").notNull(),
+	behavioralSuiteRef: text("behavioral_suite_ref"),
+	status: text().default('active').notNull(),
+	published: boolean().default(false).notNull(),
+	reviewStatus: text("review_status").default('none').notNull(),
+	tags: text().array().default([]).notNull(),
+	embedding: vector({ dimensions: 768 }),
+	titleTsv: tsvectorCustom("title_tsv").generatedAlwaysAs(sql`to_tsvector('english'::regconfig, ((COALESCE(title, ''::text) || ' '::text) || COALESCE(description, ''::text)))`),
+	createdBy: text("created_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("capability_class_registry_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
+	index("capability_class_registry_review_pending_idx").using("btree", table.reviewStatus.asc().nullsLast().op("text_ops")).where(sql`(review_status = 'pending'::text)`),
+	index("capability_class_registry_tags_idx").using("gin", table.tags.asc().nullsLast().op("array_ops")),
+	index("capability_class_registry_title_tsv_idx").using("gin", table.titleTsv.asc().nullsLast().op("tsvector_ops")),
+	primaryKey({ columns: [table.id, table.version, table.workspaceId], name: "capability_class_registry_pkey"}),
+	pgPolicy("capability_class_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	pgPolicy("capability_class_registry_approved_global_read", { as: "permissive", for: "select", to: ["public"], using: sql`(review_status = 'approved'::text)` }),
+	check("capability_class_registry_review_ck", sql`review_status = ANY (ARRAY['none'::text, 'pending'::text, 'approved'::text, 'rejected'::text])`),
+	check("capability_class_registry_status_ck", sql`status = ANY (ARRAY['active'::text, 'retired'::text, 'superseded'::text])`),
+	check("capability_class_registry_verbs_ck", sql`(jsonb_typeof(interface_verbs) = 'object'::text) AND (interface_verbs <> '{}'::jsonb)`),
+]);
+
 export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
 	workspaceId: text("workspace_id").notNull(),
 	scope: text().notNull(),
@@ -6938,6 +7025,27 @@ export const pluginReloadStateInHarnessShared = harnessShared.table("plugin_relo
 	savedAt: timestamp("saved_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.harnessSlug, table.pluginId], name: "plugin_reload_state_pkey"}),
+]);
+
+export const potCapabilityClassBindingsInHarnessShared = harnessShared.table("pot_capability_class_bindings", {
+	workspaceId: text("workspace_id").notNull(),
+	potSlug: text("pot_slug").notNull(),
+	classId: text("class_id").notNull(),
+	classVersion: text("class_version").notNull(),
+	providerPackage: text("provider_package").notNull(),
+	providerVersion: text("provider_version").notNull(),
+	boundBy: text("bound_by"),
+	boundAt: timestamp("bound_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("pot_capability_class_provider_reverse_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.providerPackage.asc().nullsLast().op("text_ops"), table.providerVersion.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.classId, table.classVersion, table.providerPackage, table.providerVersion],
+			foreignColumns: [capabilityClassProviderBindingsInHarnessShared.workspaceId, capabilityClassProviderBindingsInHarnessShared.classId, capabilityClassProviderBindingsInHarnessShared.classVersion, capabilityClassProviderBindingsInHarnessShared.providerPackage, capabilityClassProviderBindingsInHarnessShared.providerVersion],
+			name: "pot_capability_class_provider_fk"
+		}),
+	primaryKey({ columns: [table.classId, table.classVersion, table.potSlug, table.workspaceId], name: "pot_capability_class_bindings_pkey"}),
+	pgPolicy("pot_capability_class_bindings_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
 export const potDirectoryCacheInHarnessShared = harnessShared.table("pot_directory_cache", {
