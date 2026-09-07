@@ -72,10 +72,13 @@ export {
   describeAcquirePressure,
   beginAcquire,
   recordPoolMax,
+  pgResultDiagnosticSnapshot,
   resetAcquireRegistryForTest,
   ACQUIRE_RECENT_SUCCESS_MS,
   type AcquireSnapshot,
   type AcquireTicket,
+  type PgResultDiagnostic,
+  type PgResultDiagnosticSnapshot,
 } from './acquire-registry';
 // Build-stamp SEAM — the host registers which build is emitting these diagnostics
 // (EI-19484133375867605). Re-exported here for the same reason the acquire registry
