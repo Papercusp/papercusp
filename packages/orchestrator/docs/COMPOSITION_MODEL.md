@@ -27,7 +27,7 @@ P-001 adds five sections to the schema:
 |---|---|---|
 | `slots` | `[{ slot, cardinality? }]` | `slot` is an OPEN string checked against the registry by `validateBlueprint` (`slot-unknown`, mirroring `unknown-op`): a new axis is a registry row, never a document-format change, and an installed identity naming a slot this platform lacks fails diagnosably. `cardinality` is optional and, when restated, must agree with the registry (`slot-cardinality-mismatch`) — the registry is authoritative, so the two copies cannot drift. |
 | `bundles` | `[{ kind, ref, version? }]`, default `[]` | ONE uniform by-reference list for every distributable layer (D-011); `kind` is the CLOSED vocabulary `BUNDLE_KINDS` — no `skill` kind. `(kind, ref)` is unique per document (`bundle-duplicate`). Composes by union across a stack. |
-| `grants` | `{ requires[], optional[], suggestedProviders{} }` | RESERVED (D-004, sequenced by D-014): the shape is final now; any non-empty grants section is an ERROR (`grants-reserved`) until capability classes ship in M3, so no interim grant vocabulary can appear. Until then an identity's toolset is the pot/role ceiling. |
+| `grants` | `{ requires[], optional[], suggestedProviders{} }` | Exact capability `class@version` requirements. Required classes block install when absent; optional classes remain visible gaps; provider suggestions are defaults, never conformance or authorization. The effective toolset remains grants ∩ pot/role ceiling. |
 | `publisher` | `{ id, name?, url? }` | layer metadata (the resolved document carries the leaf's). |
 | `attestation` | `{ contentHash, signedBy, signature?, signedAt? }` | publisher attestation over THIS layer: `contentHash` must equal the layer's own hash (§4); the signature binding lands in M2 on `lib/identity/attest.ts` + `hive-keypair.ts`. |
 
@@ -172,7 +172,7 @@ identities read the same projection; no new store.
 - **P-002** assigns su.md's sections to these slots; **P-003** seals the kernel and renders the
   stack; **P-012** attaches/detaches layers at runtime; **P-032** subsumed the second composer
   (§8, D-018).
-- **P-016 (M3)** lifts the `grants-reserved` refusal when capability classes exist.
+- **P-016 (M3)** provides the versioned class registry and attested provider bindings; **P-017** validates exact grant refs, resolves provider choices at install, and pins the exact pot provider in the immutable specification closure.
 
 ## 8. The spawn replacement composer — subsumed, not a third path (P-032 / D-018)
 
