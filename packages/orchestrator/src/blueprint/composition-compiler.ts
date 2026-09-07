@@ -505,6 +505,7 @@ function addressedInput(row: CompositionAddressedDocumentInput): ResolvedAgentIn
     ref,
     revision: String(row.revision),
     contentHash: String(row.contentHash),
+    ...(row.text !== undefined ? { bytes: row.text } : {}),
   };
 }
 
@@ -580,7 +581,7 @@ export interface CompositionPackageInput {
 /** Seal bytes already read by a package adapter into the specification's pin record. */
 export function pinPackageInput(input: CompositionPackageInput): ResolvedPackageInput {
   const files = input.files.map((file) => {
-    const bytes = Buffer.from(file.bytes);
+    const bytes = typeof file.bytes === 'string' ? Buffer.from(file.bytes, 'utf8') : Buffer.from(file.bytes);
     return {
       path: file.path,
       encoding: 'base64' as const,
@@ -653,7 +654,7 @@ function validatePackageContent(input: ResolvedPackageInput): void {
 }
 
 /** Shared by compilation, replay and the existing distribution dependency validator. */
-export function validateAgentInputClosure(entries: readonly ResolvedAgentInput[]): ResolvedAgentInput[] {
+export function validateAgentInputClosure(entries: readonly unknown[]): ResolvedAgentInput[] {
   const byKey = new Map<string, ResolvedAgentInput>();
   for (const raw of entries) {
     const parsed = ResolvedAgentInputSchema.safeParse(cloneJson(raw));
@@ -697,7 +698,7 @@ export function validateAgentInputClosure(entries: readonly ResolvedAgentInput[]
 /** Resolve declared bundles using the same exact pins carried by the compiler. */
 export function validateSpecificationBundles(
   bundles: readonly { kind: string; ref: string; version?: string }[],
-  inputs: readonly ResolvedAgentInput[],
+  inputs: readonly unknown[],
 ): ResolvedPackageInput[] {
   const pins = validateAgentInputClosure(inputs).filter((entry): entry is ResolvedPackageInput => entry.kind === 'package');
   for (const bundle of bundles) {
@@ -710,19 +711,28 @@ export function validateSpecificationBundles(
   return pins;
 }
 
-function blueprintPackageInputs(loaded: LoadedBlueprint): ResolvedPackageInput[] {
-  return loaded.layers.map((layer) => {
+function blueprintPackageInputs(loaded: LoadedBlueprint, additional: readonly ResolvedAgentInput[]): ResolvedPackageInput[] {
+  const packages: ResolvedPackageInput[] = [];
+  for (const layer of loaded.layers) {
     const document = layerSourceDocument(layer);
     if (!document) fail('source-invalid', 'source snapshot is unavailable', layer.id);
     const promptDir = layer.sourcePath ? join(dirname(layer.sourcePath), 'prompts') : null;
-    return pinPackageInput({
+    const parents = typeof document.extends === 'string' ? [document.extends]
+      : Array.isArray(document.extends) ? document.extends : [];
+    const dependencies = [...packages, ...additional.filter((entry): entry is ResolvedPackageInput => entry.kind === 'package')]
+      .filter((entry) => entry.packageKind === 'blueprint' ? parents.includes(entry.ref)
+        : layer.bundles.some((bundle) => bundle.kind === entry.packageKind && bundle.ref === entry.ref))
+      .map(({ packageKind, ref, revision, contentHash }) => ({ packageKind, ref, revision, contentHash }));
+    packages.push(pinPackageInput({
       packageKind: 'blueprint',
       ref: layer.id,
       revision: typeof document.version === 'string' ? document.version : layer.contentHash,
       value: document,
       files: promptDir && existsSync(promptDir) ? readPackageFiles(promptDir, 'prompts/') : [],
-    });
-  });
+      dependencies,
+    }));
+  }
+  return packages;
 }
 
 /** Replay the exact saved artifact, without consulting a mutable file or registry. */
@@ -730,7 +740,7 @@ export function replayAgentSpecification(value: unknown): CompiledAgentSpecifica
   const parsed = ResolvedAgentSpecificationSchema.safeParse(value);
   if (!parsed.success) fail('input-invalid', parsed.error.issues.map((issue) => issue.message).join('; '));
   const specification = parsed.data;
-  validateSpecificationBundles(specification.configuration.bundles, specification.inputs as ResolvedAgentInput[]);
+  validateSpecificationBundles(specification.configuration.bundles, specification.inputs);
   for (const entry of specification.inputs) {
     if (entry.kind === 'blueprint-layer' && !entry.document) fail('source-invalid', 'replay needs the source document', entry.ref);
     if (entry.kind === 'addressed-document' && entry.bytes === undefined) {
@@ -843,7 +853,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
   if (!compilerVersion.trim()) fail('input-invalid', 'compilerVersion must be non-empty');
 
   const inputs: ResolvedAgentInput[] = loaded.layers.map((_, i) => layerInput(loaded, i, input.layerRevisions));
-  inputs.push(...blueprintPackageInputs(loaded));
+  inputs.push(...blueprintPackageInputs(loaded, input.inputClosure ?? []));
   const promptKeys = new Map<string, string>();
   const descriptors = normalizePromptDescriptors(input);
   const promptSegments: string[] = [];
