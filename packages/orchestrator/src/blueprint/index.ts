@@ -54,6 +54,7 @@ export {
   loadBuiltinBlueprint,
   loadBlueprintFromFile,
   resolveBlueprint,
+  resolveBlueprintSource,
   resolveExtends,
   resolveLayers,
   layerContentHash,

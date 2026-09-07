@@ -451,7 +451,10 @@ function validateProgramSpine(
  * Guards every field: this fn is also the author-time secondary net over RAW
  * (un-parsed) documents.
  */
-function validateIdentityDeclarations(bp: Blueprint, err: Reporter): void {
+export function validateIdentityDeclarations(
+  bp: Partial<Pick<Blueprint, 'slots' | 'bundles' | 'grants'>>,
+  err: Reporter,
+): void {
   const seenSlots = new Set<string>();
   for (const d of bp.slots ?? []) {
     if (seenSlots.has(d.slot)) err('slot-duplicate', `slot "${d.slot}" is declared more than once in slots[]`);

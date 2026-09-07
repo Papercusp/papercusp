@@ -40,6 +40,7 @@ import { parse as parseYaml } from 'yaml';
 import { harnessPath, harnessRootCandidates } from '@papercusp/harness/paths';
 import {
   BlueprintHeaderSchema,
+  BlueprintSourceDocumentSchema,
   BundleRefSchema,
   RunnableBlueprintSchema,
   isBlueprintContributionField,
@@ -47,10 +48,11 @@ import {
   type Blueprint,
   type BlueprintContributionField,
   type BlueprintSourceKind,
+  type ParsedBlueprintSourceDocument,
   type BundleRef,
   type RunnableBlueprint,
 } from './schema.js';
-import { validateBlueprint, type BlueprintValidation, type ValidateOptions } from './validate.js';
+import { validateBlueprint, validateIdentityDeclarations, type BlueprintValidation, type ValidateOptions } from './validate.js';
 import { canonicalBlueprintId } from '../blueprint-aliases.js';
 import { findExclusiveSlotConflicts, type SlotClaim } from './slots.js';
 import { mergeByRules, isPlainObject, stableStringify } from './merge.js';
@@ -347,25 +349,46 @@ export function blueprintHash(bp: Blueprint): string {
 }
 
 /**
- * Resolve + parse + validate a raw blueprint object into a `LoadedBlueprint`.
- * Throws if `validateBlueprint` reports errors (a malformed spine must never
- * reach the durable pipeline); warnings are returned, not thrown.
+ * Author-time view of the SAME layer walk. Abstract parents and identity
+ * modules need no fabricated workItem/spine to receive the loader's security
+ * and composition checks. This is a source artifact, never an executable spec.
  */
-export function resolveBlueprint(
+export function resolveBlueprintSource(
   raw: RawBlueprint,
   opts: {
     resolve?: ResolveExtendsPath;
     sourcePath?: string | null;
-    /** Operator-injected registries → op/role liveness enforcement (P-001). */
-    registry?: BlueprintValidateRegistry;
-    /** identity-lint options for the structural BLOCK tier over the stack (P-003): the D-005 ceiling, which layers must attest. */
     lint?: IdentityLintOptions;
   } = {},
-): LoadedBlueprint {
-  const sourcePath = opts.sourcePath ?? null;
-  const { merged, layers } = resolveLayers(raw, opts.resolve ?? resolveBuiltinExtends, sourcePath);
-  const blueprint = RunnableBlueprintSchema.parse(merged);
-  const validation = validateBlueprint(blueprint, opts.registry ?? {});
+): {
+  source: ParsedBlueprintSourceDocument;
+  merged: RawBlueprint;
+  layers: BlueprintLayer[];
+  validation: BlueprintValidation;
+} {
+  const source = parseBlueprintSourceDocument(raw);
+  const { merged, layers } = resolveLayers(raw, opts.resolve ?? resolveBuiltinExtends, opts.sourcePath ?? null);
+  const validation: BlueprintValidation = { ok: true, errors: [], warnings: [] };
+  // Validate the authored declarations BEFORE keyed overlays can hide an
+  // invalid cardinality, duplicate bundle or reserved grant in an ancestor.
+  for (const layer of layers) {
+    const document = BlueprintSourceDocumentSchema.parse(layerSourceDocument(layer));
+    validateIdentityDeclarations(document, (code, message) => {
+      validation.errors.push({ level: 'error', code, message: `layer "${layer.id}": ${message}` });
+    });
+  }
+  BlueprintSourceDocumentSchema.parse(merged);
+  appendLayerValidation(validation, layers, opts.lint);
+  validation.ok = validation.errors.length === 0;
+  return { source, merged, layers, validation };
+}
+
+/** Stack checks shared by source authoring and runnable loading. */
+function appendLayerValidation(
+  validation: BlueprintValidation,
+  layers: readonly BlueprintLayer[],
+  lint?: IdentityLintOptions,
+): void {
   // ── stack-level checks (identities-v1 P-001) — need the layers, not the merged doc ──
   for (const layer of layers) {
     if (layer.attestation && layer.attestation.contentHash !== layer.contentHash) {
@@ -392,10 +415,30 @@ export function resolveBlueprint(
   //    missing attestation on an installed layer. The two findings the loops above already report
   //    under their pinned codes (`slot-exclusive-conflict`, `attestation-hash-mismatch`) are not
   //    reported twice. Every finding fails the load — there is no override path.
-  for (const f of lintStackLayers(layers, opts.lint)) {
+  for (const f of lintStackLayers(layers, lint)) {
     if (f.code === 'exclusive-double-claim' || f.code === 'attestation-failed') continue;
     validation.errors.push({ level: 'error', code: f.code, message: f.message });
   }
+}
+
+/**
+ * Resolve + parse + validate an executable blueprint. Source fragments use
+ * resolveBlueprintSource; this boundary still requires a runnable schema.
+ */
+export function resolveBlueprint(
+  raw: RawBlueprint,
+  opts: {
+    resolve?: ResolveExtendsPath;
+    sourcePath?: string | null;
+    registry?: BlueprintValidateRegistry;
+    lint?: IdentityLintOptions;
+  } = {},
+): LoadedBlueprint {
+  const sourcePath = opts.sourcePath ?? null;
+  const { merged, layers } = resolveLayers(raw, opts.resolve ?? resolveBuiltinExtends, sourcePath);
+  const blueprint = RunnableBlueprintSchema.parse(merged);
+  const validation = validateBlueprint(blueprint, opts.registry ?? {});
+  appendLayerValidation(validation, layers, opts.lint);
   validation.ok = validation.errors.length === 0;
   if (!validation.ok) {
     const msg = validation.errors.map((e) => `${e.code}: ${e.message}`).join('; ');
