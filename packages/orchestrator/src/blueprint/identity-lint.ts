@@ -206,7 +206,7 @@ function grantsOf(layer: Pick<StackLayerInput, 'grants'>): string[] {
  */
 export function lintStackLayers(layers: readonly StackLayerInput[], opts: IdentityLintOptions = {}): IdentityLintFinding[] {
   const out: IdentityLintFinding[] = [];
-  const ceiling = new Set(opts.ceiling ?? []);
+  const ceiling = opts.ceiling === undefined ? null : new Set(opts.ceiling);
   const requireAttestation = opts.requireAttestation ?? ((l: StackLayerInput) => l.trust === 'installed');
 
   for (const layer of layers) {
@@ -223,7 +223,7 @@ export function lintStackLayers(layers: readonly StackLayerInput[], opts: Identi
     }
 
     for (const cls of grantsOf(layer)) {
-      if (!ceiling.has(cls)) {
+      if (ceiling && !ceiling.has(cls)) {
         out.push({
           tier: 'block',
           code: 'grant-outside-ceiling',

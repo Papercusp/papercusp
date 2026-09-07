@@ -55,7 +55,8 @@ test('lintStackLayers — two DISTINCT documents on one exclusive slot block; th
 
 test('lintStackLayers — a grant outside the D-005 ceiling blocks; inside it passes; an empty ceiling refuses every grant', () => {
   const g = layer({ id: 'g', slots: ['domain'], grants: { requires: ['fs.write@1.0.0'], optional: ['net.fetch@1.0.0'] } });
-  assert.deepEqual(lintStackLayers([g]).map((f) => [f.code, f.message.includes('"fs.write@1.0.0"'), f.message.includes('empty — no capability classes authorized')]), [
+  assert.equal(lintStackLayers([g]).length, 0, 'an unavailable ceiling is deferred, not guessed empty');
+  assert.deepEqual(lintStackLayers([g], { ceiling: [] }).map((f) => [f.code, f.message.includes('"fs.write@1.0.0"'), f.message.includes('empty — no capability classes authorized')]), [
     ['grant-outside-ceiling', true, true],
     ['grant-outside-ceiling', false, true],
   ]);
@@ -164,12 +165,15 @@ test('loader — a root document parses only with the runnable minimum (the guar
 
 test('loader fixture — the D-005 ceiling is a load option; the empty default refuses an exact grant', () => {
   assert.throws(
-    () => resolveBlueprint({
-      id: 'g',
-      slots: [{ slot: 'domain' }],
-      grants: { requires: ['fs.write@1.0.0'] },
-      ...runnable,
-    }),
+    () => resolveBlueprint(
+      {
+        id: 'g',
+        slots: [{ slot: 'domain' }],
+        grants: { requires: ['fs.write@1.0.0'] },
+        ...runnable,
+      },
+      { lint: { ceiling: [] } },
+    ),
     /grant-outside-ceiling/,
   );
 });
