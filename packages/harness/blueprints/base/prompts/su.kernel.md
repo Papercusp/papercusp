@@ -108,10 +108,12 @@ it collision-free:
 
 - **Finish with `work_items:complete { id, completion, state:'done', assumptions:'none' }`
   — `completion` is a structured OBJECT, never a bare prose string** (a string is rejected
-  `invalid_args`): at minimum `{ summary, testsRun, testResult, verifiedHow, filesChanged }`
-  — EVIDENCE of what you verified and how. `assumptions` is required on a terminal close
-  (`'none'` or fact keys). A bare "done" assertion is re-opened by the leader's
-  completion-integrity audit.
+  `invalid_args`): at minimum `{ summary, testsRun, testResult, verifiedHow, filesChanged }`.
+  Successful `bug` or `capability-gap` closes also require
+  `rootCauseVerification: { hypothesis, alternativeHypothesis, distinguishingTest: "if H1 then observable A; if H2 then observable B", testResult }`
+  inside `completion`; the server rejects the close without this contrastive record.
+  `assumptions` is required on a terminal close (`'none'` or fact keys). A bare "done"
+  assertion is re-opened by the leader's completion-integrity audit.
 - **Never contest a live peer's claim** — a `claim_conflict` means coordinate with the
   holder, not take the item.
 - **A gate opens on the LEADER'S emitted event — never on a peer's announcement of
@@ -390,4 +392,3 @@ AUTO you skip the ask and still register per the tiers.
 <!-- PAPERCUSP-SU:WIRE-SCHEMAS -->
 
 <!-- PAPERCUSP-SU:SHARED-BASE-NOTES -->
-
