@@ -99,6 +99,89 @@ test('P-038 compiler snapshots the resolved blueprint, prompt bytes, closure and
   }
 });
 
+test('P-025 identity layers contribute lexicon, retirement, role backend and each valid rubric authority', () => {
+  const f = fixture();
+  try {
+    const commonIdentity = {
+      extends: 'base',
+      slots: [{ slot: 'domain' }],
+      lexicon: { workUnit: 'deliverable', reviewGate: 'review' },
+      retired: { at: 'D-025', reason: 'fixture retirement contract' },
+      knobs: {
+        aiBackend: {
+          roles: {
+            reviewer: { model: 'review-model', extraArgs: ['--reasoning-effort', 'high'] },
+          },
+        },
+      },
+    } as const;
+    const gymIdentity = {
+      ...commonIdentity,
+      id: 'gym-domain-identity',
+      gym: {
+        rubric: {
+          version: 'gym-v1',
+          dimensions: { quality: 'Is the deliverable well supported?' },
+          weights: { quality: 1 },
+        },
+      },
+    } as const;
+    const acceptanceIdentity = {
+      ...commonIdentity,
+      id: 'acceptance-domain-identity',
+      acceptance: {
+        kind: 'judge',
+        rubric: {
+          version: 'accept-v1',
+          dimensions: { complete: 'Does it answer the full brief?' },
+          weights: { complete: 1 },
+        },
+      },
+    } as const;
+
+    const gymArtifact = compileAgentSpecification({ source: gymIdentity, resolve: f.resolve });
+    const acceptanceArtifact = compileAgentSpecification({ source: acceptanceIdentity, resolve: f.resolve });
+    for (const [artifact, sourceRef] of [
+      [gymArtifact, 'gym-domain-identity'],
+      [acceptanceArtifact, 'acceptance-domain-identity'],
+    ] as const) {
+      assert.deepEqual(artifact.configuration.lexicon, { workUnit: 'deliverable', reviewGate: 'review' });
+      assert.deepEqual(artifact.configuration.retired, { at: 'D-025', reason: 'fixture retirement contract' });
+      assert.deepEqual(artifact.configuration.knobs.aiBackend?.roles?.reviewer, {
+        model: 'review-model',
+        extraArgs: ['--reasoning-effort', 'high'],
+      });
+      for (const path of [
+        'configuration.lexicon.workUnit',
+        'configuration.retired.at',
+        'configuration.knobs.aiBackend.roles.reviewer.model',
+      ]) {
+        assert.equal(
+          artifact.provenance.find((entry) => entry.path === path)?.sourceRef,
+          sourceRef,
+          `${path} must retain identity-layer provenance`,
+        );
+      }
+    }
+    assert.equal(gymArtifact.configuration.gym?.rubric?.version, 'gym-v1');
+    assert.equal(gymArtifact.configuration.acceptance, undefined);
+    assert.equal(acceptanceArtifact.configuration.acceptance?.rubric?.version, 'accept-v1');
+    assert.equal(acceptanceArtifact.configuration.gym, undefined);
+    for (const [artifact, path, sourceRef] of [
+      [gymArtifact, 'configuration.gym.rubric.dimensions.quality', 'gym-domain-identity'],
+      [acceptanceArtifact, 'configuration.acceptance.rubric.dimensions.complete', 'acceptance-domain-identity'],
+    ] as const) {
+      assert.equal(
+        artifact.provenance.find((entry) => entry.path === path)?.sourceRef,
+        sourceRef,
+        `${path} must retain identity-layer provenance`,
+      );
+    }
+  } finally {
+    f.cleanup();
+  }
+});
+
 test('prompt-only and addressed-document-only changes invalidate the artifact without changing configuration', () => {
   const f = fixture();
   try {
