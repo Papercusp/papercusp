@@ -781,6 +781,47 @@ test('invoke — workspace-scoped fleet preflights missing srt before spawning',
   }
 });
 
+test('invoke — workspace agent isolates package-manager caches when the OS sandbox is disabled', async () => {
+  const fx = makeFixture(({ harnessDir, projectDir }) => {
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
+    const binDir = join(projectDir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(
+      join(binDir, 'agent'),
+      '#!/bin/sh\nprintf "CACHE=%s\\n" "$npm_config_cache"\ncat >/dev/null\n',
+      { mode: 0o755 },
+    );
+  });
+  const previousFleetSandbox = process.env.PAPERCUSP_FLEET_SANDBOX;
+  process.env.PAPERCUSP_FLEET_SANDBOX = '0';
+  try {
+    const result = await invoke(
+      {
+        harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir,
+        stateDir: fx.stateDir,
+        logDir: fx.logDir,
+        phase: 'staging',
+        claudeCmd: join(fx.projectDir, 'bin', 'agent'),
+        workspaceId: 'ws-test',
+        log: () => {},
+        nowSeconds: () => 1700000008,
+      },
+      'worker',
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(
+      readFileSync(result.outPath, 'utf8').trim(),
+      `CACHE=${fleetSandboxCacheEnv(fx.projectDir).npm_config_cache}`,
+    );
+  } finally {
+    if (previousFleetSandbox === undefined) delete process.env.PAPERCUSP_FLEET_SANDBOX;
+    else process.env.PAPERCUSP_FLEET_SANDBOX = previousFleetSandbox;
+    fx.cleanup();
+  }
+});
+
 test('invoke — engine=loop uses the injected port and persists native NDJSON without spawning', async () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');

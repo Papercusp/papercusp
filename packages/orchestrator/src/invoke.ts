@@ -1702,26 +1702,29 @@ export function healSandboxZeroByteManifest(cwd: string, log?: (msg: string) => 
 }
 
 /**
- * Root for the fleet sandbox's redirected package-manager caches. The sandbox
- * makes everything outside cwd read-only (allowWrite is cwd + this dir), but
- * npm/pip/cargo write their caches under $HOME (e.g. ~/.npm/_cacache) — so a
- * real `npm install` under the sandbox fails EROFS (verified P-014/D-013: the
- * registry was REACHED, the cache write was denied). Rather than weaken
- * containment by leaving $HOME writable, we add THIS one dedicated dir to
- * `allowWrite` and point each ecosystem's cache env at a per-project subdir of
- * it (see fleetSandboxCacheEnv). NOT under `~/.papercusp` (which is denyRead).
+ * Root for fleet agent package-manager caches. The sandbox makes everything
+ * outside cwd read-only (allowWrite is cwd + this dir), but npm/pip/cargo write
+ * their caches under $HOME (e.g. ~/.npm/_cacache) — so a real `npm install`
+ * under the sandbox fails EROFS (verified P-014/D-013: the registry was
+ * REACHED, the cache write was denied). Rather than weaken containment by
+ * leaving $HOME writable, we add THIS one dedicated dir to `allowWrite` and
+ * point each ecosystem's cache env at a per-project subdir of it (see
+ * fleetSandboxCacheEnv). Workspace agent spawns keep using those isolated paths
+ * even when the OS sandbox is explicitly disabled, so sibling checkouts and
+ * /tmp scratch projects do not race the shared ~/.npm content store. NOT under
+ * `~/.papercusp` (which is denyRead).
  * Computed from the operator process home so it matches the absolute cache-env
  * paths even when the child gets a per-spawn HOME (resolveSpawnHome).
  */
 export const FLEET_SANDBOX_CACHE_ROOT = join(homedir(), '.cache', 'papercusp-fleet-sandbox');
 
 /**
- * Cache-redirect env for a sandboxed spawn whose project lives at `cwd`. Points
- * npm/yarn/pip/cargo/go + the generic XDG cache at a per-project subdir of
- * FLEET_SANDBOX_CACHE_ROOT (which is allow-listed for writes). Per-project
- * keying (a short hash of cwd) keeps one project's build from poisoning
- * another's cache. Absolute paths, so they're independent of the child's HOME.
- * The caller mkdir -p's the dirs; only applied when the sandbox is enabled.
+ * Cache-redirect env for a workspace agent spawn whose project lives at `cwd`.
+ * Points npm/yarn/pip/cargo/go + the generic XDG cache at a per-project subdir
+ * of FLEET_SANDBOX_CACHE_ROOT (which is allow-listed for writes when the OS
+ * sandbox is enabled). Per-project keying (a short hash of cwd) keeps one
+ * project's build from poisoning another's cache. Absolute paths, so they're
+ * independent of the child's HOME. The caller mkdir -p's the dirs.
  */
 export function fleetSandboxCacheEnv(cwd: string): Record<string, string> {
   const key = createHash('sha256').update(cwd).digest('hex').slice(0, 16);
@@ -3136,8 +3139,9 @@ export async function invoke(
   // default that standalone CLI callers should inherit. Resolve it once for
   // this subprocess invocation so every sandbox leg agrees on the same scope.
   // Owned-loop calls do not spawn a child and therefore do not need srt.
-  const fleetSandboxForSpawn =
-    executionEngine === 'subprocess' && Boolean(ctx.workspaceId) && fleetSandboxEnabled();
+  const workspaceAgentSpawn =
+    executionEngine === 'subprocess' && Boolean(ctx.workspaceId);
+  const fleetSandboxForSpawn = workspaceAgentSpawn && fleetSandboxEnabled();
   const fleetSrtBin =
     fleetSandboxForSpawn && backendUsesSrt(agentBackend) ? srtBinOnPath() : null;
   if (fleetSandboxForSpawn && backendUsesSrt(agentBackend) && !fleetSrtBin) {
@@ -3969,23 +3973,24 @@ export async function invoke(
     // untouched. Real enforcement; the Bash(git push:*) deny is the backstop.
     Object.assign(spawnEnv, gitConfigNoPushEnv(spawnEnv, ensureFleetGitHooksDir()));
 
-    // When the OS sandbox is on, also strip provider/cloud creds from the
-    // sandboxed Bash subprocess env (verified: =1 strips e.g. AWS_SECRET_ACCESS_KEY
-    // from a Bash subprocess). Complements the sandbox's denyRead + egress block.
-    if (fleetSandboxForSpawn) {
-      spawnEnv.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1';
-      // Redirect package-manager caches into the allow-listed cache root: the
-      // sandbox makes $HOME read-only, so npm/pip/cargo (which cache under
-      // ~/.npm/_cacache etc.) fail EROFS on a real install (D-013/P-014).
-      // Absolute, per-project paths — independent of the per-spawn HOME above.
-      // mkdir -p so bwrap can bind the dirs; harmless when no sandbox engages
-      // (codex/omp aren't sandboxed → their $HOME stays writable, cache just
-      // lands here instead).
+    // Workspace agent spawns always use an isolated package-manager cache. This
+    // prevents npm's content-addressed ~/.npm store from racing across sibling
+    // checkouts and /tmp scratch projects even when the OS sandbox is opted out.
+    // Under the sandbox the same paths are also the allow-listed writable cache
+    // root; outside it they remain a durable isolation boundary.
+    if (workspaceAgentSpawn) {
       const cacheEnv = fleetSandboxCacheEnv(cwd);
       for (const dir of new Set(Object.values(cacheEnv))) {
         try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort; a real install would surface the error */ }
       }
       Object.assign(spawnEnv, cacheEnv);
+    }
+
+    // When the OS sandbox is on, also strip provider/cloud creds from the
+    // sandboxed Bash subprocess env (verified: =1 strips e.g. AWS_SECRET_ACCESS_KEY
+    // from a Bash subprocess). Complements the sandbox's denyRead + egress block.
+    if (fleetSandboxForSpawn) {
+      spawnEnv.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1';
     }
 
     // Per-spawn .mcp.json: write the seven-param URL config so OMP
