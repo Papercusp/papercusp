@@ -86,17 +86,18 @@ export interface StackLayerInput {
 export interface IdentityLintOptions {
   /**
    * The D-005 capability ceiling — the capability classes the pot/role ALREADY authorizes.
-   * A grant naming a class outside it blocks. Absent ⇒ the EMPTY ceiling: grants are
-   * RESERVED before M3 (D-014), so any grant at all is outside it.
+   * A grant naming a class outside it blocks. Absent means this authoring/import
+   * path cannot evaluate the runtime ceiling yet; callers that know the target
+   * pot pass the exact set (including an explicit empty set).
    */
   ceiling?: Iterable<string>;
   /**
    * The capability-class vocabulary for the text/grant consistency check: a class
    * named in an identity's text but absent from its grants is reported. Absent ⇒
-   * the check is skipped (there is no vocabulary to check against before M3).
+   * the check is skipped because there is no authoritative vocabulary to scan.
    */
   capabilityClasses?: Iterable<string>;
-  /** The tier of `text-grant-inconsistency` — `warn` (default, pre-M3) or `block` (once grants have a vocabulary). */
+  /** The tier of `text-grant-inconsistency` — `warn` by default or `block` at an enforcing boundary. */
   textGrantTier?: IdentityLintTier;
   /** Which layers MUST carry a verified attestation. Default: `trust === 'installed'`. */
   requireAttestation?: (layer: StackLayerInput) => boolean;

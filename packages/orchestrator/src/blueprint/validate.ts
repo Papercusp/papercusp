@@ -441,11 +441,9 @@ function validateProgramSpine(
  *     cardinality agrees with the registry (`slot-cardinality-mismatch`, D-007 —
  *     the registry is authoritative).
  *   - `bundles[]` — a `(kind, ref)` pair is referenced once (`bundle-duplicate`).
- *   - `grants` — RESERVED: any non-empty grants section is an error
- *     (`grants-reserved`, D-004 sequenced by D-014 — until capability classes
- *     land in M3 an identity carries no grants and its toolset is the pot/role
- *     ceiling; refusing here is what keeps an interim grant vocabulary from
- *     appearing).
+ *   - `grants` — exact class@version refs, no duplicate or required/optional
+ *     overlap, and suggestions only for a class the identity actually grants
+ *     (D-004 / P-017).
  * Cross-LAYER checks (two documents on one exclusive slot, attestation vs layer
  * hash) need the stack and live in the loader (`resolveBlueprint`).
  * Guards every field: this fn is also the author-time secondary net over RAW

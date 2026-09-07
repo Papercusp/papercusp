@@ -984,13 +984,11 @@ export const BundleRefSchema = z
   });
 
 /**
- * RESERVED (D-004, sequenced by D-014): grants name registered capability
- * CLASSES, split into `requires` (blocks install until satisfied) and `optional`
- * (installs with a visible gap), with publisher `suggestedProviders` hints
- * (class → provider). The SHAPE lands now so the document format is final; until
- * capability classes ship (M3, P-016) an identity carries NO grants and its
- * toolset is the pot/role ceiling — `validateBlueprint` REFUSES a non-empty
- * grants section (`grants-reserved`) so no interim grant vocabulary can appear.
+ * Grants name registered capability CLASSES at exact class@version refs, split
+ * into `requires` (blocks install until satisfied) and `optional` (installs with
+ * a visible gap), with publisher `suggestedProviders` hints (class → provider).
+ * Install-time resolution and provider selection are P-017; runtime grants still
+ * narrow the pot/role ceiling and never widen it (D-004/D-005).
  */
 export const GrantsSchema = z.object({
   requires: z.array(z.string().min(1)).default([]),
