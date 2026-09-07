@@ -1247,6 +1247,29 @@ export const ResolvedPackageInputSchema = ResolvedPackageReferenceSchema.extend(
 export type ResolvedPackageReference = z.infer<typeof ResolvedPackageReferenceSchema>;
 export type ResolvedPackageInput = z.infer<typeof ResolvedPackageInputSchema>;
 
+/**
+ * Pot-scoped capability-provider choice pinned into the same immutable input
+ * closure as every other resolved launch input (identities-v1 P-017).
+ */
+export const ResolvedCapabilityProviderInputSchema = z
+  .object({
+    kind: z.literal('capability-provider'),
+    ref: z.string().regex(
+      /^[a-z0-9][a-z0-9.-]*@[0-9A-Za-z][0-9A-Za-z._+-]*$/,
+      'exact normalized capability class@version ref',
+    ),
+    providerPackage: z.string().min(1),
+    providerVersion: z.string().min(1),
+    conformanceRunId: z.string().min(1),
+    registryRevision: z.string().min(1),
+    verbBindings: z.record(z.string(), z.string().min(1)),
+  })
+  .strict();
+
+export type ResolvedCapabilityProviderInput = z.infer<
+  typeof ResolvedCapabilityProviderInputSchema
+>;
+
 export const ResolvedAgentInputSchema = z.discriminatedUnion('kind', [
   z
     .object({
@@ -1284,6 +1307,7 @@ export const ResolvedAgentInputSchema = z.discriminatedUnion('kind', [
       value: z.unknown(),
     })
     .strict(),
+  ResolvedCapabilityProviderInputSchema,
   ResolvedPackageInputSchema,
 ]);
 

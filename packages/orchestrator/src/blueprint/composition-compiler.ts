@@ -841,13 +841,22 @@ function inputProvenance(
     if (input.kind === 'prompt-file') prefix = `prompt.${promptKeys.get(input.ref) ?? 'default'}`;
     else if (input.kind === 'addressed-document') prefix = `addressed.${input.ref}`;
     else if (input.kind === 'package') prefix = 'package.' + packageKey(input);
+    else if (input.kind === 'capability-provider') prefix = 'capability-provider.' + input.ref;
     else prefix = `setting.${input.ref}`;
-    const sourceRevision = input.kind === 'prompt-file' ? input.contentHash : input.revision;
+    const sourceRevision = input.kind === 'prompt-file'
+      ? input.contentHash
+      : input.kind === 'capability-provider'
+        ? input.providerVersion + '@' + input.conformanceRunId
+        : input.revision;
     out.push({
       path: prefix,
       sourceRef: input.ref,
       sourceRevision,
-      decision: input.kind === 'setting' ? 'explicit-state' : 'resolved-input',
+      decision: input.kind === 'setting'
+        ? 'explicit-state'
+        : input.kind === 'capability-provider'
+          ? 'resolved-provider'
+          : 'resolved-input',
     } as ResolvedAgentProvenance);
   }
   return out;
