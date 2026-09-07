@@ -7,6 +7,14 @@
 -- a verb map that differed from the run. Make those derived-truth invariants
 -- relational: every binding must reference the same exact tuple AND a passing
 -- run, and verb_bindings is read from that immutable run instead of duplicated.
+--
+-- FORWARD-COMPAT: migration 1140 and the classes:* handlers are new in this
+-- still-unshipped P-016 change; the currently deployed release has no reader or
+-- writer for any capability_class_* table. The live provider-binding table is
+-- empty before this migration is armed. Dropping its duplicated verb_bindings
+-- column and replacing the run FK therefore cannot break an old binary or lose
+-- user data. The new handler reads the verb map from the joined conformance run
+-- and never names the dropped column.
 
 ALTER TABLE harness_shared.capability_class_conformance_runs
   ADD CONSTRAINT capability_class_conformance_binding_identity_uq

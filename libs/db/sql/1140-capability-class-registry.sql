@@ -192,3 +192,4 @@ CREATE POLICY pot_capability_class_bindings_workspace_isolation
   FOR ALL
   USING (workspace_id = current_setting('app.workspace_id', true))
   WITH CHECK (workspace_id = current_setting('app.workspace_id', true));
+
