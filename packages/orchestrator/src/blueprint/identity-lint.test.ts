@@ -53,16 +53,18 @@ test('lintStackLayers — two DISTINCT documents on one exclusive slot block; th
   assert.match(f[0]!.message, /each may be clean alone, their COMPOSITION conflicts/);
 });
 
-test('lintStackLayers — a grant outside the D-005 ceiling blocks; inside it passes; the empty (pre-M3) ceiling refuses every grant', () => {
-  const g = layer({ id: 'g', slots: ['domain'], grants: { requires: ['fs.write'], optional: ['net.fetch'] } });
-  assert.deepEqual(lintStackLayers([g]).map((f) => [f.code, f.message.includes('"fs.write"'), f.message.includes('empty — grants are reserved')]), [
+test('lintStackLayers — a grant outside the D-005 ceiling blocks; inside it passes; an empty ceiling refuses every grant', () => {
+  const g = layer({ id: 'g', slots: ['domain'], grants: { requires: ['fs.write@1.0.0'], optional: ['net.fetch@1.0.0'] } });
+  assert.deepEqual(lintStackLayers([g]).map((f) => [f.code, f.message.includes('"fs.write@1.0.0"'), f.message.includes('empty — no capability classes authorized')]), [
     ['grant-outside-ceiling', true, true],
     ['grant-outside-ceiling', false, true],
   ]);
-  assert.equal(lintStackLayers([g], { ceiling: ['fs.write', 'net.fetch', 'db.read'] }).length, 0);
-  const f = lintStackLayers([g], { ceiling: ['fs.write'] });
+  assert.equal(lintStackLayers([g], {
+    ceiling: ['fs.write@1.0.0', 'net.fetch@1.0.0', 'db.read@1.0.0'],
+  }).length, 0);
+  const f = lintStackLayers([g], { ceiling: ['fs.write@1.0.0'] });
   assert.equal(f.length, 1);
-  assert.match(f[0]!.message, /"net\.fetch".*outside the pot\/role ceiling \(fs\.write\)/);
+  assert.match(f[0]!.message, /"net\.fetch@1\.0\.0".*outside the pot\/role ceiling \(fs\.write@1\.0\.0\)/);
 });
 
 test('lintStackLayers — an authority-bearing field on a mode-axis document blocks; the allowed set passes; a non-mode slot is not checked', () => {
@@ -160,9 +162,16 @@ test('loader — a root document parses only with the runnable minimum (the guar
   assert.equal(ok.layers[0]!.grants, null);
 });
 
-test('loader fixture — the D-005 ceiling is a load option; the empty default refuses any grant (grants are reserved pre-M3 anyway)', () => {
-  // grants-reserved (validation) AND grant-outside-ceiling (lint) both fire on a non-empty grants section.
-  assert.throws(() => resolveBlueprint({ id: 'g', slots: [{ slot: 'domain' }], grants: { requires: ['fs.write'] }, ...runnable }), /grants-reserved.*grant-outside-ceiling|grant-outside-ceiling.*grants-reserved/s);
+test('loader fixture — the D-005 ceiling is a load option; the empty default refuses an exact grant', () => {
+  assert.throws(
+    () => resolveBlueprint({
+      id: 'g',
+      slots: [{ slot: 'domain' }],
+      grants: { requires: ['fs.write@1.0.0'] },
+      ...runnable,
+    }),
+    /grant-outside-ceiling/,
+  );
 });
 
 // ── the prose tier ────────────────────────────────────────────────────────────
@@ -193,12 +202,17 @@ test('lintStackDocuments — a generated splice marker WARNS, except the client 
 });
 
 test('lintStackDocuments — text/grant consistency is skipped without a vocabulary, WARNS by default with one, BLOCKS when told to', () => {
-  const doc: StackDocument = { id: 'd', layer: 'domain', slot: 'domain', text: 'Use net.fetch to pull the page; fs.write is fine too.', grants: { requires: ['fs.write'] } };
+  const doc: StackDocument = { id: 'd', layer: 'domain', slot: 'domain', text: 'Use net.fetch to pull the page; fs.write is fine too.', grants: { requires: ['fs.write@1.0.0'] } };
   assert.equal(lintStackDocuments([doc]).length, 0);
-  const warn = lintStackDocuments([doc], { capabilityClasses: ['net.fetch', 'fs.write', 'db.read'] });
+  const warn = lintStackDocuments([doc], {
+    capabilityClasses: ['net.fetch@1.0.0', 'fs.write@1.0.0', 'db.read@1.0.0'],
+  });
   assert.deepEqual(warn.map((x) => [x.tier, x.code]), [['warn', 'text-grant-inconsistency']]);
-  assert.match(warn[0]!.message, /"net\.fetch"/);
-  assert.deepEqual(lintStackDocuments([doc], { capabilityClasses: ['net.fetch'], textGrantTier: 'block' }).map((x) => x.tier), ['block']);
+  assert.match(warn[0]!.message, /"net\.fetch@1\.0\.0"/);
+  assert.deepEqual(lintStackDocuments([doc], {
+    capabilityClasses: ['net.fetch@1.0.0'],
+    textGrantTier: 'block',
+  }).map((x) => x.tier), ['block']);
 });
 
 test('detectHeadingOverlap — the shipped hive-override-additive-guard heuristic, lifted: case-insensitive substring over `#`/`##`/`###` lines', () => {

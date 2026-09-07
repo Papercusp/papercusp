@@ -228,7 +228,7 @@ export function lintStackLayers(layers: readonly StackLayerInput[], opts: Identi
           tier: 'block',
           code: 'grant-outside-ceiling',
           documentId: layer.id,
-          message: `"${layer.id}" grants capability class "${cls}", which is outside the pot/role ceiling (${ceiling.size ? [...ceiling].join(', ') : 'empty — grants are reserved until M3'}) — an identity may narrow the ceiling, never widen it (D-005)`,
+          message: `"${layer.id}" grants capability class "${cls}", which is outside the pot/role ceiling (${ceiling.size ? [...ceiling].join(', ') : 'empty — no capability classes authorized'}) — an identity may narrow the ceiling, never widen it (D-005)`,
         });
       }
     }
@@ -307,7 +307,10 @@ export function lintStackDocuments(docs: readonly StackDocument[], opts: Identit
       for (const h of headingLines(d.text)) if (h.startsWith('## ')) kernelHeadings.add(headingText(h));
     }
   }
-  const classes = [...(opts.capabilityClasses ?? [])];
+  const classes = [...(opts.capabilityClasses ?? [])].map((ref) => {
+    const at = ref.lastIndexOf('@');
+    return { ref, textName: at > 0 ? ref.slice(0, at) : ref };
+  });
   const textGrantTier = opts.textGrantTier ?? 'warn';
 
   for (const d of docs) {
@@ -372,8 +375,8 @@ export function lintStackDocuments(docs: readonly StackDocument[], opts: Identit
     if (classes.length) {
       const granted = new Set([...(d.grants?.requires ?? []), ...(d.grants?.optional ?? [])]);
       for (const cls of classes) {
-        if (granted.has(cls)) continue;
-        const re = new RegExp(`(^|[^\\w-])${cls.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`, 'i');
+        if (granted.has(cls.ref)) continue;
+        const re = new RegExp(`(^|[^\\w-])${cls.textName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`, 'i');
         if (re.test(text)) {
           out.push({
             tier: textGrantTier,
@@ -381,7 +384,7 @@ export function lintStackDocuments(docs: readonly StackDocument[], opts: Identit
             documentId: d.id,
             slot: d.slot,
             line: lineOf(text, re),
-            message: `"${d.id}" instructs use of capability class "${cls}" but does not grant it — text and grants must agree (an identity's toolset is its grants ∩ the ceiling, never its prose)`,
+            message: `"${d.id}" instructs use of capability class "${cls.ref}" but does not grant it — text and grants must agree (an identity's toolset is its grants ∩ the ceiling, never its prose)`,
           });
         }
       }
