@@ -27,6 +27,14 @@ describe('isRetriableConnectionSetupError', () => {
     ).toBe(true);
   });
 
+  it.each([
+    { code: '57P03', message: 'FATAL: the database system is starting up' },
+    { message: 'FATAL: the database system is in recovery mode' },
+    { message: 'server_login_retry: database system is not yet accepting connections' },
+  ])('matches a transient PostgreSQL recovery/startup signal: $message', (error) => {
+    expect(isRetriableConnectionSetupError(error)).toBe(true);
+  });
+
   it('does not match an unrelated error', () => {
     expect(isRetriableConnectionSetupError({ code: '23505', message: 'duplicate key' })).toBe(false);
   });
@@ -66,6 +74,23 @@ describe('retryBeforeCallbackStarts', () => {
     expect(out).toBe('ok');
     expect(attempts).toBe(3);
     expect(onRetry).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a recovery-mode failure BEFORE markStarted(), then succeeds', async () => {
+    let attempts = 0;
+    const out = await retryBeforeCallbackStarts(
+      async (markStarted) => {
+        attempts++;
+        if (attempts === 1) {
+          throw { code: '57P03', message: 'FATAL: the database system is in recovery mode' };
+        }
+        markStarted();
+        return 'recovered';
+      },
+      { sleep: noSleep },
+    );
+    expect(out).toBe('recovered');
+    expect(attempts).toBe(2);
   });
 
   it('NEVER retries once markStarted() has fired, even on a retriable-looking error', async () => {

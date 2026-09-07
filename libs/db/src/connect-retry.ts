@@ -259,8 +259,22 @@ export function isRetriableConnectionSetupError(e: unknown): boolean {
   if (e instanceof ConnectPhaseDeadlineError) return false;
   const x = e as { code?: string; message?: string } | null;
   if (!x) return false;
-  if (x.code === 'CONNECTION_CLOSED' || x.code === 'CONNECT_TIMEOUT') return true;
-  return /\b(CONNECTION_CLOSED|CONNECT_TIMEOUT)\b/.test(x.message ?? '');
+  if (
+    x.code === 'CONNECTION_CLOSED' ||
+    x.code === 'CONNECT_TIMEOUT' ||
+    // PostgreSQL 57P03: the server is restarting/recovering and cannot accept
+    // the connection yet. This is the same pre-callback startup window as a
+    // stale pooled socket, so retrying remains safe before markStarted().
+    x.code === '57P03'
+  ) {
+    return true;
+  }
+  return (
+    /\b(CONNECTION_CLOSED|CONNECT_TIMEOUT|57P03|server_login_retry)\b/i.test(x.message ?? '') ||
+    /\b(?:database system is (?:in recovery mode|starting up|not yet accepting connections)|not yet accepting connections)\b/i.test(
+      x.message ?? '',
+    )
+  );
 }
 
 export interface RetryBeforeCallbackOpts {
