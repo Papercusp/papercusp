@@ -48,7 +48,7 @@ describe('blueprint source authoring', () => {
     [{ slots: [{ slot: 'practice' }, { slot: 'practice' }] }, 'slot-duplicate'],
     [{ slots: [{ slot: 'domain', cardinality: 'additive' }] }, 'slot-cardinality-mismatch'],
     [{ bundles: [{ kind: 'recipe', ref: 'one' }, { kind: 'recipe', ref: 'one' }] }, 'bundle-duplicate'],
-    [{ grants: { requires: ['email.send'] } }, 'grants-reserved'],
+    [{ grants: { requires: ['email.send'] } }, 'grant-class-ref-invalid'],
     [{ slots: [{ slot: 'autonomy' }], knobs: { maxCostUsd: 100 } }, 'authority-on-mode-axis'],
   ])('rejects invalid source declarations %j', (override, code) => {
     expect(errorCodes({ ...identity, ...override })).toContain(code);

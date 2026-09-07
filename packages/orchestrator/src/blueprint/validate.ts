@@ -488,12 +488,59 @@ export function validateIdentityDeclarations(
 
   const g = bp.grants;
   if (g) {
-    const declared = (g.requires?.length ?? 0) + (g.optional?.length ?? 0) + Object.keys(g.suggestedProviders ?? {}).length;
-    if (declared > 0) {
-      err(
-        'grants-reserved',
-        `grants are RESERVED until capability classes land (identities-v1 M3 / D-004, D-014): an identity carries no grants and its toolset is the pot/role ceiling — remove grants.requires / grants.optional / grants.suggestedProviders (${declared} declared)`,
-      );
+    const exactRef = /^[a-z0-9][a-z0-9.-]*@[0-9A-Za-z][0-9A-Za-z._+-]*$/;
+    const required = g.requires ?? [];
+    const optional = g.optional ?? [];
+    const requiredSet = new Set<string>();
+    const optionalSet = new Set<string>();
+    const validateRefs = (
+      refs: readonly string[],
+      field: 'requires' | 'optional',
+      seen: Set<string>,
+    ): void => {
+      for (const ref of refs) {
+        if (!exactRef.test(ref)) {
+          err(
+            'grant-class-ref-invalid',
+            'grants.' + field + ' must name an exact normalized class@version ref; got ' + JSON.stringify(ref),
+          );
+        }
+        if (seen.has(ref)) {
+          err('grant-duplicate', 'grants.' + field + ' declares ' + JSON.stringify(ref) + ' more than once');
+        }
+        seen.add(ref);
+      }
+    };
+    validateRefs(required, 'requires', requiredSet);
+    validateRefs(optional, 'optional', optionalSet);
+    for (const ref of requiredSet) {
+      if (optionalSet.has(ref)) {
+        err(
+          'grant-required-optional-overlap',
+          'capability class ' + JSON.stringify(ref) + ' cannot be both required and optional',
+        );
+      }
+    }
+    const declared = new Set([...requiredSet, ...optionalSet]);
+    for (const [classRef, provider] of Object.entries(g.suggestedProviders ?? {})) {
+      if (!exactRef.test(classRef)) {
+        err(
+          'grant-class-ref-invalid',
+          'grants.suggestedProviders key must be an exact normalized class@version ref; got ' +
+            JSON.stringify(classRef),
+        );
+        continue;
+      }
+      if (!declared.has(classRef)) {
+        err(
+          'grant-suggestion-undeclared',
+          'suggested provider for ' + JSON.stringify(classRef) +
+            ' is invalid because the class is not present in grants.requires or grants.optional',
+        );
+      }
+      if (!provider.trim()) {
+        err('grant-provider-invalid', 'suggested provider for ' + JSON.stringify(classRef) + ' is blank');
+      }
     }
   }
 }

@@ -54,13 +54,51 @@ test('bundle-duplicate — the same (kind, ref) twice; the same ref under two ki
   assert.deepEqual(codes({ ...base, bundles: [{ kind: 'recipe', ref: 'r' }, { kind: 'rubric', ref: 'r' }] }), []);
 });
 
-test('grants-reserved — any non-empty grants section is refused until capability classes land (D-004 / D-014)', () => {
-  assert.deepEqual(codes({ ...base, grants: { requires: ['crm.email'] } }), ['grants-reserved']);
-  assert.deepEqual(codes({ ...base, grants: { optional: ['crm.email'] } }), ['grants-reserved']);
-  assert.deepEqual(codes({ ...base, grants: { suggestedProviders: { 'crm.email': 'acme' } } }), ['grants-reserved']);
-  assert.deepEqual(codes({ ...base, grants: {} }), [], 'the empty reserved shape is allowed');
-  const v = validateBlueprint(BlueprintSchema.parse({ ...base, grants: { requires: ['a', 'b'], optional: ['c'] } }));
-  assert.match(v.errors[0]!.message, /3 declared/);
+test('grants require exact normalized class@version refs', () => {
+  assert.deepEqual(codes({ ...base, grants: { requires: ['crm.email@1.0.0'] } }), []);
+  assert.deepEqual(codes({ ...base, grants: { optional: ['crm.email'] } }), ['grant-class-ref-invalid']);
+  assert.deepEqual(codes({ ...base, grants: { requires: ['CRM.email@1.0.0'] } }), ['grant-class-ref-invalid']);
+  assert.deepEqual(
+    codes({ ...base, grants: { suggestedProviders: { 'crm.email': 'acme' } } }),
+    ['grant-class-ref-invalid'],
+  );
+});
+
+test('grants reject duplicates, required/optional overlap and suggestions for undeclared classes', () => {
+  assert.deepEqual(
+    codes({ ...base, grants: { requires: ['crm.email@1.0.0', 'crm.email@1.0.0'] } }),
+    ['grant-duplicate'],
+  );
+  assert.deepEqual(
+    codes({
+      ...base,
+      grants: {
+        requires: ['crm.email@1.0.0'],
+        optional: ['crm.email@1.0.0'],
+      },
+    }),
+    ['grant-required-optional-overlap'],
+  );
+  assert.deepEqual(
+    codes({
+      ...base,
+      grants: {
+        requires: ['crm.email@1.0.0'],
+        suggestedProviders: { 'calendar.read@1.0.0': 'calendar-provider' },
+      },
+    }),
+    ['grant-suggestion-undeclared'],
+  );
+  assert.deepEqual(
+    codes({
+      ...base,
+      grants: {
+        requires: ['crm.email@1.0.0'],
+        suggestedProviders: { 'crm.email@1.0.0': 'acme-crm' },
+      },
+    }),
+    [],
+  );
 });
 
 test('a plain blueprint (no slots:) is untouched by the identity checks', () => {
