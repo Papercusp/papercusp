@@ -40,7 +40,7 @@ export function attributeOmpGatewayModelsConfig(
   let changed = false;
 
   const stamp = (entry: YAMLMap, onlyIfPresent = false) => {
-    let headers = entry.get('headers', true);
+    let headers: unknown = entry.get('headers', true);
     if (headers == null || (headers as { value?: unknown }).value === null) {
       if (onlyIfPresent) return;
       headers = doc.createNode({});
