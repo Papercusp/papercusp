@@ -3,6 +3,9 @@
 -- acceptance-rubric reader/writer understands subjectHarnessSlug. The database
 -- guard below proves only the index prerequisite, NOT deployed-code readiness.
 -- Rollout requires separate authorization. Test on isolated Postgres only.
+-- FORWARD-COMPAT: PARKED CONTRACT ONLY; legacy readers/writers are incompatible.
+-- Keep .DRAFT until all serving code uses subjectHarnessSlug and no longer relies
+-- on migration 1004's broader arbiter; verify that deployment before arming.
 --
 -- Keep the scoped uniqueness invariant throughout the transition; never drop
 -- the old invariant if EXPAND is absent or its replacement is not usable.
