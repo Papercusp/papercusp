@@ -27,19 +27,19 @@ const ACCOUNT_HEADER = 'x-papercusp-account';
 const OWNER_HEADER = 'x-papercusp-owner';
 const PRIORITY_HEADER = 'x-papercusp-priority';
 
-/** Attribute an existing session registry without changing its provider/account route. */
-export function attributeOmpGatewayModelsConfig(
+/** Prepare gateway wire compatibility and attribution without changing the account/model route. */
+export function prepareOmpGatewayModelsConfig(
   content: string,
   format: 'yaml' | 'json',
   ownerId?: string | null,
 ): string {
   const owner = ownerId?.trim();
-  if (!owner) return content;
   const doc = parseDocument(content);
   if (doc.errors.length) throw new Error('Cannot attribute an invalid OMP model registry');
   let changed = false;
 
   const stamp = (entry: YAMLMap, onlyIfPresent = false) => {
+    if (!owner) return;
     let headers: unknown = entry.get('headers', true);
     if (headers == null || (headers as { value?: unknown }).value === null) {
       if (onlyIfPresent) return;
@@ -58,6 +58,12 @@ export function attributeOmpGatewayModelsConfig(
 
   const provider = doc.getIn(['providers', OMP_GATEWAY_PROVIDER_ID], true);
   if (isMap(provider)) {
+    // The gateway injects a subscription OAuth credential, which OMP cannot
+    // infer from its non-secret placeholder key. Use OMP's native wire mode.
+    if (provider.get('api') === 'anthropic-messages' && provider.get('auth') !== 'oauth') {
+      provider.set('auth', 'oauth');
+      changed = true;
+    }
     stamp(provider);
     // Native registries can carry per-model header overrides as well.
     const models = provider.get('models', true);
@@ -225,7 +231,7 @@ export function ompGatewayModelsConfig(
     `    baseUrl: ${yamlString(baseUrl)}`,
     `    apiKey: ${yamlString(OMP_GATEWAY_PLACEHOLDER_KEY)}`,
     `    api: ${api}`,
-    '    auth: apiKey',
+    `    auth: ${opts.provider === 'anthropic' ? 'oauth' : 'apiKey'}`,
     ...headerBlock,
     '    models:',
     ...modelLines,
