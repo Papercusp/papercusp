@@ -1,4 +1,4 @@
--- WI-10000549 P002: acceptance subject identity includes its harness.
+-- WI-10000549 P002 EXPAND: acceptance subject identity includes its harness.
 -- SOURCE-ONLY DRAFT: do not arm while the deployed rubric schema/readers still
 -- lack subjectHarnessSlug. Test against isolated Postgres before coordinated rollout.
 -- A rubric's storage harness is not necessarily its subject's harness. Backfill
@@ -20,10 +20,9 @@ UPDATE harness_shared.harness_plans AS rubric
    AND rubric.template_data->>'subjectPlan' = subjects.plan_slug
    AND rubric.template_data->>'subjectHarnessSlug' IS NULL;
 
--- FORWARD-COMPAT: the currently deployed release neither reads/writes
--- subjectHarnessSlug nor names this new three-column conflict arbiter. It keeps
--- using the broader two-column index from migration 1004, which this EXPAND
--- draft deliberately retains until compatible writers have deployed.
+-- FORWARD-COMPAT: retain the broader two-column uniqueness invariant from
+-- migration 1004 while old readers/writers may still serve requests. This phase
+-- does NOT enable separate live rubrics for same-slug subjects across harnesses.
 CREATE UNIQUE INDEX IF NOT EXISTS harness_plans_one_active_acceptance_per_scoped_subject
   ON harness_shared.harness_plans
     (workspace_id, (template_data->>'subjectPlan'), (COALESCE(template_data->>'subjectHarnessSlug', '')))
@@ -35,4 +34,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS harness_plans_one_active_acceptance_per_scoped
     AND NULLIF(template_data->>'subjectPlan', '') IS NOT NULL;
 
 -- Keep the broader deployed-writer arbiter through this EXPAND migration. A later
--- CONTRACT migration may retire it only after compatible writers have shipped.
+-- CONTRACT migration 1146 may retire it only after compatible readers AND
+-- writers have shipped. Both phases remain parked .DRAFT files until rollout
+-- is separately authorized; isolated tests explicitly apply each phase.
