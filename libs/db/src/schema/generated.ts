@@ -9248,6 +9248,7 @@ export const testingRunSnapshotsInHarnessShared = harnessShared.table("testing_r
 	truncated: boolean().default(false).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	taskId: text("task_id"),
 }, (table) => [
 	index("testing_run_snapshots_finished_idx").using("btree", table.finishedAt.desc().nullsFirst().op("timestamptz_ops"), table.runId.asc().nullsLast().op("text_ops")).where(sql`(finished_at IS NOT NULL)`),
 	index("testing_run_snapshots_updated_idx").using("btree", table.updatedAt.desc().nullsFirst().op("timestamptz_ops"), table.runId.asc().nullsLast().op("text_ops")),

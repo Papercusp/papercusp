@@ -155,6 +155,33 @@ test('buildPrompt — non-curator gets memory + memory-discipline footer', () =>
   }
 });
 
+test('buildPrompt — evidence-only judge does not get unavailable raw-memory write instruction', () => {
+  const fx = makeFixture(({ harnessDir, stateDir }) => {
+    writeFileSync(join(harnessDir, 'judge.md'), '# JUDGE');
+    writeFileSync(join(stateDir, 'memory', 'summary.md'), 'A learned thing.');
+  });
+  try {
+    const out = buildPrompt({
+      role: 'judge',
+      promptFile: join(fx.harnessDir, 'judge.md'),
+      promptOverride: '',
+      stateDir: fx.stateDir,
+      harnessDir: fx.harnessDir,
+      projectDir: fx.projectDir,
+      cwdOverride: '',
+      featureId: null,
+      runId: 'r1',
+      extras: [],
+    });
+    assert.match(out, /## Memory \(curated from prior iterations/);
+    assert.match(out, /A learned thing\./);
+    assert.doesNotMatch(out, /Memory discipline:/);
+    assert.doesNotMatch(out, /append ONE line to `\.papercusp\/memory\/raw\.md`/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 // ── self-learning-central P-001/A: friction trip-wire in the shared bee base ──
 
 test('buildPrompt — non-curator bee gets the friction trip-wire (self-learning P-001/A)', () => {

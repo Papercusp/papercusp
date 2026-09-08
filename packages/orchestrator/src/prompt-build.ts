@@ -1482,9 +1482,9 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //    (they used to sit AFTER the per-spawn runtime context, which re-wrote
   //    them into the cache on every spawn).
   //
-  // 3a. Memory discipline — every role except curator. References only the
-  //     role name (stable per role-keyed cache prefix).
-  if (input.role !== 'curator') {
+  // 3a. Memory discipline — roles that can persist raw observations. The
+  //     evidence-only judge emits scorecards and cannot write raw.md.
+  if (input.role !== 'curator' && input.role !== 'judge') {
     pre.push('\n---');
     pre.push('- **Memory discipline:** at the end of your work, if you learned something');
     pre.push('  actionable for future iterations (a technique that works, a library that');
