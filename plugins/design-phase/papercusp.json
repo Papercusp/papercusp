@@ -437,7 +437,8 @@
             "required": ["width", "height"]
           },
           "timeoutMs": { "type": "integer", "exclusiveMinimum": 0 },
-          "advisoryNotes": { "type": "string", "description": "Explanatory prose. Recorded beside the evidence and never able to change a verdict." }
+          "advisoryNotes": { "type": "string", "description": "Explanatory prose. Recorded beside the evidence and never able to change a verdict." },
+          "renderObservation": { "type": "object", "description": "Structured state/viewport/theme geometry, controls, fixture-versus-real provenance, capture hash and optional side-by-side review. Validated by the host against this exact target, environment and actual image bytes; stored on the existing comparison artifact, separately from the pixel verdict." }
         },
         "required": [
           "featureId", "referenceId", "target", "environment",
