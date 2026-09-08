@@ -7,6 +7,8 @@
  * unless the caller explicitly supplies a pin or `gatewayOn`.
  */
 
+import { isMap, isSeq, parseDocument, type YAMLMap } from 'yaml';
+
 export type OmpGatewayProvider = 'anthropic' | 'openai';
 export type OmpGatewayAccountProvider = 'claude' | 'codex';
 
@@ -24,6 +26,55 @@ export const OMP_MODELS_REL_PATH = '.omp/agent/models.yml';
 const ACCOUNT_HEADER = 'x-papercusp-account';
 const OWNER_HEADER = 'x-papercusp-owner';
 const PRIORITY_HEADER = 'x-papercusp-priority';
+
+/** Attribute an existing session registry without changing its provider/account route. */
+export function attributeOmpGatewayModelsConfig(
+  content: string,
+  format: 'yaml' | 'json',
+  ownerId?: string | null,
+): string {
+  const owner = ownerId?.trim();
+  if (!owner) return content;
+  const doc = parseDocument(content);
+  if (doc.errors.length) throw new Error('Cannot attribute an invalid OMP model registry');
+  let changed = false;
+
+  const stamp = (entry: YAMLMap, onlyIfPresent = false) => {
+    let headers = entry.get('headers', true);
+    if (headers == null || (headers as { value?: unknown }).value === null) {
+      if (onlyIfPresent) return;
+      headers = doc.createNode({});
+      entry.set('headers', headers);
+    }
+    if (!isMap(headers)) throw new Error('OMP gateway headers must be a mapping');
+    const keys = headers.items.map((pair) => String(pair.key))
+      .filter((key) => key.toLowerCase() === OWNER_HEADER);
+    if (onlyIfPresent && !keys.length) return;
+    if (keys.length === 1 && keys[0] === OWNER_HEADER && headers.get(OWNER_HEADER) === owner) return;
+    for (const key of keys) headers.delete(key);
+    headers.set(OWNER_HEADER, owner);
+    changed = true;
+  };
+
+  const provider = doc.getIn(['providers', OMP_GATEWAY_PROVIDER_ID], true);
+  if (isMap(provider)) {
+    stamp(provider);
+    // Native registries can carry per-model header overrides as well.
+    const models = provider.get('models', true);
+    if (isSeq(models)) for (const model of models.items) if (isMap(model)) stamp(model, true);
+    const overrides = provider.get('modelOverrides', true);
+    if (isMap(overrides)) for (const pair of overrides.items) if (isMap(pair.value)) stamp(pair.value, true);
+  }
+  // Older OMP JSON registries store complete models at the root.
+  const models = doc.get('models', true);
+  if (isSeq(models)) {
+    for (const model of models.items) {
+      if (isMap(model) && model.get('provider') === OMP_GATEWAY_PROVIDER_ID) stamp(model);
+    }
+  }
+  if (!changed) return content;
+  return format === 'json' ? JSON.stringify(doc.toJS(), null, 2) + '\n' : doc.toString();
+}
 
 const DEFAULT_MODELS: Record<OmpGatewayProvider, string[]> = {
   anthropic: ['claude-sonnet-4-6'],
