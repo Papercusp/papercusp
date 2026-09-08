@@ -30,7 +30,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS harness_plans_one_active_acceptance_per_scoped
     AND template_data->>'kind' = 'acceptance'
     AND NULLIF(template_data->>'subjectPlan', '') IS NOT NULL;
 
--- The scoped invariant is installed before retiring the broader index. Existing
--- legacy rows keep their uniqueness bucket; only explicitly scoped writers may
--- author independent contracts for duplicate slugs in different harnesses.
-DROP INDEX IF EXISTS harness_shared.harness_plans_one_active_acceptance_per_subject_plan;
+-- Keep the broader deployed-writer arbiter through this EXPAND migration. A later
+-- CONTRACT migration may retire it only after compatible writers have shipped.
