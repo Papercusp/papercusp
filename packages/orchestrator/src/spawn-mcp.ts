@@ -497,8 +497,9 @@ export interface SpawnCodexContextConfig {
 
 export interface SpawnCodexConfigOpts extends CodexGatewayConfigOpts {
   /** Effective model written at the CODEX_HOME root so model-less resumes
-   * cannot fall through to the installed models cache. Omitted resolves to the
-   * canonical safe default. */
+   * cannot fall through to the installed models cache. The launch boundary
+   * supplies its explicit/inherited selection; this renderer does not select
+   * a default on the caller's behalf. */
   model?: string | null;
   contextConfig?: SpawnCodexContextConfig | null;
 }

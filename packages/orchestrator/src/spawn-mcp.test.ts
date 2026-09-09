@@ -26,6 +26,9 @@ import {
 } from './spawn-mcp';
 
 const ROOT = join(tmpdir(), `papercusp-spawn-mcp-test-${process.pid}`);
+// These serialization/routing fixtures select a model just as invoke.ts does.
+// Omitting it tests model-selection policy instead of the behavior named below.
+const TEST_CODEX_MODEL = 'gpt-5.4:high';
 
 beforeEach(() => {
   rmSync(ROOT, { recursive: true, force: true });
@@ -612,6 +615,7 @@ describe('async spawn config writers use stale-port recovery', () => {
     const codexHandle = await writeSignedSpawnCodexHome(input, {
       codexHome,
       cleanup: false,
+      model: TEST_CODEX_MODEL,
       probe,
       onRecovery: () => {},
       pg,
@@ -720,11 +724,22 @@ describe('buildSpawnCodexConfigToml', () => {
     else process.env.PAPERCUSP_GATEWAY_PORT = savedGatewayPort;
   });
 
+  it('preserves the selected model and effort instead of substituting a default', () => {
+    const toml = buildSpawnCodexConfigToml(
+      'http://127.0.0.1:3270/api/mcp?harness=papercusp',
+      undefined,
+      { model: TEST_CODEX_MODEL },
+    );
+    expect(toml).toContain('model = "gpt-5.4"\n');
+    expect(toml).toContain('model_reasoning_effort = "high"\n');
+    expect(toml.indexOf('model =')).toBeLessThan(toml.indexOf('[features]'));
+  });
+
   it('prepends a resolved context pair as TOML root keys before every table', () => {
     const toml = buildSpawnCodexConfigToml(
       'http://127.0.0.1:3270/api/mcp?harness=papercusp',
       undefined,
-      { contextConfig: { modelContextWindow: 1_000_000, modelAutoCompactTokenLimit: 900_000 } },
+      { model: TEST_CODEX_MODEL, contextConfig: { modelContextWindow: 1_000_000, modelAutoCompactTokenLimit: 900_000 } },
     );
     expect(toml).toMatch(
       /^model_context_window = 1000000\nmodel_auto_compact_token_limit = 900000\n/,
@@ -737,7 +752,7 @@ describe('buildSpawnCodexConfigToml', () => {
     const toml = buildSpawnCodexConfigToml(
       'http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a"b',
       'aviynw_codex',
-      { ownerId: 's-queen"1', priority: 'mug' },
+      { model: TEST_CODEX_MODEL, ownerId: 's-queen"1', priority: 'mug' },
     );
 
     expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
@@ -756,6 +771,7 @@ describe('buildSpawnCodexConfigToml', () => {
     const toml = buildSpawnCodexConfigToml(
       'http://127.0.0.1:3270/api/mcp?harness=papercusp',
       undefined,
+      { model: TEST_CODEX_MODEL },
     );
 
     expect(toml).not.toContain('papercusp-codex-gateway');
@@ -772,7 +788,7 @@ describe('buildSpawnCodexConfigToml', () => {
     const toml = buildSpawnCodexConfigToml(
       'http://127.0.0.1:3270/api/mcp?harness=papercusp',
       undefined,
-      { gatewayOn: true, ownerId: 's-queen1', priority: 'mug' },
+      { model: TEST_CODEX_MODEL, gatewayOn: true, ownerId: 's-queen1', priority: 'mug' },
     );
 
     expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
@@ -786,7 +802,7 @@ describe('buildSpawnCodexConfigToml', () => {
     const toml = buildSpawnCodexConfigToml(
       'http://127.0.0.1:3270/api/mcp?harness=papercusp',
       undefined,
-      { gatewayOn: true },
+      { model: TEST_CODEX_MODEL, gatewayOn: true },
     );
 
     expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
