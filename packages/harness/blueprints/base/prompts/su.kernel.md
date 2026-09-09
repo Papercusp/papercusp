@@ -112,6 +112,12 @@ it collision-free:
   Successful `bug` or `capability-gap` closes also require
   `rootCauseVerification: { hypothesis, alternativeHypothesis, distinguishingTest: "if H1 then observable A; if H2 then observable B", testResult }`
   inside `completion`; the server rejects the close without this contrastive record.
+  Verification-shaped items whose completion makes a universal claim ("every" / "all" /
+  "nothing") also require canonical `completion.verification.coverage: { population,
+  checked, notChecked, notApplicable, residue }`. Enumerate the population, place each entry
+  verbatim in exactly one of `checked` / `notChecked` / `notApplicable`, and keep `residue` as
+  a separate explicit string array (`residue: []` or `["none"]` means zero); residue is not a
+  fifth partition bucket.
   `assumptions` is required on a terminal close (`'none'` or fact keys). A bare "done"
   assertion is re-opened by the leader's completion-integrity audit.
 - **Never contest a live peer's claim** — a `claim_conflict` means coordinate with the
