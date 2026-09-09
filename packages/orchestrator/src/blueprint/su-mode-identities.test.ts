@@ -37,8 +37,13 @@ import {
   suModeLayer,
   suModeLayers,
 } from './mode-identities.js';
-import { composeSuStackMutation, composeSuStackSource, resolveSuIdentityDocument, suSessionBinding } from './su-stack.js';
-import { STACK_INJECTION_STAMP, bindingRefs } from './stack-mutation.js';
+import {
+  composeSuStackMutation,
+  composeSuStackSource,
+  resolveSuIdentityDocument,
+  suSessionBinding,
+} from './su-stack.js';
+import { STACK_INJECTION_STAMP, bindingRefs, normalizeStackBinding } from './stack-mutation.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const harnessDir = join(here, '..', '..', '..', 'harness'); // libs/papercusp/packages/harness
@@ -94,6 +99,26 @@ test('P-021 — the four mode-axis identities + the four audience identities are
     assert.ok(d.id === `${d.role}.audience-${d.mode}`);
   }
   assert.equal(audienceIdentityDocument('operator', 'wizard'), null);
+});
+
+test('P-021 — every audience-axis identity composes from its authored blueprint document instead of falling back to an unrelated su artifact', () => {
+  for (const audience of AUDIENCE_IDENTITY_DOCUMENTS) {
+    const authoredText = readFileSync(join(harnessDir, audience.path), 'utf8');
+    const rendered = composeSuStackSource({
+      harnessDir,
+      binding: normalizeStackBinding([{ slot: 'audience', id: audience.id }]),
+    });
+    assert.ok(
+      rendered.text.includes(authoredText.trim()),
+      `${audience.id} renders its authored document`,
+    );
+    assert.deepEqual(
+      rendered.order.filter((entry) => entry.slot === 'audience').map((entry) => entry.id),
+      [audience.id],
+      `${audience.id} occupies the audience slot`,
+    );
+    assert.equal(rendered.findings.filter((finding) => finding.tier === 'block').length, 0);
+  }
 });
 
 test('P-021 — the registry → layer map: auto/cold-auto → autonomy, ideate → ideation, drain → objective, audit → audit; goal/grade/test/unknown bind nothing; one layer per axis, additive across axes', () => {

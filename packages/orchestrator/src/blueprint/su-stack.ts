@@ -58,7 +58,11 @@ import {
   type StackMutationOp,
 } from './stack-mutation.js';
 import type { SlotId } from './slots.js';
-import { suModeDocument, suModeLayers } from './mode-identities.js';
+import {
+  AUDIENCE_IDENTITY_DOCUMENTS,
+  suModeDocument,
+  suModeLayers,
+} from './mode-identities.js';
 import {
   SU_PART_DOCUMENTS,
   SU_PREAMBLE_REL,
@@ -293,20 +297,29 @@ export function suBoundLayerDocument(
   layer: BoundLayer,
   resolve?: { identityRoots: readonly string[] },
 ): StackDocument | null {
-  // P-021: a MODE-AXIS identity (`su.mode-auto`, …) is AUTHORED, not derived from su.md —
-  // it has no tiles, so it resolves through the chain ONLY; a missing document refuses
-  // (nothing to fall back to). With no `resolve` the built-in harness is the one root.
+  // P-021: a MODE-AXIS or AUDIENCE identity is AUTHORED, not derived from su.md — it has
+  // no tiles, so it resolves through the chain ONLY; a missing document refuses (nothing
+  // to fall back to). With no `resolve` the built-in harness is the one root.
   const mode = suModeDocument(layer.id);
-  if (mode) {
-    if (mode.slot !== layer.slot) return null;
+  const audience =
+    AUDIENCE_IDENTITY_DOCUMENTS.find((document) => document.id === layer.id) ?? null;
+  const authored = mode ?? audience;
+  if (authored) {
+    if (authored.slot !== layer.slot) return null;
     const roots = resolve?.identityRoots ?? [harnessRoot()];
-    const hit = resolveSuIdentityDocument(mode, roots);
+    const hit = resolveSuIdentityDocument(authored, roots);
     if (!hit) {
       throw new Error(
-        `su-stack: mode identity document for "${layer.slot}:${layer.id}" (${mode.path}) exists in none of the identity roots [${roots.join(', ')}] — the identity is not installed in any tier`,
+        `su-stack: ${mode ? 'mode' : 'audience'} identity document for "${layer.slot}:${layer.id}" (${authored.path}) exists in none of the identity roots [${roots.join(', ')}] — the identity is not installed in any tier`,
       );
     }
-    return { id: mode.id, layer: slotLayer(mode.slot), slot: mode.slot, text: hit.text, sourcePath: hit.path } satisfies StackDocument;
+    return {
+      id: authored.id,
+      layer: slotLayer(authored.slot),
+      slot: authored.slot,
+      text: hit.text,
+      sourcePath: hit.path,
+    } satisfies StackDocument;
   }
   const part = SU_PART_DOCUMENTS.find((d) => d.id === layer.id);
   if (!part || part.part !== layer.slot) return null;
