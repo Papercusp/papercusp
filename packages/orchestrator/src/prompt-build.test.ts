@@ -733,6 +733,13 @@ test('su.md persona spine carries all four sharpened directives (drift guard, P-
   assert.match(su, /`coord:declare-intent \{ intent \}` — omit `items` so existing plan-item claims stay/);
   assert.match(su, /use `items: \[\]` only when you intentionally release a plan lane/);
   assert.match(su, /Leave `current_plan_slug` unset/);
+  // [COMPLETION-COVERAGE] — a universal verification close must carry the same
+  // canonical partition contract that work_items:complete enforces.
+  assert.match(su, /universal claim \("every" \/ "all" \/\s+"nothing"\)/);
+  assert.match(su, /`completion\.verification\.coverage: \{ population,\s+checked, notChecked, notApplicable, residue \}`/);
+  assert.match(su, /place each entry\s+verbatim in exactly one of `checked` \/ `notChecked` \/ `notApplicable`/);
+  assert.match(su, /`residue: \[\]` or `\["none"\]` means zero/);
+  assert.match(su, /residue is not a\s+fifth partition bucket/);
 });
 
 test('buildPrompt — acceptanceKind judge/none swaps TESTING_STANDARD for VERIFICATION_STANDARD (P-008)', () => {
