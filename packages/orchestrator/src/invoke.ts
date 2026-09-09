@@ -1854,6 +1854,15 @@ export const SPAWN_ENV_ALL_ROLES_STRIP: readonly string[] = [
 ];
 
 /**
+ * Private detector identity copied from the invoke-once process into the
+ * actual agent CLI environment. The signed MCP URL carries the same value as
+ * `?detector=...`; hooks cannot read that URL, so this is their process-local
+ * carrier for draining failure-loop state without conflating it with the
+ * public coordination owner.
+ */
+export const FAILURE_LOOP_SESSION_KEY_ENV = 'PAPERCUSP_FAILURE_LOOP_SESSION_KEY';
+
+/**
  * Decrypted search-provider API-key env names that OMP's `web_search` providers
  * consume. SOURCE OF TRUTH: `apps/operator/lib/search-provider-credentials.ts`
  * `SEARCH_PROVIDERS` (each provider's `primary` + `alternates` + the SearXNG
@@ -1911,10 +1920,17 @@ export const SEARCH_PROVIDER_ENV_KEYS: readonly string[] = [
  * (`OMP_*`/`PI_*` memory flags, `resolveSpawnHome` → HOME/USERPROFILE,
  * `gitConfigNoPushEnv`, the per-spawn `CODEX_HOME`/`.mcp.json` and sandbox
  * cache-redirect), so HOME, the git-no-push config, and the MCP/cache env added
- * afterward survive — none of those are secrets this strips.
+ * afterward survive — none of those are secrets this strips. The private
+ * failure-loop detector key is copied from `PAPERCUSP_SID` into its explicit
+ * hook carrier here, at the same producer boundary that signs `?detector=` in
+ * the MCP URL. A missing SID clears any inherited carrier rather than leaking
+ * a stale detector identity into a child.
  */
 export function scopeSpawnEnvForRole(env: NodeJS.ProcessEnv, role: string): NodeJS.ProcessEnv {
   const scoped: NodeJS.ProcessEnv = { ...env };
+  const detectorSessionKey = typeof env.PAPERCUSP_SID === 'string' ? env.PAPERCUSP_SID.trim() : '';
+  if (detectorSessionKey) scoped[FAILURE_LOOP_SESSION_KEY_ENV] = detectorSessionKey;
+  else delete scoped[FAILURE_LOOP_SESSION_KEY_ENV];
   for (const k of SPAWN_ENV_ALL_ROLES_STRIP) delete scoped[k];
   if (role === 'auditor') {
     for (const k of SEARCH_PROVIDER_ENV_KEYS) delete scoped[k];

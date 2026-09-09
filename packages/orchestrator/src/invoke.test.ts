@@ -62,6 +62,7 @@ import {
   FLEET_SANDBOX_DENY_READ,
   FLEET_SANDBOX_DENY_RULES,
   scopeSpawnEnvForRole,
+  FAILURE_LOOP_SESSION_KEY_ENV,
   SPAWN_ENV_ALL_ROLES_STRIP,
   SEARCH_PROVIDER_ENV_KEYS,
   normalizeExplicitModelFlagsForBackend,
@@ -2667,6 +2668,22 @@ test('scopeSpawnEnvForRole — all roles drop operator PG/DB secrets, keep PATH/
   assert.equal(out.HOME, '/home/u');
   // A worker uses web_search → keeps the search-provider key.
   assert.equal(out.TAVILY_API_KEY, 'tvly-xxx', 'worker keeps search keys (uses web_search)');
+});
+
+test('scopeSpawnEnvForRole — carries the signed detector identity to child hooks', () => {
+  const input: NodeJS.ProcessEnv = {
+    PAPERCUSP_SID: 'private-detector-session',
+    [FAILURE_LOOP_SESSION_KEY_ENV]: 'stale-inherited-detector',
+    PATH: '/usr/bin',
+  };
+  const out = scopeSpawnEnvForRole(input, 'auditor');
+  assert.equal(out[FAILURE_LOOP_SESSION_KEY_ENV], 'private-detector-session');
+  assert.equal(input[FAILURE_LOOP_SESSION_KEY_ENV], 'stale-inherited-detector');
+});
+
+test('scopeSpawnEnvForRole — clears an inherited detector identity when the producer has no SID', () => {
+  const out = scopeSpawnEnvForRole({ [FAILURE_LOOP_SESSION_KEY_ENV]: 'stale-detector' }, 'worker');
+  assert.equal(out[FAILURE_LOOP_SESSION_KEY_ENV], undefined);
 });
 
 test('scopeSpawnEnvForRole — auditor additionally strips ALL search-provider keys, keeps PATH/HOME', () => {
