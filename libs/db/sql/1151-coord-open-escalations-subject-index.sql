@@ -1,4 +1,4 @@
--- 1150 — index exact open-escalation subject lookup.
+-- 1151 — index exact open-escalation subject lookup.
 --
 -- WI-2145586: settlement cleanup for a critical work-item uses the stable
 -- `(dedupKind, subjectSignature)` identity even when the item's severity was
