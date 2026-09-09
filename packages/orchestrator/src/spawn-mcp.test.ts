@@ -126,6 +126,17 @@ describe('buildSpawnMcpConfig', () => {
     expect(url.searchParams.get('role')).toBe('cup');
   });
 
+  it('bakes the private detector session key separately from public client identity', () => {
+    const cfg = buildSpawnMcpConfig({
+      harnessSlug: 'demo', workspaceId: 'ws-1', role: 'judge',
+      runId: 'run-1', spawnId: 'spawn-1', clientId: null,
+      detectorSessionKey: 'sid-auditor-1',
+    });
+    const url = new URL(cfg.mcpServers.papercusp!.url);
+    expect(url.searchParams.get('detector')).toBe('sid-auditor-1');
+    expect(url.searchParams.has('client')).toBe(false);
+  });
+
   it('carries a per-spawn MCP tools listing hint when provided', () => {
     const cfg = buildSpawnMcpConfig({
       harnessSlug: 'papercusp',

@@ -37,6 +37,7 @@ export const SIGNED_PARAM_ALLOWLIST: ReadonlySet<string> = new Set([
   'chunk',
   'parent_spawn',
   'client',
+  'detector',
   'exp',
 ]);
 

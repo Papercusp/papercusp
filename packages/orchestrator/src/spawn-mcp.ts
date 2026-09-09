@@ -78,6 +78,8 @@ export interface SpawnMcpConfigInput {
    * Optional — pipeline roles (worker/scoper/…) that never coord can omit it.
    */
   clientId?: string | null;
+  /** Private stable session key used only to isolate process-local detectors. */
+  detectorSessionKey?: string | null;
 }
 
 /**
@@ -301,6 +303,7 @@ export function buildSpawnMcpConfig(input: SpawnMcpConfigInput): {
   if (input.mcpToolNames?.length) params.set('tools', input.mcpToolNames.join(','));
   // Stable coord owner id (operator's `s-…` spawnId). See buildSpawnUrlParams.
   if (input.clientId) params.set('client', input.clientId);
+  if (input.detectorSessionKey) params.set('detector', input.detectorSessionKey);
   return {
     mcpServers: {
       papercusp: {
@@ -971,6 +974,7 @@ function buildSpawnUrlParams(input: SpawnMcpConfigInput): URLSearchParams {
   // verifies it before trusting it as the child's coord identity. parseRequestContext
   // reads it into ctx.uiClientId, which resolveAgentIdentity attributes coord writes to.
   if (input.clientId) params.set('client', input.clientId);
+  if (input.detectorSessionKey) params.set('detector', input.detectorSessionKey);
   return params;
 }
 
