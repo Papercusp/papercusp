@@ -4029,6 +4029,11 @@ export async function invoke(
           // durable operator-assigned spawnId — a bare random UUID would not be a real
           // coord owner, so omit it there (the legacy pipeline-role path is unchanged).
           clientId: stableSpawnId || null,
+          // Private detector identity: invoke-once children inherit PAPERCUSP_SID,
+          // which is stable for the auditor session but intentionally differs from
+          // the public resolveAgentIdentity result on client-less signed invokes.
+          // Sign it into the MCP URL; never substitute runId or spawnId here.
+          detectorSessionKey: (process.env.PAPERCUSP_SID ?? '').trim() || null,
           // pot-rename dual-accept plus the pipeline worker↔cup equivalence:
           // select a bounded catalog before OMP serializes tool schemas.
           mcpToolNames: invokeMcpToolNamesForRole(role),
