@@ -59,9 +59,39 @@
  * flag here: `su-session-rpc-engine.ts` builds its session config with
  * `writeOmpSessionConfigDir({ discoveryOff: true, toolsAllowlist: ompCoreToolNames(env) })`,
  * which turns omp's native `search_tool_bm25` discovery off AND pins the
- * papercusp fallback in the allowlist. codex takes no discovery config on that
- * path (its tools arrive over MCP), so there is nothing of this shape to deny
- * there today — re-check if codex ever ships a native catalog-search tool.
+ * papercusp fallback in the allowlist.
+ *
+ * ⚠ CODEX IS NOT COVERED AND IS A KNOWN OPEN GAP — do not read this module as
+ * "all clients handled". An earlier revision of this comment claimed codex had
+ * "nothing of this shape to deny"; that was WRONG, inferred from the absence of
+ * OUR config on its launch path rather than from codex itself, and is retracted.
+ * Codex ships the SAME mechanism as claude — deferred MCP tool schemas plus a
+ * search tool that loads them. Evidence, read out of the codex binary
+ * (@openai/codex-linux-x64 .../bin/codex) on 2026-09-11, with a positive control
+ * confirming the search could see known builtins (shell=266, apply_patch=88):
+ *   • `tool_search_output` and `tool_search_call` are first-class ResponseItem
+ *     variants, siblings of `web_search_call` / `function_call`;
+ *   • the literal parameter description "Search query for deferred tools.";
+ *   • `DynamicToolFunctionSpec { description, inputSchema, deferLoading }`;
+ *   • `tools.deferred_namespaces`, "Added/Removed deferred tool namespaces";
+ *   • flag-shaped names `tool_search` and `tool_search_always_defer_mcp_tools`.
+ * `--disallowedTools` cannot carry this: it is a claude flag, and codex is
+ * launched as `codex … app-server` and configured through `-c key=value` /
+ * config.toml instead (see su-session-rpc-engine.ts, the codex branch).
+ *
+ * THE LEVER IS NOT YET KNOWN — do NOT guess it. `[features] tool_search = false`
+ * (mirroring the existing `codexManagedFeaturesToml()` block in
+ * codex-gateway-config.ts, which already sets `memories` and
+ * `remote_compaction_v2`) is the OBVIOUS candidate and is UNVERIFIED. It was not
+ * shipped because the check that would confirm it came back inconclusive: codex
+ * SILENTLY ACCEPTS unknown feature keys — a deliberately fake
+ * `features.definitely_not_a_real_flag_xyz` produced output byte-identical to a
+ * known-good key, so a startup probe cannot tell a real lever from a no-op, and
+ * writing the config anyway would buy false confidence rather than a deny.
+ * Settle it by enumerating a LIVE codex session's actual tool surface with and
+ * without the candidate key (blocked 2026-09-11: the codex account pool was
+ * fully walled — 0 of 7 serviceable, and the default route was also usage-capped
+ * — so no model turn could be obtained on any route).
  *
  * A SEPARATE `--disallowedTools=` token from the other deny flags (claude unions
  * repeated occurrences — verified live), so this stays independently revertible
