@@ -37,6 +37,11 @@
       "import": "./src/native-scheduler-deny.ts",
       "default": "./src/native-scheduler-deny.ts"
     },
+    "./native-tool-search-deny": {
+      "types": "./src/native-tool-search-deny.ts",
+      "import": "./src/native-tool-search-deny.ts",
+      "default": "./src/native-tool-search-deny.ts"
+    },
     "./no-subagent-deny": {
       "types": "./src/no-subagent-deny.ts",
       "import": "./src/no-subagent-deny.ts",

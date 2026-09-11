@@ -67,6 +67,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { AgentBackend, HarnessConfig, InvokeResult } from './types';
 import { resolveAgentBackend, normalizeModelForBackend, resolveCodexModel } from './env';
 import { hasExplicitDisallowedTools, nativeSchedulerDenyFlag } from './native-scheduler-deny';
+import { nativeToolSearchDenyFlag } from './native-tool-search-deny';
 import { NO_SUBAGENT_TOOLS_DENY, noSubagentToolsDenyFlag } from './no-subagent-deny';
 import { ownerDesktopNotifyDenyFlag } from './owner-desktop-notify-deny';
 import { ROLE_MODEL_DEFAULTS } from './role-models';
@@ -3213,6 +3214,14 @@ export async function invoke(
     // headless twin of psu's default-deny + the wake-executor resume re-arm; there is
     // no headless opt-in (the `--allow-subagents` opt-in is a psu-launch surface only).
     extraFlags.push(noSubagentToolsDenyFlag());
+    // Native client tool-search lockout (owner directive 2026-09-11): force
+    // discovery through papercusp's tools:find / tools:invoke, which are
+    // result-door-capped and (for invoke) cost zero schema tokens. Measured:
+    // ONE ToolSearch loading six schemas cost +67k tokens, 17% of a session's
+    // budget, bypassing applyResultDoor entirely. Same union-composition
+    // rationale as the denies above. See native-tool-search-deny.ts for the
+    // empirical proof that this does NOT strand the session.
+    extraFlags.push(nativeToolSearchDenyFlag());
     // Owner-desktop-notification lockout (owner directive 2026-07-14): every
     // headless claude spawn loses the easy `notify-send` shell paths,
     // UNCONDITIONALLY (same union-composition rationale as the subagent deny
