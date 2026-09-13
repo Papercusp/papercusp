@@ -12,11 +12,18 @@ function readMigration(filename: string): string {
   return readFileSync(existsSync(armed) ? armed : `${armed}.DRAFT`, 'utf8');
 }
 
+function isCommentOnlyChunk(chunk: string): boolean {
+  return chunk.split(/\r?\n/).every((line) => {
+    const trimmed = line.trim();
+    return trimmed.length === 0 || trimmed.startsWith('--');
+  });
+}
+
 function splitMigration(sqlText: string): string[] {
   return sqlText
     .split(/-->\s*statement-breakpoint/g)
     .map((chunk) => chunk.trim())
-    .filter((chunk) => chunk.length > 0 && !/^(\s*--[^\n]*\n?)+$/.test(chunk));
+    .filter((chunk) => chunk.length > 0 && !isCommentOnlyChunk(chunk));
 }
 
 const migrationSql = readMigration('1154-prose-embedding-profile-identity.sql');
@@ -96,6 +103,13 @@ afterAll(async () => {
 });
 
 describe('migration 1154 — exact shared prose profile identity', () => {
+  it('keeps SQL after a long comment preamble while dropping comment-only chunks', () => {
+    const preamble = Array.from({ length: 2_048 }, (_, index) => `-- migration note ${index}`).join('\n');
+    expect(splitMigration(`${preamble}\nSELECT 1;\n--> statement-breakpoint\n-- comment only`)).toEqual([
+      `${preamble}\nSELECT 1;`,
+    ]);
+  });
+
   it('bounds unrelated ACCESS EXCLUSIVE locks to singleton runner transactions', () => {
     expectLockSafeChunks(migrationChunks);
   });
