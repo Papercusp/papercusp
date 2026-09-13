@@ -32,6 +32,11 @@
       "import": "./src/role-models.ts",
       "default": "./src/role-models.ts"
     },
+    "./managed-capability-contract": {
+      "types": "./src/managed-capability-contract.ts",
+      "import": "./src/managed-capability-contract.ts",
+      "default": "./src/managed-capability-contract.ts"
+    },
     "./native-scheduler-deny": {
       "types": "./src/native-scheduler-deny.ts",
       "import": "./src/native-scheduler-deny.ts",

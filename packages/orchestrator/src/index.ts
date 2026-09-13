@@ -33,6 +33,23 @@ export {
 export { createLogger } from './log';
 export { resolvePaths, resolveEnv, resolveAgentCmd, resolveAgentBackend } from './env';
 export { AGENT_BACKENDS } from './types';
+export {
+  MANAGED_CAPABILITY_CONTRACT_VERSION,
+  MANAGED_CAPABILITY_FAMILY_IDS,
+  MANAGED_CAPABILITY_DISPOSITIONS,
+  MANAGED_CAPABILITY_CUTOVER_READY,
+  managedCapabilityContractViolations,
+  managedCapabilityDisposition,
+} from './managed-capability-contract';
+export type {
+  ManagedCapabilityFamilyId,
+  ManagedCapabilityDispositionKind,
+  ManagedCapabilityGapKind,
+  ManagedCapabilitySourceCitation,
+  ManagedCapabilityGap,
+  ManagedCapabilityDisposition,
+  ManagedCapabilityContractCandidate,
+} from './managed-capability-contract';
 export { allHarnessProfiles, harnessProfile, harnessSupports } from './harness-profile';
 export type {
   HarnessAdapterProfile,
