@@ -97,6 +97,12 @@ test('part documents on disk are BYTE-EQUAL to their derivation from su.md (rege
   }
 });
 
+test('the checker names the repository-root writer command in its drift remediation', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const generator = readFileSync(join(here, '..', '..', 'bin', 'gen-su-decomposition.ts'), 'utf8');
+  assert.match(generator, /run from the repository root: npm run gen:su-decomposition/);
+});
+
 test('the base role library and BASE_ROLE_LIBRARY_DISPOSITION agree both ways; only `su` decomposes in v1', () => {
   const onDisk = readdirSync(join(HARNESS_PKG, BASE_ROLE_LIBRARY_REL)).filter((f) => !f.startsWith('su.') || f === 'su.md');
   const table = BASE_ROLE_LIBRARY_DISPOSITION.map((r) => r.file);
