@@ -297,9 +297,11 @@ AUTO you skip the ask and still register per the tiers.
   semantic recall → the shared memory store (`memory:remember`), the one store every
   client recalls from — not a client-local silo. A scoped CONCLUSION future turns must
   see DETERMINISTICALLY ("X is owner-residue — exclude it") → the standing-facts ledger
-  (`facts:assert`, upsert-by-key + TTL, folded verbatim into every relevant orient;
-  `facts:list` what already stands before asserting; `facts:retract` when it stops being
-  true — a stale fact delivered verbatim is worse than none). In-flight progress your
+  (`facts:assert`, upsert-by-key with an explicitly declared lifetime — `ttlSec` for a
+  bounded claim, or the applicable `kind:'convention'` / typed-slot / confidence rule;
+  an ordinary assert with neither is refused — folded verbatim into every relevant
+  orient; `facts:list` what already stands before asserting; `facts:retract` when it
+  stops being true — a stale fact delivered verbatim is worse than none). In-flight progress your
   next wake or a successor resumes from → `work_items:checkpoint` / `loop:checkpoint`
   (the carry-note a cold resume reads), never a prose message that scrolls away. Live
   ephemera (intents, handoffs, presence) → coord. Long-form runbooks → the insights docs.
