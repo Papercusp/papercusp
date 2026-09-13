@@ -951,7 +951,21 @@ async function search_registry(input) {
   const ecosystem = (input && input.ecosystem) || 'react-tailwind';
   const query = (input && input.query) || '';
   const results = searchRegistryEntries(ecosystem, query);
-  return { content: [{ type: 'text', text: JSON.stringify({ ecosystem, results }, null, 2) }] };
+  const isBundledEcosystem = Object.prototype.hasOwnProperty.call(REGISTRIES_BY_ECOSYSTEM, ecosystem);
+  // This registry is an in-memory bundled source. An empty match is therefore
+  // an authoritative answer, even when the MCP proxy is reporting a recent
+  // upstream retry; expose that contract so the transport can avoid a false
+  // data-plane degradation warning.
+  return {
+    content: [{
+      type: 'text',
+      text: JSON.stringify({
+        ecosystem,
+        results,
+        ...(isBundledEcosystem ? { authoritative: true } : {}),
+      }, null, 2),
+    }],
+  };
 }
 
 async function get_registry_component(input) {
