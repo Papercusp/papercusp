@@ -17,66 +17,98 @@
 -- only rows whose identity cannot be mapped safely. The prior release ignores
 -- the added columns and keeps serving.
 
--- Readers acquire nested compatibility views from the outside in, then the
--- work_items base table. Take the same order before ALTER TABLE can lock the
--- base relation; otherwise the later CREATE OR REPLACE VIEW statements invert
--- that order and can deadlock against a live reader (the migration-721 class).
+-- Each unrelated hot table is deliberately its own runner transaction. The
+-- first armed version held all four work-item compatibility views while it
+-- waited for session_turns, and a normal reader holding session_turns then
+-- queued on engineer_issues: PostgreSQL reported a real 40P01 deadlock after
+-- the earlier 55P03 lock-timeout attempts. The established Drizzle/test-config
+-- `statement-breakpoint` marker now has identical production-runner semantics:
+-- prior chunks may commit, the migration ledger is written only with the last
+-- chunk, and every statement below is idempotent for safe retry.
+--
+-- Two older refill-only surfaces never had the mode discriminator. ADD it in
+-- the same singleton transaction as the exact profile column; existing vectors
+-- deliberately remain identity-unknown.
+ALTER TABLE IF EXISTS harness_shared.session_turns
+  ADD COLUMN IF NOT EXISTS text_embedding_mode text,
+  ADD COLUMN IF NOT EXISTS text_embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.session_turn_chunks
+  ADD COLUMN IF NOT EXISTS embedding_mode text,
+  ADD COLUMN IF NOT EXISTS embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.operator_turns
+  ADD COLUMN IF NOT EXISTS text_embedding_mode text,
+  ADD COLUMN IF NOT EXISTS text_embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.doc_sections
+  ADD COLUMN IF NOT EXISTS embedding_mode text,
+  ADD COLUMN IF NOT EXISTS embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.harness_docs
+  ADD COLUMN IF NOT EXISTS embedding_mode text,
+  ADD COLUMN IF NOT EXISTS embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.harness_plans
+  ADD COLUMN IF NOT EXISTS embedding_mode text,
+  ADD COLUMN IF NOT EXISTS embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.harness_escalations
+  ADD COLUMN IF NOT EXISTS body_embedding_mode text,
+  ADD COLUMN IF NOT EXISTS body_embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.harness_brainstorm
+  ADD COLUMN IF NOT EXISTS content_embedding_mode text,
+  ADD COLUMN IF NOT EXISTS content_embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.harness_decisions
+  ADD COLUMN IF NOT EXISTS body_embedding_mode text,
+  ADD COLUMN IF NOT EXISTS body_embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.code_recipes
+  ADD COLUMN IF NOT EXISTS embedding_mode text,
+  ADD COLUMN IF NOT EXISTS embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.datatype_registry
+  ADD COLUMN IF NOT EXISTS embedding_mode text,
+  ADD COLUMN IF NOT EXISTS embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.personal_documents
+  ADD COLUMN IF NOT EXISTS embedding_mode text,
+  ADD COLUMN IF NOT EXISTS embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.consult_state
+  ADD COLUMN IF NOT EXISTS query_embedding_mode text,
+  ADD COLUMN IF NOT EXISTS query_embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.interest_watches
+  ADD COLUMN IF NOT EXISTS embedding_mode text,
+  ADD COLUMN IF NOT EXISTS embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.carry_notes
+  ADD COLUMN IF NOT EXISTS note_embedding_mode text,
+  ADD COLUMN IF NOT EXISTS note_embedding_profile text;
+--> statement-breakpoint
+ALTER TABLE IF EXISTS harness_shared.coord_thread_posts
+  ADD COLUMN IF NOT EXISTS body_embedding_mode text,
+  ADD COLUMN IF NOT EXISTS body_embedding_profile text;
+--> statement-breakpoint
+
+-- This final chunk is the one genuinely coupled relation family. Readers
+-- acquire nested compatibility views from the outside in, then work_items, so
+-- take that same order before ALTER TABLE and keep the view rewrites atomic
+-- with the base-column addition (the migration-721 invariant).
 LOCK TABLE harness_shared.harness_features IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE harness_shared.harness_features_consolidated IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE harness_shared.work_items_claimable IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE harness_shared.engineer_issues IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE harness_shared.work_items IN ACCESS EXCLUSIVE MODE;
 
--- lint-migrations: dynamic-view-lock-order all four compatibility views are locked outside-in before work_items and before the dynamic ALTER loop
+-- lint-migrations: dynamic-view-lock-order all four compatibility views are locked outside-in before work_items and before the dynamic view rewrite
 
-DO $migration$
-DECLARE
-  target record;
-  qualified text;
-BEGIN
-  FOR target IN
-    SELECT * FROM (VALUES
-      ('harness_shared', 'session_turns',      'text_embedding',    'text_embedding_mode'),
-      ('harness_shared', 'session_turn_chunks','embedding',         'embedding_mode'),
-      ('harness_shared', 'operator_turns',     'text_embedding',    'text_embedding_mode'),
-      ('harness_shared', 'work_items',         'embedding',         'embedding_mode'),
-      ('harness_shared', 'doc_sections',       'embedding',         'embedding_mode'),
-      ('harness_shared', 'harness_docs',       'embedding',         'embedding_mode'),
-      ('harness_shared', 'harness_plans',      'embedding',         'embedding_mode'),
-      ('harness_shared', 'harness_escalations','body_embedding',    'body_embedding_mode'),
-      ('harness_shared', 'harness_brainstorm', 'content_embedding', 'content_embedding_mode'),
-      ('harness_shared', 'harness_decisions',  'body_embedding',    'body_embedding_mode'),
-      ('harness_shared', 'code_recipes',       'embedding',         'embedding_mode'),
-      ('harness_shared', 'datatype_registry',  'embedding',         'embedding_mode'),
-      ('harness_shared', 'personal_documents', 'embedding',         'embedding_mode'),
-      ('harness_shared', 'consult_state',      'query_embedding',   'query_embedding_mode'),
-      ('harness_shared', 'interest_watches',   'embedding',         'embedding_mode'),
-      ('harness_shared', 'carry_notes',        'note_embedding',    'note_embedding_mode'),
-      ('harness_shared', 'coord_thread_posts', 'body_embedding',    'body_embedding_mode')
-    ) AS t(schema_name, table_name, embedding_col, mode_col)
-  LOOP
-    qualified := format('%I.%I', target.schema_name, target.table_name);
-    IF to_regclass(qualified) IS NULL THEN
-      CONTINUE;
-    END IF;
-
-    -- Two older refill-only surfaces never had the mode discriminator. Add it
-    -- now so every future write carries both the human-readable projection and
-    -- the exact profile; their existing vectors remain identity-unknown.
-    EXECUTE format(
-      'ALTER TABLE %s ADD COLUMN IF NOT EXISTS %I text',
-      qualified,
-      target.mode_col
-    );
-    EXECUTE format(
-      'ALTER TABLE %s ADD COLUMN IF NOT EXISTS %I text',
-      qualified,
-      target.embedding_col || '_profile'
-    );
-
-  END LOOP;
-END
-$migration$;
+ALTER TABLE IF EXISTS harness_shared.work_items
+  ADD COLUMN IF NOT EXISTS embedding_mode text,
+  ADD COLUMN IF NOT EXISTS embedding_profile text;
 
 -- Append work_items.embedding_profile to the canonical compatibility views
 -- without restating their large, independently evolving column lists. The

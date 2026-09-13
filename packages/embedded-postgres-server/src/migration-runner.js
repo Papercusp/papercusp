@@ -6,7 +6,9 @@
  *   1. Ensure schema_migrations exists.
  *   2. Read the SQL dir, filter to *.sql sorted by filename.
  *   3. For each file not already in schema_migrations, apply it inside a
- *      transaction and INSERT a row.
+ *      transaction and INSERT a row. Files carrying the established
+ *      `--> statement-breakpoint` delimiter run each chunk in its own
+ *      transaction and record the file only with the final chunk.
  *
  * This fixes the long-standing bug where pglite-server only applied SQL on
  * "first boot" (when harness_shared didn't exist), causing migrations
@@ -33,6 +35,31 @@ const MIGRATION_TRANSACTION_PREFIX = 'BEGIN;\nSET LOCAL statement_timeout = 0;\n
 const BULK_MIGRATION_TRANSACTION_PREFIX =
   `${MIGRATION_TRANSACTION_PREFIX}SET LOCAL max_parallel_workers_per_gather = 0;\n`;
 const MAX_STATEMENT_EXCERPT_CHARS = 320;
+
+// Drizzle's generated schema and @papercusp/test-config already use this exact
+// marker to delimit statements that must run in separate autocommit
+// transactions. Honour the same convention in the production runner. This is
+// intentionally opt-in: ordinary migrations retain the all-or-nothing
+// transaction they have always had, while a migration touching several
+// unrelated fleet-hot relations can avoid holding one relation's ACCESS
+// EXCLUSIVE lock while it waits for the next (the migration-1154 deadlock
+// class).
+//
+// A breakpoint migration MUST be idempotent. If chunk N fails, chunks 1..N-1
+// are already committed but the schema_migrations row is absent; the next run
+// therefore replays the earlier chunks before retrying N. The ledger write is
+// included only in the final chunk's transaction, so it can never claim a
+// partially-applied file as complete.
+const STATEMENT_BREAKPOINT = /-->\s*statement-breakpoint/g;
+
+/** @param {string} ddl */
+function migrationTransactionChunks(ddl) {
+  if (!ddl.includes('statement-breakpoint')) return [ddl];
+  return ddl
+    .split(STATEMENT_BREAKPOINT)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.length > 0 && !/^(\s*--[^\n]*\n?)+$/.test(chunk));
+}
 
 const SCHEMA_MIGRATIONS_DDL = `
   CREATE SCHEMA IF NOT EXISTS harness_shared;
@@ -377,10 +404,18 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     // ONLY statement_timeout: lock_timeout stays as the deliberate fail-fast guard.
     const migrationPath = resolve(sqlDir, f);
     const queryPrefix = bulkApply ? BULK_MIGRATION_TRANSACTION_PREFIX : MIGRATION_TRANSACTION_PREFIX;
-    const migrationSql = `${queryPrefix}${ddl};\nINSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\nCOMMIT;`;
+    let activeChunk = ddl;
     try {
       await beforeApply?.(f, ddlRaw);
-      await client.unsafe(migrationSql);
+      const chunks = migrationTransactionChunks(ddl);
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+        activeChunk = chunks[chunkIndex];
+        const isFinalChunk = chunkIndex === chunks.length - 1;
+        const ledgerWrite = isFinalChunk
+          ? `INSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\n`
+          : '';
+        await client.unsafe(`${queryPrefix}${activeChunk};\n${ledgerWrite}COMMIT;`);
+      }
       appliedCount++;
       lastAppliedFile = f;
     } catch (err) {
@@ -401,7 +436,7 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
         cause: err,
         file: f,
         migrationPath,
-        ddl,
+        ddl: activeChunk,
         dataDirWasReused,
         haltBoot: !continueOnError,
         queryPrefix,

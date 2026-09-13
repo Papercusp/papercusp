@@ -1467,6 +1467,7 @@ export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	bodyTs: bigint("body_ts", { mode: "number" }),
 	attestedCount: integer("attested_count").default(0).notNull(),
+	noteEmbeddingProfile: text("note_embedding_profile"),
 }, (table) => [
 	index("carry_notes_embedding_hnsw_idx").using("hnsw", table.noteEmbedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("carry_notes_embedding_mode_idx").using("btree", table.noteEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(note_embedding_mode IS NOT NULL)`),
@@ -1578,6 +1579,8 @@ export const codeRecipesInHarnessShared = harnessShared.table("code_recipes", {
 	potSlug: text("pot_slug"),
 	bindingSchema: jsonb("binding_schema"),
 	capabilityManifest: jsonb("capability_manifest"),
+	embeddingMode: text("embedding_mode"),
+	embeddingProfile: text("embedding_profile"),
 }, (table) => [
 	index("code_recipes_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("code_recipes_pot_idx").using("btree", table.potSlug.asc().nullsLast().op("text_ops")),
@@ -1672,6 +1675,8 @@ export const consultStateInHarnessShared = harnessShared.table("consult_state", 
 	queryEmbedding: vector("query_embedding", { dimensions: 768 }),
 	cascadeCursor: integer("cascade_cursor").default(0).notNull(),
 	cascadeDigest: jsonb("cascade_digest").default([]).notNull(),
+	queryEmbeddingMode: text("query_embedding_mode"),
+	queryEmbeddingProfile: text("query_embedding_profile"),
 }, (table) => [
 	index("consult_state_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((expires_at IS NOT NULL) AND (closed_at IS NULL))`),
 	index("consult_state_origin_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.originTaskRef.asc().nullsLast().op("text_ops")).where(sql`(origin_task_ref IS NOT NULL)`),
@@ -1975,6 +1980,7 @@ export const coordThreadPostsInHarnessShared = harnessShared.table("coord_thread
 	bodyEmbedding: vector("body_embedding", { dimensions: 768 }),
 	bodyEmbeddingMode: text("body_embedding_mode"),
 	bodyTsv: tsvectorCustom("body_tsv").generatedAlwaysAs(sql`to_tsvector('english'::regconfig, COALESCE(body, ''::text))`),
+	bodyEmbeddingProfile: text("body_embedding_profile"),
 }, (table) => [
 	index("coord_thread_posts_embedding_hnsw_idx").using("hnsw", table.bodyEmbedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("coord_thread_posts_embedding_mode_idx").using("btree", table.bodyEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(body_embedding_mode IS NOT NULL)`),
@@ -2352,6 +2358,8 @@ export const datatypeRegistryInHarnessShared = harnessShared.table("datatype_reg
 	reviewStatus: text("review_status").default('none').notNull(),
 	potSlug: text("pot_slug"),
 	display: jsonb(),
+	embeddingMode: text("embedding_mode"),
+	embeddingProfile: text("embedding_profile"),
 }, (table) => [
 	index("datatype_registry_review_pending_idx").using("btree", table.reviewStatus.asc().nullsLast().op("text_ops")).where(sql`(review_status = 'pending'::text)`),
 	index("datatype_registry_title_tsv_idx").using("gin", table.titleTsv.asc().nullsLast().op("tsvector_ops")),
@@ -2589,6 +2597,7 @@ export const docSectionsInHarnessShared = harnessShared.table("doc_sections", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	embedding: vector({ dimensions: 768 }),
 	embeddingMode: text("embedding_mode"),
+	embeddingProfile: text("embedding_profile"),
 }, (table) => [
 	index("doc_sections_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("doc_sections_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
@@ -3579,6 +3588,7 @@ export const harnessBrainstormInHarnessShared = harnessShared.table("harness_bra
 	contentTsv: tsvectorCustom("content_tsv"),
 	contentEmbedding: vector("content_embedding", { dimensions: 768 }),
 	contentEmbeddingMode: text("content_embedding_mode"),
+	contentEmbeddingProfile: text("content_embedding_profile"),
 }, (table) => [
 	index("harness_brainstorm_content_embedding_hnsw").using("hnsw", table.contentEmbedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("harness_brainstorm_content_embedding_mode_idx").using("btree", table.contentEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(content_embedding_mode IS NOT NULL)`),
@@ -3642,6 +3652,7 @@ export const harnessDecisionsInHarnessShared = harnessShared.table("harness_deci
 	bodyTsv: tsvectorCustom("body_tsv"),
 	bodyEmbedding: vector("body_embedding", { dimensions: 768 }),
 	bodyEmbeddingMode: text("body_embedding_mode"),
+	bodyEmbeddingProfile: text("body_embedding_profile"),
 }, (table) => [
 	index("harness_decisions_body_embedding_hnsw").using("hnsw", table.bodyEmbedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("harness_decisions_body_embedding_mode_idx").using("btree", table.bodyEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(body_embedding_mode IS NOT NULL)`),
@@ -3755,6 +3766,7 @@ export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
 	projectedClients: jsonb("projected_clients").default({}).notNull(),
 	retiredAt: timestamp("retired_at", { withTimezone: true, mode: 'string' }),
 	retiredReason: text("retired_reason"),
+	embeddingProfile: text("embedding_profile"),
 }, (table) => [
 	index("harness_docs_anchor_paths_idx").using("gin", table.anchorPaths.asc().nullsLast().op("array_ops")),
 	index("harness_docs_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
@@ -3784,6 +3796,7 @@ export const harnessEscalationsInHarnessShared = harnessShared.table("harness_es
 	riskTier: text("risk_tier"),
 	authority: text(),
 	bodyEmbeddingMode: text("body_embedding_mode"),
+	bodyEmbeddingProfile: text("body_embedding_profile"),
 }, (table) => [
 	index("harness_escalations_body_embedding_hnsw").using("hnsw", table.bodyEmbedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("harness_escalations_body_embedding_mode_idx").using("btree", table.bodyEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(body_embedding_mode IS NOT NULL)`),
@@ -4096,6 +4109,7 @@ origin: scout
 	acceptanceBarRubricRevision: bigint("acceptance_bar_rubric_revision", { mode: "number" }),
 	acceptanceBarSeededAt: timestamp("acceptance_bar_seeded_at", { withTimezone: true, mode: 'string' }),
 	acceptanceBarSeededBy: text("acceptance_bar_seeded_by"),
+	embeddingProfile: text("embedding_profile"),
 }, (table) => [
 	index("harness_plans_acceptance_bar_unseeded").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")).where(sql`((acceptance_bar_epoch IS NOT NULL) AND (acceptance_bar_set_hash IS NULL))`),
 	index("harness_plans_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
@@ -4478,6 +4492,8 @@ export const interestWatchesInHarnessShared = harnessShared.table("interest_watc
 	active: boolean().default(true).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	embedding: vector({ dimensions: 768 }),
+	embeddingMode: text("embedding_mode"),
+	embeddingProfile: text("embedding_profile"),
 }, (table) => [
 	index("interest_watches_due_idx").using("btree", table.lastSweptAt.asc().nullsFirst().op("timestamptz_ops")).where(sql`active`),
 ]);
@@ -5822,6 +5838,7 @@ export const operatorTurnsInHarnessShared = harnessShared.table("operator_turns"
 	report: jsonb(),
 	workspaceId: text("workspace_id").notNull(),
 	textEmbeddingMode: text("text_embedding_mode"),
+	textEmbeddingProfile: text("text_embedding_profile"),
 }, (table) => [
 	index("operator_turns_conv_seq_idx").using("btree", table.conversationId.asc().nullsLast().op("uuid_ops"), table.seq.asc().nullsLast().op("int4_ops")),
 	index("operator_turns_report_recent_idx").using("btree", table.createdAt.asc().nullsLast().op("int8_ops")).where(sql`(report IS NOT NULL)`),
@@ -6315,6 +6332,7 @@ export const personalDocumentsInHarnessShared = harnessShared.table("personal_do
 	embedding: vector({ dimensions: 768 }),
 	sourceId: uuid("source_id"),
 	providerAccountId: text("provider_account_id"),
+	embeddingProfile: text("embedding_profile"),
 }, (table) => [
 	index("personal_documents_account_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.source.asc().nullsLast().op("text_ops"), table.providerAccountId.asc().nullsLast().op("text_ops"), table.occurredAt.desc().nullsLast().op("timestamptz_ops")),
 	index("personal_documents_embedding_mode_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
@@ -8597,6 +8615,7 @@ export const sessionTurnChunksInHarnessShared = harnessShared.table("session_tur
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	embedding: vector({ dimensions: 768 }),
 	embeddingMode: text("embedding_mode"),
+	embeddingProfile: text("embedding_profile"),
 }, (table) => [
 	index("session_turn_chunks_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("session_turn_chunks_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
@@ -8668,6 +8687,7 @@ export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", 
 	turnOriginVerdict: text("turn_origin_verdict"),
 	turnOriginClassifierVersion: integer("turn_origin_classifier_version"),
 	chunkedAt: timestamp("chunked_at", { withTimezone: true, mode: 'string' }),
+	textEmbeddingProfile: text("text_embedding_profile"),
 }, (table) => [
 	index("session_turns_chunkable_idx").using("btree", table.ingestedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(length(text) > 2000)`),
 	index("session_turns_embedding_idx").using("hnsw", table.textEmbedding.asc().nullsLast().op("vector_cosine_ops")),
@@ -10240,6 +10260,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	firstClaimedAt: timestamp("first_claimed_at", { withTimezone: true, mode: 'string' }),
 	claimHold: boolean("claim_hold").generatedAlwaysAs(sql`((payload ->> '_claimHold'::text) = 'true'::text)`),
 	needsOwnerAction: boolean("needs_owner_action").generatedAlwaysAs(sql`((payload ->> 'needsOwnerAction'::text) = 'true'::text)`),
+	embeddingProfile: text("embedding_profile"),
 }, (table) => [
 	index("harness_features_consolidated_claimed_progress_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.lastProgressAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((taken_by IS NOT NULL) AND (taken_by <> ''::text))`),
 	index("hfc_audit_pending_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((origin = 'remote'::text) AND ((audit_verdict IS NULL) OR (audit_verdict = 'pending'::text)))`),
@@ -10958,7 +10979,8 @@ export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues
 	lastReleasedBy: text("last_released_by"),
 	claimHold: boolean("claim_hold"),
 	needsOwnerAction: boolean("needs_owner_action"),
-}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason, authority, closed_ts, lane, embedding, embedding_mode, goal_id, parent_id, tags, source_plan_slug, source_plan_item_ids, redundancy, expected_cost_cents, state_changed_at, admission, admitted_at, admitted_by, last_released_at, last_released_by, claim_hold, needs_owner_action FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+	embeddingProfile: text("embedding_profile"),
+}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason, authority, closed_ts, lane, embedding, embedding_mode, goal_id, parent_id, tags, source_plan_slug, source_plan_item_ids, redundancy, expected_cost_cents, state_changed_at, admission, admitted_at, admitted_by, last_released_at, last_released_by, claim_hold, needs_owner_action, embedding_profile FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
 
 export const eventAwaitsEffectiveInHarnessShared = harnessShared.view("event_awaits_effective", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),
@@ -11113,7 +11135,8 @@ export const harnessFeaturesInHarnessShared = harnessShared.view("harness_featur
 	embedding: vector({ dimensions: 768 }),
 	embeddingMode: text("embedding_mode"),
 	terminalReason: text("terminal_reason"),
-}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, wave, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, swarm_affinity, redundancy, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason FROM harness_shared.harness_features_consolidated`);
+	embeddingProfile: text("embedding_profile"),
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, wave, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, swarm_affinity, redundancy, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, embedding_profile FROM harness_shared.harness_features_consolidated`);
 
 export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("harness_features_consolidated", {	harnessSlug: text("harness_slug"),
 	featureId: text("feature_id"),
@@ -11201,7 +11224,8 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("ha
 	admission: text(),
 	admittedAt: timestamp("admitted_at", { withTimezone: true, mode: 'string' }),
 	admittedBy: text("admitted_by"),
-}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, wave, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, swarm_affinity, redundancy, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, admission, admitted_at, admitted_by FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+	embeddingProfile: text("embedding_profile"),
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, wave, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, swarm_affinity, redundancy, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, admission, admitted_at, admitted_by, embedding_profile FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
 
 export const hiveEvalBakeoffDeltasInHarnessShared = harnessShared.view("hive_eval_bakeoff_deltas", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),
@@ -11664,4 +11688,5 @@ export const workItemsClaimableInHarnessShared = harnessShared.view("work_items_
 	admittedAt: timestamp("admitted_at", { withTimezone: true, mode: 'string' }),
 	admittedBy: text("admitted_by"),
 	firstClaimedAt: timestamp("first_claimed_at", { withTimezone: true, mode: 'string' }),
-}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, lane, condition_key, embedding_recipe, state_changed_at, admission, admitted_at, admitted_by, first_claimed_at FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsOwnerAction'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(workspace_id, status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id)) = 0`);
+	embeddingProfile: text("embedding_profile"),
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, lane, condition_key, embedding_recipe, state_changed_at, admission, admitted_at, admitted_by, first_claimed_at, embedding_profile FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsOwnerAction'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(workspace_id, status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id)) = 0`);

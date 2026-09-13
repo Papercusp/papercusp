@@ -10,9 +10,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const armed = join(HERE, '..', 'sql', '1154-prose-embedding-profile-identity.sql');
 const path = existsSync(armed) ? armed : `${armed}.DRAFT`;
 const migrationSql = readFileSync(path, 'utf8');
+const migrationChunks = migrationSql
+  .split(/-->\s*statement-breakpoint/g)
+  .map((chunk) => chunk.trim())
+  .filter((chunk) => chunk.length > 0 && !/^(\s*--[^\n]*\n?)+$/.test(chunk));
 
 let db: MigratedTestDb;
 let sql: Sql;
+
+async function applyMigration(): Promise<void> {
+  for (const chunk of migrationChunks) await sql.unsafe(chunk);
+}
 
 beforeAll(async () => {
   db = await createFreshTestDb({ prefix: 'prose-profile-1154' });
@@ -51,7 +59,7 @@ beforeAll(async () => {
     INSERT INTO harness_shared.datatype_registry (id, embedding)
       VALUES ('mode-less-datatype', '[0,1,0]');
   `);
-  await sql.unsafe(migrationSql);
+  await applyMigration();
 }, 120_000);
 
 afterAll(async () => {
@@ -60,6 +68,21 @@ afterAll(async () => {
 });
 
 describe('migration 1154 — exact shared prose profile identity', () => {
+  it('bounds unrelated ACCESS EXCLUSIVE locks to singleton runner transactions', () => {
+    expect(migrationChunks).toHaveLength(17);
+    for (const chunk of migrationChunks.slice(0, -1)) {
+      const targets = [...chunk.matchAll(/ALTER TABLE IF EXISTS\s+([\w.]+)/gi)].map((match) => match[1]);
+      expect(targets, chunk).toHaveLength(1);
+      expect(chunk).not.toMatch(/LOCK TABLE/i);
+      expect(targets[0]).not.toBe('harness_shared.work_items');
+    }
+    const finalChunk = migrationChunks.at(-1)!;
+    expect(finalChunk).toContain('LOCK TABLE harness_shared.harness_features IN ACCESS EXCLUSIVE MODE');
+    expect(finalChunk).toContain('LOCK TABLE harness_shared.work_items IN ACCESS EXCLUSIVE MODE');
+    expect(finalChunk).toContain('ALTER TABLE IF EXISTS harness_shared.work_items');
+    expect(finalChunk).not.toContain('harness_shared.session_turns');
+  });
+
   it('preserves legacy vector bytes without rewriting inferred profile metadata', async () => {
     const rows = await sql<Array<{
       feature_id: string;
@@ -132,7 +155,7 @@ describe('migration 1154 — exact shared prose profile identity', () => {
       UPDATE harness_shared.work_items
          SET embedding_profile = 'foreign-space@v2'
        WHERE feature_id = 'current-gemma'`;
-    await expect(sql.unsafe(migrationSql)).resolves.toBeDefined();
+    await expect(applyMigration()).resolves.toBeUndefined();
     const [row] = await sql<{ embedding_profile: string }[]>`
       SELECT embedding_profile FROM harness_shared.work_items
        WHERE feature_id = 'current-gemma'`;
