@@ -1,3 +1,5 @@
+/** @param {string} ddl */
+export function migrationTransactionChunks(ddl: string): string[];
 export function defaultSkipFile(f: any): any;
 /**
  * Order numbered migrations by numeric prefix, then by complete filename for

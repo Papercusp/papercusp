@@ -32,8 +32,7 @@ const MIGRATION_TRANSACTION_PREFIX = 'BEGIN;\nSET LOCAL statement_timeout = 0;\n
 // memory segment; a fleet burst exhausted /dev/shm and aborted migration 859
 // before any test ran. Transaction-local keeps the production session default
 // untouched and scopes the guard to bulk (fresh-install/template) replay only.
-const BULK_MIGRATION_TRANSACTION_PREFIX =
-  `${MIGRATION_TRANSACTION_PREFIX}SET LOCAL max_parallel_workers_per_gather = 0;\n`;
+const BULK_MIGRATION_TRANSACTION_PREFIX = `${MIGRATION_TRANSACTION_PREFIX}SET LOCAL max_parallel_workers_per_gather = 0;\n`;
 const MAX_STATEMENT_EXCERPT_CHARS = 320;
 
 // Drizzle's generated schema and @papercusp/test-config already use this exact
@@ -53,7 +52,7 @@ const MAX_STATEMENT_EXCERPT_CHARS = 320;
 const STATEMENT_BREAKPOINT = /-->\s*statement-breakpoint/g;
 
 /** @param {string} ddl */
-function migrationTransactionChunks(ddl) {
+export function migrationTransactionChunks(ddl) {
   if (!ddl.includes('statement-breakpoint')) return [ddl];
   return ddl
     .split(STATEMENT_BREAKPOINT)
@@ -242,19 +241,20 @@ function wrapMigrationFailure({
   const position = migrationPosition(details.position, ddl, queryPrefix);
   const excerpt = position ? statementExcerptAt(ddl, position.offset) : null;
 
-  const lines = [
-    `Migration ${file} FAILED: ${causeMessage}${sqlState}`,
-    `Migration file: ${migrationPath}`,
-  ];
+  const lines = [`Migration ${file} FAILED: ${causeMessage}${sqlState}`, `Migration file: ${migrationPath}`];
   if (position && excerpt) {
     lines.push(`Offending statement near migration character ${position.character}: ${excerpt}`);
   } else {
     lines.push('The underlying error did not report a usable query position; inspect the migration file directly.');
   }
   if (dataDirWasReused === true) {
-    lines.push('This boot reused an existing Postgres data directory; its schema may predate assumptions in this migration.');
+    lines.push(
+      'This boot reused an existing Postgres data directory; its schema may predate assumptions in this migration.',
+    );
   } else if (dataDirWasReused === false) {
-    lines.push('This boot created a fresh Postgres data directory; the migration or one of its prerequisites is invalid.');
+    lines.push(
+      'This boot created a fresh Postgres data directory; the migration or one of its prerequisites is invalid.',
+    );
   }
   lines.push(
     haltBoot
@@ -273,7 +273,7 @@ function wrapMigrationFailure({
 // produces "syntax error at or near :".
 const MANUAL_ONLY = new Set([
   '040-plugin-configs-backfill.sql', // requires PAPERCUSP_DB_ENCRYPTION_KEY via psql -v key=...
-  '__seed_restored__.marker',         // sentinel inserted by seed-restore path; not a real migration file
+  '__seed_restored__.marker', // sentinel inserted by seed-restore path; not a real migration file
 ]);
 
 // EI-19403856469813053: extracted (pure refactor, same predicate as before) so a
@@ -335,7 +335,15 @@ export function compareMigrationFilenames(a, b) {
  *   array and the boot CONTINUES (the bad file stays unrecorded → retried next
  *   boot), so one peer's broken migration can't wedge the dev-api for the fleet.
  */
-export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, beforeApply, dataDirWasReused, continueOnError = false }) {
+export async function applyPendingMigrations({
+  client,
+  sqlDir,
+  log = () => {},
+  skipFile,
+  beforeApply,
+  dataDirWasReused,
+  continueOnError = false,
+}) {
   const skip = skipFile ?? defaultSkipFile;
   const failed = [];
 
@@ -349,9 +357,7 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     .sort(compareMigrationFilenames);
 
   // Read applied set.
-  const appliedRows = await client.unsafe(
-    `SELECT filename FROM harness_shared.schema_migrations`,
-  );
+  const appliedRows = await client.unsafe(`SELECT filename FROM harness_shared.schema_migrations`);
   const applied = new Set((appliedRows ?? []).map((r) => r.filename));
 
   // First-boot fast path (desktop first-launch perf). A fresh install applies the

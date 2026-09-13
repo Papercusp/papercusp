@@ -232,4 +232,4 @@ export const PORTABLE_INITDB_LOCALES: string[];
  * FORMATTING only (never collation/ctype), so plain 'C' loses nothing.
  */
 export const UNIVERSAL_LC_VALUES: string[];
-export { applyPendingMigrations, defaultSkipFile } from "./migration-runner.js";
+export { applyPendingMigrations, defaultSkipFile, migrationTransactionChunks } from "./migration-runner.js";
