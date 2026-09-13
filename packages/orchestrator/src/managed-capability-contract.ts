@@ -110,20 +110,11 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
       },
       {
         path: 'packages/operator-core/lib/agent-tools/capability/bash-jobs.ts',
-        anchors: ['startBackground', 'CAPABILITY_BASH_FOREGROUND_TIMEOUT_ENV'],
-        note: 'Existing process launch, deadline, output, and task-enrolment implementation.',
+        anchors: ['startBackground', 'waitForJobResponse', 'CAPABILITY_BASH_FOREGROUND_TIMEOUT_ENV'],
+        note: 'Start-once process launch, separate response/execution deadlines, output, and task enrolment.',
       },
     ],
     gaps: [
-      {
-        id: 'shell-start-once-response-yield',
-        kind: 'parity',
-        description:
-          'Foreground execution does not yet prove the R-2 start-once transition from a bounded response window to the same durable running job without restart.',
-        owningPlanItems: ['P-002'],
-        falsifier:
-          'A focused test observes one launch, a response-window yield, and later completion through the same task id.',
-      },
       {
         id: 'shell-cross-client-enforcement',
         kind: 'policy',
@@ -134,14 +125,14 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-002 and P-005/P-007/P-008 still own response-yield and cross-client bypass proof.',
+    cutoverReason: 'P-005/P-007/P-008 still own cross-client bypass proof and accepted enforcement.',
   },
   {
     family: 'jobs-output-stop-pty',
     nativeSurface: 'Background jobs, output retrieval, stop/kill, and interactive terminal sessions',
     disposition: 'unsupported-gap',
     boundary:
-      'Background Bash jobs and PTYs already use durable task ids and managed process scopes, but the family remains unsupported for cutover until response-yield continuity, PTY resize, restart truth, and completion wakes are complete.',
+      'Bash jobs now use start-once response yield plus durable task ids and managed process scopes, but the family remains unsupported for cutover until PTY resize, restart truth, and completion wakes are complete.',
     managedAuthorities: [
       'capability:bash_output',
       'capability:bash_kill',
@@ -168,14 +159,6 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     ],
     gaps: [
       {
-        id: 'job-response-deadline-continuity',
-        kind: 'parity',
-        description: 'A foreground response timeout is not yet the same recoverable durable job contract.',
-        owningPlanItems: ['P-002'],
-        falsifier:
-          'Fast, yielded, timed-out, cancelled, and recovered-output tests share one launch identity and preserve exit truth.',
-      },
-      {
         id: 'pty-resize-completion-reattach',
         kind: 'unsupported',
         description:
@@ -186,8 +169,7 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
       },
     ],
     cutoverReady: false,
-    cutoverReason:
-      'P-002/P-003 must close durable yield, resize, wake, and restart behavior before any native terminal restriction.',
+    cutoverReason: 'P-003/P-007/P-008 must close resize, wake, restart, and client acceptance before restriction.',
   },
   {
     family: 'script-orchestration-kernels',

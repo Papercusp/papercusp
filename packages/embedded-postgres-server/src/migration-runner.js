@@ -32,9 +32,13 @@ const MIGRATION_TRANSACTION_PREFIX = 'BEGIN;\nSET LOCAL statement_timeout = 0;\n
 // memory segment; a fleet burst exhausted /dev/shm and aborted migration 859
 // before any test ran. Transaction-local keeps the production session default
 // untouched and scopes the guard to bulk (fresh-install/template) replay only.
-const BULK_MIGRATION_TRANSACTION_PREFIX =
-  `${MIGRATION_TRANSACTION_PREFIX}SET LOCAL max_parallel_workers_per_gather = 0;\n`;
 const MAX_STATEMENT_EXCERPT_CHARS = 320;
+
+/** @param {number} statementTimeoutMs @param {boolean} bulkApply */
+function migrationTransactionPrefix(statementTimeoutMs, bulkApply) {
+  const prefix = `BEGIN;\nSET LOCAL statement_timeout = ${statementTimeoutMs};\n`;
+  return bulkApply ? `${prefix}SET LOCAL max_parallel_workers_per_gather = 0;\n` : prefix;
+}
 
 // Drizzle's generated schema and @papercusp/test-config already use this exact
 // marker to delimit statements that must run in separate autocommit
@@ -325,6 +329,10 @@ export function compareMigrationFilenames(a, b) {
  * @param {(s: string) => void} [args.log]
  * @param {(file: string) => boolean} [args.skipFile]   Optional filter; defaults to skipping the per-harness template.
  * @param {(file: string, raw: string) => void | Promise<void>} [args.beforeApply] Optional fail-closed guard run after the file is read and before its SQL executes.
+ * @param {number} [args.migrationStatementTimeoutMs] Optional positive per-migration
+ *   database deadline in milliseconds. Omitted preserves the production boot
+ *   contract (`SET LOCAL statement_timeout = 0`); bounded test setup passes an
+ *   explicit value so a stuck DDL/backend phase cannot outlive the runner.
  * @param {boolean} [args.dataDirWasReused] Whether embedded boot found an existing
  *   PGDATA directory. When provided, failure diagnostics distinguish schema drift
  *   in reused data from a broken fresh-install migration/prerequisite.
@@ -335,7 +343,11 @@ export function compareMigrationFilenames(a, b) {
  *   array and the boot CONTINUES (the bad file stays unrecorded → retried next
  *   boot), so one peer's broken migration can't wedge the dev-api for the fleet.
  */
-export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, beforeApply, dataDirWasReused, continueOnError = false }) {
+export async function applyPendingMigrations({ client, sqlDir, log = () => {}, skipFile, beforeApply, migrationStatementTimeoutMs, dataDirWasReused, continueOnError = false }) {
+  const effectiveMigrationStatementTimeoutMs = migrationStatementTimeoutMs ?? 0;
+  if (!Number.isSafeInteger(effectiveMigrationStatementTimeoutMs) || effectiveMigrationStatementTimeoutMs < 0) {
+    throw new TypeError(`migrationStatementTimeoutMs must be a non-negative integer; got ${migrationStatementTimeoutMs}`);
+  }
   const skip = skipFile ?? defaultSkipFile;
   const failed = [];
 
@@ -395,15 +407,17 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     // by `npm run lint:migrations` (audit P-074, EI-170); files 116–200
     // predate this contract and are grandfathered as applied history.
     //
-    // WI-832: `SET LOCAL statement_timeout = 0` is the MIGRATION OPT-OUT for the
+    // WI-832: the default `SET LOCAL statement_timeout = 0` is the MIGRATION OPT-OUT for the
     // org-pool default statement_timeout (a DDL migration legitimately runs longer
     // than any interactive cap). SET LOCAL is txn-scoped, so it reverts at COMMIT.
     // This is the single chokepoint every migration path funnels through (embedded-pg
     // boot, native boot-migrate, db:migrate), so the opt-out holds regardless of
     // which client/pool applies the file — even once a non-zero default is live.
-    // ONLY statement_timeout: lock_timeout stays as the deliberate fail-fast guard.
+    // A bounded fixture can explicitly override that default through
+    // migrationStatementTimeoutMs. ONLY statement_timeout is changed here:
+    // lock_timeout stays as the caller's deliberate fail-fast guard.
     const migrationPath = resolve(sqlDir, f);
-    const queryPrefix = bulkApply ? BULK_MIGRATION_TRANSACTION_PREFIX : MIGRATION_TRANSACTION_PREFIX;
+    const queryPrefix = migrationTransactionPrefix(effectiveMigrationStatementTimeoutMs, bulkApply);
     let activeChunk = ddl;
     try {
       await beforeApply?.(f, ddlRaw);

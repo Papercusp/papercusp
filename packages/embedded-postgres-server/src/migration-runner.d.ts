@@ -18,6 +18,10 @@ export function compareMigrationFilenames(a: string, b: string): 0 | 1 | -1;
  * @param {(s: string) => void} [args.log]
  * @param {(file: string) => boolean} [args.skipFile]   Optional filter; defaults to skipping the per-harness template.
  * @param {(file: string, raw: string) => void | Promise<void>} [args.beforeApply] Optional fail-closed guard run after the file is read and before its SQL executes.
+ * @param {number} [args.migrationStatementTimeoutMs] Optional positive per-migration
+ *   database deadline in milliseconds. Omitted preserves the production boot
+ *   contract (`SET LOCAL statement_timeout = 0`); bounded test setup passes an
+ *   explicit value so a stuck DDL/backend phase cannot outlive the runner.
  * @param {boolean} [args.dataDirWasReused] Whether embedded boot found an existing
  *   PGDATA directory. When provided, failure diagnostics distinguish schema drift
  *   in reused data from a broken fresh-install migration/prerequisite.
@@ -28,12 +32,13 @@ export function compareMigrationFilenames(a: string, b: string): 0 | 1 | -1;
  *   array and the boot CONTINUES (the bad file stays unrecorded → retried next
  *   boot), so one peer's broken migration can't wedge the dev-api for the fleet.
  */
-export function applyPendingMigrations({ client, sqlDir, log, skipFile, beforeApply, dataDirWasReused, continueOnError }: {
+export function applyPendingMigrations({ client, sqlDir, log, skipFile, beforeApply, migrationStatementTimeoutMs, dataDirWasReused, continueOnError }: {
     client: object;
     sqlDir: string;
     log?: ((s: string) => void) | undefined;
     skipFile?: ((file: string) => boolean) | undefined;
     beforeApply?: ((file: string, raw: string) => void | Promise<void>) | undefined;
+    migrationStatementTimeoutMs?: number | undefined;
     dataDirWasReused?: boolean | undefined;
     continueOnError?: boolean | undefined;
 }): Promise<{
