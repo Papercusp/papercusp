@@ -22,6 +22,7 @@
  * ("Run after any new .sql migration") and by CI's drift check, not here.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 describe('pull-schema.mjs main-guard (EI-18786840446203185)', () => {
   it('refuses to run its side effects when merely IMPORTED, not executed as the CLI entrypoint', async () => {
@@ -32,5 +33,13 @@ describe('pull-schema.mjs main-guard (EI-18786840446203185)', () => {
 
   it('the guard message names the safe alternative (`node --check`) so the fix is self-documenting', async () => {
     await expect(import('./pull-schema.mjs')).rejects.toThrow(/node --check/);
+  });
+
+  it('captures drizzle-kit stdout only for non-TTY runs before forwarding normalized output', () => {
+    const source = readFileSync(new URL('./pull-schema.mjs', import.meta.url), 'utf8');
+
+    expect(source).toContain('const captureDrizzleKitOutput = !process.stdout.isTTY;');
+    expect(source).toContain('createSchemaCliSpawnOptions({');
+    expect(source).toContain('normalizeSchemaCliOutput(result.stdout)');
   });
 });

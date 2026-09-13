@@ -67,6 +67,10 @@ import {
 import { repairNotValidChecks } from '../src/schema/schema-checks.mjs';
 import { repairPgPolicyPredicates } from '../src/schema/schema-policies.mjs';
 import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
+import {
+  createSchemaCliSpawnOptions,
+  normalizeSchemaCliOutput,
+} from '../src/schema-cli-output.mjs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
@@ -156,13 +160,23 @@ function resolveLocalDrizzleKitBin() {
 }
 const localKitBin = resolveLocalDrizzleKitBin();
 const introspectArgs = ['introspect', '--config=' + join(DB_ROOT, 'drizzle.config.ts')];
+const captureDrizzleKitOutput = !process.stdout.isTTY;
+const drizzleKitSpawnOptions = createSchemaCliSpawnOptions({
+  cwd: DB_ROOT,
+  env: { ...process.env },
+  interactive: !captureDrizzleKitOutput,
+});
 const result = localKitBin
-  ? spawnSync(process.execPath, [localKitBin, ...introspectArgs], {
-      cwd: DB_ROOT, stdio: 'inherit', env: { ...process.env },
-    })
-  : spawnSync('npx', ['-y', 'drizzle-kit@^0.31.10', ...introspectArgs], {
-      cwd: DB_ROOT, stdio: 'inherit', env: { ...process.env },
-    });
+  ? spawnSync(process.execPath, [localKitBin, ...introspectArgs], drizzleKitSpawnOptions)
+  : spawnSync(
+      'npx',
+      ['-y', 'drizzle-kit@^0.31.10', ...introspectArgs],
+      drizzleKitSpawnOptions,
+    );
+if (captureDrizzleKitOutput && result.stdout) {
+  const normalizedOutput = normalizeSchemaCliOutput(result.stdout);
+  if (normalizedOutput) process.stdout.write(normalizedOutput);
+}
 if (result.status !== 0) {
   console.error('drizzle-kit pull failed');
   process.exit(result.status ?? 1);
