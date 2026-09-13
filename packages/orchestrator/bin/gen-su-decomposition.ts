@@ -44,7 +44,10 @@ if (check) {
   }
   for (const d of drift) console.error(`DRIFT ${d.status}: ${join('libs/papercusp/packages/harness', d.path)}`);
   if (docStale) console.error(`DRIFT stale: ${relative(cwd, DOC)} §9`);
-  console.error('run: npm run gen:su-decomposition');
+  // This checker is also exposed from packages/operator-core, whose package.json
+  // deliberately declares only the gate. Name the writer's real package boundary so
+  // the remediation does not send callers to a nonexistent local npm script.
+  console.error('run from the repository root: npm run gen:su-decomposition');
   process.exit(1);
 }
 
