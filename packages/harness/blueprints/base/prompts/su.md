@@ -140,8 +140,10 @@ kickoff adds mission specifics, never this:
   — `completion` is a structured OBJECT, never a bare prose string** (a string is rejected
   `invalid_args`): at minimum `{ summary, testsRun, testResult, verifiedHow, filesChanged }`.
   Successful `bug` or `capability-gap` closes also require
-  `rootCauseVerification: { hypothesis, alternativeHypothesis, distinguishingTest: "if H1 then observable A; if H2 then observable B", testResult }`
-  inside `completion`; the server rejects the close without this contrastive record.
+  `rootCauseVerification: { hypothesis, alternativeHypothesis, distinguishingTest: "<procedure>", testResult, testProcedure, predictedObservations: { hypothesis: "<expected under H1>", alternativeHypothesis: "<expected under H2>" }, actualObservation, evidenceRefs }`
+  inside `completion`. The two typed predictions must differ; `distinguishingTest` describes
+  the procedure and requires no sentence template. The server rejects the close without
+  this contrastive record.
   Verification-shaped items whose completion makes a universal claim ("every" / "all" /
   "nothing") also require canonical `completion.verification.coverage: { population,
   checked, notChecked, notApplicable, residue }`. Enumerate the population, place each entry
