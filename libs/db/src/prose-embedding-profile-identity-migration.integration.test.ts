@@ -32,12 +32,24 @@ beforeAll(async () => {
       SELECT feature_id, embedding, embedding_mode FROM harness_shared.work_items;
     CREATE VIEW harness_shared.engineer_issues AS
       SELECT feature_id AS issue_id, embedding, embedding_mode FROM harness_shared.work_items;
+    CREATE TABLE harness_shared.code_recipes (
+      id text PRIMARY KEY,
+      embedding vector(3)
+    );
+    CREATE TABLE harness_shared.datatype_registry (
+      id text PRIMARY KEY,
+      embedding vector(3)
+    );
     INSERT INTO harness_shared.work_items (feature_id, embedding, embedding_mode) VALUES
       ('current-gemma', '[1,0,0]', 'gemma'),
       ('current-openai', '[0,1,0]', 'openai'),
       ('unknown-mode', '[0,0,1]', 'future'),
       ('mode-less', '[1,1,0]', NULL),
       ('empty', NULL, 'gemma');
+    INSERT INTO harness_shared.code_recipes (id, embedding)
+      VALUES ('mode-less-recipe', '[1,0,0]');
+    INSERT INTO harness_shared.datatype_registry (id, embedding)
+      VALUES ('mode-less-datatype', '[0,1,0]');
   `);
   await sql.unsafe(migrationSql);
 }, 120_000);
@@ -64,6 +76,27 @@ describe('migration 1154 — exact shared prose profile identity', () => {
       { feature_id: 'mode-less', embedding: '[1,1,0]', embedding_profile: null },
       { feature_id: 'unknown-mode', embedding: '[0,0,1]', embedding_profile: null },
     ]);
+  });
+
+  it('adds mode and profile columns to older mode-less surfaces without guessing identity', async () => {
+    const [recipe] = await sql<Array<{
+      embedding: string;
+      embedding_mode: string | null;
+      embedding_profile: string | null;
+    }>>`
+      SELECT embedding::text, embedding_mode, embedding_profile
+        FROM harness_shared.code_recipes
+       WHERE id = 'mode-less-recipe'`;
+    const [datatype] = await sql<Array<{
+      embedding: string;
+      embedding_mode: string | null;
+      embedding_profile: string | null;
+    }>>`
+      SELECT embedding::text, embedding_mode, embedding_profile
+        FROM harness_shared.datatype_registry
+       WHERE id = 'mode-less-datatype'`;
+    expect(recipe).toEqual({ embedding: '[1,0,0]', embedding_mode: null, embedding_profile: null });
+    expect(datatype).toEqual({ embedding: '[0,1,0]', embedding_mode: null, embedding_profile: null });
   });
 
   it('projects the appended exact identity through every compatibility view', async () => {
@@ -96,4 +129,3 @@ describe('migration 1154 — exact shared prose profile identity', () => {
     expect(row.embedding_profile).toBe('foreign-space@v2');
   });
 });
-
