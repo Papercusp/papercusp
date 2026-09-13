@@ -132,18 +132,23 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     nativeSurface: 'Background jobs, output retrieval, stop/kill, and interactive terminal sessions',
     disposition: 'unsupported-gap',
     boundary:
-      'Bash jobs now use start-once response yield plus durable task ids and managed process scopes, but the family remains unsupported for cutover until PTY resize, restart truth, and completion wakes are complete.',
+      'Bash jobs use start-once response yield plus durable task ids and managed process scopes. Managed PTYs accept authorized input and resize, return bounded screen media, emit task-terminal wakes, and distinguish live reattachment from ended or unrecoverably lost server handles. The family remains unsupported for cutover until real-client restart/reattachment acceptance is complete.',
     managedAuthorities: [
       'capability:bash_output',
       'capability:bash_kill',
-      'capability:pty_open/read_screen/write_stdin/kill',
+      'capability:pty_open/read_screen/write_stdin/resize/kill',
       'task-manager',
     ],
     evidence: {
       path: 'packages/operator-core/lib/agent-tools/capability/pty.ts',
-      anchors: ["name: 'capability:pty_open'", "name: 'capability:pty_read_screen'", "name: 'capability:pty_kill'"],
-      absentAnchors: ["name: 'capability:pty_resize'"],
-      note: 'Task-ledger-backed PTY lifecycle exists, while a resize verb is absent.',
+      anchors: [
+        "name: 'capability:pty_open'",
+        "name: 'capability:pty_resize'",
+        "name: 'capability:pty_read_screen'",
+        "name: 'capability:pty_kill'",
+        "reattachment: 'unrecoverable'",
+      ],
+      note: 'Task-ledger-backed PTY input, resize, bounded screen media, reattachment, explicit lost-handle truth, and kill share one authority path.',
     },
     reuseSites: [
       {
@@ -159,24 +164,24 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     ],
     gaps: [
       {
-        id: 'pty-resize-completion-reattach',
+        id: 'pty-real-client-restart-acceptance',
         kind: 'unsupported',
         description:
-          'Managed PTY resize, normal-completion wake delivery, and restart/reattachment outcomes remain incomplete.',
-        owningPlanItems: ['P-003', 'P-008'],
+          'The real Claude, Codex, and OMP clients have not yet accepted PTY reattachment and explicit unrecoverable outcomes across an operator restart.',
+        owningPlanItems: ['P-007', 'P-008'],
         falsifier:
-          'PTY acceptance covers resize, incremental output, clean exit wake, explicit cancel, restart reattach, and unrecoverable truth.',
+          'The real-client matrix covers incremental PTY output, clean exit wake, explicit cancel, live reattachment, and explicit unrecoverable restart truth.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-003/P-007/P-008 must close resize, wake, restart, and client acceptance before restriction.',
+    cutoverReason: 'P-007/P-008 still own real-client restart/reattachment acceptance before restriction.',
   },
   {
     family: 'script-orchestration-kernels',
     nativeSurface: 'Multi-step tool scripts, saved recipes, language execution, and persistent/multimodal kernels',
     disposition: 'unsupported-gap',
     boundary:
-      'code:run, orchestrate:run, and recipes:run are the managed script authorities; no persistent or multimodal kernel may be claimed equivalent until its state, media, cancellation, and nested authorization are explicit.',
+      'code:run, orchestrate:run, and recipes:run are foreground managed script authorities with current-caller nested authorization, branching/fan-out, parent cancellation, explicit replay state, final image/audio media, and uncertain-write reporting. They do not claim a persistent language kernel: cross-call or restart state beyond returned replay state remains explicitly unsupported.',
     managedAuthorities: ['code:run', 'orchestrate:run', 'recipes:run'],
     evidence: {
       path: 'packages/operator-core/lib/agent-tools/code/run.ts',
@@ -197,17 +202,17 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     ],
     gaps: [
       {
-        id: 'kernel-state-media-contract',
+        id: 'persistent-kernel-lifecycle',
         kind: 'unsupported',
         description:
-          'Persistent kernel state, binary/media channels, and restart semantics are not represented as a complete managed contract.',
-        owningPlanItems: ['P-003', 'P-006', 'P-008'],
+          'A persistent language-kernel lifecycle with state beyond explicit replay values and restart recovery is not implemented or accepted.',
+        owningPlanItems: ['P-006', 'P-008'],
         falsifier:
-          'Acceptance proves explicit state lifetime, media transport, cancellation, restart, and nested-call authorization.',
+          'Persistent-kernel acceptance proves cross-call state lifetime, binary/media transport, cancellation, nested-call authorization, and restart recovery.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-003/P-006/P-008 still own persistent state, media, cancellation, and real-client proof.',
+    cutoverReason: 'P-006/P-008 still own a persistent-kernel backend and real-client proof.',
   },
   {
     family: 'reads-list-search-lsp',
