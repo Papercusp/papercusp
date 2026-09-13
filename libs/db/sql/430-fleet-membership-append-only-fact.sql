@@ -71,8 +71,8 @@ CREATE OR REPLACE FUNCTION harness_shared.project_fleet_membership()
 RETURNS trigger LANGUAGE plpgsql AS $fn$
 BEGIN
   UPDATE harness_shared.coord_presence
-     SET fleet_slug = NEW.fleet_slug,
-         fleet_role = NEW.fleet_role
+     SET fleet_slug = CASE WHEN NEW.event = 'leave' THEN NULL ELSE NEW.fleet_slug END,
+         fleet_role = CASE WHEN NEW.event = 'leave' THEN NULL ELSE NEW.fleet_role END
    WHERE workspace_id = NEW.workspace_id
      AND owner_id = NEW.owner_id;
   RETURN NULL;
@@ -98,7 +98,8 @@ BEGIN
      SET fleet_slug = e.fleet_slug,
          fleet_role = e.fleet_role
     FROM (
-      SELECT fleet_slug, fleet_role
+      SELECT CASE WHEN event = 'leave' THEN NULL ELSE fleet_slug END AS fleet_slug,
+             CASE WHEN event = 'leave' THEN NULL ELSE fleet_role END AS fleet_role
         FROM harness_shared.fleet_membership_events
        WHERE workspace_id = NEW.workspace_id AND owner_id = NEW.owner_id
        ORDER BY id DESC

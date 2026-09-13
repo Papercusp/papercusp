@@ -202,6 +202,64 @@ describe('fleet_membership_events: append-only canonical membership fact (WI-134
       expect(allEvents.map((e: any) => `${e.event}:${e.cnt}`)).toEqual(['join:2', 'leave:1']);
     });
 
+    it('clears a slug-bearing leave from the live projection and on re-materialization', async () => {
+      const workspaceId = 'test-workspace-' + Date.now();
+      const agentId = 'test-agent-' + Date.now();
+      const fleetSlug = 'test-fleet-' + Date.now();
+
+      await sql`
+        INSERT INTO harness_shared.coord_presence
+          (workspace_id, owner_id, owner_label, heartbeat_at)
+        VALUES (${workspaceId}, ${agentId}, 'test-bee', now())
+      `;
+
+      await sql`
+        INSERT INTO harness_shared.fleet_membership_events
+          (workspace_id, owner_id, fleet_slug, fleet_role, event)
+        VALUES (${workspaceId}, ${agentId}, ${fleetSlug}, 'member', 'join')
+      `;
+
+      const presenceAfterJoin = await sql`
+        SELECT fleet_slug, fleet_role FROM harness_shared.coord_presence
+        WHERE workspace_id = ${workspaceId} AND owner_id = ${agentId}
+      `;
+      expect(presenceAfterJoin[0]).toMatchObject({ fleet_slug: fleetSlug, fleet_role: 'member' });
+
+      // Writers may include the fleet being left for audit/history. The event type,
+      // not nullable payload columns, determines the live projection.
+      await sql`
+        INSERT INTO harness_shared.fleet_membership_events
+          (workspace_id, owner_id, fleet_slug, fleet_role, event)
+        VALUES (${workspaceId}, ${agentId}, ${fleetSlug}, 'member', 'leave')
+      `;
+
+      const presenceAfterLeave = await sql`
+        SELECT fleet_slug, fleet_role FROM harness_shared.coord_presence
+        WHERE workspace_id = ${workspaceId} AND owner_id = ${agentId}
+      `;
+      expect(presenceAfterLeave[0].fleet_slug).toBeNull();
+      expect(presenceAfterLeave[0].fleet_role).toBeNull();
+
+      // A reaped/recreated presence row must project the latest leave as no fleet;
+      // otherwise the stale slug would return on reconnect.
+      await sql`
+        DELETE FROM harness_shared.coord_presence
+        WHERE workspace_id = ${workspaceId} AND owner_id = ${agentId}
+      `;
+      await sql`
+        INSERT INTO harness_shared.coord_presence
+          (workspace_id, owner_id, owner_label, heartbeat_at)
+        VALUES (${workspaceId}, ${agentId}, 'test-bee-rejoined', now())
+      `;
+
+      const presenceAfterRematerialize = await sql`
+        SELECT fleet_slug, fleet_role FROM harness_shared.coord_presence
+        WHERE workspace_id = ${workspaceId} AND owner_id = ${agentId}
+      `;
+      expect(presenceAfterRematerialize[0].fleet_slug).toBeNull();
+      expect(presenceAfterRematerialize[0].fleet_role).toBeNull();
+    });
+
     it('fleet_assignment view reflects latest membership from the fact, not live presence', async () => {
       const workspaceId = 'test-workspace-' + Date.now();
       const planSlug = 'test-plan-' + Date.now();
