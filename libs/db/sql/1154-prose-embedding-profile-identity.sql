@@ -8,16 +8,31 @@
 -- NULL profile may be interpreted from `*_mode` only when it names that mode's
 -- declared CURRENT profile (versioned-embedding-profiles-2026-09-12 D-002).
 --
--- EXPAND-ONLY / OLD-BINARY SAFE. No vector is deleted or recomputed here. Rows
--- whose legacy mode has one unambiguous current profile receive metadata only;
--- unknown mode-less rows stay NULL and the resumable backfill will re-embed
--- them. The prior release ignores the added columns and keeps serving.
+-- EXPAND-ONLY / OLD-BINARY SAFE. No vector is deleted or recomputed here, and
+-- existing profile identity deliberately stays NULL. Runtime compatibility
+-- maps a NULL profile from `*_mode` only to that mode's declared CURRENT
+-- profile, so rewriting the live corpus here would add no information while
+-- holding ACCESS EXCLUSIVE for the duration of a potentially multi-million-row
+-- UPDATE. New writers stamp exact identity; the resumable backfill re-embeds
+-- only rows whose identity cannot be mapped safely. The prior release ignores
+-- the added columns and keeps serving.
+
+-- Readers acquire nested compatibility views from the outside in, then the
+-- work_items base table. Take the same order before ALTER TABLE can lock the
+-- base relation; otherwise the later CREATE OR REPLACE VIEW statements invert
+-- that order and can deadlock against a live reader (the migration-721 class).
+LOCK TABLE harness_shared.harness_features IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE harness_shared.harness_features_consolidated IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE harness_shared.work_items_claimable IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE harness_shared.engineer_issues IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE harness_shared.work_items IN ACCESS EXCLUSIVE MODE;
+
+-- lint-migrations: dynamic-view-lock-order all four compatibility views are locked outside-in before work_items and before the dynamic ALTER loop
 
 DO $migration$
 DECLARE
   target record;
   qualified text;
-  index_name text;
 BEGIN
   FOR target IN
     SELECT * FROM (VALUES
@@ -59,30 +74,6 @@ BEGIN
       target.embedding_col || '_profile'
     );
 
-    -- Metadata-only legacy mapping. It is intentionally closed and exact:
-    -- equal dimensions and arbitrary future mode strings are not evidence.
-    EXECUTE format(
-      'UPDATE %s SET %I = CASE %I ' ||
-      'WHEN ''gemma'' THEN ''gemma-embeddinggemma-300m-768@v1'' ' ||
-      'WHEN ''openai'' THEN ''openai-text-embedding-3-small-768@v1'' ' ||
-      'ELSE NULL END ' ||
-      'WHERE %I IS NOT NULL AND %I IS NULL AND %I IN (''gemma'', ''openai'')',
-      qualified,
-      target.embedding_col || '_profile',
-      target.mode_col,
-      target.embedding_col,
-      target.embedding_col || '_profile',
-      target.mode_col
-    );
-
-    index_name := target.table_name || '_' || target.embedding_col || '_profile_idx';
-    EXECUTE format(
-      'CREATE INDEX IF NOT EXISTS %I ON %s (%I) WHERE %I IS NOT NULL',
-      index_name,
-      qualified,
-      target.embedding_col || '_profile',
-      target.embedding_col || '_profile'
-    );
   END LOOP;
 END
 $migration$;

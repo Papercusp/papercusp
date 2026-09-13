@@ -60,7 +60,7 @@ afterAll(async () => {
 });
 
 describe('migration 1154 — exact shared prose profile identity', () => {
-  it('maps only known legacy current modes without touching vector bytes', async () => {
+  it('preserves legacy vector bytes without rewriting inferred profile metadata', async () => {
     const rows = await sql<Array<{
       feature_id: string;
       embedding: string | null;
@@ -70,12 +70,22 @@ describe('migration 1154 — exact shared prose profile identity', () => {
         FROM harness_shared.work_items
        ORDER BY feature_id`;
     expect(rows).toEqual([
-      { feature_id: 'current-gemma', embedding: '[1,0,0]', embedding_profile: 'gemma-embeddinggemma-300m-768@v1' },
-      { feature_id: 'current-openai', embedding: '[0,1,0]', embedding_profile: 'openai-text-embedding-3-small-768@v1' },
+      { feature_id: 'current-gemma', embedding: '[1,0,0]', embedding_profile: null },
+      { feature_id: 'current-openai', embedding: '[0,1,0]', embedding_profile: null },
       { feature_id: 'empty', embedding: null, embedding_profile: null },
       { feature_id: 'mode-less', embedding: '[1,1,0]', embedding_profile: null },
       { feature_id: 'unknown-mode', embedding: '[0,0,1]', embedding_profile: null },
     ]);
+  });
+
+  it('does not build profile indexes while holding the expand transaction locks', async () => {
+    const indexes = await sql<{ indexname: string }[]>`
+      SELECT indexname
+        FROM pg_indexes
+       WHERE schemaname = 'harness_shared'
+         AND indexname LIKE '%\\_profile\\_idx' ESCAPE '\\'
+       ORDER BY indexname`;
+    expect(indexes).toEqual([]);
   });
 
   it('adds mode and profile columns to older mode-less surfaces without guessing identity', async () => {
