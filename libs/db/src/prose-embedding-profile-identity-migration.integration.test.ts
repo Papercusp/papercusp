@@ -1,4 +1,4 @@
-/** Real-PostgreSQL data-integrity guard for migration 1154. */
+/** Real-PostgreSQL data-integrity guard for migrations 1154 and 1155. */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,19 +7,47 @@ import postgres, { type Sql } from 'postgres';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const armed = join(HERE, '..', 'sql', '1154-prose-embedding-profile-identity.sql');
-const path = existsSync(armed) ? armed : `${armed}.DRAFT`;
-const migrationSql = readFileSync(path, 'utf8');
-const migrationChunks = migrationSql
-  .split(/-->\s*statement-breakpoint/g)
-  .map((chunk) => chunk.trim())
-  .filter((chunk) => chunk.length > 0 && !/^(\s*--[^\n]*\n?)+$/.test(chunk));
+function readMigration(filename: string): string {
+  const armed = join(HERE, '..', 'sql', filename);
+  return readFileSync(existsSync(armed) ? armed : `${armed}.DRAFT`, 'utf8');
+}
+
+function splitMigration(sqlText: string): string[] {
+  return sqlText
+    .split(/-->\s*statement-breakpoint/g)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.length > 0 && !/^(\s*--[^\n]*\n?)+$/.test(chunk));
+}
+
+const migrationSql = readMigration('1154-prose-embedding-profile-identity.sql');
+const repairMigrationSql = readMigration('1155-reapply-safe-prose-embedding-profile-identity.sql');
+const migrationChunks = splitMigration(migrationSql);
+const repairMigrationChunks = splitMigration(repairMigrationSql);
 
 let db: MigratedTestDb;
 let sql: Sql;
 
-async function applyMigration(): Promise<void> {
-  for (const chunk of migrationChunks) await sql.unsafe(chunk);
+async function applyMigration(chunks: string[] = migrationChunks): Promise<void> {
+  for (const chunk of chunks) await sql.unsafe(chunk);
+}
+
+function alterTargets(chunks: string[]): string[] {
+  return chunks.flatMap((chunk) => [...chunk.matchAll(/ALTER TABLE IF EXISTS\s+([\w.]+)/gi)].map((match) => match[1]));
+}
+
+function expectLockSafeChunks(chunks: string[]): void {
+  expect(chunks).toHaveLength(17);
+  for (const chunk of chunks.slice(0, -1)) {
+    const targets = [...chunk.matchAll(/ALTER TABLE IF EXISTS\s+([\w.]+)/gi)].map((match) => match[1]);
+    expect(targets, chunk).toHaveLength(1);
+    expect(chunk).not.toMatch(/LOCK TABLE/i);
+    expect(targets[0]).not.toBe('harness_shared.work_items');
+  }
+  const finalChunk = chunks.at(-1)!;
+  expect(finalChunk).toContain('LOCK TABLE harness_shared.harness_features IN ACCESS EXCLUSIVE MODE');
+  expect(finalChunk).toContain('LOCK TABLE harness_shared.work_items IN ACCESS EXCLUSIVE MODE');
+  expect(finalChunk).toContain('ALTER TABLE IF EXISTS harness_shared.work_items');
+  expect(finalChunk).not.toContain('harness_shared.session_turns');
 }
 
 beforeAll(async () => {
@@ -69,26 +97,25 @@ afterAll(async () => {
 
 describe('migration 1154 — exact shared prose profile identity', () => {
   it('bounds unrelated ACCESS EXCLUSIVE locks to singleton runner transactions', () => {
-    expect(migrationChunks).toHaveLength(17);
-    for (const chunk of migrationChunks.slice(0, -1)) {
-      const targets = [...chunk.matchAll(/ALTER TABLE IF EXISTS\s+([\w.]+)/gi)].map((match) => match[1]);
-      expect(targets, chunk).toHaveLength(1);
-      expect(chunk).not.toMatch(/LOCK TABLE/i);
-      expect(targets[0]).not.toBe('harness_shared.work_items');
-    }
-    const finalChunk = migrationChunks.at(-1)!;
-    expect(finalChunk).toContain('LOCK TABLE harness_shared.harness_features IN ACCESS EXCLUSIVE MODE');
-    expect(finalChunk).toContain('LOCK TABLE harness_shared.work_items IN ACCESS EXCLUSIVE MODE');
-    expect(finalChunk).toContain('ALTER TABLE IF EXISTS harness_shared.work_items');
-    expect(finalChunk).not.toContain('harness_shared.session_turns');
+    expectLockSafeChunks(migrationChunks);
+  });
+
+  it('carries the corrected lock-bounded state into immutable successor 1155', () => {
+    expect(repairMigrationSql).toContain('6c34b9014272387faa172be6c8bc4946e586f809746b4cb64a2f0ff361fd5dcd');
+    expect(repairMigrationSql).toContain('b48510177581764476ac602958e6ec26b5ef45d8ac6614d64662dd1647bc8bc8');
+    expect(repairMigrationSql).toContain('EI-23124585951651029');
+    expectLockSafeChunks(repairMigrationChunks);
+    expect(alterTargets(repairMigrationChunks)).toEqual(alterTargets(migrationChunks));
   });
 
   it('preserves legacy vector bytes without rewriting inferred profile metadata', async () => {
-    const rows = await sql<Array<{
-      feature_id: string;
-      embedding: string | null;
-      embedding_profile: string | null;
-    }>>`
+    const rows = await sql<
+      Array<{
+        feature_id: string;
+        embedding: string | null;
+        embedding_profile: string | null;
+      }>
+    >`
       SELECT feature_id, embedding::text, embedding_profile
         FROM harness_shared.work_items
        ORDER BY feature_id`;
@@ -112,19 +139,23 @@ describe('migration 1154 — exact shared prose profile identity', () => {
   });
 
   it('adds mode and profile columns to older mode-less surfaces without guessing identity', async () => {
-    const [recipe] = await sql<Array<{
-      embedding: string;
-      embedding_mode: string | null;
-      embedding_profile: string | null;
-    }>>`
+    const [recipe] = await sql<
+      Array<{
+        embedding: string;
+        embedding_mode: string | null;
+        embedding_profile: string | null;
+      }>
+    >`
       SELECT embedding::text, embedding_mode, embedding_profile
         FROM harness_shared.code_recipes
        WHERE id = 'mode-less-recipe'`;
-    const [datatype] = await sql<Array<{
-      embedding: string;
-      embedding_mode: string | null;
-      embedding_profile: string | null;
-    }>>`
+    const [datatype] = await sql<
+      Array<{
+        embedding: string;
+        embedding_mode: string | null;
+        embedding_profile: string | null;
+      }>
+    >`
       SELECT embedding::text, embedding_mode, embedding_profile
         FROM harness_shared.datatype_registry
        WHERE id = 'mode-less-datatype'`;
@@ -150,12 +181,12 @@ describe('migration 1154 — exact shared prose profile identity', () => {
     }
   });
 
-  it('is idempotent and never overwrites an explicit exact identity', async () => {
+  it('re-applies successor 1155 idempotently without overwriting an explicit exact identity', async () => {
     await sql`
       UPDATE harness_shared.work_items
          SET embedding_profile = 'foreign-space@v2'
        WHERE feature_id = 'current-gemma'`;
-    await expect(applyMigration()).resolves.toBeUndefined();
+    await expect(applyMigration(repairMigrationChunks)).resolves.toBeUndefined();
     const [row] = await sql<{ embedding_profile: string }[]>`
       SELECT embedding_profile FROM harness_shared.work_items
        WHERE feature_id = 'current-gemma'`;
