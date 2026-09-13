@@ -197,7 +197,8 @@ export const UNIVERSAL_LC_VALUES = ['C', 'POSIX'];
 
 /** True when `value` is a runtime lc_* value valid on EVERY target libc (incl. macOS). Pure. */
 export function localeIsUniversal(value) {
-  return typeof value === 'string' && UNIVERSAL_LC_VALUES.some((p) => p.toLowerCase() === value.toLowerCase());
+  return typeof value === 'string'
+    && UNIVERSAL_LC_VALUES.some((p) => p.toLowerCase() === value.toLowerCase());
 }
 
 /**
@@ -229,7 +230,8 @@ export function initdbLocaleIsPortable(flags = []) {
 
 /** True when `value` names a locale present on every lean target rootfs. Pure. */
 export function localeIsPortable(value) {
-  return typeof value === 'string' && PORTABLE_INITDB_LOCALES.some((p) => p.toLowerCase() === value.toLowerCase());
+  return typeof value === 'string'
+    && PORTABLE_INITDB_LOCALES.some((p) => p.toLowerCase() === value.toLowerCase());
 }
 
 /**
@@ -352,10 +354,11 @@ export async function extractSeed(seedPath, dataDir) {
  * @param {string} [opts.dbName]
  * @param {string} [opts.pgRestoreBin]
  */
-export function restoreLogicalSeed(
-  seedPath,
-  { port, dbName = DEFAULT_DB, pgRestoreBin = process.env.PAPERCUSP_PG_RESTORE_BIN ?? 'pg_restore' },
-) {
+export function restoreLogicalSeed(seedPath, {
+  port,
+  dbName = DEFAULT_DB,
+  pgRestoreBin = process.env.PAPERCUSP_PG_RESTORE_BIN ?? 'pg_restore',
+}) {
   if (!Number.isInteger(port) || port <= 0) {
     throw new Error(`logical seed restore requires a valid postgres port (got ${port})`);
   }
@@ -366,14 +369,10 @@ export function restoreLogicalSeed(
         '--exit-on-error',
         '--single-transaction',
         '--no-owner',
-        '--host',
-        'localhost',
-        '--port',
-        String(port),
-        '--username',
-        DEFAULT_OWNER,
-        '--dbname',
-        dbName,
+        '--host', 'localhost',
+        '--port', String(port),
+        '--username', DEFAULT_OWNER,
+        '--dbname', dbName,
         seedPath,
       ],
       {
@@ -385,7 +384,10 @@ export function restoreLogicalSeed(
     const stderr = Buffer.isBuffer(error?.stderr)
       ? error.stderr.toString('utf8').trim()
       : String(error?.stderr ?? '').trim();
-    throw new Error(`pg_restore failed for logical seed ${seedPath}${stderr ? `: ${stderr}` : ''}`, { cause: error });
+    throw new Error(
+      `pg_restore failed for logical seed ${seedPath}${stderr ? `: ${stderr}` : ''}`,
+      { cause: error },
+    );
   }
 }
 
@@ -451,13 +453,12 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     // Replication knobs above are intentionally NOT in the tuning set, so there
     // is never a conflict.
     postgresFlags: [
-      '-c',
-      'wal_level=logical',
-      '-c',
-      'max_wal_senders=10',
-      '-c',
-      'max_replication_slots=10',
-      ...Object.entries(opts.extraPostgresSettings ?? {}).flatMap(([k, v]) => ['-c', `${k}=${v}`]),
+      '-c', 'wal_level=logical',
+      '-c', 'max_wal_senders=10',
+      '-c', 'max_replication_slots=10',
+      ...Object.entries(opts.extraPostgresSettings ?? {}).flatMap(
+        ([k, v]) => ['-c', `${k}=${v}`],
+      ),
     ],
   });
 
@@ -468,8 +469,12 @@ export async function startEmbeddedPostgresServer(opts = {}) {
   // preserve that extraction path strictly for backwards compatibility.
   const dataDirWasFresh = !existsSync(join(dataDir, 'PG_VERSION'));
   const seedPath = resolveSeedPath(opts);
-  const logicalSeedPath =
-    dataDirWasFresh && seedPath && existsSync(seedPath) && seedKind(seedPath) === 'logical' ? seedPath : null;
+  const logicalSeedPath = dataDirWasFresh
+    && seedPath
+    && existsSync(seedPath)
+    && seedKind(seedPath) === 'logical'
+    ? seedPath
+    : null;
   if (dataDirWasFresh && seedPath && existsSync(seedPath) && seedKind(seedPath) === 'physical') {
     try {
       log(`seeding data dir from legacy physical snapshot ${seedPath}`);
@@ -650,8 +655,8 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     /** Connection URLs for common roles (matches connection.ts expectations). */
     urls: {
       admin: `postgresql://harness_admin:harness_admin_pwd@localhost:${port}/${dbName}`,
-      app: `postgresql://harness_app:harness_app_pwd@localhost:${port}/${dbName}`,
-      zero: `postgresql://harness_zero:harness_zero_pwd@localhost:${port}/${dbName}`,
+      app:   `postgresql://harness_app:harness_app_pwd@localhost:${port}/${dbName}`,
+      zero:  `postgresql://harness_zero:harness_zero_pwd@localhost:${port}/${dbName}`,
     },
     async stop() {
       log('stopping postgres');
