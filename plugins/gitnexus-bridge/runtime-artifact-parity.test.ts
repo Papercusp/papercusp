@@ -67,4 +67,18 @@ describe('gitnexus-bridge runtime artifact', () => {
     expect(typeof plugin._resetChildrenForTests).toBe('function');
     expect(plugin.tools).toEqual({});
   });
+
+  it('loads safe context/impact routing from the actual CommonJS artifact', () => {
+    const require = createRequire(import.meta.url);
+    const runtime = require(ARTIFACT);
+    for (const name of ['context', 'impact']) {
+      const override = runtime.TOOL_OVERRIDES[name];
+      const text = JSON.stringify(override);
+      expect(text).not.toContain('gitnexus.query');
+      expect(text).not.toMatch(/every caller|full source|INSTEAD of grep/);
+      expect(text).toContain('current source');
+      expect(text).toContain('graph:query');
+      expect(override.guidance.notWhen).toContain('runtime');
+    }
+  });
 });
