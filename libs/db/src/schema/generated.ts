@@ -1801,7 +1801,7 @@ export const coordConversationsInHarnessShared = harnessShared.table("coord_conv
 	check("coord_conversations_kind_check", sql`kind = ANY (ARRAY['question'::text, 'discussion'::text, 'consult'::text])`),
 	check("coord_conversations_scope_check", sql`scope = ANY (ARRAY['operator'::text, 'harness'::text])`),
 	check("coord_conversations_scope_slug_check", sql`((scope = 'harness'::text) AND (harness_slug IS NOT NULL) AND (harness_slug <> ''::text)) OR ((scope = 'operator'::text) AND (harness_slug IS NULL))`),
-	check("coord_conversations_state_check", sql`state = ANY (ARRAY['open'::text, 'resolved'::text, 'closed'::text, 'superseded'::text])`),
+	check("coord_conversations_state_check", sql`state = ANY (ARRAY['open'::text, 'resolved'::text, 'closed'::text, 'superseded'::text, 'expired'::text])`),
 	check("coord_conversations_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 

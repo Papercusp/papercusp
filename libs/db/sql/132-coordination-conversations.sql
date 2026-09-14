@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS harness_shared.coord_conversations (
     asker_id         text NOT NULL,                          -- owner_id of the opener
     title            text,                                   -- short headline (list rendering)
     body             text DEFAULT ''::text NOT NULL,         -- the seed question / discussion text
-    state            text DEFAULT 'open'::text NOT NULL,     -- Lifecycle: open | resolved | closed
+    state            text DEFAULT 'open'::text NOT NULL,     -- Lifecycle: open | resolved | closed | expired
     accepted_answer  text,                                   -- the captured accepted answer (resolve)
     accepted_post_id bigint,                                 -- → coord_thread_posts.id of the accepted answer
     capture_target   text,                                   -- where the answer was written back (mem0|decision|insight)
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS harness_shared.coord_conversations (
     CONSTRAINT coord_conversations_pkey PRIMARY KEY (workspace_id, id),
     CONSTRAINT coord_conversations_kind_check  CHECK ((kind  = ANY (ARRAY['question'::text, 'discussion'::text]))),
     CONSTRAINT coord_conversations_scope_check CHECK ((scope = ANY (ARRAY['operator'::text, 'harness'::text]))),
-    CONSTRAINT coord_conversations_state_check CHECK ((state = ANY (ARRAY['open'::text, 'resolved'::text, 'closed'::text]))),
+    CONSTRAINT coord_conversations_state_check CHECK ((state = ANY (ARRAY['open'::text, 'resolved'::text, 'closed'::text, 'expired'::text]))),
     -- A harness-scoped conversation must name its harness; operator-scope must not.
     CONSTRAINT coord_conversations_scope_slug_check CHECK (
         (scope = 'harness'::text  AND harness_slug IS NOT NULL AND harness_slug <> ''::text)
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS harness_shared.coord_conversations (
 );
 
 COMMENT ON TABLE harness_shared.coord_conversations IS
-  'Question/discussion objects on the coordination substrate (coordination-conversations-2026-06-03). kind question|discussion; Lifecycle state open|resolved|closed (interface-only in the substrate — stored here). Thread/tags/subs ride coord_threads/_posts, coord_links, coord_entity_subscriptions. Workspace-local in v1 (not federated — substrate D-009).';
+  'Question/discussion objects on the coordination substrate (coordination-conversations-2026-06-03). kind question|discussion; Lifecycle state open|resolved|closed|expired (interface-only in the substrate — stored here). Thread/tags/subs ride coord_threads/_posts, coord_links, coord_entity_subscriptions. Workspace-local in v1 (not federated — substrate D-009).';
 
 -- List open questions / a scope's conversations cheaply (the hot read paths).
 CREATE INDEX IF NOT EXISTS coord_conversations_open_idx
