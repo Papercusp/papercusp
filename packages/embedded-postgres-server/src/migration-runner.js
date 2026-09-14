@@ -62,7 +62,13 @@ export function migrationTransactionChunks(ddl) {
   return ddl
     .split(STATEMENT_BREAKPOINT)
     .map((chunk) => chunk.trim())
-    .filter((chunk) => chunk.length > 0 && !/^(\s*--[^\n]*\n?)+$/.test(chunk));
+    // Do not use a repeated group with an optional newline here. A long
+    // comment containing "--" followed by SQL makes that pattern explore
+    // exponentially many partitions, blocking migration bootstrap entirely.
+    .filter((chunk) => chunk.length > 0 && chunk.split('\n').some((line) => {
+      const text = line.trim();
+      return text.length > 0 && !text.startsWith('--');
+    }));
 }
 
 const SCHEMA_MIGRATIONS_DDL = `
