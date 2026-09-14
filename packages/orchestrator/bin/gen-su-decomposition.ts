@@ -3,7 +3,7 @@
  * COMPOSITION_MODEL.md §9 from `src/blueprint/su-decomposition.ts` + the live
  * `blueprints/base/prompts/su.md` (identities-v1-2026-08-30 P-002).
  *
- *   npm run gen:su-decomposition          # write (root package.json → this file)
+ *   npm run gen:su-decomposition          # write (from the superproject or libs/papercusp)
  *   npm run gen:su-decomposition:check    # exit 1 on drift
  *
  * The part documents are VERBATIM extractions (byte-equal to the concatenation of
@@ -47,7 +47,7 @@ if (check) {
   // This checker is also exposed from packages/operator-core, whose package.json
   // deliberately declares only the gate. Name the writer's real package boundary so
   // the remediation does not send callers to a nonexistent local npm script.
-  console.error('run from the repository root: npm run gen:su-decomposition');
+  console.error('run from the repository root or libs/papercusp: npm run gen:su-decomposition');
   process.exit(1);
 }
 

@@ -97,10 +97,18 @@ test('part documents on disk are BYTE-EQUAL to their derivation from su.md (rege
   }
 });
 
-test('the checker names the repository-root writer command in its drift remediation', () => {
+test('the checker names a runnable writer command in its drift remediation', () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const generator = readFileSync(join(here, '..', '..', 'bin', 'gen-su-decomposition.ts'), 'utf8');
-  assert.match(generator, /run from the repository root: npm run gen:su-decomposition/);
+  assert.match(generator, /run from the repository root or libs\/papercusp: npm run gen:su-decomposition/);
+});
+
+test('the owning submodule package exposes the generator and drift-check commands', () => {
+  const packageJson = JSON.parse(readFileSync(join(HARNESS_PKG, '..', '..', 'package.json'), 'utf8')) as {
+    scripts?: Record<string, string>;
+  };
+  assert.equal(packageJson.scripts?.['gen:su-decomposition'], 'tsx packages/orchestrator/bin/gen-su-decomposition.ts');
+  assert.equal(packageJson.scripts?.['gen:su-decomposition:check'], 'tsx packages/orchestrator/bin/gen-su-decomposition.ts --check');
 });
 
 test('the base role library and BASE_ROLE_LIBRARY_DISPOSITION agree both ways; only `su` decomposes in v1', () => {
