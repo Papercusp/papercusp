@@ -1,5 +1,5 @@
 /**
- * Regression coverage for migrations 886 and 1158.
+ * Regression coverage for migrations 886 and 1159.
  *
  * Older consult:close calls left the typed consult_state row terminal while
  * coord_conversations stayed open.  This applies the real migration to a
@@ -24,8 +24,8 @@ const MIGRATION_796 = fileURLToPath(
 const MIGRATION_886 = fileURLToPath(
   new URL('../sql/886-backfill-consult-conversation-lifecycle.sql', import.meta.url),
 );
-const MIGRATION_1158 = fileURLToPath(
-  new URL('../sql/1158-backfill-expired-consult-conversation-lifecycle.sql', import.meta.url),
+const MIGRATION_1159_DRAFT = fileURLToPath(
+  new URL('../sql/1159-backfill-expired-consult-conversation-lifecycle.sql.DRAFT', import.meta.url),
 );
 
 let rootSql: Sql;
@@ -125,7 +125,7 @@ async function lifecycleRows() {
   `;
 }
 
-describe('migration 886 + 1158 — consult/coarse conversation lifecycle backfills', () => {
+describe('migration 886 + 1159 — consult/coarse conversation lifecycle backfills', () => {
   it('repairs typed close terminals, leaves non-close states alone, and is idempotent', async () => {
     await seedConsult({
       id: 'answered-with-post',
@@ -164,7 +164,7 @@ describe('migration 886 + 1158 — consult/coarse conversation lifecycle backfil
     `;
 
     await rootSql.unsafe(readFileSync(MIGRATION_886, 'utf8'));
-    await rootSql.unsafe(readFileSync(MIGRATION_1158, 'utf8'));
+    await rootSql.unsafe(readFileSync(MIGRATION_1159_DRAFT, 'utf8'));
 
     expect(await lifecycleRows()).toEqual([
       { id: 'already-closed', state: 'closed', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
@@ -198,7 +198,7 @@ describe('migration 886 + 1158 — consult/coarse conversation lifecycle backfil
     expect(expiredProjection).toEqual([{ state: 'expired', updated_at: '2026-08-21T21:12:26.766Z' }]);
 
     const afterFirstRun = await lifecycleRows();
-    await rootSql.unsafe(readFileSync(MIGRATION_1158, 'utf8'));
+    await rootSql.unsafe(readFileSync(MIGRATION_1159_DRAFT, 'utf8'));
     expect(await lifecycleRows()).toEqual(afterFirstRun);
   });
 });
