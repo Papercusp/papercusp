@@ -1,4 +1,4 @@
--- 1157-work-items-keyless-title-identity.sql
+-- 1157-work-items-keyless-title-identity-guard.sql
 --
 -- EI-22775699419447395 — improvements:capture can be retried after an admission
 -- shed. Its exact normalized-title SELECT is advisory, so concurrent keyless
@@ -164,10 +164,10 @@ SELECT workspace_id, harness_slug, title_key, winner_id, loser_id,
 ON CONFLICT (workspace_id, harness_slug, title_key, loser_id) DO NOTHING;
 
 -- Payload backfill is additive and runs before terminalization so historical
--- losers retain the same machine-readable title identity as their winner.
--- USER triggers are disabled for this historical repair: no CDC/federation or
--- notification event should present the backfill as a new agent filing.
-ALTER TABLE harness_shared.work_items DISABLE TRIGGER USER;
+-- losers retain the same machine-readable title identity as their winner. Keep
+-- the normal trigger path live: this hot table's sync invalidation and CDC
+-- projections must observe the repair, and payload-only writes do not justify
+-- suppressing those readers.
 
 UPDATE harness_shared.work_items wi
    SET payload = COALESCE(wi.payload, '{}'::jsonb) || jsonb_build_object(
@@ -214,8 +214,6 @@ UPDATE harness_shared.work_items loser
  WHERE loser.workspace_id = repair.workspace_id
    AND loser.harness_slug = repair.harness_slug
    AND loser.feature_id = repair.loser_id;
-
-ALTER TABLE harness_shared.work_items ENABLE TRIGGER USER;
 
 DO $verify_repair1157$
 DECLARE

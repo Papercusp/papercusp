@@ -1,4 +1,4 @@
--- 1158 — restore and project expired consult conversation lifecycle.
+-- 1159 — restore and project expired consult conversation lifecycle.
 --
 -- Migration 796 replaced coord_conversations_state_check for supersession but
 -- accidentally omitted the already-supported `expired` state. The expiry
