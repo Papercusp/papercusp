@@ -1436,6 +1436,7 @@ export const capabilityClassRegistryInHarnessShared = harnessShared.table("capab
 	reviewStatus: text("review_status").default('none').notNull(),
 	tags: text().array().default([]).notNull(),
 	embedding: vector({ dimensions: 768 }),
+	embeddingProfile: text("embedding_profile"),
 	titleTsv: tsvectorCustom("title_tsv").generatedAlwaysAs(sql`to_tsvector('english'::regconfig, ((COALESCE(title, ''::text) || ' '::text) || COALESCE(description, ''::text)))`),
 	createdBy: text("created_by"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
