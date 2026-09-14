@@ -6,6 +6,11 @@
 -- the coarse projection legal again and repairs rows left open by older
 -- runners. Keep the repair narrow to consult parents that are still open so a
 -- later terminal lifecycle can never be overwritten.
+--
+-- FORWARD-COMPAT: this DROP+ADD only widens the existing state constraint with
+-- `expired`; every state accepted by the currently deployed release remains
+-- valid, and that release's consult reader and expiry writer already handle
+-- `expired` explicitly.
 
 ALTER TABLE harness_shared.coord_conversations
   DROP CONSTRAINT IF EXISTS coord_conversations_state_check;
