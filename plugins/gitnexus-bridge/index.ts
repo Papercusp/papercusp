@@ -432,11 +432,9 @@ export function quotaFor(toolName: string): ToolDefinition['rolesQuota'] {
  * agent-tools/tools/find.ts's buildCorpus). Reachable ONLY by agents who already know the
  * literal word "gitnexus" — which is exactly the set that doesn't need to search for it.
  *
- * These overrides REPLACE upstream's description (still the authoritative capability, just
- * re-worded) and add `guidance.when`/`notWhen` in first-person agent vocabulary, explicitly
- * framed as a replacement for shelling out to `grep -r`/`rg` on code (the previous wording,
- * "Complements grep/IDE search", read as permission to keep using grep alongside it rather
- * than instead of it). Tools with no entry here keep upstream's description unchanged, so a
+ * These overrides replace upstream descriptions with question-specific guidance:
+ * graph topology for known symbols, current text for literals/source, and official
+ * LSP for compiler semantics. Tools with no entry keep upstream descriptions, so a
  * future upstream gitnexus release still flows through for anything not overridden.
  */
 export const TOOL_OVERRIDES: Record<string, { description: string; guidance: NonNullable<ToolDefinition['guidance']> }> = {
@@ -486,22 +484,24 @@ export const TOOL_OVERRIDES: Record<string, { description: string; guidance: Non
   },
   context: {
     description:
-      'Fetch the full source and surrounding context for a specific symbol or file location the ' +
-      'graph already identified (e.g. from a gitnexus.query/cypher result), without a manual file ' +
-      'Read+offset.',
+      'Retrieve indexed context and relationships for a known symbol. Supply uid or file_path to ' +
+      'disambiguate names. Content may be stale or include neighboring text; read current source ' +
+      'before editing. Empty results do not prove the symbol is absent.',
     guidance: {
-      when: 'After gitnexus.query or gitnexus.cypher returns a symbol/location and you need to read its actual source.',
-      chaining: 'Chain directly after gitnexus.query — its results are exactly this tool\'s input.',
+      when: 'For a bounded lookup after source, LSP, or graph:query identifies a symbol.',
+      notWhen: 'For exact literals, configuration, logs or runtime state use rg or the relevant state tool; use official LSP for compiler references.',
+      chaining: 'Inspect index revision and ambiguity, anchor the production symbol, then corroborate relevant locations in current source. On failure use scoped rg or LSP.',
     },
   },
   impact: {
     description:
-      'Find every caller/consumer that would be affected by changing a given symbol — the ' +
-      'blast-radius check before a rename, refactor, or deletion. Use INSTEAD of grep -r when you need ' +
-      'to know "what would break" before a risky edit.',
+      'Find indexed callers and dependent symbols to investigate before changing a shared helper. ' +
+      'Coverage is partial: stale, dynamic or unindexed consumers may be missing. Separate file ' +
+      'links from resolved callers; zero callers does not establish safety.',
     guidance: {
-      when: 'Before renaming, refactoring, or deleting a symbol — "what depends on this", "what would break if I change X".',
-      notWhen: 'Not for exploring code you haven\'t decided to change yet — start with gitnexus.query.',
+      when: 'Before a substantive shared-symbol rename, refactor or deletion; use graph:query for bounded callers/callees.',
+      notWhen: 'For ordinary reads, literal/config searches or runtime diagnosis; these do not require graph lookup. Use context for known-symbol navigation.',
+      chaining: 'Record index/source revisions, corroborate consumers in current source or official LSP, and test affected behavior. Report unchecked consumers and fall back on failure.',
     },
   },
   explain: {

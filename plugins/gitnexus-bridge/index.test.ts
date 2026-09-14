@@ -221,10 +221,8 @@ describe('resolveGitnexusChildCwd — index and process identity stay aligned (D
 // by tools:find for plain agent-vocabulary intents ("find call sites without
 // grep" returned zero code-search hits). These tests are the recurrence guard
 // the bug report asked for: assert the override text an agent actually needs
-// is present, in agent-first-person vocabulary, and explicitly frames itself
-// as a REPLACEMENT for grep (not merely a complement — that ambiguity was the
-// original defect: "Complements grep/IDE search" read as permission to keep
-// grepping alongside it).
+// is present. Routing is question-specific: graph relationships do not replace
+// current-source inspection, compiler semantics, literal searches or runtime state.
 describe('TOOL_OVERRIDES — agent-vocabulary description/guidance for code-search tools', () => {
   const CODE_SEARCH_TOOLS = ['query', 'cypher', 'context', 'impact', 'explain', 'trace', 'pdg_query'];
 
@@ -261,7 +259,7 @@ describe('TOOL_OVERRIDES — agent-vocabulary description/guidance for code-sear
     expect(text).toMatch(/break|rename|refactor|depend/);
   });
 
-  it.each(['explain', 'trace', 'pdg_query'])('%s override stays within the prompt-weight hard cap', (tool) => {
+  it.each(['context', 'impact', 'explain', 'trace', 'pdg_query'])('%s override stays within the prompt-weight hard cap', (tool) => {
     const o = TOOL_OVERRIDES[tool];
     const weight = [o.description, o.guidance.when, o.guidance.notWhen, o.guidance.chaining].reduce(
       (total, text) => total + (text?.length ?? 0),
@@ -290,6 +288,19 @@ describe('TOOL_OVERRIDES — agent-vocabulary description/guidance for code-sear
   it('a tool with no override entry is simply absent from the map (upstream description falls through unchanged)', () => {
     expect(TOOL_OVERRIDES.list_repos).toBeUndefined();
     expect(TOOL_OVERRIDES.totally_new_upstream_tool).toBeUndefined();
+  });
+
+  it.each(['context', 'impact'])('%s offers safe, selective navigation with source corroboration', (tool) => {
+    const override = TOOL_OVERRIDES[tool];
+    const text = JSON.stringify(override).toLowerCase();
+    expect(text).not.toContain('gitnexus.query');
+    expect(text).not.toMatch(/every caller|every consumer|full source|instead of grep/);
+    expect(text).toContain('current source');
+    expect(text).toContain('stale');
+    expect(text).toContain('graph:query');
+    expect(text).toContain('lsp');
+    expect(override.guidance.notWhen).toMatch(/runtime/);
+    expect(override.guidance.chaining).toMatch(/fail/);
   });
 });
 

@@ -322,17 +322,19 @@ var TOOL_OVERRIDES = {
     }
   },
   context: {
-    description: "Fetch the full source and surrounding context for a specific symbol or file location the graph already identified (e.g. from a gitnexus.query/cypher result), without a manual file Read+offset.",
+    description: "Retrieve indexed context and relationships for a known symbol. Supply uid or file_path to disambiguate names. Content may be stale or include neighboring text; read current source before editing. Empty results do not prove the symbol is absent.",
     guidance: {
-      when: "After gitnexus.query or gitnexus.cypher returns a symbol/location and you need to read its actual source.",
-      chaining: "Chain directly after gitnexus.query \u2014 its results are exactly this tool's input."
+      when: "For a bounded lookup after source, LSP, or graph:query identifies a symbol.",
+      notWhen: "For exact literals, configuration, logs or runtime state use rg or the relevant state tool; use official LSP for compiler references.",
+      chaining: "Inspect index revision and ambiguity, anchor the production symbol, then corroborate relevant locations in current source. On failure use scoped rg or LSP."
     }
   },
   impact: {
-    description: 'Find every caller/consumer that would be affected by changing a given symbol \u2014 the blast-radius check before a rename, refactor, or deletion. Use INSTEAD of grep -r when you need to know "what would break" before a risky edit.',
+    description: "Find indexed callers and dependent symbols to investigate before changing a shared helper. Coverage is partial: stale, dynamic or unindexed consumers may be missing. Separate file links from resolved callers; zero callers does not establish safety.",
     guidance: {
-      when: 'Before renaming, refactoring, or deleting a symbol \u2014 "what depends on this", "what would break if I change X".',
-      notWhen: "Not for exploring code you haven't decided to change yet \u2014 start with gitnexus.query."
+      when: "Before a substantive shared-symbol rename, refactor or deletion; use graph:query for bounded callers/callees.",
+      notWhen: "For ordinary reads, literal/config searches or runtime diagnosis; these do not require graph lookup. Use context for known-symbol navigation.",
+      chaining: "Record index/source revisions, corroborate consumers in current source or official LSP, and test affected behavior. Report unchecked consumers and fall back on failure."
     }
   },
   explain: {
