@@ -1,4 +1,4 @@
--- 1160-capability-class-embedding-profile.sql
+-- 1161-capability-class-embedding-profile.sql
 -- versioned-embedding-profiles-2026-09-12 P-003 / D-002 / D-003
 --
 -- capability_class_registry predates exact embedding-space identity. Its
