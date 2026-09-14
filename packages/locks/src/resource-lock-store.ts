@@ -392,12 +392,17 @@ export async function tryAcquireResource(
 
   if (mode === 'shared') {
     // Writer-priority: a pending/held exclusive by ANOTHER owner refuses
-    // new shared acquisitions (the "don't start new things" rule).
+    // new shared acquisitions (the "don't start new things" rule). An
+    // incumbent shared holder is different: it must be able to renew while
+    // the exclusive drains, otherwise the lease refresh itself removes the
+    // holder from the drain protocol and a long-running operation can be
+    // interrupted by the restart it was waiting to finish (EI-23229103052811419).
     const excl = holders.find((h) => h.mode === 'exclusive');
     const callerHoldsShared = holders.some((h) => h.owner === owner && h.mode === 'shared');
+    const effectiveExclusiveBlocks = excl !== undefined && excl.owner !== owner && !callerHoldsShared;
     const queuedExclusiveBlocks =
       queue.length > 0 && !callerHoldsShared && !(excl && excl.owner === owner);
-    if ((excl && excl.owner !== owner) || queuedExclusiveBlocks) {
+    if (effectiveExclusiveBlocks || queuedExclusiveBlocks) {
       // Refused by another owner's exclusive — record as a waiter so the
       // back-up broadcast on release reaches us (not the whole fleet).
       await recordResourceWaiter(tx, { coordinationDomain: cd, resource, owner, ownerLabel });
