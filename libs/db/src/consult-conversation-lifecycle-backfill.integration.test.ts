@@ -1,10 +1,11 @@
 /**
- * Regression coverage for migration 885.
+ * Regression coverage for migrations 886 and 1157.
  *
  * Older consult:close calls left the typed consult_state row terminal while
  * coord_conversations stayed open.  This applies the real migration to a
  * throwaway Postgres database, checks answer/post recovery, and proves the
- * terminal-close integrity query is empty and the migration is idempotent.
+ * terminal-close integrity query is empty, expired consults project their
+ * coarse lifecycle, and both migrations are idempotent.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
@@ -17,8 +18,14 @@ const WS = 'ws-consult-lifecycle-backfill';
 const MIGRATION_834 = fileURLToPath(
   new URL('../sql/834-consult-threads.sql', import.meta.url),
 );
-const MIGRATION_885 = fileURLToPath(
+const MIGRATION_796 = fileURLToPath(
+  new URL('../sql/796-conversation-supersession.sql', import.meta.url),
+);
+const MIGRATION_886 = fileURLToPath(
   new URL('../sql/886-backfill-consult-conversation-lifecycle.sql', import.meta.url),
+);
+const MIGRATION_1157 = fileURLToPath(
+  new URL('../sql/1157-backfill-expired-consult-conversation-lifecycle.sql', import.meta.url),
 );
 
 let rootSql: Sql;
@@ -53,6 +60,10 @@ beforeAll(async () => {
       resolved_at timestamptz,
       PRIMARY KEY (workspace_id, id)
     )`);
+  // Recreate the historical deployed shape before applying the consult
+  // migrations: 796 widened the state enum for supersession but omitted
+  // expired, while 834 only adds the consult kind and typed side tables.
+  await rootSql.unsafe(readFileSync(MIGRATION_796, 'utf8'));
   await rootSql.unsafe(readFileSync(MIGRATION_834, 'utf8'));
 }, 120_000);
 
@@ -69,10 +80,11 @@ afterAll(async () => {
 
 async function seedConsult(input: {
   id: string;
-  state: 'active' | 'closed_answered' | 'closed_cant_help' | 'graduated';
+  state: 'active' | 'closed_answered' | 'closed_cant_help' | 'graduated' | 'expired';
   outcome?: Record<string, unknown>;
   closedAt?: string;
   coarseState?: 'open' | 'closed';
+  coarseUpdatedAt?: string;
   closePostId?: number;
 }): Promise<void> {
   const closedAt = input.closedAt ?? '2026-08-20T21:12:26.766Z';
@@ -89,7 +101,7 @@ async function seedConsult(input: {
     INSERT INTO harness_shared.coord_conversations
       (workspace_id, id, kind, state, updated_at)
     VALUES
-      (${WS}, ${input.id}, 'consult', ${input.coarseState ?? 'open'}, ${closedAt}::timestamptz)
+      (${WS}, ${input.id}, 'consult', ${input.coarseState ?? 'open'}, ${input.coarseUpdatedAt ?? closedAt}::timestamptz)
   `;
   if (input.closePostId != null) {
     await rootSql`
@@ -113,7 +125,7 @@ async function lifecycleRows() {
   `;
 }
 
-describe('migration 886 — consult/coarse conversation lifecycle backfill', () => {
+describe('migration 886 + 1157 — consult/coarse conversation lifecycle backfills', () => {
   it('repairs typed close terminals, leaves non-close states alone, and is idempotent', async () => {
     await seedConsult({
       id: 'answered-with-post',
@@ -138,15 +150,30 @@ describe('migration 886 — consult/coarse conversation lifecycle backfill', () 
     });
     await seedConsult({ id: 'still-active', state: 'active' });
     await seedConsult({ id: 'already-closed', state: 'closed_cant_help', coarseState: 'closed' });
+    await seedConsult({
+      id: 'expired-open',
+      state: 'expired',
+      coarseUpdatedAt: '2026-08-21T21:12:26.766Z',
+    });
+    await seedConsult({ id: 'expired-already-closed', state: 'expired', coarseState: 'closed' });
+    await seedConsult({ id: 'expired-non-consult', state: 'expired' });
+    await rootSql`
+      UPDATE harness_shared.coord_conversations
+         SET kind = 'question'
+       WHERE workspace_id = ${WS} AND id = 'expired-non-consult'
+    `;
 
-    const migrationSql = readFileSync(MIGRATION_885, 'utf8');
-    await rootSql.unsafe(migrationSql);
+    await rootSql.unsafe(readFileSync(MIGRATION_886, 'utf8'));
+    await rootSql.unsafe(readFileSync(MIGRATION_1157, 'utf8'));
 
     expect(await lifecycleRows()).toEqual([
       { id: 'already-closed', state: 'closed', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
       { id: 'answered-with-post', state: 'resolved', accepted_answer: 'the answer', accepted_post_id: '17', has_resolved_at: true },
       { id: 'answered-without-post', state: 'resolved', accepted_answer: 'recoverable answer', accepted_post_id: null, has_resolved_at: true },
       { id: 'cant-help', state: 'closed', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
+      { id: 'expired-already-closed', state: 'closed', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
+      { id: 'expired-non-consult', state: 'open', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
+      { id: 'expired-open', state: 'expired', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
       { id: 'graduated', state: 'closed', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
       { id: 'still-active', state: 'open', accepted_answer: null, accepted_post_id: null, has_resolved_at: false },
     ]);
@@ -162,8 +189,16 @@ describe('migration 886 — consult/coarse conversation lifecycle backfill', () 
     `;
     expect(integrityViolations).toEqual([]);
 
+    const expiredProjection = await rootSql`
+      SELECT state,
+             to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS updated_at
+        FROM harness_shared.coord_conversations
+       WHERE workspace_id = ${WS} AND id = 'expired-open'
+    `;
+    expect(expiredProjection).toEqual([{ state: 'expired', updated_at: '2026-08-21T21:12:26.766Z' }]);
+
     const afterFirstRun = await lifecycleRows();
-    await rootSql.unsafe(migrationSql);
+    await rootSql.unsafe(readFileSync(MIGRATION_1157, 'utf8'));
     expect(await lifecycleRows()).toEqual(afterFirstRun);
   });
 });
