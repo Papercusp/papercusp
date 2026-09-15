@@ -219,7 +219,10 @@ export const agentChatsConsolidatedInHarnessShared = harnessShared.table("agent_
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	archivedAt: bigint("archived_at", { mode: "number" }),
 	suRuntimeClass: text("su_runtime_class"),
+	continuedFromChatId: text("continued_from_chat_id"),
+	continuedFromTurnCount: integer("continued_from_turn_count"),
 }, (table) => [
+	index("agent_chats_consolidated_continued_from_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.continuedFromChatId.asc().nullsLast().op("text_ops")).where(sql`(continued_from_chat_id IS NOT NULL)`),
 	index("agent_chats_consolidated_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.updatedAt.desc().nullsFirst().op("int8_ops")),
 	primaryKey({ columns: [table.harnessSlug, table.id, table.workspaceId], name: "agent_chats_consolidated_pkey"}),
 	pgPolicy("agent_chats_consolidated_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
@@ -1436,11 +1439,11 @@ export const capabilityClassRegistryInHarnessShared = harnessShared.table("capab
 	reviewStatus: text("review_status").default('none').notNull(),
 	tags: text().array().default([]).notNull(),
 	embedding: vector({ dimensions: 768 }),
-	embeddingProfile: text("embedding_profile"),
 	titleTsv: tsvectorCustom("title_tsv").generatedAlwaysAs(sql`to_tsvector('english'::regconfig, ((COALESCE(title, ''::text) || ' '::text) || COALESCE(description, ''::text)))`),
 	createdBy: text("created_by"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	embeddingProfile: text("embedding_profile"),
 }, (table) => [
 	index("capability_class_registry_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("capability_class_registry_review_pending_idx").using("btree", table.reviewStatus.asc().nullsLast().op("text_ops")).where(sql`(review_status = 'pending'::text)`),
@@ -7891,6 +7894,64 @@ export const replayRunsInHarnessShared = harnessShared.table("replay_runs", {
 	check("replay_runs_status_check", sql`status = ANY (ARRAY['started'::text, 'scored'::text, 'rate_limited'::text, 'errored'::text])`),
 ]);
 
+export const reportLibraryInHarnessShared = harnessShared.table("report_library", {
+	workspaceId: text("workspace_id").notNull(),
+	reportId: text("report_id").notNull(),
+	title: text().notNull(),
+	summary: text().default('').notNull(),
+	bodyMd: text("body_md").default('').notNull(),
+	kind: text().default('audit').notNull(),
+	subjectKind: text("subject_kind").default('none').notNull(),
+	subjectRef: text("subject_ref"),
+	subjectLabel: text("subject_label"),
+	originHarnessSlug: text("origin_harness_slug"),
+	authorOwnerId: text("author_owner_id"),
+	authorSessionRef: text("author_session_ref"),
+	visibility: text().default('owner').notNull(),
+	supersedesReportId: text("supersedes_report_id"),
+	lineageId: text("lineage_id").notNull(),
+	source: text().default('agent').notNull(),
+	tags: text().array().default([]).notNull(),
+	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	retiredAt: timestamp("retired_at", { withTimezone: true, mode: 'string' }),
+	searchTsv: tsvectorCustom("search_tsv").generatedAlwaysAs(sql`(((setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(summary, ''::text)), 'B'::"char")) || setweight(to_tsvector('english'::regconfig, COALESCE(subject_label, ''::text)), 'B'::"char")) || setweight(to_tsvector('english'::regconfig, "left"(COALESCE(body_md, ''::text), 200000)), 'C'::"char"))`),
+}, (table) => [
+	index("report_library_kind_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.publishedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("report_library_lineage_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.lineageId.asc().nullsLast().op("text_ops"), table.publishedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("report_library_origin_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.originHarnessSlug.asc().nullsLast().op("text_ops"), table.publishedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("report_library_published_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.publishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(retired_at IS NULL)`),
+	index("report_library_subject_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subjectKind.asc().nullsLast().op("text_ops"), table.subjectRef.asc().nullsLast().op("text_ops")),
+	index("report_library_tags_idx").using("gin", table.tags.asc().nullsLast().op("array_ops")),
+	index("report_library_tsv_idx").using("gin", table.searchTsv.asc().nullsLast().op("tsvector_ops")),
+	primaryKey({ columns: [table.reportId, table.workspaceId], name: "report_library_pkey"}),
+	check("report_library_kind_allowed", sql`kind = ANY (ARRAY['audit'::text, 'review'::text, 'analysis'::text, 'postmortem'::text, 'status-digest'::text, 'proposal'::text, 'other'::text])`),
+	check("report_library_subject_kind_allowed", sql`subject_kind = ANY (ARRAY['pot'::text, 'plan'::text, 'work_item'::text, 'fleet'::text, 'goal'::text, 'repo'::text, 'external'::text, 'none'::text])`),
+	check("report_library_subject_ref_present", sql`(subject_kind = 'none'::text) OR (COALESCE(btrim(subject_ref), ''::text) <> ''::text)`),
+	check("report_library_title_present", sql`btrim(title) <> ''::text`),
+	check("report_library_visibility_allowed", sql`visibility = ANY (ARRAY['owner'::text, 'pot'::text, 'workspace'::text])`),
+]);
+
+export const reportLibraryChunksInHarnessShared = harnessShared.table("report_library_chunks", {
+	workspaceId: text("workspace_id").notNull(),
+	reportId: text("report_id").notNull(),
+	chunkIdx: integer("chunk_idx").notNull(),
+	text: text().notNull(),
+	embedding: vector({ dimensions: 768 }),
+	textEmbeddingMode: text("text_embedding_mode"),
+	textEmbeddingProfile: text("text_embedding_profile"),
+	embeddedAt: timestamp("embedded_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("report_library_chunks_embedding_hnsw").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
+	index("report_library_chunks_unembedded_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.reportId.asc().nullsLast().op("text_ops")).where(sql`(embedding IS NULL)`),
+	foreignKey({
+			columns: [table.workspaceId, table.reportId],
+			foreignColumns: [reportLibraryInHarnessShared.workspaceId, reportLibraryInHarnessShared.reportId],
+			name: "report_library_chunks_report_fk"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.chunkIdx, table.reportId, table.workspaceId], name: "report_library_chunks_pkey"}),
+]);
+
 export const resourceAllotmentsInHarnessShared = harnessShared.table("resource_allotments", {
 	workspaceId: text("workspace_id").notNull(),
 	fleetSlug: text("fleet_slug"),
@@ -10293,6 +10354,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	index("work_items_escalated_open_idx").using("btree", sql`workspace_id`, sql`COALESCE(((payload -> '_ei'::text) ->> 'severity'::text), 'mino`).where(sql`((status = 'open'::text) AND (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
 	index("work_items_frontier_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((status = 'open'::text) AND (item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
 	index("work_items_goal_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops")).where(sql`(goal_id IS NOT NULL)`),
+	uniqueIndex("work_items_keyless_title_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload #>> '{admissionIdentity,titleKey}'::text[]))`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND (NULLIF(btrim((payload ->> 'watchdogKey'::text)), ''::text) IS NULL) AND (COALESCE((payload ->> 'lane'::text), 'improvement'::text) <> 'observation'::text) AND ((payload #>> '{admissionIdentity,schemaVersion}'::text[]) = 'admission-identity-v1'::text) AND (NULLIF(btrim((payload #>> '{admissionIdentity,titleKey}'::text[])), ''::text) IS NOT NULL))`),
 	index("work_items_obs_rubric_ref_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text) IS NOT NULL)`),
 	index("work_items_obs_supersedes_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'supersedes'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'supersedes'::text) IS NOT NULL)`),
 	index("work_items_plan_item_stamp_idx").using("btree", sql`(((payload -> 'plan_item'::text) ->> 'plan_slug'::text))`, sql`(((payload -> 'plan_item'::text) ->> 'item_id'::text))`).where(sql`((payload -> 'plan_item'::text) IS NOT NULL)`),
