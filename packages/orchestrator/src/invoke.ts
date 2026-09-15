@@ -56,6 +56,7 @@ import {
   isLocalOmpModel,
   ompRemoteCompactionEndpoint,
   writeOmpCompactionOverlay,
+  resolveMcpConfigPlacement,
   type SpawnMcpHandle,
   type SpawnCodexHomeHandle,
   type SpawnCodexContextConfig,
@@ -3778,22 +3779,27 @@ export async function invoke(
   // (bpkind=hive, D-010) — bake the config at a PERSISTENT conventional path
   // keyed by the spawn id instead: wake-executor later resumes this session via
   // `claude --resume --mcp-config <that path>`, which a deleted temp dir would
-  // break (the Queen would wake toolless). Skipping mcpTempDir also skips the
-  // close-time restore/rm below, so the config survives for the resume.
+  // break (the Queen would wake toolless).
   const trackedSessionSpawnId = (process.env.PAPERCUSP_NATIVE_SESSION_ID ?? '').trim()
     ? (process.env.PAPERCUSP_SPAWN_ID ?? '').trim()
     : '';
-  if (agentBackend === 'claude-code' && ctx.workspaceId) {
-    if (trackedSessionSpawnId) {
-      // Keyed by the tracked spawn id (== the adv_sessions coord_owner_id on the
-      // hive path) via the ONE shared helper, so the wake-executor resume leg
-      // remounts the IDENTICAL dir (unify-launch-mechanics P-004).
-      mcpConfigDir = sessionMcpDir(trackedSessionSpawnId);
-      mkdirSync(mcpConfigDir, { recursive: true });
-    } else {
-      mcpTempDir = mkdtempSync(join(tmpdir(), 'papercusp-mcp-'));
-      mcpConfigDir = mcpTempDir;
-    }
+  // ONE value carries BOTH the path and the close-time restore skip, so the two
+  // cannot drift apart the way separate variables did (EI-23336628915114721).
+  const mcpPlacement = resolveMcpConfigPlacement({
+    agentBackend,
+    workspaceId: ctx.workspaceId,
+    trackedSessionSpawnId,
+  });
+  const mcpConfigPersistsOutsideCwd = mcpPlacement.persistsOutsideCwd;
+  if (mcpPlacement.kind === 'session-dir') {
+    // Keyed by the tracked spawn id (== the adv_sessions coord_owner_id on the
+    // hive path) via the ONE shared helper, so the wake-executor resume leg
+    // remounts the IDENTICAL dir (unify-launch-mechanics P-004).
+    mcpConfigDir = sessionMcpDir(mcpPlacement.spawnId);
+    mkdirSync(mcpConfigDir, { recursive: true });
+  } else if (mcpPlacement.kind === 'temp-dir') {
+    mcpTempDir = mkdtempSync(join(tmpdir(), 'papercusp-mcp-'));
+    mcpConfigDir = mcpTempDir;
   }
   const mcpConfigPath = join(mcpConfigDir, '.mcp.json');
 
@@ -4355,8 +4361,10 @@ export async function invoke(
     child.on('error', (err) => {
       ctx.log(`  spawn error: ${err.message}`);
       if (timer) clearTimeout(timer);
-      // Tracked launches keep their persistent config — the resume leg needs it.
-      if (mcpHandle && !trackedSessionSpawnId) restoreSpawnMcp(mcpHandle);
+      // Skip the restore ONLY when the config was baked OUTSIDE cwd (the resume
+      // leg needs that one). A tracked launch whose config still lives at the
+      // shared `<cwd>/.mcp.json` MUST restore it.
+      if (mcpHandle && !mcpConfigPersistsOutsideCwd) restoreSpawnMcp(mcpHandle);
       if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       if (codexHomeHandle) codexHomeHandle.cleanup();
       if (ompHomeHandle) ompHomeHandle.cleanup();
@@ -4368,8 +4376,10 @@ export async function invoke(
 
     child.on('close', (code) => {
       if (timer) clearTimeout(timer);
-      // Tracked launches keep their persistent config — the resume leg needs it.
-      if (mcpHandle && !trackedSessionSpawnId) restoreSpawnMcp(mcpHandle);
+      // Skip the restore ONLY when the config was baked OUTSIDE cwd (the resume
+      // leg needs that one). A tracked launch whose config still lives at the
+      // shared `<cwd>/.mcp.json` MUST restore it.
+      if (mcpHandle && !mcpConfigPersistsOutsideCwd) restoreSpawnMcp(mcpHandle);
       if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       if (codexHomeHandle) codexHomeHandle.cleanup();
       if (ompHomeHandle) ompHomeHandle.cleanup();

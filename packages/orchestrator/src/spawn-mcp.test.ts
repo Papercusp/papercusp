@@ -22,8 +22,58 @@ import {
   writeOmpCompactionOverlay,
   ompRemoteCompactionEndpoint,
   OMP_MAINTENANCE_SUMMARIZE_PATH,
+  resolveMcpConfigPlacement,
+  type McpConfigPlacement,
   type SpawnMcpSigningPg,
 } from './spawn-mcp';
+
+describe('resolveMcpConfigPlacement — placement and restore-skip cannot drift', () => {
+  const TRACKED = 'spawn-abc123';
+
+  it('a TRACKED claude-code spawn with a workspace persists outside cwd (the resume needs it)', () => {
+    expect(resolveMcpConfigPlacement({
+      agentBackend: 'claude-code', workspaceId: 'ws-1', trackedSessionSpawnId: TRACKED,
+    })).toEqual({ kind: 'session-dir', spawnId: TRACKED, persistsOutsideCwd: true });
+  });
+
+  // THE REGRESSION (EI-23336628915114721). Tracked, but a non-claude backend never
+  // takes the redirect — the config lands in the SHARED `<cwd>/.mcp.json`, so the
+  // close-time restore MUST run. Keying the skip off the tracked id alone stranded
+  // that signed config in the shared repo root permanently.
+  it('a TRACKED omp spawn stays in cwd and MUST be restored', () => {
+    expect(resolveMcpConfigPlacement({
+      agentBackend: 'omp', workspaceId: 'ws-1', trackedSessionSpawnId: TRACKED,
+    })).toEqual({ kind: 'cwd', persistsOutsideCwd: false });
+  });
+
+  it('a TRACKED claude-code spawn with NO workspaceId stays in cwd and MUST be restored', () => {
+    expect(resolveMcpConfigPlacement({
+      agentBackend: 'claude-code', workspaceId: null, trackedSessionSpawnId: TRACKED,
+    })).toEqual({ kind: 'cwd', persistsOutsideCwd: false });
+  });
+
+  it('an UNtracked claude-code spawn uses a disposable temp dir', () => {
+    expect(resolveMcpConfigPlacement({
+      agentBackend: 'claude-code', workspaceId: 'ws-1', trackedSessionSpawnId: '',
+    })).toEqual({ kind: 'temp-dir', persistsOutsideCwd: false });
+  });
+
+  it('persistsOutsideCwd is true ONLY for a session-dir placement', () => {
+    const seen: McpConfigPlacement['kind'][] = [];
+    for (const agentBackend of ['claude-code', 'omp', 'codex']) {
+      for (const workspaceId of ['ws-1', null]) {
+        for (const trackedSessionSpawnId of [TRACKED, '', '   ']) {
+          const p = resolveMcpConfigPlacement({ agentBackend, workspaceId, trackedSessionSpawnId });
+          seen.push(p.kind);
+          expect(p.persistsOutsideCwd).toBe(p.kind === 'session-dir');
+        }
+      }
+    }
+    // Calibration: every arm was actually reached, so the assertion above cannot
+    // pass vacuously by never producing a persisting placement.
+    expect(new Set(seen)).toEqual(new Set(['session-dir', 'temp-dir', 'cwd']));
+  });
+});
 
 const ROOT = join(tmpdir(), `papercusp-spawn-mcp-test-${process.pid}`);
 // These serialization/routing fixtures select a model just as invoke.ts does.

@@ -339,6 +339,46 @@ export interface SpawnMcpHandle {
   backupPath: string | null;
 }
 
+/**
+ * WHERE a spawn's `.mcp.json` is baked — and, inseparably, whether the
+ * close-time restore must run.
+ *
+ * These were once TWO variables (`mcpConfigDir`, and a skip condition keyed off
+ * `trackedSessionSpawnId`) that had to agree, and they drifted: the tracked id
+ * is backend-independent, while the redirect to a persistent dir fires only for
+ * claude-code WITH a workspaceId. A tracked omp spawn — or a tracked claude
+ * spawn with no workspaceId — therefore wrote the SHARED `<cwd>/.mcp.json` and
+ * then skipped its restore, permanently stranding a signed role-bearing config
+ * in the shared repo root AND leaving the `.mcp.json` it displaced parked at its
+ * backup suffix, never renamed back (EI-23336628915114721).
+ *
+ * Returning both as ONE value makes `kind:'cwd'` with `persistsOutsideCwd:true`
+ * unrepresentable rather than merely untrue, so the pair cannot drift again.
+ * Pure by design — the caller performs the mkdir/mkdtemp.
+ */
+export type McpConfigPlacement =
+  | { kind: 'session-dir'; spawnId: string; persistsOutsideCwd: true }
+  | { kind: 'temp-dir'; persistsOutsideCwd: false }
+  | { kind: 'cwd'; persistsOutsideCwd: false };
+
+export function resolveMcpConfigPlacement(opts: {
+  agentBackend: string;
+  workspaceId?: string | null;
+  /** Non-empty only for a tracked (resumable) launch. */
+  trackedSessionSpawnId?: string | null;
+}): McpConfigPlacement {
+  // The redirect is claude-code-only: omp path-discovers `<cwd>/.mcp.json` with
+  // no explicit-path override, and codex uses a per-spawn CODEX_HOME.
+  if (opts.agentBackend !== 'claude-code' || !opts.workspaceId) {
+    return { kind: 'cwd', persistsOutsideCwd: false };
+  }
+  const spawnId = (opts.trackedSessionSpawnId ?? '').trim();
+  // A tracked launch resumes via `claude --resume --mcp-config <path>`, which a
+  // deleted temp dir would break — so that one config persists and is NOT restored.
+  if (spawnId) return { kind: 'session-dir', spawnId, persistsOutsideCwd: true };
+  return { kind: 'temp-dir', persistsOutsideCwd: false };
+}
+
 export function writeSpawnMcp(cwd: string, input: SpawnMcpConfigInput): SpawnMcpHandle {
   const path = join(cwd, FILENAME);
   let prior: string | null = null;
