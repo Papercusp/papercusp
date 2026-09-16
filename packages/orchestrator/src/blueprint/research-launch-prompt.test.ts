@@ -30,6 +30,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { harnessPath } from '@papercusp/harness/paths';
 import { assembleRolePrompt } from '../role-prompt-from-slug.js';
+import { loadBlueprintFromFile } from './loader.js';
+import { loadHarnessLexicon } from '../effective-config.js';
 
 const HARNESS_DIR = harnessPath();
 const RESEARCH_YAML = join(HARNESS_DIR, 'blueprints', 'research', 'blueprint.yaml');
@@ -117,6 +119,33 @@ test('P-014 clause 4 / D-048 §4: a launched research wearer gets NO vocabulary 
     assert.ok(
       !text.includes(VOCAB_HEADING),
       'REFUTES D-048 §4: a vocabulary block DID reach a launched research wearer. Correct the decision — do not silently replace it.',
+    );
+  } finally {
+    rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
+test('P-014 clause 4: research-steward is UNLOADABLE as an install, and loadHarnessLexicon SWALLOWS the throw', () => {
+  // The defect the control exposed, pinned. Clause 8 verified a lexicon that lives
+  // on `research-steward`. That blueprint cannot be loaded as an install at all —
+  // it is abstract (no `workItem`) and `loadBlueprintFromFile` throws on it, in-place
+  // as well as copied. `loadHarnessLexicon` catches that and returns `undefined`,
+  // so at runtime an unloadable blueprint is INDISTINGUISHABLE from one that simply
+  // declares no lexicon. That silence is why D-048 §4 reached for the wrong
+  // explanation (sibling-siting) for an absence this actually caused.
+  //
+  // If a later change makes the steward loadable, or removes the swallow, this test
+  // fails and forces the finding to be revisited rather than quietly un-discovered.
+  const projectDir = installFrom(STEWARD_YAML);
+  try {
+    assert.throws(
+      () => loadBlueprintFromFile(join(projectDir, '.papercusp', 'blueprint.yaml')),
+      'research-steward now LOADS — re-examine D-048 and the clause-8 lexicon siting',
+    );
+    assert.equal(
+      loadHarnessLexicon(join(projectDir, '.papercusp')),
+      undefined,
+      'the swallow no longer returns undefined for an unloadable blueprint — re-examine',
     );
   } finally {
     rmSync(projectDir, { recursive: true, force: true });
