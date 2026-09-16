@@ -79,7 +79,14 @@ test('findExclusiveSlotConflicts — the D-007 hard-error rule over per-layer cl
 });
 
 test('BUNDLE_KINDS is the D-011 vocabulary — and carries no `skill` kind (owner ruling 2026-09-02)', () => {
-  assert.deepEqual([...BUNDLE_KINDS], ['recipe', 'rubric', 'knowledge-pack', 'datatype', 'event', 'rule']);
+  // `plan` + `goal` added 2026-09-16: both were already live Cupboard listing kinds with
+  // their own publish verbs while absent here, so D-011's uniform list was true of the text
+  // and false of the code. Kept as an EXACT assertion on purpose — it is what makes the next
+  // silent divergence between the listing kinds and this vocabulary fail loudly.
+  assert.deepEqual(
+    [...BUNDLE_KINDS],
+    ['recipe', 'rubric', 'knowledge-pack', 'plan', 'goal', 'datatype', 'event', 'rule'],
+  );
 });
 
 test('docs/COMPOSITION_MODEL.md embeds EXACTLY this registry (pinned prose — it cannot describe another one)', () => {

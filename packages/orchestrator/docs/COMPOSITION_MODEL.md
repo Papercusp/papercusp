@@ -52,7 +52,7 @@ Layering order: `kernel` → `client` → `domain` → `fleet-posture` → `mode
 | `collaboration-stance` | exclusive | practices | how the agent works WITH the owner — the collaborator stance of su.md (address by name, confirm-before-execute posture, delivery discipline) | D-017 (P-001 ruling): exclusive — two stances toward one owner conflict rather than stack; sits on the practices layer per D-007’s order |
 | `practice` | additive | practices | a stackable working practice (compaction protocol, wait-loop discipline, peer-wake craft, …) | D-007 ("practices stack because their slot is additive") |
 
-Bundle kinds (`bundles[].kind`, D-011): `recipe`, `rubric`, `knowledge-pack`, `datatype`, `event`, `rule` — no `skill` kind (owner ruling 2026-09-02).
+Bundle kinds (`bundles[].kind`, D-011): `recipe`, `rubric`, `knowledge-pack`, `plan`, `goal`, `datatype`, `event`, `rule` — no `skill` kind (owner ruling 2026-09-02).
 <!-- SLOT-REGISTRY:END -->
 
 **Why a registry and not a `kind`.** What the profession/facet TYPE split encoded was a

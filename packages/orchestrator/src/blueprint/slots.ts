@@ -164,11 +164,17 @@ export const SLOT_REGISTRY: readonly SlotSpec[] = SLOT_IDS.map((slot) => ({ slot
 /**
  * The Cupboard kinds an identity may bundle BY REFERENCE (D-011: one uniform
  * `bundles: [{ kind, ref, version }]` list, never a bespoke field per layer).
- * `recipe`, `rubric`, `knowledge-pack` are listing kinds today; `datatype`,
- * `event`, `rule` become kinds in M3 (P-027/P-028/P-029). There is deliberately
- * NO `skill` kind — removed by owner ruling 2026-09-02.
+ * `recipe`, `rubric`, `knowledge-pack`, `plan`, `goal` are listing kinds today;
+ * `datatype`, `event`, `rule` become kinds in M3 (P-027/P-028/P-029). There is
+ * deliberately NO `skill` kind — removed by owner ruling 2026-09-02.
+ *
+ * `plan` and `goal` were absent until 2026-09-16 while both were already live
+ * Cupboard listing kinds with their own publish verbs (`cupboard:publish-plan`,
+ * `cupboard:publish-goal`) — so D-011's "one uniform list" was true of the TEXT
+ * and false of the CODE, and an identity could not bundle the two kinds most
+ * worth bundling. Added [owner 2026-09-15].
  */
-export const BUNDLE_KINDS = ['recipe', 'rubric', 'knowledge-pack', 'datatype', 'event', 'rule'] as const;
+export const BUNDLE_KINDS = ['recipe', 'rubric', 'knowledge-pack', 'plan', 'goal', 'datatype', 'event', 'rule'] as const;
 export type BundleKind = (typeof BUNDLE_KINDS)[number];
 
 export function isSlotId(x: unknown): x is SlotId {
