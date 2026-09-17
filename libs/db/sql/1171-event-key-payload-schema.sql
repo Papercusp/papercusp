@@ -42,6 +42,14 @@
 -- deployed release keeps serving unchanged and no FORWARD-COMPAT acknowledgment is
 -- owed.
 
+-- Bound the ALTER's lock wait. Measured BOTH ways (2026-09-17), which is what makes
+-- 3s a choice rather than a default: with no timeout the ALTER queues behind a reader
+-- convoy (the hourly backup pg_dump holds AccessShare on EVERY table, observed ~10min),
+-- and boot auto-apply sets none; but at 250ms a sibling migration here records having
+-- "exhausted all 5 lock_timeout retries", failing the migration at boot. 3s is the
+-- value this file's own end-to-end rehearsal passed under.
+SET lock_timeout = '3s';
+
 ALTER TABLE harness_shared.event_key_registry
   ADD COLUMN IF NOT EXISTS payload_schema JSONB;
 

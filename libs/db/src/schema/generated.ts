@@ -2835,6 +2835,7 @@ export const eventKeyRegistryInHarnessShared = harnessShared.table("event_key_re
 	createdBy: text("created_by"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	payloadSchema: jsonb("payload_schema"),
 }, (table) => [
 	index("event_key_registry_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("event_key_registry_review_pending_idx").using("btree", table.reviewStatus.asc().nullsLast().op("text_ops")).where(sql`(review_status = 'pending'::text)`),
@@ -2847,6 +2848,7 @@ export const eventKeyRegistryInHarnessShared = harnessShared.table("event_key_re
 	check("event_key_registry_derived_dated_ck", sql`(derived_at IS NOT NULL) OR ((emitter IS NULL) AND (emitter_exists IS NULL) AND (emit_site_count IS NULL))`),
 	check("event_key_registry_emit_count_ck", sql`(emit_site_count IS NULL) OR (emit_site_count >= 0)`),
 	check("event_key_registry_key_ck", sql`length(btrim(event_key)) > 0`),
+	check("event_key_registry_payload_schema_ck", sql`(payload_schema IS NULL) OR (jsonb_typeof(payload_schema) = 'object'::text)`),
 	check("event_key_registry_review_ck", sql`review_status = ANY (ARRAY['none'::text, 'pending'::text, 'approved'::text, 'rejected'::text])`),
 	check("event_key_registry_status_ck", sql`status = ANY (ARRAY['active'::text, 'retired'::text, 'superseded'::text])`),
 ]);
@@ -9546,6 +9548,7 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	index("tool_invocations_invoked_at_cov_idx").using("btree", table.invokedAt.desc().nullsFirst().op("timestamptz_ops"), table.toolName.asc().nullsLast(), table.durationMs.asc().nullsLast(), table.status.asc().nullsLast()),
 	index("tool_invocations_parent_spawn_partial_idx").using("btree", table.parentSpawnId.asc().nullsLast().op("text_ops")).where(sql`((parent_spawn_id IS NOT NULL) AND (parent_spawn_id <> ''::text))`),
 	index("tool_invocations_quota_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.windowKey.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast()).where(sql`(status = ANY (ARRAY['ok'::text, 'refused'::text]))`),
+	index("tool_invocations_quota_idx_ccnew").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.windowKey.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast()).where(sql`(status = ANY (ARRAY['ok'::text, 'refused'::text]))`),
 	index("tool_invocations_serving_host_idx").using("btree", table.servingHost.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(serving_host IS NOT NULL)`),
 	index("tool_invocations_spawn_id_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.spawnId.asc().nullsLast().op("text_ops")),
 	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")),
@@ -11153,7 +11156,8 @@ export const eventKeyRegistryAttestedInHarnessShared = harnessShared.view("event
 	createdBy: text("created_by"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
-}).as(sql`SELECT r.workspace_id, r.event_key, r.title, r.description, r.key_pattern, r.contributor, r.status, r.published, r.review_status, r.tags, r.emitter, r.emitter_exists, r.emit_site_count, r.derived_at, r.derived_from, f.first_fired_at, f.last_fired_at, f.last_fired_by, f.fire_count, r.emitter_exists IS FALSE AND f.fire_count > 0 AS contradicts_scan, r.created_by, r.created_at, r.updated_at FROM harness_shared.event_key_registry r LEFT JOIN harness_shared.event_key_fires f ON f.workspace_id = r.workspace_id AND f.event_key = r.event_key`);
+	payloadSchema: jsonb("payload_schema"),
+}).as(sql`SELECT r.workspace_id, r.event_key, r.title, r.description, r.key_pattern, r.contributor, r.status, r.published, r.review_status, r.tags, r.emitter, r.emitter_exists, r.emit_site_count, r.derived_at, r.derived_from, f.first_fired_at, f.last_fired_at, f.last_fired_by, f.fire_count, r.emitter_exists IS FALSE AND f.fire_count > 0 AS contradicts_scan, r.created_by, r.created_at, r.updated_at, r.payload_schema FROM harness_shared.event_key_registry r LEFT JOIN harness_shared.event_key_fires f ON f.workspace_id = r.workspace_id AND f.event_key = r.event_key`);
 
 export const fleetAssignmentInHarnessShared = harnessShared.view("fleet_assignment", {	source: text(),
 	workspaceId: text("workspace_id"),
