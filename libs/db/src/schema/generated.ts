@@ -1529,6 +1529,10 @@ export const cloudResourceObligationsInHarnessShared = harnessShared.table("clou
 	lastEscalatedAt: timestamp("last_escalated_at", { withTimezone: true, mode: 'string' }),
 	escalationWorkItemId: text("escalation_work_item_id").default('').notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	zone: text().default('').notNull(),
+	region: text().default('').notNull(),
+	parentResourceId: text("parent_resource_id").default('').notNull(),
+	hostId: text("host_id").default('').notNull(),
 }, (table) => [
 	index("cloud_resource_obligations_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((closed_at IS NULL) AND teardown_owed)`),
 	unique("cloud_resource_obligations_workspace_id_provider_resource_k_key").on(table.provider, table.resourceId, table.resourceKind, table.workspaceId),
@@ -6598,7 +6602,7 @@ export const pipelineEventsInHarnessShared = harnessShared.table("pipeline_event
 	index("pipeline_events_slug_created_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("pipeline_events_slug_kind_created_idx").using("btree", table.installSlug.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	pgPolicy("pipeline_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("pipeline_events_kind_check", sql`kind = ANY (ARRAY['git_sync'::text, 'merge_resolver'::text, 'content_fixer'::text, 'green_checkpoint'::text, 'green_checkpoint_fire'::text, 'gate_fire_drill'::text, 'deploy'::text, 'release_fixer'::text])`),
+	check("pipeline_events_kind_check", sql`kind = ANY (ARRAY['git_sync'::text, 'merge_resolver'::text, 'content_fixer'::text, 'green_checkpoint'::text, 'green_checkpoint_fire'::text, 'gate_fire_drill'::text, 'deploy'::text, 'release_fixer'::text, 'green_checkpoint_repair_latency'::text])`),
 	check("pipeline_events_slug_nonempty", sql`install_slug <> ''::text`),
 	check("pipeline_events_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
