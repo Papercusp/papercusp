@@ -26,9 +26,12 @@
 -- currently-deployed release simply never reads or writes the new column.
 -- Composes onto 000-baseline.sql for fresh/embedded-pg boots; safe additive on
 -- the native :5432 box. Runs as harness_admin.
+--
+-- No top-level BEGIN;/COMMIT;: the migration runner wraps each file in its own
+-- transaction, and the pre-apply gate lint refuses a file that opens its own
+-- (migration 153, whose style this otherwise follows, predates that rule).
 
 \set ON_ERROR_STOP on
-BEGIN;
 
 ALTER TABLE harness_shared.event_reactions
     ADD COLUMN IF NOT EXISTS contributor text;
@@ -44,5 +47,3 @@ COMMENT ON COLUMN harness_shared.event_reactions.contributor IS
 CREATE INDEX IF NOT EXISTS event_reactions_contributor_idx
     ON harness_shared.event_reactions (workspace_id, contributor, fired_at DESC)
     WHERE contributor IS NOT NULL;
-
-COMMIT;
