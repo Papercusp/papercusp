@@ -2825,7 +2825,9 @@ export const eventReactionsInHarnessShared = harnessShared.table("event_reaction
 	status: text().default('fired').notNull(),
 	errorMessage: text("error_message"),
 	firedAt: timestamp("fired_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	contributor: text(),
 }, (table) => [
+	index("event_reactions_contributor_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.contributor.asc().nullsLast().op("text_ops"), table.firedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(contributor IS NOT NULL)`),
 	index("event_reactions_rule_idx").using("btree", table.ruleId.asc().nullsLast().op("text_ops"), table.firedAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("event_reactions_ws_fired_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.firedAt.desc().nullsFirst().op("timestamptz_ops")),
 	primaryKey({ columns: [table.dedupId], name: "event_reactions_pkey"}),
