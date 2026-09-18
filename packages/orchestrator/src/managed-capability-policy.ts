@@ -197,7 +197,7 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
     },
     // 'Task' is the pre-rename spelling of 'Agent'; 'Workflow' is the third
     // door onto the same fan-out. Denying a subset leaves the capability live.
-    aliases: [NO_SUBAGENT_TOOLS_DENY[0]],
+    aliases: NO_SUBAGENT_TOOLS_DENY,
     nestedRoutes: [],
     clients: ['claude'],
     surfaces: ALL_SURFACES,
