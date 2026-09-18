@@ -18,6 +18,7 @@ import {
   resolveCapabilityPolicy,
   type CapabilityPolicySurface,
   type CapabilityReadinessSource,
+  type ManagedCapabilityRestriction,
 } from './managed-capability-policy';
 import { NO_SUBAGENT_TOOLS_DENY } from './no-subagent-deny';
 import { NATIVE_TOOL_SEARCH_DENY } from './native-tool-search-deny';
@@ -263,5 +264,198 @@ describe('managed capability policy — derived deferral env', () => {
     const decision = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' }, []);
     expect(policyDeferralReachable(decision)).toBe(true);
     expect(policyDeferralEnv(decision)).toEqual({ ENABLE_TOOL_SEARCH: 'true' });
+  });
+});
+
+/**
+ * FALSIFIABILITY CONTROLS — permanently retained, per CLAUDE.md § "Proving a
+ * guard is falsifiable" (tier 1: a module you `import`).
+ *
+ * Every assertion ABOVE is a property that passes. Passing tests cannot
+ * distinguish "this suite checks the policy" from "this suite asserts nothing":
+ * 22 greens that have never been observed to fail are, to a reader, the same
+ * artifact either way. These controls close that gap by driving THE REAL
+ * DETECTORS against deliberately DRIFTED tables and requiring them to fire.
+ *
+ * `resolveCapabilityPolicy` takes the restriction table as its second
+ * parameter precisely so this can be done WITHOUT mutating the shared tree —
+ * no copy-out, no sweep race, no lock (the in-tree `cp`/mutate/restore idiom
+ * has committed a mutant here before).
+ *
+ * Each control is PAIRED with a calibration on the REAL table. Without the
+ * pair, a control still passes when the property itself is broken — it would
+ * only prove the drifted table differs from something, not that the shipped
+ * one is correct.
+ */
+
+/**
+ * Rewrite ONE restriction in the real table, leaving every other entry intact.
+ *
+ * Throws when the id is unknown or the patch changes nothing. A control whose
+ * anchor silently matches nothing degenerates into comparing the program
+ * against itself, which is the single most common way a mutation control lies
+ * — it reports a confident "caught" having mutated exactly zero bytes.
+ */
+function drift(
+  id: string,
+  patch: Partial<ManagedCapabilityRestriction>,
+): readonly ManagedCapabilityRestriction[] {
+  const target = MANAGED_CAPABILITY_RESTRICTIONS.find((entry) => entry.id === id);
+  if (!target) {
+    throw new Error(
+      `falsifiability control targeted unknown restriction id '${id}' — the table was renamed and this control stopped mutating anything`,
+    );
+  }
+  const drifted = MANAGED_CAPABILITY_RESTRICTIONS.map((entry) =>
+    entry.id === id ? { ...entry, ...patch } : entry,
+  );
+  if (JSON.stringify(drifted) === JSON.stringify(MANAGED_CAPABILITY_RESTRICTIONS)) {
+    throw new Error(
+      `falsifiability control for '${id}' produced a NO-OP drift — it would compare the real table against itself`,
+    );
+  }
+  return drifted;
+}
+
+describe('managed capability policy — falsifiability controls', () => {
+  it('CONTROL: the surface-parity detector FIRES when wake silently drops a restriction', () => {
+    // Reproduces THE regression this module exists to prevent: before it, the
+    // wake path re-armed three of four denies and dropped desktop-notify, so a
+    // restriction that held at launch lapsed on the first wake.
+    const drifted = drift('no-owner-desktop-notify', { surfaces: ['launch', 'resume'] });
+
+    const launch = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' }, drifted);
+    const wake = resolveCapabilityPolicy({ client: 'claude', surface: 'wake' }, drifted);
+
+    expect(wake.deniedNames).not.toEqual(launch.deniedNames);
+    for (const name of OWNER_DESKTOP_NOTIFY_BASH_DENY) {
+      expect(wake.deniedNames).not.toContain(name);
+    }
+
+    // CALIBRATION: the shipped table passes the very assertion the drift breaks.
+    const realLaunch = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' });
+    const realWake = resolveCapabilityPolicy({ client: 'claude', surface: 'wake' });
+    expect(realWake.deniedNames).toEqual(realLaunch.deniedNames);
+  });
+
+  it('CONTROL: the alias detector FIRES when a restriction denies only one spelling', () => {
+    // A restriction in name only: denying 'Agent' while 'Task' stays reachable.
+    const [firstAlias] = NO_SUBAGENT_TOOLS_DENY;
+    const drifted = drift('no-subagent-fanout', { aliases: [firstAlias] });
+
+    const decision = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' }, drifted);
+    const missed = NO_SUBAGENT_TOOLS_DENY.filter((alias) => !decision.deniedNames.includes(alias));
+    expect(missed.length).toBeGreaterThan(0);
+
+    // CALIBRATION: the shipped table leaves no spelling reachable.
+    const real = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' });
+    for (const alias of NO_SUBAGENT_TOOLS_DENY) {
+      expect(real.deniedNames).toContain(alias);
+    }
+  });
+
+  it('CONTROL: the nested-route detector FIRES when the shell route to the OS scheduler is dropped', () => {
+    // Denying CronCreate while leaving `Bash(crontab:*)` open restricts nothing.
+    const drifted = drift('no-os-scheduler-shell', { nestedRoutes: [] });
+
+    const decision = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' }, drifted);
+    expect(decision.deniedNames).toContain('CronCreate');
+    for (const nested of OS_SCHEDULER_BASH_DENY) {
+      expect(decision.deniedNames).not.toContain(nested);
+    }
+
+    // CALIBRATION: the shipped table closes the nested route alongside the tool.
+    const real = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' });
+    for (const nested of OS_SCHEDULER_BASH_DENY) {
+      expect(real.deniedNames).toContain(nested);
+    }
+  });
+
+  it('CONTROL: the audience detector FIRES when the shell routes are folded back onto the all-audience deny', () => {
+    // This is not a hypothetical drift — it is the ACTUAL pre-fix table, as it
+    // stood in commit 340985364b before the audience split. Folding
+    // OS_SCHEDULER_BASH_DENY onto the all-audience scheduler restriction hands
+    // the INTERACTIVE su session a strictly WIDER posture than the launcher
+    // ships, taking `Bash(systemd-run:*)` away from capability:bash and
+    // scripts/verify-tauri-headless.sh, which both shell out to it.
+    const preFix: readonly ManagedCapabilityRestriction[] = MANAGED_CAPABILITY_RESTRICTIONS.filter(
+      (entry) => entry.id !== 'no-os-scheduler-shell',
+    ).map((entry) =>
+      entry.id === 'no-native-scheduler'
+        ? { ...entry, nestedRoutes: OS_SCHEDULER_BASH_DENY }
+        : entry,
+    );
+    // Assert the reconstruction actually differs from what shipped, so a later
+    // refactor cannot quietly turn this control into a self-comparison.
+    expect(JSON.stringify(preFix)).not.toBe(JSON.stringify(MANAGED_CAPABILITY_RESTRICTIONS));
+
+    const interactive = resolveCapabilityPolicy(
+      { client: 'claude', surface: 'launch', audience: 'interactive-su' },
+      preFix,
+    );
+    for (const nested of OS_SCHEDULER_BASH_DENY) {
+      expect(interactive.deniedNames).toContain(nested);
+    }
+
+    // CALIBRATION: the shipped table keeps those shell routes OPEN for the
+    // interactive owner, matching what psu-launcher actually sends.
+    const real = resolveCapabilityPolicy({
+      client: 'claude',
+      surface: 'launch',
+      audience: 'interactive-su',
+    });
+    for (const nested of OS_SCHEDULER_BASH_DENY) {
+      expect(real.deniedNames).not.toContain(nested);
+    }
+  });
+
+  it('CONTROL: the replacement-quality gate FIRES when a cutover is declared ready without evidence', () => {
+    // The gate's whole purpose is that a managed-cutover restriction cannot be
+    // applied while its replacement is unproven. Forging readiness must be the
+    // ONLY thing that lets it through.
+    const forged: CapabilityReadinessSource = CONTRACT_CAPABILITY_READINESS.map((entry) => ({
+      ...entry,
+      cutoverReady: true,
+      openGapIds: [],
+    }));
+
+    const forgedDecision = resolveCapabilityPolicy({
+      client: 'claude',
+      surface: 'launch',
+      readiness: forged,
+    });
+    const forgedWithheld = forgedDecision.withheld.find((e) => e.id === 'managed-shell-cutover');
+    expect(forgedWithheld?.reason).not.toBe('replacement-unproven');
+
+    // CALIBRATION: against the REAL shipped readiness the same restriction is
+    // withheld, and withheld for exactly that reason.
+    const real = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' });
+    expect(real.withheld.find((e) => e.id === 'managed-shell-cutover')?.reason).toBe(
+      'replacement-unproven',
+    );
+  });
+
+  it('CONTROL: the accounting detector FIRES when a restriction is neither applied nor withheld', () => {
+    // `accounted.size === MANAGED_CAPABILITY_RESTRICTIONS.length` is the
+    // assertion that catches a silently-vanishing restriction. Prove it can
+    // fail by resolving against a table that is SHORT one entry while the
+    // expectation still counts the real table.
+    const short = MANAGED_CAPABILITY_RESTRICTIONS.slice(1);
+    expect(short.length).toBe(MANAGED_CAPABILITY_RESTRICTIONS.length - 1);
+
+    const decision = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' }, short);
+    const accounted = new Set([
+      ...decision.applied.map((entry) => entry.id),
+      ...decision.withheld.map((entry) => entry.id),
+    ]);
+    expect(accounted.size).not.toBe(MANAGED_CAPABILITY_RESTRICTIONS.length);
+
+    // CALIBRATION: the shipped table accounts for every restriction.
+    const real = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' });
+    const realAccounted = new Set([
+      ...real.applied.map((entry) => entry.id),
+      ...real.withheld.map((entry) => entry.id),
+    ]);
+    expect(realAccounted.size).toBe(MANAGED_CAPABILITY_RESTRICTIONS.length);
   });
 });
