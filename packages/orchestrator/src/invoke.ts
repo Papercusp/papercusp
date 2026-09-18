@@ -67,10 +67,9 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import type { AgentBackend, HarnessConfig, InvokeResult } from './types';
 import { resolveAgentBackend, normalizeModelForBackend, resolveCodexModel } from './env';
-import { hasExplicitDisallowedTools, nativeSchedulerDenyFlag } from './native-scheduler-deny';
-import { nativeToolSearchDenyFlag } from './native-tool-search-deny';
-import { NO_SUBAGENT_TOOLS_DENY, noSubagentToolsDenyFlag } from './no-subagent-deny';
-import { ownerDesktopNotifyDenyFlag } from './owner-desktop-notify-deny';
+import { capabilityPolicyFlags } from './managed-capability-policy';
+import { hasExplicitDisallowedTools } from './native-scheduler-deny';
+import { NO_SUBAGENT_TOOLS_DENY } from './no-subagent-deny';
 import { ROLE_MODEL_DEFAULTS } from './role-models';
 import { workspaceHomeDir } from './workspace';
 
@@ -3204,36 +3203,34 @@ export async function invoke(
     harnessSupports(agentBackend, 'subagent-tools') &&
     splitCommand(roleAgentCmd).some((a) => a.includes('claude'))
   ) {
-    // Subagent-fanout deny (owner mandate 2026-07-02): EVERY headless claude spawn
-    // loses the built-in Task/Agent subagent-launch tool, UNCONDITIONALLY — a bee
-    // that could recursively spawn work outside the orchestrator's own spawn graph is
-    // invisible to fleet:assignments + an uncontrolled second fan-out. Applied even
-    // when the operator manages the rest of the permission posture (the D-004 carve-
-    // out below does NOT apply): claude UNIONS repeated `--disallowedTools`
-    // occurrences (verified live, see no-subagent-deny.ts), so this composes with any
-    // operator/Layer-A (claudeMcpArgs) deny rather than overriding it. This is the
-    // headless twin of psu's default-deny + the wake-executor resume re-arm; there is
-    // no headless opt-in (the `--allow-subagents` opt-in is a psu-launch surface only).
-    extraFlags.push(noSubagentToolsDenyFlag());
-    // Native client tool-search lockout (owner directive 2026-09-11): force
-    // discovery through papercusp's tools:find / tools:invoke, which are
-    // result-door-capped and (for invoke) cost zero schema tokens. Measured:
-    // ONE ToolSearch loading six schemas cost +67k tokens, 17% of a session's
-    // budget, bypassing applyResultDoor entirely. Same union-composition
-    // rationale as the denies above. See native-tool-search-deny.ts for the
-    // empirical proof that this does NOT strand the session.
-    extraFlags.push(nativeToolSearchDenyFlag());
-    // Owner-desktop-notification lockout (owner directive 2026-07-14): every
-    // headless claude spawn loses the easy `notify-send` shell paths,
-    // UNCONDITIONALLY (same union-composition rationale as the subagent deny
-    // above; layered with the psu PATH shim — see owner-desktop-notify-deny.ts).
-    extraFlags.push(ownerDesktopNotifyDenyFlag());
-    // Native-scheduler lockout (D-001/D-005): every headless claude spawn schedules
-    // ONLY via the harness routines table. An explicit operator-supplied deny list
-    // wins here (D-004), so this KEEPS its guard — unlike the subagent deny above.
-    if (!hasExplicitDisallowedTools(roleAgentCmd)) {
-      extraFlags.push(nativeSchedulerDenyFlag());
-    }
+    // ONE capability policy (P-005) resolves EVERY native restriction for this
+    // client/surface — subagent fanout, native tool-search, owner-desktop
+    // notification, native scheduler — together with their aliases, their nested
+    // routes (`Bash(crontab:*)` reaches the OS scheduler without touching
+    // CronCreate) and their overrides. It replaces the hand-listed sequence of
+    // four *DenyFlag() pushes that used to live here.
+    //
+    // Why a policy and not four pushes: this site pushed all four while the WAKE
+    // path (events/await/wake-executor.ts) pushed only three, so a woken agent
+    // silently regained `notify-send` — a restriction that read as enforced at
+    // every launch and quietly lapsed on the first wake. Each site read healthy
+    // alone, which is exactly why nothing caught it. Composing the set in one
+    // place makes that drift unrepresentable rather than merely fixed.
+    //
+    // Per-restriction authority is preserved, not flattened: the subagent deny is
+    // unconditional (owner mandate 2026-07-02 — headless has no `--allow-subagents`
+    // opt-in), while the scheduler deny still yields to an explicit
+    // operator-supplied deny list (D-004), which is what `explicitDenyList` carries.
+    // claude UNIONS repeated `--disallowedTools` occurrences, so these still compose
+    // with any operator/Layer-A (claudeMcpArgs) deny rather than overriding it.
+    extraFlags.push(
+      ...capabilityPolicyFlags({
+        client: 'claude',
+        surface: 'launch',
+        audience: 'headless-agent',
+        explicitDenyList: hasExplicitDisallowedTools(roleAgentCmd),
+      }),
+    );
   }
 
   // 5. Per-role model — only inject if user didn't already pass one.

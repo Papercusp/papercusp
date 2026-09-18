@@ -252,7 +252,9 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
       directive: 'native-scheduler-lockout-2026-06-09 D-001/D-005 — wakes live in the routines table',
     },
     aliases: NATIVE_SCHEDULER_TOOL_DENY,
-    nestedRoutes: OS_SCHEDULER_BASH_DENY,
+    // Deliberately TOOLS-ONLY: the OS-shell routes are a separate restriction
+    // below, because they are audience-split and these are not. See there.
+    nestedRoutes: [],
     clients: ['claude'],
     surfaces: ALL_SURFACES,
     audiences: ALL_AUDIENCES,
@@ -263,6 +265,39 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
     yieldsToExplicitDenyList: true,
     rationale:
       'A client-native schedule drifts, dies with the session, and is invisible to the operator; harness routines are tracked, observable and restart-durable.',
+  },
+  {
+    id: 'no-os-scheduler-shell',
+    title: 'OS schedulers reached THROUGH the shell',
+    authority: {
+      kind: 'owner-mandate',
+      directive: 'native-scheduler-lockout-2026-06-09 D-001/D-005 — wakes live in the routines table',
+    },
+    aliases: [],
+    // Purely nested: `Bash(crontab:*)` reaches the OS scheduler without ever
+    // touching CronCreate, so denying only the tools is a speed bump.
+    nestedRoutes: OS_SCHEDULER_BASH_DENY,
+    clients: ['claude'],
+    surfaces: ALL_SURFACES,
+    // SPLIT FROM THE TOOL DENY ON THE AUDIENCE AXIS, and this split is
+    // load-bearing rather than cosmetic. `apps/operator/scripts/psu-launcher.mjs`
+    // ships the interactive su session a STRICT SUBSET of the scheduler deny
+    // (SU_SCHEDULER_TOOLS_DENY_FLAG — the four Cron/ScheduleWakeup TOOLS only)
+    // precisely because D-003 keeps the owner-facing surfaces reachable for a
+    // human at the keyboard. Folding these routes into the all-audience tool
+    // deny would have had this policy hand the su launcher a WIDER restriction
+    // than it ships today — and `Bash(systemd-run:*)` is not hypothetical
+    // collateral: capability:bash and scripts/verify-tauri-headless.sh both
+    // shell out to systemd-run, so su would lose working tooling.
+    //
+    // This was found by diffing the resolved set against the launcher's real
+    // literals BEFORE pinning them together. Pinning first would have recorded
+    // agreement with a policy that silently widened su's posture, which is the
+    // failure a pin test is supposed to prevent rather than cause.
+    audiences: ['headless-agent'],
+    yieldsToExplicitDenyList: true,
+    rationale:
+      'The OS scheduler is reachable through the shell without touching any client scheduling tool; a headless agent has no owner at the keyboard who needs that route.',
   },
   {
     id: 'no-native-scheduler-skills',
