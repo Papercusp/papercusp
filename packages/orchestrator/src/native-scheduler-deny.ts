@@ -42,14 +42,30 @@
  * apps/operator/lib/psu-launcher.test.ts pins the two copies together.
  */
 
-/** T1 — claude-code's first-class scheduler tools + skills. */
-export const NATIVE_SCHEDULER_DENY = [
+/** T1a — claude-code's first-class scheduler TOOLS. MODEL-facing: the model
+ *  calls these itself, and every agent persona (su included) already forbids
+ *  that in prose in favour of `loop:arm` / `plans:set-schedule`. */
+export const NATIVE_SCHEDULER_TOOL_DENY = [
   'CronCreate',
   'CronDelete',
   'CronList',
   'ScheduleWakeup',
+] as const;
+
+/** T1b — the scheduling SKILLS. OWNER-facing: these are what a human types as
+ *  `/schedule` and `/loop`, which is the surface D-003 preserves for the human
+ *  `psu su` collaborator. Denying them removes an OWNER affordance, so they are
+ *  split from T1a and are NOT part of the su-session deny. */
+export const NATIVE_SCHEDULER_SKILL_DENY = [
   'Skill(schedule)',
   'Skill(loop)',
+] as const;
+
+/** T1 — claude-code's first-class scheduler tools + skills. DERIVED from T1a+T1b
+ *  so the union and its subsets cannot drift apart (one source, not three lists). */
+export const NATIVE_SCHEDULER_DENY = [
+  ...NATIVE_SCHEDULER_TOOL_DENY,
+  ...NATIVE_SCHEDULER_SKILL_DENY,
 ] as const;
 
 /** T2 — persistent OS schedulers via the Bash tool (colon prefix-rule form;
@@ -63,6 +79,36 @@ export const OS_SCHEDULER_BASH_DENY = [
 /** The ready-to-append argv token (claude CLI). Single `=` token — see header. */
 export function nativeSchedulerDenyFlag(): string {
   return `--disallowedTools=${[...NATIVE_SCHEDULER_DENY, ...OS_SCHEDULER_BASH_DENY].join(',')}`;
+}
+
+/**
+ * The su-session argv token: T1a (model-facing scheduler TOOLS) ONLY.
+ *
+ * D-003 exempts the human `psu su` collaborator from the full lockout so the
+ * OWNER keeps `/schedule` and `/loop`. That rationale covers T1b (the skills a
+ * human types) — it does NOT cover T1a, which only the MODEL calls and which
+ * the su playbook already forbids in prose: "do NOT self-pace with Claude
+ * Code's native `/loop` (or `ScheduleWakeup`) … declare an engine loop with
+ * `loop:arm`". So su was paying twice — once for schemas it must not use, once
+ * for the prose banning them.
+ *
+ * Measured 2026-09-18 by capturing the `tools` array of a real `/v1/messages`
+ * body (7-arm A/B with a no-deny positive control): ScheduleWakeup 4,923 B +
+ * CronCreate 3,642 B + CronDelete 360 B + CronList 231 B = **9,156 B of tool
+ * schemas on EVERY turn of EVERY su session**. With ToolSearch denied there is
+ * no native schema deferral, so none of it is recoverable later.
+ *
+ * Deliberately NOT included, each for a stated reason:
+ *   - T1b skills — removing them would remove the owner's own `/schedule` +
+ *     `/loop`, which is precisely what D-003 protects.
+ *   - T2 `Bash(crontab:*)` etc. — worth 0 bytes (deny patterns ship no schema)
+ *     while costing the owner a real shell capability. This flag is a COST fix;
+ *     it does not quietly widen the su lockout's behavioural scope.
+ *
+ * MUST stay one `=` token — same greed-guard reason as the full flag.
+ */
+export function suSchedulerToolsDenyFlag(): string {
+  return `--disallowedTools=${NATIVE_SCHEDULER_TOOL_DENY.join(',')}`;
 }
 
 /** True when `cmd` already carries an explicit --disallowedTools /
