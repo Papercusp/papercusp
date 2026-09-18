@@ -111,8 +111,19 @@ CREATE TRIGGER spec_evidence_bindings_immutable
   BEFORE UPDATE OR DELETE ON harness_shared.spec_evidence_bindings
   FOR EACH ROW EXECUTE FUNCTION harness_shared.guard_spec_evidence_binding_mutation();
 
--- Defence in depth beneath the trigger: a column-level UPDATE grant means the
--- database refuses an update touching any other column before the trigger is even
--- reached, so a raw writer cannot rewrite proof even if the guard is later relaxed.
+-- Defence in depth beneath the trigger. MEASURED FIRST, not assumed: both roles
+-- currently hold table-wide UPDATE on this table (information_schema.column_privileges
+-- returns all 22 columns for each), so ADDING a column-level grant would restrict
+-- nothing — it is additive, and a comment claiming otherwise would be false. The
+-- narrowing therefore has to REVOKE first, after which the three stamp columns are the
+-- only ones the database will accept an UPDATE against, and a raw writer cannot rewrite
+-- proof even if the trigger above is later relaxed.
+--
+-- Safe by construction: the trigger already rejects every UPDATE except a complete
+-- retraction stamp, so no legitimate writer can be exercising the privilege being
+-- revoked. The trigger remains the authoritative guard — a future blanket
+-- `GRANT ALL ON ALL TABLES IN SCHEMA harness_shared` would silently re-widen this
+-- grant, which is exactly why correctness does not rest on it.
+REVOKE UPDATE ON harness_shared.spec_evidence_bindings FROM harness_app, harness_admin;
 GRANT UPDATE (retracted_at, retracted_by, retraction_reason)
   ON harness_shared.spec_evidence_bindings TO harness_app, harness_admin;
