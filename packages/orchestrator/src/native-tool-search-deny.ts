@@ -118,3 +118,56 @@ export const NATIVE_TOOL_SEARCH_DENY = ['ToolSearch'] as const;
 export function nativeToolSearchDenyFlag(): string {
   return `--disallowedTools=${NATIVE_TOOL_SEARCH_DENY.join(',')}`;
 }
+
+/**
+ * Is claude's NATIVE schema deferral REACHABLE on a launch that applies this deny list?
+ *
+ * DERIVED from the deny list, never hand-set — that is the whole point. The deferral is
+ * conditional on `ToolSearch` EXISTING (see the verified note above), and `ENABLE_TOOL_SEARCH`
+ * exists for exactly one job: forcing that deferral back on for gateway-routed sessions, which
+ * claude otherwise disables whenever `ANTHROPIC_BASE_URL` is set. So denying `ToolSearch` while
+ * ALSO setting `ENABLE_TOOL_SEARCH=true` asks the client to engage a mechanism we removed the
+ * only working part of. Both halves shipped independently and contradicted each other in
+ * production for four days (2026-09-11 → 2026-09-15+) with nothing detecting it, because each
+ * half read healthy on its own. Deriving one from the other makes that state unrepresentable
+ * rather than merely warned about (the repo's derived-truth ladder, rung 1 over rung 4).
+ *
+ * ⚠ IT IS NOT A HARMLESS NO-OP, which is why this is a derivation and not a comment.
+ * MEASURED 2026-09-18 against real captured /v1/messages bodies (4 arms, stub MCP server of 40
+ * fat tools, `ANTHROPIC_BASE_URL` pointed at a local capture endpoint so the gateway-routed
+ * condition is genuinely reproduced; C and D repeated, both STABLE):
+ *   B  no deny + ENABLE_TOOL_SEARCH   13 tools /  26,607 B  ToolSearch present, deferral WORKS
+ *   C  deny   + ENABLE_TOOL_SEARCH    66 tools / 180,158 B  deferred: DeferredToolPlaceholder, advisor
+ *   D  deny   + no ENABLE_TOOL_SEARCH 65 tools / 179,954 B  deferred: advisor
+ * C-minus-D is exactly one tool: a `DeferredToolPlaceholder` carrying `defer_loading: true`,
+ * riding in EVERY request of EVERY psu claude session, standing in for a deferred set that is
+ * empty, with no `ToolSearch` that could ever resolve it. Small in bytes; it is the visible
+ * artifact of a half-engaged mechanism, and a deferred tool is precisely the shape that cannot
+ * legally carry `cache_control` (a `defer_loading` + `cache_control` pair is a hard 400 — see
+ * `inference-gateway/cache-policy.ts`), so it is not something to leave lying around untracked.
+ *
+ * ⚠ SEPARATELY, AND MUCH LARGER — arm B is the cost of the deny itself, NOT an argument this
+ * function settles: native deferral took that surface 179,954 B → 26,607 B (−85%), and it
+ * reached NATIVE tools (25 → 11), which `PAPERCUSP_TOOLS` and every server-side seed cut are
+ * structurally unable to touch. The deny is an OWNER DIRECTIVE (2026-09-11) resting on its own
+ * measurement (one `ToolSearch` call = +67,045 tokens, bypassing `applyResultDoor`), so this
+ * module does NOT reverse it. Recorded so the trade-off is visible to whoever revisits it.
+ */
+export function nativeDeferralReachable(
+  deniedNames: readonly string[] = NATIVE_TOOL_SEARCH_DENY,
+): boolean {
+  return !deniedNames.includes('ToolSearch');
+}
+
+/**
+ * The claude-only context-trimming env keys whose MEANING depends on deferral being reachable.
+ *
+ * Returns `{}` when it is not, so a caller spreading this can never emit the contradiction.
+ * Callers own the keys that are unconditionally correct (`PAPERCUSP_TOOLS`,
+ * `PAPERCUSP_CONTEXT_TIER`); this owns only the conditional one.
+ */
+export function nativeDeferralEnv(
+  deniedNames: readonly string[] = NATIVE_TOOL_SEARCH_DENY,
+): { ENABLE_TOOL_SEARCH?: 'true' } {
+  return nativeDeferralReachable(deniedNames) ? { ENABLE_TOOL_SEARCH: 'true' } : {};
+}
