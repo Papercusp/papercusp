@@ -265,15 +265,27 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
   {
     family: 'edit-write-patch-notebook',
     nativeSurface: 'Exact edits, whole-file writes, multi-file patches, structural code changes, and notebook mutation',
-    disposition: 'unsupported-gap',
+    disposition: 'managed-execution',
     boundary:
-      'capability:edit/write and lsp:apply are managed mutation doors with lock policy; multi-file patch and notebook semantics remain unsupported as a complete replacement and must not be hidden by renaming an exact-string edit.',
-    managedAuthorities: ['capability:edit', 'capability:write', 'lsp:apply', 'locks:*'],
+      'capability:edit/write, capability:patch, capability:notebook_edit and lsp:apply are managed mutation doors under the same lock policy; atomic multi-file patch and notebook cell semantics are now distinct registered adapters and must not be hidden by renaming an exact-string edit, but cross-client bypass enforcement and real-client acceptance are still unproven.',
+    managedAuthorities: [
+      'capability:edit',
+      'capability:write',
+      'capability:patch',
+      'capability:notebook_edit',
+      'lsp:apply',
+      'locks:*',
+    ],
     evidence: {
       path: 'packages/operator-core/lib/agent-tools/index.ts',
-      anchors: ["import './capability/edit';", "import './capability/write';", "import './lsp/apply';"],
-      absentAnchors: ["import './capability/patch';", "import './capability/notebook';"],
-      note: 'The registry exposes managed edit/write/LSP mutation but no patch or notebook capability adapter.',
+      anchors: [
+        "import './capability/edit';",
+        "import './capability/write';",
+        "import './capability/patch';",
+        "import './capability/notebook';",
+        "import './lsp/apply';",
+      ],
+      note: 'The registry exposes managed edit/write/LSP mutation plus the registered patch and notebook cell-edit adapters.',
     },
     reuseSites: [
       {
@@ -291,15 +303,26 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         anchors: ["name: 'lsp:apply'"],
         note: 'Existing structural code-action mutation surface.',
       },
+      {
+        path: 'packages/operator-core/lib/agent-tools/capability/patch.ts',
+        anchors: ["name: 'capability:patch'", 'MAX_HUNKS', 'function restore('],
+        note: 'Registered atomic multi-file patch adapter with bounded hunks and all-or-nothing restore.',
+      },
+      {
+        path: 'packages/operator-core/lib/agent-tools/capability/notebook.ts',
+        anchors: ["name: 'capability:notebook_edit'", 'function findCell(', 'function sourceStyle('],
+        note: 'Registered notebook cell-edit adapter preserving cell addressing and source-style fidelity.',
+      },
     ],
     gaps: [
       {
-        id: 'patch-notebook-adapters',
-        kind: 'unsupported',
-        description: 'No accepted managed multi-file patch or notebook cell-edit adapter exists.',
-        owningPlanItems: ['P-006', 'P-008'],
+        id: 'patch-notebook-real-client-acceptance',
+        kind: 'evidence',
+        description:
+          'Registered patch and notebook adapters pass hermetic and single-host real-client checks, but the Claude/Codex/OMP matrix has not yet accepted them against native Edit/MultiEdit/NotebookEdit UX.',
+        owningPlanItems: ['P-007', 'P-008'],
         falsifier:
-          'Hermetic and real-client tests prove atomic multi-file patch and notebook semantics through managed authority and locks.',
+          'Each client matrix run proves atomic multi-file patch and notebook cell semantics through managed authority and locks, with no native mutation door left unaccounted.',
       },
       {
         id: 'mutation-client-enforcement',
@@ -310,7 +333,8 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-005/P-006/P-007/P-008 still own patch/notebook parity and cross-client enforcement.',
+    cutoverReason:
+      'P-005/P-007/P-008 still own cross-client mutation enforcement and real-client patch/notebook acceptance.',
   },
   {
     family: 'http-search-browser-computer',
