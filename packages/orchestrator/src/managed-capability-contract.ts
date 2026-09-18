@@ -562,12 +562,12 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     gaps: [
       {
         id: 'offline-bounded-recovery',
-        kind: 'recovery',
+        kind: 'unsupported',
         description:
-          'Operator-unreachable bounded local recovery with audit/reconciliation and automatic restriction reset is not yet implemented.',
+          'Operator-unreachable bounded local recovery is DELIBERATELY EXCLUDED, not unbuilt: plan decision D-010 retired the feature and dropped its owning item P-004. D-007/D-008 measured that no machine-local authority root can establish human-owner provenance here — a software-only Ed25519 key in sk-ssh-ed25519 wire format with signer-chosen flags 0x05 verifies as hardware-backed, and managed agents hold NOPASSWD root — so a local grant is forgeable by the very agents it constrains. The exclusion stands BECAUSE no weaker substitute is acceptable; there is no managed offline recovery path, and callers must treat operator-unreachable as unrecoverable.',
         owningPlanItems: ['P-004', 'P-008'],
         falsifier:
-          'An isolated operator-outage drill proves scoped expiry, local audit, resume reset, and later reconciliation.',
+          'This exclusion is falsified if any locally-authorized recovery path ships — i.e. a managed agent obtains a recovery grant without an owner signature rooted outside this machine mutation authority. A re-implementation attempt must first supersede D-007/D-008, never route around them.',
       },
       {
         id: 'resume-rewind-client-semantics',
@@ -580,7 +580,7 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     ],
     cutoverReady: false,
     cutoverReason:
-      'P-004 through P-008 still own offline recovery, restriction reset, and distinct resume/rewind semantics.',
+      'Offline recovery is no longer owned by anyone: D-010 retired the feature and dropped P-004, so it is a permanent documented exclusion rather than outstanding work. P-005 through P-008 still own restriction reset and distinct resume/rewind semantics, which is what keeps this family short of cutover.',
   },
   {
     family: 'questions-approvals',
