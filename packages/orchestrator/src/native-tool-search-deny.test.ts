@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { NATIVE_TOOL_SEARCH_DENY, nativeToolSearchDenyFlag } from './native-tool-search-deny';
+import {
+  NATIVE_TOOL_SEARCH_DENY,
+  nativeDeferralEnv,
+  nativeDeferralReachable,
+  nativeToolSearchDenyFlag,
+} from './native-tool-search-deny';
 
 describe('nativeToolSearchDenyFlag', () => {
   it('is one `=` token (the variadic space form would eat a trailing positional prompt)', () => {
@@ -43,5 +48,41 @@ describe('nativeToolSearchDenyFlag', () => {
     expect(flag).not.toContain('tools:invoke');
     expect(flag).not.toContain('tools_find');
     expect(flag).not.toContain('tools_invoke');
+  });
+});
+
+describe('nativeDeferralReachable / nativeDeferralEnv (P-007)', () => {
+  it('reports deferral UNREACHABLE while ToolSearch is denied, so ENABLE_TOOL_SEARCH is withheld', () => {
+    // ENABLE_TOOL_SEARCH exists only to force claude's native schema deferral back on for
+    // gateway-routed sessions, and that deferral is conditional on ToolSearch existing. Setting
+    // it under the deny turns on nothing: MEASURED 2026-09-18 on real captured /v1/messages
+    // bodies, the pair injects a `DeferredToolPlaceholder` (defer_loading: true) representing an
+    // empty deferred set, with no ToolSearch able to resolve it (66 tools vs 65 without).
+    expect(nativeDeferralReachable()).toBe(false);
+    expect(nativeDeferralEnv()).toEqual({});
+  });
+
+  it('is a REAL derivation, not a constant — lifting the deny restores the env', () => {
+    // The load-bearing check. Asserting only "the env is empty" would pass identically against
+    // `return false`, which would strand ENABLE_TOOL_SEARCH forever if the 2026-09-11 owner
+    // lockout is ever lifted — silently re-costing every gateway-routed session the whole
+    // catalog inline, the exact regression WI-2140943 was opened for.
+    expect(nativeDeferralReachable([])).toBe(true);
+    expect(nativeDeferralReachable(['SomethingElse'])).toBe(true);
+    expect(nativeDeferralEnv(['SomethingElse'])).toEqual({ ENABLE_TOOL_SEARCH: 'true' });
+    // And it must still see ToolSearch when it is one of several denied names.
+    expect(nativeDeferralReachable(['A', 'ToolSearch', 'B'])).toBe(false);
+    expect(nativeDeferralEnv(['A', 'ToolSearch', 'B'])).toEqual({});
+  });
+
+  it('derives from the deny LIST, so the two can never be edited out of agreement', () => {
+    // The invariant that makes the contradiction unrepresentable rather than merely detected:
+    // whatever the deny list says, the env follows from it by construction.
+    expect(nativeDeferralReachable(NATIVE_TOOL_SEARCH_DENY)).toBe(
+      !NATIVE_TOOL_SEARCH_DENY.includes('ToolSearch'),
+    );
+    expect(Object.keys(nativeDeferralEnv(NATIVE_TOOL_SEARCH_DENY)).length).toBe(
+      nativeDeferralReachable(NATIVE_TOOL_SEARCH_DENY) ? 1 : 0,
+    );
   });
 });
