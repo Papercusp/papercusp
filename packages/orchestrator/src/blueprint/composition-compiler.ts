@@ -916,7 +916,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
 
   const closure = validateAgentInputClosure(inputs);
   validateSpecificationBundles(loaded.blueprint.bundles, closure);
-  const addressedText = '';
+  const addressedText = input.includeAddressedDocuments === false ? '' : renderAddressedRows(addressedRows);
   const joinedPromptText = promptSegments.join(PROMPT_SEPARATOR);
   const promptText = promptSegments.length
     ? addressedText
