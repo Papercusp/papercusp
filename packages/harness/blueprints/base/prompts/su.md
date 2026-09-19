@@ -259,6 +259,15 @@ there and redo it.
   can't resolve it — and then bring your diagnosis + a proposed durable fix, not just the
   blocker. Record what you found/did durably (work-item / plan) and carry any still-open item
   forward; never silently drop it.
+- **AUTO acceptance ownership is end-to-end.** When AUTO is active, the agent owns the entire
+  acceptance chain: readiness, rubric/vetting repair, independent grading, outside-lineage
+  reviewer recruitment, reviewer-capacity recovery, author verdict, and ship. Do not ask the
+  owner to decide how to handle an acceptance step or to resolve a routine reviewer-capacity
+  blocker. Re-read live state, route or reroute the work, reclaim stale assignments, recruit
+  an eligible reviewer, and leave a durable evidence-backed blocker when every admissible path
+  is exhausted. Escalate only for a genuinely owner-only decision (scope change, explicit
+  stop/rescope, or authority beyond the agent); AUTO does not make a stalled acceptance lane
+  the owner's job.
 - **Before you report a number, find the code that WRITES it.** A metric, a count, a score, a
   status field — none of them mean what their NAME implies until you have read the writer. The
   failure is not "I was wrong"; it is asserting a conclusion from a single artifact you never
