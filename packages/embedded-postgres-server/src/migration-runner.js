@@ -33,6 +33,30 @@ const MIGRATION_TRANSACTION_PREFIX = 'BEGIN;\nSET LOCAL statement_timeout = 0;\n
 // before any test ran. Transaction-local keeps the production session default
 // untouched and scopes the guard to bulk (fresh-install/template) replay only.
 const MAX_STATEMENT_EXCERPT_CHARS = 320;
+// A migration keeps the caller's fail-fast lock_timeout so it never queues an
+// ACCESS EXCLUSIVE request ahead of ordinary readers. A transient 55P03 still
+// gets a small, bounded chance to win the lock race again after its aborted
+// transaction is rolled back. Keep this retry here, at the shared runner seam,
+// so embedded boot and every other runner caller get the same behavior.
+const MIGRATION_LOCK_RETRY_MAX_ATTEMPTS = 3;
+const MIGRATION_LOCK_RETRY_BASE_DELAY_MS = 400;
+const MIGRATION_LOCK_RETRY_MAX_DELAY_MS = 2_000;
+
+/** @param {number} attempt 1-based failed-attempt number */
+function migrationLockRetryBackoffMs(attempt) {
+  return Math.min(MIGRATION_LOCK_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1), MIGRATION_LOCK_RETRY_MAX_DELAY_MS);
+}
+
+/** @param {unknown} error */
+function isMigrationLockTimeout(error) {
+  if (!error || typeof error !== 'object') return false;
+  return /** @type {{ code?: unknown }} */ (error).code === '55P03';
+}
+
+/** @param {number} ms */
+function sleep(ms) {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
 
 /** @param {number} statementTimeoutMs @param {boolean} bulkApply */
 function migrationTransactionPrefix(statementTimeoutMs, bulkApply) {
@@ -421,20 +445,47 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
     // which client/pool applies the file — even once a non-zero default is live.
     // A bounded fixture can explicitly override that default through
     // migrationStatementTimeoutMs. ONLY statement_timeout is changed here:
-    // lock_timeout stays as the caller's deliberate fail-fast guard.
+    // lock_timeout stays as the caller's deliberate fail-fast guard. A raw
+    // SQLSTATE 55P03 is retried below only after its transaction is rolled
+    // back, so each attempt remains fail-fast and never leaves the connection
+    // in an aborted transaction.
     const migrationPath = resolve(sqlDir, f);
     const queryPrefix = migrationTransactionPrefix(effectiveMigrationStatementTimeoutMs, bulkApply);
     let activeChunk = ddl;
+    let rollbackCompleted = false;
     try {
       await beforeApply?.(f, ddlRaw);
       const chunks = migrationTransactionChunks(ddl);
       for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
         activeChunk = chunks[chunkIndex];
+        rollbackCompleted = false;
         const isFinalChunk = chunkIndex === chunks.length - 1;
         const ledgerWrite = isFinalChunk
           ? `INSERT INTO harness_shared.schema_migrations (filename, sha256) VALUES ('${f.replace(/'/g, "''")}', '${hash}');\n`
           : '';
-        await client.unsafe(`${queryPrefix}${activeChunk};\n${ledgerWrite}COMMIT;`);
+        const query = `${queryPrefix}${activeChunk};\n${ledgerWrite}COMMIT;`;
+        for (let attempt = 1; attempt <= MIGRATION_LOCK_RETRY_MAX_ATTEMPTS; attempt += 1) {
+          try {
+            await client.unsafe(query);
+            break;
+          } catch (err) {
+            // A failed BEGIN…COMMIT leaves the connection in an aborted
+            // transaction. Reset it before deciding whether a raw 55P03 is
+            // eligible for another fail-fast attempt.
+            await client.unsafe('ROLLBACK').catch(() => {});
+            rollbackCompleted = true;
+            if (!isMigrationLockTimeout(err) || attempt >= MIGRATION_LOCK_RETRY_MAX_ATTEMPTS) throw err;
+            const delayMs = migrationLockRetryBackoffMs(attempt);
+            log(
+              `retry ${f} after SQLSTATE 55P03 lock timeout in ${delayMs}ms ` +
+                `(attempt ${attempt + 1}/${MIGRATION_LOCK_RETRY_MAX_ATTEMPTS})`,
+            );
+            await sleep(delayMs);
+            // The next attempt starts a fresh transaction. If it fails too,
+            // this flag is set again before the outer diagnostic wrapper runs.
+            rollbackCompleted = false;
+          }
+        }
       }
       appliedCount++;
       lastAppliedFile = f;
@@ -442,7 +493,7 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
       // The failed `BEGIN…COMMIT` left the connection in an aborted
       // transaction; reset it so error reporting isn't masked by
       // "current transaction is aborted, commands ignored until end of block".
-      await client.unsafe('ROLLBACK').catch(() => {});
+      if (!rollbackCompleted) await client.unsafe('ROLLBACK').catch(() => {});
       // No skip-on-42P01 anymore. That tolerance existed only because the OLD
       // incremental migrations ALTERed `harness_shared.*` tables that ensure-schema
       // (not a migration) created lazily at runtime — so an ALTER could hit a
