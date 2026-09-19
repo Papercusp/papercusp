@@ -1188,6 +1188,11 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // rarity, not a discoverability artifact — members await; leaders/peers emit, and
   // the system fires most emits from lifecycle events) and no fallback-reach demand;
   // reachable via tools:find/invoke, natural member of a future leader-overlay seed.
+  // checkpoint:await is the shared release-gate sleep primitive named by
+  // checkpoint-run/trace. Seed it so trimmed Codex sessions have a direct wrapper
+  // from launch; tools:find activation cannot guarantee that wrapper exists in the
+  // same turn.
+  'checkpoint:await',
   'events:await',
   'events:catalog',
   'events:cancel',
