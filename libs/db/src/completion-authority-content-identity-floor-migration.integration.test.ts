@@ -45,6 +45,11 @@ const migration1044Sql = readFileSync(migrationPath('1044-completion-identity-mu
  * but production had already recorded them and therefore never re-ran the edits.
  */
 const migration1144Sql = readFileSync(migrationPath('1144-completion-identity-deletion-artifact-floor.sql'), 'utf8');
+/**
+ * EI-23577999135289807: 1180 forwards the artifact-only correction without
+ * editing the already-applied 1144 migration.
+ */
+const migration1180Sql = readFileSync(migrationPath('1180-completion-identity-out-of-repo-artifact-floor-followup.sql'), 'utf8');
 
 /**
  * Exact semantic shape observed in production before migration 1144: 1044's
@@ -250,6 +255,7 @@ beforeAll(async () => {
       ) AS "artifactMixOk"`;
   expect(historicalPre1144Probe).toEqual({ deletionOk: false, artifactMixOk: true });
   await applyMigrationFile(migration1144Sql);
+  await applyMigrationFile(migration1180Sql);
   // A silently-absent or disabled trigger would make every keep-case below pass
   // vacuously, so the definition itself is part of the precondition. The probe
   // dumps unqualified ground truth so a mis-targeted DDL cannot hide behind an
@@ -294,7 +300,7 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
-describe('migrations 972 + 1044 + 1144 — completion authority content-identity floor', () => {
+describe('migrations 972 + 1044 + 1144 + 1180 — completion authority content-identity floor', () => {
   it('reproduces the historical live deletion rejection before the 1144 forward repair', () => {
     expect(historicalPre1144Probe).toEqual({ deletionOk: false, artifactMixOk: true });
   });
@@ -316,13 +322,20 @@ describe('migrations 972 + 1044 + 1144 — completion authority content-identity
       diag: { has_ev: true, pt: 'object' },
     });
     // The SQL mirror must agree with the TS truth table on canonical shapes.
-    const [p] = await sql<{ p_null: boolean; p_ok: boolean; p_mismatch: boolean }[]>`
+    const [p] = await sql<{ p_null: boolean; p_ok: boolean; p_mismatch: boolean; p_artifact_only: boolean }[]>`
       SELECT harness_shared.completion_content_identity_proven(NULL::jsonb) AS p_null,
         harness_shared.completion_content_identity_proven(
           ${sql.json([{ path: 'a', workingTreeBlobSha: SHA_A, headBlobSha: SHA_A }])}) AS p_ok,
         harness_shared.completion_content_identity_proven(
-          ${sql.json([{ path: 'a', workingTreeBlobSha: SHA_B, headBlobSha: SHA_A }])}) AS p_mismatch`;
-    expect(p, `proven()=${JSON.stringify(p)}`).toEqual({ p_null: false, p_ok: true, p_mismatch: false });
+          ${sql.json([{ path: 'a', workingTreeBlobSha: SHA_B, headBlobSha: SHA_A }])}) AS p_mismatch,
+        harness_shared.completion_content_identity_proven(
+          ${sql.json([outOfRepoArtifact('/tmp/proof.png')])}) AS p_artifact_only`;
+    expect(p, `proven()=${JSON.stringify(p)}`).toEqual({
+      p_null: false,
+      p_ok: true,
+      p_mismatch: false,
+      p_artifact_only: true,
+    });
   });
 
   it('downgrades null-blob, mismatched-blob, and empty-array identities', async () => {
@@ -402,9 +415,8 @@ describe('migrations 972 + 1044 + 1144 — completion authority content-identity
    * prove; counting them unproven made every UI-verified suite-app close ineligible for
    * 'committed' (measured on WI-1409555).
    *
-   * The two CONTROLs are the point of this test: excluding artifacts from the floor must
-   * not loosen it in the direction that matters. An implementation that simply ignored
-   * unprovable entries would pass the first assertion and fail both controls.
+   * The controls are the point of this test: explicit artifacts qualify when they are the
+   * complete identity, but they never excuse a genuine repo-backed mismatch.
    */
   it('excludes out-of-repo artifacts from the floor, but never lets them stand alone or excuse drift', async () => {
     // Mixed close: a papercusp path, a SECOND checkout's path carrying its own root, and
@@ -426,14 +438,18 @@ describe('migrations 972 + 1044 + 1144 — completion authority content-identity
       ),
     ).toBe('committed');
 
-    // CONTROL: artifacts alone are no provable code evidence at all.
+    // An artifact-only completion has no repository settlement to await, but its
+    // explicit server classification is sufficient for the identity floor.
     await seedOpenItem('WI-CASE-ARTIFACT-ONLY');
     expect(
       await closeAsCommitted(
         'WI-CASE-ARTIFACT-ONLY',
-        evidenceWith([outOfRepoArtifact('/home/u/.papercusp/evidence/WI-CASE-ARTIFACT-ONLY/ui.png')]),
+        evidenceWith(
+          [outOfRepoArtifact('/home/u/.papercusp/evidence/WI-CASE-ARTIFACT-ONLY/ui.png')],
+          ['/home/u/.papercusp/evidence/WI-CASE-ARTIFACT-ONLY/ui.png'],
+        ),
       ),
-    ).toBe('proposed');
+    ).toBe('committed');
 
     // CONTROL: an artifact citation never excuses a genuine mismatch beside it.
     await seedOpenItem('WI-CASE-ARTIFACT-PLUS-DRIFT');
