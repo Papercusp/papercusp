@@ -2,14 +2,16 @@
  * WI-10000316: terminal postgres.js results remain attributable without
  * retaining SQL parameters, row contents, or unbounded history.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
+import postgres from 'postgres';
 import {
   pgResultDiagnosticSnapshot,
   recordPgResult,
   capturePgDiagnosticContext,
+  createPgDiagnosticHooks,
   resetPgDiagnosticContextResolver,
   resetAcquireRegistryForTest,
   setPgDiagnosticContextResolver,
@@ -179,8 +181,35 @@ describe('postgres.js terminal result diagnostics patch', () => {
     }
   });
 
-  it('captures correlation at debug/query-build time without changing the maintained result callback', () => {
-    const correlation = {
+  it.each(['esm', 'cjs'])('captures tagged/unsafe/file queries before queuing without executing them (%s)', async (runtime) => {
+    const factory: typeof postgres = runtime === 'esm' ? postgres : require_('postgres');
+    const socket = vi.fn(() => { throw new Error('must not connect'); });
+    const context = { state: 'unobserved' };
+    const observer = vi.fn(() => context);
+    const sql = factory({ onquerycontext: observer, socket, fetch_types: false });
+    // Merely constructing queries never reads the file, creates a socket or
+    // changes the lazy Query identity. Do not await or cancel these Queries.
+    const queries = [sql`select 1`, sql.unsafe('select 2'), sql.file('/not-read.sql')];
+    sql('identifier');
+    expect(observer).toHaveBeenCalledTimes(3);
+    for (const query of queries) {
+      expect((query as unknown as { diagnosticContext: unknown }).diagnosticContext).toBe(context);
+      expect(query.simple()).toBe(query);
+      expect((query as unknown as { executed: boolean }).executed).toBe(false);
+    }
+    await sql.end();
+    expect(socket).not.toHaveBeenCalled();
+
+    const broken = factory({ onquerycontext() { throw new Error('observer'); }, socket });
+    const query = broken`select 1`;
+    expect((query as unknown as { diagnosticContext: unknown }).diagnosticContext).toBeNull();
+    expect(query.simple()).toBe(query);
+    await broken.end();
+    expect(socket).not.toHaveBeenCalled();
+  });
+
+  it.each(BUILD_ROOTS)('runs the real build/retry/reporter functions with creation-time context (%s; hermetic, not wire proof)', async (runtime) => {
+    const first = {
       processInstanceId: '11111111-1111-4111-8111-111111111111',
       buildSha: null,
       rowId: '7',
@@ -189,16 +218,41 @@ describe('postgres.js terminal result diagnostics patch', () => {
       stage: 'epoch-query',
       boundary: 'await' as const,
     };
-    setPgDiagnosticContextResolver(() => correlation);
-    const source = fs.readFileSync(path.join(PG_ROOT, 'src/connection.js'), 'utf8');
-    const build = functionSource(source, 'build');
-    expect(build).toContain('q.resultDiagnostic = q.resultDiagnostic ||');
-    // The maintained patch owns queryId assignment and invokes debug only after
-    // the descriptor exists; connection.ts folds that identity into the local
-    // bounded correlation map.
-    expect(source).toContain('options.debug(id, string, parameters, types, q.resultDiagnostic.queryId)');
-    expect(build).toContain('context: q.diagnosticContext');
-    expect(source).toContain('options.onresult({');
-    expect(correlation.stage).toBe('epoch-query');
+    const hooks = createPgDiagnosticHooks('org-app');
+    const sql = postgres({ ...hooks, fetch_types: false });
+    setPgDiagnosticContextResolver(() => first);
+    const original = sql`select 1`;
+    const captured = capturePgDiagnosticContext();
+    // Queue/service/retry context has moved to a different attempt.
+    setPgDiagnosticContextResolver(() => ({ ...first, rowId: '8', attemptId: '33333333-3333-4333-8333-333333333333' }));
+    const source = fs.readFileSync(path.join(PG_ROOT, runtime, 'connection.js'), 'utf8');
+    const harness = new Function('options', `
+      const id = 7, backend = { pid: 8123 }, result = { command: 'SELECT' }, results = null;
+      const statements = {}, statementId = 'test';
+      let statementCount = 0, queryDiagnosticId = 0, query, now = 100;
+      const performance = { now: () => now };
+      const stringify = q => q.strings[0], handleValue = () => {};
+      const execute = q => build(q);
+      ${functionSource(source, 'build')}
+      ${functionSource(source, 'retry')}
+      ${functionSource(source, 'reportQueryResult')}
+      return { build, retry, report(q, error) { query = q; now = 175; reportQueryResult(error); } };
+    `)({ ...hooks, prepare: true }) as {
+      build(q: unknown): void;
+      retry(q: unknown, error: unknown): void;
+      report(q: unknown, error: unknown): void;
+    };
+    harness.build(original);
+    const descriptor = (original as unknown as { resultDiagnostic: unknown }).resultDiagnostic;
+    harness.retry(original, { code: '26000' });
+    expect((original as unknown as { resultDiagnostic: unknown }).resultDiagnostic).toBe(descriptor);
+    expect(descriptor).toMatchObject({ context: captured, queryId: 1, startedAt: 100 });
+    harness.report(original, { code: '42P01' });
+    expect(pgResultDiagnosticSnapshot('org-app').results[0]).toMatchObject({
+      correlationState: 'linked', correlation: first, queryId: 1,
+      elapsedMs: 75, status: 'error', errorCode: '42p01',
+    });
+    expect(capturePgDiagnosticContext().correlation?.rowId).toBe('8');
+    await sql.end();
   });
 });

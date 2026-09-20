@@ -138,6 +138,7 @@ export interface PgResultDiagnosticInput {
 }
 
 export type PgDiagnosticBoundary = 'await' | 'sync';
+/** Source-defined stage names only; a token-shaped secret is still a secret. */
 export const PG_DIAGNOSTIC_STAGES = [
   'scope-query', 'epoch-query', 'epoch-load', 'baseline-evidence', 'owner-check',
   'key-provider', 'keychain', 'native-loader', 'serialize', 'native-encrypt',

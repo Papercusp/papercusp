@@ -20,6 +20,7 @@ import {
   pgQueryFamily,
   pgResultDiagnosticSnapshot,
   capturePgDiagnosticContext,
+  createPgDiagnosticHooks,
   resetPgDiagnosticContextResolver,
   recordPgResult,
   recordPoolMax,
@@ -220,7 +221,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
     });
   });
 
-  it('links a completed result to the first local attempt context and consumes the pending map', () => {
+  it('retains captured scalar context without consulting a later resolver', () => {
     const correlation = {
       processInstanceId: '11111111-1111-4111-8111-111111111111',
       buildSha: 'abcdef1234567',
@@ -248,8 +249,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
       correlationState: 'linked',
       correlation,
     });
-    // A terminal result consumes the descriptor mapping; a later same-ID result
-    // cannot be relabelled by a different attempt or pool event.
+    // Same numeric IDs without captured context must not inherit a prior result.
     recordPgResult('org-app', {
       connectionId: 7,
       queryId: 19,
@@ -262,7 +262,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
     expect(pgResultDiagnosticSnapshot('org-app').results[1]).not.toHaveProperty('correlation');
   });
 
-  it('preserves explicit unobserved/unknown/evicted linkage states without crossing pools', () => {
+  it('preserves explicit unobserved/unknown linkage states without crossing pools', () => {
     setPgDiagnosticContextResolver(() => null);
     const unobserved = capturePgDiagnosticContext();
     recordPgResult('org-app', {
@@ -297,7 +297,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
     ).toEqual([]);
   });
 
-  it('keeps prepared-retry descriptor identity stable by first-correlation-wins', () => {
+  it('keeps separately captured attempts distinct', () => {
     const first = {
       processInstanceId: '11111111-1111-4111-8111-111111111111',
       buildSha: null,
@@ -324,6 +324,38 @@ describe('bounded PostgreSQL result diagnostics', () => {
     });
     expect(pgResultDiagnosticSnapshot('org-app').results[0].correlation).toEqual(first);
     expect(retryCaptured.correlation).toEqual(retry);
+  });
+
+  it('keeps equal numeric query IDs isolated by process and physical pool identity', () => {
+    const input = { connectionId: 1, queryId: 1, backendPid: null, query: 'select 1', rowCount: 1, wireBytes: 10, status: 'ok' as const };
+    const a = createPgDiagnosticHooks('org-app');
+    const b = createPgDiagnosticHooks('org-app');
+    a.onresult(input);
+    b.onresult(input);
+    const [one, two] = pgResultDiagnosticSnapshot('org-app').results;
+    expect(one.source.poolInstanceId).not.toBe(two.source.poolInstanceId);
+    expect(one.source.processInstanceId).toBe(two.source.processInstanceId);
+    recordPgResult('org-app', input, { ...one.source, processInstanceId: '11111111-1111-4111-8111-111111111111' });
+    expect(pgResultDiagnosticSnapshot('org-app').results[2].source).not.toEqual(one.source);
+    createPgDiagnosticHooks('org-admin').onresult(input);
+    expect(pgResultDiagnosticSnapshot('org-admin').results).toHaveLength(1);
+    expect(pgResultDiagnosticSnapshot('org-app').results).toHaveLength(3);
+  });
+
+  it('copies and bounds correlation fields rather than retaining secret-shaped values or extra properties', () => {
+    const raw = {
+      processInstanceId: '11111111-1111-4111-8111-111111111111',
+      attemptId: '22222222-2222-4222-8222-222222222222',
+      buildSha: 'secret-build', rowId: 'secret-row', hopId: 2,
+      stage: 'secret-token', boundary: 'await' as const, parameters: ['secret-value'],
+    };
+    setPgDiagnosticContextResolver(() => raw);
+    const context = capturePgDiagnosticContext();
+    expect(context.correlation).toMatchObject({ buildSha: null, rowId: null, stage: null });
+    expect(JSON.stringify(context)).not.toContain('secret');
+    expect(Object.isFrozen(context.correlation)).toBe(true);
+    raw.hopId = 4;
+    expect(context.correlation?.hopId).toBe(2);
   });
 });
 
