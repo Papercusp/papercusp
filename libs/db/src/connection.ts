@@ -45,8 +45,7 @@ import {
   ACQUIRE_QUEUE_LOCATION_RESIDUAL,
   beginAcquire,
   describeAcquirePressure,
-  rememberPgDiagnosticContext,
-  recordPgResult,
+  createPgDiagnosticHooks,
   recordPoolMax,
 } from './acquire-registry';
 import { stampedTag } from './build-stamp';
@@ -1272,13 +1271,7 @@ function buildClient(
     // WI-10000316: postgres.js emits this once at terminal ReadyForQuery.
     // recordPgResult immediately reduces the raw query to a bounded family and
     // never retains SQL text, parameters, or rows.
-    onresult: (diagnostic) => recordPgResult(label, diagnostic),
-    // postgres.js's maintained diagnostic patch calls debug at query-build time
-    // with the stable connection/query identity. Capture local context there;
-    // never wrap the lazy Query promise or infer identity from completion order.
-    debug: (connectionId, _query, _parameters, _types, queryId) => {
-      rememberPgDiagnosticContext(label, connectionId, queryId);
-    },
+    ...createPgDiagnosticHooks(label),
     ...(connectTimeoutSec > 0 ? { connect_timeout: connectTimeoutSec } : {}),
     // PgBouncer-safe startup options. Under transaction pooling the statement_timeout +
     // idle_in_transaction_session_timeout GUCs are NOT sent at startup (the pooler rejects
