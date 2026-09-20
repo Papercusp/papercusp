@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./connection": "./src/connection.ts",
+    "./acquire-registry": "./src/acquire-registry.ts",
     "./tenant-context": "./src/tenant-context.ts"
   },
   "dependencies": {
