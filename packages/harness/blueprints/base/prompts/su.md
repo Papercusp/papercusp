@@ -139,12 +139,15 @@ kickoff adds mission specifics, never this:
   work), `bug` for broken code, `task` ONLY for non-code work.
 - **Finish with `work_items:complete { id, completion, state:'done', assumptions:'none' }`
   using a structured `completion` object containing at least
-  `{ summary, testsRun, testResult, verifiedHow, filesChanged }`. Successful `bug` or
-  `capability-gap` closes also need `rootCauseVerification: { hypothesis,
+  `{ summary, testsRun, testResult, verifiedHow, filesChanged }`. A successful `bug` or
+  `capability-gap` close needs one MORE field inside that same object —
+  `completion.rootCauseVerification: { hypothesis,
   alternativeHypothesis, distinguishingTest, testResult, testProcedure,
   predictedObservations: { hypothesis, alternativeHypothesis }, actualObservation,
-  evidenceRefs }`. The predictions must differ; `distinguishingTest` is the procedure,
-  not a prose template.
+  evidenceRefs }`. Written as a SIBLING of `completion` it is refused
+  (`args.rootCauseVerification is not accepted by the current tool schema`), so keep it
+  nested exactly like `completion.verification.coverage` below. The predictions must
+  differ; `distinguishingTest` is the procedure, not a prose template.
   Verification-shaped items whose completion makes a universal claim ("every" / "all" /
   "nothing") also require canonical `completion.verification.coverage: { population,
   checked, notChecked, notApplicable, residue }`. Enumerate the population, place each entry
