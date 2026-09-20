@@ -197,7 +197,7 @@ describe('postgres.js terminal result diagnostics patch', () => {
     // the descriptor exists; connection.ts folds that identity into the local
     // bounded correlation map.
     expect(source).toContain('options.debug(id, string, parameters, types, q.resultDiagnostic.queryId)');
-    expect(build).toContain('q.resultDiagnostic.context');
+    expect(build).toContain('context: q.diagnosticContext');
     expect(source).toContain('options.onresult({');
     expect(correlation.stage).toBe('epoch-query');
   });

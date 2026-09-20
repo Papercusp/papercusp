@@ -85,8 +85,10 @@ export {
   type AcquireTicket,
   type PgResultDiagnostic,
   type PgResultDiagnosticCorrelation,
+  type PgDiagnosticCorrelationState,
   type PgDiagnosticBoundary,
   type PgDiagnosticContextResolver,
+  type PgDiagnosticSource,
   type PgResultDiagnosticSnapshot,
 } from './acquire-registry';
 // Build-stamp SEAM — the host registers which build is emitting these diagnostics

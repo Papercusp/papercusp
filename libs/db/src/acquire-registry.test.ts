@@ -144,8 +144,13 @@ describe('bounded PostgreSQL result diagnostics', () => {
       capacity: PG_RESULT_DIAGNOSTIC_LIMIT,
     });
     expect(snapshot.results).toEqual([
-      {
+      expect.objectContaining({
         pool: 'org-app',
+        source: expect.objectContaining({
+          processInstanceId: expect.stringMatching(/^[a-f0-9-]{36}$/i),
+          buildSha: null,
+          poolInstanceId: null,
+        }),
         connectionId: 7,
         queryId: 19,
         backendPid: 4123,
@@ -156,8 +161,9 @@ describe('bounded PostgreSQL result diagnostics', () => {
         elapsedMs: 83,
         status: 'ok',
         errorCode: null,
+        correlationState: 'unobserved',
         recordedAt: Date.now(),
-      },
+      }),
     ]);
     expect(JSON.stringify(snapshot)).not.toContain('private');
     expect(JSON.stringify(snapshot)).not.toContain('SELECT payload');
