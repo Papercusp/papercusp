@@ -9,7 +9,9 @@ import { createRequire } from 'node:module';
 import {
   pgResultDiagnosticSnapshot,
   recordPgResult,
+  resetPgDiagnosticContextResolver,
   resetAcquireRegistryForTest,
+  setPgDiagnosticContextResolver,
 } from './acquire-registry';
 
 const require_ = createRequire(import.meta.url);
@@ -84,7 +86,10 @@ function instantiateReporter(
   });
 }
 
-beforeEach(() => resetAcquireRegistryForTest());
+beforeEach(() => {
+  resetPgDiagnosticContextResolver();
+  resetAcquireRegistryForTest();
+});
 
 describe('postgres.js terminal result diagnostics patch', () => {
   it('covers every shipped runtime build and the option/type entry points', () => {
@@ -109,6 +114,7 @@ describe('postgres.js terminal result diagnostics patch', () => {
     expect(hostConnection).toContain(
       'onresult: (diagnostic) => recordPgResult(label, diagnostic)',
     );
+    expect(hostConnection).toContain('rememberPgDiagnosticContext(label, connectionId, queryId)');
   });
 
   it('persists every runtime and type edit in the patch-package artifact', () => {
@@ -173,5 +179,27 @@ describe('postgres.js terminal result diagnostics patch', () => {
       expect(build).toContain('q.resultDiagnostic = q.resultDiagnostic ||');
       expect(retry).not.toContain('resultDiagnostic');
     }
+  });
+
+  it('captures correlation at debug/query-build time without changing the maintained result callback', () => {
+    const correlation = {
+      processInstanceId: '11111111-1111-4111-8111-111111111111',
+      buildSha: null,
+      rowId: '7',
+      attemptId: '22222222-2222-4222-8222-222222222222',
+      hopId: 1,
+      stage: 'epoch-query',
+      boundary: 'await' as const,
+    };
+    setPgDiagnosticContextResolver(() => correlation);
+    const source = fs.readFileSync(path.join(PG_ROOT, 'src/connection.js'), 'utf8');
+    const build = functionSource(source, 'build');
+    expect(build).toContain('q.resultDiagnostic = q.resultDiagnostic ||');
+    // The maintained patch owns queryId assignment and invokes debug only after
+    // the descriptor exists; connection.ts folds that identity into the local
+    // bounded correlation map.
+    expect(source).toContain('options.debug(id, string, parameters, types, q.resultDiagnostic.queryId)');
+    expect(source).toContain('options.onresult({');
+    expect(correlation.stage).toBe('epoch-query');
   });
 });

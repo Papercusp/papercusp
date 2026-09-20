@@ -73,11 +73,17 @@ export {
   beginAcquire,
   recordPoolMax,
   pgResultDiagnosticSnapshot,
+  setPgDiagnosticContextResolver,
+  resetPgDiagnosticContextResolver,
+  rememberPgDiagnosticContext,
   resetAcquireRegistryForTest,
   ACQUIRE_RECENT_SUCCESS_MS,
   type AcquireSnapshot,
   type AcquireTicket,
   type PgResultDiagnostic,
+  type PgResultDiagnosticCorrelation,
+  type PgDiagnosticBoundary,
+  type PgDiagnosticContextResolver,
   type PgResultDiagnosticSnapshot,
 } from './acquire-registry';
 // Build-stamp SEAM — the host registers which build is emitting these diagnostics

@@ -132,6 +132,42 @@ export interface PgResultDiagnosticInput {
   errorCode?: string | null;
 }
 
+export type PgDiagnosticBoundary = 'await' | 'sync';
+
+/**
+ * Optional local-only attribution captured at query construction time.
+ *
+ * This is deliberately a small, sanitized identity tuple. It is never part of
+ * LocalWriteOp, AAD, a federated envelope, or SQL/parameter data.
+ */
+export interface PgResultDiagnosticCorrelation {
+  processInstanceId: string;
+  buildSha: string | null;
+  rowId: string | null;
+  attemptId: string;
+  hopId: number | null;
+  stage: string | null;
+  boundary: PgDiagnosticBoundary | null;
+}
+
+export type PgDiagnosticCorrelationState = 'linked' | 'unobserved' | 'unknown' | 'evicted';
+
+export type PgDiagnosticContextResolver = () => PgResultDiagnosticCorrelation | null;
+
+interface PendingPgCorrelation {
+  key: string;
+  pool: string;
+  connectionId: number;
+  queryId: number;
+  state: Exclude<PgDiagnosticCorrelationState, 'evicted'>;
+  correlation?: PgResultDiagnosticCorrelation;
+}
+
+const PG_CORRELATION_LIMIT = 64;
+let pgDiagnosticContextResolver: PgDiagnosticContextResolver | null = null;
+const pendingPgCorrelations = new Map<string, PendingPgCorrelation>();
+const evictedPgCorrelations = new Set<string>();
+
 /**
  * The bounded, safe-to-render record retained for a completed postgres-js
  * query. It deliberately contains no SQL text, values, parameters, or rows.
@@ -149,6 +185,8 @@ export interface PgResultDiagnostic {
   status: 'ok' | 'error';
   errorCode: string | null;
   recordedAt: number;
+  correlationState?: PgDiagnosticCorrelationState;
+  correlation?: PgResultDiagnosticCorrelation;
 }
 
 export interface PgResultDiagnosticSnapshot {
@@ -168,6 +206,136 @@ function safeToken(value: string | null | undefined, max: number): string | null
   if (!value) return null;
   const token = value.toLowerCase().replace(/[^a-z0-9_.-]+/g, '').slice(0, max);
   return token || null;
+}
+
+function pgCorrelationKey(pool: string, connectionId: number, queryId: number): string {
+  return `${pool}:${connectionId}:${queryId}`;
+}
+
+function sanitizePgCorrelation(
+  value: PgResultDiagnosticCorrelation | null | undefined,
+): PgResultDiagnosticCorrelation | null {
+  if (!value || typeof value !== 'object') return null;
+  const processInstanceId =
+    typeof value.processInstanceId === 'string' && /^[a-f0-9-]{36}$/i.test(value.processInstanceId)
+      ? value.processInstanceId
+      : null;
+  const attemptId =
+    typeof value.attemptId === 'string' && /^[a-f0-9-]{36}$/i.test(value.attemptId)
+      ? value.attemptId
+      : null;
+  if (!processInstanceId || !attemptId) return null;
+  const buildSha =
+    value.buildSha === null
+      ? null
+      : typeof value.buildSha === 'string' && /^[a-f0-9]{7,64}$/i.test(value.buildSha)
+        ? value.buildSha
+        : null;
+  const rowId =
+    value.rowId === null
+      ? null
+      : typeof value.rowId === 'string' && /^\d{1,30}$/.test(value.rowId)
+        ? value.rowId
+        : null;
+  const hopId =
+    value.hopId === null
+      ? null
+      : Number.isFinite(value.hopId) && value.hopId >= 0
+        ? Math.floor(value.hopId)
+        : null;
+  const stage =
+    value.stage === null
+      ? null
+      : typeof value.stage === 'string'
+        ? safeToken(value.stage, 64)
+        : null;
+  const boundary =
+    value.boundary === 'await' || value.boundary === 'sync' ? value.boundary : null;
+  return Object.freeze({
+    processInstanceId,
+    buildSha,
+    rowId,
+    attemptId,
+    hopId,
+    stage,
+    boundary,
+  });
+}
+
+/** Register the host's current local attempt resolver (last registration wins). */
+export function setPgDiagnosticContextResolver(
+  resolver: PgDiagnosticContextResolver | null,
+): void {
+  pgDiagnosticContextResolver = resolver;
+}
+
+/** Clear the optional local-attribution resolver (test seam + host teardown). */
+export function resetPgDiagnosticContextResolver(): void {
+  pgDiagnosticContextResolver = null;
+}
+
+/**
+ * Capture the current local correlation for a query descriptor.
+ *
+ * postgres-js invokes its debug callback at query construction time and gives
+ * us the connection/query identity. The descriptor survives prepared retries;
+ * the first correlation wins so a retry cannot relabel the original attempt.
+ */
+export function rememberPgDiagnosticContext(
+  pool: string,
+  connectionId: number,
+  queryId: number,
+): void {
+  if (!pool || !Number.isFinite(connectionId) || !Number.isFinite(queryId)) return;
+  if (!pgDiagnosticContextResolver) return;
+  const key = pgCorrelationKey(pool, Math.floor(connectionId), Math.floor(queryId));
+  if (pendingPgCorrelations.has(key)) return;
+  let correlation: PgResultDiagnosticCorrelation | null = null;
+  let state: Exclude<PgDiagnosticCorrelationState, 'evicted'> = 'unobserved';
+  try {
+    const raw = pgDiagnosticContextResolver();
+    correlation = sanitizePgCorrelation(raw);
+    state = raw === null ? 'unobserved' : correlation ? 'linked' : 'unknown';
+  } catch {
+    state = 'unknown';
+  }
+  pendingPgCorrelations.set(key, {
+    key,
+    pool,
+    connectionId: Math.floor(connectionId),
+    queryId: Math.floor(queryId),
+    state,
+    ...(correlation ? { correlation } : {}),
+  });
+  while (pendingPgCorrelations.size > PG_CORRELATION_LIMIT) {
+    const oldest = pendingPgCorrelations.keys().next().value;
+    if (oldest === undefined) break;
+    pendingPgCorrelations.delete(oldest);
+    evictedPgCorrelations.add(oldest);
+    while (evictedPgCorrelations.size > PG_CORRELATION_LIMIT) {
+      const oldestEvicted = evictedPgCorrelations.values().next().value;
+      if (oldestEvicted === undefined) break;
+      evictedPgCorrelations.delete(oldestEvicted);
+    }
+  }
+}
+
+function takePgDiagnosticContext(
+  pool: string,
+  connectionId: number,
+  queryId: number,
+): { state: PgDiagnosticCorrelationState; correlation?: PgResultDiagnosticCorrelation } | undefined {
+  const key = pgCorrelationKey(pool, Math.floor(connectionId), Math.floor(queryId));
+  const pending = pendingPgCorrelations.get(key);
+  if (pending) {
+    pendingPgCorrelations.delete(key);
+    return {
+      state: pending.state,
+      ...(pending.correlation ? { correlation: pending.correlation } : {}),
+    };
+  }
+  if (evictedPgCorrelations.delete(key)) return { state: 'evicted' };
+  return undefined;
 }
 
 /**
@@ -206,6 +374,7 @@ export function recordPgResult(pool: string, input: PgResultDiagnosticInput): vo
   if (!pool) return;
   const s = poolState(pool);
   const results = (s.pgResults ??= []);
+  const correlation = takePgDiagnosticContext(pool, input.connectionId, input.queryId);
   const diagnostic: PgResultDiagnostic = {
     pool,
     connectionId: boundedWholeNumber(input.connectionId) ?? 0,
@@ -223,6 +392,12 @@ export function recordPgResult(pool: string, input: PgResultDiagnosticInput): vo
     status: input.status === 'error' ? 'error' : 'ok',
     errorCode: safeToken(input.errorCode, 16),
     recordedAt: Date.now(),
+    ...(correlation
+      ? {
+          correlationState: correlation.state,
+          ...(correlation.correlation ? { correlation: correlation.correlation } : {}),
+        }
+      : {}),
   };
   results.push(diagnostic);
   s.totalPgResults = (s.totalPgResults ?? 0) + 1;
@@ -240,7 +415,13 @@ export function pgResultDiagnosticSnapshot(
   const all = s?.pgResults ?? [];
   const totalRecorded = s?.totalPgResults ?? 0;
   const appliedLimit = Math.max(0, Math.min(PG_RESULT_DIAGNOSTIC_LIMIT, Math.floor(limit)));
-  const results = appliedLimit === 0 ? [] : all.slice(-appliedLimit).map((item) => ({ ...item }));
+  const results =
+    appliedLimit === 0
+      ? []
+      : all.slice(-appliedLimit).map((item) => ({
+          ...item,
+          ...(item.correlation ? { correlation: { ...item.correlation } } : {}),
+        }));
   return {
     pool,
     capacity: PG_RESULT_DIAGNOSTIC_LIMIT,
@@ -435,4 +616,6 @@ export const ACQUIRE_QUEUE_LOCATION_RESIDUAL =
 export function resetAcquireRegistryForTest(): void {
   STATE.pools.clear();
   STATE.seq = 0;
+  pendingPgCorrelations.clear();
+  evictedPgCorrelations.clear();
 }

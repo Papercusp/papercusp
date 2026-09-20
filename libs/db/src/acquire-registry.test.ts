@@ -19,9 +19,12 @@ import {
   PG_RESULT_DIAGNOSTIC_LIMIT,
   pgQueryFamily,
   pgResultDiagnosticSnapshot,
+  resetPgDiagnosticContextResolver,
+  rememberPgDiagnosticContext,
   recordPgResult,
   recordPoolMax,
   resetAcquireRegistryForTest,
+  setPgDiagnosticContextResolver,
 } from './acquire-registry';
 import {
   withAcquisitionDeadline,
@@ -36,6 +39,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  resetPgDiagnosticContextResolver();
   resetAcquireRegistryForTest();
 });
 
@@ -208,6 +212,107 @@ describe('bounded PostgreSQL result diagnostics', () => {
       status: 'error',
       errorCode: '42p01leakeddetai',
     });
+  });
+
+  it('links a completed result to the first local attempt context and consumes the pending map', () => {
+    const correlation = {
+      processInstanceId: '11111111-1111-4111-8111-111111111111',
+      buildSha: 'abcdef1234567',
+      rowId: '42',
+      attemptId: '22222222-2222-4222-8222-222222222222',
+      hopId: 3,
+      stage: 'epoch-query',
+      boundary: 'await' as const,
+    };
+    setPgDiagnosticContextResolver(() => correlation);
+
+    rememberPgDiagnosticContext('org-app', 7, 19);
+    recordPgResult('org-app', {
+      connectionId: 7,
+      queryId: 19,
+      backendPid: 8123,
+      query: 'select 1',
+      rowCount: 1,
+      wireBytes: 10,
+      status: 'ok',
+    });
+
+    expect(pgResultDiagnosticSnapshot('org-app').results[0]).toMatchObject({
+      correlationState: 'linked',
+      correlation,
+    });
+    // A terminal result consumes the descriptor mapping; a later same-ID result
+    // cannot be relabelled by a different attempt or pool event.
+    recordPgResult('org-app', {
+      connectionId: 7,
+      queryId: 19,
+      backendPid: 8123,
+      query: 'select 1',
+      rowCount: 1,
+      wireBytes: 10,
+      status: 'ok',
+    });
+    expect(pgResultDiagnosticSnapshot('org-app').results[1]).not.toHaveProperty('correlation');
+  });
+
+  it('preserves explicit unobserved/unknown/evicted linkage states without crossing pools', () => {
+    setPgDiagnosticContextResolver(() => null);
+    rememberPgDiagnosticContext('org-app', 1, 1);
+    recordPgResult('org-app', {
+      connectionId: 1,
+      queryId: 1,
+      backendPid: null,
+      query: 'select 1',
+      rowCount: 0,
+      wireBytes: 0,
+      status: 'ok',
+    });
+    expect(pgResultDiagnosticSnapshot('org-app').results[0].correlationState).toBe('unobserved');
+
+    setPgDiagnosticContextResolver(() => {
+      throw new Error('observer unavailable');
+    });
+    rememberPgDiagnosticContext('org-app', 2, 1);
+    recordPgResult('org-app', {
+      connectionId: 2,
+      queryId: 1,
+      backendPid: null,
+      query: 'select 1',
+      rowCount: 0,
+      wireBytes: 0,
+      status: 'ok',
+    });
+    expect(pgResultDiagnosticSnapshot('org-app').results[1].correlationState).toBe('unknown');
+    expect(
+      pgResultDiagnosticSnapshot('org-admin').results,
+    ).toEqual([]);
+  });
+
+  it('keeps prepared-retry descriptor identity stable by first-correlation-wins', () => {
+    const first = {
+      processInstanceId: '11111111-1111-4111-8111-111111111111',
+      buildSha: null,
+      rowId: '10',
+      attemptId: '22222222-2222-4222-8222-222222222222',
+      hopId: 1,
+      stage: 'epoch-query',
+      boundary: 'await' as const,
+    };
+    const retry = { ...first, attemptId: '33333333-3333-4333-8333-333333333333', hopId: 2 };
+    setPgDiagnosticContextResolver(() => first);
+    rememberPgDiagnosticContext('org-app', 4, 9);
+    setPgDiagnosticContextResolver(() => retry);
+    rememberPgDiagnosticContext('org-app', 4, 9);
+    recordPgResult('org-app', {
+      connectionId: 4,
+      queryId: 9,
+      backendPid: null,
+      query: 'select 1',
+      rowCount: 1,
+      wireBytes: 1,
+      status: 'ok',
+    });
+    expect(pgResultDiagnosticSnapshot('org-app').results[0].correlation).toEqual(first);
   });
 });
 
