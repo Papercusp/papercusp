@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import {
   pgResultDiagnosticSnapshot,
   recordPgResult,
+  capturePgDiagnosticContext,
   resetPgDiagnosticContextResolver,
   resetAcquireRegistryForTest,
   setPgDiagnosticContextResolver,
@@ -111,10 +112,7 @@ describe('postgres.js terminal result diagnostics patch', () => {
     expect(types).toContain('queryId: number');
 
     const hostConnection = fs.readFileSync(new URL('./connection.ts', import.meta.url), 'utf8');
-    expect(hostConnection).toContain(
-      'onresult: (diagnostic) => recordPgResult(label, diagnostic)',
-    );
-    expect(hostConnection).toContain('rememberPgDiagnosticContext(label, connectionId, queryId)');
+    expect(hostConnection).toContain('...createPgDiagnosticHooks(label)');
   });
 
   it('persists every runtime and type edit in the patch-package artifact', () => {
@@ -199,6 +197,7 @@ describe('postgres.js terminal result diagnostics patch', () => {
     // the descriptor exists; connection.ts folds that identity into the local
     // bounded correlation map.
     expect(source).toContain('options.debug(id, string, parameters, types, q.resultDiagnostic.queryId)');
+    expect(build).toContain('q.resultDiagnostic.context');
     expect(source).toContain('options.onresult({');
     expect(correlation.stage).toBe('epoch-query');
   });

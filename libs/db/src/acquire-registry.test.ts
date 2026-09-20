@@ -19,8 +19,8 @@ import {
   PG_RESULT_DIAGNOSTIC_LIMIT,
   pgQueryFamily,
   pgResultDiagnosticSnapshot,
+  capturePgDiagnosticContext,
   resetPgDiagnosticContextResolver,
-  rememberPgDiagnosticContext,
   recordPgResult,
   recordPoolMax,
   resetAcquireRegistryForTest,
@@ -226,7 +226,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
     };
     setPgDiagnosticContextResolver(() => correlation);
 
-    rememberPgDiagnosticContext('org-app', 7, 19);
+    const captured = capturePgDiagnosticContext();
     recordPgResult('org-app', {
       connectionId: 7,
       queryId: 19,
@@ -235,6 +235,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
       rowCount: 1,
       wireBytes: 10,
       status: 'ok',
+      context: captured,
     });
 
     expect(pgResultDiagnosticSnapshot('org-app').results[0]).toMatchObject({
@@ -257,7 +258,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
 
   it('preserves explicit unobserved/unknown/evicted linkage states without crossing pools', () => {
     setPgDiagnosticContextResolver(() => null);
-    rememberPgDiagnosticContext('org-app', 1, 1);
+    const unobserved = capturePgDiagnosticContext();
     recordPgResult('org-app', {
       connectionId: 1,
       queryId: 1,
@@ -266,13 +267,14 @@ describe('bounded PostgreSQL result diagnostics', () => {
       rowCount: 0,
       wireBytes: 0,
       status: 'ok',
+      context: unobserved,
     });
     expect(pgResultDiagnosticSnapshot('org-app').results[0].correlationState).toBe('unobserved');
 
     setPgDiagnosticContextResolver(() => {
       throw new Error('observer unavailable');
     });
-    rememberPgDiagnosticContext('org-app', 2, 1);
+    const unknown = capturePgDiagnosticContext();
     recordPgResult('org-app', {
       connectionId: 2,
       queryId: 1,
@@ -281,6 +283,7 @@ describe('bounded PostgreSQL result diagnostics', () => {
       rowCount: 0,
       wireBytes: 0,
       status: 'ok',
+      context: unknown,
     });
     expect(pgResultDiagnosticSnapshot('org-app').results[1].correlationState).toBe('unknown');
     expect(
@@ -300,9 +303,9 @@ describe('bounded PostgreSQL result diagnostics', () => {
     };
     const retry = { ...first, attemptId: '33333333-3333-4333-8333-333333333333', hopId: 2 };
     setPgDiagnosticContextResolver(() => first);
-    rememberPgDiagnosticContext('org-app', 4, 9);
+    const firstCaptured = capturePgDiagnosticContext();
     setPgDiagnosticContextResolver(() => retry);
-    rememberPgDiagnosticContext('org-app', 4, 9);
+    const retryCaptured = capturePgDiagnosticContext();
     recordPgResult('org-app', {
       connectionId: 4,
       queryId: 9,
@@ -311,8 +314,10 @@ describe('bounded PostgreSQL result diagnostics', () => {
       rowCount: 1,
       wireBytes: 1,
       status: 'ok',
+      context: firstCaptured,
     });
     expect(pgResultDiagnosticSnapshot('org-app').results[0].correlation).toEqual(first);
+    expect(retryCaptured.correlation).toEqual(retry);
   });
 });
 
