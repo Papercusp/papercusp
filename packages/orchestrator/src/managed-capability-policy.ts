@@ -387,7 +387,28 @@ export type CapabilityWithheldReason =
   | 'no-client-enforcement-surface'
   | 'owner-override'
   | 'explicit-deny-list'
-  | 'replacement-unproven';
+  | 'replacement-unproven'
+  /**
+   * The replacement is proven at parity, but THIS client/family pair has no
+   * adoption evidence for both control arms (P-007,
+   * CAP-CONTRACT-P007-CUTOVER-EVIDENCE@1). Parity is a property of the adapter;
+   * acceptance is a property of the adapter AT a client, and the clause is
+   * quantified over the second one.
+   */
+  | 'adoption-unproven'
+  /**
+   * Staged rollout withheld it: the family's cutover stage is `off`, or it is
+   * `canary` and this audience is outside the canary population. This is the
+   * ROLLBACK control — flipping the stage back to `off` withholds an already
+   * enabled cutover on the next resolve, with no table edit.
+   */
+  | 'cutover-stage-withheld'
+  /**
+   * The client version moved since the acceptance evidence was taken, so the
+   * native surface this restriction claims to cover may have been respelled.
+   * Stale acceptance is not acceptance.
+   */
+  | 'client-version-drift';
 
 export interface CapabilityWithheldRestriction {
   readonly id: string;
@@ -410,6 +431,24 @@ export interface CapabilityPolicyRequest {
    * cutover, and so P-008 can drive it from measured evidence.
    */
   readonly readiness?: CapabilityReadinessSource;
+  /**
+   * Per-client/family acceptance telemetry. Defaults to EMPTY, which denies
+   * every cutover on adoption grounds — the fail-safe reading, and the reason
+   * this gate cannot be satisfied by forgetting to pass it.
+   */
+  readonly adoption?: CapabilityAdoptionGateSource;
+  /**
+   * Per-family rollout stage. Defaults to `SHIPPED_CUTOVER_STAGING` (all off).
+   */
+  readonly cutoverStaging?: CapabilityCutoverStaging;
+  /**
+   * The client versions currently in play. When a version is supplied here and
+   * the matching adoption entry names a DIFFERENT `atClientVersion`, the
+   * acceptance is stale and the cutover is withheld. An UNKNOWN current version
+   * does not invalidate acceptance — absence of a measurement is not evidence
+   * of drift — so this narrows the gate only when the version is actually known.
+   */
+  readonly clientVersions?: Readonly<Partial<Record<CapabilityClientFamily, string>>>;
 }
 
 /** Minimal shape the gate needs from a disposition — family, readiness, gaps. */
@@ -432,6 +471,82 @@ export const CONTRACT_CAPABILITY_READINESS: CapabilityReadinessSource =
     cutoverReady: entry.cutoverReady,
     openGapIds: entry.gaps.map((gap) => gap.id),
   }));
+
+/**
+ * Minimal shape the gate needs from adoption telemetry — the TWO control arms,
+ * per client AND family.
+ *
+ * Same seam, and the same reason, as `CapabilityReadinessEntry` above: the
+ * report that produces these entries lives in `managed-capability-adoption.ts`
+ * and imports this module, so the gate accepts the shape rather than importing
+ * the producer. That keeps the dependency one-directional and lets a test drive
+ * both sides of the gate without a real client.
+ *
+ * WHY BOTH ARMS, never one: a managed-path success alone proves the replacement
+ * works but says nothing about whether the native route is still open (a
+ * restriction that denies nothing); a bypass refusal alone proves the native
+ * route is shut but not that anything took its place (a stranded agent). Only
+ * the conjunction is acceptance, which is exactly what
+ * CAP-CONTRACT-P007-CUTOVER-EVIDENCE@1 quantifies over.
+ */
+export interface CapabilityAdoptionEntry {
+  readonly client: CapabilityClientFamily;
+  readonly family: ManagedCapabilityFamilyId;
+  /** A managed-path invocation was observed SUCCEEDING at this client. */
+  readonly managedPathProven: boolean;
+  /** A native-bypass attempt was observed being REFUSED at this client. */
+  readonly nativeBypassRefused: boolean;
+  /**
+   * The client version both observations were taken at. Compared against
+   * `CapabilityPolicyRequest.clientVersions` so acceptance cannot outlive the
+   * surface it was measured on.
+   */
+  readonly atClientVersion?: string;
+}
+
+export type CapabilityAdoptionGateSource = readonly CapabilityAdoptionEntry[];
+
+/**
+ * How far a family's cutover has been rolled out.
+ *
+ * Reuses the EXISTING controls the item text requires rather than adding a
+ * parallel rollout system: the population is expressed with the audience axis
+ * the restriction table and resolver already carry, and rollback is this dial
+ * returning to `off` (or the restriction's existing `overrideKey`). No flag, no
+ * new config surface, no second deny path.
+ */
+export type CapabilityCutoverStage = 'off' | 'canary' | 'full';
+
+export type CapabilityCutoverStaging = Readonly<
+  Partial<Record<ManagedCapabilityFamilyId, CapabilityCutoverStage>>
+>;
+
+/**
+ * The audiences a stage admits.
+ *
+ * `canary` is ATTENDED-ONLY on purpose. `interactive-su` has a human in the
+ * loop who notices and reports a stranded capability within one turn; a
+ * headless agent hits the same wall with nobody watching and burns its whole
+ * budget routing around it. So the canary population is the one that can
+ * actually report, not merely the smaller one.
+ */
+export function cutoverStageAudiences(
+  stage: CapabilityCutoverStage,
+): readonly CapabilityAudience[] {
+  if (stage === 'off') return [];
+  if (stage === 'canary') return ['interactive-su'];
+  return ALL_AUDIENCES;
+}
+
+/**
+ * The shipped staging position: every family `off`.
+ *
+ * Fail-SAFE and deliberately not derived from readiness — a family reaching
+ * parity must not thereby enable its own restriction fleet-wide. Enabling is a
+ * separate, stated act (P-008 supplies the measured evidence; this dial admits
+ * it in stages).
+ */
+export const SHIPPED_CUTOVER_STAGING: CapabilityCutoverStaging = Object.freeze({});
 
 export interface AppliedCapabilityRestriction {
   readonly id: string;
@@ -484,6 +599,9 @@ export function resolveCapabilityPolicy(
   const audience: CapabilityAudience = request.audience ?? 'headless-agent';
   const overrides = new Set(request.overrides ?? []);
   const readiness = request.readiness ?? CONTRACT_CAPABILITY_READINESS;
+  const adoption = request.adoption ?? [];
+  const staging = request.cutoverStaging ?? SHIPPED_CUTOVER_STAGING;
+  const currentClientVersion = request.clientVersions?.[request.client];
   const enforcement = CAPABILITY_CLIENT_ENFORCEMENT[request.client];
 
   const applied: AppliedCapabilityRestriction[] = [];
@@ -556,6 +674,66 @@ export function resolveCapabilityPolicy(
             `The managed replacement for '${scope.family}' is not proven at parity yet` +
             (gaps.length ? `; open gaps: ${gaps.join(', ')}.` : '.') +
             ' Restricting the native surface now would strand the agent.',
+        });
+        continue;
+      }
+
+      // Parity is proven. Everything below is P-007: parity is a property of
+      // the ADAPTER, while enabling a restriction is a claim about the adapter
+      // AT A CLIENT, on a KNOWN surface version, for a CHOSEN population. Each
+      // of those is checked separately so a failure names which one it was.
+      const stage = staging[scope.family] ?? 'off';
+      const stageAudiences = cutoverStageAudiences(stage);
+      if (!stageAudiences.includes(audience)) {
+        withheld.push({
+          id: restriction.id,
+          reason: 'cutover-stage-withheld',
+          detail:
+            stage === 'off'
+              ? `The '${scope.family}' cutover stage is 'off', so ${restriction.id} is not enabled. ` +
+                'Parity alone never enables a restriction; staging it is a separate, stated act.'
+              : `The '${scope.family}' cutover is at the '${stage}' stage, which admits ` +
+                `${stageAudiences.join(', ')} only; this launch is ${audience}.`,
+        });
+        continue;
+      }
+
+      const adoptionEntry = adoption.find(
+        (candidate) => candidate.client === request.client && candidate.family === scope.family,
+      );
+      if (
+        !adoptionEntry ||
+        !adoptionEntry.managedPathProven ||
+        !adoptionEntry.nativeBypassRefused
+      ) {
+        const missing: string[] = [];
+        if (!adoptionEntry?.managedPathProven) missing.push('a successful managed-path observation');
+        if (!adoptionEntry?.nativeBypassRefused) missing.push('a refused native-bypass observation');
+        withheld.push({
+          id: restriction.id,
+          reason: 'adoption-unproven',
+          detail:
+            `Cutover of '${scope.family}' at ${request.client} lacks ${missing.join(' and ')}` +
+            `${adoptionEntry ? '' : ' (no adoption telemetry recorded for this client/family at all)'}. ` +
+            'Both control arms are required before the native surface is restricted ' +
+            '(CAP-CONTRACT-P007-CUTOVER-EVIDENCE).',
+        });
+        continue;
+      }
+
+      if (
+        currentClientVersion !== undefined &&
+        adoptionEntry.atClientVersion !== undefined &&
+        adoptionEntry.atClientVersion !== currentClientVersion
+      ) {
+        withheld.push({
+          id: restriction.id,
+          reason: 'client-version-drift',
+          detail:
+            `Acceptance for '${scope.family}' at ${request.client} was measured on version ` +
+            `'${adoptionEntry.atClientVersion}', but this launch is version '${currentClientVersion}'. ` +
+            'A version change can respell the native surface, so the alias coverage this ' +
+            'restriction claims is no longer evidenced. Re-measure both arms.',
         });
         continue;
       }
@@ -719,10 +897,50 @@ export interface NativeFamilyRetention {
   readonly violations: readonly string[];
 }
 
+/**
+ * Every (client, family) pair proven on both arms, over the DECLARED family
+ * list rather than the supplied inventory.
+ *
+ * Totality matters here for the same reason it does in the census itself: a
+ * saturation derived from a truncated `dispositions` input would leave the
+ * omitted families ungated, and the census would then report them as "not
+ * disabled" because the adoption gate withheld their restriction — an absence
+ * indistinguishable from a genuine retention verdict.
+ */
+function saturatedAdoptionFor(
+  clients: readonly CapabilityClientFamily[],
+  _dispositions: readonly CapabilityRetentionDispositionInput[],
+): CapabilityAdoptionGateSource {
+  const out: CapabilityAdoptionEntry[] = [];
+  for (const client of clients) {
+    for (const family of MANAGED_CAPABILITY_FAMILY_IDS) {
+      out.push({ client, family, managedPathProven: true, nativeBypassRefused: true });
+    }
+  }
+  return out;
+}
+
+/** Every declared family staged `full`. Same totality argument as above. */
+function fullStagingFor(
+  _dispositions: readonly CapabilityRetentionDispositionInput[],
+): CapabilityCutoverStaging {
+  const out: Partial<Record<ManagedCapabilityFamilyId, CapabilityCutoverStage>> = {};
+  for (const family of MANAGED_CAPABILITY_FAMILY_IDS) out[family] = 'full';
+  return out;
+}
+
 export interface CapabilityRetentionCensusOptions {
   readonly dispositions?: readonly CapabilityRetentionDispositionInput[];
   readonly restrictions?: readonly ManagedCapabilityRestriction[];
   readonly readiness?: CapabilityReadinessSource;
+  /**
+   * The P-007 acceptance dimension. Defaults to SATURATED — see the call site
+   * in `capabilityRetentionCensus` for why this census must not inherit the
+   * gate's fail-safe default.
+   */
+  readonly adoption?: CapabilityAdoptionGateSource;
+  /** The P-007 rollout dimension. Defaults to every declared family `full`. */
+  readonly cutoverStaging?: CapabilityCutoverStaging;
   readonly clients?: readonly CapabilityClientFamily[];
   readonly surfaces?: readonly CapabilityPolicySurface[];
   readonly audiences?: readonly CapabilityAudience[];
@@ -800,6 +1018,17 @@ export function capabilityRetentionCensus(
             readiness,
             overrides: options.overrides,
             explicitDenyList: options.explicitDenyList,
+            // The P-007 dimensions are held at their PERMISSIVE end by default
+            // so this census keeps measuring its OWN rule. The retention rule
+            // asks "given readiness, which families end up disabled?"; if the
+            // adoption gate and the staging dial defaulted to their fail-safe
+            // (closed) end here, every decision would apply nothing, the census
+            // would answer "no family is ever disabled" for any input, and its
+            // falsifiability controls would pass vacuously — a green reading
+            // produced by measuring nothing. Acceptance is measured by
+            // `capabilityAdoptionReport` instead; both remain injectable.
+            adoption: options.adoption ?? saturatedAdoptionFor(clients, dispositions),
+            cutoverStaging: options.cutoverStaging ?? fullStagingFor(dispositions),
           },
           restrictions,
         );

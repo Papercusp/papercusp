@@ -176,6 +176,21 @@ describe('managed capability policy — replacement-quality gating', () => {
       client: 'claude',
       surface: 'launch',
       readiness: proven,
+      // P-007 added two further gates AFTER this one: a cutover must also be
+      // staged for the audience and evidenced on both control arms. They are
+      // satisfied here so this test keeps isolating the READINESS gate it was
+      // written for. Their own both-sides coverage lives in
+      // `managed-capability-adoption.test.ts`; proving parity alone no longer
+      // enables a restriction is the point of P-007, not a regression here.
+      cutoverStaging: { 'shell-ssh-interpreters': 'full' },
+      adoption: [
+        {
+          client: 'claude',
+          family: 'shell-ssh-interpreters',
+          managedPathProven: true,
+          nativeBypassRefused: true,
+        },
+      ],
     });
 
     expect(decision.deniedNames).toContain('Bash');
