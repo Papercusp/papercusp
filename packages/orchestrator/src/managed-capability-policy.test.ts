@@ -191,6 +191,20 @@ describe('managed capability policy — replacement-quality gating', () => {
           nativeBypassRefused: true,
         },
       ],
+      // P-008 added a THIRD downstream gate: the isolated real-client matrix
+      // must have passed every declared scenario. Satisfied here for the same
+      // reason the P-007 pair above is — so this test keeps isolating the
+      // READINESS gate it was written for. Its own both-sides coverage lives
+      // in `managed-capability-matrix.test.ts`.
+      matrix: [
+        {
+          client: 'claude',
+          family: 'shell-ssh-interpreters',
+          allScenariosPassed: true,
+          declaredScenarioCount: 7,
+          unmet: [],
+        },
+      ],
     });
 
     expect(decision.deniedNames).toContain('Bash');

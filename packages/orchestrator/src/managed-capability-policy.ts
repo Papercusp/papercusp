@@ -408,7 +408,20 @@ export type CapabilityWithheldReason =
    * native surface this restriction claims to cover may have been respelled.
    * Stale acceptance is not acceptance.
    */
-  | 'client-version-drift';
+  | 'client-version-drift'
+  /**
+   * The isolated real-client matrix has not passed every DECLARED scenario for
+   * this family/client (P-008, CAP-CONTRACT-P008-REAL-CLIENT-MATRIX@1).
+   *
+   * Distinct from `adoption-unproven`, and deliberately checked after it:
+   * adoption asks whether the two control arms were ever observed at this
+   * client at all, while this asks whether the full declared scenario set —
+   * launch, resume, wake, recovery, lifecycle, sandbox, native-disable — is
+   * green, fresh, on THIS version, and still fingerprint-identical to what the
+   * default was enabled against. Two proven arms on a launch are not evidence
+   * about recovery or sandboxing.
+   */
+  | 'matrix-scenario-unproven';
 
 export interface CapabilityWithheldRestriction {
   readonly id: string;
@@ -437,6 +450,13 @@ export interface CapabilityPolicyRequest {
    * this gate cannot be satisfied by forgetting to pass it.
    */
   readonly adoption?: CapabilityAdoptionGateSource;
+  /**
+   * Isolated real-client matrix verdicts (P-008). Defaults to EMPTY for the
+   * same fail-safe reason as `adoption`: a caller who forgets to supply the
+   * matrix must not thereby enable a managed default, because "missing" is the
+   * FIRST word of this clause's falsifier.
+   */
+  readonly matrix?: CapabilityMatrixGateSource;
   /**
    * Per-family rollout stage. Defaults to `SHIPPED_CUTOVER_STAGING` (all off).
    */
@@ -505,6 +525,48 @@ export interface CapabilityAdoptionEntry {
 }
 
 export type CapabilityAdoptionGateSource = readonly CapabilityAdoptionEntry[];
+
+/** One unmet cell, carried so a denial can name WHICH scenario and WHY. */
+export interface CapabilityMatrixUnmetScenario {
+  readonly scenarioId: string;
+  /**
+   * The four falsifier words, plus `enablement-drift` for a scenario that
+   * passes but whose fingerprint no longer matches the record the default was
+   * enabled against. Kept as a string rather than a union so the producer owns
+   * the vocabulary and this module stays a consumer of the shape.
+   */
+  readonly status: string;
+  readonly detail: string;
+}
+
+/**
+ * Minimal shape the gate needs from the real-client matrix (P-008).
+ *
+ * Same seam and same rationale as `CapabilityReadinessEntry` and
+ * `CapabilityAdoptionEntry` above: the producer
+ * (`managed-capability-matrix.ts`) imports THIS module, so the gate accepts a
+ * shape instead of importing the producer. That keeps the dependency
+ * one-directional and lets a test drive both sides of the gate without booting
+ * a real client.
+ */
+export interface CapabilityMatrixEntry {
+  readonly client: CapabilityClientFamily;
+  readonly family: ManagedCapabilityFamilyId;
+  /**
+   * Every declared scenario for this family/client passed, is fresh, ran on
+   * this client version, and still matches the enablement record.
+   *
+   * The producer sets this FALSE for an empty declared set: "no scenario was
+   * declared" is not "every scenario passed". A vacuous truth here would open
+   * the gate for precisely the family whose matrix nobody wrote.
+   */
+  readonly allScenariosPassed: boolean;
+  /** How many scenarios the manifest declared — 0 is itself a defect. */
+  readonly declaredScenarioCount: number;
+  readonly unmet: readonly CapabilityMatrixUnmetScenario[];
+}
+
+export type CapabilityMatrixGateSource = readonly CapabilityMatrixEntry[];
 
 /**
  * How far a family's cutover has been rolled out.
@@ -600,6 +662,10 @@ export function resolveCapabilityPolicy(
   const overrides = new Set(request.overrides ?? []);
   const readiness = request.readiness ?? CONTRACT_CAPABILITY_READINESS;
   const adoption = request.adoption ?? [];
+  // Fail-safe empty, exactly like `adoption`: "missing" is the first word of
+  // this clause's falsifier, so a caller who omits the matrix must not thereby
+  // enable a managed default.
+  const matrix = request.matrix ?? [];
   const staging = request.cutoverStaging ?? SHIPPED_CUTOVER_STAGING;
   const currentClientVersion = request.clientVersions?.[request.client];
   const enforcement = CAPABILITY_CLIENT_ENFORCEMENT[request.client];
@@ -734,6 +800,41 @@ export function resolveCapabilityPolicy(
             `'${adoptionEntry.atClientVersion}', but this launch is version '${currentClientVersion}'. ` +
             'A version change can respell the native surface, so the alias coverage this ' +
             'restriction claims is no longer evidenced. Re-measure both arms.',
+        });
+        continue;
+      }
+
+      // P-008, and the LAST gate before a managed default is enabled:
+      // CAP-CONTRACT-P008-REAL-CLIENT-MATRIX@1 requires that the full declared
+      // scenario set has actually been executed in isolated client profiles.
+      // Placed last on purpose — every gate above names a cheaper, more
+      // specific defect, so a reader gets the narrowest true reason rather
+      // than "the matrix is red" when the real answer is "this family has no
+      // parity yet".
+      const matrixEntry = matrix.find(
+        (candidate) => candidate.client === request.client && candidate.family === scope.family,
+      );
+      if (!matrixEntry || !matrixEntry.allScenariosPassed) {
+        const unmet = matrixEntry?.unmet ?? [];
+        withheld.push({
+          id: restriction.id,
+          reason: 'matrix-scenario-unproven',
+          detail:
+            `The isolated real-client matrix for '${scope.family}' at ${request.client} has not passed ` +
+            `every declared scenario` +
+            (matrixEntry
+              ? matrixEntry.declaredScenarioCount === 0
+                ? ': the manifest declares NO scenario for this family/client, which is itself unproven — ' +
+                  'an empty matrix is never a passing one.'
+                : `; unmet: ${
+                    unmet.length
+                      ? unmet.map((row) => `${row.scenarioId} (${row.status})`).join(', ')
+                      : 'none reported, yet the matrix is not green — treat the producer as faulty'
+                  }.`
+              : ' (no matrix verdict was supplied for this client/family at all).') +
+            ' A managed default may not be enabled until launch, resume, wake, recovery, lifecycle, ' +
+            'sandbox and native-disable all pass on this client version ' +
+            '(CAP-CONTRACT-P008-REAL-CLIENT-MATRIX).',
         });
         continue;
       }
@@ -921,6 +1022,48 @@ function saturatedAdoptionFor(
 }
 
 /** Every declared family staged `full`. Same totality argument as above. */
+/**
+ * A matrix source that holds the P-008 dimension at "not the blocker".
+ *
+ * WHY THIS IS EXPORTED AND SHARED. Two callers need it, for the same reason
+ * and with the same hazard. The retention census asks "which native family is
+ * still RETAINED", and the adoption report (P-007) asks "for every pair where
+ * cutover is INTENDED, are both control arms proven". Both answer their
+ * question by asking `resolveCapabilityPolicy` what it applied — so if the
+ * P-008 matrix gate is left at its fail-safe empty default, it withholds
+ * everything and both callers report an empty population instead of the
+ * disposition they exist to report. That would silently make P-007's
+ * already-accepted clause vacuous, which is the opposite of adding evidence.
+ *
+ * So each caller saturates every dimension it is NOT measuring, exactly as it
+ * already does for `adoption`, and this is the single definition both use —
+ * a second copy would be the hand-maintained duplication the derived-truth
+ * ladder warns about.
+ *
+ * `declaredScenarioCount` is -1 on purpose: this source is an ASSUMPTION, not
+ * a measurement, and a fabricated plausible count would be indistinguishable
+ * from a real one. The gate reads `allScenariosPassed`, so the sentinel is
+ * inert to it and loud to a reader.
+ */
+export function saturatedCapabilityMatrix(
+  clients: readonly CapabilityClientFamily[],
+  families: readonly ManagedCapabilityFamilyId[] = MANAGED_CAPABILITY_FAMILY_IDS,
+): CapabilityMatrixGateSource {
+  const out: CapabilityMatrixEntry[] = [];
+  for (const client of clients) {
+    for (const family of families) {
+      out.push({
+        client,
+        family,
+        allScenariosPassed: true,
+        declaredScenarioCount: -1,
+        unmet: [],
+      });
+    }
+  }
+  return out;
+}
+
 function fullStagingFor(
   _dispositions: readonly CapabilityRetentionDispositionInput[],
 ): CapabilityCutoverStaging {
@@ -939,6 +1082,15 @@ export interface CapabilityRetentionCensusOptions {
    * gate's fail-safe default.
    */
   readonly adoption?: CapabilityAdoptionGateSource;
+  /**
+   * The P-008 acceptance dimension. Defaults to SATURATED for exactly the
+   * reason `adoption` does: this census answers "which native family is still
+   * RETAINED", and inheriting the gate's fail-safe empty default would report
+   * every family as retained-because-its-matrix-is-missing, burying the
+   * disposition the census exists to report. A caller measuring real matrix
+   * state passes it explicitly.
+   */
+  readonly matrix?: CapabilityMatrixGateSource;
   /** The P-007 rollout dimension. Defaults to every declared family `full`. */
   readonly cutoverStaging?: CapabilityCutoverStaging;
   readonly clients?: readonly CapabilityClientFamily[];
@@ -1028,6 +1180,7 @@ export function capabilityRetentionCensus(
             // produced by measuring nothing. Acceptance is measured by
             // `capabilityAdoptionReport` instead; both remain injectable.
             adoption: options.adoption ?? saturatedAdoptionFor(clients, dispositions),
+            matrix: options.matrix ?? saturatedCapabilityMatrix(clients),
             cutoverStaging: options.cutoverStaging ?? fullStagingFor(dispositions),
           },
           restrictions,

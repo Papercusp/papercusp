@@ -61,6 +61,7 @@ import {
   MANAGED_CAPABILITY_RESTRICTIONS,
   SHIPPED_CUTOVER_STAGING,
   resolveCapabilityPolicy,
+  saturatedCapabilityMatrix,
   type CapabilityAdoptionEntry,
   type CapabilityAdoptionGateSource,
   type CapabilityAudience,
@@ -296,6 +297,14 @@ export function capabilityAdoptionReport(
             audience,
             readiness: options.readiness,
             adoption: saturated,
+            // Hold the P-008 matrix dimension at "not the blocker" for the
+            // same reason `adoption` is saturated one line above: this loop
+            // enumerates cutover INTENT, and a downstream gate left at its
+            // fail-safe default would withhold every restriction, making this
+            // report see an empty population and answer
+            // `no-cutover-enabled` — which would render THIS clause vacuous
+            // rather than adding evidence to it.
+            matrix: saturatedCapabilityMatrix(clients, families),
             cutoverStaging: staging,
           },
           restrictions,

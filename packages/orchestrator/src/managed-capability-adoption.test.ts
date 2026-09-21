@@ -47,6 +47,7 @@ import {
   MANAGED_CAPABILITY_RESTRICTIONS,
   cutoverStageAudiences,
   resolveCapabilityPolicy,
+  saturatedCapabilityMatrix,
   type CapabilityAudience,
   type CapabilityClientFamily,
   type CapabilityReadinessSource,
@@ -63,6 +64,20 @@ import {
 const CUTOVER_FAMILY: ManagedCapabilityFamilyId = 'shell-ssh-interpreters';
 const CUTOVER_CLIENT: CapabilityClientFamily = 'claude';
 const CUTOVER_RESTRICTION = 'managed-shell-cutover';
+
+/**
+ * P-008 added a gate DOWNSTREAM of every gate this file tests: a managed
+ * default also requires a passing isolated real-client matrix. These tests
+ * isolate the P-007 dimensions (adoption, staging, version drift), so the
+ * P-008 dimension is held at "not the blocker" — the same technique this file
+ * already uses when it saturates adoption to enumerate cutover intent.
+ *
+ * Both sides of the P-008 gate are proven in `managed-capability-matrix*.ts`;
+ * satisfying it here keeps each test below falsifiable for the gate it was
+ * actually written for, instead of every one of them failing for a reason it
+ * does not measure.
+ */
+const PROVEN_MATRIX = saturatedCapabilityMatrix([CUTOVER_CLIENT], [CUTOVER_FAMILY]);
 
 /** Readiness with ONE family proven at parity — the seam P-005 left open. */
 function readyFor(family: ManagedCapabilityFamilyId): CapabilityReadinessSource {
@@ -267,6 +282,7 @@ describe('policy gate — prove the arms BEFORE enabling the restriction', () =>
     surface: 'launch' as const,
     readiness: readyFor(CUTOVER_FAMILY),
     cutoverStaging: { [CUTOVER_FAMILY]: 'full' as const },
+    matrix: PROVEN_MATRIX,
   };
 
   function withheldReason(decision: ReturnType<typeof resolveCapabilityPolicy>) {
@@ -344,6 +360,7 @@ describe('canary and rollback — through the existing controls', () => {
     surface: 'launch' as const,
     readiness: readyFor(CUTOVER_FAMILY),
     adoption: capabilityAdoptionGateSource(ACCEPTED_PAIR),
+    matrix: PROVEN_MATRIX,
   };
 
   it('stage off withholds even a fully evidenced cutover', () => {
@@ -420,6 +437,7 @@ describe('version-change checks — acceptance cannot outlive its surface', () =
     readiness: readyFor(CUTOVER_FAMILY),
     cutoverStaging: { [CUTOVER_FAMILY]: 'full' as const },
     adoption: capabilityAdoptionGateSource(ACCEPTED_PAIR),
+    matrix: PROVEN_MATRIX,
   };
 
   it('withholds the cutover when the client version moved since acceptance', () => {
