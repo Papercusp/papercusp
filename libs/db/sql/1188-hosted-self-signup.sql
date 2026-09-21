@@ -4,6 +4,8 @@
 -- membership shortcut.  The attempt ledger is the idempotency/rate-limit
 -- anchor; hosted_service owns it and the resulting entitlement projection.
 -- There are deliberately no credentials or provider tokens in either table.
+-- FORWARD-COMPAT: all relations and indexes below are additive new signup
+-- surfaces; no existing hosted relation or uniqueness contract is narrowed.
 
 CREATE SCHEMA IF NOT EXISTS papercusp_auth;
 
@@ -84,6 +86,93 @@ CREATE POLICY hosted_entitlements_service_all
   ON papercusp_auth.hosted_entitlements
   FOR ALL TO hosted_service USING (true) WITH CHECK (true);
 
+-- The ordinary hosted_service lifecycle role is intentionally forbidden from
+-- creating memberships (978).  Self-signup is the one reviewed admission
+-- exception: a SECURITY DEFINER function owned by the non-login hosted_owner
+-- role performs only the fixed owner bootstrap, while the caller remains in
+-- the same surrounding transaction for rollback/idempotency.
+DROP POLICY IF EXISTS organization_memberships_signup_owner
+  ON papercusp_auth.organization_memberships;
+CREATE POLICY organization_memberships_signup_owner
+  ON papercusp_auth.organization_memberships
+  FOR INSERT TO hosted_owner WITH CHECK (true);
+DROP POLICY IF EXISTS organization_memberships_signup_owner_read
+  ON papercusp_auth.organization_memberships;
+CREATE POLICY organization_memberships_signup_owner_read
+  ON papercusp_auth.organization_memberships
+  FOR SELECT TO hosted_owner USING (true);
+
+CREATE OR REPLACE FUNCTION papercusp_auth.bootstrap_hosted_self_signup_membership(
+  p_organization_id uuid,
+  p_user_id uuid
+)
+RETURNS TABLE(id uuid, updated_at timestamptz)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, papercusp_auth
+AS $function$
+BEGIN
+  IF p_organization_id IS NULL OR p_user_id IS NULL THEN
+    RAISE EXCEPTION 'self-signup membership ids are required' USING ERRCODE = '22023';
+  END IF;
+  INSERT INTO papercusp_auth.organization_memberships
+    (organization_id, user_id, role, created_via, created_by_user_id)
+  VALUES (p_organization_id, p_user_id, 'owner', 'organization_bootstrap', p_user_id)
+  ON CONFLICT (organization_id, user_id) DO NOTHING;
+  RETURN QUERY
+    SELECT m.id, m.updated_at
+      FROM papercusp_auth.organization_memberships AS m
+     WHERE m.organization_id = p_organization_id
+       AND m.user_id = p_user_id
+       AND m.status = 'active'
+     LIMIT 1;
+END
+$function$;
+ALTER FUNCTION papercusp_auth.bootstrap_hosted_self_signup_membership(uuid, uuid)
+  OWNER TO hosted_owner;
+REVOKE ALL ON FUNCTION papercusp_auth.bootstrap_hosted_self_signup_membership(uuid, uuid)
+  FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION papercusp_auth.bootstrap_hosted_self_signup_membership(uuid, uuid)
+  TO hosted_service;
+
+GRANT INSERT ON papercusp_auth.legal_acceptances TO hosted_owner;
+CREATE OR REPLACE FUNCTION papercusp_auth.record_hosted_self_signup_legal(
+  p_organization_id uuid,
+  p_user_id uuid,
+  p_document_kind text,
+  p_document_version text,
+  p_accepted_at timestamptz
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, papercusp_auth
+AS $function$
+BEGIN
+  IF p_document_kind NOT IN ('terms', 'privacy') OR btrim(p_document_version) = '' THEN
+    RAISE EXCEPTION 'invalid self-signup legal acceptance' USING ERRCODE = '22023';
+  END IF;
+  INSERT INTO papercusp_auth.legal_acceptances
+    (organization_id, user_id, document_kind, document_version, acceptance_source, accepted_at)
+  VALUES (
+    p_organization_id, p_user_id, p_document_kind,
+    p_document_version, 'hosted_ui', p_accepted_at
+  )
+  ON CONFLICT (organization_id, user_id, document_kind, document_version) DO NOTHING;
+END
+$function$;
+ALTER FUNCTION papercusp_auth.record_hosted_self_signup_legal(uuid, uuid, text, text, timestamptz)
+  OWNER TO hosted_owner;
+REVOKE ALL ON FUNCTION papercusp_auth.record_hosted_self_signup_legal(uuid, uuid, text, text, timestamptz)
+  FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION papercusp_auth.record_hosted_self_signup_legal(uuid, uuid, text, text, timestamptz)
+  TO hosted_service;
+DROP POLICY IF EXISTS legal_acceptances_signup_owner
+  ON papercusp_auth.legal_acceptances;
+CREATE POLICY legal_acceptances_signup_owner
+  ON papercusp_auth.legal_acceptances
+  FOR INSERT TO hosted_owner WITH CHECK (true);
+
 DO $mig1188$
 BEGIN
   IF EXISTS (
@@ -97,6 +186,20 @@ BEGIN
   IF NOT has_table_privilege('hosted_service', 'papercusp_auth.hosted_signup_attempts', 'SELECT, INSERT, UPDATE')
      OR NOT has_table_privilege('hosted_service', 'papercusp_auth.hosted_entitlements', 'SELECT, INSERT, UPDATE') THEN
     RAISE EXCEPTION '1188: hosted_service self-signup DML surface is incomplete';
+  END IF;
+  IF NOT has_function_privilege(
+    'hosted_service',
+    'papercusp_auth.bootstrap_hosted_self_signup_membership(uuid, uuid)',
+    'EXECUTE'
+  ) THEN
+    RAISE EXCEPTION '1188: hosted_service cannot invoke self-signup membership bootstrap';
+  END IF;
+  IF NOT has_function_privilege(
+    'hosted_service',
+    'papercusp_auth.record_hosted_self_signup_legal(uuid, uuid, text, text, timestamptz)',
+    'EXECUTE'
+  ) THEN
+    RAISE EXCEPTION '1188: hosted_service cannot record self-signup legal acceptance';
   END IF;
 END
 $mig1188$;
