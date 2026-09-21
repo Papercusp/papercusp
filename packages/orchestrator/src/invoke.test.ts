@@ -1093,7 +1093,23 @@ test('invoke — a claude agent spawn carries the native-scheduler lockout in it
     const schedulerDeny = denyLines.find((l) => l.includes('ScheduleWakeup'));
     assert.ok(schedulerDeny, `scheduler deny flag missing from spawned argv:\n${argvDump}`);
     assert.match(schedulerDeny, /ScheduleWakeup/);
-    assert.match(schedulerDeny, /Bash\(crontab:\*\)/);
+    // The NESTED shell route to the OS scheduler rides as its OWN token, not
+    // folded into the tool-lockout token: the ONE policy emits one
+    // `--disallowedTools=` per RESTRICTION (P-005), and `no-native-scheduler`
+    // (the tools) and `no-os-scheduler-shell` (the shell route) are two.
+    // Requiring both names inside a single token asserted the pre-P-005 shape
+    // and could only ever fail; the property that matters — the nested route is
+    // denied in the argv the kernel delivered — is asserted here instead.
+    const shellSchedulerDeny = denyLines.find((l) => l.includes('Bash(crontab:*)'));
+    assert.ok(
+      shellSchedulerDeny,
+      `OS-scheduler shell-route deny flag missing from spawned argv:\n${argvDump}`,
+    );
+    assert.notEqual(
+      shellSchedulerDeny,
+      schedulerDeny,
+      'the shell route and the tool lockout must be separate tokens (one flag per restriction)',
+    );
     // The subagent-fanout deny rides alongside as its own token (Task + Agent).
     const subagentDeny = denyLines.find((l) => l.includes('Task') && l.includes('Agent'));
     assert.ok(subagentDeny, `subagent-fanout deny flag missing from spawned argv:\n${argvDump}`);

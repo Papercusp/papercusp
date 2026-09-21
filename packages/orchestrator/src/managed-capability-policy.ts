@@ -76,6 +76,8 @@
 
 import {
   MANAGED_CAPABILITY_DISPOSITIONS,
+  MANAGED_CAPABILITY_FAMILY_IDS,
+  type ManagedCapabilityDispositionKind,
   type ManagedCapabilityFamilyId,
 } from './managed-capability-contract';
 import {
@@ -147,10 +149,36 @@ export const CAPABILITY_CLIENT_ENFORCEMENT: Readonly<
  */
 export type CapabilityRestrictionAuthority =
   | { readonly kind: 'owner-mandate'; readonly directive: string }
-  | { readonly kind: 'managed-cutover'; readonly family: ManagedCapabilityFamilyId };
+  | { readonly kind: 'managed-cutover' };
+
+/**
+ * WHICH native capability family this restriction's denied names belong to
+ * (P-006, D-012).
+ *
+ * Required on EVERY restriction, both authority kinds. Before D-012 the family
+ * lived only on the `managed-cutover` authority variant, so all six
+ * owner-mandate restrictions named no family at all — and with six of seven
+ * restrictions unmapped, "is family X disabled?" was unanswerable and the P-006
+ * clause ("every native capability family lacking a semantically equivalent
+ * managed adapter remains explicitly retained or unsupported instead of being
+ * disabled") could not be checked at all.
+ *
+ * `outside-r1-taxonomy` is for a native surface the R-1 family list genuinely
+ * does not cover. It is a CLAIM that must be stated and read, never a silent
+ * omission — which is the whole difference from the unmapped state it replaces.
+ */
+export type CapabilityRestrictionFamilyScope =
+  | { readonly kind: 'contract-family'; readonly family: ManagedCapabilityFamilyId }
+  | { readonly kind: 'outside-r1-taxonomy'; readonly note: string };
 
 export interface ManagedCapabilityRestriction {
   readonly id: string;
+  /**
+   * The family this restriction disables. A `managed-cutover` authority MUST
+   * scope to a `contract-family`: there is no such thing as cutting over to a
+   * managed replacement for a family the contract does not inventory.
+   */
+  readonly familyScope: CapabilityRestrictionFamilyScope;
   readonly title: string;
   readonly authority: CapabilityRestrictionAuthority;
   /**
@@ -190,6 +218,7 @@ const ALL_AUDIENCES: readonly CapabilityAudience[] = ['headless-agent', 'interac
 export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestriction[] = [
   {
     id: 'no-subagent-fanout',
+    familyScope: { kind: 'contract-family', family: 'delegation' },
     title: 'Native subagent/Task fan-out',
     authority: {
       kind: 'owner-mandate',
@@ -211,6 +240,7 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
   },
   {
     id: 'no-native-tool-search',
+    familyScope: { kind: 'contract-family', family: 'images-artifacts-skills-discovery' },
     title: 'Native client tool-search / schema deferral',
     authority: {
       kind: 'owner-mandate',
@@ -227,6 +257,14 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
   },
   {
     id: 'no-owner-desktop-notify',
+    // The R-1 taxonomy inventories 13 capability families; owner-facing desktop
+    // notification is not one of them. Saying so explicitly is the point: an
+    // unmapped restriction and a deliberately-out-of-taxonomy one look identical
+    // until one of them says which it is.
+    familyScope: {
+      kind: 'outside-r1-taxonomy',
+      note: 'Owner-facing desktop notification is not one of the 13 R-1 capability families; the owner ruled it out directly, not as a cutover.',
+    },
     title: 'Owner desktop notifications from the shell',
     authority: {
       kind: 'owner-mandate',
@@ -246,6 +284,7 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
   },
   {
     id: 'no-native-scheduler',
+    familyScope: { kind: 'contract-family', family: 'schedules-monitors-wakes' },
     title: 'Native client scheduler tools',
     authority: {
       kind: 'owner-mandate',
@@ -268,6 +307,11 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
   },
   {
     id: 'no-os-scheduler-shell',
+    // Scoped to SCHEDULING, not to the shell. The denied names are shell
+    // spellings, but the capability removed is the OS scheduler reached through
+    // them; scoping this to `shell-ssh-interpreters` would report the shell as
+    // disabled while it remains fully available by every other route.
+    familyScope: { kind: 'contract-family', family: 'schedules-monitors-wakes' },
     title: 'OS schedulers reached THROUGH the shell',
     authority: {
       kind: 'owner-mandate',
@@ -301,6 +345,7 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
   },
   {
     id: 'no-native-scheduler-skills',
+    familyScope: { kind: 'contract-family', family: 'schedules-monitors-wakes' },
     title: 'Native scheduling SKILLS (/schedule, /loop)',
     authority: {
       kind: 'owner-mandate',
@@ -321,8 +366,9 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
   },
   {
     id: 'managed-shell-cutover',
+    familyScope: { kind: 'contract-family', family: 'shell-ssh-interpreters' },
     title: 'Native shell in favour of managed capability:bash',
-    authority: { kind: 'managed-cutover', family: 'shell-ssh-interpreters' },
+    authority: { kind: 'managed-cutover' },
     aliases: ['Bash'],
     nestedRoutes: [],
     clients: ['claude'],
@@ -390,6 +436,12 @@ export const CONTRACT_CAPABILITY_READINESS: CapabilityReadinessSource =
 export interface AppliedCapabilityRestriction {
   readonly id: string;
   readonly authorityKind: CapabilityRestrictionAuthority['kind'];
+  /**
+   * The family these names belong to, carried on the DECISION so a caller can
+   * trace a denied native name back to a capability family without re-reading
+   * the table (P-007's teaching text and the retention census both need this).
+   */
+  readonly familyScope: CapabilityRestrictionFamilyScope;
   /** Aliases + nested routes, in table order, deduped. */
   readonly deniedNames: readonly string[];
 }
@@ -479,14 +531,29 @@ export function resolveCapabilityPolicy(
       continue;
     }
     if (restriction.authority.kind === 'managed-cutover') {
-      const entry = readinessFor(readiness, restriction.authority.family);
+      const scope = restriction.familyScope;
+      if (scope.kind !== 'contract-family') {
+        // A cutover to a managed replacement for a family the contract does not
+        // inventory is not expressible: there is no disposition to read a
+        // readiness verdict from. Fail SAFE — withhold it, never apply a
+        // restriction whose replacement claim cannot be checked (D-012).
+        withheld.push({
+          id: restriction.id,
+          reason: 'replacement-unproven',
+          detail:
+            `${restriction.id} claims a managed cutover but is scoped outside the R-1 family taxonomy ` +
+            `(${scope.note}), so no readiness verdict exists for it. A malformed cutover is withheld, never applied.`,
+        });
+        continue;
+      }
+      const entry = readinessFor(readiness, scope.family);
       if (!entry?.cutoverReady) {
         const gaps = entry?.openGapIds ?? [];
         withheld.push({
           id: restriction.id,
           reason: 'replacement-unproven',
           detail:
-            `The managed replacement for '${restriction.authority.family}' is not proven at parity yet` +
+            `The managed replacement for '${scope.family}' is not proven at parity yet` +
             (gaps.length ? `; open gaps: ${gaps.join(', ')}.` : '.') +
             ' Restricting the native surface now would strand the agent.',
         });
@@ -509,6 +576,7 @@ export function resolveCapabilityPolicy(
     applied.push({
       id: restriction.id,
       authorityKind: restriction.authority.kind,
+      familyScope: restriction.familyScope,
       deniedNames,
     });
   }
@@ -575,4 +643,287 @@ export function policyDeferralEnv(
   decision: CapabilityPolicyDecision,
 ): { ENABLE_TOOL_SEARCH?: 'true' } {
   return policyDeferralReachable(decision) ? { ENABLE_TOOL_SEARCH: 'true' } : {};
+}
+
+/* -------------------------------------------------------------------------- *
+ * Retention census — P-006 / D-012
+ *
+ * The clause this answers, verbatim: "Every native capability family lacking a
+ * semantically equivalent managed adapter remains explicitly retained or
+ * unsupported instead of being disabled."
+ *
+ * Two words make it a MEASUREMENT rather than a slogan, and both need this
+ * module to supply them:
+ *
+ *  - "every family" — so the census iterates MANAGED_CAPABILITY_FAMILY_IDS, the
+ *    declared id list, NOT the disposition array. A family added to the
+ *    taxonomy and forgotten in the inventory is then a reported violation
+ *    rather than a row that silently never existed. Iterating the inventory
+ *    would make the census agree with whatever it happened to contain.
+ *  - "instead of being disabled" — disablement is a property of the resolved
+ *    DECISION, not of the table. A restriction that is withheld in every
+ *    context disables nothing, so the census resolves the full
+ *    client × surface × audience space and reads what actually applied.
+ * -------------------------------------------------------------------------- */
+
+export type NativeFamilyRetentionOutcome =
+  /** A proven-equivalent managed adapter exists: a cutover may remove the native surface. */
+  | 'managed-cutover-eligible'
+  /** No proven equivalent: the native surface stays, with the contract's stated boundary. */
+  | 'retained'
+  /** Explicitly not offered at all — the honest disposition, not a silent absence. */
+  | 'unsupported';
+
+/**
+ * The minimum the census needs from a disposition.
+ *
+ * Deliberately accepted as an INPUT rather than read only from the shipped
+ * contract: `ManagedCapabilityDisposition.cutoverReady` is the literal type
+ * `false`, so with the contract alone the proven-equivalent branch of the rule
+ * would be unreachable and every test of it vacuous. This is the same seam, and
+ * the same reason, as `CapabilityPolicyRequest.readiness`.
+ */
+export interface CapabilityRetentionDispositionInput {
+  readonly family: ManagedCapabilityFamilyId;
+  readonly disposition: ManagedCapabilityDispositionKind;
+  readonly boundary: string;
+  /**
+   * The managed tools that actually back this family. Required by the census
+   * because "semantically equivalent managed adapter" has to name SOMETHING: a
+   * family declared ready with an empty authority list is a cutover to nothing,
+   * which is the false equivalence the item text forbids — and it would
+   * otherwise read as the most permissive outcome the census can assign.
+   */
+  readonly managedAuthorities: readonly string[];
+  readonly cutoverReady: boolean;
+  readonly gaps: readonly { readonly id: string }[];
+}
+
+export interface NativeFamilyDisablement {
+  readonly restrictionId: string;
+  readonly authorityKind: CapabilityRestrictionAuthority['kind'];
+  /** `client/surface/audience` strings in which this restriction actually applied. */
+  readonly contexts: readonly string[];
+  readonly deniedNames: readonly string[];
+}
+
+export interface NativeFamilyRetention {
+  readonly family: ManagedCapabilityFamilyId;
+  readonly disposition: ManagedCapabilityDispositionKind | 'no-recorded-disposition';
+  /** The contract's explicit managed/native line. An empty one is a violation. */
+  readonly boundary: string;
+  readonly cutoverReady: boolean;
+  readonly openGapIds: readonly string[];
+  readonly outcome: NativeFamilyRetentionOutcome;
+  readonly disabledBy: readonly NativeFamilyDisablement[];
+  readonly violations: readonly string[];
+}
+
+export interface CapabilityRetentionCensusOptions {
+  readonly dispositions?: readonly CapabilityRetentionDispositionInput[];
+  readonly restrictions?: readonly ManagedCapabilityRestriction[];
+  readonly readiness?: CapabilityReadinessSource;
+  readonly clients?: readonly CapabilityClientFamily[];
+  readonly surfaces?: readonly CapabilityPolicySurface[];
+  readonly audiences?: readonly CapabilityAudience[];
+  readonly overrides?: readonly string[];
+  readonly explicitDenyList?: boolean;
+}
+
+export interface CapabilityRetentionCensus {
+  /** One entry per declared family id, in declaration order. Always total. */
+  readonly families: readonly NativeFamilyRetention[];
+  /** Flat union of every family's violations. Empty is the shipped invariant. */
+  readonly violations: readonly string[];
+  /** Table-shape faults: a scope that cannot be honoured as written. */
+  readonly malformedRestrictions: readonly string[];
+  /** Restrictions claiming a native surface outside the R-1 taxonomy — a claim to review, not a fault. */
+  readonly outsideTaxonomyRestrictionIds: readonly string[];
+  /** How many client/surface/audience contexts were resolved. 0 would make the census vacuous. */
+  readonly contextsMeasured: number;
+}
+
+function retentionOutcome(
+  disposition: ManagedCapabilityDispositionKind | 'no-recorded-disposition',
+  cutoverReady: boolean,
+): NativeFamilyRetentionOutcome {
+  if (disposition === 'unsupported-gap') return 'unsupported';
+  if (
+    cutoverReady &&
+    (disposition === 'managed-execution' || disposition === 'managed-backed-native-interface')
+  ) {
+    return 'managed-cutover-eligible';
+  }
+  // Includes 'no-recorded-disposition': the fail-SAFE reading. An unrecorded
+  // family is treated as retained, so nothing may disable it while the omission
+  // is also reported — never the other way round.
+  return 'retained';
+}
+
+/**
+ * Resolve the retention position of every native capability family.
+ *
+ * Pure. Defaults to the shipped contract, policy table and the full decision
+ * space; every input is injectable so both sides of the rule are provable.
+ */
+export function capabilityRetentionCensus(
+  options: CapabilityRetentionCensusOptions = {},
+): CapabilityRetentionCensus {
+  const dispositions: readonly CapabilityRetentionDispositionInput[] =
+    options.dispositions ?? MANAGED_CAPABILITY_DISPOSITIONS;
+  const restrictions = options.restrictions ?? MANAGED_CAPABILITY_RESTRICTIONS;
+  const readiness: CapabilityReadinessSource =
+    options.readiness ??
+    dispositions.map((entry) => ({
+      family: entry.family,
+      cutoverReady: entry.cutoverReady,
+      openGapIds: entry.gaps.map((gap) => gap.id),
+    }));
+  // DERIVED from the enforcement map rather than a second hand-kept client list,
+  // so a client added there is measured here without touching this function.
+  const clients =
+    options.clients ?? (Object.keys(CAPABILITY_CLIENT_ENFORCEMENT) as CapabilityClientFamily[]);
+  const surfaces = options.surfaces ?? ALL_SURFACES;
+  const audiences = options.audiences ?? ALL_AUDIENCES;
+
+  const hits: { context: string; applied: AppliedCapabilityRestriction }[] = [];
+  let contextsMeasured = 0;
+  for (const client of clients) {
+    for (const surface of surfaces) {
+      for (const audience of audiences) {
+        contextsMeasured += 1;
+        const decision = resolveCapabilityPolicy(
+          {
+            client,
+            surface,
+            audience,
+            readiness,
+            overrides: options.overrides,
+            explicitDenyList: options.explicitDenyList,
+          },
+          restrictions,
+        );
+        for (const applied of decision.applied) {
+          hits.push({ context: `${client}/${surface}/${audience}`, applied });
+        }
+      }
+    }
+  }
+
+  const knownFamilies = new Set<string>(MANAGED_CAPABILITY_FAMILY_IDS);
+  const malformedRestrictions: string[] = [];
+  const outsideTaxonomyRestrictionIds: string[] = [];
+  for (const restriction of restrictions) {
+    const scope = restriction.familyScope;
+    if (!scope) {
+      malformedRestrictions.push(`${restriction.id}:missing-family-scope`);
+      continue;
+    }
+    if (scope.kind === 'outside-r1-taxonomy') {
+      outsideTaxonomyRestrictionIds.push(restriction.id);
+      if (!scope.note?.trim()) {
+        malformedRestrictions.push(`${restriction.id}:outside-taxonomy-without-note`);
+      }
+      if (restriction.authority.kind === 'managed-cutover') {
+        // There is no disposition to read a readiness verdict from, so the
+        // cutover claim is uncheckable. resolveCapabilityPolicy withholds it;
+        // the census says why out loud instead of leaving it merely absent.
+        malformedRestrictions.push(`${restriction.id}:managed-cutover-outside-taxonomy`);
+      }
+      continue;
+    }
+    if (!knownFamilies.has(scope.family)) {
+      malformedRestrictions.push(`${restriction.id}:unknown-family:${scope.family}`);
+    }
+  }
+
+  const violations: string[] = [];
+  const families = MANAGED_CAPABILITY_FAMILY_IDS.map((family): NativeFamilyRetention => {
+    const entry = dispositions.find((candidate) => candidate.family === family);
+    const readinessEntry = readinessFor(readiness, family);
+    const cutoverReady = readinessEntry?.cutoverReady ?? entry?.cutoverReady ?? false;
+    const openGapIds = readinessEntry?.openGapIds ?? entry?.gaps.map((gap) => gap.id) ?? [];
+    const disposition = entry?.disposition ?? 'no-recorded-disposition';
+    const outcome = retentionOutcome(disposition, cutoverReady);
+    const boundary = entry?.boundary ?? '';
+
+    const familyViolations: string[] = [];
+    if (!entry) {
+      familyViolations.push(
+        `${family}:no-recorded-disposition — declared in MANAGED_CAPABILITY_FAMILY_IDS with no inventory entry, so its retention position is unstated`,
+      );
+    } else if (!boundary.trim()) {
+      familyViolations.push(
+        `${family}:no-explicit-boundary — "explicitly retained" requires a stated managed/native line, not an empty string`,
+      );
+    }
+    if (outcome === 'managed-cutover-eligible' && (entry?.managedAuthorities.length ?? 0) === 0) {
+      familyViolations.push(
+        `${family}:cutover-eligible-without-named-adapter — a "semantically equivalent managed adapter" has to name one`,
+      );
+    }
+
+    const grouped = new Map<string, { authorityKind: CapabilityRestrictionAuthority['kind']; contexts: string[]; deniedNames: readonly string[] }>();
+    for (const hit of hits) {
+      const scope = hit.applied.familyScope;
+      // A missing scope is unrepresentable in the published type but reachable
+      // from an untyped source (P-008 drives this from measured evidence). It
+      // is reported in `malformedRestrictions`, never attributed to a family it
+      // does not name — an unmapped restriction is invisible here BY DESIGN,
+      // which is precisely the pre-D-012 blindness the report makes loud.
+      if (!scope || scope.kind !== 'contract-family' || scope.family !== family) continue;
+      const existing = grouped.get(hit.applied.id);
+      if (existing) existing.contexts.push(hit.context);
+      else {
+        grouped.set(hit.applied.id, {
+          authorityKind: hit.applied.authorityKind,
+          contexts: [hit.context],
+          deniedNames: hit.applied.deniedNames,
+        });
+      }
+    }
+    const disabledBy: NativeFamilyDisablement[] = [...grouped.entries()].map(
+      ([restrictionId, value]) => ({
+        restrictionId,
+        authorityKind: value.authorityKind,
+        contexts: value.contexts,
+        deniedNames: value.deniedNames,
+      }),
+    );
+
+    if (outcome !== 'managed-cutover-eligible') {
+      for (const disablement of disabledBy) {
+        // An owner mandate is a prohibition with NO managed replacement to
+        // prove — the owner ruled the native capability out regardless of what
+        // we ship — so it is the one legitimate disabler of an unreplaced
+        // surface. Anything else disabling a retained/unsupported family is
+        // precisely the "disabled instead of retained" failure.
+        if (disablement.authorityKind === 'owner-mandate') continue;
+        familyViolations.push(
+          `${family}:disabled-without-proven-equivalent:${disablement.restrictionId} — ` +
+            `outcome '${outcome}' but applied under '${disablement.authorityKind}' in ${disablement.contexts.length} context(s)`,
+        );
+      }
+    }
+
+    violations.push(...familyViolations);
+    return {
+      family,
+      disposition,
+      boundary,
+      cutoverReady,
+      openGapIds,
+      outcome,
+      disabledBy,
+      violations: familyViolations,
+    };
+  });
+
+  return {
+    families,
+    violations,
+    malformedRestrictions,
+    outsideTaxonomyRestrictionIds,
+    contextsMeasured,
+  };
 }

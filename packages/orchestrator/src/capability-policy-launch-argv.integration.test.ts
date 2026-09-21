@@ -46,7 +46,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { invoke } from './invoke';
-import { capabilityPolicyFlags } from './managed-capability-policy';
+import {
+  capabilityPolicyFlags,
+  capabilityRetentionCensus,
+  resolveCapabilityPolicy,
+} from './managed-capability-policy';
 
 // Host identity must not decide what this measures: AGENT_CMD / CLAUDE /
 // AGENT_BACKEND make invoke() resolve the caller's live backend instead of the
@@ -200,4 +204,82 @@ test('invoke — every policy flag reaches argv as ONE `=` token, never the vari
       `flag ${flag} is not present as a single argv token (it may have been split)`,
     );
   }
+});
+
+/*
+ * P-006 / D-012 — the retention rule, asserted against bytes the kernel
+ * delivered rather than against a value the policy returned.
+ *
+ * The clause: "Every native capability family lacking a semantically equivalent
+ * managed adapter remains explicitly retained or unsupported instead of being
+ * disabled." `managed-capability-retention.test.ts` proves the census computes
+ * that correctly. It cannot prove the argv a real process receives agrees with
+ * it — the same gap the two tests above were written to close for P-005, one
+ * level up: a call site that appends its OWN hand-listed deny reaches argv
+ * without passing through the policy at all, so the census would read clean
+ * while the native surface it audits was in fact removed at spawn.
+ */
+test('invoke — every native name the real argv removes is owner-mandated or proven-equivalent', async () => {
+  const decision = resolveCapabilityPolicy({
+    client: 'claude',
+    surface: 'launch',
+    audience: 'headless-agent',
+    explicitDenyList: false,
+  });
+  const census = capabilityRetentionCensus();
+  const outcomeByFamily = new Map(census.families.map((entry) => [entry.family, entry.outcome]));
+
+  // CALIBRATION — both halves. A zero-context census or a zero-deny argv would
+  // satisfy every assertion below by never iterating.
+  assert.ok(census.contextsMeasured > 0, 'the census measured no context at all');
+  assert.ok(decision.applied.length > 0, 'the policy applied nothing at this launch surface');
+
+  const argvTokens = await spawnAndCaptureArgv();
+  const deniedInArgv = argvTokens
+    .filter((token) => token.startsWith('--disallowedTools='))
+    .flatMap((token) => token.slice('--disallowedTools='.length).split(','))
+    .filter(Boolean);
+  assert.ok(
+    deniedInArgv.length > 0,
+    'the spawned argv denied nothing — this assertion would be vacuous',
+  );
+
+  const offenders: string[] = [];
+  const unattributed: string[] = [];
+  for (const name of deniedInArgv) {
+    const owner = decision.applied.find((entry) => entry.deniedNames.includes(name));
+    if (!owner) {
+      // A name reached argv that the ONE policy does not own. That is a native
+      // capability removed outside the audited mapping, which is exactly the
+      // state the census cannot see and therefore must not be allowed to exist.
+      unattributed.push(name);
+      continue;
+    }
+    if (owner.authorityKind === 'owner-mandate') continue;
+    const scope = owner.familyScope;
+    const outcome = scope.kind === 'contract-family' ? outcomeByFamily.get(scope.family) : undefined;
+    if (outcome === 'managed-cutover-eligible') continue;
+    offenders.push(
+      `${name} (restriction ${owner.id}, authority ${owner.authorityKind}, family ` +
+        `${scope.kind === 'contract-family' ? scope.family : 'outside-r1-taxonomy'}, outcome ${outcome ?? 'unknown'})`,
+    );
+  }
+
+  assert.deepEqual(
+    unattributed,
+    [],
+    `the spawned argv denied ${unattributed.length} native name(s) no policy restriction owns:\n` +
+      `${JSON.stringify(unattributed)}\n` +
+      'A hand-listed deny at the call site bypasses the ONE policy, so the retention census ' +
+      'audits a surface that is not the one being removed.\n' +
+      `ACTUAL ARGV:\n${argvTokens.join('\n')}`,
+  );
+  assert.deepEqual(
+    offenders,
+    [],
+    `the spawned argv removed ${offenders.length} native name(s) belonging to a family with no ` +
+      `proven managed equivalent and no owner mandate:\n${offenders.join('\n')}\n` +
+      'CAP-CONTRACT-P006-UNPROVEN-RETAINED: such a family must remain explicitly retained or ' +
+      'unsupported, not disabled.',
+  );
 });

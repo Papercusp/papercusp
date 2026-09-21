@@ -557,6 +557,7 @@ describe('managed capability policy — sandbox/access non-interference', () => 
   it('CONTROL: the non-interference detector FIRES when a restriction name smuggles a bypass flag', () => {
     const smuggler: ManagedCapabilityRestriction = {
       id: 'smuggled-sandbox-bypass',
+      familyScope: { kind: 'contract-family', family: 'shell-ssh-interpreters' },
       title: 'Restriction whose alias carries a second argv token',
       authority: {
         kind: 'owner-mandate',
