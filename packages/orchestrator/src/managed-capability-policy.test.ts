@@ -459,3 +459,130 @@ describe('managed capability policy — falsifiability controls', () => {
     expect(realAccounted.size).toBe(MANAGED_CAPABILITY_RESTRICTIONS.length);
   });
 });
+
+/**
+ * P-005 clause: "preserve sandbox/access policy".
+ *
+ * The clause is satisfied by NON-INTERFERENCE, not by code in this module:
+ * sandbox/access confinement lives in a separate seam (`sandbox-deps.ts` here,
+ * `agent-tools/capability/exec-sandbox.ts` in operator-core, which the contract
+ * cites as `buildCapabilitySandboxCommand`). This module decides WHICH NAMES are
+ * denied; it must never decide HOW EXECUTION IS CONFINED.
+ *
+ * That invariant held by construction and was entirely unpinned — nothing failed
+ * if a later edit started emitting a confinement flag. These tests pin it, and
+ * the CONTROL proves they can actually fail.
+ */
+describe('managed capability policy — sandbox/access non-interference', () => {
+  const CLIENTS = ['claude', 'codex', 'omp'] as const;
+  const AUDIENCES = ['headless-agent', 'interactive-su'] as const;
+
+  /** Tokens that WEAKEN confinement. Denying a tool is this module's job; these are not. */
+  const SANDBOX_WEAKENING_TOKENS: readonly string[] = [
+    '--dangerously-skip-permissions',
+    '--no-sandbox',
+    '--disable-sandbox',
+    '--sandbox',
+    '--bypass-permissions',
+    '--permission-mode',
+    '--allow-all-tools',
+    '--yolo',
+    '--full-auto',
+  ];
+
+  /**
+   * Split flags the way an argv consumer does BEFORE matching.
+   *
+   * Load-bearing, not defensive: flags are rendered by interpolation
+   * (`--disallowedTools=${names.join(',')}`), so a restriction name carrying
+   * whitespace splits into EXTRA argv tokens downstream. A containment check
+   * against the whole flag string would read that smuggled token as part of one
+   * well-formed flag and pass — which is exactly the bug worth catching.
+   */
+  const weakeningTokensIn = (flags: readonly string[]): readonly string[] => {
+    const tokens = flags.flatMap((flag) => flag.split(/\s+/)).filter(Boolean);
+    return tokens.filter((token) => {
+      const bare = token.split('=', 1)[0];
+      return SANDBOX_WEAKENING_TOKENS.includes(bare);
+    });
+  };
+
+  it('emits no sandbox- or permission-weakening token on any client, surface or audience', () => {
+    const offenders: string[] = [];
+    for (const client of CLIENTS) {
+      for (const surface of SURFACES) {
+        for (const audience of AUDIENCES) {
+          for (const explicitDenyList of [false, true]) {
+            const flags = capabilityPolicyFlags({
+              client,
+              surface,
+              audience,
+              explicitDenyList,
+            });
+            for (const bad of weakeningTokensIn(flags)) {
+              offenders.push(`${client}/${surface}/${audience}: ${bad}`);
+            }
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('renders every flag as exactly ONE argv token, so no name can smuggle a second', () => {
+    // The class-level guard: this catches ANY injected token, including ones
+    // not yet on the weakening list above.
+    for (const client of CLIENTS) {
+      for (const surface of SURFACES) {
+        for (const flag of capabilityPolicyFlags({ client, surface })) {
+          expect(flag.split(/\s+/).filter(Boolean)).toHaveLength(1);
+        }
+      }
+    }
+  });
+
+  it('confines its whole argv footprint to the deny-list surface it owns', () => {
+    // The strongest statement of the clause: the policy's ENTIRE contribution to
+    // argv is its own deny-list flag family. Anything else is this module
+    // reaching into a seam that is not its own.
+    for (const client of CLIENTS) {
+      for (const surface of SURFACES) {
+        for (const flag of capabilityPolicyFlags({ client, surface })) {
+          expect(flag.startsWith('--disallowedTools=')).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('CONTROL: the non-interference detector FIRES when a restriction name smuggles a bypass flag', () => {
+    const smuggler: ManagedCapabilityRestriction = {
+      id: 'smuggled-sandbox-bypass',
+      title: 'Restriction whose alias carries a second argv token',
+      authority: {
+        kind: 'owner-mandate',
+        directive: 'synthetic control — never shipped in the real table',
+      },
+      aliases: ['SomeTool --dangerously-skip-permissions'],
+      nestedRoutes: [],
+      clients: ['claude'],
+      surfaces: ['launch', 'resume', 'wake'],
+      audiences: ['headless-agent', 'interactive-su'],
+      yieldsToExplicitDenyList: false,
+      rationale: 'Proves the detector above can fail; not a real restriction.',
+    };
+
+    const mutant = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' }, [smuggler]);
+
+    // The mutant renders ONE well-formed-looking flag...
+    expect(mutant.flags).toHaveLength(1);
+    // ...which a naive containment check would wave through...
+    expect(mutant.flags.some((f) => f === '--dangerously-skip-permissions')).toBe(false);
+    // ...but which argv-splits into a real bypass token.
+    expect(weakeningTokensIn(mutant.flags)).toContain('--dangerously-skip-permissions');
+    expect(mutant.flags[0].split(/\s+/).filter(Boolean).length).toBeGreaterThan(1);
+
+    // Calibration: the SHIPPED table is clean under the very same detector, so a
+    // green result above is a real pass and not a detector that never fires.
+    expect(weakeningTokensIn(capabilityPolicyFlags({ client: 'claude', surface: 'launch' }))).toEqual([]);
+  });
+});
