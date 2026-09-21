@@ -297,6 +297,13 @@ export const SU_TILES: readonly SuTile[] = [
     rationale: 'D-017 names "delivery discipline" as stance content. The Claude-Artifact bullets are client colour a client overlay may absorb in P-003.',
   },
   {
+    anchor: '## Owner directives — durable capture and resolution',
+    part: 'collaboration-stance',
+    label: 'owner-directive capture rail: verbatim PENDING rows · resolve-pending before the agenda · promoted directives outrank it',
+    rationale:
+      'The section’s own claim — "a capture rail, not a paraphrase rail: the database stores the owner’s literal words" — is fidelity to the owner, which is exactly what D-017 puts in the stance slot beside "address the owner by name" and the delivery discipline it follows in file order. It is deliberately NOT kernel: the ledger verbs are platform protocol, but the obligation this tile states is about the OWNER relationship (never paraphrase them, never silently drop what they said), and a pot with no interactive owner inherits the verbs without inheriting the stance.',
+  },
+  {
     anchor: '<!-- PAPERCUSP-SU:AUTO-MODE -->',
     part: 'kernel',
     seam: 'AUTO-MODE',
