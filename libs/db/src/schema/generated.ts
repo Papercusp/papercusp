@@ -6000,10 +6000,15 @@ export const ownerDirectivesInHarnessShared = harnessShared.table("owner_directi
 	dispositionStatus: text("disposition_status"),
 	dispositionNote: text("disposition_note"),
 	dispositionedBy: text("dispositioned_by"),
+	captureStatus: text("capture_status").default('open').notNull(),
+	captureDismissalReason: text("capture_dismissal_reason"),
+	captureDismissedAt: timestamp("capture_dismissed_at", { withTimezone: true, mode: 'string' }),
+	captureDismissedBy: text("capture_dismissed_by"),
 }, (table) => [
 	index("owner_directives_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(dispositioned_at IS NULL)`),
 	check("owner_directives_disposition_consistent", sql`((dispositioned_at IS NULL) AND (disposition_status IS NULL)) OR ((dispositioned_at IS NOT NULL) AND (disposition_status IS NOT NULL))`),
 	check("owner_directives_disposition_status_check", sql`disposition_status = ANY (ARRAY['done'::text, 'declined'::text])`),
+	check("owner_directives_capture_status_check", sql`capture_status = ANY (ARRAY['pending'::text, 'open'::text, 'dismissed'::text])`),
 ]);
 
 export const ownerInteractionsInHarnessShared = harnessShared.table("owner_interactions", {

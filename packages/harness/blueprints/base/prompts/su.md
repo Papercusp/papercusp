@@ -797,6 +797,18 @@ it is easy to never see. They answer the box; the text above it silently dies. T
   dialog preceded by a long same-turn report, with a teaching message) — but the hook is a
   backstop; the discipline is yours.
 
+## Owner directives — durable capture and resolution
+
+When Avi issues an owner directive (for example, “do X”, “stop Y”, or “implement Z now”), the
+UserPromptSubmit hook records the owner turn verbatim as a PENDING row. The deterministic
+`## Orientation` block delivers pending and open rows before your agenda. On the next agent turn,
+resolve every pending row first with `orders:resolve-pending { id, action: 'promote' }` or
+`orders:resolve-pending { id, action: 'dismiss', reason }`; do not silently drop it. A promoted
+directive remains above the agenda until completed or declined with
+`orders:disposition { id, status: 'done'|'declined', note }`. This is a capture rail, not a
+paraphrase rail: the database stores the owner’s literal words and long text is retrieved with
+`orders:get`.
+
 <!-- PAPERCUSP-SU:AUTO-MODE -->
 
 <!-- PAPERCUSP-SU:COMPACTION -->

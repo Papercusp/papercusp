@@ -42,6 +42,7 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { MANAGED_CAPABILITY_DISPOSITIONS } from './managed-capability-contract';
 import {
   declareRealClientMatrix,
   realClientMatrixReport,
@@ -223,4 +224,122 @@ describe('P-008 real-client layer — the version dimension is read from the cli
     },
     PROBE_TIMEOUT_MS * 2,
   );
+});
+
+/**
+ * R-5 of the acceptance BAR set for plan
+ * managed-agent-capability-contract-and-native-cutover-2026-09-13.
+ *
+ * WHY THIS BLOCK EXISTS. R-5's structured check binds THIS file, and until now
+ * nothing in it tested R-5's claim — the file was entirely P-008 real-client
+ * probes. The author's own rubric-vetting pass (2026-09-21) measured that and
+ * treated it as a defect rather than a formality: a bar whose named probe
+ * cannot fail on its own model is decoration, not a gate. The repair is to make
+ * the bound file carry the proof, because a bar's `check` is bar-hash material
+ * and is not amendable — re-pointing the bar is not an available move.
+ *
+ * WHAT MAKES R-5 HARD. It asserts an ABSENCE, and the claim is deliberately
+ * stronger than "we did not build it": the offline-recovery path must be
+ * RECORDED as a deliberate owner-directed exclusion (D-010), rooted in the
+ * D-007/D-008 forgeability finding, so a later reader cannot mistake it for an
+ * oversight and rebuild it under a weaker authority root.
+ *
+ * An absence assertion that has gone vacuous is indistinguishable from one that
+ * holds, so every negative here is paired with a positive control.
+ */
+describe('R-5 — offline recovery is a RECORDED deliberate exclusion, not unbuilt work', () => {
+  const recoveryFamily = MANAGED_CAPABILITY_DISPOSITIONS.find(
+    (entry) => entry.family === 'memory-checkpoint-resume-rewind',
+  );
+
+  it('the shipped contract records the exclusion and cites D-010 plus its D-007/D-008 root', () => {
+    expect(
+      recoveryFamily,
+      'memory-checkpoint-resume-rewind must stay in the shipped disposition inventory; dropping ' +
+        'the family would erase the very record R-5 requires a reader to be able to find.',
+    ).toBeDefined();
+
+    const exclusion = recoveryFamily?.gaps.find((gap) => gap.id === 'offline-bounded-recovery');
+    expect(
+      exclusion,
+      'offline-bounded-recovery is the canonical record of the D-010 exclusion; without it the ' +
+        'absence reads as an oversight that somebody is entitled to close.',
+    ).toBeDefined();
+
+    // 'unsupported' is the kind that says NOBODY owns this. Reclassifying it as
+    // 'recovery' or 'parity' would turn a closed decision back into outstanding
+    // work and re-open the exact door D-010 shut.
+    expect(exclusion?.kind).toBe('unsupported');
+
+    expect(exclusion?.description).toContain('D-010');
+    expect(exclusion?.description).toContain('D-007/D-008');
+    expect(exclusion?.description).toMatch(/DELIBERATELY EXCLUDED/);
+    // "absent and unreachable, not merely unbuilt": the record must carry the
+    // forgeability finding, which is WHY no weaker substitute is acceptable.
+    expect(exclusion?.description).toMatch(/forgeable/i);
+
+    // A gap with no falsifier cannot be argued with by a later author.
+    expect(exclusion?.falsifier ?? '').toMatch(/locally-authorized recovery path/i);
+    expect(exclusion?.falsifier ?? '').toMatch(/supersede D-007\/D-008/i);
+
+    // ...and the family-level reason must not describe it as pending work.
+    expect(recoveryFamily?.cutoverReason).toContain('D-010');
+    expect(recoveryFamily?.cutoverReason).toMatch(/permanent documented exclusion/i);
+  });
+
+  it('POSITIVE CONTROL: other gap kinds still exist, so the unsupported-kind assertion discriminates', () => {
+    // Had every gap in the inventory drifted to 'unsupported', the kind
+    // assertion above would keep passing while distinguishing nothing.
+    const kinds = new Set(
+      MANAGED_CAPABILITY_DISPOSITIONS.flatMap((entry) => entry.gaps.map((gap) => gap.kind)),
+    );
+    expect(kinds.has('unsupported')).toBe(true);
+    expect([...kinds].some((kind) => kind !== 'unsupported')).toBe(true);
+  });
+
+  it('no declared managed authority anywhere in the inventory offers a local recovery grant', () => {
+    const authorities = MANAGED_CAPABILITY_DISPOSITIONS.flatMap((entry) => [
+      ...entry.managedAuthorities,
+      ...entry.reuseSites.map((site) => site.path),
+    ]);
+
+    // POSITIVE CONTROL: the inventory is the shipped surface declaration and is
+    // always populated, which is exactly why the control lives here and NOT on
+    // capabilityPolicyFlags — that render is legitimately empty before cutover
+    // (every disposition still carries cutoverReady: false), so an empty flag
+    // set would satisfy the negative below for the wrong reason.
+    expect(authorities.length).toBeGreaterThan(20);
+    expect(authorities.some((entry) => entry.includes('capability:bash'))).toBe(true);
+
+    const grantShaped = authorities.filter((entry) =>
+      /(offline|local)[-_ ]?recovery|recovery[-_ ]?(grant|key|token)|allow[-_ ]?recovery/i.test(entry),
+    );
+    expect(
+      grantShaped,
+      `a managed authority names a local recovery grant, which R-5 forbids: ${grantShaped.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('no rendered policy flag, on any client or surface, carries a recovery grant', () => {
+    const clients = ['claude', 'codex', 'omp'] as const;
+    const surfaces = ['launch', 'resume', 'wake'] as const;
+    const rendered: string[] = [];
+
+    for (const client of clients) {
+      for (const surface of surfaces) {
+        rendered.push(...capabilityPolicyFlags({ client, surface }));
+      }
+    }
+
+    // Deliberately NOT asserting `rendered.length > 0` — see the control note
+    // above. This assertion tightens as cutover activates restrictions, and is
+    // honestly weak (though never false) while the render is still empty.
+    const grantShaped = rendered.filter((flag) =>
+      /(offline|local)[-_]?recovery|recovery[-_]?(grant|key|token)|allow[-_]?recovery/i.test(flag),
+    );
+    expect(
+      grantShaped,
+      `policy rendered a recovery-grant-shaped flag: ${grantShaped.join(', ')}`,
+    ).toEqual([]);
+  });
 });
