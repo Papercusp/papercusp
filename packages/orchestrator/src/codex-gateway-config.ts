@@ -73,6 +73,10 @@ export function codexManagedFeaturesToml(opts: { disableMemories?: boolean } = {
     '[features]',
     ...(opts.disableMemories === false ? [] : ['memories = false']),
     'remote_compaction_v2 = false',
+    // Custom providers do not consult `model_catalog_url` unless this Codex feature is on.
+    // Without it, /model silently falls back to the shared/default-account cache even while
+    // the gateway can serve newer model ids for inference.
+    'api_key_model_discovery = true',
     '',
   ];
 }
@@ -93,12 +97,18 @@ export function codexGatewayConfigToml(
   // absent. Only a caller that passes neither (gateway fully off) gets no config.
   if (!pinnedAccount && !opts.gatewayOn) return { root: [], tables: [] };
   const providerId = CODEX_GATEWAY_PROVIDER_ID;
-  const headers: Record<string, string> = {};
+  // `/v1/models` is shared by the Claude and Codex adapters. Inference is
+  // unambiguous from `/v1/responses`, but the native model-catalog client does
+  // not stamp Codex's usual originator header. Make the provider identity
+  // explicit so an unpinned `account=auto` catalog request cannot fall through
+  // to Claude's differently-shaped `{ data: [...] }` response.
+  const headers: Record<string, string> = { originator: 'codex_cli_rs' };
   if (pinnedAccount) headers['x-papercusp-account'] = pinnedAccount;
   const ownerId = opts.ownerId?.trim();
   if (ownerId) headers['x-papercusp-owner'] = ownerId;
   const priority = opts.priority?.trim();
   if (priority) headers['x-papercusp-priority'] = priority;
+  const gatewayBaseUrl = `http://127.0.0.1:${codexGatewayPort()}`;
   const headerEntries = Object.entries(headers);
   const httpHeadersLine = headerEntries.length
     ? [`http_headers = { ${headerEntries.map(([k, v]) => `"${tomlEscape(k)}" = "${tomlEscape(v)}"`).join(', ')} }`]
@@ -115,7 +125,12 @@ export function codexGatewayConfigToml(
       '# BEGIN PAPERCUSP_CODEX_GATEWAY_PROVIDER',
       `[model_providers.${providerId}]`,
       'name = "Papercusp Codex Gateway"',
-      `base_url = "http://127.0.0.1:${codexGatewayPort()}/v1"`,
+      `base_url = "${gatewayBaseUrl}/v1"`,
+      // Codex model discovery is a distinct provider endpoint. Without this full URL,
+      // the TUI falls back to its shared/default-account cache instead of asking our
+      // selected gateway account, so newly released models disappear only in PSU
+      // `--account=auto` sessions even though inference can already serve them.
+      `model_catalog_url = "${gatewayBaseUrl}/v1/models"`,
       'wire_api = "responses"',
       'experimental_bearer_token = "papercusp-gateway"',
       ...httpHeadersLine,
