@@ -811,7 +811,7 @@ describe('buildSpawnCodexConfigToml', () => {
     expect(toml).toContain('wire_api = "responses"');
     expect(toml).toContain('experimental_bearer_token = "papercusp-gateway"');
     expect(toml).toContain(
-      'http_headers = { "x-papercusp-account" = "aviynw_codex", "x-papercusp-owner" = "s-queen\\"1", "x-papercusp-priority" = "mug" }',
+      'http_headers = { "originator" = "codex_cli_rs", "x-papercusp-account" = "aviynw_codex", "x-papercusp-owner" = "s-queen\\"1", "x-papercusp-priority" = "mug" }',
     );
     expect(toml).toContain('[mcp_servers.papercusp]');
     expect(toml).toContain('url = "http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a\\"b"');
@@ -845,10 +845,12 @@ describe('buildSpawnCodexConfigToml', () => {
     expect(toml).toContain('[model_providers.papercusp-codex-gateway]');
     expect(toml).toContain('base_url = "http://127.0.0.1:8799/v1"');
     expect(toml).not.toContain('x-papercusp-account"');
-    expect(toml).toContain('http_headers = { "x-papercusp-owner" = "s-queen1", "x-papercusp-priority" = "mug" }');
+    expect(toml).toContain(
+      'http_headers = { "originator" = "codex_cli_rs", "x-papercusp-owner" = "s-queen1", "x-papercusp-priority" = "mug" }',
+    );
   });
 
-  it('omits the http_headers line entirely when gatewayOn is set with no account/owner/priority', () => {
+  it('keeps only the Codex originator header when gatewayOn has no account/owner/priority', () => {
     const toml = buildSpawnCodexConfigToml(
       'http://127.0.0.1:3270/api/mcp?harness=papercusp',
       undefined,
@@ -856,7 +858,7 @@ describe('buildSpawnCodexConfigToml', () => {
     );
 
     expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
-    expect(toml).not.toContain('http_headers');
+    expect(toml).toContain('http_headers = { "originator" = "codex_cli_rs" }');
   });
 });
 
