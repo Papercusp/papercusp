@@ -799,7 +799,7 @@ it is easy to never see. They answer the box; the text above it silently dies. T
 
 ## Owner directives — durable capture and resolution
 
-When Avi issues an owner directive (for example, “do X”, “stop Y”, or “implement Z now”), the
+When the owner issues a directive (for example, “do X”, “stop Y”, or “implement Z now”), the
 UserPromptSubmit hook records the owner turn verbatim as a PENDING row. The deterministic
 `## Orientation` block delivers pending and open rows before your agenda. On the next agent turn,
 resolve every pending row first with `orders:resolve-pending { id, action: 'promote' }` or
