@@ -73,6 +73,7 @@ import {
   type FleetPostureRole,
   type LocatedSuTile,
   type SuPartDocument,
+  type SuTile,
 } from './su-decomposition.js';
 
 export interface SuStackComposeOptions extends ComposeStackOptions {
@@ -82,6 +83,16 @@ export interface SuStackComposeOptions extends ComposeStackOptions {
   suText?: string;
   /** Preamble text override (tests); default: read from the harness. */
   preambleText?: string;
+  /**
+   * Tile-list override (tests); default: the live `SU_TILES`. Pair it with `suText` when the
+   * subject is a FROZEN su.md — a pinned fixture cannot grow a section when the live su.md
+   * does, so validating a frozen subject with the live invariant reds the moment a tile is
+   * added (it was, 2026-09-21: '## Owner directives — durable capture and resolution'). Scope
+   * the tiles to the frozen text instead of re-pinning it. Live-su.md tiling soundness is NOT
+   * weakened by this: that invariant is asserted against the real harness file by
+   * `su-identities.test.ts`, which passes no override.
+   */
+  tiles?: readonly SuTile[];
   /**
    * Bind a fleet posture (attached at fleet:launch-on-plan / fleet:join / fleet:take-leadership);
    * default none. Sugar for `binding: suPostureBinding(posture)` — disagreeing with an
@@ -219,7 +230,7 @@ function textOf(located: readonly LocatedSuTile[], doc: SuPartDocument, drop: Re
 export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocuments {
   const suText = opts.suText ?? readSuSource(opts.harnessDir);
   const preamble = readPreamble(opts);
-  const located = locateSuTiles(suText);
+  const located = locateSuTiles(suText, opts.tiles);
   const headings = preambleHeadings(preamble);
   const droppedTiles: LocatedSuTile[] = [];
   const keptDedupeTiles: LocatedSuTile[] = [];

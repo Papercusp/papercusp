@@ -570,9 +570,9 @@ export function tilesOfDocument(located: readonly LocatedSuTile[], doc: SuPartDo
 }
 
 /** The VERBATIM extraction — byte-equal to the concatenation of the document's tiles. */
-export function extractSuPart(suText: string, id: SuPartDocId): string {
+export function extractSuPart(suText: string, id: SuPartDocId, tiles?: readonly SuTile[]): string {
   const doc = suPartDocument(id);
-  return tilesOfDocument(locateSuTiles(suText), doc)
+  return tilesOfDocument(locateSuTiles(suText, tiles), doc)
     .map((t) => t.text)
     .join('');
 }
