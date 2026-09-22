@@ -6007,6 +6007,7 @@ export const ownerDirectivesInHarnessShared = harnessShared.table("owner_directi
 	capturePromotedAt: timestamp("capture_promoted_at", { withTimezone: true, mode: 'string' }),
 	capturePromotedBy: text("capture_promoted_by"),
 	capturedByHook: boolean("captured_by_hook").default(false).notNull(),
+	capturePromotedNote: text("capture_promoted_note"),
 }, (table) => [
 	index("owner_directives_hook_captured_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.capturedByHook.asc().nullsLast().op("bool_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`captured_by_hook`),
 	index("owner_directives_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(dispositioned_at IS NULL)`),
