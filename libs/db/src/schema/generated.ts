@@ -6024,6 +6024,22 @@ export const ownerActivityInHarnessShared = harnessShared.table("owner_activity"
 	primaryKey({ columns: [table.workspaceId], name: "owner_activity_pkey"}),
 ]);
 
+export const ownerDirectiveAgendaInHarnessShared = harnessShared.table("owner_directive_agenda", {
+	workspaceId: text("workspace_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	directiveId: bigint("directive_id", { mode: "number" }).notNull(),
+	ownerId: text("owner_id").notNull(),
+	state: text().notNull(),
+	reason: text(),
+	actedAt: timestamp("acted_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("owner_directive_agenda_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerId.asc().nullsLast().op("text_ops"), table.directiveId.asc().nullsLast().op("int8_ops")),
+	primaryKey({ columns: [table.directiveId, table.ownerId, table.workspaceId], name: "owner_directive_agenda_pkey"}),
+	check("owner_directive_agenda_dismissal_reason_required", sql`(state <> 'dismissed'::text) OR ((reason IS NOT NULL) AND (length(btrim(reason)) > 0))`),
+	check("owner_directive_agenda_state_check", sql`state = ANY (ARRAY['open'::text, 'dismissed'::text])`),
+]);
+
 export const ownerDirectivesInHarnessShared = harnessShared.table("owner_directives", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
