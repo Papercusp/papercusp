@@ -618,6 +618,10 @@ export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage
 	turnTrigger: text("turn_trigger"),
 	accountId: text("account_id"),
 	goalId: text("goal_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	cacheCreation5MTokens: bigint("cache_creation_5m_tokens", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	cacheCreation1HTokens: bigint("cache_creation_1h_tokens", { mode: "number" }),
 }, (table) => [
 	index("agent_usage_samples_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	index("agent_usage_samples_ws_account_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.accountId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(account_id IS NOT NULL)`),
@@ -2325,6 +2329,7 @@ export const customerWorkspacesInHarnessShared = harnessShared.table("customer_w
 	lifecyclePolicyUpdatedAt: timestamp("lifecycle_policy_updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("customer_workspaces_idle_stop_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.lastActivityAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("text_ops")).where(sql`((state = 'active'::text) AND (idle_stop_after_minutes IS NOT NULL))`),
+	uniqueIndex("customer_workspaces_one_live_per_organization_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.organizationId.asc().nullsLast().op("text_ops")).where(sql`(state <> 'deleted'::text)`),
 	index("customer_workspaces_organization_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.organizationId.asc().nullsLast().op("text_ops"), table.updatedAt.desc().nullsFirst().op("timestamptz_ops"), table.id.asc().nullsLast().op("text_ops")),
 	foreignKey({
 			columns: [table.workspaceId, table.workspaceHostId],
@@ -4522,6 +4527,7 @@ export const interactiveUsageFilesInHarnessShared = harnessShared.table("interac
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	byteOffset: bigint("byte_offset", { mode: "number" }).default(0).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	parserState: jsonb("parser_state").default({}).notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.filePath, table.workspaceId], name: "interactive_usage_files_pkey"}),
 ]);
@@ -5415,6 +5421,17 @@ export const operatorCapabilityTiersInHarnessShared = harnessShared.table("opera
 
 ]);
 
+export const operatorConsultExpertRoutingInHarnessShared = harnessShared.table("operator_consult_expert_routing", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_consult_expert_routing_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_consult_expert_routing_pkey"}),
+
+]);
+
 export const operatorContextDoorsConfigInHarnessShared = harnessShared.table("operator_context_doors_config", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
@@ -6064,6 +6081,10 @@ export const ownerDirectivesInHarnessShared = harnessShared.table("owner_directi
 	summaryText: text("summary_text"),
 	summaryBy: text("summary_by"),
 	summaryAt: timestamp("summary_at", { withTimezone: true, mode: 'string' }),
+	reopenedAt: timestamp("reopened_at", { withTimezone: true, mode: 'string' }),
+	reopenedBy: text("reopened_by"),
+	reopenReason: text("reopen_reason"),
+	reopenedFrom: text("reopened_from"),
 }, (table) => [
 	index("owner_directives_hook_captured_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.capturedByHook.asc().nullsLast().op("bool_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`captured_by_hook`),
 	index("owner_directives_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(dispositioned_at IS NULL)`),
@@ -10505,6 +10526,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	index("hfc_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	index("wi_admission_first_claim_latency_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.admittedAt.asc().nullsLast().op("timestamptz_ops"), table.firstClaimedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(admitted_at IS NOT NULL)`),
 	index("wi_admission_pending_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdTs.asc().nullsLast().op("int8_ops")).where(sql`(admission = 'pending'::text)`),
+	index("work_items_acceptance_drain_plan_idx").using("btree", sql`workspace_id`, sql`((payload ->> 'acceptanceDrainPlan'::text))`).where(sql`((payload ->> 'acceptanceDrainPlan'::text) IS NOT NULL)`),
 	index("work_items_author_pubkey_local_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.authorPubkey.asc().nullsLast().op("text_ops")).where(sql`((author_pubkey IS NOT NULL) AND (author_pubkey <> ''::text) AND (item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
 	index("work_items_authority_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.authority.asc().nullsLast().op("text_ops")).where(sql`(authority IS NOT NULL)`),
 	index("work_items_authority_proposed_idx").using("btree", table.terminalOwner.asc().nullsLast().op("text_ops"), table.updatedTs.asc().nullsLast().op("int8_ops")).where(sql`(authority = 'proposed'::text)`),
