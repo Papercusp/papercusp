@@ -12,10 +12,10 @@
 -- backend continuously active, a full core taken from the peer-log fold.
 --
 -- Only filings carry the key (264 of 225,547 rows on the tower), so the index is
--- PARTIAL on `IS NOT NULL` and costs almost nothing to maintain. The equality
--- lookups `payload->>'acceptanceDrainPlan' = <ref>` prove that predicate (the
--- operator is strict), and readAcceptanceDrainVisibility repeats it verbatim for
--- its LATERAL join clause. The index-served test in
+-- PARTIAL on `IS NOT NULL` and costs almost nothing to maintain. Every lookup is
+-- an equality `payload->>'acceptanceDrainPlan' = <ref>`, and because the
+-- operator is strict the planner proves the predicate from it, including for
+-- readAcceptanceDrainVisibility's LATERAL join clause. The index-served test in
 -- system-health/acceptance-drain-visibility.integration.test.ts EXPLAINs the
 -- production SQL against this file to pin that.
 --
