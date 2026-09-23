@@ -622,10 +622,17 @@ export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage
 	cacheCreation5MTokens: bigint("cache_creation_5m_tokens", { mode: "number" }),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	cacheCreation1HTokens: bigint("cache_creation_1h_tokens", { mode: "number" }),
+	usageEventKey: text("usage_event_key"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	eventTs: bigint("event_ts", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	ingestedAt: bigint("ingested_at", { mode: "number" }),
+	usageProvenance: jsonb("usage_provenance"),
 }, (table) => [
 	index("agent_usage_samples_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
 	index("agent_usage_samples_ws_account_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.accountId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(account_id IS NOT NULL)`),
 	index("agent_usage_samples_ws_bucket_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.bucketKey.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
+	uniqueIndex("agent_usage_samples_ws_event_key_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.usageEventKey.asc().nullsLast().op("text_ops")).where(sql`(usage_event_key IS NOT NULL)`),
 	index("agent_usage_samples_ws_goal_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(goal_id IS NOT NULL)`),
 	index("agent_usage_samples_ws_role_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(role IS NOT NULL)`),
 	index("agent_usage_samples_ws_session_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(session_id IS NOT NULL)`),
