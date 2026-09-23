@@ -16,6 +16,10 @@ import {
   resetPgDiagnosticContextResolver,
   resetAcquireRegistryForTest,
   setPgDiagnosticContextResolver,
+  pgQueryFamily,
+  pgQueryFamilyMemoStats,
+  resetPgQueryFamilyMemoForTest,
+  PG_QUERY_FAMILY_MEMO_MAX_TEXT,
 } from './acquire-registry';
 
 const require_ = createRequire(import.meta.url);
@@ -55,7 +59,8 @@ function registryFromSource(source = ACQUIRE_REGISTRY_SOURCE): typeof import('./
   const pinned = new Map<string, unknown>();
   return new Function('pinModuleState', 'randomUUID', 'readBuildStamp', javascript + `
     return { createPgDiagnosticHooks, pgResultDiagnosticSnapshot, beginAcquire,
-      recordPgResult, setPgDiagnosticContextResolver, capturePgDiagnosticContext };
+      recordPgResult, setPgDiagnosticContextResolver, capturePgDiagnosticContext,
+      pgQueryFamily, pgQueryFamilyMemoStats };
   `)(
     (key: string, init: () => unknown) => {
       if (!pinned.has(key)) pinned.set(key, init());
@@ -122,6 +127,22 @@ const registryControls = [
       expect(snapshot.results.map(row => row.queryId)).toEqual([37, 38, 39, 40]);
       snapshot.results[0].source = { ...snapshot.results[0].source, processInstanceId: 'changed' };
       expect(registry.pgResultDiagnosticSnapshot('org-app', 4).results[0].source.processInstanceId).not.toBe('changed');
+    },
+  },
+  {
+    // WI-10002541: the family classifier runs once per distinct SQL text on
+    // the per-result hot path, not once per result.
+    name: 'R6 query-family memo classifies each distinct text once',
+    from: 'const hit = families.get(text);', to: 'const hit = undefined;',
+    verify(source: string) {
+      const registry = registryFromSource(source);
+      const hooks = registry.createPgDiagnosticHooks('org-app');
+      // Fresh string instances, as postgres-js builds them per call.
+      for (let queryId = 1; queryId <= 50; queryId++) {
+        hooks.onresult({ ...completedInput, queryId, query: (' ' + completedInput.query).slice(1) });
+      }
+      expect(registry.pgQueryFamilyMemoStats()).toMatchObject({ misses: 1, hits: 49, size: 1 });
+      expect(registry.pgResultDiagnosticSnapshot('org-app', 1).results[0].queryFamily).toBe('select:private_table');
     },
   },
 ];
@@ -380,5 +401,70 @@ describe('postgres.js terminal result diagnostics patch', () => {
     });
     expect(capturePgDiagnosticContext().correlation?.rowId).toBe('8');
     await sql.end();
+  });
+});
+
+describe('pgQueryFamily memo (WI-10002541)', () => {
+  const fresh = (q: string) => (' ' + q).slice(1);
+
+  it('classifies each distinct text once across many results on the result path', () => {
+    const hooks = createPgDiagnosticHooks('org-app');
+    const texts = [
+      'SELECT id FROM harness_shared.work_items WHERE workspace_id = $1',
+      'INSERT INTO harness_shared.work_items (a, b) VALUES ($1, $2)',
+      "UPDATE harness_shared.shared_session_presence SET state = 'live' WHERE owner_id = $1",
+    ];
+    for (let queryId = 1; queryId <= 300; queryId++) {
+      hooks.onresult({ ...completedInput, queryId, query: fresh(texts[queryId % 3]) });
+    }
+    expect(pgQueryFamilyMemoStats()).toMatchObject({ misses: 3, hits: 297, size: 3, evictions: 0 });
+    // Oldest first: queryIds 298, 299, 300 -> texts[1], texts[2], texts[0].
+    expect(pgResultDiagnosticSnapshot('org-app', 3).results.map((r) => r.queryFamily)).toEqual([
+      'insert:harness_shared.work_items',
+      'update:harness_shared.shared_session_presence',
+      'select:harness_shared.work_items',
+    ]);
+  });
+
+  it.each([
+    ['SELECT 1', 'select'],
+    ['/* select from decoy */ DELETE FROM public.t WHERE a = $1', 'delete:public.t'],
+    ["select x from real_table where note = 'from fake_table'", 'select:real_table'],
+    ['-- insert decoy\nupdate "T" set a = 1', 'update:t'],
+    ['DO $body$ BEGIN PERFORM 1 FROM decoy; END $body$', 'other'],
+    ['COPY harness_shared.x FROM STDIN', 'copy:harness_shared.x'],
+    ['vacuum analyze', 'other'],
+  ])('a remembered family equals the classified one: %s', (sql, expected) => {
+    const first = pgQueryFamily(sql);
+    const second = pgQueryFamily(fresh(sql));
+    expect(first).toBe(expected);
+    expect(second).toBe(expected);
+    expect(pgQueryFamilyMemoStats()).toMatchObject({ misses: 1, hits: 1 });
+  });
+
+  it('is a bounded LRU: the least recently used text is evicted, not a hot one', () => {
+    resetPgQueryFamilyMemoForTest({ max: 3 });
+    pgQueryFamily('select 1 from a');
+    pgQueryFamily('select 1 from b');
+    pgQueryFamily('select 1 from c');
+    pgQueryFamily('select 1 from a'); // refresh a: b is now the oldest
+    pgQueryFamily('select 1 from d');
+    expect(pgQueryFamilyMemoStats()).toMatchObject({ size: 3, evictions: 1, misses: 4, hits: 1 });
+    pgQueryFamily('select 1 from a');
+    expect(pgQueryFamilyMemoStats().hits).toBe(2);
+    pgQueryFamily('select 1 from b');
+    expect(pgQueryFamilyMemoStats()).toMatchObject({ misses: 5, evictions: 2 });
+  });
+
+  it('never remembers an over-long text, but still classifies it', () => {
+    const huge = `select * from big_table where id in (${'1,'.repeat(PG_QUERY_FAMILY_MEMO_MAX_TEXT)}1)`;
+    expect(pgQueryFamily(huge)).toBe('select:big_table');
+    expect(pgQueryFamily(huge)).toBe('select:big_table');
+    expect(pgQueryFamilyMemoStats()).toMatchObject({ size: 0, misses: 2, hits: 0 });
+  });
+
+  it('exposes counters only, never query text', () => {
+    pgQueryFamily(completedInput.query);
+    expect(JSON.stringify(pgQueryFamilyMemoStats())).not.toContain('never-retain-secret');
   });
 });
