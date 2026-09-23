@@ -1485,7 +1485,7 @@ export async function readPendingEditDisposition(
 // ───────── Waiter status read ─────────
 
 export interface WaiterStatus {
-  status: 'waiting' | 'granted' | 'expired' | 'cancelled' | 'missing';
+  status: 'waiting' | 'granted' | 'released' | 'expired' | 'cancelled' | 'missing';
   granted_lock_id?: string;
   granted_expires_ts?: Date;
   paths?: string[];
@@ -1501,17 +1501,48 @@ export async function readWaiterStatus(
       granted_lock_id: string | null;
       granted_expires_ts: Date | null;
       paths: string[];
+      grant_is_live: boolean | null;
+      grant_is_expired: boolean;
     }>
   >`
-    SELECT status::text AS status, granted_lock_id, granted_expires_ts, paths
-      FROM agent_lock_waiters
-     WHERE ticket_id = ${ticketId}::uuid
+    SELECT w.status::text AS status, w.granted_lock_id, w.granted_expires_ts, w.paths,
+           CASE
+             WHEN w.status = 'granted' AND w.granted_lock_id IS NOT NULL THEN
+               COALESCE(
+                 w.granted_expires_ts > clock_timestamp()
+                 AND cardinality(w.paths) > 0
+                 AND cardinality(w.paths) = (
+                   SELECT count(*)::int
+                     FROM agent_file_locks l
+                    WHERE l.coordination_domain = w.coordination_domain
+                      AND l.owner = w.owner
+                      AND l.lock_id = w.granted_lock_id
+                      AND l.path = ANY(w.paths)
+                      AND l.expires_ts > clock_timestamp()
+                 ),
+                 FALSE
+               )
+             ELSE NULL
+           END AS grant_is_live,
+           CASE
+             WHEN w.status = 'granted' AND w.granted_lock_id IS NOT NULL
+               THEN COALESCE(w.granted_expires_ts <= clock_timestamp(), FALSE)
+             ELSE FALSE
+           END AS grant_is_expired
+      FROM agent_lock_waiters w
+     WHERE w.ticket_id = ${ticketId}::uuid
      LIMIT 1
   `;
   if (rows.length === 0) return { status: 'missing' };
   const r = rows[0];
+  const status =
+    r.status === 'granted' && r.grant_is_live === false
+      ? r.grant_is_expired
+        ? 'expired'
+        : 'released'
+      : (r.status as WaiterStatus['status']);
   return {
-    status: r.status as WaiterStatus['status'],
+    status,
     granted_lock_id: r.granted_lock_id ?? undefined,
     granted_expires_ts: r.granted_expires_ts ?? undefined,
     paths: r.paths,
