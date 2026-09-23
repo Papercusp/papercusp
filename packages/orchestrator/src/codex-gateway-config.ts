@@ -130,7 +130,7 @@ export function codexGatewayConfigToml(
       // the TUI falls back to its shared/default-account cache instead of asking our
       // selected gateway account, so newly released models disappear only in PSU
       // `--account=auto` sessions even though inference can already serve them.
-
+      `model_catalog_url = "${gatewayBaseUrl}/v1/models"`,
       'wire_api = "responses"',
       'experimental_bearer_token = "papercusp-gateway"',
       ...httpHeadersLine,
