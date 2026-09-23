@@ -85,7 +85,11 @@ describe('core spine — every seeded write verb has its correction verb seeded 
     // 345,140 B against D-001's 256 KB wire ceiling), so re-separating the two layers
     // means re-expressing THIS one in wire bytes. Tracked on WI-37550, deliberately not
     // done as a side-effect of an admission.
-    expect(CORE_MCP_TOOL_NAMES.length).toBeLessThanOrEqual(48);
+    // 48 -> 49 on 2026-09-19: checkpoint:await (the shared release-gate sleep primitive
+    // named by checkpoint-run/trace; justified on the twin assertion in invoke.test.ts,
+    // which was walked without this one — the gate went red on 2026-09-23, WI-10002544).
+    // It is a read/wait verb with no write half, so it adds no EI-10946 asymmetry.
+    expect(CORE_MCP_TOOL_NAMES.length).toBeLessThanOrEqual(49);
   });
 
   it('has no duplicate entries (a hand-maintained list that has been edited many times)', () => {
