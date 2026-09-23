@@ -6061,13 +6061,17 @@ export const ownerDirectivesInHarnessShared = harnessShared.table("owner_directi
 	capturePromotedBy: text("capture_promoted_by"),
 	capturedByHook: boolean("captured_by_hook").default(false).notNull(),
 	capturePromotedNote: text("capture_promoted_note"),
+	summaryText: text("summary_text"),
+	summaryBy: text("summary_by"),
+	summaryAt: timestamp("summary_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("owner_directives_hook_captured_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.capturedByHook.asc().nullsLast().op("bool_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`captured_by_hook`),
 	index("owner_directives_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(dispositioned_at IS NULL)`),
-	index("owner_directives_pending_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((capture_status = 'pending'::text) AND (dispositioned_at IS NULL))`),
-	check("owner_directives_capture_status_check", sql`capture_status = ANY (ARRAY['pending'::text, 'open'::text, 'dismissed'::text])`),
+	check("owner_directives_capture_status_check", sql`capture_status = 'open'::text`),
 	check("owner_directives_disposition_consistent", sql`((dispositioned_at IS NULL) AND (disposition_status IS NULL)) OR ((dispositioned_at IS NOT NULL) AND (disposition_status IS NOT NULL))`),
 	check("owner_directives_disposition_status_check", sql`disposition_status = ANY (ARRAY['done'::text, 'declined'::text])`),
+	check("owner_directives_summary_consistent", sql`((summary_text IS NULL) AND (summary_by IS NULL) AND (summary_at IS NULL)) OR ((summary_text IS NOT NULL) AND (summary_by IS NOT NULL) AND (summary_at IS NOT NULL))`),
+	check("owner_directives_summary_length_check", sql`(summary_text IS NULL) OR ((length(btrim(summary_text)) > 0) AND (length(summary_text) <= 200))`),
 ]);
 
 export const ownerInteractionsInHarnessShared = harnessShared.table("owner_interactions", {
