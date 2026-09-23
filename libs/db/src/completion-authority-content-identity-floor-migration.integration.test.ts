@@ -50,6 +50,8 @@ const migration1144Sql = readFileSync(migrationPath('1144-completion-identity-de
  * editing the already-applied 1144 migration.
  */
 const migration1180Sql = readFileSync(migrationPath('1180-completion-identity-out-of-repo-artifact-floor-followup.sql'), 'utf8');
+/** WI-10002350: history-only ancestry must be separately attested and manifest-bound. */
+const migration1207Sql = readFileSync(migrationPath('1207-completion-identity-history-attestation-floor.sql'), 'utf8');
 
 /**
  * Exact semantic shape observed in production before migration 1144: 1044's
@@ -193,6 +195,8 @@ async function closeAsCommitted(id: string, evidence: Record<string, unknown>): 
 
 const SHA_A = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 const SHA_B = '0000111122223333444455556666777788889999';
+const SHA_C = '9999aaaabbbbccccddddeeeeffff000011112222';
+const SHA_D = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
 
 function evidenceWith(identity: unknown, filesChanged: string[] = ['src/fix.ts'], filesDeleted: string[] = []) {
   return {
@@ -213,6 +217,60 @@ function outOfRepoArtifact(path: string) {
     workingTreeBlobSha: null,
     headBlobSha: null,
     outOfRepoArtifact: true,
+  };
+}
+
+function historyEvidence({
+  identity = [{ path: 'src/fix.ts', workingTreeBlobSha: SHA_B, headBlobSha: SHA_C }],
+  normalizedPaths = ['src/fix.ts'],
+  manifestIdentity = [{ path: 'src/fix.ts', workingTreeBlobSha: SHA_B, headBlobSha: SHA_C }],
+  residualPaths = [],
+  attestationPaths = [{
+    path: 'src/fix.ts',
+    workingTreeBlobSha: SHA_B,
+    fromHeadSha: SHA_A,
+    toCommitSha: SHA_D,
+    proof: 'exact-path-blob-history',
+  }],
+  manifestOverrides = {},
+  attestationOverrides = {},
+}: {
+  identity?: unknown[];
+  normalizedPaths?: string[];
+  manifestIdentity?: Record<string, unknown>[];
+  residualPaths?: Record<string, unknown>[];
+  attestationPaths?: Record<string, unknown>[];
+  manifestOverrides?: Record<string, unknown>;
+  attestationOverrides?: Record<string, unknown>;
+} = {}): Record<string, unknown> {
+  const generation = 7;
+  const evidenceHash = 'c'.repeat(64);
+  const repositoryRoot = '/repo';
+  const manifest = {
+    version: 1,
+    generation,
+    evidenceHash,
+    repositoryRoot,
+    headSha: SHA_A,
+    normalizedPaths,
+    contentIdentity: manifestIdentity,
+    residualPaths,
+    ...manifestOverrides,
+  };
+  const historyAttestation = {
+    version: 1,
+    generation,
+    evidenceHash,
+    repositoryRoot,
+    closeHeadSha: SHA_A,
+    emittedCommitSha: SHA_D,
+    paths: attestationPaths,
+    ...attestationOverrides,
+  };
+  return {
+    ...evidenceWith(identity, normalizedPaths),
+    settlementManifest: manifest,
+    historyAttestation,
   };
 }
 
@@ -256,6 +314,7 @@ beforeAll(async () => {
   expect(historicalPre1144Probe).toEqual({ deletionOk: false, artifactMixOk: true });
   await applyMigrationFile(migration1144Sql);
   await applyMigrationFile(migration1180Sql);
+  await applyMigrationFile(migration1207Sql);
   // A silently-absent or disabled trigger would make every keep-case below pass
   // vacuously, so the definition itself is part of the precondition. The probe
   // dumps unqualified ground truth so a mis-targeted DDL cannot hide behind an
@@ -300,7 +359,7 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
-describe('migrations 972 + 1044 + 1144 + 1180 — completion authority content-identity floor', () => {
+describe('migrations 972 + 1044 + 1144 + 1180 + 1207 — completion authority content-identity floor', () => {
   it('reproduces the historical live deletion rejection before the 1144 forward repair', () => {
     expect(historicalPre1144Probe).toEqual({ deletionOk: false, artifactMixOk: true });
   });
@@ -481,6 +540,85 @@ describe('migrations 972 + 1044 + 1144 + 1180 — completion authority content-i
     ).toBe('committed');
   });
 
+  it('accepts history-only exact-path proof when its attestation matches the settlement manifest', async () => {
+    await seedOpenItem('WI-CASE-HISTORY-VALID');
+    const evidence = historyEvidence();
+    expect(await closeAsCommitted('WI-CASE-HISTORY-VALID', evidence)).toBe('committed');
+    const probe = await sql.unsafe<{ proven: boolean }[]>(
+      'SELECT harness_shared.completion_content_identity_proven($1::jsonb) AS proven',
+      [sql.json(evidence as Parameters<typeof sql.json>[0])],
+    );
+    expect(probe[0].proven).toBe(true);
+  });
+
+  it('rejects forged or mismatched history-attestation bindings', async () => {
+    const badEvidence = [
+      historyEvidence({ attestationOverrides: { generation: 8 } }),
+      historyEvidence({ attestationOverrides: { evidenceHash: 'd'.repeat(64) } }),
+      historyEvidence({ attestationOverrides: { repositoryRoot: '/other-repository' } }),
+      historyEvidence({ attestationOverrides: { closeHeadSha: SHA_B } }),
+      historyEvidence({ attestationOverrides: { emittedCommitSha: SHA_C } }),
+      historyEvidence({
+        attestationPaths: [{
+          path: 'src/fix.ts',
+          workingTreeBlobSha: SHA_A,
+          fromHeadSha: SHA_A,
+          toCommitSha: SHA_D,
+          proof: 'exact-path-blob-history',
+        }],
+      }),
+      historyEvidence({
+        attestationPaths: [{
+          path: 'src/fix.ts',
+          workingTreeBlobSha: SHA_B,
+          fromHeadSha: SHA_B,
+          toCommitSha: SHA_D,
+          proof: 'exact-path-blob-history',
+        }],
+      }),
+      historyEvidence({
+        attestationPaths: [{
+          path: 'src/fix.ts',
+          workingTreeBlobSha: SHA_B,
+          fromHeadSha: SHA_A,
+          toCommitSha: SHA_B,
+          proof: 'exact-path-blob-history',
+        }],
+      }),
+      historyEvidence({
+        attestationPaths: [{
+          path: 'src/fix.ts',
+          workingTreeBlobSha: SHA_B,
+          fromHeadSha: SHA_A,
+          toCommitSha: SHA_D,
+          proof: 'caller-assertion',
+        }],
+      }),
+    ];
+    for (let index = 0; index < badEvidence.length; index += 1) {
+      const id = 'WI-CASE-HISTORY-FORGED-' + index;
+      await seedOpenItem(id);
+      expect(await closeAsCommitted(id, badEvidence[index])).toBe('proposed');
+    }
+  });
+
+  it('does not clear unresolved manifest residue when another path has a valid history proof', async () => {
+    await seedOpenItem('WI-CASE-HISTORY-RESIDUE');
+    const evidence = historyEvidence({
+      identity: [
+        { path: 'src/fix.ts', workingTreeBlobSha: SHA_B, headBlobSha: SHA_C },
+        { path: 'src/other.ts', workingTreeBlobSha: SHA_A, headBlobSha: SHA_A },
+      ],
+      normalizedPaths: ['src/fix.ts', 'src/other.ts'],
+      manifestIdentity: [
+        { path: 'src/fix.ts', workingTreeBlobSha: SHA_B, headBlobSha: SHA_C },
+        { path: 'src/other.ts', workingTreeBlobSha: SHA_A, headBlobSha: SHA_A },
+      ],
+      residualPaths: [{ path: 'src/other.ts', reason: 'identity-unavailable' }],
+    });
+    expect(await closeAsCommitted('WI-CASE-HISTORY-RESIDUE', evidence)).toBe('proposed');
+  });
+
   it('keeps committed when every declared path proves blob equality', async () => {
     await seedOpenItem('WI-CASE-PROVEN');
     expect(
@@ -554,15 +692,18 @@ describe('migrations 972 + 1044 + 1144 + 1180 — completion authority content-i
   it('re-applies idempotently', async () => {
     await applyMigrationFile(migration972Sql);
     await applyMigrationFile(migration1044Sql);
-    // The floor must survive its own re-application unchanged and enabled.
+    await applyMigrationFile(migration1144Sql);
+    await applyMigrationFile(migration1180Sql);
+    await applyMigrationFile(migration1207Sql);
+    // The current floor must survive its and its predecessors' re-application enabled.
     const rows = await sql<{ tgenabled: string }[]>`
       SELECT tgenabled FROM pg_trigger
        WHERE tgrelid = 'harness_shared.work_items'::regclass
         AND tgname = 'completion_authority_floor_trg' AND NOT tgisinternal`;
     expect(rows[0]?.tgenabled).toBe('O');
 
-    // Re-applying both migrations must preserve the final deletion/artifact
-    // semantics, not merely leave an enabled trigger behind.
+    // Re-applying the complete floor stack must preserve deletion, artifact,
+    // and history-attestation semantics, not merely leave an enabled trigger.
     await seedOpenItem('WI-CASE-REAPPLY-DELETION');
     expect(
       await closeAsCommitted(
