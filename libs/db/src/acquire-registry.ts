@@ -333,13 +333,99 @@ export function createPgDiagnosticHooks(pool: string) {
   };
 }
 
+// ── Query-family memo (WI-10002541) ──────────────────────────────────────
+//
+// `recordPgResult` runs on EVERY terminal postgres-js result, and the family
+// classifier below makes five regex passes plus a lowercase over the whole SQL
+// text. The texts repeat almost perfectly (a code path issues the same SQL with
+// different parameters), so that work was recomputed for the same few hundred
+// strings thousands of times a second. On the rig VM it was ~2-3% of the
+// operator main thread (recordPgResult 3.3% inclusive in a 20s profile during
+// the P-203 fold), paid on the fold's own query path. Measured per call on a
+// representative mix: ~8.4us classified vs ~0.9us remembered.
+//
+// The family is a pure function of the text, so remembering it cannot change
+// an answer. The memo holds query TEXT only (parameter values never reach it),
+// is bounded, is never exposed by any snapshot, and skips very long texts.
+
+/** Max distinct query texts remembered. */
+export const PG_QUERY_FAMILY_MEMO_MAX = 1024;
+/** Longer texts are classified every time and never remembered, so one huge
+ *  generated statement cannot pin megabytes in the memo. */
+export const PG_QUERY_FAMILY_MEMO_MAX_TEXT = 16 * 1024;
+
+interface PgQueryFamilyMemo {
+  families: Map<string, string>;
+  hits: number;
+  misses: number;
+  evictions: number;
+  max: number;
+}
+
+const FAMILY_MEMO = pinModuleState<PgQueryFamilyMemo>('@papercusp/db-org.pg-query-family-memo', () => ({
+  families: new Map<string, string>(),
+  hits: 0,
+  misses: 0,
+  evictions: 0,
+  max: PG_QUERY_FAMILY_MEMO_MAX,
+}));
+
+/** Memo counters (no query text), for health reads and the call-count test. */
+export function pgQueryFamilyMemoStats(): {
+  hits: number;
+  misses: number;
+  evictions: number;
+  size: number;
+  max: number;
+} {
+  const { hits, misses, evictions, max, families } = FAMILY_MEMO;
+  return { hits, misses, evictions, size: families.size, max };
+}
+
+/** Test-only: forget every remembered family, zero the counters, and
+ *  optionally shrink the bound so eviction is testable. */
+export function resetPgQueryFamilyMemoForTest(opts: { max?: number } = {}): void {
+  FAMILY_MEMO.families.clear();
+  FAMILY_MEMO.hits = 0;
+  FAMILY_MEMO.misses = 0;
+  FAMILY_MEMO.evictions = 0;
+  FAMILY_MEMO.max = opts.max ?? PG_QUERY_FAMILY_MEMO_MAX;
+}
+
 /**
  * Reduce arbitrary SQL to a stable operation/relation family without retaining
  * literals or parameter values. This is intentionally a classifier, not a SQL
  * parser: an unknown shape becomes "other", never a clipped copy of the query.
+ * Remembered per distinct text (see the memo above); the answer is identical.
  */
 export function pgQueryFamily(query: string): string {
-  const scrubbed = String(query)
+  const text = String(query);
+  if (text.length > PG_QUERY_FAMILY_MEMO_MAX_TEXT) {
+    FAMILY_MEMO.misses += 1;
+    return classifyPgQuery(text);
+  }
+  const families = FAMILY_MEMO.families;
+  const hit = families.get(text);
+  if (hit !== undefined) {
+    FAMILY_MEMO.hits += 1;
+    families.delete(text); // refresh recency
+    families.set(text, hit);
+    return hit;
+  }
+  FAMILY_MEMO.misses += 1;
+  const family = classifyPgQuery(text);
+  families.set(text, family);
+  while (families.size > FAMILY_MEMO.max) {
+    const oldest = families.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    families.delete(oldest);
+    FAMILY_MEMO.evictions += 1;
+  }
+  return family;
+}
+
+function classifyPgQuery(query: string): string {
+  const scrubbed = query
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .replace(/--[^\r\n]*/g, ' ')
     .replace(/\$\w*\$[\s\S]*?\$\w*\$/g, ' ')
@@ -613,4 +699,5 @@ export const ACQUIRE_QUEUE_LOCATION_RESIDUAL =
 export function resetAcquireRegistryForTest(): void {
   STATE.pools.clear();
   STATE.seq = 0;
+  resetPgQueryFamilyMemoForTest();
 }
