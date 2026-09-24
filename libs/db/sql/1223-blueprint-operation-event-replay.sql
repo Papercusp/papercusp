@@ -101,6 +101,11 @@ CREATE INDEX IF NOT EXISTS coord_blueprint_plan_run_events_idx
 -- Client input receipts use deterministic msg_id values. The same append-only
 -- log thus rejects concurrent duplicate signal/resume/cancel admission without
 -- creating a second task or operation-state table.
+-- FORWARD-COMPAT: This partial uniqueness fence is scoped to the new
+-- `blueprint-operation` surface. The reviewed green release has no writer for
+-- this surface; the staging receipt writer uses untargeted `ON CONFLICT DO NOTHING`,
+-- which does not need to infer this partial arbiter. Existing shared-workspace rows
+-- for this surface were measured at zero before this migration.
 CREATE UNIQUE INDEX IF NOT EXISTS coord_blueprint_operation_msg_uq
   ON harness_shared.coord_event_log (workspace_id, surface, msg_id)
   WHERE surface = 'blueprint-operation';
