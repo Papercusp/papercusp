@@ -119,8 +119,12 @@ test('P-003 built-in mode manifests generate one catalog and an approved install
   const installedPath = join(homedir(), '.papercusp', 'blueprints', 'su.mode-auto-installed', 'blueprint.yaml');
   const installed = resolveBlueprintSource(variant, { sourcePath: installedPath, lint: { approvedModePolicyRefs: ['auto'] } });
   assert.equal(installed.validation.ok, true, JSON.stringify(installed.validation.errors));
+  assert.throws(() => modeCatalogFromValidatedSources([...sources, installed], {
+    supportedPolicyRefs, approvedModePolicyRefs: ['auto'],
+  }), /moderated receipt for this exact source revision/);
   const selected = modeCatalogFromValidatedSources([...sources, installed], {
     supportedPolicyRefs, approvedModePolicyRefs: ['auto'],
+    approvedInstalledSourceHashes: new Map([[installed.layers.at(-1)!.id, installed.layers.at(-1)!.contentHash]]),
   });
   assert.equal(selected.entries.length, builtin.entries.length);
   assert.equal(selected.entries.find((entry) => entry.id === 'auto')?.title, 'AUTO installed variant');

@@ -76,7 +76,13 @@ export interface ModeCatalogSnapshot {
 
 export function modeCatalogFromValidatedSources(
   sources: readonly { layers: readonly BlueprintLayer[]; validation: BlueprintValidation }[],
-  options: { supportedPolicyRefs: Iterable<string>; approvedModePolicyRefs?: Iterable<string> },
+  options: {
+    supportedPolicyRefs: Iterable<string>;
+    approvedModePolicyRefs?: Iterable<string>;
+    /** Installer-owned exact source hashes, obtained from moderated release
+     * receipts. A publisher's own attestation cannot authorize a host policy. */
+    approvedInstalledSourceHashes?: ReadonlyMap<string, string>;
+  },
 ): ModeCatalogSnapshot {
   const supported = new Set(options.supportedPolicyRefs);
   const approved = new Set(options.approvedModePolicyRefs ?? []);
@@ -92,8 +98,8 @@ export function modeCatalogFromValidatedSources(
       if (layer.trust !== 'builtin' && !approved.has(mode.policyRef)) {
         throw new Error(`mode "${mode.id}" has no installer/admin approval for host policy "${mode.policyRef}"`);
       }
-      if (layer.trust === 'installed' && (!layer.attestation || layer.attestation.contentHash !== layer.contentHash)) {
-        throw new Error(`installed mode "${mode.id}" needs a valid layer attestation`);
+      if (layer.trust === 'installed' && options.approvedInstalledSourceHashes?.get(layer.id) !== layer.contentHash) {
+        throw new Error(`installed mode "${mode.id}" needs a moderated receipt for this exact source revision`);
       }
       const contributions = source.layers.flatMap((candidate) => {
         const raw = layerSourceDocument(candidate);
