@@ -25,3 +25,23 @@ description: >-
 
 slots:
   - slot: audit
+contributions:
+  - id: audit-definition
+    purpose: prompt
+    source: fixed
+    refresh: source-change
+    inputKind: prompt-file
+    ref: "mode:su.mode-audit:audit"
+  - id: current-mode-state
+    purpose: operational
+    source: provider
+    refresh: turn
+    inputKind: setting
+    ref: mode
+    producerRef: modes/store:agent_modes
+mode:
+  id: audit
+  policyRef: audit
+  title: "AUDIT — judge the whole program, not its items"
+  oneLiner: "step back and audit an entire program — lifecycle census, ledger truth, flow, liveness, churn mechanisms — and deliver an evidenced verdict instead of an item-by-item status read"
+  definitionContributionId: audit-definition

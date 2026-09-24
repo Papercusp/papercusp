@@ -34,3 +34,23 @@ description: >-
 
 slots:
   - slot: autonomy
+contributions:
+  - id: auto-definition
+    purpose: prompt
+    source: fixed
+    refresh: source-change
+    inputKind: prompt-file
+    ref: "mode:su.mode-auto:autonomy"
+  - id: current-mode-state
+    purpose: operational
+    source: provider
+    refresh: turn
+    inputKind: setting
+    ref: mode
+    producerRef: modes/store:agent_modes
+mode:
+  id: auto
+  policyRef: auto
+  title: "AUTO — act, don’t ask"
+  oneLiner: "act on your own judgment, replace questions with disclosures, arm a loop for open-ended work"
+  definitionContributionId: auto-definition

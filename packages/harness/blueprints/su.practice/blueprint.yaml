@@ -1,0 +1,13 @@
+id: su.practice
+extends: base
+version: 0.1.0
+description: "The SU's reusable additive working practice; its text remains in base/prompts/su.practice.md until the render migration."
+slots:
+  - slot: practice
+contributions:
+  - id: su-practice-text
+    purpose: prompt
+    source: fixed
+    refresh: source-change
+    inputKind: prompt-file
+    ref: base:su.practice

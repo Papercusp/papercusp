@@ -62,6 +62,9 @@ export const SLOT_IDS = [
   'autonomy',
   'ideation',
   'objective',
+  'grade',
+  'test',
+  'goal',
   'audit',
   'audience',
   'collaboration-stance',
@@ -69,8 +72,9 @@ export const SLOT_IDS = [
 ] as const;
 export type SlotId = (typeof SLOT_IDS)[number];
 
-/** The five mode axes (D-008 amendment) — each an exclusive slot on the `modes` layer. */
-export const MODE_AXES = ['autonomy', 'ideation', 'objective', 'audit', 'audience'] as const satisfies readonly SlotId[];
+/** Mode axes — exclusive within each axis, additive across axes. GOAL renders
+ * after GRADE/TEST so its delegated-build boundary remains explicit. */
+export const MODE_AXES = ['autonomy', 'ideation', 'objective', 'grade', 'test', 'goal', 'audit', 'audience'] as const satisfies readonly SlotId[];
 export type ModeAxis = (typeof MODE_AXES)[number];
 
 export interface SlotSpecBody {
@@ -128,6 +132,24 @@ export const SLOT_SPECS: Readonly<Record<SlotId, SlotSpecBody>> = {
     layer: 'modes',
     fills: 'the domain flavour of DRAIN mode prose (the DRAIN ⇒ AUTO implication is kernel)',
     decision: 'D-008 amendment 2026-09-03',
+  },
+  grade: {
+    cardinality: 'exclusive',
+    layer: 'modes',
+    fills: 'the GRADE evaluation and repair practice; scoring and independent acceptance remain host-enforced',
+    decision: 'SU mode/identity unification P-003 (2026-09-24)',
+  },
+  test: {
+    cardinality: 'exclusive',
+    layer: 'modes',
+    fills: 'the TEST independent-verification practice; test subjects and permissions remain host-enforced',
+    decision: 'SU mode/identity unification P-003 (2026-09-24)',
+  },
+  goal: {
+    cardinality: 'exclusive',
+    layer: 'modes',
+    fills: 'the GOAL planning and delegated-execution practice; subject and authority remain host-enforced',
+    decision: 'SU mode/identity unification P-003 (2026-09-24)',
   },
   audit: {
     cardinality: 'exclusive',

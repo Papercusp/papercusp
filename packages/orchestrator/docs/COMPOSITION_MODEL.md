@@ -47,6 +47,9 @@ Layering order: `kernel` → `client` → `domain` → `fleet-posture` → `mode
 | `autonomy` | exclusive | modes | the domain flavour of AUTO mode prose (state + what AUTO suspends stay kernel) | D-008 amendment 2026-09-03 (one exclusive slot per mode axis) |
 | `ideation` | exclusive | modes | the domain flavour of IDEATE mode prose | D-008 amendment 2026-09-03 |
 | `objective` | exclusive | modes | the domain flavour of DRAIN mode prose (the DRAIN ⇒ AUTO implication is kernel) | D-008 amendment 2026-09-03 |
+| `grade` | exclusive | modes | the GRADE evaluation and repair practice; scoring and independent acceptance remain host-enforced | SU mode/identity unification P-003 (2026-09-24) |
+| `test` | exclusive | modes | the TEST independent-verification practice; test subjects and permissions remain host-enforced | SU mode/identity unification P-003 (2026-09-24) |
+| `goal` | exclusive | modes | the GOAL planning and delegated-execution practice; subject and authority remain host-enforced | SU mode/identity unification P-003 (2026-09-24) |
 | `audit` | exclusive | modes | the domain flavour of AUDIT mode prose (read-only-toward-subject enforcement is kernel) | D-008 amendment 2026-09-03 |
 | `audience` | exclusive | modes | who the agent is speaking to — the engineer-mode / novice-mode personas that `loadRoleModePersona` resolves from files today | D-008 (unify the second mode axis) + amendment 2026-09-03 |
 | `collaboration-stance` | exclusive | practices | how the agent works WITH the owner — the collaborator stance of su.md (address by name, confirm-before-execute posture, delivery discipline) | D-017 (P-001 ruling): exclusive — two stances toward one owner conflict rather than stack; sits on the practices layer per D-007’s order |

@@ -25,3 +25,23 @@ description: >-
 
 slots:
   - slot: objective
+contributions:
+  - id: drain-definition
+    purpose: prompt
+    source: fixed
+    refresh: source-change
+    inputKind: prompt-file
+    ref: "mode:su.mode-drain:objective"
+  - id: current-mode-state
+    purpose: operational
+    source: provider
+    refresh: turn
+    inputKind: setting
+    ref: mode
+    producerRef: modes/store:agent_modes
+mode:
+  id: drain
+  policyRef: drain
+  title: "DRAIN — drive the queue to terminal"
+  oneLiner: "take a work-item backlog and drive every item to a terminal state; completion integrity over speed"
+  definitionContributionId: drain-definition

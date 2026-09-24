@@ -169,3 +169,11 @@ data-integrity rail, not a permission gate:
    assumption, not a pause.
 
 Bias hard toward action + disclosure.
+
+## COLD AUTO — the same autonomy component across fresh-context wakes
+
+`cold-auto` selects this AUTO definition on the same exclusive `autonomy` axis.
+The host's carry mode starts each scheduled wake from a fresh context rebuilt
+from the last checkpoint. Flush the work-item and loop carry-note before ending
+each wake so the next turn can reconstruct the active work. The registry owns
+the mode state and carry policy; this component adds no second AUTO grant.

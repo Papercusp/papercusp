@@ -40,6 +40,7 @@ test('cardinalities per D-007 / D-008 / D-017: mode axes exclusive on `modes`; c
     assert.equal(slotSpec(axis)?.cardinality, 'exclusive', axis);
     assert.equal(slotSpec(axis)?.layer, 'modes', axis);
   }
+  assert.deepEqual([...MODE_AXES], ['autonomy', 'ideation', 'objective', 'grade', 'test', 'goal', 'audit', 'audience']);
   assert.deepEqual(SLOT_REGISTRY.filter((s) => s.cardinality === 'additive').map((s) => s.slot), ['practice']);
   for (const slot of ['client', 'domain', 'fleet-posture', 'collaboration-stance'] as const) {
     assert.equal(slotSpec(slot)?.cardinality, 'exclusive', slot);

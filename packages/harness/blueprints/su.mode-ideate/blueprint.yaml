@@ -23,3 +23,23 @@ description: >-
 
 slots:
   - slot: ideation
+contributions:
+  - id: ideate-definition
+    purpose: prompt
+    source: fixed
+    refresh: source-change
+    inputKind: prompt-file
+    ref: "mode:su.mode-ideate:ideation"
+  - id: current-mode-state
+    purpose: operational
+    source: provider
+    refresh: turn
+    inputKind: setting
+    ref: mode
+    producerRef: modes/store:agent_modes
+mode:
+  id: ideate
+  policyRef: ideate
+  title: "IDEATE — invent net-new, don’t just patch"
+  oneLiner: "run deliberate ideation passes and file net-new feature proposals; with AUTO on, build the strongest"
+  definitionContributionId: ideate-definition

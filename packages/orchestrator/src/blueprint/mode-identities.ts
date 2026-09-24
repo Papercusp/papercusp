@@ -26,9 +26,9 @@
  * BLOCKS an authority-bearing field on a mode axis (`authority-on-mode-axis`) and any
  * forged control literal (`⟦stack⟧`, `⟦INSTRUCTION-PRECEDENCE⟧`, …) — the D-005 negative.
  *
- * REGISTRY MODES WITHOUT A DOCUMENT (`goal`, `grade`, `test`) bind NO layer: their
- * definition is the registry `contract` mode:set already delivers on activation. `cold-auto`
- * binds the AUTO document — same axis, same grant; its carry rider is its contract.
+ * GOAL, GRADE and TEST now have authored mode-axis documents beside the original
+ * four. `cold-auto` binds the AUTO document — same axis and grant — while its
+ * carry rider remains a runtime-state contract until the reader migration.
  *
  * THE SECOND AXIS (D-008 "unify"): the file-based persona modes
  * (`<role>.persona.{engineer,novice}-mode.md`, `loadRoleModePersona`) are identities on the
@@ -129,7 +129,7 @@ export function modeCatalogFromValidatedSources(
   return { revision: createHash('sha256').update(stableStringify(entries)).digest('hex'), entries };
 }
 
-export type SuModeDocId = 'su.mode-auto' | 'su.mode-ideate' | 'su.mode-drain' | 'su.mode-audit';
+export type SuModeDocId = 'su.mode-auto' | 'su.mode-ideate' | 'su.mode-drain' | 'su.mode-grade' | 'su.mode-test' | 'su.mode-goal' | 'su.mode-audit';
 
 export interface SuModeDocument {
   /** The identity blueprint id (`blueprints/<id>/blueprint.yaml`). */
@@ -156,6 +156,9 @@ export const SU_MODE_DOCUMENTS: readonly SuModeDocument[] = [
   modeDoc('su.mode-auto', 'autonomy', ['auto', 'cold-auto'], 'the AUTO definition — the owner’s standing "act, don’t ask" grant read in the su’s vocabulary; bound for auto AND cold-auto (one dial, two positions)'),
   modeDoc('su.mode-ideate', 'ideation', ['ideate'], 'the IDEATE definition — "invent net-new, don’t just patch" + the IDEATE × AUTO composition table; stacks beside autonomy (cross-axis additive)'),
   modeDoc('su.mode-drain', 'objective', ['drain'], 'the DRAIN definition — drive the agreed backlog to terminal; DRAIN ⇒ AUTO is the registry’s implication, so drain binds objective AND autonomy'),
+  modeDoc('su.mode-grade', 'grade', ['grade'], 'the GRADE definition — score, repair and re-grade while preserving independent acceptance'),
+  modeDoc('su.mode-test', 'test', ['test'], 'the TEST definition — independently verify another agent’s work and leave guard tests'),
+  modeDoc('su.mode-goal', 'goal', ['goal'], 'the GOAL definition — own portfolio outcomes and delegate every implementation'),
   modeDoc('su.mode-audit', 'audit', ['audit'], 'the AUDIT definition — a verdict on a whole program; read-only-toward-subject enforcement stays kernel (audit-mode-guard.ts)'),
 ];
 
@@ -168,8 +171,8 @@ export function suModeDocument(id: string): SuModeDocument | null {
 }
 
 /**
- * The layer a registry mode id binds — null for a mode with no definition document
- * (goal / grade / test: registry contract only) and for an unknown id (a typo must
+ * The layer a registry mode id binds — null for an unknown id or a supported mode
+ * without a definition. A typo must
  * never bind a layer; the registry test is what catches it).
  */
 export function suModeLayer(modeId: string): BoundLayer | null {
