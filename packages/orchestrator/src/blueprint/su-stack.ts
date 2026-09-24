@@ -57,7 +57,7 @@ import {
   type StackBinding,
   type StackMutationOp,
 } from './stack-mutation.js';
-import { MODE_AXES, type SlotId } from './slots.js';
+import type { SlotId } from './slots.js';
 import {
   AUDIENCE_IDENTITY_DOCUMENTS,
   suModeDocument,
@@ -258,12 +258,11 @@ export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocum
   const binding = suEffectiveBinding(opts.binding, opts.posture);
   const identityRoots = suIdentityRoots(opts);
   for (const layer of binding.layers) {
-    // A selected installed mode may reuse a built-in id. Let the trusted host
-    // supply that exact approved document before the generic path resolver.
-    const isModeSlot = (MODE_AXES as readonly string[]).includes(layer.slot);
-    const doc = (isModeSlot ? opts.resolveLayer?.(layer, located) : null) ??
-      suBoundLayerDocument(located, layer, { identityRoots }) ??
-      (!isModeSlot ? opts.resolveLayer?.(layer, located) : null) ?? null;
+    // An explicitly selected identity may reuse any built-in id, including a
+    // static SU part. The trusted caller has already validated its source;
+    // use that exact document before the built-in prompt-chain fallback.
+    const doc = opts.resolveLayer?.(layer, located) ??
+      suBoundLayerDocument(located, layer, { identityRoots }) ?? null;
     if (!doc) throw new Error(`su-stack: bound layer "${layer.slot}:${layer.id}" is neither an su.md part document nor resolvable by the caller`);
     docs.push(doc);
   }
