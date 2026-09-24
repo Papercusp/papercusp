@@ -57,11 +57,12 @@ import {
   type StackBinding,
   type StackMutationOp,
 } from './stack-mutation.js';
-import type { SlotId } from './slots.js';
+import { MODE_AXES, type SlotId } from './slots.js';
 import {
   AUDIENCE_IDENTITY_DOCUMENTS,
   suModeDocument,
   suModeLayers,
+  type ModeCatalogSnapshot,
 } from './mode-identities.js';
 import {
   SU_PART_DOCUMENTS,
@@ -162,7 +163,10 @@ export function suPostureBinding(role: FleetPostureRole | null | undefined): Sta
  * the mode axes once P-021 supplies documents for them. This is the whole "no new
  * table" of P-012: the binding is derived, and the control anchor projects it.
  */
-export function suSessionBinding(session: { fleetRole?: string | null; modes?: readonly string[] | null }): StackBinding {
+export function suSessionBinding(
+  session: { fleetRole?: string | null; modes?: readonly string[] | null },
+  modeCatalog?: ModeCatalogSnapshot,
+): StackBinding {
   const layers: BoundLayer[] = [];
   const role = (session.fleetRole ?? '').trim().toLowerCase();
   if (role === 'leader' || role === 'member') layers.push(suPostureLayer(role));
@@ -170,7 +174,7 @@ export function suSessionBinding(session: { fleetRole?: string | null; modes?: r
   // the registry write) bind one mode-axis identity per axis — `su.mode-auto` on
   // `autonomy`, … — additive ACROSS axes, exclusive WITHIN one (D-008 amendment). Modes
   // without an authored definition bind nothing; GOAL/GRADE/TEST now have axes.
-  layers.push(...suModeLayers(session.modes));
+  layers.push(...suModeLayers(session.modes, modeCatalog));
   return normalizeStackBinding(layers);
 }
 
@@ -254,7 +258,12 @@ export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocum
   const binding = suEffectiveBinding(opts.binding, opts.posture);
   const identityRoots = suIdentityRoots(opts);
   for (const layer of binding.layers) {
-    const doc = suBoundLayerDocument(located, layer, { identityRoots }) ?? opts.resolveLayer?.(layer, located) ?? null;
+    // A selected installed mode may reuse a built-in id. Let the trusted host
+    // supply that exact approved document before the generic path resolver.
+    const isModeSlot = (MODE_AXES as readonly string[]).includes(layer.slot);
+    const doc = (isModeSlot ? opts.resolveLayer?.(layer, located) : null) ??
+      suBoundLayerDocument(located, layer, { identityRoots }) ??
+      (!isModeSlot ? opts.resolveLayer?.(layer, located) : null) ?? null;
     if (!doc) throw new Error(`su-stack: bound layer "${layer.slot}:${layer.id}" is neither an su.md part document nor resolvable by the caller`);
     docs.push(doc);
   }
