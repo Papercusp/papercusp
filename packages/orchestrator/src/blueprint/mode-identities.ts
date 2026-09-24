@@ -40,6 +40,8 @@
  * ONLY (a missing document refuses; there is nothing to fall back to).
  */
 import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { MODE_AXES, type ModeAxis, type SlotId } from './slots.js';
 import { layerSourceDocument, type BlueprintLayer } from './loader.js';
 import { BlueprintContributionSchema } from './schema.js';
@@ -66,6 +68,7 @@ export interface ModeCatalogEntry {
   };
   sourceId: string;
   sourceHash: string;
+  definitionHash: string;
   revision: string;
 }
 
@@ -110,6 +113,13 @@ export function modeCatalogFromValidatedSources(
           (definition.inputKind !== 'prompt-file' && definition.inputKind !== 'addressed-document')) {
         throw new Error(`mode "${mode.id}" has no prompt contribution "${mode.definitionContributionId}"`);
       }
+      const promptPath = layer.sourcePath ? join(dirname(layer.sourcePath), 'prompts', `${slot[0]}.md`) : null;
+      if (promptPath && existsSync(layer.sourcePath!) && !existsSync(promptPath)) {
+        throw new Error(`mode "${mode.id}" has no selected prompt file at ${promptPath}`);
+      }
+      const definitionHash = createHash('sha256')
+        .update(promptPath && existsSync(promptPath) ? readFileSync(promptPath) : definition.ref)
+        .digest('hex');
       const content = {
         id: mode.id, policyRef: mode.policyRef, slot: slot[0]!, title: mode.title,
         oneLiner: mode.oneLiner,
@@ -118,7 +128,7 @@ export function modeCatalogFromValidatedSources(
           source: definition.source, refresh: definition.refresh,
           ...(definition.producerRef ? { producerRef: definition.producerRef } : {}),
         },
-        sourceId: layer.id, sourceHash: layer.contentHash,
+        sourceId: layer.id, sourceHash: layer.contentHash, definitionHash,
       };
       const entry: ModeCatalogEntry = {
         ...content,

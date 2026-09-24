@@ -25,7 +25,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { builtinBlueprintPath, layerContentHash, resolveBuiltinExtends, resolveLayers, resolveBlueprintSource } from './loader.js';
 import { isIdentitySourceDocument, parseBlueprintSourceDocument } from './schema.js';
 import { lintStackLayers } from './identity-lint.js';
@@ -77,6 +77,34 @@ test('P-002 generated mode catalog pins manifest metadata and existing host poli
   assert.ok(unversioned.validation.errors.some((issue) => issue.code === 'mode-version-missing'));
   const wrongAxis = resolveBlueprintSource({ ...authored('wrong-axis', 'Use judgment.'), slots: [{ slot: 'domain' }] }, { lint: approved });
   assert.ok(wrongAxis.validation.errors.some((issue) => issue.code === 'mode-axis-missing'));
+});
+
+test('a prompt-only edit changes the selected mode revision and invalidates an old replacement pin', () => {
+  const root = mkdtempSync(join(tmpdir(), 'mode-revision-content-'));
+  try {
+    const file = join(root, 'blueprint.yaml');
+    const prompt = join(root, 'prompts', 'autonomy.md');
+    const raw = {
+      id: 'source-auto', version: '1.0.0', slots: [{ slot: 'autonomy' }],
+      contributions: [{ id: 'definition', purpose: 'prompt', source: 'fixed',
+        refresh: 'source-change', inputKind: 'prompt-file', ref: 'mode:auto' }],
+      mode: { id: 'auto', policyRef: 'auto', title: 'AUTO', oneLiner: 'Act',
+        definitionContributionId: 'definition' },
+    };
+    mkdirSync(dirname(prompt), { recursive: true });
+    writeFileSync(file, stringifyYaml(raw));
+    writeFileSync(prompt, 'First approved definition.\n');
+    const selected = () => modeCatalogFromValidatedSources([
+      resolveBlueprintSource(raw, { sourcePath: file, lint: { approvedModePolicyRefs: ['auto'] } }),
+    ], { supportedPolicyRefs: ['auto'], approvedModePolicyRefs: ['auto'] });
+    const first = selected();
+    writeFileSync(prompt, 'Second approved definition.\n');
+    const second = selected();
+    assert.notEqual(second.entries[0]?.definitionHash, first.entries[0]?.definitionHash);
+    assert.notEqual(second.entries[0]?.revision, first.entries[0]?.revision);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 import {
   composeSuStackMutation,
