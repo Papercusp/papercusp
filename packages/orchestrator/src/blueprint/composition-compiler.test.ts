@@ -8,6 +8,7 @@ import {
   CompositionCompilerError,
   compileAgentSpecification,
   compileStackSpecification,
+  operationFromSpecification,
   specificationPrompt,
 } from './composition-compiler.js';
 
@@ -94,6 +95,37 @@ test('P-038 compiler snapshots the resolved blueprint, prompt bytes, closure and
     assert.ok(a.provenance.some((entry) => entry.path === 'addressed.worker-guide'));
     assert.ok(a.provenance.some((entry) => entry.path === 'setting.mode'));
     assert.equal(specificationPrompt(a), 'Base worker prompt.\n\n## Addressed guidance — for this session’s stack\n\n> These sections are pinned to the addressed-document revisions in the effective agent specification.\n\n## Runtime\n\nUse the fixture safely.\n');
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a compiled operation keeps revision A after the authored definition changes to B', () => {
+  const f = fixture();
+  try {
+    const operation = {
+      id: 'extract',
+      version: 'A',
+      target: { kind: 'work-item', itemKind: 'feature' },
+      execution: { kind: 'agent', role: 'worker' },
+      inputSchema: { type: 'object', properties: { value: { type: 'string' } } },
+      acceptance: { resultSchema: { type: 'object' } },
+    };
+    const source = { ...rootSource(), roles: [{ id: 'worker' }], operations: [operation] };
+    const first = compileAgentSpecification({ source, resolve: f.resolve, harnessDir: f.dir });
+    const accepted = operationFromSpecification(first, 'extract');
+    const second = compileAgentSpecification({
+      source: { ...source, operations: [{ ...operation, version: 'B' }] },
+      resolve: f.resolve,
+      harnessDir: f.dir,
+    });
+
+    assert.equal(accepted.operation.version, 'A');
+    assert.equal(Object.isFrozen(accepted.operation), true);
+    assert.equal(accepted.specificationRevision, first.specificationRevision);
+    assert.notEqual(first.specificationRevision, second.specificationRevision);
+    assert.equal(operationFromSpecification(second, 'extract').operation.version, 'B');
+    assert.throws(() => operationFromSpecification(second, 'missing'), CompositionCompilerError);
   } finally {
     f.cleanup();
   }

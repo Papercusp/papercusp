@@ -75,6 +75,7 @@ export {
   compileResolvedAgentSpecification,
   compileResolvedSpecification,
   compileComposition,
+  operationFromSpecification,
   compileReplacementSystemPromptSpecification,
   compileStackSpecification,
   specificationPrompt,

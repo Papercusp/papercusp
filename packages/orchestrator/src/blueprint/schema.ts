@@ -921,6 +921,86 @@ export const OpManifestEntrySchema = z.object({
   handler: z.object({ kind: z.literal('dispatch').default('dispatch') }).prefault({}),
 });
 
+// A blueprint operation is an externally invocable task definition. It lives in
+// the existing blueprint document, separate from `ops` (harness-provided
+// deterministic spine steps). The composition compiler pins this whole manifest
+// in its immutable specificationRevision; admission verifies referenced hashes.
+const OperationNameSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9._-]*$/);
+const OperationContentHashSchema = z.string().regex(/^[0-9a-f]{64}$/, 'sha256 hex');
+const OperationReferenceFields = {
+  ref: z.string().min(1),
+  revision: z.string().min(1),
+  contentHash: OperationContentHashSchema,
+};
+const PlanTemplateOperationRefSchema = z.object({ kind: z.literal('plan-template'), ...OperationReferenceFields }).strict();
+const RecipeOperationRefSchema = z.object({ kind: z.literal('recipe'), ...OperationReferenceFields }).strict();
+const ArtifactOperationRefSchema = z.object({ kind: z.literal('artifact'), ...OperationReferenceFields }).strict();
+const IdentityOperationRefSchema = z.object({ kind: z.literal('identity'), ...OperationReferenceFields }).strict();
+const BlueprintOperationRefSchema = z.object({ kind: z.literal('blueprint'), ...OperationReferenceFields }).strict();
+const RubricOperationRefSchema = z.object({ kind: z.literal('rubric'), ...OperationReferenceFields }).strict();
+export const BlueprintOperationPinnedRefSchema = z.discriminatedUnion('kind', [
+  PlanTemplateOperationRefSchema,
+  RecipeOperationRefSchema,
+  ArtifactOperationRefSchema,
+  IdentityOperationRefSchema,
+  BlueprintOperationRefSchema,
+  RubricOperationRefSchema,
+]);
+
+/** JSON Schema crosses the blueprint/PG/process boundary as data, not a Zod fn.
+ * Empty schemas would silently accept anything in the existing JSON-Schema
+ * adapter, so an operation must declare at least a root type/union/literal. */
+const OperationJsonSchema = z.record(z.string(), z.unknown()).refine(
+  (schema) =>
+    (typeof schema.type === 'string' && ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null'].includes(schema.type)) ||
+    (Array.isArray(schema.type) && schema.type.length > 0 && schema.type.every((type) => typeof type === 'string' && ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null'].includes(type))) ||
+    (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) ||
+    (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) ||
+    (Array.isArray(schema.enum) && schema.enum.length > 0) ||
+    Object.prototype.hasOwnProperty.call(schema, 'const'),
+  'operation JSON Schema must declare type, anyOf, oneOf, enum, or const',
+);
+const OperationInputSchema = OperationJsonSchema.refine(
+  (schema) => schema.type === 'object',
+  'operation inputSchema must declare a top-level object',
+);
+const OperationModelPolicySchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('exact'), models: z.tuple([z.string().min(1)]), effort: z.string().min(1).optional(), onUnavailable: z.enum(['wait', 'fail']).default('wait') }).strict(),
+  z.object({ mode: z.literal('allowed'), models: z.array(z.string().min(1)).min(1), effort: z.string().min(1).optional(), onUnavailable: z.enum(['wait', 'fail']).default('wait') }).strict(),
+  z.object({ mode: z.literal('preferred'), models: z.array(z.string().min(1)).min(1), effort: z.string().min(1).optional(), onUnavailable: z.enum(['wait', 'fail']).default('wait') }).strict(),
+]);
+
+export const BlueprintOperationSchema = z.object({
+  id: OperationNameSchema,
+  version: z.string().min(1),
+  description: z.string().optional(),
+  target: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('work-item'), itemKind: z.string().min(1) }).strict(),
+    z.object({ kind: z.literal('plan'), template: PlanTemplateOperationRefSchema }).strict(),
+  ]),
+  execution: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('agent'), role: z.string().min(1) }).strict(),
+    z.object({ kind: z.literal('program'), blueprint: BlueprintOperationRefSchema.optional() }).strict(),
+    z.object({ kind: z.literal('recipe'), recipe: RecipeOperationRefSchema }).strict(),
+  ]).optional(),
+  inputSchema: OperationInputSchema,
+  acceptance: z.object({
+    resultSchema: OperationJsonSchema,
+    rubric: RubricOperationRefSchema.optional(),
+  }).strict(),
+  // These are requirements to intersect with the live principal/role ceiling;
+  // a blueprint declaration never grants a tool or revives a revoked grant.
+  policy: z.object({
+    identity: IdentityOperationRefSchema.optional(),
+    requiredTools: z.array(z.string().min(1)).default([]),
+    model: OperationModelPolicySchema.optional(),
+  }).prefault({}),
+  artifacts: z.array(ArtifactOperationRefSchema).default([]),
+  signals: z.record(OperationNameSchema, z.object({ payloadSchema: OperationJsonSchema }).strict()).default({}),
+  waits: z.record(OperationNameSchema, z.object({ responseSchema: OperationJsonSchema }).strict()).default({}),
+}).strict();
+export type BlueprintOperation = z.infer<typeof BlueprintOperationSchema>;
+
 // ── identities-v1-2026-08-30 P-001: the identity extension of the blueprint document ──
 //
 // An identity IS a blueprint document (D-013 — no parallel store, no new Cupboard
@@ -1115,6 +1195,9 @@ export const BlueprintSchema = z.object({
    *  the proxy dispatches to the harness runtime. Additive + optional (default []) —
    *  a blueprint with no harness ops parses unchanged. */
   ops: z.array(OpManifestEntrySchema).default([]),
+  /** Named external task operations. Absent on legacy blueprints to preserve
+   *  their resolved configuration bytes and specification revisions. */
+  operations: z.array(BlueprintOperationSchema).optional(),
   /** The build/run environment spec — "what to stand up on a frame" (P-007). The
    *  deployment driver reads it to bootstrap a cloud frame; absent ⇒ nothing to
    *  stand up (today's local-only behavior). */

@@ -131,6 +131,7 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
 
   // ── identity extension: slots / bundles / grants (identities-v1 P-001) ─────
   validateIdentityDeclarations(bp, err);
+  validateOperationDeclarations(bp, isLiveRole, err);
 
   // ── spine mode: a spine declares EXACTLY ONE model (D-002) ──────────────────
   const hasEdges = bp.spine.edges != null && Object.keys(bp.spine.edges).length > 0;
@@ -255,6 +256,7 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
         // role an install may swap in — not a dead one (local-hive P-030).
         (bp.spine.deciderAlternatives ?? []).includes(id) ||
         dispatched.has(id) ||
+        (bp.operations ?? []).some((op) => op.execution?.kind === 'agent' && op.execution.role === id) ||
         bp.reactive.some((r) => r.role === id) ||
         (finalize
           ? [...finalize.onDone, ...finalize.onEscalate].some((entry) => finalizeEntryRole(entry) === id)
@@ -269,6 +271,39 @@ export function validateBlueprint(bp: Blueprint, opts: ValidateOptions = {}): Bl
 }
 
 type Reporter = (code: string, message: string) => void;
+
+/** An operation narrows the existing runtime authority; it cannot invent an
+ * executor, tool grant, or a second plan launcher by declaration alone. */
+function validateOperationDeclarations(bp: Blueprint, isLiveRole: (id: string) => boolean, err: Reporter): void {
+  const ids = new Set<string>();
+  const importedTools = new Set(bp.dependencies?.tools ?? []);
+  for (const operation of bp.operations ?? []) {
+    if (ids.has(operation.id)) err('duplicate-operation', `operation "${operation.id}" is declared more than once`);
+    ids.add(operation.id);
+    if (operation.target.kind === 'plan' && operation.execution) {
+      err('plan-operation-executor', `plan operation "${operation.id}" uses its pinned template; it cannot declare another executor`);
+    }
+    if (operation.target.kind === 'work-item' && !operation.execution) {
+      err('work-item-operation-executor', `work-item operation "${operation.id}" must declare an agent, program or recipe executor`);
+    }
+    if (operation.execution?.kind === 'agent' && !isLiveRole(operation.execution.role)) {
+      err('operation-unknown-role', `operation "${operation.id}" references unknown role "${operation.execution.role}"`);
+    }
+    if (operation.execution?.kind === 'program' && !operation.execution.blueprint && !(bp.spine.steps?.length)) {
+      err('operation-no-program', `operation "${operation.id}" selects this blueprint's program, but spine.steps is empty`);
+    }
+    for (const tool of operation.policy.requiredTools) {
+      if (!importedTools.has(tool)) {
+        err('operation-undeclared-tool', `operation "${operation.id}" requires "${tool}" outside dependencies.tools`);
+      }
+    }
+    for (const channel of Object.keys(operation.signals)) {
+      if (Object.prototype.hasOwnProperty.call(operation.waits, channel)) {
+        err('operation-channel-collision', `operation "${operation.id}" declares "${channel}" as both a signal and wait`);
+      }
+    }
+  }
+}
 
 /**
  * P-033 — collapse duplicate blueprint declaration sites.

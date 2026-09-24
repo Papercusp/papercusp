@@ -84,7 +84,8 @@ export type CompositionCompilerErrorCode =
   | 'package-read-failed'
   | 'package-hash-mismatch'
   | 'package-pin-conflict'
-  | 'specification-hash-mismatch';
+  | 'specification-hash-mismatch'
+  | 'operation-not-found';
 
 /** A diagnosable, machine-classifiable compiler refusal. */
 export class CompositionCompilerError extends Error {
@@ -985,6 +986,15 @@ export function compileAgentSpecification(
 export const compileResolvedAgentSpecification = compileAgentSpecification;
 export const compileResolvedSpecification = compileAgentSpecification;
 export const compileComposition = compileAgentSpecification;
+
+/** Resolve a named operation only from an immutable compiled specification.
+ * The returned revision is the exact closure pinned by a later admission; it
+ * never re-reads today's mutable blueprint source. */
+export function operationFromSpecification(specification: CompiledAgentSpecification, operationId: string) {
+  const operation = specification.configuration.operations?.find((entry) => entry.id === operationId);
+  if (!operation) fail('operation-not-found', `operation "${operationId}" is absent from the compiled blueprint`, operationId);
+  return Object.freeze({ operationId, specificationRevision: specification.specificationRevision, operation });
+}
 
 /** Compile the existing replacement-system-prompt stack through this same boundary. */
 export function compileReplacementSystemPromptSpecification(

@@ -326,6 +326,7 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   'dependencies.blueprints': setUnion(DECLARATION_SET),
   'dependencies.datatypes': setUnion(DECLARATION_SET),
   ops: replace(),
+  operations: replace('externally invocable operation manifest is authored whole; absent inherits, a present child replaces it'),
   'environment.setup': replace(),
   'environment.install': replace(),
   'environment.build': replace(),
