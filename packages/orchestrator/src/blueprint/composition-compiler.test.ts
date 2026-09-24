@@ -180,7 +180,7 @@ test('P-025 identity layers contribute lexicon, retirement, role backend and eac
     ] as const) {
       assert.deepEqual(artifact.configuration.lexicon, { workUnit: 'deliverable', reviewGate: 'review' });
       assert.deepEqual(artifact.configuration.retired, { at: 'D-025', reason: 'fixture retirement contract' });
-      assert.deepEqual(artifact.configuration.knobs.aiBackend?.roles?.reviewer, {
+      assert.deepEqual(artifact.configuration.knobs?.aiBackend?.roles?.reviewer, {
         model: 'review-model',
         extraArgs: ['--reasoning-effort', 'high'],
       });
