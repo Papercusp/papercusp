@@ -100,6 +100,37 @@ test('P-038 compiler snapshots the resolved blueprint, prompt bytes, closure and
   }
 });
 
+test('an already-rendered fixed contribution is pinned once and must occur in the delivered prompt', () => {
+  const f = fixture();
+  try {
+    const fixed = join(f.dir, 'fixed-rules.md');
+    writeFileSync(fixed, 'Fixed rules.\n');
+    const source = { ...rootSource(), contributions: [{
+      id: 'rules', purpose: 'prompt', source: 'fixed', refresh: 'source-change',
+      inputKind: 'prompt-file', ref: 'fixed:rules',
+    }] };
+    const input = {
+      source, resolve: f.resolve,
+      prompt: { text: 'Fixed rules.\n\nKernel.' },
+      pinnedFixedPromptFiles: [{ path: fixed, ref: 'fixed:rules' }],
+    } as const;
+    const artifact = compileAgentSpecification(input);
+    assert.equal(specificationPrompt(artifact), 'Fixed rules.\n\nKernel.');
+    assert.ok(artifact.inputs.some((entry) => entry.kind === 'prompt-file' &&
+      entry.ref === 'fixed:rules' && entry.bytes === 'Fixed rules.\n'));
+    assert.ok(artifact.provenance.some((entry) => entry.path === 'contribution.rules' &&
+      entry.decision === 'fixed:source-change'));
+    assert.throws(() => compileAgentSpecification({ ...input, prompt: { text: 'Kernel.' } }),
+      /contribution-not-delivered/);
+    writeFileSync(fixed, 'Changed rules.\n');
+    assert.throws(() => compileAgentSpecification({ ...input, pinnedFixedPromptFiles: [{
+      path: fixed, ref: 'fixed:rules', bytes: 'Fixed rules.\n',
+    }] }), /prompt-hash-mismatch/);
+  } finally {
+    f.cleanup();
+  }
+});
+
 test('a compiled operation keeps revision A after the authored definition changes to B', () => {
   const f = fixture();
   try {

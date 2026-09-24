@@ -194,6 +194,9 @@ export interface CompositionCompilerInput {
   prompts?: CompositionPromptInput | readonly CompositionPromptInput[];
   /** Top-level shorthand for one prompt descriptor's files. */
   promptFiles?: readonly (string | CompositionPromptFileInput)[];
+  /** Fixed source files already present in a caller-rendered prompt. Pin and
+   * bind their declarations without appending their text a second time. */
+  pinnedFixedPromptFiles?: readonly (string | CompositionPromptFileInput)[];
   /** Existing render-stack seam, useful for su and replacement-system prompts. */
   stackDocuments?: readonly StackDocument[];
 
@@ -1040,6 +1043,16 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
     promptSegments.push(resolved.rendered);
   }
 
+  const pinnedFixedPrompts = (input.pinnedFixedPromptFiles ?? []).map((file, index) =>
+    normalizePromptFile(file, `pinned-fixed#${index}`, input.harnessDir));
+  for (const file of pinnedFixedPrompts) {
+    if (!file.ref || !file.bytes?.trim() || !file.contentHash) {
+      fail('prompt-empty', 'pinned fixed prompt needs a non-empty file and stable reference', file.ref);
+    }
+    fixedPromptRefs.add(file.ref);
+    inputs.push({ kind: 'prompt-file', ref: file.ref, bytes: file.bytes, contentHash: file.contentHash });
+  }
+
   const addressedRows = normalizeAddressedRows(input);
   for (const row of addressedRows) {
     const addressed = addressedInput(row);
@@ -1072,6 +1085,11 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
       ? `${joinedPromptText.replace(/\n+$/, '')}\n\n${addressedText}`
       : joinedPromptText
     : addressedText;
+  for (const file of pinnedFixedPrompts) {
+    if (!promptText.includes(file.bytes!.trim())) {
+      fail('contribution-not-delivered', 'pinned fixed prompt is absent from the delivered prompt', file.ref);
+    }
+  }
   // If addressed rows were added after a stack's synthetic rendered entry,
   // replace that entry with the final bytes so adapters never see stale text.
   if (promptText) {
