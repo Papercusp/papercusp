@@ -18,6 +18,7 @@ contributions:
     inputKind: setting
     ref: mode
     producerRef: modes/store:agent_modes
+    availability: optional
   - id: goal-kickoff
     purpose: prompt
     source: provider
