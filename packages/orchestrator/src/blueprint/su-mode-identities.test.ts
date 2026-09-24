@@ -133,6 +133,9 @@ test('P-003 built-in mode manifests generate one catalog and an approved install
         value.producerRef === 'agent-tools/goals/start:buildGoalKickoffBrief' && value.refresh === 'launch'));
       assert.ok(contributions.some((value) => value.id === 'goal-portfolio' &&
         value.producerRef === 'goal-launch-settings:renderGoalPortfolioBrief' && value.refresh === 'turn'));
+      assert.ok(contributions.some((value) => value.id === 'goal-obligations' &&
+        value.producerRef === 'agent-obligation-reader:projectAgentTurnStartObligationBrief' &&
+        value.refresh === 'turn'));
     }
     return resolved;
   });
@@ -162,6 +165,26 @@ test('P-003 built-in mode manifests generate one catalog and an approved install
   assert.notEqual(selected.revision, builtin.revision);
   const unapproved = resolveBlueprintSource(variant, { sourcePath: installedPath });
   assert.ok(unapproved.validation.errors.some((issue) => issue.code === 'mode-policy-untrusted'));
+});
+
+test('P-004 existing brief and orientation producers are declared on their current identity components', () => {
+  const expected = [
+    ['su.fleet-leader', 'fleet-leader-brief', 'agent-tools/fleet/leader-brief:buildLeaderBrief', 'on-demand'],
+    ['su.practice', 'turn-start-orientation', 'turn-start-orientation:buildTurnStartOrientationBlock', 'turn'],
+    ['su.practice', 'coord-orientation', 'agent-tools/coordination/tools/orient:composeOrient', 'on-demand'],
+  ] as const;
+  for (const [identityId, contributionId, producerRef, refresh] of expected) {
+    const raw = parseYaml(readFileSync(builtinBlueprintPath(identityId), 'utf8')) as {
+      contributions?: Array<{ id: string; producerRef?: string; refresh: string; availability?: string;
+        purpose: string; inputKind: string }>;
+    };
+    assert.ok(raw.contributions?.some((entry) => entry.id === contributionId &&
+      entry.producerRef === producerRef && entry.refresh === refresh && entry.availability === 'optional' &&
+      (contributionId === 'turn-start-orientation'
+        ? entry.purpose === 'prompt' && entry.inputKind === 'prompt-file'
+        : entry.purpose === 'operational' && entry.inputKind === 'setting')),
+    `${identityId} must bind ${contributionId} to its existing producer`);
+  }
 });
 
 /** The first non-blank line of each mode document — a sentinel that must not appear unless bound. */
