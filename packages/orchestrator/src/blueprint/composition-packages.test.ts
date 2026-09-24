@@ -240,6 +240,27 @@ describe('P-002 component contribution binding', () => {
     })).toThrow(/contribution-source-mismatch.*current-task:prompt-file:provider:task/);
   });
 
+  it('requires an explicit omission receipt for a conditional provider and pins its reason', () => {
+    const optional = { ...generated, availability: 'optional' as const };
+    const identity = { ...source, contributions: [optional] };
+    expect(() => compileAgentSpecification({ source: identity }))
+      .toThrow(/contribution-missing.*current-task/);
+    const omitted = compileAgentSpecification({ source: identity,
+      contributionOmissions: [{ id: optional.id, reason: 'not-requested' }] });
+    expect(omitted.provenance.find((entry) => entry.path === 'contribution.current-task'))
+      .toMatchObject({ decision: 'omitted:not-requested', producerRef: optional.producerRef });
+    expect(specificationPrompt(omitted)).not.toContain(providerText);
+    const delivered = compileAgentSpecification({ source: identity, inputClosure: [providerInput] });
+    expect(specificationPrompt(delivered)).toContain(providerText);
+    expect(omitted.specificationRevision).not.toBe(delivered.specificationRevision);
+    expect(() => compileAgentSpecification({ source: identity,
+      contributionOmissions: [{ id: optional.id, reason: 'unavailable' }] }))
+      .toThrow(/input-invalid.*unavailable needs errorRef/);
+    expect(() => compileAgentSpecification({ source: identity, inputClosure: [providerInput],
+      contributionOmissions: [{ id: optional.id, reason: 'not-requested' }] }))
+      .toThrow(/input-conflict.*both pinned and marked omitted/);
+  });
+
   it('refuses a declared addressed prompt when its render is disabled', () => {
     expect(() => compileAgentSpecification({
       source: { ...source, contributions: [{ id: 'guide', purpose: 'prompt', source: 'fixed',

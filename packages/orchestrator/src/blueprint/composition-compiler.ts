@@ -59,7 +59,7 @@ import { composeStack, type StackDocument } from './render-stack.js';
 import type { IdentityLintOptions } from './identity-lint.js';
 
 /** Compiler implementation version.  A semantic change requires a new value. */
-export const COMPOSITION_COMPILER_VERSION = '1.3.0';
+export const COMPOSITION_COMPILER_VERSION = '1.4.0';
 /** Alias used by callers that call the value a compiler revision. */
 export const COMPOSITION_COMPILER_REVISION = COMPOSITION_COMPILER_VERSION;
 
@@ -148,6 +148,13 @@ export interface CompositionSettingInput {
   producerRef?: string;
 }
 
+export interface CompositionContributionOmissionInput {
+  id: string;
+  reason: 'ineligible' | 'not-requested' | 'unavailable';
+  /** Required when a producer was unavailable, so that failure is addressable. */
+  errorRef?: string;
+}
+
 /** A prompt descriptor.  `documents` uses the existing sealed render seam. */
 export interface CompositionPromptInput {
   role?: string;
@@ -196,6 +203,9 @@ export interface CompositionCompilerInput {
   /** One explicit state input, normally `{ ref: 'mode', revision, value }`. */
   mutableState?: CompositionSettingInput;
   state?: CompositionSettingInput;
+
+  /** Explicit receipt for a conditionally absent provider contribution. */
+  contributionOmissions?: readonly CompositionContributionOmissionInput[];
 
   /** Additional already-pinned closure entries (package/dependency adapters use this). */
   inputClosure?: readonly ResolvedAgentInput[];
@@ -888,14 +898,38 @@ function bindContributions(
   fixedPromptRefs: ReadonlySet<string>,
   providerPromptRefs: ReadonlySet<string>,
   includeAddressedDocuments: boolean,
+  omissions: readonly CompositionContributionOmissionInput[],
 ): { promptSegments: string[]; provenance: ResolvedAgentProvenance[] } {
   const byKey = new Map(closure.map((entry) => [contributionInputKey(entry), entry]));
+  const omittedById = new Map<string, CompositionContributionOmissionInput>();
+  for (const omission of omissions) {
+    if (!omission.id.trim() || omittedById.has(omission.id) ||
+        (omission.reason === 'unavailable' && !omission.errorRef?.trim())) {
+      fail('input-invalid', 'contribution omission needs a unique id and unavailable needs errorRef', omission.id);
+    }
+    omittedById.set(omission.id, omission);
+  }
   const promptSegments: string[] = [];
   const provenance: ResolvedAgentProvenance[] = [];
   for (const declaration of declarations ?? []) {
     const key = contributionKey(declaration);
     const entry = byKey.get(key);
-    if (!entry) fail('contribution-missing', `declared ${declaration.purpose} input is absent from the pinned closure`, `${declaration.id}:${key}`);
+    const omission = omittedById.get(declaration.id);
+    if (!entry) {
+      if (declaration.availability !== 'optional' || !omission) {
+        fail('contribution-missing', `declared ${declaration.purpose} input is absent without an explicit optional omission`, `${declaration.id}:${key}`);
+      }
+      provenance.push({
+        path: `contribution.${declaration.id}`,
+        sourceRef: key,
+        sourceRevision: omission.errorRef ?? `omitted:${omission.reason}`,
+        decision: `omitted:${omission.reason}`,
+        ...(declaration.producerRef ? { producerRef: declaration.producerRef } : {}),
+      });
+      omittedById.delete(declaration.id);
+      continue;
+    }
+    if (omission) fail('input-conflict', 'contribution is both pinned and marked omitted', declaration.id);
     if (declaration.inputKind === 'prompt-file') {
       if (entry.kind === 'prompt-file' && !entry.bytes.trim()) {
         fail('contribution-not-delivered', 'declared prompt has no text bytes', `${declaration.id}:${key}`);
@@ -931,6 +965,7 @@ function bindContributions(
       ...(producerRef ? { producerRef } : {}),
     });
   }
+  if (omittedById.size) fail('input-invalid', 'omission refers to an unknown or required contribution', [...omittedById.keys()].join(','));
   return { promptSegments, provenance };
 }
 
@@ -1003,6 +1038,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
   const contributions = bindContributions(
     loaded.blueprint.contributions, closure, fixedPromptRefs, providerPromptRefs,
     input.includeAddressedDocuments !== false,
+    input.contributionOmissions ?? [],
   );
   const addressedText = input.includeAddressedDocuments === false ? '' : renderAddressedRows(addressedRows);
   const joinedPromptText = [...promptSegments, ...contributions.promptSegments].join(PROMPT_SEPARATOR);

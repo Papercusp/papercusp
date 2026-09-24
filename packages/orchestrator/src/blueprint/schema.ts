@@ -1081,6 +1081,9 @@ export const BlueprintContributionSchema = z.object({
   ref: z.string().min(1),
   /** Existing producer/service reference; required for generated contributions. */
   producerRef: z.string().min(1).optional(),
+  /** A generated provider may be conditionally absent. The caller must still
+   * supply an explicit omission receipt; absence alone is never success. */
+  availability: z.enum(['required', 'optional']).optional(),
 }).strict().superRefine((value, ctx) => {
   const kinds = {
     prompt: ['prompt-file', 'addressed-document'],
