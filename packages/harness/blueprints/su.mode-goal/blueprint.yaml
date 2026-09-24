@@ -1,6 +1,6 @@
 id: su.mode-goal
 extends: base
-version: 0.1.0
+version: 0.1.1
 description: "Built-in GOAL mode identity component; host policy remains in the mode registry."
 slots:
   - slot: goal
@@ -25,6 +25,7 @@ contributions:
     inputKind: prompt-file
     ref: provider:goal-kickoff
     producerRef: agent-tools/goals/start:buildGoalKickoffBrief
+    availability: optional
   - id: goal-portfolio
     purpose: prompt
     source: provider
@@ -32,6 +33,15 @@ contributions:
     inputKind: prompt-file
     ref: provider:goal-portfolio
     producerRef: goal-launch-settings:renderGoalPortfolioBrief
+    availability: optional
+  - id: goal-obligations
+    purpose: prompt
+    source: provider
+    refresh: turn
+    inputKind: prompt-file
+    ref: provider:goal-obligations
+    producerRef: agent-obligation-reader:projectAgentTurnStartObligationBrief
+    availability: optional
 mode:
   id: goal
   policyRef: goal
