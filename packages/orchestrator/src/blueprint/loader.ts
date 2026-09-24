@@ -34,7 +34,7 @@
  * unless a later validated `versionOverride` replaces every competing version.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve as resolvePath, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { parse as parseYaml } from 'yaml';
 import { harnessPath, harnessRootCandidates } from '@papercusp/harness/paths';
@@ -173,8 +173,13 @@ export function layerSourceDocument(layer: BlueprintLayer): Readonly<RawBlueprin
 }
 
 /** Roots of the built-in and installed blueprint tiers, for `layerTrust`. */
-const BUILTIN_BLUEPRINTS_ROOT = join(builtinBlueprintPath('base'), '..', '..');
+const BUILTIN_BLUEPRINTS_ROOTS = harnessRootCandidates().map((root) => join(root, 'blueprints'));
 const INSTALLED_BLUEPRINTS_ROOT = join(homedir(), '.papercusp', 'blueprints');
+
+function underRoot(root: string, sourcePath: string): boolean {
+  const rel = relative(resolvePath(root), resolvePath(sourcePath));
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
 
 /**
  * The trust tier of a layer by where it was read from. An in-memory root (null path)
@@ -183,8 +188,8 @@ const INSTALLED_BLUEPRINTS_ROOT = join(homedir(), '.papercusp', 'blueprints');
  */
 export function layerTrust(sourcePath: string | null): LayerTrust {
   if (!sourcePath) return 'local';
-  if (sourcePath.startsWith(BUILTIN_BLUEPRINTS_ROOT)) return 'builtin';
-  if (sourcePath.startsWith(INSTALLED_BLUEPRINTS_ROOT)) return 'installed';
+  if (BUILTIN_BLUEPRINTS_ROOTS.some((root) => underRoot(root, sourcePath))) return 'builtin';
+  if (underRoot(INSTALLED_BLUEPRINTS_ROOT, sourcePath)) return 'installed';
   return 'local';
 }
 

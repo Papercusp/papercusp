@@ -97,6 +97,11 @@
       "import": "./src/blueprint/index.ts",
       "default": "./src/blueprint/index.ts"
     },
+    "./mode-catalog": {
+      "types": "./src/blueprint/mode-catalog.generated.ts",
+      "import": "./src/blueprint/mode-catalog.generated.ts",
+      "default": "./src/blueprint/mode-catalog.generated.ts"
+    },
     "./blueprint/params": {
       "types": "./src/blueprint/params.ts",
       "import": "./src/blueprint/params.ts",

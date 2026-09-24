@@ -173,7 +173,11 @@ Bias hard toward action + disclosure.
 ## COLD AUTO — the same autonomy component across fresh-context wakes
 
 `cold-auto` selects this AUTO definition on the same exclusive `autonomy` axis.
-The host's carry mode starts each scheduled wake from a fresh context rebuilt
-from the last checkpoint. Flush the work-item and loop carry-note before ending
-each wake so the next turn can reconstruct the active work. The registry owns
-the mode state and carry policy; this component adds no second AUTO grant.
+The host's carry mode starts each scheduled wake from a fresh context with no
+transcript continuity, rebuilt from the last checkpoint. Your continuity IS the
+checkpoint layer: write `loop:checkpoint { did, left, insight, next }` every wake
+before settling, and checkpoint every held work-item at the boundary. Flush the
+work-item and loop carry-note so the next turn can reconstruct the active work;
+a cold wake that cannot do so is a defect. The same owner walls and peer-work
+data rail as AUTO still apply. The registry owns mode state and carry policy;
+this component adds no second AUTO grant.

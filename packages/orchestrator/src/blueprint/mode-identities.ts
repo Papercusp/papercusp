@@ -45,6 +45,7 @@ import { layerSourceDocument, type BlueprintLayer } from './loader.js';
 import { BlueprintContributionSchema } from './schema.js';
 import type { BlueprintValidation } from './validate.js';
 import { stableStringify } from './merge.js';
+import { BUILTIN_MODE_COMPONENTS } from './mode-catalog.generated.js';
 import type { BoundLayer } from './stack-mutation.js';
 
 /** Generated view of mode metadata authored by a validated identity component.
@@ -129,7 +130,7 @@ export function modeCatalogFromValidatedSources(
   return { revision: createHash('sha256').update(stableStringify(entries)).digest('hex'), entries };
 }
 
-export type SuModeDocId = 'su.mode-auto' | 'su.mode-ideate' | 'su.mode-drain' | 'su.mode-grade' | 'su.mode-test' | 'su.mode-goal' | 'su.mode-audit';
+export type SuModeDocId = (typeof BUILTIN_MODE_COMPONENTS)[number]['sourceId'];
 
 export interface SuModeDocument {
   /** The identity blueprint id (`blueprints/<id>/blueprint.yaml`). */
@@ -152,15 +153,14 @@ function modeDoc(id: SuModeDocId, slot: SuModeDocument['slot'], modes: readonly 
   return { id, slot, modes, path: `blueprints/${id}/prompts/${slot}.md`, role };
 }
 
-export const SU_MODE_DOCUMENTS: readonly SuModeDocument[] = [
-  modeDoc('su.mode-auto', 'autonomy', ['auto', 'cold-auto'], 'the AUTO definition — the owner’s standing "act, don’t ask" grant read in the su’s vocabulary; bound for auto AND cold-auto (one dial, two positions)'),
-  modeDoc('su.mode-ideate', 'ideation', ['ideate'], 'the IDEATE definition — "invent net-new, don’t just patch" + the IDEATE × AUTO composition table; stacks beside autonomy (cross-axis additive)'),
-  modeDoc('su.mode-drain', 'objective', ['drain'], 'the DRAIN definition — drive the agreed backlog to terminal; DRAIN ⇒ AUTO is the registry’s implication, so drain binds objective AND autonomy'),
-  modeDoc('su.mode-grade', 'grade', ['grade'], 'the GRADE definition — score, repair and re-grade while preserving independent acceptance'),
-  modeDoc('su.mode-test', 'test', ['test'], 'the TEST definition — independently verify another agent’s work and leave guard tests'),
-  modeDoc('su.mode-goal', 'goal', ['goal'], 'the GOAL definition — own portfolio outcomes and delegate every implementation'),
-  modeDoc('su.mode-audit', 'audit', ['audit'], 'the AUDIT definition — a verdict on a whole program; read-only-toward-subject enforcement stays kernel (audit-mode-guard.ts)'),
-];
+export const SU_MODE_DOCUMENTS: readonly SuModeDocument[] = [...BUILTIN_MODE_COMPONENTS]
+  .sort((a, b) => MODE_AXES.indexOf(a.slot) - MODE_AXES.indexOf(b.slot))
+  .map((entry) => modeDoc(
+    entry.sourceId,
+    entry.slot,
+    entry.id === 'auto' ? ['auto', 'cold-auto'] : [entry.id],
+    entry.title,
+  ));
 
 export function isSuModeDocId(x: unknown): x is SuModeDocId {
   return typeof x === 'string' && SU_MODE_DOCUMENTS.some((d) => d.id === x);

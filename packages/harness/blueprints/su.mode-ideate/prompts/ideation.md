@@ -82,6 +82,12 @@ stack cross-axis).
 
 **IDEATE × AUTO compose — read your current cell:**
 
+When GOAL is also active, its GOAL-LOCAL GAP REVIEW fulfills this IDEATE duty:
+record the scoped evidence and disposition in `goalReview`, including a
+justified zero-idea result when existing plans suffice. Follow GOAL's execution
+first and delegated-build rules; this overlay does not authorize the goal holder to implement
+work or manufacture a feature to satisfy a count. Standalone IDEATE keeps the ordinary grounded proposal loop above.
+
 | | **AUTO off** | **AUTO on** |
 |---|---|---|
 | **ideate off** | File observations (sensor readings); fixes/improvements wait for approval. | **Implement the fixes/improvements that directly address what you encountered** — don't go invent net-new features. |

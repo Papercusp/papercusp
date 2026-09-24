@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stringify as toYaml } from 'yaml';
+import { harnessRootCandidates } from '@papercusp/harness/paths';
 import {
   resolveBlueprint,
   resolveLayers,
@@ -19,6 +20,7 @@ import {
   MAX_BLUEPRINT_EXTENDS_DEPTH,
   MAX_BLUEPRINT_EXPANDED_LAYERS,
   layerContentHash,
+  layerTrust,
   loadBlueprintFromFile,
   loadBuiltinBlueprint,
 } from './loader.js';
@@ -34,6 +36,13 @@ function chain(docs: Record<string, Record<string, unknown>>) {
   return { dir, resolve, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 const runnable = { workItem: { kind: 'feature' }, spine: { edges: { DONE: { to: 'done' } } } };
+
+test('layerTrust recognizes every built-in harness root without accepting a prefix lookalike', () => {
+  for (const root of harnessRootCandidates()) {
+    assert.equal(layerTrust(join(root, 'blueprints', 'su.mode-goal', 'blueprint.yaml')), 'builtin');
+    assert.equal(layerTrust(join(root, 'blueprints-elsewhere', 'su.mode-goal', 'blueprint.yaml')), 'local');
+  }
+});
 
 test('resolveLayers — layers come back parent-first with the loaded document last, each with its own hash', () => {
   const { resolve, cleanup } = chain({
