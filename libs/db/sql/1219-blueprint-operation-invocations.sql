@@ -42,3 +42,21 @@ CREATE INDEX IF NOT EXISTS blueprint_invocation_item_recovery_idx
      ((payload->'blueprintOperation'->>'callerId')),
      ((payload->'blueprintOperation'->>'requestKey')))
   WHERE payload ? 'blueprintOperation';
+
+-- A run instance is a snapshot of an already admitted template, not a new
+-- author plan. Migration 1111's original trigger stamped every non-rubric
+-- INSERT as a new BAR subject, so promotion of a legacy template's instance
+-- immediately failed against an empty post-epoch cohort. Keep ordinary new
+-- plans strict; exempt only the canonical template@run-<digits> instance shape.
+CREATE OR REPLACE FUNCTION harness_shared.stamp_acceptance_bar_epoch()
+RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  IF NEW.template IS DISTINCT FROM 'rubric'
+     AND NOT (NEW.template_slug IS NOT NULL AND NEW.plan_slug ~ '.+@run-[0-9]+$')
+     AND NEW.acceptance_bar_epoch IS NULL THEN
+    NEW.acceptance_bar_epoch := 1;
+    NEW.acceptance_bar_cohort := 'post-epoch';
+  END IF;
+  RETURN NEW;
+END;
+$fn$;
