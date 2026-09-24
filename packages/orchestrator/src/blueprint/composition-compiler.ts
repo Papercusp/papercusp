@@ -30,10 +30,13 @@ import { harnessRoot } from '@papercusp/harness/paths';
 import { parse as parseYaml } from 'yaml';
 import {
   ResolvedAgentSpecificationSchema,
+  BlueprintSourceDocumentSchema,
+  RunnableBlueprintSchema,
   ResolvedAgentInputSchema,
   ResolvedPackageInputSchema,
   RESOLVED_AGENT_SPECIFICATION_SCHEMA_VERSION,
   type BlueprintSourceKind,
+  type BlueprintSourceDocument,
   type BlueprintContribution,
   type ResolvedAgentInput,
   type ResolvedAgentProvenance,
@@ -41,10 +44,10 @@ import {
   type ResolvedPackageReference,
 } from './schema.js';
 import {
-  loadBlueprintFromFile,
   layerSourceDocument,
   layerContentHash,
   resolveBlueprint,
+  resolveBlueprintSource,
   type BlueprintValidateRegistry,
   type LoadedBlueprint,
   type ResolveExtendsPath,
@@ -59,7 +62,7 @@ import { composeStack, type StackDocument } from './render-stack.js';
 import type { IdentityLintOptions } from './identity-lint.js';
 
 /** Compiler implementation version.  A semantic change requires a new value. */
-export const COMPOSITION_COMPILER_VERSION = '1.4.0';
+export const COMPOSITION_COMPILER_VERSION = '1.5.0';
 /** Alias used by callers that call the value a compiler revision. */
 export const COMPOSITION_COMPILER_REVISION = COMPOSITION_COMPILER_VERSION;
 
@@ -284,7 +287,11 @@ function asRevision(value: string | number | undefined, what: string, ref?: stri
   return String(value);
 }
 
-function sourceFor(input: CompositionCompilerInput): LoadedBlueprint {
+type LoadedComposition = Omit<LoadedBlueprint, 'blueprint'> & {
+  blueprint: LoadedBlueprint['blueprint'] | BlueprintSourceDocument;
+};
+
+function sourceFor(input: CompositionCompilerInput): LoadedComposition {
   const candidate = input.loaded ?? input.source ?? input.blueprint;
   if (candidate !== undefined) {
     if (isLoadedBlueprint(candidate)) {
@@ -295,6 +302,22 @@ function sourceFor(input: CompositionCompilerInput): LoadedBlueprint {
     }
     if (!isRecord(candidate)) fail('source-invalid', 'source must be a YAML mapping or LoadedBlueprint');
     try {
+      const authored = resolveBlueprintSource(candidate, {
+        resolve: input.resolve,
+        sourcePath: input.sourcePath ?? null,
+        lint: input.lint,
+      });
+      if (!authored.validation.ok) fail('source-invalid', 'the supplied identity source has validation errors');
+      if (!RunnableBlueprintSchema.safeParse(authored.merged).success) {
+        return {
+          blueprint: BlueprintSourceDocumentSchema.parse(authored.merged),
+          sourceKind: authored.source.kind,
+          validation: authored.validation,
+          contentHash: canonicalHash(authored.merged),
+          sourcePath: input.sourcePath ?? null,
+          layers: authored.layers,
+        };
+      }
       return resolveBlueprint(candidate, {
         resolve: input.resolve,
         sourcePath: input.sourcePath ?? null,
@@ -311,7 +334,9 @@ function sourceFor(input: CompositionCompilerInput): LoadedBlueprint {
   }
   if (input.sourcePath) {
     try {
-      return loadBlueprintFromFile(input.sourcePath, input.resolve, input.registry);
+      const raw = parseYaml(readFileSync(input.sourcePath, 'utf8'));
+      if (!isRecord(raw)) fail('source-invalid', 'source file must contain a YAML mapping', input.sourcePath);
+      return sourceFor({ ...input, source: raw });
     } catch (error) {
       fail('source-resolution-failed', error instanceof Error ? error.message : String(error), input.sourcePath);
     }
@@ -321,7 +346,7 @@ function sourceFor(input: CompositionCompilerInput): LoadedBlueprint {
 
 function defaultPromptContext(
   input: CompositionCompilerInput,
-  loaded: LoadedBlueprint,
+  loaded: LoadedComposition,
 ): PromptResolveContext {
   const supplied = input.promptContext;
   const harnessDir = supplied?.harnessDir ?? input.harnessDir ?? harnessRoot();
@@ -575,7 +600,7 @@ function normalizeSettings(input: CompositionCompilerInput): CompositionSettingI
     .sort((a, b) => compareText(a.ref, b.ref) || compareText(String(a.revision), String(b.revision)));
 }
 
-function layerInput(loaded: LoadedBlueprint, layerIndex: number, revisions?: Readonly<Record<string, string>>): ResolvedAgentInput {
+function layerInput(loaded: LoadedComposition, layerIndex: number, revisions?: Readonly<Record<string, string>>): ResolvedAgentInput {
   const layer = loaded.layers[layerIndex]!;
   const revision = revisions?.[layer.id] ?? layer.contentHash;
   assertSha(layer.contentHash, `layer ${layer.id} contentHash`, layer.id);
@@ -783,7 +808,7 @@ export function replayAgentSpecification(value: unknown): CompiledAgentSpecifica
   const parsed = ResolvedAgentSpecificationSchema.safeParse(value);
   if (!parsed.success) fail('input-invalid', parsed.error.issues.map((issue) => issue.message).join('; '));
   const specification = parsed.data;
-  validateSpecificationBundles(specification.configuration.bundles, specification.inputs);
+  validateSpecificationBundles(specification.configuration.bundles ?? [], specification.inputs);
   for (const entry of specification.inputs) {
     if (entry.kind === 'blueprint-layer' && !entry.document) fail('source-invalid', 'replay needs the source document', entry.ref);
     if (entry.kind === 'addressed-document' && entry.bytes === undefined) {
@@ -819,7 +844,7 @@ function hasOwnPath(value: Record<string, unknown>, path: string): boolean {
 }
 
 function configProvenance(
-  loaded: LoadedBlueprint,
+  loaded: LoadedComposition,
   compilerVersion: string,
 ): ResolvedAgentProvenance[] {
   const out: ResolvedAgentProvenance[] = [];
@@ -1034,7 +1059,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
   }
 
   const closure = validateAgentInputClosure(inputs);
-  validateSpecificationBundles(loaded.blueprint.bundles, closure);
+  validateSpecificationBundles(loaded.blueprint.bundles ?? [], closure);
   const contributions = bindContributions(
     loaded.blueprint.contributions, closure, fixedPromptRefs, providerPromptRefs,
     input.includeAddressedDocuments !== false,

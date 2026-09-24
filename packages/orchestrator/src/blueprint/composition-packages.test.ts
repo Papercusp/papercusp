@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -12,6 +12,8 @@ import {
   validateAgentInputClosure,
 } from './composition-compiler.js';
 import type { ResolvedPackageInput } from './schema.js';
+import { builtinBlueprintPath } from './loader.js';
+import { parse as parseYaml } from 'yaml';
 
 const source = {
   id: 'pinned-agent',
@@ -199,6 +201,23 @@ describe('P-006 complete package closure and replay', () => {
 });
 
 describe('P-002 component contribution binding', () => {
+  it('compiles an abstract identity component with its existing structured provider output', () => {
+    const file = builtinBlueprintPath('su.fleet-leader');
+    const brief = { ok: true, summary: { fleet: 'alpha', members: 2 } };
+    const artifact = compileAgentSpecification({
+      source: parseYaml(readFileSync(file, 'utf8')),
+      sourcePath: file,
+      settings: [{ ref: 'fleet-leader-brief', revision: 'brief-1', value: brief,
+        producerRef: 'agent-tools/fleet/leader-brief:buildLeaderBrief' }],
+    });
+    expect(artifact.source.kind).toBe('identity');
+    expect(artifact.configuration).toMatchObject({ id: 'su.fleet-leader' });
+    expect(artifact.provenance.find((entry) => entry.path === 'contribution.fleet-leader-brief'))
+      .toMatchObject({ sourceRef: 'setting:fleet-leader-brief', producerRef: 'agent-tools/fleet/leader-brief:buildLeaderBrief' });
+    expect(specificationPrompt(artifact)).toBe('');
+    expect(replayAgentSpecification(JSON.parse(JSON.stringify(artifact)))).toEqual(artifact);
+  });
+
   const fixed = { id: 'instructions', purpose: 'prompt', source: 'fixed', refresh: 'source-change', inputKind: 'prompt-file', ref: 'fixed:instructions' } as const;
   const generated = { id: 'current-task', purpose: 'prompt', source: 'provider', refresh: 'turn', inputKind: 'prompt-file', ref: 'provider:task', producerRef: 'existing.task-brief' } as const;
   const resource = { id: 'procedure', purpose: 'resource', source: 'fixed', refresh: 'source-change', inputKind: 'package', ref: 'recipe:shared' } as const;

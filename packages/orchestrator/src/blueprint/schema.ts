@@ -1519,7 +1519,7 @@ export const ResolvedAgentSpecificationSchema = z
         contentHash: Sha256Schema,
       })
       .strict(),
-    configuration: RunnableBlueprintSchema,
+    configuration: z.union([RunnableBlueprintSchema, BlueprintSourceDocumentSchema]),
     inputs: z.array(ResolvedAgentInputSchema),
     provenance: z.array(ResolvedAgentProvenanceSchema),
   })
