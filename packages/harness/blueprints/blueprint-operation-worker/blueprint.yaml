@@ -9,3 +9,7 @@ description: >-
 
 slots:
   - slot: domain
+
+# An empty declaration is an explicit deny-all until an operation supplies
+# current, host-validated tool authority. Absence would select legacy grants.
+grants: {}

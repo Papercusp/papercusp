@@ -16,7 +16,7 @@ test('neutral blueprint operation worker identity composes as a bounded domain l
   });
   assert.equal(resolved.validation.ok, true, JSON.stringify(resolved.validation.errors));
   assert.deepEqual(source.slots, [{ slot: 'domain' }]);
-  assert.equal(Object.hasOwn(source, 'grants'), false);
+  assert.deepEqual(source.grants, {});
   assert.equal(Object.hasOwn(source, 'workItem'), false);
   assert.equal(Object.hasOwn(source, 'spine'), false);
 
