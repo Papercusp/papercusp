@@ -39,8 +39,95 @@
  * `SU_PART_DOCUMENTS` they have no tiles, so `su-stack.ts` resolves them through the chain
  * ONLY (a missing document refuses; there is nothing to fall back to).
  */
+import { createHash } from 'node:crypto';
 import { MODE_AXES, type ModeAxis, type SlotId } from './slots.js';
+import { layerSourceDocument, type BlueprintLayer } from './loader.js';
+import { BlueprintContributionSchema } from './schema.js';
+import type { BlueprintValidation } from './validate.js';
+import { stableStringify } from './merge.js';
 import type { BoundLayer } from './stack-mutation.js';
+
+/** Generated view of mode metadata authored by a validated identity component.
+ * The host policy registry still decides implications, subjects and authority. */
+export interface ModeCatalogEntry {
+  id: string;
+  policyRef: string;
+  slot: ModeAxis;
+  title: string;
+  oneLiner: string;
+  definition: {
+    contributionId: string;
+    inputKind: 'prompt-file' | 'addressed-document';
+    ref: string;
+    source: 'fixed' | 'provider';
+    refresh: 'source-change' | 'launch' | 'turn' | 'on-demand';
+    producerRef?: string;
+  };
+  sourceId: string;
+  sourceHash: string;
+  revision: string;
+}
+
+export interface ModeCatalogSnapshot {
+  revision: string;
+  entries: readonly ModeCatalogEntry[];
+}
+
+export function modeCatalogFromValidatedSources(
+  sources: readonly { layers: readonly BlueprintLayer[]; validation: BlueprintValidation }[],
+  options: { supportedPolicyRefs: Iterable<string>; approvedModePolicyRefs?: Iterable<string> },
+): ModeCatalogSnapshot {
+  const supported = new Set(options.supportedPolicyRefs);
+  const approved = new Set(options.approvedModePolicyRefs ?? []);
+  const byId = new Map<string, ModeCatalogEntry>();
+  for (const source of sources) {
+    if (!source.validation.ok) throw new Error('mode catalog refuses an invalid blueprint source');
+    for (const layer of source.layers) {
+      const mode = layer.mode;
+      if (!mode) continue;
+      const slot = layer.slots.filter((value): value is ModeAxis => (MODE_AXES as readonly string[]).includes(value));
+      if (slot.length !== 1) throw new Error(`mode "${mode.id}" must fill exactly one mode axis`);
+      if (!supported.has(mode.policyRef)) throw new Error(`mode "${mode.id}" references unsupported host policy "${mode.policyRef}"`);
+      if (layer.trust !== 'builtin' && !approved.has(mode.policyRef)) {
+        throw new Error(`mode "${mode.id}" has no installer/admin approval for host policy "${mode.policyRef}"`);
+      }
+      if (layer.trust === 'installed' && (!layer.attestation || layer.attestation.contentHash !== layer.contentHash)) {
+        throw new Error(`installed mode "${mode.id}" needs a valid layer attestation`);
+      }
+      const contributions = source.layers.flatMap((candidate) => {
+        const raw = layerSourceDocument(candidate);
+        return Array.isArray(raw?.contributions) ? raw.contributions.map((value) => BlueprintContributionSchema.parse(value)) : [];
+      });
+      const definition = contributions.find((value) => value.id === mode.definitionContributionId);
+      if (!definition || definition.purpose !== 'prompt' ||
+          (definition.inputKind !== 'prompt-file' && definition.inputKind !== 'addressed-document')) {
+        throw new Error(`mode "${mode.id}" has no prompt contribution "${mode.definitionContributionId}"`);
+      }
+      const content = {
+        id: mode.id, policyRef: mode.policyRef, slot: slot[0]!, title: mode.title,
+        oneLiner: mode.oneLiner,
+        definition: {
+          contributionId: definition.id, inputKind: definition.inputKind, ref: definition.ref,
+          source: definition.source, refresh: definition.refresh,
+          ...(definition.producerRef ? { producerRef: definition.producerRef } : {}),
+        },
+        sourceId: layer.id, sourceHash: layer.contentHash,
+      };
+      const entry: ModeCatalogEntry = {
+        ...content,
+        revision: createHash('sha256').update(stableStringify(content)).digest('hex'),
+      };
+      const prior = byId.get(mode.id);
+      if (prior && prior.revision === entry.revision) continue;
+      if (prior && (mode.replacesRevision !== prior.revision || prior.policyRef !== mode.policyRef)) {
+        throw new Error(`mode "${mode.id}" has conflicting definitions from "${prior.sourceId}" and "${layer.id}" without an exact replacement revision`);
+      }
+      byId.set(mode.id, entry);
+    }
+  }
+  const entries = [...byId.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  return { revision: createHash('sha256').update(stableStringify(entries)).digest('hex'), entries };
+}
 
 export type SuModeDocId = 'su.mode-auto' | 'su.mode-ideate' | 'su.mode-drain' | 'su.mode-audit';
 

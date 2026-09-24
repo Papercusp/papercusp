@@ -41,12 +41,15 @@ import { harnessPath, harnessRootCandidates } from '@papercusp/harness/paths';
 import {
   BlueprintHeaderSchema,
   BlueprintSourceDocumentSchema,
+  BlueprintContributionSchema,
+  BlueprintModeDeclarationSchema,
   BundleRefSchema,
   RunnableBlueprintSchema,
   isBlueprintContributionField,
   parseBlueprintSourceDocument,
   type Blueprint,
   type BlueprintContributionField,
+  type BlueprintModeDeclaration,
   type BlueprintSourceKind,
   type ParsedBlueprintSourceDocument,
   type BundleRef,
@@ -131,6 +134,8 @@ export interface BlueprintLayer {
   slots: string[];
   /** Top-level keys of the layer's OWN raw document, `extends` excluded — what `identity-lint` reads for the mode-axis authority check (P-003). */
   fields: BlueprintContributionField[];
+  /** Authored catalog metadata, separate from host mode state and authority. */
+  mode: BlueprintModeDeclaration | null;
   /** The layer's own declared grants (raw `grants.requires` / `grants.optional`), null when it declares none (P-003, D-005 ceiling check). */
   grants: { requires: string[]; optional: string[] } | null;
   /** Exact bundle declarations retained per source layer for D-029 conflict provenance. */
@@ -209,6 +214,7 @@ function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
     ? raw.slots.flatMap((s) => (isPlainObject(s) && typeof s.slot === 'string' ? [s.slot] : []))
     : [];
   const fields = Object.keys(raw).filter(isBlueprintContributionField);
+  const mode = raw.mode === undefined ? null : BlueprintModeDeclarationSchema.parse(raw.mode);
   const g = isPlainObject(raw.grants) ? raw.grants : null;
   const grants = g ? { requires: stringList(g.requires), optional: stringList(g.optional) } : null;
   const bundles = Array.isArray(raw.bundles) ? raw.bundles.map((bundle) => BundleRefSchema.parse(bundle)) : [];
@@ -220,6 +226,7 @@ function layerOf(raw: RawBlueprint, sourcePath: string | null): BlueprintLayer {
     attestation,
     slots,
     fields,
+    mode,
     grants,
     bundles,
     trust: layerTrust(sourcePath),
@@ -271,6 +278,32 @@ function exactBundleVersionConflicts(layers: readonly BlueprintLayer[]): string[
     conflicts.push(
       `bundle "${key}" has incompatible exact versions: ${sources}; no later validated versionOverride replaces every competing version`,
     );
+  }
+  return conflicts;
+}
+
+function contributionConflicts(layers: readonly BlueprintLayer[]): string[] {
+  const seen = new Map<string, { value: string; layerId: string; layerHash: string }>();
+  const conflicts: string[] = [];
+  for (const layer of layers) {
+    const raw = layerSourceDocument(layer);
+    const declared = Array.isArray(raw?.contributions) ? raw.contributions : [];
+    const ownIds = new Set<string>();
+    for (const unparsed of declared) {
+      const contribution = BlueprintContributionSchema.parse(unparsed);
+      if (ownIds.has(contribution.id)) {
+        conflicts.push(`layer "${layer.id}" declares contribution "${contribution.id}" more than once`);
+      }
+      ownIds.add(contribution.id);
+      const value = stableStringify(contribution);
+      const prior = seen.get(contribution.id);
+      if (prior && prior.value !== value) {
+        conflicts.push(`contribution "${contribution.id}" conflicts between layer "${prior.layerId}" ` +
+          `(${prior.layerHash.slice(0, 12)}) and layer "${layer.id}" (${layer.contentHash.slice(0, 12)})`);
+      } else if (!prior) {
+        seen.set(contribution.id, { value, layerId: layer.id, layerHash: layer.contentHash });
+      }
+    }
   }
   return conflicts;
 }
@@ -435,6 +468,30 @@ function appendLayerValidation(
   }
   for (const message of exactBundleVersionConflicts(layers)) {
     validation.errors.push({ level: 'error', code: 'bundle-version-conflict', message });
+  }
+  for (const message of contributionConflicts(layers)) {
+    validation.errors.push({ level: 'error', code: 'contribution-conflict', message });
+  }
+  const stackContributions = layers.flatMap((layer) => {
+    const raw = layerSourceDocument(layer);
+    return Array.isArray(raw?.contributions) ? raw.contributions.map((entry) => BlueprintContributionSchema.parse(entry)) : [];
+  });
+  for (const layer of layers) {
+    if (!layer.mode) continue;
+    const authored = layerSourceDocument(layer);
+    if (typeof authored?.version !== 'string' || !authored.version.trim()) {
+      validation.errors.push({
+        level: 'error', code: 'mode-version-missing',
+        message: `layer "${layer.id}" declares mode "${layer.mode.id}" without a source version`,
+      });
+    }
+    const definition = stackContributions.find((entry) => entry.id === layer.mode!.definitionContributionId);
+    if (!definition || definition.purpose !== 'prompt') {
+      validation.errors.push({
+        level: 'error', code: 'mode-definition-missing',
+        message: `layer "${layer.id}" mode "${layer.mode.id}" must reference a prompt contribution "${layer.mode.definitionContributionId}"`,
+      });
+    }
   }
   // ── identity-lint, structural BLOCK tier over the composed stack (P-003 / D-009 as amended):
   //    a kernel-slot claim, a grant past the D-005 ceiling, authority on a mode-axis document, a

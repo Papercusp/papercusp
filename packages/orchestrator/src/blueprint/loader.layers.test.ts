@@ -220,6 +220,25 @@ test('D-029 — same-version peer declarations and a duplicated diamond source r
   }
 });
 
+test('P-002 — identical contribution claims compose once, while conflicting ids name both layers', () => {
+  const declaration = { id: 'task-context', purpose: 'prompt', source: 'provider', refresh: 'turn', inputKind: 'prompt-file', ref: 'provider:task', producerRef: 'existing.task-brief' };
+  const { resolve, cleanup } = chain({
+    left: { id: 'left', contributions: [declaration] },
+    same: { id: 'same', contributions: [declaration] },
+    different: { id: 'different', contributions: [{ ...declaration, ref: 'provider:other' }] },
+  });
+  try {
+    const ok = resolveBlueprint({ id: 'ok', extends: ['left', 'same'], ...runnable }, { resolve });
+    assert.deepEqual(ok.blueprint.contributions, [declaration]);
+    assert.throws(
+      () => resolveBlueprint({ id: 'conflict', extends: ['left', 'different'], ...runnable }, { resolve }),
+      /contribution-conflict: contribution "task-context" conflicts between layer "left".*layer "different"/,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
 test('D-029 — a validated higher-precedence override can replace every prior version; an incomplete override still fails', () => {
   const { resolve, cleanup } = chain({
     v1: { id: 'bundle-v1', bundles: [{ kind: 'recipe', ref: 'shared', version: '1.0.0' }] },

@@ -186,6 +186,13 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
     'keyed overlay by kind/ref; incompatible exact versions fail with layer provenance unless versionOverride validates (D-029)',
     ['kind', 'ref'],
   ),
+  contributions: setUnion('component declarations accumulate; conflicting ids are rejected with layer origins by the loader'),
+  'mode.id': replace(LAYER_META),
+  'mode.policyRef': replace(LAYER_META),
+  'mode.title': replace(LAYER_META),
+  'mode.oneLiner': replace(LAYER_META),
+  'mode.definitionContributionId': replace(LAYER_META),
+  'mode.replacesRevision': replace(LAYER_META),
   'grants.requires': setUnion(
     'grant declaration set; each layer independently vetted (D-003) — RESERVED until M3 (D-004/D-014)',
   ),

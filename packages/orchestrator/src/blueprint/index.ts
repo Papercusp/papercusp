@@ -166,6 +166,7 @@ export {
   suModeDocument,
   suModeLayer,
   suModeLayers,
+  modeCatalogFromValidatedSources,
   isSuModeDocId,
   audienceIdentityId,
   audienceIdentityDocument,
@@ -176,6 +177,8 @@ export type {
   AudienceIdentityDocument,
   AudienceRole,
   AudienceMode,
+  ModeCatalogEntry,
+  ModeCatalogSnapshot,
 } from './mode-identities.js';
 // identities-v1 P-003 — the kernel seal: slot-based prompt assembly (the kernel renders
 // LAST under an explicit precedence statement), the composed-stack identity-lint (structural

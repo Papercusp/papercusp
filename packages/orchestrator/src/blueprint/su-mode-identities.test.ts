@@ -26,7 +26,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { builtinBlueprintPath, resolveBuiltinExtends, resolveLayers } from './loader.js';
+import { builtinBlueprintPath, resolveBuiltinExtends, resolveLayers, resolveBlueprintSource } from './loader.js';
 import { isIdentitySourceDocument, parseBlueprintSourceDocument } from './schema.js';
 import { lintStackLayers } from './identity-lint.js';
 import { MODE_AXES } from './slots.js';
@@ -36,7 +36,48 @@ import {
   audienceIdentityDocument,
   suModeLayer,
   suModeLayers,
+  modeCatalogFromValidatedSources,
 } from './mode-identities.js';
+
+test('P-002 generated mode catalog pins manifest metadata and existing host policy, with exact revision replacement', () => {
+  const definition = { id: 'definition', purpose: 'prompt', source: 'fixed', refresh: 'source-change',
+    inputKind: 'prompt-file', ref: 'mode:auto' };
+  const authored = (id: string, oneLiner: string, replacesRevision?: string) => ({
+    id, version: '1.0.0', slots: [{ slot: 'autonomy' }], contributions: [definition],
+    mode: { id: 'auto', policyRef: 'auto', title: 'AUTO', oneLiner,
+      definitionContributionId: 'definition', ...(replacesRevision ? { replacesRevision } : {}) },
+  });
+  const approved = { approvedModePolicyRefs: ['auto'] };
+  const first = resolveBlueprintSource(authored('first', 'Use judgment.'), { lint: approved });
+  assert.equal(first.validation.ok, true);
+  const snapshot = modeCatalogFromValidatedSources([first], {
+    supportedPolicyRefs: ['auto'], approvedModePolicyRefs: ['auto'],
+  });
+  assert.equal(snapshot.entries[0]?.definition.ref, 'mode:auto');
+  assert.equal(snapshot.entries[0]?.slot, 'autonomy');
+  const replacement = resolveBlueprintSource(authored('replacement', 'Proceed and disclose.', snapshot.entries[0]!.revision), { lint: approved });
+  const updated = modeCatalogFromValidatedSources([first, replacement], {
+    supportedPolicyRefs: ['auto'], approvedModePolicyRefs: ['auto'],
+  });
+  assert.equal(updated.entries.length, 1);
+  assert.equal(updated.entries[0]?.oneLiner, 'Proceed and disclose.');
+  assert.notEqual(updated.revision, snapshot.revision);
+  const unpinnedReplacement = resolveBlueprintSource(authored('unpinned', 'Different definition.'), { lint: approved });
+  assert.throws(() => modeCatalogFromValidatedSources([first, unpinnedReplacement], {
+    supportedPolicyRefs: ['auto'], approvedModePolicyRefs: ['auto'],
+  }), /without an exact replacement revision/);
+  assert.throws(() => modeCatalogFromValidatedSources([first, replacement], {
+    supportedPolicyRefs: ['grade'], approvedModePolicyRefs: ['auto'],
+  }), /unsupported host policy/);
+  const unapproved = resolveBlueprintSource(authored('unapproved', 'Use judgment.'));
+  assert.ok(unapproved.validation.errors.some((issue) => issue.code === 'mode-policy-untrusted'));
+  const incomplete = resolveBlueprintSource({ ...authored('incomplete', 'Use judgment.'), contributions: [] }, { lint: approved });
+  assert.ok(incomplete.validation.errors.some((issue) => issue.code === 'mode-definition-missing'));
+  const unversioned = resolveBlueprintSource({ ...authored('unversioned', 'Use judgment.'), version: undefined }, { lint: approved });
+  assert.ok(unversioned.validation.errors.some((issue) => issue.code === 'mode-version-missing'));
+  const wrongAxis = resolveBlueprintSource({ ...authored('wrong-axis', 'Use judgment.'), slots: [{ slot: 'domain' }] }, { lint: approved });
+  assert.ok(wrongAxis.validation.errors.some((issue) => issue.code === 'mode-axis-missing'));
+});
 import {
   composeSuStackMutation,
   composeSuStackSource,

@@ -131,6 +131,7 @@ test('the decided deviations from last-writer-wins are declared exactly, and eve
   assert.equal(MERGE_RULES.roles?.rule, 'keyed-overlay');
   assert.equal(MERGE_RULES.roles?.key, 'id');
   const declarationSets = [
+    'contributions',
     'reactive',
     'gym.signals',
     'dependencies.tools',

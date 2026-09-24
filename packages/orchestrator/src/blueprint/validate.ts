@@ -485,7 +485,7 @@ function validateProgramSpine(
  * (un-parsed) documents.
  */
 export function validateIdentityDeclarations(
-  bp: Partial<Pick<Blueprint, 'slots' | 'bundles' | 'grants'>>,
+  bp: Partial<Pick<Blueprint, 'slots' | 'bundles' | 'contributions' | 'grants'>>,
   err: Reporter,
 ): void {
   const seenSlots = new Set<string>();
@@ -517,6 +517,14 @@ export function validateIdentityDeclarations(
     const k = `${b.kind}:${b.ref}`;
     if (seenBundles.has(k)) err('bundle-duplicate', `bundle ${k} is referenced more than once in bundles[]`);
     seenBundles.add(k);
+  }
+
+  const seenContributions = new Set<string>();
+  for (const contribution of bp.contributions ?? []) {
+    if (seenContributions.has(contribution.id)) {
+      err('contribution-duplicate', `contribution "${contribution.id}" is declared more than once in contributions[]`);
+    }
+    seenContributions.add(contribution.id);
   }
 
   const g = bp.grants;

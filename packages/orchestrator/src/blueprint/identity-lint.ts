@@ -52,6 +52,8 @@ export interface IdentityLintFinding {
     | 'exclusive-double-claim'
     | 'grant-outside-ceiling'
     | 'authority-on-mode-axis'
+    | 'mode-axis-missing'
+    | 'mode-policy-untrusted'
     | 'attestation-missing'
     | 'attestation-failed'
     | 'forged-control-literal'
@@ -79,6 +81,7 @@ export interface StackLayerInput {
   attestation: { contentHash: string; signedBy: string } | null;
   /** Top-level keys of the layer's raw document (`extends` excluded). Absent ⇒ the mode-axis check is skipped for it. */
   fields?: readonly string[];
+  mode?: { policyRef: string } | null;
   grants?: { requires?: readonly string[]; optional?: readonly string[] } | null;
   trust?: LayerTrust;
 }
@@ -99,6 +102,8 @@ export interface IdentityLintOptions {
   capabilityClasses?: Iterable<string>;
   /** The tier of `text-grant-inconsistency` — `warn` by default or `block` at an enforcing boundary. */
   textGrantTier?: IdentityLintTier;
+  /** Explicit installer/admin approval for a non-builtin mode policy binding. */
+  approvedModePolicyRefs?: Iterable<string>;
   /** Which layers MUST carry a verified attestation. Default: `trust === 'installed'`. */
   requireAttestation?: (layer: StackLayerInput) => boolean;
   /**
@@ -144,7 +149,7 @@ export const FORGED_CONTROL_LITERALS: readonly string[] = [
  * coordination, knobs, dispatch, dependencies, grants, triggers, wake, … — shapes what
  * the agent can DO or what happens on its behalf, i.e. authority.
  */
-export const MODE_AXIS_ALLOWED_FIELDS: ReadonlySet<string> = new Set(['id', 'extends', 'version', 'description', 'slots', 'bundles', 'publisher', 'attestation']);
+export const MODE_AXIS_ALLOWED_FIELDS: ReadonlySet<string> = new Set(['id', 'extends', 'version', 'description', 'slots', 'bundles', 'contributions', 'mode', 'publisher', 'attestation']);
 
 // ── the heuristic seed set (WARN) ─────────────────────────────────────────────
 
@@ -209,6 +214,7 @@ export function lintStackLayers(layers: readonly StackLayerInput[], opts: Identi
   const out: IdentityLintFinding[] = [];
   const ceiling = opts.ceiling === undefined ? null : new Set(opts.ceiling);
   const requireAttestation = opts.requireAttestation ?? ((l: StackLayerInput) => l.trust === 'installed');
+  const approvedModePolicyRefs = new Set(opts.approvedModePolicyRefs ?? []);
 
   for (const layer of layers) {
     for (const slot of layer.slots) {
@@ -235,6 +241,18 @@ export function lintStackLayers(layers: readonly StackLayerInput[], opts: Identi
     }
 
     const onModeAxis = layer.slots.filter((s): s is SlotId => isSlotId(s) && (MODE_AXES as readonly string[]).includes(s));
+    if (layer.mode && onModeAxis.length !== 1) {
+      out.push({
+        tier: 'block', code: 'mode-axis-missing', documentId: layer.id,
+        message: `"${layer.id}" declares a mode policy but does not fill exactly one mode axis`,
+      });
+    }
+    if (layer.mode && layer.trust !== 'builtin' && !approvedModePolicyRefs.has(layer.mode.policyRef)) {
+      out.push({
+        tier: 'block', code: 'mode-policy-untrusted', documentId: layer.id,
+        message: `"${layer.id}" binds host mode policy "${layer.mode.policyRef}" without installer/admin approval`,
+      });
+    }
     if (onModeAxis.length && layer.fields) {
       const authority = layer.fields.filter((f) => !MODE_AXIS_ALLOWED_FIELDS.has(f));
       if (authority.length) {

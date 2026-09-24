@@ -197,3 +197,83 @@ describe('P-006 complete package closure and replay', () => {
     }
   });
 });
+
+describe('P-002 component contribution binding', () => {
+  const fixed = { id: 'instructions', purpose: 'prompt', source: 'fixed', refresh: 'source-change', inputKind: 'prompt-file', ref: 'fixed:instructions' } as const;
+  const generated = { id: 'current-task', purpose: 'prompt', source: 'provider', refresh: 'turn', inputKind: 'prompt-file', ref: 'provider:task', producerRef: 'existing.task-brief' } as const;
+  const resource = { id: 'procedure', purpose: 'resource', source: 'fixed', refresh: 'source-change', inputKind: 'package', ref: 'recipe:shared' } as const;
+  const operational = { id: 'runtime-mode', purpose: 'operational', source: 'provider', refresh: 'turn', inputKind: 'setting', ref: 'mode', producerRef: 'modes.store' } as const;
+  const providerText = 'Current task supplied by the existing provider.';
+  const providerInput = { kind: 'prompt-file' as const, ref: 'provider:task', bytes: providerText, producerRef: generated.producerRef,
+    contentHash: createHash('sha256').update(providerText).digest('hex') };
+  const genericIdentity = { ...source, slots: [{ slot: 'domain' }],
+    bundles: [{ kind: 'recipe', ref: 'shared', version: '1.0.0' }],
+    contributions: [fixed, generated, resource, operational] };
+
+  it('composes fixed and generated prompt bytes with resource and state pins in a generic identity', () => {
+    const artifact = compileAgentSpecification({
+      source: genericIdentity,
+      prompt: { files: [{ ref: fixed.ref, bytes: 'Fixed instructions.' }] },
+      inputClosure: [providerInput, recipe()],
+      settings: [{ ref: 'mode', revision: 'state-1', value: { mode: 'research' }, producerRef: operational.producerRef }],
+    });
+    expect(specificationPrompt(artifact)).toContain('Fixed instructions.');
+    expect(specificationPrompt(artifact)).toContain(providerText);
+    expect(artifact.provenance.filter((entry) => entry.path.startsWith('contribution.')).map((entry) => entry.path))
+      .toEqual(['contribution.current-task', 'contribution.instructions', 'contribution.procedure', 'contribution.runtime-mode']);
+    expect(artifact.provenance.find((entry) => entry.path === 'contribution.current-task'))
+      .toMatchObject({ sourceRef: 'prompt-file:provider:task', sourceRevision: providerInput.contentHash,
+        producerRef: generated.producerRef, decision: 'provider:turn' });
+    expect(replayAgentSpecification(JSON.parse(JSON.stringify(artifact)))).toEqual(artifact);
+  });
+
+  it('refuses an absent required provider input and a prompt supplied through the wrong source', () => {
+    expect(() => compileAgentSpecification({ source: { ...source, contributions: [generated] } }))
+      .toThrow(/contribution-missing.*current-task:prompt-file:provider:task/);
+    expect(() => compileAgentSpecification({
+      source: { ...source, contributions: [generated] },
+      prompt: { files: [{ ref: generated.ref, bytes: providerText }] },
+    })).toThrow(/contribution-source-mismatch.*current-task:prompt-file:provider:task/);
+    expect(() => compileAgentSpecification({
+      source: { ...source, contributions: [generated] },
+      inputClosure: [{ ...providerInput, producerRef: 'wrong.provider' }],
+    })).toThrow(/contribution-source-mismatch.*current-task:prompt-file:provider:task/);
+  });
+
+  it('refuses a declared addressed prompt when its render is disabled', () => {
+    expect(() => compileAgentSpecification({
+      source: { ...source, contributions: [{ id: 'guide', purpose: 'prompt', source: 'fixed',
+        refresh: 'source-change', inputKind: 'addressed-document', ref: 'guide' }] },
+      addressedDocuments: [{ ref: 'guide', revision: '1', body: 'Current guide.' }],
+      includeAddressedDocuments: false,
+    })).toThrow(/contribution-not-delivered.*guide:addressed-document:guide/);
+    expect(() => compileAgentSpecification({
+      source: { ...source, contributions: [{ id: 'guide', purpose: 'prompt', source: 'fixed',
+        refresh: 'source-change', inputKind: 'addressed-document', ref: 'guide' }] },
+      addressedDocuments: [{ ref: 'guide', revision: '1', contentHash: 'a'.repeat(64) }],
+    })).toThrow(/contribution-not-delivered.*guide:addressed-document:guide/);
+  });
+
+  it('compiles a complete non-SU identity source without authored workflow or assignment fields', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'generic-identity-'));
+    try {
+      const parent = join(dir, 'runtime.yaml');
+      writeFileSync(parent, 'id: runtime\nworkItem: { kind: feature }\nspine: { edges: { DONE: { to: done } } }\n');
+      const identity = { id: 'react-identity', extends: 'runtime', slots: [{ slot: 'domain' }],
+        contributions: [fixed, generated] };
+      expect(Object.keys(identity)).not.toContain('spine');
+      const artifact = compileAgentSpecification({
+        source: identity,
+        resolve: (id) => id === 'runtime' ? parent : null,
+        prompt: { files: [{ ref: fixed.ref, bytes: 'Read, act and observe.' }] },
+        inputClosure: [providerInput],
+      });
+      expect(artifact.source).toMatchObject({ id: 'react-identity', kind: 'identity' });
+      expect(specificationPrompt(artifact)).toContain(providerText);
+      expect(artifact.inputs.find((entry) => entry.kind === 'blueprint-layer' && entry.ref === 'react-identity'))
+        .toMatchObject({ document: identity });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

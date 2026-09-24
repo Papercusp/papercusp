@@ -1069,6 +1069,59 @@ export const BundleRefSchema = z
     }
   });
 
+/** One component contribution bound to an existing compiled input. The source and
+ * refresh metadata describe how the input is produced; they never grant authority.
+ * Package refs use `<packageKind>:<ref>` so the exact package pin is unambiguous. */
+export const BlueprintContributionSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
+  purpose: z.enum(['prompt', 'resource', 'operational']),
+  source: z.enum(['fixed', 'provider']),
+  refresh: z.enum(['source-change', 'launch', 'turn', 'on-demand']),
+  inputKind: z.enum(['prompt-file', 'addressed-document', 'package', 'capability-provider', 'setting']),
+  ref: z.string().min(1),
+  /** Existing producer/service reference; required for generated contributions. */
+  producerRef: z.string().min(1).optional(),
+}).strict().superRefine((value, ctx) => {
+  const kinds = {
+    prompt: ['prompt-file', 'addressed-document'],
+    resource: ['package', 'capability-provider'],
+    operational: ['setting'],
+  } as const;
+  if (!(kinds[value.purpose] as readonly string[]).includes(value.inputKind)) {
+    ctx.addIssue({ code: 'custom', path: ['inputKind'], message: `${value.purpose} cannot bind ${value.inputKind}` });
+  }
+  if (value.source === 'fixed' && value.refresh !== 'source-change') {
+    ctx.addIssue({ code: 'custom', path: ['refresh'], message: 'fixed content refreshes on source-change' });
+  }
+  if (value.source === 'provider' && value.refresh === 'source-change') {
+    ctx.addIssue({ code: 'custom', path: ['refresh'], message: 'provider content needs launch, turn or on-demand refresh' });
+  }
+  if (value.source === 'provider' && !value.producerRef) {
+    ctx.addIssue({ code: 'custom', path: ['producerRef'], message: 'provider contribution needs producerRef' });
+  }
+  if (value.source === 'fixed' && value.producerRef) {
+    ctx.addIssue({ code: 'custom', path: ['producerRef'], message: 'fixed content does not name a provider' });
+  }
+  if ((value.inputKind === 'addressed-document' || value.inputKind === 'package') && value.source !== 'fixed') {
+    ctx.addIssue({ code: 'custom', path: ['source'], message: `${value.inputKind} is fixed content` });
+  }
+  if ((value.inputKind === 'capability-provider' || value.inputKind === 'setting') && value.source !== 'provider') {
+    ctx.addIssue({ code: 'custom', path: ['source'], message: `${value.inputKind} is supplied by a provider` });
+  }
+});
+
+/** Catalog metadata for a mode definition. `policyRef` names an EXISTING host
+ * enforcement policy; no implication, authority or lifecycle semantics live here. */
+export const BlueprintModeDeclarationSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
+  policyRef: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
+  title: z.string().trim().min(1),
+  oneLiner: z.string().trim().min(1).refine((value) => !value.includes('\n'), 'oneLiner must be one line'),
+  definitionContributionId: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
+  /** An approved replacement must name the exact catalog revision it supersedes. */
+  replacesRevision: z.string().regex(/^[0-9a-f]{64}$/, 'sha256 hex').optional(),
+}).strict();
+
 /**
  * Grants name registered capability CLASSES at exact class@version refs, split
  * into `requires` (blocks install until satisfied) and `optional` (installs with
@@ -1218,6 +1271,10 @@ export const BlueprintSchema = z.object({
   slots: z.array(SlotDeclarationSchema).optional(),
   /** Cupboard items bundled by reference (D-011). Uniform across kinds; composes by union. */
   bundles: z.array(BundleRefSchema).default([]),
+  /** Fixed and generated content, resource and operational declarations share one layer vocabulary. */
+  contributions: z.array(BlueprintContributionSchema).optional(),
+  /** Optional mode catalog view over this component; enforcement remains in the host registry. */
+  mode: BlueprintModeDeclarationSchema.optional(),
   /** RESERVED capability-class grants (D-004; refused non-empty until M3 — D-014). */
   grants: GrantsSchema.optional(),
   /** The layer's publisher/author. */
@@ -1375,6 +1432,7 @@ export const ResolvedAgentInputSchema = z.discriminatedUnion('kind', [
       ref: z.string().min(1),
       contentHash: Sha256Schema,
       bytes: z.string(),
+      producerRef: z.string().min(1).optional(),
     })
     .strict(),
   z
@@ -1392,6 +1450,7 @@ export const ResolvedAgentInputSchema = z.discriminatedUnion('kind', [
       ref: z.string().min(1),
       revision: z.string().min(1),
       value: z.unknown(),
+      producerRef: z.string().min(1).optional(),
     })
     .strict(),
   ResolvedCapabilityProviderInputSchema,
@@ -1410,6 +1469,7 @@ export const ResolvedAgentProvenanceSchema = z
     path: z.string().min(1),
     sourceRef: z.string().min(1),
     sourceRevision: z.string().min(1),
+    producerRef: z.string().min(1).optional(),
     /** How the effective value was selected (declared/default/override/input). */
     decision: z.string().min(1).optional(),
     /** Every contributing source, retained when a value was overridden or unioned. */
@@ -1560,6 +1620,8 @@ export type BlueprintParams = z.infer<typeof ParamsSchema>;
 export type SlotDeclaration = z.infer<typeof SlotDeclarationSchema>;
 /** One `bundles[]` entry: a Cupboard item by reference (D-011). */
 export type BundleRef = z.infer<typeof BundleRefSchema>;
+export type BlueprintContribution = z.infer<typeof BlueprintContributionSchema>;
+export type BlueprintModeDeclaration = z.infer<typeof BlueprintModeDeclarationSchema>;
 /** The RESERVED grants section (D-004 / D-014). */
 export type BlueprintGrants = z.infer<typeof GrantsSchema>;
 export type BlueprintPublisher = z.infer<typeof PublisherSchema>;

@@ -34,6 +34,7 @@ import {
   ResolvedPackageInputSchema,
   RESOLVED_AGENT_SPECIFICATION_SCHEMA_VERSION,
   type BlueprintSourceKind,
+  type BlueprintContribution,
   type ResolvedAgentInput,
   type ResolvedAgentProvenance,
   type ResolvedPackageInput,
@@ -58,7 +59,7 @@ import { composeStack, type StackDocument } from './render-stack.js';
 import type { IdentityLintOptions } from './identity-lint.js';
 
 /** Compiler implementation version.  A semantic change requires a new value. */
-export const COMPOSITION_COMPILER_VERSION = '1.2.0';
+export const COMPOSITION_COMPILER_VERSION = '1.3.0';
 /** Alias used by callers that call the value a compiler revision. */
 export const COMPOSITION_COMPILER_REVISION = COMPOSITION_COMPILER_VERSION;
 
@@ -80,6 +81,9 @@ export type CompositionCompilerErrorCode =
   | 'setting-invalid'
   | 'input-invalid'
   | 'input-conflict'
+  | 'contribution-missing'
+  | 'contribution-source-mismatch'
+  | 'contribution-not-delivered'
   | 'package-missing'
   | 'package-read-failed'
   | 'package-hash-mismatch'
@@ -141,6 +145,7 @@ export interface CompositionSettingInput {
   ref: string;
   revision: string | number;
   value: unknown;
+  producerRef?: string;
 }
 
 /** A prompt descriptor.  `documents` uses the existing sealed render seam. */
@@ -551,7 +556,11 @@ function normalizeSettings(input: CompositionCompilerInput): CompositionSettingI
       const key = `${ref}\u0000${revision}`;
       if (seen.has(key)) fail('input-conflict', `duplicate setting ${ref}@${revision}`, ref);
       seen.add(key);
-      return { ref, revision, value: cloneJson(setting.value) };
+      if (setting.producerRef !== undefined && (typeof setting.producerRef !== 'string' || !setting.producerRef.trim())) {
+        fail('setting-invalid', 'producerRef must be non-empty when supplied', ref);
+      }
+      return { ref, revision, value: cloneJson(setting.value),
+        ...(setting.producerRef ? { producerRef: setting.producerRef } : {}) };
     })
     .sort((a, b) => compareText(a.ref, b.ref) || compareText(String(a.revision), String(b.revision)));
 }
@@ -863,6 +872,68 @@ function inputProvenance(
   return out;
 }
 
+function contributionInputKey(input: ResolvedAgentInput): string {
+  return input.kind === 'package' ? `package:${packageKey(input)}` : `${input.kind}:${input.ref}`;
+}
+
+function contributionKey(declaration: BlueprintContribution): string {
+  return `${declaration.inputKind}:${declaration.ref}`;
+}
+
+/** Bind declarations to the exact pinned inputs already resolved by the compiler.
+ * A generated prompt is delivered only when a component explicitly names it. */
+function bindContributions(
+  declarations: readonly BlueprintContribution[] | undefined,
+  closure: readonly ResolvedAgentInput[],
+  fixedPromptRefs: ReadonlySet<string>,
+  providerPromptRefs: ReadonlySet<string>,
+  includeAddressedDocuments: boolean,
+): { promptSegments: string[]; provenance: ResolvedAgentProvenance[] } {
+  const byKey = new Map(closure.map((entry) => [contributionInputKey(entry), entry]));
+  const promptSegments: string[] = [];
+  const provenance: ResolvedAgentProvenance[] = [];
+  for (const declaration of declarations ?? []) {
+    const key = contributionKey(declaration);
+    const entry = byKey.get(key);
+    if (!entry) fail('contribution-missing', `declared ${declaration.purpose} input is absent from the pinned closure`, `${declaration.id}:${key}`);
+    if (declaration.inputKind === 'prompt-file') {
+      if (entry.kind === 'prompt-file' && !entry.bytes.trim()) {
+        fail('contribution-not-delivered', 'declared prompt has no text bytes', `${declaration.id}:${key}`);
+      }
+      const available = declaration.source === 'fixed' ? fixedPromptRefs : providerPromptRefs;
+      if (!available.has(declaration.ref)) {
+        fail('contribution-source-mismatch', `declared ${declaration.source} prompt was supplied through another source`, `${declaration.id}:${key}`);
+      }
+      if (declaration.source === 'provider' && entry.kind === 'prompt-file') promptSegments.push(entry.bytes);
+    }
+    const producerRef = entry.kind === 'capability-provider' ? entry.providerPackage
+      : entry.kind === 'prompt-file' || entry.kind === 'setting' ? entry.producerRef : undefined;
+    if (declaration.source === 'provider' && producerRef !== declaration.producerRef) {
+      fail('contribution-source-mismatch', `declared producer ${declaration.producerRef} did not supply the pinned input`, `${declaration.id}:${key}`);
+    }
+    if (declaration.purpose === 'prompt' && declaration.inputKind === 'addressed-document' && !includeAddressedDocuments) {
+      fail('contribution-not-delivered', 'declared prompt is excluded by includeAddressedDocuments:false', `${declaration.id}:${key}`);
+    }
+    if (declaration.purpose === 'prompt' && declaration.inputKind === 'addressed-document' &&
+        (entry.kind !== 'addressed-document' || !entry.bytes?.trim())) {
+      fail('contribution-not-delivered', 'declared addressed prompt has no text bytes', `${declaration.id}:${key}`);
+    }
+    const sourceRevision = entry.kind === 'prompt-file' || entry.kind === 'addressed-document' || entry.kind === 'package'
+      ? entry.contentHash
+      : entry.kind === 'capability-provider'
+        ? `${entry.providerVersion}@${entry.conformanceRunId}`
+        : entry.revision;
+    provenance.push({
+      path: `contribution.${declaration.id}`,
+      sourceRef: key,
+      sourceRevision,
+      decision: `${declaration.source}:${declaration.refresh}`,
+      ...(producerRef ? { producerRef } : {}),
+    });
+  }
+  return { promptSegments, provenance };
+}
+
 function promptTextFromInputs(inputs: CompiledAgentSpecification['inputs']): string {
   const rendered = inputs.find((input) => input.kind === 'prompt-file' && input.ref.startsWith('rendered:'));
   if (rendered && rendered.kind === 'prompt-file') return rendered.bytes;
@@ -888,6 +959,8 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
   const inputs: ResolvedAgentInput[] = loaded.layers.map((_, i) => layerInput(loaded, i, input.layerRevisions));
   inputs.push(...blueprintPackageInputs(loaded, input.inputClosure ?? []));
   const promptKeys = new Map<string, string>();
+  const fixedPromptRefs = new Set<string>();
+  const providerPromptRefs = new Set<string>();
   const descriptors = normalizePromptDescriptors(input);
   const promptSegments: string[] = [];
   for (let i = 0; i < descriptors.length; i += 1) {
@@ -901,25 +974,39 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
       const hash = file.contentHash ?? sha256(file.bytes ?? '');
       const ref = file.ref ?? file.path ?? `prompt:${resolved.key}`;
       promptKeys.set(ref, resolved.key);
+      fixedPromptRefs.add(ref);
       inputs.push({ kind: 'prompt-file', ref, contentHash: hash, bytes: file.bytes ?? '' });
     }
     promptSegments.push(resolved.rendered);
   }
 
   const addressedRows = normalizeAddressedRows(input);
-  for (const row of addressedRows) inputs.push(addressedInput(row));
+  for (const row of addressedRows) {
+    const addressed = addressedInput(row);
+    inputs.push(addressed);
+    fixedPromptRefs.add(addressed.ref);
+  }
   const settings = normalizeSettings(input);
   for (const setting of settings) {
-    inputs.push({ kind: 'setting', ref: setting.ref, revision: String(setting.revision), value: setting.value });
+    inputs.push({ kind: 'setting', ref: setting.ref, revision: String(setting.revision), value: setting.value,
+      ...(setting.producerRef ? { producerRef: setting.producerRef } : {}) });
   }
-  if (input.inputClosure) inputs.push(...input.inputClosure.map((entry) => cloneJson(entry) as ResolvedAgentInput)
-    .sort((a, b) => compareText(a.kind + ':' + a.ref, b.kind + ':' + b.ref)));
+  if (input.inputClosure) {
+    const supplied = input.inputClosure.map((entry) => cloneJson(entry) as ResolvedAgentInput)
+      .sort((a, b) => compareText(a.kind + ':' + a.ref, b.kind + ':' + b.ref));
+    for (const entry of supplied) if (entry.kind === 'prompt-file') providerPromptRefs.add(entry.ref);
+    inputs.push(...supplied);
+  }
 
   const closure = validateAgentInputClosure(inputs);
   validateSpecificationBundles(loaded.blueprint.bundles, closure);
+  const contributions = bindContributions(
+    loaded.blueprint.contributions, closure, fixedPromptRefs, providerPromptRefs,
+    input.includeAddressedDocuments !== false,
+  );
   const addressedText = input.includeAddressedDocuments === false ? '' : renderAddressedRows(addressedRows);
-  const joinedPromptText = promptSegments.join(PROMPT_SEPARATOR);
-  const promptText = promptSegments.length
+  const joinedPromptText = [...promptSegments, ...contributions.promptSegments].join(PROMPT_SEPARATOR);
+  const promptText = promptSegments.length || contributions.promptSegments.length
     ? addressedText
       ? `${joinedPromptText.replace(/\n+$/, '')}\n\n${addressedText}`
       : joinedPromptText
@@ -946,6 +1033,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
   const provenance = [
     ...configProvenance(loaded, compilerVersion),
     ...inputProvenance(closure, promptKeys),
+    ...contributions.provenance,
   ].sort((a, b) => compareText(a.path, b.path) || compareText(a.sourceRef, b.sourceRef));
   const sourceLayer = loaded.layers.at(-1)!;
   const source = {
