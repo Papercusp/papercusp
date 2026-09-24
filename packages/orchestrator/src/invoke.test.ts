@@ -695,6 +695,32 @@ test('invoke — end-to-end logs invoke message, returns rc + paths', async () =
   }
 });
 
+test('invoke — accepted operation cannot reach a legacy autonomous worker subprocess', async () => {
+  const fx = makeFixture(({ harnessDir }) => {
+    writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');
+  });
+  const reads: string[] = [];
+  try {
+    await assert.rejects(
+      () => invoke({
+        harnessDir: fx.harnessDir, projectDir: fx.projectDir,
+        stateDir: fx.stateDir, logDir: fx.logDir, phase: 'staging',
+        claudeCmd: '/definitely/not/a/real-agent-binary', workspaceId: 'ws-test',
+        pg: (async (strings: TemplateStringsArray) => {
+          reads.push(strings.join(' '));
+          return [{ payload: { blueprintOperation: { kind: 'blueprint-operation' } } }];
+        }) as never,
+        log: () => {}, nowSeconds: () => 1700000009,
+      }, 'worker', ['FEATURE_ID=WI-1']),
+      /accepted blueprint operation WI-1 requires an identity-bound worker launch/,
+    );
+    assert.equal(reads.length, 1);
+    assert.match(reads[0]!, /harness_shared\.work_items/);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 test('invoke — standalone OMP ignores inherited fleet sandbox flag without srt', async () => {
   const fx = makeFixture(({ harnessDir, projectDir }) => {
     writeFileSync(join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'), '# WORKER');

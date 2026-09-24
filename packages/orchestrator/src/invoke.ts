@@ -44,6 +44,7 @@ import { buildPrompt } from './prompt-build';
 import { fetchSubstrateContext } from './tiered-context';
 import { resolvePromptFiles, resolveReplacementSystemPrompt } from './prompt-resolve';
 import { extractFeatureId, makeRunId } from './run-id';
+import { assertNoUnboundAcceptedOperation } from './blueprint-operation-invoke-guard';
 import { harnessSlug as harnessSlugFromProjectDir } from './state';
 import {
   buildSpawnMcpConfig as _buildSpawnMcpConfig, // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -3112,6 +3113,17 @@ export async function invoke(
   //    the record is keyed deterministically across re-invocations; without it
   //    the run ID stays timestamped (every current caller).
   const featureId = extractFeatureId(extras);
+  // An accepted operation carries a pinned restricted identity and tool set.
+  // This legacy path builds neither its launch artifact nor an adv_sessions
+  // grant receipt, so letting it spawn would grant the worker ordinary role
+  // authority before any MCP policy check. The role bootstrap path binds the
+  // receipt; autonomous operation launch must do the same before using invoke.
+  if (featureId && ctx.pg && ctx.workspaceId) {
+    await assertNoUnboundAcceptedOperation({
+      pg: ctx.pg, workspaceId: ctx.workspaceId,
+      harnessSlug: harnessSlugFromProjectDir(ctx.projectDir), featureId,
+    });
+  }
   const invocationChunkId = extractChunkId(extras);
   const featureTag = featureId ? `-${featureId}` : '';
   const nowSec = (ctx.nowSeconds ?? (() => Math.floor(Date.now() / 1000)))();
