@@ -124,11 +124,13 @@ test('P-003 built-in mode manifests generate one catalog and an approved install
     const resolved = resolveBlueprintSource(raw, { sourcePath: path });
     assert.equal(resolved.validation.ok, true, `${document.id}: ${JSON.stringify(resolved.validation.errors)}`);
     assert.equal((raw.mode as { id: string }).id, document.modes[0]);
-    const contributions = raw.contributions as Array<{ id: string; producerRef?: string; refresh?: string }>;
+    const contributions = raw.contributions as Array<{ id: string; producerRef?: string; refresh?: string; availability?: string }>;
     assert.ok(contributions.some((value) => value.id === `${document.modes[0]}-definition`));
     assert.ok(contributions.some((value) => value.id === 'current-mode-state' &&
       value.producerRef === 'modes/store:agent_modes' && value.refresh === 'turn'));
     if (document.id === 'su.mode-goal') {
+      assert.ok(contributions.some((value) => value.id === 'current-mode-state' &&
+        value.availability === 'optional'), 'GOAL launch may precede holder mode attachment');
       assert.ok(contributions.some((value) => value.id === 'goal-kickoff' &&
         value.producerRef === 'agent-tools/goals/start:buildGoalKickoffBrief' && value.refresh === 'launch'));
       assert.ok(contributions.some((value) => value.id === 'goal-portfolio' &&
