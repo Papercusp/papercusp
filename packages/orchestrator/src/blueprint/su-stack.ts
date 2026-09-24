@@ -169,7 +169,7 @@ export function suSessionBinding(session: { fleetRole?: string | null; modes?: r
   // P-021: the ACTIVE registry modes (`agent_modes`, implication closure already applied by
   // the registry write) bind one mode-axis identity per axis — `su.mode-auto` on
   // `autonomy`, … — additive ACROSS axes, exclusive WITHIN one (D-008 amendment). Modes
-  // with no definition document (goal / grade / test) bind nothing.
+  // without an authored definition bind nothing; GOAL/GRADE/TEST now have axes.
   layers.push(...suModeLayers(session.modes));
   return normalizeStackBinding(layers);
 }
@@ -359,6 +359,9 @@ function slotLayer(slot: SlotId): StackDocument['layer'] {
     case 'autonomy':
     case 'ideation':
     case 'objective':
+    case 'grade':
+    case 'test':
+    case 'goal':
     case 'audit':
     case 'audience':
       return 'modes';
