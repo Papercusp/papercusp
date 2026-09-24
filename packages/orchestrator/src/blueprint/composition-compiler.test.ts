@@ -123,6 +123,7 @@ test('a compiled operation keeps revision A after the authored definition change
     assert.equal(accepted.operation.version, 'A');
     assert.equal(Object.isFrozen(accepted.operation), true);
     assert.equal(accepted.specificationRevision, first.specificationRevision);
+    assert.ok(first.provenance.some((entry) => entry.path === 'configuration.operations' && entry.decision === 'declared'));
     assert.notEqual(first.specificationRevision, second.specificationRevision);
     assert.equal(operationFromSpecification(second, 'extract').operation.version, 'B');
     assert.throws(() => operationFromSpecification(second, 'missing'), CompositionCompilerError);

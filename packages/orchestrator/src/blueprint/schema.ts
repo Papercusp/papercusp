@@ -924,7 +924,8 @@ export const OpManifestEntrySchema = z.object({
 // A blueprint operation is an externally invocable task definition. It lives in
 // the existing blueprint document, separate from `ops` (harness-provided
 // deterministic spine steps). The composition compiler pins this whole manifest
-// in its immutable specificationRevision; admission verifies referenced hashes.
+// in its immutable specificationRevision; P-004 admission must verify the
+// referenced hashes against their owning stores before accepting work.
 const OperationNameSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9._-]*$/);
 const OperationContentHashSchema = z.string().regex(/^[0-9a-f]{64}$/, 'sha256 hex');
 const OperationReferenceFields = {
@@ -950,14 +951,19 @@ export const BlueprintOperationPinnedRefSchema = z.discriminatedUnion('kind', [
 /** JSON Schema crosses the blueprint/PG/process boundary as data, not a Zod fn.
  * Empty schemas would silently accept anything in the existing JSON-Schema
  * adapter, so an operation must declare at least a root type/union/literal. */
+const OperationJsonTypes = new Set(['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']);
 const OperationJsonSchema = z.record(z.string(), z.unknown()).refine(
-  (schema) =>
-    (typeof schema.type === 'string' && ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null'].includes(schema.type)) ||
-    (Array.isArray(schema.type) && schema.type.length > 0 && schema.type.every((type) => typeof type === 'string' && ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null'].includes(type))) ||
-    (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) ||
-    (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) ||
-    (Array.isArray(schema.enum) && schema.enum.length > 0) ||
-    Object.prototype.hasOwnProperty.call(schema, 'const'),
+  (schema) => {
+    const validType = schema.type === undefined ||
+      (typeof schema.type === 'string' && OperationJsonTypes.has(schema.type)) ||
+      (Array.isArray(schema.type) && schema.type.length > 0 && schema.type.every((type) => typeof type === 'string' && OperationJsonTypes.has(type)));
+    const typed = schema.type !== undefined ||
+      (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) ||
+      (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) ||
+      (Array.isArray(schema.enum) && schema.enum.length > 0) ||
+      Object.prototype.hasOwnProperty.call(schema, 'const');
+    return validType && typed;
+  },
   'operation JSON Schema must declare type, anyOf, oneOf, enum, or const',
 );
 const OperationInputSchema = OperationJsonSchema.refine(

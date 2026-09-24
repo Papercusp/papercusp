@@ -54,11 +54,17 @@ test('direct and explicit-plan operations carry typed interfaces and exact pins'
     inputSchema,
     acceptance: { resultSchema },
   };
-  const blueprint = BlueprintSchema.parse(raw([directOperation(), plan]));
+  const recipe = {
+    ...directOperation(),
+    id: 'summarize',
+    execution: { kind: 'recipe', recipe: { kind: 'recipe', ref: 'summary-recipe', revision: '4', contentHash: hash } },
+  };
+  const blueprint = BlueprintSchema.parse(raw([directOperation(), plan, recipe]));
   assert.equal(validateBlueprint(blueprint).ok, true);
-  assert.deepEqual(blueprint.operations?.map((operation) => operation.target.kind), ['work-item', 'plan']);
+  assert.deepEqual(blueprint.operations?.map((operation) => operation.target.kind), ['work-item', 'plan', 'work-item']);
   assert.equal(blueprint.operations?.[0]?.policy.model?.mode, 'exact');
   assert.equal(blueprint.operations?.[1]?.target.kind, 'plan');
+  assert.equal(blueprint.operations?.[2]?.execution?.kind, 'recipe');
   assert.deepEqual(BlueprintSchema.parse(blueprint), blueprint);
 });
 
@@ -69,7 +75,9 @@ test('operation manifests reject unpinned references and untyped input or result
   assert.equal(BlueprintSchema.safeParse(raw([{ ...op, acceptance: { resultSchema: {} } }])).success, false);
   assert.equal(BlueprintSchema.safeParse(raw([{ ...op, acceptance: { resultSchema: { anyOf: [] } } }])).success, false);
   assert.equal(BlueprintSchema.safeParse(raw([{ ...op, inputSchema: { type: 'unrecognized' } }])).success, false);
+  assert.equal(BlueprintSchema.safeParse(raw([{ ...op, acceptance: { resultSchema: { type: 'unrecognized', enum: ['x'] } } }])).success, false);
   assert.equal(BlueprintSchema.safeParse(raw([{ ...op, artifacts: [{ kind: 'artifact', ref: 'a', revision: '1' }] }])).success, false);
+  assert.equal(BlueprintSchema.safeParse(raw([{ ...op, execution: { kind: 'recipe', recipe: { kind: 'recipe', ref: 'r', revision: '1' } } }])).success, false);
   assert.equal(BlueprintSchema.safeParse(raw([{ ...op, policy: { model: { mode: 'exact', models: ['a', 'b'] } } }])).success, false);
 });
 
