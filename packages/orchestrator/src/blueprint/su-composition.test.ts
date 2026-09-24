@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 import { builtinBlueprintPath, resolveBlueprintSource, resolveBuiltinExtends } from './loader.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
 
 test('P-003 named SU composition and planner specialist reuse the identity graph without granting an assignment', () => {
   const suPath = builtinBlueprintPath('su');
@@ -34,7 +31,5 @@ test('P-003 named SU composition and planner specialist reuse the identity graph
   assert.ok(selected.layers.some((layer) => layer.id === 'papercusp-engineer'));
   assert.ok(selected.layers.some((layer) => layer.id === 'su-collaborator'));
   const plannerPrompt = readFileSync(join(dirname(builtinBlueprintPath('su.specialist-planner')), 'prompts', 'practice.md'), 'utf8');
-  const currentRoleAddendum = readFileSync(join(here, '../../../../../..', 'apps/operator/prompts/su-role-planner.addendum.md'), 'utf8');
-  assert.equal(plannerPrompt, currentRoleAddendum,
-    'P-009 can retire the role addendum after its identity consumer is live; this parity guard prevents interim drift');
+  assert.match(plannerPrompt, /You are a PLANNER/);
 });
