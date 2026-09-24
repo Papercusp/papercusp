@@ -9,7 +9,7 @@
  *   3. `auto` binds the autonomy document; `auto + ideate` renders BOTH (cross-axis
  *      additive — the case a single exclusive `mode` slot would have hard-errored);
  *      `drain` (as the registry write leaves it: drain AND auto) binds `objective` AND
- *      `autonomy`; goal / grade / test bind nothing;
+ *      `autonomy`; GOAL/GRADE/TEST each bind their own axis;
  *   4. the live path: `mode:set auto` is an inject-now ⟦stack⟧ attach carrying the real
  *      document; `mode:set ideate` on an AUTO session attaches a SECOND layer without
  *      touching the first; `enabled:false` is a detach that VOIDS it;
@@ -22,11 +22,11 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { builtinBlueprintPath, resolveBuiltinExtends, resolveLayers, resolveBlueprintSource } from './loader.js';
+import { builtinBlueprintPath, layerContentHash, resolveBuiltinExtends, resolveLayers, resolveBlueprintSource } from './loader.js';
 import { isIdentitySourceDocument, parseBlueprintSourceDocument } from './schema.js';
 import { lintStackLayers } from './identity-lint.js';
 import { MODE_AXES } from './slots.js';
@@ -89,6 +89,46 @@ import { STACK_INJECTION_STAMP, bindingRefs, normalizeStackBinding } from './sta
 const here = dirname(fileURLToPath(import.meta.url));
 const harnessDir = join(here, '..', '..', '..', 'harness'); // libs/papercusp/packages/harness
 
+test('P-003 built-in mode manifests generate one catalog and an approved installed revision replaces exactly one entry', () => {
+  const sources = SU_MODE_DOCUMENTS.map((document) => {
+    const path = builtinBlueprintPath(document.id);
+    const raw = parseYaml(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    const resolved = resolveBlueprintSource(raw, { sourcePath: path });
+    assert.equal(resolved.validation.ok, true, `${document.id}: ${JSON.stringify(resolved.validation.errors)}`);
+    assert.equal((raw.mode as { id: string }).id, document.modes[0]);
+    const contributions = raw.contributions as Array<{ id: string; producerRef?: string; refresh?: string }>;
+    assert.ok(contributions.some((value) => value.id === `${document.modes[0]}-definition`));
+    assert.ok(contributions.some((value) => value.id === 'current-mode-state' &&
+      value.producerRef === 'modes/store:agent_modes' && value.refresh === 'turn'));
+    if (document.id === 'su.mode-goal') {
+      assert.ok(contributions.some((value) => value.id === 'goal-kickoff' &&
+        value.producerRef === 'agent-tools/goals/start:buildGoalKickoffBrief' && value.refresh === 'launch'));
+      assert.ok(contributions.some((value) => value.id === 'goal-portfolio' &&
+        value.producerRef === 'goal-launch-settings:renderGoalPortfolioBrief' && value.refresh === 'turn'));
+    }
+    return resolved;
+  });
+  const supportedPolicyRefs = SU_MODE_DOCUMENTS.flatMap((document) => [...document.modes]);
+  const builtin = modeCatalogFromValidatedSources(sources, { supportedPolicyRefs });
+  assert.deepEqual(builtin.entries.map((entry) => entry.id), ['audit', 'auto', 'drain', 'goal', 'grade', 'ideate', 'test']);
+  const original = builtin.entries.find((entry) => entry.id === 'auto')!;
+  const raw = parseYaml(readFileSync(builtinBlueprintPath('su.mode-auto'), 'utf8')) as Record<string, unknown>;
+  const variantUnsigned = { ...raw, id: 'su.mode-auto-installed', version: '0.2.0',
+    mode: { ...(raw.mode as Record<string, unknown>), title: 'AUTO installed variant', replacesRevision: original.revision } };
+  const variant = { ...variantUnsigned, attestation: { contentHash: layerContentHash(variantUnsigned), signedBy: 'approved-publisher' } };
+  const installedPath = join(homedir(), '.papercusp', 'blueprints', 'su.mode-auto-installed', 'blueprint.yaml');
+  const installed = resolveBlueprintSource(variant, { sourcePath: installedPath, lint: { approvedModePolicyRefs: ['auto'] } });
+  assert.equal(installed.validation.ok, true, JSON.stringify(installed.validation.errors));
+  const selected = modeCatalogFromValidatedSources([...sources, installed], {
+    supportedPolicyRefs, approvedModePolicyRefs: ['auto'],
+  });
+  assert.equal(selected.entries.length, builtin.entries.length);
+  assert.equal(selected.entries.find((entry) => entry.id === 'auto')?.title, 'AUTO installed variant');
+  assert.notEqual(selected.revision, builtin.revision);
+  const unapproved = resolveBlueprintSource(variant, { sourcePath: installedPath });
+  assert.ok(unapproved.validation.errors.some((issue) => issue.code === 'mode-policy-untrusted'));
+});
+
 /** The first non-blank line of each mode document — a sentinel that must not appear unless bound. */
 function docs() {
   return SU_MODE_DOCUMENTS.map((d) => {
@@ -105,6 +145,9 @@ test('P-021 — the four mode-axis identities + the four audience identities are
       ['su.mode-auto', 'autonomy'],
       ['su.mode-ideate', 'ideation'],
       ['su.mode-drain', 'objective'],
+      ['su.mode-grade', 'grade'],
+      ['su.mode-test', 'test'],
+      ['su.mode-goal', 'goal'],
       ['su.mode-audit', 'audit'],
     ],
   );
@@ -112,7 +155,7 @@ test('P-021 — the four mode-axis identities + the four audience identities are
     ...SU_MODE_DOCUMENTS.map((d) => ({ id: d.id, slot: d.slot as string, path: d.path })),
     ...AUDIENCE_IDENTITY_DOCUMENTS.map((d) => ({ id: d.id, slot: d.slot as string, path: d.path })),
   ];
-  assert.equal(identities.length, 8);
+  assert.equal(identities.length, 11);
   for (const d of identities) {
     assert.ok((MODE_AXES as readonly string[]).includes(d.slot), `${d.id} sits on a mode axis`);
     const path = builtinBlueprintPath(d.id);
@@ -162,13 +205,16 @@ test('P-021 — every audience-axis identity composes from its authored blueprin
   }
 });
 
-test('P-021 — the registry → layer map: auto/cold-auto → autonomy, ideate → ideation, drain → objective, audit → audit; goal/grade/test/unknown bind nothing; one layer per axis, additive across axes', () => {
+test('P-003 — the registry → layer map covers GOAL/GRADE/TEST while cold-auto shares AUTO; one layer per axis', () => {
   assert.deepEqual(suModeLayer('auto'), { slot: 'autonomy', id: 'su.mode-auto' });
   assert.deepEqual(suModeLayer('cold-auto'), { slot: 'autonomy', id: 'su.mode-auto' });
   assert.deepEqual(suModeLayer('IDEATE'), { slot: 'ideation', id: 'su.mode-ideate' });
   assert.deepEqual(suModeLayer('drain'), { slot: 'objective', id: 'su.mode-drain' });
+  assert.deepEqual(suModeLayer('grade'), { slot: 'grade', id: 'su.mode-grade' });
+  assert.deepEqual(suModeLayer('test'), { slot: 'test', id: 'su.mode-test' });
+  assert.deepEqual(suModeLayer('goal'), { slot: 'goal', id: 'su.mode-goal' });
   assert.deepEqual(suModeLayer('audit'), { slot: 'audit', id: 'su.mode-audit' });
-  for (const none of ['goal', 'grade', 'test', 'potato', '']) assert.equal(suModeLayer(none), null, `${none || '<empty>'} binds no layer`);
+  for (const none of ['potato', '']) assert.equal(suModeLayer(none), null, `${none || '<empty>'} binds no layer`);
   assert.deepEqual(bindingRefs(suSessionBinding({ modes: [] })), []);
   assert.deepEqual(bindingRefs(suSessionBinding({ modes: ['auto'] })), ['autonomy:su.mode-auto']);
   // Cross-axis additive (the D-008 amendment case) — and the registry's stored order is immaterial.
@@ -176,7 +222,13 @@ test('P-021 — the registry → layer map: auto/cold-auto → autonomy, ideate 
   // DRAIN ⇒ AUTO is the registry write's job; the rows it leaves bind objective AND autonomy.
   assert.deepEqual(bindingRefs(suSessionBinding({ modes: ['drain', 'auto'] })), ['autonomy:su.mode-auto', 'objective:su.mode-drain']);
   // Same-axis duplicates collapse to one layer; a posture composes beside the modes.
-  assert.deepEqual(suModeLayers(['auto', 'cold-auto', 'goal']), [{ slot: 'autonomy', id: 'su.mode-auto' }]);
+  assert.deepEqual(suModeLayers(['auto', 'cold-auto', 'goal']), [
+    { slot: 'autonomy', id: 'su.mode-auto' }, { slot: 'goal', id: 'su.mode-goal' },
+  ]);
+  assert.deepEqual(bindingRefs(suSessionBinding({ modes: ['test', 'goal', 'grade', 'ideate', 'auto'] })), [
+    'autonomy:su.mode-auto', 'ideation:su.mode-ideate', 'grade:su.mode-grade',
+    'test:su.mode-test', 'goal:su.mode-goal',
+  ]);
   assert.deepEqual(bindingRefs(suSessionBinding({ fleetRole: 'member', modes: ['auto', 'audit'] })), [
     'fleet-posture:su.fleet-member',
     'autonomy:su.mode-auto',
@@ -209,6 +261,28 @@ test('P-021 ACCEPTANCE — all modes off renders NONE of the definitions; auto r
   const withPosture = composeSuStackSource({ harnessDir, binding: suSessionBinding({ fleetRole: 'leader', modes: ['auto'] }) });
   const layers = withPosture.order.map((e) => e.layer);
   assert.ok(layers.indexOf('fleet-posture') < layers.indexOf('modes') && layers.indexOf('modes') < layers.indexOf('practices'));
+});
+
+test('P-003 GOAL/GRADE/TEST compose beside AUTO and IDEATE without dropping their restrictions', () => {
+  const active = composeSuStackSource({
+    harnessDir,
+    binding: suSessionBinding({ modes: ['goal', 'test', 'grade', 'ideate', 'auto'] }),
+  });
+  assert.deepEqual(active.order.filter((entry) => entry.layer === 'modes').map((entry) => entry.id), [
+    'su.mode-auto', 'su.mode-ideate', 'su.mode-grade', 'su.mode-test', 'su.mode-goal',
+  ]);
+  for (const id of ['su.mode-auto', 'su.mode-ideate', 'su.mode-grade', 'su.mode-test', 'su.mode-goal']) {
+    const document = docs().find((entry) => entry.id === id)!;
+    assert.ok(active.text.includes(document.text.trim()), `${id} renders its authored component`);
+  }
+  assert.ok(active.text.includes('GOAL keeps portfolio ownership and delegates every build'));
+  assert.ok(active.text.includes('TEST remains an independent verdict'));
+  assert.ok(active.text.includes('When TEST is active on another agent'));
+  assert.equal(active.findings.filter((finding) => finding.tier === 'block').length, 0);
+  assert.deepEqual(suModeLayers(['cold-auto']), [{ slot: 'autonomy', id: 'su.mode-auto' }]);
+  const cold = composeSuStackSource({ harnessDir, binding: suSessionBinding({ modes: ['cold-auto'] }) });
+  assert.deepEqual(cold.order.filter((entry) => entry.layer === 'modes').map((entry) => entry.id), ['su.mode-auto']);
+  assert.ok(cold.text.includes('COLD AUTO — the same autonomy component across fresh-context wakes'));
 });
 
 test('P-021 LIVE PATH — mode:set auto is a ⟦stack⟧ attach carrying the document; ideate on an AUTO session is a second attach (no swap, no error); enabled:false detaches and VOIDS', () => {

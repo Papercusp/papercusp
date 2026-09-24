@@ -412,6 +412,9 @@ is ONE attach), which is how the turn-start channel reconstructs what to deliver
 | `autonomy` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
 | `ideation` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
 | `objective` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
+| `grade` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
+| `test` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
+| `goal` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
 | `audit` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
 | `audience` | exclusive | modes | **inject-now** | P-012 (a): a mode-axis layer rides the mode-flip channel that already delivers the registered mode contract; state + implications stay kernel (D-008) |
 | `collaboration-stance` | exclusive | practices | **inject-now** | P-012 (a): the collaboration stance is exclusive but context-neutral — a stance swap injects now and replaces the earlier stance |

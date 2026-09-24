@@ -109,14 +109,14 @@ const getPath = (doc: unknown, path: string): unknown =>
 
 // ── 1. golden ───────────────────────────────────────────────────────────────
 
-test('GOLDEN — every builtin blueprint resolves to the same document under the rule-driven merger and under the pre-P-019 mergeRaw walk', () => {
+test('GOLDEN — historical builtins keep pre-P-019 bytes; the new named SU composition intentionally accumulates slots', () => {
   const ids = builtinIds();
   assert.ok(ids.length >= 45, `expected the full builtin set, got ${ids.length}`);
   for (const must of ['base', 'coding', 'single-agent', 'papercusp-engineer', 'su-collaborator']) {
     assert.ok(ids.includes(must), `builtin ${must} missing from the golden population`);
   }
   const diffs: string[] = [];
-  for (const id of ids) {
+  for (const id of ids.filter((entry) => entry !== 'su')) {
     const path = builtinBlueprintPath(id);
     const byRules = resolveLayers(readYaml(path), resolveBuiltinExtends, path).merged;
     const byRaw = resolveWithMergeRaw(readYaml(path), resolveBuiltinExtends);
@@ -128,6 +128,13 @@ test('GOLDEN — every builtin blueprint resolves to the same document under the
     [],
     `builtin blueprints whose resolved document CHANGED under MERGE_RULES:\n  ${diffs.join('\n  ')}`,
   );
+  const suPath = builtinBlueprintPath('su');
+  const suRules = resolveLayers(readYaml(suPath), resolveBuiltinExtends, suPath).merged;
+  const suRaw = resolveWithMergeRaw(readYaml(suPath), resolveBuiltinExtends);
+  assert.deepEqual((suRules.slots as Array<{ slot: string }>).map((entry) => entry.slot),
+    ['domain', 'collaboration-stance', 'practice'],
+    'the named SU root keeps its selected parent identities under the declared slot merge rule');
+  assert.deepEqual(suRaw.slots, [], 'the historical array-replace rule would erase every parent slot');
 });
 
 test('GOLDEN — no builtin child is clamped by a parent cap: every resolved cap equals the LEAF-MOST layer that sets it (templates carry the loosest bound, D-020)', () => {
