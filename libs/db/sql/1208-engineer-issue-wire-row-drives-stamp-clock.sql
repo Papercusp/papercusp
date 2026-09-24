@@ -38,10 +38,11 @@
 --   projection later is automatically content for the stamp too, so the two cannot
 --   drift apart again.
 --
---   Two further rules keep eligibility intact:
---   * a change of `lane` (not a wire column) still counts as content: the capture
---     triggers gate on lane <> 'observation', so an observation promoted to work must
---     still stamp and federate.
+--   Eligibility stays intact: the capture triggers gate on `lane`, which is GENERATED
+--   as payload->>'lane', and payload is on the wire, so an observation promoted to
+--   work still stamps and federates.
+--
+--   One further rule:
 --   * the capture skips an UPDATE whose full wire row (clock included) is identical to
 --     OLD's. capture_work_items_issue_upd_trg fires on ANY payload difference, and a
 --     change confined to a non-projected payload->'_ei' key would otherwise enqueue a
@@ -247,14 +248,14 @@ BEGIN
       -- WI-10002875: for an issue-family row, "content" is exactly what ships — the
       -- engineer-issues wire row (shared with capture_work_items_outbox) minus its
       -- clock/provenance keys. A write to a local-only column (embeddings, release
-      -- and attempt bookkeeping, ...) keeps the clock, so it emits no wire op. A lane
-      -- change still counts: the capture triggers gate on lane, so a promoted
-      -- observation must stamp and federate.
+      -- and attempt bookkeeping, ...) keeps the clock, so it emits no wire op.
+      -- `lane` (which the capture triggers gate on) is GENERATED as payload->>'lane'
+      -- and payload is on the wire, so a promoted observation still stamps. Do not
+      -- read NEW.lane here: generated columns are computed AFTER BEFORE triggers.
       content_changed :=
         (harness_shared.engineer_issue_wire_row(NEW, NEW.workspace_id, NULL, NULL) - wire_clock_keys)
           IS DISTINCT FROM
-        (harness_shared.engineer_issue_wire_row(OLD, OLD.workspace_id, NULL, NULL) - wire_clock_keys)
-        OR NEW.lane IS DISTINCT FROM OLD.lane;
+        (harness_shared.engineer_issue_wire_row(OLD, OLD.workspace_id, NULL, NULL) - wire_clock_keys);
     END IF;
   END IF;
 
