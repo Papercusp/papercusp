@@ -181,8 +181,12 @@ export function suModeDocument(id: string): SuModeDocument | null {
  * without a definition. A typo must
  * never bind a layer; the registry test is what catches it).
  */
-export function suModeLayer(modeId: string): BoundLayer | null {
+export function suModeLayer(modeId: string, catalog?: ModeCatalogSnapshot): BoundLayer | null {
   const key = String(modeId ?? '').trim().toLowerCase();
+  if (catalog) {
+    const entry = catalog.entries.find((candidate) => candidate.id === (key === 'cold-auto' ? 'auto' : key));
+    return entry ? { slot: entry.slot, id: entry.sourceId } : null;
+  }
   const doc = SU_MODE_DOCUMENTS.find((d) => d.modes.includes(key));
   return doc ? { slot: doc.slot, id: doc.id } : null;
 }
@@ -194,10 +198,10 @@ export function suModeLayer(modeId: string): BoundLayer | null {
  * closure is NOT applied here: `setMode` already wrote the implied rows, so `modes`
  * as read from `agent_modes` carries `drain` AND `auto`.
  */
-export function suModeLayers(modes: readonly string[] | null | undefined): BoundLayer[] {
+export function suModeLayers(modes: readonly string[] | null | undefined, catalog?: ModeCatalogSnapshot): BoundLayer[] {
   const bySlot = new Map<SlotId, BoundLayer>();
   for (const m of modes ?? []) {
-    const layer = suModeLayer(m);
+    const layer = suModeLayer(m, catalog);
     if (layer && !bySlot.has(layer.slot)) bySlot.set(layer.slot, layer);
   }
   return MODE_AXES.filter((axis) => bySlot.has(axis)).map((axis) => bySlot.get(axis)!);

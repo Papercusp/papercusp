@@ -128,6 +128,9 @@ test('P-003 built-in mode manifests generate one catalog and an approved install
   });
   assert.equal(selected.entries.length, builtin.entries.length);
   assert.equal(selected.entries.find((entry) => entry.id === 'auto')?.title, 'AUTO installed variant');
+  assert.deepEqual(bindingRefs(suSessionBinding({ modes: ['auto', 'cold-auto'] }, selected)), [
+    'autonomy:su.mode-auto-installed',
+  ]);
   assert.notEqual(selected.revision, builtin.revision);
   const unapproved = resolveBlueprintSource(variant, { sourcePath: installedPath });
   assert.ok(unapproved.validation.errors.some((issue) => issue.code === 'mode-policy-untrusted'));
