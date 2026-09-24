@@ -16,6 +16,8 @@ import {
   resolveBlueprint,
   resolveLayers,
   resolveExtends,
+  MAX_BLUEPRINT_EXTENDS_DEPTH,
+  MAX_BLUEPRINT_EXPANDED_LAYERS,
   layerContentHash,
   loadBlueprintFromFile,
   loadBuiltinBlueprint,
@@ -65,6 +67,40 @@ test('resolveLayers — layers come back parent-first with the loaded document l
     for (const l of layers) assert.match(l.contentHash, /^[0-9a-f]{64}$/);
     // resolveExtends is the same walk minus the layers (the pre-P-001 signature).
     assert.deepEqual(resolveExtends(root, resolve), merged);
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolveLayers bounds inherited depth and names the failing path', () => {
+  const docs = Object.fromEntries(
+    Array.from({ length: MAX_BLUEPRINT_EXTENDS_DEPTH + 1 }, (_, i) => [
+      `node${i + 1}`,
+      { id: `node${i + 1}`, ...(i < MAX_BLUEPRINT_EXTENDS_DEPTH ? { extends: `node${i + 2}` } : {}) },
+    ]),
+  );
+  const { resolve, cleanup } = chain(docs);
+  try {
+    const allowed = resolveLayers({ id: 'root', extends: 'node2' }, resolve);
+    assert.equal(allowed.layers.length, MAX_BLUEPRINT_EXTENDS_DEPTH + 1);
+    assert.throws(
+      () => resolveLayers({ id: 'root', extends: 'node1' }, resolve),
+      /blueprint extends depth exceeds 32 at "node33".*path: node1 ->.*node33/,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test('resolveLayers bounds repeated-ancestor expansion before it can grow without limit', () => {
+  const { resolve, cleanup } = chain({ leaf: { id: 'leaf' } });
+  try {
+    const allowed = resolveLayers({ id: 'root', extends: Array(MAX_BLUEPRINT_EXPANDED_LAYERS - 1).fill('leaf') }, resolve);
+    assert.equal(allowed.layers.length, MAX_BLUEPRINT_EXPANDED_LAYERS);
+    assert.throws(
+      () => resolveLayers({ id: 'root', extends: Array(MAX_BLUEPRINT_EXPANDED_LAYERS).fill('leaf') }, resolve),
+      /blueprint expanded layer count exceeds 128 at "root".*path: leaf/,
+    );
   } finally {
     cleanup();
   }

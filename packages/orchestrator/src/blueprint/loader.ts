@@ -275,18 +275,24 @@ function exactBundleVersionConflicts(layers: readonly BlueprintLayer[]): string[
   return conflicts;
 }
 
-/**
- * Resolve a raw blueprint's `extends` chain into a single merged raw object AND
- * the ordered list of layers it merged. Walks parents depth-first (so a
- * grandparent merges before a parent), guarding against cycles. `merged` still
- * needs `BlueprintSchema.parse`; `layers` is parent-first with `raw` last.
- */
-export function resolveLayers(
+/** Bound both recursion and diamond expansion before an installed identity can
+ * consume unbounded memory during validation. Built-in stacks are far smaller. */
+export const MAX_BLUEPRINT_EXTENDS_DEPTH = 32;
+export const MAX_BLUEPRINT_EXPANDED_LAYERS = 128;
+
+function resolveLayersBounded(
   raw: RawBlueprint,
-  resolve: ResolveExtendsPath = resolveBuiltinExtends,
-  sourcePath: string | null = null,
-  seen: Set<string> = new Set(),
+  resolve: ResolveExtendsPath,
+  sourcePath: string | null,
+  seen: Set<string>,
+  depth: number,
 ): { merged: RawBlueprint; layers: BlueprintLayer[] } {
+  if (depth > MAX_BLUEPRINT_EXTENDS_DEPTH) {
+    throw new Error(
+      `blueprint extends depth exceeds ${MAX_BLUEPRINT_EXTENDS_DEPTH} at "${String(raw.id)}" ` +
+      `(path: ${[...seen, String(raw.id)].join(' -> ')})`,
+    );
+  }
   const ext = raw.extends;
   if (ext == null) return { merged: raw, layers: [layerOf(raw, sourcePath)] };
   const parentIds = Array.isArray(ext) ? ext : [String(ext)];
@@ -299,7 +305,13 @@ export function resolveLayers(
     }
     const path = resolve(pid);
     if (!path) throw new Error(`cannot resolve extended blueprint "${pid}"`);
-    const parent = resolveLayers(readRaw(path), resolve, path, new Set([...seen, pid]));
+    const parent = resolveLayersBounded(readRaw(path), resolve, path, new Set([...seen, pid]), depth + 1);
+    if (layers.length + parent.layers.length + 1 > MAX_BLUEPRINT_EXPANDED_LAYERS) {
+      throw new Error(
+        `blueprint expanded layer count exceeds ${MAX_BLUEPRINT_EXPANDED_LAYERS} at "${String(raw.id)}" ` +
+        `(path: ${[...seen, pid].join(' -> ')})`,
+      );
+    }
     merged = mergeByRules(merged, parent.merged, {
       mode: 'peer-assembly',
       baseSources: layers.map((layer) => layer.id),
@@ -315,6 +327,20 @@ export function resolveLayers(
   });
   layers.push(layerOf(raw, sourcePath));
   return { merged: childOwn, layers };
+}
+
+/**
+ * Resolve a raw blueprint's `extends` chain into one merged raw object and
+ * its parent-first layers. Cycles, excessive depth and expansion fail before
+ * `BlueprintSchema.parse` so invalid packages never reach the compiler.
+ */
+export function resolveLayers(
+  raw: RawBlueprint,
+  resolve: ResolveExtendsPath = resolveBuiltinExtends,
+  sourcePath: string | null = null,
+  seen: Set<string> = new Set(),
+): { merged: RawBlueprint; layers: BlueprintLayer[] } {
+  return resolveLayersBounded(raw, resolve, sourcePath, seen, 0);
 }
 
 /**
