@@ -58,6 +58,7 @@ test('direct and explicit-plan operations carry typed interfaces and exact pins'
     ...directOperation(),
     id: 'summarize',
     execution: { kind: 'recipe', recipe: { kind: 'recipe', ref: 'summary-recipe', revision: '4', contentHash: hash } },
+    policy: { requiredTools: ['demo:read'] },
   };
   const blueprint = BlueprintSchema.parse(raw([directOperation(), plan, recipe]));
   assert.equal(validateBlueprint(blueprint).ok, true);
@@ -79,19 +80,26 @@ test('operation manifests reject unpinned references and untyped input or result
   assert.equal(BlueprintSchema.safeParse(raw([{ ...op, artifacts: [{ kind: 'artifact', ref: 'a', revision: '1' }] }])).success, false);
   assert.equal(BlueprintSchema.safeParse(raw([{ ...op, execution: { kind: 'recipe', recipe: { kind: 'recipe', ref: 'r', revision: '1' } } }])).success, false);
   assert.equal(BlueprintSchema.safeParse(raw([{ ...op, policy: { model: { mode: 'exact', models: ['a', 'b'] } } }])).success, false);
+  const plan = { ...op, target: { kind: 'plan', template: {
+    kind: 'plan-template', ref: 'batch-template', revision: '7', contentHash: hash } } };
+  assert.equal(BlueprintSchema.safeParse(raw([plan])).success, false);
+  assert.equal(BlueprintSchema.safeParse(raw([{ ...op, execution: { kind: 'program' } }])).success, false);
+  assert.equal(BlueprintSchema.safeParse(raw([{ ...op, execution: { kind: 'recipe', recipe: {
+    kind: 'recipe', ref: 'summary-recipe', revision: '4', contentHash: hash } } }])).success, false);
 });
 
 test('operation validation refuses duplicate, incompatible and authority-widening declarations', () => {
   const op = directOperation();
+  const withoutModel = { ...op, policy: { requiredTools: ['demo:read'] } };
   const errors = (operations: unknown) => validateBlueprint(BlueprintSchema.parse(raw(operations))).errors.map((issue) => issue.code);
   assert.ok(errors([op, op]).includes('duplicate-operation'));
   assert.ok(errors([{ ...op, execution: { kind: 'agent', role: 'missing' } }]).includes('operation-unknown-role'));
   assert.ok(errors([{ ...op, policy: { requiredTools: ['undeclared:write'] } }]).includes('operation-undeclared-tool'));
-  assert.ok(errors([{ ...op, execution: undefined }]).includes('work-item-operation-executor'));
-  assert.ok(errors([{ ...op, execution: { kind: 'program' } }]).includes('operation-no-program'));
+  assert.ok(errors([{ ...withoutModel, execution: undefined }]).includes('work-item-operation-executor'));
+  assert.ok(errors([{ ...withoutModel, execution: { kind: 'program' } }]).includes('operation-no-program'));
   assert.ok(errors([{ ...op, signals: { approval: { payloadSchema: { type: 'object' } } } }]).includes('operation-channel-collision'));
   const plan = {
-    ...op,
+    ...withoutModel,
     target: { kind: 'plan', template: { kind: 'plan-template', ref: 'batch', revision: '1', contentHash: hash } },
   };
   assert.ok(errors([plan]).includes('plan-operation-executor'));

@@ -1004,7 +1004,16 @@ export const BlueprintOperationSchema = z.object({
   artifacts: z.array(ArtifactOperationRefSchema).default([]),
   signals: z.record(OperationNameSchema, z.object({ payloadSchema: OperationJsonSchema }).strict()).default({}),
   waits: z.record(OperationNameSchema, z.object({ responseSchema: OperationJsonSchema }).strict()).default({}),
-}).strict();
+}).strict().superRefine((operation, context) => {
+  // Only a direct agent work item has an applied worker receipt and a
+  // provider response seam. A plan/program/recipe result cannot attest the
+  // operation-level model policy, so reject it before admission creates work.
+  if (operation.policy.model &&
+      (operation.target.kind !== 'work-item' || operation.execution?.kind !== 'agent')) {
+    context.addIssue({ code: 'custom', path: ['policy', 'model'],
+      message: 'model policy requires a direct agent work-item operation' });
+  }
+});
 export type BlueprintOperation = z.infer<typeof BlueprintOperationSchema>;
 
 // ── identities-v1-2026-08-30 P-001: the identity extension of the blueprint document ──
