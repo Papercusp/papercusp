@@ -12,7 +12,7 @@
  * with this command in the message. Lives under `bin/` (not `scripts/`) so the
  * package tsconfig compiles it — `lint:tsc:orchestrator` includes `bin/**`.
  */
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, writeSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -79,7 +79,11 @@ const wantDoc = splicedDoc(doc);
 const wantModeCatalog = renderModeCatalog();
 const modeCatalogStale = !existsSync(MODE_CATALOG) || readFileSync(MODE_CATALOG, 'utf8') !== wantModeCatalog;
 if (process.argv.includes('--mode-catalog-stdout')) {
-  process.stdout.write(wantModeCatalog);
+  // The catalog is unbounded; finish every synchronous write before exiting.
+  const bytes = Buffer.from(wantModeCatalog);
+  for (let offset = 0; offset < bytes.length;) {
+    offset += writeSync(1, bytes, offset, bytes.length - offset);
+  }
   process.exit(0);
 }
 if (process.argv.includes('--mode-catalog-only')) {
