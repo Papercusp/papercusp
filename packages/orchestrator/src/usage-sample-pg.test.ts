@@ -126,6 +126,39 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
     expect(v[v.length - 4]).toBeNull(); // session_id undefined -> NULL, never a fabricated value
   });
 
+  it('persists actual-model provenance and keeps a requested-only model unverified', async () => {
+    const { pg, values } = capturingPg();
+    await recordUsageSamplePg(
+      { pg, workspaceId: 'ws-1' },
+      {
+        backend: 'claude-code',
+        model: 'opus',
+        usage: {
+          inputTokens: 10,
+          model: 'claude-sonnet-4-6',
+          requestedModel: 'opus',
+          observedModels: ['claude-opus-4-8', 'claude-sonnet-4-6'],
+          modelProvenance: 'turn',
+        },
+        runId: 'run-actual',
+      },
+    );
+    expect(values()).toContain('claude-sonnet-4-6');
+    expect(values()).toContain('sonnet'); // model class follows the reported turn, not the opus request
+    expect(values()).toContain(JSON.stringify({
+      modelSource: 'turn', requestedModel: 'opus',
+      actualModels: ['claude-opus-4-8', 'claude-sonnet-4-6'], backend: 'claude-code',
+    }));
+
+    await recordUsageSamplePg(
+      { pg, workspaceId: 'ws-1' },
+      { backend: 'codex', model: 'gpt-5.5', usage: { inputTokens: 10, model: 'gpt-5.5', modelProvenance: 'request' } },
+    );
+    expect(values()).toContain(JSON.stringify({
+      modelSource: 'request', requestedModel: 'gpt-5.5', actualModels: [], backend: 'codex',
+    }));
+  });
+
   it('no-ops (no INSERT) on an empty usage so an unparseable run never fabricates a row', async () => {
     const { pg, values } = capturingPg();
     await recordUsageSamplePg(

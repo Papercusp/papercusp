@@ -55,9 +55,9 @@ export interface CostCapResult {
  *   owned  — terminal `{"type":"done", usage:{inputTokens,…,costUsd}}` wins
  *             (the owned loop emits cumulative totals in camelCase).
  *
- * `model`/`backend` are attributed from the `{"type":"papercusp.run_meta"}` line invoke.ts
- * appends at subprocess exit, with stream-derived fallbacks (claude `system:init.model`,
- * omp `message.model`) for pre-existing files.
+ * `model` remains the pricing/display model. Its provenance distinguishes a
+ * per-turn report from a session-init selection or the requested run_meta model;
+ * only a per-turn report can attest an operation's actual execution model.
  */
 export interface RunUsage {
   /** UNCACHED input tokens (claude `usage.input_tokens` semantics). */
@@ -69,8 +69,14 @@ export interface RunUsage {
   costUsd?: number;
   /** Wall-clock duration when the stream reports one (claude `result.duration_ms` only). */
   durationMs?: number;
-  /** Model id when derivable (stream-derived actual > run_meta requested). */
+  /** Model id for pricing/display (per-turn report > session init > requested). */
   model?: string;
+  /** The launch request, which must never stand in for an actual model attestation. */
+  requestedModel?: string;
+  /** Every distinct model reported by an assistant turn in this run. */
+  observedModels?: string[];
+  /** Source of `model`; only `turn` proves what served an assistant turn. */
+  modelProvenance?: 'turn' | 'session-init' | 'request';
   /** Backend when derivable ('claude-code' | 'codex' | 'omp' | …) — run_meta line > shape inference. */
   backend?: string;
   /**
@@ -90,7 +96,8 @@ export function extractRunUsage(jsonlBody: string): RunUsage | null {
 
   let metaModel: string | undefined;
   let metaBackend: string | undefined;
-  let streamModel: string | undefined;
+  let initModel: string | undefined;
+  const observedModels = new Set<string>();
 
   // claude: last result event wins (cumulative)
   let claude: RunUsage | null = null;
@@ -104,7 +111,7 @@ export function extractRunUsage(jsonlBody: string): RunUsage | null {
 
   const readOmpMessage = (msg: Record<string, unknown>): RunUsage | null => {
     if (!msg || typeof msg !== 'object' || msg.role !== 'assistant') return null;
-    if (typeof msg.model === 'string' && msg.model) streamModel = msg.model;
+    if (typeof msg.model === 'string' && msg.model) observedModels.add(msg.model);
     const u = msg.usage as Record<string, unknown> | undefined;
     if (!u || typeof u !== 'object') return null;
     const cost = u.cost as Record<string, unknown> | undefined;
@@ -150,9 +157,18 @@ export function extractRunUsage(jsonlBody: string): RunUsage | null {
       continue;
     }
 
-    // claude model from the init event (fallback when no run_meta)
+    // The CLI's init model is a session selection, not proof of what a later
+    // gateway request actually served (the gateway may downgrade it).
     if (obj.type === 'system' && obj.subtype === 'init' && typeof obj.model === 'string') {
-      streamModel = obj.model;
+      initModel = obj.model;
+      continue;
+    }
+
+    // Claude assistant messages report the model used for an actual turn.
+    if (obj.type === 'assistant' && obj.message && typeof obj.message === 'object' &&
+        !Array.isArray(obj.message)) {
+      const turnModel = (obj.message as Record<string, unknown>).model;
+      if (typeof turnModel === 'string' && turnModel) observedModels.add(turnModel);
       continue;
     }
 
@@ -244,11 +260,19 @@ export function extractRunUsage(jsonlBody: string): RunUsage | null {
   if (!usage) return null;
   const backend =
     metaBackend ?? (ownedLoop ? 'owned-loop' : claude ? 'claude-code' : codex ? 'codex' : 'omp');
-  // Stream-derived model wins (the ACTUAL model the CLI reports — claude init /
-  // omp message.model); run_meta carries the *requested* model (may be an alias)
-  // and covers codex, whose stream names no model.
-  const model = streamModel ?? metaModel;
-  return { ...usage, ...(model !== undefined ? { model } : {}), backend };
+  // Preserve the fallback for pricing, but label it so a model-policy result
+  // gate cannot mistake a requested/selected model for a served one.
+  const actualModels = [...observedModels];
+  const model = actualModels.at(-1) ?? initModel ?? metaModel;
+  const modelProvenance = actualModels.length > 0 ? 'turn' : initModel ? 'session-init' : metaModel ? 'request' : undefined;
+  return {
+    ...usage,
+    ...(model !== undefined ? { model } : {}),
+    ...(metaModel !== undefined ? { requestedModel: metaModel } : {}),
+    ...(actualModels.length > 0 ? { observedModels: actualModels } : {}),
+    ...(modelProvenance ? { modelProvenance } : {}),
+    backend,
+  };
 }
 
 /**

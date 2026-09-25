@@ -264,6 +264,8 @@ test('extractRunUsage — owned-loop done reads cumulative camelCase usage + cos
     costUsd: 0.0042,
     turns: 2,
     model: 'claude-sonnet-4-6',
+    requestedModel: 'claude-sonnet-4-6',
+    modelProvenance: 'request',
     backend: 'owned-loop',
   });
 });
@@ -299,6 +301,8 @@ test('extractRunUsage — omp message_end: sums assistant turns, reads cost.tota
   assert.equal(u?.cacheCreationTokens, 300);
   assert.ok(Math.abs((u?.costUsd ?? 0) - 0.035) < 1e-9);
   assert.equal(u?.model, 'claude-opus-4-8');
+  assert.deepEqual(u?.observedModels, ['claude-opus-4-8']);
+  assert.equal(u?.modelProvenance, 'turn');
   assert.equal(u?.backend, 'omp');
 });
 
@@ -311,18 +315,39 @@ test('extractRunUsage — omp agent_end fallback when no message_end carried usa
   assert.equal(u?.inputTokens, 900);
   assert.equal(u?.outputTokens, 120);
   assert.equal(u?.model, 'qwen2.5-coder:14b');
+  assert.deepEqual(u?.observedModels, ['qwen2.5-coder:14b']);
+  assert.equal(u?.modelProvenance, 'turn');
   assert.equal(u?.backend, 'omp');
 });
 
 test('extractRunUsage — stream-derived model (actual) wins over run_meta (requested alias)', () => {
   const jsonl = [
     JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-opus-4-8' }),
+    JSON.stringify({ type: 'assistant', message: { model: 'claude-opus-4-8', content: [] } }),
     JSON.stringify({ type: 'result', total_cost_usd: 0.01, usage: { input_tokens: 10 } }),
     JSON.stringify({ type: 'papercusp.run_meta', backend: 'claude-code', model: 'opus', role: 'worker' }),
   ].join('\n');
   const u = extractRunUsage(jsonl);
   assert.equal(u?.model, 'claude-opus-4-8'); // actual id from the stream, not the 'opus' alias
+  assert.equal(u?.requestedModel, 'opus');
+  assert.deepEqual(u?.observedModels, ['claude-opus-4-8']);
+  assert.equal(u?.modelProvenance, 'turn');
   assert.equal(u?.backend, 'claude-code');
+});
+
+test('extractRunUsage — a substituted assistant turn remains visible alongside the requested model', () => {
+  const jsonl = [
+    JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-opus-4-8' }),
+    JSON.stringify({ type: 'assistant', message: { model: 'claude-opus-4-8' } }),
+    JSON.stringify({ type: 'assistant', message: { model: 'claude-sonnet-4-6' } }),
+    JSON.stringify({ type: 'result', usage: { input_tokens: 10, output_tokens: 3 } }),
+    JSON.stringify({ type: 'papercusp.run_meta', backend: 'claude-code', model: 'opus' }),
+  ].join('\n');
+  const u = extractRunUsage(jsonl);
+  assert.equal(u?.model, 'claude-sonnet-4-6');
+  assert.equal(u?.requestedModel, 'opus');
+  assert.deepEqual(u?.observedModels, ['claude-opus-4-8', 'claude-sonnet-4-6']);
+  assert.equal(u?.modelProvenance, 'turn');
 });
 
 test('extractRunUsage — run_meta model covers codex (stream names no model)', () => {
@@ -332,6 +357,9 @@ test('extractRunUsage — run_meta model covers codex (stream names no model)', 
   ].join('\n');
   const u = extractRunUsage(jsonl);
   assert.equal(u?.model, 'gpt-5.5');
+  assert.equal(u?.requestedModel, 'gpt-5.5');
+  assert.equal(u?.observedModels, undefined);
+  assert.equal(u?.modelProvenance, 'request');
   assert.equal(u?.backend, 'codex');
 });
 
@@ -342,6 +370,8 @@ test('extractRunUsage — claude model falls back to system:init when no run_met
   ].join('\n');
   const u = extractRunUsage(jsonl);
   assert.equal(u?.model, 'claude-opus-4-7');
+  assert.equal(u?.observedModels, undefined);
+  assert.equal(u?.modelProvenance, 'session-init');
   assert.equal(u?.backend, 'claude-code');
 });
 

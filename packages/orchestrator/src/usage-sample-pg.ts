@@ -58,7 +58,8 @@ export function modelClassForRun(backend: string, model: string): string {
 export interface UsageSampleRun {
   /** Runtime backend label; unknown values remain safely attributed to `unknown`. */
   backend: string;
-  /** The model the spawn requested (resolvedModel). `usage.model` — the stream-reported actual — wins when present. */
+  /** The model the spawn requested (resolvedModel). `usage.model` is for pricing/display; inspect
+   *  `usage.modelProvenance` before treating it as an actual execution model. */
   model: string;
   usage: RunUsage;
   harnessSlug?: string;
@@ -91,8 +92,14 @@ export async function recordUsageSamplePg(
   const { usage } = run;
   if (usage.inputTokens === undefined && usage.outputTokens === undefined && usage.costUsd === undefined) return;
   const provider = providerForBackend(run.backend);
-  const modelClass = modelClassForRun(run.backend, run.model);
   const model = usage.model ?? run.model;
+  const modelClass = modelClassForRun(run.backend, model);
+  const usageProvenance = {
+    modelSource: usage.modelProvenance ?? 'request',
+    requestedModel: usage.requestedModel ?? run.model,
+    actualModels: usage.observedModels ?? [],
+    backend: run.backend,
+  };
   const n = (v: number | undefined): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
   // Provider-reported cost wins; else estimate from list prices; else NULL (never a fake 0).
@@ -110,11 +117,13 @@ export async function recordUsageSamplePg(
     INSERT INTO harness_shared.agent_usage_samples
       (workspace_id, ts, bucket_key, provider, model_class, source,
        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd,
-       model, cost_source, harness_slug, run_id, role, turn_count, session_id, goal_id, tool_name, turn_trigger, account_id)
+       model, cost_source, harness_slug, run_id, role, turn_count, usage_provenance,
+       session_id, goal_id, tool_name, turn_trigger, account_id)
     VALUES (
       ${ctx.workspaceId}, ${Date.now()}, ${`${provider}:${modelClass}`}, ${provider}, ${modelClass}, ${'jsonl'},
       ${n(usage.inputTokens)}, ${n(usage.outputTokens)}, ${n(usage.cacheReadTokens)}, ${n(usage.cacheCreationTokens)}, ${costUsd},
       ${model || null}, ${costSource}, ${run.harnessSlug ?? null}, ${run.runId ?? null}, ${run.role ?? null}, ${n(usage.turns)},
+      ${JSON.stringify(usageProvenance)}::jsonb,
       ${run.sessionId ?? null},
       (SELECT harness_shared.goal_id_for_usage_session(${ctx.workspaceId}, ${run.sessionId ?? null})),
       ${run.toolName ?? null}, ${run.turnTrigger ?? null}, ${run.accountId ?? null}
