@@ -5,9 +5,11 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 import { assembleRolePrompt, lookupProjectDir } from './role-prompt-from-slug.js';
 
 function setupRegistry(): { home: string; projectDir: string; harnessDir: string; cleanup: () => void } {
@@ -21,6 +23,10 @@ function setupRegistry(): { home: string; projectDir: string; harnessDir: string
   const projectDir = join(home, 'project');
   const stateDir = join(projectDir, '.papercusp');
   const harnessDir = join(home, 'harness');
+  const priorPromptRoot = process.env.PAPERCUSP_PROMPT_ROOT;
+  // The running su environment points PAPERCUSP_INTEGRATION_ROOT at the real
+  // repo. Pin the fixture above that fallback so these tests exercise it.
+  process.env.PAPERCUSP_PROMPT_ROOT = harnessDir;
   mkdirSync(stateDir, { recursive: true });
   // Minimal worker prompt in the base role library (Phase 5: the resolver reads base,
   // not the deleted global prompts/ tier).
@@ -40,7 +46,11 @@ function setupRegistry(): { home: string; projectDir: string; harnessDir: string
     home,
     projectDir,
     harnessDir,
-    cleanup: () => rmSync(home, { recursive: true, force: true }),
+    cleanup: () => {
+      if (priorPromptRoot === undefined) delete process.env.PAPERCUSP_PROMPT_ROOT;
+      else process.env.PAPERCUSP_PROMPT_ROOT = priorPromptRoot;
+      rmSync(home, { recursive: true, force: true });
+    },
   };
 }
 
@@ -211,6 +221,41 @@ test('assembleRolePrompt resolves blueprint-aware, riding the harness\'s OWN blu
     if (prevHarnessDir !== undefined) process.env.PAPERCUSP_HARNESS_DIR = prevHarnessDir;
     else delete process.env.PAPERCUSP_HARNESS_DIR;
     setup.cleanup();
+  }
+});
+
+test('Papercusp operator role resolves the shared execution persona and declared write ceiling', () => {
+  const harnessDir = fileURLToPath(new URL('../../harness/', import.meta.url));
+  const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
+  const priorHarnessDir = process.env.PAPERCUSP_HARNESS_DIR;
+  const priorPromptRoot = process.env.PAPERCUSP_PROMPT_ROOT;
+  process.env.PAPERCUSP_HARNESS_DIR = harnessDir;
+  process.env.PAPERCUSP_PROMPT_ROOT = harnessDir;
+  try {
+    const blueprint = parseYaml(readFileSync(join(repoRoot, '.papercusp/blueprint.yaml'), 'utf8')) as {
+      roles: Array<{ id: string }>;
+      fleet: { workerRoles: Array<{ id: string; capabilities: string[] }> };
+    };
+    assert.ok(blueprint.roles.some((role) => role.id === 'operator'));
+    assert.ok(blueprint.fleet.workerRoles.some(
+      (role) => role.id === 'operator' && role.capabilities.includes('operator:write'),
+    ));
+
+    const result = assembleRolePrompt({
+      slug: 'papercusp',
+      projectDir: repoRoot,
+      role: 'operator',
+      mode: 'chat',
+    });
+    assert.equal(result.meta.blueprintId, 'papercusp');
+    assert.match(result.meta.promptFile, /blueprints\/base\/prompts\/operator\.md$/);
+    assert.match(result.text, /Operator — bounded control-plane execution/);
+    assert.doesNotMatch(result.text, /The Mug — the Pot operator/);
+  } finally {
+    if (priorHarnessDir === undefined) delete process.env.PAPERCUSP_HARNESS_DIR;
+    else process.env.PAPERCUSP_HARNESS_DIR = priorHarnessDir;
+    if (priorPromptRoot === undefined) delete process.env.PAPERCUSP_PROMPT_ROOT;
+    else process.env.PAPERCUSP_PROMPT_ROOT = priorPromptRoot;
   }
 });
 
