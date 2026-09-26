@@ -1103,6 +1103,8 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     assert.match(out, /is a LIVE derived truth/);
     // wait-loop note (owner directive 2026-06-23) rides the shared bee base.
     assert.match(out, /Arm a self-wake LOOP/);
+    // ...and carries the keep-working-while-you-wait bullet (owner directive 2026-09-26, WI-10003276).
+    assert.match(out, /SECOND, keep working while you wait/);
     // peer-wake note (owner directive 2026-06-24) rides the shared bee base.
     assert.match(out, /You can WAKE a peer/);
   } finally {
