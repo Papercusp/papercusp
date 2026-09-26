@@ -1,6 +1,6 @@
 id: su.mode-goal
 extends: base
-version: 0.1.1
+version: 0.1.2
 description: "Built-in GOAL mode identity component; host policy remains in the mode registry."
 slots:
   - slot: goal
@@ -30,7 +30,7 @@ contributions:
   - id: goal-portfolio
     purpose: prompt
     source: provider
-    refresh: turn
+    refresh: launch
     inputKind: prompt-file
     ref: provider:goal-portfolio
     producerRef: goal-launch-settings:renderGoalPortfolioBrief
