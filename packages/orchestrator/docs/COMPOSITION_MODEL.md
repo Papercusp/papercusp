@@ -311,7 +311,7 @@ The interactive su’s DEFAULT stack (P-013 fixtures), in `LAYER_ORDER`:
 | `practices` | `practice` | `su.practice` | static | anti-babysitting — additive; further practices stack beside it |
 | `instance` | — | `pot_settings.promptOverride.su + the project guide` | launch | the per-pot override (audit S5) and the spliced project guide |
 
-Base role library (`blueprints/base/prompts`, 63 files): 1 `decomposed-v1` · 1 `kernel-base` · 2 `later` · 57 `role` · 2 `sidecar`. An identity is what an agent IS across pots; a role is WHERE it sits in a spine — choreography stays a role. The non-role rows:
+Base role library (`blueprints/base/prompts`, 64 files): 1 `decomposed-v1` · 1 `kernel-base` · 2 `later` · 58 `role` · 2 `sidecar`. An identity is what an agent IS across pots; a role is WHERE it sits in a spine — choreography stays a role. The non-role rows:
 
 | file | disposition | target | note |
 |---|---|---|---|

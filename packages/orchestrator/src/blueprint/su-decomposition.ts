@@ -717,6 +717,7 @@ export const BASE_ROLE_LIBRARY_DISPOSITION: readonly RoleLibraryRow[] = [
   role('doc-steward.md', 'doc-steward blueprint position'),
   role('monitor.md', 'monitor position — a role, not the anti-babysitting practice (which su.md carries)'),
   role('orchestrator.md', 'the harness orchestrator loop'),
+  role('operator.md', 'bounded control-plane execution position for an owner-authorized operation'),
   role('orchestrator.base.md', 'role-family base fragment shared by orchestrator variants'),
   role('kettle.md', 'pot supervisor — supervision craft is P-020 reference material, not an identity'),
   role('mug.md', 'RETIRED nursery-tier supervisor (the gate flag was deleted) — kept as a role file only'),
