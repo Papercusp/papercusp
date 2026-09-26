@@ -60,10 +60,10 @@ describe('promptHarnessRoot — prompt-root override', () => {
     expect(resolveHarnessPackageRoot([start], { stopAt: root })).toBe(harness);
   });
 
-  it('keeps a running bundled host on its complete blueprints during an incomplete staging checkout rebuild', () => {
+  it.each(['dist-host', 'dist-sidecar', 'dist-verify'])('keeps %s on its bundled blueprints when the integration checkout differs', (bundleName) => {
     const root = mk();
     const harness = join(root, 'libs', 'papercusp', 'packages', 'harness');
-    const bundled = join(root, 'apps', 'operator', 'dist-host');
+    const bundled = join(root, 'apps', 'operator', bundleName);
     mkAsset(harness);
     mkAsset(bundled);
     mkdirSync(join(bundled, 'blueprints', 'su.mode-auto'), { recursive: true });

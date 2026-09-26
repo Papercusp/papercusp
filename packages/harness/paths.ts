@@ -115,10 +115,12 @@ export function resolveHarnessPackageRoot(
   // A bundled host ships its own blueprint assets beside the running entry.
   // Prefer that complete build over the integration checkout: staging rebuilds
   // the latter in place while the previous host is still serving requests.
+  // The isolated verifier uses dist-verify with the same bundled assets; mixing
+  // its frozen schema with newer integration YAML can reject valid modes.
   // An explicit PAPERCUSP_HARNESS_DIR remains the harnessRoot() override.
   for (const startDir of startDirs) {
     const bundled = resolve(startDir);
-    if ((basename(bundled) === 'dist-host' || basename(bundled) === 'dist-sidecar') &&
+    if (['dist-host', 'dist-sidecar', 'dist-verify'].includes(basename(bundled)) &&
         hasHarnessAssets(bundled)) return bundled;
   }
 
