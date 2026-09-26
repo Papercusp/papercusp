@@ -1324,6 +1324,48 @@ export const blueprintOperationInvocationsInHarnessShared = harnessShared.table(
 	check("blueprint_operation_invocations_target_kind_check", sql`target_kind = ANY (ARRAY['work-item'::text, 'plan'::text])`),
 ]);
 
+export const blueprintPackageDependentsInHarnessShared = harnessShared.table("blueprint_package_dependents", {
+	workspaceId: text("workspace_id").notNull(),
+	dependentId: text("dependent_id").notNull(),
+	resourceKey: text("resource_key").notNull(),
+	phase: text().default('prepared').notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("blueprint_package_dependents_resource_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.resourceKey.asc().nullsLast().op("text_ops")).where(sql`(phase <> 'released'::text)`),
+	foreignKey({
+			columns: [table.workspaceId, table.resourceKey],
+			foreignColumns: [blueprintPackageResourcesInHarnessShared.workspaceId, blueprintPackageResourcesInHarnessShared.resourceKey],
+			name: "blueprint_package_dependents_workspace_id_resource_key_fkey"
+		}),
+	primaryKey({ columns: [table.dependentId, table.resourceKey, table.workspaceId], name: "blueprint_package_dependents_pkey"}),
+	pgPolicy("blueprint_package_dependents_workspace", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("blueprint_package_dependents_phase_check", sql`phase = ANY (ARRAY['prepared'::text, 'applied'::text, 'released'::text])`),
+]);
+
+export const blueprintPackageResourcesInHarnessShared = harnessShared.table("blueprint_package_resources", {
+	workspaceId: text("workspace_id").notNull(),
+	resourceKey: text("resource_key").notNull(),
+	memoryScope: text("memory_scope").notNull(),
+	packageKind: text("package_kind").notNull(),
+	packageRef: text("package_ref").notNull(),
+	packageVersion: text("package_version").notNull(),
+	packageHash: text("package_hash").notNull(),
+	resourceKind: text("resource_kind").notNull(),
+	itemKey: text("item_key").notNull(),
+	installedHash: text("installed_hash").notNull(),
+	writeKey: uuid("write_key").defaultRandom().notNull(),
+	phase: text().default('intent').notNull(),
+	externalRefs: jsonb("external_refs").default([]).notNull(),
+	error: text(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.resourceKey, table.workspaceId], name: "blueprint_package_resources_pkey"}),
+	unique("blueprint_package_resources_workspace_id_write_key_key").on(table.workspaceId, table.writeKey),
+	pgPolicy("blueprint_package_resources_workspace", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("blueprint_package_resources_external_refs_check", sql`jsonb_typeof(external_refs) = 'array'::text`),
+	check("blueprint_package_resources_phase_check", sql`phase = ANY (ARRAY['intent'::text, 'ready'::text, 'cleanup_failed'::text, 'deleted'::text, 'detached'::text])`),
+]);
+
 export const blueprintSpecificationsInHarnessShared = harnessShared.table("blueprint_specifications", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -1735,6 +1777,7 @@ export const consultStateInHarnessShared = harnessShared.table("consult_state", 
 	cascadeDigest: jsonb("cascade_digest").default([]).notNull(),
 	queryEmbeddingMode: text("query_embedding_mode"),
 	queryEmbeddingProfile: text("query_embedding_profile"),
+	dispatchAttempts: jsonb("dispatch_attempts").default([]).notNull(),
 }, (table) => [
 	index("consult_state_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((expires_at IS NOT NULL) AND (closed_at IS NULL))`),
 	index("consult_state_origin_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.originTaskRef.asc().nullsLast().op("text_ops")).where(sql`(origin_task_ref IS NOT NULL)`),
@@ -8391,6 +8434,22 @@ export const routinesInHarnessShared = harnessShared.table("routines", {
 	check("routines_reschedule_interval_positive", sql`(reschedule_interval_sec IS NULL) OR (reschedule_interval_sec > 0)`),
 	check("routines_tier_check", sql`tier = ANY (ARRAY['durable'::text, 'ephemeral'::text, 'in-process'::text])`),
 	check("routines_workspace_nonempty", sql`workspace_id <> ''::text`),
+]);
+
+export const rubricAmendReceiptsInHarnessShared = harnessShared.table("rubric_amend_receipts", {
+	workspaceId: text("workspace_id").notNull(),
+	rubricRef: text("rubric_ref").notNull(),
+	idempotencyKey: text("idempotency_key").notNull(),
+	state: text().notNull(),
+	resultJson: jsonb("result_json"),
+	error: text(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("rubric_amend_receipts_finished_idx").using("btree", table.finishedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state <> 'running'::text)`),
+	primaryKey({ columns: [table.idempotencyKey, table.rubricRef, table.workspaceId], name: "rubric_amend_receipts_pkey"}),
+	pgPolicy("rubric_amend_receipts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("rubric_amend_receipts_state_check", sql`state = ANY (ARRAY['running'::text, 'committed'::text, 'previewed'::text, 'failed'::text])`),
 ]);
 
 export const runtimeVintageInHarnessShared = harnessShared.table("runtime_vintage", {
