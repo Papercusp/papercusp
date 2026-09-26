@@ -9,6 +9,9 @@ import {
   compileAgentSpecification,
   compileStackSpecification,
   operationFromSpecification,
+  pinPackageInput,
+  pinnedOperationRubricPackage,
+  replayAgentSpecification,
   specificationPrompt,
 } from './composition-compiler.js';
 
@@ -158,6 +161,45 @@ test('a compiled operation keeps revision A after the authored definition change
     assert.notEqual(first.specificationRevision, second.specificationRevision);
     assert.equal(operationFromSpecification(second, 'extract').operation.version, 'B');
     assert.throws(() => operationFromSpecification(second, 'missing'), CompositionCompilerError);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('an operation acceptance rubric must match a retained package on compile and replay', () => {
+  const f = fixture();
+  try {
+    const rubric = pinPackageInput({
+      packageKind: 'rubric', ref: 'judge', revision: '1.0.0', files: [], dependencies: [],
+      value: { rubricId: 'judge', ratingScale: ['pass', 'fail'], criteria: [{ key: 'complete' }] },
+    });
+    const source = {
+      ...rootSource(),
+      roles: [{ id: 'worker' }],
+      operations: [{
+        id: 'review', version: '1', target: { kind: 'work-item', itemKind: 'feature' },
+        execution: { kind: 'agent', role: 'worker' },
+        inputSchema: { type: 'object' },
+        acceptance: { resultSchema: { type: 'object' }, rubric: {
+          kind: 'rubric', ref: 'judge', revision: rubric.revision, contentHash: rubric.contentHash,
+        } },
+      }],
+    };
+    assert.throws(() => compileAgentSpecification({ source, resolve: f.resolve, harnessDir: f.dir }),
+      /rubric has no retained package/);
+    const specification = compileAgentSpecification({ source, resolve: f.resolve,
+      harnessDir: f.dir, inputClosure: [rubric] });
+    assert.equal(pinnedOperationRubricPackage(
+      operationFromSpecification(specification, 'review').operation, specification.inputs,
+    )?.contentHash, rubric.contentHash);
+    assert.equal(replayAgentSpecification(specification).specificationRevision, specification.specificationRevision);
+    assert.throws(() => compileAgentSpecification({
+      source: { ...source, operations: [{ ...source.operations[0], acceptance: {
+        ...source.operations[0].acceptance,
+        rubric: { ...source.operations[0].acceptance.rubric, contentHash: 'a'.repeat(64) },
+      } }] },
+      resolve: f.resolve, harnessDir: f.dir, inputClosure: [rubric],
+    }), /rubric differs from its declared version or content hash/);
   } finally {
     f.cleanup();
   }

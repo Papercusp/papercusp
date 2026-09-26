@@ -64,7 +64,7 @@ import { composeStack, type StackDocument } from './render-stack.js';
 import type { IdentityLintOptions } from './identity-lint.js';
 
 /** Compiler implementation version.  A semantic change requires a new value. */
-export const COMPOSITION_COMPILER_VERSION = '1.6.0';
+export const COMPOSITION_COMPILER_VERSION = '1.7.0';
 /** Alias used by callers that call the value a compiler revision. */
 export const COMPOSITION_COMPILER_REVISION = COMPOSITION_COMPILER_VERSION;
 
@@ -764,6 +764,7 @@ type OperationProgramInput = {
   readonly packageKind?: string;
   readonly ref: string;
   readonly revision?: string;
+  readonly contentHash?: string;
   readonly value?: unknown;
 };
 
@@ -790,15 +791,48 @@ export function pinnedOperationProgramBlueprint(
   return parsed.data;
 }
 
-function validateOperationProgramPins(
-  configuration: { readonly operations?: readonly { readonly execution?: {
+/** Acceptance uses the exact rubric package admitted with the operation. A
+ * live rubric lookup here would silently change the bar for an in-flight task. */
+export function pinnedOperationRubricPackage(
+  operation: { readonly acceptance?: { readonly rubric?: {
+    readonly ref: string; readonly revision: string; readonly contentHash: string;
+  } } },
+  inputs: readonly OperationProgramInput[],
+): ResolvedPackageInput | null {
+  const ref = operation.acceptance?.rubric;
+  if (!ref) return null;
+  const key = `rubric:${ref.ref}`;
+  const selected = inputs.find((entry) =>
+    entry.kind === 'package' && entry.packageKind === 'rubric' && entry.ref === ref.ref);
+  if (!selected) fail('package-missing', 'operation acceptance rubric has no retained package', key);
+  if (selected.revision !== ref.revision || selected.contentHash !== ref.contentHash) {
+    fail('package-pin-conflict', 'operation acceptance rubric differs from its declared version or content hash', key);
+  }
+  const parsed = ResolvedPackageInputSchema.safeParse(selected);
+  const value = parsed.success ? parsed.data.value : null;
+  if (!parsed.success || !value || typeof value !== 'object' || Array.isArray(value) ||
+      (value as Record<string, unknown>).rubricId !== ref.ref ||
+      !Array.isArray((value as Record<string, unknown>).criteria) ||
+      !Array.isArray((value as Record<string, unknown>).ratingScale)) {
+    fail('package-pin-conflict', 'operation acceptance rubric retained content is invalid', key);
+  }
+  return parsed.data;
+}
+
+function validateOperationPins(
+  configuration: { readonly operations?: readonly { readonly acceptance?: { readonly rubric?: {
+    readonly ref: string; readonly revision: string; readonly contentHash: string;
+  } }; readonly execution?: {
     readonly kind: string; readonly blueprint?: {
       readonly ref: string; readonly revision: string; readonly contentHash: string;
     };
   } }[] },
   inputs: readonly OperationProgramInput[],
 ): void {
-  for (const operation of configuration.operations ?? []) pinnedOperationProgramBlueprint(operation, inputs);
+  for (const operation of configuration.operations ?? []) {
+    pinnedOperationProgramBlueprint(operation, inputs);
+    pinnedOperationRubricPackage(operation, inputs);
+  }
 }
 
 /** Resolve declared bundles using the same exact pins carried by the compiler. */
@@ -860,7 +894,7 @@ export function replayAgentSpecification(value: unknown): CompiledAgentSpecifica
   if (!parsed.success) fail('input-invalid', parsed.error.issues.map((issue) => issue.message).join('; '));
   const specification = parsed.data;
   validateSpecificationBundles(specification.configuration.bundles ?? [], specification.inputs);
-  validateOperationProgramPins(specification.configuration, specification.inputs);
+  validateOperationPins(specification.configuration, specification.inputs);
   for (const entry of specification.inputs) {
     if (entry.kind === 'blueprint-layer' && !entry.document) fail('source-invalid', 'replay needs the source document', entry.ref);
     if (entry.kind === 'addressed-document' && entry.bytes === undefined) {
@@ -1122,7 +1156,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
 
   const closure = validateAgentInputClosure(inputs);
   validateSpecificationBundles(loaded.blueprint.bundles ?? [], closure);
-  validateOperationProgramPins(loaded.blueprint, closure);
+  validateOperationPins(loaded.blueprint, closure);
   const contributions = bindContributions(
     loaded.blueprint.contributions, closure, fixedPromptRefs, providerPromptRefs,
     input.includeAddressedDocuments !== false,

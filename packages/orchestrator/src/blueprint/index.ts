@@ -77,6 +77,7 @@ export {
   compileComposition,
   operationFromSpecification,
   pinnedOperationProgramBlueprint,
+  pinnedOperationRubricPackage,
   compileReplacementSystemPromptSpecification,
   compileStackSpecification,
   specificationPrompt,
