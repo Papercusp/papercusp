@@ -134,6 +134,42 @@ test('an already-rendered fixed contribution is pinned once and must occur in th
   }
 });
 
+test.each(['launch', 'turn', 'on-demand'] as const)(
+  'a requested %s contribution cannot be silently omitted as not-requested', (refresh) => {
+    const f = fixture();
+    try {
+      const source = { ...rootSource(), contributions: [{ id: 'live-context', purpose: 'operational',
+        source: 'provider', refresh, inputKind: 'setting', ref: 'live-context',
+        producerRef: 'fixture:context', availability: 'optional' }] };
+      const input = { source, resolve: f.resolve, contributionRefresh: refresh };
+      assert.throws(() => compileAgentSpecification({ ...input,
+        contributionOmissions: [{ id: 'live-context', reason: 'not-requested' }],
+      }), /contribution-not-delivered.*refresh/);
+      for (const omission of [{ reason: 'ineligible' },
+        { reason: 'unavailable', errorRef: 'fixture:failed' }] as const) {
+        const artifact = compileAgentSpecification({ ...input,
+          contributionOmissions: [{ id: 'live-context', ...omission }],
+        });
+        assert.equal(artifact.provenance.find((p) => p.path === 'contribution.live-context')?.decision,
+          `omitted:${omission.reason}`);
+      }
+      const bound = compileAgentSpecification({ ...input, settings: [{ ref: 'live-context',
+        revision: '1', value: { current: true }, producerRef: 'fixture:context' }] });
+      assert.deepEqual(bound.inputs.find((entry) => entry.ref === 'composition:contribution-refresh'),
+        { kind: 'setting', ref: 'composition:contribution-refresh', revision: '1', value: refresh });
+      assert.equal(replayAgentSpecification(bound).specificationRevision, bound.specificationRevision);
+      const offCadence = compileAgentSpecification({ ...input,
+        contributionRefresh: refresh === 'turn' ? 'launch' : 'turn',
+        contributionOmissions: [{ id: 'live-context', reason: 'not-requested' }],
+      });
+      assert.equal(offCadence.provenance.find((p) => p.path === 'contribution.live-context')?.decision,
+        'omitted:not-requested');
+    } finally {
+      f.cleanup();
+    }
+  },
+);
+
 test('a compiled operation keeps revision A after the authored definition changes to B', () => {
   const f = fixture();
   try {

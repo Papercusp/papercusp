@@ -214,6 +214,9 @@ export interface CompositionCompilerInput {
 
   /** Explicit receipt for a conditionally absent provider contribution. */
   contributionOmissions?: readonly CompositionContributionOmissionInput[];
+  /** Cadence requested by this delivery sink. Omit for a source-only compile.
+   * Recorded in the immutable input closure, never inferred from a declaration. */
+  contributionRefresh?: BlueprintContribution['refresh'];
 
   /** Additional already-pinned closure entries (package/dependency adapters use this). */
   inputClosure?: readonly ResolvedAgentInput[];
@@ -1047,6 +1050,7 @@ function bindContributions(
   providerPromptRefs: ReadonlySet<string>,
   includeAddressedDocuments: boolean,
   omissions: readonly CompositionContributionOmissionInput[],
+  refresh: BlueprintContribution['refresh'] | undefined,
 ): { promptSegments: string[]; provenance: ResolvedAgentProvenance[] } {
   const byKey = new Map(closure.map((entry) => [contributionInputKey(entry), entry]));
   const omittedById = new Map<string, CompositionContributionOmissionInput>();
@@ -1066,6 +1070,11 @@ function bindContributions(
     if (!entry) {
       if (declaration.availability !== 'optional' || !omission) {
         fail('contribution-missing', `declared ${declaration.purpose} input is absent without an explicit optional omission`, `${declaration.id}:${key}`);
+      }
+      if (omission.reason === 'not-requested' && declaration.refresh === refresh) {
+        fail('contribution-not-delivered',
+          `declared refresh:${refresh} is due at this sink; supply the contribution or an ineligible/unavailable receipt`,
+          `${declaration.id}:${key}`);
       }
       provenance.push({
         path: `contribution.${declaration.id}`,
@@ -1180,6 +1189,13 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
     fixedPromptRefs.add(addressed.ref);
   }
   const settings = normalizeSettings(input);
+  if (input.contributionRefresh !== undefined) {
+    if (!['source-change', 'launch', 'turn', 'on-demand'].includes(input.contributionRefresh)) {
+      fail('input-invalid', 'unknown contribution refresh cadence');
+    }
+    inputs.push({ kind: 'setting', ref: 'composition:contribution-refresh', revision: '1',
+      value: input.contributionRefresh });
+  }
   for (const setting of settings) {
     inputs.push({ kind: 'setting', ref: setting.ref, revision: String(setting.revision), value: setting.value,
       ...(setting.producerRef ? { producerRef: setting.producerRef } : {}) });
@@ -1198,6 +1214,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
     loaded.blueprint.contributions, closure, fixedPromptRefs, providerPromptRefs,
     input.includeAddressedDocuments !== false,
     input.contributionOmissions ?? [],
+    input.contributionRefresh,
   );
   const addressedText = input.includeAddressedDocuments === false ? '' : renderAddressedRows(addressedRows);
   const joinedPromptText = [...promptSegments, ...contributions.promptSegments].join(PROMPT_SEPARATOR);
