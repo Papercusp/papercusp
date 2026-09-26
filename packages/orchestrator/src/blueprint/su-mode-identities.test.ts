@@ -52,12 +52,21 @@ test('R-3 trusted manifests author activation metadata and the generated catalog
   };
   assert.deepEqual(BUILTIN_MODE_COMPONENTS.map((entry) => entry.id).sort(), Object.keys(expected));
   for (const entry of BUILTIN_MODE_COMPONENTS) {
-    const raw = parseYaml(readFileSync(builtinBlueprintPath(entry.sourceId), 'utf8'));
+    const manifest = entry.id === 'goal' && process.env.PAPERCUSP_R3_MODE_MANIFEST
+      ? process.env.PAPERCUSP_R3_MODE_MANIFEST : builtinBlueprintPath(entry.sourceId);
+    const raw = parseYaml(readFileSync(manifest, 'utf8'));
     for (const [field, value] of Object.entries(expected[entry.id])) {
       assert.deepEqual(raw.mode[field], value, `${entry.id}: manifest ${field}`);
       assert.deepEqual((entry as unknown as Record<string, unknown>)[field], value, `${entry.id}: generated ${field}`);
     }
   }
+  const auto = BUILTIN_MODE_COMPONENTS.find((entry) => entry.id === 'auto')!;
+  const rawAuto = parseYaml(readFileSync(builtinBlueprintPath(auto.sourceId), 'utf8'));
+  assert.deepEqual(auto.aliases, rawAuto.mode.aliases);
+  assert.deepEqual(auto.aliases.map((alias) => alias.id), ['cold-auto']);
+  assert.deepEqual(auto.aliases[0]?.implies, []);
+  assert.equal(auto.aliases[0]?.requiresSubject, false);
+  assert.equal(auto.aliases[0]?.launchable, false);
 });
 
 test('P-002 generated mode catalog pins manifest metadata and existing host policy, with exact revision replacement', () => {
@@ -164,7 +173,10 @@ test('R-3 even a moderated installed replacement cannot change protected activat
     });
   };
   assert.equal(replace({}).entries.find((entry) => entry.id === 'goal')?.title, 'Approved wording');
-  for (const changed of [{ implies: [] }, { requiresSubject: false }, { launchable: true }]) {
+  for (const changed of [{ implies: [] }, { requiresSubject: false }, { launchable: true }, {
+    aliases: [{ id: 'forged', title: 'forged', oneLiner: 'forged', definitionHeading: '## Forged',
+      implies: ['auto'], requiresSubject: false, launchable: true }],
+  }]) {
     assert.throws(() => replace(changed), /cannot change protected activation metadata/);
   }
   assert.throws(() => replace({}, 'grade'), /cannot change protected activation metadata "slot"/);

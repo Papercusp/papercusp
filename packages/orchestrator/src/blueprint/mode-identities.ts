@@ -62,6 +62,10 @@ export interface ModeCatalogEntry {
   implies?: readonly string[];
   requiresSubject?: boolean;
   launchable?: boolean;
+  aliases?: readonly {
+    id: string; title: string; oneLiner: string; definitionHeading: string;
+    implies: readonly string[]; requiresSubject: boolean; launchable: boolean;
+  }[];
   definition: {
     contributionId: string;
     inputKind: 'prompt-file' | 'addressed-document';
@@ -117,9 +121,9 @@ export function modeCatalogFromValidatedSources(
       }
       const prior = byId.get(mode.id);
       if (layer.trust !== 'builtin') {
-        for (const field of ['implies', 'requiresSubject', 'launchable'] as const) {
+        for (const field of ['implies', 'requiresSubject', 'launchable', 'aliases'] as const) {
           if (mode[field] !== undefined && (!prior || stableStringify(mode[field]) !==
-              stableStringify(prior[field] ?? (field === 'implies' ? [] : false)))) {
+              stableStringify(prior[field] ?? (field === 'implies' || field === 'aliases' ? [] : false)))) {
             throw new Error(`mode "${mode.id}" cannot change protected activation metadata "${field}"`);
           }
         }
@@ -149,6 +153,7 @@ export function modeCatalogFromValidatedSources(
         implies: mode.implies ?? prior?.implies ?? [],
         requiresSubject: mode.requiresSubject ?? prior?.requiresSubject ?? false,
         launchable: mode.launchable ?? prior?.launchable ?? false,
+        aliases: mode.aliases ?? prior?.aliases ?? [],
         definition: {
           contributionId: definition.id, inputKind: definition.inputKind, ref: definition.ref,
           source: definition.source, refresh: definition.refresh,
@@ -168,14 +173,17 @@ export function modeCatalogFromValidatedSources(
     }
   }
   const entries = [...byId.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-  for (const entry of entries) {
+  const activationEntries = entries.flatMap((entry) => [entry, ...(entry.aliases ?? [])]);
+  const activationById = new Map(activationEntries.map((entry) => [entry.id, entry]));
+  if (activationById.size !== activationEntries.length) throw new Error('duplicate mode or carry alias id');
+  for (const entry of activationEntries) {
     if (entry.launchable && entry.requiresSubject) {
       throw new Error(`mode "${entry.id}" requires a subject and cannot use the subject-less launch surface`);
     }
     const visited = new Set<string>();
     const visit = (id: string, ancestors: readonly string[]): void => {
       if (ancestors.includes(id)) throw new Error(`mode implication cycle: ${[...ancestors, id].join(' -> ')}`);
-      const target = byId.get(id);
+      const target = activationById.get(id);
       if (!target) throw new Error(`mode "${entry.id}" implies unknown mode "${id}"`);
       if (ancestors.length > 0 && target.requiresSubject) {
         throw new Error(`mode "${entry.id}" implies subject-requiring mode "${id}"`);
@@ -217,7 +225,7 @@ export const SU_MODE_DOCUMENTS: readonly SuModeDocument[] = [...BUILTIN_MODE_COM
   .map((entry) => modeDoc(
     entry.sourceId,
     entry.slot,
-    entry.id === 'auto' ? ['auto', 'cold-auto'] : [entry.id],
+    [entry.id, ...((entry as ModeCatalogEntry).aliases ?? []).map((alias) => alias.id)],
     entry.title,
   ));
 
