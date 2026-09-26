@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildPrompt, buildPromptParts, wrapUntrusted, findBriefPlaceholder } from './prompt-build.js';
+import { buildPrompt, buildPromptParts, wrapUntrusted, findBriefPlaceholder, WAIT_LOOP_NOTE } from './prompt-build.js';
+import { readSuSource } from './blueprint/su-decomposition.js';
 import {
   WORK_RECORD_NOTE,
   WRITE_THROUGH_NOTE,
@@ -1110,6 +1111,19 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
   } finally {
     fx.cleanup();
   }
+});
+
+test('waiting never means idling: work the independent steps, and arm an await FIRST (owner directive 2026-09-26, WI-10003276)', () => {
+  // The shared wait note tells every agent to do all work that does not depend on the thing it
+  // waits on before it parks, and names the stop condition (EVERY remaining step needs it).
+  assert.match(WAIT_LOOP_NOTE, /SECOND, keep working while you wait/);
+  assert.match(WAIT_LOOP_NOTE, /what else in my task does NOT depend on this\?/);
+  assert.match(WAIT_LOOP_NOTE, /you are blocked only once EVERY remaining step needs/);
+  // The su kernel's await line must agree with it. The old wording ("events:await → END YOUR
+  // TURN") told agents to park the moment they subscribed, which is the idling this removes.
+  const su = readSuSource();
+  assert.doesNotMatch(su, /`events:await \{ event \}` → END YOUR TURN/);
+  assert.match(su, /`events:await \{ event \}` FIRST, then finish every step that does not need the/);
 });
 
 test('buildPrompt — whitespace-only sharedGuides entries are skipped', () => {
