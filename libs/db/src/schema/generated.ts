@@ -5062,6 +5062,20 @@ export const memoryLiveRecallCanarySetInHarnessShared = harnessShared.table("mem
 	unique("memory_live_recall_canary_set_ws_version").on(table.version, table.workspaceId),
 ]);
 
+export const memoryManagedWritesInHarnessShared = harnessShared.table("memory_managed_writes", {
+	writeKey: uuid("write_key").primaryKey().notNull(),
+	scope: text().notNull(),
+	requestHash: text("request_hash"),
+	fingerprint: text(),
+	canceled: boolean().default(false).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	check("memory_managed_writes_fingerprint_check", sql`(fingerprint IS NULL) OR (fingerprint ~ '^[a-f0-9]{64}$'::text)`),
+	check("memory_managed_writes_request_hash_check", sql`(request_hash IS NULL) OR (request_hash ~ '^[a-f0-9]{64}$'::text)`),
+	primaryKey({ columns: [table.writeKey], name: "memory_managed_writes_pkey"}),
+
+]);
+
 export const memoryPrecisionBenchInHarnessShared = harnessShared.table("memory_precision_bench", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -9997,11 +10011,12 @@ export const triggerBindingsInHarnessShared = harnessShared.table("trigger_bindi
 	primaryKey({ columns: [table.id, table.workspaceId], name: "trigger_bindings_pkey"}),
 	pgPolicy("trigger_bindings_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("trigger_bindings_action_object_check", sql`jsonb_typeof(action) = 'object'::text`),
+	check("trigger_bindings_blueprint_operation_action_check", sql`((action ->> 'type'::text) IS DISTINCT FROM 'blueprint-operation'::text) OR (((jsonb_typeof((action -> 'operationHarnessSlug'::text)) = 'string'::text) AND (btrim((action ->> 'operationHarnessSlug'::text)) <> ''::text) AND (jsonb_typeof((action -> 'operationId'::text)) = 'string'::text) AND (btrim((action ->> 'operationId'::text)) <> ''::text) AND ((NOT (action ? 'input'::text)) OR (jsonb_typeof((action -> 'input'::text)) = 'object'::text))) IS TRUE)`),
 	check("trigger_bindings_direct_work_item_cols_paired", sql`(work_item_kind IS NULL) = (work_item_harness_slug IS NULL)`),
 	check("trigger_bindings_direct_work_item_nonempty", sql`((work_item_kind IS NULL) OR (btrim(work_item_kind) <> ''::text)) AND ((work_item_harness_slug IS NULL) OR (btrim(work_item_harness_slug) <> ''::text))`),
 	check("trigger_bindings_event_filter_object_check", sql`jsonb_typeof(event_filter) = 'object'::text`),
 	check("trigger_bindings_event_pattern_nonempty", sql`btrim(event_pattern) <> ''::text`),
-	check("trigger_bindings_exactly_one_target", sql`((((plan_slug IS NOT NULL))::integer + ((goal_id IS NOT NULL))::integer) + ((work_item_kind IS NOT NULL))::integer) = 1`),
+	check("trigger_bindings_exactly_one_target", sql`(((((plan_slug IS NOT NULL))::integer + ((goal_id IS NOT NULL))::integer) + ((work_item_kind IS NOT NULL))::integer) + COALESCE((((action ->> 'type'::text) = 'blueprint-operation'::text))::integer, 0)) = 1`),
 	check("trigger_bindings_plan_cols_paired", sql`(plan_slug IS NULL) = (plan_harness_slug IS NULL)`),
 	check("trigger_bindings_storm_policy_object_check", sql`jsonb_typeof(storm_policy) = 'object'::text`),
 ]);
