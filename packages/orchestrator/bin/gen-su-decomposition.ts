@@ -50,6 +50,10 @@ function renderModeCatalog(): string {
       if (!existsSync(sourcePath)) return [];
       const raw = parseYaml(readFileSync(sourcePath, 'utf8')) as Record<string, unknown>;
       if (!raw || typeof raw !== 'object' || !raw.mode) return [];
+      const mode = raw.mode as Record<string, unknown>;
+      for (const field of ['implies', 'requiresSubject', 'launchable']) {
+        if (mode[field] === undefined) throw new Error(`built-in mode ${entry.name} must declare ${field}`);
+      }
       const source = resolveBlueprintSource(raw, { resolve: resolveBuiltinExtends, sourcePath });
       if (!source.validation.ok) {
         throw new Error(`mode source ${entry.name} invalid: ${source.validation.errors.map((issue) => issue.message).join('; ')}`);
