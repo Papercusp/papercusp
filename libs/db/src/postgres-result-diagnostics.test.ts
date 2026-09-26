@@ -149,6 +149,13 @@ const registryControls = [
 
 describe('P-003 calibrated in-memory registry counterexamples', () => {
   it.each(registryControls)('$name passes actual source and rejects the targeted mutant', ({ from, to, verify }) => {
+    if (process.env.P003_CALIBRATED_RED_CONTROL === '1') {
+      // Copy-out probes supply the already-mutated source. Require it to parse,
+      // then let the independent behavior assertion produce the red result.
+      expect(() => registryFromSource(ACQUIRE_REGISTRY_SOURCE)).not.toThrow();
+      verify(ACQUIRE_REGISTRY_SOURCE);
+      return;
+    }
     expect(ACQUIRE_REGISTRY_SOURCE.split(from), 'mutation site must be unique').toHaveLength(2);
     expect(() => verify(ACQUIRE_REGISTRY_SOURCE)).not.toThrow();
     const mutant = ACQUIRE_REGISTRY_SOURCE.replace(from, to);
