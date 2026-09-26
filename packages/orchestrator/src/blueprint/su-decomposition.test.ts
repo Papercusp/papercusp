@@ -7,6 +7,7 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -102,6 +103,30 @@ test('the checker names a runnable writer command in its drift remediation', () 
   const generator = readFileSync(join(here, '..', '..', 'bin', 'gen-su-decomposition.ts'), 'utf8');
   assert.match(generator, /run from the repository root or libs\/papercusp: npm run gen:su-decomposition/);
 });
+
+test('mode catalog stdout survives a paused pipe reader and emits the complete catalog', async () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const generator = join(here, '..', '..', 'bin', 'gen-su-decomposition.ts');
+  const expected = readFileSync(join(here, 'mode-catalog.generated.ts'));
+  const child = spawn(process.execPath, ['--import', 'tsx', generator, '--mode-catalog-stdout'], {
+    cwd: join(here, '..', '..', '..', '..'),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout.pause();
+  const chunks: Buffer[] = [];
+  const errors: Buffer[] = [];
+  child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
+  child.stderr.on('data', (chunk: Buffer) => errors.push(chunk));
+  const finished = new Promise<number | null>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', (code) => resolve(code));
+  });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  child.stdout.resume();
+  const code = await finished;
+  assert.equal(code, 0, Buffer.concat(errors).toString('utf8'));
+  assert.deepEqual(Buffer.concat(chunks), expected);
+}, 30_000);
 
 test('the owning submodule package exposes the generator and drift-check commands', () => {
   const packageJson = JSON.parse(readFileSync(join(HARNESS_PKG, '..', '..', 'package.json'), 'utf8')) as {

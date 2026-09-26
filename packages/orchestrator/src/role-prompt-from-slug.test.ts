@@ -5,7 +5,7 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -227,11 +227,20 @@ test('assembleRolePrompt resolves blueprint-aware, riding the harness\'s OWN blu
 test('Papercusp operator role resolves the shared execution persona and declared write ceiling', () => {
   const harnessDir = fileURLToPath(new URL('../../harness/', import.meta.url));
   const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
+  // The maintained mutation probe supplies a copy of the persona, never a
+  // mutation in the shared tree. Keep the real blueprint chain and resolver
+  // while replacing only that persona in an isolated fixture.
+  const probePrompt = process.env.PAPERCUSP_OPERATOR_PROMPT_PROBE;
+  const probeHarness = probePrompt ? mkdtempSync(join(tmpdir(), 'operator-prompt-probe-')) : undefined;
   const priorHarnessDir = process.env.PAPERCUSP_HARNESS_DIR;
   const priorPromptRoot = process.env.PAPERCUSP_PROMPT_ROOT;
-  process.env.PAPERCUSP_HARNESS_DIR = harnessDir;
-  process.env.PAPERCUSP_PROMPT_ROOT = harnessDir;
   try {
+    if (probeHarness) {
+      cpSync(join(harnessDir, 'blueprints'), join(probeHarness, 'blueprints'), { recursive: true });
+      writeFileSync(join(probeHarness, 'blueprints/base/prompts/operator.md'), readFileSync(probePrompt!));
+    }
+    process.env.PAPERCUSP_HARNESS_DIR = probeHarness ?? harnessDir;
+    process.env.PAPERCUSP_PROMPT_ROOT = probeHarness ?? harnessDir;
     const blueprint = parseYaml(readFileSync(join(repoRoot, '.papercusp/blueprint.yaml'), 'utf8')) as {
       roles: Array<{ id: string }>;
       fleet: { workerRoles: Array<{ id: string; capabilities: string[] }> };
@@ -256,6 +265,7 @@ test('Papercusp operator role resolves the shared execution persona and declared
     else process.env.PAPERCUSP_HARNESS_DIR = priorHarnessDir;
     if (priorPromptRoot === undefined) delete process.env.PAPERCUSP_PROMPT_ROOT;
     else process.env.PAPERCUSP_PROMPT_ROOT = priorPromptRoot;
+    if (probeHarness) rmSync(probeHarness, { recursive: true, force: true });
   }
 });
 

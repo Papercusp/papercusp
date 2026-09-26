@@ -12,9 +12,11 @@
  * with this command in the message. Lives under `bin/` (not `scripts/`) so the
  * package tsconfig compiles it — `lint:tsc:orchestrator` includes `bin/**`.
  */
-import { existsSync, readFileSync, readdirSync, writeFileSync, writeSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, relative } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { renderSuDecompositionMarkdown, suPartDocumentDrift, writeSuPartDocuments } from '../src/blueprint/su-decomposition.js';
@@ -79,11 +81,9 @@ const wantDoc = splicedDoc(doc);
 const wantModeCatalog = renderModeCatalog();
 const modeCatalogStale = !existsSync(MODE_CATALOG) || readFileSync(MODE_CATALOG, 'utf8') !== wantModeCatalog;
 if (process.argv.includes('--mode-catalog-stdout')) {
-  // The catalog is unbounded; finish every synchronous write before exiting.
-  const bytes = Buffer.from(wantModeCatalog);
-  for (let offset = 0; offset < bytes.length;) {
-    offset += writeSync(1, bytes, offset, bytes.length - offset);
-  }
+  // A piped stdout can be nonblocking: stream backpressure instead of surfacing
+  // EAGAIN from writeSync after emitting only part of the catalog.
+  await pipeline(Readable.from([wantModeCatalog]), process.stdout);
   process.exit(0);
 }
 if (process.argv.includes('--mode-catalog-only')) {
