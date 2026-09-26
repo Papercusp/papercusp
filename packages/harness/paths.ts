@@ -16,7 +16,7 @@
  * mounts, fixture-controlled tests).
  */
 import { existsSync, statSync } from 'node:fs';
-import { dirname, join, parse, resolve } from 'node:path';
+import { basename, dirname, join, parse, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -111,6 +111,16 @@ export function resolveHarnessPackageRoot(
       cur = dirname(cur);
     }
   };
+
+  // A bundled host ships its own blueprint assets beside the running entry.
+  // Prefer that complete build over the integration checkout: staging rebuilds
+  // the latter in place while the previous host is still serving requests.
+  // An explicit PAPERCUSP_HARNESS_DIR remains the harnessRoot() override.
+  for (const startDir of startDirs) {
+    const bundled = resolve(startDir);
+    if ((basename(bundled) === 'dist-host' || basename(bundled) === 'dist-sidecar') &&
+        hasHarnessAssets(bundled)) return bundled;
+  }
 
   const integ = process.env.PAPERCUSP_INTEGRATION_ROOT?.trim();
   if (integ) {

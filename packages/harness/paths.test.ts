@@ -60,6 +60,21 @@ describe('promptHarnessRoot — prompt-root override', () => {
     expect(resolveHarnessPackageRoot([start], { stopAt: root })).toBe(harness);
   });
 
+  it('keeps a running bundled host on its complete blueprints during an incomplete staging checkout rebuild', () => {
+    const root = mk();
+    const harness = join(root, 'libs', 'papercusp', 'packages', 'harness');
+    const bundled = join(root, 'apps', 'operator', 'dist-host');
+    mkAsset(harness);
+    mkAsset(bundled);
+    mkdirSync(join(bundled, 'blueprints', 'su.mode-auto'), { recursive: true });
+    writeFileSync(join(bundled, 'blueprints', 'su.mode-auto', 'blueprint.yaml'), 'id: su.mode-auto\n');
+    process.env.PAPERCUSP_INTEGRATION_ROOT = root;
+
+    // The integration tree already has base/blueprint.yaml, but the selected
+    // mode is still absent while its submodule clone is being checked out.
+    expect(resolveHarnessPackageRoot([bundled], { stopAt: root })).toBe(bundled);
+  });
+
   it('resolveHarnessPackageRoot prefers PAPERCUSP_INTEGRATION_ROOT when it has harness assets', () => {
     const root = mk();
     const harness = join(root, 'libs', 'papercusp', 'packages', 'harness');
