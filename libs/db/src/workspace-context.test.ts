@@ -59,6 +59,23 @@ describe('withWorkspace — EI-9279 connect-retry wiring', () => {
     expect(tx).toHaveBeenCalledTimes(1); // workspace GUC remains inside the transaction
   });
 
+  it('sets pooled search path and workspace scope in one transaction query', async () => {
+    h.pgbouncerEnabled.mockReturnValue(true);
+    try {
+      const tx = vi.fn(async (_query: TemplateStringsArray, _workspace?: string) => []);
+      h.begin.mockImplementation(async (cb: (sql: Sql) => Promise<unknown>) => cb(tx as unknown as Sql));
+      await withWorkspace('ws-pooled', async () => 'ok');
+
+      expect(tx).toHaveBeenCalledTimes(1);
+      const [query, scope] = tx.mock.calls[0]!;
+      expect(query.join('?')).toContain("set_config('search_path'");
+      expect(query.join('?')).toContain("set_config('app.workspace_id'");
+      expect(scope).toBe('ws-pooled');
+    } finally {
+      h.pgbouncerEnabled.mockReturnValue(false);
+    }
+  });
+
   it('retries a BEGIN-phase CONNECTION_CLOSED (callback never invoked) and eventually succeeds', async () => {
     let beginAttempts = 0;
     h.begin.mockImplementation(async (cb: (tx: Sql) => Promise<unknown>) => {

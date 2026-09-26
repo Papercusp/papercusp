@@ -121,9 +121,16 @@ export async function withWorkspace<T>(
       // always re-applies the search_path in lockstep with the URL rerouting. This
       // makes the HOT path (every agent tool call) pooler-correct.
       if (pgbouncerEnabled()) {
-        await txSql`SELECT set_config('search_path', 'harness_shared, papercusp_shared, public', true)`;
-      }
-      if (!opts.bypassRlsForAdmin) {
+        // PgBouncer drops connection-local search_path, and app reads also need
+        // the transaction-local RLS scope. Set both in one round trip when
+        // they are both required; the two settings are independent.
+        if (opts.bypassRlsForAdmin) {
+          await txSql`SELECT set_config('search_path', 'harness_shared, papercusp_shared, public', true)`;
+        } else {
+          await txSql`SELECT set_config('search_path', 'harness_shared, papercusp_shared, public', true),
+                             set_config('app.workspace_id', ${workspaceId}, true)`;
+        }
+      } else if (!opts.bypassRlsForAdmin) {
         await txSql`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
       }
       // Promise.race does NOT cancel the losing promise: if the acquisition

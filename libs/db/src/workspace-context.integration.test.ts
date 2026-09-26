@@ -11,7 +11,7 @@ import postgres, { type Sql } from 'postgres';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
 
 // The wrapper resolves its client through ./connection — point both at our test sql.
-const h = vi.hoisted(() => ({ sql: null as unknown as Sql }));
+const h = vi.hoisted(() => ({ sql: null as unknown as Sql, pooled: false }));
 // SPREAD the real module rather than ENUMERATING it. The previous form listed the
 // four exports ./connection happened to have when this file was written, so the
 // moment workspace-context reached for a fifth the fixture stranded: adding
@@ -26,7 +26,7 @@ vi.mock('./connection', async (importOriginal) => ({
   getOrgPg: () => ({ sql: h.sql }),
   // workspace-context gates its per-txn search_path/GUC re-apply on this (C1-2).
   // The test's sql is a DIRECT testcontainer client — no pooler in between.
-  pgbouncerEnabled: () => false,
+  pgbouncerEnabled: () => h.pooled,
   getHarnessPg: () => ({ sql: h.sql }),
 }));
 
@@ -57,6 +57,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  h.pooled = false;
   await sql`TRUNCATE scratch`;
 });
 
@@ -70,6 +71,17 @@ describe('withWorkspace', () => {
   it('sets app.workspace_id inside the transaction', async () => {
     const rows = await withWorkspace('ws-42', async (tx) => readGuc(tx));
     expect(rows[0].ws).toBe('ws-42');
+  });
+
+  it('sets both pooled transaction settings without losing RLS scope', async () => {
+    h.pooled = true;
+    const rows = await withWorkspace('ws-pooled', async (tx) =>
+      tx<{ ws: string; path: string }[]>`SELECT current_setting('app.workspace_id', true) AS ws,
+                                       current_setting('search_path', true) AS path`);
+    expect(rows[0]).toMatchObject({
+      ws: 'ws-pooled',
+      path: 'harness_shared, papercusp_shared, public',
+    });
   });
 
   it('keeps the GUC transaction-local (cleared after the tx)', async () => {
