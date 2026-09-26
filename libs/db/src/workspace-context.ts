@@ -41,6 +41,9 @@ export interface WorkspaceTxOptions {
    * (i.e. harness_admin role). Do not use from application code.
    */
   bypassRlsForAdmin?: boolean;
+  /** Diagnostic hook: BEGIN has completed, then transaction-local setup is ready.
+   * The caller's callback starts only after `ready`. */
+  onAcquisitionPhase?: (phase: 'begin' | 'ready') => void;
 }
 
 /**
@@ -95,6 +98,7 @@ export async function withWorkspace<T>(
     // (templated queries + .unsafe).
     (sql.begin(async (tx) => {
       const txSql = tx as unknown as Sql;
+      opts.onAcquisitionPhase?.('begin');
       // postgres-js's TransactionSql is a SUBSET of Sql — it omits
       // `.options` (the parsers/serializers config). drizzle-orm's
       // `drizzle(client)` reads `client.options.parsers` in its
@@ -136,6 +140,7 @@ export async function withWorkspace<T>(
       }
       // Past this point the caller's own work begins and may legitimately run
       // long (a search, a test run), so the acquisition deadline must not apply.
+      opts.onAcquisitionPhase?.('ready');
       disarm();
       markStarted();
       return await fn(txSql);

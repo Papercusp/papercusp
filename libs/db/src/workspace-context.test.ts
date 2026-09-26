@@ -42,6 +42,23 @@ function fakeTxSql(): Sql {
 }
 
 describe('withWorkspace — EI-9279 connect-retry wiring', () => {
+  it('reports BEGIN and workspace setup separately before caller work', async () => {
+    const phases: string[] = [];
+    const tx = vi.fn(async () => []);
+    h.begin.mockImplementation(async (cb: (sql: Sql) => Promise<unknown>) => {
+      phases.push('begin-called');
+      return cb(tx as unknown as Sql);
+    });
+
+    await withWorkspace('ws-1', async () => {
+      phases.push('caller');
+      return 'ok';
+    }, { onAcquisitionPhase: (phase) => phases.push(phase) });
+
+    expect(phases).toEqual(['begin-called', 'begin', 'ready', 'caller']);
+    expect(tx).toHaveBeenCalledTimes(1); // workspace GUC remains inside the transaction
+  });
+
   it('retries a BEGIN-phase CONNECTION_CLOSED (callback never invoked) and eventually succeeds', async () => {
     let beginAttempts = 0;
     h.begin.mockImplementation(async (cb: (tx: Sql) => Promise<unknown>) => {
