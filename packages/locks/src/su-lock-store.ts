@@ -619,6 +619,11 @@ export type AcquireResult =
   | {
       ok: false;
       busy: AcquireBusy[];
+      reason: 'queued_waiter';
+    }
+  | {
+      ok: false;
+      busy: AcquireBusy[];
       reason: AcquireRetryReason;
       retryable: true;
     };
@@ -714,24 +719,30 @@ export async function tryAcquire(
   const reusableLockId = existingLockIds[0];
   // If every requested path is already owned by us, skip the head-waiter
   // check entirely — pure refresh.
-  const blocked = newPaths.length === 0
+  const queuedWaiters = newPaths.length === 0
     ? []
-    : await tx<Array<{ blocked: true }>>`
-        SELECT TRUE AS blocked FROM agent_lock_waiters
-         WHERE coordination_domain = ${coordinationDomain}
-           AND status = 'waiting'
+    : await tx<AcquireBusy[]>`
+        SELECT waiting.path, w.owner, w.owner_label, w.intent,
+               w.wait_until AS expires_ts
+          FROM agent_lock_waiters w
+          CROSS JOIN LATERAL unnest(w.paths) AS waiting(path)
+         WHERE w.coordination_domain = ${coordinationDomain}
+           AND w.status = 'waiting'
            -- A waiter whose wait_until has elapsed is effectively dead
            -- (crashed agent / timed-out wait) and must not block a new
            -- acquire even if the janitor hasn't swept it yet
            -- (file-locking #4 — robust regardless of sweep timing).
-           AND wait_until > clock_timestamp()
-           AND lock_paths_overlap(paths, ${newPaths}::text[])
-           AND queued_ts < clock_timestamp()
-         LIMIT 1
+           AND w.wait_until > clock_timestamp()
+           AND EXISTS (
+             SELECT 1 FROM unnest(${newPaths}::text[]) AS requested(path)
+              WHERE lock_path_overlaps(waiting.path, requested.path)
+           )
+           AND w.queued_ts < clock_timestamp()
+         ORDER BY w.queued_ts ASC, w.ticket_id ASC
+         LIMIT 50
       `;
-  if (blocked.length > 0) {
-    const busy = await readBusySnapshot(tx, coordinationDomain, paths, owner);
-    return { ok: false, busy };
+  if (queuedWaiters.length > 0) {
+    return { ok: false, busy: queuedWaiters, reason: 'queued_waiter' };
   }
 
   // Step 2b: pre-check that every NEW path (not already ours) is
