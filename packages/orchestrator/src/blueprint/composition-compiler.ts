@@ -37,6 +37,7 @@ import {
   RESOLVED_AGENT_SPECIFICATION_SCHEMA_VERSION,
   type BlueprintSourceKind,
   type BlueprintSourceDocument,
+  type RunnableBlueprint,
   type BlueprintContribution,
   type ResolvedAgentInput,
   type ResolvedAgentProvenance,
@@ -46,6 +47,7 @@ import {
 import {
   layerSourceDocument,
   layerContentHash,
+  blueprintHash,
   resolveBlueprint,
   resolveBlueprintSource,
   type BlueprintValidateRegistry,
@@ -62,7 +64,7 @@ import { composeStack, type StackDocument } from './render-stack.js';
 import type { IdentityLintOptions } from './identity-lint.js';
 
 /** Compiler implementation version.  A semantic change requires a new value. */
-export const COMPOSITION_COMPILER_VERSION = '1.5.0';
+export const COMPOSITION_COMPILER_VERSION = '1.6.0';
 /** Alias used by callers that call the value a compiler revision. */
 export const COMPOSITION_COMPILER_REVISION = COMPOSITION_COMPILER_VERSION;
 
@@ -753,6 +755,52 @@ export function validateAgentInputClosure(entries: readonly unknown[]): Resolved
   return values;
 }
 
+/** An operation's external program is an already-resolved blueprint package in
+ * the specification closure. The `operation:` key avoids colliding with the
+ * authored source layers of the owning blueprint. Never consult a live file on
+ * replay: the ref, version and resolved-content hash must all match the pin. */
+type OperationProgramInput = {
+  readonly kind: string;
+  readonly packageKind?: string;
+  readonly ref: string;
+  readonly revision?: string;
+  readonly value?: unknown;
+};
+
+export function pinnedOperationProgramBlueprint(
+  operation: { readonly execution?: { readonly kind: string; readonly blueprint?: {
+    readonly ref: string; readonly revision: string; readonly contentHash: string;
+  } } },
+  inputs: readonly OperationProgramInput[],
+): RunnableBlueprint | null {
+  const ref = operation.execution?.kind === 'program' ? operation.execution.blueprint : undefined;
+  if (!ref) return null;
+  const key = `operation:${ref.ref}`;
+  const pin = inputs.find((entry) =>
+    entry.kind === 'package' && entry.packageKind === 'blueprint' && entry.ref === key);
+  if (!pin) fail('package-missing', 'external program blueprint has no retained package', key);
+  if (pin.revision !== ref.revision) {
+    fail('package-pin-conflict', `external program requires revision ${ref.revision}, selected ${pin.revision}`, key);
+  }
+  const parsed = RunnableBlueprintSchema.safeParse(pin.value);
+  if (!parsed.success || parsed.data.id !== ref.ref || parsed.data.version !== ref.revision ||
+      blueprintHash(parsed.data) !== ref.contentHash) {
+    fail('package-pin-conflict', 'external program blueprint identity or resolved content hash differs from its operation ref', key);
+  }
+  return parsed.data;
+}
+
+function validateOperationProgramPins(
+  configuration: { readonly operations?: readonly { readonly execution?: {
+    readonly kind: string; readonly blueprint?: {
+      readonly ref: string; readonly revision: string; readonly contentHash: string;
+    };
+  } }[] },
+  inputs: readonly OperationProgramInput[],
+): void {
+  for (const operation of configuration.operations ?? []) pinnedOperationProgramBlueprint(operation, inputs);
+}
+
 /** Resolve declared bundles using the same exact pins carried by the compiler. */
 export function validateSpecificationBundles(
   bundles: readonly { kind: string; ref: string; version?: string }[],
@@ -812,6 +860,7 @@ export function replayAgentSpecification(value: unknown): CompiledAgentSpecifica
   if (!parsed.success) fail('input-invalid', parsed.error.issues.map((issue) => issue.message).join('; '));
   const specification = parsed.data;
   validateSpecificationBundles(specification.configuration.bundles ?? [], specification.inputs);
+  validateOperationProgramPins(specification.configuration, specification.inputs);
   for (const entry of specification.inputs) {
     if (entry.kind === 'blueprint-layer' && !entry.document) fail('source-invalid', 'replay needs the source document', entry.ref);
     if (entry.kind === 'addressed-document' && entry.bytes === undefined) {
@@ -1073,6 +1122,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
 
   const closure = validateAgentInputClosure(inputs);
   validateSpecificationBundles(loaded.blueprint.bundles ?? [], closure);
+  validateOperationProgramPins(loaded.blueprint, closure);
   const contributions = bindContributions(
     loaded.blueprint.contributions, closure, fixedPromptRefs, providerPromptRefs,
     input.includeAddressedDocuments !== false,
