@@ -57,3 +57,11 @@ mode:
   implies: []
   requiresSubject: false
   launchable: true
+  aliases:
+    - id: cold-auto
+      title: "COLD AUTO — auto across fresh-context wakes"
+      oneLiner: "AUTO carried across scheduled cold wakes: fresh context each fire, continuity via the carry-note"
+      definitionHeading: "## COLD AUTO — the same autonomy component across fresh-context wakes"
+      implies: []
+      requiresSubject: false
+      launchable: false

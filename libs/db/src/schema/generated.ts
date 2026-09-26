@@ -1342,6 +1342,24 @@ export const blueprintPackageDependentsInHarnessShared = harnessShared.table("bl
 	check("blueprint_package_dependents_phase_check", sql`phase = ANY (ARRAY['prepared'::text, 'applied'::text, 'released'::text])`),
 ]);
 
+export const blueprintPackageInstallationsInHarnessShared = harnessShared.table("blueprint_package_installations", {
+	workspaceId: text("workspace_id").notNull(),
+	dependentId: text("dependent_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	specificationRevision: text("specification_revision").notNull(),
+	stateRevision: text("state_revision").notNull(),
+	expectedResources: jsonb("expected_resources").notNull(),
+	phase: text().default('preparing').notNull(),
+	error: text(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("blueprint_package_installations_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerId.asc().nullsLast().op("text_ops")).where(sql`(phase <> 'released'::text)`),
+	primaryKey({ columns: [table.dependentId, table.workspaceId], name: "blueprint_package_installations_pkey"}),
+	pgPolicy("blueprint_package_installations_workspace", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("blueprint_package_installations_expected_resources_check", sql`jsonb_typeof(expected_resources) = 'object'::text`),
+	check("blueprint_package_installations_phase_check", sql`phase = ANY (ARRAY['preparing'::text, 'applied'::text, 'releasing'::text, 'released'::text, 'cleanup_failed'::text])`),
+]);
+
 export const blueprintPackageResourcesInHarnessShared = harnessShared.table("blueprint_package_resources", {
 	workspaceId: text("workspace_id").notNull(),
 	resourceKey: text("resource_key").notNull(),

@@ -1135,6 +1135,16 @@ export const BlueprintModeDeclarationSchema = z.object({
     .refine((ids) => new Set(ids).size === ids.length, 'duplicate mode implication').optional(),
   requiresSubject: z.boolean().optional(),
   launchable: z.boolean().optional(),
+  /** Runtime carry variants share this identity and its host policy. */
+  aliases: z.array(z.object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
+    title: z.string().trim().min(1),
+    oneLiner: z.string().trim().min(1).refine((value) => !value.includes('\n'), 'oneLiner must be one line'),
+    definitionHeading: z.string().regex(/^#{1,6} [^\n]+$/),
+    implies: z.array(z.string().regex(/^[a-z0-9][a-z0-9._-]*$/)).max(16),
+    requiresSubject: z.boolean(),
+    launchable: z.boolean(),
+  }).strict()).max(16).optional(),
   /** An approved replacement must name the exact catalog revision it supersedes. */
   replacesRevision: z.string().regex(/^[0-9a-f]{64}$/, 'sha256 hex').optional(),
 }).strict();
