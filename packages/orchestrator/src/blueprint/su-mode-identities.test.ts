@@ -30,6 +30,7 @@ import { builtinBlueprintPath, layerContentHash, resolveBuiltinExtends, resolveL
 import { isIdentitySourceDocument, parseBlueprintSourceDocument } from './schema.js';
 import { lintStackLayers } from './identity-lint.js';
 import { MODE_AXES } from './slots.js';
+import { BUILTIN_MODE_COMPONENTS } from './mode-catalog.generated.js';
 import {
   AUDIENCE_IDENTITY_DOCUMENTS,
   SU_MODE_DOCUMENTS,
@@ -38,6 +39,26 @@ import {
   suModeLayers,
   modeCatalogFromValidatedSources,
 } from './mode-identities.js';
+
+test('R-3 trusted manifests author activation metadata and the generated catalog preserves it', () => {
+  const expected = {
+    audit: { implies: [], requiresSubject: false, launchable: false },
+    auto: { implies: [], requiresSubject: false, launchable: true },
+    drain: { implies: ['auto'], requiresSubject: false, launchable: true },
+    goal: { implies: ['auto', 'ideate'], requiresSubject: true, launchable: false },
+    grade: { implies: ['auto'], requiresSubject: false, launchable: true },
+    ideate: { implies: [], requiresSubject: false, launchable: false },
+    test: { implies: [], requiresSubject: false, launchable: true },
+  };
+  assert.deepEqual(BUILTIN_MODE_COMPONENTS.map((entry) => entry.id).sort(), Object.keys(expected));
+  for (const entry of BUILTIN_MODE_COMPONENTS) {
+    const raw = parseYaml(readFileSync(builtinBlueprintPath(entry.sourceId), 'utf8'));
+    for (const [field, value] of Object.entries(expected[entry.id])) {
+      assert.deepEqual(raw.mode[field], value, `${entry.id}: manifest ${field}`);
+      assert.deepEqual((entry as unknown as Record<string, unknown>)[field], value, `${entry.id}: generated ${field}`);
+    }
+  }
+});
 
 test('P-002 generated mode catalog pins manifest metadata and existing host policy, with exact revision replacement', () => {
   const definition = { id: 'definition', purpose: 'prompt', source: 'fixed', refresh: 'source-change',
@@ -114,6 +135,53 @@ test('a prompt-only edit changes the selected mode revision and invalidates an o
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('R-3 even a moderated installed replacement cannot change protected activation metadata', () => {
+  const sourcePath = builtinBlueprintPath('su.mode-goal');
+  const raw = parseYaml(readFileSync(sourcePath, 'utf8'));
+  const source = resolveBlueprintSource(raw, { sourcePath, resolve: resolveBuiltinExtends });
+  const baseline = modeCatalogFromValidatedSources([source], {
+    supportedPolicyRefs: BUILTIN_MODE_COMPONENTS.map((entry) => entry.policyRef),
+    builtinEntries: BUILTIN_MODE_COMPONENTS,
+  });
+  const original = baseline.entries.find((entry) => entry.id === 'goal')!;
+  const replace = (overrides: Record<string, unknown>, slot = 'goal') => {
+    const unsigned = { ...raw, id: 'installed-goal-variant', version: '1.0.0', slots: [{ slot }],
+      mode: { ...raw.mode, title: 'Approved wording', replacesRevision: original.revision, ...overrides } };
+    const variant = { ...unsigned,
+      attestation: { contentHash: layerContentHash(unsigned), signedBy: 'approved-publisher' } };
+    const installed = resolveBlueprintSource(variant, {
+      sourcePath: join(homedir(), '.papercusp', 'blueprints', variant.id, 'blueprint.yaml'),
+      resolve: resolveBuiltinExtends, lint: { approvedModePolicyRefs: ['goal'] },
+    });
+    assert.equal(installed.validation.ok, true, JSON.stringify(installed.validation.errors));
+    return modeCatalogFromValidatedSources([installed], {
+      builtinEntries: baseline.entries,
+      supportedPolicyRefs: BUILTIN_MODE_COMPONENTS.map((entry) => entry.policyRef),
+      approvedModePolicyRefs: ['goal'],
+      approvedInstalledSourceHashes: new Map([[variant.id, installed.layers.at(-1)!.contentHash]]),
+    });
+  };
+  assert.equal(replace({}).entries.find((entry) => entry.id === 'goal')?.title, 'Approved wording');
+  for (const changed of [{ implies: [] }, { requiresSubject: false }, { launchable: true }]) {
+    assert.throws(() => replace(changed), /cannot change protected activation metadata/);
+  }
+  assert.throws(() => replace({}, 'grade'), /cannot change protected activation metadata "slot"/);
+  const legacy = replace({ implies: undefined, requiresSubject: undefined, launchable: undefined });
+  assert.deepEqual(legacy.entries.find((entry) => entry.id === 'goal')?.implies, ['auto', 'ideate']);
+  assert.equal(legacy.entries.find((entry) => entry.id === 'goal')?.requiresSubject, true);
+});
+
+test('R-3 catalog refuses unknown, cyclic and subject-requiring implications and invalid launch declarations', () => {
+  const check = (id: string, change: Record<string, unknown>) => modeCatalogFromValidatedSources([], {
+    supportedPolicyRefs: BUILTIN_MODE_COMPONENTS.map((entry) => entry.policyRef),
+    builtinEntries: BUILTIN_MODE_COMPONENTS.map((entry) => entry.id === id ? { ...entry, ...change } : entry),
+  });
+  assert.throws(() => check('grade', { implies: ['unknown'] }), /implies unknown mode/);
+  assert.throws(() => check('auto', { implies: ['grade'] }), /mode implication cycle/);
+  assert.throws(() => check('grade', { implies: ['goal'] }), /implies subject-requiring mode/);
+  assert.throws(() => check('goal', { launchable: true }), /requires a subject and cannot use/);
 });
 import {
   composeSuStackMutation,

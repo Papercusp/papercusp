@@ -17,9 +17,9 @@
  *     the document on the next turn; `enabled:false` detaches and VOIDS it (P-012 / D-022).
  *
  * WHAT STAYS KERNEL and is NOT in any of these documents: the mode STATE
- * (`harness_shared.agent_modes`), the IMPLICATION TABLE (`modes/registry.ts` `implies` —
- * DRAIN ⇒ AUTO is applied by the registry write, so `mode:set drain` binds `objective`
- * AND `autonomy`; a document cannot author an implication), and the AUTHORITY semantics
+ * (`harness_shared.agent_modes`), implication ENFORCEMENT (`modes/store.ts` —
+ * DRAIN ⇒ AUTO is applied by the registry write, using trusted build metadata;
+ * an installed document cannot change those declarations), and the AUTHORITY semantics
  * (what AUTO suspends, what AUDIT permits — computed by `instruction-lint.ts` from the
  * registry, enforced at the dispatch chokepoint by `audit-mode-guard.ts`). A mode-axis
  * document supplies only the domain flavour of how the mode reads; `identity-lint.ts`
@@ -51,13 +51,17 @@ import { BUILTIN_MODE_COMPONENTS } from './mode-catalog.generated.js';
 import type { BoundLayer } from './stack-mutation.js';
 
 /** Generated view of mode metadata authored by a validated identity component.
- * The host policy registry still decides implications, subjects and authority. */
+ * Trusted declarations feed the host's existing code-backed enforcement. */
 export interface ModeCatalogEntry {
   id: string;
   policyRef: string;
   slot: ModeAxis;
   title: string;
   oneLiner: string;
+  /** Optional only for older installed definitions; the build requires these. */
+  implies?: readonly string[];
+  requiresSubject?: boolean;
+  launchable?: boolean;
   definition: {
     contributionId: string;
     inputKind: 'prompt-file' | 'addressed-document';
@@ -111,6 +115,18 @@ export function modeCatalogFromValidatedSources(
       if (layer.trust === 'installed' && options.approvedInstalledSourceHashes?.get(layer.id) !== layer.contentHash) {
         throw new Error(`installed mode "${mode.id}" needs a moderated receipt for this exact source revision`);
       }
+      const prior = byId.get(mode.id);
+      if (layer.trust !== 'builtin') {
+        for (const field of ['implies', 'requiresSubject', 'launchable'] as const) {
+          if (mode[field] !== undefined && (!prior || stableStringify(mode[field]) !==
+              stableStringify(prior[field] ?? (field === 'implies' ? [] : false)))) {
+            throw new Error(`mode "${mode.id}" cannot change protected activation metadata "${field}"`);
+          }
+        }
+        if (prior && prior.slot !== slot[0]) {
+          throw new Error(`mode "${mode.id}" cannot change protected activation metadata "slot"`);
+        }
+      }
       const contributions = source.layers.flatMap((candidate) => {
         const raw = layerSourceDocument(candidate);
         return Array.isArray(raw?.contributions) ? raw.contributions.map((value) => BlueprintContributionSchema.parse(value)) : [];
@@ -130,6 +146,9 @@ export function modeCatalogFromValidatedSources(
       const content = {
         id: mode.id, policyRef: mode.policyRef, slot: slot[0]!, title: mode.title,
         oneLiner: mode.oneLiner,
+        implies: mode.implies ?? prior?.implies ?? [],
+        requiresSubject: mode.requiresSubject ?? prior?.requiresSubject ?? false,
+        launchable: mode.launchable ?? prior?.launchable ?? false,
         definition: {
           contributionId: definition.id, inputKind: definition.inputKind, ref: definition.ref,
           source: definition.source, refresh: definition.refresh,
@@ -141,7 +160,6 @@ export function modeCatalogFromValidatedSources(
         ...content,
         revision: createHash('sha256').update(stableStringify(content)).digest('hex'),
       };
-      const prior = byId.get(mode.id);
       if (prior && prior.revision === entry.revision) continue;
       if (prior && (mode.replacesRevision !== prior.revision || prior.policyRef !== mode.policyRef)) {
         throw new Error(`mode "${mode.id}" has conflicting definitions from "${prior.sourceId}" and "${layer.id}" without an exact replacement revision`);
@@ -150,6 +168,24 @@ export function modeCatalogFromValidatedSources(
     }
   }
   const entries = [...byId.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  for (const entry of entries) {
+    if (entry.launchable && entry.requiresSubject) {
+      throw new Error(`mode "${entry.id}" requires a subject and cannot use the subject-less launch surface`);
+    }
+    const visited = new Set<string>();
+    const visit = (id: string, ancestors: readonly string[]): void => {
+      if (ancestors.includes(id)) throw new Error(`mode implication cycle: ${[...ancestors, id].join(' -> ')}`);
+      const target = byId.get(id);
+      if (!target) throw new Error(`mode "${entry.id}" implies unknown mode "${id}"`);
+      if (ancestors.length > 0 && target.requiresSubject) {
+        throw new Error(`mode "${entry.id}" implies subject-requiring mode "${id}"`);
+      }
+      if (visited.has(id)) return;
+      visited.add(id);
+      for (const implied of target.implies ?? []) visit(implied, [...ancestors, id]);
+    };
+    visit(entry.id, []);
+  }
   return { revision: createHash('sha256').update(stableStringify(entries)).digest('hex'), entries };
 }
 

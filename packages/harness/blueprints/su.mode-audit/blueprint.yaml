@@ -45,3 +45,6 @@ mode:
   title: "AUDIT — judge the whole program, not its items"
   oneLiner: "step back and audit an entire program — lifecycle census, ledger truth, flow, liveness, churn mechanisms — and deliver an evidenced verdict instead of an item-by-item status read"
   definitionContributionId: audit-definition
+  implies: []
+  requiresSubject: false
+  launchable: false
