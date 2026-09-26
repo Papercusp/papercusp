@@ -85,11 +85,18 @@ export function modeCatalogFromValidatedSources(
     /** Installer-owned exact source hashes, obtained from moderated release
      * receipts. A publisher's own attestation cannot authorize a host policy. */
     approvedInstalledSourceHashes?: ReadonlyMap<string, string>;
+    /** Trusted build-generated entries when source YAML is not shipped. Installed
+     * sources still require moderation and an exact replacement of this baseline. */
+    builtinEntries?: readonly ModeCatalogEntry[];
   },
 ): ModeCatalogSnapshot {
   const supported = new Set(options.supportedPolicyRefs);
   const approved = new Set(options.approvedModePolicyRefs ?? []);
   const byId = new Map<string, ModeCatalogEntry>();
+  for (const entry of options.builtinEntries ?? []) {
+    if (!supported.has(entry.policyRef)) throw new Error(`mode "${entry.id}" references unsupported host policy "${entry.policyRef}"`);
+    byId.set(entry.id, entry);
+  }
   for (const source of sources) {
     if (!source.validation.ok) throw new Error('mode catalog refuses an invalid blueprint source');
     for (const layer of source.layers) {

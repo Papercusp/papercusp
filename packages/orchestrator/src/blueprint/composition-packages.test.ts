@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -278,6 +279,28 @@ describe('P-002 component contribution binding', () => {
     expect(() => compileAgentSpecification({ source: identity, inputClosure: [providerInput],
       contributionOmissions: [{ id: optional.id, reason: 'not-requested' }] }))
       .toThrow(/input-conflict.*both pinned and marked omitted/);
+  });
+
+  it('CONTROL catches a compiler that silently drops a missing required contribution', () => {
+    const identity = { ...source, contributions: [generated] };
+    const assertRequiredInput = (compiler: typeof compileAgentSpecification) => {
+      // Calibration: refusal alone must not reward a compiler that rejects everything.
+      const delivered = compiler({ source: identity, inputClosure: [providerInput] });
+      assert.ok(specificationPrompt(delivered).includes(providerText));
+      assert.throws(() => compiler({ source: identity }),
+        /contribution-missing.*current-task:prompt-file:provider:task/);
+    };
+    assertRequiredInput(compileAgentSpecification);
+
+    // Permanent wrong implementation models the missing-entry `continue` mutant.
+    // Its delivered-input path is real; only the absent declaration is silently lost.
+    const silentlyDropMissing: typeof compileAgentSpecification = (input) =>
+      compileAgentSpecification(input.inputClosure?.length ? input : {
+        ...input, source: { ...source, contributions: [] },
+      });
+    assert.throws(() => assertRequiredInput(silentlyDropMissing), {
+      code: 'ERR_ASSERTION', message: /Missing expected exception/,
+    });
   });
 
   it('refuses a declared addressed prompt when its render is disabled', () => {
