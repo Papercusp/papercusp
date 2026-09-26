@@ -3,18 +3,26 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  compileAgentSpecification,
+  compileAgentSpecification as compileCurrentSpecification,
   pinPackageInput,
   replayAgentSpecification,
   snapshotPackageDirectory,
   specificationPrompt,
   validateAgentInputClosure,
+  type CompositionCompilerInput,
+  type CompiledAgentSpecification,
 } from './composition-compiler.js';
 import type { ResolvedPackageInput } from './schema.js';
 import { builtinBlueprintPath } from './loader.js';
 import { parse as parseYaml } from 'yaml';
+
+// The standard mutation probe can exercise a copied compiler without editing production.
+const compileAgentSpecification: typeof compileCurrentSpecification = process.env.PAPERCUSP_MUTATION_PROBE_SOURCE
+  ? (await import(pathToFileURL(process.env.PAPERCUSP_MUTATION_PROBE_SOURCE).href)).compileAgentSpecification
+  : compileCurrentSpecification;
 
 const source = {
   id: 'pinned-agent',
@@ -283,7 +291,7 @@ describe('P-002 component contribution binding', () => {
 
   it('CONTROL catches a compiler that silently drops a missing required contribution', () => {
     const identity = { ...source, contributions: [generated] };
-    const assertRequiredInput = (compiler: typeof compileAgentSpecification) => {
+    const assertRequiredInput = (compiler: (input: CompositionCompilerInput) => CompiledAgentSpecification) => {
       // Calibration: refusal alone must not reward a compiler that rejects everything.
       const delivered = compiler({ source: identity, inputClosure: [providerInput] });
       assert.ok(specificationPrompt(delivered).includes(providerText));
@@ -294,7 +302,7 @@ describe('P-002 component contribution binding', () => {
 
     // Permanent wrong implementation models the missing-entry `continue` mutant.
     // Its delivered-input path is real; only the absent declaration is silently lost.
-    const silentlyDropMissing: typeof compileAgentSpecification = (input) =>
+    const silentlyDropMissing = (input: CompositionCompilerInput) =>
       compileAgentSpecification(input.inputClosure?.length ? input : {
         ...input, source: { ...source, contributions: [] },
       });
