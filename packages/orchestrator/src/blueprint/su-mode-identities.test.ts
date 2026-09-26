@@ -62,9 +62,18 @@ test('P-002 generated mode catalog pins manifest metadata and existing host poli
   assert.equal(updated.entries.length, 1);
   assert.equal(updated.entries[0]?.oneLiner, 'Proceed and disclose.');
   assert.notEqual(updated.revision, snapshot.revision);
+  assert.deepEqual(modeCatalogFromValidatedSources([replacement], {
+    supportedPolicyRefs: ['auto'], approvedModePolicyRefs: ['auto'], builtinEntries: snapshot.entries,
+  }), updated);
+  assert.throws(() => modeCatalogFromValidatedSources([replacement], {
+    supportedPolicyRefs: ['auto'], builtinEntries: snapshot.entries,
+  }), /installer\/admin approval/);
   const unpinnedReplacement = resolveBlueprintSource(authored('unpinned', 'Different definition.'), { lint: approved });
   assert.throws(() => modeCatalogFromValidatedSources([first, unpinnedReplacement], {
     supportedPolicyRefs: ['auto'], approvedModePolicyRefs: ['auto'],
+  }), /without an exact replacement revision/);
+  assert.throws(() => modeCatalogFromValidatedSources([unpinnedReplacement], {
+    supportedPolicyRefs: ['auto'], approvedModePolicyRefs: ['auto'], builtinEntries: snapshot.entries,
   }), /without an exact replacement revision/);
   assert.throws(() => modeCatalogFromValidatedSources([first, replacement], {
     supportedPolicyRefs: ['grade'], approvedModePolicyRefs: ['auto'],
@@ -134,7 +143,7 @@ test('P-003 built-in mode manifests generate one catalog and an approved install
       assert.ok(contributions.some((value) => value.id === 'goal-kickoff' &&
         value.producerRef === 'agent-tools/goals/start:buildGoalKickoffBrief' && value.refresh === 'launch'));
       assert.ok(contributions.some((value) => value.id === 'goal-portfolio' &&
-        value.producerRef === 'goal-launch-settings:renderGoalPortfolioBrief' && value.refresh === 'turn'));
+        value.producerRef === 'goal-launch-settings:renderGoalPortfolioBrief' && value.refresh === 'launch'));
       assert.ok(contributions.some((value) => value.id === 'goal-obligations' &&
         value.producerRef === 'agent-obligation-reader:projectAgentTurnStartObligationBrief' &&
         value.refresh === 'turn'));
@@ -161,6 +170,13 @@ test('P-003 built-in mode manifests generate one catalog and an approved install
   });
   assert.equal(selected.entries.length, builtin.entries.length);
   assert.equal(selected.entries.find((entry) => entry.id === 'auto')?.title, 'AUTO installed variant');
+  assert.deepEqual(modeCatalogFromValidatedSources([installed], {
+    supportedPolicyRefs, builtinEntries: builtin.entries, approvedModePolicyRefs: ['auto'],
+    approvedInstalledSourceHashes: new Map([[installed.layers.at(-1)!.id, installed.layers.at(-1)!.contentHash]]),
+  }), selected);
+  assert.throws(() => modeCatalogFromValidatedSources([installed], {
+    supportedPolicyRefs, builtinEntries: builtin.entries, approvedModePolicyRefs: ['auto'],
+  }), /moderated receipt for this exact source revision/);
   assert.deepEqual(bindingRefs(suSessionBinding({ modes: ['auto', 'cold-auto'] }, selected)), [
     'autonomy:su.mode-auto-installed',
   ]);
