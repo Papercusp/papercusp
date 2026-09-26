@@ -49,3 +49,6 @@ mode:
   title: "GOAL — own an outcome, not a queue"
   oneLiner: "own a goal end-to-end: create the pots/plans/fleets that reach it, outsource every build, reallocate on evidence, kill on written criteria"
   definitionContributionId: goal-definition
+  implies: [auto, ideate]
+  requiresSubject: true
+  launchable: false
