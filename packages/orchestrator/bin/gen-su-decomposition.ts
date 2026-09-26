@@ -66,6 +66,11 @@ function renderModeCatalog(): string {
     const documentPath = `blueprints/${entry.sourceId}/prompts/${entry.slot}.md`;
     const definitionText = readFileSync(join(HARNESS, documentPath), 'utf8');
     if (!definitionText.trim()) throw new Error(`mode definition ${documentPath} is empty`);
+    for (const alias of entry.aliases ?? []) {
+      if (definitionText.split(alias.definitionHeading).length !== 2) {
+        throw new Error(`mode alias ${alias.id} needs one definition heading in ${documentPath}`);
+      }
+    }
     return { ...entry, documentPath, definitionText,
       definitionHash: createHash('sha256').update(definitionText).digest('hex') };
   });
