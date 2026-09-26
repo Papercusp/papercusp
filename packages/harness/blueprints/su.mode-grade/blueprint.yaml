@@ -24,3 +24,6 @@ mode:
   title: "GRADE — score, repair, and re-grade"
   oneLiner: "enter AUTO, grade with a reused rubric, and drive confirmed findings through a verified fix and re-grade"
   definitionContributionId: grade-definition
+  implies: [auto]
+  requiresSubject: false
+  launchable: true

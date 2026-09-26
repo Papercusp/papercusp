@@ -45,3 +45,6 @@ mode:
   title: "DRAIN — drive the queue to terminal"
   oneLiner: "take a work-item backlog and drive every item to a terminal state; completion integrity over speed"
   definitionContributionId: drain-definition
+  implies: [auto]
+  requiresSubject: false
+  launchable: true

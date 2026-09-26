@@ -1122,14 +1122,19 @@ export const BlueprintContributionSchema = z.object({
   }
 });
 
-/** Catalog metadata for a mode definition. `policyRef` names an EXISTING host
- * enforcement policy; no implication, authority or lifecycle semantics live here. */
+/** Trusted build metadata feeds the existing runtime mode APIs. `policyRef`
+ * names code-backed enforcement; installed definitions cannot change the
+ * built-in activation metadata, even with a moderated text replacement. */
 export const BlueprintModeDeclarationSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
   policyRef: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
   title: z.string().trim().min(1),
   oneLiner: z.string().trim().min(1).refine((value) => !value.includes('\n'), 'oneLiner must be one line'),
   definitionContributionId: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
+  implies: z.array(z.string().regex(/^[a-z0-9][a-z0-9._-]*$/)).max(16)
+    .refine((ids) => new Set(ids).size === ids.length, 'duplicate mode implication').optional(),
+  requiresSubject: z.boolean().optional(),
+  launchable: z.boolean().optional(),
   /** An approved replacement must name the exact catalog revision it supersedes. */
   replacesRevision: z.string().regex(/^[0-9a-f]{64}$/, 'sha256 hex').optional(),
 }).strict();

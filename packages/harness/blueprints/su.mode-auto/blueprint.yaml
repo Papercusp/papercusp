@@ -54,3 +54,6 @@ mode:
   title: "AUTO — act, don’t ask"
   oneLiner: "act on your own judgment, replace questions with disclosures, arm a loop for open-ended work"
   definitionContributionId: auto-definition
+  implies: []
+  requiresSubject: false
+  launchable: true

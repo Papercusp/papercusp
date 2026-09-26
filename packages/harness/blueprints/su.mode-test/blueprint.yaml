@@ -24,3 +24,6 @@ mode:
   title: "TEST — a verdict on the work, not progress on it"
   oneLiner: "test someone else’s work independently, report defects instead of silently fixing them, and leave committed tests behind"
   definitionContributionId: test-definition
+  implies: []
+  requiresSubject: false
+  launchable: true

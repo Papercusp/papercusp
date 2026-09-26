@@ -43,3 +43,6 @@ mode:
   title: "IDEATE — invent net-new, don’t just patch"
   oneLiner: "run deliberate ideation passes and file net-new feature proposals; with AUTO on, build the strongest"
   definitionContributionId: ideate-definition
+  implies: []
+  requiresSubject: false
+  launchable: false
