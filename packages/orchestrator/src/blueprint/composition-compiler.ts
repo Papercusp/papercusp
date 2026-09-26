@@ -851,8 +851,39 @@ export function validateSpecificationBundles(
   return pins;
 }
 
+/** A dependency list reduced to one `revision@contentHash` per package key, or
+ * null when the same key is pinned to two different contents. */
+function dependencySet(entry: ResolvedPackageInput): string | null {
+  const byKey = new Map<string, string>();
+  for (const dependency of entry.dependencies) {
+    const pin = dependency.revision + '@' + dependency.contentHash;
+    const prior = byKey.get(packageKey(dependency));
+    if (prior !== undefined && prior !== pin) return null;
+    byKey.set(packageKey(dependency), pin);
+  }
+  return stableStringify([...byKey].sort(([a], [b]) => compareText(a, b)));
+}
+
+/** Two pins of one layer agree when content is identical and they depend on the
+ * same set of pins; repeating an already-listed dependency changes nothing. */
+function sameLayerPin(prior: ResolvedPackageInput, next: ResolvedPackageInput): boolean {
+  const { contentHash: _priorHash, dependencies: _priorDependencies, ...priorContent } = prior;
+  const { contentHash: _nextHash, dependencies: _nextDependencies, ...nextContent } = next;
+  const priorSet = dependencySet(prior);
+  return priorSet !== null && priorSet === dependencySet(next) &&
+    stableStringify(priorContent) === stableStringify(nextContent);
+}
+
 export function blueprintPackageInputs(loaded: Pick<LoadedBlueprint, 'layers'>, additional: readonly ResolvedAgentInput[]): ResolvedPackageInput[] {
   const packages: ResolvedPackageInput[] = [];
+  // WI-10003294: a diamond extends (root -> [pot, X], pot -> X) visits layer X
+  // twice. Its later visit sees the shared ancestors twice in `packages`, so its
+  // dependency list repeats them and re-hashes to a second, conflicting pin.
+  // A layer resolves to ONE pin per composition: the first visit is reused, and
+  // a later visit must agree on content and dependency set. Reusing (rather than
+  // de-duplicating every list) keeps compositions that already compiled on the
+  // exact pins and specification revisions they had.
+  const pinnedLayers = new Map<string, ResolvedPackageInput>();
   for (const layer of loaded.layers) {
     const document = layerSourceDocument(layer);
     if (!document) fail('source-invalid', 'source snapshot is unavailable', layer.id);
@@ -876,14 +907,20 @@ export function blueprintPackageInputs(loaded: Pick<LoadedBlueprint, 'layers'>, 
       .filter((entry) => layer === loaded.layers.at(-1) || (entry.packageKind === 'blueprint' ? parents.includes(entry.ref)
         : layer.bundles.some((bundle) => bundle.kind === entry.packageKind && bundle.ref === entry.ref)))
       .map(({ packageKind, ref, revision, contentHash }) => ({ packageKind, ref, revision, contentHash }));
-    packages.push(pinPackageInput({
+    const pin = pinPackageInput({
       packageKind: 'blueprint',
       ref: layer.id,
       revision: typeof document.version === 'string' ? document.version : layer.contentHash,
       value: document,
       files,
       dependencies,
-    }));
+    });
+    const prior = pinnedLayers.get(layer.id);
+    if (prior && prior.contentHash !== pin.contentHash && !sameLayerPin(prior, pin)) {
+      fail('package-pin-conflict', 'layer resolved twice with different content or dependencies', packageKey(pin));
+    }
+    if (!prior) pinnedLayers.set(layer.id, pin);
+    packages.push(prior ?? pin);
   }
   return packages;
 }

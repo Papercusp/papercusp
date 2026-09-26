@@ -378,3 +378,48 @@ test('the existing sealed render seam can feed the same compiler artifact consum
     f.cleanup();
   }
 });
+
+// WI-10003294: a launch whose explicit stack re-selects the identity the pot
+// already inherits reaches the compiler as a diamond (root extends [pot, X],
+// pot extends X). The repeated X layer must resolve to ONE package pin; before
+// the fix its second occurrence listed base twice and the closure refused it.
+test('a layer reached twice through a diamond extends resolves to a single package pin', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'composition-compiler-diamond-'));
+  try {
+    const paths: Record<string, string> = {};
+    for (const [id, parent] of [['base', null], ['engineer', 'base'], ['pot', 'engineer']] as const) {
+      paths[id] = join(dir, id + '.yaml');
+      writeFileSync(paths[id], [
+        'id: ' + id,
+        'version: 1.0.0',
+        ...(parent ? ['extends: ' + parent] : []),
+        'workItem:',
+        '  kind: feature',
+        '',
+      ].join('\n'));
+    }
+    const resolve = (id: string): string | null => paths[id] ?? null;
+    const compile = (parents: string | string[]) => compileAgentSpecification({
+      source: { id: 'runtime', extends: parents, workItem: { kind: 'feature' } },
+      resolve,
+    });
+
+    const diamond = compile(['pot', 'engineer']);
+    assert.deepEqual(compile(['pot', 'engineer']), diamond, 'the diamond compiles deterministically');
+    const engineerPins = new Set(diamond.inputs
+      .filter((entry) => entry.kind === 'package' && entry.ref === 'engineer')
+      .map((entry) => entry.kind === 'package' ? entry.contentHash : ''));
+    assert.equal(engineerPins.size, 1, 'every occurrence of the repeated layer carries the same pin');
+    assert.deepEqual(replayAgentSpecification(JSON.parse(JSON.stringify(diamond))), diamond,
+      'the saved artifact replays through the closure validator');
+
+    // The single-parent composition keeps exactly the pin it had before: the fix
+    // must not re-hash compositions that already compiled.
+    const single = compile('pot');
+    const pinOf = (spec: typeof single, ref: string) => spec.inputs
+      .find((entry) => entry.kind === 'package' && entry.ref === ref);
+    assert.deepEqual(pinOf(diamond, 'engineer'), pinOf(single, 'engineer'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
