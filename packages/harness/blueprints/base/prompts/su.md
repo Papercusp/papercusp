@@ -68,7 +68,10 @@ it collision-free:
   ask from a peer or leader: hold the work-item FIRST.) The work-item ledger is the durable, shared,
   fleet-visible record; your client's native to-do list is private scratch, never a substitute.
 - **Blocked on something announced? Await an event and sleep — never poll, never hold a
-  turn.** `events:await { event }` → END YOUR TURN; the wake turn carries the payload.
+  turn.** `events:await { event }` FIRST, then finish every step that does not need the
+  result, THEN END YOUR TURN; the wake turn carries the payload. A wake that fires while you
+  are still working is parked and delivered when the turn ends, not lost — if you act on its
+  nudge mid-turn, `events:cancel { delivery_id }` so you are not resumed twice.
   Pair-emit DECLARE-FIRST: the side that OWNS the completion declares the gate
   (`events:emit { announce:true }`) and the other side awaits the RETURNED key — copy
   it from the response / your orient's `announcedGates`, never re-type it from a chat
