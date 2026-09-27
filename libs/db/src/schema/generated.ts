@@ -4595,6 +4595,24 @@ export const hlcClockInHarnessShared = harnessShared.table("hlc_clock", {
 
 ]);
 
+export const hostKernelMemorySamplesInHarnessShared = harnessShared.table("host_kernel_memory_samples", {
+	bootId: text("boot_id").notNull(),
+	bucketAt: timestamp("bucket_at", { withTimezone: true, mode: 'string' }).notNull(),
+	sampledAt: timestamp("sampled_at", { withTimezone: true, mode: 'string' }).notNull(),
+	host: text().notNull(),
+	bootedAt: timestamp("booted_at", { withTimezone: true, mode: 'string' }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	memTotalBytes: bigint("mem_total_bytes", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	sunreclaimBytes: bigint("sunreclaim_bytes", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	slabBytes: bigint("slab_bytes", { mode: "number" }).notNull(),
+	dyingDescendants: integer("dying_descendants"),
+}, (table) => [
+	index("host_kernel_memory_samples_sampled_at_idx").using("btree", table.sampledAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.bootId, table.bucketAt], name: "host_kernel_memory_samples_pkey"}),
+]);
+
 export const identityFilesInHarnessShared = harnessShared.table("identity_files", {
 	role: text().primaryKey().notNull(),
 	content: text().default('').notNull(),
