@@ -840,6 +840,40 @@ export async function readResourceQueue(
   return { holders, draining, queue };
 }
 
+/**
+ * Every coordination domain that holds a LIVE lease on `resource`, keyed on the
+ * NAME alone (EI-24434173247501787).
+ *
+ * A caller-tree domain is the repo root of the SERVING operator's checkout, so
+ * two operators serving from different checkouts (:3070 = papercup-release,
+ * :3170 = papercusp-staging) put the same undeclared resource in two different
+ * domains. A domain-scoped read cannot see the other one — that is how an
+ * exclusive `p013-benchmark-rig` hold in one domain let a second exclusive
+ * acquire succeed in the other. Readers that must not under-report a holder
+ * union this set into the domains they scan.
+ *
+ * Omit `resource` to list every domain holding ANY live lease — the unscoped
+ * `locks:list` read has the same blind spot.
+ *
+ * Read-only. `agent_resource_locks` holds only live-or-recently-expired leases,
+ * so the scan stays small without a dedicated index.
+ */
+export async function listLiveResourceDomains(sql: Sql, resource?: string): Promise<string[]> {
+  const rows = resource
+    ? await sql<Array<{ coordination_domain: string }>>`
+        SELECT DISTINCT coordination_domain
+          FROM agent_resource_locks
+         WHERE resource = ${resource}
+           AND expires_ts > clock_timestamp()
+      `
+    : await sql<Array<{ coordination_domain: string }>>`
+        SELECT DISTINCT coordination_domain
+          FROM agent_resource_locks
+         WHERE expires_ts > clock_timestamp()
+      `;
+  return rows.map((r) => r.coordination_domain);
+}
+
 // ───────── Fencing (D-001) ─────────
 
 export type FenceCheck =
