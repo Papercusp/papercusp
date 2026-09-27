@@ -455,6 +455,9 @@ test('buildPrompt — every role gets the deploy-pipeline note (async; a RED gat
       assert.match(out, /reserved ONLY for final promotion and shipment verification/);
       assert.match(out, /held or red green-checkpoint gate does NOT block non-final work/);
       assert.match(out, /explicitly names the deployed-only property/);
+      assert.match(out, /currentBuildTestRoute/);
+      assert.match(out, /`background-federation`, `migration`, `desktop-native`/);
+      assert.match(out, /A `gap` is NOT a runnable route/);
       // the two-port mental model + the pipeline_position reflex (not a browser)
       assert.match(out, /:3070 serves GREEN `main`/);
       assert.match(out, /dev:pipeline_position/);
