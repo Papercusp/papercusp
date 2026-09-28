@@ -37,6 +37,12 @@ export interface SerializableRetryOptions {
   maxRetries?: number;
   /** Base backoff in ms; grows exponentially with full jitter. Default 10. */
   baseDelayMs?: number;
+  /**
+   * Upper bound on any ONE backoff sleep's jitter ceiling (ms). Default: uncapped.
+   * Lets a caller raise `maxRetries` for a high-contention class without the
+   * exponential ceiling growing into multi-second sleeps.
+   */
+  maxDelayMs?: number;
   /** Observability hook fired before each retry sleep (attempt is 1-based). */
   onRetry?: (info: { attempt: number; code: string }) => void;
   /** Injectable sleeper (tests pass a no-op to avoid real timers). */
@@ -96,7 +102,7 @@ export async function withSerializableRetry<T>(
       if (attempt >= maxRetries) break;
       opts.onRetry?.({ attempt: attempt + 1, code: lastCode });
       // Exponential backoff with full jitter: random in [0, base * 2^attempt].
-      const ceil = baseDelayMs * 2 ** attempt;
+      const ceil = Math.min(baseDelayMs * 2 ** attempt, opts.maxDelayMs ?? Number.POSITIVE_INFINITY);
       await sleep(Math.floor(rand() * ceil));
     }
   }
