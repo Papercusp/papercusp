@@ -7,10 +7,15 @@ export function defaultSkipFile(f: any): any;
  * sorts before `374-*`, so a fresh database can run a dependent migration
  * before the table it targets exists. Unnumbered SQL files sort last.
  *
+ * The explicit @returns is load-bearing: an INFERRED literal union is emitted
+ * in type-creation order, which differs between tsc builds, so the committed
+ * .d.ts would read as stale with no source change (embedded-pg-declarations).
+ *
  * @param {string} a
  * @param {string} b
+ * @returns {-1 | 0 | 1}
  */
-export function compareMigrationFilenames(a: string, b: string): 0 | 1 | -1;
+export function compareMigrationFilenames(a: string, b: string): 1 | 0 | -1;
 /**
  * @param {object} args
  * @param {object} args.client    postgres-js client (sql tag) OR object with `.unsafe(text)` method.

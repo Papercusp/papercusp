@@ -602,6 +602,10 @@ export function resolveSeedPath(opts = {}, env = process.env) {
  * a physical PGDATA directory/tar. Keeping this decision at the existing
  * seedPath seam lets upgraded runtimes boot both formats without cloning a
  * cluster identity in newly-built artifacts.
+ *
+ * Explicit @returns keeps the generated .d.ts deterministic (an inferred
+ * union's member order can differ between tsc builds).
+ * @returns {'logical' | 'physical' | null}
  */
 export function seedKind(seedPath) {
   if (typeof seedPath !== 'string') return null;
