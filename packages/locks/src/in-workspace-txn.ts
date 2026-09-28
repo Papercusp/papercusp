@@ -164,7 +164,6 @@ export async function inWorkspaceTxn<T>(
   // UnwrapPromiseArray<T>; for our non-array results the cast is safe.
   let result: unknown;
   try {
-    if (process.env.P013_TRACE_TX) process.getBuiltinModule('node:fs').appendFileSync(process.env.P013_TRACE_TX, `INWS ${new Error().stack?.split('\n').slice(2, 7).join(' | ')}\n`); // P013-TRACE-TEMP
     result = await sql.begin(async (tx) => {
     // Diagnostic name visible in pg_stat_activity (set below, in the same
     // round trip as the timeouts — WI-10003631).
