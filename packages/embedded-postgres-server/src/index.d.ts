@@ -201,6 +201,14 @@ export function restoreLogicalSeed(seedPath: string, { port, dbName, pgRestoreBi
  *        repo-public defaults — and boot REFUSES while any default still authenticates
  *        or an unexpected privileged role exists. Unset keeps the documented DEV defaults.
  * @param {(m: string) => void} [opts.onLog]
+ * @param {boolean} [opts.supervise] Restart the postmaster with capped backoff when it
+ *        exits without a stop() request (WI-10003688). Default: true.
+ * @param {readonly number[]} [opts.restartBackoffMs] Override the restart delays
+ *        (default PG_RESTART_BACKOFF_MS; the last step repeats).
+ * @param {(e: import('./pg-supervisor.js').PostgresExitEvent) => void} [opts.onPostgresExit]
+ *        Called on every unexpected postmaster exit and every failed restart attempt.
+ * @param {(e: { attempt: number }) => void} [opts.onPostgresRestarted]
+ *        Called when a supervised restart reaches "ready to accept connections".
  */
 export function startEmbeddedPostgresServer(opts?: {
     dataDir?: string | undefined;
@@ -213,6 +221,12 @@ export function startEmbeddedPostgresServer(opts?: {
     extraPostgresSettings?: Record<string, string> | undefined;
     credentialsFile?: string | undefined;
     onLog?: ((m: string) => void) | undefined;
+    supervise?: boolean | undefined;
+    restartBackoffMs?: readonly number[] | undefined;
+    onPostgresExit?: ((e: import("./pg-supervisor.js").PostgresExitEvent) => void) | undefined;
+    onPostgresRestarted?: ((e: {
+        attempt: number;
+    }) => void) | undefined;
 }): Promise<{
     /** TCP port the postmaster is listening on. */
     port: number;
@@ -229,6 +243,12 @@ export function startEmbeddedPostgresServer(opts?: {
         app: string;
         zero: string;
     };
+    /**
+     * Postmaster supervision state (WI-10003688). `null` when started with
+     * `supervise: false`.
+     * @returns {import('./pg-supervisor.js').PostgresSupervisorHealth | null}
+     */
+    health(): import("./pg-supervisor.js").PostgresSupervisorHealth | null;
     stop(): Promise<void>;
 }>;
 /**
@@ -347,3 +367,4 @@ declare function openRoleClient({ port, user, password, database }: {
 }): postgres.Sql<{}>;
 import postgres from 'postgres';
 export { applyPendingMigrations, defaultSkipFile, migrationTransactionChunks } from "./migration-runner.js";
+export { PG_DEATH_LOG_WINDOW, PG_RESTART_BACKOFF_MS, childHasExited, classifyPostgresDeath, createPostgresLogWindow, superviseEmbeddedPostgres } from "./pg-supervisor.js";
