@@ -164,9 +164,10 @@ export async function inWorkspaceTxn<T>(
   // UnwrapPromiseArray<T>; for our non-array results the cast is safe.
   let result: unknown;
   try {
+    if (process.env.P013_TRACE_TX) process.getBuiltinModule('node:fs').appendFileSync(process.env.P013_TRACE_TX, `INWS ${new Error().stack?.split('\n').slice(2, 7).join(' | ')}\n`); // P013-TRACE-TEMP
     result = await sql.begin(async (tx) => {
-    // Diagnostic name visible in pg_stat_activity.
-    await tx`SELECT set_config('application_name', ${'papercusp-su:' + ownerId}, true)`;
+    // Diagnostic name visible in pg_stat_activity (set below, in the same
+    // round trip as the timeouts — WI-10003631).
     // Per-workspace lock_timeout + statement_timeout. Baked 5s/5s, but runtime-settable via the
     // LocksHost getTxnTimeouts seam (db:txn-timeouts, live-configurability-audit-2026-06-20 P-020),
     // so the window can be widened mid-incident without a deploy through this very txn path.
@@ -179,8 +180,9 @@ export async function inWorkspaceTxn<T>(
       configuredTimeouts.statementTimeoutMs,
       options.minStatementTimeoutMs,
     );
-    await tx`SELECT set_config('lock_timeout', ${`${Math.trunc(lockTimeoutMs)}ms`}, true)`;
-    await tx`SELECT set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`;
+    await tx`SELECT set_config('application_name', ${'papercusp-su:' + ownerId}, true),
+                    set_config('lock_timeout', ${`${Math.trunc(lockTimeoutMs)}ms`}, true),
+                    set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`;
     await acquireAdvisoryScope(tx as unknown as Sql, coordinationDomain, options.paths);
     // TransactionSql has the same tagged-template surface as Sql for our
     // purposes; the cast lets store helpers take a single `Sql` type
