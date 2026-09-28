@@ -1327,7 +1327,11 @@ function buildClient(
     // and the trade is overwhelmingly worth it for polling-heavy dev.
     // Production is unaffected because connections in prod live long
     // enough that the one-time prepare cost amortizes anyway.
-    prepare: false,
+    // WI-10003631 (P-013 C): PAPERCUSP_DB_PREPARE=1 opts a DIRECT (non-PgBouncer)
+    // pool into prepared statements — measured ~30% less Node CPU per statement and
+    // +55-75% throughput on sequential point reads. Never under transaction pooling.
+    // Default unchanged until the C matrix + integration suite validate it.
+    prepare: !pooled && process.env.PAPERCUSP_DB_PREPARE === '1',
     // Pool size: explicit override > env var > adaptive default from resource-profile.
     // Adaptive sizing derives from host resources (cores/memory/PG-type): laptop with
     // embedded PG gets a small pool (~4–7 conns), server with native PG gets a larger
