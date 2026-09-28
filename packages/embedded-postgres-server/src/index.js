@@ -39,11 +39,12 @@
 
 import EmbeddedPostgres from 'embedded-postgres';
 import postgres from 'postgres';
-import { mkdir, rm, cp, stat, chmod, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, rm, cp, stat, chmod, readFile, writeFile, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { applyPendingMigrations } from './migration-runner.js';
 export { applyPendingMigrations, defaultSkipFile, migrationTransactionChunks } from './migration-runner.js';
 
