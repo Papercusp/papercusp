@@ -7,15 +7,18 @@ export function defaultSkipFile(f: any): any;
  * sorts before `374-*`, so a fresh database can run a dependent migration
  * before the table it targets exists. Unnumbered SQL files sort last.
  *
- * The explicit @returns is load-bearing: an INFERRED literal union is emitted
- * in type-creation order, which differs between tsc builds, so the committed
- * .d.ts would read as stale with no source change (embedded-pg-declarations).
+ * The @returns {number} is load-bearing. tsc prints a literal union such as
+ * `-1 | 0 | 1` in type-identity order, even when written explicitly, and that
+ * order depends on which files are in the program: gen:types (old .d.ts
+ * deleted) and embedded-pg-declarations.test.ts (old .d.ts present) emitted
+ * different orders from the same source. `number` prints deterministically,
+ * and it is what Array.prototype.sort expects.
  *
  * @param {string} a
  * @param {string} b
- * @returns {-1 | 0 | 1}
+ * @returns {number}
  */
-export function compareMigrationFilenames(a: string, b: string): 1 | 0 | -1;
+export function compareMigrationFilenames(a: string, b: string): number;
 /**
  * @param {object} args
  * @param {object} args.client    postgres-js client (sql tag) OR object with `.unsafe(text)` method.
