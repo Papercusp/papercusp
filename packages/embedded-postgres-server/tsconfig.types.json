@@ -57,5 +57,5 @@
   // the sources. It also states the surface exactly: globbing `src/**/*.js`
   // would sweep up any future fixture or helper and silently widen what the
   // package publishes types for.
-  "files": ["src/index.js", "src/migration-runner.js"]
+  "files": ["src/index.js", "src/migration-runner.js", "src/pg-supervisor.js"]
 }

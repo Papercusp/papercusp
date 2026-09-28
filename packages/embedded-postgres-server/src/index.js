@@ -46,7 +46,16 @@ import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { applyPendingMigrations } from './migration-runner.js';
+import { childHasExited, createPostgresLogWindow, superviseEmbeddedPostgres } from './pg-supervisor.js';
 export { applyPendingMigrations, defaultSkipFile, migrationTransactionChunks } from './migration-runner.js';
+export {
+  PG_DEATH_LOG_WINDOW,
+  PG_RESTART_BACKOFF_MS,
+  childHasExited,
+  classifyPostgresDeath,
+  createPostgresLogWindow,
+  superviseEmbeddedPostgres,
+} from './pg-supervisor.js';
 
 const DEFAULT_DB = 'papercusp';
 const DEFAULT_OWNER = 'postgres';
@@ -712,13 +721,28 @@ export function restoreLogicalSeed(seedPath, {
  *        repo-public defaults — and boot REFUSES while any default still authenticates
  *        or an unexpected privileged role exists. Unset keeps the documented DEV defaults.
  * @param {(m: string) => void} [opts.onLog]
+ * @param {boolean} [opts.supervise] Restart the postmaster with capped backoff when it
+ *        exits without a stop() request (WI-10003688). Default: true.
+ * @param {readonly number[]} [opts.restartBackoffMs] Override the restart delays
+ *        (default PG_RESTART_BACKOFF_MS; the last step repeats).
+ * @param {(e: import('./pg-supervisor.js').PostgresExitEvent) => void} [opts.onPostgresExit]
+ *        Called on every unexpected postmaster exit and every failed restart attempt.
+ * @param {(e: { attempt: number }) => void} [opts.onPostgresRestarted]
+ *        Called when a supervised restart reaches "ready to accept connections".
  */
 export async function startEmbeddedPostgresServer(opts = {}) {
   const dataDir = opts.dataDir ?? join(homedir(), '.papercusp', 'embedded-pg-data');
   const port = opts.port ?? 5532;
   const dbName = opts.dbName ?? DEFAULT_DB;
   const debug = !!opts.debug;
-  const log = opts.onLog ?? ((m) => debug && console.log(`[embedded-pg-server] ${m}`));
+  const baseLog = opts.onLog ?? ((m) => debug && console.log(`[embedded-pg-server] ${m}`));
+  // Recent postmaster output, kept so the supervisor can say WHY it died (WI-10003688).
+  const pgLogWindow = createPostgresLogWindow();
+  /** @param {string} m */
+  const log = (m) => {
+    if (m.startsWith('pg: ') || m.startsWith('pg-err: ')) pgLogWindow.push(m);
+    baseLog(m);
+  };
 
   await mkdir(dataDir, { recursive: true });
 
@@ -969,6 +993,20 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     await sql.end({ timeout: 2 }).catch(() => {});
   }
 
+  // Supervise the postmaster from here on: before this point a death fails the boot
+  // loudly, after it nothing else would notice (WI-10003688).
+  const supervisor = opts.supervise === false
+    ? null
+    : superviseEmbeddedPostgres({
+        pg,
+        dataDir,
+        log,
+        recentLines: pgLogWindow.lines,
+        backoffMs: opts.restartBackoffMs,
+        onExit: opts.onPostgresExit,
+        onRestarted: opts.onPostgresRestarted,
+      });
+
   return {
     /** TCP port the postmaster is listening on. */
     port,
@@ -985,8 +1023,26 @@ export async function startEmbeddedPostgresServer(opts = {}) {
       app: roleUrl(ROLE_NAMES.app, secrets.app, port, dbName),
       zero: roleUrl(ROLE_NAMES.zero, secrets.zero, port, dbName),
     },
+    /**
+     * Postmaster supervision state (WI-10003688). `null` when started with
+     * `supervise: false`.
+     * @returns {import('./pg-supervisor.js').PostgresSupervisorHealth | null}
+     */
+    health() {
+      return supervisor ? supervisor.health() : null;
+    },
     async stop() {
+      // Stop supervising FIRST, so this shutdown is not mistaken for a death, and wait
+      // out any restart attempt already in flight before stopping what it started.
+      await supervisor?.stop();
       log('stopping postgres');
+      // embedded-postgres' stop() waits for an 'exit' event, which a child that already
+      // died will never emit again: stopping a dead postmaster would hang forever.
+      if (childHasExited(/** @type {any} */ (pg).process)) {
+        /** @type {any} */ (pg).process = undefined;
+        log('postgres had already exited; nothing to stop');
+        return;
+      }
       await pg.stop().catch((e) => log(`stop error: ${e?.message ?? e}`));
     },
   };
