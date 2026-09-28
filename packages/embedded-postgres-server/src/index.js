@@ -53,6 +53,295 @@ const DEFAULT_OWNER = 'postgres';
 const DEFAULT_OWNER_PWD = 'postgres';
 
 /**
+ * The repo-public default role passwords (WI-10003627). They are the documented
+ * DEV convention libs/db/src/connection.ts falls back to, and they are safe only
+ * where every local account is the same trust principal (a developer box, a
+ * single-user desktop). On a MULTI-ACCOUNT host — a hosted workspace VM, where the
+ * customer account shares loopback with the service user — they hand every local
+ * account a DB SUPERUSER login: loopback TCP is not a uid boundary, and PostgreSQL
+ * cannot restrict a TCP login by the connecting uid. Measured on a hosted VM
+ * (2026-09-28): the customer uid logged in as harness_admin (rolsuper) with its
+ * repo-public default. Such hosts must pass `credentialsFile` so every role gets a
+ * per-host random password and boot refuses while any default still authenticates.
+ */
+export const DEFAULT_ROLE_PASSWORDS = Object.freeze({
+  owner: DEFAULT_OWNER_PWD,
+  admin: 'harness_admin_pwd',
+  app: 'harness_app_pwd',
+  zero: 'harness_zero_pwd',
+});
+
+/** The PostgreSQL role behind each credential slot. */
+export const ROLE_NAMES = Object.freeze({
+  owner: DEFAULT_OWNER,
+  admin: 'harness_admin',
+  app: 'harness_app',
+  zero: 'harness_zero',
+});
+
+const CREDENTIAL_SLOTS = Object.freeze(['owner', 'admin', 'app', 'zero']);
+
+// A password is interpolated into `ALTER ROLE … PASSWORD '<value>'` (DDL cannot be
+// parameterised), so the CHARSET is what keeps it injection-free. Every value that
+// reaches SQL is checked against this first; the defaults and base64url both fit.
+const SQL_SAFE_RE = /^[A-Za-z0-9_-]{1,128}$/;
+// A generated password: base64url of 32 random bytes is 43 chars.
+const GENERATED_RE = /^[A-Za-z0-9_-]{32,128}$/;
+
+function sqlSafe(value, slot) {
+  if (typeof value !== 'string' || !SQL_SAFE_RE.test(value)) {
+    throw new Error(`embedded-pg ${slot} password is not SQL-safe (expected [A-Za-z0-9_-]{1,128})`);
+  }
+  return value;
+}
+
+/**
+ * True when `value` holds a strong, non-default password for every role slot.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isValidRoleCredentials(value) {
+  if (!value || typeof value !== 'object') return false;
+  return CREDENTIAL_SLOTS.every((slot) => {
+    const v = /** @type {Record<string, unknown>} */ (value)[slot];
+    return typeof v === 'string' && GENERATED_RE.test(v) && v !== DEFAULT_ROLE_PASSWORDS[slot];
+  });
+}
+
+/**
+ * Load this host's per-role PostgreSQL passwords from `file`, generating them on
+ * first use. The file is written 0600 (parent created 0700) and must stay readable
+ * ONLY by the account that runs the operator — it is the whole boundary between a
+ * co-resident account and a DB superuser login.
+ *
+ * An EXISTING but unreadable/invalid file is a hard error, never a silent
+ * regenerate: the cluster is keyed to the old owner password, so replacing it would
+ * lock the operator out of its own database.
+ *
+ * @param {string} file
+ * @param {{ generate?: () => string, log?: (m: string) => void }} [opts]
+ * @returns {Promise<{ owner: string, admin: string, app: string, zero: string }>}
+ */
+export async function loadOrCreateRoleCredentials(file, opts = {}) {
+  const generate = opts.generate ?? (() => randomBytes(32).toString('base64url'));
+  const log = opts.log ?? (() => {});
+  let raw = null;
+  try {
+    raw = await readFile(file, 'utf8');
+  } catch (e) {
+    if (e?.code !== 'ENOENT') {
+      throw new Error(`embedded-pg credentials file ${file} is unreadable (${e?.code ?? e}); refusing to regenerate over it`);
+    }
+  }
+  if (raw !== null) {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+    if (!isValidRoleCredentials(parsed)) {
+      throw new Error(
+        `embedded-pg credentials file ${file} is invalid; refusing to regenerate over it ` +
+          '(the cluster is keyed to its passwords). Restore it, or remove it together with the data dir.',
+      );
+    }
+    if (process.platform !== 'win32') await chmod(file, 0o600).catch(() => {});
+    return { owner: parsed.owner, admin: parsed.admin, app: parsed.app, zero: parsed.zero };
+  }
+  const creds = { owner: generate(), admin: generate(), app: generate(), zero: generate() };
+  if (!isValidRoleCredentials(creds)) {
+    throw new Error('generated embedded-pg credentials failed validation');
+  }
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.tmp.${process.pid}`;
+  await writeFile(tmp, `${JSON.stringify({ schemaVersion: 1, ...creds }, null, 2)}\n`, { mode: 0o600 });
+  if (process.platform !== 'win32') await chmod(tmp, 0o600).catch(() => {});
+  await rename(tmp, file);
+  log(`generated per-host role credentials at ${file}`);
+  return creds;
+}
+
+/**
+ * The idempotent role bootstrap. With `rekey`, every framework role is ALTERed to
+ * the given password on every boot, so a cluster first keyed to the repo-public
+ * defaults (an upgrade, a legacy physical seed) converges to this host's secrets.
+ * @param {{ admin: string, app: string, zero: string }} secrets
+ * @param {{ rekey?: boolean }} [opts]
+ */
+export function roleBootstrapSql(secrets, { rekey = false } = {}) {
+  const lit = (slot) => `'${sqlSafe(secrets[slot], slot)}'`;
+  const create = `
+      DO $pg$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_app') THEN
+          CREATE ROLE harness_app LOGIN PASSWORD ${lit('app')};
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_admin') THEN
+          CREATE ROLE harness_admin LOGIN SUPERUSER PASSWORD ${lit('admin')};
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_zero') THEN
+          CREATE ROLE harness_zero LOGIN REPLICATION SUPERUSER PASSWORD ${lit('zero')};
+        ELSE
+          ALTER ROLE harness_zero SUPERUSER;
+        END IF;
+      END $pg$;`;
+  if (!rekey) return create;
+  return `${create}
+      ALTER ROLE harness_app WITH LOGIN PASSWORD ${lit('app')};
+      ALTER ROLE harness_admin WITH LOGIN PASSWORD ${lit('admin')};
+      ALTER ROLE harness_zero WITH LOGIN PASSWORD ${lit('zero')};`;
+}
+
+// Keep a failing password statement out of the server log (which the operator
+// forwards to its own log stream). Session-scoped; the caller is the superuser owner.
+const QUIET_STATEMENT_LOGGING_SQL = "SET log_min_error_statement = 'panic'; SET log_statement = 'none';";
+
+function isAuthFailure(e) {
+  return e?.code === '28P01' || e?.code === '28000';
+}
+
+function openRoleClient({ port, user, password, database }) {
+  return postgres({
+    host: 'localhost',
+    port,
+    user,
+    password,
+    database,
+    max: 1,
+    connect_timeout: 10,
+    onnotice: () => {},
+  });
+}
+
+/**
+ * Connect as the cluster owner with this host's password. When that is refused
+ * and `fallback` is set, log in with the fallback (the repo-public default a
+ * cluster was first keyed to) and re-key the owner before continuing.
+ */
+async function openOwnerClient({ port, database, password, fallback, log }) {
+  const user = DEFAULT_OWNER;
+  const primary = openRoleClient({ port, user, password, database });
+  try {
+    await primary`SELECT 1`;
+    return primary;
+  } catch (e) {
+    await primary.end({ timeout: 2 }).catch(() => {});
+    if (!fallback || !isAuthFailure(e)) throw e;
+  }
+  const legacy = openRoleClient({ port, user, password: fallback, database });
+  try {
+    await legacy`SELECT 1`;
+    await legacy.unsafe(
+      `${QUIET_STATEMENT_LOGGING_SQL} ALTER ROLE ${DEFAULT_OWNER} WITH PASSWORD '${sqlSafe(password, 'owner')}';`,
+    );
+    log(`re-keyed role ${DEFAULT_OWNER} from its repo-public default to this host's generated password`);
+  } finally {
+    await legacy.end({ timeout: 2 }).catch(() => {});
+  }
+  const rekeyed = openRoleClient({ port, user, password, database });
+  await rekeyed`SELECT 1`;
+  return rekeyed;
+}
+
+/**
+ * Fail closed unless NO framework role still authenticates with its repo-public
+ * default password. Every slot is probed with a real login; only a refused
+ * password (28P01/28000) counts as closed — any other outcome is unverifiable and
+ * refuses too, because this is the rail between a co-resident account and a DB
+ * superuser.
+ * @param {{ port: number, database: string, connect?: typeof openRoleClient }} opts
+ */
+export async function assertNoDefaultRoleCredentials({ port, database, connect = openRoleClient }) {
+  const accepted = [];
+  const unverifiable = [];
+  for (const slot of CREDENTIAL_SLOTS) {
+    const user = ROLE_NAMES[slot];
+    const probe = DEFAULT_ROLE_PASSWORDS[slot];
+    const client = connect({ port, user, password: probe, database });
+    try {
+      await client`SELECT 1`;
+      accepted.push(user);
+    } catch (e) {
+      if (!isAuthFailure(e)) unverifiable.push(`${user} (${e?.code ?? e?.message ?? e})`);
+    } finally {
+      await client.end({ timeout: 2 }).catch(() => {});
+    }
+  }
+  if (accepted.length > 0) {
+    throw new Error(
+      `embedded Postgres still accepts the repo-public default password for ${accepted.join(', ')} — ` +
+        'refusing to serve on a multi-account host (WI-10003627)',
+    );
+  }
+  if (unverifiable.length > 0) {
+    throw new Error(
+      `could not verify that the default passwords are refused for ${unverifiable.join(', ')} — ` +
+        'refusing to serve on a multi-account host (WI-10003627)',
+    );
+  }
+}
+
+/**
+ * Roles a hosted cluster may hold with LOGIN or any elevated attribute. The
+ * migrations create none, so anything else was planted by a co-resident account
+ * while the default passwords were live.
+ */
+export const EXPECTED_PRIVILEGED_ROLES = Object.freeze(Object.values(ROLE_NAMES));
+
+/**
+ * Integrity check for a multi-account host: refuse to serve a cluster holding an
+ * unexpected login/elevated role, or a harness_app that gained SUPERUSER. Either
+ * means the database was altered through the default-password exposure and must
+ * not be trusted.
+ * @param {(strings: TemplateStringsArray, ...values: unknown[]) => Promise<Array<Record<string, unknown>>>} sql
+ */
+export async function assertNoRogueRoles(sql) {
+  const rows = await sql`
+    SELECT rolname, rolsuper
+      FROM pg_roles
+     WHERE rolname NOT LIKE 'pg\\_%'
+       AND (rolcanlogin OR rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls)
+  `;
+  const expected = new Set(EXPECTED_PRIVILEGED_ROLES);
+  const rogue = rows.filter((r) => !expected.has(String(r.rolname))).map((r) => String(r.rolname));
+  const elevatedApp = rows.some((r) => r.rolname === ROLE_NAMES.app && r.rolsuper === true);
+  if (rogue.length > 0 || elevatedApp) {
+    const parts = [];
+    if (rogue.length > 0) parts.push(`unexpected privileged role(s) ${rogue.sort().join(', ')}`);
+    if (elevatedApp) parts.push(`${ROLE_NAMES.app} holds SUPERUSER`);
+    throw new Error(
+      `embedded Postgres integrity check failed: ${parts.join('; ')} — refusing to serve on a ` +
+        'multi-account host (WI-10003627)',
+    );
+  }
+}
+
+/**
+ * Run `fn` with TMPDIR pointed at a fresh 0700 directory. embedded-postgres writes
+ * the owner password to `os.tmpdir()/pg-password-<id>` with default (world-readable)
+ * permissions for the duration of initdb; on a multi-account host that is a window
+ * in which another account can read the new owner password from /tmp.
+ */
+async function withPrivateTmpdir(dir, fn) {
+  if (process.platform === 'win32') return fn();
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await chmod(dir, 0o700);
+  const previous = process.env.TMPDIR;
+  process.env.TMPDIR = dir;
+  try {
+    return await fn();
+  } finally {
+    if (previous === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previous;
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function roleUrl(user, secret, port, dbName) {
+  return `postgresql://${user}:${encodeURIComponent(secret)}@localhost:${port}/${dbName}`;
+}
+
+/**
  * Ensure the `zero_harness` logical-replication publication exists and is
  * correctly configured, then fold in any per-harness schemas. Called at boot
  * AFTER migrations (the schemas it references must exist) and imported by the
@@ -354,11 +643,13 @@ export async function extractSeed(seedPath, dataDir) {
  * @param {number} opts.port
  * @param {string} [opts.dbName]
  * @param {string} [opts.pgRestoreBin]
+ * @param {string} [opts.ownerSecret] The cluster owner's password (default: the DEV default).
  */
 export function restoreLogicalSeed(seedPath, {
   port,
   dbName = DEFAULT_DB,
   pgRestoreBin = process.env.PAPERCUSP_PG_RESTORE_BIN ?? 'pg_restore',
+  ownerSecret = DEFAULT_OWNER_PWD,
 }) {
   if (!Number.isInteger(port) || port <= 0) {
     throw new Error(`logical seed restore requires a valid postgres port (got ${port})`);
@@ -377,7 +668,7 @@ export function restoreLogicalSeed(seedPath, {
         seedPath,
       ],
       {
-        env: { ...process.env, PGPASSWORD: DEFAULT_OWNER_PWD },
+        env: { ...process.env, PGPASSWORD: ownerSecret },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
@@ -414,6 +705,12 @@ export function restoreLogicalSeed(seedPath, {
  *        Empty by default → stock PG defaults (backward compatible). Passing them is
  *        how the desktop's embedded PG autoadjusts to the machine instead of running
  *        on the laptop-sized stock `max_connections=100` / `shared_buffers=128MB`.
+ * @param {string} [opts.credentialsFile] Multi-account hosts (WI-10003627): path of a 0600
+ *        file holding this host's per-role passwords, generated on first boot. When set,
+ *        every role (owner, harness_admin, harness_app, harness_zero) is keyed to its
+ *        generated password on every boot — re-keying a cluster first keyed to the
+ *        repo-public defaults — and boot REFUSES while any default still authenticates
+ *        or an unexpected privileged role exists. Unset keeps the documented DEV defaults.
  * @param {(m: string) => void} [opts.onLog]
  */
 export async function startEmbeddedPostgresServer(opts = {}) {
@@ -425,10 +722,15 @@ export async function startEmbeddedPostgresServer(opts = {}) {
 
   await mkdir(dataDir, { recursive: true });
 
+  const hostCredentials = opts.credentialsFile
+    ? await loadOrCreateRoleCredentials(opts.credentialsFile, { log })
+    : null;
+  const secrets = hostCredentials ?? DEFAULT_ROLE_PASSWORDS;
+
   const pg = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: DEFAULT_OWNER,
-    password: DEFAULT_OWNER_PWD,
+    password: secrets.owner,
     port,
     persistent: true,
     // Postgres refuses to run as root; on root-only hosts (cloud frames) the
@@ -495,7 +797,11 @@ export async function startEmbeddedPostgresServer(opts = {}) {
   // just-extracted seed), this is a no-op. Same for createDatabase below.
   if (!existsSync(join(dataDir, 'PG_VERSION'))) {
     log(`initialising data dir at ${dataDir}`);
-    await pg.initialise();
+    if (hostCredentials) {
+      await withPrivateTmpdir(`${dataDir}.initdb-tmp`, () => pg.initialise());
+    } else {
+      await pg.initialise();
+    }
   } else {
     log(`reusing existing data dir at ${dataDir}`);
   }
@@ -513,14 +819,22 @@ export async function startEmbeddedPostgresServer(opts = {}) {
   // Create the target database if missing. embedded-postgres always
   // creates `postgres` as superuser; we add `papercusp` separately so
   // it has the same name across web + desktop deployments.
-  const sysSql = postgres({
-    host: 'localhost',
-    port,
-    user: DEFAULT_OWNER,
-    password: DEFAULT_OWNER_PWD,
-    database: 'postgres',
-    max: 1,
-  });
+  const sysSql = hostCredentials
+    ? await openOwnerClient({
+        port,
+        database: 'postgres',
+        password: secrets.owner,
+        fallback: DEFAULT_OWNER_PWD,
+        log,
+      })
+    : postgres({
+        host: 'localhost',
+        port,
+        user: DEFAULT_OWNER,
+        password: secrets.owner,
+        database: 'postgres',
+        max: 1,
+      });
   try {
     const exists = await sysSql`SELECT 1 FROM pg_database WHERE datname = ${dbName}`;
     if (exists.length === 0) {
@@ -536,32 +850,25 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     host: 'localhost',
     port,
     user: DEFAULT_OWNER,
-    password: DEFAULT_OWNER_PWD,
+    password: secrets.owner,
     database: dbName,
     max: 1,
   });
 
   try {
-    // Framework roles. Same passwords libs/db/src/connection.ts defaults to.
+    // Framework roles. Without host credentials these are the documented DEV
+    // defaults libs/db/src/connection.ts falls back to; with them (a multi-account
+    // host, WI-10003627) every role is re-keyed to this host's generated password
+    // on every boot, so a cluster first keyed to the defaults converges.
     // harness_zero needs CREATE on the database — zero-cache creates a
     // _zero_metadata_<app>_<shard>/cdc schema for change-streamer state on
     // first boot. Without the grant, change-streamer crashes with
     // "permission denied for database papercusp".
-    await sql.unsafe(`
-      DO $pg$ BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_app') THEN
-          CREATE ROLE harness_app LOGIN PASSWORD 'harness_app_pwd';
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_admin') THEN
-          CREATE ROLE harness_admin LOGIN SUPERUSER PASSWORD 'harness_admin_pwd';
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_zero') THEN
-          CREATE ROLE harness_zero LOGIN REPLICATION SUPERUSER PASSWORD 'harness_zero_pwd';
-        ELSE
-          ALTER ROLE harness_zero SUPERUSER;
-        END IF;
-      END $pg$;
-    `);
+    await sql.unsafe(
+      hostCredentials
+        ? `${QUIET_STATEMENT_LOGGING_SQL}${roleBootstrapSql(secrets, { rekey: true })}`
+        : roleBootstrapSql(secrets),
+    );
 
     // Extensions the baseline schema depends on, created BEFORE migrations.
     // The squashed 000-baseline.sql (self-contained-migration-baseline-2026-06-02)
@@ -594,6 +901,7 @@ export async function startEmbeddedPostgresServer(opts = {}) {
           port,
           dbName,
           pgRestoreBin: opts.pgRestoreBin ?? process.env.PAPERCUSP_PG_RESTORE_BIN ?? 'pg_restore',
+          ownerSecret: secrets.owner,
         });
         log('logical seed restored — per-install system_identifier retained; applying migration delta');
       } catch (e) {
@@ -641,6 +949,22 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     } else if (opts.dbSqlDir) {
       log(`dbSqlDir=${opts.dbSqlDir} does not exist — skipping migrations`);
     }
+
+    // Multi-account host (WI-10003627): refuse to serve unless every repo-public
+    // default is refused by a REAL login and no co-resident account planted a
+    // privileged role while the defaults were live. Stop the postmaster before
+    // throwing so a refused boot never leaves a reachable cluster behind.
+    if (hostCredentials) {
+      try {
+        await assertNoDefaultRoleCredentials({ port, database: dbName });
+        await assertNoRogueRoles(sql);
+        log('multi-account guard: no role accepts a repo-public default password; no rogue privileged roles');
+      } catch (e) {
+        await sql.end({ timeout: 2 }).catch(() => {});
+        await pg.stop().catch((stopError) => log(`stop error: ${stopError?.message ?? stopError}`));
+        throw e;
+      }
+    }
   } finally {
     await sql.end({ timeout: 2 }).catch(() => {});
   }
@@ -652,12 +976,14 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     dbName,
     /** Owner credentials. */
     user: DEFAULT_OWNER,
-    password: DEFAULT_OWNER_PWD,
+    password: secrets.owner,
+    /** True when roles are keyed to per-host generated passwords (`credentialsFile`). */
+    hostCredentials: hostCredentials !== null,
     /** Connection URLs for common roles (matches connection.ts expectations). */
     urls: {
-      admin: `postgresql://harness_admin:harness_admin_pwd@localhost:${port}/${dbName}`,
-      app:   `postgresql://harness_app:harness_app_pwd@localhost:${port}/${dbName}`,
-      zero:  `postgresql://harness_zero:harness_zero_pwd@localhost:${port}/${dbName}`,
+      admin: roleUrl(ROLE_NAMES.admin, secrets.admin, port, dbName),
+      app: roleUrl(ROLE_NAMES.app, secrets.app, port, dbName),
+      zero: roleUrl(ROLE_NAMES.zero, secrets.zero, port, dbName),
     },
     async stop() {
       log('stopping postgres');

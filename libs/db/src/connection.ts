@@ -152,7 +152,28 @@ let _resolvedAdminUrlSource: 'env' | 'discovery' | null = null;
 // they can poison the replacement generation with a correctly-read but now-stale identity.
 // Production never calls `_resetForTests`, so its process-lifetime identity contract is unchanged.
 let _identityProbeTestGeneration = 0;
-export type DiscoveryEndpoint = { user?: string; password?: string; host?: string; port?: number };
+/**
+ * `appPassword` is harness_app's password when the advertiser keys roles to per-host
+ * secrets (a multi-account hosted VM, WI-10003627); absent ⇒ the DEV default applies.
+ */
+export type DiscoveryEndpoint = {
+  user?: string;
+  password?: string;
+  host?: string;
+  port?: number;
+  appPassword?: string;
+};
+
+/** harness_app's password from an advertised `appUrl`, or undefined. */
+function appPasswordFromUrl(appUrl: unknown): string | undefined {
+  if (typeof appUrl !== 'string' || !appUrl) return undefined;
+  try {
+    const u = new URL(appUrl);
+    return u.password ? decodeURIComponent(u.password) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Is `pid` still running? Injected into _parseDiscoveryJson so tests stay pure. */
 export function _defaultIsPidAlive(pid: number): boolean {
@@ -246,7 +267,15 @@ export function _parseDiscoveryJson(
   isPidAlive: (pid: number) => boolean = _defaultIsPidAlive,
   isPortServed: (port: number) => boolean = _defaultIsPortServed,
 ): DiscoveryEndpoint | null {
-  let parsed: { url?: string; host?: string; port?: number; user?: string; password?: string; pid?: number };
+  let parsed: {
+    url?: string;
+    appUrl?: string;
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+    pid?: number;
+  };
   try {
     parsed = JSON.parse(raw);
   } catch {
@@ -282,6 +311,7 @@ export function _parseDiscoveryJson(
           // Embedded-pg uses fixed passwords; callers default them when absent.
           user: u.username ? decodeURIComponent(u.username) : undefined,
           password: u.password ? decodeURIComponent(u.password) : undefined,
+          appPassword: appPasswordFromUrl(parsed.appUrl),
         };
       }
     } catch {
@@ -567,7 +597,10 @@ function resolveAppUrl(): string {
     // Discovery file ships harness_admin creds; for the app role we
     // know the convention (harness_app/harness_app_pwd) since both
     // are auto-created by embedded-postgres-server with fixed pwds.
-    const url = `postgresql://harness_app:harness_app_pwd@${disc.host}:${disc.port}/papercusp`;
+    // A multi-account host advertises harness_app's per-host password (WI-10003627);
+    // otherwise the documented DEV default applies.
+    const appSecret = encodeURIComponent(disc.appPassword ?? 'harness_app_pwd');
+    const url = `postgresql://harness_app:${appSecret}@${disc.host}:${disc.port}/papercusp`;
     if (url !== _resolvedAppUrl) {
       _resolvedAppUrl = url;
       _resolvedAppUrlSource = 'discovery';
