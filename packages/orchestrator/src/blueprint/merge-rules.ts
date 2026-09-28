@@ -192,6 +192,10 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   'mode.title': replace(LAYER_META),
   'mode.oneLiner': replace(LAYER_META),
   'mode.definitionContributionId': replace(LAYER_META),
+  'mode.implies': replace(LAYER_META),
+  'mode.requiresSubject': replace(LAYER_META),
+  'mode.launchable': replace(LAYER_META),
+  'mode.aliases': replace(LAYER_META),
   'mode.replacesRevision': replace(LAYER_META),
   'grants.requires': setUnion(
     'grant declaration set; each layer independently vetted (D-003) — RESERVED until M3 (D-004/D-014)',
