@@ -166,7 +166,7 @@ export async function loadOrCreateRoleCredentials(file, opts = {}) {
  * The idempotent role bootstrap. With `rekey`, every framework role is ALTERed to
  * the given password on every boot, so a cluster first keyed to the repo-public
  * defaults (an upgrade, a legacy physical seed) converges to this host's secrets.
- * @param {{ admin: string, app: string, zero: string }} secrets
+ * @param {{ owner?: string, admin: string, app: string, zero: string }} secrets
  * @param {{ rekey?: boolean }} [opts]
  */
 export function roleBootstrapSql(secrets, { rekey = false } = {}) {

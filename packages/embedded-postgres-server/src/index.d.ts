@@ -1,4 +1,69 @@
 /**
+ * True when `value` holds a strong, non-default password for every role slot.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isValidRoleCredentials(value: unknown): boolean;
+/**
+ * Load this host's per-role PostgreSQL passwords from `file`, generating them on
+ * first use. The file is written 0600 (parent created 0700) and must stay readable
+ * ONLY by the account that runs the operator — it is the whole boundary between a
+ * co-resident account and a DB superuser login.
+ *
+ * An EXISTING but unreadable/invalid file is a hard error, never a silent
+ * regenerate: the cluster is keyed to the old owner password, so replacing it would
+ * lock the operator out of its own database.
+ *
+ * @param {string} file
+ * @param {{ generate?: () => string, log?: (m: string) => void }} [opts]
+ * @returns {Promise<{ owner: string, admin: string, app: string, zero: string }>}
+ */
+export function loadOrCreateRoleCredentials(file: string, opts?: {
+    generate?: () => string;
+    log?: (m: string) => void;
+}): Promise<{
+    owner: string;
+    admin: string;
+    app: string;
+    zero: string;
+}>;
+/**
+ * The idempotent role bootstrap. With `rekey`, every framework role is ALTERed to
+ * the given password on every boot, so a cluster first keyed to the repo-public
+ * defaults (an upgrade, a legacy physical seed) converges to this host's secrets.
+ * @param {{ owner?: string, admin: string, app: string, zero: string }} secrets
+ * @param {{ rekey?: boolean }} [opts]
+ */
+export function roleBootstrapSql(secrets: {
+    owner?: string;
+    admin: string;
+    app: string;
+    zero: string;
+}, { rekey }?: {
+    rekey?: boolean;
+}): string;
+/**
+ * Fail closed unless NO framework role still authenticates with its repo-public
+ * default password. Every slot is probed with a real login; only a refused
+ * password (28P01/28000) counts as closed — any other outcome is unverifiable and
+ * refuses too, because this is the rail between a co-resident account and a DB
+ * superuser.
+ * @param {{ port: number, database: string, connect?: typeof openRoleClient }} opts
+ */
+export function assertNoDefaultRoleCredentials({ port, database, connect }: {
+    port: number;
+    database: string;
+    connect?: typeof openRoleClient;
+}): Promise<void>;
+/**
+ * Integrity check for a multi-account host: refuse to serve a cluster holding an
+ * unexpected login/elevated role, or a harness_app that gained SUPERUSER. Either
+ * means the database was altered through the default-password exposure and must
+ * not be trusted.
+ * @param {(strings: TemplateStringsArray, ...values: unknown[]) => Promise<Array<Record<string, unknown>>>} sql
+ */
+export function assertNoRogueRoles(sql: (strings: TemplateStringsArray, ...values: unknown[]) => Promise<Array<Record<string, unknown>>>): Promise<void>;
+/**
  * Ensure the `zero_harness` logical-replication publication exists and is
  * correctly configured, then fold in any per-harness schemas. Called at boot
  * AFTER migrations (the schemas it references must exist) and imported by the
@@ -99,11 +164,13 @@ export function extractSeed(seedPath: any, dataDir: any): Promise<void>;
  * @param {number} opts.port
  * @param {string} [opts.dbName]
  * @param {string} [opts.pgRestoreBin]
+ * @param {string} [opts.ownerSecret] The cluster owner's password (default: the DEV default).
  */
-export function restoreLogicalSeed(seedPath: string, { port, dbName, pgRestoreBin, }: {
+export function restoreLogicalSeed(seedPath: string, { port, dbName, pgRestoreBin, ownerSecret, }: {
     port: number;
     dbName?: string | undefined;
     pgRestoreBin?: string | undefined;
+    ownerSecret?: string | undefined;
 }): void;
 /**
  * @param {object} opts
@@ -127,6 +194,12 @@ export function restoreLogicalSeed(seedPath: string, { port, dbName, pgRestoreBi
  *        Empty by default → stock PG defaults (backward compatible). Passing them is
  *        how the desktop's embedded PG autoadjusts to the machine instead of running
  *        on the laptop-sized stock `max_connections=100` / `shared_buffers=128MB`.
+ * @param {string} [opts.credentialsFile] Multi-account hosts (WI-10003627): path of a 0600
+ *        file holding this host's per-role passwords, generated on first boot. When set,
+ *        every role (owner, harness_admin, harness_app, harness_zero) is keyed to its
+ *        generated password on every boot — re-keying a cluster first keyed to the
+ *        repo-public defaults — and boot REFUSES while any default still authenticates
+ *        or an unexpected privileged role exists. Unset keeps the documented DEV defaults.
  * @param {(m: string) => void} [opts.onLog]
  */
 export function startEmbeddedPostgresServer(opts?: {
@@ -138,6 +211,7 @@ export function startEmbeddedPostgresServer(opts?: {
     seedPath?: string | undefined;
     pgRestoreBin?: string | undefined;
     extraPostgresSettings?: Record<string, string> | undefined;
+    credentialsFile?: string | undefined;
     onLog?: ((m: string) => void) | undefined;
 }): Promise<{
     /** TCP port the postmaster is listening on. */
@@ -147,6 +221,8 @@ export function startEmbeddedPostgresServer(opts?: {
     /** Owner credentials. */
     user: string;
     password: string;
+    /** True when roles are keyed to per-host generated passwords (`credentialsFile`). */
+    hostCredentials: boolean;
     /** Connection URLs for common roles (matches connection.ts expectations). */
     urls: {
         admin: string;
@@ -155,6 +231,37 @@ export function startEmbeddedPostgresServer(opts?: {
     };
     stop(): Promise<void>;
 }>;
+/**
+ * The repo-public default role passwords (WI-10003627). They are the documented
+ * DEV convention libs/db/src/connection.ts falls back to, and they are safe only
+ * where every local account is the same trust principal (a developer box, a
+ * single-user desktop). On a MULTI-ACCOUNT host — a hosted workspace VM, where the
+ * customer account shares loopback with the service user — they hand every local
+ * account a DB SUPERUSER login: loopback TCP is not a uid boundary, and PostgreSQL
+ * cannot restrict a TCP login by the connecting uid. Measured on a hosted VM
+ * (2026-09-28): the customer uid logged in as harness_admin (rolsuper) with its
+ * repo-public default. Such hosts must pass `credentialsFile` so every role gets a
+ * per-host random password and boot refuses while any default still authenticates.
+ */
+export const DEFAULT_ROLE_PASSWORDS: Readonly<{
+    owner: "postgres";
+    admin: "harness_admin_pwd";
+    app: "harness_app_pwd";
+    zero: "harness_zero_pwd";
+}>;
+/** The PostgreSQL role behind each credential slot. */
+export const ROLE_NAMES: Readonly<{
+    owner: "postgres";
+    admin: "harness_admin";
+    app: "harness_app";
+    zero: "harness_zero";
+}>;
+/**
+ * Roles a hosted cluster may hold with LOGIN or any elevated attribute. The
+ * migrations create none, so anything else was planted by a co-resident account
+ * while the default passwords were live.
+ */
+export const EXPECTED_PRIVILEGED_ROLES: readonly ("postgres" | "harness_admin" | "harness_app" | "harness_zero")[];
 /**
  * The initdb flags used for EVERY fresh cluster this package creates — the
  * build-time source database and every target install (including a logical-seed
@@ -232,4 +339,11 @@ export const PORTABLE_INITDB_LOCALES: string[];
  * FORMATTING only (never collation/ctype), so plain 'C' loses nothing.
  */
 export const UNIVERSAL_LC_VALUES: string[];
+declare function openRoleClient({ port, user, password, database }: {
+    port: any;
+    user: any;
+    password: any;
+    database: any;
+}): postgres.Sql<{}>;
+import postgres from 'postgres';
 export { applyPendingMigrations, defaultSkipFile, migrationTransactionChunks } from "./migration-runner.js";
