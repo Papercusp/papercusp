@@ -2,7 +2,7 @@
   "name": "pythonista",
   "version": "0.1.0",
   "description": "Batch I7 bundled smoke daemon: tiny Python JSON-RPC peer over stdio. Single action 'run-script' evals a Python expression.",
-  "license": "GPL-3.0-or-later",
+  "license": "Elastic-2.0",
   "papercusp": "^0.1",
   "protocol": "^1",
   "capabilities": [
