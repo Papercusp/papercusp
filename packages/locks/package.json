@@ -24,6 +24,7 @@
     "@papercusp/locks-core": "*"
   },
   "devDependencies": {
+    "@papercusp/test-config": "*",
     "postgres": "^3.4.5",
     "vitest": "^4.1.4"
   }
