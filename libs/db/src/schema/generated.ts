@@ -1315,7 +1315,9 @@ export const blueprintOperationInvocationsInHarnessShared = harnessShared.table(
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	requestPayload: jsonb("request_payload"),
+	programStartedAt: timestamp("program_started_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
+	index("blueprint_operation_invocations_unstarted_idx").using("btree", table.id.asc().nullsLast().op("int8_ops")).where(sql`((target_kind = 'work-item'::text) AND (program_started_at IS NULL))`),
 	unique("blueprint_operation_invocatio_workspace_id_harness_slug_cal_key").on(table.callerId, table.harnessSlug, table.operationId, table.requestKey, table.workspaceId),
 	pgPolicy("blueprint_operation_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("blueprint_operation_invocations_payload_object", sql`(request_payload IS NULL) OR (jsonb_typeof(request_payload) = 'object'::text)`),
@@ -2640,6 +2642,7 @@ export const desktopPerfRunsInHarnessShared = harnessShared.table("desktop_perf_
 	gitSha: text("git_sha"),
 	runId: text("run_id"),
 	measures: jsonb().default([]).notNull(),
+	buildSha: text("build_sha"),
 }, (table) => [
 	index("desktop_perf_runs_ws_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdTs.desc().nullsFirst().op("int8_ops")),
 ]);
@@ -9690,6 +9693,11 @@ export const testExecutedSourcesInHarnessShared = harnessShared.table("test_exec
 	moduleCount: integer("module_count").notNull(),
 	runGroupId: text("run_group_id"),
 	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	readPaths: text("read_paths").array().default([]).notNull(),
+	inputsCaptured: boolean("inputs_captured").default(false).notNull(),
+	opaqueReasons: text("opaque_reasons").array().default([]).notNull(),
+	runContext: text("run_context"),
+	runnerIdentity: text("runner_identity"),
 }, (table) => [
 	index("test_executed_sources_newest_idx").using("btree", table.workspaceName.asc().nullsLast().op("text_ops"), table.testFile.asc().nullsLast().op("text_ops"), table.recordedAt.desc().nullsFirst().op("timestamptz_ops")),
 	primaryKey({ columns: [table.recordedSha, table.testFile, table.workspaceName], name: "test_executed_sources_pkey"}),
