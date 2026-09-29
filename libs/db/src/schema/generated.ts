@@ -1592,16 +1592,11 @@ export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	updatedTs: bigint("updated_ts", { mode: "number" }).notNull(),
 	deps: jsonb(),
-	noteEmbedding: vector("note_embedding", { dimensions: 768 }),
-	noteEmbeddingMode: text("note_embedding_mode"),
 	noteTsv: tsvectorCustom("note_tsv").generatedAlwaysAs(sql`to_tsvector('english'::regconfig, COALESCE(note, ''::text))`),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	bodyTs: bigint("body_ts", { mode: "number" }),
 	attestedCount: integer("attested_count").default(0).notNull(),
-	noteEmbeddingProfile: text("note_embedding_profile"),
 }, (table) => [
-	index("carry_notes_embedding_hnsw_idx").using("hnsw", table.noteEmbedding.asc().nullsLast().op("vector_cosine_ops")),
-	index("carry_notes_embedding_mode_idx").using("btree", table.noteEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(note_embedding_mode IS NOT NULL)`),
 	index("carry_notes_tsv_idx").using("gin", table.noteTsv.asc().nullsLast().op("tsvector_ops")),
 	primaryKey({ columns: [table.scope, table.workspaceId], name: "carry_notes_pkey"}),
 	pgPolicy("carry_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
