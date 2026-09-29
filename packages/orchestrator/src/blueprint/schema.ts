@@ -25,6 +25,7 @@
 import { z } from 'zod';
 import { dataConditionSchema } from '@papercusp/rules';
 import { BUNDLE_KINDS } from './slots.js';
+import { InjectionPointSchema, validateInjectionPoint } from './injection-points.js';
 
 /**
  * The work unit the director schedules/executes. Maps onto the canonical
@@ -1102,7 +1103,18 @@ export const BlueprintContributionSchema = z.object({
    * whose output it contributes. The pot's binding supplies the implementation, so
    * the class itself is the declared producer and `producerRef` must equal `ref`. */
   verb: z.string().regex(/^[a-z][a-zA-Z0-9_.-]*$/).max(120).optional(),
+  /** Declared injection point (portable-identity-packages P-010): the sink(s),
+   * trigger, token budget, priority and over-budget behavior of this provider's
+   * output. A request only; the host allocates one aggregate budget per sink. */
+  injection: InjectionPointSchema.optional(),
 }).strict().superRefine((value, ctx) => {
+  // Shape errors already surface from the `injection` field itself; add only the
+  // cross-field rules (provider source, injectable kind, renderable sink, cadence).
+  if (value.injection !== undefined && InjectionPointSchema.safeParse(value.injection).success) {
+    for (const issue of validateInjectionPoint(value)) {
+      ctx.addIssue({ code: 'custom', path: [...issue.path], message: issue.message });
+    }
+  }
   const majorRef = CAPABILITY_CLASS_MAJOR_REF.test(value.ref);
   if (value.verb !== undefined && value.inputKind !== 'capability-provider') {
     ctx.addIssue({ code: 'custom', path: ['verb'], message: 'only a capability-provider contribution names a verb' });
