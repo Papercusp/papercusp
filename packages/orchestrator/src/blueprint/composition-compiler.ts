@@ -155,7 +155,14 @@ export interface CompositionSettingInput {
 
 export interface CompositionContributionOmissionInput {
   id: string;
-  reason: 'ineligible' | 'not-requested' | 'unavailable';
+  /**
+   * 'experiment-arm' (R-4 / D-032): a behavior arm deliberately withheld the
+   * contribution. Like 'ineligible' it is preserved even when the declared
+   * refresh is due — only 'not-requested' is refused there. Operator-core's
+   * IDENTITY_OMISSION_REASONS is assigned into this type, so a reason added
+   * there but not here fails typecheck.
+   */
+  reason: 'ineligible' | 'not-requested' | 'unavailable' | 'experiment-arm';
   /** Required when a producer was unavailable, so that failure is addressable. */
   errorRef?: string;
 }
