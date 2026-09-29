@@ -1078,6 +1078,10 @@ export const BundleRefSchema = z
     }
   });
 
+/** A portable capability-class request: namespaced id + major only. The pinned
+ * input always records the exact `class@version` the pot selected. */
+export const CAPABILITY_CLASS_MAJOR_REF = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+@(?:0|[1-9][0-9]*)$/;
+
 /** One component contribution bound to an existing compiled input. The source and
  * refresh metadata describe how the input is produced; they never grant authority.
  * Package refs use `<packageKind>:<ref>` so the exact package pin is unambiguous. */
@@ -1093,7 +1097,25 @@ export const BlueprintContributionSchema = z.object({
   /** A generated provider may be conditionally absent. The caller must still
    * supply an explicit omission receipt; absence alone is never success. */
   availability: z.enum(['required', 'optional']).optional(),
+  /** Context capability (portable-identity-packages P-004): a capability-provider
+   * contribution that names a portable `class@major` also names the contract verb
+   * whose output it contributes. The pot's binding supplies the implementation, so
+   * the class itself is the declared producer and `producerRef` must equal `ref`. */
+  verb: z.string().regex(/^[a-z][a-zA-Z0-9_.-]*$/).max(120).optional(),
 }).strict().superRefine((value, ctx) => {
+  const majorRef = CAPABILITY_CLASS_MAJOR_REF.test(value.ref);
+  if (value.verb !== undefined && value.inputKind !== 'capability-provider') {
+    ctx.addIssue({ code: 'custom', path: ['verb'], message: 'only a capability-provider contribution names a verb' });
+  }
+  if (value.inputKind === 'capability-provider' && majorRef && value.verb === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['verb'], message: 'a class@major context capability names its contract verb' });
+  }
+  if (value.verb !== undefined && !majorRef) {
+    ctx.addIssue({ code: 'custom', path: ['ref'], message: 'a context capability names a portable class@major, not an exact version' });
+  }
+  if (value.verb !== undefined && value.producerRef !== undefined && value.producerRef !== value.ref) {
+    ctx.addIssue({ code: 'custom', path: ['producerRef'], message: 'a context capability is produced by its class; producerRef must equal ref' });
+  }
   const kinds = {
     prompt: ['prompt-file', 'addressed-document'],
     resource: ['package', 'capability-provider'],
@@ -1434,6 +1456,20 @@ export const ResolvedCapabilityProviderInputSchema = z
     conformanceRunId: z.string().min(1),
     registryRevision: z.string().min(1),
     verbBindings: z.record(z.string(), z.string().min(1)),
+    /** Present only for a context capability (portable-identity-packages P-004):
+     * the portable request, the one contract verb it contributes, the contract's
+     * output schema, and the explicit synchronous execution kind that was pinned.
+     * Absent on plain grant providers, so their pinned bytes are unchanged. */
+    context: z
+      .object({
+        requestedRef: z.string().regex(CAPABILITY_CLASS_MAJOR_REF, 'portable class@major ref'),
+        verb: z.string().regex(/^[a-z][a-zA-Z0-9_.-]*$/).max(120),
+        providerKind: z.enum(['tool', 'recipe']),
+        latencyClass: z.literal('sync'),
+        outputSchema: z.record(z.string(), z.unknown()),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

@@ -1019,7 +1019,9 @@ function inputProvenance(
     if (input.kind === 'prompt-file') prefix = `prompt.${promptKeys.get(input.ref) ?? 'default'}`;
     else if (input.kind === 'addressed-document') prefix = `addressed.${input.ref}`;
     else if (input.kind === 'package') prefix = 'package.' + packageKey(input);
-    else if (input.kind === 'capability-provider') prefix = 'capability-provider.' + input.ref;
+    else if (input.kind === 'capability-provider') {
+      prefix = 'capability-provider.' + input.ref + (input.context ? '#' + input.context.verb : '');
+    }
     else prefix = `setting.${input.ref}`;
     const sourceRevision = input.kind === 'prompt-file'
       ? input.contentHash
@@ -1041,11 +1043,19 @@ function inputProvenance(
 }
 
 function contributionInputKey(input: ResolvedAgentInput): string {
-  return input.kind === 'package' ? `package:${packageKey(input)}` : `${input.kind}:${input.ref}`;
+  if (input.kind === 'package') return `package:${packageKey(input)}`;
+  // A context capability is requested portably (class@major + verb); its input
+  // pins the exact class@version, so the declaration binds by the request.
+  if (input.kind === 'capability-provider' && input.context) {
+    return `capability-provider:${input.context.requestedRef}#${input.context.verb}`;
+  }
+  return `${input.kind}:${input.ref}`;
 }
 
 function contributionKey(declaration: BlueprintContribution): string {
-  return `${declaration.inputKind}:${declaration.ref}`;
+  return declaration.verb === undefined
+    ? `${declaration.inputKind}:${declaration.ref}`
+    : `${declaration.inputKind}:${declaration.ref}#${declaration.verb}`;
 }
 
 /** Bind declarations to the exact pinned inputs already resolved by the compiler.
@@ -1104,7 +1114,10 @@ function bindContributions(
       }
       if (declaration.source === 'provider' && entry.kind === 'prompt-file') promptSegments.push(entry.bytes);
     }
-    const producerRef = entry.kind === 'capability-provider' ? entry.providerPackage
+    // A context capability's producer is its portable class; the pot's binding
+    // is the implementation and is pinned in the input, not named by the author.
+    const producerRef = entry.kind === 'capability-provider'
+      ? (entry.context ? entry.context.requestedRef : entry.providerPackage)
       : entry.kind === 'prompt-file' || entry.kind === 'setting' ? entry.producerRef : undefined;
     if (declaration.source === 'provider' && producerRef !== declaration.producerRef) {
       fail('contribution-source-mismatch', `declared producer ${declaration.producerRef} did not supply the pinned input`, `${declaration.id}:${key}`);
@@ -1119,7 +1132,9 @@ function bindContributions(
     const sourceRevision = entry.kind === 'prompt-file' || entry.kind === 'addressed-document' || entry.kind === 'package'
       ? entry.contentHash
       : entry.kind === 'capability-provider'
-        ? `${entry.providerVersion}@${entry.conformanceRunId}`
+        ? (entry.context
+          ? `${entry.ref}:${entry.context.providerKind}/${entry.context.latencyClass}:${entry.providerVersion}@${entry.conformanceRunId}`
+          : `${entry.providerVersion}@${entry.conformanceRunId}`)
         : entry.revision;
     provenance.push({
       path: `contribution.${declaration.id}`,
