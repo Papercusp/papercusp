@@ -17,9 +17,14 @@ for 20 hours before you catch up.
 
 Import: `import { HyperFormula } from 'hyperformula';`
 
-**License note:** hyperformula is GPLv3. This project is single-user /
-local / non-commercial for Phase 1, which is compatible. If the project
-is later commercialized the supervisor will issue a new instruction.
+**License note:** hyperformula is dual-licensed: GPLv3, or a paid
+commercial license from Handsontable. Building and running this project
+locally for yourself creates no obligations. If you DISTRIBUTE it, the
+GPLv3 applies to the combined work: ship it under GPLv3 or buy the
+commercial license. Being non-commercial does not waive that. Do not
+vendor hyperformula into Papercusp itself, which is released under the
+Elastic License 2.0 and is incompatible with GPLv3. If distribution
+comes up, stop and ask the supervisor which licence route to take.
 
 ## supported-formulas
 
