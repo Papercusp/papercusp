@@ -9793,6 +9793,30 @@ export const testingSurfacesInHarnessShared = harnessShared.table("testing_surfa
 	check("testing_surfaces_fidelity_check", sql`fidelity = ANY (ARRAY['declared'::text, 'spec'::text, 'convention'::text, 'observed'::text, 'file-only'::text])`),
 ]);
 
+export const textChunksInHarnessShared = harnessShared.table("text_chunks", {
+	surface: text().notNull(),
+	parentKey: text("parent_key").array().notNull(),
+	chunkIdx: integer("chunk_idx").notNull(),
+	anchor: text(),
+	header: text(),
+	content: text().notNull(),
+	parentSha: text("parent_sha").notNull(),
+	chunkSha: text("chunk_sha").notNull(),
+	splitterVersion: text("splitter_version").notNull(),
+	embedding: vector({ dimensions: 768 }),
+	embeddingMode: text("embedding_mode"),
+	embeddingProfile: text("embedding_profile"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("text_chunks_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
+	index("text_chunks_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
+	index("text_chunks_updated_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.chunkIdx, table.parentKey, table.surface], name: "text_chunks_pkey"}),
+	check("text_chunks_chunk_idx_nonnegative", sql`chunk_idx >= 0`),
+	check("text_chunks_parent_key_nonempty", sql`cardinality(parent_key) > 0`),
+	check("text_chunks_surface_nonempty", sql`surface <> ''::text`),
+]);
+
 export const toastLogInHarnessShared = harnessShared.table("toast_log", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	level: text().notNull(),
