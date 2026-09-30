@@ -14,6 +14,15 @@ describe('codexGatewayConfigToml model discovery', () => {
     expect(codexManagedFeaturesToml({ disableMemories: false })).toContain('api_key_model_discovery = true');
   });
 
+  it('disables interactive plugin authentication only for headless managed homes', () => {
+    expect(codexManagedFeaturesToml({ headless: true })).toEqual(expect.arrayContaining([
+      'plugins = false',
+      'auth_elicitation = false',
+    ]));
+    expect(codexManagedFeaturesToml()).not.toContain('plugins = false');
+    expect(codexManagedFeaturesToml()).not.toContain('auth_elicitation = false');
+  });
+
   it.each([
     ['auto', null, { gatewayOn: true }],
     ['pinned', 'chatgpt-a', {}],
