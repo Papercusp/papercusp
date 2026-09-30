@@ -8408,6 +8408,36 @@ export const releasesInHarnessShared = harnessShared.table("releases", {
 	primaryKey({ columns: [table.channel, table.version, table.workspaceId], name: "releases_pkey"}),
 ]);
 
+export const remoteAccessOwnTunnelInHarnessShared = harnessShared.table("remote_access_own_tunnel", {
+	singleton: boolean().default(true).primaryKey().notNull(),
+	mode: text().notNull(),
+	enabled: boolean().default(true).notNull(),
+	ingressPort: integer("ingress_port").notNull(),
+	operatorPort: integer("operator_port"),
+	hostname: text(),
+	cfAccountId: text("cf_account_id"),
+	cfZoneId: text("cf_zone_id"),
+	cfZoneName: text("cf_zone_name"),
+	cfTunnelId: text("cf_tunnel_id"),
+	cfTunnelName: text("cf_tunnel_name"),
+	cfDnsRecordId: text("cf_dns_record_id"),
+	apiTokenCt: byteaCustom("api_token_ct"),
+	runTokenCt: byteaCustom("run_token_ct"),
+	lastError: text("last_error"),
+	lastErrorAt: timestamp("last_error_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	check("remote_access_own_tunnel_cloudflare_complete", sql`(mode <> 'cloudflare'::text) OR ((hostname IS NOT NULL) AND (cf_account_id IS NOT NULL) AND (cf_zone_id IS NOT NULL) AND (cf_tunnel_id IS NOT NULL) AND (run_token_ct IS NOT NULL))`),
+	check("remote_access_own_tunnel_ingress_not_operator", sql`(operator_port IS NULL) OR (ingress_port <> operator_port)`),
+	check("remote_access_own_tunnel_ingress_port_check", sql`(ingress_port >= 1) AND (ingress_port <= 65535)`),
+	check("remote_access_own_tunnel_mode_check", sql`mode = ANY (ARRAY['cloudflare'::text, 'manual'::text])`),
+	check("remote_access_own_tunnel_operator_port_check", sql`(operator_port IS NULL) OR ((operator_port >= 1) AND (operator_port <= 65535))`),
+	check("remote_access_own_tunnel_singleton_check", sql`CHECK (singleton)`),
+	primaryKey({ columns: [table.singleton], name: "remote_access_own_tunnel_pkey"}),
+
+]);
+
 export const replayRunsInHarnessShared = harnessShared.table("replay_runs", {
 	workspaceId: text("workspace_id").notNull(),
 	runId: text("run_id").notNull(),
