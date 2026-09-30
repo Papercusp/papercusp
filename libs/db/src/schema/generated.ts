@@ -1804,6 +1804,20 @@ export const connectedAppAccessTokensInHarnessShared = harnessShared.table("conn
 	check("connected_app_access_tokens_token_hash_check", sql`token_hash ~ '^[0-9a-f]{64}$'::text`),
 ]);
 
+export const connectedAppAuthFailuresInHarnessShared = harnessShared.table("connected_app_auth_failures", {
+	appId: text("app_id").notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	hour: timestamp({ withTimezone: true }).notNull(),
+	failures: integer().default(0).notNull(),
+	lastReason: text("last_reason").notNull(),
+	lastAt: timestamp("last_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("connected_app_auth_failures_hour_idx").using("btree", table.hour.desc().nullsFirst().op("timestamptz_ops"), table.workspaceId.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.appId, table.hour], name: "connected_app_auth_failures_pkey"}),
+	pgPolicy("connected_app_auth_failures_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("connected_app_auth_failures_failures_nonnegative_ck", sql`failures >= 0`),
+]);
+
 export const connectedAppClientAssertionsInHarnessShared = harnessShared.table("connected_app_client_assertions", {
 	appId: text("app_id").notNull(),
 	jti: text().notNull(),
