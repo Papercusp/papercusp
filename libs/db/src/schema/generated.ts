@@ -10537,6 +10537,26 @@ export const triggerSourcesInHarnessShared = harnessShared.table("trigger_source
 	check("trigger_sources_status_check", sql`status = ANY (ARRAY['unconfigured'::text, 'ready'::text, 'connecting'::text, 'connected'::text, 'degraded'::text, 'error'::text, 'disabled'::text])`),
 ]);
 
+export const triggerWebhookSecretsInHarnessShared = harnessShared.table("trigger_webhook_secrets", {
+	workspaceId: text("workspace_id").notNull(),
+	sourceId: uuid("source_id").notNull(),
+	secretCt: byteaCustom("secret_ct").notNull(),
+	previousSecretCt: byteaCustom("previous_secret_ct"),
+	previousValidUntil: timestamp("previous_valid_until", { withTimezone: true, mode: 'string' }),
+	rotatedAt: timestamp("rotated_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId, table.sourceId],
+			foreignColumns: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id],
+			name: "trigger_webhook_secrets_source_fk"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.sourceId, table.workspaceId], name: "trigger_webhook_secrets_pkey"}),
+	pgPolicy("trigger_webhook_secrets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("trigger_webhook_secrets_previous_complete", sql`(previous_secret_ct IS NULL) = (previous_valid_until IS NULL)`),
+]);
+
 export const trustedAuthorsInHarnessShared = harnessShared.table("trusted_authors", {
 	workspaceId: text("workspace_id").default('').notNull(),
 	harnessSlug: text("harness_slug").notNull(),
