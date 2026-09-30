@@ -171,7 +171,10 @@ it collision-free:
   alternative, decision, dependency, sequence, acceptance condition, unresolved
   question, and promised follow-up; map each to a plan section, D-NNN, or P-NNN;
   repair every omission; then record `plans:audit { phase:'activation', ... }` before
-  activating. A later edit PRESERVES that audit. Read the edit response's
+  activating. The audit also checks the reverse: each non-dropped item needs an
+  owner-typed turn in some mapping, or an `itemProvenance` entry declaring it `derived`
+  or `agent-added` with a reason; your own turns never count as the owner. A later
+  edit PRESERVES that audit. Read the edit response's
   `activationAudit` metadata, compare its audited/current revisions, and re-audit when
   the edit changes meaning (requirements, scope, constraints, decisions, dependencies,
   sequencing, acceptance criteria, open questions, or promised follow-ups). Spelling,
