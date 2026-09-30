@@ -1767,6 +1767,33 @@ export const commsTrustListInHarnessShared = harnessShared.table("comms_trust_li
 	check("comms_trust_list_tier_check", sql`tier = ANY (ARRAY['observe'::text, 'message'::text, 'wake'::text, 'steer'::text])`),
 ]);
 
+export const connectedAppsInHarnessShared = harnessShared.table("connected_apps", {
+	id: text().primaryKey().notNull(),
+	userEmail: text("user_email").notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	kind: text().default('mobile').notNull(),
+	label: text(),
+	pairedAt: timestamp("paired_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastSeen: timestamp("last_seen", { withTimezone: true, mode: 'string' }),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+	scopes: jsonb().default({}).notNull(),
+	tokenHash: text("token_hash"),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	pausedAt: timestamp("paused_at", { withTimezone: true, mode: 'string' }),
+	lastIp: text("last_ip"),
+	limits: jsonb().default({}).notNull(),
+}, (table) => [
+	uniqueIndex("connected_apps_token_hash_key").using("btree", table.tokenHash.asc().nullsLast().op("text_ops")).where(sql`(token_hash IS NOT NULL)`),
+	index("connected_apps_user_idx").using("btree", table.userEmail.asc().nullsLast().op("text_ops")),
+	index("connected_apps_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(revoked_at IS NULL)`),
+	pgPolicy("connected_apps_workspace_policy", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("connected_apps_app_has_token_hash", sql`(kind <> 'app'::text) OR (token_hash IS NOT NULL)`),
+	check("connected_apps_kind_check", sql`kind = ANY (ARRAY['mobile'::text, 'app'::text])`),
+	check("connected_apps_limits_is_object", sql`jsonb_typeof(limits) = 'object'::text`),
+	check("connected_apps_scopes_is_object", sql`jsonb_typeof(scopes) = 'object'::text`),
+	check("connected_apps_token_hash_shape", sql`(token_hash IS NULL) OR (token_hash ~ '^[0-9a-f]{64}$'::text)`),
+]);
+
 export const consultPostMetaInHarnessShared = harnessShared.table("consult_post_meta", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -5344,24 +5371,6 @@ export const migrationReservationsInHarnessShared = harnessShared.table("migrati
 	reservedAt: timestamp("reserved_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 });
 
-export const mobileDevicesInHarnessShared = harnessShared.table("mobile_devices", {
-	deviceId: text("device_id").primaryKey().notNull(),
-	userEmail: text("user_email").notNull(),
-	workspaceId: text("workspace_id").notNull(),
-	deviceKind: text("device_kind").default('mobile').notNull(),
-	deviceLabel: text("device_label"),
-	pairedAt: timestamp("paired_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastSeen: timestamp("last_seen", { withTimezone: true, mode: 'string' }),
-	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("mobile_devices_user_idx").using("btree", table.userEmail.asc().nullsLast().op("text_ops")),
-	index("mobile_devices_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(revoked_at IS NULL)`),
-	pgPolicy("mobile_devices_workspace_policy", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("mobile_devices_device_kind_check", sql`device_kind = 'mobile'::text`),
-	primaryKey({ columns: [table.deviceId], name: "mobile_devices_pkey"}),
-
-]);
-
 export const mobilePairTokensInHarnessShared = harnessShared.table("mobile_pair_tokens", {
 	pairToken: text("pair_token").primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -5388,13 +5397,13 @@ export const mobilePushTokensInHarnessShared = harnessShared.table("mobile_push_
 	index("mobile_push_tokens_workspace_idx").using("btree", table.deviceId.asc().nullsLast().op("text_ops")),
 	foreignKey({
 			columns: [table.deviceId],
-			foreignColumns: [mobileDevicesInHarnessShared.deviceId],
+			foreignColumns: [connectedAppsInHarnessShared.id],
 			name: "mobile_push_tokens_device_id_fkey"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.deviceId, table.platform], name: "mobile_push_tokens_pkey"}),
 	pgPolicy("mobile_push_tokens_workspace_policy", { as: "permissive", for: "all", to: ["public"], using: sql`(EXISTS ( SELECT 1
-   FROM harness_shared.mobile_devices d
-  WHERE ((d.device_id = mobile_push_tokens.device_id) AND (d.workspace_id = current_setting('app.workspace_id'::text, true)))))` }),
+   FROM harness_shared.connected_apps d
+  WHERE ((d.id = mobile_push_tokens.device_id) AND (d.workspace_id = current_setting('app.workspace_id'::text, true)))))` }),
 	check("mobile_push_tokens_platform_check", sql`platform = ANY (ARRAY['apns'::text, 'fcm'::text])`),
 ]);
 
@@ -11885,6 +11894,16 @@ export const llmTestMatrixResultsInHarnessShared = harnessShared.view("llm_test_
 	majorityStatus: text("majority_status"),
 	stddevByAxis: jsonb("stddev_by_axis"),
 }).as(sql`SELECT matrix_group_id, scenario_id, scenario_version, identity_hash, count(*) AS n_runs, mode() WITHIN GROUP (ORDER BY status) AS majority_status, jsonb_object_agg(axis, stddev_score) AS stddev_by_axis FROM ( SELECT r.matrix_group_id, r.scenario_id, r.scenario_version, r.identity_hash, r.status, k.key AS axis, stddev_pop(k.value::numeric) OVER (PARTITION BY r.matrix_group_id, k.key) AS stddev_score FROM harness_shared.llm_test_runs r, LATERAL jsonb_each_text(r.scores_json) k(key, value) WHERE r.matrix_group_id IS NOT NULL AND r.scores_json IS NOT NULL) s GROUP BY matrix_group_id, scenario_id, scenario_version, identity_hash`);
+
+export const mobileDevicesInHarnessShared = harnessShared.view("mobile_devices", {	deviceId: text("device_id"),
+	userEmail: text("user_email"),
+	workspaceId: text("workspace_id"),
+	deviceKind: text("device_kind"),
+	deviceLabel: text("device_label"),
+	pairedAt: timestamp("paired_at", { withTimezone: true, mode: 'string' }),
+	lastSeen: timestamp("last_seen", { withTimezone: true, mode: 'string' }),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+}).with({"securityInvoker":true}).as(sql`SELECT id AS device_id, user_email, workspace_id, kind AS device_kind, label AS device_label, paired_at, last_seen, revoked_at FROM harness_shared.connected_apps WHERE kind = 'mobile'::text`);
 
 export const operatorDecisionsInHarnessShared = harnessShared.view("operator_decisions", {	id: text(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
