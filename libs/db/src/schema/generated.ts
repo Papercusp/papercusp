@@ -1782,17 +1782,52 @@ export const connectedAppDeviceGrantsInHarnessShared = harnessShared.table("conn
 	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
 	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
 	lastPolledAt: timestamp("last_polled_at", { withTimezone: true, mode: 'string' }),
+	oauthClientId: text("oauth_client_id"),
+	oauthRedirectUri: text("oauth_redirect_uri"),
+	oauthCodeChallenge: text("oauth_code_challenge"),
+	oauthState: text("oauth_state"),
+	oauthResource: text("oauth_resource"),
+	authCodeHash: text("auth_code_hash"),
+	authCodeExpiresAt: timestamp("auth_code_expires_at", { withTimezone: true, mode: 'string' }),
+	grantedScopes: jsonb("granted_scopes"),
 }, (table) => [
+	uniqueIndex("connected_app_device_grants_auth_code_key").using("btree", table.authCodeHash.asc().nullsLast().op("text_ops")).where(sql`(auth_code_hash IS NOT NULL)`),
 	index("connected_app_device_grants_expires_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
 	uniqueIndex("connected_app_device_grants_pending_user_code_key").using("btree", table.userCode.asc().nullsLast().op("text_ops")).where(sql`(state = 'pending'::text)`),
+	foreignKey({
+			columns: [table.oauthClientId],
+			foreignColumns: [connectedAppOauthClientsInHarnessShared.clientId],
+			name: "connected_app_device_grants_oauth_client_id_fkey"
+		}).onDelete("cascade"),
 	pgPolicy("connected_app_device_grants_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("connected_app_device_grants_approved_has_workspace", sql`(state = ANY (ARRAY['pending'::text, 'denied'::text])) OR (workspace_id IS NOT NULL)`),
+	check("connected_app_device_grants_auth_code_shape", sql`(auth_code_hash IS NULL) OR ((auth_code_hash ~ '^[0-9a-f]{64}$'::text) AND (auth_code_expires_at IS NOT NULL) AND (oauth_client_id IS NOT NULL))`),
 	check("connected_app_device_grants_consumed_has_app", sql`(state <> 'consumed'::text) OR (app_id IS NOT NULL)`),
+	check("connected_app_device_grants_granted_scopes_is_object", sql`(granted_scopes IS NULL) OR (jsonb_typeof(granted_scopes) = 'object'::text)`),
 	check("connected_app_device_grants_hash_shape", sql`device_code_hash ~ '^[0-9a-f]{64}$'::text`),
+	check("connected_app_device_grants_oauth_request_complete", sql`(oauth_client_id IS NULL) OR ((oauth_redirect_uri IS NOT NULL) AND (oauth_code_challenge ~ '^[A-Za-z0-9_-]{43}$'::text))`),
 	check("connected_app_device_grants_scopes_is_object", sql`jsonb_typeof(requested_scopes) = 'object'::text`),
 	check("connected_app_device_grants_state_check", sql`state = ANY (ARRAY['pending'::text, 'approved'::text, 'denied'::text, 'consumed'::text])`),
 	check("connected_app_device_grants_user_code_shape", sql`user_code ~ '^[A-Z0-9]{4}-[A-Z0-9]{4}$'::text`),
 	primaryKey({ columns: [table.deviceCodeHash], name: "connected_app_device_grants_pkey"}),
+
+]);
+
+export const connectedAppOauthClientsInHarnessShared = harnessShared.table("connected_app_oauth_clients", {
+	clientId: text("client_id").primaryKey().notNull(),
+	clientName: text("client_name").notNull(),
+	redirectUris: text("redirect_uris").array().notNull(),
+	tokenEndpointAuthMethod: text("token_endpoint_auth_method").default('none').notNull(),
+	clientSecretHash: text("client_secret_hash"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	check("connected_app_oauth_clients_auth_method_check", sql`token_endpoint_auth_method = ANY (ARRAY['none'::text, 'client_secret_post'::text, 'client_secret_basic'::text])`),
+	check("connected_app_oauth_clients_id_shape", sql`client_id ~ '^pcoc_[A-Za-z0-9_-]{22}$'::text`),
+	check("connected_app_oauth_clients_redirect_count", sql`(cardinality(redirect_uris) >= 1) AND (cardinality(redirect_uris) <= 10)`),
+	check("connected_app_oauth_clients_secret_hash_shape", sql`(client_secret_hash IS NULL) OR (client_secret_hash ~ '^[0-9a-f]{64}$'::text)`),
+	check("connected_app_oauth_clients_secret_matches_method", sql`(token_endpoint_auth_method = 'none'::text) = (client_secret_hash IS NULL)`),
+	primaryKey({ columns: [table.clientId], name: "connected_app_oauth_clients_pkey"}),
 
 ]);
 
@@ -2027,7 +2062,7 @@ export const coordEntitySubscriptionsInHarnessShared = harnessShared.table("coor
 	index("coord_entity_subscriptions_derived_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.derivedFromKind.asc().nullsLast().op("text_ops"), table.derivedFromRef.asc().nullsLast().op("text_ops")).where(sql`((cancelled_at IS NULL) AND (derived_from_kind IS NOT NULL))`),
 	index("coord_entity_subscriptions_target_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
 	check("coord_entity_subscriptions_kind_check", sql`target_kind = ANY (ARRAY['topic'::text, 'object'::text, 'fleet'::text, 'event'::text])`),
-	check("coord_entity_subscriptions_mode_check", sql`delivery_mode = ANY (ARRAY['full'::text, 'digest'::text, 'mention'::text])`),
+	check("coord_entity_subscriptions_mode_check", sql`delivery_mode = ANY (ARRAY['full'::text, 'digest'::text, 'mention'::text, 'muted'::text])`),
 	check("coord_entity_subscriptions_ref_nonempty", sql`target_ref <> ''::text`),
 	check("coord_entity_subscriptions_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
