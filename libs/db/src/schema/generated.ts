@@ -3927,7 +3927,7 @@ export const harnessDocPartsInHarnessShared = harnessShared.table("harness_doc_p
 	check("harness_doc_parts_projected_needs_section", sql`(cardinality(client_scope) = 0) OR (target_section IS NOT NULL)`),
 	check("harness_doc_parts_prose_never_projects", sql`(kind <> 'prose'::text) OR (cardinality(client_scope) = 0)`),
 	check("harness_doc_parts_rationale_only_on_recipe", sql`(rationale_part_key IS NULL) OR (kind = 'recipe'::text)`),
-	check("harness_doc_parts_stack_scope_shape", sql`(cardinality(stack_scope) = 0) OR (array_to_string(stack_scope, ' '::text) ~ '^(blueprint|slot|role):[^[:space:]:]+( (blueprint|slot|role):[^[:space:]:]+)*$'::text)`),
+	check("harness_doc_parts_stack_scope_shape", sql`(cardinality(stack_scope) = 0) OR (array_to_string(stack_scope, ' '::text) ~ '^((blueprint|slot|role):[^[:space:]:]+|package:[0-9a-f]{64})( ((blueprint|slot|role):[^[:space:]:]+|package:[0-9a-f]{64}))*$'::text)`),
 ]);
 
 export const harnessDockLayoutsInHarnessShared = harnessShared.table("harness_dock_layouts", {
