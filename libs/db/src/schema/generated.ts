@@ -2635,12 +2635,19 @@ export const customerWorkspacesInHarnessShared = harnessShared.table("customer_w
 	idleStopAfterMinutes: integer("idle_stop_after_minutes"),
 	lastActivityAt: timestamp("last_activity_at", { withTimezone: true, mode: 'string' }),
 	lifecyclePolicyUpdatedAt: timestamp("lifecycle_policy_updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	kind: text().default('hosted').notNull(),
+	linkedInstallId: text("linked_install_id"),
+	hostedHostId: text("hosted_host_id").generatedAlwaysAs(sql`
+CASE
+    WHEN (kind = 'hosted'::text) THEN workspace_host_id
+    ELSE NULL::text
+END`),
 }, (table) => [
 	index("customer_workspaces_idle_stop_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.lastActivityAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("text_ops")).where(sql`((state = 'active'::text) AND (idle_stop_after_minutes IS NOT NULL))`),
-	uniqueIndex("customer_workspaces_one_live_per_organization_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.organizationId.asc().nullsLast().op("text_ops")).where(sql`(state <> 'deleted'::text)`),
+	uniqueIndex("customer_workspaces_one_live_per_organization_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.organizationId.asc().nullsLast().op("text_ops")).where(sql`((state <> 'deleted'::text) AND (kind = 'hosted'::text))`),
 	index("customer_workspaces_organization_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.organizationId.asc().nullsLast().op("text_ops"), table.updatedAt.desc().nullsFirst().op("timestamptz_ops"), table.id.asc().nullsLast().op("text_ops")),
 	foreignKey({
-			columns: [table.workspaceId, table.workspaceHostId],
+			columns: [table.workspaceId, table.hostedHostId],
 			foreignColumns: [workspaceHostsInHarnessShared.workspaceId, workspaceHostsInHarnessShared.id],
 			name: "customer_workspaces_host_fk"
 		}),
@@ -2655,7 +2662,9 @@ export const customerWorkspacesInHarnessShared = harnessShared.table("customer_w
 	check("customer_workspaces_deleted_at_ck", sql`(state = 'deleted'::text) = (deleted_at IS NOT NULL)`),
 	check("customer_workspaces_display_name_ck", sql`btrim(display_name) <> ''::text`),
 	check("customer_workspaces_idle_stop_ck", sql`(idle_stop_after_minutes IS NULL) OR (idle_stop_after_minutes > 0)`),
+	check("customer_workspaces_kind_ck", sql`kind = ANY (ARRAY['hosted'::text, 'linked'::text])`),
 	check("customer_workspaces_lifecycle_budget_ck", sql`(monthly_lifecycle_budget_cents IS NULL) OR (monthly_lifecycle_budget_cents >= 0)`),
+	check("customer_workspaces_linked_install_ck", sql`((kind = 'linked'::text) = (linked_install_id IS NOT NULL)) AND ((linked_install_id IS NULL) OR (linked_install_id ~ '^[a-z0-9][a-z0-9-]{7,63}$'::text))`),
 	check("customer_workspaces_organization_id_ck", sql`btrim(organization_id) <> ''::text`),
 	check("customer_workspaces_provider_concurrency_ck", sql`provider_concurrency_limit > 0`),
 	check("customer_workspaces_state_ck", sql`state = ANY (ARRAY['provisioning'::text, 'active'::text, 'suspended'::text, 'offboarding'::text, 'deleted'::text])`),
@@ -8473,6 +8482,45 @@ export const remoteAccessOwnTunnelInHarnessShared = harnessShared.table("remote_
 	check("remote_access_own_tunnel_operator_port_check", sql`(operator_port IS NULL) OR ((operator_port >= 1) AND (operator_port <= 65535))`),
 	check("remote_access_own_tunnel_singleton_check", sql`CHECK (singleton)`),
 	primaryKey({ columns: [table.singleton], name: "remote_access_own_tunnel_pkey"}),
+
+]);
+
+export const remoteAccessPortalRelayInHarnessShared = harnessShared.table("remote_access_portal_relay", {
+	singleton: boolean().default(true).primaryKey().notNull(),
+	installId: text("install_id").notNull(),
+	portalOrigin: text("portal_origin").notNull(),
+	state: text().default('off').notNull(),
+	consentNoticeVersion: integer("consent_notice_version"),
+	consentedAt: timestamp("consented_at", { withTimezone: true, mode: 'string' }),
+	consentedBy: text("consented_by"),
+	userCode: text("user_code"),
+	verificationUri: text("verification_uri"),
+	deviceCodeCt: byteaCustom("device_code_ct"),
+	grantExpiresAt: timestamp("grant_expires_at", { withTimezone: true, mode: 'string' }),
+	pollIntervalSec: integer("poll_interval_sec"),
+	organizationId: text("organization_id"),
+	customerWorkspaceId: text("customer_workspace_id"),
+	appBaseUrl: text("app_base_url"),
+	connectorUrl: text("connector_url"),
+	connectorBearerCt: byteaCustom("connector_bearer_ct"),
+	operatorPort: integer("operator_port"),
+	linkedAt: timestamp("linked_at", { withTimezone: true, mode: 'string' }),
+	lastError: text("last_error"),
+	lastErrorAt: timestamp("last_error_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	check("remote_access_portal_relay_consent_complete", sql`(consent_notice_version IS NULL) = (consented_at IS NULL)`),
+	check("remote_access_portal_relay_consent_notice_version_check", sql`(consent_notice_version IS NULL) OR (consent_notice_version > 0)`),
+	check("remote_access_portal_relay_install_id_check", sql`install_id ~ '^[a-z0-9][a-z0-9-]{7,63}$'::text`),
+	check("remote_access_portal_relay_linked_complete", sql`(state <> 'linked'::text) OR ((consented_at IS NOT NULL) AND (organization_id IS NOT NULL) AND (customer_workspace_id IS NOT NULL) AND (app_base_url IS NOT NULL) AND (connector_url IS NOT NULL) AND (connector_bearer_ct IS NOT NULL))`),
+	check("remote_access_portal_relay_linking_complete", sql`(state <> 'linking'::text) OR ((consented_at IS NOT NULL) AND (user_code IS NOT NULL) AND (verification_uri IS NOT NULL) AND (device_code_ct IS NOT NULL) AND (grant_expires_at IS NOT NULL))`),
+	check("remote_access_portal_relay_operator_port_check", sql`(operator_port IS NULL) OR ((operator_port >= 1) AND (operator_port <= 65535))`),
+	check("remote_access_portal_relay_poll_interval_sec_check", sql`(poll_interval_sec IS NULL) OR (poll_interval_sec > 0)`),
+	check("remote_access_portal_relay_portal_origin_check", sql`portal_origin ~ '^https?://[^/?#]+$'::text`),
+	check("remote_access_portal_relay_singleton_check", sql`CHECK (singleton)`),
+	check("remote_access_portal_relay_state_check", sql`state = ANY (ARRAY['off'::text, 'linking'::text, 'linked'::text])`),
+	primaryKey({ columns: [table.singleton], name: "remote_access_portal_relay_pkey"}),
 
 ]);
 

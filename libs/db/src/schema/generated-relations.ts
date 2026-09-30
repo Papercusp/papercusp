@@ -696,7 +696,7 @@ export const workspaceGrantsInHarnessSharedRelations = relations(workspaceGrants
 export const customerWorkspacesInHarnessSharedRelations = relations(customerWorkspacesInHarnessShared, ({one, many}) => ({
 	workspaceGrantsInHarnessShareds: many(workspaceGrantsInHarnessShared),
 	workspaceHostsInHarnessShared: one(workspaceHostsInHarnessShared, {
-		fields: [customerWorkspacesInHarnessShared.workspaceId, customerWorkspacesInHarnessShared.workspaceHostId],
+		fields: [customerWorkspacesInHarnessShared.workspaceId, customerWorkspacesInHarnessShared.hostedHostId],
 		references: [workspaceHostsInHarnessShared.workspaceId, workspaceHostsInHarnessShared.id]
 	}),
 	workspaceHostOperationsInHarnessShareds: many(workspaceHostOperationsInHarnessShared),
