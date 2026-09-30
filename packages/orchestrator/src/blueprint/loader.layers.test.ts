@@ -230,7 +230,7 @@ test('D-029 — same-version peer declarations and a duplicated diamond source r
 });
 
 test('P-002 — identical contribution claims compose once, while conflicting ids name both layers', () => {
-  const declaration = { id: 'task-context', purpose: 'prompt', source: 'provider', refresh: 'turn', inputKind: 'prompt-file', ref: 'provider:task', producerRef: 'existing.task-brief' };
+  const declaration = { id: 'task-context', purpose: 'prompt', source: 'provider', refresh: 'turn', inputKind: 'prompt-file', ref: 'provider:task', producerRef: 'papercusp.turn-start-orientation@1', verb: 'render' };
   const { resolve, cleanup } = chain({
     left: { id: 'left', contributions: [declaration] },
     same: { id: 'same', contributions: [declaration] },

@@ -125,6 +125,7 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	suClientLeaseUntil: timestamp("su_client_lease_until", { withTimezone: true, mode: 'string' }),
 	suClientDetachedAt: timestamp("su_client_detached_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
+	index("adv_sessions_app_operation_caller_idx").using("btree", sql`workspace_id`, sql`split_part((((launch_spec -> 'acceptedOperation'::text) -> 'pin`).where(sql`(launch_spec ? 'acceptedOperation'::text)`),
 	index("adv_sessions_coord_owner_first_seen_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.firstSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("adv_sessions_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("adv_sessions_ended_unarchived_idx").using("btree", table.endedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((ended_at IS NOT NULL) AND (archived_at IS NULL))`),
@@ -1863,6 +1864,17 @@ export const connectedAppDeviceGrantsInHarnessShared = harnessShared.table("conn
 
 ]);
 
+export const connectedAppNetworksInHarnessShared = harnessShared.table("connected_app_networks", {
+	appId: text("app_id").notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	network: text().notNull(),
+	firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("connected_app_networks_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.appId.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.appId, table.network], name: "connected_app_networks_pkey"}),
+	pgPolicy("connected_app_networks_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const connectedAppOauthClientsInHarnessShared = harnessShared.table("connected_app_oauth_clients", {
 	clientId: text("client_id").primaryKey().notNull(),
 	clientName: text("client_name").notNull(),
@@ -1904,6 +1916,7 @@ export const connectedAppsInHarnessShared = harnessShared.table("connected_apps"
 	rotatedAt: timestamp("rotated_at", { withTimezone: true, mode: 'string' }),
 	clientAuth: text("client_auth"),
 	clientJwk: jsonb("client_jwk"),
+	firstUsedAt: timestamp("first_used_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	uniqueIndex("connected_apps_token_hash_key").using("btree", table.tokenHash.asc().nullsLast().op("text_ops")).where(sql`(token_hash IS NOT NULL)`),
 	index("connected_apps_user_idx").using("btree", table.userEmail.asc().nullsLast().op("text_ops")),
@@ -10145,6 +10158,7 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 }, (table) => [
 	index("tool_invocations_activity_adv_session_lookup_idx").using("btree", sql`workspace_id`, sql`((args_json ->> 'adv_session_id'::text))`, sql`invoked_at`, sql`id`).where(sql`((tool_name = ANY (ARRAY['activity:report'::text, 'activity_report'::text])) AND (args_json ? 'adv_session_id'::text))`),
 	index("tool_invocations_activity_session_lookup_idx").using("btree", sql`workspace_id`, sql`COALESCE((args_json ->> 'session_id'::text), (args_json ->> 'se`, sql`invoked_at`, sql`id`).where(sql`((tool_name = ANY (ARRAY['activity:report'::text, 'activity_report'::text])) AND ((args_json ? 'session_id'::text) OR (args_json ? 'sessionId'::text)))`),
+	index("tool_invocations_app_principal_activity_idx").using("btree", sql`workspace_id`, sql`split_part(coord_owner_id, '/'::text, 1)`, sql`invoked_at`, sql`id`).where(sql`(coord_owner_id ~~ 'app:%'::text)`),
 	index("tool_invocations_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("tool_invocations_error_code_idx").using("btree", table.errorCode.asc().nullsLast().op("text_ops"), table.invokedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(error_code IS NOT NULL)`),
 	index("tool_invocations_goal_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops"), table.coordOwnerId.asc().nullsLast(), table.goalActorClass.asc().nullsLast()).where(sql`(goal_id IS NOT NULL)`),

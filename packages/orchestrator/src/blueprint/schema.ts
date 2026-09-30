@@ -1102,7 +1102,9 @@ export const BlueprintContributionSchema = z.object({
   /** Context capability (portable-identity-packages P-004): a capability-provider
    * contribution that names a portable `class@major` also names the contract verb
    * whose output it contributes. The pot's binding supplies the implementation, so
-   * the class itself is the declared producer and `producerRef` must equal `ref`. */
+   * the class itself is the declared producer and `producerRef` must equal `ref`.
+   * A setting or prompt-file provider names the verb of its first-party class
+   * (P-005, D-039). */
   verb: z.string().regex(/^[a-z][a-zA-Z0-9_.-]*$/).max(120).optional(),
   /** Declared injection point (portable-identity-packages P-010): the sink(s),
    * trigger, token budget, priority and over-budget behavior of this provider's
@@ -1146,7 +1148,8 @@ export const BlueprintContributionSchema = z.object({
   if (value.verb !== undefined && value.inputKind === 'capability-provider' && !majorRef) {
     ctx.addIssue({ code: 'custom', path: ['ref'], message: 'a context capability names a portable class@major, not an exact version' });
   }
-  if (value.verb !== undefined && value.producerRef !== undefined && value.producerRef !== value.ref) {
+  if (value.verb !== undefined && value.inputKind === 'capability-provider' && value.producerRef !== undefined &&
+      value.producerRef !== value.ref) {
     ctx.addIssue({ code: 'custom', path: ['producerRef'], message: 'a context capability is produced by its class; producerRef must equal ref' });
   }
   const kinds = {

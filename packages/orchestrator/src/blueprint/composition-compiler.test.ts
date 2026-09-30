@@ -140,7 +140,7 @@ test.each(['launch', 'turn', 'on-demand'] as const)(
     try {
       const source = { ...rootSource(), contributions: [{ id: 'live-context', purpose: 'operational',
         source: 'provider', refresh, inputKind: 'setting', ref: 'live-context',
-        producerRef: 'fixture:context', availability: 'optional' }] };
+        producerRef: 'papercusp.mode-state@1', verb: 'read', availability: 'optional' }] };
       const input = { source, resolve: f.resolve, contributionRefresh: refresh };
       assert.throws(() => compileAgentSpecification({ ...input,
         contributionOmissions: [{ id: 'live-context', reason: 'not-requested' }],
@@ -154,7 +154,7 @@ test.each(['launch', 'turn', 'on-demand'] as const)(
           `omitted:${omission.reason}`);
       }
       const bound = compileAgentSpecification({ ...input, settings: [{ ref: 'live-context',
-        revision: '1', value: { current: true }, producerRef: 'fixture:context' }] });
+        revision: '1', value: { current: true }, producerRef: 'papercusp.mode-state@1' }] });
       assert.deepEqual(bound.inputs.find((entry) => entry.ref === 'composition:contribution-refresh'),
         { kind: 'setting', ref: 'composition:contribution-refresh', revision: '1', value: refresh });
       assert.equal(replayAgentSpecification(bound).specificationRevision, bound.specificationRevision);

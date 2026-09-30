@@ -13,7 +13,7 @@ const injection = {
 
 const provider = {
   id: 'live-notes', purpose: 'prompt', source: 'provider', refresh: 'turn',
-  inputKind: 'prompt-file', ref: 'live-notes', producerRef: 'fixture:notes',
+  inputKind: 'prompt-file', ref: 'live-notes', producerRef: 'papercusp.turn-start-orientation@1', verb: 'render',
 } as const;
 
 function issuesAt(input: unknown, path: string): string[] {
@@ -46,7 +46,7 @@ test('the trigger must match the declared refresh cadence', () => {
 
 test('an output with no text cannot be injected', () => {
   const setting = { id: 'knob', purpose: 'operational', source: 'provider', refresh: 'turn',
-    inputKind: 'setting', ref: 'knob', producerRef: 'fixture:knob', injection };
+    inputKind: 'setting', ref: 'knob', producerRef: 'papercusp.mode-state@1', verb: 'read', injection };
   assert.match(issuesAt(setting, 'injection').join('\n'), /has no text to inject/);
 });
 

@@ -19,8 +19,8 @@ test('P-003 named SU composition and planner specialist reuse the identity graph
   assert.ok(!('workItem' in suRaw) && !('spine' in suRaw) && !('fleet' in suRaw),
     'the identity package does not author a workflow or fleet assignment');
   assert.deepEqual((suRaw.contributions as Array<{ id: string; producerRef: string }>).map((item) => [item.id, item.producerRef]), [
-    ['current-mode-state', 'modes/store:agent_modes'],
-    ['current-assignment', 'coord:presence'],
+    ['current-mode-state', 'papercusp.mode-state@1'],
+    ['current-assignment', 'papercusp.current-assignment@1'],
   ]);
   const selected = resolveBlueprintSource({
     id: 'selected-su-planner', extends: ['su', 'su.specialist-planner'], slots: [],

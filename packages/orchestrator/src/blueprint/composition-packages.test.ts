@@ -217,20 +217,20 @@ describe('P-002 component contribution binding', () => {
       source: parseYaml(readFileSync(file, 'utf8')),
       sourcePath: file,
       settings: [{ ref: 'fleet-leader-brief', revision: 'brief-1', value: brief,
-        producerRef: 'agent-tools/fleet/leader-brief:buildLeaderBrief' }],
+        producerRef: 'papercusp.fleet-leader-brief@1' }],
     });
     expect(artifact.source.kind).toBe('identity');
     expect(artifact.configuration).toMatchObject({ id: 'su.fleet-leader' });
     expect(artifact.provenance.find((entry) => entry.path === 'contribution.fleet-leader-brief'))
-      .toMatchObject({ sourceRef: 'setting:fleet-leader-brief', producerRef: 'agent-tools/fleet/leader-brief:buildLeaderBrief' });
+      .toMatchObject({ sourceRef: 'setting:fleet-leader-brief', producerRef: 'papercusp.fleet-leader-brief@1' });
     expect(specificationPrompt(artifact)).toBe('');
     expect(replayAgentSpecification(JSON.parse(JSON.stringify(artifact)))).toEqual(artifact);
   });
 
   const fixed = { id: 'instructions', purpose: 'prompt', source: 'fixed', refresh: 'source-change', inputKind: 'prompt-file', ref: 'fixed:instructions' } as const;
-  const generated = { id: 'current-task', purpose: 'prompt', source: 'provider', refresh: 'turn', inputKind: 'prompt-file', ref: 'provider:task', producerRef: 'existing.task-brief' } as const;
+  const generated = { id: 'current-task', purpose: 'prompt', source: 'provider', refresh: 'turn', inputKind: 'prompt-file', ref: 'provider:task', producerRef: 'papercusp.turn-start-orientation@1', verb: 'render' } as const;
   const resource = { id: 'procedure', purpose: 'resource', source: 'fixed', refresh: 'source-change', inputKind: 'package', ref: 'recipe:shared' } as const;
-  const operational = { id: 'runtime-mode', purpose: 'operational', source: 'provider', refresh: 'turn', inputKind: 'setting', ref: 'mode', producerRef: 'modes.store' } as const;
+  const operational = { id: 'runtime-mode', purpose: 'operational', source: 'provider', refresh: 'turn', inputKind: 'setting', ref: 'mode', producerRef: 'papercusp.mode-state@1', verb: 'read' } as const;
   const providerText = 'Current task supplied by the existing provider.';
   const providerInput = { kind: 'prompt-file' as const, ref: 'provider:task', bytes: providerText, producerRef: generated.producerRef,
     contentHash: createHash('sha256').update(providerText).digest('hex') };

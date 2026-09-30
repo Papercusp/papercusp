@@ -216,16 +216,16 @@ test('P-003 built-in mode manifests generate one catalog and an approved install
     const contributions = raw.contributions as Array<{ id: string; producerRef?: string; refresh?: string; availability?: string }>;
     assert.ok(contributions.some((value) => value.id === `${document.modes[0]}-definition`));
     assert.ok(contributions.some((value) => value.id === 'current-mode-state' &&
-      value.producerRef === 'modes/store:agent_modes' && value.refresh === 'turn'));
+      value.producerRef === 'papercusp.mode-state@1' && value.refresh === 'turn'));
     if (document.id === 'su.mode-goal') {
       assert.ok(contributions.some((value) => value.id === 'current-mode-state' &&
         value.availability === 'optional'), 'GOAL launch may precede holder mode attachment');
       assert.ok(contributions.some((value) => value.id === 'goal-kickoff' &&
-        value.producerRef === 'agent-tools/goals/start:buildGoalKickoffBrief' && value.refresh === 'launch'));
+        value.producerRef === 'papercusp.goal-kickoff@1' && value.refresh === 'launch'));
       assert.ok(contributions.some((value) => value.id === 'goal-portfolio' &&
-        value.producerRef === 'goal-launch-settings:renderGoalPortfolioBrief' && value.refresh === 'launch'));
+        value.producerRef === 'papercusp.goal-portfolio@1' && value.refresh === 'launch'));
       assert.ok(contributions.some((value) => value.id === 'goal-obligations' &&
-        value.producerRef === 'agent-obligation-reader:projectAgentTurnStartObligationBrief' &&
+        value.producerRef === 'papercusp.agent-obligations@1' &&
         value.refresh === 'turn'));
     }
     return resolved;
@@ -267,9 +267,9 @@ test('P-003 built-in mode manifests generate one catalog and an approved install
 
 test('P-004 existing brief and orientation producers are declared on their current identity components', () => {
   const expected = [
-    ['su.fleet-leader', 'fleet-leader-brief', 'agent-tools/fleet/leader-brief:buildLeaderBrief', 'on-demand'],
-    ['su.practice', 'turn-start-orientation', 'turn-start-orientation:buildTurnStartOrientationBlock', 'turn'],
-    ['su.practice', 'coord-orientation', 'agent-tools/coordination/tools/orient:composeOrient', 'on-demand'],
+    ['su.fleet-leader', 'fleet-leader-brief', 'papercusp.fleet-leader-brief@1', 'on-demand'],
+    ['su.practice', 'turn-start-orientation', 'papercusp.turn-start-orientation@1', 'turn'],
+    ['su.practice', 'coord-orientation', 'papercusp.coord-orientation@1', 'on-demand'],
   ] as const;
   for (const [identityId, contributionId, producerRef, refresh] of expected) {
     const raw = parseYaml(readFileSync(builtinBlueprintPath(identityId), 'utf8')) as {
