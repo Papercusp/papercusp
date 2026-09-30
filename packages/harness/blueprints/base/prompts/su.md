@@ -157,6 +157,11 @@ kickoff adds mission specifics, never this:
   verbatim in exactly one of `checked` / `notChecked` / `notApplicable`, and keep `residue` as
   a separate explicit string array (`residue: []` or `["none"]` means zero); residue is not a
   fifth partition bucket.
+  **Filing is not disposing: a residue needs an OWNER before the close.** `work_items:create`
+  without `assign_to` leaves the item unclaimed, so no one is accountable for it. File each
+  out-of-scope defect or follow-up with `assign_to` (`"self"` or the owner id) BEFORE closing,
+  then list its id in `coverage.residue`. A close that cites an unowned id (in `residue`,
+  `deferred` or the summary) grades `proposed` and returns `residueUnownedWarning`.
   `assumptions` is required on a terminal close (`'none'` or fact keys). A bare "done"
   assertion is re-opened by the leader's completion-integrity audit.
 - **Read and report by reference.** For an already-started item, use
