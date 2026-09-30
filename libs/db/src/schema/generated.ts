@@ -1769,6 +1769,17 @@ export const commsTrustListInHarnessShared = harnessShared.table("comms_trust_li
 	check("comms_trust_list_tier_check", sql`tier = ANY (ARRAY['observe'::text, 'message'::text, 'wake'::text, 'steer'::text])`),
 ]);
 
+export const connectedAppAccessSettingsInHarnessShared = harnessShared.table("connected_app_access_settings", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	enabled: boolean().default(true).notNull(),
+	changedAt: timestamp("changed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	changedBy: text("changed_by"),
+}, (table) => [
+	pgPolicy("connected_app_access_settings_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "connected_app_access_settings_pkey"}),
+
+]);
+
 export const connectedAppAccessTokensInHarnessShared = harnessShared.table("connected_app_access_tokens", {
 	id: text().primaryKey().notNull(),
 	tokenHash: text("token_hash").notNull(),
