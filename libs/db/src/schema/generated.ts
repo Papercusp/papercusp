@@ -1769,6 +1769,45 @@ export const commsTrustListInHarnessShared = harnessShared.table("comms_trust_li
 	check("comms_trust_list_tier_check", sql`tier = ANY (ARRAY['observe'::text, 'message'::text, 'wake'::text, 'steer'::text])`),
 ]);
 
+export const connectedAppAccessTokensInHarnessShared = harnessShared.table("connected_app_access_tokens", {
+	id: text().primaryKey().notNull(),
+	tokenHash: text("token_hash").notNull(),
+	appId: text("app_id").notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	scopes: jsonb().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+}, (table) => [
+	index("connected_app_access_tokens_app_expiry_idx").using("btree", table.appId.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.appId],
+			foreignColumns: [connectedAppsInHarnessShared.id],
+			name: "connected_app_access_tokens_app_id_fkey"
+		}).onDelete("cascade"),
+	unique("connected_app_access_tokens_token_hash_key").on(table.tokenHash),
+	pgPolicy("connected_app_access_tokens_workspace_policy", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("connected_app_access_tokens_expiry_after_creation", sql`expires_at > created_at`),
+	check("connected_app_access_tokens_id_check", sql`id ~ '^[A-Za-z0-9]{16}$'::text`),
+	check("connected_app_access_tokens_scopes_check", sql`jsonb_typeof(scopes) = 'object'::text`),
+	check("connected_app_access_tokens_token_hash_check", sql`token_hash ~ '^[0-9a-f]{64}$'::text`),
+]);
+
+export const connectedAppClientAssertionsInHarnessShared = harnessShared.table("connected_app_client_assertions", {
+	appId: text("app_id").notNull(),
+	jti: text().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.appId],
+			foreignColumns: [connectedAppsInHarnessShared.id],
+			name: "connected_app_client_assertions_app_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.appId, table.jti], name: "connected_app_client_assertions_pkey"}),
+	pgPolicy("connected_app_client_assertions_workspace_policy", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("connected_app_client_assertions_jti_check", sql`(length(jti) >= 1) AND (length(jti) <= 200)`),
+]);
+
 export const connectedAppDeviceGrantsInHarnessShared = harnessShared.table("connected_app_device_grants", {
 	deviceCodeHash: text("device_code_hash").primaryKey().notNull(),
 	userCode: text("user_code").notNull(),
@@ -1852,12 +1891,20 @@ export const connectedAppsInHarnessShared = harnessShared.table("connected_apps"
 	previousTokenHash: text("previous_token_hash"),
 	previousTokenValidUntil: timestamp("previous_token_valid_until", { withTimezone: true, mode: 'string' }),
 	rotatedAt: timestamp("rotated_at", { withTimezone: true, mode: 'string' }),
+	clientAuth: text("client_auth"),
+	clientJwk: jsonb("client_jwk"),
 }, (table) => [
 	uniqueIndex("connected_apps_token_hash_key").using("btree", table.tokenHash.asc().nullsLast().op("text_ops")).where(sql`(token_hash IS NOT NULL)`),
 	index("connected_apps_user_idx").using("btree", table.userEmail.asc().nullsLast().op("text_ops")),
 	index("connected_apps_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(revoked_at IS NULL)`),
 	pgPolicy("connected_apps_workspace_policy", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("connected_apps_app_has_token_hash", sql`(kind <> ALL (ARRAY['app'::text, 'service'::text])) OR (token_hash IS NOT NULL)`),
+	check("connected_apps_client_auth_check", sql`(client_auth IS NULL) OR ((kind = 'service'::text) AND (client_auth = ANY (ARRAY['client_secret'::text, 'private_key_jwt'::text])))`),
+	check("connected_apps_client_jwk_check", sql`CHECK (
+CASE
+    WHEN (NOT (client_auth IS DISTINCT FROM 'private_key_jwt'::text)) THEN ((client_jwk IS NOT NULL) AND (jsonb_typeof(client_jwk) = 'object'::text))
+    ELSE (client_jwk IS NULL)
+END)`),
 	check("connected_apps_kind_check", sql`kind = ANY (ARRAY['mobile'::text, 'app'::text, 'service'::text])`),
 	check("connected_apps_limits_is_object", sql`jsonb_typeof(limits) = 'object'::text`),
 	check("connected_apps_previous_token_hash_shape", sql`(previous_token_hash IS NULL) OR (previous_token_hash ~ '^[0-9a-f]{64}$'::text)`),
