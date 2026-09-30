@@ -290,6 +290,11 @@ function wrapMigrationFailure({
   } else if (dataDirWasReused === false) {
     lines.push('This boot created a fresh Postgres data directory; the migration or one of its prerequisites is invalid.');
   }
+  if (/type "vector" does not exist/.test(causeMessage)) {
+    lines.push(
+      'The pgvector extension is missing from this Postgres. For the embedded database run `node scripts/install-embedded-pgvector.mjs` from the repository root after installing pgvector for the embedded Postgres major (Debian/Ubuntu: `sudo apt install postgresql-18-pgvector`; macOS: `brew install pgvector`), then restart.',
+    );
+  }
   lines.push(
     haltBoot
       ? 'The operator cannot start until this migration applies. Inspect the migration and database schema, repair the mismatch or missing prerequisite, then restart Papercusp.'

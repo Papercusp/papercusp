@@ -2579,6 +2579,40 @@ export const decisionLedgerInHarnessShared = harnessShared.table("decision_ledge
 	check("decision_ledger_posture_check", sql`posture = ANY (ARRAY['auto'::text, 'proposed'::text, 'gated'::text, 'rejected'::text])`),
 ]);
 
+export const decisionModelCallsInHarnessShared = harnessShared.table("decision_model_calls", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.decision_model_calls_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	consumer: text(),
+	provider: text().notNull(),
+	requestedModel: text("requested_model").notNull(),
+	returnedModel: text("returned_model"),
+	questionIds: text("question_ids").array().default([]).notNull(),
+	questionsSchemaSha256: text("questions_schema_sha256").notNull(),
+	optionOrder: jsonb("option_order").default({}).notNull(),
+	answers: jsonb(),
+	outcome: text().notNull(),
+	inconclusiveReason: text("inconclusive_reason"),
+	inconclusiveDetail: text("inconclusive_detail"),
+	httpStatus: integer("http_status"),
+	attempts: integer().default(0).notNull(),
+	latencyMs: integer("latency_ms").notNull(),
+	inputTokens: integer("input_tokens"),
+	outputTokens: integer("output_tokens"),
+	costUsd: numeric("cost_usd", { precision: 14, scale:  8 }),
+	subjectIds: text("subject_ids").array().default([]).notNull(),
+	stateSha256: text("state_sha256").notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("decision_model_calls_state_sha256_idx").using("btree", table.stateSha256.asc().nullsLast().op("text_ops")),
+	index("decision_model_calls_ws_consumer_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.consumer.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	check("decision_model_calls_nonnegative", sql`(latency_ms >= 0) AND (attempts >= 0) AND ((input_tokens IS NULL) OR (input_tokens >= 0)) AND ((output_tokens IS NULL) OR (output_tokens >= 0)) AND ((cost_usd IS NULL) OR (cost_usd >= (0)::numeric))`),
+	check("decision_model_calls_outcome_check", sql`outcome = ANY (ARRAY['answered'::text, 'inconclusive'::text])`),
+	check("decision_model_calls_outcome_shape", sql`((outcome = 'answered'::text) AND (returned_model IS NOT NULL) AND (answers IS NOT NULL) AND (inconclusive_reason IS NULL)) OR ((outcome = 'inconclusive'::text) AND (inconclusive_reason IS NOT NULL) AND (answers IS NULL))`),
+	check("decision_model_calls_sha256_shape", sql`(state_sha256 ~ '^[0-9a-f]{64}$'::text) AND (questions_schema_sha256 ~ '^[0-9a-f]{64}$'::text)`),
+]);
+
 export const dedupAdjudicationsInHarnessShared = harnessShared.table("dedup_adjudications", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
