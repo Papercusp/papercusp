@@ -122,6 +122,8 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	suRuntimeGeneration: integer("su_runtime_generation").default(0).notNull(),
 	suSessionUpdatedAt: timestamp("su_session_updated_at", { withTimezone: true, mode: 'string' }),
 	launchParentOwner: text("launch_parent_owner").generatedAlwaysAs(sql`NULLIF((launch_spec ->> 'launchedBy'::text), ''::text)`),
+	suClientLeaseUntil: timestamp("su_client_lease_until", { withTimezone: true, mode: 'string' }),
+	suClientDetachedAt: timestamp("su_client_detached_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("adv_sessions_coord_owner_first_seen_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.firstSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("adv_sessions_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
