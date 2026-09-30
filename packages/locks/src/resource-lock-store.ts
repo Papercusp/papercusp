@@ -758,6 +758,39 @@ export async function tryHeartbeatResource(
   return { expires_ts: rows[0].expires_ts, extended: true };
 }
 
+/**
+ * WI-10004326: the coordination domain a named-resource lease ACTUALLY lives in,
+ * located by its globally unique `lock_id` + owner.
+ *
+ * A lock_id-only heartbeat or release cannot know the resource name, so it used
+ * to try only the domains the SERVING operator can infer. For a caller-tree
+ * resource that inference is the serving operator's own checkout, which differs
+ * per install: a lease acquired through the staging operator lives in the
+ * staging checkout's domain, and the same lock_id heartbeated through the green
+ * operator (release checkout) found nothing (measured 2026-09-30: not_found via
+ * one port, extended:true via the other, same lock_id). Reading the row's own
+ * domain removes the inference instead of adding another guess to it.
+ *
+ * Owner-scoped, so it only ever locates the caller's OWN lease and widens no
+ * authority. Expired rows are included on purpose: release reports expiry
+ * evidence from the lease's domain. `null` = this owner holds no row with that id.
+ * Served by idx_reslocks_owner (an owner holds a handful of leases).
+ */
+export async function readOwnedResourceLockDomain(
+  sql: Sql,
+  lockId: string,
+  owner: string,
+): Promise<string | null> {
+  const rows = await sql<Array<{ coordination_domain: string }>>`
+    SELECT coordination_domain
+      FROM agent_resource_locks
+     WHERE owner = ${owner}
+       AND lock_id = ${lockId}::uuid
+     LIMIT 1
+  `;
+  return rows[0]?.coordination_domain ?? null;
+}
+
 export interface ResourceLockStatusResult {
   status: ResourceLockStatus | 'missing';
   mode?: ResourceMode;
