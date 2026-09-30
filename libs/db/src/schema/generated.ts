@@ -12249,16 +12249,6 @@ export const llmTestMatrixResultsInHarnessShared = harnessShared.view("llm_test_
 	stddevByAxis: jsonb("stddev_by_axis"),
 }).as(sql`SELECT matrix_group_id, scenario_id, scenario_version, identity_hash, count(*) AS n_runs, mode() WITHIN GROUP (ORDER BY status) AS majority_status, jsonb_object_agg(axis, stddev_score) AS stddev_by_axis FROM ( SELECT r.matrix_group_id, r.scenario_id, r.scenario_version, r.identity_hash, r.status, k.key AS axis, stddev_pop(k.value::numeric) OVER (PARTITION BY r.matrix_group_id, k.key) AS stddev_score FROM harness_shared.llm_test_runs r, LATERAL jsonb_each_text(r.scores_json) k(key, value) WHERE r.matrix_group_id IS NOT NULL AND r.scores_json IS NOT NULL) s GROUP BY matrix_group_id, scenario_id, scenario_version, identity_hash`);
 
-export const mobileDevicesInHarnessShared = harnessShared.view("mobile_devices", {	deviceId: text("device_id"),
-	userEmail: text("user_email"),
-	workspaceId: text("workspace_id"),
-	deviceKind: text("device_kind"),
-	deviceLabel: text("device_label"),
-	pairedAt: timestamp("paired_at", { withTimezone: true, mode: 'string' }),
-	lastSeen: timestamp("last_seen", { withTimezone: true, mode: 'string' }),
-	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
-}).with({"securityInvoker":true}).as(sql`SELECT id AS device_id, user_email, workspace_id, kind AS device_kind, label AS device_label, paired_at, last_seen, revoked_at FROM harness_shared.connected_apps WHERE kind = 'mobile'::text`);
-
 export const operatorDecisionsInHarnessShared = harnessShared.view("operator_decisions", {	id: text(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	ts: bigint({ mode: "number" }),
