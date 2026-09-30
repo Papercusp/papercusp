@@ -4424,6 +4424,8 @@ origin: scout
 	acceptanceBarSeededAt: timestamp("acceptance_bar_seeded_at", { withTimezone: true, mode: 'string' }),
 	acceptanceBarSeededBy: text("acceptance_bar_seeded_by"),
 	embeddingProfile: text("embedding_profile"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	acceptanceBarVerifiedRevision: bigint("acceptance_bar_verified_revision", { mode: "number" }),
 }, (table) => [
 	index("harness_plans_acceptance_bar_unseeded").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")).where(sql`((acceptance_bar_epoch IS NOT NULL) AND (acceptance_bar_set_hash IS NULL))`),
 	index("harness_plans_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
@@ -4441,6 +4443,7 @@ origin: scout
 	check("harness_plans_acceptance_bar_epoch_positive", sql`(acceptance_bar_epoch IS NULL) OR (acceptance_bar_epoch > 0)`),
 	check("harness_plans_acceptance_bar_marker_complete", sql`(acceptance_bar_epoch IS NULL) = (acceptance_bar_cohort IS NULL)`),
 	check("harness_plans_acceptance_bar_seed_pin_complete", sql`((acceptance_bar_set_hash IS NULL) AND (acceptance_bar_rubric_slug IS NULL) AND (acceptance_bar_rubric_revision IS NULL) AND (acceptance_bar_seeded_at IS NULL) AND (acceptance_bar_seeded_by IS NULL)) OR ((acceptance_bar_set_hash ~ '^[0-9a-f]{64}$'::text) AND (length(btrim(acceptance_bar_rubric_slug)) > 0) AND (acceptance_bar_rubric_revision > 0) AND (acceptance_bar_seeded_at IS NOT NULL) AND (length(btrim(acceptance_bar_seeded_by)) > 0))`),
+	check("harness_plans_acceptance_bar_verified_revision_nonneg", sql`(acceptance_bar_verified_revision IS NULL) OR (acceptance_bar_verified_revision >= 0)`),
 	check("harness_plans_op_status_check", sql`(op_status IS NULL) OR (op_status = ANY (ARRAY['started'::text, 'paused'::text, 'done'::text]))`),
 	check("harness_plans_properties_object", sql`jsonb_typeof(properties) = 'object'::text`),
 	check("harness_plans_property_schema_object", sql`jsonb_typeof(property_schema) = 'object'::text`),
@@ -5293,6 +5296,29 @@ export const memoryPrecisionBenchInHarnessShared = harnessShared.table("memory_p
 }, (table) => [
 	index("memory_precision_bench_ws_ran_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ranAt.desc().nullsFirst().op("timestamptz_ops")),
 	pgPolicy("memory_precision_bench_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const memoryPrecisionBenchAttemptsInHarnessShared = harnessShared.table("memory_precision_bench_attempts", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	attemptedAt: timestamp("attempted_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	outcome: text().notNull(),
+	stage: text(),
+	error: text(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowId: bigint("row_id", { mode: "number" }),
+	jevGate: boolean("jev_gate").default(false).notNull(),
+}, (table) => [
+	index("memory_precision_bench_attempts_ws_at_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.attemptedAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.rowId],
+			foreignColumns: [memoryPrecisionBenchInHarnessShared.id],
+			name: "memory_precision_bench_attempts_row_id_fkey"
+		}).onDelete("set null"),
+	pgPolicy("memory_precision_bench_attempts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("memory_precision_bench_attempts_failed_shape_check", sql`(outcome = 'failed'::text) = ((stage IS NOT NULL) AND (error IS NOT NULL))`),
+	check("memory_precision_bench_attempts_outcome_check", sql`outcome = ANY (ARRAY['recorded'::text, 'failed'::text, 'flag-off'::text])`),
+	check("memory_precision_bench_attempts_stage_check", sql`(stage IS NULL) OR (stage = ANY (ARRAY['bench'::text, 'record'::text]))`),
 ]);
 
 export const memoryRecallQueryTextInHarnessShared = harnessShared.table("memory_recall_query_text", {
