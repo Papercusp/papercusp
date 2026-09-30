@@ -4874,6 +4874,29 @@ export const identityHookTurnsInHarnessShared = harnessShared.table("identity_ho
 	check("identity_hook_turns_tokens_nonnegative", sql`tokens_spent >= 0`),
 ]);
 
+export const identityReleaseFundingInHarnessShared = harnessShared.table("identity_release_funding", {
+	workspaceId: text("workspace_id").notNull(),
+	skuRef: text("sku_ref").notNull(),
+	channelId: text("channel_id"),
+	channelSource: text("channel_source"),
+	channelBoundBy: text("channel_bound_by"),
+	channelBoundAt: timestamp("channel_bound_at", { withTimezone: true, mode: 'string' }),
+	pricingState: text("pricing_state"),
+	pricingOfferId: text("pricing_offer_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	pricingUnitMicros: bigint("pricing_unit_micros", { mode: "number" }),
+	pricingCheckedAt: timestamp("pricing_checked_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.skuRef, table.workspaceId], name: "identity_release_funding_pkey"}),
+	pgPolicy("identity_release_funding_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("identity_release_funding_channel_complete", sql`((channel_id IS NULL) = (channel_source IS NULL)) AND ((channel_id IS NULL) = (channel_bound_at IS NULL)) AND ((channel_id IS NULL) OR (length(btrim(channel_id)) > 0))`),
+	check("identity_release_funding_channel_source_check", sql`(channel_source IS NULL) OR (channel_source = ANY (ARRAY['per-use-checkout'::text, 'explicit'::text]))`),
+	check("identity_release_funding_pricing_check", sql`((pricing_state IS NULL) AND (pricing_checked_at IS NULL) AND (pricing_offer_id IS NULL) AND (pricing_unit_micros IS NULL)) OR ((pricing_state = 'free'::text) AND (pricing_checked_at IS NOT NULL) AND (pricing_offer_id IS NULL) AND (pricing_unit_micros IS NULL)) OR ((pricing_state = 'priced'::text) AND (pricing_checked_at IS NOT NULL) AND (pricing_offer_id IS NOT NULL) AND (pricing_unit_micros > 0))`),
+	check("identity_release_funding_sku_ref_check", sql`sku_ref ~~ 'identity-release:%'::text`),
+]);
+
 export const improvementDispatchesInHarnessShared = harnessShared.table("improvement_dispatches", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
