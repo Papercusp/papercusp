@@ -5027,10 +5027,15 @@ export const learningPotScopeInHarnessShared = harnessShared.table("learning_pot
 	enabled: boolean().default(true).notNull(),
 	setBy: text("set_by"),
 	setAt: timestamp("set_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	pauseReason: text("pause_reason"),
+	ownerDirected: boolean("owner_directed").default(false).notNull(),
+	reviewBy: timestamp("review_by", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("learning_pot_scope_disabled_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(enabled = false)`),
 	primaryKey({ columns: [table.potSlug, table.workspaceId], name: "learning_pot_scope_pkey"}),
 	pgPolicy("learning_pot_scope_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("learning_pot_scope_owner_directed_needs_reason", sql`(NOT owner_directed) OR ((pause_reason IS NOT NULL) AND (length(btrim(pause_reason)) > 0))`),
+	check("learning_pot_scope_pause_record_only_while_paused", sql`(enabled = false) OR ((pause_reason IS NULL) AND (owner_directed = false) AND (review_by IS NULL))`),
 ]);
 
 export const learningSpendEventsInHarnessShared = harnessShared.table("learning_spend_events", {
