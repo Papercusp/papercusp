@@ -3154,6 +3154,7 @@ export const eventAwaitsInHarnessShared = harnessShared.table("event_awaits", {
 	uniqueIndex("event_awaits_inbox_wake_one_per_agent").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((policy = 'wake'::text) AND (once = false) AND (cancelled_at IS NULL) AND (event_key ~~ 'coord:inbox-wake:%'::text))`),
 	index("event_awaits_operator_cancelled_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((cancelled_at IS NOT NULL) AND (cancel_reason = 'operator'::text))`),
 	index("event_awaits_pattern_active").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`((event_key ~~ '%*%'::text) AND (fired_at IS NULL) AND (cancelled_at IS NULL))`),
+	index("event_awaits_standing_exact_key_active").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((once = false) AND (cancelled_at IS NULL))`),
 	index("event_awaits_verified_timeout_due").using("btree", table.expiresTs.asc().nullsLast().op("timestamptz_ops")).where(sql`((producer_health IS NOT NULL) AND (fired_at IS NULL) AND (cancelled_at IS NULL))`),
 	index("idx_event_awaits_active_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops")).where(sql`((fired_at IS NULL) AND (cancelled_at IS NULL))`),
 	index("idx_event_awaits_expiry").using("btree", table.expiresTs.asc().nullsLast().op("timestamptz_ops")).where(sql`((fired_at IS NULL) AND (cancelled_at IS NULL) AND (expires_ts IS NOT NULL))`),
@@ -9442,6 +9443,32 @@ export const sessionTurnPartsInHarnessShared = harnessShared.table("session_turn
 	index("session_turn_parts_ingested_idx").using("btree", table.ingestedAt.asc().nullsLast().op("timestamptz_ops")),
 	index("session_turn_parts_owner_ts_tool_use_idx").using("btree", table.owner.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(part_kind = 'tool_use'::text)`),
 	primaryKey({ columns: [table.partIdx, table.sessionId, table.sourceKind, table.workspaceId], name: "session_turn_parts_pkey"}),
+]);
+
+export const sessionTurnVocabInHarnessShared = harnessShared.table("session_turn_vocab", {
+	workspaceId: text("workspace_id").notNull(),
+	word: text().notNull(),
+	ndoc: integer().notNull(),
+	refreshedAt: timestamp("refreshed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.word, table.workspaceId], name: "session_turn_vocab_pkey"}),
+]);
+
+export const sessionTurnVocabStateInHarnessShared = harnessShared.table("session_turn_vocab_state", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	status: text().default('absent').notNull(),
+	watermarkIngestedAt: timestamp("watermark_ingested_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	wordCount: bigint("word_count", { mode: "number" }),
+	buildStartedAt: timestamp("build_started_at", { withTimezone: true, mode: 'string' }),
+	buildFinishedAt: timestamp("build_finished_at", { withTimezone: true, mode: 'string' }),
+	lastFullBuildAt: timestamp("last_full_build_at", { withTimezone: true, mode: 'string' }),
+	lastError: text("last_error"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	check("session_turn_vocab_state_status_check", sql`status = ANY (ARRAY['absent'::text, 'building'::text, 'ready'::text, 'failed'::text])`),
+	primaryKey({ columns: [table.workspaceId], name: "session_turn_vocab_state_pkey"}),
+
 ]);
 
 export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", {
