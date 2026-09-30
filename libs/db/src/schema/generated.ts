@@ -1769,6 +1769,33 @@ export const commsTrustListInHarnessShared = harnessShared.table("comms_trust_li
 	check("comms_trust_list_tier_check", sql`tier = ANY (ARRAY['observe'::text, 'message'::text, 'wake'::text, 'steer'::text])`),
 ]);
 
+export const connectedAppDeviceGrantsInHarnessShared = harnessShared.table("connected_app_device_grants", {
+	deviceCodeHash: text("device_code_hash").primaryKey().notNull(),
+	userCode: text("user_code").notNull(),
+	clientLabel: text("client_label").notNull(),
+	requestedScopes: jsonb("requested_scopes").default({}).notNull(),
+	state: text().default('pending').notNull(),
+	workspaceId: text("workspace_id"),
+	approvedBy: text("approved_by"),
+	appId: text("app_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
+	lastPolledAt: timestamp("last_polled_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("connected_app_device_grants_expires_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
+	uniqueIndex("connected_app_device_grants_pending_user_code_key").using("btree", table.userCode.asc().nullsLast().op("text_ops")).where(sql`(state = 'pending'::text)`),
+	pgPolicy("connected_app_device_grants_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("connected_app_device_grants_approved_has_workspace", sql`(state = ANY (ARRAY['pending'::text, 'denied'::text])) OR (workspace_id IS NOT NULL)`),
+	check("connected_app_device_grants_consumed_has_app", sql`(state <> 'consumed'::text) OR (app_id IS NOT NULL)`),
+	check("connected_app_device_grants_hash_shape", sql`device_code_hash ~ '^[0-9a-f]{64}$'::text`),
+	check("connected_app_device_grants_scopes_is_object", sql`jsonb_typeof(requested_scopes) = 'object'::text`),
+	check("connected_app_device_grants_state_check", sql`state = ANY (ARRAY['pending'::text, 'approved'::text, 'denied'::text, 'consumed'::text])`),
+	check("connected_app_device_grants_user_code_shape", sql`user_code ~ '^[A-Z0-9]{4}-[A-Z0-9]{4}$'::text`),
+	primaryKey({ columns: [table.deviceCodeHash], name: "connected_app_device_grants_pkey"}),
+
+]);
+
 export const connectedAppsInHarnessShared = harnessShared.table("connected_apps", {
 	id: text().primaryKey().notNull(),
 	userEmail: text("user_email").notNull(),
@@ -1784,15 +1811,27 @@ export const connectedAppsInHarnessShared = harnessShared.table("connected_apps"
 	pausedAt: timestamp("paused_at", { withTimezone: true, mode: 'string' }),
 	lastIp: text("last_ip"),
 	limits: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	spendCapCents: bigint("spend_cap_cents", { mode: "number" }),
+	spendCapWindowSec: integer("spend_cap_window_sec"),
+	previousTokenHash: text("previous_token_hash"),
+	previousTokenValidUntil: timestamp("previous_token_valid_until", { withTimezone: true, mode: 'string' }),
+	rotatedAt: timestamp("rotated_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	uniqueIndex("connected_apps_token_hash_key").using("btree", table.tokenHash.asc().nullsLast().op("text_ops")).where(sql`(token_hash IS NOT NULL)`),
 	index("connected_apps_user_idx").using("btree", table.userEmail.asc().nullsLast().op("text_ops")),
 	index("connected_apps_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(revoked_at IS NULL)`),
 	pgPolicy("connected_apps_workspace_policy", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("connected_apps_app_has_token_hash", sql`(kind <> 'app'::text) OR (token_hash IS NOT NULL)`),
-	check("connected_apps_kind_check", sql`kind = ANY (ARRAY['mobile'::text, 'app'::text])`),
+	check("connected_apps_app_has_token_hash", sql`(kind <> ALL (ARRAY['app'::text, 'service'::text])) OR (token_hash IS NOT NULL)`),
+	check("connected_apps_kind_check", sql`kind = ANY (ARRAY['mobile'::text, 'app'::text, 'service'::text])`),
 	check("connected_apps_limits_is_object", sql`jsonb_typeof(limits) = 'object'::text`),
+	check("connected_apps_previous_token_hash_shape", sql`(previous_token_hash IS NULL) OR (previous_token_hash ~ '^[0-9a-f]{64}$'::text)`),
+	check("connected_apps_previous_token_kind", sql`(previous_token_hash IS NULL) OR (kind = ANY (ARRAY['app'::text, 'service'::text]))`),
+	check("connected_apps_previous_token_pair", sql`(previous_token_hash IS NULL) = (previous_token_valid_until IS NULL)`),
 	check("connected_apps_scopes_is_object", sql`jsonb_typeof(scopes) = 'object'::text`),
+	check("connected_apps_service_has_spend_cap", sql`(kind <> 'service'::text) OR (spend_cap_cents IS NOT NULL)`),
+	check("connected_apps_spend_cap_positive", sql`(spend_cap_cents IS NULL) OR (spend_cap_cents > 0)`),
+	check("connected_apps_spend_cap_window_positive", sql`(spend_cap_window_sec IS NULL) OR (spend_cap_window_sec > 0)`),
 	check("connected_apps_token_hash_shape", sql`(token_hash IS NULL) OR (token_hash ~ '^[0-9a-f]{64}$'::text)`),
 ]);
 
@@ -4686,6 +4725,21 @@ export const identityFilesInHarnessShared = harnessShared.table("identity_files"
 }, (table) => [
 	index("identity_files_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	pgPolicy("identity_files_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const identityHookTurnsInHarnessShared = harnessShared.table("identity_hook_turns", {
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	turnId: text("turn_id").notNull(),
+	tokensSpent: integer("tokens_spent").default(0).notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	msSpent: integer("ms_spent").default(0).notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.ownerId, table.workspaceId], name: "identity_hook_turns_pkey"}),
+	pgPolicy("identity_hook_turns_workspace", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("identity_hook_turns_ms_nonnegative", sql`ms_spent >= 0`),
+	check("identity_hook_turns_tokens_nonnegative", sql`tokens_spent >= 0`),
 ]);
 
 export const improvementDispatchesInHarnessShared = harnessShared.table("improvement_dispatches", {
