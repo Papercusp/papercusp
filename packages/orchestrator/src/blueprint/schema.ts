@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { dataConditionSchema } from '@papercusp/rules';
 import { BUNDLE_KINDS } from './slots.js';
 import { InjectionPointSchema, validateInjectionPoint } from './injection-points.js';
+import { FIRST_PARTY_INPUT_KIND, resolveFirstPartyContextClass } from './first-party-classes.js';
 
 /**
  * The work unit the director schedules/executes. Maps onto the canonical
@@ -1116,13 +1117,33 @@ export const BlueprintContributionSchema = z.object({
     }
   }
   const majorRef = CAPABILITY_CLASS_MAJOR_REF.test(value.ref);
-  if (value.verb !== undefined && value.inputKind !== 'capability-provider') {
-    ctx.addIssue({ code: 'custom', path: ['verb'], message: 'only a capability-provider contribution names a verb' });
+  if (value.verb !== undefined && value.source !== 'provider') {
+    ctx.addIssue({ code: 'custom', path: ['verb'], message: 'only a provider contribution names a verb' });
+  }
+  // D-003/D-039: a provider names the class@major that produces it, never a
+  // function path. A setting or prompt-file output has an in-process producer,
+  // so it must name a first-party class whose verb and output kind match.
+  if (value.producerRef !== undefined && !CAPABILITY_CLASS_MAJOR_REF.test(value.producerRef)) {
+    ctx.addIssue({ code: 'custom', path: ['producerRef'], message: 'producerRef names a class@major, not a function path' });
+  }
+  if (value.source === 'provider' && value.inputKind !== 'capability-provider' && value.producerRef !== undefined &&
+      CAPABILITY_CLASS_MAJOR_REF.test(value.producerRef)) {
+    const firstParty = resolveFirstPartyContextClass(value.producerRef);
+    if (!firstParty) {
+      ctx.addIssue({ code: 'custom', path: ['producerRef'], message: `${value.inputKind} output needs a first-party class; ${value.producerRef} has no in-process provider` });
+    } else {
+      if (value.verb !== firstParty.verb) {
+        ctx.addIssue({ code: 'custom', path: ['verb'], message: `${firstParty.id} is produced by its ${firstParty.verb} verb` });
+      }
+      if (FIRST_PARTY_INPUT_KIND[firstParty.outputKind] !== value.inputKind) {
+        ctx.addIssue({ code: 'custom', path: ['inputKind'], message: `${firstParty.id} outputs ${firstParty.outputKind}, which binds ${FIRST_PARTY_INPUT_KIND[firstParty.outputKind]}` });
+      }
+    }
   }
   if (value.inputKind === 'capability-provider' && majorRef && value.verb === undefined) {
     ctx.addIssue({ code: 'custom', path: ['verb'], message: 'a class@major context capability names its contract verb' });
   }
-  if (value.verb !== undefined && !majorRef) {
+  if (value.verb !== undefined && value.inputKind === 'capability-provider' && !majorRef) {
     ctx.addIssue({ code: 'custom', path: ['ref'], message: 'a context capability names a portable class@major, not an exact version' });
   }
   if (value.verb !== undefined && value.producerRef !== undefined && value.producerRef !== value.ref) {
