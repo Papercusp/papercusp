@@ -1,0 +1,62 @@
+-- Migration 1270 — identity funding bindings.
+--
+-- agent-economy-flywheel-2026-08-30 P-016 (WI-10004280), decision D-011. P-017 reads it too.
+--
+-- A buyer who activates a priced Cupboard identity release pays for it through a hosted
+-- payment channel or with prepaid credits. Hosted channels are escrow held for one
+-- principal: the hosted channel row has no seller, offer or release column, and the hosted
+-- meter door takes the channelId on every call. Which channel pays for which identity
+-- release is therefore the buyer's own routing choice, and this table records it.
+--
+-- A row here is NOT evidence of funds. The activation gate re-reads the channel from the
+-- hosted Cupboard (GET /commerce/payment-channels/:channelId) on every activation, so a
+-- closed, failed or exhausted channel refuses the next activation whatever this row says.
+-- Prepaid credits need no row: they are a balance of the principal.
+--
+-- Written by the cupboard doors only: when a per-use checkout preflight returns an
+-- identity-release releaseRef ('per-use-checkout'), and by the explicit bind door after the
+-- hosted owner-only channel read confirms the channel ('explicit').
+
+CREATE TABLE IF NOT EXISTS harness_shared.identity_funding_bindings (
+  workspace_id  text NOT NULL,
+  sku_ref       text NOT NULL,
+  channel_id    text NOT NULL,
+  principal_id  text NULL,
+  source        text NOT NULL,
+  bound_by      text NOT NULL,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (workspace_id, sku_ref),
+  CONSTRAINT identity_funding_bindings_sku_ref_check
+    CHECK (sku_ref LIKE 'identity-release:%'),
+  CONSTRAINT identity_funding_bindings_channel_id_check
+    CHECK (length(btrim(channel_id)) > 0),
+  CONSTRAINT identity_funding_bindings_source_check
+    CHECK (source IN ('per-use-checkout', 'explicit'))
+);
+
+COMMENT ON TABLE harness_shared.identity_funding_bindings IS
+  'agent-economy-flywheel P-016 (D-011): which hosted payment channel pays for one Cupboard identity release in this workspace. A routing choice, never evidence of funds: the activation gate re-reads the channel from the hosted Cupboard on every activation.';
+COMMENT ON COLUMN harness_shared.identity_funding_bindings.sku_ref IS
+  'identity-release:<identity id>@<version> (cupboard/identity-per-use-offer.ts identityReleaseSkuRef).';
+COMMENT ON COLUMN harness_shared.identity_funding_bindings.principal_id IS
+  'The hosted Cupboard principal (gh:<numeric github id>) the channel was confirmed for, when the writer knew it. Informational: ownership is re-checked by the hosted owner-only read at every activation.';
+
+ALTER TABLE harness_shared.identity_funding_bindings ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname = 'harness_shared'
+       AND tablename = 'identity_funding_bindings'
+       AND policyname = 'identity_funding_bindings_workspace_isolation'
+  ) THEN
+    CREATE POLICY identity_funding_bindings_workspace_isolation
+      ON harness_shared.identity_funding_bindings
+      USING (workspace_id = current_setting('app.workspace_id'::text, true))
+      WITH CHECK (workspace_id = current_setting('app.workspace_id'::text, true));
+  END IF;
+END $$;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.identity_funding_bindings TO harness_app;
