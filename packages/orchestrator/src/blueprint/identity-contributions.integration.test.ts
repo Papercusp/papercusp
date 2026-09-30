@@ -14,7 +14,7 @@ describe('fixed and generated identity contributions through a real source packa
     const dir = mkdtempSync(join(tmpdir(), 'identity-contribution-integration-'));
     const sourcePath = join(dir, 'blueprint.yaml');
     const fixedPath = join(dir, 'prompts', 'rules.md');
-    const providerRef = 'existing.task-brief';
+    const providerRef = 'papercusp.turn-start-orientation@1';
     const taskText = 'Generated task brief from the current turn.';
     try {
       mkdirSync(join(dir, 'prompts'));
@@ -27,7 +27,7 @@ describe('fixed and generated identity contributions through a real source packa
         'spine: { edges: { DONE: { to: done } } }',
         'contributions:',
         '  - { id: rules, purpose: prompt, source: fixed, refresh: source-change, inputKind: prompt-file, ref: "fixed:rules" }',
-        '  - { id: task, purpose: prompt, source: provider, refresh: turn, inputKind: prompt-file, ref: "provider:task", producerRef: "existing.task-brief" }',
+        '  - { id: task, purpose: prompt, source: provider, refresh: turn, inputKind: prompt-file, ref: "provider:task", producerRef: "papercusp.turn-start-orientation@1", verb: render }',
       ].join('\n'));
       const input = {
         sourcePath,
