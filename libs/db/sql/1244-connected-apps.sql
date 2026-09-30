@@ -31,6 +31,8 @@
 -- The deployed code keeps working unchanged through it until :3070 serves the renamed code; the
 -- view is dropped by a later contract migration. The new unique index cannot fail on existing
 -- rows because token_hash is added by this same migration and is NULL everywhere.
+--
+-- lint-migrations: allow-index-swap the only drop on this table is the CHECK mobile_devices_device_kind_check (never an ON CONFLICT inference target), and the new unique index is on token_hash, a column this same migration adds, so no deployed ON CONFLICT spec can name the new shape or lose the old one; the only unique index a deployed writer infers (the pkey, device_id -> id) is renamed, never dropped or reshaped.
 
 DO $$
 DECLARE
