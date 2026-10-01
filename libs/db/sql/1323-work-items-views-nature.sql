@@ -25,7 +25,12 @@ DO $mig1323_views$
 DECLARE
   v_name text;
   def text;
-  anchor constant text := E'\n   FROM work_items\n';
+  -- pg_get_viewdef qualifies the relation only when harness_shared is NOT on the
+  -- caller's search_path (the migration runner: qualified, as in 1110; an
+  -- operator session: unqualified). Accept either, but still demand exactly one hit.
+  qualified constant text := E'\n   FROM harness_shared.work_items';
+  unqualified constant text := E'\n   FROM work_items\n';
+  anchor text;
   additions constant text := E',\n    nature,\n    audience';
   hits integer;
   patched text;
@@ -54,6 +59,7 @@ BEGIN
       CONTINUE;
     END IF;
 
+    anchor := CASE WHEN position(qualified IN def) > 0 THEN qualified ELSE unqualified END;
     hits := (length(def) - length(replace(def, anchor, ''))) / length(anchor);
     IF hits <> 1 THEN
       RAISE EXCEPTION
