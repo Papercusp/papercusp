@@ -109,6 +109,8 @@ BEGIN
                         WHERE oid = 'harness_shared.data_sources'::regclass)
      GROUP BY grantee
   LOOP
-    EXECUTE format('GRANT %s ON harness_shared.trigger_sources TO %I', g.privs, g.grantee);
+    -- PUBLIC is a keyword, not a role name: quoting it would name a role "PUBLIC".
+    EXECUTE format('GRANT %s ON harness_shared.trigger_sources TO %s', g.privs,
+                   CASE WHEN g.grantee = 'PUBLIC' THEN 'PUBLIC' ELSE quote_ident(g.grantee) END);
   END LOOP;
 END $$;
