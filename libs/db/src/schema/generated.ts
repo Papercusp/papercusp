@@ -749,7 +749,7 @@ export const attentionBulkRunsInHarnessShared = harnessShared.table("attention_b
 	primaryKey({ columns: [table.runId, table.workspaceId], name: "attention_bulk_runs_pkey"}),
 	pgPolicy("attention_bulk_runs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("attention_bulk_runs_phase_check", sql`phase = ANY (ARRAY['pending'::text, 'running'::text, 'review'::text, 'complete'::text, 'failed'::text])`),
-	check("attention_bulk_runs_run_kind_check", sql`run_kind = ANY (ARRAY['inbox-resolve'::text, 'plan-cleanup'::text])`),
+	check("attention_bulk_runs_run_kind_check", sql`run_kind = ANY (ARRAY['inbox-resolve'::text, 'plan-cleanup'::text, 'intake-triage'::text])`),
 ]);
 
 export const attentionNotificationsInHarnessShared = harnessShared.table("attention_notifications", {
@@ -10882,7 +10882,7 @@ export const triggerDeliveriesInHarnessShared = harnessShared.table("trigger_del
 	dedupeKey: text("dedupe_key").notNull(),
 	datatypeId: text("datatype_id").notNull(),
 	eventKey: text("event_key").notNull(),
-	payload: jsonb().notNull(),
+	payload: jsonb(),
 	sinkKind: text("sink_kind").notNull(),
 	sinkRef: text("sink_ref").default('default').notNull(),
 	outcome: text().default('pending').notNull(),
@@ -10892,7 +10892,9 @@ export const triggerDeliveriesInHarnessShared = harnessShared.table("trigger_del
 	receivedAt: timestamp("received_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	payloadPrunedAt: timestamp("payload_pruned_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
+	index("trigger_deliveries_payload_held_idx").using("btree", table.completedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(payload IS NOT NULL)`),
 	index("trigger_deliveries_ws_event_key_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops"), table.receivedAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("trigger_deliveries_ws_outcome_received_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.outcome.asc().nullsLast().op("text_ops"), table.receivedAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("trigger_deliveries_ws_source_received_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sourceId.asc().nullsLast().op("uuid_ops"), table.receivedAt.desc().nullsFirst().op("timestamptz_ops")),
@@ -11534,6 +11536,11 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	implementationReadinessEnrolled: boolean("implementation_readiness_enrolled").generatedAlwaysAs(sql`(payload ? 'implementationReadiness'::text)`),
 	reopenHistoryProjection: jsonb("reopen_history_projection").generatedAlwaysAs(sql`NULLIF((payload -> 'reopenHistory'::text), 'null'::jsonb)`),
 	externalBlockersProjection: jsonb("external_blockers_projection").generatedAlwaysAs(sql`NULLIF((payload -> 'externalBlockers'::text), 'null'::jsonb)`),
+	severityProjection: text("severity_projection").generatedAlwaysAs(sql`
+CASE
+    WHEN (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) THEN COALESCE(((payload -> '_ei'::text) ->> 'severity'::text), 'minor'::text)
+    ELSE NULL::text
+END`),
 }, (table) => [
 	index("blueprint_invocation_item_recovery_idx").using("btree", sql`workspace_id`, sql`harness_slug`, sql`(((payload -> 'blueprintOperation'::text) ->> 'operationId'::te`, sql`(((payload -> 'blueprintOperation'::text) ->> 'callerId'::text)`, sql`(((payload -> 'blueprintOperation'::text) ->> 'requestKey'::tex`).where(sql`(payload ? 'blueprintOperation'::text)`),
 	index("harness_features_consolidated_claimed_progress_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.lastProgressAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((taken_by IS NOT NULL) AND (taken_by <> ''::text))`),
