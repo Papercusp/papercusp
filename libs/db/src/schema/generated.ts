@@ -5120,6 +5120,65 @@ export const learningSpendReservationsInHarnessShared = harnessShared.table("lea
 
 ]);
 
+export const ledgerAnchorLeavesInHarnessShared = harnessShared.table("ledger_anchor_leaves", {
+	workspaceId: text("workspace_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	leafIndex: bigint("leaf_index", { mode: "number" }).notNull(),
+	streamId: text("stream_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	seq: bigint({ mode: "number" }).notNull(),
+	entryHash: text("entry_hash").notNull(),
+	leafHash: text("leaf_hash").notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.leafIndex, table.workspaceId], name: "ledger_anchor_leaves_pkey"}),
+	unique("ledger_anchor_leaves_workspace_id_stream_id_seq_key").on(table.seq, table.streamId, table.workspaceId),
+	pgPolicy("ledger_anchor_leaves_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("ledger_anchor_leaves_entry_hash_check", sql`entry_hash ~ '^[0-9a-f]{64}$'::text`),
+	check("ledger_anchor_leaves_leaf_hash_check", sql`leaf_hash ~ '^[0-9a-f]{64}$'::text`),
+	check("ledger_anchor_leaves_leaf_index_check", sql`leaf_index >= 0`),
+	check("ledger_anchor_leaves_seq_check", sql`seq >= 0`),
+	check("ledger_anchor_leaves_stream_id_check", sql`(length(stream_id) >= 1) AND (length(stream_id) <= 512)`),
+]);
+
+export const ledgerAnchorsInHarnessShared = harnessShared.table("ledger_anchors", {
+	workspaceId: text("workspace_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	anchorSeq: bigint("anchor_seq", { mode: "number" }).notNull(),
+	logId: text("log_id").notNull(),
+	logRoot: text("log_root").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	treeSize: bigint("tree_size", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	windowStart: bigint("window_start", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	windowEnd: bigint("window_end", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	consistencyFrom: bigint("consistency_from", { mode: "number" }).notNull(),
+	consistencyProof: jsonb("consistency_proof").default([]).notNull(),
+	backend: text().notNull(),
+	chainId: integer("chain_id"),
+	anchorRef: text("anchor_ref").notNull(),
+	txHash: text("tx_hash"),
+	attester: text(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.anchorSeq, table.workspaceId], name: "ledger_anchors_pkey"}),
+	unique("ledger_anchors_workspace_id_window_end_key").on(table.windowEnd, table.workspaceId),
+	unique("ledger_anchors_workspace_id_anchor_ref_key").on(table.anchorRef, table.workspaceId),
+	pgPolicy("ledger_anchors_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("ledger_anchors_anchor_ref_check", sql`(length(anchor_ref) >= 1) AND (length(anchor_ref) <= 512)`),
+	check("ledger_anchors_anchor_seq_check", sql`anchor_seq >= 0`),
+	check("ledger_anchors_backend_check", sql`(length(backend) >= 1) AND (length(backend) <= 64)`),
+	check("ledger_anchors_check", sql`window_end > window_start`),
+	check("ledger_anchors_check1", sql`consistency_from <= tree_size`),
+	check("ledger_anchors_consistency_from_check", sql`consistency_from >= 0`),
+	check("ledger_anchors_consistency_proof_check", sql`jsonb_typeof(consistency_proof) = 'array'::text`),
+	check("ledger_anchors_log_id_check", sql`(length(log_id) >= 1) AND (length(log_id) <= 512)`),
+	check("ledger_anchors_log_root_check", sql`log_root ~ '^[0-9a-f]{64}$'::text`),
+	check("ledger_anchors_tree_size_check", sql`tree_size >= 0`),
+]);
+
 export const ledgerChainLinksInHarnessShared = harnessShared.table("ledger_chain_links", {
 	workspaceId: text("workspace_id").notNull(),
 	streamId: text("stream_id").notNull(),
