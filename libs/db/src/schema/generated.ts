@@ -11822,6 +11822,8 @@ CASE
     WHEN (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) THEN COALESCE(((payload -> '_ei'::text) ->> 'severity'::text), 'minor'::text)
     ELSE NULL::text
 END`),
+	nature: text().notNull(),
+	audience: text(),
 }, (table) => [
 	index("blueprint_invocation_item_recovery_idx").using("btree", sql`workspace_id`, sql`harness_slug`, sql`(((payload -> 'blueprintOperation'::text) ->> 'operationId'::te`, sql`(((payload -> 'blueprintOperation'::text) ->> 'callerId'::text)`, sql`(((payload -> 'blueprintOperation'::text) ->> 'requestKey'::tex`).where(sql`(payload ? 'blueprintOperation'::text)`),
 	index("harness_features_consolidated_claimed_progress_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.lastProgressAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((taken_by IS NOT NULL) AND (taken_by <> ''::text))`),
@@ -11873,8 +11875,10 @@ END`),
 	check("hfc_rank_writer_chk", sql`(rank_writer IS NULL) OR (rank_writer = ANY (ARRAY['cup'::text, 'mug'::text]))`),
 	check("hfc_workspace_nonempty", sql`workspace_id <> ''::text`),
 	check("work_items_admission_chk", sql`(admission IS NULL) OR (admission = ANY (ARRAY['pending'::text, 'admitted'::text, 'auto'::text, 'unreviewed'::text]))`),
+	check("work_items_audience_check", sql`((audience IS NULL) OR (audience = ANY (ARRAY['agent'::text, 'human'::text]))) AND ((nature = 'work'::text) = (audience IS NOT NULL))`),
 	check("work_items_authority_check", sql`(authority IS NULL) OR (authority = ANY (ARRAY['proposed'::text, 'validated'::text, 'committed'::text, 'pending_human'::text, 'invalid'::text]))`),
 	check("work_items_epoch_ms_timestamp_units_chk", sql`((created_ts IS NULL) OR (created_ts < (1000000000)::bigint) OR (created_ts >= '10000000000'::bigint)) AND ((updated_ts IS NULL) OR (updated_ts < (1000000000)::bigint) OR (updated_ts >= '10000000000'::bigint))`),
+	check("work_items_nature_check", sql`nature = ANY (ARRAY['work'::text, 'record'::text, 'document'::text, 'event'::text])`),
 	check("work_items_payload_is_object_ck", sql`(payload IS NULL) OR (jsonb_typeof(payload) = 'object'::text)`),
 	check("work_items_signal_origin_chk", sql`(((payload -> '_ei'::text) ->> 'signal_origin'::text) IS NULL) OR (((payload -> '_ei'::text) ->> 'signal_origin'::text) = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text]))`),
 ]);
