@@ -7305,6 +7305,26 @@ export const personalPrivacyRulesInHarnessShared = harnessShared.table("personal
 	check("personal_privacy_rules_match_value_check", sql`length(btrim(match_value)) > 0`),
 ]);
 
+export const personalSealedContentsInHarnessShared = harnessShared.table("personal_sealed_contents", {
+	id: uuid().defaultRandom().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	store: text().notNull(),
+	ref: text().notNull(),
+	writerOwnerId: text("writer_owner_id").notNull(),
+	content: jsonb().notNull(),
+	labels: jsonb().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.id, table.workspaceId], name: "personal_sealed_contents_pkey"}),
+	unique("personal_sealed_contents_workspace_id_store_ref_key").on(table.ref, table.store, table.workspaceId),
+	pgPolicy("personal_sealed_contents_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("personal_sealed_contents_content_check", sql`jsonb_typeof(content) = 'object'::text`),
+	check("personal_sealed_contents_labels_check", sql`(jsonb_typeof(labels) = 'array'::text) AND (jsonb_array_length(labels) > 0)`),
+	check("personal_sealed_contents_ref_check", sql`length(btrim(ref)) > 0`),
+	check("personal_sealed_contents_store_check", sql`length(btrim(store)) > 0`),
+	check("personal_sealed_contents_writer_owner_id_check", sql`length(btrim(writer_owner_id)) > 0`),
+]);
+
 export const personalSyncStateInHarnessShared = harnessShared.table("personal_sync_state", {
 	workspaceId: text("workspace_id").notNull(),
 	userId: uuid("user_id").notNull(),
