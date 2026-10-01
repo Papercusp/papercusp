@@ -3754,13 +3754,29 @@ export const gatewayPayloadBlobsInHarnessShared = harnessShared.table("gateway_p
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	lastAccessedAt: timestamp("last_accessed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
+	// TODO: failed to parse database type 'bytea[]'
+	chunkHashes: text("chunk_hashes").array(),
 }, (table) => [
 	index("gateway_payload_blobs_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(expires_at IS NOT NULL)`),
 	index("gateway_payload_blobs_gc_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.lastAccessedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(ref_count = 0)`),
 	primaryKey({ columns: [table.blobKey, table.workspaceId], name: "gateway_payload_blobs_pkey"}),
+	check("gateway_payload_blobs_chunked_has_no_inline_bytes", sql`(chunk_hashes IS NULL) OR (octet_length(bytes) = 0)`),
 	check("gateway_payload_blobs_key_is_sha256", sql`blob_key ~ '^[0-9a-f]{64}$'::text`),
 	check("gateway_payload_blobs_len_nonneg", sql`byte_length >= 0`),
 	check("gateway_payload_blobs_refcount_nonneg", sql`ref_count >= 0`),
+]);
+
+export const gatewayPayloadChunksInHarnessShared = harnessShared.table("gateway_payload_chunks", {
+	workspaceId: text("workspace_id").notNull(),
+	chunkHash: byteaCustom("chunk_hash").notNull(),
+	bytes: byteaCustom("bytes").notNull(),
+	rawLength: integer("raw_length").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastRefAt: timestamp("last_ref_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.chunkHash, table.workspaceId], name: "gateway_payload_chunks_pkey"}),
+	check("gateway_payload_chunks_hash_is_sha256", sql`octet_length(chunk_hash) = 32`),
+	check("gateway_payload_chunks_raw_length_positive", sql`raw_length > 0`),
 ]);
 
 export const gatewayStallEventsInHarnessShared = harnessShared.table("gateway_stall_events", {
@@ -5439,7 +5455,6 @@ END`),
 	index("memory_canonical_payload_data_trgm").using("gin", sql`((payload ->> 'data'::text))`),
 	index("memory_canonical_payload_description_trgm").using("gin", sql`((payload ->> 'description'::text))`),
 	index("memory_canonical_payload_name_trgm").using("gin", sql`((payload ->> 'name'::text))`),
-	index("memory_canonical_recently_surfaced_idx").using("btree", table.lastSurfacedAt.desc().nullsLast().op("timestamptz_ops")).where(sql`(last_surfaced_at IS NOT NULL)`),
 	index("memory_canonical_row_kind_memory_idx").using("btree", table.id.asc().nullsLast().op("uuid_ops")).where(sql`(row_kind = 'memory'::text)`),
 	index("memory_canonical_shareable_idx").using("btree", table.shareable.asc().nullsLast().op("bool_ops")).where(sql`(shareable = true)`),
 	index("memory_canonical_state_idx").using("btree", table.state.asc().nullsLast().op("text_ops")).where(sql`(state <> 'active'::text)`),
@@ -7615,6 +7630,8 @@ export const planClosureObservationsInHarnessShared = harnessShared.table("plan_
 	fingerprint: jsonb().notNull(),
 	observedAt: timestamp("observed_at", { withTimezone: true, mode: 'string' }).notNull(),
 	buildSha: text("build_sha"),
+	rubricId: text("rubric_id"),
+	gradedBy: text("graded_by"),
 }, (table) => [
 	primaryKey({ columns: [table.harnessSlug, table.planSlug, table.workspaceId], name: "plan_closure_observations_pkey"}),
 	pgPolicy("plan_closure_observations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
