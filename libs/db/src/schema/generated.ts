@@ -646,6 +646,7 @@ export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage
 	index("agent_usage_samples_ws_trigger_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.turnTrigger.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(turn_trigger IS NOT NULL)`),
 	index("agent_usage_samples_ws_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
 	pgPolicy("agent_usage_samples_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("agent_usage_samples_provider_message_key_ck", sql`(source IS DISTINCT FROM 'interactive'::text) OR (usage_event_key IS NULL) OR (model IS NULL) OR ((usage_provenance ->> 'sourceId'::text) IS NULL) OR ((usage_provenance ->> 'sourceId'::text) !~~ 'message:%'::text) OR (usage_event_key = harness_shared.transcript_provider_message_usage_key(model, (usage_provenance ->> 'sourceId'::text)))`),
 ]);
 
 export const appOwnerMappingsInHarnessShared = harnessShared.table("app_owner_mappings", {
@@ -4992,9 +4993,15 @@ export const knowledgePackCandidatesInHarnessShared = harnessShared.table("knowl
 	reviewErrorCount: integer("review_error_count").default(0).notNull(),
 	lastReviewError: text("last_review_error"),
 	lastReviewErrorAt: timestamp("last_review_error_at", { withTimezone: true, mode: 'string' }),
+	workspaceId: text("workspace_id"),
+	targetIdentityId: text("target_identity_id"),
+	targetPackId: text("target_pack_id"),
+	sourceMemoryId: uuid("source_memory_id"),
 }, (table) => [
+	index("knowledge_pack_candidates_identity_listing_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.targetIdentityId.asc().nullsLast().op("text_ops"), table.targetPackId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("knowledge_pack_candidates_listing_idx").using("btree", table.status.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	unique("knowledge_pack_candidates_signature_uniq").on(table.signature),
+	check("knowledge_pack_candidates_identity_target_check", sql`((workspace_id IS NULL) AND (target_identity_id IS NULL) AND (target_pack_id IS NULL) AND (source_memory_id IS NULL)) OR ((num_nonnulls(workspace_id, target_identity_id, target_pack_id, source_memory_id) = 4) AND (workspace_id <> ''::text) AND (target_identity_id <> ''::text) AND (target_pack_id <> ''::text))`),
 	check("knowledge_pack_candidates_kind_check", sql`kind = ANY (ARRAY['user'::text, 'feedback'::text, 'project'::text, 'reference'::text])`),
 	check("knowledge_pack_candidates_status_check", sql`status = ANY (ARRAY['pending'::text, 'adopted'::text, 'dismissed'::text])`),
 	primaryKey({ columns: [table.id], name: "knowledge_pack_candidates_pkey"}),
@@ -8590,6 +8597,60 @@ export const rationaleIndexInHarnessShared = harnessShared.table("rationale_inde
 	index("rationale_index_key_idx").using("btree", table.key.asc().nullsLast().op("text_ops"), table.sortKey.desc().nullsFirst().op("text_ops")),
 	index("rationale_index_source_idx").using("btree", table.sourceId.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.entryId, table.key, table.sourceId], name: "rationale_index_pkey"}),
+]);
+
+export const reconciliationBreaksInHarnessShared = harnessShared.table("reconciliation_breaks", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	invariant: text().notNull(),
+	workItemId: text("work_item_id"),
+	openedAt: timestamp("opened_at", { withTimezone: true, mode: 'string' }).notNull(),
+	openedByRun: text("opened_by_run").notNull(),
+	lastRunId: text("last_run_id").notNull(),
+	detail: text().notNull(),
+	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
+	resolvedByRun: text("resolved_by_run"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("reconciliation_breaks_one_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.invariant.asc().nullsLast().op("text_ops")).where(sql`(resolved_at IS NULL)`),
+	index("reconciliation_breaks_workspace_opened_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.openedAt.desc().nullsFirst().op("timestamptz_ops")),
+	check("reconciliation_breaks_check", sql`(resolved_at IS NULL) = (resolved_by_run IS NULL)`),
+	check("reconciliation_breaks_check1", sql`(resolved_at IS NULL) OR (resolved_at >= opened_at)`),
+	check("reconciliation_breaks_detail_check", sql`length(detail) <= 4000`),
+	check("reconciliation_breaks_invariant_check", sql`invariant = ANY (ARRAY['credit-reserve-covers-outstanding-credits'::text, 'dao-payable-equals-accrued-minus-transferred'::text, 'safe-balance-equals-receipts-minus-approved-spends'::text, 'journal-matches-stripe'::text, 'journal-matches-bank'::text, 'journal-matches-chain'::text])`),
+	check("reconciliation_breaks_last_run_id_check", sql`(length(last_run_id) >= 1) AND (length(last_run_id) <= 128)`),
+	check("reconciliation_breaks_opened_by_run_check", sql`(length(opened_by_run) >= 1) AND (length(opened_by_run) <= 128)`),
+]);
+
+export const reconciliationRunsInHarnessShared = harnessShared.table("reconciliation_runs", {
+	workspaceId: text("workspace_id").notNull(),
+	runId: text("run_id").notNull(),
+	mode: text().notNull(),
+	month: text().notNull(),
+	periodFrom: timestamp("period_from", { withTimezone: true, mode: 'string' }).notNull(),
+	periodUntil: timestamp("period_until", { withTimezone: true, mode: 'string' }).notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).notNull(),
+	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }).notNull(),
+	verdicts: jsonb().notNull(),
+	opened: jsonb().default([]).notNull(),
+	resolved: jsonb().default([]).notNull(),
+	gateOpen: boolean("gate_open").notNull(),
+	gate: jsonb().notNull(),
+	gatePublish: jsonb("gate_publish").notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("reconciliation_runs_workspace_finished_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
+	primaryKey({ columns: [table.runId, table.workspaceId], name: "reconciliation_runs_pkey"}),
+	check("reconciliation_runs_check", sql`period_until > period_from`),
+	check("reconciliation_runs_check1", sql`finished_at >= started_at`),
+	check("reconciliation_runs_gate_check", sql`jsonb_typeof(gate) = 'object'::text`),
+	check("reconciliation_runs_gate_publish_check", sql`jsonb_typeof(gate_publish) = 'object'::text`),
+	check("reconciliation_runs_mode_check", sql`mode = ANY (ARRAY['provisional'::text, 'final'::text])`),
+	check("reconciliation_runs_month_check", sql`month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text`),
+	check("reconciliation_runs_opened_check", sql`jsonb_typeof(opened) = 'array'::text`),
+	check("reconciliation_runs_resolved_check", sql`jsonb_typeof(resolved) = 'array'::text`),
+	check("reconciliation_runs_run_id_check", sql`(length(run_id) >= 1) AND (length(run_id) <= 128)`),
+	check("reconciliation_runs_verdicts_check", sql`jsonb_typeof(verdicts) = 'array'::text`),
 ]);
 
 export const redQueenDrillsInHarnessShared = harnessShared.table("red_queen_drills", {
