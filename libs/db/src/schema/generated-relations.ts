@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { acceptanceAdoptionRunsInHarnessShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, capabilityClassRegistryInHarnessShared, capabilityClassConformanceRunsInHarnessShared, connectedAppsInHarnessShared, connectedAppAccessTokensInHarnessShared, connectedAppOauthClientsInHarnessShared, connectedAppDeviceGrantsInHarnessShared, testingSurfacesInHarnessShared, coverageEvidenceInHarnessShared, testRunsInHarnessShared, coverageWaiversInHarnessShared, cupKeeperInstancesInHarnessShared, cupKeeperRunsInHarnessShared, eventAwaitNodesInHarnessShared, goalsInHarnessShared, goalPotsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryPrecisionBenchInHarnessShared, memoryPrecisionBenchAttemptsInHarnessShared, memoryRecallStatsInHarnessShared, memoryRecallQueryTextInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, memoryVecHarrierInHarnessShared, memoryVecLocalInHarnessShared, memoryVecOpenaiInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, potEvalInstancesInHarnessShared, potEvalRunsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, routineGroupsInHarnessShared, routinesInHarnessShared, savedPromptsInHarnessShared, workItemSpecRevisionEdgesInHarnessShared, specEvidenceBindingsInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, messageRecipientsInPapercuspShared, connectedAppClientAssertionsInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, blueprintPackageResourcesInHarnessShared, blueprintPackageDependentsInHarnessShared, documentPermissionListsInHarnessShared, documentPermissionMembersInHarnessShared, moneyJournalRollupsInHarnessShared, moneyJournalMicroAccrualsInHarnessShared, personalVaultSettingsInHarnessShared, triggerSourcesInHarnessShared, chatRollupQueueInHarnessShared, memoryAnchorsInHarnessShared, moneyJournalEntriesInHarnessShared, moneyJournalLinesInHarnessShared, appOwnerMappingsInHarnessShared, personalSyncStateInHarnessShared, sessionTasksInHarnessShared, sessionTaskWorkItemLinksInHarnessShared, personalIdentitiesInHarnessShared, reportLibraryInHarnessShared, reportLibraryChunksInHarnessShared, triggerWebhookSecretsInHarnessShared, dataSourceLegalHoldsInHarnessShared, planSpecClauseRevisionsInHarnessShared, planSpecClausesInHarnessShared, harnessPlansInHarnessShared, providerIdentityMappingsInHarnessShared, workItemsInHarnessShared, personalIdentityAliasesInHarnessShared, workspaceHostsInHarnessShared, workspaceHostLogsInHarnessShared, workspaceHostOperationsInHarnessShared, personalGrantsInHarnessShared, personalPrivacyRulesInHarnessShared, personalVaultImportUploadsInHarnessShared, planDecisionsInHarnessShared, capabilityClassProviderBindingsInHarnessShared, potCapabilityClassBindingsInHarnessShared, sessionTurnsInHarnessShared, sessionTurnChunksInHarnessShared, workspaceHostEventsInHarnessShared, workspaceHostInitializationStepsInHarnessShared, chatRetrievalUnitsInHarnessShared, personalDisclosuresInHarnessShared, planItemsInHarnessShared, potEvalScoresInHarnessShared, chatMessagesInHarnessShared, triggerBindingsInHarnessShared, triggerRunsInHarnessShared, triggerDeliveriesInHarnessShared, datatypeRegistryInHarnessShared, benchRunTasksInHarnessShared, cupKeeperScoresInHarnessShared, workspaceHostResourcesInHarnessShared, customerWorkspacesInHarnessShared, workspaceGrantsInHarnessShared, triageSnapshotsInHarnessShared, triageLedgerInHarnessShared, potsInHarnessShared, potMembersInHarnessShared, personalDocumentsInHarnessShared, personalVaultImportJobsInHarnessShared, workspaceHostConnectionsInHarnessShared } from "./generated";
+import { acceptanceAdoptionRunsInHarnessShared, backupSnapshotsInHarnessShared, backupEventsInHarnessShared, benchRunsInHarnessShared, benchRunEventsInHarnessShared, benchmarkRolloutInHarnessShared, benchmarkRunResultInHarnessShared, capabilityClassRegistryInHarnessShared, capabilityClassConformanceRunsInHarnessShared, connectedAppsInHarnessShared, connectedAppAccessTokensInHarnessShared, connectedAppOauthClientsInHarnessShared, connectedAppDeviceGrantsInHarnessShared, testingSurfacesInHarnessShared, coverageEvidenceInHarnessShared, testRunsInHarnessShared, coverageWaiversInHarnessShared, cupKeeperInstancesInHarnessShared, cupKeeperRunsInHarnessShared, eventAwaitNodesInHarnessShared, goalsInHarnessShared, goalPotsInHarnessShared, llmTestRunsInHarnessShared, llmTestFindingsInHarnessShared, llmTestFixturesInHarnessShared, memoryPrecisionBenchInHarnessShared, memoryPrecisionBenchAttemptsInHarnessShared, memoryRecallStatsInHarnessShared, memoryRecallQueryTextInHarnessShared, memoryCanonicalInHarnessShared, memoryVecGemmaInHarnessShared, memoryVecHarrierInHarnessShared, memoryVecLocalInHarnessShared, memoryVecOpenaiInHarnessShared, operatorConversationsInHarnessShared, operatorTurnsInHarnessShared, planRunsInHarnessShared, planRunTurnsInHarnessShared, potEvalInstancesInHarnessShared, potEvalRunsInHarnessShared, projectsInHarnessShared, projectSpecRevisionsInHarnessShared, routineGroupsInHarnessShared, routinesInHarnessShared, savedPromptsInHarnessShared, workItemSpecRevisionEdgesInHarnessShared, specEvidenceBindingsInHarnessShared, usersInHarnessShared, userSessionsInHarnessShared, messagesInPapercuspShared, messageCommentsInPapercuspShared, messageRecipientsInPapercuspShared, connectedAppClientAssertionsInHarnessShared, mobilePushTokensInHarnessShared, userPreferencesInHarnessShared, blueprintPackageResourcesInHarnessShared, blueprintPackageDependentsInHarnessShared, documentPermissionListsInHarnessShared, documentPermissionMembersInHarnessShared, moneyJournalRollupsInHarnessShared, moneyJournalMicroAccrualsInHarnessShared, personalVaultSettingsInHarnessShared, dataSourcesInHarnessShared, chatRollupQueueInHarnessShared, memoryAnchorsInHarnessShared, moneyJournalEntriesInHarnessShared, moneyJournalLinesInHarnessShared, appOwnerMappingsInHarnessShared, personalSyncStateInHarnessShared, sessionTasksInHarnessShared, sessionTaskWorkItemLinksInHarnessShared, personalIdentitiesInHarnessShared, reportLibraryInHarnessShared, reportLibraryChunksInHarnessShared, triggerWebhookSecretsInHarnessShared, dataSourceLegalHoldsInHarnessShared, planSpecClauseRevisionsInHarnessShared, planSpecClausesInHarnessShared, harnessPlansInHarnessShared, providerIdentityMappingsInHarnessShared, workItemsInHarnessShared, personalIdentityAliasesInHarnessShared, workspaceHostsInHarnessShared, workspaceHostLogsInHarnessShared, workspaceHostOperationsInHarnessShared, personalGrantsInHarnessShared, personalPrivacyRulesInHarnessShared, personalVaultImportUploadsInHarnessShared, planDecisionsInHarnessShared, capabilityClassProviderBindingsInHarnessShared, potCapabilityClassBindingsInHarnessShared, sessionTurnsInHarnessShared, sessionTurnChunksInHarnessShared, workspaceHostEventsInHarnessShared, workspaceHostInitializationStepsInHarnessShared, chatRetrievalUnitsInHarnessShared, personalDisclosuresInHarnessShared, planItemsInHarnessShared, potEvalScoresInHarnessShared, chatMessagesInHarnessShared, triggerBindingsInHarnessShared, triggerRunsInHarnessShared, triggerDeliveriesInHarnessShared, datatypeRegistryInHarnessShared, benchRunTasksInHarnessShared, cupKeeperScoresInHarnessShared, workspaceHostResourcesInHarnessShared, customerWorkspacesInHarnessShared, workspaceGrantsInHarnessShared, triageSnapshotsInHarnessShared, triageLedgerInHarnessShared, potsInHarnessShared, potMembersInHarnessShared, personalDocumentsInHarnessShared, personalVaultImportJobsInHarnessShared, workspaceHostConnectionsInHarnessShared } from "./generated";
 
 export const acceptanceAdoptionRunsInHarnessSharedRelations = relations(acceptanceAdoptionRunsInHarnessShared, ({one, many}) => ({
 	acceptanceAdoptionRunsInHarnessShared: one(acceptanceAdoptionRunsInHarnessShared, {
@@ -335,7 +335,7 @@ export const usersInHarnessSharedRelations = relations(usersInHarnessShared, ({m
 	personalPrivacyRulesInHarnessShareds: many(personalPrivacyRulesInHarnessShared),
 	personalVaultImportUploadsInHarnessShareds: many(personalVaultImportUploadsInHarnessShared),
 	personalDisclosuresInHarnessShareds: many(personalDisclosuresInHarnessShared),
-	triggerSourcesInHarnessShareds: many(triggerSourcesInHarnessShared),
+	dataSourcesInHarnessShareds: many(dataSourcesInHarnessShared),
 	personalDocumentsInHarnessShareds: many(personalDocumentsInHarnessShared),
 	personalVaultImportJobsInHarnessShareds: many(personalVaultImportJobsInHarnessShared),
 }));
@@ -422,13 +422,13 @@ export const personalVaultSettingsInHarnessSharedRelations = relations(personalV
 }));
 
 export const chatRollupQueueInHarnessSharedRelations = relations(chatRollupQueueInHarnessShared, ({one}) => ({
-	triggerSourcesInHarnessShared: one(triggerSourcesInHarnessShared, {
+	dataSourcesInHarnessShared: one(dataSourcesInHarnessShared, {
 		fields: [chatRollupQueueInHarnessShared.workspaceId, chatRollupQueueInHarnessShared.dataSourceId],
-		references: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id]
+		references: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id]
 	}),
 }));
 
-export const triggerSourcesInHarnessSharedRelations = relations(triggerSourcesInHarnessShared, ({one, many}) => ({
+export const dataSourcesInHarnessSharedRelations = relations(dataSourcesInHarnessShared, ({one, many}) => ({
 	chatRollupQueueInHarnessShareds: many(chatRollupQueueInHarnessShared),
 	triggerWebhookSecretsInHarnessShareds: many(triggerWebhookSecretsInHarnessShared),
 	dataSourceLegalHoldsInHarnessShareds: many(dataSourceLegalHoldsInHarnessShared),
@@ -437,7 +437,7 @@ export const triggerSourcesInHarnessSharedRelations = relations(triggerSourcesIn
 	triggerBindingsInHarnessShareds: many(triggerBindingsInHarnessShared),
 	triggerDeliveriesInHarnessShareds: many(triggerDeliveriesInHarnessShared),
 	usersInHarnessShared: one(usersInHarnessShared, {
-		fields: [triggerSourcesInHarnessShared.ownerUserId],
+		fields: [dataSourcesInHarnessShared.ownerUserId],
 		references: [usersInHarnessShared.id]
 	}),
 }));
@@ -505,16 +505,16 @@ export const reportLibraryInHarnessSharedRelations = relations(reportLibraryInHa
 }));
 
 export const triggerWebhookSecretsInHarnessSharedRelations = relations(triggerWebhookSecretsInHarnessShared, ({one}) => ({
-	triggerSourcesInHarnessShared: one(triggerSourcesInHarnessShared, {
+	dataSourcesInHarnessShared: one(dataSourcesInHarnessShared, {
 		fields: [triggerWebhookSecretsInHarnessShared.workspaceId, triggerWebhookSecretsInHarnessShared.sourceId],
-		references: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id]
+		references: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id]
 	}),
 }));
 
 export const dataSourceLegalHoldsInHarnessSharedRelations = relations(dataSourceLegalHoldsInHarnessShared, ({one}) => ({
-	triggerSourcesInHarnessShared: one(triggerSourcesInHarnessShared, {
+	dataSourcesInHarnessShared: one(dataSourcesInHarnessShared, {
 		fields: [dataSourceLegalHoldsInHarnessShared.workspaceId, dataSourceLegalHoldsInHarnessShared.dataSourceId],
-		references: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id]
+		references: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id]
 	}),
 }));
 
@@ -693,9 +693,9 @@ export const workspaceHostInitializationStepsInHarnessSharedRelations = relation
 }));
 
 export const chatRetrievalUnitsInHarnessSharedRelations = relations(chatRetrievalUnitsInHarnessShared, ({one}) => ({
-	triggerSourcesInHarnessShared: one(triggerSourcesInHarnessShared, {
+	dataSourcesInHarnessShared: one(dataSourcesInHarnessShared, {
 		fields: [chatRetrievalUnitsInHarnessShared.workspaceId, chatRetrievalUnitsInHarnessShared.dataSourceId],
-		references: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id]
+		references: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id]
 	}),
 }));
 
@@ -721,9 +721,9 @@ export const potEvalScoresInHarnessSharedRelations = relations(potEvalScoresInHa
 }));
 
 export const chatMessagesInHarnessSharedRelations = relations(chatMessagesInHarnessShared, ({one}) => ({
-	triggerSourcesInHarnessShared: one(triggerSourcesInHarnessShared, {
+	dataSourcesInHarnessShared: one(dataSourcesInHarnessShared, {
 		fields: [chatMessagesInHarnessShared.workspaceId, chatMessagesInHarnessShared.dataSourceId],
-		references: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id]
+		references: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id]
 	}),
 }));
 
@@ -748,9 +748,9 @@ export const triggerBindingsInHarnessSharedRelations = relations(triggerBindings
 		fields: [triggerBindingsInHarnessShared.workspaceId, triggerBindingsInHarnessShared.planHarnessSlug, triggerBindingsInHarnessShared.planSlug],
 		references: [harnessPlansInHarnessShared.workspaceId, harnessPlansInHarnessShared.harnessSlug, harnessPlansInHarnessShared.planSlug]
 	}),
-	triggerSourcesInHarnessShared: one(triggerSourcesInHarnessShared, {
+	dataSourcesInHarnessShared: one(dataSourcesInHarnessShared, {
 		fields: [triggerBindingsInHarnessShared.workspaceId, triggerBindingsInHarnessShared.sourceId],
-		references: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id]
+		references: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id]
 	}),
 }));
 
@@ -760,9 +760,9 @@ export const triggerDeliveriesInHarnessSharedRelations = relations(triggerDelive
 		fields: [triggerDeliveriesInHarnessShared.workspaceId, triggerDeliveriesInHarnessShared.datatypeId],
 		references: [datatypeRegistryInHarnessShared.workspaceId, datatypeRegistryInHarnessShared.id]
 	}),
-	triggerSourcesInHarnessShared: one(triggerSourcesInHarnessShared, {
+	dataSourcesInHarnessShared: one(dataSourcesInHarnessShared, {
 		fields: [triggerDeliveriesInHarnessShared.workspaceId, triggerDeliveriesInHarnessShared.sourceId],
-		references: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id]
+		references: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id]
 	}),
 }));
 

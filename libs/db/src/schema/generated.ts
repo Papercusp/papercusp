@@ -1677,7 +1677,7 @@ export const chatMessagesInHarnessShared = harnessShared.table("chat_messages", 
 	index("chat_messages_thread_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.dataSourceId.asc().nullsLast().op("uuid_ops"), table.channelId.asc().nullsLast().op("text_ops"), table.threadKey.asc().nullsLast().op("text_ops"), table.postedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(thread_key IS NOT NULL)`),
 	foreignKey({
 			columns: [table.workspaceId, table.dataSourceId],
-			foreignColumns: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id],
+			foreignColumns: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id],
 			name: "chat_messages_source_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "chat_messages_pkey"}),
@@ -1708,7 +1708,7 @@ export const chatRetrievalUnitsInHarnessShared = harnessShared.table("chat_retri
 	index("chat_retrieval_units_bucket_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.dataSourceId.asc().nullsLast().op("uuid_ops"), table.channelId.asc().nullsLast().op("text_ops"), table.unitKind.asc().nullsLast().op("text_ops"), table.bucketKey.asc().nullsLast().op("text_ops")),
 	foreignKey({
 			columns: [table.workspaceId, table.dataSourceId],
-			foreignColumns: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id],
+			foreignColumns: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id],
 			name: "chat_retrieval_units_source_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "chat_retrieval_units_pkey"}),
@@ -1732,7 +1732,7 @@ export const chatRollupQueueInHarnessShared = harnessShared.table("chat_rollup_q
 }, (table) => [
 	foreignKey({
 			columns: [table.workspaceId, table.dataSourceId],
-			foreignColumns: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id],
+			foreignColumns: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id],
 			name: "chat_rollup_queue_source_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.bucketKey, table.bucketKind, table.channelId, table.dataSourceId, table.workspaceId], name: "chat_rollup_queue_pkey"}),
@@ -2819,7 +2819,7 @@ export const dataSourceLegalHoldsInHarnessShared = harnessShared.table("data_sou
 	index("data_source_legal_holds_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.dataSourceId.asc().nullsLast().op("uuid_ops"), table.channelId.asc().nullsLast().op("text_ops")).where(sql`(released_at IS NULL)`),
 	foreignKey({
 			columns: [table.workspaceId, table.dataSourceId],
-			foreignColumns: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id],
+			foreignColumns: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id],
 			name: "data_source_legal_holds_source_fk"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "data_source_legal_holds_pkey"}),
@@ -2849,6 +2849,60 @@ export const dataSourceSubscriptionsInHarnessShared = harnessShared.table("data_
 	check("data_source_subscriptions_source_check", sql`source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text`),
 	check("data_source_subscriptions_subject_kind_check", sql`subject_kind = ANY (ARRAY['pot'::text, 'plan'::text])`),
 	check("data_source_subscriptions_subject_ref_check", sql`length(btrim(subject_ref)) > 0`),
+]);
+
+export const dataSourcesInHarnessShared = harnessShared.table("data_sources", {
+	workspaceId: text("workspace_id").notNull(),
+	id: uuid().defaultRandom().notNull(),
+	kind: text().notNull(),
+	config: jsonb().default({}).notNull(),
+	credentialRef: text("credential_ref"),
+	status: text().default('unconfigured').notNull(),
+	cursor: jsonb().default({}).notNull(),
+	lastConnectedAt: timestamp("last_connected_at", { withTimezone: true, mode: 'string' }),
+	lastError: text("last_error"),
+	createdBy: text("created_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	ownerUserId: uuid("owner_user_id"),
+	providerAccountId: text("provider_account_id"),
+	syncMode: text("sync_mode").notNull(),
+	backfillStatus: text("backfill_status").default('not-requested').notNull(),
+	scope: text().notNull(),
+	scopeRef: text("scope_ref"),
+	scopeMapping: jsonb("scope_mapping").default({}).notNull(),
+	datatypeMappings: jsonb("datatype_mappings").default({}).notNull(),
+	destinationPolicy: jsonb("destination_policy").default({}).notNull(),
+	retentionPolicy: jsonb("retention_policy").default({}).notNull(),
+	permissionMapping: jsonb("permission_mapping").default({"mode":"owner"}).notNull(),
+}, (table) => [
+	uniqueIndex("data_sources_owned_account_kind_uidx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops"), table.providerAccountId.asc().nullsLast().op("text_ops")).where(sql`((owner_user_id IS NOT NULL) AND (provider_account_id IS NOT NULL))`),
+	index("data_sources_workspace_owner_account_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops"), table.providerAccountId.asc().nullsLast().op("text_ops")).where(sql`((owner_user_id IS NOT NULL) AND (provider_account_id IS NOT NULL))`),
+	index("data_sources_workspace_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops")).where(sql`(owner_user_id IS NOT NULL)`),
+	index("data_sources_ws_kind_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.ownerUserId],
+			foreignColumns: [usersInHarnessShared.id],
+			name: "data_sources_owner_user_id_fkey"
+		}).onDelete("set null"),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "data_sources_pkey"}),
+	pgPolicy("data_sources_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("data_sources_backfill_status_chk", sql`backfill_status = ANY (ARRAY['not-requested'::text, 'pending'::text, 'running'::text, 'complete'::text, 'failed'::text])`),
+	check("data_sources_config_object_check", sql`jsonb_typeof(config) = 'object'::text`),
+	check("data_sources_credential_ref_nonempty", sql`(credential_ref IS NULL) OR (btrim(credential_ref) <> ''::text)`),
+	check("data_sources_cursor_object_check", sql`jsonb_typeof(cursor) = 'object'::text`),
+	check("data_sources_datatype_mappings_chk", sql`CHECK (harness_shared.data_source_datatype_mappings_valid(datatype_mappings`),
+	check("data_sources_destination_policy_chk", sql`CHECK (harness_shared.data_source_destination_policy_valid(destination_policy`),
+	check("data_sources_kind_nonempty", sql`btrim(kind) <> ''::text`),
+	check("data_sources_permission_mapping_chk", sql`CHECK (harness_shared.data_source_permission_mapping_valid(permission_mapping`),
+	check("data_sources_personal_owner_chk", sql`(scope <> 'personal'::text) OR (owner_user_id IS NOT NULL)`),
+	check("data_sources_provider_account_nonempty", sql`(owner_user_id IS NULL) OR ((provider_account_id IS NOT NULL) AND (btrim(provider_account_id) <> ''::text))`),
+	check("data_sources_retention_policy_chk", sql`CHECK (harness_shared.data_source_retention_policy_valid(retention_policy`),
+	check("data_sources_scope_chk", sql`scope = ANY (ARRAY['personal'::text, 'organization'::text, 'pot'::text])`),
+	check("data_sources_scope_mapping_chk", sql`jsonb_typeof(scope_mapping) = 'object'::text`),
+	check("data_sources_scope_ref_chk", sql`(scope = 'pot'::text) = ((scope_ref IS NOT NULL) AND (btrim(scope_ref) <> ''::text))`),
+	check("data_sources_status_check", sql`status = ANY (ARRAY['unconfigured'::text, 'ready'::text, 'connecting'::text, 'connected'::text, 'degraded'::text, 'error'::text, 'disabled'::text])`),
+	check("data_sources_sync_mode_chk", sql`sync_mode = ANY (ARRAY['poll'::text, 'webhook'::text, 'socket'::text, 'federated'::text, 'manual'::text])`),
 ]);
 
 export const datatypeRegistryInHarnessShared = harnessShared.table("datatype_registry", {
@@ -11121,7 +11175,7 @@ export const triggerBindingsInHarnessShared = harnessShared.table("trigger_bindi
 		}).onDelete("restrict"),
 	foreignKey({
 			columns: [table.workspaceId, table.sourceId],
-			foreignColumns: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id],
+			foreignColumns: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id],
 			name: "trigger_bindings_source_fk"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "trigger_bindings_pkey"}),
@@ -11167,7 +11221,7 @@ export const triggerDeliveriesInHarnessShared = harnessShared.table("trigger_del
 		}).onDelete("restrict"),
 	foreignKey({
 			columns: [table.workspaceId, table.sourceId],
-			foreignColumns: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id],
+			foreignColumns: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id],
 			name: "trigger_deliveries_source_fk"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "trigger_deliveries_pkey"}),
@@ -11223,60 +11277,6 @@ export const triggerRunsInHarnessShared = harnessShared.table("trigger_runs", {
 	check("trigger_runs_status_check", sql`status = ANY (ARRAY['pending'::text, 'running'::text, 'succeeded'::text, 'failed'::text, 'skipped'::text, 'cancelled'::text])`),
 ]);
 
-export const triggerSourcesInHarnessShared = harnessShared.table("trigger_sources", {
-	workspaceId: text("workspace_id").notNull(),
-	id: uuid().defaultRandom().notNull(),
-	kind: text().notNull(),
-	config: jsonb().default({}).notNull(),
-	credentialRef: text("credential_ref"),
-	status: text().default('unconfigured').notNull(),
-	cursor: jsonb().default({}).notNull(),
-	lastConnectedAt: timestamp("last_connected_at", { withTimezone: true, mode: 'string' }),
-	lastError: text("last_error"),
-	createdBy: text("created_by"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	ownerUserId: uuid("owner_user_id"),
-	providerAccountId: text("provider_account_id"),
-	syncMode: text("sync_mode").notNull(),
-	backfillStatus: text("backfill_status").default('not-requested').notNull(),
-	scope: text().notNull(),
-	scopeRef: text("scope_ref"),
-	scopeMapping: jsonb("scope_mapping").default({}).notNull(),
-	datatypeMappings: jsonb("datatype_mappings").default({}).notNull(),
-	destinationPolicy: jsonb("destination_policy").default({}).notNull(),
-	retentionPolicy: jsonb("retention_policy").default({}).notNull(),
-	permissionMapping: jsonb("permission_mapping").default({"mode":"owner"}).notNull(),
-}, (table) => [
-	uniqueIndex("trigger_sources_owned_account_kind_uidx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops"), table.providerAccountId.asc().nullsLast().op("text_ops")).where(sql`((owner_user_id IS NOT NULL) AND (provider_account_id IS NOT NULL))`),
-	index("trigger_sources_workspace_owner_account_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops"), table.providerAccountId.asc().nullsLast().op("text_ops")).where(sql`((owner_user_id IS NOT NULL) AND (provider_account_id IS NOT NULL))`),
-	index("trigger_sources_workspace_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops")).where(sql`(owner_user_id IS NOT NULL)`),
-	index("trigger_sources_ws_kind_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.ownerUserId],
-			foreignColumns: [usersInHarnessShared.id],
-			name: "trigger_sources_owner_user_id_fkey"
-		}).onDelete("set null"),
-	primaryKey({ columns: [table.id, table.workspaceId], name: "trigger_sources_pkey"}),
-	pgPolicy("trigger_sources_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("trigger_sources_backfill_status_chk", sql`backfill_status = ANY (ARRAY['not-requested'::text, 'pending'::text, 'running'::text, 'complete'::text, 'failed'::text])`),
-	check("trigger_sources_config_object_check", sql`jsonb_typeof(config) = 'object'::text`),
-	check("trigger_sources_credential_ref_nonempty", sql`(credential_ref IS NULL) OR (btrim(credential_ref) <> ''::text)`),
-	check("trigger_sources_cursor_object_check", sql`jsonb_typeof(cursor) = 'object'::text`),
-	check("trigger_sources_datatype_mappings_chk", sql`CHECK (harness_shared.data_source_datatype_mappings_valid(datatype_mappings`),
-	check("trigger_sources_destination_policy_chk", sql`CHECK (harness_shared.data_source_destination_policy_valid(destination_policy`),
-	check("trigger_sources_kind_nonempty", sql`btrim(kind) <> ''::text`),
-	check("trigger_sources_permission_mapping_chk", sql`CHECK (harness_shared.data_source_permission_mapping_valid(permission_mapping`),
-	check("trigger_sources_personal_owner_chk", sql`(scope <> 'personal'::text) OR (owner_user_id IS NOT NULL)`),
-	check("trigger_sources_provider_account_nonempty", sql`(owner_user_id IS NULL) OR ((provider_account_id IS NOT NULL) AND (btrim(provider_account_id) <> ''::text))`),
-	check("trigger_sources_retention_policy_chk", sql`CHECK (harness_shared.data_source_retention_policy_valid(retention_policy`),
-	check("trigger_sources_scope_chk", sql`scope = ANY (ARRAY['personal'::text, 'organization'::text, 'pot'::text])`),
-	check("trigger_sources_scope_mapping_chk", sql`jsonb_typeof(scope_mapping) = 'object'::text`),
-	check("trigger_sources_scope_ref_chk", sql`(scope = 'pot'::text) = ((scope_ref IS NOT NULL) AND (btrim(scope_ref) <> ''::text))`),
-	check("trigger_sources_status_check", sql`status = ANY (ARRAY['unconfigured'::text, 'ready'::text, 'connecting'::text, 'connected'::text, 'degraded'::text, 'error'::text, 'disabled'::text])`),
-	check("trigger_sources_sync_mode_chk", sql`sync_mode = ANY (ARRAY['poll'::text, 'webhook'::text, 'socket'::text, 'federated'::text, 'manual'::text])`),
-]);
-
 export const triggerWebhookSecretsInHarnessShared = harnessShared.table("trigger_webhook_secrets", {
 	workspaceId: text("workspace_id").notNull(),
 	sourceId: uuid("source_id").notNull(),
@@ -11289,7 +11289,7 @@ export const triggerWebhookSecretsInHarnessShared = harnessShared.table("trigger
 }, (table) => [
 	foreignKey({
 			columns: [table.workspaceId, table.sourceId],
-			foreignColumns: [triggerSourcesInHarnessShared.workspaceId, triggerSourcesInHarnessShared.id],
+			foreignColumns: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id],
 			name: "trigger_webhook_secrets_source_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.sourceId, table.workspaceId], name: "trigger_webhook_secrets_pkey"}),
@@ -13200,6 +13200,31 @@ export const triageRoutedItemsInHarnessShared = harnessShared.view("triage_route
 	hasCompletionEvidence: boolean("has_completion_evidence"),
 	closedByTriage: boolean("closed_by_triage"),
 }).as(sql`WITH first_routing AS ( SELECT DISTINCT ON (scout_routed_ideas.workspace_id, (split_part(scout_routed_ideas.routed_ref, ':'::text, 2))) scout_routed_ideas.workspace_id AS routed_workspace_id, split_part(scout_routed_ideas.routed_ref, ':'::text, 2) AS fid, scout_routed_ideas.lens, to_timestamp((scout_routed_ideas.routed_at::numeric / 1000.0)::double precision) AS routed_at FROM harness_shared.scout_routed_ideas WHERE scout_routed_ideas.routed_ref ~~ 'wi:%'::text ORDER BY scout_routed_ideas.workspace_id, (split_part(scout_routed_ideas.routed_ref, ':'::text, 2)), (to_timestamp((scout_routed_ideas.routed_at::numeric / 1000.0)::double precision)) ) SELECT w.workspace_id, w.harness_slug, w.feature_id, w.origin, w.origin = 'local'::text AS actionable, w.status, w.status <> ALL (ARRAY['done'::text, 'resolved'::text, 'passed'::text, 'closed'::text, 'deprecated'::text, 'dropped'::text]) AS non_terminal, w.lane IS NULL OR w.lane <> 'observation'::text AS non_observation, fr.lens, date_trunc('month'::text, fr.routed_at)::date AS routed_month, to_timestamp((w.closed_ts::numeric / 1000.0)::double precision) AS closed_at, w.terminal_completion_ref, w.terminal_completion_ref IS NOT NULL OR w.payload ? '_completionEvidence'::text AS has_completion_evidence, w.terminal_completion_ref ~~ 'P-008-MERGE%'::text AS closed_by_triage FROM harness_shared.work_items w JOIN first_routing fr ON fr.fid = w.feature_id AND fr.routed_workspace_id = w.workspace_id`);
+
+export const triggerSourcesInHarnessShared = harnessShared.view("trigger_sources", {	workspaceId: text("workspace_id"),
+	id: uuid(),
+	kind: text(),
+	config: jsonb(),
+	credentialRef: text("credential_ref"),
+	status: text(),
+	cursor: jsonb(),
+	lastConnectedAt: timestamp("last_connected_at", { withTimezone: true, mode: 'string' }),
+	lastError: text("last_error"),
+	createdBy: text("created_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
+	ownerUserId: uuid("owner_user_id"),
+	providerAccountId: text("provider_account_id"),
+	syncMode: text("sync_mode"),
+	backfillStatus: text("backfill_status"),
+	scope: text(),
+	scopeRef: text("scope_ref"),
+	scopeMapping: jsonb("scope_mapping"),
+	datatypeMappings: jsonb("datatype_mappings"),
+	destinationPolicy: jsonb("destination_policy"),
+	retentionPolicy: jsonb("retention_policy"),
+	permissionMapping: jsonb("permission_mapping"),
+}).with({"securityInvoker":true}).as(sql`SELECT workspace_id, id, kind, config, credential_ref, status, cursor, last_connected_at, last_error, created_by, created_at, updated_at, owner_user_id, provider_account_id, sync_mode, backfill_status, scope, scope_ref, scope_mapping, datatype_mappings, destination_policy, retention_policy, permission_mapping FROM harness_shared.data_sources`);
 
 export const workItemsClaimableInHarnessShared = harnessShared.view("work_items_claimable", {	harnessSlug: text("harness_slug"),
 	featureId: text("feature_id"),
