@@ -190,7 +190,7 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
     expect(values()).toContain('sonnet'); // model class follows the reported turn, not the opus request
     expect(values()).toContain(JSON.stringify({
       modelSource: 'turn', requestedModel: 'opus',
-      actualModels: ['claude-opus-4-8', 'claude-sonnet-4-6'], backend: 'claude-code',
+      actualModels: ['claude-opus-4-8', 'claude-sonnet-4-6'], backend: 'claude-code', costBound: null,
     }));
 
     await recordUsageSamplePg(
@@ -198,7 +198,23 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
       { backend: 'codex', model: 'gpt-5.5', usage: { inputTokens: 10, model: 'gpt-5.5', modelProvenance: 'request' } },
     );
     expect(values()).toContain(JSON.stringify({
-      modelSource: 'request', requestedModel: 'gpt-5.5', actualModels: [], backend: 'codex',
+      modelSource: 'request', requestedModel: 'gpt-5.5', actualModels: [], backend: 'codex', costBound: null,
+    }));
+  });
+
+  // D-020: a run aggregate has no request size. A long-context model used to persist NULL here;
+  // it now prices at the standard-tier floor and says so, matching the operator's repricer.
+  it('prices a long-context aggregate at its floor and records the lower bound', async () => {
+    const { pg, values } = capturingPg();
+    const usage = { inputTokens: 366_710, outputTokens: 9_444, cacheReadTokens: 7_333_632 };
+    await recordUsageSamplePg({ pg, workspaceId: 'ws-1' }, { backend: 'codex', model: 'gpt-6-astra', usage });
+    const v = values();
+    expect(costFromTokens('gpt-6-astra', usage).priced).toBe(false);
+    expect(v[10]).toBeCloseTo(11.472932, 9);
+    expect(v[12]).toBe('estimated');
+    expect(v[13]).toBe(PRICE_TABLE_VERSION);
+    expect(values()).toContain(JSON.stringify({
+      modelSource: 'request', requestedModel: 'gpt-6-astra', actualModels: [], backend: 'codex', costBound: 'lower',
     }));
   });
 

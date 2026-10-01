@@ -23,7 +23,7 @@
  * `@papercusp/papercusp-shared/agent`'s governor profile without inverting the package
  * dependency. Model-family bucketing remains a tiny pure helper at this boundary.
  */
-import { PRICE_TABLE_VERSION, costFromTokens } from '@papercusp/model-pricing';
+import { PRICE_TABLE_VERSION, USAGE_LEDGER_PRICING, costFromTokens } from '@papercusp/model-pricing';
 import type { OrchestratorPg } from './invoke';
 import type { RunUsage } from './cost-cap';
 import { harnessProfile } from './harness-profile';
@@ -99,6 +99,9 @@ export async function recordUsageSamplePg(
     requestedModel: usage.requestedModel ?? run.model,
     actualModels: usage.observedModels ?? [],
     backend: run.backend,
+    // 'lower' when the estimate is a tier floor (D-020): a run aggregate has no request size, so a
+    // long-context model prices at its standard tier. Written as null otherwise, never omitted.
+    costBound: null as 'lower' | null,
   };
   const n = (v: number | undefined): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -112,10 +115,11 @@ export async function recordUsageSamplePg(
     const est = costFromTokens(model, {
       inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
       cacheReadTokens: usage.cacheReadTokens, cacheCreationTokens: usage.cacheCreationTokens,
-    });
+    }, USAGE_LEDGER_PRICING);
     if (est.priced) {
       costUsd = est.usd;
       costSource = 'estimated';
+      usageProvenance.costBound = est.bound ?? null;
     }
   }
   // Every row not carrying provider cost was derived under this table version; the repricer
