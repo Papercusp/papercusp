@@ -7128,6 +7128,35 @@ export const periodicSweepRunsInHarnessShared = harnessShared.table("periodic_sw
 
 ]);
 
+export const personalDisclosuresInHarnessShared = harnessShared.table("personal_disclosures", {
+	id: uuid().defaultRandom().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	userId: uuid("user_id").notNull(),
+	agentOwnerId: text("agent_owner_id").notNull(),
+	documentId: uuid("document_id").notNull(),
+	source: text().notNull(),
+	level: text().notNull(),
+	readerSet: text("reader_set").array().notNull(),
+	deliveredVia: text("delivered_via").notNull(),
+	deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	releasedAt: timestamp("released_at", { withTimezone: true, mode: 'string' }),
+	releasedBy: text("released_by"),
+	releaseRef: text("release_ref"),
+}, (table) => [
+	uniqueIndex("personal_disclosures_active_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.agentOwnerId.asc().nullsLast().op("text_ops"), table.documentId.asc().nullsLast().op("uuid_ops")).where(sql`(released_at IS NULL)`),
+	index("personal_disclosures_agent_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.agentOwnerId.asc().nullsLast().op("text_ops")).where(sql`(released_at IS NULL)`),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [usersInHarnessShared.id],
+			name: "personal_disclosures_user_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.id, table.userId, table.workspaceId], name: "personal_disclosures_pkey"}),
+	pgPolicy("personal_disclosures_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("personal_disclosures_agent_owner_id_check", sql`length(btrim(agent_owner_id)) > 0`),
+	check("personal_disclosures_check", sql`(released_at IS NULL) = (release_ref IS NULL)`),
+	check("personal_disclosures_level_check", sql`level = ANY (ARRAY['participants'::text, 'sender-only'::text])`),
+]);
+
 export const personalDocumentsInHarnessShared = harnessShared.table("personal_documents", {
 	id: uuid().defaultRandom().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -7248,6 +7277,32 @@ export const personalIdentityAliasesInHarnessShared = harnessShared.table("perso
 	check("personal_identity_aliases_alias_kind_check", sql`alias_kind = ANY (ARRAY['email'::text, 'contact'::text, 'social-handle'::text, 'name'::text])`),
 	check("personal_identity_aliases_normalized_value_check", sql`length(btrim(normalized_value)) > 0`),
 	check("personal_identity_aliases_source_check", sql`source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text`),
+]);
+
+export const personalPrivacyRulesInHarnessShared = harnessShared.table("personal_privacy_rules", {
+	id: uuid().defaultRandom().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	userId: uuid("user_id").notNull(),
+	matchKind: text("match_kind").notNull(),
+	matchValue: text("match_value").notNull(),
+	level: text().notNull(),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedBy: text("updated_by").notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	authorityRef: text("authority_ref"),
+}, (table) => [
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [usersInHarnessShared.id],
+			name: "personal_privacy_rules_user_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.id, table.userId, table.workspaceId], name: "personal_privacy_rules_pkey"}),
+	unique("personal_privacy_rules_workspace_id_user_id_match_kind_matc_key").on(table.matchKind, table.matchValue, table.userId, table.workspaceId),
+	pgPolicy("personal_privacy_rules_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("personal_privacy_rules_level_check", sql`level = ANY (ARRAY['unrestricted'::text, 'participants'::text, 'sender-only'::text])`),
+	check("personal_privacy_rules_match_kind_check", sql`match_kind = ANY (ARRAY['source'::text, 'sender'::text, 'sender-domain'::text])`),
+	check("personal_privacy_rules_match_value_check", sql`length(btrim(match_value)) > 0`),
 ]);
 
 export const personalSyncStateInHarnessShared = harnessShared.table("personal_sync_state", {
@@ -12921,5 +12976,14 @@ export const workItemsClaimableInHarnessShared = harnessShared.view("work_items_
 	admittedAt: timestamp("admitted_at", { withTimezone: true, mode: 'string' }),
 	admittedBy: text("admitted_by"),
 	firstClaimedAt: timestamp("first_claimed_at", { withTimezone: true, mode: 'string' }),
+	claimHold: boolean("claim_hold"),
+	needsOwnerAction: boolean("needs_owner_action"),
 	embeddingProfile: text("embedding_profile"),
-}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, lane, condition_key, embedding_recipe, state_changed_at, admission, admitted_at, admitted_by, first_claimed_at, embedding_profile FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsOwnerAction'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(workspace_id, status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id)) = 0`);
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	directiveRef: bigint("directive_ref", { mode: "number" }),
+	agentReviewProjection: jsonb("agent_review_projection"),
+	implementationReadinessProjection: jsonb("implementation_readiness_projection"),
+	implementationReadinessEnrolled: boolean("implementation_readiness_enrolled"),
+	reopenHistoryProjection: jsonb("reopen_history_projection"),
+	externalBlockersProjection: jsonb("external_blockers_projection"),
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, lane, condition_key, embedding_recipe, state_changed_at, admission, admitted_at, admitted_by, first_claimed_at, claim_hold, needs_owner_action, embedding_profile, directive_ref, agent_review_projection, implementation_readiness_projection, implementation_readiness_enrolled, reopen_history_projection, external_blockers_projection FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsOwnerAction'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(workspace_id, status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id, item_kind, summary, created_ts)) = 0`);
