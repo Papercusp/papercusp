@@ -633,8 +633,10 @@ export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	ingestedAt: bigint("ingested_at", { mode: "number" }),
 	usageProvenance: jsonb("usage_provenance"),
+	priceTableVersion: text("price_table_version"),
 }, (table) => [
 	index("agent_usage_samples_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(harness_slug IS NOT NULL)`),
+	index("agent_usage_samples_price_version_idx").using("btree", table.priceTableVersion.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(cost_source IS DISTINCT FROM 'provider'::text)`),
 	index("agent_usage_samples_ws_account_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.accountId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(account_id IS NOT NULL)`),
 	index("agent_usage_samples_ws_bucket_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.bucketKey.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
 	uniqueIndex("agent_usage_samples_ws_event_key_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.usageEventKey.asc().nullsLast().op("text_ops")).where(sql`(usage_event_key IS NOT NULL)`),
@@ -1320,6 +1322,7 @@ export const blueprintOperationInvocationsInHarnessShared = harnessShared.table(
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	requestPayload: jsonb("request_payload"),
 	programStartedAt: timestamp("program_started_at", { withTimezone: true, mode: 'string' }),
+	targetHarnessSlug: text("target_harness_slug"),
 }, (table) => [
 	index("blueprint_operation_invocations_unstarted_idx").using("btree", table.id.asc().nullsLast().op("int8_ops")).where(sql`((target_kind = 'work-item'::text) AND (program_started_at IS NULL))`),
 	unique("blueprint_operation_invocatio_workspace_id_harness_slug_cal_key").on(table.callerId, table.harnessSlug, table.operationId, table.requestKey, table.workspaceId),
