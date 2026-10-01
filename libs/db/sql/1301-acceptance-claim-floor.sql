@@ -38,6 +38,7 @@
 -- column list (82 columns) has drifted from work_items (90 columns, a different order), which
 -- CREATE OR REPLACE VIEW refuses ("cannot change name of view column"). Nothing depends on the
 -- view; grants come from the schema's default privileges exactly as they did for 654.
+-- lint-migrations: allow-view-drop work_items_claimable has no dependent objects (the DROP is non-CASCADE, so it fails rather than silently dropping any) and is recreated in this same transaction with every prior column; its owner and grants come from the schema default privileges, verified unchanged by a live BEGIN..ROLLBACK dry-run on 2026-10-01 (as 654 did).
 -- FORWARD-COMPAT: the view is dropped and recreated in this same migration transaction, and the recreated view keeps every column the old one exposed (it only gains the 8 newer work_items columns), so the release still serving :3070 reads it unchanged.
 
 CREATE OR REPLACE FUNCTION harness_shared.work_item_implementation_readiness_admits(
