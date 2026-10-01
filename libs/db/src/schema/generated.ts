@@ -2772,6 +2772,7 @@ export const decisionModelCallsInHarnessShared = harnessShared.table("decision_m
 	stateSha256: text("state_sha256").notNull(),
 	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	surface: text(),
 }, (table) => [
 	index("decision_model_calls_state_sha256_idx").using("btree", table.stateSha256.asc().nullsLast().op("text_ops")),
 	index("decision_model_calls_ws_consumer_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.consumer.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
@@ -5119,6 +5120,28 @@ export const learningSpendReservationsInHarnessShared = harnessShared.table("lea
 
 ]);
 
+export const ledgerChainLinksInHarnessShared = harnessShared.table("ledger_chain_links", {
+	workspaceId: text("workspace_id").notNull(),
+	streamId: text("stream_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	seq: bigint({ mode: "number" }).notNull(),
+	sourceId: text("source_id").notNull(),
+	entryDigest: text("entry_digest").notNull(),
+	prevHash: text("prev_hash").notNull(),
+	entryHash: text("entry_hash").notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.seq, table.streamId, table.workspaceId], name: "ledger_chain_links_pkey"}),
+	unique("ledger_chain_links_workspace_id_stream_id_source_id_key").on(table.sourceId, table.streamId, table.workspaceId),
+	pgPolicy("ledger_chain_links_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("ledger_chain_links_entry_digest_check", sql`entry_digest ~ '^[0-9a-f]{64}$'::text`),
+	check("ledger_chain_links_entry_hash_check", sql`entry_hash ~ '^[0-9a-f]{64}$'::text`),
+	check("ledger_chain_links_prev_hash_check", sql`prev_hash ~ '^[0-9a-f]{64}$'::text`),
+	check("ledger_chain_links_seq_check", sql`seq >= 0`),
+	check("ledger_chain_links_source_id_check", sql`(length(source_id) >= 1) AND (length(source_id) <= 1024)`),
+	check("ledger_chain_links_stream_id_check", sql`(length(stream_id) >= 1) AND (length(stream_id) <= 512)`),
+]);
+
 export const llmTestClaimsInHarnessShared = harnessShared.table("llm_test_claims", {
 	claimKey: text("claim_key").primaryKey().notNull(),
 	ownerId: text("owner_id").notNull(),
@@ -7275,6 +7298,23 @@ export const planCleanupRunFindingsInHarnessShared = harnessShared.table("plan_c
 	check("plan_cleanup_run_findings_outcome_check", sql`outcome = ANY (ARRAY['pending'::text, 'auto_applied'::text, 'recommended'::text, 'accepted'::text, 'dismissed'::text, 'skipped'::text, 'failed'::text])`),
 	check("plan_cleanup_run_findings_recommendation_kind_check", sql`(recommendation_kind IS NULL) OR (recommendation_kind = ANY (ARRAY['owner_action'::text, 'cleanup_candidate'::text, 'retry_needed'::text, 'routed'::text, 'investigate'::text]))`),
 	check("plan_cleanup_run_findings_responsibility_check", sql`(responsibility IS NULL) OR (responsibility = ANY (ARRAY['owner'::text, 'agent'::text, 'system'::text, 'engineering'::text, 'unknown'::text]))`),
+]);
+
+export const planClosureObservationsInHarnessShared = harnessShared.table("plan_closure_observations", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	planSlug: text("plan_slug").notNull(),
+	satisfied: boolean().notNull(),
+	code: text(),
+	skipped: text(),
+	message: text(),
+	fingerprint: jsonb().notNull(),
+	observedAt: timestamp("observed_at", { withTimezone: true, mode: 'string' }).notNull(),
+	buildSha: text("build_sha"),
+}, (table) => [
+	primaryKey({ columns: [table.harnessSlug, table.planSlug, table.workspaceId], name: "plan_closure_observations_pkey"}),
+	pgPolicy("plan_closure_observations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("plan_closure_observations_fingerprint_check", sql`jsonb_typeof(fingerprint) = 'object'::text`),
 ]);
 
 export const planDecisionsInHarnessShared = harnessShared.table("plan_decisions", {
