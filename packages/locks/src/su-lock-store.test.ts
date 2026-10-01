@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { resolveLocksSqlDir, tryAcquire } from './su-lock-store';
+import { readQueue, resolveLocksSqlDir, tryAcquire } from './su-lock-store';
 
 const roots: string[] = [];
 
@@ -99,5 +99,41 @@ describe('tryAcquire', () => {
       reason: 'upsert_race',
       retryable: true,
     });
+  });
+});
+
+describe('readQueue', () => {
+  function fakePool() {
+    const statements: string[] = [];
+    const sql = Object.assign(
+      (strings: TemplateStringsArray) => {
+        statements.push(strings.join(' '));
+        return Promise.resolve([]);
+      },
+      { begin: async (run: (tx: unknown) => Promise<unknown>) => run(sql) },
+    );
+    return { sql: sql as never, statements };
+  }
+
+  it('skips the waiter query when a caller only needs active locks', async () => {
+    const pool = fakePool();
+
+    const result = await readQueue(pool.sql, {
+      coordinationDomain: 'test-domain',
+      paths: ['src/file.ts'],
+      includeWaiting: false,
+    });
+
+    expect(result).toEqual({ active_locks: [], waiting: [] });
+    expect(pool.statements.some((statement) => statement.includes('FROM agent_file_locks'))).toBe(true);
+    expect(pool.statements.some((statement) => statement.includes('FROM agent_lock_waiters w'))).toBe(false);
+  });
+
+  it('continues reading waiters by default for existing queue consumers', async () => {
+    const pool = fakePool();
+
+    await readQueue(pool.sql, { coordinationDomain: 'test-domain' });
+
+    expect(pool.statements.some((statement) => statement.includes('FROM agent_lock_waiters w'))).toBe(true);
   });
 });

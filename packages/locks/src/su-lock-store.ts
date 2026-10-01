@@ -1013,6 +1013,8 @@ export interface QueueParams {
   paths?: string[];
   owner?: string;
   includeCompleted?: boolean;
+  /** Skip the pending-waiter query when a caller only needs held locks. */
+  includeWaiting?: boolean;
 }
 
 export interface ActiveLockRow {
@@ -1176,7 +1178,7 @@ async function readQueueInner(
   sql: Sql,
   params: QueueParams,
 ): Promise<QueueResult> {
-  const { coordinationDomain, paths, owner, includeCompleted } = params;
+  const { coordinationDomain, paths, owner, includeCompleted, includeWaiting = true } = params;
 
   // `undefined` means "no filter"; an explicit [] means the caller requested no
   // paths and must fail closed. Treating both as the same is a dangerous broadening
@@ -1223,7 +1225,8 @@ async function readQueueInner(
       ? sql`AND FALSE`
       : sql`AND lock_paths_overlap(w.paths, ${paths}::text[])`;
 
-  const waiting = await sql<Array<WaiterRow & { ahead_count: number }>>`
+  const waiting: Array<WaiterRow & { ahead_count: number }> = includeWaiting
+    ? await sql<Array<WaiterRow & { ahead_count: number }>>`
     SELECT w.ticket_id, w.owner, w.owner_label, w.paths, w.intent, w.goal_ref,
            w.queued_ts, w.wait_until,
            w.status::text AS status,
@@ -1253,7 +1256,8 @@ async function readQueueInner(
        ${waitingPathOverlap}
        ${waitingOwnerFilter}
      ORDER BY w.queued_ts ASC, w.ticket_id ASC
-  `;
+  `
+    : [];
 
   const result: QueueResult = { active_locks: active, waiting };
 
