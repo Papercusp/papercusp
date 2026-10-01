@@ -5710,6 +5710,98 @@ export const modelPricingInHarnessShared = harnessShared.table("model_pricing", 
 	primaryKey({ columns: [table.modelId], name: "model_pricing_pkey"}),
 ]);
 
+export const moneyJournalEntriesInHarnessShared = harnessShared.table("money_journal_entries", {
+	workspaceId: text("workspace_id").notNull(),
+	entryId: text("entry_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	postingSeq: bigint("posting_seq", { mode: "number" }).generatedAlwaysAsIdentity({ name: "harness_shared.money_journal_entries_posting_seq_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).notNull(),
+	currency: text().notNull(),
+	movement: text().notNull(),
+	externalRefKind: text("external_ref_kind").notNull(),
+	externalRef: text("external_ref").notNull(),
+	rollupId: text("rollup_id"),
+	memo: text().default('').notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("money_journal_entries_ref_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.externalRefKind.asc().nullsLast().op("text_ops"), table.externalRef.asc().nullsLast().op("text_ops")),
+	index("money_journal_entries_rollup_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.rollupId.asc().nullsLast().op("text_ops")).where(sql`(rollup_id IS NOT NULL)`),
+	primaryKey({ columns: [table.entryId, table.workspaceId], name: "money_journal_entries_pkey"}),
+	unique("money_journal_entries_posting_seq_key").on(table.postingSeq),
+	pgPolicy("money_journal_entries_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("money_journal_entries_check", sql`(rollup_id IS NOT NULL) = (movement = 'usage-settlement'::text)`),
+	check("money_journal_entries_currency_check", sql`currency ~ '^[A-Z]{3}$'::text`),
+	check("money_journal_entries_entry_id_check", sql`(length(entry_id) >= 1) AND (length(entry_id) <= 256)`),
+	check("money_journal_entries_external_ref_check", sql`(length(external_ref) >= 1) AND (length(external_ref) <= 512)`),
+	check("money_journal_entries_external_ref_kind_check", sql`external_ref_kind = ANY (ARRAY['stripe-balance-transaction'::text, 'bank-transaction'::text, 'chain-tx'::text])`),
+	check("money_journal_entries_memo_check", sql`length(memo) <= 1000`),
+	check("money_journal_entries_movement_check", sql`movement = ANY (ARRAY['customer-payment'::text, 'credit-purchase'::text, 'refund'::text, 'chargeback'::text, 'provider-payment'::text, 'dao-transfer'::text, 'tax-remittance'::text, 'usage-settlement'::text])`),
+	check("money_journal_entries_rollup_id_check", sql`(rollup_id IS NULL) OR ((length(rollup_id) >= 1) AND (length(rollup_id) <= 256))`),
+]);
+
+export const moneyJournalLinesInHarnessShared = harnessShared.table("money_journal_lines", {
+	workspaceId: text("workspace_id").notNull(),
+	entryId: text("entry_id").notNull(),
+	lineNo: smallint("line_no").notNull(),
+	account: text().notNull(),
+	side: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	cents: bigint({ mode: "number" }).notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId, table.entryId],
+			foreignColumns: [moneyJournalEntriesInHarnessShared.workspaceId, moneyJournalEntriesInHarnessShared.entryId],
+			name: "money_journal_lines_workspace_id_entry_id_fkey"
+		}),
+	primaryKey({ columns: [table.entryId, table.lineNo, table.workspaceId], name: "money_journal_lines_pkey"}),
+	pgPolicy("money_journal_lines_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("money_journal_lines_account_check", sql`account = ANY (ARRAY['operating'::text, 'customer-credit-reserve'::text, 'refund-chargeback-reserve'::text, 'tax-reserve'::text, 'dao-payable'::text, 'revenue'::text, 'provider-cost'::text])`),
+	check("money_journal_lines_cents_check", sql`cents > 0`),
+	check("money_journal_lines_line_no_check", sql`line_no >= 0`),
+	check("money_journal_lines_side_check", sql`side = ANY (ARRAY['debit'::text, 'credit'::text])`),
+]);
+
+export const moneyJournalMicroAccrualsInHarnessShared = harnessShared.table("money_journal_micro_accruals", {
+	workspaceId: text("workspace_id").notNull(),
+	rollupId: text("rollup_id").notNull(),
+	accrualId: text("accrual_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	micros: bigint({ mode: "number" }).notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId, table.rollupId],
+			foreignColumns: [moneyJournalRollupsInHarnessShared.workspaceId, moneyJournalRollupsInHarnessShared.rollupId],
+			name: "money_journal_micro_accruals_workspace_id_rollup_id_fkey"
+		}),
+	primaryKey({ columns: [table.accrualId, table.rollupId, table.workspaceId], name: "money_journal_micro_accruals_pkey"}),
+	pgPolicy("money_journal_micro_accruals_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("money_journal_micro_accruals_accrual_id_check", sql`(length(accrual_id) >= 1) AND (length(accrual_id) <= 256)`),
+	check("money_journal_micro_accruals_micros_check", sql`micros > 0`),
+]);
+
+export const moneyJournalRollupsInHarnessShared = harnessShared.table("money_journal_rollups", {
+	workspaceId: text("workspace_id").notNull(),
+	rollupId: text("rollup_id").notNull(),
+	currency: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	totalMicros: bigint("total_micros", { mode: "number" }).default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	settledCents: bigint("settled_cents", { mode: "number" }).default(0).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	roundingMicros: bigint("rounding_micros", { mode: "number" }).default(0).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.rollupId, table.workspaceId], name: "money_journal_rollups_pkey"}),
+	pgPolicy("money_journal_rollups_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("money_journal_rollups_currency_check", sql`currency ~ '^[A-Z]{3}$'::text`),
+	check("money_journal_rollups_identity", sql`total_micros = ((settled_cents * 10000) + rounding_micros)`),
+	check("money_journal_rollups_rollup_id_check", sql`(length(rollup_id) >= 1) AND (length(rollup_id) <= 256)`),
+	check("money_journal_rollups_rounding_micros_check", sql`rounding_micros >= 0`),
+	check("money_journal_rollups_settled_cents_check", sql`settled_cents >= 0`),
+	check("money_journal_rollups_total_micros_check", sql`total_micros >= 0`),
+]);
+
 export const negativeSpaceDemandInHarnessShared = harnessShared.table("negative_space_demand", {
 	workspaceId: text("workspace_id").notNull(),
 	surface: text().notNull(),
