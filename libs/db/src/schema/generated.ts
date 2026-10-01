@@ -10105,6 +10105,30 @@ export const sqlReadCensusInHarnessShared = harnessShared.table("sql_read_census
 	check("sql_read_census_deliberate_no_pair_fields_check", sql`((deliberately_unpaired = false) AND (deliberate_decision_ref IS NULL)) OR ((deliberately_unpaired = true) AND (intent_label IS NULL) AND (relation_has_pairs = false) AND (deliberate_decision_ref IS NOT NULL) AND (deliberate_baseline_window_days IS NOT NULL) AND (deliberate_baseline_calls IS NOT NULL) AND (deliberate_baseline_atoms IS NOT NULL) AND (deliberate_baseline_distinct_agents IS NOT NULL))`),
 ]);
 
+export const statementAttestationsInHarnessShared = harnessShared.table("statement_attestations", {
+	workspaceId: text("workspace_id").notNull(),
+	month: text().notNull(),
+	documentSha256: text("document_sha256").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	attestationSeq: bigint("attestation_seq", { mode: "number" }).generatedAlwaysAsIdentity({ name: "harness_shared.statement_attestations_attestation_seq_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	statementDigest: text("statement_digest").notNull(),
+	attestorName: text("attestor_name").notNull(),
+	attestedOn: date("attested_on").notNull(),
+	scope: text().array().notNull(),
+	recordJson: jsonb("record_json").notNull(),
+	recordedBy: text("recorded_by"),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.documentSha256, table.month, table.workspaceId], name: "statement_attestations_pkey"}),
+	unique("statement_attestations_attestation_seq_key").on(table.attestationSeq),
+	pgPolicy("statement_attestations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("statement_attestations_attestor_name_check", sql`(length(attestor_name) >= 1) AND (length(attestor_name) <= 200)`),
+	check("statement_attestations_document_sha256_check", sql`document_sha256 ~ '^[0-9a-f]{64}$'::text`),
+	check("statement_attestations_month_check", sql`month ~ '^\d{4}-(0[1-9]|1[0-2])$'::text`),
+	check("statement_attestations_scope_check", sql`cardinality(scope) >= 1`),
+	check("statement_attestations_statement_digest_check", sql`statement_digest ~ '^[0-9a-f]{64}$'::text`),
+]);
+
 export const steeringChurnEscalationsInHarnessShared = harnessShared.table("steering_churn_escalations", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -11420,6 +11444,11 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	embeddingProfile: text("embedding_profile"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	directiveRef: bigint("directive_ref", { mode: "number" }),
+	agentReviewProjection: jsonb("agent_review_projection").generatedAlwaysAs(sql`NULLIF((payload -> 'agentReview'::text), 'null'::jsonb)`),
+	implementationReadinessProjection: jsonb("implementation_readiness_projection").generatedAlwaysAs(sql`NULLIF((payload -> 'implementationReadiness'::text), 'null'::jsonb)`),
+	implementationReadinessEnrolled: boolean("implementation_readiness_enrolled").generatedAlwaysAs(sql`(payload ? 'implementationReadiness'::text)`),
+	reopenHistoryProjection: jsonb("reopen_history_projection").generatedAlwaysAs(sql`NULLIF((payload -> 'reopenHistory'::text), 'null'::jsonb)`),
+	externalBlockersProjection: jsonb("external_blockers_projection").generatedAlwaysAs(sql`NULLIF((payload -> 'externalBlockers'::text), 'null'::jsonb)`),
 }, (table) => [
 	index("blueprint_invocation_item_recovery_idx").using("btree", sql`workspace_id`, sql`harness_slug`, sql`(((payload -> 'blueprintOperation'::text) ->> 'operationId'::te`, sql`(((payload -> 'blueprintOperation'::text) ->> 'callerId'::text)`, sql`(((payload -> 'blueprintOperation'::text) ->> 'requestKey'::tex`).where(sql`(payload ? 'blueprintOperation'::text)`),
 	index("harness_features_consolidated_claimed_progress_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.lastProgressAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((taken_by IS NOT NULL) AND (taken_by <> ''::text))`),
@@ -11455,6 +11484,7 @@ export const workItemsInHarnessShared = harnessShared.table("work_items", {
 	index("work_items_escalated_open_idx").using("btree", sql`workspace_id`, sql`COALESCE(((payload -> '_ei'::text) ->> 'severity'::text), 'mino`).where(sql`((status = 'open'::text) AND (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
 	index("work_items_frontier_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((status = 'open'::text) AND (item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
 	index("work_items_goal_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops")).where(sql`(goal_id IS NOT NULL)`),
+	uniqueIndex("work_items_intake_promotion_key_uniq").using("btree", sql`(((payload -> 'intakePromotion'::text) ->> 'key'::text))`).where(sql`(payload ? 'intakePromotion'::text)`),
 	uniqueIndex("work_items_keyless_title_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload #>> '{admissionIdentity,titleKey}'::text[]))`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND (NULLIF(btrim((payload ->> 'watchdogKey'::text)), ''::text) IS NULL) AND (COALESCE((payload ->> 'lane'::text), 'improvement'::text) <> 'observation'::text) AND ((payload #>> '{admissionIdentity,schemaVersion}'::text[]) = 'admission-identity-v1'::text) AND (NULLIF(btrim((payload #>> '{admissionIdentity,titleKey}'::text[])), ''::text) IS NOT NULL))`),
 	index("work_items_obs_rubric_ref_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text) IS NOT NULL)`),
 	index("work_items_obs_supersedes_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'supersedes'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'supersedes'::text) IS NOT NULL)`),
