@@ -17,24 +17,28 @@ import {
   sessionMcpDir,
   sessionMcpJsonPath,
   codexHomeForSessionKey,
+  codexSqliteHomeForSessionKey,
 } from './session-launch-dirs';
 
 const SAVED = {
   claude: process.env.PAPERCUSP_SESSION_CLAUDE_DIR,
   mcp: process.env.PAPERCUSP_SESSION_MCP_DIR,
   codex: process.env.PAPERCUSP_SU_CODEX_HOMES_DIR,
+  codexSqlite: process.env.PAPERCUSP_CODEX_SQLITE_HOMES_DIR,
 };
 
 beforeEach(() => {
   process.env.PAPERCUSP_SESSION_CLAUDE_DIR = '/tmp/t-session-claude';
   process.env.PAPERCUSP_SESSION_MCP_DIR = '/tmp/t-session-mcp';
   process.env.PAPERCUSP_SU_CODEX_HOMES_DIR = '/tmp/t-codex-homes';
+  process.env.PAPERCUSP_CODEX_SQLITE_HOMES_DIR = '/tmp/t-codex-sqlite-homes';
 });
 afterEach(() => {
   for (const [k, v] of [
     ['PAPERCUSP_SESSION_CLAUDE_DIR', SAVED.claude],
     ['PAPERCUSP_SESSION_MCP_DIR', SAVED.mcp],
     ['PAPERCUSP_SU_CODEX_HOMES_DIR', SAVED.codex],
+    ['PAPERCUSP_CODEX_SQLITE_HOMES_DIR', SAVED.codexSqlite],
   ] as const) {
     if (v == null) delete process.env[k];
     else process.env[k] = v;
@@ -56,13 +60,15 @@ describe('session-launch-dirs — cross-agent isolation (EI-153 keying contract)
     expect(sessionClaudeConfigDir('owner-x')).toBe(sessionClaudeConfigDir('owner-x'));
     expect(sessionMcpDir('owner-x')).toBe(sessionMcpDir('owner-x'));
     expect(codexHomeForSessionKey(42)).toBe(codexHomeForSessionKey(42));
+    expect(codexSqliteHomeForSessionKey(42)).toBe(codexSqliteHomeForSessionKey(42));
   });
 
   it('claude / mcp / codex dirs are distinct namespaces for one owner', () => {
     const claude = sessionClaudeConfigDir('owner-y');
     const mcp = sessionMcpDir('owner-y');
     const codex = codexHomeForSessionKey('owner-y');
-    expect(new Set([claude, mcp, codex]).size).toBe(3);
+    const codexSqlite = codexSqliteHomeForSessionKey('owner-y');
+    expect(new Set([claude, mcp, codex, codexSqlite]).size).toBe(4);
   });
 
   it('sessionMcpJsonPath is the .mcp.json inside the owner mcp dir', () => {
@@ -73,5 +79,6 @@ describe('session-launch-dirs — cross-agent isolation (EI-153 keying contract)
     expect(sessionClaudeConfigDir('o')).toBe('/tmp/t-session-claude/o');
     expect(sessionMcpDir('o')).toBe('/tmp/t-session-mcp/o');
     expect(codexHomeForSessionKey('o')).toBe('/tmp/t-codex-homes/session-o');
+    expect(codexSqliteHomeForSessionKey('o')).toBe('/tmp/t-codex-sqlite-homes/session-o');
   });
 });
