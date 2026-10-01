@@ -27,10 +27,12 @@
 --    other predicates; its membership now matches the TypeScript claim drain on floor #16.
 --    (Column list: see the FORWARD-COMPAT note below.)
 --
--- CUTOVER: rows created before 2026-10-02T00:00:00.000Z (epoch ms 1790899200000, the
--- IMPLEMENTATION_ACCEPTANCE_ENFORCEMENT_CUTOVER constant; a unit test pins the two) keep the
--- legacy readiness floor until P-011 reviews their cohort. A stale or invalid-authority
--- acceptance refuses at any age.
+-- CUTOVER (D-018): the created-after-cutover arm is DEFERRED to P-011 (cohort baseline + named
+-- canary). The rendered literal is the far sentinel 2100-01-01T00:00:00.000Z (epoch ms
+-- 4102444800000, the IMPLEMENTATION_ACCEPTANCE_ENFORCEMENT_CUTOVER constant; the claim-SSOT
+-- integration test re-renders and pins the two), so every current row keeps the legacy readiness
+-- floor until P-011 lowers it in a new migration. A stale-revision or invalid-authority
+-- acceptance refuses at any age, today.
 --
 -- The view is DROPPED and CREATED (as migration 654 did), not CREATE OR REPLACE'd: its stored
 -- column list (82 columns) has drifted from work_items (90 columns, a different order), which
@@ -113,7 +115,7 @@ AS $floor1301$
       END) = 'qualifying'
         )
         OR (
-          (COALESCE(created_ts, 0) < '1790899200000'::bigint)
+          (COALESCE(created_ts, 0) < '4102444800000'::bigint)
           AND (CASE
         WHEN NOT (COALESCE((
         jsonb_typeof((COALESCE(payload, '{}'::jsonb) -> 'implementationReadiness')) = 'object'
