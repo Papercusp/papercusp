@@ -55,10 +55,15 @@ CREATE INDEX IF NOT EXISTS session_identity_activation_spec_rev_idx
   WHERE specification_layer_refs IS NOT NULL;
 
 -- 4. One-shot backfill of everything still recoverable: every artifact still carried by a launch
---    record (current + identityHistory) or retained in blueprint_specifications, keyed by the
---    revision it hashes to. Running this freezes artifacts that further relaunches would evict.
---    TODO before arming: time this against the live table (September census over 1,598 records
---    took ~20s) and confirm the runner has no statement timeout that would cut it.
+--    record (current + identityHistory), keyed by the revision it hashes to. Running this freezes
+--    artifacts that further relaunches would evict. blueprint_specifications is not a source: it
+--    held none of the missing revisions, and leaving it out keeps this file free of 1212.
+--    Timed read-only on the live DB 2026-10-01: ~30s, 2,558 recoverable revisions (1,462 with an
+--    empty slotted set), 17,010 of 30,547 events stamped; the rest stay NULL (artifact gone).
+--    The runner applies each chunk with SET LOCAL statement_timeout = 0, and the breakpoint below
+--    commits the DDL first, so the ALTER's ACCESS EXCLUSIVE lock is not held across the backfill
+--    (which only takes row locks on rows that are not being inserted).
+--> statement-breakpoint
 WITH arts AS (
   SELECT a.workspace_id, a.launch_spec->>'specificationRevision' AS revision,
          a.launch_spec->'specificationArtifact' AS artifact
@@ -71,9 +76,6 @@ WITH arts AS (
            CASE WHEN jsonb_typeof(a.launch_spec->'identityHistory') = 'array'
                 THEN a.launch_spec->'identityHistory' ELSE '[]'::jsonb END) h
    WHERE jsonb_typeof(h->'specificationArtifact') = 'object'
-  UNION ALL
-  SELECT b.workspace_id, b.specification_revision, b.artifact
-    FROM harness_shared.blueprint_specifications b
 ), refs AS (
   SELECT DISTINCT ON (workspace_id, revision)
          workspace_id, revision, harness_shared.identity_specification_layer_refs(artifact) AS layer_refs
