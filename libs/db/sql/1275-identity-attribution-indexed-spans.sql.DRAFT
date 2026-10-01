@@ -12,18 +12,20 @@
 --    (measured 2026-09-30: 11,537 rows, EXCEPT ALL empty in both directions).
 --
 -- 2. agent_usage_samples_identity_attribution keeps 1177's matching rule and
---    evaluates it by cases. Let O = the distinct non-null session_turns owners
---    of the sample's session (claude/omp/codex, own or 'default' workspace).
---    1177 admits a span only when no turn owner differs from span.owner_id,
---    and its session_turns path admits every span whose owner is in O. So:
---      |O| >= 2  -> no span qualifies (NULL identity, as before);
---      O = {X}   -> exactly the spans owned by X (every other key path is
---                   either redundant with, or vetoed by, that owner);
---      O = {}    -> only the native / adv_sessions / session_archives keys.
---    O depends on (workspace_id, session_id) alone, so the planner memoizes
---    it per session; the span pick is an index scan backward on
+--    evaluates it as two indexed candidate sets. 1177 admits a span when
+--    EITHER the sample's session reaches it through a key (native session
+--    id, the span's adv_sessions row, or a session_archives row) OR the
+--    session's transcript owners are exactly {span.owner_id}. The owner veto
+--    guards only that second path: a key match admits the span whoever owns
+--    the turns. Let O = the distinct non-null session_turns owners of the
+--    sample's session (claude/omp/codex, own or 'default' workspace). So the
+--    candidates are the key-reached spans, plus every span owned by X when
+--    O = {X}. O depends on (workspace_id, session_id) alone, so the planner
+--    memoizes it per session; the owner pick is an index scan backward on
 --    session_identity_activation_applied_time_idx. 1177 took >30s for one
 --    hour of samples; this form answers the same hour in well under 1s.
+--    (A first draft also applied the veto to the key paths; a stratified
+--    8,039-row comparison against 1177 caught 205 dropped attributions.)
 --
 -- 1177 selected `u.*`, which expands at CREATE time. agent_usage_samples has
 -- since gained columns (usage_event_key, ...), so the usage columns are listed
@@ -93,14 +95,15 @@ SELECT u.id, u.workspace_id, u.ts, u.bucket_key, u.provider, u.model_class,
   LEFT JOIN LATERAL (
     SELECT c.*
       FROM (
-        -- O = {X}: every span X owns.
+        -- O = {X}: every span X owns (the session_turns path).
         SELECT s.*
           FROM harness_shared.session_identity_activation_spans s
          WHERE o.owner_count = 1
            AND s.workspace_id = u.workspace_id
            AND s.owner_id = o.sole_owner
         UNION ALL
-        -- O = {}: spans reachable through the session's own keys.
+        -- Any O: spans reachable through the session's own keys. The owner
+        -- veto does not apply here (1177 ORs these paths with the owner one).
         SELECT s.*
           FROM (
             SELECT e.id
@@ -130,8 +133,7 @@ SELECT u.id, u.workspace_id, u.ts, u.bucket_key, u.provider, u.model_class,
               FROM harness_shared.session_identity_activation_spans sp
              WHERE sp.activation_event_id = k.id
           ) s
-         WHERE o.owner_count = 0
-           AND u.session_id IS NOT NULL
+         WHERE u.session_id IS NOT NULL
       ) c
      WHERE c.active_from <= to_timestamp((u.ts::numeric / 1000.0)::double precision)
        AND (c.active_until IS NULL
