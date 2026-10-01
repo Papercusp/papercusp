@@ -20,9 +20,6 @@ ALTER TABLE harness_shared.agent_usage_samples
 COMMENT ON COLUMN harness_shared.agent_usage_samples.price_table_version IS
   'model-pricing PRICE_TABLE_VERSION that cost_usd/cost_source were last derived under (WI-10004517). NULL on provider-reported rows and on rows never derived under a known table; the repricer re-derives any non-provider row whose value differs from the running table.';
 
--- The repricer's stale scan: non-provider rows whose stamp is NULL or not the running version.
--- Once a pass completes this set is empty, so the scan must not cost a full-table read on every
--- tick. Rows are matched as (IS NULL OR < v OR > v), which this index answers with range scans.
-CREATE INDEX IF NOT EXISTS agent_usage_samples_price_version_idx
-  ON harness_shared.agent_usage_samples (price_table_version, id)
-  WHERE cost_source IS DISTINCT FROM 'provider';
+-- The stale-scan index is migration 1281, a separate file on purpose: the runner wraps each
+-- file in one transaction, so building it here would hold this ALTER's ACCESS EXCLUSIVE lock
+-- for the whole build (measured 19s on 1.27M rows under load), blocking every reader too.

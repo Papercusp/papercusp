@@ -3,6 +3,7 @@
  * Run with: npx vitest run packages/orchestrator/src/usage-sample-pg.test.ts
  */
 import { describe, expect, it } from 'vitest';
+import { PRICE_TABLE_VERSION, costFromTokens } from '@papercusp/model-pricing';
 import {
   providerForBackend,
   modelClassForRun,
@@ -54,6 +55,48 @@ describe('modelClassForRun', () => {
   it('falls back to "default" for an unrecognized model', () => {
     expect(modelClassForRun('codex', 'gpt-5')).toBe('default');
     expect(modelClassForRun('claude-code', '')).toBe('default');
+  });
+});
+
+// WI-10004517 / D-017: an estimate is stamped with the table version it was priced under, so
+// the operator's repricer can tell it is stale after a price change. Provider cost is never
+// stamped (it is an observation and is never re-priced). Values 10..13 are
+// cost_usd, model, cost_source, price_table_version.
+describe('recordUsageSamplePg — price-table version stamp', () => {
+  it('stamps an estimated row with the running PRICE_TABLE_VERSION', async () => {
+    const { pg, values } = capturingPg();
+    await recordUsageSamplePg(
+      { pg, workspaceId: 'ws-1' },
+      { backend: 'codex', model: 'gpt-5.5', usage: { inputTokens: 1_000_000, outputTokens: 0 } },
+    );
+    const v = values();
+    expect(v[10]).toBeCloseTo(costFromTokens('gpt-5.5', { inputTokens: 1_000_000, outputTokens: 0 }).usd, 12);
+    expect(v[12]).toBe('estimated');
+    expect(v[13]).toBe(PRICE_TABLE_VERSION);
+  });
+
+  it('stamps an unpriceable row too, so it is re-tried when its model gains a price', async () => {
+    const { pg, values } = capturingPg();
+    await recordUsageSamplePg(
+      { pg, workspaceId: 'ws-1' },
+      { backend: 'codex', model: 'gpt-not-in-the-table', usage: { inputTokens: 10, outputTokens: 5 } },
+    );
+    const v = values();
+    expect(v[10]).toBeNull();
+    expect(v[12]).toBeNull();
+    expect(v[13]).toBe(PRICE_TABLE_VERSION);
+  });
+
+  it('leaves provider-reported cost unstamped', async () => {
+    const { pg, values } = capturingPg();
+    await recordUsageSamplePg(
+      { pg, workspaceId: 'ws-1' },
+      { backend: 'claude-code', model: 'claude-opus-4-8', usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.42 } },
+    );
+    const v = values();
+    expect(v[10]).toBe(0.42);
+    expect(v[12]).toBe('provider');
+    expect(v[13]).toBeNull();
   });
 });
 
