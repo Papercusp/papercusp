@@ -701,6 +701,7 @@ export const attentionBulkRunItemsInHarnessShared = harnessShared.table("attenti
 	reversalWindowUntil: timestamp("reversal_window_until", { withTimezone: true, mode: 'string' }),
 	revertedAt: timestamp("reverted_at", { withTimezone: true, mode: 'string' }),
 	revertNote: text("revert_note"),
+	intakeDecision: jsonb("intake_decision"),
 }, (table) => [
 	index("attention_bulk_run_items_disposition_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.runId.asc().nullsLast().op("text_ops"), table.disposition.asc().nullsLast().op("text_ops")),
 	index("attention_bulk_run_items_item_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.itemId.asc().nullsLast().op("text_ops")),
@@ -711,6 +712,7 @@ export const attentionBulkRunItemsInHarnessShared = harnessShared.table("attenti
 	check("attention_bulk_run_items_confidence_check", sql`(confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'high'::text]))`),
 	check("attention_bulk_run_items_confidence_level_check", sql`(confidence_level IS NULL) OR (confidence_level = ANY (ARRAY['high'::text, 'medium'::text, 'low'::text, 'insufficient'::text]))`),
 	check("attention_bulk_run_items_disposition_check", sql`(disposition IS NULL) OR (disposition = ANY (ARRAY['pending'::text, 'auto_resolved'::text, 'recommended'::text, 'owner_action'::text, 'cleanup_candidate'::text, 'retry_needed'::text, 'routed'::text, 'investigate'::text, 'failed'::text, 'dismissed'::text, 'legacy_skipped'::text]))`),
+	check("attention_bulk_run_items_intake_decision_check", sql`(intake_decision IS NULL) OR ((jsonb_typeof(intake_decision) = 'object'::text) AND ((intake_decision ->> 'disposition'::text) = ANY (ARRAY['promote'::text, 'merge'::text, 'investigate'::text, 'retain'::text, 'reject'::text, 'retry'::text])) AND (length(btrim(COALESCE((intake_decision ->> 'reason'::text), ''::text))) > 0) AND (length(btrim(COALESCE((intake_decision ->> 'decidedBy'::text), ''::text))) > 0) AND (((intake_decision ->> 'disposition'::text) <> 'merge'::text) OR (length(btrim(COALESCE((intake_decision ->> 'targetRef'::text), ''::text))) > 0)) AND (((intake_decision ->> 'disposition'::text) <> 'retry'::text) OR (length(btrim(COALESCE((intake_decision ->> 'missingInformation'::text), ''::text))) > 0)))`),
 	check("attention_bulk_run_items_outcome_check", sql`outcome = ANY (ARRAY['pending'::text, 'auto_resolved'::text, 'recommended'::text, 'skipped'::text, 'failed'::text, 'dismissed'::text])`),
 	check("attention_bulk_run_items_recommendation_kind_check", sql`(recommendation_kind IS NULL) OR (recommendation_kind = ANY (ARRAY['owner_action'::text, 'cleanup_candidate'::text, 'retry_needed'::text, 'routed'::text, 'investigate'::text]))`),
 	check("attention_bulk_run_items_responsibility_check", sql`(responsibility IS NULL) OR (responsibility = ANY (ARRAY['owner'::text, 'agent'::text, 'system'::text, 'engineering'::text, 'unknown'::text]))`),
