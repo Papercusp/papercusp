@@ -1699,7 +1699,7 @@ export const cloudResourceObligationsInHarnessShared = harnessShared.table("clou
 	unique("cloud_resource_obligations_workspace_id_provider_resource_k_key").on(table.provider, table.resourceId, table.resourceKind, table.workspaceId),
 	pgPolicy("cloud_resource_obligations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("cloud_resource_obligations_grace_ms_check", sql`grace_ms >= 0`),
-	check("cloud_resource_obligations_provider_check", sql`provider = 'gcp'::text`),
+	check("cloud_resource_obligations_provider_check", sql`provider = ANY (ARRAY['gcp'::text, 'aws'::text])`),
 	check("cloud_resource_obligations_resource_id_check", sql`(length(btrim(resource_id)) >= 1) AND (length(btrim(resource_id)) <= 300)`),
 	check("cloud_resource_obligations_resource_kind_check", sql`(length(btrim(resource_kind)) >= 1) AND (length(btrim(resource_kind)) <= 80)`),
 ]);
