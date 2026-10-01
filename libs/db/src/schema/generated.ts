@@ -2830,6 +2830,27 @@ export const dataSourceLegalHoldsInHarnessShared = harnessShared.table("data_sou
 	check("data_source_legal_holds_release_chk", sql`(released_at IS NULL) = (released_by IS NULL)`),
 ]);
 
+export const dataSourceSubscriptionsInHarnessShared = harnessShared.table("data_source_subscriptions", {
+	id: uuid().defaultRandom().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	subjectKind: text("subject_kind").notNull(),
+	subjectRef: text("subject_ref").notNull(),
+	source: text().notNull(),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+	revokedBy: text("revoked_by"),
+}, (table) => [
+	uniqueIndex("data_source_subscriptions_live_key").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subjectKind.asc().nullsLast().op("text_ops"), table.subjectRef.asc().nullsLast().op("text_ops"), table.source.asc().nullsLast().op("text_ops")).where(sql`(revoked_at IS NULL)`),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "data_source_subscriptions_pkey"}),
+	pgPolicy("data_source_subscriptions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("data_source_subscriptions_created_by_check", sql`length(btrim(created_by)) > 0`),
+	check("data_source_subscriptions_revocation_chk", sql`(revoked_at IS NULL) = (revoked_by IS NULL)`),
+	check("data_source_subscriptions_source_check", sql`source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text`),
+	check("data_source_subscriptions_subject_kind_check", sql`subject_kind = ANY (ARRAY['pot'::text, 'plan'::text])`),
+	check("data_source_subscriptions_subject_ref_check", sql`length(btrim(subject_ref)) > 0`),
+]);
+
 export const datatypeRegistryInHarnessShared = harnessShared.table("datatype_registry", {
 	id: text().notNull(),
 	workspaceId: text("workspace_id").notNull(),
