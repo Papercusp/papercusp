@@ -2815,9 +2815,12 @@ export const decisionModelCallsInHarnessShared = harnessShared.table("decision_m
 	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	surface: text(),
+	loopBusyMs: integer("loop_busy_ms"),
+	loopUtilization: real("loop_utilization"),
 }, (table) => [
 	index("decision_model_calls_state_sha256_idx").using("btree", table.stateSha256.asc().nullsLast().op("text_ops")),
 	index("decision_model_calls_ws_consumer_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.consumer.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	check("decision_model_calls_loop_busy_range", sql`((loop_busy_ms IS NULL) OR (loop_busy_ms >= 0)) AND ((loop_utilization IS NULL) OR ((loop_utilization >= (0)::double precision) AND (loop_utilization <= (1)::double precision)))`),
 	check("decision_model_calls_nonnegative", sql`(latency_ms >= 0) AND (attempts >= 0) AND ((input_tokens IS NULL) OR (input_tokens >= 0)) AND ((output_tokens IS NULL) OR (output_tokens >= 0)) AND ((cost_usd IS NULL) OR (cost_usd >= (0)::numeric))`),
 	check("decision_model_calls_outcome_check", sql`outcome = ANY (ARRAY['answered'::text, 'inconclusive'::text])`),
 	check("decision_model_calls_outcome_shape", sql`((outcome = 'answered'::text) AND (returned_model IS NOT NULL) AND (answers IS NOT NULL) AND (inconclusive_reason IS NULL)) OR ((outcome = 'inconclusive'::text) AND (inconclusive_reason IS NOT NULL) AND (answers IS NULL))`),
@@ -3017,6 +3020,41 @@ export const docSectionsInHarnessShared = harnessShared.table("doc_sections", {
 	index("doc_sections_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("doc_sections_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
 	primaryKey({ columns: [table.anchor, table.slug, table.sourceKey], name: "doc_sections_pkey"}),
+]);
+
+export const documentPermissionListsInHarnessShared = harnessShared.table("document_permission_lists", {
+	id: uuid().defaultRandom().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	source: text().notNull(),
+	sourceRef: text("source_ref").notNull(),
+	title: text().default('').notNull(),
+	refreshedAt: timestamp("refreshed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.id, table.workspaceId], name: "document_permission_lists_pkey"}),
+	unique("document_permission_lists_source_ref_key").on(table.source, table.sourceRef, table.workspaceId),
+	pgPolicy("document_permission_lists_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("document_permission_lists_source_check", sql`source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text`),
+	check("document_permission_lists_source_ref_check", sql`length(btrim(source_ref)) > 0`),
+]);
+
+export const documentPermissionMembersInHarnessShared = harnessShared.table("document_permission_members", {
+	workspaceId: text("workspace_id").notNull(),
+	listId: uuid("list_id").notNull(),
+	provider: text().notNull(),
+	providerUserId: text("provider_user_id").notNull(),
+	addedAt: timestamp("added_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("document_permission_members_identity_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.provider.asc().nullsLast().op("text_ops"), table.providerUserId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.listId],
+			foreignColumns: [documentPermissionListsInHarnessShared.workspaceId, documentPermissionListsInHarnessShared.id],
+			name: "document_permission_members_list_fk"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.listId, table.provider, table.providerUserId, table.workspaceId], name: "document_permission_members_pkey"}),
+	pgPolicy("document_permission_members_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("document_permission_members_provider_check", sql`provider ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text`),
+	check("document_permission_members_provider_user_id_check", sql`length(btrim(provider_user_id)) > 0`),
 ]);
 
 export const dreamRunsInHarnessShared = harnessShared.table("dream_runs", {
@@ -7204,7 +7242,7 @@ export const personalDisclosuresInHarnessShared = harnessShared.table("personal_
 export const personalDocumentsInHarnessShared = harnessShared.table("personal_documents", {
 	id: uuid().defaultRandom().notNull(),
 	workspaceId: text("workspace_id").notNull(),
-	userId: uuid("user_id").notNull(),
+	userId: uuid("user_id"),
 	source: text().notNull(),
 	scopeKey: text("scope_key").generatedAlwaysAs(sql`('personal:'::text || source)`),
 	kind: text().notNull(),
@@ -7224,27 +7262,40 @@ export const personalDocumentsInHarnessShared = harnessShared.table("personal_do
 	sourceId: uuid("source_id"),
 	providerAccountId: text("provider_account_id"),
 	embeddingProfile: text("embedding_profile"),
+	scope: text().default('personal').notNull(),
+	potSlug: text("pot_slug"),
+	permissionListId: uuid("permission_list_id"),
 }, (table) => [
 	index("personal_documents_account_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.source.asc().nullsLast().op("text_ops"), table.providerAccountId.asc().nullsLast().op("text_ops"), table.occurredAt.desc().nullsLast().op("timestamptz_ops")),
 	index("personal_documents_embedding_mode_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
+	uniqueIndex("personal_documents_organization_dedupe").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.source.asc().nullsLast().op("text_ops"), table.dedupeKey.asc().nullsLast().op("text_ops")).where(sql`(scope = 'organization'::text)`),
 	index("personal_documents_participant_ids_idx").using("gin", table.participantIds.asc().nullsLast().op("array_ops")),
 	index("personal_documents_participants_idx").using("gin", table.participants.asc().nullsLast().op("array_ops")),
+	index("personal_documents_permission_list_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.permissionListId.asc().nullsLast().op("uuid_ops")).where(sql`(scope = 'organization'::text)`),
+	uniqueIndex("personal_documents_pot_dedupe").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.source.asc().nullsLast().op("text_ops"), table.dedupeKey.asc().nullsLast().op("text_ops")).where(sql`(scope = 'pot'::text)`),
 	index("personal_documents_scope_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.scopeKey.asc().nullsLast().op("text_ops"), table.occurredAt.desc().nullsLast().op("timestamptz_ops")),
 	index("personal_documents_source_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.sourceId.asc().nullsLast().op("uuid_ops")).where(sql`(source_id IS NOT NULL)`),
 	index("personal_documents_source_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.source.asc().nullsLast().op("text_ops"), table.occurredAt.desc().nullsLast().op("timestamptz_ops")),
 	index("personal_documents_text_tsv_idx").using("gin", table.textTsv.asc().nullsLast().op("tsvector_ops")),
 	foreignKey({
+			columns: [table.workspaceId, table.permissionListId],
+			foreignColumns: [documentPermissionListsInHarnessShared.workspaceId, documentPermissionListsInHarnessShared.id],
+			name: "personal_documents_permission_list_fk"
+		}).onDelete("restrict"),
+	foreignKey({
 			columns: [table.userId],
 			foreignColumns: [usersInHarnessShared.id],
 			name: "personal_documents_user_id_fkey"
 		}).onDelete("cascade"),
-	primaryKey({ columns: [table.id, table.userId, table.workspaceId], name: "personal_documents_pkey"}),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "personal_documents_pkey"}),
 	unique("personal_documents_workspace_id_user_id_source_dedupe_key_key").on(table.dedupeKey, table.source, table.userId, table.workspaceId),
 	pgPolicy("personal_documents_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("personal_documents_dedupe_key_check", sql`length(btrim(dedupe_key)) > 0`),
 	check("personal_documents_embedding_mode_check", sql`(embedding_mode IS NULL) OR (embedding_mode = 'gemma'::text)`),
 	check("personal_documents_kind_check", sql`length(btrim(kind)) > 0`),
+	check("personal_documents_pot_slug_chk", sql`(pot_slug IS NULL) OR (pot_slug ~ '^[a-z0-9][a-z0-9._-]{0,127}$'::text)`),
 	check("personal_documents_provider_account_nonempty", sql`(provider_account_id IS NULL) OR (length(btrim(provider_account_id)) > 0)`),
+	check("personal_documents_scope_chk", sql`((scope = 'personal'::text) AND (user_id IS NOT NULL) AND (permission_list_id IS NULL) AND (pot_slug IS NULL)) OR ((scope = 'organization'::text) AND (user_id IS NULL) AND (permission_list_id IS NOT NULL) AND (pot_slug IS NULL)) OR ((scope = 'pot'::text) AND (user_id IS NULL) AND (pot_slug IS NOT NULL))`),
 	check("personal_documents_source_check", sql`source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text`),
 ]);
 
@@ -8668,6 +8719,32 @@ export const promptCompositionsInHarnessShared = harnessShared.table("prompt_com
 	index("prompt_compositions_by_feature").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops"), table.tsMs.desc().nullsFirst().op("int8_ops")).where(sql`(feature_id IS NOT NULL)`),
 	index("prompt_compositions_by_harness").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.tsMs.desc().nullsFirst().op("int8_ops")),
 	pgPolicy("prompt_compositions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const providerIdentityMappingsInHarnessShared = harnessShared.table("provider_identity_mappings", {
+	id: uuid().defaultRandom().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	provider: text().notNull(),
+	providerUserId: text("provider_user_id").notNull(),
+	userId: uuid("user_id").notNull(),
+	mappedBy: text("mapped_by").notNull(),
+	mappedAt: timestamp("mapped_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+	revokedBy: text("revoked_by"),
+}, (table) => [
+	uniqueIndex("provider_identity_mappings_live_identity").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.provider.asc().nullsLast().op("text_ops"), table.providerUserId.asc().nullsLast().op("text_ops")).where(sql`(revoked_at IS NULL)`),
+	index("provider_identity_mappings_user_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(revoked_at IS NULL)`),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [usersInHarnessShared.id],
+			name: "provider_identity_mappings_user_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "provider_identity_mappings_pkey"}),
+	pgPolicy("provider_identity_mappings_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("provider_identity_mappings_mapped_by_check", sql`length(btrim(mapped_by)) > 0`),
+	check("provider_identity_mappings_provider_check", sql`provider ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text`),
+	check("provider_identity_mappings_provider_user_id_check", sql`length(btrim(provider_user_id)) > 0`),
+	check("provider_identity_mappings_revocation_chk", sql`(revoked_at IS NULL) = (revoked_by IS NULL)`),
 ]);
 
 export const provisionAuditLogInHarnessShared = harnessShared.table("provision_audit_log", {
@@ -11022,6 +11099,15 @@ export const triggerSourcesInHarnessShared = harnessShared.table("trigger_source
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	ownerUserId: uuid("owner_user_id"),
 	providerAccountId: text("provider_account_id"),
+	syncMode: text("sync_mode").notNull(),
+	backfillStatus: text("backfill_status").default('not-requested').notNull(),
+	scope: text().notNull(),
+	scopeRef: text("scope_ref"),
+	scopeMapping: jsonb("scope_mapping").default({}).notNull(),
+	datatypeMappings: jsonb("datatype_mappings").default({}).notNull(),
+	destinationPolicy: jsonb("destination_policy").default({}).notNull(),
+	retentionPolicy: jsonb("retention_policy").default({}).notNull(),
+	permissionMapping: jsonb("permission_mapping").default({"mode":"owner"}).notNull(),
 }, (table) => [
 	uniqueIndex("trigger_sources_owned_account_kind_uidx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops"), table.providerAccountId.asc().nullsLast().op("text_ops")).where(sql`((owner_user_id IS NOT NULL) AND (provider_account_id IS NOT NULL))`),
 	index("trigger_sources_workspace_owner_account_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops"), table.providerAccountId.asc().nullsLast().op("text_ops")).where(sql`((owner_user_id IS NOT NULL) AND (provider_account_id IS NOT NULL))`),
@@ -11034,12 +11120,22 @@ export const triggerSourcesInHarnessShared = harnessShared.table("trigger_source
 		}).onDelete("set null"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "trigger_sources_pkey"}),
 	pgPolicy("trigger_sources_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("trigger_sources_backfill_status_chk", sql`backfill_status = ANY (ARRAY['not-requested'::text, 'pending'::text, 'running'::text, 'complete'::text, 'failed'::text])`),
 	check("trigger_sources_config_object_check", sql`jsonb_typeof(config) = 'object'::text`),
 	check("trigger_sources_credential_ref_nonempty", sql`(credential_ref IS NULL) OR (btrim(credential_ref) <> ''::text)`),
 	check("trigger_sources_cursor_object_check", sql`jsonb_typeof(cursor) = 'object'::text`),
+	check("trigger_sources_datatype_mappings_chk", sql`CHECK (harness_shared.data_source_datatype_mappings_valid(datatype_mappings`),
+	check("trigger_sources_destination_policy_chk", sql`CHECK (harness_shared.data_source_destination_policy_valid(destination_policy`),
 	check("trigger_sources_kind_nonempty", sql`btrim(kind) <> ''::text`),
+	check("trigger_sources_permission_mapping_chk", sql`CHECK (harness_shared.data_source_permission_mapping_valid(permission_mapping`),
+	check("trigger_sources_personal_owner_chk", sql`(scope <> 'personal'::text) OR (owner_user_id IS NOT NULL)`),
 	check("trigger_sources_provider_account_nonempty", sql`(owner_user_id IS NULL) OR ((provider_account_id IS NOT NULL) AND (btrim(provider_account_id) <> ''::text))`),
+	check("trigger_sources_retention_policy_chk", sql`CHECK (harness_shared.data_source_retention_policy_valid(retention_policy`),
+	check("trigger_sources_scope_chk", sql`scope = ANY (ARRAY['personal'::text, 'organization'::text, 'pot'::text])`),
+	check("trigger_sources_scope_mapping_chk", sql`jsonb_typeof(scope_mapping) = 'object'::text`),
+	check("trigger_sources_scope_ref_chk", sql`(scope = 'pot'::text) = ((scope_ref IS NOT NULL) AND (btrim(scope_ref) <> ''::text))`),
 	check("trigger_sources_status_check", sql`status = ANY (ARRAY['unconfigured'::text, 'ready'::text, 'connecting'::text, 'connected'::text, 'degraded'::text, 'error'::text, 'disabled'::text])`),
+	check("trigger_sources_sync_mode_chk", sql`sync_mode = ANY (ARRAY['poll'::text, 'webhook'::text, 'socket'::text, 'federated'::text, 'manual'::text])`),
 ]);
 
 export const triggerWebhookSecretsInHarnessShared = harnessShared.table("trigger_webhook_secrets", {

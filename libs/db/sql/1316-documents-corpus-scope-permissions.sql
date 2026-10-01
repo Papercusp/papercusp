@@ -18,6 +18,8 @@
 -- d.user_id = <owner>) can never return one.
 --
 -- FORWARD-COMPAT: the deployed release never names personal_documents_pkey and never upserts ON CONFLICT on (workspace_id, user_id, id); its only document conflict target, the (workspace_id, user_id, source, dedupe_key) unique, is kept unchanged. It always supplies user_id, so dropping NOT NULL and swapping the primary key to (workspace_id, id) cannot change any statement it runs. The partial unique indexes are on rows it never writes (scope <> 'personal') or on tables it never reads.
+--
+-- lint-migrations: allow-index-swap PK (workspace_id,user_id,id) -> (workspace_id,id) plus two NEW partial uniques; verified 2026-10-01 (su-cb96f15f, WI-10005049) that no ON CONFLICT targets the old PK in the working tree, the deployed papercup-release checkout, or the bundled desktop sidecar serve.mjs — every personal_documents upsert there targets (workspace_id, user_id, source, dedupe_key), which this migration leaves unchanged; the new organization upsert (data-sources/documents-corpus.ts) names its own partial index with WHERE scope = 'organization'.
 
 -- 1. Source-derived permission lists. One list per (source, source_ref): e.g. a
 --    Slack channel, an Asana project. Its members are PROVIDER identities, copied
