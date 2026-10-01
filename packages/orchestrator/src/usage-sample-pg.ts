@@ -107,7 +107,7 @@ export async function recordUsageSamplePg(
   let costSource: string | null = costUsd !== null ? 'provider' : null;
   // Keep this call's usage shape — the four counters, absent ones priced as zero — in step with
   // operator-core `storedSampleTokenUsage` ('jsonl'): the repricer re-derives this row from its
-  // stored columns whenever the price table changes (WI-10004517 / D-017).
+  // stored columns whenever the price table changes (WI-10004517 / D-018).
   if (costUsd === null && model) {
     const est = costFromTokens(model, {
       inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,

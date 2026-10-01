@@ -58,7 +58,7 @@ describe('modelClassForRun', () => {
   });
 });
 
-// WI-10004517 / D-017: an estimate is stamped with the table version it was priced under, so
+// WI-10004517 / D-018: an estimate is stamped with the table version it was priced under, so
 // the operator's repricer can tell it is stale after a price change. Provider cost is never
 // stamped (it is an observation and is never re-priced). Values 10..13 are
 // cost_usd, model, cost_source, price_table_version.
