@@ -56,7 +56,17 @@ function isMigrationLockTimeout(error) {
 const LOCK_HOLDER_LIMIT = 5;
 const LOCK_HOLDER_RELATION_LIMIT = 50;
 const LOCK_HOLDER_QUERY_CHARS = 120;
-const QUALIFIED_RELATION = /\b("?)([A-Za-z_][A-Za-z0-9_$]*)\1\s*\.\s*("?)([A-Za-z_][A-Za-z0-9_$]*)\3/g;
+// `(?<!…)` rather than `\b`: there is no word boundary before a leading `"`.
+const QUALIFIED_RELATION = /(?<![A-Za-z0-9_$"])("?)([A-Za-z_][A-Za-z0-9_$]*)\1\s*\.\s*("?)([A-Za-z_][A-Za-z0-9_$]*)\3/g;
+
+/**
+ * Postgres folds an unquoted identifier to lower case; a quoted one keeps its case.
+ * @param {string} quote `"` when the identifier was quoted, else empty
+ * @param {string} name
+ */
+function foldIdentifier(quote, name) {
+  return quote ? name : name.toLowerCase();
+}
 
 /**
  * Schema-qualified `schema.relation` names a migration chunk mentions, in first-seen order.
@@ -68,7 +78,7 @@ const QUALIFIED_RELATION = /\b("?)([A-Za-z_][A-Za-z0-9_$]*)\1\s*\.\s*("?)([A-Za-
 export function migrationRelationNames(ddl) {
   const names = new Set();
   for (const match of ddl.matchAll(QUALIFIED_RELATION)) {
-    names.add(`${match[2]}.${match[4]}`);
+    names.add(`${foldIdentifier(match[1], match[2])}.${foldIdentifier(match[3], match[4])}`);
     if (names.size >= LOCK_HOLDER_RELATION_LIMIT) break;
   }
   return [...names];
@@ -339,6 +349,7 @@ function migrationPosition(value, ddl, queryPrefix = MIGRATION_TRANSACTION_PREFI
  * @param {boolean | undefined} args.dataDirWasReused
  * @param {boolean} args.haltBoot
  * @param {string} [args.queryPrefix]
+ * @param {string | null} [args.lockHolders] {@link describeMigrationLockHolders} output for a 55P03
  * @returns {Error}
  */
 function wrapMigrationFailure({
