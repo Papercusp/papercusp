@@ -10011,8 +10011,8 @@ export const sessionPendingGatesInHarnessShared = harnessShared.table("session_p
 	uniqueIndex("session_pending_gates_ref_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops"), table.refId.asc().nullsLast().op("text_ops")),
 	check("session_pending_gates_client_check", sql`client = ANY (ARRAY['claude'::text, 'omp'::text, 'codex'::text])`),
 	check("session_pending_gates_closed_reason_check", sql`(closed_reason IS NULL) OR (closed_reason = ANY (ARRAY['tool_result_observed'::text, 'hook_cleared'::text, 'asker_gone'::text, 'default_applied'::text]))`),
-	check("session_pending_gates_kind_check", sql`kind = ANY (ARRAY['ask'::text, 'permission_wait'::text])`),
-	check("session_pending_gates_source_check", sql`source = ANY (ARRAY['watcher'::text, 'hook'::text])`),
+	check("session_pending_gates_kind_check", sql`kind = ANY (ARRAY['ask'::text, 'permission_wait'::text, 'suppressed_ask'::text])`),
+	check("session_pending_gates_source_check", sql`source = ANY (ARRAY['watcher'::text, 'hook'::text, 'agent'::text])`),
 ]);
 
 export const sessionPortsInHarnessShared = harnessShared.table("session_ports", {
@@ -10984,6 +10984,7 @@ export const textChunksInHarnessShared = harnessShared.table("text_chunks", {
 	embeddingProfile: text("embedding_profile"),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
+	index("text_chunks_consult_questions_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")).where(sql`(surface = 'consult_questions'::text)`),
 	index("text_chunks_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("text_chunks_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
 	index("text_chunks_updated_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
