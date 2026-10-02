@@ -10188,6 +10188,42 @@ export const sessionTurnVocabStateInHarnessShared = harnessShared.table("session
 
 ]);
 
+export const sessionTurnWindowsInHarnessShared = harnessShared.table("session_turn_windows", {
+	workspaceId: text("workspace_id").notNull(),
+	sourceKind: text("source_kind").notNull(),
+	sessionId: text("session_id").notNull(),
+	turnIdx: integer("turn_idx").notNull(),
+	winIdx: integer("win_idx").notNull(),
+	wtext: text().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId, table.sourceKind, table.sessionId, table.turnIdx],
+			foreignColumns: [sessionTurnsInHarnessShared.workspaceId, sessionTurnsInHarnessShared.sourceKind, sessionTurnsInHarnessShared.sessionId, sessionTurnsInHarnessShared.turnIdx],
+			name: "session_turn_windows_workspace_id_source_kind_session_id_t_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.sessionId, table.sourceKind, table.turnIdx, table.winIdx, table.workspaceId], name: "session_turn_windows_pkey"}),
+]);
+
+export const sessionTurnWindowsStateInHarnessShared = harnessShared.table("session_turn_windows_state", {
+	scope: text().default('all').primaryKey().notNull(),
+	status: text().default('absent').notNull(),
+	cursorWorkspaceId: text("cursor_workspace_id"),
+	cursorSourceKind: text("cursor_source_kind"),
+	cursorSessionId: text("cursor_session_id"),
+	cursorTurnIdx: integer("cursor_turn_idx"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	turnsDone: bigint("turns_done", { mode: "number" }).default(0).notNull(),
+	buildStartedAt: timestamp("build_started_at", { withTimezone: true, mode: 'string' }),
+	buildFinishedAt: timestamp("build_finished_at", { withTimezone: true, mode: 'string' }),
+	heartbeatAt: timestamp("heartbeat_at", { withTimezone: true, mode: 'string' }),
+	lastError: text("last_error"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	check("session_turn_windows_state_status_check", sql`status = ANY (ARRAY['absent'::text, 'building'::text, 'ready'::text, 'failed'::text])`),
+	primaryKey({ columns: [table.scope], name: "session_turn_windows_state_pkey"}),
+
+]);
+
 export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	sourceKind: text("source_kind").notNull(),
