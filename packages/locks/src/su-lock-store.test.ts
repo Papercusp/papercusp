@@ -106,7 +106,7 @@ describe('tryAcquire', () => {
     const holderExpires = new Date('2026-10-02T03:59:29.604Z');
     const statements: string[] = [];
     const tx = ((strings: TemplateStringsArray) => {
-      const statement = strings.join(' ');
+      const statement = strings.join(' ').replace(/\s+/g, ' ').trim();
       statements.push(statement);
       if (statement.includes('SELECT path, lock_id::text AS lock_id, expires_ts FROM agent_file_locks')) {
         return [];
