@@ -42,4 +42,19 @@ describe('pull-schema.mjs main-guard (EI-18786840446203185)', () => {
     expect(source).toContain('createSchemaCliSpawnOptions({');
     expect(source).toContain('normalizeSchemaCliOutput(result.stdout)');
   });
+
+  it('holds the shared filesystem mutex across introspection and intermediate-file promotion', () => {
+    const source = readFileSync(new URL('./pull-schema.mjs', import.meta.url), 'utf8');
+    const runStart = source.indexOf('async function runPullSchema() {');
+    const lockCall = source.indexOf('await withFsMutex(');
+    const lockTail = source.slice(lockCall);
+
+    expect(runStart).toBeGreaterThanOrEqual(0);
+    expect(lockCall).toBeGreaterThan(runStart);
+    expect(source.slice(runStart, lockCall)).toContain("console.log('==> running drizzle-kit pull");
+    expect(source.slice(runStart, lockCall)).toContain('promoteGeneratedSchemaArtifacts({');
+    expect(lockTail).toMatch(
+      /await withFsMutex\(\s*`papercusp-db-pull-schema:\$\{REAL_DB_ROOT\}`\s*,\s*runPullSchema\s*,/,
+    );
+  });
 });
