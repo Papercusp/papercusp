@@ -16,8 +16,10 @@
 -- atomic with the mint.
 --
 -- Additive only: two nullable columns and a partial index. The backfill appends
--- one history row per CURRENT goal holder, so a live holder that exits before the
--- next election cannot have its epoch re-issued either.
+-- one history row per goal, carrying its highest LIVE epoch (and that row's
+-- owner), so a live holder that exits before the next election cannot have its
+-- epoch re-issued either. Epochs of holders that exited before this migration are
+-- unrecoverable; the next election still moves past every live epoch.
 
 ALTER TABLE harness_shared.agent_mode_changes
   ADD COLUMN IF NOT EXISTS subject text,
@@ -33,11 +35,15 @@ INSERT INTO harness_shared.agent_mode_changes
 SELECT am.workspace_id, am.owner_id, am.axis_key, am.mode, am.mode,
        'backfill: goal lease epoch high-water (WI-10005240)', 'migration:1331', false,
        am.subject, am.goal_lease_epoch
-  FROM harness_shared.agent_modes am
- WHERE am.mode = 'goal'
-   AND am.subject IS NOT NULL
-   AND am.goal_lease_epoch IS NOT NULL
-   AND NOT EXISTS (
+  FROM (
+    SELECT DISTINCT ON (workspace_id, subject) *
+      FROM harness_shared.agent_modes
+     WHERE mode = 'goal'
+       AND subject IS NOT NULL
+       AND goal_lease_epoch IS NOT NULL
+     ORDER BY workspace_id, subject, goal_lease_epoch DESC, set_at DESC, owner_id
+  ) am
+ WHERE NOT EXISTS (
      SELECT 1 FROM harness_shared.agent_mode_changes c
       WHERE c.workspace_id = am.workspace_id
         AND c.subject = am.subject
