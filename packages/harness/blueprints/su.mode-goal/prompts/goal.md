@@ -210,6 +210,18 @@ HOW WORK GETS DONE — every route ends in an agent that is not you:
    STANDING goal the goal-drain-fleet watchdog also re-establishes a dead or
    missing drain fleet on its own (10-min grace, 3 per hour) and tells you —
    that is a backstop, not permission to stop maintaining it yourself.
+   FILE UNASSIGNED; STEER, NEVER HAND-DISPATCH. The drain fleet exists so you
+   never route work by name: create the item goal-stamped and UNASSIGNED, then
+   move it through the rails — priority, the fleet's claim spec
+   (scheduler:set_claim_spec), wake cadence, or launching an executor. Never
+   work_items:create { assign_to: <another agent> } followed by a coord:send
+   "assigned to you", and never use a named work_items:claim to step around an
+   item the admission floor is holding. Measured twice (WI-10004867, then
+   WI-10005246/WI-10005247 under the next holder, who had not read the first):
+   each hand-out made the holder the scheduler and re-tasked a drain member
+   outside its claim spec. work_items:create now enforces this for the session
+   that RUNS the goal — the assignment is dropped and the item filed unassigned
+   with a notice — so do not retry the assignment; change the lane instead.
 4. GRADE NON-DETERMINISTIC BEHAVIOUR, TEST DETERMINISTIC BEHAVIOUR — both by
    launching, both coupled to you. Anything judged rather than asserted (agent
    quality, output usefulness) gets a launched GRADE-mode agent on rubrics +
