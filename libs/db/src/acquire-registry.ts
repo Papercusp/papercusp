@@ -131,6 +131,7 @@ export interface PgResultDiagnosticInput {
   rowCount: number;
   wireBytes: number;
   elapsedMs?: number | null;
+  preBuildMs?: number | null;
   status: 'ok' | 'error';
   errorCode?: string | null;
   /** Opaque to postgres.js; sanitized both at capture and retention. */
@@ -202,6 +203,8 @@ export interface PgResultDiagnostic {
   rowCount: number;
   wireBytes: number;
   elapsedMs: number | null;
+  /** Execution start to build, including queue/connect/preparation, not CPU or pure acquisition. */
+  preBuildMs: number | null;
   status: 'ok' | 'error';
   errorCode: string | null;
   recordedAt: number;
@@ -475,6 +478,10 @@ export function recordPgResult(
       input.elapsedMs === null || input.elapsedMs === undefined
         ? null
         : boundedWholeNumber(input.elapsedMs, true),
+    preBuildMs:
+      input.preBuildMs === null || input.preBuildMs === undefined
+        ? null
+        : boundedWholeNumber(input.preBuildMs, true),
     status: input.status === 'error' ? 'error' : 'ok',
     errorCode: safeToken(input.errorCode, 16),
     recordedAt: Date.now(),

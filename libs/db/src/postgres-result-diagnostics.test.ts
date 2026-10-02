@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire, stripTypeScriptTypes } from 'node:module';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import {
   pgResultDiagnosticSnapshot,
@@ -329,10 +329,23 @@ describe('postgres.js terminal result diagnostics patch', () => {
     for (const rel of BUILD_ROOTS) {
       expect(patch).toContain(`node_modules/postgres/${rel}/connection.js`);
       expect(patch).toContain(`node_modules/postgres/${rel}/index.js`);
+      expect(patch).toContain(`node_modules/postgres/${rel}/query.js`);
     }
     expect(patch).toContain('node_modules/postgres/types/index.d.ts');
     expect(patch).toContain('PAPERCUSP PATCH (WI-10000316)');
     expect(patch).toContain('interface QueryResultDiagnostic');
+  });
+
+  it('matches installed dependency bytes to each maintained patch postimage', () => {
+    const patch = fs.readFileSync(PATCH_PATH, 'utf8');
+    for (const block of patch.split(/(?=^diff --git )/m).filter(block => block.startsWith('diff --git '))) {
+      const target = block.match(/^\+\+\+ b\/node_modules\/postgres\/(.+)$/m)?.[1];
+      const hash = block.match(/^index [a-f0-9]+\.\.([a-f0-9]+)/m)?.[1];
+      expect(target).toBeDefined(); expect(hash).toBeDefined();
+      const bytes = fs.readFileSync(path.join(PG_ROOT, target!));
+      const actual = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+      expect(actual.startsWith(hash!), target).toBe(true);
+    }
   });
 
   it('correlates a large terminal result with its originating query family', () => {
