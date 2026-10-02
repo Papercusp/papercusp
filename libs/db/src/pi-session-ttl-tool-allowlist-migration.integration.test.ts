@@ -52,6 +52,20 @@ describe('PI session scope and expiry migration', () => {
     expect(row.allowed_tools).toBeNull();
   });
 
+  it('keeps the deployed writer working when it omits the new columns', async () => {
+    await sql`
+      INSERT INTO harness_shared.pi_sessions
+        (workspace_id, session_id, bearer_hash, capabilities)
+      VALUES ('ws-legacy-writer', 'legacy-session', 'hash-legacy', '[]'::jsonb)`;
+    const [row] = await sql<{ expires_at: Date; allowed_tools: unknown }[]>`
+      SELECT expires_at, allowed_tools
+        FROM harness_shared.pi_sessions
+       WHERE workspace_id = 'ws-legacy-writer' AND session_id = 'legacy-session'`;
+    expect(row.expires_at.getTime()).toBeGreaterThan(Date.now());
+    expect(row.expires_at.getTime()).toBeLessThan(Date.now() + 25 * 60 * 60 * 1000);
+    expect(row.allowed_tools).toBeNull();
+  });
+
   it('defaults new rows to an expiry and stores exact canonical names', async () => {
     await sql`
       INSERT INTO harness_shared.pi_sessions
