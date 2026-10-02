@@ -84,6 +84,35 @@ export const adjacencyStateInHarnessShared = harnessShared.table("adjacency_stat
 
 ]);
 
+export const admissionRulesInHarnessShared = harnessShared.table("admission_rules", {
+	workspaceId: text("workspace_id").notNull(),
+	id: uuid().defaultRandom().notNull(),
+	dataSourceId: uuid("data_source_id").notNull(),
+	sourceKind: text("source_kind").default('record').notNull(),
+	title: text().notNull(),
+	match: jsonb().notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	workKind: text("work_kind").default('change').notNull(),
+	enabled: boolean().default(true).notNull(),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("admission_rules_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.dataSourceId.asc().nullsLast().op("uuid_ops"), table.sourceKind.asc().nullsLast().op("text_ops")).where(sql`enabled`),
+	foreignKey({
+			columns: [table.workspaceId, table.dataSourceId],
+			foreignColumns: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id],
+			name: "admission_rules_source_fk"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "admission_rules_pkey"}),
+	check("admission_rules_created_by_check", sql`btrim(created_by) <> ''::text`),
+	check("admission_rules_harness_slug_check", sql`btrim(harness_slug) <> ''::text`),
+	check("admission_rules_match_check", sql`(jsonb_typeof(match) = 'object'::text) AND (match <> '{}'::jsonb)`),
+	check("admission_rules_source_kind_check", sql`btrim(source_kind) <> ''::text`),
+	check("admission_rules_title_check", sql`btrim(title) <> ''::text`),
+	check("admission_rules_work_kind_check", sql`btrim(work_kind) <> ''::text`),
+]);
+
 export const admissionRunsInHarnessShared = harnessShared.table("admission_runs", {
 	id: text().primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -11626,6 +11655,35 @@ export const webhookAuditInHarnessShared = harnessShared.table("webhook_audit", 
 	index("webhook_audit_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.sentAt.desc().nullsFirst().op("timestamptz_ops")),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "webhook_audit_pkey"}),
 	pgPolicy("webhook_audit_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const workAdmissionsInHarnessShared = harnessShared.table("work_admissions", {
+	workspaceId: text("workspace_id").notNull(),
+	id: uuid().defaultRandom().notNull(),
+	workItemId: text("work_item_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	dataSourceId: uuid("data_source_id"),
+	sourceKind: text("source_kind").notNull(),
+	sourceKey: text("source_key").notNull(),
+	sourceRef: jsonb("source_ref").default({}).notNull(),
+	fieldAuthority: jsonb("field_authority").default({}).notNull(),
+	admittedVia: text("admitted_via").notNull(),
+	admittedBy: text("admitted_by").notNull(),
+	ruleId: uuid("rule_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("work_admissions_work_item_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.workItemId.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "work_admissions_pkey"}),
+	unique("work_admissions_source_key").on(table.sourceKey, table.sourceKind, table.workspaceId),
+	check("work_admissions_admitted_by_check", sql`btrim(admitted_by) <> ''::text`),
+	check("work_admissions_admitted_via_check", sql`admitted_via = ANY (ARRAY['person'::text, 'rule'::text])`),
+	check("work_admissions_field_authority_check", sql`jsonb_typeof(field_authority) = 'object'::text`),
+	check("work_admissions_harness_slug_check", sql`btrim(harness_slug) <> ''::text`),
+	check("work_admissions_rule_chk", sql`(admitted_via = 'rule'::text) = (rule_id IS NOT NULL)`),
+	check("work_admissions_source_key_check", sql`btrim(source_key) <> ''::text`),
+	check("work_admissions_source_kind_check", sql`btrim(source_kind) <> ''::text`),
+	check("work_admissions_source_ref_check", sql`jsonb_typeof(source_ref) = 'object'::text`),
+	check("work_admissions_work_item_id_check", sql`btrim(work_item_id) <> ''::text`),
 ]);
 
 export const workItemBlockedInHarnessShared = harnessShared.table("work_item_blocked", {
