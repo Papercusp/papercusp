@@ -12,8 +12,10 @@
 --                     UNIQUE (workspace_id, source_kind, source_key) makes admission idempotent.
 --
 -- work_admissions deliberately has NO foreign key to the source rows (chat_messages, the record's
--- work_items row) or to data_sources. It is attribution history: retention may delete a chat
--- message and a data source may be removed, and the record of who admitted what must outlive both.
+-- work_items row), to data_sources, or to admission_rules. It is attribution history: retention may
+-- delete a chat message, a data source may be removed (cascading its rules), and the record of who
+-- admitted what must outlive all of them. rule_id stays as a plain attribution uuid; a RESTRICT FK
+-- there would make deleting any data source whose rule ever admitted something fail.
 -- source_key is the provider identity (stable across re-ingest), never a row uuid.
 --
 -- FORWARD-COMPAT: additive only (two new tables, their indexes). The deployed release does not
@@ -63,10 +65,7 @@ CREATE TABLE IF NOT EXISTS harness_shared.work_admissions (
   created_at       timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT work_admissions_pkey PRIMARY KEY (workspace_id, id),
   CONSTRAINT work_admissions_source_key UNIQUE (workspace_id, source_kind, source_key),
-  CONSTRAINT work_admissions_rule_chk CHECK ((admitted_via = 'rule') = (rule_id IS NOT NULL)),
-  CONSTRAINT work_admissions_rule_fk
-    FOREIGN KEY (workspace_id, rule_id)
-    REFERENCES harness_shared.admission_rules (workspace_id, id) ON DELETE RESTRICT
+  CONSTRAINT work_admissions_rule_chk CHECK ((admitted_via = 'rule') = (rule_id IS NOT NULL))
 );
 
 CREATE INDEX IF NOT EXISTS work_admissions_work_item_idx
