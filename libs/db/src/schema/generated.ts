@@ -1759,6 +1759,27 @@ export const claimAuditInHarnessShared = harnessShared.table("claim_audit", {
 	check("claim_audit_outcome_check", sql`outcome = ANY (ARRAY['won'::text, 'lost'::text, 'timeout'::text, 'error'::text])`),
 ]);
 
+export const claimRetractionEventsInHarnessShared = harnessShared.table("claim_retraction_events", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	eventSeq: bigint("event_seq", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.claim_retraction_events_event_seq_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").notNull(),
+	claimId: text("claim_id").notNull(),
+	eventKind: text("event_kind").notNull(),
+	because: text().notNull(),
+	supersededBy: text("superseded_by"),
+	actor: text().notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("claim_retraction_events_claim_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.claimId.asc().nullsLast().op("text_ops"), table.eventSeq.desc().nullsFirst().op("int8_ops")),
+	pgPolicy("claim_retraction_events_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("claim_retraction_events_because_check", sql`(length(because) >= 1) AND (length(because) <= 1000)`),
+	check("claim_retraction_events_claim_id_check", sql`(length(claim_id) >= 1) AND (length(claim_id) <= 160)`),
+	check("claim_retraction_events_event_kind_check", sql`event_kind = ANY (ARRAY['retract'::text, 'reinstate'::text])`),
+	check("claim_retraction_events_superseded_by_check", sql`(superseded_by IS NULL) OR ((length(superseded_by) >= 1) AND (length(superseded_by) <= 300))`),
+	primaryKey({ columns: [table.eventSeq], name: "claim_retraction_events_pkey"}),
+
+]);
+
 export const cloudResourceObligationsInHarnessShared = harnessShared.table("cloud_resource_obligations", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
