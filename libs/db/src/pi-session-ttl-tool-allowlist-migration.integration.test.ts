@@ -72,11 +72,14 @@ describe('PI session scope and expiry migration', () => {
         (workspace_id, session_id, bearer_hash, capabilities, allowed_tools)
       VALUES ('ws-new', 'new-session', 'hash-new', '[]'::jsonb,
         ${JSON.stringify(['chat:ask_choice', 'tasks:ops'])}::jsonb)`;
-    const [row] = await sql<{ expires_at: Date; allowed_tools: string[] }[]>`
+    const [row] = await sql<{ expires_at: Date; allowed_tools: unknown }[]>`
       SELECT expires_at, allowed_tools
         FROM harness_shared.pi_sessions
        WHERE workspace_id = 'ws-new' AND session_id = 'new-session'`;
     expect(row.expires_at.getTime()).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
-    expect(row.allowed_tools).toEqual(['chat:ask_choice', 'tasks:ops']);
+    const storedTools = typeof row.allowed_tools === 'string'
+      ? JSON.parse(row.allowed_tools)
+      : row.allowed_tools;
+    expect(storedTools).toEqual(['chat:ask_choice', 'tasks:ops']);
   });
 });
