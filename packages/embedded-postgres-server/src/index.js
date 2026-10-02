@@ -1173,7 +1173,12 @@ export async function startEmbeddedPostgresServer(opts = {}) {
         log('postgres had already exited; nothing to stop');
         return;
       }
-      await pg.stop().catch((e) => log(`stop error: ${e?.message ?? e}`));
+      try {
+        await pg.stop();
+      } catch (error) {
+        log(`stop error: ${error?.message ?? error}`);
+        throw error;
+      }
     },
   };
 }
