@@ -1948,6 +1948,34 @@ export const commsTrustListInHarnessShared = harnessShared.table("comms_trust_li
 	check("comms_trust_list_tier_check", sql`tier = ANY (ARRAY['observe'::text, 'message'::text, 'wake'::text, 'steer'::text])`),
 ]);
 
+export const completionHistorySearchMemoInHarnessShared = harnessShared.table("completion_history_search_memo", {
+	workspaceId: text("workspace_id").notNull(),
+	repositoryRoot: text("repository_root").notNull(),
+	fromHeadSha: text("from_head_sha").notNull(),
+	path: text().notNull(),
+	blobSha: text("blob_sha").notNull(),
+	resolvedRoot: text("resolved_root").notNull(),
+	resolvedFromSha: text("resolved_from_sha").notNull(),
+	resolvedPath: text("resolved_path").notNull(),
+	searchedThrough: text("searched_through"),
+	foundThrough: text("found_through"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("completion_history_search_memo_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.updatedAt.desc().nullsFirst().op("timestamptz_ops")),
+	primaryKey({ columns: [table.blobSha, table.fromHeadSha, table.path, table.repositoryRoot, table.workspaceId], name: "completion_history_search_memo_pkey"}),
+	pgPolicy("completion_history_search_memo_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("completion_history_search_memo_blob_sha_check", sql`blob_sha ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text`),
+	check("completion_history_search_memo_found_through_check", sql`found_through ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text`),
+	check("completion_history_search_memo_from_head_sha_check", sql`from_head_sha ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text`),
+	check("completion_history_search_memo_one_verdict", sql`(searched_through IS NULL) <> (found_through IS NULL)`),
+	check("completion_history_search_memo_path_check", sql`(length(path) >= 1) AND (length(path) <= 4096)`),
+	check("completion_history_search_memo_repository_root_check", sql`(length(repository_root) >= 1) AND (length(repository_root) <= 4096)`),
+	check("completion_history_search_memo_resolved_from_sha_check", sql`resolved_from_sha ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text`),
+	check("completion_history_search_memo_resolved_path_check", sql`(length(resolved_path) >= 1) AND (length(resolved_path) <= 4096)`),
+	check("completion_history_search_memo_resolved_root_check", sql`(length(resolved_root) >= 1) AND (length(resolved_root) <= 4096)`),
+	check("completion_history_search_memo_searched_through_check", sql`searched_through ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text`),
+]);
+
 export const connectedAppAccessSettingsInHarnessShared = harnessShared.table("connected_app_access_settings", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	enabled: boolean().default(true).notNull(),
@@ -7826,8 +7854,11 @@ export const piSessionsInHarnessShared = harnessShared.table("pi_sessions", {
 	capabilities: jsonb().default([]).notNull(),
 	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	endedAt: timestamp("ended_at", { withTimezone: true, mode: 'string' }),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).default(sql`(now() + '24:00:00'::interval)`).notNull(),
+	allowedTools: jsonb("allowed_tools"),
 }, (table) => [
 	index("pi_sessions_active_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sessionId.asc().nullsLast().op("text_ops")).where(sql`(ended_at IS NULL)`),
+	index("pi_sessions_live_expiry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(ended_at IS NULL)`),
 	index("pi_sessions_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.sessionId, table.workspaceId], name: "pi_sessions_pkey"}),
 	pgPolicy("pi_sessions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
