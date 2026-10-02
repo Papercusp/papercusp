@@ -2,7 +2,9 @@
 --
 -- Seeds the routine that RUNS the Slack organization connector. Each fire, for
 -- every Slack source connected with the customer's own internal app
--- (data-sources:connect-slack-org), the system:slack-org-sync action re-syncs
+-- (admin route POST /admin/triggers/slack/connect-org — an HTTP route, not an
+-- MCP verb, so tokens never travel as agent tool args), the
+-- system:slack-org-sync action re-syncs
 -- channel membership when it is due (it feeds each channel's permission list)
 -- and then takes up to max_steps paced backfill steps. The connector owns the
 -- pacing and every Slack 429 Retry-After; concurrency 'skip' keeps fires from
