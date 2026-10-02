@@ -9883,6 +9883,7 @@ export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs"
 	lastOrientDisclosures: jsonb("last_orient_disclosures"),
 	lastOrientDisclosuresAt: timestamp("last_orient_disclosures_at", { withTimezone: true, mode: 'string' }),
 	ambientExcludedRefs: jsonb("ambient_excluded_refs"),
+	pendingCarryRespawn: jsonb("pending_carry_respawn"),
 }, (table) => [
 	index("session_briefs_goal_id_idx").using("btree", table.goalId.asc().nullsLast().op("text_ops")).where(sql`(goal_id IS NOT NULL)`),
 	index("session_briefs_native_session_id_idx").using("btree", table.nativeSessionId.asc().nullsLast().op("text_ops")).where(sql`(native_session_id IS NOT NULL)`),
