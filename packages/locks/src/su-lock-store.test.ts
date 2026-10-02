@@ -100,6 +100,61 @@ describe('tryAcquire', () => {
       retryable: true,
     });
   });
+
+  it('keeps an earlier same-owner waiter out of busy and reports the actual holder lease', async () => {
+    const waiterUntil = new Date('2026-10-02T03:44:01.010Z');
+    const holderExpires = new Date('2026-10-02T03:59:29.604Z');
+    const statements: string[] = [];
+    const tx = ((strings: TemplateStringsArray) => {
+      const statement = strings.join(' ');
+      statements.push(statement);
+      if (statement.includes('SELECT path, lock_id::text AS lock_id, expires_ts FROM agent_file_locks')) {
+        return [];
+      }
+      if (statement.includes('FROM agent_lock_waiters w')) {
+        return [{
+          path: 'src/contended.ts',
+          owner: 'requester',
+          owner_label: 'Requester',
+          intent: 'edit',
+          expires_ts: waiterUntil,
+        }];
+      }
+      if (statement.includes('SELECT path, owner, owner_label, intent, expires_ts FROM agent_file_locks')) {
+        return [{
+          path: 'src/contended.ts',
+          owner: 'active-holder',
+          owner_label: 'Active holder',
+          intent: 'write file',
+          expires_ts: holderExpires,
+        }];
+      }
+      return [];
+    }) as unknown as Parameters<typeof tryAcquire>[0];
+
+    const result = await tryAcquire(tx, {
+      coordinationDomain: 'test-domain',
+      owner: 'requester',
+      ownerLabel: 'Requester',
+      paths: ['src/contended.ts'],
+      intent: 'retry while queued',
+      ttlSec: 60,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'queued_waiter',
+      busy: [{
+        path: 'src/contended.ts',
+        owner: 'active-holder',
+        owner_label: 'Active holder',
+        intent: 'write file',
+        expires_ts: holderExpires,
+      }],
+    });
+    expect(statements.some((statement) => statement.includes('FROM agent_lock_waiters w'))).toBe(true);
+    expect(statements.some((statement) => statement.includes('SELECT path, owner, owner_label, intent, expires_ts FROM agent_file_locks'))).toBe(true);
+  });
 });
 
 describe('readQueue', () => {

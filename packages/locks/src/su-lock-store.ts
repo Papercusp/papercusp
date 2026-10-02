@@ -632,7 +632,9 @@ export type AcquireResult =
  * Atomic multi-path acquire. Inside the calling `inWorkspaceTxn`.
  *
  * Strategy:
- *   1. Head-waiter check — if any older waiter overlaps our paths, return busy.
+ *   1. Head-waiter check — if any older waiter overlaps our paths, return
+ *      `queued_waiter` with a fresh snapshot of active holders. Waiter rows are
+ *      queue positions, not held locks, and must never enter `busy`.
  *   2. Upsert all paths (or only new paths for an automatic guard that
  *      overlaps a deliberate same-owner claim); ON CONFLICT only overwrites
  *      expired rows.
@@ -742,7 +744,13 @@ export async function tryAcquire(
          LIMIT 50
       `;
   if (queuedWaiters.length > 0) {
-    return { ok: false, busy: queuedWaiters, reason: 'queued_waiter' };
+    // Keep FIFO: an earlier waiter still prevents this acquire from winning.
+    // But `busy` is the active agent_file_locks snapshot consumed by holder
+    // enrichment and lock-wait briefs. Returning queue rows here made a
+    // caller's own earlier ticket look like a live holder and used wait_until
+    // as that holder's lease expiry, hiding the actual lock owner.
+    const busy = await readBusySnapshot(tx, coordinationDomain, paths, owner);
+    return { ok: false, busy, reason: 'queued_waiter' };
   }
 
   // Step 2b: pre-check that every NEW path (not already ours) is
