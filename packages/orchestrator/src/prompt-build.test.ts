@@ -47,6 +47,17 @@ test('STATE_PLANE_NOTE — teaches coord:send why envelope object shape', () => 
   assert.match(STATE_PLANE_NOTE, /bare string or array of strings is REFUSED/);
 });
 
+test('STATE_PLANE_NOTE — requires coord:send summary as the inbox headline', () => {
+  assert.ok(
+    STATE_PLANE_NOTE.includes('`summary` is REQUIRED at the top level for every single-message send.'),
+  );
+  assert.ok(
+    STATE_PLANE_NOTE.includes(
+      'It is the one-line inbox headline the recipient sees, even when `body` carries the full message.',
+    ),
+  );
+});
+
 test('buildPrompt — minimal: just the role prompt + runtime context', () => {
   const fx = makeFixture(({ harnessDir }) => {
     writeFileSync(join(harnessDir, 'worker.md'), '# WORKER\nDo the thing.');
