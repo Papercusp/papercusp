@@ -170,6 +170,18 @@ describe('bounded PostgreSQL result diagnostics', () => {
     expect(JSON.stringify(snapshot)).not.toContain('SELECT payload');
   });
 
+  it('preserves finite pre-build durations and keeps unmeasured values unknown', () => {
+    for (const preBuildMs of [31.9, 0, -5, NaN, Infinity, undefined, null]) {
+      recordPgResult('pre-build-test', {
+        connectionId: 1, queryId: 1, backendPid: null, query: 'select 1',
+        rowCount: 1, wireBytes: 10, status: 'ok', elapsedMs: 12, preBuildMs,
+      } as Parameters<typeof recordPgResult>[1]);
+    }
+    expect(pgResultDiagnosticSnapshot('pre-build-test').results.map(row =>
+      (row as typeof row & { preBuildMs?: number | null }).preBuildMs,
+    )).toEqual([31, 0, 0, null, null, null, null]);
+  });
+
   it('bounds the FIFO and reports how much older evidence was dropped', () => {
     for (let i = 0; i < PG_RESULT_DIAGNOSTIC_LIMIT + 5; i++) {
       recordPgResult('org-admin', {

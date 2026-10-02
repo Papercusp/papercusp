@@ -219,6 +219,59 @@ beforeEach(() => {
 });
 
 describe('postgres.js terminal result diagnostics patch', () => {
+  it.each(BUILD_ROOTS)('starts pre-build timing at execution, preserving lazy gaps and concurrent identities (%s)', async (runtime) => {
+    const source = fs.readFileSync(path.join(PG_ROOT, runtime, 'query.js'), 'utf8');
+    const method = source.match(/^  async handle\(\) \{[\s\S]*?^  \}/m);
+    expect(method).not.toBeNull();
+    let now = 10;
+    const Query = new Function('performance', `return class Query {
+      constructor(handler) { this.executed = false; this.handler = handler; }
+      ${method![0]}
+    };` )({ now: () => now }) as new (handler: (q: { diagnosticHandleStartedAt?: number }) => void) => {
+      diagnosticHandleStartedAt?: number; handle(): Promise<void>;
+    };
+    const seen: Array<number | undefined> = [];
+    const first = new Query(q => seen.push(q.diagnosticHandleStartedAt));
+    const second = new Query(q => seen.push(q.diagnosticHandleStartedAt));
+    expect(first.diagnosticHandleStartedAt).toBeUndefined();
+    now = 100; await first.handle();
+    now = 240; await second.handle();
+    now = 500; await first.handle();
+    expect(seen).toEqual([100, 240]);
+    expect(first.diagnosticHandleStartedAt).toBe(100);
+    expect(second.diagnosticHandleStartedAt).toBe(240);
+  });
+
+  it.each(BUILD_ROOTS)('separates pre-build wait from execution and preserves both across retry (%s)', (runtime) => {
+    const source = fs.readFileSync(path.join(PG_ROOT, runtime, 'connection.js'), 'utf8');
+    const seen: Record<string, unknown>[] = [];
+    const harness = new Function('onresult', `
+      const options = { onresult, prepare: true };
+      const id = 1, backend = { pid: 2 }, result = { command: 'SELECT' }, results = null;
+      const statements = {}, statementId = 'test';
+      let statementCount = 0, queryDiagnosticId = 0, query, now = 100;
+      const performance = { now: () => now };
+      const stringify = q => q.strings[0], handleValue = () => {};
+      const execute = q => build(q);
+      ${functionSource(source, 'build')}
+      ${functionSource(source, 'retry')}
+      ${functionSource(source, 'reportQueryResult')}
+      return { build, retry, clock(value) { now = value; },
+        report(q) { query = q; reportQueryResult(null); } };
+    `)((value: Record<string, unknown>) => seen.push(value));
+    const query = { strings: ['select 1'], args: [], options: {}, tagged: true,
+      diagnosticHandleStartedAt: 25, resultDiagnostic: undefined as unknown };
+    harness.build(query);
+    const descriptor = query.resultDiagnostic;
+    harness.clock(160); harness.retry(query, { code: '26000' });
+    expect(query.resultDiagnostic).toBe(descriptor);
+    harness.clock(200); harness.report(query);
+    expect(seen[0]).toMatchObject({ preBuildMs: 75, elapsedMs: 100 });
+    const legacy = { strings: ['select 2'], args: [], options: {}, tagged: true };
+    harness.build(legacy); harness.clock(210); harness.report(legacy);
+    expect(seen[1]).toMatchObject({ preBuildMs: null, elapsedMs: 10 });
+  });
+
   it('keeps distinct pool identities in the production factory (copy-out mutation seam)', () => {
     // Execute the actual factory, including a relocated copy during mutation
     // probes. The independent oracle compares emitted identities, not source
