@@ -304,6 +304,10 @@ only ever creates is a ratchet; closing is the half that stops it.
 OWNER-WALLED ACTIONS, NAMED — app-store submission, payment/Stripe setup, domain
 registration, real spend, published marketing. Queue them as owner asks and keep
 working around them; never stall silently, never act irreversibly.
+WALL A PLAN LANE IN PLAN STATE — `plans:set-status { slug, harness, item,
+status:'needs-human', note:<the owner ask> }`. Placement obligations, launch
+admission and claims read plan state, never facts: a `wall:` fact alone leaves
+the item placeable, so every successor is told to place it again.
 SHIPPED, NOT GREEN — a feature behind an unflipped flag is dead code; for a
 revenue goal the deliverable is a released artifact with a payment path, not a
 passing suite. Flags ship ON.
