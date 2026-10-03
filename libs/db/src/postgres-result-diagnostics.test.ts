@@ -7,10 +7,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire, stripTypeScriptTypes } from 'node:module';
 import { createHash, randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import postgres from 'postgres';
 import {
   pgResultDiagnosticSnapshot,
   recordPgResult,
+  recordPgDiagnosticResponse,
   capturePgDiagnosticContext,
   createPgDiagnosticHooks,
   resetPgDiagnosticContextResolver,
@@ -60,7 +62,7 @@ function registryFromSource(source = ACQUIRE_REGISTRY_SOURCE): typeof import('./
   return new Function('pinModuleState', 'randomUUID', 'readBuildStamp', javascript + `
     return { createPgDiagnosticHooks, pgResultDiagnosticSnapshot, beginAcquire,
       recordPgResult, setPgDiagnosticContextResolver, capturePgDiagnosticContext,
-      pgQueryFamily, pgQueryFamilyMemoStats };
+      pgQueryFamily, pgQueryFamilyMemoStats, recordPgDiagnosticResponse };
   `)(
     (key: string, init: () => unknown) => {
       if (!pinned.has(key)) pinned.set(key, init());
@@ -177,6 +179,7 @@ function functionSource(source: string, name: string): string {
 function instantiateReporter(
   declaration: string,
   onresult: (value: Record<string, unknown>) => void,
+  overrides: Record<string, unknown> = {},
 ) {
   const factory = new Function(
     'state',
@@ -210,12 +213,132 @@ function instantiateReporter(
     results: null,
     id: 7,
     performance: { now: () => 175 },
+    ...overrides,
   });
 }
 
 beforeEach(() => {
   resetPgDiagnosticContextResolver();
   resetAcquireRegistryForTest();
+});
+
+describe('P011 exact decoded-object weak diagnostic guards', () => {
+  it.each(BUILD_ROOTS)('observes the exact fulfilled single/multi-result object, never an error partial (%s)', (runtime) => {
+    const connection = fs.readFileSync(path.join(PG_ROOT, runtime, 'connection.js'), 'utf8');
+    const declaration = functionSource(connection, 'reportQueryResult');
+    const single = Object.assign([{ secret: 'do-not-render-row' }], { command: 'SELECT' });
+    const multi = [single, Object.assign([{ id: 2 }], { command: 'SELECT' })];
+    for (const results of [null, multi]) {
+      const fulfilled = results ?? single;
+      let observed: unknown;
+      const report = instantiateReporter(declaration, (value) => {
+        observed = value.result;
+        recordPgResult('org-app', value as never);
+      }, { result: single, results });
+      report(null);
+      expect(observed).toBe(fulfilled);
+      const snapshot = pgResultDiagnosticSnapshot('org-app', 1, { includeObjectRefs: true });
+      expect(snapshot.results[0].objectRefs?.decodedResult?.deref()).toBe(fulfilled);
+      expect(JSON.stringify(pgResultDiagnosticSnapshot('org-app'))).not.toContain('do-not-render-row');
+      expect(pgResultDiagnosticSnapshot('org-app').results.at(-1)).not.toHaveProperty('objectRefs');
+      report({ code: '42P01' });
+      expect(observed).toBeUndefined();
+      expect(pgResultDiagnosticSnapshot('org-app', 1, { includeObjectRefs: true }).results[0]).not.toHaveProperty('objectRefs');
+    }
+  });
+
+  it('joins responses only by exact request/process/build identity and keeps pool/query identity', () => {
+    const identity = {
+      processInstanceId: randomUUID(), buildSha: 'a'.repeat(40), rowId: null,
+      attemptId: randomUUID(), hopId: null, stage: null, boundary: null,
+      requestId: randomUUID(), operation: 'workItems.byHarness',
+    };
+    const raw = [{ id: 1 }];
+    const mapped = [{ id: 1 }];
+    const envelope = { rows: mapped };
+    const sources = [
+      { ...identity, poolInstanceId: randomUUID() },
+      { ...identity, poolInstanceId: randomUUID(), processInstanceId: randomUUID() },
+      { ...identity, poolInstanceId: randomUUID(), buildSha: 'b'.repeat(40) },
+    ];
+    for (let n = 0; n < sources.length; n++) {
+      recordPgResult('org-app', { ...completedInput, status: 'ok', queryId: n + 1, result: raw,
+        context: { state: 'linked', correlation: identity } }, sources[n]);
+    }
+    recordPgResult('org-app', { ...completedInput, status: 'ok', queryId: 4, result: raw,
+      context: { state: 'linked', correlation: { ...identity, requestId: randomUUID() } } }, sources[0]);
+    recordPgDiagnosticResponse(identity, 'resolvedRows', mapped);
+    recordPgDiagnosticResponse(identity, 'responseValue', envelope);
+    const snapshot = pgResultDiagnosticSnapshot('org-app', 32, { includeObjectRefs: true });
+    expect(snapshot.results[0].objectRefs?.resolvedRows?.deref()).toBe(mapped);
+    expect(snapshot.results[0].objectRefs?.responseValue?.deref()).toBe(envelope);
+    expect(snapshot.results[0].objectRefs?.decodedResult?.deref()).toBe(raw);
+    expect(raw).not.toBe(mapped);
+    expect(snapshot.results.map(r => [r.source.poolInstanceId, r.queryId])).toEqual([
+      [sources[0].poolInstanceId, 1], [sources[1].poolInstanceId, 2],
+      [sources[2].poolInstanceId, 3], [sources[0].poolInstanceId, 4],
+    ]);
+    for (const row of snapshot.results.slice(1)) {
+      expect(row.objectRefs).not.toHaveProperty('resolvedRows');
+      expect(row.objectRefs).not.toHaveProperty('responseValue');
+    }
+    delete snapshot.results[0].objectRefs!.decodedResult;
+    expect(pgResultDiagnosticSnapshot('org-app', 32, { includeObjectRefs: true }).results[0].objectRefs?.decodedResult?.deref()).toBe(raw);
+  });
+
+  it('bounds weak records and never invents an evicted or unobserved request link', () => {
+    const hooks = createPgDiagnosticHooks('org-app');
+    for (let queryId = 1; queryId <= 40; queryId++) hooks.onresult({ ...completedInput, status: 'ok', queryId, result: [] });
+    const snapshot = pgResultDiagnosticSnapshot('org-app', 32, { includeObjectRefs: true });
+    expect(snapshot).toMatchObject({ capacity: 32, totalRecorded: 40, dropped: 8 });
+    expect(snapshot.results.map(row => row.queryId)).toEqual(Array.from({ length: 32 }, (_, n) => n + 9));
+    recordPgDiagnosticResponse({ processInstanceId: randomUUID(), buildSha: null, rowId: null,
+      attemptId: randomUUID(), hopId: null, stage: null, boundary: null, requestId: randomUUID() }, 'resolvedRows', []);
+    expect(pgResultDiagnosticSnapshot('org-app', 32, { includeObjectRefs: true }).results.every(r => !r.objectRefs?.resolvedRows)).toBe(true);
+  });
+
+  it('allows decoded and response objects to be collected while the diagnostic record remains', () => {
+    // Isolated canonical lifetime guard: no GC, DB, inspector or profiler in the serving process.
+    const javascript = stripTypeScriptTypes(ACQUIRE_REGISTRY_SOURCE)
+      .replace(/^import .*;\s*$/gm, '').replace(/^export /gm, '');
+    const program = `
+      const { randomUUID } = require('node:crypto');
+      const pinned = new Map();
+      const registry = new Function('pinModuleState', 'randomUUID', 'readBuildStamp',
+        ${JSON.stringify(javascript)} + '\\nreturn { createPgDiagnosticHooks, pgResultDiagnosticSnapshot, recordPgDiagnosticResponse, pgDiagnosticIdentity, setPgDiagnosticContextResolver };'
+      )((key, init) => { if (!pinned.has(key)) pinned.set(key, init()); return pinned.get(key); }, randomUUID, () => null);
+      const context = { ...registry.pgDiagnosticIdentity(), rowId: null,
+        attemptId: randomUUID(), hopId: null, stage: null, boundary: null, requestId: randomUUID() };
+      registry.setPgDiagnosticContextResolver(() => context);
+      const held = [{ id: 'held' }];
+      function record() {
+        const hooks = registry.createPgDiagnosticHooks('org-app');
+        const identity = hooks.onquerycontext();
+        const result = [{ id: 'released' }];
+        hooks.onresult({ connectionId: 1, queryId: 1, backendPid: null, query: 'select 1',
+          rowCount: 1, wireBytes: 1, status: 'ok', result, context: identity });
+        registry.recordPgDiagnosticResponse(context, 'resolvedRows', [{ id: 'mapped' }]);
+        registry.recordPgDiagnosticResponse(context, 'responseValue', { rows: result });
+        hooks.onresult({ connectionId: 1, queryId: 2, backendPid: null, query: 'select 1',
+          rowCount: 1, wireBytes: 1, status: 'ok', result: held, context: identity });
+        return registry.pgResultDiagnosticSnapshot('org-app', 32, { includeObjectRefs: true });
+      }
+      const snapshot = record();
+      (async () => {
+        for (let n = 0; n < 20; n++) { await new Promise(setImmediate); global.gc(); }
+        const refs = snapshot.results[0].objectRefs;
+        if (!refs.resolvedRows || !refs.responseValue) throw new Error('missing observed response references');
+        for (const ref of Object.values(refs)) if (ref.deref() !== undefined) throw new Error('diagnostic retained a released object');
+        if (snapshot.results[1].objectRefs.decodedResult.deref() !== held) throw new Error('lost the positive retained control');
+        if (registry.pgResultDiagnosticSnapshot('org-app').results.length !== 2) throw new Error('lost diagnostic metadata');
+        console.log('weak-lifetime-pass');
+      })().catch(error => { console.error(error); process.exitCode = 1; });
+    `;
+    const child = spawnSync(process.execPath, ['--expose-gc', '-e', program], { encoding: 'utf8', timeout: 15_000 });
+    expect(child.error).toBeUndefined();
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout).toContain('weak-lifetime-pass');
+  });
 });
 
 describe('postgres.js terminal result diagnostics patch', () => {
