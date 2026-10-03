@@ -390,25 +390,32 @@ materialize or repair its independent fleet before discretionary new ideation.
 When an evidenced uncovered need is not addressed by existing plans, create and
 start the necessary plan through the normal gates, then get its items claimed.
 Planning and placement are steps toward verified effects, not substitutes for them.
-GOAL-LOCAL GAP REVIEW — for a GOAL holder, the IDEATE duty is a meaningful scoped
-review, at least once per reporting cycle and when a changed outcome, recurring
-failure or uncovered need warrants a new decision. There is no minimum new-idea or
-feature count. Existing plans can be sufficient; a recent supported no-new-plan
-decision does not require another pass merely because the next wake is quiet.
-GROUND the review in the current goal, worklist, scoped frontier, and feedback
-(curation:state-of-pot and blender:ideation-feedback { scope:'mine' }). Choose an
-evidence-backed disposition: existing-plans-sufficient, plan-needed, adopt-plan,
-revise-plan, route-work, blocked, or no-eligible-work. Keep budget, admission,
-ownership and pause constraints explicit; missing evidence is not proof of no work.
-RECORD the review with blender:ideate-pass-record: ideasFiled is the actual count
-and may be zero; goalReview carries your actual goalId, disposition, rationale and
-evidenceRefs. Include planRefs for adoption/revision and uncoveredOutcome when a
-new plan is needed. The server binds the review to your current goal and portfolio.
-An unsupported checkbox is not a review; a review is not a worker claim or proof
-of completion. Follow an identified need through its plan and execution, and report
-the resulting effect or current accountable blocker rather than manufacturing an
-idea to satisfy a quota.
+GOAL-LOCAL GAP REVIEW — for a GOAL holder, the IDEATE duty is a scoped review at
+least once per reporting cycle and whenever a changed outcome, recurring failure or
+uncovered need warrants a new decision, and it must YIELD: at least one evaluated
+new candidate per goal per goal-day (the trailing 24h) — an idea filed through
+Blender (improvements:capture or blender:route-idea) or a plan proposed for the
+goal (plans:new). A single pass may file zero; the goal-day may not.
+GROUND every candidate in the current goal, worklist, scoped frontier, measured
+trend and feedback (curation:state-of-pot, rubrics:trend and
+blender:ideation-feedback { scope:'mine' }). "The outcome is already met" and
+"existing plans suffice" are claims that need measured evidence, not defaults:
+existing-plans-sufficient carries a coverage map naming every recurring need, its
+goal itemRefs and the live planRef covering it (or a single-item justification);
+a 3+ item need with no plan is refused. Choose an evidence-backed disposition:
+existing-plans-sufficient, plan-needed, adopt-plan, revise-plan, route-work,
+blocked, or no-eligible-work. Keep budget, admission, ownership and pause
+constraints explicit; missing evidence is not proof of no work.
+RECORD the review with blender:ideate-pass-record: ideasFiled is the actual count;
+goalReview carries your actual goalId, disposition, rationale, evidenceRefs and
+coverage. Include planRefs for adoption/revision and uncoveredOutcome when a new
+plan is needed. The receipt's ideationYield is the goal-day count the grader uses;
+owed:true means this goal-day has not yet produced a candidate, so produce one
+before the day closes. The server binds the review to your current goal and
+portfolio. An unsupported checkbox is not a review; a review is not a worker claim
+or proof of completion. Follow an identified need through its plan and execution,
+and report the resulting effect or current accountable blocker.
 
 ## Combination with other active modes
 
-GOAL keeps portfolio ownership and delegates every build, test and repair even when GRADE or TEST is also active. Its local gap review satisfies IDEATE without manufacturing a proposal. Mode state and authority continue to come from the host registry.
+GOAL keeps portfolio ownership and delegates every build, test and repair even when GRADE or TEST is also active. Its local gap review satisfies IDEATE when the goal-day yields at least one evaluated new candidate. Mode state and authority continue to come from the host registry.
