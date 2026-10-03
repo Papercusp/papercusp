@@ -52,6 +52,8 @@ const migration1144Sql = readFileSync(migrationPath('1144-completion-identity-de
 const migration1180Sql = readFileSync(migrationPath('1180-completion-identity-out-of-repo-artifact-floor-followup.sql'), 'utf8');
 /** WI-10002350: history-only ancestry must be separately attested and manifest-bound. */
 const migration1207Sql = readFileSync(migrationPath('1207-completion-identity-history-attestation-floor.sql'), 'utf8');
+/** EI-24932469749678544: sibling checkout proofs bind the same path by root and close HEAD. */
+const migration1350Sql = readFileSync(migrationPath('1350-completion-per-checkout-settlement-floor.sql'), 'utf8');
 
 /**
  * Exact semantic shape observed in production before migration 1144: 1044's
@@ -315,6 +317,7 @@ beforeAll(async () => {
   await applyMigrationFile(migration1144Sql);
   await applyMigrationFile(migration1180Sql);
   await applyMigrationFile(migration1207Sql);
+  await applyMigrationFile(migration1350Sql);
   // A silently-absent or disabled trigger would make every keep-case below pass
   // vacuously, so the definition itself is part of the precondition. The probe
   // dumps unqualified ground truth so a mis-targeted DDL cannot hide behind an
@@ -359,7 +362,7 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
-describe('migrations 972 + 1044 + 1144 + 1180 + 1207 — completion authority content-identity floor', () => {
+describe('migrations 972 + 1044 + 1144 + 1180 + 1207 + 1350 — completion authority content-identity floor', () => {
   it('reproduces the historical live deletion rejection before the 1144 forward repair', () => {
     expect(historicalPre1144Probe).toEqual({ deletionOk: false, artifactMixOk: true });
   });
@@ -689,12 +692,69 @@ describe('migrations 972 + 1044 + 1144 + 1180 + 1207 — completion authority co
     expect(rows[0].authority).toBe('proposed');
   });
 
+  it('requires independent root and close-head proofs for equal paths in sibling checkouts', async () => {
+    const path = 'src/fix.ts';
+    const roots = ['/repo', '/sibling'];
+    const heads = [SHA_A, SHA_C];
+    const blobs = [SHA_B, SHA_D];
+    const identities = roots.map((repositoryRoot, index) => ({
+      path,
+      repositoryRoot,
+      headSha: heads[index],
+      workingTreeBlobSha: blobs[index],
+      headBlobSha: index === 0 ? SHA_C : SHA_A,
+    }));
+    const generation = 8;
+    const evidenceHash = 'e'.repeat(64);
+    const checkouts = roots.map((repositoryRoot, index) => ({
+      repositoryRoot,
+      closeHeadSha: heads[index],
+      emittedCommitSha: SHA_D,
+      paths: [{
+        path,
+        workingTreeBlobSha: blobs[index],
+        fromHeadSha: heads[index],
+        toCommitSha: SHA_D,
+        proof: 'exact-path-blob-history',
+      }],
+    }));
+    const evidence = (proofs: unknown[]) => ({
+      ...evidenceWith(identities),
+      settlementManifest: {
+        version: 1,
+        generation,
+        evidenceHash,
+        repositoryRoot: roots[0],
+        headSha: heads[0],
+        normalizedPaths: [path, path],
+        contentIdentity: identities,
+        residualPaths: [],
+      },
+      historyAttestation: { version: 2, generation, evidenceHash, checkouts: proofs },
+    });
+
+    await seedOpenItem('WI-CASE-CHECKOUT-PARTIAL');
+    expect(await closeAsCommitted('WI-CASE-CHECKOUT-PARTIAL', evidence(checkouts.slice(0, 1)))).toBe('proposed');
+
+    await seedOpenItem('WI-CASE-CHECKOUT-WRONG-HEAD');
+    const wrongHead = {
+      ...checkouts[1]!,
+      closeHeadSha: heads[0],
+      paths: checkouts[1]!.paths.map((entry) => ({ ...entry, fromHeadSha: heads[0] })),
+    };
+    expect(await closeAsCommitted('WI-CASE-CHECKOUT-WRONG-HEAD', evidence([checkouts[0], wrongHead]))).toBe('proposed');
+
+    await seedOpenItem('WI-CASE-CHECKOUT-PROVEN');
+    expect(await closeAsCommitted('WI-CASE-CHECKOUT-PROVEN', evidence(checkouts))).toBe('committed');
+  });
+
   it('re-applies idempotently', async () => {
     await applyMigrationFile(migration972Sql);
     await applyMigrationFile(migration1044Sql);
     await applyMigrationFile(migration1144Sql);
     await applyMigrationFile(migration1180Sql);
     await applyMigrationFile(migration1207Sql);
+    await applyMigrationFile(migration1350Sql);
     // The current floor must survive its and its predecessors' re-application enabled.
     const rows = await sql<{ tgenabled: string }[]>`
       SELECT tgenabled FROM pg_trigger
