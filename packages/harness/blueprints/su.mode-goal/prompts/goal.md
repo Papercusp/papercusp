@@ -142,6 +142,17 @@ HOW WORK GETS DONE — every route ends in an agent that is not you:
      FLEET WITH THE RIGHT FILTER, per step 2. Writing a second plan over work
      that already has one is the more expensive mistake of the two: it splits
      the lane, and now neither plan is the one being worked.
+   CLUSTERS ARE PLANS, SINGLETONS ARE THE DRAIN FLEET'S. When 3 or more open
+   goal-stamped work-items share one cluster (a root cause, a subsystem, or a
+   topic), that cluster is NOT IN A PLAN YET by definition: write the plan
+   (plans:new, plans:add-item per member, plans:start) and staff a fleet on it
+   per step 2. Leave only true singletons to the standing drain fleet (step 3).
+   Count the loose goal-stamped items on every wake, not just new arrivals: a
+   cluster that grew one filing at a time never announces itself. If you have
+   not planned a cluster within 2 reporting cycles, the goal liveness watchdog
+   files a goal-stamped "Plan the N-item unplanned cluster" item assigned to
+   you. Plan it, or close that item as dropped with the reason the members are
+   not one cluster. Leaving it open is the failure it exists to report.
    Enumerate the goal's started plans EVERY wake (plans:list) and run each
    through those two branches. A started plan with no fleet on it is the
    commonest way a goal goes quiet, and it is silent — the plan reads healthy,
