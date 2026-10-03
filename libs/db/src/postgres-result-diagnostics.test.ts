@@ -286,6 +286,47 @@ describe('P011 exact decoded-object weak diagnostic guards', () => {
     expect(pgResultDiagnosticSnapshot('org-app', 32, { includeObjectRefs: true }).results[0].objectRefs?.decodedResult?.deref()).toBe(raw);
   });
 
+  it('uses the captured request build when the pool source build was unmeasured', () => {
+    const context = { processInstanceId: randomUUID(), buildSha: 'a'.repeat(40), rowId: null,
+      attemptId: randomUUID(), hopId: null, stage: null, boundary: null,
+      requestId: randomUUID(), operation: 'workItems.byHarness' };
+    const source = { processInstanceId: context.processInstanceId, buildSha: null, poolInstanceId: randomUUID() };
+    const decoded = [{ id: 'raw-private' }], mapped = [{ id: 'mapped-private' }], envelope = { rows: mapped };
+    recordPgResult('org-app', { ...completedInput, status: 'ok', result: decoded,
+      context: { state: 'linked', correlation: context } }, source);
+    recordPgDiagnosticResponse(context, 'resolvedRows', mapped);
+    recordPgDiagnosticResponse(context, 'responseValue', envelope);
+    const row = pgResultDiagnosticSnapshot('org-app', 32, { includeObjectRefs: true }).results[0];
+    expect(row.source).toEqual(source);
+    expect(row.correlation?.buildSha).toBe(context.buildSha);
+    expect(row.objectRefs?.decodedResult?.deref()).toBe(decoded);
+    expect(row.objectRefs?.resolvedRows?.deref()).toBe(mapped);
+    expect(row.objectRefs?.responseValue?.deref()).toBe(envelope);
+    expect(JSON.stringify(pgResultDiagnosticSnapshot('org-app'))).not.toContain('private');
+  });
+
+  it.each(['captured-build', 'captured-process', 'pool-build', 'pool-process', 'request'])(
+    'rejects a %s mismatch even when response objects are observed', mismatch => {
+      const context = { processInstanceId: randomUUID(), buildSha: 'a'.repeat(40), rowId: null,
+        attemptId: randomUUID(), hopId: null, stage: null, boundary: null,
+        requestId: randomUUID(), operation: 'workItems.byHarness' };
+      const captured = { ...context };
+      const source = { processInstanceId: context.processInstanceId, buildSha: null as string | null,
+        poolInstanceId: randomUUID() };
+      if (mismatch === 'captured-build') captured.buildSha = 'b'.repeat(40);
+      if (mismatch === 'captured-process') captured.processInstanceId = randomUUID();
+      if (mismatch === 'pool-build') source.buildSha = 'b'.repeat(40);
+      if (mismatch === 'pool-process') source.processInstanceId = randomUUID();
+      if (mismatch === 'request') captured.requestId = randomUUID();
+      recordPgResult('org-app', { ...completedInput, status: 'ok', result: [],
+        context: { state: 'linked', correlation: captured } }, source);
+      recordPgDiagnosticResponse(context, 'resolvedRows', []);
+      recordPgDiagnosticResponse(context, 'responseValue', { rows: [] });
+      const row = pgResultDiagnosticSnapshot('org-app', 32, { includeObjectRefs: true }).results[0];
+      expect(row.objectRefs).not.toHaveProperty('resolvedRows');
+      expect(row.objectRefs).not.toHaveProperty('responseValue');
+    });
+
   it('bounds weak records and never invents an evicted or unobserved request link', () => {
     const hooks = createPgDiagnosticHooks('org-app');
     for (let queryId = 1; queryId <= 40; queryId++) hooks.onresult({ ...completedInput, status: 'ok', queryId, result: [] });
