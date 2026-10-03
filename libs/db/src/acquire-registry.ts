@@ -529,8 +529,10 @@ export function recordPgDiagnosticResponse(
   for (const s of STATE.pools.values()) {
     for (const diagnostic of s.pgResults ?? []) {
       if (diagnostic.correlation?.requestId !== context.requestId ||
+          diagnostic.correlation.processInstanceId !== context.processInstanceId ||
+          diagnostic.correlation.buildSha !== context.buildSha ||
           diagnostic.source.processInstanceId !== context.processInstanceId ||
-          diagnostic.source.buildSha !== context.buildSha) continue;
+          (diagnostic.source.buildSha !== null && diagnostic.source.buildSha !== context.buildSha)) continue;
       (diagnostic.objectRefs ??= {})[phase] = new WeakRef(value);
     }
   }

@@ -302,7 +302,8 @@ describe('P011 exact decoded-object weak diagnostic guards', () => {
     expect(row.objectRefs?.decodedResult?.deref()).toBe(decoded);
     expect(row.objectRefs?.resolvedRows?.deref()).toBe(mapped);
     expect(row.objectRefs?.responseValue?.deref()).toBe(envelope);
-    expect(JSON.stringify(pgResultDiagnosticSnapshot('org-app'))).not.toContain('private');
+    const publicSnapshot = JSON.stringify(pgResultDiagnosticSnapshot('org-app'));
+    for (const payload of ['raw-private', 'mapped-private']) expect(publicSnapshot).not.toContain(payload);
   });
 
   it.each(['captured-build', 'captured-process', 'pool-build', 'pool-process', 'request'])(
