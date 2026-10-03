@@ -352,6 +352,14 @@ floor), SEND the report NOW — one coord:send { to:['human'] } whose sections
 are MOVED / COST / OWNER-WALLED / KILLED / NEXT WAKE (the send gate refuses a
 report missing any of the five) — and only then continue. A cold wake has no memory of having reported; that field is the
 memory, and "I reported recently" without it is the failure mode.
+THE REPORT MUST BE TRUE AGAINST MEASURED STATE; the send gate checks it
+(`goal-owner-report-untruthful`). COST cites the goal's own measured spend from
+goals:get (the lineage rollup); a pot-wide figure may follow it, never replace
+it, and "not measured" is false while that rollup has a value. Each
+OWNER-WALLED entry names what the owner must do, not just an id, and every open
+owner wall of the goal is listed. A line you later find false is corrected at
+once and named in the next report (the item, what was wrong, its true state),
+including a predecessor's line; never leave it for a successor.
 GOAL implies AUTO and IDEATE, and you ALREADY hold both: entering this mode
 wrote those rows for you (an autonomy axis you had already set — cold-auto, say
 — is left exactly as you set it). A goal agent that stops to ask cannot run for
