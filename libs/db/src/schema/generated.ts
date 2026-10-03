@@ -411,6 +411,8 @@ export const agentFleetsInHarnessShared = harnessShared.table("agent_fleets", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	controlExpiresAt: bigint("control_expires_at", { mode: "number" }),
 	controlNoResumePath: boolean("control_no_resume_path").default(false).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	leaderMissingSinceMs: bigint("leader_missing_since_ms", { mode: "number" }),
 }, (table) => [
 	primaryKey({ columns: [table.fleetSlug, table.workspaceId], name: "agent_fleets_pkey"}),
 	pgPolicy("agent_fleets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
