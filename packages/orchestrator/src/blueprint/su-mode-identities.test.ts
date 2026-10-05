@@ -441,6 +441,33 @@ test('P-003 GOAL/GRADE/TEST compose beside AUTO and IDEATE without dropping thei
   assert.ok(cold.text.includes('COLD AUTO — the same autonomy component across fresh-context wakes'));
 });
 
+test('WI-10005610 — GOAL corrections preempt cadence, compaction and successor handoff in both carry modes', () => {
+  for (const autonomy of ['auto', 'cold-auto']) {
+    const active = composeSuStackSource({
+      harnessDir,
+      binding: suSessionBinding({ modes: [autonomy, 'ideate', 'goal'] }),
+    });
+    const correction = active.text.match(/CORRECTIONS PREEMPT THE REPORT CADENCE\.[\s\S]*?(?=\nGOAL implies)/)?.[0]
+      .replace(/\s+/g, ' ');
+    assert.ok(correction, `${autonomy}: the authored correction contract reaches the composed prompt`);
+    assert.match(correction, /to:\['human'\], expects:'none'/);
+    assert.match(correction, /BEFORE unrelated work, compaction, or handoff/);
+    assert.match(correction, /Do not wait for the next due report or next wake/);
+    assert.match(correction, /do not delegate the correction to a successor/);
+    assert.match(correction, /false claim.*measured true state.*evidence reference/);
+    assert.match(correction, /does not replace the periodic five-section report/);
+    assert.equal(active.findings.filter((finding) => finding.tier === 'block').length, 0);
+  }
+  const attached = composeSuStackMutation({
+    harnessDir,
+    binding: suSessionBinding({ modes: ['auto', 'ideate'] }),
+    op: 'attach',
+    layer: suModeLayer('goal')!,
+  });
+  assert.ok(attached.injection?.includes('CORRECTIONS PREEMPT THE REPORT CADENCE.'),
+    'the live GOAL-mode attachment carries the same correction contract');
+});
+
 test('P-021 LIVE PATH — mode:set auto is a ⟦stack⟧ attach carrying the document; ideate on an AUTO session is a second attach (no swap, no error); enabled:false detaches and VOIDS', () => {
   const autoDoc = docs().find((d) => d.id === 'su.mode-auto')!;
   const on = composeSuStackMutation({ harnessDir, binding: { layers: [] }, op: 'attach', layer: { slot: 'autonomy', id: 'su.mode-auto' } });
