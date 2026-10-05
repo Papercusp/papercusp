@@ -1,0 +1,14 @@
+-- Retain measured evidence before the temporary Gym database is destroyed.
+-- NULL means no measurement/parameters were recorded; legacy rows are not backfilled.
+ALTER TABLE harness_gym_durable.gym_runs
+  ADD COLUMN IF NOT EXISTS deterministic_signals jsonb,
+  ADD COLUMN IF NOT EXISTS trace_ref text,
+  ADD COLUMN IF NOT EXISTS distilled_ref text,
+  ADD COLUMN IF NOT EXISTS run_params jsonb;
+
+COMMENT ON COLUMN harness_gym_durable.gym_runs.deterministic_signals IS
+  'Actual Gym run signals, including oracle pre/post measurements; NULL is unmeasured.';
+COMMENT ON COLUMN harness_gym_durable.gym_runs.run_params IS
+  'Snapshot of the recorded gym_runs_params row; declared commits are not complete runtime identity.';
+COMMENT ON COLUMN harness_gym_durable.gym_runs.trace_ref IS
+  'Original trace reference; retention of the referenced file must be verified separately.';
