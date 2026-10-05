@@ -48,10 +48,17 @@ describe('blueprint source authoring', () => {
     [{ slots: [{ slot: 'practice' }, { slot: 'practice' }] }, 'slot-duplicate'],
     [{ slots: [{ slot: 'domain', cardinality: 'additive' }] }, 'slot-cardinality-mismatch'],
     [{ bundles: [{ kind: 'recipe', ref: 'one' }, { kind: 'recipe', ref: 'one' }] }, 'bundle-duplicate'],
-    [{ grants: { requires: ['email.send'] } }, 'grant-class-ref-invalid'],
     [{ slots: [{ slot: 'autonomy' }], knobs: { maxCostUsd: 100 } }, 'authority-on-mode-axis'],
   ])('rejects invalid source declarations %j', (override, code) => {
     expect(errorCodes({ ...identity, ...override })).toContain(code);
+  });
+
+  it.each(['email.send', 'CRM.email@1.0.0', 'crm.email@1'])('rejects malformed grant %s at the source schema', ref => {
+    expect(() => resolveBlueprintSource({ ...identity, grants: { requires: [ref] } })).toThrow(/class@version/);
+  });
+
+  it('accepts an exact normalized capability class grant', () => {
+    expect(resolveBlueprintSource({ ...identity, grants: { requires: ['crm.email@1.0.0'] } }).validation.ok).toBe(true);
   });
 
   it('rejects unknown contribution fields instead of stripping them', () => {

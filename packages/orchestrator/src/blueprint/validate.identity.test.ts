@@ -7,7 +7,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { BlueprintSchema } from './schema.js';
-import { validateBlueprint } from './validate.js';
+import { validateBlueprint, validateIdentityDeclarations } from './validate.js';
 
 const base = { id: 'ident', workItem: { kind: 'feature' }, spine: { edges: { DONE: { to: 'done' } } } };
 const codes = (doc: Record<string, unknown>): string[] => validateBlueprint(BlueprintSchema.parse(doc)).errors.map((e) => e.code);
@@ -56,12 +56,24 @@ test('bundle-duplicate — the same (kind, ref) twice; the same ref under two ki
 
 test('grants require exact normalized class@version refs', () => {
   assert.deepEqual(codes({ ...base, grants: { requires: ['crm.email@1.0.0'] } }), []);
-  assert.deepEqual(codes({ ...base, grants: { optional: ['crm.email'] } }), ['grant-class-ref-invalid']);
-  assert.deepEqual(codes({ ...base, grants: { requires: ['CRM.email@1.0.0'] } }), ['grant-class-ref-invalid']);
+  assert.equal(BlueprintSchema.safeParse({ ...base, grants: { optional: ['crm.email'] } }).success, false);
+  assert.equal(BlueprintSchema.safeParse({ ...base, grants: { requires: ['CRM.email@1.0.0'] } }).success, false);
   assert.deepEqual(
     codes({ ...base, grants: { suggestedProviders: { 'crm.email': 'acme' } } }),
     ['grant-class-ref-invalid'],
   );
+});
+
+test('raw author-time grant validation uses the same exact class reference grammar as the schema', () => {
+  for (const ref of ['crm.email', 'CRM.email@1.0.0', 'crm.email@1', 'email@1.0.0', '9crm.email@1.0.0']) {
+    const errors: string[] = [];
+    validateIdentityDeclarations({ grants: { requires: [ref], optional: [], suggestedProviders: {} } }, code => errors.push(code));
+    assert.deepEqual(errors, ['grant-class-ref-invalid'], ref);
+    assert.equal(BlueprintSchema.safeParse({ ...base, grants: { requires: [ref] } }).success, false, ref);
+  }
+  const errors: string[] = [];
+  validateIdentityDeclarations({ grants: { requires: ['crm.email@1.0.0'], optional: [], suggestedProviders: {} } }, code => errors.push(code));
+  assert.deepEqual(errors, []);
 });
 
 test('grants reject duplicates, required/optional overlap and suggestions for undeclared classes', () => {
