@@ -11,6 +11,7 @@
  * do not cover.
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { resetBuildStampResolver, setBuildStampResolver } from './build-stamp';
 import {
   ACQUIRE_RECENT_SUCCESS_MS,
   acquireSnapshot,
@@ -180,6 +181,28 @@ describe('bounded PostgreSQL result diagnostics', () => {
     expect(pgResultDiagnosticSnapshot('pre-build-test').results.map(row =>
       (row as typeof row & { preBuildMs?: number | null }).preBuildMs,
     )).toEqual([31, 0, 0, null, null, null, null]);
+  });
+  it('binds a bootstrap pool to the first available loaded build without rewriting historical diagnostics', () => {
+    setBuildStampResolver(() => null);
+    try {
+      const hooks = createPgDiagnosticHooks('bootstrap-build');
+      const input = { connectionId: 1, queryId: 1, backendPid: null, query: 'select 1',
+        rowCount: 1, wireBytes: 10, status: 'ok' as const };
+      hooks.onresult(input);
+      const first = pgResultDiagnosticSnapshot('bootstrap-build').results[0].source;
+      expect(first.buildSha).toBeNull();
+      setBuildStampResolver(() => 'abcdef1234');
+      hooks.onresult({ ...input, queryId: 2 });
+      const rows = pgResultDiagnosticSnapshot('bootstrap-build').results;
+      expect(rows.map(row => row.source.buildSha)).toEqual([null, 'abcdef1234']);
+      expect(rows[1].source.poolInstanceId).toBe(first.poolInstanceId);
+      expect(rows[1].source.processInstanceId).toBe(first.processInstanceId);
+      // A measured source identity stays pinned; a later resolver cannot relabel it.
+      setBuildStampResolver(() => 'ffffffff');
+      hooks.onresult({ ...input, queryId: 3 });
+      expect(pgResultDiagnosticSnapshot('bootstrap-build').results.map(row => row.source.buildSha))
+        .toEqual([null, 'abcdef1234', 'abcdef1234']);
+    } finally { resetBuildStampResolver(); }
   });
 
   it('bounds the FIFO and reports how much older evidence was dropped', () => {
