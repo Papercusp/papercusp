@@ -335,8 +335,8 @@ export const usersInHarnessSharedRelations = relations(usersInHarnessShared, ({m
 	personalPrivacyRulesInHarnessShareds: many(personalPrivacyRulesInHarnessShared),
 	personalVaultImportUploadsInHarnessShareds: many(personalVaultImportUploadsInHarnessShared),
 	personalDisclosuresInHarnessShareds: many(personalDisclosuresInHarnessShared),
-	dataSourcesInHarnessShareds: many(dataSourcesInHarnessShared),
 	documentsInHarnessShareds: many(documentsInHarnessShared),
+	dataSourcesInHarnessShareds: many(dataSourcesInHarnessShared),
 	personalVaultImportJobsInHarnessShareds: many(personalVaultImportJobsInHarnessShared),
 }));
 
