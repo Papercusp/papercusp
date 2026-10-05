@@ -65,7 +65,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await sql`TRUNCATE harness_shared.work_items`;
+  // This private database contains the full current schema, including tables
+  // referencing work_items. Reset that dependent fixture state together.
+  await sql`TRUNCATE harness_shared.work_items CASCADE`;
   await sql`TRUNCATE harness_shared.substrate_outbox RESTART IDENTITY`;
   // harness_shared.hives was renamed to pots (mig 557, cup-lexicon-full-rename-2026-07-09
   // P-011) — this rig provisions the full migration chain, so the live schema has pots.

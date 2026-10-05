@@ -90,7 +90,7 @@ describe('migration 367 — work_item_deps', () => {
     await insertEdge('WI-BLOCKED', 'WI-BLOCKER');
     await settle();
     const n = depNotifs();
-    expect(n).toHaveLength(1);
+    expect(n, JSON.stringify(n, null, 2)).toHaveLength(1);
     expect(n[0]!.args.op).toBe('INSERT');
     expect(n[0]!.args.blocked_ref).toBe('WI-BLOCKED');
     expect(n[0]!.args.blocker_ref).toBe('WI-BLOCKER');
@@ -105,7 +105,7 @@ describe('migration 367 — work_item_deps', () => {
     await sql.unsafe(`DELETE FROM harness_shared.work_item_deps WHERE blocked_ref='WI-D2' AND blocker_ref='WI-B2'`);
     await settle();
     const n = depNotifs();
-    expect(n).toHaveLength(1);
+    expect(n, JSON.stringify(n, null, 2)).toHaveLength(1);
     expect(n[0]!.args.op).toBe('DELETE');
     expect(n[0]!.args.blocked_ref).toBe('WI-D2');
   });

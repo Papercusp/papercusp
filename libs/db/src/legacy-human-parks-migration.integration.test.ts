@@ -398,8 +398,10 @@ describe('migration 864 — guarded execution', () => {
     // all of 950's row-level guards and postconditions execute normally.
     await sql.unsafe(`
       INSERT INTO harness_shared.bak_20260821_legacy_human_recurrence_870
-        (workspace_id, harness_slug, feature_id)
-      VALUES ('papercusp-workspace', 'papercusp', 'PEER-REMOTE-001')
+      SELECT wi.* FROM harness_shared.work_items wi
+       WHERE wi.workspace_id = 'papercusp-workspace'
+         AND wi.harness_slug = 'papercusp'
+         AND wi.feature_id = 'PEER-REMOTE-001'
       ON CONFLICT (workspace_id, harness_slug, feature_id) DO NOTHING;
     `);
     await applyMigration(MIGRATION_950_SQL, '950');
