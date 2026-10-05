@@ -42,7 +42,10 @@ async function provision(url: string): Promise<void> {
     }
     // Validate the allocated draft only in this private database before arming.
     const draft = join(SQL_DIR, '1365-unify-work-item-dep-change-notify.sql.DRAFT');
-    if (existsSync(draft)) await client.unsafe(readFileSync(draft, 'utf8'));
+    if (existsSync(draft)) {
+      await client.unsafe(readFileSync(draft, 'utf8'));
+      await client.unsafe(readFileSync(draft, 'utf8'));
+    }
   } finally {
     await client.end({ timeout: 5 });
   }

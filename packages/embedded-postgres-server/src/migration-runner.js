@@ -362,7 +362,7 @@ function wrapMigrationFailure({
   queryPrefix = MIGRATION_TRANSACTION_PREFIX,
   lockHolders = null,
 }) {
-  const details = /** @type {{ message?: unknown, code?: unknown, position?: unknown }} */ (
+  const details = /** @type {{ message?: unknown, code?: unknown, position?: unknown, where?: unknown }} */ (
     cause && typeof cause === 'object' ? cause : {}
   );
   const causeMessage = String(details.message ?? cause ?? 'unknown migration error');
@@ -378,6 +378,11 @@ function wrapMigrationFailure({
     lines.push(`Offending statement near migration character ${position.character}: ${excerpt}`);
   } else {
     lines.push('The underlying error did not report a usable query position; inspect the migration file directly.');
+  }
+  // PL/pgSQL failures often have no outer position; PostgreSQL's context names
+  // the inner statement and block line (including dynamic ALTER ROLE failures).
+  if (typeof details.where === 'string' && details.where.trim()) {
+    lines.push(`PostgreSQL context: ${details.where.slice(0, MAX_STATEMENT_EXCERPT_CHARS)}`);
   }
   if (lockHolders) {
     lines.push(
