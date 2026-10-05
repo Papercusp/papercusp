@@ -8,6 +8,7 @@
  *   cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/work-item-deps.integration.test.ts
  */
 import { dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
@@ -39,6 +40,9 @@ async function provision(url: string): Promise<void> {
     if (appliedCount !== totalKnown) {
       throw new Error(`work-item-deps provision: applied ${appliedCount}/${totalKnown} (expected zero skips)`);
     }
+    // Validate the allocated draft only in this private database before arming.
+    const draft = join(SQL_DIR, '1365-unify-work-item-dep-change-notify.sql.DRAFT');
+    if (existsSync(draft)) await client.unsafe(readFileSync(draft, 'utf8'));
   } finally {
     await client.end({ timeout: 5 });
   }
@@ -49,7 +53,7 @@ let sql: Sql;
 let listener: Sql;
 interface Notif {
   name: string;
-  args: { op: string; blocked_ref?: string; blocker_ref?: string; dep_type?: string; workspace_id?: string | null };
+  args: { id?: number; op: string; blocked_ref?: string; blocker_ref?: string; dep_type?: string; workspace_id?: string | null };
 }
 const received: Notif[] = [];
 const NAME = 'harness_shared.work_item_deps.changed';
@@ -96,6 +100,8 @@ describe('migration 367 — work_item_deps', () => {
     expect(n[0]!.args.blocker_ref).toBe('WI-BLOCKER');
     expect(n[0]!.args.dep_type).toBe('blocks');
     expect(n[0]!.args.workspace_id).toBe('test-ws');
+    const [edge] = await sql<{ id: number }[]>`SELECT id FROM harness_shared.work_item_deps WHERE blocked_ref = 'WI-BLOCKED'`;
+    expect(n[0]!.args.id).toBe(edge.id);
   });
 
   it('emits on DELETE', async () => {
@@ -108,6 +114,19 @@ describe('migration 367 — work_item_deps', () => {
     expect(n, JSON.stringify(n, null, 2)).toHaveLength(1);
     expect(n[0]!.args.op).toBe('DELETE');
     expect(n[0]!.args.blocked_ref).toBe('WI-D2');
+  });
+
+  it('emits one UPDATE with both row routing and dependency references', async () => {
+    await insertEdge('WI-UPD', 'WI-UPD-SRC');
+    await settle();
+    received.length = 0;
+    const [edge] = await sql<{ id: number }[]>`
+      UPDATE harness_shared.work_item_deps SET dep_type = 'relates'
+       WHERE blocked_ref = 'WI-UPD' RETURNING id`;
+    await settle();
+    expect(depNotifs()).toHaveLength(1);
+    expect(depNotifs()[0].args).toMatchObject({ id: edge.id, op: 'UPDATE',
+      blocked_ref: 'WI-UPD', blocker_ref: 'WI-UPD-SRC', dep_type: 'relates', workspace_id: 'test-ws' });
   });
 
   it('rejects a duplicate edge (unique constraint)', async () => {
