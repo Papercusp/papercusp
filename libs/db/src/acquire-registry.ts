@@ -344,13 +344,22 @@ function normalizePgDiagnosticContext(input: unknown): PgDiagnosticLink {
 
 /** One identity per physical pool construction, even when labels are reused. */
 export function createPgDiagnosticHooks(pool: string) {
-  const source: PgDiagnosticSource = Object.freeze({
+  let source: PgDiagnosticSource = Object.freeze({
     ...pgDiagnosticIdentity(),
     poolInstanceId: randomUUID(),
   });
   return {
     onquerycontext: capturePgDiagnosticContext,
-    onresult: (diagnostic: PgResultDiagnosticInput) => recordPgResult(pool, diagnostic, source),
+    onresult: (diagnostic: PgResultDiagnosticInput) => {
+      // Pools can be constructed before the host installs its loaded-build
+      // resolver. Fill an unknown stamp once; keep the process/pool identities
+      // and every already-recorded diagnostic unchanged.
+      if (source.buildSha === null) {
+        const buildSha = pgDiagnosticIdentity().buildSha;
+        if (buildSha !== null) source = Object.freeze({ ...source, buildSha });
+      }
+      recordPgResult(pool, diagnostic, source);
+    },
   };
 }
 
