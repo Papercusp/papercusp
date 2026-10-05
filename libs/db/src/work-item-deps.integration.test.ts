@@ -100,7 +100,7 @@ describe('migration 367 — work_item_deps', () => {
     expect(n[0]!.args.blocker_ref).toBe('WI-BLOCKER');
     expect(n[0]!.args.dep_type).toBe('blocks');
     expect(n[0]!.args.workspace_id).toBe('test-ws');
-    const [edge] = await sql<{ id: number }[]>`SELECT id FROM harness_shared.work_item_deps WHERE blocked_ref = 'WI-BLOCKED'`;
+    const [edge] = await sql<{ id: number }[]>`SELECT id::int AS id FROM harness_shared.work_item_deps WHERE blocked_ref = 'WI-BLOCKED'`;
     expect(n[0]!.args.id).toBe(edge.id);
   });
 
@@ -122,7 +122,7 @@ describe('migration 367 — work_item_deps', () => {
     received.length = 0;
     const [edge] = await sql<{ id: number }[]>`
       UPDATE harness_shared.work_item_deps SET dep_type = 'relates'
-       WHERE blocked_ref = 'WI-UPD' RETURNING id`;
+       WHERE blocked_ref = 'WI-UPD' RETURNING id::int AS id`;
     await settle();
     expect(depNotifs()).toHaveLength(1);
     expect(depNotifs()[0].args).toMatchObject({ id: edge.id, op: 'UPDATE',

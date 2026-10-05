@@ -182,6 +182,7 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	launchParentOwner: text("launch_parent_owner").generatedAlwaysAs(sql`NULLIF((launch_spec ->> 'launchedBy'::text), ''::text)`),
 	suClientLeaseUntil: timestamp("su_client_lease_until", { withTimezone: true, mode: 'string' }),
 	suClientDetachedAt: timestamp("su_client_detached_at", { withTimezone: true, mode: 'string' }),
+	suHostOwner: jsonb("su_host_owner"),
 }, (table) => [
 	index("adv_sessions_app_operation_caller_idx").using("btree", sql`workspace_id`, sql`split_part((((launch_spec -> 'acceptedOperation'::text) -> 'pin`).where(sql`(launch_spec ? 'acceptedOperation'::text)`),
 	index("adv_sessions_coord_owner_first_seen_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.firstSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
@@ -5781,6 +5782,24 @@ export const localBackendsInHarnessShared = harnessShared.table("local_backends"
 	check("local_backends_on_demand_needs_unit_check", sql`(lifecycle <> 'on-demand'::text) OR (unit_name IS NOT NULL)`),
 ]);
 
+export const lspCapabilitiesInHarnessShared = harnessShared.table("lsp_capabilities", {
+	language: text().notNull(),
+	intent: text().notNull(),
+	serverIdentity: text("server_identity").notNull(),
+	supported: boolean().notNull(),
+	source: text().notNull(),
+	evidence: text().notNull(),
+	evidencePriority: smallint("evidence_priority").notNull(),
+	observedAt: timestamp("observed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.intent, table.language, table.serverIdentity], name: "lsp_capabilities_pkey"}),
+	check("lsp_capabilities_check", sql`((source = 'initialize'::text) AND (evidence_priority = 1)) OR ((source = ANY (ARRAY['request-success'::text, 'publish'::text])) AND (evidence_priority = 2)) OR ((source = 'method-not-found'::text) AND (evidence_priority = 3) AND (supported = false))`),
+	check("lsp_capabilities_intent_check", sql`intent = ANY (ARRAY['definition'::text, 'references'::text, 'implementations'::text, 'rename-preview'::text, 'diagnostics'::text, 'symbol-search'::text])`),
+	check("lsp_capabilities_language_check", sql`length(language) > 0`),
+	check("lsp_capabilities_server_identity_check", sql`server_identity ~ '^[0-9a-f]{64}$'::text`),
+	check("lsp_capabilities_source_check", sql`source = ANY (ARRAY['initialize'::text, 'request-success'::text, 'publish'::text, 'method-not-found'::text])`),
+]);
+
 export const mcpToolResultsInHarnessShared = harnessShared.table("mcp_tool_results", {
 	ownerKey: text("owner_key").notNull(),
 	idempotencyKey: text("idempotency_key").notNull(),
@@ -7996,6 +8015,7 @@ export const planDecisionsInHarnessShared = harnessShared.table("plan_decisions"
 	affects: text().array().default([]).notNull(),
 }, (table) => [
 	index("plan_decisions_affects_gin").using("gin", table.affects.asc().nullsLast().op("array_ops")),
+	index("plan_decisions_execution_tokens_idx").using("gin", sql`regexp_split_to_array(body, '[^A-Za-z0-9_-]+'::text)`),
 	index("plan_decisions_item_refs_gin").using("gin", table.itemRefs.asc().nullsLast().op("array_ops")),
 	index("plan_decisions_plan_seq_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.seq.asc().nullsLast().op("int4_ops")),
 	foreignKey({
@@ -11301,9 +11321,12 @@ export const triggerBindingsInHarnessShared = harnessShared.table("trigger_bindi
 	goalId: text("goal_id"),
 	workItemHarnessSlug: text("work_item_harness_slug"),
 	workItemKind: text("work_item_kind"),
+	datatypeId: text("datatype_id"),
+	packInstallationId: uuid("pack_installation_id"),
 }, (table) => [
 	index("trigger_bindings_installed_plan_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.planHarnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")).where(sql`(detached_at IS NULL)`),
 	index("trigger_bindings_ws_goal_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops")).where(sql`(goal_id IS NOT NULL)`),
+	index("trigger_bindings_ws_pack_installation_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.packInstallationId.asc().nullsLast().op("uuid_ops")).where(sql`(pack_installation_id IS NOT NULL)`),
 	index("trigger_bindings_ws_plan_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.planHarnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")),
 	index("trigger_bindings_ws_source_armed_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sourceId.asc().nullsLast().op("uuid_ops"), table.armed.asc().nullsLast().op("bool_ops")),
 	index("trigger_bindings_ws_work_item_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.workItemHarnessSlug.asc().nullsLast().op("text_ops"), table.workItemKind.asc().nullsLast().op("text_ops")).where(sql`((work_item_kind IS NOT NULL) AND (detached_at IS NULL))`),
@@ -11312,6 +11335,11 @@ export const triggerBindingsInHarnessShared = harnessShared.table("trigger_bindi
 			foreignColumns: [goalsInHarnessShared.id],
 			name: "trigger_bindings_goal_id_fkey"
 		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.packInstallationId],
+			foreignColumns: [triggerPackInstallationsInHarnessShared.id],
+			name: "trigger_bindings_pack_installation_fk"
+		}).onDelete("set null"),
 	foreignKey({
 			columns: [table.workspaceId, table.planHarnessSlug, table.planSlug],
 			foreignColumns: [harnessPlansInHarnessShared.workspaceId, harnessPlansInHarnessShared.harnessSlug, harnessPlansInHarnessShared.planSlug],
@@ -11326,6 +11354,7 @@ export const triggerBindingsInHarnessShared = harnessShared.table("trigger_bindi
 	pgPolicy("trigger_bindings_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("trigger_bindings_action_object_check", sql`jsonb_typeof(action) = 'object'::text`),
 	check("trigger_bindings_blueprint_operation_action_check", sql`((action ->> 'type'::text) IS DISTINCT FROM 'blueprint-operation'::text) OR (((jsonb_typeof((action -> 'operationHarnessSlug'::text)) = 'string'::text) AND (btrim((action ->> 'operationHarnessSlug'::text)) <> ''::text) AND (jsonb_typeof((action -> 'operationId'::text)) = 'string'::text) AND (btrim((action ->> 'operationId'::text)) <> ''::text) AND ((NOT (action ? 'input'::text)) OR (jsonb_typeof((action -> 'input'::text)) = 'object'::text))) IS TRUE)`),
+	check("trigger_bindings_datatype_id_nonempty", sql`(datatype_id IS NULL) OR (btrim(datatype_id) <> ''::text)`),
 	check("trigger_bindings_direct_work_item_cols_paired", sql`(work_item_kind IS NULL) = (work_item_harness_slug IS NULL)`),
 	check("trigger_bindings_direct_work_item_nonempty", sql`((work_item_kind IS NULL) OR (btrim(work_item_kind) <> ''::text)) AND ((work_item_harness_slug IS NULL) OR (btrim(work_item_harness_slug) <> ''::text))`),
 	check("trigger_bindings_event_filter_object_check", sql`jsonb_typeof(event_filter) = 'object'::text`),
@@ -11378,6 +11407,33 @@ export const triggerDeliveriesInHarnessShared = harnessShared.table("trigger_del
 	check("trigger_deliveries_payload_object_check", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("trigger_deliveries_sink_kind_nonempty", sql`btrim(sink_kind) <> ''::text`),
 	check("trigger_deliveries_sink_ref_nonempty", sql`btrim(sink_ref) <> ''::text`),
+]);
+
+export const triggerPackInstallationsInHarnessShared = harnessShared.table("trigger_pack_installations", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	pluginName: text("plugin_name").notNull(),
+	pluginVersion: text("plugin_version").notNull(),
+	sourceMappings: jsonb("source_mappings").default({}).notNull(),
+	inputs: jsonb().default({}).notNull(),
+	resources: jsonb().default({}).notNull(),
+	unmet: jsonb().default([]).notNull(),
+	status: text().default('needs-configuration').notNull(),
+	createdBy: text("created_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	unique("trigger_pack_installations_identity").on(table.harnessSlug, table.pluginName, table.workspaceId),
+	pgPolicy("trigger_pack_installations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("trigger_pack_installations_inputs_object", sql`jsonb_typeof(inputs) = 'object'::text`),
+	check("trigger_pack_installations_names_nonempty", sql`(btrim(harness_slug) <> ''::text) AND (btrim(plugin_name) <> ''::text) AND (btrim(plugin_version) <> ''::text)`),
+	check("trigger_pack_installations_resources_object", sql`jsonb_typeof(resources) = 'object'::text`),
+	check("trigger_pack_installations_source_mappings_object", sql`jsonb_typeof(source_mappings) = 'object'::text`),
+	check("trigger_pack_installations_status_check", sql`status = ANY (ARRAY['needs-configuration'::text, 'configured'::text])`),
+	check("trigger_pack_installations_unmet_array", sql`jsonb_typeof(unmet) = 'array'::text`),
+	primaryKey({ columns: [table.id], name: "trigger_pack_installations_pkey"}),
+
 ]);
 
 export const triggerRunsInHarnessShared = harnessShared.table("trigger_runs", {
