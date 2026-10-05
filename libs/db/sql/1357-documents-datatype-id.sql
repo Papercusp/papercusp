@@ -15,10 +15,20 @@
 -- (personal-vault/store.ts dedupeKeyFor), so the uniqueness domain
 -- (workspace_id, user_id, source, dedupe_key) is unchanged.
 --
--- Additive + data rewrite only: no DROP, RENAME or SET NOT NULL. The currently
--- deployed release never reads datatype_id, and an old-format key written by
--- that release after this runs is a plain new row that the next sync under the
--- new code supersedes, so the expand step is safe while :3070 lags.
+-- Additive + data rewrite only: no DROP, RENAME or SET NOT NULL.
+--
+-- EXPAND WINDOW. This applies to the shared database as soon as any operator
+-- built from staging boots, while the release on :3070 still runs the previous
+-- code for as long as the green gate holds main. That release writes rows with
+-- no datatype_id and with the legacy key shape. Left alone, every such write
+-- would (a) be invisible to the datatype-keyed reconcile/status reads and
+-- (b) insert a duplicate beside its re-keyed twin. A BEFORE INSERT trigger
+-- (below) normalizes both on the way in. PostgreSQL fires BEFORE ROW INSERT
+-- triggers before ON CONFLICT arbitration, so a legacy-shaped upsert conflicts
+-- with the re-keyed row instead of minting a twin. The trigger is a no-op for
+-- the new code, which always stamps datatype_id and the source-scoped key. It
+-- is transitional and is dropped once no release writes the legacy shape
+-- (tracked on the P-005 work-item's follow-up).
 
 ALTER TABLE harness_shared.documents
   ADD COLUMN IF NOT EXISTS datatype_id text;
@@ -87,3 +97,53 @@ UPDATE harness_shared.documents d
         AND x.source = c.source
         AND x.dedupe_key = c.new_key
    );
+
+-- Transitional expand-window normalizer (see header). Mirrors the backfill and
+-- the re-key above for rows written by a release that predates D-010. Pure
+-- function of the incoming row; touches nothing else.
+CREATE OR REPLACE FUNCTION harness_shared.documents_normalize_legacy_routing()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $fn$
+DECLARE
+  prefix text;
+  legacy_key text;
+BEGIN
+  IF NEW.datatype_id IS NULL THEN
+    NEW.datatype_id := CASE
+      WHEN NEW.source = 'gmail'    AND NEW.kind = 'message' THEN 'email-message'
+      WHEN NEW.source = 'calendar' AND NEW.kind = 'event'   THEN 'calendar-event'
+      WHEN NEW.source = 'facebook'                          THEN 'social-post'
+      WHEN NEW.source = 'contacts' AND NEW.kind = 'contact' THEN 'contact'
+    END;
+  END IF;
+
+  IF NEW.source_id IS NOT NULL
+     AND NEW.external_id IS NOT NULL
+     AND NEW.source IN ('gmail', 'calendar', 'facebook') THEN
+    prefix := COALESCE(substring(NEW.dedupe_key FROM '^(account:[0-9a-f]{64}:)'), '');
+    legacy_key := CASE
+      WHEN NEW.source = 'facebook' THEN prefix || 'facebook:' || NEW.kind || ':' || NEW.external_id
+      ELSE prefix || NEW.source || ':' || NEW.external_id
+    END;
+    IF NEW.dedupe_key = legacy_key THEN
+      NEW.dedupe_key := CASE
+        WHEN NEW.source = 'facebook'
+          THEN prefix || 'facebook:' || NEW.source_id::text || ':' || NEW.kind || ':' || NEW.external_id
+        ELSE prefix || NEW.source || ':' || NEW.source_id::text || ':' || NEW.external_id
+      END;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$fn$;
+
+COMMENT ON FUNCTION harness_shared.documents_normalize_legacy_routing() IS
+  'TRANSITIONAL (1357, D-010): stamps datatype_id and source-scopes legacy Vault keys for rows written by a pre-D-010 release. Drop once no deployed release writes the legacy shape.';
+
+DROP TRIGGER IF EXISTS documents_normalize_legacy_routing ON harness_shared.documents;
+CREATE TRIGGER documents_normalize_legacy_routing
+  BEFORE INSERT ON harness_shared.documents
+  FOR EACH ROW
+  EXECUTE FUNCTION harness_shared.documents_normalize_legacy_routing();
