@@ -8,7 +8,6 @@
  *   cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/work-item-deps.integration.test.ts
  */
 import { dirname, join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
@@ -39,12 +38,6 @@ async function provision(url: string): Promise<void> {
     const { appliedCount, totalKnown } = await applyPendingMigrations({ client, sqlDir: SQL_DIR });
     if (appliedCount !== totalKnown) {
       throw new Error(`work-item-deps provision: applied ${appliedCount}/${totalKnown} (expected zero skips)`);
-    }
-    // Validate the allocated draft only in this private database before arming.
-    const draft = join(SQL_DIR, '1365-unify-work-item-dep-change-notify.sql.DRAFT');
-    if (existsSync(draft)) {
-      await client.unsafe(readFileSync(draft, 'utf8'));
-      await client.unsafe(readFileSync(draft, 'utf8'));
     }
   } finally {
     await client.end({ timeout: 5 });
