@@ -1,0 +1,89 @@
+-- 1357: documents.datatype_id + source-scoped Vault dedupe keys
+-- (plan generalized-integrations-google-migration-cupboard-workflows-2026-10-05,
+--  P-005 / WI-10006069, Decision D-010).
+--
+-- Vault ingestion and the app-row producer now route a document by its
+-- canonical datatype instead of by an `ext:gmail:` / `ext:gcal:` key prefix or
+-- a provider-named category map. The datatype is stamped at ingestion from the
+-- canonical event's `datatypeId`; this migration adds the column and backfills
+-- the rows written before that stamp existed.
+--
+-- It also re-keys source-bound rows so the stable key carries the source id.
+-- Two providers (or two sources of one provider) that reuse the same native id
+-- under the same account address previously collapsed onto one row; the new
+-- key keeps them apart. Keys keep their optional `account:<sha256>:` prefix
+-- (personal-vault/store.ts dedupeKeyFor), so the uniqueness domain
+-- (workspace_id, user_id, source, dedupe_key) is unchanged.
+--
+-- Additive + data rewrite only: no DROP, RENAME or SET NOT NULL. The currently
+-- deployed release never reads datatype_id, and an old-format key written by
+-- that release after this runs is a plain new row that the next sync under the
+-- new code supersedes, so the expand step is safe while :3070 lags.
+
+ALTER TABLE harness_shared.documents
+  ADD COLUMN IF NOT EXISTS datatype_id text;
+
+COMMENT ON COLUMN harness_shared.documents.datatype_id IS
+  'Canonical datatype registry id (e.g. email-message, calendar-event) stamped at ingestion; routing key for Vault and app-row production (D-010).';
+
+-- Backfill from (source, kind) for rows written before ingestion stamped it.
+UPDATE harness_shared.documents
+   SET datatype_id = CASE
+         WHEN source = 'gmail'    AND kind = 'message' THEN 'email-message'
+         WHEN source = 'calendar' AND kind = 'event'   THEN 'calendar-event'
+         WHEN source = 'facebook'                      THEN 'social-post'
+         WHEN source = 'contacts' AND kind = 'contact' THEN 'contact'
+       END
+ WHERE datatype_id IS NULL
+   AND (   (source = 'gmail'    AND kind = 'message')
+        OR (source = 'calendar' AND kind = 'event')
+        OR  source = 'facebook'
+        OR (source = 'contacts' AND kind = 'contact'));
+
+CREATE INDEX IF NOT EXISTS documents_user_datatype_cursor_idx
+  ON harness_shared.documents (workspace_id, user_id, datatype_id, (COALESCE(occurred_at, imported_at)), id);
+
+-- Re-key source-bound mail and calendar rows:
+--   [account:<hash>:]gmail:<native>          -> [account:<hash>:]gmail:<source_id>:<native>
+--   [account:<hash>:]calendar:<native>       -> [account:<hash>:]calendar:<source_id>:<native>
+--   [account:<hash>:]facebook:<type>:<native> -> [account:<hash>:]facebook:<source_id>:<type>:<native>
+-- Only rows whose key is EXACTLY the legacy shape are touched, and a row is
+-- skipped when its new key already exists in the same uniqueness domain (the
+-- newer write wins; the stale twin is left for the next sync to supersede).
+WITH legacy AS (
+  SELECT d.id,
+         d.workspace_id,
+         d.user_id,
+         d.source,
+         COALESCE(substring(d.dedupe_key FROM '^(account:[0-9a-f]{64}:)'), '') AS prefix,
+         d.source_id::text AS sid,
+         d.external_id,
+         d.kind,
+         d.dedupe_key
+    FROM harness_shared.documents d
+   WHERE d.source_id IS NOT NULL
+     AND d.external_id IS NOT NULL
+     AND d.source IN ('gmail', 'calendar', 'facebook')
+), candidates AS (
+  SELECT id, workspace_id, user_id, source,
+         CASE
+           WHEN source = 'facebook' THEN prefix || 'facebook:' || sid || ':' || kind || ':' || external_id
+           ELSE prefix || source || ':' || sid || ':' || external_id
+         END AS new_key
+    FROM legacy
+   WHERE dedupe_key = CASE
+           WHEN source = 'facebook' THEN prefix || 'facebook:' || kind || ':' || external_id
+           ELSE prefix || source || ':' || external_id
+         END
+)
+UPDATE harness_shared.documents d
+   SET dedupe_key = c.new_key
+  FROM candidates c
+ WHERE d.id = c.id
+   AND NOT EXISTS (
+     SELECT 1 FROM harness_shared.documents x
+      WHERE x.workspace_id = c.workspace_id
+        AND x.user_id = c.user_id
+        AND x.source = c.source
+        AND x.dedupe_key = c.new_key
+   );
