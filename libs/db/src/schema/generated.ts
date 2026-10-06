@@ -2995,6 +2995,7 @@ export const dataSourcesInHarnessShared = harnessShared.table("data_sources", {
 	syncFailureCount: integer("sync_failure_count").default(0).notNull(),
 	syncLastSuccessAt: timestamp("sync_last_success_at", { withTimezone: true, mode: 'string' }),
 	syncWakeRequestedAt: timestamp("sync_wake_requested_at", { withTimezone: true, mode: 'string' }),
+	participantBackfillAt: timestamp("participant_backfill_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	uniqueIndex("data_sources_owned_account_kind_uidx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops"), table.providerAccountId.asc().nullsLast().op("text_ops")).where(sql`((owner_user_id IS NOT NULL) AND (provider_account_id IS NOT NULL))`),
 	index("data_sources_workspace_owner_account_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerUserId.asc().nullsLast().op("uuid_ops"), table.providerAccountId.asc().nullsLast().op("text_ops")).where(sql`((owner_user_id IS NOT NULL) AND (provider_account_id IS NOT NULL))`),
