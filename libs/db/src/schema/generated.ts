@@ -98,6 +98,7 @@ export const admissionRulesInHarnessShared = harnessShared.table("admission_rule
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	lifecycle: jsonb().default({}).notNull(),
+	action: text().default('admit').notNull(),
 }, (table) => [
 	index("admission_rules_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.dataSourceId.asc().nullsLast().op("uuid_ops"), table.sourceKind.asc().nullsLast().op("text_ops")).where(sql`enabled`),
 	foreignKey({
@@ -106,6 +107,7 @@ export const admissionRulesInHarnessShared = harnessShared.table("admission_rule
 			name: "admission_rules_source_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "admission_rules_pkey"}),
+	check("admission_rules_action_check", sql`action = ANY (ARRAY['admit'::text, 'suggest'::text])`),
 	check("admission_rules_created_by_check", sql`btrim(created_by) <> ''::text`),
 	check("admission_rules_harness_slug_check", sql`btrim(harness_slug) <> ''::text`),
 	check("admission_rules_lifecycle_check", sql`jsonb_typeof(lifecycle) = 'object'::text`),
