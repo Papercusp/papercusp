@@ -202,6 +202,41 @@ test('a compiled operation keeps revision A after the authored definition change
   }
 });
 
+test('composition refuses a direct agent operation without a pinned worker identity', () => {
+  const f = fixture();
+  try {
+    const operation = {
+      id: 'execute',
+      version: '1',
+      target: { kind: 'work-item', itemKind: 'task' },
+      execution: { kind: 'agent', role: 'worker' },
+      inputSchema: { type: 'object' },
+      acceptance: { resultSchema: { type: 'object' } },
+    };
+    const source = { ...rootSource(), roles: [{ id: 'worker' }], operations: [operation] };
+
+    assert.throws(
+      () => compileAgentSpecification({ source, resolve: f.resolve, harnessDir: f.dir }),
+      (error: unknown) => error instanceof CompositionCompilerError &&
+        error.code === 'source-invalid' && error.message.includes('operation-unpinned-agent'),
+    );
+
+    const pinned = compileAgentSpecification({
+      source: {
+        ...source,
+        operations: [{ ...operation, policy: { identity: {
+          kind: 'identity', ref: 'worker-domain', revision: '7', contentHash: 'a'.repeat(64),
+        } } }],
+      },
+      resolve: f.resolve,
+      harnessDir: f.dir,
+    });
+    assert.equal(pinned.configuration.operations?.[0]?.policy.identity?.ref, 'worker-domain');
+  } finally {
+    f.cleanup();
+  }
+});
+
 test('an operation acceptance rubric must match a retained package on compile and replay', () => {
   const f = fixture();
   try {

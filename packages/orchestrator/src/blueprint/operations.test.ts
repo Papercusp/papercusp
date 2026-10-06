@@ -104,3 +104,36 @@ test('operation validation refuses duplicate, incompatible and authority-widenin
   };
   assert.ok(errors([plan]).includes('plan-operation-executor'));
 });
+
+test('direct agent work-item operations require a pinned worker identity', () => {
+  const operation = directOperation();
+  const unpinned = {
+    ...operation,
+    policy: { requiredTools: operation.policy.requiredTools, model: operation.policy.model },
+  };
+  const unpinnedValidation = validateBlueprint(BlueprintSchema.parse(raw([unpinned])));
+  assert.deepEqual(
+    unpinnedValidation.errors.filter((issue) => issue.code === 'operation-unpinned-agent').map((issue) => issue.code),
+    ['operation-unpinned-agent'],
+  );
+
+  const pinned = {
+    ...operation,
+    policy: { ...operation.policy, identity: {
+      kind: 'identity' as const, ref: 'worker-domain', revision: '7', contentHash: hash,
+    } },
+  };
+  assert.equal(validateBlueprint(BlueprintSchema.parse(raw([pinned]))).ok, true);
+
+  const recipe = {
+    ...operation,
+    execution: { kind: 'recipe' as const, recipe: {
+      kind: 'recipe' as const, ref: 'summary-recipe', revision: '4', contentHash: hash,
+    } },
+    policy: { requiredTools: operation.policy.requiredTools },
+  };
+  assert.equal(
+    validateBlueprint(BlueprintSchema.parse(raw([recipe]))).errors.some((issue) => issue.code === 'operation-unpinned-agent'),
+    false,
+  );
+});

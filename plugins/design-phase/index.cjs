@@ -283,9 +283,15 @@ function lintIr(ir, ctx = {}) {
   // orphan component bindings
   const declared = new Set((ir.components || []).map((c) => c.id));
   const referenced = new Set();
-  walkNodes(ir.layout, '/layout', (n) => {
-    if (n.kind === 'component' && n.ref) referenced.add(n.ref);
-  });
+  const collectRefs = (root, pathPrefix) => {
+    walkNodes(root, pathPrefix, (n) => {
+      if (n.kind === 'component' && n.ref) referenced.add(n.ref);
+    });
+  };
+  collectRefs(ir.layout, '/layout');
+  for (const [stateName, stateRoot] of Object.entries(ir.states || {})) {
+    collectRefs(stateRoot, `/states/${stateName}`);
+  }
   for (const id of declared) {
     if (!referenced.has(id)) emit('orphan-component-binding', 'warning', '/components', `"${id}" declared but unused`);
   }

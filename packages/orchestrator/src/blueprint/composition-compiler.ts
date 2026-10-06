@@ -310,7 +310,10 @@ function sourceFor(input: CompositionCompilerInput): LoadedComposition {
   const candidate = input.loaded ?? input.source ?? input.blueprint;
   if (candidate !== undefined) {
     if (isLoadedBlueprint(candidate)) {
-      if (!candidate.validation?.ok) fail('source-invalid', 'the supplied LoadedBlueprint has validation errors');
+      if (!candidate.validation?.ok) {
+        const issues = candidate.validation?.errors.map((issue) => `${issue.code}: ${issue.message}`).join('; ');
+        fail('source-invalid', `the supplied LoadedBlueprint has validation errors${issues ? `: ${issues}` : ''}`);
+      }
       if (!candidate.layers.length) fail('source-invalid', 'the supplied LoadedBlueprint has no source layers');
       assertSha(candidate.contentHash, 'loaded blueprint contentHash');
       return candidate;
@@ -322,7 +325,10 @@ function sourceFor(input: CompositionCompilerInput): LoadedComposition {
         sourcePath: input.sourcePath ?? null,
         lint: input.lint,
       });
-      if (!authored.validation.ok) fail('source-invalid', 'the supplied identity source has validation errors');
+      if (!authored.validation.ok) {
+        const issues = authored.validation.errors.map((issue) => `${issue.code}: ${issue.message}`).join('; ');
+        fail('source-invalid', `the supplied blueprint source has validation errors${issues ? `: ${issues}` : ''}`);
+      }
       if (!RunnableBlueprintSchema.safeParse(authored.merged).success) {
         return {
           blueprint: BlueprintSourceDocumentSchema.parse(authored.merged),

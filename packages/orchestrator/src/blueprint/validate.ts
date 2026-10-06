@@ -289,6 +289,14 @@ function validateOperationDeclarations(bp: Blueprint, isLiveRole: (id: string) =
     if (operation.execution?.kind === 'agent' && !isLiveRole(operation.execution.role)) {
       err('operation-unknown-role', `operation "${operation.id}" references unknown role "${operation.execution.role}"`);
     }
+    // Accepted direct agent work items are later bound to a worker identity from
+    // this immutable specification. Reject a missing pin before the operation can
+    // mint a receipt that placement can only retire and the worker cannot bind.
+    if (operation.target.kind === 'work-item' && operation.execution?.kind === 'agent' &&
+        !operation.policy.identity) {
+      err('operation-unpinned-agent',
+        `agent work-item operation "${operation.id}" must declare a pinned policy.identity before admission`);
+    }
     if (operation.execution?.kind === 'program' && !operation.execution.blueprint && !(bp.spine.steps?.length)) {
       err('operation-no-program', `operation "${operation.id}" selects this blueprint's program, but spine.steps is empty`);
     }
