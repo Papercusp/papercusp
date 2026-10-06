@@ -52,8 +52,8 @@ const migration1144Sql = readFileSync(migrationPath('1144-completion-identity-de
 const migration1180Sql = readFileSync(migrationPath('1180-completion-identity-out-of-repo-artifact-floor-followup.sql'), 'utf8');
 /** WI-10002350: history-only ancestry must be separately attested and manifest-bound. */
 const migration1207Sql = readFileSync(migrationPath('1207-completion-identity-history-attestation-floor.sql'), 'utf8');
-/** EI-24932469749678544: sibling checkout proofs bind the same path by root and close HEAD. */
-const migration1350Sql = readFileSync(migrationPath('1350-completion-per-checkout-settlement-floor.sql'), 'utf8');
+/** WI-10006322: v2 sibling-checkout proofs bind the same path by root and close HEAD. */
+const migration1390Sql = readFileSync(migrationPath('1390-completion-history-attestation-v2-settlement-floor.sql'), 'utf8');
 
 /**
  * Exact semantic shape observed in production before migration 1144: 1044's
@@ -317,7 +317,7 @@ beforeAll(async () => {
   await applyMigrationFile(migration1144Sql);
   await applyMigrationFile(migration1180Sql);
   await applyMigrationFile(migration1207Sql);
-  await applyMigrationFile(migration1350Sql);
+  await applyMigrationFile(migration1390Sql);
   // A silently-absent or disabled trigger would make every keep-case below pass
   // vacuously, so the definition itself is part of the precondition. The probe
   // dumps unqualified ground truth so a mis-targeted DDL cannot hide behind an
@@ -362,7 +362,7 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
-describe('migrations 972 + 1044 + 1144 + 1180 + 1207 + 1350 — completion authority content-identity floor', () => {
+describe('migrations 972 + 1044 + 1144 + 1180 + 1207 + 1390 — completion authority content-identity floor', () => {
   it('reproduces the historical live deletion rejection before the 1144 forward repair', () => {
     expect(historicalPre1144Probe).toEqual({ deletionOk: false, artifactMixOk: true });
   });
@@ -754,7 +754,7 @@ describe('migrations 972 + 1044 + 1144 + 1180 + 1207 + 1350 — completion autho
     await applyMigrationFile(migration1144Sql);
     await applyMigrationFile(migration1180Sql);
     await applyMigrationFile(migration1207Sql);
-    await applyMigrationFile(migration1350Sql);
+    await applyMigrationFile(migration1390Sql);
     // The current floor must survive its and its predecessors' re-application enabled.
     const rows = await sql<{ tgenabled: string }[]>`
       SELECT tgenabled FROM pg_trigger
