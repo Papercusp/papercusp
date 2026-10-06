@@ -141,6 +141,18 @@ function listOf(data, url) {
   return data;
 }
 
+/** GitHub's close reasons that mean "not done": the canonical `canceled` category. */
+const CANCELED_REASONS = new Set(['not_planned', 'duplicate']);
+
+/**
+ * The canonical workflow category (migration 1377) for a GitHub issue. GitHub has only
+ * open/closed: open is `todo`; closed is `done` unless its reason says it was dropped.
+ */
+function statusCategoryOf(issue) {
+  if (text(issue.state) !== 'closed') return 'todo';
+  return CANCELED_REASONS.has(text(issue.state_reason)) ? 'canceled' : 'done';
+}
+
 /** The canonical `ticket` payload for one GitHub issue. */
 function issueToTicket(owner, repo, issue) {
   const number = Number(issue.number);
@@ -156,6 +168,7 @@ function issueToTicket(owner, repo, issue) {
     title: typeof issue.title === 'string' ? issue.title : '',
     body: typeof issue.body === 'string' ? issue.body : '',
     state: text(issue.state) === 'closed' ? 'closed' : 'open',
+    statusCategory: statusCategoryOf(issue),
     assignees,
     labels,
   };
