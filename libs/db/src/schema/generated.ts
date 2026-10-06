@@ -139,6 +139,27 @@ export const admissionRunsInHarnessShared = harnessShared.table("admission_runs"
 	check("admission_runs_run_kind_check", sql`run_kind = ANY (ARRAY['census'::text, 'promoter-tick'::text, 'bulk-stage'::text, 'delta-sweep'::text, 'daily-digest'::text, 'durable-park-audit'::text, 'resolver-whole-corpus'::text])`),
 ]);
 
+export const admissionWriteBacksInHarnessShared = harnessShared.table("admission_write_backs", {
+	workspaceId: text("workspace_id").notNull(),
+	id: uuid().defaultRandom().notNull(),
+	admissionId: uuid("admission_id").notNull(),
+	workItemId: text("work_item_id").notNull(),
+	dataSourceId: uuid("data_source_id"),
+	action: text().notNull(),
+	updateId: text("update_id"),
+	externalRef: text("external_ref"),
+	detail: jsonb().default({}).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("admission_write_backs_update_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.dataSourceId.asc().nullsLast().op("uuid_ops"), table.updateId.asc().nullsLast().op("text_ops")).where(sql`(update_id IS NOT NULL)`),
+	index("admission_write_backs_work_item_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.workItemId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	primaryKey({ columns: [table.id, table.workspaceId], name: "admission_write_backs_pkey"}),
+	check("admission_write_backs_action_check", sql`action = ANY (ARRAY['comment'::text, 'transition'::text])`),
+	check("admission_write_backs_detail_check", sql`jsonb_typeof(detail) = 'object'::text`),
+	check("admission_write_backs_update_id_check", sql`(update_id IS NULL) OR (btrim(update_id) <> ''::text)`),
+	check("admission_write_backs_work_item_id_check", sql`btrim(work_item_id) <> ''::text`),
+]);
+
 export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -10623,8 +10644,14 @@ export const specEvidenceBindingsInHarnessShared = harnessShared.table("spec_evi
 	retractionReason: text("retraction_reason"),
 }, (table) => [
 	index("spec_evidence_bindings_by_spec").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops"), table.specRevision.asc().nullsLast().op("int4_ops"), table.observedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("spec_evidence_bindings_by_test_run").using("btree", table.testRunId.asc().nullsLast().op("int8_ops")).where(sql`(test_run_id IS NOT NULL)`),
 	index("spec_evidence_bindings_by_work_item").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.workItemId.asc().nullsLast().op("text_ops"), table.observedAt.desc().nullsFirst().op("timestamptz_ops")),
 	uniqueIndex("spec_evidence_bindings_dedup_live").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.workItemId.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops"), table.specRevision.asc().nullsLast().op("int4_ops"), table.bindingFingerprint.asc().nullsLast().op("text_ops")).where(sql`(retracted_at IS NULL)`),
+	foreignKey({
+			columns: [table.testRunId],
+			foreignColumns: [testRunsInHarnessShared.id],
+			name: "spec_evidence_bindings_test_run_id_fkey"
+		}).onDelete("restrict"),
 	foreignKey({
 			columns: [table.workspaceId, table.harnessSlug, table.workItemId, table.planSlug, table.specId, table.specRevision, table.specFingerprint],
 			foreignColumns: [workItemSpecRevisionEdgesInHarnessShared.workspaceId, workItemSpecRevisionEdgesInHarnessShared.harnessSlug, workItemSpecRevisionEdgesInHarnessShared.workItemId, workItemSpecRevisionEdgesInHarnessShared.planSlug, workItemSpecRevisionEdgesInHarnessShared.specId, workItemSpecRevisionEdgesInHarnessShared.specRevision, workItemSpecRevisionEdgesInHarnessShared.specFingerprint],
