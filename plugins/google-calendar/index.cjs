@@ -8,7 +8,8 @@
  * routing); the outbound calendar verbs call `invoke`. This module only maps the Calendar REST API:
  *   - a calendar event -> `calendar-event`, events `event-created` / `event-updated` (changes) and
  *     `event-upcoming` (the time wheel), nativeId = the Google event id
- *   - calendar.read -> one event; calendar.write (create | update) -> events insert / patch
+ *   - calendar.read -> one event; calendar.write (create | update | delete) -> events insert / patch /
+ *     delete
  *   - sync.adopt -> start a source the retired host Calendar poll drove from that poll's cursor
  *
  * The only network path is `host.fetch`, which carries the source account's token. Nothing here
@@ -482,6 +483,21 @@ async function calendarWrite(host, source, args) {
       body: patchBody(args),
     });
     return writeResult(event);
+  }
+  if (args.operation === 'delete') {
+    const eventId = requireId(args.eventId, 'event_id');
+    try {
+      // 204 with no body; sendUpdates=all sends the cancellation to every attendee.
+      await call(host, source, 'event_delete', eventsUrl(calendarId, `/${enc(eventId)}${query({ sendUpdates: 'all' })}`), {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      // 410 Gone is Google's answer for an event that is already cancelled: the
+      // owner's intent already holds, so it is not a failure. 404 still is (a
+      // wrong calendar or an id that never existed must not read as deleted).
+      if (!error || error.status !== 410) throw error;
+    }
+    return { id: eventId, htmlLink: null, status: 'cancelled', attendees: [] };
   }
   throw new Error(`google_calendar_write_operation_unsupported:${args.operation}`);
 }
