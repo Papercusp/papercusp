@@ -1616,6 +1616,29 @@ test('normalizeExplicitModelFlagsForBackend — codex command model flags accept
   );
 });
 
+// WI-10006244: claude drops an effort carried inside --model, so an explicit
+// `<model>:<effort>` on a claude-code command is split into --effort.
+test('normalizeExplicitModelFlagsForBackend — claude-code splits an explicit model effort into --effort', () => {
+  assert.deepEqual(
+    normalizeExplicitModelFlagsForBackend(['claude', '-p', '--model', 'opus:xhigh', '--verbose'], 'claude-code'),
+    ['claude', '-p', '--model', 'opus', '--effort', 'max', '--verbose'],
+  );
+  assert.deepEqual(
+    normalizeExplicitModelFlagsForBackend(['claude', '-p', '--model=sonnet[1m]:high'], 'claude-code'),
+    ['claude', '-p', '--model', 'sonnet[1m]', '--effort', 'high'],
+  );
+  // An explicit --effort already on the command wins; only the model is cleaned.
+  assert.deepEqual(
+    normalizeExplicitModelFlagsForBackend(['claude', '-p', '--effort', 'low', '--model', 'opus:xhigh'], 'claude-code'),
+    ['claude', '-p', '--effort', 'low', '--model', 'opus'],
+  );
+  // No model flag: byte-identical.
+  assert.deepEqual(
+    normalizeExplicitModelFlagsForBackend(['claude', '-p'], 'claude-code'),
+    ['claude', '-p'],
+  );
+});
+
 // --- claudeMcpArgs: makes claude-code load the per-spawn signed .mcp.json ---
 
 const MCP_PATH = '/proj/.papercusp/../.mcp.json';
