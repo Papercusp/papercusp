@@ -992,6 +992,10 @@ export const BlueprintOperationSchema = z.object({
     z.object({ kind: z.literal('recipe'), recipe: RecipeOperationRefSchema }).strict(),
   ]).optional(),
   inputSchema: OperationInputSchema,
+  // D-014 (app-agent-tasks-durable-execution-2026-10-06): content the submitter
+  // hands to the worker WITHOUT putting it in the work-item payload. Any JSON
+  // value; stored outside the item and deleted once the item is terminal.
+  privateInputSchema: OperationJsonSchema.optional(),
   acceptance: z.object({
     resultSchema: OperationJsonSchema,
     rubric: RubricOperationRefSchema.optional(),
