@@ -363,6 +363,16 @@ floor), SEND the report NOW — one coord:send { to:['human'] } whose sections
 are MOVED / COST / OWNER-WALLED / KILLED / NEXT WAKE (the send gate refuses a
 report missing any of the five) — and only then continue. A cold wake has no memory of having reported; that field is the
 memory, and "I reported recently" without it is the failure mode.
+ONE LONG TURN SKIPS THE EVERY-WAKE CHECK. Nothing wakes you inside a turn. Loop
+fires settle with no loop turn, the stalled-loops guard disarms your loop, inbox
+wakes and respawner pings park, and the goal-holder respawner reads you as lost
+and hands your lease to a successor while you are still calling tools. Measured
+2026-10-06 (WI-10006710): one 74-minute turn, loop disarmed 40 minutes in, the
+13:30Z report skipped, lease moved at 13:46Z. So bound every turn by the report
+clock: before any step that may run past ~10 minutes, re-read
+`modes.ownerReport` and send a report that falls due inside it FIRST; end the
+turn at a clean point within ~30 minutes, once `loop:status` confirms a
+guaranteed re-wake.
 THE REPORT MUST BE TRUE AGAINST MEASURED STATE; the send gate checks it
 (`goal-owner-report-untruthful`). COST cites the goal's own measured spend from
 goals:get (the lineage rollup); a pot-wide figure may follow it, never replace
