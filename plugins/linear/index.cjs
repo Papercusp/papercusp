@@ -90,7 +90,10 @@ const ISSUE_FIELDS = `
     nodes { id createdAt fromState { ${STATE_FIELDS} } toState { ${STATE_FIELDS} } actor { ${USER_FIELDS} } }
   }`;
 
+// `viewer` is the connected account: under actor=app it is Papercusp's own Linear user, the one
+// work is delegated to (D-005), so each ticket can say which roles Papercusp holds on it (D-012).
 const ISSUES_QUERY = `query PapercuspIssues($filter: IssueFilter, $after: String) {
+  viewer { id }
   issues(first: ${PAGE_SIZE}, after: $after, filter: $filter, orderBy: updatedAt) {
     nodes { ${ISSUE_FIELDS} }
     pageInfo { hasNextPage endCursor }
@@ -105,6 +108,7 @@ const COMMENTS_QUERY = `query PapercuspComments($filter: CommentFilter, $after: 
 }`;
 
 const ISSUE_QUERY = `query PapercuspIssue($id: String!) {
+  viewer { id }
   issue(id: $id) { ${ISSUE_FIELDS} }
 }`;
 
@@ -305,9 +309,20 @@ function dueAtOf(dueDate) {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? iso(`${raw}T00:00:00Z`) : undefined;
 }
 
-/** The canonical `ticket` payload for one Linear issue. */
-function issueToTicket(issue) {
+/** The roles the connected account (`selfId`, the viewer) holds on an issue: `assignee`, `delegate`. */
+function selfRolesOf(issue, selfId) {
+  const self = text(selfId);
+  if (!self) return [];
+  const roles = [];
+  if (text(issue.assignee && issue.assignee.id) === self) roles.push('assignee');
+  if (text(issue.delegate && issue.delegate.id) === self) roles.push('delegate');
+  return roles;
+}
+
+/** The canonical `ticket` payload for one Linear issue, seen by the connected account `selfId`. */
+function issueToTicket(issue, selfId) {
   const category = categoryOf(issue.state) || 'todo';
+  const selfRoles = selfRolesOf(issue, selfId);
   const labels = ((issue.labels && issue.labels.nodes) || []).map((label) => text(label && label.name)).filter(Boolean);
   const assignee = person(issue.assignee);
   const delegate = person(issue.delegate);
@@ -329,6 +344,7 @@ function issueToTicket(issue) {
     identifier: text(issue.identifier) || undefined,
     statusName: text(issue.state && issue.state.name) || undefined,
     delegates: delegate ? [delegate] : undefined,
+    selfRoles: selfRoles.length > 0 ? selfRoles : undefined,
     priority: Number.isInteger(level) && level >= 0 && level <= 4
       ? { level, ...(text(issue.priorityLabel) ? { name: text(issue.priorityLabel) } : {}) }
       : undefined,
@@ -415,10 +431,11 @@ async function readIssues(host, source, cursor) {
   const data = await gql(host, source, ISSUES_QUERY, { filter: pageFilter(cursor, 'issues'), after: cursor.after });
   const page = connectionOf(data, 'issues');
   const key = watermarkKey(cursor, 'issues');
+  const selfId = text(data.viewer && data.viewer.id);
   const records = [];
   for (const issue of page.nodes) {
     if (!issue || !text(issue.id)) continue;
-    const ticket = issueToTicket(issue);
+    const ticket = issueToTicket(issue, selfId);
     cursor.seen[key] = later(cursor.seen[key], ticket.updatedAt);
     records.push({
       datatype: 'ticket',
@@ -501,7 +518,7 @@ async function readTicket(request, host) {
   const id = issueIdOf(request.args);
   const data = await gql(host, request.source, ISSUE_QUERY, { id });
   if (!data.issue || !text(data.issue.id)) throw new Error(`ticket_not_found:${id}`);
-  return { ticket: issueToTicket(data.issue) };
+  return { ticket: issueToTicket(data.issue, text(data.viewer && data.viewer.id)) };
 }
 
 /** `ticket.comment { externalId, text }`: one plain comment; only the text is sent. */
