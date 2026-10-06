@@ -2235,6 +2235,7 @@ export const connectedAppsInHarnessShared = harnessShared.table("connected_apps"
 	clientAuth: text("client_auth"),
 	clientJwk: jsonb("client_jwk"),
 	firstUsedAt: timestamp("first_used_at", { withTimezone: true, mode: 'string' }),
+	noisePublicKey: text("noise_public_key"),
 }, (table) => [
 	uniqueIndex("connected_apps_token_hash_key").using("btree", table.tokenHash.asc().nullsLast().op("text_ops")).where(sql`(token_hash IS NOT NULL)`),
 	index("connected_apps_user_idx").using("btree", table.userEmail.asc().nullsLast().op("text_ops")),
@@ -2249,6 +2250,7 @@ CASE
 END)`),
 	check("connected_apps_kind_check", sql`kind = ANY (ARRAY['mobile'::text, 'app'::text, 'service'::text])`),
 	check("connected_apps_limits_is_object", sql`jsonb_typeof(limits) = 'object'::text`),
+	check("connected_apps_noise_public_key_check", sql`(noise_public_key IS NULL) OR ((kind = 'mobile'::text) AND (noise_public_key ~ '^[A-Za-z0-9+/]{43}=$'::text))`),
 	check("connected_apps_previous_token_hash_shape", sql`(previous_token_hash IS NULL) OR (previous_token_hash ~ '^[0-9a-f]{64}$'::text)`),
 	check("connected_apps_previous_token_kind", sql`(previous_token_hash IS NULL) OR (kind = ANY (ARRAY['app'::text, 'service'::text]))`),
 	check("connected_apps_previous_token_pair", sql`(previous_token_hash IS NULL) = (previous_token_valid_until IS NULL)`),
