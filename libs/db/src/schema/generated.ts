@@ -3464,7 +3464,9 @@ export const editAttributionLedgerInHarnessShared = harnessShared.table("edit_at
 	ts: timestamp({ withTimezone: true }).defaultNow().notNull(),
 	repoRoot: text("repo_root"),
 	acquiredVia: text("acquired_via"),
+	dispatchCallId: text("dispatch_call_id"),
 }, (table) => [
+	uniqueIndex("edit_attribution_dispatch_repo_file_uidx").using("btree", table.dispatchCallId.asc().nullsLast().op("text_ops"), table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops")).where(sql`(dispatch_call_id IS NOT NULL)`),
 	index("edit_attribution_ledger_agent_ts_idx").using("btree", table.agentId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
 	index("edit_attribution_ledger_repo_file_idx").using("btree", table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
 	index("edit_attribution_ledger_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(work_item_id IS NOT NULL)`),
