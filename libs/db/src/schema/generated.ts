@@ -1737,6 +1737,38 @@ export const censusProviderRegistrationsInHarnessShared = harnessShared.table("c
 	check("census_provider_registrations_source_check", sql`source = ANY (ARRAY['template'::text, 'detected'::text, 'manual'::text])`),
 ]);
 
+export const chatBugSuggestionsInHarnessShared = harnessShared.table("chat_bug_suggestions", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	dataSourceId: uuid("data_source_id").notNull(),
+	ruleId: uuid("rule_id").notNull(),
+	channelId: text("channel_id").notNull(),
+	providerMessageId: text("provider_message_id").notNull(),
+	authorExternalId: text("author_external_id").notNull(),
+	score: real().notNull(),
+	classifierVersion: text("classifier_version").notNull(),
+	outcome: text().default('pending').notNull(),
+	error: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("chat_bug_suggestions_author_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.dataSourceId.asc().nullsLast().op("uuid_ops"), table.channelId.asc().nullsLast().op("text_ops"), table.authorExternalId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	uniqueIndex("chat_bug_suggestions_message_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.dataSourceId.asc().nullsLast().op("uuid_ops"), table.channelId.asc().nullsLast().op("text_ops"), table.providerMessageId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.dataSourceId],
+			foreignColumns: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id],
+			name: "chat_bug_suggestions_source_fk"
+		}).onDelete("cascade"),
+	pgPolicy("chat_bug_suggestions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("chat_bug_suggestions_author_external_id_check", sql`btrim(author_external_id) <> ''::text`),
+	check("chat_bug_suggestions_channel_id_check", sql`btrim(channel_id) <> ''::text`),
+	check("chat_bug_suggestions_classifier_version_check", sql`btrim(classifier_version) <> ''::text`),
+	check("chat_bug_suggestions_outcome_check", sql`outcome = ANY (ARRAY['pending'::text, 'notified'::text, 'no-route'::text, 'failed'::text])`),
+	check("chat_bug_suggestions_provider_message_id_check", sql`btrim(provider_message_id) <> ''::text`),
+	primaryKey({ columns: [table.id], name: "chat_bug_suggestions_pkey"}),
+
+]);
+
 export const chatMessagesInHarnessShared = harnessShared.table("chat_messages", {
 	workspaceId: text("workspace_id").notNull(),
 	id: uuid().defaultRandom().notNull(),
@@ -3319,7 +3351,7 @@ export const desktopSessionsInHarnessShared = harnessShared.table("desktop_sessi
 	check("desktop_sessions_name_format_ck", sql`(name IS NULL) OR (name ~ '^[a-z0-9][a-z0-9._-]{0,62}$'::text)`),
 	check("desktop_sessions_name_scope_ck", sql`(name IS NULL) OR (scope = 'agent'::text)`),
 	check("desktop_sessions_released_at_ck", sql`((state = ANY (ARRAY['released'::text, 'dead'::text])) AND (released_at IS NOT NULL)) OR ((state <> ALL (ARRAY['released'::text, 'dead'::text])) AND (released_at IS NULL))`),
-	check("desktop_sessions_scope_ck", sql`scope = ANY (ARRAY['pot'::text, 'agent'::text, 'workspace'::text])`),
+	check("desktop_sessions_scope_ck", sql`scope = ANY (ARRAY['pot'::text, 'agent'::text, 'workspace'::text, 'user'::text])`),
 	check("desktop_sessions_state_ck", sql`state = ANY (ARRAY['provisioning'::text, 'ready'::text, 'idle'::text, 'frozen'::text, 'released'::text, 'dead'::text])`),
 	check("desktop_sessions_viewer_mode_ck", sql`viewer_mode = ANY (ARRAY['none'::text, 'watch'::text, 'takeover'::text])`),
 ]);
@@ -10425,7 +10457,6 @@ export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", 
 	index("session_turns_embedding_idx").using("hnsw", table.textEmbedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("session_turns_ingested_idx").using("btree", table.ingestedAt.asc().nullsLast().op("timestamptz_ops")),
 	index("session_turns_owner_ts_idx").using("btree", table.owner.asc().nullsLast().op("text_ops"), table.ts.asc().nullsLast().op("timestamptz_ops")),
-	index("session_turns_provenance_version_idx").using("btree", table.turnOriginClassifierVersion.asc().nullsLast().op("int4_ops")),
 	index("session_turns_session_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops")),
 	index("session_turns_text_embedding_mode_idx").using("btree", table.textEmbeddingMode.asc().nullsLast().op("text_ops")).where(sql`(text_embedding_mode IS NOT NULL)`),
 	index("session_turns_text_trgm_idx").using("gin", sql`lower(text)`),
