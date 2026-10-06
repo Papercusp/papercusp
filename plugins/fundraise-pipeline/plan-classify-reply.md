@@ -15,7 +15,7 @@ personalScopes: personal:gmail, personal:contacts
 
 ## Background
 
-An inbound Gmail message arrives under `payload.plan_run.inputs.trigger.payload` as a canonical
+An inbound Gmail message arrives under the event `payload` returned by `triggers:read-payload { planRunId: payload.plan_run.runId }` as a canonical
 `email-message`. This plan decides whether the message belongs to the fundraise pipeline at all,
 records what the reply means, and leaves a draft a human reviews.
 
@@ -62,6 +62,6 @@ optimistically produces a forecast the owner cannot use.
 ### D-003 — This pack drafts and stops
 Date: 2026-08-23
 No plan in this pack sends mail. The no-auto-send property is enforced by the host rather than
-by instruction-following: `mail:reply { planRunId }` refuses `mode:"send"` from a triggered run
+by instruction-following: `mail:reply { planRunId }` refuses a send-mode reply from a triggered run
 while the owner-authority flag `papercusp-gmail-auto-send` is OFF. (The scopes are not the guard:
 Google's `gmail.compose` scope itself permits sending.)

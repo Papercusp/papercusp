@@ -27,7 +27,7 @@ work until the meeting has actually ended.
 
 ## Phase 1 — Wait for the meeting to end
 
-- **P-001** `todo` Read the meeting end time from `payload.plan_run.inputs.trigger.payload.end` (fall back to `start` plus one hour when `end` is absent). If that instant is still in the future, arm a single-shot cadence with `plans:set-schedule` + `plans:arm-schedule` for shortly after it and COMPLETE this run — the next run resumes at Phase 2. Do not busy-wait, and do not draft a thank-you for a meeting that has not happened yet.
+- **P-001** `todo` Read the meeting end time from `payload.end` from `triggers:read-payload { planRunId: payload.plan_run.runId }` (fall back to `start` plus one hour when `end` is absent). If that instant is still in the future, arm a single-shot cadence with `plans:set-schedule` + `plans:arm-schedule` for shortly after it and COMPLETE this run — the next run resumes at Phase 2. Do not busy-wait, and do not draft a thank-you for a meeting that has not happened yet.
 - **P-002** `todo` On the resumed run, re-read the calendar event and the matched `pipeline-deal`. If the event was cancelled or declined, set `stageDetail: meeting-cancelled`, leave `stage` unchanged, disarm the cadence, and COMPLETE without drafting. blocked-by: P-001
 
 ## Phase 2 — Capture what was promised
