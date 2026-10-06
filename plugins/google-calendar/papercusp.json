@@ -3,7 +3,7 @@
   "name": "google-calendar",
   "version": "0.1.0",
   "papercusp": "^0.1.0",
-  "description": "Google Calendar as a first-party calendar provider: events become calendar-event records (sync-token changes, then an upcoming-event time wheel), and creates and updates run through the provider contract. Synced by the host's connector driver; the plugin only maps the Calendar REST API.",
+  "description": "Google Calendar as a first-party calendar provider: events become calendar-event records (sync-token changes, then an upcoming-event time wheel), and creates, updates and deletes run through the provider contract. Synced by the host's connector driver; the plugin only maps the Calendar REST API.",
   "author": "Papercusp",
   "license": "MIT",
   "main": "./index.cjs",
