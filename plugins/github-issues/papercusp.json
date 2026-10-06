@@ -27,6 +27,11 @@
       }
     },
     "egressHosts": ["api.github.com", "github.com"],
+    "defaultDestinations": {
+      "ticket": ["record"],
+      "ticket-status-change": ["event"],
+      "ticket-comment": ["document"]
+    },
     "configSchema": {
       "type": "object",
       "required": ["owner", "repo"],

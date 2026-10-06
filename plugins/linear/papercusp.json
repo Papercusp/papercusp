@@ -30,6 +30,11 @@
       }
     },
     "egressHosts": ["api.linear.app", "linear.app"],
+    "defaultDestinations": {
+      "ticket": ["record"],
+      "ticket-status-change": ["event"],
+      "ticket-comment": ["document"]
+    },
     "configSchema": {
       "type": "object",
       "required": ["teamIds"],

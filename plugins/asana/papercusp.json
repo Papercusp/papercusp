@@ -34,6 +34,11 @@
       }
     },
     "egressHosts": ["app.asana.com"],
+    "defaultDestinations": {
+      "ticket": ["record"],
+      "ticket-status-change": ["event"],
+      "ticket-comment": ["document"]
+    },
     "configSchema": {
       "type": "object",
       "required": ["projectGids"],
