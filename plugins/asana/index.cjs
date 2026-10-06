@@ -38,6 +38,11 @@
  * with sections for the configured (or requested) projects, so the Integrations page can offer them
  * for `workspaceGid`, `projectGids` and `sectionCategories`.
  *
+ * Push (D-016): `push.subscribe` keeps one Asana webhook per configured project pointed at the
+ * source's public hook URL, and `push.unsubscribe` deletes them. The host verifies the
+ * `X-Hook-Secret` handshake and each `X-Hook-Signature` itself (manifest `provider.push`); a
+ * verified delivery only wakes the next sync, so this module never reads a webhook body.
+ *
  * The only network path is `host.fetch` (https://app.asana.com/api/1.0), which enforces the
  * declared egress host and injects the source account's token. Nothing here sees a credential,
  * imports host code, or writes a table.
@@ -646,11 +651,82 @@ async function listContainers(request, host) {
   return { containers, truncated };
 }
 
+/** A rate limit or a lost grant stops the whole reconcile; anything else fails only its project. */
+function stopsReconcile(error) {
+  return Boolean(error) && (error.kind === 'auth' || error.kind === 'rate-limited');
+}
+
+function storedSubscriptions(args) {
+  const raw = Array.isArray(args.subscriptions) ? args.subscriptions : [];
+  return raw
+    .map((s) => ({ id: text(s && s.id), resource: text(s && s.resource) }))
+    .filter((s) => s.id && s.resource);
+}
+
+/**
+ * `push.subscribe { targetUrl, subscriptions }` (D-016): one Asana webhook per configured project,
+ * each pointing at `targetUrl`. A stored webhook is kept when Asana still has it active, for a
+ * configured project and the same target; every other stored webhook is deleted; a configured
+ * project without one gets a new webhook. Creating one makes Asana POST its `X-Hook-Secret`
+ * handshake to `targetUrl` before the create returns; the host answers it. Returns the resulting
+ * set, and per-project `failures` that leave the rest intact.
+ */
+async function subscribePush(request, host) {
+  const args = request.args || {};
+  const targetUrl = text(args.targetUrl);
+  if (!/^https:\/\/[^\s]+$/.test(targetUrl)) throw new Error('asana_push_target_invalid: targetUrl must be an https URL');
+  const projects = projectsOf(request.config);
+  const wanted = new Set(projects);
+  const kept = new Map();
+  const failures = [];
+  for (const sub of storedSubscriptions(args)) {
+    const path = `/webhooks/${encodeURIComponent(sub.id)}`;
+    const res = await rest(host, request.source, 'GET', path, { query: { opt_fields: 'active,target,resource' }, allow: [404] });
+    const hook = res.status === 404 ? null : res.body.data;
+    const keep = hook && hook.active !== false && text(hook.target) === targetUrl
+      && wanted.has(sub.resource) && !kept.has(sub.resource);
+    if (keep) {
+      kept.set(sub.resource, sub);
+      continue;
+    }
+    if (hook) await rest(host, request.source, 'DELETE', path, { allow: [404], emptyOk: true });
+  }
+  for (const project of projects) {
+    if (kept.has(project)) continue;
+    try {
+      const res = await rest(host, request.source, 'POST', '/webhooks', {
+        body: { data: { resource: project, target: targetUrl } },
+        query: { opt_fields: 'gid' },
+      });
+      const gid = text(res.body.data && res.body.data.gid);
+      if (!gid) throw syncError('transient', `asana_webhook_gid_missing:${project}`);
+      kept.set(project, { id: gid, resource: project });
+    } catch (error) {
+      if (stopsReconcile(error)) throw error;
+      failures.push({ resource: project, error: text(error && error.message) || 'failed' });
+    }
+  }
+  const subscriptions = projects.filter((p) => kept.has(p)).map((p) => kept.get(p));
+  return failures.length > 0 ? { subscriptions, failures } : { subscriptions };
+}
+
+/** `push.unsubscribe { subscriptions }` (D-016): delete each stored webhook; one already gone is fine. */
+async function unsubscribePush(request, host) {
+  let deleted = 0;
+  for (const sub of storedSubscriptions(request.args || {})) {
+    const res = await rest(host, request.source, 'DELETE', `/webhooks/${encodeURIComponent(sub.id)}`, { allow: [404], emptyOk: true });
+    if (res.status !== 404) deleted++;
+  }
+  return { deleted };
+}
+
 const INVOKERS = {
   'ticket.read': readTicket,
   'ticket.comment': commentOnTicket,
   'ticket.transition': transitionTicket,
   'ticket.containers': listContainers,
+  'push.subscribe': subscribePush,
+  'push.unsubscribe': unsubscribePush,
 };
 
 async function invoke(request, host) {
