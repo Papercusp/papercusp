@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS papercusp_auth.hosted_prepaid_allocations (
   allocation_id text NOT NULL,
   payment_transaction_id text NOT NULL,
   organization_id text NOT NULL,
+  -- Always bind the directory, including an organization-unassigned grant.
+  -- FK enforcement needs no directory SELECT grant for the service writer.
+  binding_customer_workspace_id text NOT NULL,
   customer_workspace_id text,
   budget_key text NOT NULL,
   micros numeric NOT NULL CHECK (micros >= 0 AND micros <= 9007199254740991 AND scale(micros) <= 324),
@@ -14,6 +17,8 @@ CREATE TABLE IF NOT EXISTS papercusp_auth.hosted_prepaid_allocations (
   evidence_ref text NOT NULL,
   received_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (stripe_account_id, allocation_id),
+  FOREIGN KEY (control_workspace_id, organization_id, binding_customer_workspace_id)
+    REFERENCES harness_shared.customer_workspaces (workspace_id, organization_id, id),
   FOREIGN KEY (control_workspace_id, organization_id, customer_workspace_id)
     REFERENCES harness_shared.customer_workspaces (workspace_id, organization_id, id),
   CHECK (control_workspace_id ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$'
@@ -51,10 +56,6 @@ BEGIN
       WHERE stripe_account_id = NEW.stripe_account_id AND payment_transaction_id = NEW.payment_transaction_id
         AND organization_id <> NEW.organization_id) THEN
     RAISE EXCEPTION 'prepaid payment organization mismatch' USING ERRCODE = '23514';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM harness_shared.customer_workspaces
-      WHERE workspace_id = NEW.control_workspace_id AND organization_id = NEW.organization_id) THEN
-    RAISE EXCEPTION 'prepaid allocation organization not in control workspace' USING ERRCODE = '23503';
   END IF;
   RETURN NEW;
 END;
