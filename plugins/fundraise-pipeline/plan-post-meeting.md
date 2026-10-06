@@ -2,7 +2,7 @@
 title: Post-meeting follow-through
 slug: fundraise-post-meeting
 status: draft
-personalScopes: personal:gmail, personal:calendar
+personalScopes: personal:mail, personal:calendar
 ---
 
 # Post-meeting follow-through
@@ -37,7 +37,7 @@ work until the meeting has actually ended.
 
 ## Phase 3 — Draft and hand off
 
-- **P-005** `todo` Draft the thank-you in the existing thread: find the latest message in the deal's `threadRefs` thread with `personal:search { scopes:["personal:gmail"] }`, then call `mail:reply` with its `externalId` as `messageId`, its `sourceId`, and the thank-you as `text` (draft mode, never `mode:"send"`). The draft carries one line of genuine specificity from the conversation, the owed items with dates, and the proposed next step. Honour `payload.plan_run.inputs.toneGuidance`. No recap of the whole meeting — they were there. blocked-by: P-004
+- **P-005** `todo` Draft the thank-you in the existing thread: find the latest message in the deal's `threadRefs` thread with `personal:search { scopes:["personal:mail"] }`, then call `mail:reply` with its `externalId` as `messageId`, its `sourceId`, and the thank-you as `text` (draft mode, never `mode:"send"`). The draft carries one line of genuine specificity from the conversation, the owed items with dates, and the proposed next step. Honour `payload.plan_run.inputs.toneGuidance`. No recap of the whole meeting — they were there. blocked-by: P-004
 - **P-006** `todo` List every owed artifact as a checklist on the deal's `notes` with an owner and a date, so an unshipped promise is visible in the pipeline board rather than only in a draft nobody re-reads. blocked-by: P-004
 - **P-007** `todo` Notify the owner with `notifications:send_owner` on a stable `dedupeKey`: counterparty, what was promised, the new stage, and that a thank-you draft is waiting. blocked-by: P-005
 

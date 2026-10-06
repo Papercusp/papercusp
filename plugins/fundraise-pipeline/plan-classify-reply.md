@@ -2,7 +2,7 @@
 title: Investor reply — classify and draft
 slug: fundraise-classify-reply
 status: draft
-personalScopes: personal:gmail, personal:contacts
+personalScopes: personal:mail, personal:contacts
 ---
 
 # Investor reply — classify and draft

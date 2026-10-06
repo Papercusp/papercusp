@@ -2,7 +2,7 @@
 title: Investor meeting prep
 slug: fundraise-meeting-prep
 status: draft
-personalScopes: personal:gmail, personal:calendar, personal:contacts
+personalScopes: personal:mail, personal:calendar, personal:contacts
 ---
 
 # Investor meeting prep
@@ -35,7 +35,7 @@ evidence that private data exists.
 ## Phase 2 — Gather
 
 - **P-003** `todo` Read the matched deal: current `stage`, `stageDetail`, `warmPath` (who introduced us and how), `threadRefs`, `researchBriefRef`, `notes`, and every prior classification. This is the single most valuable section of the brief and it requires no external call. blocked-by: P-002
-- **P-004** `todo` Query `personal:search` for recent threads with these attendees using scopes `personal:gmail`, `personal:calendar`, and `personal:contacts`. Bound the snippets, preserve provenance, and continue with trigger-only context if authorization refuses or returns nothing. blocked-by: P-003
+- **P-004** `todo` Query `personal:search` for recent threads with these attendees using scopes `personal:mail`, `personal:calendar`, and `personal:contacts`. Bound the snippets, preserve provenance, and continue with trigger-only context if authorization refuses or returns nothing. blocked-by: P-003
 - **P-005** `todo` From the fund research brief at `researchBriefRef` (if present), pull the partner-specific material: what this individual has backed, what they have written publicly, and their stated thesis. Prefer the brief over re-researching; if it is absent or older than 30 days, note that in the brief rather than silently presenting stale material as current. blocked-by: P-003
 
 ## Phase 3 — Synthesize and deliver

@@ -2,7 +2,7 @@
 title: First touch — draft the initial outreach
 slug: fundraise-first-touch
 status: draft
-personalScopes: personal:gmail
+personalScopes: personal:mail
 ---
 
 # First touch — draft the initial outreach
