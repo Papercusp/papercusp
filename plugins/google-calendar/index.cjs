@@ -16,10 +16,13 @@
  *
  * Cursor: one opaque JSON string
  *   `{ v, phase, syncToken, pageToken, lastSyncAt, changesStartedAt,
- *      upcoming: { pageToken, windowStart }, legacyUpcoming: { from } | null }`.
+ *      upcoming: { pageToken, windowStart, windowEnd, coveredUntil }, legacyUpcoming: { from } | null }`.
  * Each `syncPage` reads ONE events.list page. The `changes` phase pages events.list (showDeleted)
  * from the sync token until Google returns the next one; then the `upcoming` phase pages the
- * single-event window [windowStart, windowStart + lead) and the pass ends. Versions are namespaced
+ * single-event window [windowStart, windowEnd) and the pass ends. The window ends at now + lead and
+ * starts where the previous pass's window ended (`coveredUntil`) when that is earlier than now, so
+ * an event that falls entirely inside a sync outage is still announced (WI-10006640); the catch-up
+ * reaches back at most a day. Versions are namespaced
  * (`change:<updated|etag|sequence-N>`, `upcoming:<start>`) because the host's delivery key carries
  * no event name: a full resync re-reads every event at the SAME version and is deduped (D-021.3).
  */
@@ -31,6 +34,8 @@ const DATATYPE = 'calendar-event';
 const PAGE_SIZE = 2500;
 const DEFAULT_LEAD_MINUTES = 15;
 const MAX_LEAD_MINUTES = 24 * 60;
+/** How far back an upcoming window may reach to cover a sync outage. */
+const MAX_CATCH_UP_MS = 24 * 60 * 60000;
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
 const RATE_LIMIT_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded', 'quotaExceeded', 'dailyLimitExceeded']);
 
@@ -212,6 +217,11 @@ function calendarIdOf(config) {
 
 /* ─── cursor ─── */
 
+/** The upcoming state between passes: no window open, only where the last one ended. */
+function idleUpcoming(coveredUntil) {
+  return { pageToken: null, windowStart: null, windowEnd: null, coveredUntil: coveredUntil || null };
+}
+
 function freshCursor() {
   return {
     v: 1,
@@ -220,7 +230,7 @@ function freshCursor() {
     pageToken: null,
     lastSyncAt: null,
     changesStartedAt: null,
-    upcoming: { pageToken: null, windowStart: null },
+    upcoming: idleUpcoming(null),
     legacyUpcoming: null,
   };
 }
@@ -247,7 +257,12 @@ function decodeCursor(raw) {
     pageToken: nonEmpty(parsed.pageToken),
     lastSyncAt: isoOrNull(parsed.lastSyncAt),
     changesStartedAt: isoOrNull(parsed.changesStartedAt),
-    upcoming: { pageToken: nonEmpty(upcoming.pageToken), windowStart: isoOrNull(upcoming.windowStart) },
+    upcoming: {
+      pageToken: nonEmpty(upcoming.pageToken),
+      windowStart: isoOrNull(upcoming.windowStart),
+      windowEnd: isoOrNull(upcoming.windowEnd),
+      coveredUntil: isoOrNull(upcoming.coveredUntil),
+    },
     legacyUpcoming: legacyFrom ? { from: legacyFrom } : null,
   };
 }
@@ -294,7 +309,7 @@ async function readChangesPage(host, source, cursor, calendarId, now) {
   cursor.lastSyncAt = cursor.changesStartedAt;
   cursor.changesStartedAt = null;
   cursor.phase = 'upcoming';
-  cursor.upcoming = { pageToken: null, windowStart: null };
+  cursor.upcoming = idleUpcoming(cursor.upcoming.coveredUntil);
   return records;
 }
 
@@ -316,17 +331,32 @@ function legacyAnnounced(cursor, event, start, lead) {
   return !Number.isFinite(updated) || updated <= from;
 }
 
-/** One page of the upcoming-event window: single events overlapping [windowStart, windowStart + lead). */
+/**
+ * Where the next upcoming window starts: now, unless the previous window ended before now (the
+ * passes stopped for longer than the lead), in which case at that end, at most a day back.
+ */
+function upcomingWindowStart(coveredUntil, now) {
+  const covered = coveredUntil ? Date.parse(coveredUntil) : NaN;
+  if (!Number.isFinite(covered) || covered >= now) return now;
+  return Math.max(covered, now - MAX_CATCH_UP_MS);
+}
+
+/** One page of the upcoming-event window: single events overlapping [windowStart, windowEnd). */
 async function readUpcomingPage(host, source, cursor, calendarId, lead, now) {
-  if (!cursor.upcoming.windowStart) cursor.upcoming.windowStart = new Date(now).toISOString();
+  if (!cursor.upcoming.windowStart) {
+    cursor.upcoming.windowStart = new Date(upcomingWindowStart(cursor.upcoming.coveredUntil, now)).toISOString();
+    cursor.upcoming.windowEnd = new Date(now + lead * 60000).toISOString();
+  }
   const windowStart = Date.parse(cursor.upcoming.windowStart);
+  // A window opened before windowEnd was stored spans the lead from its start.
+  const windowEnd = cursor.upcoming.windowEnd ? Date.parse(cursor.upcoming.windowEnd) : windowStart + lead * 60000;
   const page = await call(host, source, 'upcoming_list', eventsUrl(calendarId, query({
     maxResults: PAGE_SIZE,
     orderBy: 'startTime',
     showDeleted: 'false',
     singleEvents: 'true',
     timeMin: new Date(windowStart).toISOString(),
-    timeMax: new Date(windowStart + lead * 60000).toISOString(),
+    timeMax: new Date(windowEnd).toISOString(),
     pageToken: cursor.upcoming.pageToken,
   })));
   const records = [];
@@ -340,7 +370,7 @@ async function readUpcomingPage(host, source, cursor, calendarId, lead, now) {
   cursor.upcoming.pageToken = nextPageToken;
   if (!nextPageToken) {
     cursor.phase = 'changes';
-    cursor.upcoming = { pageToken: null, windowStart: null };
+    cursor.upcoming = idleUpcoming(new Date(windowEnd).toISOString());
   }
   return { records, more: Boolean(nextPageToken) };
 }
