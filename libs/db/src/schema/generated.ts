@@ -9509,6 +9509,34 @@ export const replayRunsInHarnessShared = harnessShared.table("replay_runs", {
 	check("replay_runs_status_check", sql`status = ANY (ARRAY['started'::text, 'scored'::text, 'rate_limited'::text, 'errored'::text])`),
 ]);
 
+export const reportAttachmentsInHarnessShared = harnessShared.table("report_attachments", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	workItemId: text("work_item_id").notNull(),
+	door: text().notNull(),
+	kind: text().notNull(),
+	externalId: text("external_id"),
+	mime: text().notNull(),
+	byteSize: integer("byte_size").notNull(),
+	content: byteaCustom("content").notNull(),
+	redaction: text().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("report_attachments_door_external_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.door.asc().nullsLast().op("text_ops"), table.externalId.asc().nullsLast().op("text_ops")).where(sql`(external_id IS NOT NULL)`),
+	index("report_attachments_item_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.workItemId.asc().nullsLast().op("text_ops")),
+	pgPolicy("report_attachments_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("report_attachments_byte_size_check", sql`(byte_size >= 0) AND (byte_size <= 2097152)`),
+	check("report_attachments_check", sql`octet_length(content) = byte_size`),
+	check("report_attachments_check1", sql`(kind <> ALL (ARRAY['log'::text, 'text'::text])) OR (redaction = 'redacted'::text)`),
+	check("report_attachments_door_check", sql`door ~ '^[a-z][a-z0-9-]{0,31}$'::text`),
+	check("report_attachments_external_id_check", sql`(external_id IS NULL) OR ((length(external_id) >= 1) AND (length(external_id) <= 256))`),
+	check("report_attachments_kind_check", sql`kind = ANY (ARRAY['log'::text, 'text'::text, 'screenshot'::text, 'file'::text])`),
+	check("report_attachments_mime_check", sql`(length(mime) >= 1) AND (length(mime) <= 128)`),
+	check("report_attachments_redaction_check", sql`redaction = ANY (ARRAY['redacted'::text, 'not-redactable'::text])`),
+	primaryKey({ columns: [table.id], name: "report_attachments_pkey"}),
+
+]);
+
 export const reportLibraryInHarnessShared = harnessShared.table("report_library", {
 	workspaceId: text("workspace_id").notNull(),
 	reportId: text("report_id").notNull(),
