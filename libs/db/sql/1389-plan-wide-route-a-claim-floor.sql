@@ -8,6 +8,10 @@
 -- Route A form plan-wide. The by-id claim path remains available to the named executor.
 -- The TypeScript twin is reservedPlanLaneExclusionSql in work-items.ts; the real-Postgres
 -- claim-ssot agreement test applies this draft and checks both task and feature paths.
+-- FORWARD-COMPAT: the RENAME keeps the old body as work_item_claim_floors_pre1389, and the
+-- CREATE OR REPLACE below restores work_item_claim_floors with the identical 9-argument
+-- signature and text[] return type, wrapping the renamed body. The deployed release calls the
+-- same signature, so it resolves the new wrapper; no caller loses the function (WI-10006549).
 
 DO $guard1389$
 BEGIN
