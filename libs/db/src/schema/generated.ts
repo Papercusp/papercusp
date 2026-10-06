@@ -97,6 +97,7 @@ export const admissionRulesInHarnessShared = harnessShared.table("admission_rule
 	createdBy: text("created_by").notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lifecycle: jsonb().default({}).notNull(),
 }, (table) => [
 	index("admission_rules_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.dataSourceId.asc().nullsLast().op("uuid_ops"), table.sourceKind.asc().nullsLast().op("text_ops")).where(sql`enabled`),
 	foreignKey({
@@ -107,6 +108,7 @@ export const admissionRulesInHarnessShared = harnessShared.table("admission_rule
 	primaryKey({ columns: [table.id, table.workspaceId], name: "admission_rules_pkey"}),
 	check("admission_rules_created_by_check", sql`btrim(created_by) <> ''::text`),
 	check("admission_rules_harness_slug_check", sql`btrim(harness_slug) <> ''::text`),
+	check("admission_rules_lifecycle_check", sql`jsonb_typeof(lifecycle) = 'object'::text`),
 	check("admission_rules_match_check", sql`(jsonb_typeof(match) = 'object'::text) AND (match <> '{}'::jsonb)`),
 	check("admission_rules_source_kind_check", sql`btrim(source_kind) <> ''::text`),
 	check("admission_rules_title_check", sql`btrim(title) <> ''::text`),
@@ -150,12 +152,15 @@ export const admissionWriteBacksInHarnessShared = harnessShared.table("admission
 	externalRef: text("external_ref"),
 	detail: jsonb().default({}).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lifecycleKey: text("lifecycle_key"),
 }, (table) => [
+	uniqueIndex("admission_write_backs_lifecycle_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.admissionId.asc().nullsLast().op("uuid_ops"), table.lifecycleKey.asc().nullsLast().op("text_ops")).where(sql`(lifecycle_key IS NOT NULL)`),
 	uniqueIndex("admission_write_backs_update_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.dataSourceId.asc().nullsLast().op("uuid_ops"), table.updateId.asc().nullsLast().op("text_ops")).where(sql`(update_id IS NOT NULL)`),
 	index("admission_write_backs_work_item_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.workItemId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "admission_write_backs_pkey"}),
 	check("admission_write_backs_action_check", sql`action = ANY (ARRAY['comment'::text, 'transition'::text])`),
 	check("admission_write_backs_detail_check", sql`jsonb_typeof(detail) = 'object'::text`),
+	check("admission_write_backs_lifecycle_key_check", sql`(lifecycle_key IS NULL) OR (btrim(lifecycle_key) <> ''::text)`),
 	check("admission_write_backs_update_id_check", sql`(update_id IS NULL) OR (btrim(update_id) <> ''::text)`),
 	check("admission_write_backs_work_item_id_check", sql`btrim(work_item_id) <> ''::text`),
 ]);
@@ -6331,7 +6336,8 @@ export const moneyJournalMicroAccrualsInHarnessShared = harnessShared.table("mon
 			name: "money_journal_micro_accruals_workspace_id_rollup_id_fkey"
 		}),
 	primaryKey({ columns: [table.accrualId, table.rollupId, table.workspaceId], name: "money_journal_micro_accruals_pkey"}),
-	pgPolicy("money_journal_micro_accruals_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	pgPolicy("money_journal_micro_accruals_hosted_funding_read", { as: "permissive", for: "select", to: ["hosted_service"], using: sql`true` }),
+	pgPolicy("money_journal_micro_accruals_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 	check("money_journal_micro_accruals_accrual_id_check", sql`(length(accrual_id) >= 1) AND (length(accrual_id) <= 256)`),
 	check("money_journal_micro_accruals_decimal_precision", sql`(micros > (0)::numeric) AND (micros <= ('9007199254740991'::bigint)::numeric) AND (scale(micros) <= 324)`),
 	check("money_journal_micro_accruals_micros_check", sql`micros > (0)::numeric`),
@@ -6348,7 +6354,8 @@ export const moneyJournalRollupsInHarnessShared = harnessShared.table("money_jou
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.rollupId, table.workspaceId], name: "money_journal_rollups_pkey"}),
-	pgPolicy("money_journal_rollups_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	pgPolicy("money_journal_rollups_hosted_funding_read", { as: "permissive", for: "select", to: ["hosted_service"], using: sql`true` }),
+	pgPolicy("money_journal_rollups_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 	check("money_journal_rollups_currency_check", sql`currency ~ '^[A-Z]{3}$'::text`),
 	check("money_journal_rollups_decimal_precision", sql`((total_micros >= (0)::numeric) AND (total_micros <= ('9007199254740991'::bigint)::numeric)) AND (scale(total_micros) <= 324) AND ((rounding_micros >= (0)::numeric) AND (rounding_micros <= ('9007199254740991'::bigint)::numeric)) AND (scale(rounding_micros) <= 324)`),
 	check("money_journal_rollups_identity", sql`total_micros = (((settled_cents * 10000))::numeric + rounding_micros)`),
@@ -11819,6 +11826,7 @@ export const workAdmissionsInHarnessShared = harnessShared.table("work_admission
 	admittedBy: text("admitted_by").notNull(),
 	ruleId: uuid("rule_id"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	sourceCategory: text("source_category"),
 }, (table) => [
 	index("work_admissions_work_item_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.workItemId.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "work_admissions_pkey"}),
@@ -11828,6 +11836,7 @@ export const workAdmissionsInHarnessShared = harnessShared.table("work_admission
 	check("work_admissions_field_authority_check", sql`jsonb_typeof(field_authority) = 'object'::text`),
 	check("work_admissions_harness_slug_check", sql`btrim(harness_slug) <> ''::text`),
 	check("work_admissions_rule_chk", sql`(admitted_via = 'rule'::text) = (rule_id IS NOT NULL)`),
+	check("work_admissions_source_category_check", sql`(source_category IS NULL) OR (source_category = ANY (ARRAY['triage'::text, 'backlog'::text, 'todo'::text, 'in-progress'::text, 'in-review'::text, 'done'::text, 'canceled'::text]))`),
 	check("work_admissions_source_key_check", sql`btrim(source_key) <> ''::text`),
 	check("work_admissions_source_kind_check", sql`btrim(source_kind) <> ''::text`),
 	check("work_admissions_source_ref_check", sql`jsonb_typeof(source_ref) = 'object'::text`),
