@@ -61,6 +61,26 @@ describe('pull-schema.mjs main-guard (EI-18786840446203185)', () => {
     );
   });
 
+  it('fingerprints schema_migrations before introspection and re-checks it before the policy refusal and promotion (WI-10006614)', () => {
+    const source = readFileSync(new URL('./pull-schema.mjs', import.meta.url), 'utf8');
+    const fingerprint = source.indexOf('const catalogBefore = readMigrationFingerprint();');
+    const introspect = source.indexOf('const introspectArgs = [');
+    const policyRefusal = source.indexOf("'refusing to promote generated schema with unresolved pgPolicy predicates");
+    const policyDriftCheck = source.indexOf("if (refuseOnCatalogDrift('at the pg_policies check')) return;");
+    const promote = source.indexOf('promoteGeneratedSchemaArtifacts({ schemaPath');
+    const promoteDriftCheck = source.indexOf("if (refuseOnCatalogDrift('before promotion')) return;");
+
+    for (const at of [fingerprint, introspect, policyRefusal, policyDriftCheck, promote, promoteDriftCheck]) {
+      expect(at).toBeGreaterThanOrEqual(0);
+    }
+    // The ledger is read before drizzle-kit can see the catalog...
+    expect(fingerprint).toBeLessThan(introspect);
+    // ...drift is diagnosed before the projector-blaming refusal prints...
+    expect(policyDriftCheck).toBeLessThan(policyRefusal);
+    // ...and a run that straddled a commit never promotes a mixed-catalog schema.
+    expect(promoteDriftCheck).toBeLessThan(promote);
+  });
+
   it('excludes drizzle-kit intermediate TypeScript files from the database package typecheck', () => {
     const tsconfig = JSON.parse(readFileSync(new URL('../tsconfig.json', import.meta.url), 'utf8'));
 

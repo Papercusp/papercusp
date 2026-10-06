@@ -49,6 +49,10 @@
  *   Fix 13: drizzle-kit can attach a table's policy predicates to only one
  *           pgPolicy entry when policy introspection order changes; restore
  *           each USING / WITH CHECK expression from pg_policies by identity.
+ *   Fix 14: a migration committing mid-run makes the authoritative psql reads
+ *           disagree with drizzle-kit's introspection; fingerprint
+ *           schema_migrations up front and refuse with "catalog changed during
+ *           pull — re-run" instead of blaming the projector (WI-10006614).
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, realpathSync, rmSync } from 'node:fs';
@@ -66,6 +70,11 @@ import {
 } from '../src/schema/schema-declaration-order.mjs';
 import { repairNotValidChecks } from '../src/schema/schema-checks.mjs';
 import { repairPgPolicyPredicates } from '../src/schema/schema-policies.mjs';
+import {
+  MIGRATION_FINGERPRINT_SQL,
+  describeCatalogDrift,
+  parseMigrationFingerprint,
+} from '../src/schema/schema-catalog-drift.mjs';
 import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
 import {
   createSchemaCliSpawnOptions,
@@ -154,6 +163,36 @@ const { url: dbUrl, source: dbUrlSource } = resolveAdminUrlWithSource();
     process.exitCode = 1;
     return;
   }
+}
+
+// Fix 14 (WI-10006614): fingerprint the applied-migration ledger BEFORE
+// drizzle-kit introspects. Migrations auto-apply concurrently with pull runs on
+// this fleet; one committing between introspection and the authoritative psql
+// reads below makes those reads see objects introspection never saw, and the
+// resulting refusal ("authoritative policy has no generated call") blames the
+// projector. Re-read the ledger before any such refusal and before promotion.
+function readMigrationFingerprint() {
+  const read = spawnSync('psql', [dbUrl, '-tA', '-c', MIGRATION_FINGERPRINT_SQL], {
+    encoding: 'utf8',
+  });
+  if (read.error != null || read.status !== 0) return null;
+  return parseMigrationFingerprint(read.stdout);
+}
+const catalogBefore = readMigrationFingerprint();
+if (catalogBefore == null) {
+  console.warn(
+    '    ⚠ could not fingerprint harness_shared.schema_migrations — mid-run catalog ' +
+      'drift detection is OFF for this run',
+  );
+}
+function refuseOnCatalogDrift(stage) {
+  if (catalogBefore == null) return false;
+  const drift = describeCatalogDrift(catalogBefore, readMigrationFingerprint(), { stage });
+  if (drift == null) return false;
+  console.error(`\n==> REFUSING TO PROMOTE: ${drift}`);
+  console.error('    generated.ts is UNCHANGED — nothing inconsistent can be committed.');
+  process.exitCode = 1;
+  return true;
 }
 
 // Prefer the locally-installed drizzle-kit. `npx -y drizzle-kit@^0.31.10`
@@ -268,6 +307,7 @@ try {
 }
 const policyFix = repairPgPolicyPredicates({ source: schema, policies: policyRows });
 if (policyFix.unresolved.length > 0) {
+  if (refuseOnCatalogDrift('at the pg_policies check')) return;
   console.error(
     'refusing to promote generated schema with unresolved pgPolicy predicates:\n  - ' +
       policyFix.unresolved.join('\n  - '),
@@ -911,6 +951,9 @@ if (process.env.PAPERCUSP_SKIP_IDENTITY_KEYED_GATE === '1') {
 
 // Fix 9 / promote: copy first, then remove the ignored drizzle-kit source
 // names. Leaving schema.ts behind makes tsc compile a stale second mirror.
+// Fix 14: a run that straddled a migration commit mixes two catalog states even
+// when no repair refused, so check the ledger once more before promoting.
+if (refuseOnCatalogDrift('before promotion')) return;
 promoteGeneratedSchemaArtifacts({ schemaPath, relationsPath, schemaDir: SCHEMA_DIR });
 
 console.log('==> done. generated.ts + generated-relations.ts updated.');
