@@ -171,6 +171,8 @@ function taskToTicket(task, cfg) {
     if (name && !projectNames.includes(name)) projectNames.push(name);
   }
   const sectionName = nameOf(membership && membership.section);
+  // The connected account (`cfg.self`, from GET /users/me) is "the Papercusp user" (D-012).
+  const assignedToSelf = Boolean(cfg.self) && text(task.assignee && task.assignee.gid) === cfg.self;
   const payload = {
     provider: TICKET_PROVIDER,
     externalId: text(task.gid),
@@ -186,6 +188,7 @@ function taskToTicket(task, cfg) {
     statusName: task.completed === true ? 'Completed' : sectionName,
     section: sectionName,
     projects: projectNames.length > 0 ? projectNames : undefined,
+    selfRoles: assignedToSelf ? ['assignee'] : undefined,
     dueAt: dueAtOf(task),
     parentExternalId: text(task.parent && task.parent.gid) || undefined,
     author: nameOf(task.created_by),
@@ -387,7 +390,15 @@ async function taskRecords(host, source, task, cfg) {
 }
 
 function freshCursor(projects, tokens) {
-  return { v: 1, projects, project: 0, phase: 'crawl', offset: null, tokens: tokens || {}, fresh: {} };
+  return { v: 1, projects, project: 0, phase: 'crawl', offset: null, tokens: tokens || {}, fresh: {}, self: null };
+}
+
+/** The connected account's user gid (GET /users/me): the Papercusp user tasks are assigned to. */
+async function selfGid(host, source) {
+  const res = await rest(host, source, 'GET', '/users/me', { query: { opt_fields: 'gid' } });
+  const gid = text(res.body && res.body.data && res.body.data.gid);
+  if (!gid) throw syncError('transient', 'asana_self_unresolved');
+  return gid;
 }
 
 function plainObject(value) {
@@ -417,7 +428,7 @@ function decodeCursor(raw, projects) {
   if (parsed.project >= projects.length) throw syncError('cursor-expired', 'asana_cursor_unrecognised');
   return {
     v: 1, projects, project: parsed.project, phase: parsed.phase, offset: parsed.offset,
-    tokens: plainObject(parsed.tokens), fresh: plainObject(parsed.fresh),
+    tokens: plainObject(parsed.tokens), fresh: plainObject(parsed.fresh), self: text(parsed.self) || null,
   };
 }
 
@@ -440,7 +451,7 @@ async function crawlPage(host, source, cursor, cfg) {
     return { records, nextCursor: JSON.stringify({ ...cursor, fresh, project: cursor.project + 1, offset: null }), hasMore: true };
   }
   // Crawl complete: the tokens taken before each project's crawl become the incremental starting points.
-  const done = { v: 1, projects: cursor.projects, project: 0, phase: 'events', offset: null, tokens: { ...cursor.tokens, ...fresh }, fresh: {} };
+  const done = { v: 1, projects: cursor.projects, project: 0, phase: 'events', offset: null, tokens: { ...cursor.tokens, ...fresh }, fresh: {}, self: cursor.self };
   return { records, nextCursor: JSON.stringify(done), hasMore: false };
 }
 
@@ -486,6 +497,8 @@ async function eventsPage(host, source, cursor, cfg) {
 async function syncPage(request, host) {
   const cfg = configOf(request.config);
   const cursor = decodeCursor(request.cursor, cfg.projects);
+  if (!cursor.self) cursor.self = await selfGid(host, request.source);
+  cfg.self = cursor.self;
   return cursor.phase === 'crawl' ? crawlPage(host, request.source, cursor, cfg) : eventsPage(host, request.source, cursor, cfg);
 }
 
@@ -503,7 +516,9 @@ async function readTask(host, source, gid) {
 
 async function readTicket(request, host) {
   const task = await readTask(host, request.source, taskGidOf(request.args));
-  return { ticket: taskToTicket(task, writeConfigOf(request.config)) };
+  const cfg = writeConfigOf(request.config);
+  cfg.self = await selfGid(host, request.source);
+  return { ticket: taskToTicket(task, cfg) };
 }
 
 /** `ticket.comment { externalId, text }`: one comment story; only the text is sent. */
