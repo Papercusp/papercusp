@@ -180,6 +180,9 @@ test('a compiled operation keeps revision A after the authored definition change
       execution: { kind: 'agent', role: 'worker' },
       inputSchema: { type: 'object', properties: { value: { type: 'string' } } },
       acceptance: { resultSchema: { type: 'object' } },
+      policy: { identity: {
+        kind: 'identity', ref: 'worker-domain', revision: '7', contentHash: 'a'.repeat(64),
+      } },
     };
     const source = { ...rootSource(), roles: [{ id: 'worker' }], operations: [operation] };
     const first = compileAgentSpecification({ source, resolve: f.resolve, harnessDir: f.dir });
@@ -218,7 +221,7 @@ test('composition refuses a direct agent operation without a pinned worker ident
     assert.throws(
       () => compileAgentSpecification({ source, resolve: f.resolve, harnessDir: f.dir }),
       (error: unknown) => error instanceof CompositionCompilerError &&
-        error.code === 'source-invalid' && error.message.includes('operation-unpinned-agent'),
+        error.code === 'source-resolution-failed' && error.message.includes('operation-unpinned-agent'),
     );
 
     const pinned = compileAgentSpecification({
@@ -251,6 +254,9 @@ test('an operation acceptance rubric must match a retained package on compile an
         id: 'review', version: '1', target: { kind: 'work-item', itemKind: 'feature' },
         execution: { kind: 'agent', role: 'worker' },
         inputSchema: { type: 'object' },
+        policy: { identity: {
+          kind: 'identity', ref: 'worker-domain', revision: '7', contentHash: 'a'.repeat(64),
+        } },
         acceptance: { resultSchema: { type: 'object' }, rubric: {
           kind: 'rubric', ref: 'judge', revision: rubric.revision, contentHash: rubric.contentHash,
         } },

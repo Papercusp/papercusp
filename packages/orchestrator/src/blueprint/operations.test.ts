@@ -23,6 +23,7 @@ const directOperation = (): BlueprintOperation => ({
   inputSchema,
   acceptance: { resultSchema },
   policy: {
+    identity: { kind: 'identity', ref: 'worker-domain', revision: '7', contentHash: hash },
     requiredTools: ['demo:read'],
     model: { mode: 'exact', models: ['gpt-6-sol'], onUnavailable: 'fail' },
   },
