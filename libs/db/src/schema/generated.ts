@@ -1429,6 +1429,24 @@ export const blueprintOperationInvocationsInHarnessShared = harnessShared.table(
 	check("blueprint_operation_invocations_target_kind_check", sql`target_kind = ANY (ARRAY['work-item'::text, 'plan'::text])`),
 ]);
 
+export const blueprintOperationPrivateInputsInHarnessShared = harnessShared.table("blueprint_operation_private_inputs", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	callerId: text("caller_id").notNull(),
+	operationId: text("operation_id").notNull(),
+	requestKey: text("request_key").notNull(),
+	contentText: text("content_text").notNull(),
+	contentSha256: text("content_sha256").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).default(sql`(now() + '7 days'::interval)`).notNull(),
+}, (table) => [
+	index("blueprint_operation_private_inputs_expires_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.callerId, table.harnessSlug, table.operationId, table.requestKey, table.workspaceId], name: "blueprint_operation_private_inputs_pkey"}),
+	pgPolicy("blueprint_operation_private_inputs_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("blueprint_operation_private_inputs_content_sha256_check", sql`content_sha256 ~ '^[0-9a-f]{64}$'::text`),
+	check("blueprint_operation_private_inputs_content_text_check", sql`octet_length(content_text) <= 4194304`),
+]);
+
 export const blueprintPackageDependentsInHarnessShared = harnessShared.table("blueprint_package_dependents", {
 	workspaceId: text("workspace_id").notNull(),
 	dependentId: text("dependent_id").notNull(),
