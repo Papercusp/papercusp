@@ -8,8 +8,10 @@
 --                                                  could not answer
 -- P-008 retires both as hold reasons. Their writers now stamp the one stage reason,
 -- awaiting-agent-review (capture-core promotedProbationReadiness, triage-core
--- triageImplementationReadiness), and the hold-registry entries for the two old reasons
--- are removed in the same change, so no writer can produce them again.
+-- triageImplementationReadiness), and the hold-registry marks the two old reasons
+-- RETIRED in the same change: a write is refused (RetiredHoldError), but a row still
+-- carrying one keeps resolving to its clearer, because a deployed build that predates
+-- P-008 keeps stamping them until it ships and this migration runs only once.
 --
 -- This rewrites every NON-TERMINAL row still carrying one of them. The readiness keeps
 -- its status ('unknown'), source and evidence; only the reason changes, and updatedAt is
