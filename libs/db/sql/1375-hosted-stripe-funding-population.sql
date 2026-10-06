@@ -37,6 +37,9 @@ RETURNS void LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog
 AS $body$
 BEGIN
+  IF current_setting('transaction_isolation') <> 'read committed' THEN
+    RAISE EXCEPTION 'funding population requires read committed' USING ERRCODE = '25001';
+  END IF;
   LOCK TABLE harness_shared.money_journal_entries,
     harness_shared.money_journal_lines,
     harness_shared.payment_receipts,
