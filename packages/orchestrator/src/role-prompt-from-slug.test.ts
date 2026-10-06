@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { assembleRolePrompt, lookupProjectDir } from './role-prompt-from-slug.js';
+import { isRolePromptPathReference } from './effective-config.js';
 
 function setupRegistry(): { home: string; projectDir: string; harnessDir: string; cleanup: () => void } {
   // Pin the operator-API base to a guaranteed-refused port so
@@ -299,4 +300,101 @@ test('assembleRolePrompt includes Queen brief when supplied (P-060)', () => {
     }
     setup.cleanup();
   }
+});
+
+// WI-10006942: an app pot's roles live ONLY in its harness-local blueprint
+// (`roles[].prompt`), never under a prompt root's blueprints/<id>/prompts/. Before the
+// fix nothing read that field, so every placed app operation worker died at
+// bootstrap-role with "no prompt file found".
+function writeAppBlueprint(projectDir: string, roles: Array<{ id: string; prompt: string }>): string {
+  const file = join(projectDir, '.papercusp', 'blueprint.yaml');
+  writeFileSync(
+    file,
+    [
+      'id: demo-app',
+      'workItem: { kind: feature, idPrefix: F }',
+      'spine: { decider: director, edges: { DONE: { to: done } }, default: { to: idle } }',
+      'acceptance: { kind: judge }',
+      'roles:',
+      ...roles.flatMap((r) => [`  - id: ${r.id}`, `    prompt: ${JSON.stringify(r.prompt)}`]),
+      '',
+    ].join('\n'),
+  );
+  return file;
+}
+
+function withAppHarness(fn: (setup: ReturnType<typeof setupRegistry>) => void): void {
+  const setup = setupRegistry();
+  const prevHome = process.env.HOME;
+  const prevHarnessDir = process.env.PAPERCUSP_HARNESS_DIR;
+  process.env.HOME = setup.home;
+  process.env.PAPERCUSP_HARNESS_DIR = setup.harnessDir;
+  try {
+    fn(setup);
+  } finally {
+    if (prevHome !== undefined) process.env.HOME = prevHome;
+    if (prevHarnessDir !== undefined) {
+      process.env.PAPERCUSP_HARNESS_DIR = prevHarnessDir;
+    } else {
+      delete process.env.PAPERCUSP_HARNESS_DIR;
+    }
+    setup.cleanup();
+  }
+}
+
+test('assembleRolePrompt renders an app role from the harness blueprint\'s inline roles[].prompt (WI-10006942)', () => {
+  withAppHarness((setup) => {
+    const persona = 'Produce one MeetingPrepProposalSet. Ground every agenda item in the supplied event.';
+    const blueprintFile = writeAppBlueprint(setup.projectDir, [{ id: 'demo-prep-worker', prompt: persona }]);
+
+    const result = assembleRolePrompt({ slug: 'demo', role: 'demo-prep-worker', featureId: 'WI-1' });
+
+    assert.match(result.text, /Produce one MeetingPrepProposalSet\. Ground every agenda item/);
+    assert.match(result.text, /FEATURE_ID=WI-1/, 'runtime context is still assembled around the declared persona');
+    assert.equal(result.meta.promptFile, blueprintFile, 'provenance names the blueprint that carries the inline persona');
+  });
+});
+
+test('a declared roles[].prompt path resolves relative to the blueprint directory (WI-10006942)', () => {
+  withAppHarness((setup) => {
+    const personaFile = join(setup.projectDir, '.papercusp', 'prompts', 'demo-agent.md');
+    mkdirSync(join(setup.projectDir, '.papercusp', 'prompts'), { recursive: true });
+    writeFileSync(personaFile, '# DEMO AGENT\n\nAnswer the caller.\n');
+    writeAppBlueprint(setup.projectDir, [{ id: 'demo-agent', prompt: 'prompts/demo-agent.md' }]);
+
+    const result = assembleRolePrompt({ slug: 'demo', role: 'demo-agent' });
+
+    assert.match(result.text, /# DEMO AGENT\n\nAnswer the caller\./);
+    assert.doesNotMatch(result.text, /prompts\/demo-agent\.md\n/, 'the path is never fed in as persona text');
+    assert.equal(result.meta.promptFile, personaFile);
+  });
+});
+
+test('a declared roles[].prompt path that does not exist falls back to the prompt library (WI-10006942)', () => {
+  withAppHarness((setup) => {
+    writeAppBlueprint(setup.projectDir, [{ id: 'worker', prompt: 'prompts/inherited-from-parent.md' }]);
+
+    const result = assembleRolePrompt({ slug: 'demo', role: 'worker' });
+
+    assert.match(result.text, /# WORKER\n\nDo your job\./);
+    assert.equal(result.meta.promptFile, join(setup.harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'));
+  });
+});
+
+test('a role neither declared in the harness blueprint nor in the library still throws (WI-10006942)', () => {
+  withAppHarness((setup) => {
+    writeAppBlueprint(setup.projectDir, [{ id: 'demo-prep-worker', prompt: 'Prep the meeting.' }]);
+    assert.throws(
+      () => assembleRolePrompt({ slug: 'demo', role: 'not-declared-anywhere' }),
+      /no prompt file found for role "not-declared-anywhere" and the harness blueprint declares no roles\[\]\.prompt/,
+    );
+  });
+});
+
+test('isRolePromptPathReference tells a persona sentence from a prompt path', () => {
+  assert.equal(isRolePromptPathReference('prompts/worker.md'), true);
+  assert.equal(isRolePromptPathReference('./persona.txt'), true);
+  assert.equal(isRolePromptPathReference('/abs/persona'), true);
+  assert.equal(isRolePromptPathReference('Write the draft. See notes.md'), false, 'a sentence ending in .md is text');
+  assert.equal(isRolePromptPathReference('Produce one MeetingPrepProposalSet.'), false);
 });

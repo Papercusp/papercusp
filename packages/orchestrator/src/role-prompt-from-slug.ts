@@ -23,7 +23,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { harnessRoot } from '@papercusp/harness/paths';
 import { resolvePhase, configGet } from './config';
-import { readEffectiveConfig, loadHarnessAcceptanceKind, loadHarnessLexicon, loadHarnessBlueprintId } from './effective-config';
+import { readEffectiveConfig, loadHarnessAcceptanceKind, loadHarnessLexicon, loadHarnessBlueprintId, loadHarnessRolePrompt } from './effective-config';
 import { buildPrompt } from './prompt-build';
 import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 
@@ -247,12 +247,32 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
   // gets `undefined` here ⇒ chain=['base'] ⇒ byte-identical to before.
   const blueprintId = loadHarnessBlueprintId(stateDir);
 
+  // WI-10006942: the harness's OWN blueprint document is the most specific persona
+  // source there is — `roles[].prompt` is the declared persona authority (validate.ts
+  // P-033). A harness-local blueprint (every app pot) has no `blueprints/<id>/prompts/`
+  // subtree, so library resolution alone could never find its roles: placed operation
+  // workers died at bootstrap-role with "no prompt file found". The declared persona,
+  // when present, therefore wins; otherwise resolve from the prompt library as before.
+  const declaredPrompt = loadHarnessRolePrompt(stateDir, opts.role);
+
   // Layered list (base/<role>.md first when present — audit P-019), the
   // concrete most-specific prompt last (kept as `promptFile` for meta).
-  const promptFiles = resolvePromptFiles({ harnessDir, phase, dept, blueprintId }, opts.role);
-  const promptFile = promptFiles[promptFiles.length - 1];
+  let promptFiles: string[];
+  let inlinePrompt: string | undefined;
+  let promptFile: string | undefined;
+  if (declaredPrompt?.kind === 'inline') {
+    promptFiles = [];
+    inlinePrompt = declaredPrompt.text;
+    promptFile = declaredPrompt.source;
+  } else if (declaredPrompt?.kind === 'file') {
+    promptFiles = [declaredPrompt.path];
+    promptFile = declaredPrompt.path;
+  } else {
+    promptFiles = resolvePromptFiles({ harnessDir, phase, dept, blueprintId }, opts.role);
+    promptFile = promptFiles[promptFiles.length - 1];
+  }
   if (!promptFile) {
-    throw new Error(`assembleRolePrompt: no prompt file found for role "${opts.role}" (phase=${phase}, dept=${dept || 'none'}, blueprintId=${blueprintId ?? 'none'})`);
+    throw new Error(`assembleRolePrompt: no prompt file found for role "${opts.role}" and the harness blueprint declares no roles[].prompt for it (phase=${phase}, dept=${dept || 'none'}, blueprintId=${blueprintId ?? 'none'})`);
   }
 
   // Per-role specialization. The workspace-owned PG override (D-7) is the
@@ -299,6 +319,7 @@ export function assembleRolePrompt(opts: AssembleRolePromptOptions): AssembledPr
     role: opts.role,
     promptFile,
     promptFiles,
+    inlinePrompt,
     promptOverride,
     stateDir,
     harnessDir,

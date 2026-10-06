@@ -172,6 +172,51 @@ export function loadHarnessLexicon(stateDir: string): Record<string, string> | u
 }
 
 /**
+ * A harness blueprint's DECLARED persona for one role: `roles[].prompt` in
+ * `<stateDir>/blueprint.yaml` (WI-10006942). The schema types it as a plain string
+ * and the validator calls it "the authored persona authority", but before this
+ * reader nothing consumed it: prompt resolution only walks `blueprints/<id>/prompts/
+ * <role>.md` under the prompt roots, and a harness-LOCAL blueprint (every app pot —
+ * calendar, email, phone-app, crm) has no such subtree. Its roles therefore died at
+ * launch with "no prompt file found".
+ *
+ * Two forms, told apart the same way `promptOverrides` is: a single token that starts
+ * with `./` or `/` or ends in `.md`/`.txt` is a PATH (relative to `stateDir`, the
+ * blueprint's own directory), anything else is the INLINE persona text. A path that
+ * does not exist under `stateDir` — e.g. a role inherited from a parent blueprint whose
+ * path is relative to that parent — yields `undefined`, so the caller falls back to
+ * the prompt library instead of feeding a filename in as the persona.
+ *
+ * `source` is the provenance to report: the prompt file, or the blueprint document
+ * that carries the inline text. Fail-safe: an absent/unreadable blueprint or an
+ * undeclared role ⇒ `undefined` ⇒ unchanged library resolution.
+ */
+export type HarnessRolePrompt =
+  | { kind: 'inline'; text: string; source: string }
+  | { kind: 'file'; path: string; source: string };
+
+export function isRolePromptPathReference(value: string): boolean {
+  return /^\S+$/.test(value) && (value.startsWith('./') || value.startsWith('/') || /\.(md|txt)$/.test(value));
+}
+
+export function loadHarnessRolePrompt(stateDir: string, role: string): HarnessRolePrompt | undefined {
+  try {
+    const f = join(stateDir, 'blueprint.yaml');
+    if (!existsSync(f)) return undefined;
+    const declared = loadBlueprintFromFile(f).blueprint.roles?.find((r) => r.id === role)?.prompt;
+    const value = typeof declared === 'string' ? declared.trim() : '';
+    if (!value) return undefined;
+    if (isRolePromptPathReference(value)) {
+      const path = value.startsWith('/') ? value : join(stateDir, value.replace(/^\.\//, ''));
+      return existsSync(path) ? { kind: 'file', path, source: path } : undefined;
+    }
+    return { kind: 'inline', text: value, source: f };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The per-install INSTANCE config, delivered SOLELY via the `HARNESS_CONFIG_JSON`
  * env-transport (the operator assembles it from workspace PG and passes it on
  * spawn; a cloud frame receives it the same way). `.papercusp/config.json` is no
